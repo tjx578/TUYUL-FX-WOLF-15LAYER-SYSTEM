@@ -144,8 +144,18 @@ if _ON_RAILWAY and TRUSTED_PROXY_ENABLED:
         _RAILWAY_PROXY_CIDR,
     )
 
-# Paths exempted from rate limiting (health, root).
-EXEMPT_PATHS: set[str] = {"/", "/health", "/healthz", "/health/full", "/docs", "/openapi.json", "/redoc"}
+# Paths exempted from rate limiting (infra probes, root, docs).
+EXEMPT_PATHS: set[str] = {
+    "/",
+    "/health",
+    "/healthz",
+    "/readyz",
+    "/api/v1/status",
+    "/api/v1/status/full",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+}
 
 # Merge user-defined exempt paths from env var.
 _extra_exempt = os.getenv("RATE_LIMIT_EXEMPT_PATHS", "")

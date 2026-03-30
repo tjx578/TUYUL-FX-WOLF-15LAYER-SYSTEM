@@ -486,6 +486,109 @@ class FinnhubCandleFetcher:
             "source": "h1_aggregated",
         }
 
+    def aggregate_d1(self, h1_candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Aggregate H1 bars into D1 (daily) bars.
+
+        Groups H1 candles by UTC date and builds one D1 candle per group.
+        Used as a fallback when the REST API returns no daily data.
+        """
+        if not h1_candles:
+            return []
+
+        valid_h1 = [
+            c
+            for c in h1_candles
+            if c.get("close", -1) > 0
+            and c.get("open", -1) > 0
+            and c.get("high", -1) > 0
+            and c.get("low", -1) > 0
+            and c["high"] >= c["low"]
+        ]
+        if not valid_h1:
+            return []
+
+        from collections import defaultdict
+
+        daily_groups: dict[tuple[int, int, int], list[dict[str, Any]]] = defaultdict(list)
+        for h1 in valid_h1:
+            ts = h1["timestamp"]
+            dt = ts if isinstance(ts, datetime) else datetime.fromtimestamp(ts, tz=UTC)
+            daily_groups[(dt.year, dt.month, dt.day)].append(h1)
+
+        d1_candles_out: list[dict[str, Any]] = []
+        for (_y, _m, _d), group in sorted(daily_groups.items()):
+            last_ts = group[-1]["timestamp"]
+            if not isinstance(last_ts, datetime):
+                last_ts = datetime.fromtimestamp(last_ts, tz=UTC)
+            d1_candles_out.append(
+                {
+                    "symbol": group[0]["symbol"],
+                    "timeframe": "D1",
+                    "open": group[0]["open"],
+                    "high": max(c["high"] for c in group),
+                    "low": min(c["low"] for c in group),
+                    "close": group[-1]["close"],
+                    "volume": sum(c.get("volume", 0) for c in group),
+                    "timestamp": last_ts,
+                    "source": "h1_aggregated",
+                }
+            )
+
+        logger.debug("Aggregated {} H1 bars into {} D1 bars", len(valid_h1), len(d1_candles_out))
+        return d1_candles_out
+
+    def aggregate_w1(self, d1_candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Aggregate D1 bars into W1 (weekly) bars.
+
+        Groups D1 candles by ISO year+week and builds one W1 candle per group.
+        Used as a fallback when the REST API returns no weekly data.
+        """
+        if not d1_candles:
+            return []
+
+        valid_d1 = [
+            c
+            for c in d1_candles
+            if c.get("close", -1) > 0
+            and c.get("open", -1) > 0
+            and c.get("high", -1) > 0
+            and c.get("low", -1) > 0
+            and c["high"] >= c["low"]
+        ]
+        if not valid_d1:
+            return []
+
+        from collections import defaultdict
+
+        weekly_groups: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
+        for d1 in valid_d1:
+            ts = d1["timestamp"]
+            dt = ts if isinstance(ts, datetime) else datetime.fromtimestamp(ts, tz=UTC)
+            iso_year, iso_week, _ = dt.isocalendar()
+            weekly_groups[(iso_year, iso_week)].append(d1)
+
+        w1_candles: list[dict[str, Any]] = []
+        for (_y, _w), group in sorted(weekly_groups.items()):
+            last_ts = group[-1]["timestamp"]
+            if not isinstance(last_ts, datetime):
+                last_ts = datetime.fromtimestamp(last_ts, tz=UTC)
+            w1_candles.append(
+                {
+                    "symbol": group[0]["symbol"],
+                    "timeframe": "W1",
+                    "open": group[0]["open"],
+                    "high": max(c["high"] for c in group),
+                    "low": min(c["low"] for c in group),
+                    "close": group[-1]["close"],
+                    "volume": sum(c.get("volume", 0) for c in group),
+                    "timestamp": last_ts,
+                    "source": "d1_aggregated",
+                }
+            )
+
+        logger.debug("Aggregated {} D1 bars into {} W1 bars", len(valid_d1), len(w1_candles))
+        return w1_candles
+
     def aggregate_mn(self, d1_candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Aggregate D1 bars into MN (monthly) bars.
 
@@ -577,30 +680,73 @@ class FinnhubCandleFetcher:
                 if tf not in timeframes and tf != "M15":
                     timeframes.append(tf)
 
+        # When D1/W1 are synthesized from H1 (Finnhub free-tier returns
+        # no_data for "D"/"W" resolutions), the H1 fetch must span enough
+        # history.  5 W1 bars ≈ 5 forex weeks ≈ 25 trading days × 24 H1/day
+        # = 600 H1, plus ~40 % calendar buffer for weekends ≈ 840.
+        h1_synthesis_min = 0
+        if "D1" in timeframes or "W1" in timeframes:
+            h1_synthesis_min = max(warmup_bars, 840)
+
+        tf_bars: dict[str, int] = {}
+        for tf in timeframes:
+            tf_bars[tf] = warmup_bars
+        if h1_synthesis_min:
+            tf_bars["H1"] = max(tf_bars.get("H1", warmup_bars), h1_synthesis_min)
+
         logger.info(
-            f"Starting warmup for {len(enabled_symbols)} symbols, {len(timeframes)} timeframes, {warmup_bars} bars each"
+            f"Starting warmup for {len(enabled_symbols)} symbols, {len(timeframes)} timeframes, "
+            f"{warmup_bars} bars each (H1={tf_bars.get('H1', warmup_bars)} for synthesis coverage)"
         )
 
         results: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
         # Create tasks for all symbol/timeframe combinations
         tasks = [
-            self.warmup_symbol_tf(symbol, tf, warmup_bars, results) for symbol in enabled_symbols for tf in timeframes
+            self.warmup_symbol_tf(symbol, tf, tf_bars.get(tf) or warmup_bars, results)
+            for symbol in enabled_symbols
+            for tf in timeframes
         ]
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
+        # ── D1 fallback: synthesize from H1 when REST returned no daily data ──
+        for symbol in enabled_symbols:
+            sym_data = results.get(symbol, {})
+            if not sym_data.get("D1") and sym_data.get("H1"):
+                synthesized = self.aggregate_d1(sym_data["H1"])
+                if synthesized:
+                    results.setdefault(symbol, {})["D1"] = synthesized
+                    for candle in synthesized:
+                        self.context_bus.update_candle(candle)
+                    logger.info(
+                        "[Warmup] {} D1: synthesized {} bars from H1 (REST returned no daily data)",
+                        symbol,
+                        len(synthesized),
+                    )
+
+        # ── W1 fallback: synthesize from D1 when REST returned no weekly data ──
+        for symbol in enabled_symbols:
+            sym_data = results.get(symbol, {})
+            if not sym_data.get("W1") and sym_data.get("D1"):
+                synthesized = self.aggregate_w1(sym_data["D1"])
+                if synthesized:
+                    results.setdefault(symbol, {})["W1"] = synthesized
+                    for candle in synthesized:
+                        self.context_bus.update_candle(candle)
+                    logger.info(
+                        "[Warmup] {} W1: synthesized {} bars from D1 (REST returned no weekly data)",
+                        symbol,
+                        len(synthesized),
+                    )
+
         # ── MN fallback: synthesize from D1 when REST returned no monthly data ──
         for symbol in enabled_symbols:
             sym_data = results.get(symbol, {})
-            mn_candles = sym_data.get("MN", [])
-            d1_candles = sym_data.get("D1", [])
-            if not mn_candles and d1_candles:
-                synthesized = self.aggregate_mn(d1_candles)
+            if not sym_data.get("MN") and sym_data.get("D1"):
+                synthesized = self.aggregate_mn(sym_data["D1"])
                 if synthesized:
-                    if symbol not in results:
-                        results[symbol] = {}
-                    results[symbol]["MN"] = synthesized
+                    results.setdefault(symbol, {})["MN"] = synthesized
                     for candle in synthesized:
                         self.context_bus.update_candle(candle)
                     logger.info(

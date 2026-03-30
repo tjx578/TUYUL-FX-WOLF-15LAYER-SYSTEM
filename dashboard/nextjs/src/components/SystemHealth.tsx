@@ -4,7 +4,7 @@
 // TUYUL FX Wolf-15 — SystemHealth widget
 // ============================================================
 
-import { useHealth, useOrchestratorState } from "@/shared/api/system.api";
+import { useStatus, useOrchestratorState } from "@/shared/api/system.api";
 import type { FeedStatus, FreshnessClassLabel } from "@/types";
 
 /** Map backend internal feed_status to the approved FreshnessClass label.
@@ -46,7 +46,7 @@ const FRESHNESS_DISPLAY: Record<FreshnessClassLabel, string> = {
 };
 
 export function SystemHealth() {
-  const { data: health, isLoading } = useHealth();
+  const { data: health, isLoading } = useStatus();
   const { data: orchestrator } = useOrchestratorState();
 
   const isHealthy = health?.status === "ok";

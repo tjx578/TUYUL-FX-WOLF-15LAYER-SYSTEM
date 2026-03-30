@@ -24,13 +24,16 @@ Only material that should be treated as production truth:
 
 1. `data-flow.md`
 2. `system-overview.md`
-3. `config-resolver.md`
-4. `lock-enforcement.md`
-5. `config-governance.md`
-6. `risk-stack.md`
-7. `risk-monitor.md`
-8. `deployment-railway.md`
-9. `topology.md`
+3. `dashboard-control-surface.md`
+4. `runtime-topology-current.md`
+5. `engine-lineage-zones.md`
+6. `config-resolver.md`
+7. `lock-enforcement.md`
+8. `config-governance.md`
+9. `risk-stack.md`
+10. `risk-monitor.md`
+11. `deployment-railway.md`
+12. `topology.md`
 
 ## Existing detailed references
 

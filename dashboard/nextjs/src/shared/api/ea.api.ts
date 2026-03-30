@@ -8,6 +8,7 @@ import {
     updateAgent,
 } from "@/lib/agent-manager-api";
 import { AgentStatus as AgentStatusEnum } from "@/types/agent-manager";
+import { getRestPrefix } from "@/lib/env";
 import type { AgentItem, AgentEvent } from "@/types/agent-manager";
 import { apiMutate, API_ENDPOINTS } from "@/shared/api/client";
 
@@ -144,7 +145,7 @@ export function useEAPing(agentId: string | null, refreshIntervalMs = 60_000) {
  */
 export async function restartEA(): Promise<void> {
     try {
-        const res = await fetch("/api/v1/agent-manager/agents", { credentials: "include" });
+        const res = await fetch(`${getRestPrefix()}/api/v1/agent-manager/agents`, { credentials: "include" });
         if (res.ok) {
             const payload = await res.json();
             const agents: AgentItem[] = Array.isArray(payload) ? payload : (payload.agents ?? []);
@@ -167,7 +168,7 @@ export async function restartEA(): Promise<void> {
  */
 export async function setEASafeMode(enabled: boolean, reason: string): Promise<void> {
     try {
-        const res = await fetch("/api/v1/agent-manager/agents", { credentials: "include" });
+        const res = await fetch(`${getRestPrefix()}/api/v1/agent-manager/agents`, { credentials: "include" });
         if (res.ok) {
             const payload = await res.json();
             const agents: AgentItem[] = Array.isArray(payload) ? payload : (payload.agents ?? []);

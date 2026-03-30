@@ -136,7 +136,7 @@ Prefect, or a bespoke `core/dag_engine.py`).  The reasoning is in §7.
 
 | Phase | Components | Current Mode | Can Parallelize? | Blocker |
 
-|-------|-----------|--------------|-----------------|---------|
+| ------- | ----------- | -------------- | ----------------- | --------- |
 | 1 | L1, L2, L3 | Sequential | ❌ No | L2 needs L1 output; L3 needs L2; halt-on-failure chain |
 | 2 | L4, L5 | Sequential | ⚠️ Maybe | L5 (psychology) is enriched by L4 score in practice |
 | 2.5 E1-8 | 8 enrichment engines | **Parallel** ✅ | ✅ Yes | **Implemented** — independent computations |
@@ -248,7 +248,7 @@ element) and Future-level exceptions (via `future.result()` re-raise).
 
 | Scenario | Timing |
 
-|---------|--------|
+| --------- | -------- |
 | Sequential (old) — engines 1-8 | ~8 × 30ms = 240ms |
 | Sequential (old) — engine 9 | ~30ms |
 | **Sequential total** | **~270ms** |
@@ -316,7 +316,7 @@ bespoke `core/dag_engine.py`).
 
 | Criterion | Hybrid (chosen) | Standalone DAG |
 
-|-----------|----------------|----------------|
+| ----------- | ---------------- | ---------------- |
 | Dependency footprint | None (stdlib only) | Large (Airflow: 50+ deps) |
 | Operational complexity | Low (in-process) | High (separate scheduler) |
 | Latency | Microseconds overhead | 10s–100s ms scheduler overhead |

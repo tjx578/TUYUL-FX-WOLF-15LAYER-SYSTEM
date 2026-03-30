@@ -8,9 +8,9 @@ export interface ApiErrorPayload {
   details?: unknown;
 }
 
-// On local dev / valid builds: baseURL = "" (relative paths via Next.js rewrites).
-// On deployed hosts with stale/missing build-time env: baseURL = "/api/proxy"
-// so requests route through the runtime proxy that reads env vars at request time.
+// P4 consolidation: baseURL is always "/api/proxy" on the client.
+// All REST calls go through the runtime proxy route handler which
+// reads INTERNAL_API_URL at request time.
 export const apiClient = axios.create({
   baseURL: getRestPrefix(),
   headers: {

@@ -22,10 +22,24 @@ def _make_probe_mock() -> AsyncMock:
     return probe
 
 
+async def _fake_start_probe_as_task(
+    *,
+    port: int,
+    service_name: str,
+    readiness_check: Any = None,
+    extra_details: Any = None,
+    task_name: str | None = None,
+) -> tuple[AsyncMock, asyncio.Task[None]]:
+    """Stand-in for start_probe_as_task that returns a mock probe + real task."""
+    probe = _make_probe_mock()
+    probe._readiness_check = readiness_check
+    task = asyncio.create_task(asyncio.sleep(999), name=task_name or "TestProbe")
+    return probe, task
+
+
 @pytest.mark.asyncio
 async def test_probe_task_reference_stored() -> None:
     """Health probe task must be stored to prevent GC collection."""
-    probe = _make_probe_mock()
     tasks_created: list[asyncio.Task[None]] = []
     original_create_task = asyncio.create_task
 
@@ -38,7 +52,10 @@ async def test_probe_task_reference_stored() -> None:
         return
 
     with (
-        patch("services.trade.runner.HealthProbe", return_value=probe),
+        patch(
+            "services.shared.health_probe_launcher.start_probe_as_task",
+            side_effect=_fake_start_probe_as_task,
+        ),
         patch("asyncio.create_task", side_effect=_tracking_create_task),
         patch("allocation.async_worker._main", new=_instant_worker),
         patch("execution.async_worker._main", new=_instant_worker),
@@ -47,22 +64,28 @@ async def test_probe_task_reference_stored() -> None:
 
         await _main()
 
-    # At least 3 tasks: probe + alloc + exec — all stored as local vars.
-    assert len(tasks_created) >= 3
-    probe_task = tasks_created[0]
-    assert probe_task.get_name() == "TradeHealthProbe"
+    # At least 2 worker tasks: alloc + exec (probe is via shared launcher)
+    assert len(tasks_created) >= 2
 
 
 @pytest.mark.asyncio
 async def test_worker_crash_marks_unhealthy() -> None:
     """When a worker crashes, readiness_check must return False."""
-    probe = _make_probe_mock()
     captured_readiness = None
 
-    def _capture_probe(**kwargs: Any) -> AsyncMock:
+    async def _capturing_start_probe(
+        *,
+        port: int,
+        service_name: str,
+        readiness_check: Any = None,
+        extra_details: Any = None,
+        task_name: str | None = None,
+    ) -> tuple[AsyncMock, asyncio.Task[None]]:
         nonlocal captured_readiness
-        captured_readiness = kwargs.get("readiness_check")
-        return probe
+        captured_readiness = readiness_check
+        probe = _make_probe_mock()
+        task = asyncio.create_task(asyncio.sleep(999), name=task_name or "TestProbe")
+        return probe, task
 
     async def _crash_worker() -> None:
         raise RuntimeError("boom")
@@ -71,7 +94,10 @@ async def test_worker_crash_marks_unhealthy() -> None:
         await asyncio.sleep(10)
 
     with (
-        patch("services.trade.runner.HealthProbe", side_effect=_capture_probe),
+        patch(
+            "services.shared.health_probe_launcher.start_probe_as_task",
+            side_effect=_capturing_start_probe,
+        ),
         patch("allocation.async_worker._main", new=_crash_worker),
         patch("execution.async_worker._main", new=_ok_worker),
     ):
@@ -89,7 +115,6 @@ async def test_env_vars_set_before_worker_import() -> None:
     """ALLOC/EXEC_HEALTH_PORT env vars must be set before workers are imported."""
     import os
 
-    probe = _make_probe_mock()
     env_at_import: dict[str, str | None] = {}
 
     async def _checking_worker() -> None:
@@ -97,7 +122,10 @@ async def test_env_vars_set_before_worker_import() -> None:
         env_at_import["EXEC_HEALTH_PORT"] = os.environ.get("EXEC_HEALTH_PORT")
 
     with (
-        patch("services.trade.runner.HealthProbe", return_value=probe),
+        patch(
+            "services.shared.health_probe_launcher.start_probe_as_task",
+            side_effect=_fake_start_probe_as_task,
+        ),
         patch("allocation.async_worker._main", new=_checking_worker),
         patch("execution.async_worker._main", new=_checking_worker),
     ):
@@ -112,13 +140,29 @@ async def test_env_vars_set_before_worker_import() -> None:
 @pytest.mark.asyncio
 async def test_probe_stopped_in_finally() -> None:
     """Probe.stop() must be called even on normal exit."""
-    probe = _make_probe_mock()
+    probes_created: list[AsyncMock] = []
+
+    async def _tracking_start_probe(
+        *,
+        port: int,
+        service_name: str,
+        readiness_check: Any = None,
+        extra_details: Any = None,
+        task_name: str | None = None,
+    ) -> tuple[AsyncMock, asyncio.Task[None]]:
+        probe = _make_probe_mock()
+        probes_created.append(probe)
+        task = asyncio.create_task(asyncio.sleep(999), name=task_name or "TestProbe")
+        return probe, task
 
     async def _instant_worker() -> None:
         return
 
     with (
-        patch("services.trade.runner.HealthProbe", return_value=probe),
+        patch(
+            "services.shared.health_probe_launcher.start_probe_as_task",
+            side_effect=_tracking_start_probe,
+        ),
         patch("allocation.async_worker._main", new=_instant_worker),
         patch("execution.async_worker._main", new=_instant_worker),
     ):
@@ -126,4 +170,5 @@ async def test_probe_stopped_in_finally() -> None:
 
         await _main()
 
-    probe.stop.assert_awaited_once()
+    assert len(probes_created) == 1
+    probes_created[0].stop.assert_awaited_once()

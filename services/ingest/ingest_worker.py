@@ -16,28 +16,26 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import signal
-import types
 
 from loguru import logger
+
+from config.logging_bootstrap import configure_loguru_logging
+
+configure_loguru_logging()
 
 
 async def _bootstrap_and_run() -> None:
     """Start health probe first, then import and run ingest service."""
-    from config.logging_bootstrap import configure_loguru_logging
-
-    configure_loguru_logging()
-
-    # core.health_probe only depends on stdlib + loguru — safe early import.
-    from core.health_probe import HealthProbe
+    from services.shared.health_probe_launcher import start_probe_as_task
 
     port = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
-    probe = HealthProbe(port=port, service_name="ingest")
-    health_task = asyncio.create_task(probe.start(), name="BootstrapHealthProbe")
+    probe, health_task = await start_probe_as_task(
+        port=port,
+        service_name="ingest",
+        task_name="BootstrapHealthProbe",
+    )
     # Yield so the probe can bind the port before any slow work.
     await asyncio.sleep(0.2)
-
-    logger.info("Bootstrap health probe listening on :{}", port)
 
     try:
         # Import ingest_service in the main thread.  Using run_in_executor
@@ -63,20 +61,9 @@ async def _bootstrap_and_run() -> None:
         logger.exception(exc)
         # Keep process alive so health probe keeps responding.
         # Railway deployment succeeds; operator can inspect /status.
-        hold_timeout = int(os.environ.get("DEGRADED_HOLD_TIMEOUT_SEC", "3600"))
-        logger.warning("Degraded hold active (max {}s). Send SIGTERM to exit.", hold_timeout)
-        shutdown = asyncio.Event()
+        from services.shared.diagnostics import hold_alive_async  # noqa: PLC0415
 
-        def _sig(signum: int, _frame: types.FrameType | None) -> None:
-            logger.info("Received {} — exiting degraded hold", signal.Signals(signum).name)
-            shutdown.set()
-
-        signal.signal(signal.SIGTERM, _sig)
-        signal.signal(signal.SIGINT, _sig)
-        with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
-            await asyncio.wait_for(shutdown.wait(), timeout=hold_timeout)
-        if not shutdown.is_set():
-            logger.warning("Degraded hold timeout ({}s) — exiting for auto-restart", hold_timeout)
+        await hold_alive_async(service_name="Ingest")
     finally:
         health_task.cancel()
         with contextlib.suppress(Exception):
@@ -84,9 +71,6 @@ async def _bootstrap_and_run() -> None:
 
 
 def run() -> None:
-    from config.logging_bootstrap import configure_loguru_logging
-
-    configure_loguru_logging()
     logger.info("Starting wolf15-ingest service")
     asyncio.run(_bootstrap_and_run())
 

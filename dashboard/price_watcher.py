@@ -14,10 +14,9 @@ import logging
 from collections.abc import Callable
 from typing import Any, cast
 
-from dashboard.price_feed import PriceFeed
-from dashboard.trade_ledger import TradeLedger
-from journal.journal_router import JournalRouter
 from schemas.trade_models import CloseReason, TradeStatus
+from storage.price_feed import PriceFeed
+from storage.trade_ledger import TradeLedger
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +37,7 @@ class PriceWatcher:
         super().__init__()
         self._ledger = TradeLedger()
         self._price_feed = PriceFeed()
-        self._journal = JournalRouter()
+        self._transitioned: set[str] = set()
 
     async def _check_trades(self) -> None:
         """Check all active trades against current prices and trigger transitions."""
@@ -63,6 +62,12 @@ class PriceWatcher:
         pnl: float | None = None,
     ) -> None:
         """Typed compatibility wrapper for ledger status updates."""
+        guard_key = f"{trade_id}:{status.value}"
+        if guard_key in self._transitioned:
+            logger.debug("Idempotency guard: %s already transitioned", guard_key)
+            return
+        self._transitioned.add(guard_key)
+
         # Preferred API
         preferred_updater = getattr(self._ledger, "update_status", None)
         if callable(preferred_updater):
@@ -77,7 +82,17 @@ class PriceWatcher:
             updater(trade_id, status, close_reason=close_reason, pnl=pnl)
             return
 
+        self._transitioned.discard(guard_key)
         raise AttributeError("TradeLedger does not expose a supported status update method")
+
+    @staticmethod
+    def _compute_pnl(legs: list[Any], direction: str, close_price: float) -> float:
+        """Aggregate PnL across all legs: (close - entry) * lot per leg."""
+        total = 0.0
+        for leg in legs:
+            diff = (close_price - leg.entry) if direction == "BUY" else (leg.entry - close_price)
+            total += diff * leg.lot
+        return round(total, 6)
 
     async def _process_trade(self, trade: Any) -> None:
         """Process a single trade against the current price."""
@@ -86,14 +101,15 @@ class PriceWatcher:
         status = trade.status
         trade_id: str = trade.trade_id
 
-        # Get first leg entry/sl/tp
         legs = getattr(trade, "legs", [])
         if not legs:
             return
-        leg = legs[0]
-        entry: float = leg.entry
-        sl: float = leg.sl
-        tp: float = leg.tp
+
+        # Primary entry from first leg (trigger for PENDING -> OPEN)
+        entry: float = legs[0].entry
+        # Multi-leg SL/TP boundaries
+        sls = [leg.sl for leg in legs]
+        tps = [leg.tp for leg in legs]
 
         # Fetch live price
         price_data = self._price_feed.get_price(pair)
@@ -103,52 +119,53 @@ class PriceWatcher:
         bid: float = float(price_data.get("bid", 0.0))
         ask: float = float(price_data.get("ask", 0.0))
 
-        # Validate price data
         if bid <= 0.0 or ask <= 0.0:
             return
 
         if status == TradeStatus.PENDING:
-            # BUY: entry hit when ask price reaches entry level
             if direction == "BUY" and ask <= entry:
                 logger.info("PENDING->OPEN: BUY %s entry hit at ask=%.5f", trade_id, ask)
                 self._update_trade_status(trade_id, TradeStatus.OPEN)
-            # SELL: entry hit when bid price reaches entry level
             elif direction == "SELL" and bid >= entry:
                 logger.info("PENDING->OPEN: SELL %s entry hit at bid=%.5f", trade_id, bid)
                 self._update_trade_status(trade_id, TradeStatus.OPEN)
 
         elif status == TradeStatus.OPEN:
             if direction == "BUY":
-                if bid >= tp:
-                    logger.info("OPEN->CLOSED: BUY %s TP hit at bid=%.5f", trade_id, bid)
+                if bid >= min(tps):
+                    pnl = self._compute_pnl(legs, direction, bid)
+                    logger.info("OPEN->CLOSED: BUY %s TP hit at bid=%.5f pnl=%.6f", trade_id, bid, pnl)
                     self._update_trade_status(
                         trade_id,
                         TradeStatus.CLOSED,
                         close_reason=CloseReason.TP_HIT,
-                        pnl=None,
+                        pnl=pnl,
                     )
-                elif bid <= sl:
-                    logger.info("OPEN->CLOSED: BUY %s SL hit at bid=%.5f", trade_id, bid)
+                elif bid <= max(sls):
+                    pnl = self._compute_pnl(legs, direction, bid)
+                    logger.info("OPEN->CLOSED: BUY %s SL hit at bid=%.5f pnl=%.6f", trade_id, bid, pnl)
                     self._update_trade_status(
                         trade_id,
                         TradeStatus.CLOSED,
                         close_reason=CloseReason.SL_HIT,
-                        pnl=None,
+                        pnl=pnl,
                     )
             elif direction == "SELL":
-                if ask <= tp:
-                    logger.info("OPEN->CLOSED: SELL %s TP hit at ask=%.5f", trade_id, ask)
+                if ask <= max(tps):
+                    pnl = self._compute_pnl(legs, direction, ask)
+                    logger.info("OPEN->CLOSED: SELL %s TP hit at ask=%.5f pnl=%.6f", trade_id, ask, pnl)
                     self._update_trade_status(
                         trade_id,
                         TradeStatus.CLOSED,
                         close_reason=CloseReason.TP_HIT,
-                        pnl=None,
+                        pnl=pnl,
                     )
-                elif ask >= sl:
-                    logger.info("OPEN->CLOSED: SELL %s SL hit at ask=%.5f", trade_id, ask)
+                elif ask >= min(sls):
+                    pnl = self._compute_pnl(legs, direction, ask)
+                    logger.info("OPEN->CLOSED: SELL %s SL hit at ask=%.5f pnl=%.6f", trade_id, ask, pnl)
                     self._update_trade_status(
                         trade_id,
                         TradeStatus.CLOSED,
                         close_reason=CloseReason.SL_HIT,
-                        pnl=None,
+                        pnl=pnl,
                     )

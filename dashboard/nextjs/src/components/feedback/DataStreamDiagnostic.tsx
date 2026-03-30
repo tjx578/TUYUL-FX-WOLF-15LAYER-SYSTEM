@@ -3,12 +3,13 @@
 // ============================================================
 // TUYUL FX Wolf-15 — DataStreamDiagnostic
 // Shown when one or more API streams fail.
-// Per-stream status grid, /health ping, env checklist, retry.
+// Per-stream status grid, /healthz ping, env checklist, retry.
 // ============================================================
 
 import { useState, useCallback, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getRuntimeHealth } from "@/lib/runtimeHealth";
+import { getRestPrefix } from "@/lib/env";
 import { getTransportDiagnostics, type TransportDiagnostics } from "@/lib/realtime/multiplexer";
 
 interface DataStreamDiagnosticProps {
@@ -40,8 +41,8 @@ const CHECKLIST = [
     key: "env-ws",
   },
   {
-    label: "/health endpoint reachable",
-    detail: "Backend must respond 200 at GET /health (no /api prefix). Check PING /health result above.",
+    label: "/healthz endpoint reachable",
+    detail: "Backend must respond 200 at GET /healthz (liveness probe). Check PING /healthz result above.",
     key: "health",
   },
   {
@@ -85,7 +86,7 @@ export default function DataStreamDiagnostic({
     setPingResult(null);
     const t0 = performance.now();
     try {
-      const res = await fetch("/health", { credentials: "include" });
+      const res = await fetch(`${getRestPrefix()}/healthz`, { credentials: "include" });
       const latency = Math.round(performance.now() - t0);
       setPingResult({ ok: res.ok, latency, status: res.status });
     } catch (err) {
@@ -155,7 +156,7 @@ export default function DataStreamDiagnostic({
             disabled={pinging}
             aria-label="Ping backend health endpoint"
           >
-            {pinging ? "PINGING…" : "PING /health"}
+            {pinging ? "PINGING…" : "PING /healthz"}
           </button>
           <button
             className="btn btn-danger"
@@ -298,7 +299,7 @@ export default function DataStreamDiagnostic({
               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)" }}>INTERNAL_API_URL</div>
               <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
                 {hasApiBase
-                  ? "Env var appears set — Next.js rewrites will proxy to backend."
+                  ? "Env var appears set — runtime proxy will forward to backend."
                   : "NOT SET on Vercel. Go to Settings → Vars → add INTERNAL_API_URL=https://your-api.up.railway.app (no /api suffix). This is the #1 cause of all 6 stream failures."}
               </div>
             </div>

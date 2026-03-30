@@ -1,10 +1,13 @@
 const path = require("path");
 
-// Resolve the backend API base URL for server-side proxy rewrites.
-// Prefer server-side INTERNAL_API_URL (not exposed to browser),
-// then fall back to the public env var.
+// Resolve the backend API base URL, used for:
+//   - env.NEXT_PUBLIC_API_BASE_URL injection into the client bundle
+//   - WebSocket origin derivation when NEXT_PUBLIC_WS_BASE_URL is unset
+//   - CSP connect-src headers
+// The runtime proxy at /api/proxy/[...path] reads INTERNAL_API_URL at
+// request time (P4), so this value is NOT used for REST proxying.
 // IMPORTANT: this must be the base origin (e.g. https://api.example.com)
-// WITHOUT a /api suffix — the rewrite rules below already append /api/:path*.
+// WITHOUT a /api suffix.
 const isProd =
   process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 
@@ -162,7 +165,7 @@ if (rawApiBase) {
 if (isProd && !rawApiBase) {
   const message =
     "[next.config] Missing INTERNAL_API_URL or NEXT_PUBLIC_API_BASE_URL in production. " +
-    "All API rewrites will route to a placeholder and will NOT work. " +
+    "The runtime proxy will be unable to forward API calls. " +
     "Set this in Vercel/Railway env vars before deploying.";
   if (isProtectedDeployment) {
     throw new Error(`${message} Protected deployment is fail-fast by policy.`);
@@ -174,7 +177,7 @@ if (isProd && !rawApiBase) {
 const resolvedBase = rawApiBase || "http://localhost:8000";
 
 // Normalize: strip trailing slash and any accidental /api suffix to prevent
-// double-prefix (/api/api/...) when combined with rewrite destinations.
+// double-prefix (/api/api/...) when used for env injection or WS derivation.
 const apiBase = resolvedBase.replace(/\/+$/, "").replace(/\/api$/, "");
 
 // Validate raw NEXT_PUBLIC_WS_BASE_URL BEFORE normalization.
@@ -321,46 +324,10 @@ const nextConfig = {
       },
     ];
   },
-  async rewrites() {
-    console.log("[next.config] rewrites apiBase =", apiBase);
-    return [
-      // /health — health checks called directly by frontend diagnostics/hooks
-      {
-        source: "/health",
-        destination: `${apiBase}/health`,
-      },
-      {
-        source: "/api/:path*",
-        destination: `${apiBase}/api/:path*`,
-      },
-      // /auth/* — sessionService calls /auth/refresh; backend prefix is /api/auth
-      {
-        source: "/auth/:path*",
-        destination: `${apiBase}/api/auth/:path*`,
-      },
-      // /preferences — legacy rewrite kept for any remaining callers;
-      // preferencesService now calls /api/v1/config/profile/* directly.
-      {
-        source: "/preferences",
-        destination: `${apiBase}/api/v1/config/profile/effective`,
-      },
-      {
-        source: "/preferences/:path*",
-        destination: `${apiBase}/api/v1/config/profile/:path*`,
-      },
-      // /pipeline — pipelineDagService calls /pipeline/dag
-      {
-        source: "/pipeline/:path*",
-        destination: `${apiBase}/api/v1/pipeline/:path*`,
-      },
-      // NOTE: /ws/* WebSocket rewrite is intentionally removed.
-      // Vercel serverless cannot upgrade WebSocket connections — the rewrite
-      // appeared to work but silently failed in production.
-      // WS connections MUST be direct: set NEXT_PUBLIC_WS_BASE_URL to the
-      // Railway wss:// origin. Local dev still works via Next.js dev-server
-      // proxy when NEXT_PUBLIC_WS_BASE_URL is unset (falls back to origin).
-    ];
-  },
+  // NO rewrites — the runtime proxy at /api/proxy/[...path] is the single
+  // canonical backend access path.  Do NOT re-add rewrites here; that
+  // creates a dual-path overlap with the runtime proxy and breaks auth
+  // injection in middleware.
   eslint: {
     // Allow builds to complete even if there are ESLint warnings/errors
     ignoreDuringBuilds: true,

@@ -11,8 +11,7 @@ import { getRestPrefix } from "@/lib/env";
 import { HttpError } from "@/lib/fetcher";
 import { useSessionStore } from "@/store/useSessionStore";
 
-// Resolved at module load: "" on local dev / valid build, "/api/proxy" on
-// deployed hosts where build-time rewrites may be stale (Finding 3.1 fix).
+// P4 consolidation: always "/api/proxy" on client — the single canonical path.
 const API_BASE = getRestPrefix();
 
 // Global 429 cooldown — prevents all hooks from hammering a rate-limited backend.
@@ -30,7 +29,15 @@ export const POLL_INTERVALS = {
 } as const;
 
 export const API_ENDPOINTS = {
-    health: "/health",
+    /** Liveness probe — lightweight infra check, no auth, no Redis. */
+    healthz: "/healthz",
+    /** Readiness probe — infra readiness, no auth. */
+    readyz: "/readyz",
+    /**
+     * Operator status — rich diagnostics for the dashboard (session-authed).
+     * Served by /api/status route handler, NOT proxied through /api/proxy.
+     */
+    status: "/api/status",
     orchestratorState: "/api/v1/orchestrator/state",
     accounts: "/api/v1/accounts",
     accountsRiskSnapshot: "/api/v1/accounts/risk-snapshot",

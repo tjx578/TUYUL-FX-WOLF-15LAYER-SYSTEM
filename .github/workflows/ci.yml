@@ -139,25 +139,159 @@ jobs:
         run: npm run build
 
   # -------------------------------------------------------------------
+  # Deprecated shim guard — block resurrection of retired modules
+  # -------------------------------------------------------------------
+  shim-guard:
+    name: Deprecated shim guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "Block resurrected shim files"
+        run: |
+          echo "Checking that retired shim files have not been re-created..."
+          RETIRED_SHIMS=(
+            "dashboard/price_feed.py"
+            "dashboard/trade_ledger.py"
+          )
+          FOUND=0
+          for SHIM in "${RETIRED_SHIMS[@]}"; do
+            if [ -f "$SHIM" ]; then
+              echo "::error::Retired shim resurrected: $SHIM"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            echo "Remove the file(s) above. Canonical modules live in storage/."
+            exit 1
+          fi
+          echo "No retired shims found."
+
+      - name: "Block deprecated imports in production code"
+        run: |
+          echo "Scanning for deprecated dashboard imports..."
+          DEPRECATED_PATTERNS=(
+            "from dashboard.price_feed"
+            "from dashboard.trade_ledger"
+            "import dashboard.price_feed"
+            "import dashboard.trade_ledger"
+          )
+          VIOLATIONS=""
+          for PATTERN in "${DEPRECATED_PATTERNS[@]}"; do
+            HITS=$(grep -rn --include="*.py" \
+              --exclude-dir=tests \
+              --exclude-dir=__pycache__ \
+              --exclude-dir=.venv \
+              "$PATTERN" . || true)
+            if [ -n "$HITS" ]; then
+              VIOLATIONS="${VIOLATIONS}${HITS}\n"
+            fi
+          done
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::Deprecated dashboard imports detected:"
+            echo -e "$VIOLATIONS"
+            echo "Use storage.price_feed / storage.trade_ledger instead."
+            exit 1
+          fi
+          echo "No deprecated imports found."
+
+  # -------------------------------------------------------------------
+  # Architecture drift guard — constitutional boundary spot-checks
+  # -------------------------------------------------------------------
+  drift-guard:
+    name: Architecture drift guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: "analysis/ must not contain execution logic"
+        run: |
+          VIOLATIONS=$(grep -rn --include="*.py" \
+            -e "place_order" -e "execute_trade" -e "send_order" \
+            -e "market_execution" -e "mt4_send" -e "mt5_send" \
+            analysis/ || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::analysis/ contains execution logic"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+
+      - name: "execution/ must not contain strategy logic"
+        run: |
+          VIOLATIONS=$(grep -rn --include="*.py" \
+            -e "calculate_signal" -e "market_direction" -e "trend_analysis" \
+            -e "wolf_score" -e "generate_verdict" \
+            execution/ || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::execution/ contains strategy logic"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+
+      - name: "L12 signal must not carry account state"
+        run: |
+          python - <<'PYEOF'
+          import pathlib, re, sys
+
+          ACCOUNT_FIELDS = re.compile(
+              r'\b(balance|equity|margin_used|margin_free|account_size)\b'
+          )
+          TARGET = pathlib.Path('contracts/redis_stream_contracts.py')
+          if not TARGET.exists():
+              print(f'SKIP: {TARGET} not found')
+              sys.exit(0)
+
+          text = TARGET.read_text()
+          # Only scan the VerdictPayload class
+          in_verdict = False
+          errors = []
+          for i, line in enumerate(text.splitlines(), 1):
+              if 'class VerdictPayload' in line:
+                  in_verdict = True
+                  continue
+              if in_verdict and line.startswith('class '):
+                  break
+              if in_verdict and ACCOUNT_FIELDS.search(line):
+                  errors.append(f'  {TARGET}:{i}: {line.strip()}')
+          if errors:
+              print('::error::VerdictPayload contains account-state fields:')
+              for e in errors:
+                  print(e)
+              sys.exit(1)
+          print('VerdictPayload is clean — no account-state fields.')
+          PYEOF
+
+  # -------------------------------------------------------------------
   # CI Gate — required status check for branch protection
   # -------------------------------------------------------------------
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard]
+    needs: [ruff, tests, dashboard, shim-guard, drift-guard]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
         run: |
-          echo "ruff:      ${{ needs.ruff.result }}"
-          echo "tests:     ${{ needs.tests.result }}"
-          echo "dashboard: ${{ needs.dashboard.result }}"
+          echo "ruff:        ${{ needs.ruff.result }}"
+          echo "tests:       ${{ needs.tests.result }}"
+          echo "dashboard:   ${{ needs.dashboard.result }}"
+          echo "shim-guard:  ${{ needs.shim-guard.result }}"
+          echo "drift-guard: ${{ needs.drift-guard.result }}"
 
           FAILED=0
           for JOB in \
             "${{ needs.ruff.result }}" \
             "${{ needs.tests.result }}" \
-            "${{ needs.dashboard.result }}"; do
+            "${{ needs.dashboard.result }}" \
+            "${{ needs.shim-guard.result }}" \
+            "${{ needs.drift-guard.result }}"; do
             if [[ "$JOB" != "success" ]]; then
               FAILED=1
             fi

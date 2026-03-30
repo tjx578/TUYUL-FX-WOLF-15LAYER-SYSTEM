@@ -18,7 +18,6 @@ import os
 from loguru import logger
 
 from config.logging_bootstrap import configure_loguru_logging
-from core.health_probe import HealthProbe
 
 configure_loguru_logging()
 
@@ -38,14 +37,14 @@ async def _main() -> None:
     def _readiness_check() -> bool:
         return _workers_alive
 
-    probe = HealthProbe(
+    from services.shared.health_probe_launcher import start_probe_as_task  # noqa: PLC0415
+
+    probe, probe_task = await start_probe_as_task(
         port=health_port,
         service_name="trade",
         readiness_check=_readiness_check,
+        task_name="TradeHealthProbe",
     )
-    # Store reference to prevent GC collection (Python docs warning).
-    probe_task = asyncio.create_task(probe.start(), name="TradeHealthProbe")
-    logger.info("Trade service health probe started on :{}", health_port)
 
     # Import workers lazily to avoid import-time side effects until we're ready.
     from allocation.async_worker import _main as alloc_main  # noqa: PLC0415

@@ -1,17 +1,27 @@
 """
-Auth Router — session validation, login, logout, and token refresh.
+Auth Router — owner-only session management.
+
+This is a private owner dashboard.  There is no public-user login flow.
+Authentication is owner-only: the Next.js middleware injects a server-side
+API key or session cookie for every proxied request.
 
 Endpoints:
-  POST /auth/login    — validate API key, issue JWT, set HttpOnly cookie.
-  GET  /auth/session  — validate JWT (header or cookie), return SessionUser.
-  POST /auth/refresh  — issue a fresh JWT from a still-valid token, update cookie.
-  POST /auth/logout   — clear session cookie.
+  POST /auth/owner-session — canonical owner auth (header-based, no body key).
+  GET  /auth/session       — validate JWT (header or cookie), return SessionUser.
+  POST /auth/refresh       — re-issue JWT from still-valid token, update cookie.
+  POST /auth/logout        — clear session cookie.
+  POST /auth/login         — DEPRECATED: body-based API-key login (backward compat).
 
-The dashboard frontend (Next.js) calls these on every page render and
-on periodic client-side refresh.  The response shape matches the Zod
-``SessionUserSchema`` defined in dashboard/nextjs/src/schema/authSchema.ts:
+The response shape matches the Zod ``SessionUserSchema`` in
+dashboard/nextjs/src/schema/authSchema.ts:
 
     { user_id: str, email: str, role: str, name?: str }
+
+Auth model contract (see docs/architecture/dashboard-control-surface.md):
+  - public-user login semantics are NOT the primary architecture
+  - browser-facing API key fallback is NOT allowed
+  - machine/service API keys must remain machine-only
+  - owner identity must be explicit and bounded
 """
 
 from __future__ import annotations
@@ -74,22 +84,62 @@ def _session_from_payload(payload: dict[str, Any]) -> SessionUserResponse:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+# ── Owner session (canonical) ─────────────────────────────────────────────────
+
+
+@router.post("/owner-session")
+async def owner_session(
+    response: Response,
+    payload: dict[str, Any] = Depends(verify_token),  # noqa: B008
+) -> dict[str, Any]:
+    """Canonical owner-session initialization — header-based auth only.
+
+    The caller must present a valid ``Authorization: Bearer <jwt_or_api_key>``
+    header.  In normal operation, Next.js middleware injects this server-side
+    so the raw API key never reaches the browser.
+
+    Returns a fresh owner-scoped JWT and sets the HttpOnly session cookie.
+    Browser-facing API key submission is NOT allowed on this endpoint.
+    """
+    token = create_token(
+        sub=str(payload.get("sub", "owner")),
+        extra={
+            "email": str(payload.get("email", "owner@tuyulfx.com")),
+            "role": str(payload.get("role", "owner")),
+            "name": payload.get("name", "TUYUL FX Owner"),
+            "auth_method": "owner_session",
+        },
+    )
+    set_auth_cookie(response, token)
+    user = _session_from_payload(
+        {
+            "sub": payload.get("sub", "owner"),
+            "email": payload.get("email", "owner@tuyulfx.com"),
+            "role": payload.get("role", "owner"),
+            "name": payload.get("name", "TUYUL FX Owner"),
+        },
+    )
+    return {"token": token, **user.model_dump()}
+
+
+# ── Deprecated login (backward compat) ────────────────────────────────────────
+
 
 class LoginRequest(BaseModel):
-    """Request body for POST /auth/login."""
+    """Request body for POST /auth/login.  DEPRECATED — use /auth/owner-session."""
 
     api_key: str = Field(..., min_length=1)
 
 
-@router.post("/login")
+@router.post("/login", deprecated=True)
 async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
-    """
-    Authenticate with an API key and receive a JWT + HttpOnly session cookie.
+    """DEPRECATED — use ``POST /auth/owner-session`` instead.
 
-    The cookie is set automatically; the ``token`` field in the response body
-    allows the frontend to store it for WebSocket auth (query-param based)
-    or as a fallback for clients that cannot use cookies.
+    This endpoint accepts a raw API key in the request body, which is a
+    browser-facing API-key pattern.  New integrations must use
+    ``/auth/owner-session`` with header-based auth.
     """
+    logger.warning("[auth] POST /auth/login is deprecated — migrate to POST /auth/owner-session")
     from .middleware.auth import API_KEY as CONFIGURED_API_KEY  # noqa: N811
 
     key = body.api_key.strip()

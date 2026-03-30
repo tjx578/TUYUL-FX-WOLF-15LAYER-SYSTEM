@@ -193,6 +193,7 @@ vi.mock("@/shared/hooks/useLifecycleNavigationContext", () => ({
 }));
 
 vi.mock("@/shared/api/system.api", () => ({
+    useStatus: () => ({ data: null }),
     useHealth: () => ({ data: null }),
     useOrchestratorState: () => ({
         data: { orchestrator_ready: true, mode: "NORMAL", orchestrator_heartbeat_age_seconds: 1 },

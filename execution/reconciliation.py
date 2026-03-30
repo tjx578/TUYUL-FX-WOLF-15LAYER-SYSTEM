@@ -15,6 +15,7 @@ Zone: execution — safety authority, prevents duplicate semantics.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -31,24 +32,15 @@ from execution.execution_intent import (
 _PENDING_TIMEOUT_SEC = int(os.getenv("EXECUTION_PENDING_TIMEOUT_SEC", "300"))
 
 
+@dataclass(slots=True)
 class ReconciliationResult:
     """Result of a single intent reconciliation."""
 
-    __slots__ = ("execution_intent_id", "previous_state", "resolved_state", "resolution_source", "reason")
-
-    def __init__(
-        self,
-        execution_intent_id: str,
-        previous_state: str,
-        resolved_state: str,
-        resolution_source: str,
-        reason: str,
-    ) -> None:
-        self.execution_intent_id = execution_intent_id
-        self.previous_state = previous_state
-        self.resolved_state = resolved_state
-        self.resolution_source = resolution_source
-        self.reason = reason
+    execution_intent_id: str
+    previous_state: str
+    resolved_state: str
+    resolution_source: str
+    reason: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -73,9 +65,18 @@ class ExecutionReconciler:
         self,
         repo: ExecutionIntentRepository | None = None,
         pending_timeout_sec: int = _PENDING_TIMEOUT_SEC,
+        stream_publisher: Any = None,
     ) -> None:
         self._repo = repo or ExecutionIntentRepository()
         self._pending_timeout_sec = max(60, pending_timeout_sec)
+        self._stream_publisher = stream_publisher
+
+    def _get_publisher(self) -> Any:
+        if self._stream_publisher is None:
+            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
+
+            self._stream_publisher = StreamPublisher()
+        return self._stream_publisher
 
     async def reconcile_on_restart(self) -> list[ReconciliationResult]:
         """Run reconciliation for all pending/ambiguous intents.
@@ -240,15 +241,13 @@ class ExecutionReconciler:
             reason,
         )
 
-    @staticmethod
     async def _emit_reconciliation_event(
+        self,
         results: list[ReconciliationResult],
     ) -> None:
         """Emit reconciliation summary event."""
         try:
-            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
-
-            publisher = StreamPublisher()
+            publisher = self._get_publisher()
             await publisher.publish(
                 stream=RECONCILIATION_EVENTS,
                 fields={

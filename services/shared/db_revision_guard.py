@@ -13,12 +13,20 @@ class DatabaseSchemaError(RuntimeError):
     """Raised when required schema objects are missing."""
 
 
-async def assert_required_tables(engine: AsyncEngine, tables: Iterable[str]) -> None:
-    """Validate required tables exist in public schema.
+async def assert_required_tables(
+    engine: AsyncEngine,
+    tables: Iterable[str],
+    *,
+    default_schema: str = "public",
+) -> None:
+    """Validate required tables exist in the database.
 
     Args:
         engine: Async SQLAlchemy engine.
-        tables: Table names without schema prefix.
+        tables: Table names — bare names (e.g. ``trade_outbox``) are
+            qualified with *default_schema*; names that already contain
+            a dot (e.g. ``wolf15.trade_outbox``) are used as-is.
+        default_schema: Schema prefix applied to bare table names.
 
     Raises:
         DatabaseSchemaError: If any required table is missing or query fails.
@@ -29,7 +37,7 @@ async def assert_required_tables(engine: AsyncEngine, tables: Iterable[str]) -> 
     try:
         async with engine.connect() as conn:
             for table_name in tables:
-                fqtn = f"public.{table_name}"
+                fqtn = table_name if "." in table_name else f"{default_schema}.{table_name}"
                 result = await conn.execute(sql, {"fqtn": fqtn})
                 exists = result.scalar_one_or_none()
                 if exists is None:

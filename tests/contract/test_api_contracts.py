@@ -6,7 +6,8 @@ declared in  dashboard/nextjs/src/types/index.ts  so that refactors on
 either side are caught immediately.
 
 Endpoints covered (P0 minimum set):
-  - GET  /health               → SystemHealth fields
+  - GET  /api/v1/status        → SystemHealth fields (operator diagnostics)
+  - GET  /healthz              → liveness probe (minimal)
   - GET  /api/v1/context       → ContextSnapshot fields
   - GET  /api/v1/verdict/all   → list[L12Verdict] fields
   - GET  /api/v1/accounts      → list[Account] or {accounts:[...]} fields
@@ -64,10 +65,10 @@ def client() -> Generator[Any, None, None]:
     yield _make_client()
 
 
-# ── /health ────────────────────────────────────────────────────────────────────
+# ── /api/v1/status (operator diagnostics) ──────────────────────────────────────
 
 
-class TestHealthContract:
+class TestStatusContract:
     """
     TypeScript contract:
       interface SystemHealth {
@@ -81,29 +82,37 @@ class TestHealthContract:
     """
 
     def test_returns_200(self, client: Any) -> None:
-        resp = client.get("/health")
+        resp = client.get("/api/v1/status")
         assert resp.status_code == 200
 
     def test_required_fields(self, client: Any) -> None:
-        data: dict[str, Any] = client.get("/health").json()
+        data: dict[str, Any] = client.get("/api/v1/status").json()
         assert "status" in data, "missing: status"
 
     def test_status_is_string(self, client: Any) -> None:
-        data: dict[str, Any] = client.get("/health").json()
+        data: dict[str, Any] = client.get("/api/v1/status").json()
         assert isinstance(data["status"], str)
 
-    def test_full_health_shape(self, client: Any) -> None:
-        """Full health endpoint returns richer shape."""
-        resp = client.get("/health/full")
+    def test_full_status_shape(self, client: Any) -> None:
+        """Full status endpoint returns richer shape."""
+        resp = client.get("/api/v1/status/full")
         # May return 401/503 in isolated test env — only validate shape when 200.
         if resp.status_code != 200:
-            pytest.skip("Full health requires live infra")
+            pytest.skip("Full status requires live infra")
         data: dict[str, Any] = resp.json()
         required = {"status", "service", "version", "redis", "postgres", "timestamp"}
         missing = required - data.keys()
-        assert not missing, f"Missing fields in /health/full: {missing}"
+        assert not missing, f"Missing fields in /api/v1/status/full: {missing}"
         assert isinstance(data["redis"], dict)
         assert "connected" in data["redis"]
+
+    def test_healthz_liveness(self, client: Any) -> None:
+        """Liveness probe returns minimal payload, no auth needed."""
+        resp = client.get("/healthz")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "alive"
+        assert data["service"] == "tuyul-fx"
 
 
 # ── /api/v1/context ────────────────────────────────────────────────────────────

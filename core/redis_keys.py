@@ -152,6 +152,24 @@ CIRCUIT_BREAKER_DATA = f"{PREFIX}:circuit_breaker:data"
 CONSECUTIVE_LOSSES = f"{PREFIX}:consecutive_losses"
 RECOVERY_LAST_HYDRATION = f"{PREFIX}:recovery:last_hydration"
 
+# ── Feature Flags (ARCH-GAP-10) ──────────────────────────────────────────────
+FEATURE_FLAGS_PREFIX = f"{PREFIX}:feature_flags"
+
+
+def feature_flags_key(service: str) -> str:
+    """Per-service feature flags HASH: wolf15:feature_flags:{service}."""
+    return f"{FEATURE_FLAGS_PREFIX}:{service}"
+
+
+# ── Service Circuit Breaker (ARCH-GAP-10) ────────────────────────────────────
+SERVICE_CB_PREFIX = f"{PREFIX}:service_cb"
+
+
+def service_cb_key(service: str) -> str:
+    """Per-service circuit breaker state: wolf15:service_cb:{service}. Type: STRING (JSON)."""
+    return f"{SERVICE_CB_PREFIX}:{service}"
+
+
 # Trade record key pattern: wolf15:TRADE:{trade_id}
 TRADE_KEY_PREFIX = f"{PREFIX}:TRADE"
 TRADE_SCAN_PATTERNS = ("TRADE:*", f"{PREFIX}:TRADE:*")

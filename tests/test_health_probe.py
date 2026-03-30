@@ -34,14 +34,19 @@ async def probe_server():
         await task
 
 
-def _get(port: int, path: str) -> tuple[int, dict]:
+def _get(port: int, path: str, *, headers: dict[str, str] | None = None) -> tuple[int, dict]:
     """Blocking HTTP GET — fine for tests."""
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
     try:
         resp = urllib.request.urlopen(req, timeout=3)  # noqa: S310
         return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read())
+
+
+_PROBE_TOKEN = "test-health-token"
 
 
 # ── Liveness ────────────────────────────────────────────────────
@@ -105,10 +110,12 @@ async def test_readyz_custom_check(probe_server):
 
 
 @pytest.mark.asyncio()
-async def test_set_detail_appears_in_response(probe_server):
+async def test_set_detail_appears_in_authenticated_status(probe_server, monkeypatch):
+    """Details are only visible on /status with valid HEALTH_PROBE_TOKEN."""
+    monkeypatch.setenv("HEALTH_PROBE_TOKEN", _PROBE_TOKEN)
     probe, port = probe_server
     probe.set_detail("version", "1.2.3")
-    status, body = await asyncio.to_thread(_get, port, "/healthz")
+    status, body = await asyncio.to_thread(_get, port, "/status", headers={"Authorization": f"Bearer {_PROBE_TOKEN}"})
     assert status == 200
     assert body["version"] == "1.2.3"
 
@@ -128,11 +135,12 @@ async def test_unknown_path_returns_404(probe_server):
 
 
 @pytest.mark.asyncio()
-async def test_status_healthy(probe_server):
-    """When alive and ready, /status returns 200 with combined info."""
+async def test_status_healthy(probe_server, monkeypatch):
+    """When alive and ready, /status returns 200 with combined info (authenticated)."""
+    monkeypatch.setenv("HEALTH_PROBE_TOKEN", _PROBE_TOKEN)
     probe, port = probe_server
     probe.set_detail("component", "ws")
-    status, body = await asyncio.to_thread(_get, port, "/status")
+    status, body = await asyncio.to_thread(_get, port, "/status", headers={"Authorization": f"Bearer {_PROBE_TOKEN}"})
     assert status == 200
     assert body["alive"] is True
     assert body["ready"] is True
@@ -142,11 +150,12 @@ async def test_status_healthy(probe_server):
 
 
 @pytest.mark.asyncio()
-async def test_status_degraded_when_not_ready(probe_server):
-    """When alive but not ready, /status returns 503."""
+async def test_status_degraded_when_not_ready(probe_server, monkeypatch):
+    """When alive but not ready, /status returns 503 (authenticated)."""
+    monkeypatch.setenv("HEALTH_PROBE_TOKEN", _PROBE_TOKEN)
     probe, port = probe_server
     probe.set_readiness_check(lambda: False)
-    status, body = await asyncio.to_thread(_get, port, "/status")
+    status, body = await asyncio.to_thread(_get, port, "/status", headers={"Authorization": f"Bearer {_PROBE_TOKEN}"})
     assert status == 503
     assert body["alive"] is True
     assert body["ready"] is False

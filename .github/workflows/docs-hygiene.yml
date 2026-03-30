@@ -1,0 +1,161 @@
+# Docs hygiene — verify architecture reading order, legacy quarantine,
+# and broken cross-references.  Runs on push/PR when docs change.
+
+name: Docs Hygiene
+
+on:
+  push:
+    paths:
+      - "docs/**"
+      - "contracts/README.md"
+      - ".github/workflows/docs-hygiene.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "contracts/README.md"
+      - ".github/workflows/docs-hygiene.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reading-order:
+    name: Architecture reading-order integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Verify every reading-order entry exists"
+        run: |
+          echo "Checking docs/architecture/README.md reading order..."
+
+          READING_ORDER=(
+            "data-flow.md"
+            "system-overview.md"
+            "dashboard-control-surface.md"
+            "runtime-topology-current.md"
+            "engine-lineage-zones.md"
+            "config-resolver.md"
+            "lock-enforcement.md"
+            "config-governance.md"
+            "risk-stack.md"
+            "risk-monitor.md"
+            "deployment-railway.md"
+            "topology.md"
+          )
+
+          MISSING=0
+          for DOC in "${READING_ORDER[@]}"; do
+            if [ ! -f "docs/architecture/$DOC" ]; then
+              echo "::error::Reading-order entry missing: docs/architecture/$DOC"
+              MISSING=1
+            else
+              echo "  OK: $DOC"
+            fi
+          done
+
+          if [ "$MISSING" -eq 1 ]; then
+            echo "Add the missing file(s) or update the reading order in docs/architecture/README.md"
+            exit 1
+          fi
+          echo "All reading-order entries resolve."
+
+  legacy-quarantine:
+    name: Legacy docs quarantine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "No production code may import from docs/legacy/"
+        run: |
+          echo "Scanning production code for docs/legacy references..."
+          VIOLATIONS=$(grep -rn "docs/legacy" \
+            --include="*.py" \
+            --exclude-dir=tests \
+            --exclude-dir=__pycache__ \
+            --exclude-dir=.venv \
+            --exclude-dir=node_modules \
+            . || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::Production code references docs/legacy/:"
+            echo "$VIOLATIONS"
+            echo "Legacy docs are for historical traceability only — do not reference in code."
+            exit 1
+          fi
+          echo "No legacy doc references in production code."
+
+      - name: "docs/legacy/README.md must exist"
+        run: |
+          if [ ! -f "docs/legacy/README.md" ]; then
+            echo "::error::docs/legacy/README.md is missing — quarantine index required."
+            exit 1
+          fi
+          echo "Legacy quarantine index exists."
+
+  cross-references:
+    name: Architecture cross-reference check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "Check internal markdown links"
+        run: |
+          python - <<'PYEOF'
+          import pathlib, re, sys
+
+          ARCH_DIR = pathlib.Path("docs/architecture")
+          LINK_RE = re.compile(r'\[.*?\]\((?!https?://|#)([^)]+)\)')
+
+          errors = []
+          for md in ARCH_DIR.rglob("*.md"):
+              text = md.read_text(encoding="utf-8")
+              for i, line in enumerate(text.splitlines(), 1):
+                  for m in LINK_RE.finditer(line):
+                      target = m.group(1).split("#")[0]
+                      if not target:
+                          continue
+                      resolved = (md.parent / target).resolve()
+                      if not resolved.exists():
+                          errors.append(f"{md}:{i} -> {target} (not found)")
+
+          if errors:
+              print("Broken cross-references in docs/architecture/:")
+              for e in errors[:30]:
+                  print(f"  {e}")
+              sys.exit(1)
+          print(f"Checked {sum(1 for _ in ARCH_DIR.rglob('*.md'))} files — no broken links.")
+          PYEOF
+
+  docs-gate:
+    name: Docs Gate
+    runs-on: ubuntu-latest
+    needs: [reading-order, legacy-quarantine, cross-references]
+    if: always()
+    steps:
+      - name: Evaluate docs hygiene jobs
+        run: |
+          echo "reading-order:     ${{ needs.reading-order.result }}"
+          echo "legacy-quarantine: ${{ needs.legacy-quarantine.result }}"
+          echo "cross-references:  ${{ needs.cross-references.result }}"
+
+          FAILED=0
+          for JOB in \
+            "${{ needs.reading-order.result }}" \
+            "${{ needs.legacy-quarantine.result }}" \
+            "${{ needs.cross-references.result }}"; do
+            if [[ "$JOB" != "success" ]]; then
+              FAILED=1
+            fi
+          done
+
+          if [[ "$FAILED" -eq 1 ]]; then
+            echo "::error::Docs hygiene check failed"
+            exit 1
+          fi
+
+          echo "All docs hygiene checks passed"

@@ -3,7 +3,7 @@
     {
       "name": "wolf15-api",
       "startCommand": "bash deploy/railway/start_api.sh",
-      "healthcheckPath": "/health",
+      "healthcheckPath": "/healthz",
       "public": true
     },
     {

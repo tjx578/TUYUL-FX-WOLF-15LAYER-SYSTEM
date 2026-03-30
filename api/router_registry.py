@@ -83,6 +83,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.orchestrator_routes", "router", "Orchestrator governance state"),
     # Settings governance (read/write/rollback/audit) — P1-8
     RouterEntry("api.settings_routes", "router", "Settings governance API"),
+    # Feature flags + circuit breaker + maintenance mode — ARCH-GAP-10
+    RouterEntry("api.governance_routes", "router", "Feature flags / circuit breaker / maintenance"),
 ]
 
 

@@ -77,6 +77,26 @@ The engine must never be assumed to imply live ingest. Running analysis without 
 
 API, engine, ingest, and orchestrator are independent runtime concerns even when deployed on the same platform.
 
+## Deploy Scripts Inventory
+
+All role-scoped entrypoints live in `deploy/railway/`:
+
+| Script | Role |
+| -------- | ------ |
+| `start_api.sh` | API service |
+| `start_api_consolidated.sh` | API consolidated mode |
+| `start_engine.sh` | Engine worker |
+| `start_engine_consolidated.sh` | Engine consolidated mode |
+| `start_ingest.sh` | Ingest worker |
+| `start_orchestrator.sh` | Orchestrator worker |
+| `start_allocation.sh` | Allocation worker |
+| `start_execution.sh` | Execution worker |
+| `start_trade_consolidated.sh` | Trade consolidated mode |
+| `start_worker.sh` | Generic worker |
+| `start_migrator.sh` | DB migration runner |
+
+For status classification of each surface, see `docs/status-map.md`.
+
 ## Operational references
 
 - `infrastructure/railway/service-map.md`

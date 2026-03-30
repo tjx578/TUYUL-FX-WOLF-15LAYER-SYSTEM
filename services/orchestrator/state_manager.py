@@ -1,8 +1,19 @@
-"""Runtime state manager for governance mode transitions."""
+"""Runtime state manager for governance mode transitions.
+
+Guard mappings (Redis key → compliance input):
+  ACCOUNT_STATE      → balance, equity, drawdown  → account health gates
+  TRADE_RISK         → risk/exposure limits        → risk limit gates
+  NEWS_LOCK:STATE    → news_lock_active            → news event lockout
+  HEARTBEAT_INGEST   → data_stale, staleness_sec   → data freshness gate
+  (runtime)          → session_locked              → forex market hours gate
+
+See contracts/README.md for coverage status.
+"""
 
 from __future__ import annotations
 
-import asyncio
+import hashlib
+import hmac as _hmac
 import json
 import os
 import threading
@@ -10,11 +21,11 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
+import redis.client
 from loguru import logger
 
-import core.health_probe
 from config.logging_bootstrap import configure_loguru_logging
 from core.redis_keys import (
     ACCOUNT_STATE,
@@ -45,25 +56,6 @@ _DATA_STALE_THRESHOLD_SEC = float(os.getenv("COMPLIANCE_DATA_STALE_SEC", "120"))
 configure_loguru_logging()
 
 
-class OrchestratorPubSubProtocol(Protocol):
-    def subscribe(self, channel: str) -> None: ...
-    def close(self) -> None: ...
-    def get_message(
-        self,
-        ignore_subscribe_messages: bool = True,
-        timeout: float = 0.0,
-    ) -> dict[str, Any] | None: ...
-
-
-class OrchestratorRedisProtocol(Protocol):
-    def pubsub(self) -> OrchestratorPubSubProtocol: ...
-    def get(self, key: str) -> str | None: ...
-    def set(self, key: str, value: str, ex: int | None = None) -> None: ...
-    def publish(self, channel: str, message: str) -> int: ...
-    def mget(self, keys: list[str]) -> list[str | None]: ...
-    def pipeline(self) -> Any: ...
-
-
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -87,6 +79,29 @@ def _mode_from_compliance(allowed: bool, severity: str) -> ExecutionMode:
     return ExecutionMode.SAFE
 
 
+def _verify_command_signature(payload: dict[str, Any]) -> bool:
+    """Verify HMAC-SHA256 signature on a command payload.
+
+    Returns True when ORCHESTRATOR_COMMAND_SECRET is not configured (auth
+    disabled), or when the payload's ``signature`` field matches the HMAC of
+    the canonical JSON of the payload (the ``signature`` key is excluded from
+    the digest input).
+
+    SEC-SVC-02: This prevents an attacker with bare Redis write access from
+    forging arbitrary mode-change commands.
+    """
+    secret = os.getenv("ORCHESTRATOR_COMMAND_SECRET", "")
+    if not secret:
+        return True
+    sig = str(payload.get("signature", ""))
+    if not sig:
+        return False
+    check_payload = {k: v for k, v in payload.items() if k != "signature"}
+    canonical = json.dumps(check_payload, sort_keys=True, separators=(",", ":"))
+    expected = _hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+    return _hmac.compare_digest(expected, sig)
+
+
 @dataclass(slots=True)
 class OrchestratorState:
     mode: ExecutionMode = ExecutionMode.NORMAL
@@ -96,11 +111,11 @@ class OrchestratorState:
 
 
 class StateManager:
-    def __init__(self, redis_client: OrchestratorRedisProtocol | None = None) -> None:
+    def __init__(self, redis_client: RedisClient | None = None) -> None:
         super().__init__()
         self._state = OrchestratorState(updated_at=_utc_now_iso())
-        self._redis: OrchestratorRedisProtocol = redis_client or RedisClient()
-        self._pubsub: OrchestratorPubSubProtocol | None = None
+        self._redis: RedisClient = redis_client or RedisClient()
+        self._pubsub: redis.client.PubSub | None = None
 
         self._channel = os.getenv("ORCHESTRATOR_CHANNEL", ORCHESTRATOR_COMMANDS)
         self._state_key = os.getenv("ORCHESTRATOR_STATE_KEY", ORCHESTRATOR_STATE)
@@ -209,9 +224,7 @@ class StateManager:
             payload["details"] = details
 
         encoded = json.dumps(payload)
-        heartbeat_payload = json.dumps(
-            {"producer": ORCHESTRATOR_SOURCE, "ts": time.time()}
-        )
+        heartbeat_payload = json.dumps({"producer": ORCHESTRATOR_SOURCE, "ts": time.time()})
         pipe = self._redis.pipeline()
         pipe.publish(self._channel, encoded)
         pipe.set(self._state_key, encoded)
@@ -231,7 +244,13 @@ class StateManager:
         self._refresh_compliance_signals()
 
     def _refresh_compliance_signals(self) -> None:
-        """Compute and inject news_lock, session_lock, and data_stale into account state."""
+        """Compute and inject news_lock, session_lock, and data_stale into account state.
+
+        Guard mapping (see contracts/README.md § Orchestrator guard mappings):
+          NEWS_LOCK:STATE   → news_lock_active / news_lock_reason
+          HEARTBEAT_INGEST  → data_stale / staleness_seconds / feed_freshness_class
+          is_forex_market_open() → session_locked / session_lock_reason
+        """
         try:
             extra_keys = [_NEWS_LOCK_STATE_KEY, HEARTBEAT_INGEST]
             raw = self._redis.mget(extra_keys)
@@ -293,17 +312,17 @@ class StateManager:
         if str(payload.get("source", "")).strip().lower() == ORCHESTRATOR_SOURCE:
             return
 
-        if isinstance(payload.get("account_state"), dict):
-            self._account_state.update(payload["account_state"])
-        if isinstance(payload.get("trade_risk"), dict):
-            self._trade_risk.update(payload["trade_risk"])
+        # SEC-SVC-02: account_state / trade_risk are NOT accepted from pub/sub.
+        # Authoritative state comes only from Redis keys via _refresh_snapshots_from_redis.
+        # Accepting arbitrary dicts here would allow a Redis-access attacker to
+        # spoof balance, drawdown, and compliance_mode fields.
 
         raw_payload = json.dumps(payload)
         try:
             set_mode_command = parse_set_mode_command(raw_payload)
         except CommandParseError as exc:
             command = str(payload.get("command") or payload.get("event") or "").strip().lower()
-            if command in {"set_mode", "mode_set"}:
+            if command == "set_mode":
                 logger.warning("invalid set_mode command ignored: {} payload={}", exc, payload)
             return
 
@@ -315,7 +334,27 @@ class StateManager:
             )
             return
 
+        # SEC-SVC-02: Verify HMAC signature when a command secret is configured.
+        if not _verify_command_signature(payload):
+            logger.warning(
+                "set_mode command rejected: invalid or missing HMAC signature payload={}",
+                {k: v for k, v in payload.items() if k != "signature"},
+            )
+            return
+
         new_mode = ExecutionMode[set_mode_command.mode]
+
+        # SEC-SVC-02: External commands must not downgrade an active KILL_SWITCH.
+        # Only internal compliance evaluation (or a local API call) may clear it.
+        if self._state.mode == ExecutionMode.KILL_SWITCH and new_mode != ExecutionMode.KILL_SWITCH:
+            logger.warning(
+                "set_mode command rejected: cannot downgrade KILL_SWITCH via external command "
+                "requested_mode={} payload={}",
+                new_mode,
+                {k: v for k, v in payload.items() if k != "signature"},
+            )
+            return
+
         self.set_mode(
             new_mode,
             reason=set_mode_command.reason,
@@ -420,23 +459,18 @@ class StateManager:
 
 def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> None:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
+    from services.shared.health_probe_launcher import start_probe_in_thread
+
     port = int(os.getenv("ORCHESTRATOR_HEALTH_PORT", os.getenv("PORT", "8083")))
-    probe = core.health_probe.HealthProbe(
+    start_probe_in_thread(
         port=port,
         service_name="orchestrator",
         readiness_check=readiness_check,
+        extra_details={
+            "service_role": "orchestrator",
+            "source": ORCHESTRATOR_SOURCE,
+        },
     )
-    probe.set_detail("service_role", "orchestrator")
-    probe.set_detail("source", ORCHESTRATOR_SOURCE)
-
-    def _run() -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(probe.start())
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    logger.info("Orchestrator health probe started on :{}", port)
 
 
 def run() -> None:
@@ -446,21 +480,9 @@ def run() -> None:
         StateManager().run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
         logger.exception("Orchestrator fatal error — holding alive for health probe diagnostics")
-        import signal as _signal
-        import types
+        from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
 
-        hold_timeout = int(os.getenv("DEGRADED_HOLD_TIMEOUT_SEC", "3600"))
-        logger.warning("Degraded hold active (max {}s). Send SIGTERM to exit.", hold_timeout)
-        shutdown = threading.Event()
-
-        def _on_signal(signum: int, _frame: types.FrameType | None) -> None:
-            logger.info("Received {} — exiting degraded hold", _signal.Signals(signum).name)
-            shutdown.set()
-
-        _signal.signal(_signal.SIGTERM, _on_signal)
-        _signal.signal(_signal.SIGINT, _on_signal)
-        if not shutdown.wait(timeout=hold_timeout):
-            logger.warning("Degraded hold timeout ({}s) — exiting for auto-restart", hold_timeout)
+        hold_alive_sync(service_name="Orchestrator")
 
 
 if __name__ == "__main__":

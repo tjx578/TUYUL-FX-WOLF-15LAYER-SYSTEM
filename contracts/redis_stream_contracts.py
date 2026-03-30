@@ -5,6 +5,27 @@ to prevent silent field-missing / type-coercion bugs when data
 flows between services through Redis Streams, Pub/Sub, or key-value.
 
 Zone: contracts — no market logic, no execution authority.
+
+Coverage status
+---------------
+The following Redis boundaries have typed contracts:
+
+  ✅ VerdictPayload          — L12 cache → signal_service / allocation
+  ✅ ExecutionIntentPayload  — coordinator → execution stream
+  ✅ WorkerResultPayload     — worker jobs → Redis key
+  ✅ OrchestratorCommand     — pub/sub mode-change commands
+  ✅ ExecutionQueuePayload   — allocation → execution worker (execution_queue_contract.py)
+
+Outstanding boundaries without typed contracts:
+
+  ⬜ ACCOUNT_STATE key       — ingest / orchestrator read, shape validated ad-hoc
+  ⬜ TRADE_RISK key          — risk engine writes, orchestrator reads, no schema
+  ⬜ HEARTBEAT_* keys        — heartbeat producers, compliance freshness checks
+  ⬜ NEWS_LOCK:STATE key     — API sets, orchestrator reads, no schema
+  ⬜ PRICE:* hashes          — PriceFeed read model, no Pydantic contract
+
+Adding a contract for ⬜ items requires coordinating the writer and all readers
+to migrate to the typed model.  Prioritise ACCOUNT_STATE and TRADE_RISK next.
 """
 
 from __future__ import annotations
@@ -12,6 +33,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 # ── Verdict Payload (L12 cache → signal_service / allocation) ─────────────
+
 
 class VerdictPayload(BaseModel):
     """Validated shape for a cached L12 verdict read from Redis."""
@@ -32,6 +54,7 @@ class VerdictPayload(BaseModel):
 
 
 # ── Execution Intent (Orchestrator → Execution stream) ────────────────────
+
 
 class ExecutionIntentPayload(BaseModel):
     """Validated shape for an execution intent pushed by the coordinator."""
@@ -57,6 +80,7 @@ class ExecutionIntentPayload(BaseModel):
 
 # ── Worker Result (worker jobs → Redis key) ───────────────────────────────
 
+
 class WorkerResultPayload(BaseModel):
     """Validated shape for a worker job result stored in Redis."""
 
@@ -67,6 +91,7 @@ class WorkerResultPayload(BaseModel):
 
 
 # ── Orchestrator Command (Pub/Sub) ───────────────────────────────────────
+
 
 class OrchestratorCommand(BaseModel):
     """Validated shape for an orchestrator mode-change command.

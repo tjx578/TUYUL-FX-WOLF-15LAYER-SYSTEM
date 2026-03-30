@@ -8,7 +8,8 @@
  *   import { apiFetch } from "@/lib/fetcher";
  *   const data = await apiFetch("/api/v1/verdict/all");
  *
- * Note: Uses relative paths (no base URL) so Next.js rewrites proxy to the real backend.
+ * Note: All calls go through the runtime proxy at /api/proxy/[...path].
+ * getRestPrefix() provides the prefix.
  */
 import { bearerHeader } from "@/lib/auth";
 import { getRestPrefix } from "@/lib/env";
@@ -36,7 +37,7 @@ export async function apiFetch(
   path: string,
   opts: RequestInit = {}
 ): Promise<Response> {
-  // Prefix with runtime proxy path when build-time rewrites are stale.
+  // P4: always routes through the runtime proxy at /api/proxy/[...path].
   const prefix = getRestPrefix();
   const auth = bearerHeader();
 

@@ -235,7 +235,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
     # Paths that must never be redirected (internal health probes, metrics).
-    _EXEMPT_PATHS: frozenset[str] = frozenset({"/health", "/healthz", "/health/full", "/metrics"})
+    _EXEMPT_PATHS: frozenset[str] = frozenset(
+        {"/health", "/healthz", "/api/v1/status", "/api/v1/status/full", "/metrics"}
+    )
 
     def __init__(self, app: Any, force_https: bool) -> None:
         super().__init__(app)
@@ -431,8 +433,9 @@ def _register_health_routes(app: FastAPI) -> None:
     async def root() -> dict[str, str]:
         return {
             "service": "tuyul-fx",
-            "status": "ok",
-            "health": "/health",
+            "alive": "ok",
+            "healthz": "/healthz",
+            "operator_status": "/api/v1/status",
         }
 
     app.add_api_route("/", root, methods=["GET"])
@@ -472,7 +475,18 @@ def _register_health_routes(app: FastAPI) -> None:
         except Exception:
             return None, False
 
-    async def health(request: Request) -> dict[str, Any]:
+    # /health is a liveness alias — same semantics as /healthz.
+    # Rich operator diagnostics live at /api/v1/status (P5 separation).
+    async def health() -> dict[str, str]:
+        return {"status": "alive", "service": "tuyul-fx"}
+
+    app.add_api_route("/health", health, methods=["GET"])
+
+    # ── Operator status (dashboard-facing) ────────────────────────
+    # Moved from the former /health handler (P5).  JWT-authed so only
+    # the authenticated dashboard owner can read operator diagnostics.
+
+    async def operator_status(request: Request) -> dict[str, Any]:
         import math  # noqa: PLC0415
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
@@ -529,7 +543,12 @@ def _register_health_routes(app: FastAPI) -> None:
             "router_boot_errors": router_boot_errors,
         }
 
-    app.add_api_route("/health", health, methods=["GET"])
+    app.add_api_route(
+        "/api/v1/status",
+        operator_status,
+        methods=["GET"],
+        dependencies=[Depends(verify_token)],
+    )
 
     # /healthz is the liveness probe — must be unauthenticated and
     # return instantly with NO external dependencies (no Redis, no DB).
@@ -607,7 +626,8 @@ def _register_health_routes(app: FastAPI) -> None:
         dependencies=[Depends(verify_observability_machine_auth)],
     )
 
-    async def full_health(request: Request) -> dict[str, Any]:
+    async def full_status(request: Request) -> dict[str, Any]:
+        """Deep diagnostics — Redis, Postgres, config, engine, lockdown."""
         import math
         from datetime import UTC, datetime
 
@@ -676,8 +696,8 @@ def _register_health_routes(app: FastAPI) -> None:
         }
 
     app.add_api_route(
-        "/health/full",
-        full_health,
+        "/api/v1/status/full",
+        full_status,
         methods=["GET"],
         dependencies=[Depends(verify_token)],
     )
@@ -702,6 +722,10 @@ def _build_bootstrap_fallback_app(error_text: str) -> FastAPI:
 
     @fallback.get("/health")
     async def health() -> dict[str, Any]:
+        return {"status": "alive", "service": "tuyul-fx", "degraded": True}
+
+    @fallback.get("/api/v1/status")
+    async def fallback_status() -> dict[str, Any]:
         return {
             "status": "degraded",
             "service": "tuyul-fx",
@@ -791,7 +815,7 @@ def create_app() -> FastAPI:
 
     If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
     raises, returns a minimal fallback app that keeps ``/healthz`` alive
-    so operators can diagnose the failure via ``/health``.
+    so operators can diagnose the failure via ``/api/v1/status``.
     """
     fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
     try:

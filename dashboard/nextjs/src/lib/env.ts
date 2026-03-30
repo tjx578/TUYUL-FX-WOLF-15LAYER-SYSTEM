@@ -4,12 +4,14 @@
  * Single source of truth for all env-derived config.
  *
  * Deployment rules:
- *   REST  → relative path  → Next.js rewrite /api/* proxies to backend (safe on Vercel)
+ *   REST  → always through /api/proxy/[...path] runtime proxy.
+ *          No build-time rewrites — the proxy reads INTERNAL_API_URL at
+ *          request time, so stale-env bugs are impossible.
  *   WS    → MUST be direct  → Vercel cannot upgrade WebSocket connections.
- *           Set NEXT_PUBLIC_WS_BASE_URL to the Railway/backend wss:// origin.
+ *          Set NEXT_PUBLIC_WS_BASE_URL to the Railway/backend wss:// origin.
  *
  * Env vars in use (exactly these two, nothing else):
- *   NEXT_PUBLIC_API_BASE_URL   optional  override REST base (default: relative via rewrite)
+ *   NEXT_PUBLIC_API_BASE_URL   optional  override REST base (default: relative via proxy)
  *   NEXT_PUBLIC_WS_BASE_URL    required  bare wss:// ORIGIN for Railway — NO path suffix!
  *                                        e.g. wss://wolf15-api.up.railway.app  (NOT .../ws/live)
  *
@@ -107,7 +109,7 @@ function _isDeployedHost(): boolean {
 /**
  * Returns the REST API base URL.
  *
- * Default: empty string (relative) — Next.js rewrite /api/* handles proxying.
+ * Default: empty string (relative) — all REST goes through /api/proxy.
  * Override with NEXT_PUBLIC_API_BASE_URL for direct backend calls (dev/debug).
  */
 export function getApiBaseUrl(): string {
@@ -245,7 +247,8 @@ export function validateEnv(): void {
     missingVars.push("NEXT_PUBLIC_API_BASE_URL");
     console.error(
       "[env] CRITICAL: NEXT_PUBLIC_API_BASE_URL is NOT SET. " +
-      "API calls will fall back to relative paths which may fail if the proxy is not configured. " +
+      "The runtime proxy reads INTERNAL_API_URL server-side, but this client-side var " +
+      "is needed for diagnostics and SSE. " +
       "Set it to: NEXT_PUBLIC_API_BASE_URL=https://your-api.up.railway.app (NO /api suffix)."
     );
   }
@@ -274,50 +277,25 @@ export function validateEnv(): void {
   }
 }
 
-// ── Runtime proxy fallback ─────────────────────────────────────
+// ── Runtime proxy — single canonical path ──────────────────────────────
 //
-// On deployed hosts (Vercel, Railway, *.app), if the build-time API base URL
-// resolved to localhost or is empty, Next.js rewrites will route /api/* to the
-// wrong destination.  In that case, we route all REST calls through the runtime
-// proxy at /api/proxy/[...path] which reads the env vars at request time.
-//
-// This eliminates the silent-404 / loop bug described in Finding 3.1.
+// P4 consolidation: all REST calls go through /api/proxy/[...path].
+// Build-time rewrites have been removed. The runtime proxy reads
+// INTERNAL_API_URL at request time, eliminating stale-env bugs.
 
 /**
  * Returns the URL prefix that client-side fetch calls should prepend.
  *
- *   - Local dev: `""` — relies on Next.js rewrite (fast, zero-overhead).
- *   - Deployed with correct env: `""` — rewrites work at build time.
- *   - Deployed without env / stale build: `"/api/proxy"` — runtime proxy.
+ * Always returns "/api/proxy" on client (browser).
+ * Returns "" on server (SSR/RSC) — server code should use INTERNAL_API_URL directly.
  *
  * Callers use it like:  fetch(`${getRestPrefix()}/api/v1/trades/active`)
- * When the prefix is "/api/proxy", the URL becomes
- *   /api/proxy/api/v1/trades/active
- * and the catch-all route handler forwards to the backend correctly.
+ * The resulting URL /api/proxy/api/v1/trades/active is handled by the
+ * catch-all route handler which forwards to the backend.
  */
 export function getRestPrefix(): string {
-  // Server-side rendering — always use relative (rewrites handle it).
+  // Server-side rendering — return empty; server code should use backend URL directly.
   if (typeof window === "undefined") return "";
-
-  // Local dev — rewrites always work via the Next.js dev server.
-  const host = window.location.hostname;
-  const isLocalDev = host === "localhost" || host === "127.0.0.1" || host === "";
-  if (isLocalDev) return "";
-
-  // Deployed host — check if the build-time API base looks valid.
-  // next.config.js injects the resolved value into NEXT_PUBLIC_API_BASE_URL.
-  const buildTimeBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
-  if (
-    buildTimeBase &&
-    !buildTimeBase.includes("localhost") &&
-    !buildTimeBase.includes("127.0.0.1")
-  ) {
-    // Build-time rewrites point to a real backend — use them (zero overhead).
-    return "";
-  }
-
-  // Build-time base is empty or points to localhost — rewrites are broken.
-  // Fall back to the runtime proxy which reads env vars at request time.
   return "/api/proxy";
 }
 

@@ -27,7 +27,6 @@ from redis.exceptions import ResponseError
 from allocation.allocation_models import AllocationRequest
 from allocation.allocation_service import AllocationService
 from config.logging_bootstrap import configure_loguru_logging
-from core.health_probe import HealthProbe
 from infrastructure.redis_client import RedisConfig, close_pool, get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
@@ -380,9 +379,12 @@ async def _main() -> None:
     start_http_server(int(os.getenv("ALLOC_METRICS_PORT", "9102")))
 
     health_port = int(os.getenv("PORT", os.getenv("ALLOC_HEALTH_PORT", "8085")))
-    probe = HealthProbe(port=health_port, service_name="allocation")
-    asyncio.create_task(probe.start())
-    logger.info("Allocation health probe started on :{}", health_port)
+    from services.shared.health_probe_launcher import start_probe_as_task  # noqa: PLC0415
+
+    _probe, _probe_task = await start_probe_as_task(
+        port=health_port,
+        service_name="allocation",
+    )
 
     restarts = 0
     try:
@@ -413,7 +415,7 @@ async def _main() -> None:
                 await asyncio.sleep(_RESTART_COOLDOWN)
     finally:
         await close_pool()
-        await probe.stop()
+        await _probe.stop()
 
 
 if __name__ == "__main__":

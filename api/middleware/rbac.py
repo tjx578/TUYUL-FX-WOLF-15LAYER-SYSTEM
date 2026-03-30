@@ -23,6 +23,7 @@ Usage in routers:
 from __future__ import annotations
 
 import enum
+from dataclasses import dataclass
 from typing import Any, cast
 
 from fastapi import Depends, Header, HTTPException
@@ -163,25 +164,15 @@ def get_permissions_for_role(role: Role) -> frozenset[Permission]:
 # ── Token → User context ─────────────────────────────────────────────────────
 
 
+@dataclass(slots=True)
 class UserContext:
     """Resolved user identity from a JWT or API key."""
 
-    __slots__ = ("sub", "role", "scopes", "auth_method", "raw_payload")
-
-    def __init__(
-        self,
-        sub: str,
-        role: Role,
-        scopes: frozenset[str],
-        auth_method: str,
-        raw_payload: dict[str, Any],
-    ) -> None:
-        super().__init__()
-        self.sub = sub
-        self.role = role
-        self.scopes = scopes
-        self.auth_method = auth_method
-        self.raw_payload = raw_payload
+    sub: str
+    role: Role
+    scopes: frozenset[str]
+    auth_method: str
+    raw_payload: dict[str, Any]
 
     def has_permission(self, perm: Permission) -> bool:
         # JWT-scope override: if the token carries explicit scopes, check those too

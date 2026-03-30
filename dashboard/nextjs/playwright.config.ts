@@ -7,6 +7,16 @@ export default defineConfig({
     baseURL: "http://localhost:3000",
     trace: "on-first-retry",
   },
+  webServer: {
+    command: "npm run dev",
+    url: "http://localhost:3000",
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    env: {
+      NODE_OPTIONS: "--max-old-space-size=512 --max-semi-space-size=64",
+      DASHBOARD_MODE: "owner",
+    },
+  },
   projects: [
     {
       name: "chromium",

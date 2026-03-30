@@ -106,7 +106,7 @@ AUTHORITY:
 
 | Priority | Layers | Purpose | Critical Modules |
 
-|----------|--------|---------|-----------------|
+| ---------- | -------- | --------- | ----------------- |
 | CRITICAL | L8, L12 | TII Gate + Constitutional Decision | core_reflective, core_quantum |
 | HIGH | L4, L7, L11 | Scoring + Monte Carlo + RR + Battle Strategy | core_fusion, core_quantum |
 | MEDIUM | L1-L3, L5-L6, L9-L10 | Context + Psychology + SMC + Sizing | All 4 modules |

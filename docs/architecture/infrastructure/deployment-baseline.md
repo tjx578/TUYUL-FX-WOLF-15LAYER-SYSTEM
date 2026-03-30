@@ -69,7 +69,7 @@
 ### Backend (Railway)
 
 ```env
-# Auth
+# Auth (wolf15-api service only — other services do not use JWT)
 DASHBOARD_JWT_SECRET=<random 64-char string>
 DASHBOARD_JWT_ALGO=HS256
 DASHBOARD_TOKEN_EXPIRE_MIN=60

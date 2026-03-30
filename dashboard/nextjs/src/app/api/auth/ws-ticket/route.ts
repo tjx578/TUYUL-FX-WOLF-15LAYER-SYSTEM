@@ -3,32 +3,51 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * GET /api/auth/ws-ticket
  *
- * Returns an auth token for WebSocket connections.
- * Reads the session cookie first, then falls back to the server-only
- * API_KEY env var. Neither value is exposed in the client JS bundle.
+ * Returns a session-cookie-based auth token for WebSocket connections.
+ * The session cookie is set server-side by /api/set-session after the
+ * owner-session flow — neither raw API keys nor secrets are exposed
+ * in the client JS bundle.
  *
- * SEC-03 NOTE: In owner mode, the session cookie == API_KEY, so this
- * endpoint effectively returns the API_KEY as the WS token. Clients
- * send it as a URL query param (?token=...) which is visible in browser
- * DevTools and proxy logs. To harden: have the backend issue short-lived
- * WS tickets (TTL ~30s) and only return those here. For a private
- * single-owner dashboard this exposure is acceptable.
+ * Auth model: owner-only.
+ *   - If a valid session cookie exists, return it.
+ *   - If no session cookie but DASHBOARD_MODE=owner and API_KEY are set,
+ *     auto-bootstrap the session by setting the cookie and returning the
+ *     token.  This handles the first-visit case where no login flow has
+ *     run yet.
+ *   - Otherwise return 401.
+ *
+ * See docs/architecture/dashboard-control-surface.md — Auth Model.
  */
+
+const SESSION_COOKIE = "wolf15_session";
+const MAX_AGE = 60 * 60 * 8; // 8 hours
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
-    // 1. Prefer session cookie (set by /api/set-session after login)
-    const sessionToken = request.cookies.get("wolf15_session")?.value?.trim();
+    // 1. Existing session cookie — fast path.
+    const sessionToken = request.cookies.get(SESSION_COOKIE)?.value?.trim();
     if (sessionToken) {
         return NextResponse.json({ token: sessionToken });
     }
 
-    // 2. Fallback: server-only API key (NOT NEXT_PUBLIC_*)
-    const apiKey = process.env.API_KEY?.trim();
-    if (apiKey) {
-        return NextResponse.json({ token: apiKey });
+    // 2. Owner-mode auto-bootstrap: set session cookie from server-side API_KEY.
+    //    API_KEY is a server-only env var (no NEXT_PUBLIC_ prefix) so it is
+    //    never included in the client JS bundle.
+    const dashboardMode = (process.env.DASHBOARD_MODE ?? "").trim().toLowerCase();
+    const apiKey = (process.env.API_KEY ?? "").trim();
+    if (dashboardMode === "owner" && apiKey) {
+        const response = NextResponse.json({ token: apiKey });
+        response.cookies.set(SESSION_COOKIE, apiKey, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            path: "/",
+            maxAge: MAX_AGE,
+        });
+        return response;
     }
 
     return NextResponse.json(
-        { error: "no auth configured" },
+        { error: "no session — authenticate via /api/auth/owner-session first" },
         { status: 401 },
     );
 }

@@ -34,36 +34,36 @@ class TestAutoTradingStateMachine:
         assert auto_mode.is_enabled is True
         assert auto_mode.is_paused is False
 
-    def test_pause_transitions_to_paused(self, auto_mode):
-        transition = auto_mode.pause("DAILY_DD_LIMIT_BREACH", "DD exceeded", "system:compliance")
+    async def test_pause_transitions_to_paused(self, auto_mode):
+        transition = await auto_mode.pause("DAILY_DD_LIMIT_BREACH", "DD exceeded", "system:compliance")
         assert auto_mode.state == AutoTradingState.PAUSED
         assert auto_mode.is_paused is True
         assert transition.previous_state == AutoTradingState.ENABLED
         assert transition.new_state == AutoTradingState.PAUSED
         assert transition.trigger_code == "DAILY_DD_LIMIT_BREACH"
 
-    def test_resume_transitions_to_enabled(self, auto_mode):
-        auto_mode.pause("TEST", "test", "system:compliance")
-        transition = auto_mode.resume("Risk cleared", "admin")
+    async def test_resume_transitions_to_enabled(self, auto_mode):
+        await auto_mode.pause("TEST", "test", "system:compliance")
+        transition = await auto_mode.resume("Risk cleared", "admin")
         assert auto_mode.state == AutoTradingState.ENABLED
         assert transition.previous_state == AutoTradingState.PAUSED
         assert transition.new_state == AutoTradingState.ENABLED
         assert transition.trigger_code == "OPERATOR_RESUME"
         assert transition.actor == "admin"
 
-    def test_resume_when_enabled_raises(self, auto_mode):
+    async def test_resume_when_enabled_raises(self, auto_mode):
         with pytest.raises(ValueError, match="already enabled"):
-            auto_mode.resume("No reason", "admin")
+            await auto_mode.resume("No reason", "admin")
 
-    def test_pause_is_idempotent(self, auto_mode):
-        auto_mode.pause("FIRST", "first pause", "system:compliance")
-        transition = auto_mode.pause("SECOND", "duplicate pause", "system:compliance")
+    async def test_pause_is_idempotent(self, auto_mode):
+        await auto_mode.pause("FIRST", "first pause", "system:compliance")
+        transition = await auto_mode.pause("SECOND", "duplicate pause", "system:compliance")
         assert auto_mode.state == AutoTradingState.PAUSED
         assert "Already paused" in transition.reason
 
-    def test_transition_history_recorded(self, auto_mode):
-        auto_mode.pause("TEST_CODE", "testing", "system:compliance")
-        auto_mode.resume("reset", "admin")
+    async def test_transition_history_recorded(self, auto_mode):
+        await auto_mode.pause("TEST_CODE", "testing", "system:compliance")
+        await auto_mode.resume("reset", "admin")
         history = auto_mode.transition_history
         assert len(history) == 2
         assert history[0].new_state == AutoTradingState.PAUSED
@@ -78,9 +78,9 @@ class TestAutoModeEnforcement:
         mode = ComplianceAutoMode()
         mode.enforce()  # Should not raise
 
-    def test_enforce_raises_when_paused(self):
+    async def test_enforce_raises_when_paused(self):
         mode = ComplianceAutoMode()
-        mode.pause("TEST", "test", "system")
+        await mode.pause("TEST", "test", "system")
         with pytest.raises(ComplianceAutoModePaused):
             mode.enforce()
 
@@ -313,36 +313,36 @@ class TestAutoModeStatePersistence:
         mode = ComplianceAutoMode(redis_client=redis)
         assert mode.state == AutoTradingState.ENABLED
 
-    def test_pause_persists_to_redis(self):
+    async def test_pause_persists_to_redis(self):
         redis = _FakeRedis()
         mode = ComplianceAutoMode(redis_client=redis)
-        mode.pause("DD_BREACH", "daily dd exceeded", "system:compliance")
+        await mode.pause("DD_BREACH", "daily dd exceeded", "system:compliance")
         assert redis.store[COMPLIANCE_AUTO_MODE_STATE] == "PAUSED"
 
-    def test_resume_persists_to_redis(self):
+    async def test_resume_persists_to_redis(self):
         redis = _FakeRedis()
         mode = ComplianceAutoMode(redis_client=redis)
-        mode.pause("DD_BREACH", "daily dd exceeded", "system:compliance")
-        mode.resume("Risk cleared", "admin")
+        await mode.pause("DD_BREACH", "daily dd exceeded", "system:compliance")
+        await mode.resume("Risk cleared", "admin")
         assert redis.store[COMPLIANCE_AUTO_MODE_STATE] == "ENABLED"
 
-    def test_restart_restores_paused_state(self):
+    async def test_restart_restores_paused_state(self):
         """Simulate restart: pause, then create new instance with same Redis."""
         redis = _FakeRedis()
         mode1 = ComplianceAutoMode(redis_client=redis)
-        mode1.pause("VIOLATION", "compliance violation", "system:compliance")
+        await mode1.pause("VIOLATION", "compliance violation", "system:compliance")
 
         # Simulate restart — new instance, same Redis
         mode2 = ComplianceAutoMode(redis_client=redis)
         assert mode2.state == AutoTradingState.PAUSED
         assert mode2.is_paused is True
 
-    def test_restart_after_resume_is_enabled(self):
+    async def test_restart_after_resume_is_enabled(self):
         """After operator resume + restart, state should be ENABLED."""
         redis = _FakeRedis()
         mode1 = ComplianceAutoMode(redis_client=redis)
-        mode1.pause("VIOLATION", "test", "system:compliance")
-        mode1.resume("Cleared", "admin")
+        await mode1.pause("VIOLATION", "test", "system:compliance")
+        await mode1.resume("Cleared", "admin")
 
         mode2 = ComplianceAutoMode(redis_client=redis)
         assert mode2.state == AutoTradingState.ENABLED
@@ -353,13 +353,13 @@ class TestAutoModeStatePersistence:
         mode = ComplianceAutoMode(redis_client=redis)
         assert mode.state == AutoTradingState.PAUSED
 
-    def test_redis_failure_on_persist_does_not_crash(self):
+    async def test_redis_failure_on_persist_does_not_crash(self):
         """Write failure is best-effort — should not raise."""
         redis = _FakeRedis()
         mode = ComplianceAutoMode(redis_client=redis)
         # Break redis after init
         mode._redis = _BrokenRedis()  # noqa: SLF001
-        mode.pause("TEST", "test", "system:compliance")
+        await mode.pause("TEST", "test", "system:compliance")
         assert mode.state == AutoTradingState.PAUSED  # state changed in-memory
 
     def test_compliance_result_fields(self):

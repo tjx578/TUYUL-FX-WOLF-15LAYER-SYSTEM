@@ -15,7 +15,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { hasRole } from "@/lib/auth";
 import type { UserRole } from "@/contracts/auth";
 import { useActiveTrades } from "@/features/trades/api/tradesQuery.api";
-import { useHealth } from "@/shared/api/system.api";
+import { useStatus } from "@/shared/api/system.api";
 import { useMemo } from "react";
 
 // ── Icon ──────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ const ADMIN_ITEMS: NavItem[] = [
 // ── SystemPulse ───────────────────────────────────────────────
 
 function SystemPulse() {
-  const { data: health, isLoading } = useHealth();
+  const { data: health, isLoading } = useStatus();
   const isOk = health?.status === "ok";
 
   if (isLoading) {

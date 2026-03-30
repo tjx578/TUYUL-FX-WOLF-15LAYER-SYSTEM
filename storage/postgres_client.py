@@ -17,7 +17,14 @@ class PostgresConnectionError(Exception):
 
 
 # Railway/cloud proxies typically have 300s idle timeout.
-# We ping at 120s to stay well under the limit.
+# Pool must retire idle connections BEFORE the proxy kills them,
+# otherwise the next query hits a dead socket and Postgres logs
+# "could not receive data from client: Connection reset by peer".
+# Use 180s to stay safely under Railway's 300s proxy ceiling.
+_POOL_MAX_INACTIVE_LIFETIME_SEC: float = float(os.getenv("PG_POOL_MAX_INACTIVE_SEC", "180"))
+
+# Keepalive pings at 120s keep at least one connection alive, but
+# idle connections beyond that are retired by max_inactive_connection_lifetime.
 _POOL_KEEPALIVE_INTERVAL_SEC: int = int(os.getenv("PG_POOL_KEEPALIVE_SEC", "120"))
 
 
@@ -76,7 +83,7 @@ class PostgresClient:
                     min_size=1,
                     max_size=10,
                     command_timeout=30,
-                    max_inactive_connection_lifetime=300.0,
+                    max_inactive_connection_lifetime=_POOL_MAX_INACTIVE_LIFETIME_SEC,
                     server_settings={
                         "tcp_keepalives_idle": "60",
                         "tcp_keepalives_interval": "10",

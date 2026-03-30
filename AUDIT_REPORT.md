@@ -17,7 +17,8 @@ fails due to one fixable bug. Ruff formatting is broken across 96 files.
 **CI State on `main` (run #2339):**
 
 | Job | Status | Root Cause |
-|-----|--------|------------|
+| ----- | -------- | ------------ |
+
 | Ruff lint | ❌ FAIL | 96 files need `ruff format` |
 | Python tests | ❌ FAIL | `FINNHUB_API_KEY` singleton bug in test fixture |
 | Dashboard build | ✅ PASS | — |
@@ -30,13 +31,14 @@ fails due to one fixable bug. Ruff formatting is broken across 96 files.
 
 ### Finding 0.1 — 40+ Debug / Scratch Files Committed to `main`
 
-**Severity: HIGH (code debt, pollutes repo, confuses contributors)**
+*Severity: HIGH (code debt, pollutes repo, confuses contributors)**
 
 The following files were committed directly to the repo root. They are debug outputs,
 probe scripts, and temporary CI artifacts that should never have been committed:
 
 | Category | Files |
-|----------|-------|
+| ---------- | ------- |
+
 | PR004 debug txt | `_pr004_collect.txt`, `_pr004_cors.txt`, `_pr004_cors2.txt`, `_pr004_existing.txt`, `_pr004_gov.txt`, `_pr004_gov2.txt`, `_pr004_gov3.txt`, `_pr004_out2.txt`, `_pr004_out3.txt`, `_pr004_static.txt`, `_pr004_test_out.txt` |
 | Test output txt | `_test_dash_err.txt`, `_test_full_out.txt`, `_test_full_out2.txt`, `_test_full_out3.txt`, `_test_iter.txt`, `_test_iter2.txt`, `_test_iter4.txt`, `_test_monitor.txt`, `_test_monitor2.txt`, `_test_pr004_wg.txt`, `_test_run_current.txt`, `_suite_out.txt` |
 | PR artifacts txt | `pr004_existing_tests.txt`, `pr004_full.txt`, `pr004_ruff.txt`, `pr004_ruff2.txt`, `pr004_tsc.txt`, `pr004_tsc2.txt`, `pr004_tsc3.txt`, `pr004_wg2.txt`, `pr004_wg_result.txt`, `contract_test_out.txt` |
@@ -67,18 +69,21 @@ Ruff lint still passes (`ruff check` had zero violations).
 **Severity: CRITICAL (blocks CI tests)**  
 **File:** `tests/test_finnhub_ws_reconnect.py:97`  
 **Error:**
-```
+``
+
 ERROR tests/test_finnhub_ws_reconnect.py::TestLeaderElection::test_acquire_leader_lock_success
 RuntimeError: No FINNHUB_API_KEY configured — cannot start WebSocket client.
-```
+``
 
 **Root Cause (detailed):**
 
 1. `ingest/finnhub_key_manager.py` exports a module-level singleton:
+
    ```python
    # line 290
    finnhub_keys = FinnhubKeyManager()  # reads env vars at import time
    ```
+
 2. `FinnhubKeyManager.__init__` calls `_load_keys()` which reads `os.getenv("FINNHUB_API_KEY")`.
    In CI, no `FINNHUB_API_KEY` is set → `_keys = []`.
 3. The test fixture used `patch.dict("os.environ", {"FINNHUB_API_KEY": "test-token"})` —
@@ -105,11 +110,13 @@ with patch.object(finnhub_keys, "current_key", return_value="test-token"):
 
 ### Finding 2.1 — Dual `engine/` and `engines/` Directories
 
-**Severity: MEDIUM (naming confusion, unclear ownership)**
+*Severity: MEDIUM (naming confusion, unclear ownership)**
 
 | Directory | Contents | Role |
-|-----------|----------|------|
+| ----------- | ---------- | ------ |
+
 | `engine/` | `trq_engine.py`, `trq_redis_bridge.py` | Zone A micro-wave engine (M1/M5/M15) |
+
 | `engines/` | 18 files: `bayesian_update_engine.py`, `correlation_risk_engine.py`, ML models, etc. | Extended analytical engines used by pipeline |
 
 Both directories are legitimate and actively used — they are NOT dead code. However, the naming is confusing for contributors. The architecture comment says "Zone A (M1/M5/M15 micro-wave, engine/)" but `engines/` contains the extended engine suite (Bayesian, Monte Carlo, Quantum, etc.) used by the constitutional pipeline.
@@ -136,7 +143,7 @@ dedicated cleanup PR (verify no CI jobs reference them first).
 
 ### Finding 2.3 — `ingest_service.py` Monolith (1,122 lines at root)
 
-**Severity: MEDIUM (violates module boundary principle)**
+*Severity: MEDIUM (violates module boundary principle)**
 
 `ingest_service.py` (1,122 lines) lives at the repo root but contains the full Finnhub ingest
 service implementation. The modular implementation should live in `services/ingest/`.
@@ -159,7 +166,7 @@ acceptable but can be trimmed by moving mode-dispatch logic to a `startup/run_mo
 
 ### Finding 2.5 — Two API Entry Points (`app.py` + `api_server.py`)
 
-**Severity: LOW (intentional design, but confusing)**
+*Severity: LOW (intentional design, but confusing)**
 
 - `app.py` — ASGI shim (`from api_server import app`) for `gunicorn app:app`
 - `api_server.py` — Full FastAPI bootstrap (`python api_server.py`)
@@ -241,6 +248,7 @@ fields. `schemas/validator.py` enforces this at runtime via `jsonschema`.
 ### Finding 6.1 — State Machine FSM (✅ Correct)
 
 `execution/state_machine.py`:
+
 - Enum FSM: `IDLE → PENDING_ACTIVE → FILLED/CANCELLED`
 - Singleton, thread-safe via `threading.Lock`
 - Replay-safe: terminal→same-terminal returns `REPLAY_TERMINAL_NOOP`
@@ -281,6 +289,7 @@ compiles and builds without errors.
 ### Finding 8.2 — API URL Configuration (✅ Correct)
 
 `dashboard/nextjs/next.config.js` correctly resolves API base from env vars in priority order:
+
 1. `INTERNAL_API_URL` (Railway server-side)
 2. `NEXT_PUBLIC_API_BASE_URL`
 3. `API_BASE_URL`
@@ -299,6 +308,7 @@ fail silently. The `next.config.js` validates this and throws for protected depl
 ### Finding 8.4 — Stale Root-Level Next.js Config Files (MEDIUM)
 
 The following files at the repo root are leftovers from before the dashboard was moved to `dashboard/nextjs/`:
+
 - `next.config.ts` (a bare-bones stub, 228 bytes — does nothing)
 - `package.json` (references old dependencies like `next: ^15.0.0`)
 - `tsconfig.json` (bare TypeScript config)
@@ -357,7 +367,8 @@ Constitutional rule verified: journal is write-only (no decision authority).
 All `railway-*.toml` files point to scripts in `deploy/railway/`:
 
 | Service | Start Script |
-|---------|-------------|
+
+| --------- | ------------- |
 | API | `deploy/railway/start_api.sh` |
 | Engine | `deploy/railway/start_engine.sh` |
 | Ingest | `deploy/railway/start_ingest.sh` |
@@ -387,7 +398,8 @@ Multi-stage build with Python 3.11. All services share one `Dockerfile`.
 ## Summary: Findings by Severity
 
 | Severity | Count | Fixed in this PR? |
-|----------|-------|-------------------|
+
+| ---------- | ------- | ------------------- |
 | CRITICAL | 2 | ✅ Yes (ruff format, test fixture bug) |
 | HIGH | 1 | ✅ Yes (40+ debug files removed) |
 | MEDIUM | 4 | ⚠️ Documented; separate PRs recommended |
@@ -410,7 +422,8 @@ Multi-stage build with Python 3.11. All services share one `Dockerfile`.
 ## Constitutional Compliance Verification
 
 | Rule | Status |
-|------|--------|
+
+| ------ | -------- |
 | No execution authority in analysis modules | ✅ PASS |
 | Dashboard/EA cannot override L12 verdict | ✅ PASS |
 | No market direction computed in execution/dashboard | ✅ PASS |

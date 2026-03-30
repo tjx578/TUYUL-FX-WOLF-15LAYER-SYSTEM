@@ -63,3 +63,35 @@ async def test_assert_required_tables_raises_when_missing() -> None:
 
     with pytest.raises(DatabaseRevisionMismatchError, match="public.trade_journal"):
         await assert_required_tables(engine, ["trade_outbox", "trade_journal"])  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_schema_qualified_table_used_as_is() -> None:
+    """Tables with an explicit schema prefix must not be re-prefixed."""
+    engine = _FakeEngine({"wolf15.trade_outbox"})
+
+    await assert_required_tables(engine, ["wolf15.trade_outbox"])  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_schema_qualified_table_missing_raises() -> None:
+    engine = _FakeEngine(set())
+
+    with pytest.raises(DatabaseRevisionMismatchError, match="wolf15.trade_outbox"):
+        await assert_required_tables(engine, ["wolf15.trade_outbox"])  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_mixed_bare_and_qualified_tables() -> None:
+    """Mix of bare and schema-qualified names in a single call."""
+    engine = _FakeEngine({"public.trade_journal", "wolf15.trade_outbox"})
+
+    await assert_required_tables(engine, ["trade_journal", "wolf15.trade_outbox"])  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_custom_default_schema() -> None:
+    """The default_schema kwarg overrides 'public' for bare names."""
+    engine = _FakeEngine({"staging.trade_outbox"})
+
+    await assert_required_tables(engine, ["trade_outbox"], default_schema="staging")  # type: ignore[arg-type]

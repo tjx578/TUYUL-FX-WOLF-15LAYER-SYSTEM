@@ -12,6 +12,7 @@
  */
 
 import type { UserRole } from "@/contracts/auth";
+import { getRestPrefix } from "@/lib/env";
 
 const TOKEN_KEY = "wolf15_token";
 
@@ -19,7 +20,7 @@ const TOKEN_KEY = "wolf15_token";
 // process.env.NODE_ENV is statically inlined by the bundler.
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-export const ADMIN_ROLES = ["risk_admin", "config_admin", "approver"] as const;
+export const ADMIN_ROLES = ["owner", "risk_admin", "config_admin", "approver"] as const;
 
 export function hasRole(
   role: UserRole | undefined,
@@ -242,7 +243,7 @@ async function performRefresh(): Promise<void> {
   if (!currentToken) return;
 
   try {
-    const res = await fetch("/api/auth/refresh", {
+    const res = await fetch(`${getRestPrefix()}/api/auth/refresh`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

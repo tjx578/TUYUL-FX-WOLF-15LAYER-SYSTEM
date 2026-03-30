@@ -41,7 +41,7 @@ type TestFixtures = {
 test.describe("RBAC Enforcement", () => {
   test("Viewer role can access read endpoints", async ({ request }: TestFixtures) => {
     const token = createTestJwt({ sub: "viewer-user", role: "viewer" });
-    const res = await request.get("/health/full", {
+    const res = await request.get("/api/v1/status/full", {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status()).toBe(200);
@@ -73,7 +73,7 @@ test.describe("RBAC Enforcement", () => {
       role: "admin",
       scopes: ["*"],
     });
-    const res = await request.get("/health/full", {
+    const res = await request.get("/api/v1/status/full", {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status()).toBe(200);

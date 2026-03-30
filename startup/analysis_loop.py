@@ -33,6 +33,7 @@ from core.metrics import (
 from infrastructure.tracing import setup_tracer
 from journal.builders import build_j1, build_j2
 from pipeline import WolfConstitutionalPipeline
+from services.shared.type_coerce import to_float as _to_float
 from state.heartbeat_classifier import (
     HeartbeatState,
     IngestHealthState,
@@ -428,16 +429,6 @@ async def analysis_loop(
 
     _symbol_reflex_inputs: dict[str, tuple[float, float]] = {}
     _symbol_last_analysis_ts: dict[str, float] = {}
-
-    def _to_float(value: object, default: float = 0.0) -> float:
-        if isinstance(value, int | float):
-            return float(value)
-        if isinstance(value, str):
-            try:
-                return float(value)
-            except ValueError:
-                return default
-        return default
 
     _first_cycle_done = False
 

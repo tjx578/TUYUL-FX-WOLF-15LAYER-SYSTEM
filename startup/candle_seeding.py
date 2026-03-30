@@ -22,6 +22,140 @@ if TYPE_CHECKING:
 __all__ = ["seed_candles_on_startup"]
 
 
+def _synthesize_d1_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
+    """Synthesize D1 candles from H1 data for pairs missing daily bars.
+
+    Finnhub free tier often returns no_data for daily resolution on OANDA forex.
+    This mirrors the H4-from-H1 aggregation pattern.
+    """
+    from collections import defaultdict
+    from datetime import datetime
+
+    for pair in pairs:
+        d1_candles = bus.get_candles(pair, "D1")
+        if d1_candles:
+            continue
+        h1_candles = bus.get_candles(pair, "H1")
+        if not h1_candles:
+            continue
+
+        daily_groups: dict[tuple[int, int, int], list[dict]] = defaultdict(list)
+        for h1 in h1_candles:
+            ts = h1.get("timestamp")
+            if ts is None:
+                continue
+            if isinstance(ts, str):
+                try:
+                    dt = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    continue
+            elif isinstance(ts, datetime):
+                dt = ts
+            elif isinstance(ts, (int, float)):
+                dt = datetime.fromtimestamp(ts, tz=UTC)
+            else:
+                continue
+            ohlc = [h1.get(k, -1) for k in ("open", "high", "low", "close")]
+            if any(v <= 0 for v in ohlc):
+                continue
+            daily_groups[(dt.year, dt.month, dt.day)].append(h1)
+
+        if not daily_groups:
+            continue
+
+        synthesized = []
+        for (_y, _m, _d), group in sorted(daily_groups.items()):
+            last_ts = group[-1].get("timestamp")
+            synthesized.append(
+                {
+                    "symbol": pair,
+                    "timeframe": "D1",
+                    "open": group[0]["open"],
+                    "high": max(c["high"] for c in group),
+                    "low": min(c["low"] for c in group),
+                    "close": group[-1]["close"],
+                    "volume": sum(c.get("volume", 0) for c in group),
+                    "timestamp": last_ts,
+                    "source": "h1_aggregated",
+                }
+            )
+
+        bus.set_candle_history(pair, "D1", synthesized)
+        logger.info(
+            "[SEED] {} D1: synthesized {} bars from {} H1 bars (no daily data)",
+            pair,
+            len(synthesized),
+            len(h1_candles),
+        )
+
+
+def _synthesize_w1_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
+    """Synthesize W1 candles from D1 data for pairs missing weekly bars.
+
+    Finnhub free tier often returns no_data for weekly resolution on OANDA forex.
+    """
+    from collections import defaultdict
+    from datetime import datetime
+
+    for pair in pairs:
+        w1_candles = bus.get_candles(pair, "W1")
+        if w1_candles:
+            continue
+        d1_candles = bus.get_candles(pair, "D1")
+        if not d1_candles:
+            continue
+
+        weekly_groups: dict[tuple[int, int], list[dict]] = defaultdict(list)
+        for d1 in d1_candles:
+            ts = d1.get("timestamp")
+            if ts is None:
+                continue
+            if isinstance(ts, str):
+                try:
+                    dt = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    continue
+            elif isinstance(ts, datetime):
+                dt = ts
+            elif isinstance(ts, (int, float)):
+                dt = datetime.fromtimestamp(ts, tz=UTC)
+            else:
+                continue
+            ohlc = [d1.get(k, -1) for k in ("open", "high", "low", "close")]
+            if any(v <= 0 for v in ohlc):
+                continue
+            iso_year, iso_week, _ = dt.isocalendar()
+            weekly_groups[(iso_year, iso_week)].append(d1)
+
+        if not weekly_groups:
+            continue
+
+        synthesized = []
+        for (_y, _w), group in sorted(weekly_groups.items()):
+            last_ts = group[-1].get("timestamp")
+            synthesized.append(
+                {
+                    "symbol": pair,
+                    "timeframe": "W1",
+                    "open": group[0]["open"],
+                    "high": max(c["high"] for c in group),
+                    "low": min(c["low"] for c in group),
+                    "close": group[-1]["close"],
+                    "volume": sum(c.get("volume", 0) for c in group),
+                    "timestamp": last_ts,
+                    "source": "d1_aggregated",
+                }
+            )
+
+        bus.set_candle_history(pair, "W1", synthesized)
+        logger.info(
+            "[SEED] {} W1: synthesized {} bars from {} D1 bars (no weekly data)",
+            pair,
+            len(synthesized),
+            len(d1_candles),
+        )
+
+
 def _synthesize_mn_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
     """Synthesize MN candles from D1 data for pairs missing monthly bars.
 
@@ -185,7 +319,10 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
                         attempt,
                     )
 
-                    # Synthesize MN from D1 when ingest didn't provide monthly data
+                    # Synthesize D1 from H1, W1 from D1, MN from D1
+                    # when ingest didn't provide those timeframes
+                    _synthesize_d1_from_h1(bus, pairs)
+                    _synthesize_w1_from_d1(bus, pairs)
                     _synthesize_mn_from_d1(bus, pairs)
 
                     for pair in pairs:

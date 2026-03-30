@@ -339,6 +339,75 @@ class TestAuthLogout:
 
 
 # ============================================================================
+# 6. Owner-session endpoint — POST /api/auth/owner-session
+# ============================================================================
+
+
+class TestOwnerSession:
+    """``POST /api/auth/owner-session`` — header-based owner auth (P2)."""
+
+    @pytest.fixture()
+    def owner_client(self):
+        _set_auth_secret(api_key=_TEST_API_KEY)
+        from api.auth_router import router
+
+        app = FastAPI()
+        app.include_router(router)
+        yield TestClient(app)
+        _set_auth_secret(api_key="")
+
+    def test_owner_session_with_valid_jwt(self, owner_client: TestClient):
+        """Valid JWT in Authorization header -> owner JWT + cookie."""
+        token = _make_token(sub="owner", email="owner@tuyulfx.com", role="owner")
+        resp = owner_client.post(
+            "/api/auth/owner-session",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "token" in body
+        assert body["user_id"] == "owner"
+        assert body["role"] == "owner"
+        cookie_header = resp.headers.get("set-cookie", "")
+        assert "wolf15_session=" in cookie_header
+
+    def test_owner_session_with_api_key(self, owner_client: TestClient):
+        """Machine API key in Authorization header -> owner JWT + cookie."""
+        resp = owner_client.post(
+            "/api/auth/owner-session",
+            headers={"Authorization": f"Bearer {_TEST_API_KEY}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "token" in body
+        assert body["user_id"] in ("api_key_user", "owner")
+        cookie_header = resp.headers.get("set-cookie", "")
+        assert "wolf15_session=" in cookie_header
+
+    def test_owner_session_without_auth_returns_401(self, owner_client: TestClient):
+        """No Authorization header -> 401."""
+        resp = owner_client.post("/api/auth/owner-session")
+        assert resp.status_code == 401
+
+    def test_owner_session_with_invalid_token_returns_401(self, owner_client: TestClient):
+        """Invalid token -> 401."""
+        resp = owner_client.post(
+            "/api/auth/owner-session",
+            headers={"Authorization": "Bearer invalid-token"},
+        )
+        assert resp.status_code == 401
+
+    def test_owner_session_no_body_required(self, owner_client: TestClient):
+        """Owner-session does NOT require a request body (unlike deprecated /login)."""
+        token = _make_token(sub="owner")
+        resp = owner_client.post(
+            "/api/auth/owner-session",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+
+
+# ============================================================================
 # 6. Cookie-based session auth
 # ============================================================================
 

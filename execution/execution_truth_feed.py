@@ -31,6 +31,16 @@ class ExecutionTruthFeed:
     Ensures both executed and rejected paths are journaled.
     """
 
+    def __init__(self, stream_publisher: Any = None) -> None:
+        self._stream_publisher = stream_publisher
+
+    def _get_publisher(self) -> Any:
+        if self._stream_publisher is None:
+            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
+
+            self._stream_publisher = StreamPublisher()
+        return self._stream_publisher
+
     async def on_execution_state_change(
         self,
         intent: ExecutionIntentRecord,
@@ -205,16 +215,14 @@ class ExecutionTruthFeed:
         except Exception:
             pass
 
-    @staticmethod
     async def _emit_truth_event(
+        self,
         intent: ExecutionIntentRecord,
         previous_state: ExecutionLifecycleState,
     ) -> None:
         """Emit execution truth event for downstream consumers."""
         try:
-            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
-
-            publisher = StreamPublisher()
+            publisher = self._get_publisher()
             await publisher.publish(
                 stream=EXECUTION_TRUTH,
                 fields={

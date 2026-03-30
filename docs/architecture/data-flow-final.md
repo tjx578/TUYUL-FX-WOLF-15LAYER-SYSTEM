@@ -1,5 +1,4 @@
 ---
-title: TUYUL-FX Final Data Flow Architecture
 status: official
 version: v1
 owner: TUYUL-FX
@@ -30,6 +29,7 @@ tags:
 This layer supplies raw upstream inputs required by the system.
 
 It includes:
+
 - Finnhub WebSocket for live ticks
 - Finnhub REST Candles for higher-timeframe refresh and fallback
 - Calendar / Market News providers for macro and event context
@@ -41,6 +41,7 @@ Its purpose is to provide market observations and event context. It is not a dec
 This layer is responsible for acquiring, validating, normalizing, and publishing market and event data into the system.
 
 It includes:
+
 - `FinnhubWebSocketFeed`
 - Tick validation and spike filtering
 - Candle builder chain
@@ -50,6 +51,7 @@ It includes:
 - Producer heartbeat
 
 Its purpose is to:
+
 - maintain live data acquisition
 - reject invalid or dangerous payloads
 - construct runtime candle authority from tick flow
@@ -63,11 +65,13 @@ This layer has authority over data production, but no authority over trading dec
 This layer is the low-latency operational substrate for the realtime system.
 
 It includes:
+
 - latest hashes for ticks, candles, and heartbeats
 - historical candle lists by symbol and timeframe
 - pub/sub channels for tick, candle, news, and system state events
 
 Its purpose is to:
+
 - preserve current low-latency state
 - provide cross-container fanout
 - support warmup and hydration of runtime consumers
@@ -80,11 +84,13 @@ Redis is not the final analytical authority, but it is a first-class runtime dur
 This layer turns Redis-backed runtime data into analysis-ready state.
 
 It includes:
+
 - `RedisConsumer`
 - `LiveContextBus`
 - startup hydration and recovery rules
 
 Its purpose is to:
+
 - load history into engine memory during warmup
 - consume realtime pub/sub updates
 - maintain runtime feed timestamps and inference state
@@ -98,6 +104,7 @@ Its purpose is to:
 This layer decides whether the system is epistemically safe to continue normal operation.
 
 It includes:
+
 - `SystemStateManager`
 - feed freshness guards
 - `DataQualityGate`
@@ -105,6 +112,7 @@ It includes:
 - kill-switch / no-trade guard
 
 Its purpose is to:
+
 - monitor freshness and heartbeat status
 - unify degraded, stale, and no-producer detection
 - penalize or reject poor data conditions
@@ -117,6 +125,7 @@ This layer is not the final trading authority, but it controls whether the decis
 This is the analytical and constitutional decision pipeline.
 
 It includes:
+
 - warmup gate
 - perception layers
 - psychology and confluence
@@ -126,11 +135,13 @@ It includes:
 - meta and sovereignty layers
 
 Its purpose is to:
+
 - transform validated market context into structured analysis
 - estimate signal quality and execution suitability
 - enforce constitutional gates before any verdict is produced
 
 Absolute rule:
+
 - Layer 12 remains sole authority for trade verdicts
 - degraded or stale conditions may reduce confidence or force `HOLD`
 
@@ -139,12 +150,14 @@ Absolute rule:
 This layer distributes system outputs to consumers and persistence targets.
 
 It includes:
+
 - backend APIs
 - realtime transport endpoints
 - persistent journals and metrics
 - health endpoints and alerting
 
 Its purpose is to:
+
 - expose state safely to dashboards and automation
 - publish live and fallback transport data
 - persist system records for audit and diagnosis
@@ -157,11 +170,13 @@ This layer consumes decisions and system state. It does not decide trades.
 This layer provides operator-facing visibility and transport fallback.
 
 It includes:
+
 - `useLivePipeline` transport ladder
 - UI freshness states
 - operator diagnostics
 
 Its purpose is to:
+
 - keep the frontend connected using the best available transport
 - distinguish live, degraded, stale, and no-producer conditions
 - show why data is degraded rather than merely showing that it is degraded
@@ -411,6 +426,7 @@ System must force `HOLD` when any of the following conditions apply:
 TUYUL-FX must never treat data presence as equivalent to data legitimacy.
 
 The system is considered operationally trustworthy only when:
+
 - producers are alive
 - freshness is within allowed thresholds
 - warmup is sufficient

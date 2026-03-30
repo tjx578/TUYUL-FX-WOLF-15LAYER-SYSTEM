@@ -68,7 +68,7 @@ META_RESONANCE_LIMIT = 0.95
 ## Dataclasses (10 dataclasses)
 
 | Dataclass | Decorator | Purpose |
-|-----------|-----------|---------|
+| ----------- | ----------- | --------- |
 | `CognitiveState` | `@dataclass` | L0 cognitive snapshot with timestamp, twms_score, risk_level, emotion_index, discipline_score, confluence_count |
 | `EmotionFeedbackCycle` | `@dataclass(frozen=True)` | L11 emotion feedback output |
 | `ReflexEmotionResult` | `@dataclass(frozen=True)` | L1 reflex-emotion result with gate and state |
@@ -155,7 +155,7 @@ Performance-based risk adjustment:
 
 5-tier drawdown system:
 | Drawdown Range | Multiplier | Tier |
-|----------------|------------|------|
+| ---------------- | ------------ | ------ |
 | 0-5% | 100% (1.00) | TIER_0 |
 | 5-10% | 80% (0.80) | TIER_1 |
 | 10-15% | 60% (0.60) | TIER_2 |

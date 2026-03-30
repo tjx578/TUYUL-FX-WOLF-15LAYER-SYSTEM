@@ -40,17 +40,23 @@ class TestDashboardShimsReExport:
 
         assert Shim is Canonical
 
-    def test_dashboard_price_feed_shim(self) -> None:
-        from dashboard.price_feed import PriceFeed as Shim
-        from storage.price_feed import PriceFeed as Canonical
+    def test_price_feed_shim_removed(self) -> None:
+        """dashboard/price_feed.py was deleted — import must fail."""
+        import importlib
 
-        assert Shim is Canonical
+        import pytest
 
-    def test_dashboard_trade_ledger_shim(self) -> None:
-        from dashboard.trade_ledger import TradeLedger as Shim
-        from storage.trade_ledger import TradeLedger as Canonical
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("dashboard.price_feed")
 
-        assert Shim is Canonical
+    def test_trade_ledger_shim_removed(self) -> None:
+        """dashboard/trade_ledger.py was deleted — import must fail."""
+        import importlib
+
+        import pytest
+
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("dashboard.trade_ledger")
 
 
 # ── 3. Router import sources ─────────────────────────────────────────────────
@@ -70,8 +76,8 @@ def _get_imports(filepath: pathlib.Path) -> list[str]:
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _DASHBOARD_MODULES = {
     "dashboard.account_manager",
-    "dashboard.price_feed",
-    "dashboard.trade_ledger",
+    "dashboard.price_feed",  # retired — kept for boundary scan
+    "dashboard.trade_ledger",  # retired — kept for boundary scan
 }
 
 

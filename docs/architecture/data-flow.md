@@ -17,8 +17,9 @@ External providers
   -> engine context and recovery
   -> freshness and quality governance
   -> Wolf analysis and constitutional DAG
+  -> orchestration and execution gating
   -> output distribution
-  -> dashboard and operator consumers
+  -> dashboard and operator surfaces
 ```
 
 ## Non-negotiable rules
@@ -27,7 +28,34 @@ External providers
 - Ingest validates and normalizes data, but does not decide trades.
 - Redis is the operational runtime substrate, not constitutional trading authority.
 - Layer 12 remains the sole trade verdict authority.
-- Dashboard surfaces state and diagnostics only; it must never become a shadow execution path.
+- Governance and firewall layers may block or pause downstream execution, but may not invent market verdicts.
+- The dashboard is a private owner control surface that consumes state, diagnostics, and transport outputs.
+- The dashboard may initiate documented owner-scoped operational actions, but it must never become a shadow execution or verdict path.
+
+## Dashboard boundary
+
+The dashboard is not a public-user application surface.
+It is a private owner-operated operational interface.
+
+This means:
+
+- browser/session behavior must follow an owner-scoped design
+- machine/service credentials must not be reused as browser auth
+- dashboard actions must remain downstream of backend authority boundaries
+- health/status routes must not blur infrastructure probe semantics
+
+## Storage namespace migration
+
+All read-model modules now live under the `storage.*` canonical namespace:
+
+| Module | Canonical import |
+| -------- | ------------------ |
+| TradeLedger | `storage.trade_ledger` |
+| PriceFeed | `storage.price_feed` |
+| TradeJournal | `storage.trade_journal` |
+
+Deprecated shims at `dashboard/price_feed.py` and `dashboard/trade_ledger.py` have been deleted.
+The boundary test suite (`test_pr003_boundary.py`) enforces that no `api/` file imports from the retired `dashboard.*` namespace.
 
 ## Promotion rule
 

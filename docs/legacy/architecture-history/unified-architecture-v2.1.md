@@ -11,7 +11,7 @@
 ## 1. Design Principles
 
 | Principle | Rule |
-|-----------|------|
+| ----------- | ------ |
 | Constitutional separation | `analysis/` ≠ `execution/` ≠ `dashboard/` — each zone has one role |
 | Sole decision authority | **L12 is the ONLY module that may issue EXECUTE/HOLD/NO_TRADE** |
 | Dumb executor | EA is a **ZERO-INTELLIGENCE** file-polling executor; it never evaluates market state |
@@ -271,7 +271,7 @@ Finnhub WebSocket
 ## 4. Component Inventory
 
 | Zone | Component | File Path | Key Features | Status |
-|------|-----------|-----------|--------------|--------|
+| ------ | ----------- | ----------- | -------------- | -------- |
 | A | FinnhubWebSocket | `ingest/finnhub_ws.py` | leader election, backoff, key rotation | ✅ |
 | A | SpikeFilter | `analysis/tick_filter.py` | per-symbol % threshold, staleness reset | ✅ |
 | A | DedupCache | `analysis/tick_filter.py` | TTL OrderedDict, thread-safe | ✅ |
@@ -316,7 +316,7 @@ Finnhub WebSocket
 ## 5. v1 vs v2 Assessment
 
 | Dimension | v1 | v2 | v2.1 (Unified) | Notes |
-|-----------|:--:|:--:|:--------------:|-------|
+| ----------- | :--: | :--: | :--------------: | ------- |
 | Class name accuracy | 6/10 | 10/10 | 10/10 | Source-verified |
 | Component completeness | 7/10 | 9.5/10 | 9.5/10 | All runtime components |
 | V11 coverage | 3/10 | 10/10 | 10/10 | Full 3-layer gate + 6 sub-engines |

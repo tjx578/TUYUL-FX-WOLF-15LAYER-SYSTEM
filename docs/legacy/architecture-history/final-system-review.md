@@ -1,4 +1,5 @@
-# 🐺 TUYUL FX — WOLF 15-LAYER SYSTEM  
+# 🐺 TUYUL FX — WOLF 15-LAYER SYSTEM
+
 ## FINAL SYSTEM REVIEW (v7.4r∞)
 
 **Status:** 🟢 FINAL · LOCKED · LIVE READY  
@@ -14,6 +15,7 @@
 - Tidak ada market execution
 
 **Boundary keras:**
+
 - analysis/ → berpikir
 - execution/ → menjalankan
 - EA → executor only
@@ -24,12 +26,13 @@
 ## 2. TIMEFRAME LAW
 
 | Timeframe | Fungsi | Status |
-|---------|-------|-------|
+| --------- | ------ | ------ |
 | H1 | Setup creation | 🔒 |
 | M15 | Monitoring & invalidation | 🔒 |
 | Tick | Data only | 🔒 |
 
 M15 **tidak membuat setup**, hanya:
+
 - memantau harga masuk zona
 - mendeteksi invalidasi
 - memicu cancel
@@ -39,12 +42,14 @@ M15 **tidak membuat setup**, hanya:
 ## 3. MARKET UNIVERSE (LOCKED)
 
 ### ✅ WAJIB ANALISIS
+
 - Semua **FOREX MAJOR**
 - Semua **FOREX CROSS**
 - **XAUUSD**
 - **XAGUSD**
 
 ### ❌ DITOLAK
+
 - Crypto
 - Index
 
@@ -72,15 +77,13 @@ M15 **tidak membuat setup**, hanya:
 
 ## 6. FINAL REVIEW VERDICT
 
-```
-
+```text
 ARCHITECTURE : PASS
 CONSTITUTION : PASS
 RISK MODEL   : PASS
 PROP FIRM    : SAFE
 
 ∴ SYSTEM STATUS: LIVE READY
-
 ```
 
 ---

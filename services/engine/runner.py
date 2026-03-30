@@ -16,12 +16,12 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import threading
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from config.logging_bootstrap import configure_loguru_logging
@@ -33,14 +33,15 @@ REQUIRED_TABLES: tuple[str, ...] = ("trade_outbox",)
 
 
 def _build_engine_from_env() -> AsyncEngine:
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
+    raw_url = os.getenv("DATABASE_URL")
+    if not raw_url:
         raise RuntimeError("DATABASE_URL is not set")
 
-    if database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    url = make_url(raw_url)
+    if url.drivername == "postgresql":
+        url = url.set(drivername="postgresql+asyncpg")
 
-    return create_async_engine(database_url, pool_pre_ping=True, future=True)
+    return create_async_engine(url, pool_pre_ping=True, future=True)
 
 
 async def _preflight_checks() -> None:
@@ -57,28 +58,11 @@ def _start_health_probe_in_thread() -> None:
 
     This keeps ``/healthz`` responsive while the main thread runs the
     blocking DB preflight and heavy module imports.
-
-    The probe runs in an ISOLATED event loop with no shared asyncio
-    primitives to avoid cross-loop state corruption.
     """
-    from core.health_probe import HealthProbe
+    from services.shared.health_probe_launcher import start_probe_in_thread
 
     port = int(os.getenv("ENGINE_HEALTH_PORT", os.getenv("PORT", "8081")))
-    probe = HealthProbe(port=port, service_name="engine")
-
-    def _run() -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(probe.start())
-        except Exception:
-            logger.warning("Bootstrap health probe stopped")
-        finally:
-            loop.close()
-
-    t = threading.Thread(target=_run, daemon=True, name="engine-health-probe")
-    t.start()
-    logger.info("Bootstrap health probe listening on :{}", port)
+    start_probe_in_thread(port=port, service_name="engine")
 
 
 def _import_main() -> Callable[[], Coroutine[Any, Any, None]]:
@@ -137,33 +121,9 @@ def run() -> None:
 
     # If main() returns or crashes, keep process alive so the health
     # probe stays responsive and operators can inspect /status.
-    _hold_alive_for_diagnostics()
+    from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
 
-
-def _hold_alive_for_diagnostics() -> None:
-    """Block forever so the daemon-thread health probe stays responsive.
-
-    Same pattern as ingest_worker — Railway deployment succeeds and
-    operators can inspect /healthz and /status for diagnostics.
-    """
-    import signal as _signal
-    import types
-
-    hold_timeout = int(os.environ.get("DEGRADED_HOLD_TIMEOUT_SEC", "3600"))
-    logger.warning(
-        "Engine holding alive for health probe diagnostics (max {}s). Send SIGTERM to exit.",
-        hold_timeout,
-    )
-    shutdown = threading.Event()
-
-    def _on_signal(signum: int, _frame: types.FrameType | None) -> None:
-        logger.info("Received {} — exiting degraded hold", _signal.Signals(signum).name)
-        shutdown.set()
-
-    _signal.signal(_signal.SIGTERM, _on_signal)
-    _signal.signal(_signal.SIGINT, _on_signal)
-    if not shutdown.wait(timeout=hold_timeout):
-        logger.warning("Degraded hold timeout ({}s) — exiting for auto-restart", hold_timeout)
+    hold_alive_sync(service_name="Engine")
 
 
 if __name__ == "__main__":

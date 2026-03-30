@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { DomainHeader } from "@/shared/ui/DomainHeader";
 import { API_ENDPOINTS, apiMutate } from "@/shared/api/client";
-import { useHealth } from "@/shared/api/system.api";
+import { useStatus } from "@/shared/api/system.api";
 
 const TABS = [
   "General",
@@ -22,7 +22,7 @@ const TABS = [
 type ScopeType = "global" | "account" | "prop_firm" | "pair";
 
 export function SettingsScreen() {
-  const { data } = useHealth();
+  const { data } = useStatus();
   const [tab, setTab] = useState<(typeof TABS)[number]>("General");
   const [profileName, setProfileName] = useState("default");
   const [scopeType, setScopeType] = useState<ScopeType>("global");

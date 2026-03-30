@@ -150,6 +150,7 @@ class StateManager:
             acc = copy.deepcopy(self._account_state)
             signals = {k: copy.deepcopy(v) for k, v in self._signals.items()}
             overrides = copy.deepcopy(self._risk_overrides)
+            heartbeat = self._last_heartbeat
 
         return {
             "account": {
@@ -160,7 +161,7 @@ class StateManager:
             },
             "signals": {k: vars(v) for k, v in signals.items()},
             "risk_overrides": overrides,
-            "last_heartbeat": self._last_heartbeat,
+            "last_heartbeat": heartbeat,
         }
 
     # ── Reset ─────────────────────────────────────────────────────
