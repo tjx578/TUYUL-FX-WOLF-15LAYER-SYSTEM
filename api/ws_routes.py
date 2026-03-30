@@ -966,42 +966,105 @@ async def websocket_risk(websocket: fastapi.WebSocket):
 
     try:
         while websocket in risk_manager.active_connections:
-            # Build risk state from cached singletons
-            risk_state: dict[str, Any] = {"ts": time.time()}
+            # Get all accounts
+            try:
+                accounts = _account_manager.list_accounts()
+            except Exception:
+                accounts = []
 
-            rm = _get_risk_manager()
-            if rm is not None:
-                try:
-                    snapshot = rm.get_risk_snapshot()  # type: ignore[union-attr]
-                    risk_state["risk_snapshot"] = snapshot
-                except Exception:
-                    risk_state["risk_snapshot"] = None
-            else:
-                risk_state["risk_snapshot"] = None
-
+            # Get circuit breaker state (global)
             cb = _get_circuit_breaker()
+            cb_state = "CLOSED"
             if cb is not None:
                 try:
-                    risk_state["circuit_breaker"] = {
-                        "state": cb.state.value if hasattr(cb, "state") else "UNKNOWN",  # type: ignore[union-attr]
-                        "is_open": cb.is_open() if hasattr(cb, "is_open") else False,  # type: ignore[union-attr]
-                    }
+                    if hasattr(cb, "state"):
+                        cb_state_val = cb.state.value if hasattr(cb.state, "value") else str(cb.state)  # type: ignore[union-attr]
+                        # Normalize state names
+                        if cb_state_val in ("CLOSED", "HALF_OPEN", "OPEN"):
+                            cb_state = cb_state_val
                 except Exception:
-                    risk_state["circuit_breaker"] = None
-            else:
-                risk_state["circuit_breaker"] = None
+                    pass
 
+            # Get risk manager for legacy snapshot
+            rm = _get_risk_manager()
+            rm_snapshot = None
+            if rm is not None:
+                try:
+                    rm_snapshot = rm.get_risk_snapshot()  # type: ignore[union-attr]
+                except Exception:
+                    pass
+
+            # Get drawdown tracker status
+            dd_status = None
             try:
                 drawdown_module = importlib.import_module("risk.drawdown")
                 drawdown_cls = getattr(drawdown_module, "DrawdownTracker", None)
                 dd_instance: Any = drawdown_cls() if callable(drawdown_cls) else None
                 get_status = getattr(dd_instance, "get_status", None) if dd_instance is not None else None
-                risk_state["drawdown"] = get_status() if callable(get_status) else None
+                dd_status = get_status() if callable(get_status) else None
             except Exception:
-                risk_state["drawdown"] = None
+                pass
 
-            msg = _ws_event("risk.state", risk_state)
-            if not await risk_manager.send_stamped(websocket, msg):
+            # For each account, build and send the RiskUpdatedSchema payload
+            for account in accounts:
+                account_id = account.account_id if hasattr(account, "account_id") else str(account)
+
+                # Determine severity based on drawdown
+                severity = "SAFE"
+                if dd_status is not None:
+                    daily_dd = dd_status.get("daily_pct", 0) if isinstance(dd_status, dict) else 0
+                    total_dd = dd_status.get("total_pct", 0) if isinstance(dd_status, dict) else 0
+                    # Simple heuristic: CRITICAL if near limits, WARNING if moderate
+                    if daily_dd > 80 or total_dd > 80:
+                        severity = "CRITICAL"
+                    elif daily_dd > 50 or total_dd > 50:
+                        severity = "WARNING"
+
+                # Determine if can trade and block reason
+                can_trade = True
+                block_reason = ""
+                if cb_state == "OPEN":
+                    can_trade = False
+                    block_reason = "Circuit breaker is open"
+                elif severity == "CRITICAL":
+                    can_trade = False
+                    block_reason = "Drawdown limit critical"
+
+                # Build the RiskUpdatedSchema payload
+                risk_payload: dict[str, Any] = {
+                    "can_trade": can_trade,
+                    "block_reason": block_reason,
+                    "account_id": account_id,
+                    "daily_dd_percent": (
+                        dd_status.get("daily_pct", 0) if isinstance(dd_status, dict) else 0
+                    ),
+                    "daily_dd_limit": 10.0,  # Default limit, adjust if available from config
+                    "total_dd_percent": (
+                        dd_status.get("total_pct", 0) if isinstance(dd_status, dict) else 0
+                    ),
+                    "total_dd_limit": 20.0,  # Default limit, adjust if available from config
+                    "open_risk_percent": (
+                        account.open_risk_percent if hasattr(account, "open_risk_percent") else 0.0
+                    ),
+                    "open_trades": (
+                        account.open_trades if hasattr(account, "open_trades") else 0
+                    ),
+                    "circuit_breaker": cb_state,
+                    "severity": severity,
+                    "timestamp": time.time(),
+                }
+
+                # Also include legacy risk_snapshot for backward compatibility
+                if rm_snapshot is not None:
+                    risk_payload["risk_snapshot"] = rm_snapshot
+                if dd_status is not None:
+                    risk_payload["drawdown"] = dd_status
+
+                msg = _ws_event("risk.state", risk_payload)
+                if not await risk_manager.send_stamped(websocket, msg):
+                    break
+
+            if websocket not in risk_manager.active_connections:
                 break
             await asyncio.sleep(RISK_STATE_INTERVAL)
 

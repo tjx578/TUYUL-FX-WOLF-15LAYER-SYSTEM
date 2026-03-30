@@ -72,7 +72,7 @@ export function SignalBoardDetail({
             <div>
                 <strong>Gates</strong>
                 <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-                    {signal.gates.map((g) => (
+                    {(signal.gates ?? []).map((g) => (
                         <div key={g.gateId} style={{ fontSize: 13 }}>
                             {g.passed ? "✓" : "✗"} {g.name}
                             {g.message ? ` — ${g.message}` : ""}

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TUYUL Trading Swarm — Command Center</title>
+  <link rel="stylesheet" href="/dashboard/static/style.css" />
+</head>
+<body>
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">🐺 TUYUL</div>
+      <div class="logo-sub">Trading Swarm v3.0</div>
+    </div>
+    <div class="header-center">
+      <div class="market-status" id="market-status">
+        <span class="status-dot" id="market-dot"></span>
+        <span id="market-status-text">Checking...</span>
+      </div>
+      <div class="session-badge" id="session-badge">---</div>
+      <div class="shift-badge" id="shift-badge">---</div>
+    </div>
+    <div class="header-right">
+      <div class="time-display" id="time-display">--:--:-- UTC</div>
+      <div class="connection-indicator" id="connection-status" title="API Connection">●</div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ MAIN LAYOUT ═══════════════════ -->
+  <div class="main-layout">
+
+    <!-- ── LEFT PANEL: Agent Status ── -->
+    <aside class="sidebar-left">
+      <div class="panel-title">🤖 AGENT SWARM STATUS</div>
+      <div id="agents-grid" class="agents-grid">
+        <!-- Populated by JS -->
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <div class="panel-title">⚙️ SHIFT ROTATION</div>
+      <div id="shift-info" class="shift-info-block">
+        <div class="shift-row">
+          <span class="sl">MONITORING</span>
+          <span class="sv" id="shift-monitoring">---</span>
+        </div>
+        <div class="shift-row">
+          <span class="sl">ANALYSIS</span>
+          <span class="sv" id="shift-analysis">---</span>
+        </div>
+        <div class="shift-row">
+          <span class="sl">CONTROL</span>
+          <span class="sv" id="shift-control">---</span>
+        </div>
+        <div class="shift-row">
+          <span class="sl">REVIEW</span>
+          <span class="sv" id="shift-review">---</span>
+        </div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <div class="panel-title">⚠️ PSYCHOLOGY ALERTS</div>
+      <div id="psych-warnings" class="psych-warnings-list">
+        <div class="empty-state">No active warnings</div>
+      </div>
+    </aside>
+
+    <!-- ── CENTER: Main Dashboard ── -->
+    <main class="center-panel">
+
+      <!-- KPI Row -->
+      <div class="kpi-row">
+        <div class="kpi-card kpi-execute">
+          <div class="kpi-value" id="kpi-execute">0</div>
+          <div class="kpi-label">EXECUTE Today</div>
+        </div>
+        <div class="kpi-card kpi-skip">
+          <div class="kpi-value" id="kpi-skip">0</div>
+          <div class="kpi-label">SKIP Today</div>
+        </div>
+        <div class="kpi-card kpi-halt">
+          <div class="kpi-value" id="kpi-halt">0</div>
+          <div class="kpi-label">HALT Today</div>
+        </div>
+        <div class="kpi-card kpi-watch">
+          <div class="kpi-value" id="kpi-watchlist">0</div>
+          <div class="kpi-label">WATCHLIST</div>
+        </div>
+        <div class="kpi-card kpi-trades">
+          <div class="kpi-value" id="kpi-open-trades">0</div>
+          <div class="kpi-label">Open Trades</div>
+        </div>
+      </div>
+
+      <!-- Submit Candidate Panel -->
+      <div class="panel submit-panel">
+        <div class="panel-title">📋 SUBMIT TRADE CANDIDATE</div>
+        <form id="candidate-form" class="candidate-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Instrument</label>
+              <select id="f-instrument">
+                <option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option>
+                <option>XAUUSD</option><option>US30</option><option>GBPJPY</option>
+                <option>AUDUSD</option><option>USDCHF</option><option>NZDUSD</option>
+                <option>EURJPY</option><option>USDCAD</option><option>EURGBP</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Direction</label>
+              <select id="f-direction">
+                <option value="LONG">LONG</option>
+                <option value="SHORT">SHORT</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Session</label>
+              <select id="f-session">
+                <option value="LONDON">LONDON</option>
+                <option value="NEW_YORK">NEW YORK</option>
+                <option value="OVERLAP_LDN_NY">OVERLAP LDN/NY</option>
+                <option value="TOKYO">TOKYO</option>
+                <option value="SYDNEY">SYDNEY</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Timeframe</label>
+              <select id="f-timeframe">
+                <option>H4</option><option>H1</option><option>M15</option><option>D1</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Entry Price</label>
+              <input type="number" id="f-entry" step="0.00001" placeholder="1.08500" />
+            </div>
+            <div class="form-group">
+              <label>Stop Loss</label>
+              <input type="number" id="f-sl" step="0.00001" placeholder="1.08000" />
+            </div>
+            <div class="form-group">
+              <label>Take Profit</label>
+              <input type="number" id="f-tp" step="0.00001" placeholder="1.09500" />
+            </div>
+            <div class="form-group">
+              <label>Lot Size</label>
+              <input type="number" id="f-lot" step="0.01" placeholder="0.10" />
+            </div>
+          </div>
+          <!-- TWMS Context Toggles -->
+          <div class="context-section">
+            <div class="context-title">📊 TWMS Context (Tuyul Exception v.3)</div>
+            <div class="context-grid">
+              <label class="toggle-item"><input type="checkbox" id="c-htf-trend" checked /><span>HTF Trend Aligned</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-ema" checked /><span>EMA Alignment</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-trendline" checked /><span>Trendline Respect</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-momentum" checked /><span>Momentum Confirmed</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-ob" checked /><span>Order Block</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-liq" checked /><span>Liquidity Sweep</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-fvg" checked /><span>Fair Value Gap</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-vol" checked /><span>Volume Profile</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-mtf" checked /><span>MTF Sync</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-fib" checked /><span>Fibonacci Confluence</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-candle" checked /><span>Candle Pattern</span></label>
+              <label class="toggle-item"><input type="checkbox" id="c-div" /><span>Divergence</span></label>
+            </div>
+          </div>
+          <!-- Smart Money Context -->
+          <div class="context-section">
+            <div class="context-title">🧠 Smart Money Context</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>OB Freshness</label>
+                <select id="c-ob-fresh">
+                  <option value="fresh">Fresh / Untouched</option>
+                  <option value="moderate">Moderate</option>
+                  <option value="stale">Stale / Tested</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Liquidity Sweep</label>
+                <select id="c-liq-qual">
+                  <option value="strong">Strong / Clean</option>
+                  <option value="moderate">Moderate</option>
+                  <option value="weak">Weak</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>FVG (pips)</label>
+                <input type="number" id="c-fvg-pips" value="25" step="1" />
+              </div>
+              <div class="form-group">
+                <label>Volume vs Avg %</label>
+                <input type="number" id="c-vol-pct" value="160" step="5" />
+              </div>
+            </div>
+          </div>
+          <!-- Market Context -->
+          <div class="context-section">
+            <div class="context-title">📈 Market & Risk Context</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Market State</label>
+                <select id="c-market-state">
+                  <option value="TRENDING">TRENDING</option>
+                  <option value="RANGING">RANGING</option>
+                  <option value="CHOPPY">CHOPPY</option>
+                  <option value="EXTREME">EXTREME</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>ADX</label>
+                <input type="number" id="c-adx" value="32" step="1" />
+              </div>
+              <div class="form-group">
+                <label>News Risk</label>
+                <select id="c-news-risk">
+                  <option value="LOW">LOW</option>
+                  <option value="MEDIUM">MEDIUM</option>
+                  <option value="HIGH">HIGH</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Psychology State</label>
+                <select id="c-psych">
+                  <option value="NEUTRAL">NEUTRAL</option>
+                  <option value="FOCUSED">FOCUSED</option>
+                  <option value="EUPHORIC">EUPHORIC</option>
+                  <option value="ANGRY">ANGRY</option>
+                  <option value="DESPERATE">DESPERATE</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Daily Loss %</label>
+                <input type="number" id="c-daily-loss" value="0" step="0.1" />
+              </div>
+              <div class="form-group">
+                <label>Consecutive Losses</label>
+                <input type="number" id="c-consec-loss" value="0" step="1" />
+              </div>
+              <div class="form-group">
+                <label>Daily Trades Count</label>
+                <input type="number" id="c-daily-trades" value="0" step="1" />
+              </div>
+              <div class="form-group">
+                <label>Account Balance</label>
+                <input type="number" id="c-balance" value="100000" step="1000" />
+              </div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-evaluate">
+              🎯 EVALUATE CANDIDATE
+            </button>
+            <button type="button" class="btn-reset" onclick="resetForm()">↺ Reset</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Decision Result Panel -->
+      <div class="panel result-panel" id="result-panel" style="display:none;">
+        <div class="panel-title">📦 DECISION PACKET</div>
+        <div class="verdict-banner" id="verdict-banner">---</div>
+        <div class="decision-grid" id="decision-grid">
+          <!-- Filled by JS -->
+        </div>
+        <div class="agent-reports-section">
+          <div class="section-title">🔍 Agent Gate Reports</div>
+          <div id="agent-reports-list" class="agent-reports-list"></div>
+        </div>
+      </div>
+
+      <!-- Decision History -->
+      <div class="panel">
+        <div class="panel-title-row">
+          <div class="panel-title">📜 DECISION HISTORY (Today)</div>
+          <button class="btn-small" onclick="loadHistory()">↻ Refresh</button>
+        </div>
+        <div id="history-table-wrapper">
+          <table class="data-table" id="history-table">
+            <thead>
+              <tr>
+                <th>Time</th><th>Instrument</th><th>Dir</th>
+                <th>TWMS</th><th>SM%</th><th>RR</th>
+                <th>News</th><th>Psych</th><th>Verdict</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr><td colspan="9" class="empty-row">No decisions today</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- ── RIGHT PANEL: Watchlist, Open Trades, Events ── -->
+    <aside class="sidebar-right">
+      <div class="panel-title">👁️ ACTIVE WATCHLIST</div>
+      <div id="watchlist-panel" class="watchlist-list">
+        <div class="empty-state">No active watchlist</div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <div class="panel-title">📈 OPEN TRADES</div>
+      <div id="open-trades-panel" class="open-trades-list">
+        <div class="empty-state">No open trades</div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <div class="panel-title">📰 UPCOMING EVENTS</div>
+      <div id="events-panel" class="events-list">
+        <div class="empty-state">No upcoming events</div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <div class="panel-title">🔒 AUDIT FLAGS</div>
+      <div id="audit-panel" class="audit-list">
+        <div class="empty-state">No audit flags</div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ═══════════════════ LOADING OVERLAY ═══════════════════ -->
+  <div class="loading-overlay" id="loading-overlay" style="display:none;">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Evaluating candidate through all 12 agents...</div>
+  </div>
+
+  <!-- ═══════════════════ TOAST NOTIFICATIONS ═══════════════════ -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/dashboard/static/app.js"></script>
+</body>
+</html>

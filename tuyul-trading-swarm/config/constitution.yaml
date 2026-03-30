@@ -1,0 +1,103 @@
+# ============================================================
+# TUYUL TRADING SWARM — Constitutional Rules (LOCKED)
+# Hard rules yang tidak bisa di-override oleh agent manapun.
+# ============================================================
+
+version: "3.0.0"
+locked: true
+
+hard_rules:
+  trading:
+    - id: TR-001
+      rule: "Minimum RR ratio 1:2.0 wajib dipenuhi sebelum execution"
+      enforcement: HARD_BLOCK
+
+    - id: TR-002
+      rule: "Maximum pip risk 50 pip per trade (default)"
+      enforcement: HARD_BLOCK
+
+    - id: TR-003
+      rule: "Maximum account risk 1% per trade"
+      enforcement: HARD_BLOCK
+
+    - id: TR-004
+      rule: "TWMS score minimum 11/12 untuk approval"
+      enforcement: HARD_BLOCK
+
+    - id: TR-005
+      rule: "Smart money confidence minimum 80% untuk approval"
+      enforcement: HARD_BLOCK
+
+    - id: TR-006
+      rule: "Choppy atau extreme market state = REJECT tanpa exception"
+      enforcement: HARD_BLOCK
+
+    - id: TR-007
+      rule: "30 menit window sebelum/sesudah high-impact news = REJECT"
+      enforcement: HARD_BLOCK
+
+    - id: TR-008
+      rule: "Central bank meeting hari = REJECT"
+      enforcement: HARD_BLOCK
+
+  psychology:
+    - id: PS-001
+      rule: "Psychology HALT overrides semua gate teknikal"
+      enforcement: ABSOLUTE_HALT
+
+    - id: PS-002
+      rule: "Daily loss limit >= 2% = HALT semua aktivitas"
+      enforcement: ABSOLUTE_HALT
+
+    - id: PS-003
+      rule: "Revenge trade = HALT"
+      enforcement: ABSOLUTE_HALT
+
+    - id: PS-004
+      rule: "FOMO trade = HALT"
+      enforcement: ABSOLUTE_HALT
+
+    - id: PS-005
+      rule: "Consecutive losses >= 2 = mandatory review sebelum lanjut"
+      enforcement: ABSOLUTE_HALT
+
+    - id: PS-006
+      rule: "Daily trade limit >= 3 = HALT"
+      enforcement: ABSOLUTE_HALT
+
+  governance:
+    - id: GV-001
+      rule: "Tidak ada trade yang dieksekusi tanpa full multi-agent approval"
+      enforcement: HARD_BLOCK
+
+    - id: GV-002
+      rule: "Setiap keputusan WAJIB di-journal"
+      enforcement: REQUIRED
+
+    - id: GV-003
+      rule: "Setiap keputusan WAJIB di-audit post-decision"
+      enforcement: REQUIRED
+
+    - id: GV-004
+      rule: "Execution agent tidak boleh dijalankan tanpa orchestrator approval"
+      enforcement: HARD_BLOCK
+
+    - id: GV-005
+      rule: "Missing confirmation BUKAN confirmation — selalu SKIP jika ragu"
+      enforcement: BEHAVIORAL
+
+    - id: GV-006
+      rule: "Tidak ada upgrade setup via storytelling atau narrative bias"
+      enforcement: BEHAVIORAL
+
+philosophy:
+  core: "Trade BETTER, not MORE"
+  principles:
+    - "Quality over quantity"
+    - "Discipline over emotion"
+    - "Risk control over excitement"
+    - "Hard filters over persuasive narratives"
+    - "Capital preservation before opportunity capture"
+    - "Skip mediocre setups without hesitation"
+    - "One critical failure is enough to reject a trade"
+    - "No agent may override a hard veto from a mandatory gatekeeper"

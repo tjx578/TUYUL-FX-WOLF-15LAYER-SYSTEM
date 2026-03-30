@@ -1,0 +1,20 @@
+[
+  "tests/test_agents.py::test_market_condition_choppy_fail",
+  "tests/test_agents.py::test_market_condition_trending_pass",
+  "tests/test_agents.py::test_news_central_bank_fail",
+  "tests/test_agents.py::test_news_low_risk_pass",
+  "tests/test_agents.py::test_psychology_halt_on_daily_loss",
+  "tests/test_agents.py::test_psychology_halt_on_emotional_state",
+  "tests/test_agents.py::test_psychology_halt_on_revenge",
+  "tests/test_agents.py::test_psychology_ready_pass",
+  "tests/test_agents.py::test_rr_fails_below_minimum",
+  "tests/test_agents.py::test_rr_passes_valid",
+  "tests/test_agents.py::test_smart_money_fail_grade_c",
+  "tests/test_agents.py::test_smart_money_grade_a",
+  "tests/test_agents.py::test_technical_structure_fail_below_threshold",
+  "tests/test_agents.py::test_technical_structure_perfect",
+  "tests/test_decision_engine.py::test_all_pass_gives_execute",
+  "tests/test_decision_engine.py::test_halt_overrides_all",
+  "tests/test_decision_engine.py::test_multiple_fails_all_recorded",
+  "tests/test_decision_engine.py::test_one_fail_gives_skip"
+]

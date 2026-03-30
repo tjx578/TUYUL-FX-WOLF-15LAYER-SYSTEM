@@ -36,7 +36,7 @@ export function SignalBoardList({ signals, selectedId, onSelect }: Props) {
                     </div>
 
                     <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
-                        RR: {signal.riskRewardRatio ? `1:${signal.riskRewardRatio.toFixed(2)}` : "—"} •
+                        RR: {signal.riskRewardRatio != null ? `1:${signal.riskRewardRatio.toFixed(2)}` : "—"} •
                         Entry: {signal.entryPrice ?? "—"} • SL: {signal.stopLoss ?? "—"}
                     </div>
 

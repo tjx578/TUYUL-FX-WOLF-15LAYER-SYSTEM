@@ -1,0 +1,158 @@
+package:
+  name: tuyul-trading-swarm
+  version: "3.0.0"
+  type: multi-agent-trading-system
+  concept: tuyul-exception-v3
+  description: Production-grade 12-agent hierarchical trading decision swarm
+
+agents:
+  - id: 1
+    name: orchestrator
+    class: TradingOrchestratorAgent
+    path: agents/orchestrator.py
+    role: orchestrator
+    shift: all
+    mandatory: true
+    depends_on: []
+
+  - id: 2
+    name: market_scanner
+    class: MarketScannerAgent
+    path: agents/market_scanner.py
+    role: pre-filter
+    shift: MONITORING
+    mandatory: false
+    depends_on: [1]
+
+  - id: 3
+    name: technical_structure
+    class: TechnicalStructureAgent
+    path: agents/technical_structure.py
+    role: technical-gate
+    shift: ANALYSIS
+    mandatory: true
+    depends_on: [2]
+
+  - id: 4
+    name: smart_money
+    class: SmartMoneyAgent
+    path: agents/smart_money.py
+    role: smart-money-gate
+    shift: ANALYSIS
+    mandatory: true
+    depends_on: [3]
+
+  - id: 5
+    name: risk_reward
+    class: RiskRewardAgent
+    path: agents/risk_reward.py
+    role: risk-gate
+    shift: ANALYSIS
+    mandatory: true
+    depends_on: [3]
+
+  - id: 6
+    name: market_condition
+    class: MarketConditionAgent
+    path: agents/market_condition.py
+    role: environment-gate
+    shift: MONITORING
+    mandatory: true
+    depends_on: [1]
+
+  - id: 7
+    name: news_event_risk
+    class: NewsEventRiskAgent
+    path: agents/news_event_risk.py
+    role: news-gate
+    shift: MONITORING
+    mandatory: true
+    depends_on: [1]
+
+  - id: 8
+    name: psychology_discipline
+    class: PsychologyDisciplineAgent
+    path: agents/psychology_discipline.py
+    role: psychology-gate
+    shift: CONTROL
+    mandatory: true
+    halt_authority: true
+    depends_on: [1]
+
+  - id: 9
+    name: trade_execution
+    class: TradeExecutionAgent
+    path: agents/trade_execution.py
+    role: execution-control
+    shift: CONTROL
+    mandatory: false
+    depends_on: [3, 4, 5, 6, 7, 8]
+
+  - id: 10
+    name: journal_review
+    class: JournalReviewAgent
+    path: agents/journal_review.py
+    role: journal
+    shift: REVIEW
+    mandatory: false
+    depends_on: [1, 9]
+
+  - id: 11
+    name: audit_governance
+    class: AuditGovernanceAgent
+    path: agents/audit_governance.py
+    role: audit
+    shift: REVIEW
+    mandatory: false
+    depends_on: [10]
+
+  - id: 12
+    name: memory_handoff
+    class: MemoryHandoffAgent
+    path: agents/memory_handoff.py
+    role: memory-handoff
+    shift: REVIEW
+    mandatory: false
+    depends_on: [1]
+
+coordination:
+  topology: hierarchical-veto-mesh
+  execution_model: parallel-gatekeeper-then-sequential-review
+  decision_engine: tuyul-exception-v3
+
+decision_rules:
+  - one_disqualifier_rejects_trade
+  - psychology_halt_absolute_veto
+  - execution_requires_all_gatekeeper_passes
+  - all_decisions_must_be_journaled
+  - all_journaled_decisions_must_be_audited
+  - missing_confirmation_is_not_confirmation
+  - no_score_inflation_via_storytelling
+
+mandatory_gates:
+  - technical_structure
+  - smart_money
+  - risk_reward
+  - market_condition
+  - news_event_risk
+  - psychology_discipline
+
+verdicts:
+  - EXECUTE
+  - SKIP
+  - HALT
+  - WATCHLIST
+
+shift_model:
+  MONITORING:
+    agents: [market_scanner, news_event_risk, market_condition]
+    utc_hours: "00:00-06:00"
+  ANALYSIS:
+    agents: [technical_structure, smart_money, risk_reward]
+    utc_hours: "06:00-12:00"
+  CONTROL:
+    agents: [orchestrator, psychology_discipline, trade_execution]
+    utc_hours: "12:00-18:00"
+  REVIEW:
+    agents: [journal_review, audit_governance, memory_handoff]
+    utc_hours: "18:00-24:00"

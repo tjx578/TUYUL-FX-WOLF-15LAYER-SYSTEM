@@ -68,12 +68,12 @@ export const TradeTableRow = React.memo(
             >
                 <td style={{ padding: "8px 10px" }}>
                     <span className="num" style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                        {trade.trade_id?.slice(0, 12)}…
+                        {trade.trade_id ? trade.trade_id.slice(0, 12) + "…" : "—"}
                     </span>
                 </td>
                 <td>
                     <span className="num" style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                        {trade.account_id?.slice(0, 10)}…
+                        {trade.account_id ? trade.account_id.slice(0, 10) + "…" : "—"}
                     </span>
                 </td>
                 <td>

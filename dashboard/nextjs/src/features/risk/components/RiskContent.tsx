@@ -82,30 +82,30 @@ export function RiskContent({ accountId }: { accountId: string }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
               <RiskStat
                 label="DAILY DD"
-                value={`${live.daily_dd_percent?.toFixed(2)}%`}
-                color={live.daily_dd_percent > live.daily_dd_limit * 0.7 ? "var(--red)" : "var(--green)"}
+                value={`${(live.daily_dd_percent ?? 0).toFixed(2)}%`}
+                color={(live.daily_dd_percent ?? 0) > (live.daily_dd_limit ?? 100) * 0.7 ? "var(--red)" : "var(--green)"}
               />
               <RiskStat
                 label="DAILY LIMIT"
-                value={`${live.daily_dd_limit?.toFixed(1)}%`}
+                value={`${(live.daily_dd_limit ?? 0).toFixed(1)}%`}
               />
               <RiskStat
                 label="TOTAL DD"
-                value={`${live.total_dd_percent?.toFixed(2)}%`}
-                color={live.total_dd_percent > 5 ? "var(--red)" : "var(--text-primary)"}
+                value={`${(live.total_dd_percent ?? 0).toFixed(2)}%`}
+                color={(live.total_dd_percent ?? 0) > 5 ? "var(--red)" : "var(--text-primary)"}
               />
               <RiskStat
                 label="OPEN RISK"
-                value={`${live.open_risk_percent?.toFixed(2)}%`}
+                value={`${(live.open_risk_percent ?? 0).toFixed(2)}%`}
               />
               <RiskStat
                 label="OPEN TRADES"
-                value={String(live.open_trades)}
+                value={String(live.open_trades ?? 0)}
                 color="var(--blue)"
               />
               <RiskStat
                 label="CIRCUIT BREAKER"
-                value={String(live.circuit_breaker)}
+                value={String(live.circuit_breaker ?? "CLOSED")}
                 color={cbColor}
               />
             </div>

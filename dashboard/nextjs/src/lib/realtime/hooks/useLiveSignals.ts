@@ -183,6 +183,46 @@ export function useLiveSignals(
           setLastUpdatedAt(Date.now());
           resetStaleTimer();
         }
+
+        // ── Backend signals.update / signals.snapshot (normalised to SignalUpdated) ──
+        if (event.type === "SignalUpdated") {
+          wsDeliveredRef.current = true;
+          const payload = event.payload as Record<string, unknown> | undefined;
+          if (!payload) return;
+
+          // signals.update sends {signal: {...}} — single signal update
+          const signalData = payload.signal as Record<string, unknown> | undefined;
+          if (signalData && isRecord(signalData)) {
+            const symbol = String(signalData.symbol ?? signalData.pair ?? "").toUpperCase();
+            if (!symbol) return;
+            const incomingTs = typeof signalData.timestamp === "number" ? signalData.timestamp : Date.now();
+            const mapped: L12Verdict = {
+              symbol,
+              verdict: (signalData.verdict as L12Verdict["verdict"]) ?? "HOLD",
+              confidence: typeof signalData.confidence === "number" ? signalData.confidence : 0,
+              gates: Array.isArray(signalData.gates) ? signalData.gates : [],
+              timestamp: incomingTs,
+              direction: signalData.direction as L12Verdict["direction"],
+              entry_price: signalData.entry_price as number | undefined,
+              stop_loss: signalData.stop_loss as number | undefined,
+              take_profit_1: signalData.take_profit_1 as number | undefined,
+              risk_reward_ratio: signalData.risk_reward_ratio as number | undefined,
+              wolf_status: signalData.wolf_status as string | undefined,
+              scores: signalData.scores as L12Verdict["scores"],
+              expires_at: signalData.expires_at as number | undefined,
+            };
+            setVerdicts((prev) => {
+              const idx = prev.findIndex((v) => v.symbol === symbol);
+              if (idx !== -1 && incomingTs <= prev[idx].timestamp) return prev;
+              if (idx === -1) return [mapped, ...prev];
+              const next = [...prev];
+              next[idx] = mapped;
+              return next;
+            });
+            setLastUpdatedAt(Date.now());
+            resetStaleTimer();
+          }
+        }
       },
       onStatusChange: (s) => {
         setStatus(s);

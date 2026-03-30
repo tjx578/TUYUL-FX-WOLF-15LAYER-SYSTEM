@@ -31,33 +31,62 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   "verdict.update": "VerdictUpdated",
   "verdict.snapshot": "VerdictSnapshot",
   "pipeline.update": "PipelineUpdated",
-  "pipeline.result": "PipelineResultUpdated",
+  "pipeline.result": "PipelineResultUpdated", // [BACKWARD COMPAT] Backend uses pipeline.update
   // ── Prices ──
   "price.snapshot": "PricesSnapshot",
   "price.tick": "PriceUpdated",
   // ── Risk / Execution ──
   "risk.state": "RiskUpdated",
-  "risk.updated": "RiskStateUpdated",
-  "execution.state": "ExecutionStateUpdated",
+  "risk.updated": "RiskUpdated", // [BACKWARD COMPAT] Backend emits risk.state, maps to same target
+  "execution.state": "ExecutionStateUpdated", // [BACKWARD COMPAT] Backend never emits this
   // ── System ──
-  "system.status": "SystemStatusUpdated",
-  // ── Signals / Trades (not yet in WsEventSchema — handled by onRawMessage) ──
+  "system.status": "SystemStatusUpdated", // [BACKWARD COMPAT] Backend uses live.heartbeat_state/live.snapshot
+  // ── Signals / Trades ──
   "signals.update": "SignalUpdated",
+  "signals.snapshot": "SignalUpdated", // Backend sends signal snapshots
   "trade.snapshot": "TradeSnapshot",
   "trade.update": "TradeUpdated",
-  // ── Candles / Equity (not yet in WsEventSchema — handled by onRawMessage) ──
+  // ── Alerts ──
+  "alert.event": "AlertCreated", // Backend emits from /ws/alerts
+  // ── Candles / Equity ──
   "candle.snapshot": "CandleSnapshot",
   "candle.forming": "CandleForming",
   "equity.update": "EquityUpdated",
+  // ── TRQ (Trade Risk Quotient) ──
+  "trq.snapshot": "TRQSnapshot",
+  "trq.update": "TRQUpdated",
   // ── Live feed events ──
   "live.heartbeat_state": "SystemStatusUpdated",
-  "live.snapshot": "SystemStatusUpdated",
+  // live.snapshot carries {signals, accounts, trades} — NOT SystemStatus shape.
+  // Let normalizeWsEvent handle it specially instead of mapping to SystemStatusUpdated.
+  "live_event.heartbeat_state": "SystemStatusUpdated",
 };
 
 function normalizeWsEvent(raw: Record<string, unknown>): Record<string, unknown> {
   // Backend envelope has event_type + payload wrapper
   if (typeof raw.event_type === "string" && raw.payload !== undefined) {
-    const mapped = EVENT_TYPE_MAP[raw.event_type] ?? raw.event_type;
+    const eventType = raw.event_type as string;
+
+    // live.snapshot carries {signals, accounts, trades} — not SystemStatus shape.
+    // Convert to SystemStatusUpdated with derived metadata so the Zod schema passes.
+    if (eventType === "live.snapshot") {
+      const payload = raw.payload as Record<string, unknown> | undefined;
+      const signalCount = Array.isArray(payload?.signals) ? payload.signals.length : 0;
+      const accountCount = Array.isArray(payload?.accounts) ? payload.accounts.length : 0;
+      return {
+        ...raw,
+        type: "SystemStatusUpdated",
+        payload: {
+          mode: signalCount > 0 ? "NORMAL" : "DEGRADED",
+          reason: `live snapshot: ${signalCount} signals, ${accountCount} accounts`,
+          updated_at: typeof raw.server_ts === "number"
+            ? new Date(raw.server_ts * 1000).toISOString()
+            : new Date().toISOString(),
+        },
+      };
+    }
+
+    const mapped = EVENT_TYPE_MAP[eventType] ?? eventType;
     return { ...raw, type: mapped };
   }
   // Direct messages (ping, auth_error) already have `type`

@@ -124,7 +124,7 @@ export function ExposureSummaryPanel({ exposure }: ExposureSummaryPanelProps) {
                                 <div style={{ display: "flex", gap: 10, color: "var(--text-secondary)" }}>
                                     <span>{a.total_lots.toFixed(2)} lots</span>
                                     <span>{a.count} trades</span>
-                                    <span style={{ color: "var(--text-muted)" }}>{a.pairs.join(", ")}</span>
+                                    <span style={{ color: "var(--text-muted)" }}>{(a.pairs ?? []).join(", ")}</span>
                                 </div>
                             </div>
                         ))}
