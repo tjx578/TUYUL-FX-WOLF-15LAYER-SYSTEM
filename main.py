@@ -23,6 +23,29 @@ import asyncio
 import os
 import sys
 
+from dotenv import load_dotenv
+
+
+def _is_railway_runtime() -> bool:
+    return bool(
+        os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("RAILWAY_ENVIRONMENT_ID")
+        or os.environ.get("RAILWAY_PROJECT_ID")
+        or os.environ.get("RAILWAY_SERVICE_ID")
+        or os.environ.get("RAILWAY_DEPLOYMENT_ID")
+        or os.environ.get("RAILWAY_REPLICA_ID")
+    )
+
+
+def _env_true(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Load .env only for local/dev workflows. On Railway, rely on platform env vars
+# unless explicitly forced via WOLF15_LOAD_DOTENV=true.
+if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
+    load_dotenv(override=False)
+
 import uvicorn
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
