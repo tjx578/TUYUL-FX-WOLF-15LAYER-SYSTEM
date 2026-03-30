@@ -439,7 +439,7 @@ export interface ContextSnapshot {
   regime: string;
   volatility: string;
   trend: string;
-  active_pairs: string[];
+  active_pairs: number;
   timestamp: number;
 }
 

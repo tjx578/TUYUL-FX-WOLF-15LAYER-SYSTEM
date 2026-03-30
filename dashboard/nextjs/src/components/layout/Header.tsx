@@ -101,7 +101,7 @@ export default function Header() {
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <div style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700 }}>ACTIVE PAIRS</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-secondary)", fontWeight: 700 }}>
-            {context?.active_pairs?.length ?? "—"}
+            {context?.active_pairs ?? "—"}
           </div>
         </div>
       </div>
