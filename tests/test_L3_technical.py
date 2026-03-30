@@ -422,16 +422,16 @@ class TestAnalyzeStructure:
         assert result["score"] == 0.0
 
     def test_strong_bos_upward(self):
-        """Last bar high breaks prev-window high → STRONG."""
+        """Last 5 bars high breaks prev-window high → STRONG."""
         # bars 0-19 (prev window -20:-5): highs peak at 1.10
-        # bar -1 (last): high 1.15 → breaks structure
+        # bars -5:-1 include high 1.15 → breaks structure
         highs = [1.10] * 20 + [1.08, 1.09, 1.10, 1.11, 1.15]
         lows = [1.08] * 20 + [1.07, 1.08, 1.09, 1.10, 1.12]
         closes = [1.09] * 20 + [1.075, 1.085, 1.095, 1.105, 1.14]
         result = L3TechnicalAnalyzer._analyze_structure(highs, lows, closes, atr=0.005)
         assert result["validity"] == "STRONG"
-        assert result["confidence"] == 0.85
-        assert result["score"] == 0.85
+        assert 0.60 <= result["confidence"] <= 0.95
+        assert 0.60 <= result["score"] <= 0.95
 
     def test_strong_bos_downward(self):
         """Last bar low breaks prev-window low → STRONG."""
@@ -450,7 +450,7 @@ class TestAnalyzeStructure:
         # range = 0.0002 < 3*0.005 = 0.015
         result = L3TechnicalAnalyzer._analyze_structure(highs, lows, closes, atr=0.005)
         assert result["validity"] == "WEAK"
-        assert result["confidence"] == 0.15
+        assert 0.10 <= result["confidence"] <= 0.25
 
     def test_moderate_no_bos_wide_range(self):
         """No BOS but range >= 3*ATR → MODERATE."""
@@ -465,7 +465,7 @@ class TestAnalyzeStructure:
         # range = 1.1020 - 1.0960 = 0.006 >= 3*0.001 = 0.003
         result = L3TechnicalAnalyzer._analyze_structure(highs, lows, closes, atr=0.001)
         assert result["validity"] == "MODERATE"
-        assert result["confidence"] == 0.55
+        assert 0.35 <= result["confidence"] <= 0.55
 
     def test_gold_bos_strong(self):
         """XAUUSD BOS → STRONG (multi-asset)."""
@@ -860,12 +860,18 @@ class TestFindConfluence:
 class TestComputeTRQ3D:
     """TRQ3D energy & drift: bounded, asset-agnostic normalization."""
 
-    def test_empty_h4_d1_returns_zero(self):
-        """No H4/D1 data → energy=0, drift=0."""
-        candles = _make_candle_dicts(1.10, 0.001, 60)
-        result = L3TechnicalAnalyzer._compute_trq3d("EURUSD", candles, [], [])
+    def test_empty_h1_returns_zero(self):
+        """No H1 data → energy=0, drift=0."""
+        result = L3TechnicalAnalyzer._compute_trq3d("EURUSD", [], [], [])
         assert result["energy"] == 0.0
         assert result["drift"] == 0.0
+
+    def test_h1_only_computes(self):
+        """H1 data with empty H4/D1 → still computes energy."""
+        candles = _make_candle_dicts(1.10, 0.001, 60)
+        result = L3TechnicalAnalyzer._compute_trq3d("EURUSD", candles, [], [])
+        assert result["energy"] >= 0.0
+        assert result["drift"] >= 0.0
 
     def test_fx_energy_bounded(self):
         """FX (EURUSD) energy ∈ [0, 1]."""

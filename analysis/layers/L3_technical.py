@@ -397,6 +397,11 @@ class L3TechnicalAnalyzer:
         ema20 = IndicatorEngine.ema(closes, 20)
         ema50 = IndicatorEngine.ema(closes, 50)
 
+        # Fallback: when <50 candles, use EMA(20) vs EMA(35) to still
+        # detect trend direction (degraded but not blind).
+        if ema50 is None and len(closes) >= 35:
+            ema50 = IndicatorEngine.ema(closes, 35)
+
         if ema20 is None or ema50 is None:
             return "NEUTRAL", 0.0
 
@@ -552,22 +557,45 @@ class L3TechnicalAnalyzer:
 
         prev_high = max(highs[-20:-5])
         prev_low = min(lows[-20:-5])
-        last_high = highs[-1]
-        last_low = lows[-1]
 
-        bos_up = last_high > prev_high
-        bos_down = last_low < prev_low
+        # Check last 5 bars for BOS (not just last bar)
+        recent_high = max(highs[-5:])
+        recent_low = min(lows[-5:])
+
+        bos_up = recent_high > prev_high
+        bos_down = recent_low < prev_low
 
         recent_range = max(highs[-20:]) - min(lows[-20:])
         range_threshold = atr * 3.0 if atr > 0 else 0.0
 
         if not (bos_up or bos_down) and recent_range < range_threshold:
-            return {"validity": "WEAK", "confidence": 0.15, "score": 0.15}
+            # Range-bound, no structure break — derive confidence from
+            # how close range is to the threshold (wider = slightly more)
+            range_ratio = (recent_range / range_threshold) if range_threshold > 0 else 0.0
+            conf = float(np.clip(0.10 + 0.15 * range_ratio, 0.10, 0.25))
+            return {"validity": "WEAK", "confidence": conf, "score": conf}
 
         if bos_up or bos_down:
-            return {"validity": "STRONG", "confidence": 0.85, "score": 0.85}
+            # Derive confidence from break magnitude relative to ATR
+            if atr > 0:
+                break_mag = max(
+                    (recent_high - prev_high) / atr if bos_up else 0.0,
+                    (prev_low - recent_low) / atr if bos_down else 0.0,
+                )
+                # break_mag ~ 0.0 (barely broke) to 2.0+ (decisive break)
+                conf = float(np.clip(0.60 + 0.25 * min(break_mag, 2.0) / 2.0, 0.60, 0.95))
+            else:
+                conf = 0.75
+            score = float(np.clip(conf, 0.60, 0.95))
+            return {"validity": "STRONG", "confidence": conf, "score": score}
 
-        return {"validity": "MODERATE", "confidence": 0.55, "score": 0.55}
+        # No BOS but range exceeds threshold — moderate structure
+        if atr > 0:
+            range_excess = (recent_range - range_threshold) / atr
+            conf = float(np.clip(0.35 + 0.20 * min(range_excess, 2.0) / 2.0, 0.35, 0.55))
+        else:
+            conf = 0.45
+        return {"validity": "MODERATE", "confidence": conf, "score": conf}
 
     # ═══════════════════════════════════════════════════════════════
     # §5  CONFLUENCE: Fib + Volume Profile + Order Block + FVG
@@ -893,7 +921,7 @@ class L3TechnicalAnalyzer:
 
         Falls back to price normalization when ATR is unavailable.
         """
-        if not candles_h4 or not candles_d1:
+        if not candles_h1:
             return {"energy": 0.0, "drift": 0.0}
 
         trq = TRQ3DEngine()

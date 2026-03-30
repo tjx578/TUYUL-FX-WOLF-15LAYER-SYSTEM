@@ -22,6 +22,74 @@ if TYPE_CHECKING:
 __all__ = ["seed_candles_on_startup"]
 
 
+def _synthesize_h4_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
+    """Synthesize H4 candles from H1 data for pairs missing 4-hour bars.
+
+    Groups H1 bars into 4-hour blocks (00-03, 04-07, 08-11, 12-15, 16-19, 20-23)
+    and aggregates OHLCV.  Mirrors the D1-from-H1 pattern.
+    """
+    from datetime import datetime
+
+    for pair in pairs:
+        h4_candles = bus.get_candles(pair, "H4")
+        if h4_candles:
+            continue
+        h1_candles = bus.get_candles(pair, "H1")
+        if not h1_candles:
+            continue
+
+        h4_groups: dict[tuple[int, int, int, int], list[dict]] = {}
+        for h1 in h1_candles:
+            ts = h1.get("timestamp")
+            if ts is None:
+                continue
+            if isinstance(ts, str):
+                try:
+                    dt = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    continue
+            elif isinstance(ts, datetime):
+                dt = ts
+            elif isinstance(ts, (int, float)):
+                dt = datetime.fromtimestamp(ts, tz=UTC)
+            else:
+                continue
+            ohlc = [h1.get(k, -1) for k in ("open", "high", "low", "close")]
+            if any(v <= 0 for v in ohlc):
+                continue
+            block = dt.hour // 4  # 0-5 (six 4-hour blocks per day)
+            key = (dt.year, dt.month, dt.day, block)
+            h4_groups.setdefault(key, []).append(h1)
+
+        if not h4_groups:
+            continue
+
+        synthesized = []
+        for _key, group in sorted(h4_groups.items()):
+            last_ts = group[-1].get("timestamp")
+            synthesized.append(
+                {
+                    "symbol": pair,
+                    "timeframe": "H4",
+                    "open": group[0]["open"],
+                    "high": max(c["high"] for c in group),
+                    "low": min(c["low"] for c in group),
+                    "close": group[-1]["close"],
+                    "volume": sum(c.get("volume", 0) for c in group),
+                    "timestamp": last_ts,
+                    "source": "h1_aggregated",
+                }
+            )
+
+        bus.set_candle_history(pair, "H4", synthesized)
+        logger.info(
+            "[SEED] {} H4: synthesized {} bars from {} H1 bars (no H4 data)",
+            pair,
+            len(synthesized),
+            len(h1_candles),
+        )
+
+
 def _synthesize_d1_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
     """Synthesize D1 candles from H1 data for pairs missing daily bars.
 
@@ -319,8 +387,9 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
                         attempt,
                     )
 
-                    # Synthesize D1 from H1, W1 from D1, MN from D1
+                    # Synthesize H4 from H1, D1 from H1, W1 from D1, MN from D1
                     # when ingest didn't provide those timeframes
+                    _synthesize_h4_from_h1(bus, pairs)
                     _synthesize_d1_from_h1(bus, pairs)
                     _synthesize_w1_from_d1(bus, pairs)
                     _synthesize_mn_from_d1(bus, pairs)
