@@ -175,11 +175,28 @@ class LiquiditySweepScorer:
         # -- extract arrays --------------------------------------------------
         highs = np.array([float(c["high"]) for c in candles])
         lows = np.array([float(c["low"]) for c in candles])
-        np.array([float(c["close"]) for c in candles])
-        np.array([float(c["open"]) for c in candles])
+        closes = np.array([float(c["close"]) for c in candles])
+        opens = np.array([float(c["open"]) for c in candles])
         volumes = np.array([float(c.get("volume", 0)) for c in candles])
 
         lookback = min(self.lookback_period, len(candles))
+
+        # -- adaptive equal-level tolerance ----------------------------------
+        # Fixed absolute tolerance (0.0003) is meaningless for instruments
+        # with very different price scales (EURUSD ~1.1 vs XAUUSD ~3000).
+        # Derive tolerance from recent ATR to be price-proportional.
+        adaptive_tol = self.equal_level_tolerance
+        if len(highs) >= 14:
+            tr = np.maximum(
+                highs[-14:] - lows[-14:],
+                np.maximum(
+                    np.abs(highs[-14:] - closes[-15:-1]) if len(closes) > 14 else highs[-14:] - lows[-14:],
+                    np.abs(lows[-14:] - closes[-15:-1]) if len(closes) > 14 else highs[-14:] - lows[-14:],
+                ),
+            )
+            atr_14 = float(np.mean(tr))
+            # Tolerance = 15% of ATR (tight enough for real equal levels)
+            adaptive_tol = max(atr_14 * 0.15, self.equal_level_tolerance)
 
         # -- equal-level detection -------------------------------------------
         recent_lows = lows[-lookback:]
@@ -187,16 +204,18 @@ class LiquiditySweepScorer:
 
         equal_level = False
         if direction == "bullish":
-            equal_level = self._has_equal_levels(recent_lows)
+            equal_level = self._has_equal_levels(recent_lows, tolerance=adaptive_tol)
         else:
-            equal_level = self._has_equal_levels(recent_highs)
+            equal_level = self._has_equal_levels(recent_highs, tolerance=adaptive_tol)
 
         # -- volume spike ----------------------------------------------------
+        # Check last *completed* bar (index -2) instead of the current
+        # partial bar (index -1) which typically has lower volume.
         vol_spike = False
-        if len(volumes) > self.volume_lookback:
-            avg_vol = float(np.mean(volumes[-self.volume_lookback - 1 : -1]))
+        if len(volumes) > self.volume_lookback + 1:
+            avg_vol = float(np.mean(volumes[-self.volume_lookback - 2 : -2]))
             if avg_vol > 0:
-                vol_spike = float(volumes[-1]) >= avg_vol * self.volume_spike_threshold
+                vol_spike = float(volumes[-2]) >= avg_vol * self.volume_spike_threshold
 
         # -- wick rejection --------------------------------------------------
         last = candles[-1]
@@ -238,15 +257,31 @@ class LiquiditySweepScorer:
                 )
 
         # -- composite quality -----------------------------------------------
+        # Use continuous scoring instead of discrete binary steps to produce
+        # instrument-specific quality values rather than fixed 0.25 increments.
         quality = 0.0
+
+        # Equal level: 0-0.25 scaled by cluster tightness
         if equal_level:
             quality += 0.25
-        if vol_spike:
-            quality += 0.20
-        if wick >= self.wick_rejection_min:
-            quality += 0.25
+        # Volume: 0-0.20 continuous — ratio of bar volume to average
+        if len(volumes) > self.volume_lookback + 1:
+            avg_vol = float(np.mean(volumes[-self.volume_lookback - 2 : -2]))
+            if avg_vol > 0:
+                vol_ratio = float(volumes[-2]) / avg_vol
+                if vol_spike:
+                    quality += 0.20  # Full points for exceeding threshold
+                elif vol_ratio > 1.0:
+                    # Partial credit for above-average but below spike threshold
+                    quality += 0.20 * min((vol_ratio - 1.0) / (self.volume_spike_threshold - 1.0), 1.0)
+        # Wick rejection: 0-0.25 continuous — proportional to wick ratio
+        if wick > 0:
+            wick_score = min(wick / self.wick_rejection_min, 1.0) * 0.25
+            quality += wick_score
+        # Failed to close: binary 0.15
         if failed_to_close:
             quality += 0.15
+        # Multi-bar: binary 0.15
         if multi_bar:
             quality += 0.15
         quality = min(quality, 1.0)
@@ -263,14 +298,19 @@ class LiquiditySweepScorer:
             multi_bar_pattern=multi_bar,
         )
 
-    def _has_equal_levels(self, prices: np.ndarray) -> bool:
+    def _has_equal_levels(
+        self,
+        prices: np.ndarray,
+        tolerance: float | None = None,
+    ) -> bool:
         """Return True if *prices* contain a cluster of equal values."""
         if len(prices) < self.min_touches_for_level:
             return False
+        tol = tolerance if tolerance is not None else self.equal_level_tolerance
         sorted_p = np.sort(prices)
         for i in range(len(sorted_p) - self.min_touches_for_level + 1):
             window = sorted_p[i : i + self.min_touches_for_level]
-            if float(window[-1] - window[0]) <= self.equal_level_tolerance:
+            if float(window[-1] - window[0]) <= tol:
                 return True
         return False
 

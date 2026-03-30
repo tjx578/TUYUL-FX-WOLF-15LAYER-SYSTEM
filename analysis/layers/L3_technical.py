@@ -260,9 +260,17 @@ class L3TechnicalAnalyzer:
             candles_d1,
         )
 
-        # Liquidity sweep scorer expects candle dicts + direction string
-        direction = "bullish" if trend == "BULLISH" else "bearish"
-        liq_result = self._liq.score(candles_h1, direction=direction)
+        # Liquidity sweep scorer expects candle dicts + direction string.
+        # When trend is NEUTRAL, check both directions and use the better
+        # quality to avoid always defaulting to one side.
+        if trend == "BULLISH":
+            liq_result = self._liq.score(candles_h1, direction="bullish")
+        elif trend == "BEARISH":
+            liq_result = self._liq.score(candles_h1, direction="bearish")
+        else:
+            liq_bull = self._liq.score(candles_h1, direction="bullish")
+            liq_bear = self._liq.score(candles_h1, direction="bearish")
+            liq_result = liq_bull if liq_bull.sweep_quality >= liq_bear.sweep_quality else liq_bear
         liq_score = float(getattr(liq_result, "sweep_quality", 0.0))
 
         # ── v5 scoring (UNCHANGED) ────────────────────────────────

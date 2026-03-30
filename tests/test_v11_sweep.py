@@ -170,7 +170,7 @@ class TestLiquiditySweepScorer:
                 }
             )
 
-        # Add high volume candle
+        # Add high volume candle (the completed bar with the spike)
         candles.append(
             {
                 "open": 1.0,
@@ -178,6 +178,17 @@ class TestLiquiditySweepScorer:
                 "low": 0.99,
                 "close": 1.0,
                 "volume": 200,  # 2x average
+            }
+        )
+
+        # Add a partial/current bar after the spike so spike sits at [-2]
+        candles.append(
+            {
+                "open": 1.0,
+                "high": 1.005,
+                "low": 0.995,
+                "close": 1.0,
+                "volume": 50,
             }
         )
 
