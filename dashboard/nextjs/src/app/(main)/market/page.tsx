@@ -1,30 +1,28 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { TabPanel, Tabs, type TabItem } from "@/components/ui/Tabs";
-import { NewsScreen } from "@/features/news/components/NewsScreen";
-import { useLivePrices } from "@/lib/realtime/hooks/useLivePrices";
+import { Tabs, type TabItem } from "@/components/ui/Tabs";
 
-/* ─── Tab definitions ─────────────────────────────────────── */
+/* ─── Tab definitions (matching HTML prototype) ──────────── */
 
 const MAIN_TABS: TabItem[] = [
-  { id: "chart", label: "CHART" },
-  { id: "lot", label: "LOT CALCULATOR" },
-  { id: "news", label: "NEWS" },
-  { id: "watchlist", label: "WATCHLIST" },
+  { id: "market", label: "Market Details" },
+  { id: "chart", label: "Trading View Chart" },
+  { id: "lot", label: "Lotsize Calculator" },
+  { id: "news", label: "Market Headlines" },
 ];
 
 const SUB_TABS: TabItem[] = [
-  { id: "calendar", label: "ECONOMIC CALENDAR" },
-  { id: "heatmap", label: "FOREX HEATMAP" },
-  { id: "cross", label: "CROSS RATES" },
+  { id: "calendar", label: "Economic Calendar" },
+  { id: "heatmap", label: "Forex Heatmap" },
+  { id: "cross", label: "Forex Cross Rates" },
 ];
 
 /* ─── TradingView embed ──────────────────────────────────── */
 
 function TradingViewFrame({ src, title, height = 560 }: { src: string; title: string; height?: number }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
+    <div style={{ overflow: "hidden", borderRadius: 12, border: "1px solid #232834", background: "#0b0f15" }}>
       <iframe
         src={src}
         title={title}
@@ -36,52 +34,126 @@ function TradingViewFrame({ src, title, height = 560 }: { src: string; title: st
   );
 }
 
-/* ─── Watchlist (live prices) ────────────────────────────── */
+/* ─── Watchlist / Market Details (live prices, prototype style) ─── */
 
-function WatchlistTab() {
-  const { priceMap } = useLivePrices();
-  const rows = Object.entries(priceMap ?? {});
+const MARKET_MOCK = [
+  { ticker: "AUDCAD", price: "0.95738", chg: "-0.17%", neg: true, bid: "0.95658", ask: "0.95669", high: "0.96119", low: "0.95476", rating: "Sell" },
+  { ticker: "AUDCHF", price: "0.54906", chg: "-0.12%", neg: true, bid: "0.54898", ask: "0.54909", high: "0.55078", low: "0.54751", rating: "Neutral" },
+  { ticker: "AUDUSD", price: "0.69250", chg: "-0.32%", neg: true, bid: "0.69187", ask: "0.69191", high: "0.69569", low: "0.69015", rating: "Sell" },
+  { ticker: "CADAUD", price: "1.0441", chg: "+0.19%", neg: false, bid: "1.0454", ask: "1.0454", high: "1.0471", low: "1.0402", rating: "Buy" },
+  { ticker: "CADCHF", price: "0.57345", chg: "+0.04%", neg: false, bid: "0.57390", ask: "0.57398", high: "0.57400", low: "0.57225", rating: "Buy" },
+  { ticker: "EURUSD", price: "1.08240", chg: "+0.12%", neg: false, bid: "1.08220", ask: "1.08260", high: "1.08500", low: "1.07910", rating: "Buy" },
+  { ticker: "GBPUSD", price: "1.26610", chg: "-0.05%", neg: true, bid: "1.26590", ask: "1.26630", high: "1.26890", low: "1.26310", rating: "Neutral" },
+  { ticker: "USDJPY", price: "151.920", chg: "+0.19%", neg: false, bid: "151.900", ask: "151.940", high: "152.300", low: "151.500", rating: "Buy" },
+];
+
+function MarketDetailsView() {
+  const ratingColor = (r: string) =>
+    r === "Buy" ? "#60a5fa" : r === "Sell" ? "#ef4444" : "#9ca3af";
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
-        <p className="font-mono text-[11px] tracking-[0.12em] text-[var(--text-dim)]">LIVE WATCHLIST</p>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">
-          Real-time prices streamed from websocket live hooks.
-        </p>
+    <div>
+      {/* Ticker strip */}
+      <div
+        style={{
+          display: "flex",
+          gap: 18,
+          overflow: "auto",
+          paddingBottom: 8,
+          borderBottom: "1px solid #232834",
+          marginBottom: 14,
+        }}
+      >
+        {["BTC -2.66%", "ETH -4.44%", "S&P500 -0.38%", "US100 -0.68%"].map((t) => {
+          const neg = t.includes("-");
+          return (
+            <div key={t} style={{ whiteSpace: "nowrap", color: "#d6dae3", fontWeight: 700 }}>
+              {t.split(" ")[0]}{" "}
+              <span style={{ color: neg ? "#ef4444" : "#14b8a6" }}>{t.split(" ")[1]}</span>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-card)]">
-        <table className="w-full text-sm">
-          <thead className="border-b border-[var(--border)] bg-[var(--bg-elevated)] text-left font-mono text-xs text-[var(--text-dim)]">
-            <tr>
-              <th className="px-4 py-3">PAIR</th>
-              <th className="px-4 py-3">BID</th>
-              <th className="px-4 py-3">ASK</th>
-              <th className="px-4 py-3">SPREAD</th>
+      {/* Toolbar */}
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button style={{ background: "#0e1218", color: "#e8eaed", border: "1px solid #232834", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Overview</button>
+          <button style={{ background: "#0e1218", color: "#e8eaed", border: "1px solid #232834", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Major / Minor Pairs</button>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <select style={{ background: "#0e1218", color: "#e8eaed", border: "1px solid #232834", borderRadius: 10, padding: "9px 12px" }}>
+            <option>General</option>
+          </select>
+          <button style={{ background: "#0e1218", color: "#e8eaed", border: "1px solid #232834", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Filters</button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <table style={{ width: "100%", borderCollapse: "collapse", borderRadius: 12, overflow: "hidden" }}>
+        <thead>
+          <tr>
+            {["Ticker", "Price", "Chg %", "Bid", "Ask", "High", "Low", "Technical"].map((h) => (
+              <th key={h} style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330", textAlign: "left", color: "#95a0b0", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em", background: "#0c1016" }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {MARKET_MOCK.map((row) => (
+            <tr key={row.ticker}>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.ticker}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.price}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330", color: row.neg ? "#ef4444" : "#14b8a6" }}>{row.chg}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.bid}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.ask}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.high}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.low}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330", color: ratingColor(row.rating), fontWeight: 700 }}>
+                {row.rating}
+              </td>
             </tr>
-          </thead>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─── News view (matching prototype 2-col layout) ────────── */
+
+function NewsView() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 14 }}>
+      <div style={{ background: "#0b0f15", border: "1px solid #232834", borderRadius: 14, padding: 14 }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Top Stories</h3>
+        {[
+          { pair: "GBP/USD", text: "Pound ticks up as UK inflation lands steady at 3% in February." },
+          { pair: "USD/JPY", text: "Dollar chases ¥160.00 as FX markets reshuffle amid war jitters." },
+          { pair: "EUR/USD", text: "Euro tumbles as traders flock to greenback support levels." },
+          { pair: "USD/JPY", text: "Dollar pops above ¥153 after Japan's economy barely avoids recession." },
+        ].map((h, i) => (
+          <div key={i} style={{ padding: "12px 0", borderBottom: "1px solid #1d2330" }}>
+            <strong>{h.pair}:</strong> {h.text}
+          </div>
+        ))}
+      </div>
+      <div style={{ background: "#0b0f15", border: "1px solid #232834", borderRadius: 14, padding: 14 }}>
+        <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>News Lock</h3>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
-            {rows.slice(0, 20).map(([symbol, tick]) => {
-              const bid = Number(tick.bid ?? 0);
-              const ask = Number(tick.ask ?? 0);
-              const spread = ask > 0 && bid > 0 ? (ask - bid).toFixed(5) : "-";
-              return (
-                <tr key={symbol} className="border-b border-[var(--border)]/70 last:border-0">
-                  <td className="px-4 py-3 font-mono">{symbol}</td>
-                  <td className="px-4 py-3">{bid > 0 ? bid.toFixed(5) : "-"}</td>
-                  <td className="px-4 py-3">{ask > 0 ? ask.toFixed(5) : "-"}</td>
-                  <td className="px-4 py-3 text-[var(--text-muted)]">{spread}</td>
-                </tr>
-              );
-            })}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-[var(--text-muted)]">
-                  Waiting for live ticks...
-                </td>
-              </tr>
-            )}
+            {[
+              ["High impact", "Enabled"],
+              ["Lock before", "30 min"],
+              ["Lock after", "30 min"],
+            ].map(([k, v]) => (
+              <tr key={k}><td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{k}</td><td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{v}</td></tr>
+            ))}
+            <tr>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>Status</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330", color: "#ef4444", fontWeight: 700 }}>New trades blocked during window</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -328,8 +400,8 @@ function CrossRatesTab() {
 /* ─── Page ───────────────────────────────────────────────── */
 
 export default function MarketPage() {
-  const [mainTab, setMainTab] = useState("chart");
-  const [subTab, setSubTab] = useState("heatmap");
+  const [mainTab, setMainTab] = useState("market");
+  const [subTab, setSubTab] = useState("");
 
   const activeView = mainTab !== "" ? mainTab : subTab;
 
@@ -337,26 +409,20 @@ export default function MarketPage() {
   const handleSubTab = useCallback((id: string) => { setSubTab(id); setMainTab(""); }, []);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-bold">Market</h1>
-        <p className="font-mono text-xs text-[var(--text-muted)]">
-          Chart, calculator, news, calendar, heatmap, and cross rates.
-        </p>
-      </div>
-
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Primary tabs */}
-      <Tabs tabs={MAIN_TABS} activeTab={mainTab} onTabChange={handleMainTab}>
+      <Tabs tabs={MAIN_TABS} activeTab={mainTab} onTabChange={handleMainTab} columns={4}>
         <></>
       </Tabs>
 
       {/* Secondary tabs */}
-      <Tabs tabs={SUB_TABS} activeTab={subTab} onTabChange={handleSubTab}>
+      <Tabs tabs={SUB_TABS} activeTab={subTab} onTabChange={handleSubTab} columns={3}>
         <></>
       </Tabs>
 
-      {/* Content panels */}
-      <div className="min-h-[500px]">
+      {/* Content */}
+      <div style={{ background: "#05070a", border: "1px solid #1a1f2b", borderRadius: 16, padding: 14, minHeight: 500 }}>
+        {activeView === "market" && <MarketDetailsView />}
         {activeView === "chart" && (
           <TradingViewFrame
             title="TradingView Chart"
@@ -364,8 +430,7 @@ export default function MarketPage() {
           />
         )}
         {activeView === "lot" && <LotCalculatorTab />}
-        {activeView === "news" && <NewsScreen />}
-        {activeView === "watchlist" && <WatchlistTab />}
+        {activeView === "news" && <NewsView />}
         {activeView === "calendar" && (
           <TradingViewFrame
             title="Economic Calendar"

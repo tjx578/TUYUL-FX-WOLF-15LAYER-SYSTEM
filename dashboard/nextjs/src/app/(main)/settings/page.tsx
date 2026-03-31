@@ -9,9 +9,9 @@ import { useAuthStore } from "@/store/useAuthStore";
 
 function AuditPlaceholder() {
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-10 text-center">
-      <p className="font-mono text-[11px] tracking-[0.12em] text-[var(--text-dim)]">AUDIT LOG</p>
-      <p className="mx-auto mt-3 max-w-xl text-sm text-[var(--text-muted)]">
+    <div style={{ background: "#0b0f15", border: "1px solid #232834", borderRadius: 14, padding: 40, textAlign: "center" }}>
+      <p style={{ fontFamily: "monospace", fontSize: 11, letterSpacing: "0.12em", color: "#717886" }}>AUDIT LOG</p>
+      <p style={{ marginTop: 12, maxWidth: 520, marginInline: "auto", fontSize: 14, color: "#9aa3b2" }}>
         Full audit trail for privileged operations and system events.
       </p>
     </div>
@@ -27,35 +27,26 @@ export default function SettingsPage() {
 
   const tabs = useMemo<TabItem[]>(() => {
     const base: TabItem[] = [
-      { id: "general", label: "GENERAL" },
-      { id: "agents", label: "AGENTS" },
+      { id: "general", label: "General" },
+      { id: "agents", label: "Agents" },
     ];
     if (isAdmin) {
-      base.push({ id: "audit", label: "AUDIT" });
+      base.push({ id: "audit", label: "Audit Log" });
     }
     return base;
   }, [isAdmin]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold">Settings &amp; Operations</h1>
-        <p className="font-mono text-xs text-[var(--text-muted)]">
-          Configuration, agents, and role-gated audit access.
-        </p>
-      </div>
-
-      <Tabs tabs={tabs} activeTab={tab} onTabChange={setTab}>
-        <TabPanel id="general" activeTab={tab}>
-          <SettingsScreen />
-        </TabPanel>
-        <TabPanel id="agents" activeTab={tab}>
-          <AgentManagerScreen />
-        </TabPanel>
-        <TabPanel id="audit" activeTab={tab}>
-          {isAdmin ? <AuditPlaceholder /> : null}
-        </TabPanel>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Tabs tabs={tabs} activeTab={tab} onTabChange={setTab} columns={isAdmin ? 3 : 2}>
+        <></>
       </Tabs>
+
+      <div style={{ background: "#05070a", border: "1px solid #1a1f2b", borderRadius: 16, padding: 14, minHeight: 400 }}>
+        {tab === "general" && <SettingsScreen />}
+        {tab === "agents" && <AgentManagerScreen />}
+        {tab === "audit" && isAdmin && <AuditPlaceholder />}
+      </div>
     </div>
   );
 }

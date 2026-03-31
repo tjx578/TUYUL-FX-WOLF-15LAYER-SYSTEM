@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TabPanel, Tabs, type TabItem } from "@/components/ui/Tabs";
+import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { JournalScreen } from "@/features/journal/components/JournalScreen";
 import { TradesScreen } from "@/features/trades/components/TradesScreen";
 
@@ -14,9 +14,17 @@ const TABS: TabItem[] = [
 
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-10 text-center">
-      <p className="font-mono text-[11px] tracking-[0.12em] text-[var(--text-dim)]">{title}</p>
-      <p className="mx-auto mt-3 max-w-xl text-sm text-[var(--text-muted)]">{desc}</p>
+    <div
+      style={{
+        background: "#0b0f15",
+        border: "1px solid #232834",
+        borderRadius: 14,
+        padding: "40px 20px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ color: "#717886", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}>{title}</div>
+      <p style={{ color: "#9aa3b2", fontSize: 14, marginTop: 12, maxWidth: 500, marginInline: "auto" }}>{desc}</p>
     </div>
   );
 }
@@ -25,34 +33,35 @@ export default function TradesPage() {
   const [tab, setTab] = useState("active");
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold">Trades</h1>
-        <p className="font-mono text-xs text-[var(--text-muted)]">
-          Trade desk + journal + exposure in one workflow.
-        </p>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Tabs tabs={TABS} activeTab={tab} onTabChange={setTab} columns={4}>
+        <></>
+      </Tabs>
 
-      <Tabs tabs={TABS} activeTab={tab} onTabChange={setTab}>
-        <TabPanel id="active" activeTab={tab}>
-          <TradesScreen />
-        </TabPanel>
-        <TabPanel id="history" activeTab={tab}>
+      <div
+        style={{
+          background: "#05070a",
+          border: "1px solid #1a1f2b",
+          borderRadius: 16,
+          padding: 14,
+          minHeight: 540,
+        }}
+      >
+        {tab === "active" && <TradesScreen />}
+        {tab === "history" && (
           <Placeholder
             title="TRADE HISTORY"
             desc="Closed trades with sorting, filters, and execution metadata."
           />
-        </TabPanel>
-        <TabPanel id="journal" activeTab={tab}>
-          <JournalScreen />
-        </TabPanel>
-        <TabPanel id="exposure" activeTab={tab}>
+        )}
+        {tab === "journal" && <JournalScreen />}
+        {tab === "exposure" && (
           <Placeholder
             title="EXPOSURE SUMMARY"
             desc="Net long/short and concentration by pair and account."
           />
-        </TabPanel>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 }

@@ -6,9 +6,9 @@ import AuthBootstrap from "@/components/auth/AuthBootstrap";
 import LivePipelineProvider from "@/components/LivePipelineProvider";
 import ComplianceBanner from "@/components/feedback/ComplianceBanner";
 import DegradationBanner from "@/components/feedback/DegradationBanner";
-import Header from "@/components/layout/Header";
 import WorkspaceManager from "@/components/layout/WorkspaceManager";
 import { SidebarV2 } from "@/components/layout/SidebarV2";
+import { Topbar } from "@/components/layout/Topbar";
 import RouteTransition from "@/components/layout/RouteTransition";
 
 interface Props extends PropsWithChildren {
@@ -20,18 +20,17 @@ export default function DashboardShell({ user, children }: Props) {
         <>
             <AuthBootstrap user={user} />
             <LivePipelineProvider />
-            <div className="relative z-10 flex min-h-screen">
+            <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", minHeight: "100vh" }}>
                 <SidebarV2 />
                 <main
-                    className="flex-1 overflow-auto"
                     style={{
-                        marginLeft: "var(--sidebar-w)",
+                        marginLeft: 240,
+                        padding: 16,
+                        background: "linear-gradient(180deg, #0a0b0d, #0d1016 40%, #0a0b0d)",
                         minHeight: "100vh",
-                        padding: "32px 40px",
-                        background: "#000000",
                     }}
                 >
-                    <Header />
+                    <Topbar />
                     <DegradationBanner />
                     <ComplianceBanner />
                     <RouteTransition>{children}</RouteTransition>

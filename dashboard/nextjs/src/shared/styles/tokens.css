@@ -1,61 +1,61 @@
 /* ============================================================
    WOLF-15 TERMINAL — DESIGN TOKENS
-   Institutional dark trading terminal
-   Colors: 5 — #080C14 bg / #0E1420 panel / #1A6EFF blue /
-           #00E676 green / #FF3D57 red
+   Gold-accent dark trading terminal (matching HTML prototype)
+   Colors: #0a0b0d bg / #11141b panel / #d8b35d gold /
+           #22c55e green / #ef4444 red
    ============================================================ */
 
 :root {
   /* ── BACKGROUNDS ── */
-  --bg-base:      #080c14;
-  --bg-panel:     #0e1420;
-  --bg-card:      #121922;
-  --bg-elevated:  #161e28;
-  --bg-hover:     #1a2230;
-  --bg-border:    #1e2a3a;
-  --bg-overlay:   rgba(8, 12, 20, 0.90);
+  --bg-base:      #0a0b0d;
+  --bg-panel:     #11141b;
+  --bg-card:      #0b0f15;
+  --bg-elevated:  #171c25;
+  --bg-hover:     #1a1f2b;
+  --bg-border:    #232834;
+  --bg-overlay:   rgba(10, 11, 13, 0.90);
 
-  /* ── ACCENT — ELECTRIC BLUE ── */
-  --accent:       #1a6eff;
-  --accent-dim:   #1255cc;
-  --accent-glow:  rgba(26, 110, 255, 0.20);
-  --accent-muted: rgba(26, 110, 255, 0.10);
+  /* ── ACCENT — WOLF GOLD (primary accent) ── */
+  --accent:       #d8b35d;
+  --accent-dim:   #8b6a22;
+  --accent-glow:  rgba(216, 179, 93, 0.20);
+  --accent-muted: rgba(216, 179, 93, 0.10);
 
-  /* ── WOLF GOLD (secondary accent — alerts, badges only) ── */
-  --gold:         #f5a623;
-  --gold-dim:     #c17d13;
-  --gold-glow:    rgba(245, 166, 35, 0.18);
-  --gold-muted:   rgba(245, 166, 35, 0.10);
+  /* ── WOLF GOLD (kept for backward compat) ── */
+  --gold:         #d8b35d;
+  --gold-dim:     #8b6a22;
+  --gold-glow:    rgba(216, 179, 93, 0.18);
+  --gold-muted:   rgba(216, 179, 93, 0.10);
 
   /* ── STATUS COLORS ── */
-  --green:        #00e676;
-  --green-dim:    #00994d;
-  --green-glow:   rgba(0, 230, 118, 0.15);
-  --red:          #ff3d57;
-  --red-dim:      #cc0026;
-  --red-glow:     rgba(255, 61, 87, 0.15);
+  --green:        #22c55e;
+  --green-dim:    #15803d;
+  --green-glow:   rgba(34, 197, 94, 0.15);
+  --red:          #ef4444;
+  --red-dim:      #b91c1c;
+  --red-glow:     rgba(239, 68, 68, 0.15);
   --yellow:       #ffd740;
   --yellow-glow:  rgba(255, 215, 64, 0.13);
-  --blue:         var(--accent);
-  --blue-glow:    var(--accent-glow);
+  --blue:         #60a5fa;
+  --blue-glow:    rgba(96, 165, 250, 0.15);
   --cyan:         #00d4ff;
   --cyan-glow:    rgba(0, 212, 255, 0.15);
   --purple:       #b040fb;
-  --teal:         #00b8a9;
+  --teal:         #14b8a6;
 
   /* ── TEXT ── */
-  --text-primary:   rgba(225, 232, 242, 0.96);
-  --text-secondary: rgba(118, 148, 178, 0.92);
-  --text-muted:     rgba(70, 95, 120, 0.90);
-  --text-faint:     rgba(70, 95, 120, 0.50);
+  --text-primary:   #e8eaed;
+  --text-secondary: #9aa3b2;
+  --text-muted:     #717886;
+  --text-faint:     rgba(113, 120, 134, 0.50);
 
   /* ── BORDERS ── */
-  --border-default: rgba(30, 42, 58, 0.95);
+  --border-default: #232834;
   --border-subtle:  rgba(255, 255, 255, 0.04);
   --border-strong:  rgba(255, 255, 255, 0.10);
-  --border-accent:  rgba(26, 110, 255, 0.35);
-  --border-danger:  rgba(255, 61, 87, 0.28);
-  --border-success: rgba(0, 230, 118, 0.28);
+  --border-accent:  rgba(216, 179, 93, 0.35);
+  --border-danger:  rgba(239, 68, 68, 0.28);
+  --border-success: rgba(34, 197, 94, 0.28);
   --border-warn:    rgba(255, 215, 64, 0.25);
 
   /* ── TYPOGRAPHY ── */
@@ -64,7 +64,7 @@
   --font-mono:    "Share Tech Mono", "Space Mono", monospace;
 
   /* ── LAYOUT ── */
-  --sidebar-w:    220px;
+  --sidebar-w:    240px;
   --header-h:     52px;
   --radius-sm:    5px;
   --radius-md:    8px;

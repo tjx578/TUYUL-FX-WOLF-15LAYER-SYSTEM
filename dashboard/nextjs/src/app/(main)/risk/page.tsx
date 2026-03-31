@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { TabPanel, Tabs, type TabItem } from "@/components/ui/Tabs";
+import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { AccountsScreen } from "@/features/accounts/components/AccountsScreen";
 import { PropFirmScreen } from "@/features/prop-firm/components/PropFirmScreen";
 import { RiskScreen } from "@/features/risk/components/RiskScreen";
 
 const TABS: TabItem[] = [
-  { id: "overview", label: "OVERVIEW" },
+  { id: "overview", label: "RISK MONITOR" },
   { id: "accounts", label: "ACCOUNTS" },
   { id: "compliance", label: "COMPLIANCE" },
 ];
@@ -16,25 +16,24 @@ export default function RiskPage() {
   const [tab, setTab] = useState("overview");
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold">Risk &amp; Compliance</h1>
-        <p className="font-mono text-xs text-[var(--text-muted)]">
-          Drawdown, account health, and prop-firm compliance in one route.
-        </p>
-      </div>
-
-      <Tabs tabs={TABS} activeTab={tab} onTabChange={setTab}>
-        <TabPanel id="overview" activeTab={tab}>
-          <RiskScreen />
-        </TabPanel>
-        <TabPanel id="accounts" activeTab={tab}>
-          <AccountsScreen />
-        </TabPanel>
-        <TabPanel id="compliance" activeTab={tab}>
-          <PropFirmScreen />
-        </TabPanel>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Tabs tabs={TABS} activeTab={tab} onTabChange={setTab} columns={3}>
+        <></>
       </Tabs>
+
+      <div
+        style={{
+          background: "#05070a",
+          border: "1px solid #1a1f2b",
+          borderRadius: 16,
+          padding: 14,
+          minHeight: 540,
+        }}
+      >
+        {tab === "overview" && <RiskScreen />}
+        {tab === "accounts" && <AccountsScreen />}
+        {tab === "compliance" && <PropFirmScreen />}
+      </div>
     </div>
   );
 }
