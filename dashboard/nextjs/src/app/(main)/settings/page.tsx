@@ -9,9 +9,9 @@ import { useAuthStore } from "@/store/useAuthStore";
 
 function AuditPlaceholder() {
   return (
-    <div style={{ background: "#0b0f15", border: "1px solid #232834", borderRadius: 14, padding: 40, textAlign: "center" }}>
+    <div style={{ background: "#1A1C1F", border: "1px solid #2E333B", borderRadius: 14, padding: 40, textAlign: "center" }}>
       <p style={{ fontFamily: "monospace", fontSize: 11, letterSpacing: "0.12em", color: "#717886" }}>AUDIT LOG</p>
-      <p style={{ marginTop: 12, maxWidth: 520, marginInline: "auto", fontSize: 14, color: "#9aa3b2" }}>
+      <p style={{ marginTop: 12, maxWidth: 520, marginInline: "auto", fontSize: 14, color: "#A4ACB9" }}>
         Full audit trail for privileged operations and system events.
       </p>
     </div>
@@ -42,7 +42,7 @@ export default function SettingsPage() {
         <></>
       </Tabs>
 
-      <div style={{ background: "#05070a", border: "1px solid #1a1f2b", borderRadius: 16, padding: 14, minHeight: 400 }}>
+      <div style={{ background: "#0A0B0D", border: "1px solid #1A1C1F", borderRadius: 16, padding: 14, minHeight: 400 }}>
         {tab === "general" && <SettingsScreen />}
         {tab === "agents" && <AgentManagerScreen />}
         {tab === "audit" && isAdmin && <AuditPlaceholder />}

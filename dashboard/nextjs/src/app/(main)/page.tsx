@@ -6,14 +6,14 @@ function StatCard({ label, value, color }: { label: string; value: string; color
   return (
     <div
       style={{
-        background: "#171c25",
-        border: "1px solid #232834",
+        background: "#1A1C1F",
+        border: "1px solid #2E333B",
         borderRadius: 14,
         padding: 16,
       }}
     >
-      <div style={{ color: "#9aa3b2", fontSize: 12, textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, marginTop: 8, color: color ?? "#e8eaed" }}>{value}</div>
+      <div style={{ color: "#A4ACB9", fontSize: 12, textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, marginTop: 8, color: color ?? "#F5F7FA" }}>{value}</div>
     </div>
   );
 }
@@ -22,8 +22,8 @@ function ChartPlaceholder({ title }: { title: string }) {
   return (
     <div
       style={{
-        background: "#0b0f15",
-        border: "1px solid #232834",
+        background: "#1A1C1F",
+        border: "1px solid #2E333B",
         borderRadius: 14,
         padding: 16,
       }}
@@ -33,11 +33,11 @@ function ChartPlaceholder({ title }: { title: string }) {
         style={{
           height: 320,
           borderRadius: 14,
-          border: "1px solid #232834",
+          border: "1px solid #2E333B",
           background:
             "linear-gradient(to right, transparent 0 9.5%, rgba(255,255,255,.05) 9.5% 10%), linear-gradient(to bottom, transparent 0 19.5%, rgba(255,255,255,.05) 19.5% 20%)",
           backgroundSize: "10% 100%, 100% 20%",
-          backgroundColor: "#0a0d12",
+          backgroundColor: "#0A0B0D",
           position: "relative",
           overflow: "hidden",
         }}
@@ -49,7 +49,7 @@ function ChartPlaceholder({ title }: { title: string }) {
         >
           <polyline
             fill="none"
-            stroke="#d8b35d"
+            stroke="#C7FF1A"
             strokeWidth="0.5"
             points="0,45 5,54 10,49 15,60 20,55 25,58 30,53 35,48 40,50 45,43 50,38 55,40 60,34 65,30 70,28 75,36 80,32 85,29 90,35 95,40 100,37"
           />
@@ -113,15 +113,15 @@ export default function DashboardPage() {
           <div
             key={card.title}
             style={{
-              background: "#0b0f15",
-              border: "1px solid #232834",
+              background: "#1A1C1F",
+              border: "1px solid #2E333B",
               borderRadius: 14,
               padding: 16,
               minHeight: 130,
             }}
           >
             <h4 style={{ margin: "0 0 10px", fontWeight: 700 }}>{card.title}</h4>
-            <div style={{ color: "#9aa3b2" }}>{card.desc}</div>
+            <div style={{ color: "#A4ACB9" }}>{card.desc}</div>
           </div>
         ))}
       </div>

@@ -22,7 +22,7 @@ const SUB_TABS: TabItem[] = [
 
 function TradingViewFrame({ src, title, height = 560 }: { src: string; title: string; height?: number }) {
   return (
-    <div style={{ overflow: "hidden", borderRadius: 12, border: "1px solid #232834", background: "#0b0f15" }}>
+    <div style={{ overflow: "hidden", borderRadius: 12, border: "1px solid #2E333B", background: "#1A1C1F" }}>
       <iframe
         src={src}
         title={title}
@@ -60,14 +60,14 @@ function MarketDetailsView() {
           gap: 18,
           overflow: "auto",
           paddingBottom: 8,
-          borderBottom: "1px solid #232834",
+          borderBottom: "1px solid #2E333B",
           marginBottom: 14,
         }}
       >
         {["BTC -2.66%", "ETH -4.44%", "S&P500 -0.38%", "US100 -0.68%"].map((t) => {
           const neg = t.includes("-");
           return (
-            <div key={t} style={{ whiteSpace: "nowrap", color: "#d6dae3", fontWeight: 700 }}>
+              <div key={t} style={{ whiteSpace: "nowrap", color: "#F5F7FA", fontWeight: 700 }}>
               {t.split(" ")[0]}{" "}
               <span style={{ color: neg ? "#ef4444" : "#14b8a6" }}>{t.split(" ")[1]}</span>
             </div>
@@ -78,14 +78,14 @@ function MarketDetailsView() {
       {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 8 }}>
-          <button style={{ background: "#0e1218", color: "#e8eaed", border: "1px solid #232834", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Overview</button>
-          <button style={{ background: "#0e1218", color: "#e8eaed", border: "1px solid #232834", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Major / Minor Pairs</button>
+          <button style={{ background: "#1A1C1F", color: "#F5F7FA", border: "1px solid #2E333B", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Overview</button>
+          <button style={{ background: "#1A1C1F", color: "#F5F7FA", border: "1px solid #2E333B", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Major / Minor Pairs</button>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <select style={{ background: "#0e1218", color: "#e8eaed", border: "1px solid #232834", borderRadius: 10, padding: "9px 12px" }}>
+          <select style={{ background: "#1A1C1F", color: "#F5F7FA", border: "1px solid #2E333B", borderRadius: 10, padding: "9px 12px" }}>
             <option>General</option>
           </select>
-          <button style={{ background: "#0e1218", color: "#e8eaed", border: "1px solid #232834", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Filters</button>
+          <button style={{ background: "#1A1C1F", color: "#F5F7FA", border: "1px solid #2E333B", borderRadius: 10, padding: "9px 12px", cursor: "pointer" }}>Filters</button>
         </div>
       </div>
 
@@ -94,7 +94,7 @@ function MarketDetailsView() {
         <thead>
           <tr>
             {["Ticker", "Price", "Chg %", "Bid", "Ask", "High", "Low", "Technical"].map((h) => (
-              <th key={h} style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330", textAlign: "left", color: "#95a0b0", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em", background: "#0c1016" }}>
+              <th key={h} style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B", textAlign: "left", color: "#A4ACB9", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.06em", background: "#1A1C1F" }}>
                 {h}
               </th>
             ))}
@@ -103,14 +103,14 @@ function MarketDetailsView() {
         <tbody>
           {MARKET_MOCK.map((row) => (
             <tr key={row.ticker}>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.ticker}</td>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.price}</td>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330", color: row.neg ? "#ef4444" : "#14b8a6" }}>{row.chg}</td>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.bid}</td>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.ask}</td>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.high}</td>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{row.low}</td>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330", color: ratingColor(row.rating), fontWeight: 700 }}>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.ticker}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.price}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B", color: row.neg ? "#ef4444" : "#14b8a6" }}>{row.chg}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.bid}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.ask}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.high}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.low}</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B", color: ratingColor(row.rating), fontWeight: 700 }}>
                 {row.rating}
               </td>
             </tr>
@@ -126,7 +126,7 @@ function MarketDetailsView() {
 function NewsView() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 14 }}>
-      <div style={{ background: "#0b0f15", border: "1px solid #232834", borderRadius: 14, padding: 14 }}>
+      <div style={{ background: "#1A1C1F", border: "1px solid #2E333B", borderRadius: 14, padding: 14 }}>
         <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Top Stories</h3>
         {[
           { pair: "GBP/USD", text: "Pound ticks up as UK inflation lands steady at 3% in February." },
@@ -134,12 +134,12 @@ function NewsView() {
           { pair: "EUR/USD", text: "Euro tumbles as traders flock to greenback support levels." },
           { pair: "USD/JPY", text: "Dollar pops above ¥153 after Japan's economy barely avoids recession." },
         ].map((h, i) => (
-          <div key={i} style={{ padding: "12px 0", borderBottom: "1px solid #1d2330" }}>
+          <div key={i} style={{ padding: "12px 0", borderBottom: "1px solid #2E333B" }}>
             <strong>{h.pair}:</strong> {h.text}
           </div>
         ))}
       </div>
-      <div style={{ background: "#0b0f15", border: "1px solid #232834", borderRadius: 14, padding: 14 }}>
+      <div style={{ background: "#1A1C1F", border: "1px solid #2E333B", borderRadius: 14, padding: 14 }}>
         <h3 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>News Lock</h3>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
@@ -148,11 +148,11 @@ function NewsView() {
               ["Lock before", "30 min"],
               ["Lock after", "30 min"],
             ].map(([k, v]) => (
-              <tr key={k}><td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{k}</td><td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>{v}</td></tr>
+              <tr key={k}><td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{k}</td><td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{v}</td></tr>
             ))}
             <tr>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330" }}>Status</td>
-              <td style={{ padding: "12px 10px", borderBottom: "1px solid #1d2330", color: "#ef4444", fontWeight: 700 }}>New trades blocked during window</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>Status</td>
+              <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B", color: "#ef4444", fontWeight: 700 }}>New trades blocked during window</td>
             </tr>
           </tbody>
         </table>
@@ -236,19 +236,19 @@ function LotCalculatorTab() {
       {/* Right: Result */}
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-[var(--border)] bg-[#171c25] p-4">
+          <div className="rounded-xl border border-[var(--border)] bg-[#1A1C1F] p-4">
             <div className="text-xs text-[var(--text-muted)] uppercase font-mono">Lot Size</div>
             <div className="mt-2 text-2xl font-extrabold">{calc.lotSize.toFixed(2)}</div>
           </div>
-          <div className="rounded-xl border border-[var(--border)] bg-[#171c25] p-4">
+          <div className="rounded-xl border border-[var(--border)] bg-[#1A1C1F] p-4">
             <div className="text-xs text-[var(--text-muted)] uppercase font-mono">Risk Amount</div>
             <div className="mt-2 text-2xl font-extrabold">${calc.riskAmount.toFixed(0)}</div>
           </div>
-          <div className="rounded-xl border border-[var(--border)] bg-[#171c25] p-4">
+          <div className="rounded-xl border border-[var(--border)] bg-[#1A1C1F] p-4">
             <div className="text-xs text-[var(--text-muted)] uppercase font-mono">SL Pips</div>
             <div className="mt-2 text-2xl font-extrabold">{calc.slPips.toFixed(1)}</div>
           </div>
-          <div className="rounded-xl border border-[var(--border)] bg-[#171c25] p-4">
+          <div className="rounded-xl border border-[var(--border)] bg-[#1A1C1F] p-4">
             <div className="text-xs text-[var(--text-muted)] uppercase font-mono">Direction</div>
             <div className={`mt-2 text-2xl font-extrabold ${calc.direction === "BUY" ? "text-[#22c55e]" : "text-[#ef4444]"}`}>{calc.direction}</div>
           </div>
@@ -421,7 +421,7 @@ export default function MarketPage() {
       </Tabs>
 
       {/* Content */}
-      <div style={{ background: "#05070a", border: "1px solid #1a1f2b", borderRadius: 16, padding: 14, minHeight: 500 }}>
+      <div style={{ background: "#0A0B0D", border: "1px solid #1A1C1F", borderRadius: 16, padding: 14, minHeight: 500 }}>
         {activeView === "market" && <MarketDetailsView />}
         {activeView === "chart" && (
           <TradingViewFrame

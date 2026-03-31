@@ -23,8 +23,8 @@ export default function RiskPage() {
 
       <div
         style={{
-          background: "#05070a",
-          border: "1px solid #1a1f2b",
+          background: "#0A0B0D",
+          border: "1px solid #1A1C1F",
           borderRadius: 16,
           padding: 14,
           minHeight: 540,

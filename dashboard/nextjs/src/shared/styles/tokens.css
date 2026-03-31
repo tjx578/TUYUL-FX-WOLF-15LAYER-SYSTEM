@@ -1,27 +1,29 @@
 /* ============================================================
    WOLF-15 TERMINAL — DESIGN TOKENS
-   Gold-accent dark trading terminal (matching HTML prototype)
-   Colors: #0a0b0d bg / #11141b panel / #d8b35d gold /
+   Lime-neon accent dark trading terminal
+   Colors: #0A0B0D bg / #1A1C1F panel / #C7FF1A lime /
            #22c55e green / #ef4444 red
    ============================================================ */
 
 :root {
   /* ── BACKGROUNDS ── */
-  --bg-base:      #0a0b0d;
-  --bg-panel:     #11141b;
-  --bg-card:      #0b0f15;
-  --bg-elevated:  #171c25;
-  --bg-hover:     #1a1f2b;
-  --bg-border:    #232834;
+  --bg-base:      #0A0B0D;
+  --bg-sidebar:   #070809;
+  --bg-panel:     #1A1C1F;
+  --bg-card:      #22252A;
+  --bg-elevated:  #22252A;
+  --bg-hover:     #2A2E35;
+  --bg-border:    #2E333B;
   --bg-overlay:   rgba(10, 11, 13, 0.90);
 
-  /* ── ACCENT — WOLF GOLD (primary accent) ── */
-  --accent:       #d8b35d;
-  --accent-dim:   #8b6a22;
-  --accent-glow:  rgba(216, 179, 93, 0.20);
-  --accent-muted: rgba(216, 179, 93, 0.10);
+  /* ── ACCENT — LIME NEON (primary accent) ── */
+  --accent:       #C7FF1A;
+  --accent-dim:   #7DA310;
+  --accent-glow:  rgba(199, 255, 26, 0.20);
+  --accent-muted: rgba(199, 255, 26, 0.10);
+  --accent-soft:  rgba(199, 255, 26, 0.14);
 
-  /* ── WOLF GOLD (kept for backward compat) ── */
+  /* ── GOLD (demoted to secondary — legacy compat) ── */
   --gold:         #d8b35d;
   --gold-dim:     #8b6a22;
   --gold-glow:    rgba(216, 179, 93, 0.18);
@@ -44,16 +46,16 @@
   --teal:         #14b8a6;
 
   /* ── TEXT ── */
-  --text-primary:   #e8eaed;
-  --text-secondary: #9aa3b2;
+  --text-primary:   #F5F7FA;
+  --text-secondary: #A4ACB9;
   --text-muted:     #717886;
   --text-faint:     rgba(113, 120, 134, 0.50);
 
   /* ── BORDERS ── */
-  --border-default: #232834;
+  --border-default: #2E333B;
   --border-subtle:  rgba(255, 255, 255, 0.04);
   --border-strong:  rgba(255, 255, 255, 0.10);
-  --border-accent:  rgba(216, 179, 93, 0.35);
+  --border-accent:  rgba(199, 255, 26, 0.35);
   --border-danger:  rgba(239, 68, 68, 0.28);
   --border-success: rgba(34, 197, 94, 0.28);
   --border-warn:    rgba(255, 215, 64, 0.25);
@@ -88,34 +90,35 @@
 
   /* ── EXTRA TEXT LEVELS ── */
   --text-bright:   rgba(255, 255, 255, 0.97); /* t0 — max-brightness hero text */
-  --text-tertiary: rgba(118, 148, 178, 0.70); /* t3 — between secondary and muted */
+  --text-tertiary: rgba(164, 172, 185, 0.70); /* t3 — between secondary and muted */
 
   /* ── SEMANTIC COLOR ALIASES ── */
-  /* Bridge verbose names used in lib/tokens.ts to canonical status vars above */
   --accent-red:     var(--red);
   --accent-amber:   var(--yellow);
   --accent-emerald: var(--green);
   --accent-cyan:    var(--cyan);
   --accent-teal:    var(--teal);
-  --accent-blue:    var(--accent);
+  --accent-blue:    var(--blue);
+  --accent-lime:    var(--accent);
   --accent-gold:    var(--gold);
   --accent-purple:  var(--purple);
   --accent-violet:  #8b5cf6;
 
   /* ── GLOW FILL SURFACES (~7% opacity — subtle background tints) ── */
-  /* Distinct from --*-glow vars above (which are ~15% for borders/shadows) */
   --glow-surface-red:   rgba(255,  61,  87, 0.07);
   --glow-surface-green: rgba(  0, 230, 118, 0.07);
   --glow-surface-amber: rgba(255, 215,  64, 0.07);
   --glow-surface-cyan:  rgba(  0, 212, 255, 0.07);
-  --glow-surface-gold:  rgba(245, 166,  35, 0.07);
+  --glow-surface-lime:  rgba(199, 255,  26, 0.07);
+  --glow-surface-gold:  rgba(216, 179,  93, 0.07);
 
   /* ── DIM BORDER TINTS (~20% opacity) ── */
   --border-dim-red:   rgba(255,  61,  87, 0.20);
   --border-dim-green: rgba(  0, 230, 118, 0.20);
   --border-dim-amber: rgba(255, 215,  64, 0.20);
   --border-dim-cyan:  rgba(  0, 212, 255, 0.20);
-  --border-dim-gold:  rgba(245, 166,  35, 0.20);
+  --border-dim-lime:  rgba(199, 255,  26, 0.20);
+  --border-dim-gold:  rgba(216, 179,  93, 0.20);
 }
 
 /* ── TAILWIND v4 THEME TOKENS ── */
@@ -132,6 +135,7 @@
 
   /* Accent colors */
   --color-accent:         var(--accent);
+  --color-accent-lime:    var(--accent);
   --color-accent-gold:    var(--gold);
   --color-accent-cyan:    var(--cyan);
   --color-accent-emerald: var(--green);
@@ -155,5 +159,6 @@
   /* Box shadows (glow effects) */
   --shadow-glow-cyan:    0 0 24px rgba(0, 212, 255, 0.15);
   --shadow-glow-emerald: 0 0 24px rgba(0, 230, 118, 0.15);
+  --shadow-glow-lime:    0 0 24px rgba(199, 255, 26, 0.18);
   --shadow-glow-orange:  0 0 24px rgba(245, 166, 35, 0.18);
 }

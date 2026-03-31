@@ -45,14 +45,14 @@
   border-radius: 8px;
   background: var(--accent);
   flex-shrink: 0;
-  box-shadow: 0 0 16px rgba(26, 110, 255, 0.45);
+  box-shadow: 0 0 16px rgba(199, 255, 26, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 800;
-  color: #fff;
+  color: #0A0B0D;
   letter-spacing: -0.02em;
 }
 .sidebar-logo-name {
@@ -91,14 +91,13 @@
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.16em;
-  color: rgba(120, 190, 255, 0.95);
+  color: rgba(199, 255, 26, 0.90);
   padding: 10px 8px 5px;
   text-transform: uppercase;
   text-shadow:
-    0 0 4px rgba(26, 110, 255, 1),
-    0 0 10px rgba(26, 110, 255, 0.85),
-    0 0 22px rgba(26, 110, 255, 0.60),
-    0 0 40px rgba(26, 110, 255, 0.30),
+    0 0 4px rgba(199, 255, 26, 0.80),
+    0 0 10px rgba(199, 255, 26, 0.50),
+    0 0 22px rgba(199, 255, 26, 0.30),
     0 2px 6px rgba(0, 0, 0, 0.90);
   position: relative;
   display: inline-block;
@@ -115,14 +114,14 @@
   background: linear-gradient(
     to right,
     transparent,
-    rgba(26, 110, 255, 0.70) 20%,
-    rgba(26, 110, 255, 0.90) 50%,
-    rgba(26, 110, 255, 0.70) 80%,
+    rgba(199, 255, 26, 0.50) 20%,
+    rgba(199, 255, 26, 0.70) 50%,
+    rgba(199, 255, 26, 0.50) 80%,
     transparent
   );
   box-shadow:
-    0 0 6px rgba(26, 110, 255, 0.80),
-    0 0 14px rgba(26, 110, 255, 0.50);
+    0 0 6px rgba(199, 255, 26, 0.50),
+    0 0 14px rgba(199, 255, 26, 0.25);
 }
 .sidebar-link {
   display: flex;
@@ -147,12 +146,12 @@
 }
 .sidebar-link--active {
   background: var(--accent);
-  color: #ffffff;
+  color: #0A0B0D;
   font-weight: 600;
 }
 .sidebar-link--active:hover {
-  background: #2e7fff;
-  color: #ffffff;
+  background: #b3e617;
+  color: #0A0B0D;
 }
 .sidebar-badge-count {
   margin-left: auto;

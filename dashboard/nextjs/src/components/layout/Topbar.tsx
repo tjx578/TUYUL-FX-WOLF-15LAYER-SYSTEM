@@ -32,9 +32,9 @@ export function Topbar() {
         justifyContent: "space-between",
         alignItems: "center",
         gap: 12,
-        background: "linear-gradient(90deg, #10131a, #0d1016)",
-        border: "1px solid #232834",
-        borderRadius: 16,
+        background: "#0A0B0D",
+        border: "1px solid #2E333B",
+        borderRadius: 14,
         padding: "14px 18px",
         marginBottom: 14,
       }}
@@ -43,18 +43,18 @@ export function Topbar() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700 }}>
         <span>▣</span>
         <span>{label}</span>
-        <span style={{ color: "#9aa3b2" }}>/ Wolf-15 Dashboard</span>
+        <span style={{ color: "#A4ACB9" }}>/ Wolf-15 Dashboard</span>
       </div>
 
       {/* Badges */}
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <div
           style={{
-            border: "1px solid #232834",
-            background: "#0b0f15",
+            border: "1px solid #2E333B",
+            background: "#1A1C1F",
             borderRadius: 10,
             padding: "8px 10px",
-            color: wsConnected ? "#22c55e" : "#9aa3b2",
+            color: wsConnected ? "#22c55e" : "#A4ACB9",
             fontSize: 12,
             fontWeight: 600,
           }}
@@ -63,11 +63,11 @@ export function Topbar() {
         </div>
         <div
           style={{
-            border: "1px solid #232834",
-            background: "#0b0f15",
+            border: "1px solid #2E333B",
+            background: "#1A1C1F",
             borderRadius: 10,
             padding: "8px 10px",
-            color: complianceState === "OK" ? "#22c55e" : "#9aa3b2",
+            color: complianceState === "OK" ? "#22c55e" : "#A4ACB9",
             fontSize: 12,
             fontWeight: 600,
           }}
@@ -76,11 +76,11 @@ export function Topbar() {
         </div>
         <div
           style={{
-            border: "1px solid #232834",
-            background: "#0b0f15",
+            border: "1px solid #2E333B",
+            background: "#1A1C1F",
             borderRadius: 10,
             padding: "8px 10px",
-            color: "#9aa3b2",
+            color: "#A4ACB9",
             fontSize: 12,
             fontWeight: 600,
           }}

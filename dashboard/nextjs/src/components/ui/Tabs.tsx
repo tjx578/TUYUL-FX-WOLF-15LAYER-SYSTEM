@@ -38,10 +38,10 @@ export function Tabs({ tabs, activeTab, onTabChange, children, columns }: TabsPr
               onClick={() => onTabChange(tab.id)}
               style={{
                 background: active
-                  ? "linear-gradient(180deg, rgba(216,179,93,0.24), rgba(216,179,93,0.12))"
-                  : "#05070a",
-                color: active ? "#f1d089" : "#9ba5b5",
-                border: `1px solid ${active ? "rgba(216,179,93,0.4)" : "#171c25"}`,
+                  ? "linear-gradient(180deg, rgba(199,255,26,0.18), rgba(199,255,26,0.08))"
+                  : "#0A0B0D",
+                color: active ? "#C7FF1A" : "#A4ACB9",
+                border: `1px solid ${active ? "rgba(199,255,26,0.35)" : "#1A1C1F"}`,
                 borderRadius: 14,
                 padding: 14,
                 textAlign: "center",
@@ -50,7 +50,7 @@ export function Tabs({ tabs, activeTab, onTabChange, children, columns }: TabsPr
                 textTransform: "uppercase",
                 letterSpacing: "0.03em",
                 fontSize: 13,
-                boxShadow: active ? "inset 0 0 0 1px rgba(255,221,146,0.08)" : "none",
+                boxShadow: active ? "inset 0 0 0 1px rgba(199,255,26,0.06)" : "none",
               }}
             >
               {tab.icon && <span style={{ marginRight: 8 }}>{tab.icon}</span>}

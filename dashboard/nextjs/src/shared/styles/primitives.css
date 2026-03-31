@@ -94,8 +94,8 @@ html, body {
 }
 .btn:disabled { opacity: 0.38; cursor: not-allowed; }
 
-.btn-primary  { background: var(--accent); color: #fff; border: 1px solid var(--accent-dim); }
-.btn-primary:hover:not(:disabled) { background: #2e7fff; box-shadow: 0 0 18px var(--accent-glow); }
+.btn-primary  { background: var(--accent); color: #0A0B0D; border: 1px solid var(--accent-dim); }
+.btn-primary:hover:not(:disabled) { background: #b3e617; box-shadow: 0 0 18px var(--accent-glow); }
 
 .btn-take     { background: var(--green-glow); color: var(--green); border: 1px solid var(--border-success); }
 .btn-take:hover:not(:disabled) { background: rgba(0,230,118,0.24); box-shadow: 0 0 10px var(--green-glow); }
@@ -190,7 +190,8 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
 }
 
 /* ─── GLOW UTILITIES ─── */
-.glow-gold   { box-shadow: 0 0 32px var(--accent-glow); }
+.glow-lime   { box-shadow: 0 0 32px var(--accent-glow); }
+.glow-gold   { box-shadow: 0 0 32px var(--gold-glow); }
 .glow-green  { box-shadow: 0 0 32px var(--green-glow); }
 .glow-red    { box-shadow: 0 0 32px var(--red-glow); }
 .glow-cyan   { box-shadow: 0 0 32px var(--cyan-glow); }

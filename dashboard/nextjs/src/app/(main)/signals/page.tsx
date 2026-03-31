@@ -14,15 +14,15 @@ function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
     <div
       style={{
-        background: "#0b0f15",
-        border: "1px solid #232834",
+        background: "#1A1C1F",
+        border: "1px solid #2E333B",
         borderRadius: 14,
         padding: "40px 20px",
         textAlign: "center",
       }}
     >
       <div style={{ color: "#717886", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700 }}>{title}</div>
-      <p style={{ color: "#9aa3b2", fontSize: 14, marginTop: 12, maxWidth: 500, marginInline: "auto" }}>{desc}</p>
+      <p style={{ color: "#A4ACB9", fontSize: 14, marginTop: 12, maxWidth: 500, marginInline: "auto" }}>{desc}</p>
     </div>
   );
 }
@@ -38,8 +38,8 @@ export default function SignalsPage() {
 
       <div
         style={{
-          background: "#05070a",
-          border: "1px solid #1a1f2b",
+          background: "#0A0B0D",
+          border: "1px solid #1A1C1F",
           borderRadius: 16,
           padding: 14,
           minHeight: 540,

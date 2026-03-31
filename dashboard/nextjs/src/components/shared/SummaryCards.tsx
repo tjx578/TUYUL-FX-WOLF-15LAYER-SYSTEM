@@ -1,10 +1,11 @@
-/* Reusable summary-card strip matching prototype .cards pattern */
+/* Reusable summary-card strip — lime neon theme */
 
 const COLOR_MAP: Record<string, string> = {
   green: "#22c55e",
   red: "#ef4444",
   blue: "#60a5fa",
   orange: "#f59e0b",
+  lime: "#C7FF1A",
   gold: "#d8b35d",
 };
 
@@ -19,18 +20,18 @@ export function SummaryCards({
         <div
           key={item.label}
           style={{
-            background: "#0b0f15",
-            border: "1px solid #232834",
+            background: "#1A1C1F",
+            border: "1px solid #2E333B",
             borderRadius: 14,
             padding: 14,
           }}
         >
-          <div style={{ color: "#94a0b4", fontSize: 12 }}>{item.label}</div>
+          <div style={{ color: "#A4ACB9", fontSize: 12 }}>{item.label}</div>
           <div
             style={{
               fontSize: 26,
               fontWeight: 800,
-              color: item.color ? (COLOR_MAP[item.color] ?? "#e8eaed") : "#e8eaed",
+              color: item.color ? (COLOR_MAP[item.color] ?? "#F5F7FA") : "#F5F7FA",
               marginTop: 4,
             }}
           >
