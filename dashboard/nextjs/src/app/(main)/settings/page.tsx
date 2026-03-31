@@ -1,34 +1,19 @@
 "use client";
 
-import React, { useState } from "react";
-import { SettingsScreen } from "@/features/settings/components/SettingsScreen";
+import { useMemo, useState } from "react";
+import { TabPanel, Tabs, type TabItem } from "@/components/ui/Tabs";
 import { AgentManagerScreen } from "@/features/agent-manager/components/AgentManagerScreen";
-import { useAuthStore } from "@/store/useAuthStore";
+import { SettingsScreen } from "@/features/settings/components/SettingsScreen";
 import { hasRole } from "@/lib/auth";
-
-const BASE_TABS = [
-  { id: "general", label: "GENERAL", adminOnly: false },
-  { id: "agents", label: "AGENTS", adminOnly: false },
-  { id: "audit", label: "AUDIT LOG", adminOnly: true },
-];
-
-function tabStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: "10px 20px", fontSize: 11,
-    fontFamily: "var(--font-mono,'Share Tech Mono',monospace)",
-    fontWeight: active ? 700 : 400, letterSpacing: "0.08em",
-    color: active ? "var(--accent,#3b82f6)" : "var(--text-muted,#64748b)",
-    background: "transparent", border: "none",
-    borderBottom: active ? "2px solid var(--accent,#3b82f6)" : "2px solid transparent",
-    marginBottom: -1, cursor: "pointer", transition: "color 0.15s",
-  };
-}
+import { useAuthStore } from "@/store/useAuthStore";
 
 function AuditPlaceholder() {
   return (
-    <div style={{ background: "var(--bg-card,#111827)", border: "1px solid var(--border,#1e293b)", borderRadius: 12, padding: "48px 32px", textAlign: "center", minHeight: 280, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-      <div style={{ fontFamily: "var(--font-mono,monospace)", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-dim,#475569)" }}>AUDIT LOG</div>
-      <div style={{ fontSize: 13, color: "var(--text-muted,#64748b)", maxWidth: 400 }}>Full audit trail of all system actions, config changes, and operator events. Admin access required.</div>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-10 text-center">
+      <p className="font-mono text-[11px] tracking-[0.12em] text-[var(--text-dim)]">AUDIT LOG</p>
+      <p className="mx-auto mt-3 max-w-xl text-sm text-[var(--text-muted)]">
+        Full audit trail for privileged operations and system events.
+      </p>
     </div>
   );
 }
@@ -36,28 +21,41 @@ function AuditPlaceholder() {
 export default function SettingsPage() {
   const [tab, setTab] = useState("general");
   const user = useAuthStore((s) => s.user);
-  const isAdmin = user != null && hasRole(user.role, ["risk_admin", "config_admin", "approver", "owner"] as const);
-  const tabs = BASE_TABS.filter((t) => !t.adminOnly || isAdmin);
+  const isAdmin =
+    user != null &&
+    hasRole(user.role, ["risk_admin", "config_admin", "approver", "owner"] as const);
+
+  const tabs = useMemo<TabItem[]>(() => {
+    const base: TabItem[] = [
+      { id: "general", label: "GENERAL" },
+      { id: "agents", label: "AGENTS" },
+    ];
+    if (isAdmin) {
+      base.push({ id: "audit", label: "AUDIT" });
+    }
+    return base;
+  }, [isAdmin]);
 
   return (
-    <div>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em", marginBottom: 4 }}>Settings &amp; Operations</h1>
-        <p style={{ fontSize: 12, color: "var(--text-muted,#64748b)", fontFamily: "var(--font-mono,monospace)" }}>
-          System configuration · Agent management · Audit trail
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold">Settings &amp; Operations</h1>
+        <p className="font-mono text-xs text-[var(--text-muted)]">
+          Configuration, agents, and role-gated audit access.
         </p>
       </div>
-      <div style={{ display: "flex", borderBottom: "1px solid var(--border,#1e293b)", marginBottom: 24 }}>
-        {tabs.map((t) => (
-          <button key={t.id} style={tabStyle(tab === t.id)} onClick={() => setTab(t.id)}>
-            {t.label}
-            {t.adminOnly && <span style={{ marginLeft: 6, fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "rgba(245,158,11,0.12)", color: "#f59e0b", fontWeight: 700 }}>ADMIN</span>}
-          </button>
-        ))}
-      </div>
-      {tab === "general" && <SettingsScreen />}
-      {tab === "agents" && <AgentManagerScreen />}
-      {tab === "audit" && isAdmin && <AuditPlaceholder />}
+
+      <Tabs tabs={tabs} activeTab={tab} onTabChange={setTab}>
+        <TabPanel id="general" activeTab={tab}>
+          <SettingsScreen />
+        </TabPanel>
+        <TabPanel id="agents" activeTab={tab}>
+          <AgentManagerScreen />
+        </TabPanel>
+        <TabPanel id="audit" activeTab={tab}>
+          {isAdmin ? <AuditPlaceholder /> : null}
+        </TabPanel>
+      </Tabs>
     </div>
   );
 }
