@@ -6,10 +6,14 @@ import { TimezoneDisplay } from "@/components/TimezoneDisplay";
 
 const ROUTE_LABELS: Record<string, string> = {
   "/": "Home",
-  "/signals": "Signal Queue",
+  "/signals": "Signals",
   "/trades": "Trades",
-  "/risk": "Accounts",
-  "/market": "Tools",
+  "/accounts": "Accounts",
+  "/risk": "Risk Monitor",
+  "/news": "News",
+  "/journal": "Journal",
+  "/utilities": "Utilities",
+  "/market": "Market Tools",
   "/settings": "Settings",
 };
 

@@ -18,15 +18,19 @@ const NAV: NavGroup[] = [
     title: "Main",
     items: [
       { label: "Home", href: "/" },
-      { label: "Signal Queue", href: "/signals" },
+      { label: "Signals", href: "/signals" },
       { label: "Trades", href: "/trades" },
-      { label: "Accounts", href: "/risk" },
+      { label: "Accounts", href: "/accounts" },
+      { label: "Risk Monitor", href: "/risk" },
+      { label: "News", href: "/news" },
+      { label: "Journal", href: "/journal" },
     ],
   },
   {
     title: "Tools",
     items: [
-      { label: "Tools", href: "/market", gold: true },
+      { label: "Utilities", href: "/utilities" },
+      { label: "Market Tools", href: "/market", gold: true },
       { label: "Settings", href: "/settings" },
     ],
   },
