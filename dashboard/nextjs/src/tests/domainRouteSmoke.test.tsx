@@ -237,38 +237,32 @@ vi.mock("@tanstack/react-query", () => ({
 
 describe("Domain Route Smoke Tests", { timeout: 15_000 }, () => {
     it("signals page renders without crashing", async () => {
-        const { default: SignalsPage } = await import("@/app/(control)/signals/page");
+        const { default: SignalsPage } = await import("@/app/(main)/signals/page");
         render(<SignalsPage />);
-        expect(screen.getByText("SIGNAL BOARD")).toBeTruthy();
+        expect(screen.getByText("Signals")).toBeTruthy();
     });
 
     it("trades page renders without crashing", async () => {
-        const { default: TradesPage } = await import("@/app/(control)/trades/page");
+        const { default: TradesPage } = await import("@/app/(main)/trades/page");
         render(<TradesPage />);
-        expect(screen.getByText("TRADE DESK")).toBeTruthy();
-    });
-
-    it("accounts page renders without crashing", async () => {
-        const { default: AccountsPage } = await import("@/app/(control)/accounts/page");
-        render(<AccountsPage />);
-        expect(screen.getByText("CAPITAL ACCOUNTS")).toBeTruthy();
-    });
-
-    it("journal page renders without crashing", async () => {
-        const { default: JournalPage } = await import("@/app/(control)/journal/page");
-        render(<JournalPage />);
-        expect(screen.getByText("TRADING JOURNAL")).toBeTruthy();
-    });
-
-    it("news page renders without crashing", async () => {
-        const { default: NewsPage } = await import("@/app/(control)/news/page");
-        render(<NewsPage />);
-        expect(screen.getByText("NEWS CALENDAR")).toBeTruthy();
+        expect(screen.getByText("Trades")).toBeTruthy();
     });
 
     it("risk page renders without crashing", async () => {
-        const { default: RiskPage } = await import("@/app/(control)/risk/page");
+        const { default: RiskPage } = await import("@/app/(main)/risk/page");
         render(<RiskPage />);
-        expect(screen.getByText("RISK MONITOR")).toBeTruthy();
+        expect(screen.getByText("Risk & Compliance")).toBeTruthy();
+    });
+
+    it("market page renders without crashing", async () => {
+        const { default: MarketPage } = await import("@/app/(main)/market/page");
+        render(<MarketPage />);
+        expect(screen.getByText("Market")).toBeTruthy();
+    });
+
+    it("settings page renders without crashing", async () => {
+        const { default: SettingsPage } = await import("@/app/(main)/settings/page");
+        render(<SettingsPage />);
+        expect(screen.getByText("Settings & Operations")).toBeTruthy();
     });
 });

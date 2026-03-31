@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import TradeDeskPage from "@/app/(control)/trades/page";
+import TradeDeskPage from "@/app/(main)/trades/page";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),

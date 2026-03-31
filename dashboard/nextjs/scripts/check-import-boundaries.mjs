@@ -3,10 +3,10 @@
 /**
  * check-import-boundaries.mjs
  * ────────────────────────────
- * Enforces CUTOVER-PHASE-9 import boundary rules.
+ * Enforces Architecture V2 import boundary rules.
  *
  * Rules:
- *   1. Route pages in (control) may only import from features
+ *   1. Route pages in (main) may only import from features
  *   2. features must not import from app
  *   3. shared must not import from app or features
  *   4. widgets must not import from features domain hooks/api
@@ -61,11 +61,11 @@ function violation(file, line, rule, importPath) {
 
 // ── Rule 1: Route pages must be thin ──────────────────────────
 
-const controlPages = walk(join(SRC, "app", "(control)")).filter(
-  (f) => f.endsWith("page.tsx") && !relPath(f).endsWith("(control)/page.tsx"),
+const mainPages = walk(join(SRC, "app", "(main)")).filter(
+  (f) => f.endsWith("page.tsx") && !relPath(f).endsWith("(main)/page.tsx"),
 );
 
-for (const file of controlPages) {
+for (const file of mainPages) {
   for (const imp of extractImports(file)) {
     if (imp.path.startsWith("@/features/")) continue; // allowed
     violation(file, imp.line, "ROUTE_THIN", imp.path);

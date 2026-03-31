@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import CapitalAccountsPage from "@/app/(control)/accounts/page";
+import { AccountsScreen as CapitalAccountsPage } from "@/features/accounts/components/AccountsScreen";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),

@@ -201,7 +201,7 @@ function EventBanner({ blocker }: EventBannerProps) {
         {blocker.reason ?? "High-impact event window active — trading signals are blocked."}
       </span>
       <Link
-        href="/news"
+        href="/market"
         style={{
           marginLeft: "auto",
           fontFamily: "var(--font-mono)",
@@ -680,7 +680,7 @@ export function CommandCenterScreen() {
               })}
               {accounts.length > 4 && (
                 <Link
-                  href="/accounts"
+                  href="/risk"
                   style={{
                     fontSize: 10,
                     color: "var(--text-muted)",

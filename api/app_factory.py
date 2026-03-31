@@ -276,7 +276,7 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
 def _add_cors(app: FastAPI) -> None:
     # Production should set CORS_ORIGINS explicitly. Keep fallback minimal and stable
     # so redeploy-specific hostnames (e.g., Railway-generated domains) are never baked in.
-    raw = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:8000,https://tuyul-fx-dashboard.vercel.app")
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:8000,https://tuyul-fx-dashboard.vercel.app,https://tuyul-fx-wolf-15-layer-system.vercel.app")
     if "CORS_ORIGINS" not in os.environ:
         logger.warning(
             "CORS_ORIGINS not set; using fallback origins. Set CORS_ORIGINS explicitly in deployed services."
