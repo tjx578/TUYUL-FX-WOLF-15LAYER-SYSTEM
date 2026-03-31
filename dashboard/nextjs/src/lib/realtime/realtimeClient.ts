@@ -69,6 +69,8 @@ function normalizeWsEvent(raw: Record<string, unknown>): Record<string, unknown>
 
     // live.snapshot carries {signals, accounts, trades} — not SystemStatus shape.
     // Convert to SystemStatusUpdated with derived metadata so the Zod schema passes.
+    // NOTE: Receiving a snapshot proves the WS transport is healthy. Signal count
+    // is informational — 0 signals (no active analysis) is NOT a degradation.
     if (eventType === "live.snapshot") {
       const payload = raw.payload as Record<string, unknown> | undefined;
       const signalCount = Array.isArray(payload?.signals) ? payload.signals.length : 0;
@@ -77,10 +79,32 @@ function normalizeWsEvent(raw: Record<string, unknown>): Record<string, unknown>
         ...raw,
         type: "SystemStatusUpdated",
         payload: {
-          mode: signalCount > 0 ? "NORMAL" : "DEGRADED",
+          mode: "NORMAL",
           reason: `live snapshot: ${signalCount} signals, ${accountCount} accounts`,
           updated_at: typeof raw.server_ts === "number"
             ? new Date(raw.server_ts * 1000).toISOString()
+            : new Date().toISOString(),
+        },
+      };
+    }
+
+    // live.heartbeat_state carries {signal_count, engine_status, ...} — not
+    // SystemStatus shape.  Derive a valid `mode` from engine_status so the
+    // Zod schema passes and the dashboard can self-recover from DEGRADED.
+    if (eventType === "live.heartbeat_state" || eventType === "live_event.heartbeat_state") {
+      const payload = raw.payload as Record<string, unknown> | undefined;
+      const engineStatus = payload?.engine_status as string | undefined;
+      const signalCount = typeof payload?.signal_count === "number" ? payload.signal_count : 0;
+      // Engine producing verdicts = NORMAL; stalled but WS alive = DEGRADED_BUT_REFRESHING
+      const mode = engineStatus === "ok" ? "NORMAL" : "DEGRADED_BUT_REFRESHING";
+      return {
+        ...raw,
+        type: "SystemStatusUpdated",
+        payload: {
+          mode,
+          reason: `heartbeat: engine=${engineStatus ?? "unknown"}, signals=${signalCount}`,
+          updated_at: typeof payload?.server_ts === "number"
+            ? new Date((payload.server_ts as number) * 1000).toISOString()
             : new Date().toISOString(),
         },
       };

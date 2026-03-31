@@ -42,14 +42,15 @@ export default function GlobalStatusStrip({
   isStale,
 }: GlobalStatusStripProps) {
   const backendOk = health?.status === "ok";
-  const degraded = mode === "DEGRADED" || mode === "RECONNECTING_WS" || mode === "POLLING_REST" || mode === "STALE";
+  const degraded = mode === "DEGRADED" || mode === "RECONNECTING_WS" || mode === "POLLING_REST" || mode === "STALE" || mode === "DEGRADED_BUT_REFRESHING";
 
   const systemModeLabel =
     mode === "STALE" ? "STALE"
       : mode === "POLLING_REST" ? "POLLING"
         : mode === "RECONNECTING_WS" ? "RECONNECTING"
-          : degraded ? "DEGRADED"
-            : "NORMAL";
+          : mode === "DEGRADED_BUT_REFRESHING" ? "REFRESHING"
+            : degraded ? "DEGRADED"
+              : "NORMAL";
 
   const systemModeColor =
     mode === "STALE" ? "var(--red)"
