@@ -1,13 +1,47 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import { Card } from "@/components/primitives/Card";
-import { useWorkspaceStore } from "@/store/useWorkspaceStore";
+import type { WorkspaceLayout } from "@/contracts/workspace";
+
+const defaultLayout: WorkspaceLayout = {
+  preset: "default",
+  widgets: [
+    { id: "pipeline_runtime", title: "Pipeline Runtime", visible: true },
+    { id: "pipeline_dag", title: "Pipeline DAG Canvas", visible: true },
+    { id: "entry_governance", title: "Entry Governance", visible: true },
+  ],
+};
 
 export default function WorkspaceManager() {
-  const layout = useWorkspaceStore((state) => state.layout);
-  const toggleWidget = useWorkspaceStore((state) => state.toggleWidget);
-  const moveWidget = useWorkspaceStore((state) => state.moveWidget);
-  const reset = useWorkspaceStore((state) => state.reset);
+  const [layout, setLayout] = useState<WorkspaceLayout>(defaultLayout);
+
+  const toggleWidget = useCallback((id: string) => {
+    setLayout((prev) => ({
+      ...prev,
+      widgets: prev.widgets.map((widget) =>
+        widget.id === id ? { ...widget, visible: !widget.visible } : widget
+      ),
+    }));
+  }, []);
+
+  const moveWidget = useCallback((id: string, direction: "up" | "down") => {
+    setLayout((prev) => {
+      const widgets = [...prev.widgets];
+      const currentIndex = widgets.findIndex((widget) => widget.id === id);
+      if (currentIndex === -1) return prev;
+      const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (nextIndex < 0 || nextIndex >= widgets.length) return prev;
+      const temp = widgets[currentIndex];
+      widgets[currentIndex] = widgets[nextIndex];
+      widgets[nextIndex] = temp;
+      return { ...prev, widgets };
+    });
+  }, []);
+
+  const reset = useCallback(() => {
+    setLayout(defaultLayout);
+  }, []);
 
   return (
     <Card className="mt-4">

@@ -2,15 +2,15 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useSessionStore } from "@/store/useSessionStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useSessionRefresh } from "@/hooks/useSessionRefresh";
 
 export default function SessionExpiryModal() {
   const router = useRouter();
-  const expiringInSeconds = useSessionStore((state) => state.expiringInSeconds);
-  const expiredReason = useSessionStore((state) => state.expiredReason);
-  const refreshInFlight = useSessionStore((state) => state.refreshInFlight);
-  const setExpiringInSeconds = useSessionStore((state) => state.setExpiringInSeconds);
+  const expiringInSeconds = useAuthStore((state) => state.expiringInSeconds);
+  const expiredReason = useAuthStore((state) => state.expiredReason);
+  const refreshInFlight = useAuthStore((state) => state.refreshInFlight);
+  const setExpiringInSeconds = useAuthStore((state) => state.setExpiringInSeconds);
   const refresh = useSessionRefresh();
 
   // Use wall-clock elapsed time to avoid setTimeout drift (especially in

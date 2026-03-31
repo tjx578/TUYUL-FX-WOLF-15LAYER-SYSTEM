@@ -4,10 +4,9 @@
  * @deprecated Use `useAgentManagerState` from `@/hooks/useAgentManagerState` instead. Sunset: 2026-06-01
  */
 
-import { useMemo, useCallback, useEffect, useRef } from "react";
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { useAgentManagerState } from "@/hooks/useAgentManagerState";
 import { AgentStatus as AgentStatusEnum } from "@/types/agent-manager";
-import { useAgentStore } from "@/store/useAgentStore";
 import type { EAAgent, EAStatus, EALog, AgentFailure } from "@/types";
 import type { AgentItem, AgentEvent } from "@/types/agent-manager";
 
@@ -118,11 +117,9 @@ export function useAgentControlState(): AgentControlState {
         refreshAll,
     } = useAgentManagerState();
 
-    // Bridge to legacy AgentStore for components that read from it directly
-    const storeSelectedAgentId = useAgentStore((s) => s.selectedAgentId);
-    const storeSetSelectedAgent = useAgentStore((s) => s.setSelectedAgent);
-    const storeActiveTab = useAgentStore((s) => s.activeTab) as "overview" | "profiles" | "logs";
-    const storeSetActiveTab = useAgentStore((s) => s.setActiveTab);
+    // Local UI state — replaces former useAgentStore
+    const [localSelectedAgentId, setLocalSelectedAgentId] = useState<string | null>(null);
+    const [localActiveTab, setLocalActiveTab] = useState<"overview" | "profiles" | "logs">("overview");
 
     // Derived: map new agents to legacy format
     const legacyAgents = useMemo(() => agents.map(_mapAgent), [agents]);
@@ -131,7 +128,7 @@ export function useAgentControlState(): AgentControlState {
     const legacyLogs = useMemo(() => events.map(_mapEvent), [events]);
 
     // Derived: selected agent in legacy format
-    const selectedAgentId = storeSelectedAgentId ?? amSelectedId;
+    const selectedAgentId = localSelectedAgentId ?? amSelectedId;
     const selectedAgent = useMemo(
         () => legacyAgents.find((a) => a.agent_id === selectedAgentId) ?? null,
         [legacyAgents, selectedAgentId]
@@ -200,18 +197,18 @@ export function useAgentControlState(): AgentControlState {
         return { success: true };
     }, [agents, handleToggleSafeMode, refreshAll]);
 
-    // Bridged setters — sync both stores
+    // Bridged setters — sync local state with agent manager
     const setSelectedAgent = useCallback((id: string | null) => {
-        storeSetSelectedAgent(id);
+        setLocalSelectedAgentId(id);
         setSelectedAgentId(id);
-    }, [storeSetSelectedAgent, setSelectedAgentId]);
+    }, [setSelectedAgentId]);
 
     const setActiveTab = useCallback((tab: "overview" | "profiles" | "logs") => {
-        storeSetActiveTab(tab);
+        setLocalActiveTab(tab);
         // Map legacy tabs to new AM tabs where possible
         if (tab === "overview" || tab === "logs") amSetActiveTab("agents");
         if (tab === "profiles") amSetActiveTab("profiles");
-    }, [storeSetActiveTab, amSetActiveTab]);
+    }, [amSetActiveTab]);
 
     return {
         status,
@@ -223,7 +220,7 @@ export function useAgentControlState(): AgentControlState {
         cooldownState,
         isLoading,
         selectedAgentId,
-        activeTab: storeActiveTab,
+        activeTab: localActiveTab,
         setSelectedAgent,
         setActiveTab,
         handleRestart,

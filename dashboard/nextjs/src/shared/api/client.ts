@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bearerHeader } from "@/lib/auth";
 import { getRestPrefix } from "@/lib/env";
 import { HttpError } from "@/lib/fetcher";
-import { useSessionStore } from "@/store/useSessionStore";
+import { useAuthStore } from "@/store/useAuthStore";
 
 // P4 consolidation: always "/api/proxy" on client — the single canonical path.
 const API_BASE = getRestPrefix();
@@ -80,7 +80,7 @@ export const API_ENDPOINTS = {
 } as const;
 
 export const fetcher = async (url: string) => {
-    if (useSessionStore.getState().expiredReason) {
+    if (useAuthStore.getState().expiredReason) {
         throw new HttpError("Session expired", 401);
     }
 

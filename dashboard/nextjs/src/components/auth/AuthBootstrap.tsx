@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import type { SessionUser } from "@/contracts/auth";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useSessionStore } from "@/store/useSessionStore";
 import { scheduleRefresh, cancelRefresh } from "@/lib/auth";
 
 interface AuthBootstrapProps {
@@ -13,7 +12,7 @@ interface AuthBootstrapProps {
 export default function AuthBootstrap({ user }: AuthBootstrapProps) {
   const setUser = useAuthStore((state) => state.setUser);
   const setLoading = useAuthStore((state) => state.setLoading);
-  const setExpiredReason = useSessionStore((state) => state.setExpiredReason);
+  const setExpiredReason = useAuthStore((state) => state.setExpiredReason);
 
   useEffect(() => {
     setUser(user);

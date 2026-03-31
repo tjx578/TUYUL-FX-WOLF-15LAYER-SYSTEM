@@ -2,7 +2,7 @@
 
 // ============================================================
 // TUYUL FX Wolf-15 — Command Center Screen
-// Extracted from app/(root)/page.tsx → features/command/
+// Extracted from app/(root)/page.tsx → features/dashboard/
 // PRD: Global Status Strip, Urgency Rail, Critical Risk Strip,
 //      System Health Cluster, Market Context, Event Banner,
 //      Quick Actions, Stale Data Banner, Recent Changes

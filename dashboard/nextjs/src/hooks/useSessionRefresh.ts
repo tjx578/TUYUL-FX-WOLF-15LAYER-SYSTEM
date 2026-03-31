@@ -2,14 +2,13 @@
 
 import { useCallback } from "react";
 import { refreshSession } from "@/services/sessionService";
-import { useSessionStore } from "@/store/useSessionStore";
 import { useAuthStore } from "@/store/useAuthStore";
 
 export function useSessionRefresh() {
   const setUser = useAuthStore((state) => state.setUser);
-  const setExpiredReason = useSessionStore((state) => state.setExpiredReason);
-  const setExpiringInSeconds = useSessionStore((state) => state.setExpiringInSeconds);
-  const setRefreshInFlight = useSessionStore((state) => state.setRefreshInFlight);
+  const setExpiredReason = useAuthStore((state) => state.setExpiredReason);
+  const setExpiringInSeconds = useAuthStore((state) => state.setExpiringInSeconds);
+  const setRefreshInFlight = useAuthStore((state) => state.setRefreshInFlight);
 
   return useCallback(async () => {
     setRefreshInFlight(true);

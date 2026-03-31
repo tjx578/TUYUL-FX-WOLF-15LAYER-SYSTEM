@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AuthoritySurface } from "@/contracts/authority";
 import { fetchAuthoritySurface } from "@/services/authorityService";
 import { buildAuthorityKey } from "@/lib/authorityKey";
-import { AUTHORITY_TTL_MS, useAuthorityStore } from "@/store/useAuthorityStore";
+import { AUTHORITY_TTL_MS, useAuthStore } from "@/store/useAuthStore";
 
 interface UseAuthoritySurfaceOptions {
   action: string;
@@ -28,8 +28,8 @@ export function useAuthoritySurface(
     [options.action, options.accountId, options.tradeId]
   );
 
-  const cacheEntry = useAuthorityStore((state) => state.cache[key]);
-  const setEntry = useAuthorityStore((state) => state.setEntry);
+  const cacheEntry = useAuthStore((state) => state.authorityCache[key]);
+  const setEntry = useAuthStore((state) => state.setAuthorityEntry);
 
   const [authority, setAuthority] = useState<AuthoritySurface | null>(cacheEntry?.value ?? null);
   const [loading, setLoading] = useState(!cacheEntry);
