@@ -122,7 +122,7 @@ export function SidebarV2() {
   }, [isCollapsed]);
 
   const updateSidebarWidth = () => {
-    const width = isCollapsed ? "56px" : "200px";
+    const width = isCollapsed ? "56px" : "220px";
     document.documentElement.style.setProperty("--sidebar-w", width);
   };
 
@@ -140,7 +140,7 @@ export function SidebarV2() {
   return (
     <aside
       className="fixed left-0 top-0 h-screen bg-[#080c14] border-r border-[var(--border)] transition-all duration-200 ease-out flex flex-col z-50"
-      style={{ width: isCollapsed ? "56px" : "200px" }}
+      style={{ width: isCollapsed ? "56px" : "220px" }}
     >
       {/* Header / Logo */}
       <div className="flex items-center justify-center h-16 border-b border-[var(--border)] flex-shrink-0">

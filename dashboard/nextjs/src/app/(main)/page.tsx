@@ -1,7 +1,7 @@
 "use client";
 
-import { CommandCenterScreen } from "@/features/command/components/CommandCenterScreen";
+import { DashboardScreen } from "@/features/dashboard/components/DashboardScreen";
 
 export default function DashboardPage() {
-  return <CommandCenterScreen />;
+  return <DashboardScreen />;
 }
