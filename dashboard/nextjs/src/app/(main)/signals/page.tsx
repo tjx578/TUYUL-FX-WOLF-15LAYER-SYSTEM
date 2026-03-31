@@ -1,51 +1,53 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { SignalBoardScreen } from "@/features/signals/components/SignalBoardScreen";
+import { TabPanel, Tabs, type TabItem } from "@/components/ui/Tabs";
 
-const TABS = [
-  { id: "active", label: "ACTIVE SIGNALS" },
+const TABS: TabItem[] = [
+  { id: "active", label: "ACTIVE" },
   { id: "history", label: "HISTORY" },
   { id: "pipeline", label: "PIPELINE" },
 ];
 
-function tabStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: "10px 20px", fontSize: 11,
-    fontFamily: "var(--font-mono,'Share Tech Mono',monospace)",
-    fontWeight: active ? 700 : 400, letterSpacing: "0.08em",
-    color: active ? "var(--accent,#3b82f6)" : "var(--text-muted,#64748b)",
-    background: "transparent", border: "none",
-    borderBottom: active ? "2px solid var(--accent,#3b82f6)" : "2px solid transparent",
-    marginBottom: -1, cursor: "pointer", transition: "color 0.15s",
-  };
-}
-
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
-    <div style={{ background: "var(--bg-card,#111827)", border: "1px solid var(--border,#1e293b)", borderRadius: 12, padding: "48px 32px", textAlign: "center", minHeight: 280, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-      <div style={{ fontFamily: "var(--font-mono,monospace)", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-dim,#475569)" }}>{title}</div>
-      <div style={{ fontSize: 13, color: "var(--text-muted,#64748b)", maxWidth: 400 }}>{desc}</div>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-10 text-center">
+      <p className="font-mono text-[11px] tracking-[0.12em] text-[var(--text-dim)]">{title}</p>
+      <p className="mx-auto mt-3 max-w-xl text-sm text-[var(--text-muted)]">{desc}</p>
     </div>
   );
 }
 
 export default function SignalsPage() {
   const [tab, setTab] = useState("active");
+
   return (
-    <div>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em", marginBottom: 4 }}>Signals</h1>
-        <p style={{ fontSize: 12, color: "var(--text-muted,#64748b)", fontFamily: "var(--font-mono,monospace)" }}>
-          Wolf-15 verdicts · L12 authority · 9-gate compliance
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold">Signals</h1>
+        <p className="font-mono text-xs text-[var(--text-muted)]">
+          Signal board + pipeline status in one route.
         </p>
       </div>
-      <div style={{ display: "flex", borderBottom: "1px solid var(--border,#1e293b)", marginBottom: 24 }}>
-        {TABS.map((t) => <button key={t.id} style={tabStyle(tab === t.id)} onClick={() => setTab(t.id)}>{t.label}</button>)}
-      </div>
-      {tab === "active" && <SignalBoardScreen />}
-      {tab === "history" && <Placeholder title="SIGNAL HISTORY" desc="Historical verdicts with filtering by pair, direction, outcome, and date range." />}
-      {tab === "pipeline" && <Placeholder title="PIPELINE — 15 LAYERS" desc="Real-time status of all 15 analytical layers. Layer health, latency, gate status." />}
+
+      <Tabs tabs={TABS} activeTab={tab} onTabChange={setTab}>
+        <TabPanel id="active" activeTab={tab}>
+          <SignalBoardScreen />
+        </TabPanel>
+        <TabPanel id="history" activeTab={tab}>
+          <Placeholder
+            title="SIGNAL HISTORY"
+            desc="Historical verdicts with filtering by pair, direction, and outcome."
+          />
+        </TabPanel>
+        <TabPanel id="pipeline" activeTab={tab}>
+          <Placeholder
+            title="PIPELINE STATUS"
+            desc="15-layer pipeline health, gate pass/fail, and latency diagnostics."
+          />
+        </TabPanel>
+      </Tabs>
     </div>
   );
 }
