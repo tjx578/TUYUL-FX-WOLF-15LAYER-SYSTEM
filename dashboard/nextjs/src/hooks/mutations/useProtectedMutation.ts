@@ -5,7 +5,7 @@ import type { ProtectedMutationConfig } from "@/contracts/protectedMutation";
 import type { ProtectedMutationResult } from "@/contracts/protectedMutationResult";
 import { buildAuthorityKey } from "@/lib/authorityKey";
 import { useToastStore } from "@/store/useToastStore";
-import { useAuthorityStore } from "@/store/useAuthorityStore";
+import { useAuthStore } from "@/store/useAuthStore";
 
 function getCorrelationId(result: unknown): string | null {
   if (!result || typeof result !== "object") {
@@ -21,7 +21,7 @@ export function useProtectedMutation<TVars, TResult>(
 ) {
   const queryClient = useQueryClient();
   const pushToast = useToastStore((state) => state.push);
-  const invalidateAuthority = useAuthorityStore((state) => state.invalidate);
+  const invalidateAuthority = useAuthStore((state) => state.invalidateAuthority);
 
   return useMutation({
     mutationKey: [config.mutationKey, config.accountId, config.tradeId],

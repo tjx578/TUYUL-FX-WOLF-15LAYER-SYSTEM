@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/primitives/Card";
 import { fetchPipelineDag } from "@/services/pipelineDagService";
-import { usePipelineDagStore } from "@/store/usePipelineDagStore";
+import type { PipelineDagView } from "@/contracts/pipelineDag";
 
 interface PipelineDagCanvasProps {
   symbol?: string;
@@ -19,8 +19,7 @@ const STATE_COLOR: Record<string, string> = {
 };
 
 export default function PipelineDagCanvas({ symbol, accountId }: PipelineDagCanvasProps) {
-  const dag = usePipelineDagStore((state) => state.dag);
-  const setDag = usePipelineDagStore((state) => state.setDag);
+  const [dag, setDag] = useState<PipelineDagView | null>(null);
 
   useEffect(() => {
     fetchPipelineDag(symbol, accountId)

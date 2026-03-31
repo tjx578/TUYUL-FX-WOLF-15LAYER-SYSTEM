@@ -6,7 +6,7 @@ import { buildAuthorityKey } from "@/lib/authorityKey";
 import { useToastStore } from "@/store/useToastStore";
 import { useAuthoritySurface } from "@/hooks/useAuthoritySurface";
 import { useActionThrottle } from "@/hooks/useActionThrottle";
-import { useAuthorityStore } from "@/store/useAuthorityStore";
+import { useAuthStore } from "@/store/useAuthStore";
 
 interface Props extends PropsWithChildren {
   action: string;
@@ -33,7 +33,7 @@ export function ProtectedActionButton({
   children,
 }: Props) {
   const pushToast = useToastStore((state) => state.push);
-  const invalidate = useAuthorityStore((state) => state.invalidate);
+  const invalidate = useAuthStore((state) => state.invalidateAuthority);
   const { authority, loading } = useAuthoritySurface({ action, accountId, tradeId });
   const throttleKey = `protected-action:${buildAuthorityKey(action, accountId, tradeId)}`;
   const throttle = useActionThrottle(throttleKey, throttleMs);

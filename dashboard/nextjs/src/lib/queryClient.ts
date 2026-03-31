@@ -1,7 +1,6 @@
 import { QueryClient, QueryCache } from "@tanstack/react-query";
 import { HttpError } from "@/lib/fetcher";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useSessionStore } from "@/store/useSessionStore";
 
 // Global rate-limit cooldown: when a 429 is received, all queries pause until
 // this timestamp passes.  Updated by the QueryCache onError handler.
@@ -16,12 +15,11 @@ export function createQueryClient() {
         // In owner mode (user_id === "owner") the dashboard has no JWT —
         // a 401 means missing API_KEY configuration, not an expired session.
         if (error instanceof HttpError && error.status === 401) {
-          const session = useSessionStore.getState();
           const auth = useAuthStore.getState();
           const hasRealSession = auth.user != null && auth.user.user_id !== "owner";
-          if (hasRealSession && !session.expiredReason) {
+          if (hasRealSession && !auth.expiredReason) {
             auth.clear();
-            session.setExpiredReason("SESSION_EXPIRED");
+            auth.setExpiredReason("SESSION_EXPIRED");
           }
         }
 
