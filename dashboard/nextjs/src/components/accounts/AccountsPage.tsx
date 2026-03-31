@@ -25,13 +25,13 @@ export function AccountsPage() {
                   key={h}
                   style={{
                     padding: "12px 10px",
-                    borderBottom: "1px solid #2E333B",
+                    borderBottom: "1px solid #30343C",
                     textAlign: "left",
-                    color: "#A4ACB9",
+                    color: "#A5ADBA",
                     fontSize: 12,
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
-                    background: "#1A1C1F",
+                    background: "#1B1D21",
                   }}
                 >
                   {h}
@@ -42,14 +42,14 @@ export function AccountsPage() {
           <tbody>
             {items.map((row) => (
               <tr key={row.id}>
-                <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B", fontWeight: 700 }}>{row.name}</td>
-                <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.type}</td>
-                <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.balance}</td>
-                <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.equity}</td>
-                <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.dailyDd}</td>
-                <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.maxDd}</td>
-                <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B" }}>{row.rules}</td>
-                <td style={{ padding: "12px 10px", borderBottom: "1px solid #2E333B", color: STATUS_COLOR[row.statusColor] ?? "#F5F7FA", fontWeight: 700 }}>
+                <td style={{ padding: "12px 10px", borderBottom: "1px solid #30343C", fontWeight: 700 }}>{row.name}</td>
+                <td style={{ padding: "12px 10px", borderBottom: "1px solid #30343C" }}>{row.type}</td>
+                <td style={{ padding: "12px 10px", borderBottom: "1px solid #30343C" }}>{row.balance}</td>
+                <td style={{ padding: "12px 10px", borderBottom: "1px solid #30343C" }}>{row.equity}</td>
+                <td style={{ padding: "12px 10px", borderBottom: "1px solid #30343C" }}>{row.dailyDd}</td>
+                <td style={{ padding: "12px 10px", borderBottom: "1px solid #30343C" }}>{row.maxDd}</td>
+                <td style={{ padding: "12px 10px", borderBottom: "1px solid #30343C" }}>{row.rules}</td>
+                <td style={{ padding: "12px 10px", borderBottom: "1px solid #30343C", color: STATUS_COLOR[row.statusColor] ?? "#F5F7FA", fontWeight: 700 }}>
                   {row.status}
                 </td>
               </tr>

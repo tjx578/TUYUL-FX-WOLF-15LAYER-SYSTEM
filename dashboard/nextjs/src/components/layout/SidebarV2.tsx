@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useSystemStore } from "@/store/useSystemStore";
 import { useAuthStore } from "@/store/useAuthStore";
 
-/* ─── Navigation structure matching HTML prototype ───────── */
+/* â”€â”€â”€ Navigation structure matching HTML prototype â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 interface NavGroup {
   title: string;
@@ -64,7 +64,7 @@ export function SidebarV2() {
         left: 0,
         height: "100vh",
         background: "#070809",
-        borderRight: "1px solid #1A1C1F",
+        borderRight: "1px solid #1B1D21",
         display: "flex",
         flexDirection: "column",
         padding: "18px 14px",
@@ -85,7 +85,7 @@ export function SidebarV2() {
       {/* Primary action */}
       <button
         style={{
-          background: "#C7FF1A",
+          background: "#C8FF1A",
           color: "#0A0B0D",
           border: "none",
           borderRadius: 10,
@@ -125,17 +125,17 @@ export function SidebarV2() {
                     alignItems: "center",
                     gap: 10,
                     padding: "11px 12px",
-                    color: active ? "#C7FF1A" : "#A4ACB9",
+                    color: active ? "#C8FF1A" : "#A5ADBA",
                     textDecoration: "none",
                     borderRadius: 10,
                     margin: "2px 0",
                     fontSize: 14,
                     fontWeight: active ? 600 : 400,
                     background: active
-                      ? "rgba(199, 255, 26, 0.10)"
+                      ? "rgba(200, 255, 26, 0.10)"
                       : "transparent",
                     outline: active
-                      ? "1px solid rgba(199, 255, 26, 0.25)"
+                      ? "1px solid rgba(200, 255, 26, 0.25)"
                       : "none",
                   }}
                 >
@@ -153,9 +153,9 @@ export function SidebarV2() {
       {/* Footer */}
       <div
         style={{
-          borderTop: "1px solid #1A1C1F",
+          borderTop: "1px solid #1B1D21",
           paddingTop: 12,
-          color: "#A4ACB9",
+          color: "#A5ADBA",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -166,7 +166,7 @@ export function SidebarV2() {
           <div style={{ fontWeight: 700, color: "#F5F7FA", fontSize: 14 }}>
             {user?.email?.split("@")[0] ?? "Operator"}
           </div>
-          <div style={{ color: "#A4ACB9", fontSize: 12 }}>
+          <div style={{ color: "#A5ADBA", fontSize: 12 }}>
             {(user?.role ?? "operator").charAt(0).toUpperCase() + (user?.role ?? "operator").slice(1)}
           </div>
         </div>

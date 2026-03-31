@@ -22,4 +22,4 @@ exec gunicorn app:app \
   --error-logfile /dev/stdout \
   --timeout 120 \
   --graceful-timeout 30 \
-  --keep-alive 5
+  --keep-alive 75

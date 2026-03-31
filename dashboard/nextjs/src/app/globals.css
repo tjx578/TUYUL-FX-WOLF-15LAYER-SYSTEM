@@ -45,7 +45,7 @@
   border-radius: 8px;
   background: var(--accent);
   flex-shrink: 0;
-  box-shadow: 0 0 16px rgba(199, 255, 26, 0.35);
+  box-shadow: 0 0 16px rgba(200, 255, 26, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -91,13 +91,13 @@
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.16em;
-  color: rgba(199, 255, 26, 0.90);
+  color: rgba(200, 255, 26, 0.90);
   padding: 10px 8px 5px;
   text-transform: uppercase;
   text-shadow:
-    0 0 4px rgba(199, 255, 26, 0.80),
-    0 0 10px rgba(199, 255, 26, 0.50),
-    0 0 22px rgba(199, 255, 26, 0.30),
+    0 0 4px rgba(200, 255, 26, 0.80),
+    0 0 10px rgba(200, 255, 26, 0.50),
+    0 0 22px rgba(200, 255, 26, 0.30),
     0 2px 6px rgba(0, 0, 0, 0.90);
   position: relative;
   display: inline-block;
@@ -114,14 +114,14 @@
   background: linear-gradient(
     to right,
     transparent,
-    rgba(199, 255, 26, 0.50) 20%,
-    rgba(199, 255, 26, 0.70) 50%,
-    rgba(199, 255, 26, 0.50) 80%,
+    rgba(200, 255, 26, 0.50) 20%,
+    rgba(200, 255, 26, 0.70) 50%,
+    rgba(200, 255, 26, 0.50) 80%,
     transparent
   );
   box-shadow:
-    0 0 6px rgba(199, 255, 26, 0.50),
-    0 0 14px rgba(199, 255, 26, 0.25);
+    0 0 6px rgba(200, 255, 26, 0.50),
+    0 0 14px rgba(200, 255, 26, 0.25);
 }
 .sidebar-link {
   display: flex;

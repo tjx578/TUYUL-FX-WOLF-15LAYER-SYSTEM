@@ -12,15 +12,15 @@ export function UtilitiesPage() {
           <div
             key={item.title}
             style={{
-              background: "#1A1C1F",
-              border: "1px solid #2E333B",
+              background: "#1B1D21",
+              border: "1px solid #30343C",
               borderRadius: 14,
               padding: 18,
               cursor: "pointer",
             }}
           >
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{item.title}</div>
-            <div style={{ color: "#A4ACB9", fontSize: 13 }}>{item.desc}</div>
+            <div style={{ color: "#A5ADBA", fontSize: 13 }}>{item.desc}</div>
           </div>
         ))}
       </div>

@@ -1,27 +1,27 @@
 /* ============================================================
    WOLF-15 TERMINAL — DESIGN TOKENS
    Lime-neon accent dark trading terminal
-   Colors: #0A0B0D bg / #1A1C1F panel / #C7FF1A lime /
-           #22c55e green / #ef4444 red
+   Colors: #0A0B0D bg / #1B1D21 panel / #C8FF1A lime /
+           #32D583 success / #FF4D4F danger
    ============================================================ */
 
 :root {
   /* ── BACKGROUNDS ── */
   --bg-base:      #0A0B0D;
   --bg-sidebar:   #070809;
-  --bg-panel:     #1A1C1F;
-  --bg-card:      #22252A;
-  --bg-elevated:  #22252A;
+  --bg-panel:     #1B1D21;
+  --bg-card:      #23262C;
+  --bg-elevated:  #23262C;
   --bg-hover:     #2A2E35;
-  --bg-border:    #2E333B;
+  --bg-border:    #30343C;
   --bg-overlay:   rgba(10, 11, 13, 0.90);
 
   /* ── ACCENT — LIME NEON (primary accent) ── */
-  --accent:       #C7FF1A;
+  --accent:       #C8FF1A;
   --accent-dim:   #7DA310;
-  --accent-glow:  rgba(199, 255, 26, 0.20);
-  --accent-muted: rgba(199, 255, 26, 0.10);
-  --accent-soft:  rgba(199, 255, 26, 0.14);
+  --accent-glow:  rgba(200, 255, 26, 0.20);
+  --accent-muted: rgba(200, 255, 26, 0.10);
+  --accent-soft:  rgba(200, 255, 26, 0.14);
 
   /* ── GOLD (demoted to secondary — legacy compat) ── */
   --gold:         #d8b35d;
@@ -36,6 +36,8 @@
   --red:          #ef4444;
   --red-dim:      #b91c1c;
   --red-glow:     rgba(239, 68, 68, 0.15);
+  --danger:       #FF4D4F;
+  --success:      #32D583;
   --yellow:       #ffd740;
   --yellow-glow:  rgba(255, 215, 64, 0.13);
   --blue:         #60a5fa;
@@ -47,15 +49,15 @@
 
   /* ── TEXT ── */
   --text-primary:   #F5F7FA;
-  --text-secondary: #A4ACB9;
+  --text-secondary: #A5ADBA;
   --text-muted:     #717886;
   --text-faint:     rgba(113, 120, 134, 0.50);
 
   /* ── BORDERS ── */
-  --border-default: #2E333B;
+  --border-default: #30343C;
   --border-subtle:  rgba(255, 255, 255, 0.04);
   --border-strong:  rgba(255, 255, 255, 0.10);
-  --border-accent:  rgba(199, 255, 26, 0.35);
+  --border-accent:  rgba(200, 255, 26, 0.35);
   --border-danger:  rgba(239, 68, 68, 0.28);
   --border-success: rgba(34, 197, 94, 0.28);
   --border-warn:    rgba(255, 215, 64, 0.25);
@@ -70,8 +72,10 @@
   --header-h:     52px;
   --radius-sm:    5px;
   --radius-md:    8px;
-  --radius-lg:    12px;
+  --radius-lg:    14px;
   --radius-xl:    16px;
+  --radius-modal: 18px;
+  --radius-pill:  999px;
 
   /* ── SHADOWS ── */
   --shadow-card:   0 2px 16px rgba(0, 0, 0, 0.45);
@@ -109,7 +113,7 @@
   --glow-surface-green: rgba(  0, 230, 118, 0.07);
   --glow-surface-amber: rgba(255, 215,  64, 0.07);
   --glow-surface-cyan:  rgba(  0, 212, 255, 0.07);
-  --glow-surface-lime:  rgba(199, 255,  26, 0.07);
+  --glow-surface-lime:  rgba(200, 255,  26, 0.07);
   --glow-surface-gold:  rgba(216, 179,  93, 0.07);
 
   /* ── DIM BORDER TINTS (~20% opacity) ── */
@@ -117,7 +121,7 @@
   --border-dim-green: rgba(  0, 230, 118, 0.20);
   --border-dim-amber: rgba(255, 215,  64, 0.20);
   --border-dim-cyan:  rgba(  0, 212, 255, 0.20);
-  --border-dim-lime:  rgba(199, 255,  26, 0.20);
+  --border-dim-lime:  rgba(200, 255,  26, 0.20);
   --border-dim-gold:  rgba(216, 179,  93, 0.20);
 }
 
@@ -159,6 +163,6 @@
   /* Box shadows (glow effects) */
   --shadow-glow-cyan:    0 0 24px rgba(0, 212, 255, 0.15);
   --shadow-glow-emerald: 0 0 24px rgba(0, 230, 118, 0.15);
-  --shadow-glow-lime:    0 0 24px rgba(199, 255, 26, 0.18);
+  --shadow-glow-lime:    0 0 24px rgba(200, 255, 26, 0.18);
   --shadow-glow-orange:  0 0 24px rgba(245, 166, 35, 0.18);
 }

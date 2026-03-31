@@ -59,8 +59,8 @@ FINNHUB_WS_URL: str = "wss://ws.finnhub.io?token={token}"
 PING_INTERVAL_S: float = 20.0
 PING_TIMEOUT_S: float = 10.0
 LEADER_LOCK_KEY: str = "finnhub:ws:leader"
-LEADER_LOCK_TTL_S: int = 30
-LEADER_LOCK_RENEWAL_S: float = 20.0  # Renew every 20s (must be < TTL)
+LEADER_LOCK_TTL_S: int = 60  # Was 30 — increased for VPS/high-latency tolerance
+LEADER_LOCK_RENEWAL_S: float = 15.0  # Renew every 15s → 45s margin before expiry
 
 # Market hours: Forex open Sun 22:00 UTC → Fri 22:00 UTC
 WEEKEND_POLL_INTERVAL_S: float = 300.0  # Check every 5 min during weekend
@@ -389,21 +389,35 @@ class FinnhubWebSocket:
             logger.error(f"[WS] Unexpected error: {e}", exc_info=True)
             raise
 
-    async def run(self):
-        """Run WebSocket with exponential backoff reconnection."""
+    async def run(self) -> None:
+        """Run WebSocket with unlimited exponential backoff reconnection.
+
+        The client will keep retrying indefinitely as long as ``self._running``
+        is True.  Consecutive failures use the shared ``_calculate_backoff()``
+        helper (exponential + jitter, capped at MAX_BACKOFF_S = 300 s).
+        The attempt counter resets on every successful connection so transient
+        network blips don't accumulate toward a permanent shutdown.
+        """
         self._running = True
         attempt = 0
-        max_attempts = 10
 
-        while attempt < max_attempts:
+        while self._running:
             try:
                 # Acquire leader lock
                 if not await self._acquire_leader_lock():
-                    logger.info("[WS] Not leader - waiting")
+                    logger.info("[WS] Not leader — waiting 10 s before retry")
                     await asyncio.sleep(10)
                     continue
 
-                logger.info(f"[WS] Connection attempt {attempt + 1}/{max_attempts}")
+                # Refresh token in case key was rotated
+                refreshed = self._key_manager.current_key()
+                if refreshed:
+                    self._token = refreshed
+
+                logger.info(
+                    "[WS] Connection attempt %d (backoff resets on success)",
+                    attempt + 1,
+                )
 
                 # Build URL correctly
                 url = FINNHUB_WS_URL.format(token=self._token)
@@ -421,30 +435,92 @@ class FinnhubWebSocket:
                     self._connected = True
                     attempt = 0  # Reset on success
 
+                    # Record WS connect timestamp for pipeline warmup grace
+                    with contextlib.suppress(Exception):
+                        await self._redis.set(
+                            WS_CONNECTED_AT,
+                            str(time.time()),
+                            ex=3600,
+                        )
+
+                    # Start background lock renewal
+                    self._lock_renewal_task = asyncio.create_task(
+                        self._lock_renewal_loop(),
+                        name="LeaderLockRenewal",
+                    )
+
+                    # Update Prometheus metrics
+                    finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(0)
+                    finnhub_ws_connections_total.labels(replica_id=self._replica_id).inc()
+                    finnhub_ws_connected.labels(replica_id=self._replica_id).set(1)
+
+                    # Fire on_connect callback (e.g. HTF refresh) — best effort
+                    if self._on_connect is not None:
+                        with contextlib.suppress(Exception):
+                            asyncio.create_task(self._on_connect(), name="WsOnConnectCallback")
+
                     logger.info("[WS] Connected successfully")
 
                     # Subscribe to symbols
                     await self._subscribe(ws)
 
-                    # Listen
+                    # Listen (blocks until disconnect)
                     await self._listen(ws)
 
             except asyncio.CancelledError:
-                logger.info("[WS] Task cancelled")
+                logger.info("[WS] Task cancelled — exiting run loop")
                 break
 
-            except websockets.exceptions.ConnectionClosedError:
+            except FinnhubRateLimitError as exc:
                 attempt += 1
-                delay = min(2 * (2**attempt), 300)
-                logger.warning(f"[WS] Connection closed. Retry in {delay}s (attempt {attempt}/{max_attempts})")
+                delay = exc.retry_after
+                finnhub_ws_reconnect_attempts.labels(
+                    replica_id=self._replica_id, error_type="rate_limit"
+                ).inc()
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
+                logger.warning(
+                    "[WS] Rate limited (429). Retry in %.1f s (attempt %d)",
+                    delay,
+                    attempt,
+                )
                 self._connected = False
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 await asyncio.sleep(delay)
 
-            except Exception as e:
+            except websockets.exceptions.ConnectionClosedError as exc:
                 attempt += 1
-                delay = min(2 * (2**attempt), 300)
-                logger.error(f"[WS] Error: {e}. Retry in {delay}s (attempt {attempt}/{max_attempts})")
+                delay = _calculate_backoff(attempt)
+                finnhub_ws_reconnect_attempts.labels(
+                    replica_id=self._replica_id, error_type="connection_closed"
+                ).inc()
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
+                logger.warning(
+                    "[WS] Connection closed: %s. Retry in %.1f s (attempt %d)",
+                    exc,
+                    delay,
+                    attempt,
+                )
                 self._connected = False
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
+                await asyncio.sleep(delay)
+
+            except Exception as exc:
+                attempt += 1
+                delay = _calculate_backoff(attempt)
+                error_type = type(exc).__name__
+                finnhub_ws_reconnect_attempts.labels(
+                    replica_id=self._replica_id, error_type=error_type
+                ).inc()
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
+                logger.error(
+                    "[WS] Error: %s (%s). Retry in %.1f s (attempt %d)",
+                    exc,
+                    error_type,
+                    delay,
+                    attempt,
+                )
+                self._connected = False
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 await asyncio.sleep(delay)
 
             finally:
@@ -452,9 +528,11 @@ class FinnhubWebSocket:
                 if self._ws is not None:
                     with contextlib.suppress(Exception):
                         await self._ws.close()
+                    self._ws = None
 
-        logger.error(f"[WS] Max reconnection attempts ({max_attempts}) reached. Giving up.")
+        logger.info("[WS] Run loop exited (running=%s)", self._running)
         self._connected = False
+        finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
         await self._release_leader_lock()
 
     async def stop(self) -> None:
