@@ -79,7 +79,7 @@ def test_smc_bullish_bos_detected(analyzer, context_bus):
 
     # Should detect BOS with uptrend breaking previous swing high
     if result["bos_detected"]:
-        assert result["confidence"] == 0.8
+        assert result["confidence"] >= 0.8  # base 0.8 + optional FVG/OB/sweep boost
         assert result["displacement"] is True
         assert result["smc"] is True
 

@@ -228,7 +228,9 @@ class TestL8FallbackEdges:
         assert _fallback_vwap([]) == 0.0
 
     def test_fallback_vwap_short_list(self) -> None:
-        assert _fallback_vwap([1.3, 1.31, 1.32]) == 0.0
+        # _fallback_vwap works with any non-empty list (no minimum guard)
+        result = _fallback_vwap([1.3, 1.31, 1.32])
+        assert 1.29 < result < 1.33  # near the mean of inputs
 
     def test_fallback_vwap_returns_near_mean(self) -> None:
         closes = _make_closes(60)

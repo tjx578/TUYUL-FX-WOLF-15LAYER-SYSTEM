@@ -1079,6 +1079,28 @@ class WolfConstitutionalPipeline:
                     "L9SMCAnalyzer",
                 ]
             )
+            # ── L8 needs raw close prices for TII computation ────────
+            # L3 output doesn't include raw closes; fetch from bus.
+            _h1_for_l8 = cast(
+                list[dict[str, Any]],
+                self._context_bus.get_candles(symbol, "H1"),
+            )
+            _l8_closes: list[float] = []
+            for _c in _h1_for_l8:
+                _cv = _c.get("close")
+                if isinstance(_cv, int | float | str):
+                    with contextlib.suppress(TypeError, ValueError):
+                        _l8_closes.append(float(_cv))
+            _l8_market_data: dict[str, Any] = {"closes": _l8_closes} if _l8_closes else {}
+
+            # ── L9 needs structure dict from L3 output ───────────────
+            _l9_structure: dict[str, Any] = {
+                "valid": l3.get("valid", False),
+                "trend": l3.get("trend", "NEUTRAL"),
+                "bos": l3.get("fvg_detected", False),  # proxy from L3 SMC markers
+                "choch": False,
+            }
+
             phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "L7": lambda: cast(
                     dict[str, Any],
@@ -1101,9 +1123,13 @@ class WolfConstitutionalPipeline:
                         l1=l1,
                         l3=l3,
                         indicators=l3,
+                        market_data=_l8_market_data,
                     ),
                 ),
-                "L9": lambda: cast(dict[str, Any], _timed_layer_call(l9_engine.analyze, "L9", symbol)),
+                "L9": lambda: cast(
+                    dict[str, Any],
+                    _timed_layer_call(l9_engine.analyze, "L9", symbol, structure=_l9_structure),
+                ),
             }
             phase3_results = self._run_dag_batch_calls(dag_batches, phase3_calls)
             l7 = phase3_results["L7"]
@@ -1122,6 +1148,25 @@ class WolfConstitutionalPipeline:
                 l7.get("bayesian_posterior", 0.0),
                 l7.get("risk_of_ruin", 1.0),
                 l7.get("mc_passed_threshold", False),
+            )
+            logger.info(
+                "[Phase-3] %s L8 complete: tii=%.4f integrity=%.4f gate=%s twms=%.4f closes_fed=%d",
+                symbol,
+                l8.get("tii_sym", 0.0),
+                l8.get("integrity", 0.0),
+                l8.get("gate_status", "N/A"),
+                l8.get("twms_score", 0.0),
+                len(_l8_closes),
+            )
+            logger.info(
+                "[Phase-3] %s L9 complete: smc=%s score=%d dvg=%.4f liq=%.4f signal=%s valid=%s",
+                symbol,
+                l9.get("smc", False),
+                l9.get("smc_score", 0),
+                l9.get("dvg_confidence", 0.0),
+                l9.get("liquidity_score", 0.0),
+                l9.get("smart_money_signal", "N/A"),
+                l9.get("valid", False),
             )
 
             # ═══════════════════════════════════════════════════════
