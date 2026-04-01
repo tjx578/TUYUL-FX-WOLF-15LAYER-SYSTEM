@@ -432,6 +432,15 @@ class L2MTAAnalyzer:
         self._ensure_engines()
 
         candle_source = self.bus or self.context
+        # v8.1: Auto-initialize from singleton if no bus was injected
+        if candle_source is None:
+            try:
+                from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+                candle_source = LiveContextBus()
+                self.bus = candle_source
+            except Exception:
+                pass
         l1_ctx = self._fetch_l1_context(symbol)
 
         # ── Adaptive TF weights ───────────────────────────────
@@ -468,6 +477,18 @@ class L2MTAAnalyzer:
 
         # ── Validity gate ─────────────────────────────────────
         if available < _MIN_TIMEFRAMES:
+            present_tfs = list(tf_probs.keys())
+            missing_tfs = [tf for tf in _TF_ORDER if tf not in tf_probs]
+            logger.warning(
+                "[L2] %s insufficient TFs: %d/%d (need %d). present=%s missing=%s bus=%s",
+                symbol,
+                available,
+                len(_TF_ORDER),
+                _MIN_TIMEFRAMES,
+                present_tfs,
+                missing_tfs,
+                type(candle_source).__name__ if candle_source else "None",
+            )
             return self._fallback(available, per_tf_detail)
 
         # ── Hierarchical Bayesian Fusion ──────────────────────

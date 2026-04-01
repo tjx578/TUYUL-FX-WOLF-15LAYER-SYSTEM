@@ -331,6 +331,7 @@ class WolfConstitutionalPipeline:
 
         self._l1 = L1ContextAnalyzer()
         self._l2 = L2MTAAnalyzer()
+        self._l2.bus = self._context_bus  # L2 needs bus injection for candle access
         self._l3 = L3TechnicalAnalyzer()
         self._l4 = L4ScoringEngine()
         self._l5 = L5PsychologyAnalyzer()
@@ -1224,7 +1225,7 @@ class WolfConstitutionalPipeline:
             )
             layers_executed.append("L6")
 
-            risk_ok: Any = l6.get("risk_ok", False)
+            l6.get("risk_ok", False)
             smc_confidence: Any = l9.get("confidence", 0.0)
             assert self._l10 is not None
 
@@ -1350,7 +1351,6 @@ class WolfConstitutionalPipeline:
                         l6["propfirm_compliant"] = False
                         l6["max_risk_pct"] = 0.0
                         l6.setdefault("warnings", []).append(f"LRCE_FRACTURE({_lrce:.3f})")
-                        risk_ok = False
                         logger.warning(
                             "[Phase-4→2.5] L6 LRCE escalation: {:.3f} > threshold → HARD BLOCK",
                             _lrce,
