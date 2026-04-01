@@ -1,0 +1,24 @@
+{
+  "user_request": "Build a new feature with auth integration, release workflow, and performance validation.",
+  "domain_tags": ["backend", "api", "release"],
+  "deliverable_types": ["code", "doc", "release"],
+  "constraints": {
+    "security_sensitivity": "high",
+    "performance_sensitivity": "medium",
+    "architecture_impact": "cross_module",
+    "release_impact": "major",
+    "memory_required": true,
+    "audit_required": true
+  },
+  "context": {
+    "repo_available": true,
+    "artifacts_available": true,
+    "historical_memory_available": true,
+    "external_systems_involved": ["github", "auth_provider"]
+  },
+  "preferences": {
+    "prefer_fast_path": false,
+    "allow_swarm": true,
+    "require_spec_first": true
+  }
+}

@@ -1,0 +1,1334 @@
+{
+  "meta": {
+    "name": "Ultimate Agent Registry",
+    "version": "2.0.0",
+    "status": "draft-executable-spec",
+    "entrypoint": "ultimate_agent_router",
+    "default_strategy": "single_agent_fast_path",
+    "default_verification": true,
+    "default_memory_writeback": true
+  },
+  "contracts": {
+    "objective_contract": {
+      "objective_id": "string",
+      "user_request": "string",
+      "normalized_objective": "string",
+      "domain_tags": [
+        "string"
+      ],
+      "deliverable_types": [
+        "analysis|code|doc|test|release|ops|memory"
+      ],
+      "constraints": {
+        "time_sensitivity": "low|medium|high",
+        "security_sensitivity": "low|medium|high",
+        "performance_sensitivity": "low|medium|high",
+        "architecture_impact": "none|local|cross_module|cross_system",
+        "release_impact": "none|minor|major",
+        "memory_required": "boolean",
+        "audit_required": "boolean"
+      },
+      "context": {
+        "repo_available": "boolean",
+        "artifacts_available": "boolean",
+        "historical_memory_available": "boolean",
+        "external_systems_involved": [
+          "string"
+        ]
+      },
+      "preferences": {
+        "prefer_fast_path": "boolean",
+        "allow_swarm": "boolean",
+        "require_spec_first": "boolean"
+      }
+    },
+    "result_contract": {
+      "objective_id": "string",
+      "route_id": "string",
+      "selected_topology": "single|pipeline|parallel_swarm|hierarchical_swarm",
+      "selected_modes": [
+        "string"
+      ],
+      "execution_status": "success|partial|failed|blocked",
+      "deliverables": {
+        "summaries": [
+          "string"
+        ],
+        "artifacts": [
+          "string"
+        ],
+        "changed_files": [
+          "string"
+        ],
+        "tests": [
+          "string"
+        ],
+        "issues": [
+          "string"
+        ]
+      },
+      "governance": {
+        "security_review_required": "boolean",
+        "performance_review_required": "boolean",
+        "verification_status": "pass|warn|fail",
+        "blockers": [
+          "string"
+        ]
+      },
+      "memory": {
+        "writeback_status": "pending|written|skipped",
+        "namespaces": [
+          "string"
+        ],
+        "stored_items": [
+          "string"
+        ]
+      },
+      "next_actions": [
+        "string"
+      ]
+    },
+    "handoff_contract": {
+      "from_mode": "string",
+      "to_mode": "string",
+      "objective_id": "string",
+      "route_id": "string",
+      "summary": "string",
+      "artifacts": [
+        "string"
+      ],
+      "findings": [
+        "string"
+      ],
+      "decisions": [
+        "string"
+      ],
+      "blockers": [
+        "string"
+      ],
+      "assumptions": [
+        "string"
+      ],
+      "requested_action": "string",
+      "completion_hint": "string"
+    },
+    "verification_contract": {
+      "checks": {
+        "clarity": "pass|warn|fail",
+        "completeness": "pass|warn|fail",
+        "consistency": "pass|warn|fail",
+        "security": "pass|warn|fail|not_applicable",
+        "performance": "pass|warn|fail|not_applicable",
+        "evidence": "pass|warn|fail"
+      },
+      "overall_verdict": "pass|warn|fail",
+      "blockers": [
+        "string"
+      ],
+      "confidence": "0.0..1.0",
+      "ship_recommendation": "ship|ship_with_caveats|do_not_ship"
+    }
+  },
+  "registry_item_schema": {
+    "id": "string",
+    "label": "string",
+    "class": "mode|gate|support",
+    "description": "string",
+    "triggers": [
+      "string"
+    ],
+    "use_when": [
+      "string"
+    ],
+    "skip_when": [
+      "string"
+    ],
+    "required_inputs": [
+      "string"
+    ],
+    "optional_inputs": [
+      "string"
+    ],
+    "produces": [
+      "string"
+    ],
+    "side_effects": [
+      "string"
+    ],
+    "dependencies": [
+      "string"
+    ],
+    "handoff_to": [
+      "string"
+    ],
+    "topology_support": [
+      "single|pipeline|parallel_swarm|hierarchical_swarm"
+    ],
+    "risk_profile": "low|medium|high",
+    "execution_cost": "low|medium|high",
+    "memory_policy": "none|read|write|read_write",
+    "completion_criteria": [
+      "string"
+    ]
+  },
+  "routing_dimensions": [
+    "complexity",
+    "ambiguity",
+    "security_risk",
+    "performance_risk",
+    "architecture_impact",
+    "delivery_scope",
+    "memory_value"
+  ],
+  "complexity_rules": {
+    "low": {
+      "conditions": [
+        "single deliverable",
+        "single domain",
+        "no architecture impact",
+        "low security/performance risk"
+      ],
+      "route": "single_agent_fast_path"
+    },
+    "medium": {
+      "conditions": [
+        "multi-step",
+        "2 domains",
+        "local architecture impact"
+      ],
+      "route": "pipeline"
+    },
+    "high": {
+      "conditions": [
+        "3+ domains",
+        "cross-module or cross-system impact",
+        "security or performance sensitivity",
+        "multiple artifacts"
+      ],
+      "route": "full_orchestrated_path"
+    },
+    "extreme": {
+      "conditions": [
+        "3+ independent workstreams",
+        "needs parallel specialists",
+        "high-risk cross-system release"
+      ],
+      "route": "swarm_path"
+    }
+  },
+  "topology_rules": [
+    {
+      "name": "single_fast_path",
+      "if_all": [
+        "complexity <= 1",
+        "ambiguity <= 1",
+        "security_risk <= 1",
+        "architecture_impact <= 1"
+      ],
+      "select": {
+        "topology": "single",
+        "modes": [
+          "research",
+          "implementation",
+          "verification"
+        ]
+      }
+    },
+    {
+      "name": "spec_first_pipeline",
+      "if_all": [
+        "ambiguity >= 3",
+        "complexity >= 2"
+      ],
+      "select": {
+        "topology": "pipeline",
+        "modes": [
+          "research",
+          "specification",
+          "architecture",
+          "implementation",
+          "verification"
+        ]
+      }
+    },
+    {
+      "name": "architecture_pipeline",
+      "if_all": [
+        "architecture_impact >= 3"
+      ],
+      "select": {
+        "topology": "pipeline",
+        "modes": [
+          "scout",
+          "research",
+          "planner",
+          "architecture",
+          "implementation",
+          "review",
+          "test",
+          "verification"
+        ]
+      }
+    },
+    {
+      "name": "secure_delivery_pipeline",
+      "if_all": [
+        "security_risk >= 3"
+      ],
+      "select": {
+        "topology": "pipeline",
+        "modes": [
+          "research",
+          "specification",
+          "architecture",
+          "implementation",
+          "security",
+          "review",
+          "test",
+          "verification"
+        ]
+      }
+    },
+    {
+      "name": "performance_pipeline",
+      "if_all": [
+        "performance_risk >= 3"
+      ],
+      "select": {
+        "topology": "pipeline",
+        "modes": [
+          "research",
+          "architecture",
+          "implementation",
+          "performance",
+          "test",
+          "verification"
+        ]
+      }
+    },
+    {
+      "name": "release_pipeline",
+      "if_all": [
+        "delivery_scope >= 3"
+      ],
+      "select": {
+        "topology": "pipeline",
+        "modes": [
+          "planner",
+          "implementation",
+          "review",
+          "test",
+          "github_release",
+          "verification"
+        ]
+      }
+    },
+    {
+      "name": "hierarchical_swarm",
+      "if_all": [
+        "complexity >= 4",
+        "delivery_scope >= 4",
+        "architecture_impact >= 3"
+      ],
+      "select": {
+        "topology": "hierarchical_swarm",
+        "modes": [
+          "swarm_coordination",
+          "scout",
+          "research",
+          "planner",
+          "architecture",
+          "implementation",
+          "review",
+          "test",
+          "verification"
+        ]
+      }
+    }
+  ],
+  "gate_injection": {
+    "security": {
+      "inject_if": "security_risk >= 3",
+      "insert_after": "implementation"
+    },
+    "performance": {
+      "inject_if": "performance_risk >= 3",
+      "insert_after": "implementation"
+    },
+    "review": {
+      "inject_if": "deliverable_types contains code",
+      "insert_after": "implementation"
+    },
+    "test": {
+      "inject_if": "deliverable_types contains code",
+      "insert_after": "review"
+    },
+    "memory_learning": {
+      "inject_if": "memory_value >= 2 or constraints.memory_required == true",
+      "insert_before": "verification"
+    },
+    "verification": {
+      "inject_if": "always",
+      "insert_at_end": true
+    }
+  },
+  "state_machine": {
+    "states": [
+      "intake",
+      "normalized",
+      "classified",
+      "routed",
+      "executing",
+      "waiting_handoff",
+      "blocked",
+      "reroute_required",
+      "verifying",
+      "persistence",
+      "completed",
+      "failed"
+    ],
+    "transitions": [
+      {
+        "from": "intake",
+        "to": "normalized",
+        "when": "objective normalized"
+      },
+      {
+        "from": "normalized",
+        "to": "classified",
+        "when": "routing dimensions scored"
+      },
+      {
+        "from": "classified",
+        "to": "routed",
+        "when": "topology and modes selected"
+      },
+      {
+        "from": "routed",
+        "to": "executing",
+        "when": "first mode invoked"
+      },
+      {
+        "from": "executing",
+        "to": "waiting_handoff",
+        "when": "current mode completed and next mode pending"
+      },
+      {
+        "from": "waiting_handoff",
+        "to": "executing",
+        "when": "next mode accepted handoff"
+      },
+      {
+        "from": "executing",
+        "to": "blocked",
+        "when": "hard blocker or failed gate"
+      },
+      {
+        "from": "blocked",
+        "to": "reroute_required",
+        "when": "fallback path available"
+      },
+      {
+        "from": "reroute_required",
+        "to": "routed",
+        "when": "alternate route selected"
+      },
+      {
+        "from": "executing",
+        "to": "verifying",
+        "when": "all required modes completed"
+      },
+      {
+        "from": "verifying",
+        "to": "persistence",
+        "when": "verification pass or warn with allowed publish"
+      },
+      {
+        "from": "verifying",
+        "to": "blocked",
+        "when": "verification fail"
+      },
+      {
+        "from": "persistence",
+        "to": "completed",
+        "when": "memory writeback resolved"
+      },
+      {
+        "from": "blocked",
+        "to": "failed",
+        "when": "no legal reroute exists"
+      }
+    ]
+  },
+  "standard_routes": {
+    "route_fast_build": {
+      "topology": "single",
+      "modes": [
+        "research",
+        "implementation",
+        "verification"
+      ]
+    },
+    "route_new_feature": {
+      "topology": "pipeline",
+      "modes": [
+        "research",
+        "specification",
+        "architecture",
+        "implementation",
+        "review",
+        "test",
+        "verification"
+      ]
+    },
+    "route_secure_system": {
+      "topology": "pipeline",
+      "modes": [
+        "scout",
+        "research",
+        "planner",
+        "specification",
+        "architecture",
+        "implementation",
+        "security",
+        "review",
+        "test",
+        "verification"
+      ]
+    },
+    "route_release": {
+      "topology": "pipeline",
+      "modes": [
+        "planner",
+        "implementation",
+        "review",
+        "test",
+        "github_release",
+        "verification"
+      ]
+    },
+    "route_large_swarm": {
+      "topology": "hierarchical_swarm",
+      "modes": [
+        "swarm_coordination",
+        "scout",
+        "research",
+        "planner",
+        "architecture",
+        "implementation",
+        "review",
+        "test",
+        "verification"
+      ]
+    }
+  },
+  "registry": [
+    {
+      "id": "scout",
+      "label": "Scout Mode",
+      "class": "mode",
+      "description": "Fast reconnaissance to map territory, files, threats, and next best route.",
+      "triggers": [
+        "unknown codebase",
+        "large workspace",
+        "need initial map"
+      ],
+      "use_when": [
+        "domain unclear",
+        "need structural overview",
+        "need fast triage"
+      ],
+      "skip_when": [
+        "task already well scoped",
+        "single known file change"
+      ],
+      "required_inputs": [
+        "objective_id",
+        "normalized_objective"
+      ],
+      "optional_inputs": [
+        "repo_path",
+        "artifact_paths"
+      ],
+      "produces": [
+        "workspace_map",
+        "relevant_files",
+        "initial_risks",
+        "next_mode_recommendation"
+      ],
+      "side_effects": [
+        "may create reconnaissance notes"
+      ],
+      "dependencies": [],
+      "handoff_to": [
+        "research",
+        "planner",
+        "architecture",
+        "implementation"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "low",
+      "execution_cost": "low",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "relevant surface mapped",
+        "next route proposed"
+      ]
+    },
+    {
+      "id": "research",
+      "label": "Research Mode",
+      "class": "mode",
+      "description": "Deep analysis of patterns, dependencies, historical choices, and implementation facts.",
+      "triggers": [
+        "need understanding",
+        "dependency analysis",
+        "legacy behavior"
+      ],
+      "use_when": [
+        "answer not obvious",
+        "need grounded understanding",
+        "need technical synthesis"
+      ],
+      "skip_when": [
+        "implementation path already proven and simple"
+      ],
+      "required_inputs": [
+        "objective_id",
+        "normalized_objective"
+      ],
+      "optional_inputs": [
+        "workspace_map",
+        "memory_refs"
+      ],
+      "produces": [
+        "findings",
+        "dependency_map",
+        "anti_patterns",
+        "technical_recommendations"
+      ],
+      "side_effects": [
+        "may enrich memory"
+      ],
+      "dependencies": [],
+      "handoff_to": [
+        "planner",
+        "specification",
+        "architecture",
+        "implementation",
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "parallel_swarm",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "low",
+      "execution_cost": "medium",
+      "memory_policy": "read_write",
+      "completion_criteria": [
+        "facts synthesized",
+        "decision-relevant insight produced"
+      ]
+    },
+    {
+      "id": "planner",
+      "label": "Planner / GOAP Mode",
+      "class": "mode",
+      "description": "Decomposes objective into ordered executable tasks with risks and contingencies.",
+      "triggers": [
+        "multi-step objective",
+        "cross-domain work",
+        "uncertain sequencing"
+      ],
+      "use_when": [
+        "dependencies matter",
+        "critical path must be explicit"
+      ],
+      "skip_when": [
+        "one-step request"
+      ],
+      "required_inputs": [
+        "objective_id",
+        "normalized_objective"
+      ],
+      "optional_inputs": [
+        "findings",
+        "workspace_map"
+      ],
+      "produces": [
+        "work_plan",
+        "milestones",
+        "dependency_graph",
+        "risk_map"
+      ],
+      "side_effects": [
+        "locks preferred route unless rerouted"
+      ],
+      "dependencies": [
+        "research"
+      ],
+      "handoff_to": [
+        "specification",
+        "architecture",
+        "implementation",
+        "release",
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "medium",
+      "execution_cost": "medium",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "ordered plan produced",
+        "critical path defined"
+      ]
+    },
+    {
+      "id": "specification",
+      "label": "SPARC Specification Mode",
+      "class": "mode",
+      "description": "Converts ambiguous intent into precise scope, acceptance criteria, and non-goals.",
+      "triggers": [
+        "ambiguous request",
+        "new feature",
+        "unclear boundaries"
+      ],
+      "use_when": [
+        "requirements fuzzy",
+        "acceptance criteria missing"
+      ],
+      "skip_when": [
+        "requirements already explicit"
+      ],
+      "required_inputs": [
+        "objective_id",
+        "normalized_objective"
+      ],
+      "optional_inputs": [
+        "research_findings",
+        "plan"
+      ],
+      "produces": [
+        "specification",
+        "acceptance_criteria",
+        "constraints",
+        "edge_cases",
+        "non_goals"
+      ],
+      "side_effects": [
+        "tightens downstream execution legality"
+      ],
+      "dependencies": [
+        "research"
+      ],
+      "handoff_to": [
+        "architecture",
+        "implementation",
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline"
+      ],
+      "risk_profile": "medium",
+      "execution_cost": "medium",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "scope explicit",
+        "acceptance criteria testable"
+      ]
+    },
+    {
+      "id": "architecture",
+      "label": "Architecture Mode",
+      "class": "mode",
+      "description": "Defines component boundaries, interfaces, data flow, deployment implications, and trade-offs.",
+      "triggers": [
+        "cross-module change",
+        "new service",
+        "API redesign",
+        "system integration"
+      ],
+      "use_when": [
+        "architecture impact not none",
+        "service boundaries affected"
+      ],
+      "skip_when": [
+        "small local edit"
+      ],
+      "required_inputs": [
+        "objective_id",
+        "normalized_objective"
+      ],
+      "optional_inputs": [
+        "specification",
+        "plan",
+        "findings"
+      ],
+      "produces": [
+        "architecture_decisions",
+        "contracts",
+        "boundaries",
+        "risks",
+        "tradeoffs"
+      ],
+      "side_effects": [
+        "may require security/performance reviews"
+      ],
+      "dependencies": [
+        "research"
+      ],
+      "handoff_to": [
+        "implementation",
+        "security",
+        "performance",
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "high",
+      "execution_cost": "high",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "interfaces defined",
+        "trade-offs recorded"
+      ]
+    },
+    {
+      "id": "implementation",
+      "label": "Implementation Mode",
+      "class": "mode",
+      "description": "Builds or edits the deliverable based on selected architecture/specification.",
+      "triggers": [
+        "ready to build",
+        "clear patch path"
+      ],
+      "use_when": [
+        "solution path sufficiently clear"
+      ],
+      "skip_when": [
+        "spec still ambiguous",
+        "architecture unresolved"
+      ],
+      "required_inputs": [
+        "objective_id",
+        "normalized_objective"
+      ],
+      "optional_inputs": [
+        "specification",
+        "architecture_decisions",
+        "plan"
+      ],
+      "produces": [
+        "code_changes",
+        "docs_updates",
+        "artifacts",
+        "implementation_notes"
+      ],
+      "side_effects": [
+        "changes working state",
+        "creates artifacts"
+      ],
+      "dependencies": [],
+      "handoff_to": [
+        "review",
+        "test",
+        "security",
+        "performance",
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "parallel_swarm"
+      ],
+      "risk_profile": "medium",
+      "execution_cost": "high",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "deliverable produced",
+        "changes attributable to objective"
+      ]
+    },
+    {
+      "id": "review",
+      "label": "Review Mode",
+      "class": "mode",
+      "description": "Checks correctness, maintainability, consistency, and merge readiness.",
+      "triggers": [
+        "code changed",
+        "deliverable needs inspection"
+      ],
+      "use_when": [
+        "quality review required"
+      ],
+      "skip_when": [
+        "pure explanation with no artifact"
+      ],
+      "required_inputs": [
+        "objective_id"
+      ],
+      "optional_inputs": [
+        "code_changes",
+        "architecture_decisions"
+      ],
+      "produces": [
+        "review_findings",
+        "severity_map",
+        "proposed_fixes",
+        "readiness"
+      ],
+      "side_effects": [
+        "can block publish"
+      ],
+      "dependencies": [
+        "implementation"
+      ],
+      "handoff_to": [
+        "implementation",
+        "test",
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "parallel_swarm"
+      ],
+      "risk_profile": "medium",
+      "execution_cost": "medium",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "findings categorized",
+        "readiness declared"
+      ]
+    },
+    {
+      "id": "test",
+      "label": "Test Mode",
+      "class": "mode",
+      "description": "Produces or runs a test strategy to prove intended behavior and regressions.",
+      "triggers": [
+        "behavior changed",
+        "new code",
+        "risk of regression"
+      ],
+      "use_when": [
+        "proof needed"
+      ],
+      "skip_when": [
+        "no executable behavior affected"
+      ],
+      "required_inputs": [
+        "objective_id"
+      ],
+      "optional_inputs": [
+        "code_changes",
+        "acceptance_criteria"
+      ],
+      "produces": [
+        "test_plan",
+        "test_artifacts",
+        "evidence",
+        "gaps"
+      ],
+      "side_effects": [
+        "can fail route"
+      ],
+      "dependencies": [
+        "implementation"
+      ],
+      "handoff_to": [
+        "implementation",
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "parallel_swarm"
+      ],
+      "risk_profile": "medium",
+      "execution_cost": "medium",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "evidence generated",
+        "remaining gaps explicit"
+      ]
+    },
+    {
+      "id": "security",
+      "label": "Security Mode",
+      "class": "gate",
+      "description": "Threat model and hardening gate for sensitive surfaces.",
+      "triggers": [
+        "auth",
+        "secrets",
+        "payments",
+        "user data",
+        "external API",
+        "distributed system"
+      ],
+      "use_when": [
+        "security_sensitivity is medium/high"
+      ],
+      "skip_when": [
+        "purely local non-sensitive change"
+      ],
+      "required_inputs": [
+        "objective_id"
+      ],
+      "optional_inputs": [
+        "architecture_decisions",
+        "code_changes"
+      ],
+      "produces": [
+        "risk_register",
+        "findings",
+        "mitigations",
+        "blockers"
+      ],
+      "side_effects": [
+        "may block release"
+      ],
+      "dependencies": [],
+      "handoff_to": [
+        "implementation",
+        "verification",
+        "release"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "high",
+      "execution_cost": "medium",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "sensitive surfaces reviewed",
+        "blockers explicit"
+      ]
+    },
+    {
+      "id": "performance",
+      "label": "Performance Mode",
+      "class": "gate",
+      "description": "Evaluates latency, throughput, memory, concurrency, and hot-path impact.",
+      "triggers": [
+        "hot path",
+        "scaling",
+        "latency concern",
+        "storage/network impact"
+      ],
+      "use_when": [
+        "performance_sensitivity is medium/high"
+      ],
+      "skip_when": [
+        "no performance-relevant change"
+      ],
+      "required_inputs": [
+        "objective_id"
+      ],
+      "optional_inputs": [
+        "code_changes",
+        "architecture_decisions"
+      ],
+      "produces": [
+        "bottleneck_map",
+        "benchmark_plan",
+        "optimization_recommendations",
+        "results"
+      ],
+      "side_effects": [
+        "may require reroute"
+      ],
+      "dependencies": [],
+      "handoff_to": [
+        "implementation",
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline"
+      ],
+      "risk_profile": "medium",
+      "execution_cost": "medium",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "performance implications explicit"
+      ]
+    },
+    {
+      "id": "github_release",
+      "label": "GitHub / Release Mode",
+      "class": "mode",
+      "description": "Handles issue, PR, workflow, release, rollout, and project coordination.",
+      "triggers": [
+        "PR",
+        "issue",
+        "release",
+        "workflow",
+        "CI/CD"
+      ],
+      "use_when": [
+        "delivery pipeline involved"
+      ],
+      "skip_when": [
+        "no release surface"
+      ],
+      "required_inputs": [
+        "objective_id"
+      ],
+      "optional_inputs": [
+        "review_findings",
+        "test_evidence",
+        "verification_verdict"
+      ],
+      "produces": [
+        "pr_plan",
+        "release_plan",
+        "checklist",
+        "rollout_notes"
+      ],
+      "side_effects": [
+        "touches delivery state"
+      ],
+      "dependencies": [
+        "review",
+        "test"
+      ],
+      "handoff_to": [
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline"
+      ],
+      "risk_profile": "medium",
+      "execution_cost": "medium",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "delivery path explicit",
+        "blockers known"
+      ]
+    },
+    {
+      "id": "platform_ops",
+      "label": "Platform Ops Mode",
+      "class": "mode",
+      "description": "Covers auth, sandbox, deployment, billing, app workflows, and operational tool surfaces.",
+      "triggers": [
+        "deployment",
+        "billing",
+        "sandbox",
+        "app workflow",
+        "ops"
+      ],
+      "use_when": [
+        "operational flows involved"
+      ],
+      "skip_when": [
+        "no platform surface"
+      ],
+      "required_inputs": [
+        "objective_id"
+      ],
+      "optional_inputs": [
+        "architecture_decisions",
+        "release_plan"
+      ],
+      "produces": [
+        "ops_steps",
+        "environment_requirements",
+        "runbook",
+        "guardrails"
+      ],
+      "side_effects": [
+        "touches operational readiness"
+      ],
+      "dependencies": [],
+      "handoff_to": [
+        "verification"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "high",
+      "execution_cost": "medium",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "operational path defined",
+        "guardrails explicit"
+      ]
+    },
+    {
+      "id": "memory_learning",
+      "label": "Memory & Learning Mode",
+      "class": "support",
+      "description": "Reads/writes long-lived context, decisions, patterns, and handoff summaries.",
+      "triggers": [
+        "historical context needed",
+        "important decision",
+        "cross-session continuity"
+      ],
+      "use_when": [
+        "memory_required is true",
+        "decision durability matters"
+      ],
+      "skip_when": [
+        "ephemeral trivial task"
+      ],
+      "required_inputs": [
+        "objective_id"
+      ],
+      "optional_inputs": [
+        "route_summary",
+        "final_result"
+      ],
+      "produces": [
+        "memory_refs",
+        "persisted_decisions",
+        "retrieval_hooks"
+      ],
+      "side_effects": [
+        "writes audit trail"
+      ],
+      "dependencies": [],
+      "handoff_to": [
+        "research",
+        "planner",
+        "verification",
+        "publish"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "parallel_swarm",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "low",
+      "execution_cost": "low",
+      "memory_policy": "read_write",
+      "completion_criteria": [
+        "relevant context restored or stored"
+      ]
+    },
+    {
+      "id": "swarm_coordination",
+      "label": "Swarm Coordination Mode",
+      "class": "mode",
+      "description": "Creates and manages specialist topology for parallel or hierarchical execution.",
+      "triggers": [
+        "3+ workstreams",
+        "parallel specialists",
+        "large objective"
+      ],
+      "use_when": [
+        "allow_swarm is true",
+        "single path insufficient"
+      ],
+      "skip_when": [
+        "single-agent enough"
+      ],
+      "required_inputs": [
+        "objective_id",
+        "normalized_objective"
+      ],
+      "optional_inputs": [
+        "plan",
+        "architecture_decisions"
+      ],
+      "produces": [
+        "topology_choice",
+        "role_assignments",
+        "subtask_routes",
+        "synthesis_plan"
+      ],
+      "side_effects": [
+        "creates coordination overhead"
+      ],
+      "dependencies": [
+        "planner"
+      ],
+      "handoff_to": [
+        "research",
+        "implementation",
+        "review",
+        "verification"
+      ],
+      "topology_support": [
+        "parallel_swarm",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "medium",
+      "execution_cost": "high",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "subtasks assigned",
+        "synthesis mechanism defined"
+      ]
+    },
+    {
+      "id": "verification",
+      "label": "Verification Gate Mode",
+      "class": "gate",
+      "description": "Final constitutional gate for truth, consistency, completeness, and ship readiness.",
+      "triggers": [
+        "always at end"
+      ],
+      "use_when": [
+        "before final output",
+        "before release/publish"
+      ],
+      "skip_when": [],
+      "required_inputs": [
+        "objective_id"
+      ],
+      "optional_inputs": [
+        "deliverables",
+        "findings",
+        "blockers"
+      ],
+      "produces": [
+        "verification_verdict",
+        "confidence",
+        "blockers",
+        "final_recommendation"
+      ],
+      "side_effects": [
+        "may stop publish"
+      ],
+      "dependencies": [],
+      "handoff_to": [
+        "memory_learning",
+        "publish"
+      ],
+      "topology_support": [
+        "single",
+        "pipeline",
+        "parallel_swarm",
+        "hierarchical_swarm"
+      ],
+      "risk_profile": "high",
+      "execution_cost": "low",
+      "memory_policy": "write",
+      "completion_criteria": [
+        "final verdict emitted"
+      ]
+    }
+  ]
+}
