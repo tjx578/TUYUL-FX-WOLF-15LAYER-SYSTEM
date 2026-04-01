@@ -16,7 +16,7 @@ from loguru import logger
 from config_loader import get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
 from context.system_state import SystemStateManager
-from core.redis_keys import candle_history, channel_candle
+from core.redis_keys import candle_history, channel_candle, latest_candle
 from ingest.finnhub_candles import FinnhubCandleFetcher
 from storage.candle_persistence import enqueue_candle_dict
 
@@ -177,6 +177,8 @@ class H1RefreshScheduler:
         """RPUSH candle dicts to Redis history lists (best-effort)."""
         if not self._redis or not candles:
             return
+        import time as _time  # noqa: PLC0415
+
         for candle in candles:
             symbol = candle.get("symbol")
             timeframe = candle.get("timeframe")
@@ -191,5 +193,15 @@ class H1RefreshScheduler:
                 # PUBLISH so engine RedisConsumer picks up refresh in real-time
                 pub_channel = channel_candle(symbol, timeframe)
                 await self._redis.publish(pub_channel, candle_json)
+                # Update latest_candle hash so pipeline staleness check
+                # sees fresh data from REST-sourced candles (not only WS).
+                hash_key = latest_candle(symbol, timeframe)
+                await self._redis.hset(
+                    hash_key,
+                    mapping={
+                        "data": candle_json,
+                        "last_seen_ts": str(_time.time()),
+                    },
+                )
             except Exception as exc:
                 logger.warning("[H1Refresh] Redis push failed {}: {}", key, exc)

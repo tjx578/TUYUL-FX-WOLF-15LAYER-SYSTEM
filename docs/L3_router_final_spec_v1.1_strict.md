@@ -11,7 +11,7 @@
 ## Changelog from v1.0
 
 | ID | Type | Description | Justification |
-|----|------|-------------|---------------|
+| ---- | ------ | ------------- | --------------- |
 | C1 | **Threshold recalibration** | `HIGH ≥ 0.55`, `MID ≥ 0.25` (was `0.85` / `0.65`) | Sigmoid edge model (`bias=-3.5`) produces realistic output in 0.2–0.7 range. Old thresholds were unreachable in practice. |
 | C2 | **NEUTRAL trend handling** | `NEUTRAL` trend with valid analysis → `WARN` (not `FAIL`) | NEUTRAL is a valid market state; failing it would block all non-directional confirmations. Pipeline should degrade gracefully, not halt. |
 | C3 | **LOW_CONFIRMATION_SCORE blocker** | New `BlockerCode.LOW_CONFIRMATION_SCORE` added | Provides diagnostic visibility when confirmation score falls below `MID` threshold independently of other blockers. |
@@ -22,7 +22,7 @@
 ## §1 Critical Blockers (frozen v1 + C3 extension)
 
 | # | BlockerCode | Trigger |
-|---|-------------|---------|
+| --- | ------------- | --------- |
 | 1 | `UPSTREAM_L2_NOT_CONTINUABLE` | L2 `continuation_allowed == false` |
 | 2 | `REQUIRED_TREND_SOURCE_MISSING` | Required trend source not in available set |
 | 3 | `TREND_CONFIRMATION_UNAVAILABLE` | Trend not confirmed or NEUTRAL + very low score |
@@ -39,7 +39,7 @@
 ## §2 Threshold Bands (recalibrated v1.1)
 
 | Band | Threshold | Note |
-|------|-----------|------|
+| ------ | ----------- | ------ |
 | `HIGH` | `≥ 0.55` | Calibrated for sigmoid edge model (`P_edge = sigmoid(W·X − 3.5)`) |
 | `MID` | `≥ 0.25` | Realistic lower-bound for valid setups in sigmoid output distribution |
 | `LOW` | `< 0.25` | Below viable confirmation — triggers FAIL |
@@ -51,7 +51,7 @@
 ## §3 Freshness States
 
 | State | Meaning |
-|-------|---------|
+| ------- | --------- |
 | `FRESH` | Candle age < 1h |
 | `STALE_PRESERVED` | Candle age 1h–2h |
 | `DEGRADED` | Candle age > 2h **OR** `data_quality=FLAT` **[v1.1]** |
@@ -62,7 +62,7 @@
 ## §4 Warmup States
 
 | State | Trigger |
-|-------|---------|
+| ------- | --------- |
 | `READY` | H1 bars ≥ 30 |
 | `PARTIAL` | H1 bars 20–29 |
 | `INSUFFICIENT` | H1 bars < 20 |
@@ -72,7 +72,7 @@
 ## §5 Fallback Legality Matrix (frozen v1)
 
 | FallbackClass | Legal | Effect |
-|---------------|-------|--------|
+| --------------- | ------- | -------- |
 | `NO_FALLBACK` | ✅ | Clean path |
 | `LEGAL_PRIMARY_SUBSTITUTE` | ✅ | PASS with warning |
 | `LEGAL_EMERGENCY_PRESERVE` | ✅ | WARN only |
@@ -83,7 +83,7 @@
 ## §6 Compression Truth Table (v1.1)
 
 | Condition | Status | continuation_allowed |
-|-----------|--------|---------------------|
+| ----------- | -------- | --------------------- |
 | Any critical blocker | `FAIL` | `false` |
 | Band == LOW | `FAIL` | `false` |
 | Not confirmed | `FAIL` | `false` |

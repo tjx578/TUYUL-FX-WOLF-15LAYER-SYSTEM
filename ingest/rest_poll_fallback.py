@@ -20,7 +20,7 @@ from loguru import logger
 
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
-from core.redis_keys import candle_history, channel_candle
+from core.redis_keys import candle_history, channel_candle, latest_candle
 from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 from ingest.finnhub_ws import is_forex_market_open
 from storage.candle_persistence import enqueue_candle_dict
@@ -388,6 +388,20 @@ class RestPollFallback:
                     enqueue_candle_dict(candle)
                     # Notify engine-side RedisConsumer via Pub/Sub
                     await self._redis.publish(pub_channel, candle_json)
+                # Update latest_candle hash so pipeline staleness check
+                # sees fresh data from REST-sourced candles (not only WS).
+                last_item = items[-1]
+                sym = last_item[2].get("symbol", "")
+                tf = last_item[2].get("timeframe", "")
+                if sym and tf:
+                    hash_key = latest_candle(sym, tf)
+                    await self._redis.hset(
+                        hash_key,
+                        mapping={
+                            "data": last_item[0],
+                            "last_seen_ts": str(time.time()),
+                        },
+                    )
                 self._redis_writes += len(items)
                 written_in_batch += len(items)
             except Exception as exc:
