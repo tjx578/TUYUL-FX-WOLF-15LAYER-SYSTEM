@@ -255,6 +255,13 @@ const _customCspOrigins = _extraCspConnectSrcOrigins(wsBase);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Enable instrumentation hook (src/instrumentation.ts) — polyfills
+  // performance API methods required by Next.js internal perf tracking.
+  // Without this, Node.js Alpine containers may throw
+  // "mgt.clearMarks is not a function" at runtime.
+  experimental: {
+    instrumentationHook: true,
+  },
   // Exclude browser-only chart library from server bundle.
   // lightweight-charts uses browser APIs (document/window) when createChart() is
   // called; keeping it out of the server bundle reduces cold-start parse time.

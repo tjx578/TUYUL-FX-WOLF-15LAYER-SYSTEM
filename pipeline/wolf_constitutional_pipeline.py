@@ -1101,6 +1101,12 @@ class WolfConstitutionalPipeline:
                 "choch": False,
             }
 
+            # WF validation is only meaningful for real trade P&L.
+            # Candle-derived returns have ~50% win rate by nature -> always
+            # fails WF thresholds -> false downgrade.  Flag synthetic source
+            # so L7 skips WF enrichment.
+            _synthetic_returns = trade_returns_preconditioned
+
             phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "L7": lambda: cast(
                     dict[str, Any],
@@ -1112,6 +1118,7 @@ class WolfConstitutionalPipeline:
                         trade_returns=l7_trade_returns,
                         prior_wins=prior_wins,
                         prior_losses=prior_losses,
+                        synthetic_returns=_synthetic_returns,
                     ),
                 ),
                 "L8": lambda: cast(

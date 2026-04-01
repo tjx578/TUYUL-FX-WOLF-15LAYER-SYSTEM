@@ -66,17 +66,16 @@ class TestL7WalkForwardDegradation:
         fake_wf = MagicMock()
         fake_wf.run.return_value = _FakeWFResult(passed=False)
 
-        analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42)
+        analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42, wf_validator=fake_wf)
         # Strong returns → MC says PASS
         returns = _make_returns(150, win_rate=0.75, seed=42)
 
-        with patch("analysis.layers.L7_probability._wf_validator", fake_wf):
-            result = analyzer.analyze(
-                "EURUSD",
-                trade_returns=returns,
-                prior_wins=30,
-                prior_losses=10,
-            )
+        result = analyzer.analyze(
+            "EURUSD",
+            trade_returns=returns,
+            prior_wins=30,
+            prior_losses=10,
+        )
 
         # WF failed → should have downgraded from PASS to CONDITIONAL
         assert result["validation"] in ("CONDITIONAL", "FAIL")
@@ -87,22 +86,32 @@ class TestL7WalkForwardDegradation:
         fake_wf = MagicMock()
         fake_wf.run.return_value = _FakeWFResult(passed=False)
 
-        analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42)
-        # Moderate returns → MC says CONDITIONAL
-        returns = _make_returns(150, win_rate=0.56, seed=11)
+        # First, find the MC tier without WF to calibrate.
+        # Use wf_validator=None to disable WF entirely.
+        probe = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42, wf_validator=None)
+        returns = _make_returns(200, win_rate=0.58, seed=11)
+        probe_result = probe.analyze(
+            "EURUSD", trade_returns=returns, prior_wins=15, prior_losses=15,
+        )
+        mc_tier = probe_result["validation"]
 
-        with patch("analysis.layers.L7_probability._wf_validator", fake_wf):
-            result = analyzer.analyze(
-                "EURUSD",
-                trade_returns=returns,
-                prior_wins=15,
-                prior_losses=15,
-            )
+        # Now run with WF that fails
+        analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42, wf_validator=fake_wf)
+        result = analyzer.analyze(
+            "EURUSD",
+            trade_returns=returns,
+            prior_wins=15,
+            prior_losses=15,
+        )
 
-        # If MC gave CONDITIONAL, WF fail should downgrade to FAIL
-        if result.get("_mc_validation_before_wf", result["validation"]) == "CONDITIONAL":
+        # WF fail should downgrade exactly one tier
+        if mc_tier == "PASS":
+            assert result["validation"] == "CONDITIONAL"
+        elif mc_tier == "CONDITIONAL":
             assert result["validation"] == "FAIL"
-        # If MC already gave FAIL, WF can't downgrade further
+        else:
+            # MC already FAIL — WF can't downgrade further
+            assert result["validation"] == "FAIL"
         assert result["wf_passed"] is False
 
     def test_wf_exception_populates_default_fields(self) -> None:
@@ -110,16 +119,15 @@ class TestL7WalkForwardDegradation:
         fake_wf = MagicMock()
         fake_wf.run.side_effect = RuntimeError("engine crash")
 
-        analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42)
+        analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42, wf_validator=fake_wf)
         returns = _make_returns(150, win_rate=0.75, seed=42)
 
-        with patch("analysis.layers.L7_probability._wf_validator", fake_wf):
-            result = analyzer.analyze(
-                "EURUSD",
-                trade_returns=returns,
-                prior_wins=30,
-                prior_losses=10,
-            )
+        result = analyzer.analyze(
+            "EURUSD",
+            trade_returns=returns,
+            prior_wins=30,
+            prior_losses=10,
+        )
 
         # WF fields should exist with None values
         assert result.get("wf_passed") is None
@@ -135,16 +143,15 @@ class TestL7WalkForwardDegradation:
         fake_wf = MagicMock()
         fake_wf.run.return_value = _FakeWFResult(passed=True, stability=0.9)
 
-        analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42)
+        analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42, wf_validator=fake_wf)
         returns = _make_returns(150, win_rate=0.75, seed=42)
 
-        with patch("analysis.layers.L7_probability._wf_validator", fake_wf):
-            result = analyzer.analyze(
-                "EURUSD",
-                trade_returns=returns,
-                prior_wins=30,
-                prior_losses=10,
-            )
+        result = analyzer.analyze(
+            "EURUSD",
+            trade_returns=returns,
+            prior_wins=30,
+            prior_losses=10,
+        )
 
         assert result["wf_passed"] is True
         assert result["wf_stability_score"] == 0.9

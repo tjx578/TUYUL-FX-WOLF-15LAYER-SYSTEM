@@ -64,6 +64,9 @@ try:
 except Exception:  # pragma: no cover
     _wf_validator = None
 
+# ── Sentinel for default wf_validator parameter ─────────────────────────────
+_SENTINEL = object()
+
 # ── Gate thresholds ──────────────────────────────────────────────────────────
 _MC_WIN_THRESHOLD = 0.60  # Win-rate ≥ 60% -> PASS tier
 _MC_WIN_CONDITIONAL = 0.55  # Win-rate ≥ 55% -> CONDITIONAL tier
@@ -103,6 +106,7 @@ class L7ProbabilityAnalyzer:
         *,
         mc_simulations: int | None = None,
         mc_seed: int | None = None,
+        wf_validator: Any | None = _SENTINEL,
     ) -> None:
         # Accept legacy kwarg names used by older callers / tests
         if mc_simulations is not None:
@@ -118,6 +122,8 @@ class L7ProbabilityAnalyzer:
         )
         self._bayesian = BayesianProbabilityEngine(seed=seed)
         self._trade_history: list[float] = []
+        # Injectable WF validator: default uses module-level singleton.
+        self._wf_validator = _wf_validator if wf_validator is _SENTINEL else wf_validator
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -141,6 +147,7 @@ class L7ProbabilityAnalyzer:
         prior_losses: int = 40,
         dvg_confidence: float = 0.5,
         liquidity_score: float = 0.5,
+        synthetic_returns: bool = False,
     ) -> dict[str, Any]:
         """Run Monte Carlo + Bayesian probability validation.
 
@@ -154,6 +161,10 @@ class L7ProbabilityAnalyzer:
             prior_losses: Observed losing trades for Bayesian prior (≥ 0).
             dvg_confidence: Divergence confidence from L9 or upstream (0-1).
             liquidity_score: Liquidity score from L9 or upstream (0-1).
+            synthetic_returns: True when returns are derived from candle
+                prices (not real trade P&L). Walk-forward enrichment is
+                skipped for synthetic returns because WF thresholds assume
+                filtered trade outcomes, not raw price deltas.
 
         Returns:
             dict with full L7 output schema (see module docstring).
@@ -240,12 +251,16 @@ class L7ProbabilityAnalyzer:
                 "valid": True,
                 # ── Metadata ─────────────────────────────────────────
                 "symbol": symbol,
+                "returns_source": "synthetic" if synthetic_returns else "trade_history",
             }
 
             # ── Walk-Forward Enrichment (optional) ───────────────────
-            if _wf_validator is not None and len(returns) >= 130:
+            # Skip WF for synthetic (candle-derived) returns: WF thresholds
+            # (win_rate ≥ 55%, PF ≥ 1.4) were calibrated for real trade P&L.
+            # Raw price returns have ~50% win rate by nature → always fails.
+            if self._wf_validator is not None and len(returns) >= 130 and not synthetic_returns:
                 try:
-                    wf_result = _wf_validator.run(returns)
+                    wf_result = self._wf_validator.run(returns)
                     result["wf_passed"] = wf_result.passed
                     result["wf_stability_score"] = wf_result.stability_score
                     result["wf_avg_win_rate"] = wf_result.avg_win_rate
@@ -276,6 +291,14 @@ class L7ProbabilityAnalyzer:
                     result.setdefault("wf_avg_win_rate", None)
                     result.setdefault("wf_regime_consistency", None)
                     result.setdefault("wf_avg_profit_factor", None)
+            elif synthetic_returns and self._wf_validator is not None and len(returns) >= 130:
+                logger.info(
+                    "[L7] {symbol} WF skipped — returns are candle-derived (synthetic), "
+                    "not real trade P&L",
+                    symbol=symbol,
+                )
+                result["wf_passed"] = None
+                result["wf_skipped_reason"] = "synthetic_returns"
 
             logger.info(
                 "[L7] {symbol} -> {validation} | "
