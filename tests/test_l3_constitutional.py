@@ -58,19 +58,19 @@ class TestBandFromScore:
         assert _band_from_score(0.90) == CoherenceBand.HIGH
 
     def test_mid(self):
-        assert _band_from_score(0.70) == CoherenceBand.MID
+        assert _band_from_score(0.40) == CoherenceBand.MID
 
     def test_low(self):
-        assert _band_from_score(0.50) == CoherenceBand.LOW
+        assert _band_from_score(0.20) == CoherenceBand.LOW
 
     def test_boundary_high(self):
-        assert _band_from_score(0.85) == CoherenceBand.HIGH
+        assert _band_from_score(0.55) == CoherenceBand.HIGH
 
     def test_boundary_mid(self):
-        assert _band_from_score(0.65) == CoherenceBand.MID
+        assert _band_from_score(0.25) == CoherenceBand.MID
 
     def test_below_boundary_mid(self):
-        assert _band_from_score(0.6499) == CoherenceBand.LOW
+        assert _band_from_score(0.2499) == CoherenceBand.LOW
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -502,3 +502,35 @@ class TestGovernorIntegration:
         assert "NEUTRAL_TREND_NON_DIRECTIONAL" in result["warning_codes"]
         assert result["features"]["trend_confirmed"] is True
         assert result["features"]["structure_conflict"] is False
+
+    def test_fail_low_confirmation_score_has_blocker_code(self):
+        """LOW band should produce explicit LOW_CONFIRMATION_SCORE blocker for diagnostics."""
+        l3 = _healthy_l3()
+        l3["edge_probability"] = 0.10  # Very low → LOW band
+        result = self.gov.evaluate(
+            l2_output=_healthy_l2(),
+            l3_analysis=l3,
+            symbol="GBPJPY",
+        )
+        assert result["status"] == "FAIL"
+        assert BlockerCode.LOW_CONFIRMATION_SCORE.value in result["blocker_codes"]
+        assert result["continuation_allowed"] is False
+
+    def test_warn_moderate_edge_probability_eurjpy(self):
+        """EURJPY-like: directional trend, valid analysis, moderate sigmoid P_edge → WARN.
+
+        With recalibrated thresholds (MID >= 0.25), a moderate P_edge of 0.35
+        should produce MID band and WARN status, not FAIL.
+        """
+        l3 = _healthy_l3()
+        l3["edge_probability"] = 0.35  # Moderate sigmoid output
+        l3["trend"] = "BULLISH"
+        result = self.gov.evaluate(
+            l2_output=_healthy_l2(),
+            l3_analysis=l3,
+            symbol="EURJPY",
+        )
+        assert result["status"] in ("PASS", "WARN")
+        assert result["continuation_allowed"] is True
+        assert result["coherence_band"] == "MID"
+        assert BlockerCode.LOW_CONFIRMATION_SCORE.value not in result["blocker_codes"]

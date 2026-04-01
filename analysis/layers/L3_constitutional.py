@@ -79,14 +79,19 @@ class BlockerCode(str, Enum):
     WARMUP_INSUFFICIENT = "WARMUP_INSUFFICIENT"
     FALLBACK_DECLARED_BUT_NOT_ALLOWED = "FALLBACK_DECLARED_BUT_NOT_ALLOWED"
     CONTRACT_PAYLOAD_MALFORMED = "CONTRACT_PAYLOAD_MALFORMED"
+    LOW_CONFIRMATION_SCORE = "LOW_CONFIRMATION_SCORE"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # §2  FROZEN THRESHOLDS
 # ═══════════════════════════════════════════════════════════════════════════
 
-CONFIRMATION_HIGH_GTE = 0.85
-CONFIRMATION_MID_GTE = 0.65
+# Calibrated for sigmoid edge model with bias=-3.5
+# The P_edge output range is ~0.1-0.9 but realistic setups produce 0.2-0.7.
+# OLD: HIGH=0.85, MID=0.65 — impossible in practice (required features>0.7 avg).
+# NEW: Aligned to actual sigmoid output distribution.
+CONFIRMATION_HIGH_GTE = 0.55
+CONFIRMATION_MID_GTE = 0.25
 
 # Required trend sources for legal confirmation
 REQUIRED_TREND_SOURCES: list[str] = ["ema_stack", "momentum_sync"]
@@ -512,6 +517,11 @@ class L3ConstitutionalGovernor:
             for b in blockers
         ):
             blockers.append(BlockerCode.TREND_STRUCTURE_CONFLICT)
+
+        # Explicit blocker for LOW confirmation score (diagnostic visibility)
+        if band == CoherenceBand.LOW:
+            blockers.append(BlockerCode.LOW_CONFIRMATION_SCORE)
+            rule_hits.append("low_confirmation_score_blocker")
 
         # ── Step 7: Compress status ───────────────────────────
         blocker_strs = list(dict.fromkeys(

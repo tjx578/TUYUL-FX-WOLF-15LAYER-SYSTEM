@@ -116,8 +116,9 @@ class L3RouterEvaluator:
     """Strict constitutional L3 evaluator."""
 
     VERSION = "1.0.0"
-    HIGH_THRESHOLD = 0.85
-    MID_THRESHOLD = 0.65
+    # Calibrated for sigmoid edge model (bias=-3.5). See L3_constitutional.py.
+    HIGH_THRESHOLD = 0.55
+    MID_THRESHOLD = 0.25
 
     def coherence_band(self, score: float) -> CoherenceBand:
         if score >= self.HIGH_THRESHOLD:

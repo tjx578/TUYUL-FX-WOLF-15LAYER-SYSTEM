@@ -542,7 +542,7 @@ class TestL3RouterEvaluator:
             trend_sources_used=["ema_stack"],
             required_trend_sources=["ema_stack"],
             available_trend_sources=["ema_stack"],
-            confirmation_score=0.50,
+            confirmation_score=0.15,
             trend_confirmed=True,
             structure_conflict=False,
             upstream_l2_continuation_allowed=True,
