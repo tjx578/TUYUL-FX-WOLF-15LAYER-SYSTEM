@@ -468,7 +468,7 @@ class WolfConstitutionalPipeline:
                 result: Any = future.result(timeout=_LAYER_TIMEOUT_SEC)
             except concurrent.futures.TimeoutError:
                 logger.error(
-                    "[Pipeline] Layer %s TIMEOUT (>%.0fs) for %s — aborting layer",
+                    "[Pipeline] Layer {} TIMEOUT (>{:.0f}s) for {} — aborting layer",
                     layer_name,
                     _LAYER_TIMEOUT_SEC,
                     symbol,
@@ -523,7 +523,7 @@ class WolfConstitutionalPipeline:
                     )
                 except Exception as exc:
                     logger.error(
-                        "DAG_BATCH_FAILED: batch=%d, runnable=%s, root_cause=%s: %s",
+                        "DAG_BATCH_FAILED: batch={}, runnable={}, root_cause={}: {}",
                         batch_idx,
                         ",".join(runnable),
                         type(exc).__name__,
@@ -988,7 +988,7 @@ class WolfConstitutionalPipeline:
             if _bus_returns:
                 trade_returns = _bus_returns
                 logger.info(
-                    "[Phase-3] %s Loaded %d historical returns via context bus",
+                    "[Phase-3] {} Loaded {} historical returns via context bus",
                     symbol,
                     len(_bus_returns),
                 )
@@ -1013,7 +1013,7 @@ class WolfConstitutionalPipeline:
                         self._context_bus.get_conditioning_meta(symbol),
                     )
                     logger.info(
-                        "[Phase-3] %s Loaded %d conditioned returns via realtime tick path",
+                        "[Phase-3] {} Loaded {} conditioned returns via realtime tick path",
                         symbol,
                         len(_cond_returns),
                     )
@@ -1043,7 +1043,7 @@ class WolfConstitutionalPipeline:
                     preconditioning_diag = _conditioned.diagnostics()
                     preconditioning_diag["source"] = f"candle_{_candle_source}"
                     logger.info(
-                        "[Phase-3] %s Derived %d conditioned returns from %s candle closes",
+                        "[Phase-3] {} Derived {} conditioned returns from {} candle closes",
                         symbol,
                         len(trade_returns),
                         _candle_source,
@@ -1090,7 +1090,7 @@ class WolfConstitutionalPipeline:
                 l7_trade_returns = conditioned.conditioned_returns
                 conditioning_diag = conditioned.diagnostics()
                 logger.info(
-                    "[Phase-3] %s SignalConditioner: in=%d out=%d noise=%.4f quality=%.4f stride=%d",
+                    "[Phase-3] {} SignalConditioner: in={} out={} noise={:.4f} quality={:.4f} stride={}",
                     symbol,
                     conditioning_diag["samples_in"],
                     conditioning_diag["samples_out"],
@@ -1180,7 +1180,7 @@ class WolfConstitutionalPipeline:
             layers_executed.extend(["L7", "L8", "L9"])
 
             logger.info(
-                "[Phase-3] %s L7 complete: validation=%s win=%.1f%% pf=%.2f bayes=%.4f ror=%.4f mc_passed=%s",
+                "[Phase-3] {} L7 complete: validation={} win={:.1f}% pf={:.2f} bayes={:.4f} ror={:.4f} mc_passed={}",
                 symbol,
                 l7.get("validation", "N/A"),
                 l7.get("win_probability", 0.0),
@@ -1190,7 +1190,7 @@ class WolfConstitutionalPipeline:
                 l7.get("mc_passed_threshold", False),
             )
             logger.info(
-                "[Phase-3] %s L8 complete: tii=%.4f integrity=%.4f gate=%s twms=%.4f closes_fed=%d",
+                "[Phase-3] {} L8 complete: tii={:.4f} integrity={:.4f} gate={} twms={:.4f} closes_fed={}",
                 symbol,
                 l8.get("tii_sym", 0.0),
                 l8.get("integrity", 0.0),
@@ -1199,7 +1199,7 @@ class WolfConstitutionalPipeline:
                 len(_l8_closes),
             )
             logger.info(
-                "[Phase-3] %s L9 complete: smc=%s score=%d dvg=%.4f liq=%.4f signal=%s valid=%s",
+                "[Phase-3] {} L9 complete: smc={} score={} dvg={:.4f} liq={:.4f} signal={} valid={}",
                 symbol,
                 l9.get("smc", False),
                 l9.get("smc_score", 0),
@@ -1288,7 +1288,7 @@ class WolfConstitutionalPipeline:
             }
 
             logger.debug(
-                "[Phase-4] L6 account wiring via bus: equity=%.2f peak=%.2f daily_dd=%.4f circuit=%s open=%d/%d",
+                "[Phase-4] L6 account wiring via bus: equity={:.2f} peak={:.2f} daily_dd={:.4f} circuit={} open={}/{}",
                 _l6_account_state["equity"],
                 _l6_account_state["peak_equity"],
                 _l6_account_state["daily_loss_pct"],
@@ -1604,7 +1604,7 @@ class WolfConstitutionalPipeline:
                         current_adj = synthesis["layers"].get("enrichment_confidence_adj", 0.0)
                         synthesis["layers"]["enrichment_confidence_adj"] = current_adj - adaptive_penalty
                         logger.info(
-                            "[Pipeline v8.0] L14-B adaptive penalty %.3f applied for %s",
+                            "[Pipeline v8.0] L14-B adaptive penalty {:.3f} applied for {}",
                             adaptive_penalty,
                             symbol,
                         )

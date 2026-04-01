@@ -827,8 +827,8 @@ class L1ContextAnalyzer:
           6. Emit canonical L1 output contract
         """
         from analysis.layers.L1_constitutional import (  # noqa: PLC0415
-            L1GateInput,
             WARMUP_MIN_BARS,
+            L1GateInput,
             evaluate_l1_constitutional,
         )
 
