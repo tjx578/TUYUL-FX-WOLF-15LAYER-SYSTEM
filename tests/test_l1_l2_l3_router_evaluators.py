@@ -292,8 +292,8 @@ class TestL2RouterEvaluator:
             timestamp="2026-04-01T10:00:00Z",
             structure_sources_used=["mtf_alignment", "fusion_sync"],
             required_timeframes=["D1", "H4"],
-            coverage_target_timeframes=["D1", "H4"],
-            available_timeframes=["D1", "H4"],
+            coverage_target_timeframes=["D1", "H4", "H1"],
+            available_timeframes=["D1", "H4", "H1"],
             alignment_score=0.89,
             hierarchy_followed=True,
             aligned=True,
@@ -317,7 +317,7 @@ class TestL2RouterEvaluator:
             structure_sources_used=["mtf_alignment"],
             required_timeframes=["D1", "H4"],
             coverage_target_timeframes=["D1", "H4", "H1"],
-            available_timeframes=["D1", "H4"],
+            available_timeframes=["D1", "H4", "H1"],
             alignment_score=0.77,
             hierarchy_followed=True,
             aligned=False,
@@ -361,8 +361,8 @@ class TestL2RouterEvaluator:
             timestamp="2026-04-01T10:03:00Z",
             structure_sources_used=["mtf_alignment"],
             required_timeframes=["D1", "H4"],
-            coverage_target_timeframes=["D1", "H4"],
-            available_timeframes=["D1", "H4"],
+            coverage_target_timeframes=["D1", "H4", "H1"],
+            available_timeframes=["D1", "H4", "H1"],
             alignment_score=0.88,
             hierarchy_followed=False,
             aligned=True,
@@ -381,8 +381,8 @@ class TestL2RouterEvaluator:
             timestamp="2026-04-01T10:04:00Z",
             structure_sources_used=["mtf_alignment"],
             required_timeframes=["D1", "H4"],
-            coverage_target_timeframes=["D1", "H4"],
-            available_timeframes=["D1", "H4"],
+            coverage_target_timeframes=["D1", "H4", "H1"],
+            available_timeframes=["D1", "H4", "H1"],
             alignment_score=0.50,
             hierarchy_followed=True,
             aligned=False,
@@ -400,8 +400,8 @@ class TestL2RouterEvaluator:
             "timestamp": "2026-04-01T10:00:00Z",
             "structure_sources_used": ["mtf"],
             "required_timeframes": ["D1", "H4"],
-            "coverage_target_timeframes": ["D1", "H4"],
-            "available_timeframes": ["D1", "H4"],
+            "coverage_target_timeframes": ["D1", "H4", "H1"],
+            "available_timeframes": ["D1", "H4", "H1"],
             "alignment_score": 0.88,
             "hierarchy_followed": True,
             "aligned": True,
@@ -552,6 +552,7 @@ class TestL3RouterEvaluator:
         result = ev.evaluate(inp)
         assert result.status == L3Status.FAIL
         assert result.coherence_band == "LOW"
+        assert L3Blocker.LOW_CONFIRMATION_SCORE.value in result.blocker_codes
 
     def test_build_from_dict(self):
         payload = {
@@ -624,8 +625,8 @@ def _l2_pass_payload() -> dict:
         "timestamp": _TS,
         "structure_sources_used": ["mtf_alignment"],
         "required_timeframes": ["D1", "H4"],
-        "coverage_target_timeframes": ["D1", "H4"],
-        "available_timeframes": ["D1", "H4"],
+        "coverage_target_timeframes": ["D1", "H4", "H1"],
+        "available_timeframes": ["D1", "H4", "H1"],
         "alignment_score": 0.89,
         "hierarchy_followed": True,
         "aligned": True,

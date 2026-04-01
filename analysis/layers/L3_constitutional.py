@@ -24,12 +24,11 @@ Zone: analysis/ — pure read-only analysis, no execution side-effects.
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -581,8 +580,8 @@ class L3ConstitutionalGovernor:
 
         # Log constitutional result
         logger.info(
-            "[L3] %s constitutional: status=%s band=%s confirmation=%.4f "
-            "freshness=%s warmup=%s fallback=%s trend=%s conflict=%s blockers=%d",
+            "[L3] {} constitutional: status={} band={} confirmation={:.4f} "
+            "freshness={} warmup={} fallback={} trend={} conflict={} blockers={}",
             symbol,
             status.value,
             band.value,

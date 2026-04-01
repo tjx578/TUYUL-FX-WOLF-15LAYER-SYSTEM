@@ -47,6 +47,7 @@ class BlockerCode(str, Enum):
     WARMUP_INSUFFICIENT = "WARMUP_INSUFFICIENT"
     FALLBACK_DECLARED_BUT_NOT_ALLOWED = "FALLBACK_DECLARED_BUT_NOT_ALLOWED"
     CONTRACT_PAYLOAD_MALFORMED = "CONTRACT_PAYLOAD_MALFORMED"
+    LOW_CONFIRMATION_SCORE = "LOW_CONFIRMATION_SCORE"
 
 
 @dataclass(frozen=True)
@@ -157,6 +158,10 @@ class L3RouterEvaluator:
 
         if payload.contract_payload_malformed:
             blockers.append(BlockerCode.CONTRACT_PAYLOAD_MALFORMED)
+
+        # v1.1: diagnostic blocker when score < MID threshold
+        if payload.confirmation_score < self.MID_THRESHOLD:
+            blockers.append(BlockerCode.LOW_CONFIRMATION_SCORE)
 
         deduped: list[BlockerCode] = []
         seen = set()

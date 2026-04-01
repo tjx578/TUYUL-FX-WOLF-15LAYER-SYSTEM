@@ -137,7 +137,7 @@ class L2RouterEvaluator:
         if payload.required_timeframe_missing or missing_required:
             blockers.append(BlockerCode.REQUIRED_TIMEFRAME_MISSING)
 
-        if payload.timeframe_set_insufficient or len(payload.available_timeframes) < 2:
+        if payload.timeframe_set_insufficient or len(payload.available_timeframes) < 3:
             blockers.append(BlockerCode.TIMEFRAME_SET_INSUFFICIENT)
 
         if not payload.hierarchy_followed:
