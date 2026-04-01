@@ -505,7 +505,7 @@ class TestEarlyExit:
         assert mocked_pipeline._l2 is not None, "_l2 analyzer not initialized"
         mocked_pipeline._l2.analyze = MagicMock(return_value=_l2(valid=False))
         result = mocked_pipeline.execute("EURUSD")
-        assert "L2_MTA_INVALID" in result["errors"]
+        assert any(e.startswith("L2_MTA_INVALID") for e in result["errors"])
 
     def test_l3_invalid_returns_early(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         assert mocked_pipeline._l3 is not None, "_l3 analyzer not initialized"

@@ -651,7 +651,7 @@ class L2MTAAnalyzer:
             sensitivity,
         )
 
-        return {
+        raw_result = {
             # ── Pipeline-required fields ──
             "mta_compliance": compliance,
             "hierarchy_followed": aligned,
@@ -677,6 +677,53 @@ class L2MTAAnalyzer:
             "regime_used": regime,
             "volatility_dampener": dampener,
         }
+
+        # ── Constitutional governor wrapper ───────────────────
+        return self._apply_constitutional(raw_result, symbol, l1_ctx)
+
+    # ──────────────────────────────────────────────────────────
+    #  Constitutional governor wrapper
+    # ──────────────────────────────────────────────────────────
+
+    def _apply_constitutional(
+        self,
+        raw_result: dict[str, Any],
+        symbol: str,
+        l1_ctx: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Wrap raw L2 analysis with constitutional governor envelope.
+
+        Merges the canonical constitutional output with the raw analysis
+        fields so downstream consumers (L4, L5, 9-Gate, L12 synthesis)
+        continue to find the fields they expect.
+        """
+        try:
+            from analysis.layers.L2_constitutional import (  # noqa: PLC0415
+                L2ConstitutionalGovernor,
+            )
+        except ImportError:
+            # If constitutional module unavailable, pass through raw result
+            return raw_result
+
+        gov = L2ConstitutionalGovernor()
+
+        # Build L1 output for upstream legality check
+        l1_output = l1_ctx if l1_ctx else {"valid": True, "continuation_allowed": True}
+
+        constitutional = gov.evaluate(
+            l1_output=l1_output,
+            l2_analysis=raw_result,
+            symbol=symbol,
+        )
+
+        # Merge: raw fields first, then constitutional overlay
+        merged = dict(raw_result)
+        merged.update(constitutional)
+
+        # Map continuation_allowed to legacy "valid" key
+        merged["valid"] = constitutional["continuation_allowed"]
+
+        return merged
 
     # ──────────────────────────────────────────────────────────
     #  Legacy compute() — backward compatible
@@ -752,6 +799,13 @@ class L2MTAAnalyzer:
             "sensitivity_multiplier": 1.2,
             "regime_used": "UNKNOWN",
             "volatility_dampener": 1.0,
+            # Constitutional envelope — FAIL state
+            "status": "FAIL",
+            "continuation_allowed": False,
+            "blocker_codes": ["TIMEFRAME_SET_INSUFFICIENT"],
+            "warning_codes": [],
+            "coherence_band": "LOW",
+            "coherence_score": 0.0,
         }
 
 

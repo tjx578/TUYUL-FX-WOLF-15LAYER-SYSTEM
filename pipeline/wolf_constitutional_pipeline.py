@@ -924,8 +924,23 @@ class WolfConstitutionalPipeline:
                 )
 
             if not l2.get("valid"):
-                errors.append("L2_MTA_INVALID")
+                _l2_status = l2.get("status", "FAIL")
+                errors.append(f"L2_MTA_INVALID:status={_l2_status}")
                 return _early_exit_with_map(errors, time.time() - start_time)
+
+            # L2 constitutional diagnostics
+            _l2_status = l2.get("status", "")
+            if _l2_status == "WARN":
+                _l2_warnings = l2.get("warning_codes", [])
+                logger.warning(
+                    "[Pipeline v8.0] L2 constitutional WARN | symbol={} "
+                    "warnings={} coherence_band={} fallback_class={}",
+                    symbol,
+                    _l2_warnings,
+                    l2.get("coherence_band", "?"),
+                    l2.get("fallback_class", "?"),
+                )
+
             if not l3.get("valid"):
                 errors.append("L3_TECHNICAL_INVALID")
                 return _early_exit_with_map(errors, time.time() - start_time)
