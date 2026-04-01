@@ -669,13 +669,23 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
 
     # ── Step 5: Context coherence (from analysis result) ──────────
     coherence_score = float(ar.get("context_coherence", 0.0))
+    regime = str(ar.get("regime", "UNKNOWN"))
 
     # ── Step 6: Derive coherence band ─────────────────────────────
     coherence_band = _derive_coherence_band(coherence_score)
     rule_hits.append(f"coherence_band={coherence_band.value}")
+    rule_hits.append(f"regime={regime}")
 
     if coherence_band == CoherenceBand.LOW:
-        blocker_codes.append(BlockerCode.LOW_CONTEXT_COHERENCE)
+        # LOW coherence is a hard blocker only for TREND regimes
+        # (a trending market MUST have high certainty).
+        # For RANGE/TRANSITION, LOW coherence is a degradation warning —
+        # we know the market is non-trending but uncertainty is high.
+        if regime in ("TREND_UP", "TREND_DOWN"):
+            blocker_codes.append(BlockerCode.LOW_CONTEXT_COHERENCE)
+        else:
+            warning_codes.append("LOW_COHERENCE_NON_TREND")
+            rule_hits.append("low_coherence_downgraded_to_warning")
 
     # ── Step 7: Compress status ───────────────────────────────────
     status = _compress_status(

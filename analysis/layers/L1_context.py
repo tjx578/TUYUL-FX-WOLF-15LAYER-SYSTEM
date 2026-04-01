@@ -363,14 +363,46 @@ def _compute_entropy(p_trend: float) -> float:
 
 
 def _compute_context_coherence(p_trend: float) -> float:
-    """Context Coherence: CC = 1 - H_regime / ln(2).
+    """Context Coherence v2 — regime-aware certainty model.
 
-    CC = 1.0 when regime is certain (P=0 or P=1).
-    CC = 0.0 when maximum uncertainty (P=0.5).
+    Measures how clearly the system can identify the current regime,
+    regardless of WHICH regime it is.  A clearly ranging market (p deep
+    inside the RANGE bucket) has high context coherence — we KNOW
+    it is ranging.  Shannon entropy alone penalises non-trending markets
+    because it equates p≈0.5 (max binary uncertainty) with "no signal".
+
+    Three-regime boundaries: RANGE (p ≤ 0.45), TRANSITION, TREND (p > 0.65).
+
+    Model: Tri-regime clarity score based on how deep p sits inside
+    its classified regime bucket.  Deeper = higher certainty.
+
     Output ∈ [0, 1].
     """
+    # Regime classification boundaries (must match _classify_regime)
+    RANGE_UPPER = 0.45  # noqa: N806
+    TREND_LOWER = 0.65  # noqa: N806
+
+    if p_trend <= RANGE_UPPER:
+        # RANGE bucket: [0, 0.45].  Deeper towards 0 = more certain.
+        depth = (RANGE_UPPER - p_trend) / RANGE_UPPER
+    elif p_trend <= TREND_LOWER:
+        # TRANSITION bucket: [0.45, 0.65].  Inherently ambiguous zone.
+        # Max certainty at midpoint (0.55), drops near boundaries.
+        midpoint = (RANGE_UPPER + TREND_LOWER) / 2.0
+        half_width = (TREND_LOWER - RANGE_UPPER) / 2.0
+        depth = 1.0 - abs(p_trend - midpoint) / half_width
+        depth *= 0.70  # cap: TRANSITION is never fully certain
+    else:
+        # TREND bucket: [0.65, 1.0].  Deeper towards 1 = more certain.
+        depth = (p_trend - TREND_LOWER) / (1.0 - TREND_LOWER)
+
+    # Shannon CC (legacy component, still valuable for extreme p)
     h = _compute_entropy(p_trend)
-    return 1.0 - h / math.log(2.0)
+    shannon_cc = 1.0 - h / math.log(2.0)
+
+    # Blend: regime depth dominates, Shannon refines extremes
+    blended = max(0.35 * shannon_cc + 0.65 * depth, depth * 0.90)
+    return round(min(1.0, blended), 4)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
