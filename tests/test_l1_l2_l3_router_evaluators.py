@@ -142,13 +142,14 @@ class TestL1RouterEvaluator:
         assert "PARTIAL_WARMUP" in result.warning_codes
         assert "EMERGENCY_PRESERVE_FALLBACK" in result.warning_codes
 
-    def test_low_coherence_fail(self):
+    def test_low_coherence_trend_fail(self):
+        """LOW coherence in TREND regime → FAIL (must have high certainty)."""
         ev = L1RouterEvaluator()
         inp = L1Input(
             input_ref="TEST_004",
             timestamp="2026-04-01T10:02:00Z",
             context_sources_used=("regime_service",),
-            market_regime="TRENDING",
+            market_regime="TREND_UP",
             dominant_force="MOMENTUM",
             coherence_score=0.50,
             freshness_state=L1Freshness.FRESH,
@@ -158,6 +159,25 @@ class TestL1RouterEvaluator:
         assert result.status == L1Status.FAIL
         assert result.continuation_allowed is False
         assert result.coherence_band == L1Band.LOW
+
+    def test_low_coherence_non_trend_warn(self):
+        """LOW coherence in non-TREND regime → WARN (tolerated degradation)."""
+        ev = L1RouterEvaluator()
+        inp = L1Input(
+            input_ref="TEST_004B",
+            timestamp="2026-04-01T10:02:00Z",
+            context_sources_used=("regime_service",),
+            market_regime="RANGE",
+            dominant_force="MIXED",
+            coherence_score=0.50,
+            freshness_state=L1Freshness.FRESH,
+            warmup_state=L1Warmup.READY,
+        )
+        result = ev.evaluate(inp)
+        assert result.status == L1Status.WARN
+        assert result.continuation_allowed is True
+        assert result.coherence_band == L1Band.LOW
+        assert "LOW_COHERENCE_NON_TREND" in result.warning_codes
 
     def test_no_producer_fail(self):
         ev = L1RouterEvaluator()
@@ -262,12 +282,13 @@ class TestL1RouterEvaluator:
         assert result.status == L1Status.PASS
 
     def test_threshold_boundary_mid(self):
+        """Below MID threshold in trend regime → FAIL."""
         ev = L1RouterEvaluator()
         inp = L1Input(
             input_ref="T_BOUNDARY_MID",
             timestamp="2026-04-01T10:00:00Z",
             context_sources_used=("src",),
-            market_regime="TRENDING",
+            market_regime="TREND_DOWN",
             dominant_force="MOMENTUM",
             coherence_score=0.649,
             freshness_state=L1Freshness.FRESH,
@@ -534,7 +555,8 @@ class TestL3RouterEvaluator:
         assert result.status == L3Status.FAIL
         assert L3Blocker.UPSTREAM_L2_NOT_CONTINUABLE.value in result.blocker_codes
 
-    def test_low_confirmation_fail(self):
+    def test_low_confirmation_below_hard_floor_fail(self):
+        """Score below hard floor (0.15) → blocker + FAIL."""
         ev = L3RouterEvaluator()
         inp = L3Input(
             input_ref="TEST_L3_LOW",
@@ -542,7 +564,7 @@ class TestL3RouterEvaluator:
             trend_sources_used=["ema_stack"],
             required_trend_sources=["ema_stack"],
             available_trend_sources=["ema_stack"],
-            confirmation_score=0.15,
+            confirmation_score=0.10,
             trend_confirmed=True,
             structure_conflict=False,
             upstream_l2_continuation_allowed=True,
@@ -553,6 +575,29 @@ class TestL3RouterEvaluator:
         assert result.status == L3Status.FAIL
         assert result.coherence_band == "LOW"
         assert L3Blocker.LOW_CONFIRMATION_SCORE.value in result.blocker_codes
+
+    def test_low_confirmation_warn_band(self):
+        """Score in WARN band (0.15-0.25) → WARN, no blocker."""
+        ev = L3RouterEvaluator()
+        inp = L3Input(
+            input_ref="TEST_L3_WARN",
+            timestamp="2026-04-01T10:05:00Z",
+            trend_sources_used=["ema_stack"],
+            required_trend_sources=["ema_stack"],
+            available_trend_sources=["ema_stack"],
+            confirmation_score=0.20,
+            trend_confirmed=True,
+            structure_conflict=False,
+            upstream_l2_continuation_allowed=True,
+            freshness_state=L3Freshness.FRESH,
+            warmup_state=L3Warmup.READY,
+        )
+        result = ev.evaluate(inp)
+        assert result.status == L3Status.WARN
+        assert result.continuation_allowed is True
+        assert result.coherence_band == "LOW"
+        assert L3Blocker.LOW_CONFIRMATION_SCORE.value not in result.blocker_codes
+        assert "LOW_CONFIRMATION_SCORE_DEGRADED" in result.warning_codes
 
     def test_build_from_dict(self):
         payload = {

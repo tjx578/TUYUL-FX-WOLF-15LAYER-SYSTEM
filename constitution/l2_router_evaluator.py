@@ -63,6 +63,7 @@ class L2Input:
     upstream_l1_continuation_allowed: bool
     freshness_state: FreshnessState
     warmup_state: WarmupState
+    hierarchy_band: str = "PASS"
     fallback_class: FallbackClass = FallbackClass.NO_FALLBACK
     fallback_used: bool = False
     required_timeframe_missing: bool = False
@@ -178,6 +179,7 @@ class L2RouterEvaluator:
         rule_hits.append(f"fallback_class={payload.fallback_class.value}")
         rule_hits.append(f"available_timeframes={len(payload.available_timeframes)}")
         rule_hits.append(f"hierarchy_followed={payload.hierarchy_followed}")
+        rule_hits.append(f"hierarchy_band={payload.hierarchy_band}")
         rule_hits.append(f"aligned={payload.aligned}")
 
         target_timeframes = payload.coverage_target_timeframes or payload.required_timeframes
@@ -227,6 +229,8 @@ class L2RouterEvaluator:
                 if legal_warn:
                     status = L2Status.WARN
                     continuation_allowed = True
+                    if payload.hierarchy_band == "WARN":
+                        warning_codes.append("MTA_HIERARCHY_DEGRADED")
                     if not payload.aligned:
                         warning_codes.append("STRUCTURE_NOT_FULLY_ALIGNED")
                     if partial_coverage:
@@ -251,6 +255,7 @@ class L2RouterEvaluator:
         features = {
             "alignment_score": round(payload.alignment_score, 4),
             "hierarchy_followed": payload.hierarchy_followed,
+            "hierarchy_band": payload.hierarchy_band,
             "aligned": payload.aligned,
             "required_timeframes": payload.required_timeframes,
             "coverage_target_timeframes": payload.coverage_target_timeframes,

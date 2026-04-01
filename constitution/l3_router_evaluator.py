@@ -120,6 +120,8 @@ class L3RouterEvaluator:
     # Calibrated for sigmoid edge model (bias=-3.5). See L3_constitutional.py.
     HIGH_THRESHOLD = 0.55
     MID_THRESHOLD = 0.25
+    # Hard floor: below this → blocker. Between HARD_FLOOR and MID → WARN band.
+    HARD_FLOOR = 0.15
 
     def coherence_band(self, score: float) -> CoherenceBand:
         if score >= self.HIGH_THRESHOLD:
@@ -159,8 +161,9 @@ class L3RouterEvaluator:
         if payload.contract_payload_malformed:
             blockers.append(BlockerCode.CONTRACT_PAYLOAD_MALFORMED)
 
-        # v1.1: diagnostic blocker when score < MID threshold
-        if payload.confirmation_score < self.MID_THRESHOLD:
+        # v1.2: diagnostic blocker only when score < hard floor (not MID threshold)
+        # Scores between HARD_FLOOR and MID_THRESHOLD get WARN band, not blocker
+        if payload.confirmation_score < self.HARD_FLOOR:
             blockers.append(BlockerCode.LOW_CONFIRMATION_SCORE)
 
         deduped: list[BlockerCode] = []
@@ -190,9 +193,26 @@ class L3RouterEvaluator:
             continuation_allowed = False
         else:
             if band == CoherenceBand.LOW:
-                status = L3Status.FAIL
-                continuation_allowed = False
-                warning_codes.append("LOW_CONFIRMATION")
+                # LOW band without blocker = score in WARN range (HARD_FLOOR..MID)
+                # Allow as WARN with degradation warning
+                low_warn_legal = (
+                    payload.trend_confirmed
+                    and not payload.structure_conflict
+                    and payload.freshness_state in (
+                        FreshnessState.FRESH,
+                        FreshnessState.STALE_PRESERVED,
+                        FreshnessState.DEGRADED,
+                    )
+                    and payload.warmup_state in (WarmupState.READY, WarmupState.PARTIAL)
+                )
+                if low_warn_legal:
+                    status = L3Status.WARN
+                    continuation_allowed = True
+                    warning_codes.append("LOW_CONFIRMATION_SCORE_DEGRADED")
+                else:
+                    status = L3Status.FAIL
+                    continuation_allowed = False
+                    warning_codes.append("LOW_CONFIRMATION")
             elif (
                 payload.freshness_state == FreshnessState.FRESH
                 and payload.warmup_state == WarmupState.READY

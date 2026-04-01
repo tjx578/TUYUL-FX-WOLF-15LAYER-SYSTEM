@@ -107,6 +107,16 @@ _TF_ORDER: list[str] = ["MN", "W1", "D1", "H4", "H1", "M15"]
 _MIN_TIMEFRAMES: int = 3
 _LOG2: float = math.log(2.0)
 
+# ── Regime-adaptive alignment thresholds ──────────────────────────
+# (pass_threshold, warn_threshold) — below warn = hard FAIL
+_ALIGNMENT_THRESHOLDS: dict[str, tuple[float, float]] = {
+    "TREND_UP": (0.60, 0.40),
+    "TREND_DOWN": (0.60, 0.40),
+    "RANGE": (0.45, 0.30),
+    "TRANSITION": (0.50, 0.35),
+}
+_ALIGNMENT_THRESHOLDS_DEFAULT: tuple[float, float] = (0.50, 0.35)
+
 # ── Volatility dampener map ───────────────────────────────────────
 _VOL_DAMPENER: dict[str, float] = {
     "EXTREME": 0.60,
@@ -523,7 +533,19 @@ class L2MTAAnalyzer:
             5,
         )
 
-        aligned = alignment_strength >= 0.6
+        # ── Regime-adaptive alignment gate ────────────────────
+        _pass_t, _fail_t = _ALIGNMENT_THRESHOLDS.get(
+            regime, _ALIGNMENT_THRESHOLDS_DEFAULT,
+        )
+        if alignment_strength >= _pass_t:
+            aligned = True
+            hierarchy_band = "PASS"
+        elif alignment_strength >= _fail_t:
+            aligned = True
+            hierarchy_band = "WARN"
+        else:
+            aligned = False
+            hierarchy_band = "FAIL"
 
         # ── Compliance string ─────────────────────────────────
         bullish_tfs = sum(1 for p in tf_probs.values() if p > 0.5)
@@ -628,6 +650,7 @@ class L2MTAAnalyzer:
         # ── Fusion-based alignment override ───────────────────
         if conf12 >= 0.9 and frpc_energy >= 0.85:
             aligned = True
+            hierarchy_band = "PASS"
             alignment_strength = max(alignment_strength, 0.9)
 
         # ── Sensitivity multiplier for L3 ─────────────────────
@@ -655,6 +678,7 @@ class L2MTAAnalyzer:
             # ── Pipeline-required fields ──
             "mta_compliance": compliance,
             "hierarchy_followed": aligned,
+            "hierarchy_band": hierarchy_band,
             "reflex_coherence": reflex_coherence,
             "conf12": round(conf12, 4),
             "frpc_energy": round(frpc_energy, 4),
@@ -779,6 +803,7 @@ class L2MTAAnalyzer:
         return {
             "mta_compliance": f"0/{len(_TF_WEIGHTS_DEFAULT)}",
             "hierarchy_followed": False,
+            "hierarchy_band": "FAIL",
             "reflex_coherence": 0.0,
             "conf12": 0.0,
             "frpc_energy": 0.0,

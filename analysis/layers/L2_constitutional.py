@@ -30,7 +30,6 @@ from typing import Any
 
 from loguru import logger
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # §1  FROZEN ENUMS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -480,8 +479,10 @@ class L2ConstitutionalGovernor:
         rule_hits.append(f"available_timeframes={len(available_tfs)}")
 
         hierarchy_followed = bool(l2_analysis.get("hierarchy_followed", False))
+        hierarchy_band = str(l2_analysis.get("hierarchy_band", "PASS" if hierarchy_followed else "FAIL"))
         aligned = bool(l2_analysis.get("aligned", False))
         rule_hits.append(f"hierarchy_followed={hierarchy_followed}")
+        rule_hits.append(f"hierarchy_band={hierarchy_band}")
         rule_hits.append(f"aligned={aligned}")
 
         # Partial coverage check
@@ -513,7 +514,11 @@ class L2ConstitutionalGovernor:
             warning_codes = _collect_warning_codes(
                 freshness, warmup, fallback, aligned, partial_coverage,
             )
+            if hierarchy_band == "WARN":
+                warning_codes.append("MTA_HIERARCHY_DEGRADED")
 
+        if hierarchy_band == "WARN" and status != L2Status.FAIL:
+            notes.append("Alignment in WARN band — regime-adaptive threshold applied.")
         if band == CoherenceBand.LOW and status == L2Status.FAIL:
             notes.append("Alignment below legal threshold.")
         if partial_coverage and status != L2Status.FAIL:

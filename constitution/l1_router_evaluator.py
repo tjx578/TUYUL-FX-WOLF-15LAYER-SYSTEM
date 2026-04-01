@@ -141,6 +141,8 @@ class L1RouterEvaluator:
                 warning_codes.append("PARTIAL_WARMUP")
             if payload.fallback_class == FallbackClass.LEGAL_EMERGENCY_PRESERVE:
                 warning_codes.append("EMERGENCY_PRESERVE_FALLBACK")
+            if coherence_band == CoherenceBand.LOW:
+                warning_codes.append("LOW_COHERENCE_NON_TREND")
 
         warning_codes = sorted(set(warning_codes))
 
@@ -236,8 +238,12 @@ class L1RouterEvaluator:
             return L1Status.FAIL
 
         if coherence_band == CoherenceBand.LOW:
-            rule_hits.append("status=FAIL:low_coherence")
-            return L1Status.FAIL
+            # Regime-adaptive: LOW coherence is hard FAIL only for TREND regimes.
+            # RANGE/TRANSITION tolerate lower coherence → WARN, not FAIL.
+            if payload.market_regime in ("TREND_UP", "TREND_DOWN"):
+                rule_hits.append("status=FAIL:low_coherence_trend")
+                return L1Status.FAIL
+            rule_hits.append("low_coherence_downgraded_to_warn")
 
         if payload.fallback_class == FallbackClass.ILLEGAL_FALLBACK:
             rule_hits.append("status=FAIL:illegal_fallback")
@@ -260,7 +266,7 @@ class L1RouterEvaluator:
                 FreshnessState.FRESH,
             )
             and payload.warmup_state in (WarmupState.READY, WarmupState.PARTIAL)
-            and coherence_band in (CoherenceBand.HIGH, CoherenceBand.MID)
+            and coherence_band in (CoherenceBand.HIGH, CoherenceBand.MID, CoherenceBand.LOW)
             and payload.fallback_class in (
                 FallbackClass.NO_FALLBACK,
                 FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,

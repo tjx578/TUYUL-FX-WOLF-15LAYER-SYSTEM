@@ -250,10 +250,11 @@ class TestCompression:
                                 FallbackClass.NO_FALLBACK, CoherenceBand.HIGH,
                                 True, False, True) == L3Status.FAIL
 
-    def test_fail_low_band(self):
+    def test_warn_low_band_in_warn_range(self):
+        """LOW band without blockers = score in WARN range (above hard floor)."""
         assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
                                 FallbackClass.NO_FALLBACK, CoherenceBand.LOW,
-                                True, False, True) == L3Status.FAIL
+                                True, False, True) == L3Status.WARN
 
     def test_fail_not_confirmed(self):
         assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
@@ -296,11 +297,11 @@ class TestCompression:
                                 FallbackClass.NO_FALLBACK, CoherenceBand.HIGH,
                                 True, False, False) == L3Status.WARN
 
-    def test_fail_neutral_trend_low_band(self):
-        """NEUTRAL trend with LOW band → FAIL."""
+    def test_warn_neutral_trend_low_band(self):
+        """NEUTRAL trend with LOW band (above hard floor) → WARN."""
         assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
                                 FallbackClass.NO_FALLBACK, CoherenceBand.LOW,
-                                True, False, False) == L3Status.FAIL
+                                True, False, False) == L3Status.WARN
 
 
 # ═══════════════════════════════════════════════════════════════

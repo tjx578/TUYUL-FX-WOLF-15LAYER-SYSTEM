@@ -30,7 +30,6 @@ from typing import Any
 
 from loguru import logger
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # §1  FROZEN ENUMS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -91,6 +90,10 @@ class BlockerCode(str, Enum):
 # NEW: Aligned to actual sigmoid output distribution.
 CONFIRMATION_HIGH_GTE = 0.55
 CONFIRMATION_MID_GTE = 0.25
+
+# Hard floor: below this → LOW_CONFIRMATION_SCORE blocker (hard fail)
+# Between HARD_FLOOR and MID_GTE → warning band (degraded but legal)
+CONFIRMATION_HARD_FLOOR = 0.15
 
 # Required trend sources for legal confirmation
 REQUIRED_TREND_SOURCES: list[str] = ["ema_stack", "momentum_sync"]
@@ -297,19 +300,17 @@ def _compress_status(
 ) -> L3Status:
     """Step 6: Compress sub-gate outputs into final status.
 
-    Truth table (v1.1):
-      FAIL: any critical blocker, LOW band, analysis invalid (not confirmed),
-            insufficient warmup, illegal fallback, structure conflict
+    Truth table (v1.2):
+      FAIL: any critical blocker, analysis invalid (not confirmed),
+            insufficient warmup, illegal fallback, structure conflict,
+            LOW band below hard floor
       PASS: fresh + ready + directional trend + no conflict +
             band in {HIGH, MID} + fallback in {NO, PRIMARY_SUBSTITUTE}
       WARN: NEUTRAL trend (confirmed non-directional), degraded freshness,
-            partial warmup, emergency fallback
+            partial warmup, emergency fallback, LOW band in warn range
       else: FAIL
     """
     if blockers:
-        return L3Status.FAIL
-
-    if band == CoherenceBand.LOW:
         return L3Status.FAIL
 
     if not trend_confirmed:
@@ -318,12 +319,20 @@ def _compress_status(
     if structure_conflict:
         return L3Status.FAIL
 
+    # LOW band: if no blockers (i.e. above hard floor), allow as WARN
+    if band == CoherenceBand.LOW:
+        low_warn_legal = (
+            freshness in (FreshnessState.FRESH, FreshnessState.STALE_PRESERVED, FreshnessState.DEGRADED)
+            and warmup in (WarmupState.READY, WarmupState.PARTIAL)
+        )
+        return L3Status.WARN if low_warn_legal else L3Status.FAIL
+
     # NEUTRAL trend (confirmed but non-directional) → WARN envelope
     if not trend_is_directional:
         neutral_legal = (
             freshness in (FreshnessState.FRESH, FreshnessState.STALE_PRESERVED, FreshnessState.DEGRADED)
             and warmup in (WarmupState.READY, WarmupState.PARTIAL)
-            and band in (CoherenceBand.HIGH, CoherenceBand.MID)
+            and band in (CoherenceBand.HIGH, CoherenceBand.MID, CoherenceBand.LOW)
         )
         return L3Status.WARN if neutral_legal else L3Status.FAIL
 
@@ -518,9 +527,13 @@ class L3ConstitutionalGovernor:
             blockers.append(BlockerCode.TREND_STRUCTURE_CONFLICT)
 
         # Explicit blocker for LOW confirmation score (diagnostic visibility)
+        # WARN band: scores between HARD_FLOOR and MID_GTE get a warning, not a blocker
         if band == CoherenceBand.LOW:
-            blockers.append(BlockerCode.LOW_CONFIRMATION_SCORE)
-            rule_hits.append("low_confirmation_score_blocker")
+            if confirmation_score < CONFIRMATION_HARD_FLOOR:
+                blockers.append(BlockerCode.LOW_CONFIRMATION_SCORE)
+                rule_hits.append("low_confirmation_score_blocker")
+            else:
+                rule_hits.append("low_confirmation_score_warn_band")
 
         # ── Step 7: Compress status ───────────────────────────
         blocker_strs = list(dict.fromkeys(
@@ -547,6 +560,8 @@ class L3ConstitutionalGovernor:
             )
             if not trend_is_directional:
                 warning_codes.append("NEUTRAL_TREND_NON_DIRECTIONAL")
+            if band == CoherenceBand.LOW:
+                warning_codes.append("LOW_CONFIRMATION_SCORE_DEGRADED")
 
         if band == CoherenceBand.LOW and status == L3Status.FAIL:
             notes.append("Confirmation score below legal threshold.")
