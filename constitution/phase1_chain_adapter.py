@@ -546,3 +546,190 @@ def build_phase1_payloads_from_dict(
     l2 = payload.get("L2", {})
     l3 = payload.get("L3", {})
     return dict(l1), dict(l2), dict(l3)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §5  ROUTER EVALUATOR CHAIN
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class Phase1EvaluatorChainResult:
+    """Rich result from the router-evaluator based Phase 1 chain.
+
+    Wraps the canonical :class:`Phase1ChainResult` from the router
+    evaluator prototype and also exposes a :meth:`to_dict` compatible
+    with the rest of the constitution layer.
+    """
+
+    __slots__ = (
+        "phase", "phase_version", "input_ref", "timestamp",
+        "halted", "halted_at", "continuation_allowed",
+        "next_legal_targets", "chain_status", "summary_status",
+        "blocker_map", "warning_map", "layer_results", "audit",
+    )
+
+    def __init__(self, **kwargs: Any) -> None:
+        for k, v in kwargs.items():
+            object.__setattr__(self, k, v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {s: getattr(self, s) for s in self.__slots__}
+
+
+class Phase1RouterEvaluatorAdapter:
+    """Runs L1→L2→L3 using the standalone router evaluators.
+
+    This adapter delegates to ``L1RouterEvaluator``, ``L2RouterEvaluator``,
+    ``L3RouterEvaluator`` from ``constitution/`` and orchestrates them in
+    strict halt-safe order with upstream flag injection.
+
+    Usage::
+
+        adapter = Phase1RouterEvaluatorAdapter()
+        result = adapter.run(l1_payload, l2_payload, l3_payload)
+    """
+
+    VERSION = "1.0.0"
+
+    def __init__(
+        self,
+        l1_evaluator: Any | None = None,
+        l2_evaluator: Any | None = None,
+        l3_evaluator: Any | None = None,
+    ) -> None:
+        from constitution.l1_router_evaluator import L1RouterEvaluator
+        from constitution.l2_router_evaluator import L2RouterEvaluator
+        from constitution.l3_router_evaluator import L3RouterEvaluator
+
+        self.l1_evaluator = l1_evaluator or L1RouterEvaluator()
+        self.l2_evaluator = l2_evaluator or L2RouterEvaluator()
+        self.l3_evaluator = l3_evaluator or L3RouterEvaluator()
+
+    @staticmethod
+    def _canonicalize(payloads: list[dict[str, Any]], key: str) -> str:
+        vals = [str(p.get(key, "")).strip() for p in payloads]
+        non_empty = [v for v in vals if v]
+        if not non_empty:
+            raise ValueError(f"Phase 1 requires at least one non-empty {key}.")
+        return non_empty[0]
+
+    @staticmethod
+    def _inject_upstream(
+        l1_result: Any | None,
+        l2_payload: dict[str, Any],
+        l2_result: Any | None,
+        l3_payload: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        l2_rt = dict(l2_payload)
+        if l1_result is not None:
+            l2_rt["upstream_l1_continuation_allowed"] = l1_result.continuation_allowed
+
+        l3_rt = dict(l3_payload)
+        if l2_result is not None:
+            l3_rt["upstream_l2_continuation_allowed"] = l2_result.continuation_allowed
+
+        return l2_rt, l3_rt
+
+    def run(
+        self,
+        l1_payload: dict[str, Any],
+        l2_payload: dict[str, Any],
+        l3_payload: dict[str, Any],
+    ) -> Phase1EvaluatorChainResult:
+        """Evaluate Phase 1 chain using router evaluators."""
+        from constitution.l1_router_evaluator import build_l1_input_from_dict
+        from constitution.l2_router_evaluator import build_l2_input_from_dict
+        from constitution.l3_router_evaluator import build_l3_input_from_dict
+
+        payloads = [l1_payload, l2_payload, l3_payload]
+        input_ref = self._canonicalize(payloads, "input_ref")
+        timestamp = self._canonicalize(payloads, "timestamp")
+
+        summary_status: dict[str, str] = {}
+        blocker_map: dict[str, list[str]] = {}
+        warning_map: dict[str, list[str]] = {}
+        layer_results: dict[str, dict[str, Any]] = {}
+        audit_steps: list[str] = []
+
+        def _halt(at: str, reason: str) -> Phase1EvaluatorChainResult:
+            audit_steps.append(f"Chain halted at {at}")
+            return Phase1EvaluatorChainResult(
+                phase="PHASE_1_FOUNDATION",
+                phase_version=self.VERSION,
+                input_ref=input_ref,
+                timestamp=timestamp,
+                halted=True,
+                halted_at=at,
+                continuation_allowed=False,
+                next_legal_targets=[],
+                chain_status="FAIL",
+                summary_status=summary_status,
+                blocker_map=blocker_map,
+                warning_map=warning_map,
+                layer_results=layer_results,
+                audit={"halt_safe": True, "steps": audit_steps, "reason": reason},
+            )
+
+        # ── L1 ────────────────────────────────────────────
+        l1_input = build_l1_input_from_dict(l1_payload)
+        l1_result = self.l1_evaluator.evaluate(l1_input)
+        summary_status["L1"] = l1_result.status.value
+        blocker_map["L1"] = list(l1_result.blocker_codes)
+        warning_map["L1"] = list(l1_result.warning_codes)
+        layer_results["L1"] = l1_result.to_dict()
+        audit_steps.append("L1 evaluated")
+        audit_steps.append(f"L1 continuation_allowed={l1_result.continuation_allowed}")
+
+        if not l1_result.continuation_allowed:
+            return _halt("L1", "L1 continuation disallowed")
+
+        # ── L2 ────────────────────────────────────────────
+        l2_rt, l3_rt = self._inject_upstream(l1_result, l2_payload, None, l3_payload)
+        l2_input = build_l2_input_from_dict(l2_rt)
+        l2_result = self.l2_evaluator.evaluate(l2_input)
+        summary_status["L2"] = l2_result.status.value
+        blocker_map["L2"] = list(l2_result.blocker_codes)
+        warning_map["L2"] = list(l2_result.warning_codes)
+        layer_results["L2"] = l2_result.to_dict()
+        audit_steps.append("L2 evaluated")
+        audit_steps.append(f"L2 continuation_allowed={l2_result.continuation_allowed}")
+
+        if not l2_result.continuation_allowed:
+            return _halt("L2", "L2 continuation disallowed")
+
+        # ── L3 ────────────────────────────────────────────
+        _, l3_rt = self._inject_upstream(l1_result, l2_payload, l2_result, l3_payload)
+        l3_input = build_l3_input_from_dict(l3_rt)
+        l3_result = self.l3_evaluator.evaluate(l3_input)
+        summary_status["L3"] = l3_result.status.value
+        blocker_map["L3"] = list(l3_result.blocker_codes)
+        warning_map["L3"] = list(l3_result.warning_codes)
+        layer_results["L3"] = l3_result.to_dict()
+        audit_steps.append("L3 evaluated")
+        audit_steps.append(f"L3 continuation_allowed={l3_result.continuation_allowed}")
+
+        if not l3_result.continuation_allowed:
+            return _halt("L3", "L3 continuation disallowed")
+
+        # ── ALL PASS ──────────────────────────────────────
+        chain_status = "PASS"
+        if any(s == "WARN" for s in summary_status.values()):
+            chain_status = "WARN"
+
+        audit_steps.append("Phase 1 completed")
+        return Phase1EvaluatorChainResult(
+            phase="PHASE_1_FOUNDATION",
+            phase_version=self.VERSION,
+            input_ref=input_ref,
+            timestamp=timestamp,
+            halted=False,
+            halted_at=None,
+            continuation_allowed=True,
+            next_legal_targets=["L4"],
+            chain_status=chain_status,
+            summary_status=summary_status,
+            blocker_map=blocker_map,
+            warning_map=warning_map,
+            layer_results=layer_results,
+            audit={"halt_safe": True, "steps": audit_steps, "reason": "Phase 1 completed legally"},
+        )
