@@ -170,9 +170,15 @@ class TestRegimeProbability:
 
 class TestEntropyCoherence:
     def test_maximum_uncertainty(self) -> None:
-        """P=0.5 → max entropy, CC=0."""
+        """P=0.5 → TRANSITION midpoint, moderate coherence (regime-aware v2).
+
+        In the tri-regime model, p=0.5 sits at the TRANSITION midpoint.
+        Coherence is non-zero because the system CAN classify it —
+        though TRANSITION is capped at 0.70 bucket depth.
+        """
         cc = _compute_context_coherence(0.5)
-        assert cc == pytest.approx(0.0, abs=0.01)
+        # v2: p=0.5 is TRANSITION midpoint, depth=0.70, blended ~0.32
+        assert 0.20 < cc < 0.50
 
     def test_high_certainty_trend(self) -> None:
         cc = _compute_context_coherence(0.95)
