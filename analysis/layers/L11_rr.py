@@ -76,6 +76,11 @@ class L11RRAnalyzer:
     def __init__(self) -> None:
         self._scenario_matrix = None
         self._exec_optimizer = None
+        self._upstream_output: dict[str, Any] = {}
+
+    def set_upstream_output(self, upstream: dict[str, Any]) -> None:
+        """Inject upstream output (Phase 3 / L9 result) for constitutional governance."""
+        self._upstream_output = upstream
 
     def _ensure_loaded(self) -> None:
         if self._scenario_matrix is not None:
@@ -143,7 +148,7 @@ class L11RRAnalyzer:
 
         # --- Direction validation ---
         if direction not in _VALID_DIRECTIONS:
-            return self._fail("invalid_direction", symbol)
+            return self._apply_constitutional(self._fail("invalid_direction", symbol), symbol)
 
         # --- Candle data ---
         candles = self._get_candles(symbol)
@@ -152,7 +157,7 @@ class L11RRAnalyzer:
                 "[L11] {} candle count={} < {} required",
                 symbol, len(candles), _MIN_CANDLES,
             )
-            return self._fail("no_data", symbol)
+            return self._apply_constitutional(self._fail("no_data", symbol), symbol)
 
         # --- ATR ---
         atr = self._compute_atr(candles)
@@ -174,7 +179,7 @@ class L11RRAnalyzer:
                     logger.info("[L11] {} entry fallback to HL-midpoint: {:.5f}", symbol, entry)
 
         if entry is None or entry == 0.0:
-            return self._fail("no_entry_price", symbol)
+            return self._apply_constitutional(self._fail("no_entry_price", symbol), symbol)
 
         # --- SL / TP ---
         sl_distance = atr * 1.0
@@ -217,7 +222,7 @@ class L11RRAnalyzer:
             rr = round(abs(tp1 - entry) / sl_distance, 2)
 
         if rr < _MIN_RR:
-            return {
+            return self._apply_constitutional({
                 "valid": False,
                 "reason": "rr_too_low",
                 "rr": rr,
@@ -233,7 +238,7 @@ class L11RRAnalyzer:
                 "take_profit_1": tp1,
                 "entry_zone": f"{sl:.5f}-{tp1:.5f}",
                 "tp1_source": tp1_source,
-            }
+            }, symbol)
 
         # --- Battle strategy selection ---
         if rr >= 3.0:
@@ -245,7 +250,7 @@ class L11RRAnalyzer:
         else:
             strategy = "SHADOW_STRIKE"
 
-        return {
+        return self._apply_constitutional({
             "valid": True,
             "reason": "rr_ok",
             "rr": rr,
@@ -261,7 +266,7 @@ class L11RRAnalyzer:
             "take_profit_1": tp1,
             "entry_zone": f"{sl:.5f}-{tp1:.5f}",
             "tp1_source": tp1_source,
-        }
+        }, symbol)
 
     # ------------------------------------------------------------------
     # Legacy compatibility
@@ -310,3 +315,43 @@ class L11RRAnalyzer:
             "take_profit_1": _min_tp,
             "entry_zone": "0.00000-0.00000",
         }
+
+    def _apply_constitutional(self, raw_result: dict[str, Any], symbol: str) -> dict[str, Any]:
+        """Wrap raw L11 output with constitutional governance envelope."""
+        try:
+            from analysis.layers.L11_constitutional import L11ConstitutionalGovernor
+
+            gov = L11ConstitutionalGovernor()
+            upstream = self._upstream_output or {}
+
+            envelope = gov.evaluate(
+                l11_analysis=raw_result,
+                upstream_output=upstream,
+            )
+
+            raw_result["constitutional"] = envelope
+            raw_result["continuation_allowed"] = envelope.get(
+                "continuation_allowed", True,
+            )
+
+            status = envelope.get("status", "PASS")
+            if status == "FAIL":
+                raw_result["valid"] = False
+
+            logger.info(
+                "[L11] {} constitutional: status={} continuation={} band={}",
+                symbol,
+                status,
+                envelope.get("continuation_allowed", True),
+                envelope.get("coherence_band", "N/A"),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "[L11] Constitutional governor failed — raw result preserved: {}",
+                exc,
+            )
+            raw_result["constitutional"] = {"error": str(exc)}
+            raw_result["continuation_allowed"] = True
+
+        return raw_result

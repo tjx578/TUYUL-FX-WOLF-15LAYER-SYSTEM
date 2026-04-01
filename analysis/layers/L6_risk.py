@@ -97,12 +97,17 @@ class L6RiskAnalyzer:
         self.sharpe_lookback = sharpe_lookback
         self.sharpe_degradation_threshold = sharpe_degradation_threshold
         self.lrce_block_threshold = lrce_block_threshold
+        self._upstream_output: dict[str, Any] = {}
 
         # Load limits from config (graceful fallback)
         self._max_daily_dd = _DEFAULT_MAX_DAILY_DD
         self._max_total_dd = _DEFAULT_MAX_TOTAL_DD
         self._base_risk_pct = _DEFAULT_BASE_RISK_PCT
         self._load_config()
+
+    def set_upstream_output(self, upstream: dict[str, Any]) -> None:
+        """Inject upstream output (L11 result) for constitutional governance."""
+        self._upstream_output = upstream
 
     # ────────────────── Config ──────────────────────────────────────
 
@@ -404,7 +409,7 @@ class L6RiskAnalyzer:
             not hard_block,
         )
 
-        return {
+        result = {
             # Core risk profile (consumed by L10 + L12)
             "risk_status": risk_status,
             "propfirm_compliant": not hard_block,
@@ -421,3 +426,43 @@ class L6RiskAnalyzer:
             "rr_ratio": rr,
             "current_drawdown": round(current_dd, 6),
         }
+        return self._apply_constitutional(result)
+
+    def _apply_constitutional(self, raw_result: dict[str, Any]) -> dict[str, Any]:
+        """Wrap raw L6 output with constitutional governance envelope."""
+        try:
+            from analysis.layers.L6_constitutional import L6ConstitutionalGovernor
+
+            gov = L6ConstitutionalGovernor()
+            upstream = self._upstream_output or {}
+
+            envelope = gov.evaluate(
+                l6_analysis=raw_result,
+                upstream_output=upstream,
+            )
+
+            raw_result["constitutional"] = envelope
+            raw_result["continuation_allowed"] = envelope.get(
+                "continuation_allowed", True,
+            )
+
+            status = envelope.get("status", "PASS")
+            if status == "FAIL":
+                raw_result["risk_ok"] = False
+
+            logger.info(
+                "[L6] constitutional: status=%s continuation=%s band=%s",
+                status,
+                envelope.get("continuation_allowed", True),
+                envelope.get("coherence_band", "N/A"),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "[L6] Constitutional governor failed — raw result preserved: %s",
+                exc,
+            )
+            raw_result["constitutional"] = {"error": str(exc)}
+            raw_result["continuation_allowed"] = True
+
+        return raw_result

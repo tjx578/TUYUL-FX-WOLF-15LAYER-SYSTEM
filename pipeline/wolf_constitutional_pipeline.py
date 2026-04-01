@@ -1410,6 +1410,12 @@ class WolfConstitutionalPipeline:
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
             assert self._macro is not None
             macro_engine = self._macro
+
+            # ── Constitutional: inject Phase 3 upstream into L11 ───────
+            if self._l11 is not None and hasattr(self._l11, "set_upstream_output"):
+                _l9_upstream = l9 if l9 else {"valid": True, "continuation_allowed": True}
+                self._l11.set_upstream_output(_l9_upstream)
+
             phase4_batch0_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "macro": lambda: cast(dict[str, Any], _timed_layer_call(macro_engine.analyze, "macro", symbol)),
             }
@@ -1484,6 +1490,10 @@ class WolfConstitutionalPipeline:
                 errors.append("L6_ANALYZER_NOT_INITIALIZED")
                 return _early_exit_with_map(errors, time.time() - start_time)
 
+            # ── Constitutional: inject L11 upstream into L6 ────────────
+            if hasattr(self._l6, "set_upstream_output"):
+                self._l6.set_upstream_output(l11)
+
             l6: dict[str, Any] = _timed_layer_call(
                 self._l6.analyze,
                 "L6",
@@ -1496,6 +1506,10 @@ class WolfConstitutionalPipeline:
             l6.get("risk_ok", False)
             smc_confidence: Any = l9.get("confidence", 0.0)
             assert self._l10 is not None
+
+            # ── Constitutional: inject L6 upstream into L10 ────────────
+            if hasattr(self._l10, "set_upstream_output"):
+                self._l10.set_upstream_output(l6)
 
             # Build trade_params from L11 + account state for L10
             _l10_trade_params: dict[str, Any] = {
@@ -1517,6 +1531,21 @@ class WolfConstitutionalPipeline:
                 bayesian_posterior=l7.get("bayesian_posterior"),
             )
             layers_executed.append("L10")
+
+            # ── Phase 4 constitutional diagnostics ─────────────────────
+            _p4_l11_status = l11.get("constitutional", {}).get("status", "N/A")
+            _p4_l6_status = l6.get("constitutional", {}).get("status", "N/A")
+            _p4_l10_status = l10.get("constitutional", {}).get("status", "N/A")
+            logger.info(
+                "[Pipeline v8.0] Phase 4 constitutional: L11={} L6={} L10={} "
+                "| L11_cont={} L6_cont={} L10_cont={}",
+                _p4_l11_status,
+                _p4_l6_status,
+                _p4_l10_status,
+                l11.get("continuation_allowed", "N/A"),
+                l6.get("continuation_allowed", "N/A"),
+                l10.get("continuation_allowed", "N/A"),
+            )
 
             # ── SL/TP zero guard ─────────────────────────────────
             # When ATR=0 (warmup insufficient), L11 returns SL=0/TP=0.

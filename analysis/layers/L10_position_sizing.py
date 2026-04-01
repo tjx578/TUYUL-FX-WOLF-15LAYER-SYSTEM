@@ -337,6 +337,11 @@ class L10PositionAnalyzer:
 
     def __init__(self) -> None:
         self._trade_count: int = 0
+        self._upstream_output: dict[str, Any] = {}
+
+    def set_upstream_output(self, upstream: dict[str, Any]) -> None:
+        """Inject upstream output (L6 result) for constitutional governance."""
+        self._upstream_output = upstream
 
     def analyze(  # noqa: PLR0912, PLR0913
         self,
@@ -649,7 +654,47 @@ class L10PositionAnalyzer:
             "timestamp": now.isoformat(),
         }
 
-        return result
+        return self._apply_constitutional(result, pair)
+
+    def _apply_constitutional(self, raw_result: dict[str, Any], pair: str = "") -> dict[str, Any]:
+        """Wrap raw L10 output with constitutional governance envelope."""
+        try:
+            from analysis.layers.L10_constitutional import L10ConstitutionalGovernor
+
+            gov = L10ConstitutionalGovernor()
+            upstream = self._upstream_output or {}
+
+            envelope = gov.evaluate(
+                l10_analysis=raw_result,
+                upstream_output=upstream,
+            )
+
+            raw_result["constitutional"] = envelope
+            raw_result["continuation_allowed"] = envelope.get(
+                "continuation_allowed", True,
+            )
+
+            status = envelope.get("status", "PASS")
+            if status == "FAIL":
+                raw_result["position_ok"] = False
+
+            logger.debug(
+                "L10 %s constitutional: status=%s continuation=%s band=%s",
+                pair,
+                status,
+                envelope.get("continuation_allowed", True),
+                envelope.get("coherence_band", "N/A"),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "L10 Constitutional governor failed — raw result preserved: %s",
+                exc,
+            )
+            raw_result["constitutional"] = {"error": str(exc)}
+            raw_result["continuation_allowed"] = True
+
+        return raw_result
 
 
 # ═══════════════════════════════════════════════════════════════════════
