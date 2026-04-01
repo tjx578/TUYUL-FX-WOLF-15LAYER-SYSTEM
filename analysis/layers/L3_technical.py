@@ -218,11 +218,20 @@ class L3TechnicalAnalyzer:
     v6: Adds edge probability enrichment on top of v5 scoring.
     v5 `_compute_tech_score()` is preserved UNCHANGED as the primary
     `technical_score` output consumed by L4/L12/L15.
+
+    v6.3: Integrates L3 Constitutional Governor (Strict Mode v1.0.0).
+    The raw analysis result is wrapped through constitutional sub-gates
+    and the output includes the full L3 constitutional contract.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, l2_output: dict[str, Any] | None = None) -> None:
         self._bus = LiveContextBus()
         self._liq = LiquiditySweepScorer()
+        self._l2_output = l2_output
+
+    def set_l2_output(self, l2_output: dict[str, Any]) -> None:
+        """Inject L2 output for constitutional upstream check."""
+        self._l2_output = l2_output
 
     # ── public API ─────────────────────────────────────────────────
 
@@ -230,14 +239,15 @@ class L3TechnicalAnalyzer:
         """Deep technical analysis for *symbol*.
 
         Returns:
-            dict with v5 contract keys (unchanged) + v6 enrichment keys.
+            dict with v5 contract keys (unchanged) + v6 enrichment keys
+            + v6.3 constitutional governance envelope.
         """
         candles_h1 = self._bus.get_candle_history(symbol, "H1", count=80)
         candles_h4 = self._bus.get_candle_history(symbol, "H4", count=30)
         candles_d1 = self._bus.get_candle_history(symbol, "D1", count=15)
 
         if not candles_h1 or len(candles_h1) < 30:
-            return self._insufficient_data(symbol)
+            return self._apply_constitutional(self._insufficient_data(symbol), symbol)
 
         closes = [float(c["close"]) for c in candles_h1]
         highs = [float(c["high"]) for c in candles_h1]
@@ -398,7 +408,7 @@ class L3TechnicalAnalyzer:
             _data_quality,
         )
 
-        return {
+        raw_result = {
             # ── v5 contract (PRESERVED IDENTICAL) ─────────────────
             "technical_score": technical_score,
             "structure_validity": structure["validity"],
@@ -428,6 +438,52 @@ class L3TechnicalAnalyzer:
             # ── v6.2 data quality (ADDITIVE) ──────────────────────
             "data_quality": _data_quality,
         }
+
+        # ── v6.3 Constitutional governor wrapper ──────────────────
+        return self._apply_constitutional(raw_result, symbol)
+
+    # ──────────────────────────────────────────────────────────
+    #  Constitutional governor wrapper (v6.3)
+    # ──────────────────────────────────────────────────────────
+
+    def _apply_constitutional(
+        self,
+        raw_result: dict[str, Any],
+        symbol: str,
+    ) -> dict[str, Any]:
+        """Wrap raw L3 analysis with constitutional governor envelope.
+
+        Merges the canonical constitutional output with the raw analysis
+        fields so downstream consumers (L4, L5, 9-Gate, L12 synthesis)
+        continue to find the fields they expect.
+        """
+        try:
+            from analysis.layers.L3_constitutional import (  # noqa: PLC0415
+                L3ConstitutionalGovernor,
+            )
+        except ImportError:
+            # If constitutional module unavailable, pass through raw result
+            return raw_result
+
+        gov = L3ConstitutionalGovernor()
+
+        # Build L2 output for upstream legality check
+        l2_output = self._l2_output if self._l2_output else {"valid": True, "continuation_allowed": True}
+
+        constitutional = gov.evaluate(
+            l2_output=l2_output,
+            l3_analysis=raw_result,
+            symbol=symbol,
+        )
+
+        # Merge: raw fields first, then constitutional overlay
+        merged = dict(raw_result)
+        merged.update(constitutional)
+
+        # Map continuation_allowed to legacy "valid" key
+        merged["valid"] = constitutional["continuation_allowed"]
+
+        return merged
 
     # ═══════════════════════════════════════════════════════════════
     # §2  ATR (shared foundation for asset-agnostic normalization)

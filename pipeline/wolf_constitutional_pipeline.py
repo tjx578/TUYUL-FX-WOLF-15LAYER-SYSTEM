@@ -865,6 +865,7 @@ class WolfConstitutionalPipeline:
         try:
             # ═══════════════════════════════════════════════════════
             # PHASE 1 -- ZONA PERCEPTION & CONTEXT (L1, L2, L3)
+            # Strict sequential halt-on-failure via Phase1ChainAdapter
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context -- {symbol}")
             engines_invoked.extend(["L1ContextAnalyzer", "L2MTAAnalyzer", "L3TechnicalAnalyzer"])
@@ -875,75 +876,55 @@ class WolfConstitutionalPipeline:
             l1_analyzer = self._l1
             l2_analyzer = self._l2
             l3_analyzer = self._l3
-            phase1_calls: dict[str, Callable[[], dict[str, Any]]] = {
-                "L1": lambda: cast(dict[str, Any], _timed_layer_call(l1_analyzer.analyze, "L1", symbol)),
-                "L2": lambda: cast(dict[str, Any], _timed_layer_call(l2_analyzer.analyze, "L2", symbol)),
-                "L3": lambda: cast(dict[str, Any], _timed_layer_call(l3_analyzer.analyze, "L3", symbol)),
-            }
-            phase1_results = self._run_dag_batch_calls(dag_batches, phase1_calls)
 
-            l1 = phase1_results["L1"]
-            l2 = phase1_results["L2"]
-            l3 = phase1_results["L3"]
+            from constitution.phase1_chain_adapter import (  # noqa: PLC0415
+                ChainStatus,
+                Phase1ChainAdapter,
+            )
+
+            _phase1_adapter = Phase1ChainAdapter(
+                l1_callable=lambda sym: cast(
+                    dict[str, Any], _timed_layer_call(l1_analyzer.analyze, "L1", sym),
+                ),
+                l2_callable=lambda sym: cast(
+                    dict[str, Any], _timed_layer_call(l2_analyzer.analyze, "L2", sym),
+                ),
+                l3_callable=lambda sym: cast(
+                    dict[str, Any], _timed_layer_call(l3_analyzer.analyze, "L3", sym),
+                ),
+                l3_l2_injector=l3_analyzer.set_l2_output,
+            )
+            _phase1_result = _phase1_adapter.execute(symbol)
+
+            l1 = _phase1_result.l1
+            l2 = _phase1_result.l2
+            l3 = _phase1_result.l3
             layers_executed.extend(["L1", "L2", "L3"])
 
-            # L1 constitutional governance: check continuation_allowed (v1.0.0)
-            # Falls back to legacy 'valid' check for backward compatibility
-            _l1_continue = l1.get("continuation_allowed", l1.get("valid"))
-            if not _l1_continue:
-                _l1_status = l1.get("status", "FAIL")
-                _l1_blockers = l1.get("blocker_codes", [])
-                errors.append(f"L1_CONTEXT_INVALID:status={_l1_status}")
-                if _l1_blockers:
-                    errors.extend(
-                        f"L1_BLOCKER:{b}" for b in _l1_blockers
-                    )
+            # Update layer timings from chain adapter
+            for _layer_id, _layer_ms in _phase1_result.timing_ms.items():
+                layer_timings_ms[_layer_id] = _layer_ms
+
+            if not _phase1_result.continuation_allowed:
+                _halt = _phase1_result.halted_at or "UNKNOWN"
+                errors.extend(_phase1_result.errors)
                 logger.warning(
-                    "[Pipeline v8.0] L1 constitutional FAIL | symbol={} status={} "
-                    "blockers={} freshness={} warmup={} coherence_band={}",
+                    "[Pipeline v8.0] Phase 1 HALT at {} | symbol={} "
+                    "chain_status={} errors={}",
+                    _halt,
                     symbol,
-                    _l1_status,
-                    _l1_blockers,
-                    l1.get("freshness_state", "?"),
-                    l1.get("warmup_state", "?"),
-                    l1.get("coherence_band", "?"),
+                    _phase1_result.status.value,
+                    _phase1_result.errors,
                 )
                 return _early_exit_with_map(errors, time.time() - start_time)
 
-            # L1 WARN: continuation allowed but with degraded context
-            _l1_status = l1.get("status", "PASS")
-            if _l1_status == "WARN":
-                _l1_warnings = l1.get("warning_codes", [])
+            # Phase 1 WARN diagnostics
+            if _phase1_result.status == ChainStatus.WARN:
                 logger.warning(
-                    "[Pipeline v8.0] L1 constitutional WARN | symbol={} "
-                    "warnings={} coherence_band={} fallback_class={}",
+                    "[Pipeline v8.0] Phase 1 WARN | symbol={} warnings={}",
                     symbol,
-                    _l1_warnings,
-                    l1.get("coherence_band", "?"),
-                    l1.get("fallback_class", "?"),
+                    _phase1_result.warnings,
                 )
-
-            if not l2.get("valid"):
-                _l2_status = l2.get("status", "FAIL")
-                errors.append(f"L2_MTA_INVALID:status={_l2_status}")
-                return _early_exit_with_map(errors, time.time() - start_time)
-
-            # L2 constitutional diagnostics
-            _l2_status = l2.get("status", "")
-            if _l2_status == "WARN":
-                _l2_warnings = l2.get("warning_codes", [])
-                logger.warning(
-                    "[Pipeline v8.0] L2 constitutional WARN | symbol={} "
-                    "warnings={} coherence_band={} fallback_class={}",
-                    symbol,
-                    _l2_warnings,
-                    l2.get("coherence_band", "?"),
-                    l2.get("fallback_class", "?"),
-                )
-
-            if not l3.get("valid"):
-                errors.append("L3_TECHNICAL_INVALID")
-                return _early_exit_with_map(errors, time.time() - start_time)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2 -- ZONA CONFLUENCE & SCORING (L4, L5)
