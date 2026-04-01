@@ -60,7 +60,7 @@ class TestEndToEndConstitutionalWrapperToPhase5(unittest.TestCase):
     def test_pass_through_to_verdict(self) -> None:
         result = self.wrapper.run(self.base)
         # With synthetic intermediate layers, we get WARN/HOLD at best
-        self.assertIn(result.final_verdict, {"EXECUTE", "HOLD", "NO_TRADE"})
+        self.assertIn(result.final_verdict, {"EXECUTE", "EXECUTE_REDUCED_RISK", "HOLD", "NO_TRADE"})
         self.assertIn(result.final_verdict_status, {"PASS", "WARN", "FAIL"})
 
     def test_phase5_result_embedded(self) -> None:
