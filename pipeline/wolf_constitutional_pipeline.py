@@ -1310,11 +1310,14 @@ class WolfConstitutionalPipeline:
             _raw_sl = l11.get("stop_loss", l11.get("sl", 0.0))
             _raw_tp = l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0)))
             if not _raw_sl or _raw_sl <= 0 or not _raw_tp or _raw_tp <= 0:
+                _l11_reason = l11.get("reason", "unknown")
                 logger.warning(
-                    "[Pipeline v8.0] %s SL/TP=0 → NO_TRADE (ATR warmup) sl=%.5f tp=%.5f",
+                    "[Pipeline v8.0] {} SL/TP=0 → NO_TRADE "
+                    "(reason={} sl={:.5f} tp={:.5f})",
                     symbol,
-                    _raw_sl or 0,
-                    _raw_tp or 0,
+                    _l11_reason,
+                    _raw_sl or 0.0,
+                    _raw_tp or 0.0,
                 )
                 result = _early_exit_with_map(
                     ["sl_tp_zero_guard"],

@@ -148,6 +148,10 @@ class L11RRAnalyzer:
         # --- Candle data ---
         candles = self._get_candles(symbol)
         if len(candles) < _MIN_CANDLES:
+            logger.warning(
+                "[L11] {} candle count={} < {} required",
+                symbol, len(candles), _MIN_CANDLES,
+            )
             return self._fail("no_data", symbol)
 
         # --- ATR ---
@@ -156,10 +160,18 @@ class L11RRAnalyzer:
             # Fallback: simple high-low range of last candle
             last = candles[-1]
             atr = last.get("high", 0.0) - last.get("low", 0.0)
+            logger.info("[L11] {} ATR fallback to H-L range: {:.6f}", symbol, atr)
 
         # --- Entry ---
         if entry is None:
             entry = candles[-1].get("close", 0.0)
+            # Fallback: use HL midpoint if close is 0/stale
+            if not entry or entry == 0.0:
+                last = candles[-1]
+                h, l = last.get("high", 0.0), last.get("low", 0.0)  # noqa: E741
+                if h > 0 and l > 0:
+                    entry = (h + l) / 2.0
+                    logger.info("[L11] {} entry fallback to HL-midpoint: {:.5f}", symbol, entry)
 
         if entry is None or entry == 0.0:
             return self._fail("no_entry_price", symbol)
@@ -280,19 +292,21 @@ class L11RRAnalyzer:
     @staticmethod
     def _fail(reason: str, symbol: str = "") -> dict[str, Any]:
         _min_tp = _min_tp_distance(symbol) if symbol else 0.0001
+        _min_sl = _min_tp * 0.5
+        logger.warning("[L11] {} fail: {}", symbol or "?", reason)
         return {
             "valid": False,
             "reason": reason,
             "rr": 0.0,
             "entry": 0.0,
-            "sl": 0.0,
-            "tp1": 0.0,
+            "sl": _min_sl,
+            "tp1": _min_tp,
             "atr": 0.0,
             "direction": "",
             "battle_strategy": "SHADOW_STRIKE",
             "execution_mode": "TP1_ONLY",
             "entry_price": 0.0,
-            "stop_loss": 0.0,
+            "stop_loss": _min_sl,
             "take_profit_1": _min_tp,
             "entry_zone": "0.00000-0.00000",
         }
