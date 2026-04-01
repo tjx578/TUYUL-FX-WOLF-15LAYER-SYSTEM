@@ -362,9 +362,9 @@ def _compress_status(
     if warmup == WarmupState.INSUFFICIENT:
         return L1Status.FAIL
 
-    # Coherence hard fail
-    if coherence_band == CoherenceBand.LOW:
-        return L1Status.FAIL
+    # Coherence: If LOW_CONTEXT_COHERENCE blocker is present, already FAIL
+    # via blocker_codes check above.  Non-trend LOW coherence was downgraded
+    # to a warning in evaluate() and should fall through to WARN path.
 
     # Illegal fallback hard fail
     if fallback_class == FallbackClass.ILLEGAL_FALLBACK:
@@ -391,7 +391,8 @@ def _compress_status(
             FreshnessState.FRESH,
         )
         and warmup in (WarmupState.READY, WarmupState.PARTIAL)
-        and coherence_band in (CoherenceBand.HIGH, CoherenceBand.MID)
+        and coherence_band
+        in (CoherenceBand.HIGH, CoherenceBand.MID, CoherenceBand.LOW)
         and fallback_class
         in (
             FallbackClass.NO_FALLBACK,
@@ -697,7 +698,6 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
     continuation_allowed, next_legal_targets = _set_continuation(status)
 
     # ── Step 9: Emit contract ─────────────────────────────────────
-    regime = str(ar.get("regime", "UNKNOWN"))
     dominant_force = str(ar.get("dominant_force", "NEUTRAL"))
 
     feature_hash = _compute_feature_hash(
