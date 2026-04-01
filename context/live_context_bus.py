@@ -431,6 +431,9 @@ class LiveContextBus:
         """Return raw epoch timestamp of last feed update for *symbol*, or None."""
         return self._feed_timestamps.get(symbol)
 
+    # Alias used by VaultHealthChecker and other consumers.
+    get_last_tick_time = get_feed_timestamp
+
     def is_feed_stale(self, symbol: str, threshold_sec: float | None = None) -> bool:
         """Return True if the feed for *symbol* has not updated within *threshold_sec* seconds.
 

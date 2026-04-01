@@ -423,6 +423,39 @@ class TIIThresholds:
 
 
 @dataclass
+class AdaptiveTIIThresholds(TIIThresholds):
+    """Regime-adaptive TII thresholds (merged from adaptive_tii_thresholds.py).
+
+    Adjusts classification boundaries based on volatility regime so that
+    trending markets use tighter thresholds and ranging markets relax them.
+    """
+
+    regime: str = "normal"
+
+    # Per-regime overrides (applied on top of base defaults)
+    _REGIME_ADJUSTMENTS: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: {
+            "high_volatility": {"strong_trend": -0.05, "moderate_trend": -0.05},
+            "low_volatility": {"strong_trend": 0.05, "moderate_trend": 0.05},
+            "trending": {"strong_trend": -0.10, "weak_trend": -0.05},
+            "ranging": {"ranging": -0.05, "weak_trend": 0.05},
+        },
+        repr=False,
+    )
+
+    def adapt(self, regime: str) -> "AdaptiveTIIThresholds":
+        """Return a new instance with thresholds adjusted for *regime*."""
+        adj = self._REGIME_ADJUSTMENTS.get(regime, {})
+        return AdaptiveTIIThresholds(
+            strong_trend=max(0.0, min(1.0, self.strong_trend + adj.get("strong_trend", 0.0))),
+            moderate_trend=max(0.0, min(1.0, self.moderate_trend + adj.get("moderate_trend", 0.0))),
+            weak_trend=max(0.0, min(1.0, self.weak_trend + adj.get("weak_trend", 0.0))),
+            ranging=max(0.0, min(1.0, self.ranging + adj.get("ranging", 0.0))),
+            regime=regime,
+        )
+
+
+@dataclass
 class TIIResult:
     timestamp: datetime
     price: float
