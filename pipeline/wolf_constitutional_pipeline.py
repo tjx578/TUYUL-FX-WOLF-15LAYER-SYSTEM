@@ -928,6 +928,7 @@ class WolfConstitutionalPipeline:
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2 -- ZONA CONFLUENCE & SCORING (L4, L5)
+            # Strict sequential halt-on-failure: L4 → L5
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring -- {symbol}")
             engines_invoked.extend(["L4ScoringEngine", "L5PsychologyAnalyzer"])
@@ -941,17 +942,12 @@ class WolfConstitutionalPipeline:
             if hasattr(l4_engine, "set_l3_output"):
                 l4_engine.set_l3_output(l3)
 
-            phase2_calls: dict[str, Callable[[], dict[str, Any]]] = {
-                "L4": lambda: cast(dict[str, Any], _timed_layer_call(l4_engine.score, "L4", l1, l2, l3)),
-                "L5": lambda: cast(
-                    dict[str, Any], _timed_layer_call(l5_engine.analyze, "L5", symbol, volatility_profile=l2)
-                ),
-            }
-            phase2_results = self._run_dag_batch_calls(dag_batches, phase2_calls)
-            l4 = phase2_results["L4"]
-            l5 = phase2_results["L5"]
+            # ── Step 1: L4 (sequential) ──────────────────────────
+            l4 = cast(
+                dict[str, Any],
+                _timed_layer_call(l4_engine.score, "L4", l1, l2, l3),
+            )
             layers_executed.append("L4")
-            layers_executed.append("L5")
 
             # L4 constitutional diagnostic
             _l4_const = l4.get("constitutional", {})
@@ -961,13 +957,64 @@ class WolfConstitutionalPipeline:
                     "[Pipeline v8.0] L4 constitutional {} | symbol={} reasons={}",
                     _l4_status,
                     symbol,
-                    _l4_const.get("warnings", []),
+                    _l4_const.get("warning_codes", _l4_const.get("warnings", [])),
                 )
+
+            # Halt check: L4 must allow continuation before L5 runs
             if not l4.get("continuation_allowed", l4.get("valid", True)):
                 logger.warning(
-                    "[Pipeline v8.0] L4 blocked continuation | symbol={}",
+                    "[Pipeline v8.0] Phase 2 HALT at L4 | symbol={} "
+                    "status={} blockers={}",
                     symbol,
+                    _l4_status,
+                    _l4_const.get("blocker_codes", []),
                 )
+                errors.append(f"L4_HALT:status={_l4_status}")
+                errors.extend(
+                    f"L4_BLOCKER:{b}"
+                    for b in _l4_const.get("blocker_codes", [])
+                )
+                return _early_exit_with_map(errors, time.time() - start_time)
+
+            # ── Step 2: L5 (sequential, with L4 upstream) ────────
+            # Inject L4 output for L5 upstream legality check
+            if hasattr(l5_engine, "set_l4_output"):
+                l5_engine.set_l4_output(l4)
+
+            l5 = cast(
+                dict[str, Any],
+                _timed_layer_call(
+                    l5_engine.analyze, "L5", symbol, volatility_profile=l2,
+                ),
+            )
+            layers_executed.append("L5")
+
+            # L5 constitutional diagnostic
+            _l5_const = l5.get("constitutional", {})
+            _l5_status = _l5_const.get("status", "PASS")
+            if _l5_status in ("WARN", "FAIL"):
+                logger.warning(
+                    "[Pipeline v8.0] L5 constitutional {} | symbol={} reasons={}",
+                    _l5_status,
+                    symbol,
+                    _l5_const.get("warning_codes", _l5_const.get("warnings", [])),
+                )
+
+            # Halt check: L5 must allow continuation before Phase 3
+            if not l5.get("continuation_allowed", l5.get("valid", True)):
+                logger.warning(
+                    "[Pipeline v8.0] Phase 2 HALT at L5 | symbol={} "
+                    "status={} blockers={}",
+                    symbol,
+                    _l5_status,
+                    _l5_const.get("blocker_codes", []),
+                )
+                errors.append(f"L5_HALT:status={_l5_status}")
+                errors.extend(
+                    f"L5_BLOCKER:{b}"
+                    for b in _l5_const.get("blocker_codes", [])
+                )
+                return _early_exit_with_map(errors, time.time() - start_time)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 3 -- ZONA PROBABILITY & VALIDATION (L7, L8, L9)

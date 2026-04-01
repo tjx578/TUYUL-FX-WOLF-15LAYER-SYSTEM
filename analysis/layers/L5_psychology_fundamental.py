@@ -445,6 +445,11 @@ class L5AnalysisLayer:
         self._consecutive_losses: int = 0
         self._win_streak: int = 0
         self._drawdown_percent: float = 0.0
+        self._l4_output: dict[str, Any] | None = None
+
+    def set_l4_output(self, l4_output: dict[str, Any]) -> None:
+        """Inject L4 constitutional output for upstream legality check."""
+        self._l4_output = l4_output
 
     def record_loss(self) -> None:
         self._consecutive_losses += 1
@@ -677,6 +682,59 @@ class L5AnalysisLayer:
             "valid": True,
             "timestamp": now.isoformat(),
         }
+        return self._apply_constitutional(raw_result, pair)
+
+    # ── Constitutional Governance Wrapper ────────────────────────────
+    def _apply_constitutional(
+        self, raw_result: dict[str, Any], symbol: str
+    ) -> dict[str, Any]:
+        """Wrap raw L5 output with constitutional governance envelope.
+
+        Follows the same pattern as L4 constitutional wrapper:
+        lazy-import governor → build inputs → evaluate → merge → map valid.
+        """
+        try:
+            from analysis.layers.L5_constitutional import L5ConstitutionalGovernor
+
+            gov = L5ConstitutionalGovernor()
+
+            l4_output = self._l4_output or {}
+
+            envelope = gov.evaluate(
+                l4_output=l4_output,
+                l5_analysis=raw_result,
+                symbol=symbol,
+            )
+
+            raw_result["constitutional"] = envelope
+            raw_result["continuation_allowed"] = envelope.get(
+                "continuation_allowed", True
+            )
+
+            # Map constitutional status → valid flag
+            status = envelope.get("status", "PASS")
+            if status == "FAIL":
+                raw_result["valid"] = False
+            elif status == "WARN":
+                # WARN degrades but does not block
+                pass
+
+            logger.debug(
+                "L5 constitutional: symbol=%s status=%s continuation=%s",
+                symbol,
+                status,
+                envelope.get("continuation_allowed", True),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "L5 constitutional governor failed — raw result preserved: %s",
+                exc,
+            )
+            raw_result["constitutional"] = {"error": str(exc)}
+            raw_result["continuation_allowed"] = True
+
+        return raw_result
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -701,6 +759,10 @@ class L5PsychologyAnalyzer:
 
     def reset_session(self) -> None:
         self._inner.reset_session()
+
+    def set_l4_output(self, l4_output: dict[str, Any]) -> None:
+        """Inject L4 constitutional output for upstream legality check."""
+        self._inner.set_l4_output(l4_output)
 
     def analyze(
         self,
