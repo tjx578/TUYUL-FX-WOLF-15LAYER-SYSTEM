@@ -233,12 +233,17 @@ class L8PipelineAdapter:
     def __init__(self, gate_threshold: float = 0.60) -> None:
         self._gate_threshold = gate_threshold
         self._inner: Any = None
+        self._upstream_output: dict[str, Any] = {}
         try:
             from analysis.layers.L8_tii_integrity import L8TIIIntegrityAnalyzer
 
             self._inner = L8TIIIntegrityAnalyzer(gate_threshold=gate_threshold)
         except ImportError:
             logger.warning("[L8-adapter] L8TIIIntegrityAnalyzer unavailable — using minimal path")
+
+    def set_upstream_output(self, upstream: dict[str, Any]) -> None:
+        """Inject upstream output (L7 result) for constitutional governance."""
+        self._upstream_output = upstream
 
     def analyze(
         self,
@@ -275,10 +280,13 @@ class L8PipelineAdapter:
             )
 
         if self._inner is not None:
-            return self._inner.analyze(layer_outputs)
+            result = self._inner.analyze(layer_outputs)
+            return self._apply_constitutional(result)
 
         # Minimal fallback when L8TIIIntegrityAnalyzer unavailable
-        return self._minimal_tii(symbol_or_outputs if isinstance(symbol_or_outputs, str) else "UNKNOWN")
+        return self._apply_constitutional(
+            self._minimal_tii(symbol_or_outputs if isinstance(symbol_or_outputs, str) else "UNKNOWN"),
+        )
 
     @staticmethod
     def _build_layer_outputs(
@@ -340,6 +348,42 @@ class L8PipelineAdapter:
             "timestamp": datetime.now(UTC).isoformat(),
             "note": "minimal_fallback",
         }
+
+    def _apply_constitutional(self, raw_result: dict[str, Any]) -> dict[str, Any]:
+        """Wrap raw L8 output with constitutional governance envelope."""
+        try:
+            from analysis.layers.L8_constitutional import L8ConstitutionalGovernor
+
+            gov = L8ConstitutionalGovernor()
+            upstream = self._upstream_output or {}
+
+            envelope = gov.evaluate(
+                l8_analysis=raw_result,
+                upstream_output=upstream,
+            )
+
+            raw_result["constitutional"] = envelope
+            raw_result["continuation_allowed"] = envelope.get(
+                "continuation_allowed", True,
+            )
+
+            status = envelope.get("status", "PASS")
+            if status == "FAIL":
+                raw_result["valid"] = False
+
+            logger.info(
+                "[L8] constitutional: status=%s continuation=%s band=%s",
+                status,
+                envelope.get("continuation_allowed", True),
+                envelope.get("coherence_band", "N/A"),
+            )
+
+        except Exception as exc:
+            logger.warning("[L8] Constitutional governor failed — raw result preserved: %s", exc)
+            raw_result["constitutional"] = {"error": str(exc)}
+            raw_result["continuation_allowed"] = True
+
+        return raw_result
 
 
 # ═══════════════════════════════════════════════════════════════════════════

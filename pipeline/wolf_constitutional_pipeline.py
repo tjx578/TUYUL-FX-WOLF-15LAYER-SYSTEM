@@ -1214,6 +1214,13 @@ class WolfConstitutionalPipeline:
                 _l7_upstream = l4
             l7_engine.set_upstream_output(_l7_upstream)
 
+            # ── L8/L9 upstream injection will happen after L7 completes ─
+            # L8 needs L7 output, L9 needs L8 output for constitutional chain.
+            # Since Phase 3 runs L7/L8/L9 in parallel, we set Phase 2 output
+            # as upstream for L8/L9. Post-hoc chain verification follows.
+            l8_engine.set_upstream_output(_l7_upstream)
+            l9_engine.set_upstream_output(_l7_upstream)
+
             phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "L7": lambda: cast(
                     dict[str, Any],
@@ -1310,6 +1317,79 @@ class WolfConstitutionalPipeline:
                     _l7_const_status,
                     _l7_const.get("coherence_band", "N/A"),
                     _l7_const.get("score_numeric", 0.0),
+                )
+
+            # ── L8 Constitutional Diagnostic ─────────────────────────
+            _l8_const = l8.get("constitutional", {})
+            _l8_const_status = _l8_const.get("status", "N/A")
+            _l8_cont_allowed = l8.get("continuation_allowed", True)
+            if _l8_const_status == "FAIL":
+                _l8_blockers = _l8_const.get("blocker_codes", [])
+                logger.warning(
+                    "[Phase-3] {} L8 constitutional FAIL — blockers={} continuation={}",
+                    symbol,
+                    _l8_blockers,
+                    _l8_cont_allowed,
+                )
+            elif _l8_const_status == "WARN":
+                _l8_warns = _l8_const.get("warning_codes", [])
+                logger.info(
+                    "[Phase-3] {} L8 constitutional WARN — warnings={} band={}",
+                    symbol,
+                    _l8_warns,
+                    _l8_const.get("coherence_band", "N/A"),
+                )
+            else:
+                logger.info(
+                    "[Phase-3] {} L8 constitutional {} — band={} integrity={:.4f}",
+                    symbol,
+                    _l8_const_status,
+                    _l8_const.get("coherence_band", "N/A"),
+                    _l8_const.get("score_numeric", 0.0),
+                )
+
+            # ── L9 Constitutional Diagnostic ─────────────────────────
+            _l9_const = l9.get("constitutional", {})
+            _l9_const_status = _l9_const.get("status", "N/A")
+            _l9_cont_allowed = l9.get("continuation_allowed", True)
+            if _l9_const_status == "FAIL":
+                _l9_blockers = _l9_const.get("blocker_codes", [])
+                logger.warning(
+                    "[Phase-3] {} L9 constitutional FAIL — blockers={} continuation={}",
+                    symbol,
+                    _l9_blockers,
+                    _l9_cont_allowed,
+                )
+            elif _l9_const_status == "WARN":
+                _l9_warns = _l9_const.get("warning_codes", [])
+                logger.info(
+                    "[Phase-3] {} L9 constitutional WARN — warnings={} band={}",
+                    symbol,
+                    _l9_warns,
+                    _l9_const.get("coherence_band", "N/A"),
+                )
+            else:
+                logger.info(
+                    "[Phase-3] {} L9 constitutional {} — band={} structure={:.4f}",
+                    symbol,
+                    _l9_const_status,
+                    _l9_const.get("coherence_band", "N/A"),
+                    _l9_const.get("score_numeric", 0.0),
+                )
+
+            # ── Phase-3 Chain Integrity Check (post-hoc) ─────────────
+            # If L7 FAIL, downstream L8/L9 should also be treated as blocked
+            if _l7_const_status == "FAIL" and (_l8_cont_allowed or _l9_cont_allowed):
+                logger.warning(
+                    "[Phase-3] {} CHAIN WARNING: L7 FAIL but L8/L9 continuation allowed "
+                    "(parallel execution — Phase 2 upstream used)",
+                    symbol,
+                )
+            if _l8_const_status == "FAIL" and _l9_cont_allowed:
+                logger.warning(
+                    "[Phase-3] {} CHAIN WARNING: L8 FAIL but L9 continuation allowed "
+                    "(parallel execution — Phase 2 upstream used)",
+                    symbol,
                 )
 
             # ═══════════════════════════════════════════════════════

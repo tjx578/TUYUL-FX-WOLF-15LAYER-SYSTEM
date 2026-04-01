@@ -65,6 +65,11 @@ class L9SMCAnalyzer:
         self._liq_scorer = None
         self._dvg_engine: object | None = None
         self._prev_trend: str | None = None  # Track for CHoCH detection
+        self._upstream_output: dict[str, Any] = {}
+
+    def set_upstream_output(self, upstream: dict[str, Any]) -> None:
+        """Inject upstream output (L8 result) for constitutional governance."""
+        self._upstream_output = upstream
 
     def _ensure_loaded(self) -> None:
         if self._smc_detector is not None:
@@ -303,10 +308,10 @@ class L9SMCAnalyzer:
 
         # --- Validate structure input ---
         if structure is None or not structure:
-            return self._fail("no_structure_data")
+            return self._apply_constitutional(self._fail("no_structure_data"), symbol)
 
         if not structure.get("valid", False):
-            return self._fail("invalid_structure")
+            return self._apply_constitutional(self._fail("invalid_structure"), symbol)
 
         trend = structure.get("trend", "NEUTRAL")
 
@@ -359,7 +364,7 @@ class L9SMCAnalyzer:
         # --- Liquidity score from sweep quality ---
         liquidity_score = sweep_quality if sweep_detected else 0.0
 
-        return {
+        result = {
             "smc_score": int(confidence * 100),
             "liquidity_score": liquidity_score,
             "dvg_confidence": dvg_confidence,
@@ -380,6 +385,7 @@ class L9SMCAnalyzer:
             "liquidity_sweep": sweep_detected,
             "reason": "smc_ok" if smc else "no_signal",
         }
+        return self._apply_constitutional(result, symbol)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -404,3 +410,43 @@ class L9SMCAnalyzer:
             "liquidity_sweep": False,
             "reason": reason,
         }
+
+    def _apply_constitutional(self, raw_result: dict[str, Any], symbol: str) -> dict[str, Any]:
+        """Wrap raw L9 output with constitutional governance envelope."""
+        try:
+            from analysis.layers.L9_constitutional import L9ConstitutionalGovernor
+
+            gov = L9ConstitutionalGovernor()
+            upstream = self._upstream_output or {}
+
+            envelope = gov.evaluate(
+                l9_analysis=raw_result,
+                upstream_output=upstream,
+            )
+
+            raw_result["constitutional"] = envelope
+            raw_result["continuation_allowed"] = envelope.get(
+                "continuation_allowed", True,
+            )
+
+            status = envelope.get("status", "PASS")
+            if status == "FAIL":
+                raw_result["valid"] = False
+
+            logger.info(
+                "[L9] {} constitutional: status={} continuation={} band={}",
+                symbol,
+                status,
+                envelope.get("continuation_allowed", True),
+                envelope.get("coherence_band", "N/A"),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "[L9] Constitutional governor failed — raw result preserved: {}",
+                exc,
+            )
+            raw_result["constitutional"] = {"error": str(exc)}
+            raw_result["continuation_allowed"] = True
+
+        return raw_result

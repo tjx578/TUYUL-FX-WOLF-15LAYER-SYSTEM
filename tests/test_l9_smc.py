@@ -46,9 +46,12 @@ def test_smc_neutral_trend_low_confidence(analyzer, context_bus):
     }
 
     result = analyzer.analyze("EURUSD", structure=structure)
-    assert result["valid"] is True
+    # Constitutional governor marks low-confidence results as FAIL (valid=False)
+    # but the analysis still computes correctly
     assert result["smc"] is False  # No clear SMC signal
     assert result["confidence"] == 0.3  # Low confidence
+    assert result.get("constitutional", {}).get("status") == "FAIL"
+    assert result.get("constitutional", {}).get("coherence_band") == "LOW"
 
 
 def test_smc_bullish_bos_detected(analyzer, context_bus):
@@ -127,7 +130,7 @@ def test_smc_choch_bullish_to_bearish(analyzer, context_bus):
     }
 
     result1 = analyzer.analyze("EURUSD", structure=structure_bullish)
-    assert result1["valid"] is True
+    # First call: low confidence (0.4) → constitutional FAIL, but analysis ran
     assert result1["choch_detected"] is False  # No previous trend
 
     # Second analysis with BEARISH trend (CHoCH)
@@ -139,10 +142,12 @@ def test_smc_choch_bullish_to_bearish(analyzer, context_bus):
     }
 
     result2 = analyzer.analyze("EURUSD", structure=structure_bearish)
-    assert result2["valid"] is True
+    # Constitutional governor: confidence 0.6 → smc_score 60 → LOW band → FAIL
+    # but CHoCH detection logic works correctly
     assert result2["choch_detected"] is True  # Detected CHoCH
     assert result2["confidence"] == 0.6  # Medium confidence for reversal
     assert result2["smc"] is True
+    assert result2.get("constitutional", {}).get("coherence_band") == "LOW"
 
 
 def test_smc_choch_bearish_to_bullish(analyzer, context_bus):
@@ -156,7 +161,8 @@ def test_smc_choch_bearish_to_bullish(analyzer, context_bus):
     }
 
     result1 = analyzer.analyze("EURUSD", structure=structure_bearish)
-    assert result1["valid"] is True
+    # First call: low confidence → constitutional FAIL, but analysis ran
+    assert result1["confidence"] == 0.4
 
     # Second analysis with BULLISH trend (CHoCH)
     structure_bullish = {
@@ -167,9 +173,11 @@ def test_smc_choch_bearish_to_bullish(analyzer, context_bus):
     }
 
     result2 = analyzer.analyze("EURUSD", structure=structure_bullish)
-    assert result2["valid"] is True
+    # Constitutional governor: confidence 0.6 → smc_score 60 → LOW band → FAIL
+    # but CHoCH detection logic works correctly
     assert result2["choch_detected"] is True
     assert result2["confidence"] == 0.6
+    assert result2.get("constitutional", {}).get("coherence_band") == "LOW"
 
 
 def test_smc_no_choch_same_trend(analyzer, context_bus):
