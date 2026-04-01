@@ -176,7 +176,9 @@ def _eval_freshness(
     # Infer from data quality
     dq = l3_analysis.get("data_quality", "HEALTHY")
     if dq == "FLAT":
-        return FreshnessState.NO_PRODUCER
+        # FLAT means data exists but is unusable — DEGRADED, not NO_PRODUCER.
+        # NO_PRODUCER is reserved for truly absent data pipeline.
+        return FreshnessState.DEGRADED
     if dq == "STALE_CLOSE":
         return FreshnessState.STALE_PRESERVED
 
@@ -262,12 +264,10 @@ def _check_structure_conflict(l3_analysis: dict[str, Any]) -> bool:
 
     A conflict occurs when:
     - trend is directional but structure_validity is WEAK with low confidence
-    - data quality is FLAT (no usable structural data)
-    """
-    dq = l3_analysis.get("data_quality", "HEALTHY")
-    if dq == "FLAT":
-        return True
 
+    FLAT data quality is handled by the freshness gate (DEGRADED), not here.
+    NEUTRAL trend cannot conflict — there is no directional claim to contradict.
+    """
     trend = l3_analysis.get("trend", "NEUTRAL")
     struct_validity = l3_analysis.get("structure_validity", "WEAK")
     confidence = l3_analysis.get("confidence", 0)
@@ -289,16 +289,17 @@ def _compress_status(
     band: CoherenceBand,
     trend_confirmed: bool,
     structure_conflict: bool,
+    trend_is_directional: bool = True,
 ) -> L3Status:
     """Step 6: Compress sub-gate outputs into final status.
 
-    Truth table (frozen v1):
-      FAIL: any critical blocker, LOW band, no-producer,
-            insufficient warmup, illegal fallback,
-            trend not confirmed, structure conflict
-      PASS: fresh + ready + confirmed + no conflict +
+    Truth table (v1.1):
+      FAIL: any critical blocker, LOW band, analysis invalid (not confirmed),
+            insufficient warmup, illegal fallback, structure conflict
+      PASS: fresh + ready + directional trend + no conflict +
             band in {HIGH, MID} + fallback in {NO, PRIMARY_SUBSTITUTE}
-      WARN: legal degraded envelope
+      WARN: NEUTRAL trend (confirmed non-directional), degraded freshness,
+            partial warmup, emergency fallback
       else: FAIL
     """
     if blockers:
@@ -312,6 +313,15 @@ def _compress_status(
 
     if structure_conflict:
         return L3Status.FAIL
+
+    # NEUTRAL trend (confirmed but non-directional) → WARN envelope
+    if not trend_is_directional:
+        neutral_legal = (
+            freshness in (FreshnessState.FRESH, FreshnessState.STALE_PRESERVED, FreshnessState.DEGRADED)
+            and warmup in (WarmupState.READY, WarmupState.PARTIAL)
+            and band in (CoherenceBand.HIGH, CoherenceBand.MID)
+        )
+        return L3Status.WARN if neutral_legal else L3Status.FAIL
 
     clean_pass = (
         freshness == FreshnessState.FRESH
@@ -350,6 +360,8 @@ def _collect_warning_codes(
 
     if data_quality == "STALE_CLOSE":
         warnings.append("STALE_CLOSE_DATA")
+    if data_quality == "FLAT":
+        warnings.append("FLAT_DATA_QUALITY")
     if freshness == FreshnessState.STALE_PRESERVED:
         warnings.append("STALE_PRESERVED_TREND")
     if freshness == FreshnessState.DEGRADED:
@@ -483,9 +495,14 @@ class L3ConstitutionalGovernor:
 
         # Trend confirmation status
         trend = l3_analysis.get("trend", "NEUTRAL")
-        trend_confirmed = trend in ("BULLISH", "BEARISH")
+        # trend_confirmed = L3 analysis ran successfully (valid output)
+        # trend_is_directional = trend has a clear direction (BULLISH/BEARISH)
+        # NEUTRAL is a valid confirmed state ("confirmed no trend"), not a failure.
+        trend_confirmed = l3_analysis.get("valid", False)
+        trend_is_directional = trend in ("BULLISH", "BEARISH")
         structure_conflict = _check_structure_conflict(l3_analysis)
         rule_hits.append(f"trend_confirmed={trend_confirmed}")
+        rule_hits.append(f"trend_is_directional={trend_is_directional}")
         rule_hits.append(f"structure_conflict={structure_conflict}")
         rule_hits.append(f"trend={trend}")
 
@@ -510,6 +527,7 @@ class L3ConstitutionalGovernor:
             band,
             trend_confirmed,
             structure_conflict,
+            trend_is_directional,
         )
 
         # Collect warning codes (for PASS and WARN — PASS can have advisory warnings)
@@ -518,13 +536,17 @@ class L3ConstitutionalGovernor:
             warning_codes = _collect_warning_codes(
                 freshness, warmup, fallback, dq,
             )
+            if not trend_is_directional:
+                warning_codes.append("NEUTRAL_TREND_NON_DIRECTIONAL")
 
         if band == CoherenceBand.LOW and status == L3Status.FAIL:
             notes.append("Confirmation score below legal threshold.")
         if structure_conflict:
             notes.append("Trend confirmation conflicts with upstream structure.")
         if not trend_confirmed and status == L3Status.FAIL:
-            notes.append("No directional trend confirmed — NEUTRAL trend is insufficient.")
+            notes.append("L3 analysis invalid — trend confirmation unavailable.")
+        if not trend_is_directional and status == L3Status.WARN:
+            notes.append("NEUTRAL trend — non-directional confirmation, pipeline continues with reduced confidence.")
 
         # ── Step 8: Set continuation ──────────────────────────
         continuation_allowed = status in (L3Status.PASS, L3Status.WARN)
