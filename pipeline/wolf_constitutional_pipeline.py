@@ -936,6 +936,11 @@ class WolfConstitutionalPipeline:
             assert self._l5 is not None
             l4_engine = self._l4
             l5_engine = self._l5
+
+            # Inject L3 output for L4 constitutional upstream legality check
+            if hasattr(l4_engine, "set_l3_output"):
+                l4_engine.set_l3_output(l3)
+
             phase2_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "L4": lambda: cast(dict[str, Any], _timed_layer_call(l4_engine.score, "L4", l1, l2, l3)),
                 "L5": lambda: cast(
@@ -947,6 +952,22 @@ class WolfConstitutionalPipeline:
             l5 = phase2_results["L5"]
             layers_executed.append("L4")
             layers_executed.append("L5")
+
+            # L4 constitutional diagnostic
+            _l4_const = l4.get("constitutional", {})
+            _l4_status = _l4_const.get("status", "PASS")
+            if _l4_status in ("WARN", "FAIL"):
+                logger.warning(
+                    "[Pipeline v8.0] L4 constitutional {} | symbol={} reasons={}",
+                    _l4_status,
+                    symbol,
+                    _l4_const.get("warnings", []),
+                )
+            if not l4.get("continuation_allowed", l4.get("valid", True)):
+                logger.warning(
+                    "[Pipeline v8.0] L4 blocked continuation | symbol={}",
+                    symbol,
+                )
 
             # ═══════════════════════════════════════════════════════
             # PHASE 3 -- ZONA PROBABILITY & VALIDATION (L7, L8, L9)
