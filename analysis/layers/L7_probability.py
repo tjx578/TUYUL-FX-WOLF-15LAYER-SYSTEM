@@ -124,6 +124,8 @@ class L7ProbabilityAnalyzer:
         self._trade_history: list[float] = []
         # Injectable WF validator: default uses module-level singleton.
         self._wf_validator = _wf_validator if wf_validator is _SENTINEL else wf_validator
+        # Upstream output for constitutional governance (Phase 2 / enrichment result)
+        self._upstream_output: dict[str, Any] | None = None
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -136,6 +138,10 @@ class L7ProbabilityAnalyzer:
         if not isinstance(returns, list | tuple):
             raise TypeError(f"Expected list[float], got {type(returns).__name__}")
         self._trade_history = [float(r) for r in returns]
+
+    def set_upstream_output(self, upstream: dict[str, Any]) -> None:
+        """Inject upstream output (Phase 2 / enrichment result) for constitutional governance."""
+        self._upstream_output = upstream
 
     def analyze(
         self,
@@ -184,7 +190,9 @@ class L7ProbabilityAnalyzer:
                 available=len(returns),
                 required=_MIN_TRADES,
             )
-            return self._fallback_result(symbol, len(returns))
+            return self._apply_constitutional(
+                self._fallback_result(symbol, len(returns)), symbol,
+            )
 
         try:
             # ── Monte Carlo Bootstrap ────────────────────────────────
@@ -321,7 +329,7 @@ class L7ProbabilityAnalyzer:
                 sims=result["simulations"],
             )
 
-            return result
+            return self._apply_constitutional(result, symbol)
 
         except Exception as exc:
             logger.error(
@@ -329,7 +337,9 @@ class L7ProbabilityAnalyzer:
                 symbol=symbol,
                 exc=exc,
             )
-            return self._fallback_result(symbol, len(returns))
+            return self._apply_constitutional(
+                self._fallback_result(symbol, len(returns)), symbol,
+            )
 
     # ── Private helpers ──────────────────────────────────────────────────────
 
@@ -373,3 +383,51 @@ class L7ProbabilityAnalyzer:
             "symbol": symbol,
             "note": f"insufficient_data_{available_trades}/{_MIN_TRADES}",
         }
+
+    # ── Constitutional Governance Wrapper ────────────────────────────
+    def _apply_constitutional(
+        self, raw_result: dict[str, Any], symbol: str,
+    ) -> dict[str, Any]:
+        """Wrap raw L7 output with constitutional governance envelope.
+
+        Follows the same pattern as L4/L5 constitutional wrappers:
+        lazy-import governor → evaluate → merge → map valid.
+        """
+        try:
+            from analysis.layers.L7_constitutional import L7ConstitutionalGovernor
+
+            gov = L7ConstitutionalGovernor()
+            upstream = self._upstream_output or {}
+
+            envelope = gov.evaluate(
+                l7_analysis=raw_result,
+                upstream_output=upstream,
+            )
+
+            raw_result["constitutional"] = envelope
+            raw_result["continuation_allowed"] = envelope.get(
+                "continuation_allowed", True,
+            )
+
+            status = envelope.get("status", "PASS")
+            if status == "FAIL":
+                raw_result["valid"] = False
+            # WARN degrades but does not block
+
+            logger.info(
+                "[L7] {symbol} constitutional: status={status} continuation={cont} band={band}",
+                symbol=symbol,
+                status=status,
+                cont=envelope.get("continuation_allowed", True),
+                band=envelope.get("coherence_band", "N/A"),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "[L7] Constitutional governor failed — raw result preserved: {exc}",
+                exc=exc,
+            )
+            raw_result["constitutional"] = {"error": str(exc)}
+            raw_result["continuation_allowed"] = True
+
+        return raw_result

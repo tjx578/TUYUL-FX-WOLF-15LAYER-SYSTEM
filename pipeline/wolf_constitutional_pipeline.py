@@ -1204,6 +1204,16 @@ class WolfConstitutionalPipeline:
             # so L7 skips WF enrichment.
             _synthetic_returns = trade_returns_preconditioned
 
+            # ── Inject upstream output for L7 constitutional governor ─
+            # L7 constitutional needs Phase 2 / enrichment continuation
+            # state to check upstream legality.
+            _l7_upstream: dict[str, Any] = {}
+            if l5:
+                _l7_upstream = l5
+            elif l4:
+                _l7_upstream = l4
+            l7_engine.set_upstream_output(_l7_upstream)
+
             phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "L7": lambda: cast(
                     dict[str, Any],
@@ -1272,6 +1282,35 @@ class WolfConstitutionalPipeline:
                 l9.get("smart_money_signal", "N/A"),
                 l9.get("valid", False),
             )
+
+            # ── L7 Constitutional Diagnostic ─────────────────────────
+            _l7_const = l7.get("constitutional", {})
+            _l7_const_status = _l7_const.get("status", "N/A")
+            _l7_cont_allowed = l7.get("continuation_allowed", True)
+            if _l7_const_status == "FAIL":
+                _l7_blockers = _l7_const.get("blocker_codes", [])
+                logger.warning(
+                    "[Phase-3] {} L7 constitutional FAIL — blockers={} continuation={}",
+                    symbol,
+                    _l7_blockers,
+                    _l7_cont_allowed,
+                )
+            elif _l7_const_status == "WARN":
+                _l7_warns = _l7_const.get("warning_codes", [])
+                logger.info(
+                    "[Phase-3] {} L7 constitutional WARN — warnings={} band={}",
+                    symbol,
+                    _l7_warns,
+                    _l7_const.get("coherence_band", "N/A"),
+                )
+            else:
+                logger.info(
+                    "[Phase-3] {} L7 constitutional {} — band={} wp={:.4f}",
+                    symbol,
+                    _l7_const_status,
+                    _l7_const.get("coherence_band", "N/A"),
+                    _l7_const.get("score_numeric", 0.0),
+                )
 
             # ═══════════════════════════════════════════════════════
             # PHASE 4 -- ZONA EXECUTION & DECISION (L11 -> L6 -> L10)

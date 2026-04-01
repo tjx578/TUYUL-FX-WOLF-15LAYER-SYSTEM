@@ -40,7 +40,7 @@ class TestL7ProbabilityAnalyzer:
         analyzer = L7ProbabilityAnalyzer(mc_simulations=100, mc_seed=42)
         result = analyzer.analyze("GBPUSD", technical_score=50)
 
-        assert result["valid"] is True
+        assert result["valid"] is False  # Constitutional governor: FAIL (no MC data)
         # MC skipped -> defaults
         assert result["win_probability"] == 0.0
         assert result["profit_factor"] == 0.0
@@ -57,7 +57,7 @@ class TestL7ProbabilityAnalyzer:
             trade_returns=[1.0, -0.5, 2.0],
         )
 
-        assert result["valid"] is True
+        assert result["valid"] is False  # Constitutional governor: FAIL (insufficient data)
         assert result["win_probability"] == 0.0
         assert result["mc_passed_threshold"] is False
 
