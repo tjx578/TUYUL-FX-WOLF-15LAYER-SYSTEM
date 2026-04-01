@@ -60,7 +60,9 @@ class Phase2ChainResult:
         return {
             "phase": "PHASE_2",
             "status": self.status.value,
+            "chain_status": self.status.value,
             "continuation_allowed": self.continuation_allowed,
+            "halted": self.halted_at is not None,
             "halted_at": self.halted_at,
             "l4": self.l4,
             "l5": self.l5,
@@ -68,6 +70,16 @@ class Phase2ChainResult:
             "warnings": self.warnings,
             "timing_ms": self.timing_ms,
         }
+
+    @property
+    def chain_status(self) -> str:
+        """Chain status as string."""
+        return self.status.value
+
+    @property
+    def halted(self) -> bool:
+        """Whether the chain halted before completing all layers."""
+        return self.halted_at is not None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

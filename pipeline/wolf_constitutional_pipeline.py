@@ -1428,8 +1428,10 @@ class WolfConstitutionalPipeline:
             # ═══════════════════════════════════════════════════════
             # PHASE 2.5 -- ENGINE ENRICHMENT LAYER (9 Facade Engines)
             #   ADR-011: cognitive/fusion/quantum enrichment before L12
+            #   Constitutional wrapper: advisory-only, non-fatal, isolated
             # ═══════════════════════════════════════════════════════
             enrichment_data: dict[str, Any] = {}
+            _phase25_constitutional: dict[str, Any] = {}
             try:
                 if self._enrichment is None:
                     from engines.enrichment_orchestrator import (  # noqa: PLC0415
@@ -1471,15 +1473,58 @@ class WolfConstitutionalPipeline:
                     ]
                 )
                 enrichment_data = enrichment_result.to_dict()
+
+                # ── Constitutional governance envelope for Phase 2.5 ──
+                _enrich_ok = 9 - len(enrichment_result.errors)
+                _enrich_warnings: list[str] = list(enrichment_result.errors)
+                if _enrich_ok < 5:
+                    _enrich_warnings.append("ENRICHMENT_ENGINES_DEGRADED")
+                _phase25_status = "PASS" if not _enrich_warnings else "WARN"
+                _phase25_constitutional = {
+                    "phase": "PHASE_2_5_ENRICHMENT",
+                    "phase_status": _phase25_status,
+                    "continuation_allowed": True,  # enrichment never halts
+                    "next_legal_targets": ["PHASE_5"],
+                    "engines_ok": _enrich_ok,
+                    "engines_total": 9,
+                    "enrichment_score": enrichment_result.enrichment_score,
+                    "warnings": _enrich_warnings,
+                    "advisory_only": True,
+                    "audit": {
+                        "non_fatal": True,
+                        "parallel_semantic": True,
+                        "advisory_after_collection": True,
+                    },
+                }
+                enrichment_data["constitutional"] = _phase25_constitutional
+
                 logger.info(
-                    "[Pipeline v8.0] Phase 2.5: Enrichment -- {} score={:.3f} engines_ok={}/9",
+                    "[Pipeline v8.0] Phase 2.5: Enrichment -- {} "
+                    "score={:.3f} engines_ok={}/9 status={}",
                     symbol,
                     enrichment_result.enrichment_score,
-                    9 - len(enrichment_result.errors),
+                    _enrich_ok,
+                    _phase25_status,
                 )
+                if _phase25_status == "WARN":
+                    logger.warning(
+                        "[Pipeline v8.0] Phase 2.5 WARN | symbol={} warnings={}",
+                        symbol,
+                        _enrich_warnings,
+                    )
             except Exception as exc:
                 logger.warning("[Pipeline v8.0] Phase 2.5 enrichment failed (non-fatal): {}", exc)
                 enrichment_data = {"error": str(exc)}
+                _phase25_constitutional = {
+                    "phase": "PHASE_2_5_ENRICHMENT",
+                    "phase_status": "WARN",
+                    "continuation_allowed": True,
+                    "engines_ok": 0,
+                    "engines_total": 9,
+                    "enrichment_score": 0.0,
+                    "warnings": [f"ENRICHMENT_EXCEPTION:{type(exc).__name__}"],
+                    "advisory_only": True,
+                }
 
             # ── LRCE patch: feed enrichment into L6 (Check 4) ────────
             # L6 ran before enrichment (needed for L10/L12), but

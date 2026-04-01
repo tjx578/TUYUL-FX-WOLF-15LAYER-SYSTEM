@@ -61,15 +61,24 @@ class _L3:
     def analyze(self, symbol: str) -> dict[str, Any]:
         return {"valid": True, "trend": "BULLISH"}
 
+    def set_l2_output(self, l2: dict[str, Any]) -> None:
+        pass
+
 
 class _L4:
     def score(self, l1: dict[str, Any], l2: dict[str, Any], l3: dict[str, Any]) -> dict[str, Any]:
         return {"technical_score": 72, "directional_bias": 0.7}
 
+    def set_l3_output(self, l3: dict[str, Any]) -> None:
+        pass
+
 
 class _L5:
     def analyze(self, symbol: str, volatility_profile: dict[str, Any] | None = None) -> dict[str, Any]:
         return {"current_drawdown": 0.0, "consecutive_losses": 0}
+
+    def set_l4_output(self, l4: dict[str, Any]) -> None:
+        pass
 
 
 class _L7:
