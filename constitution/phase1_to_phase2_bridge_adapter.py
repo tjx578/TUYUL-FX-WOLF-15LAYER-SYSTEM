@@ -372,3 +372,334 @@ class Phase1ToPhase2BridgeAdapter:
             bridge_status=bridge_status,
             bridge_allowed=bridge_allowed,
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §4  EVALUATOR-BASED BRIDGE RESULT
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class Phase1ToPhase2EvaluatorBridgeResult:
+    """Bridge result for evaluator-based pipeline path.
+
+    Contains fully-formed L4/L5 evaluator payloads ready to feed
+    into ``Phase2RouterEvaluatorAdapter.run()``.
+    """
+
+    bridge: str
+    bridge_version: str
+    input_ref: str
+    timestamp: str
+    bridge_allowed: bool
+    bridge_status: str
+    next_legal_targets: list[str]
+    l4_payload: dict[str, Any]
+    l5_payload: dict[str, Any]
+    audit: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bridge": self.bridge,
+            "bridge_version": self.bridge_version,
+            "input_ref": self.input_ref,
+            "timestamp": self.timestamp,
+            "bridge_allowed": self.bridge_allowed,
+            "bridge_status": self.bridge_status,
+            "next_legal_targets": self.next_legal_targets,
+            "l4_payload": self.l4_payload,
+            "l5_payload": self.l5_payload,
+            "audit": self.audit,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §5  EVALUATOR-BASED BRIDGE ADAPTER
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class Phase1ToPhase2EvaluatorBridgeAdapter:
+    """Bridges Phase 1 evaluator chain output into Phase 2 evaluator payloads.
+
+    Derives L4/L5 evaluator payloads from a
+    ``Phase1EvaluatorChainResult.to_dict()`` output under strict
+    constitutional semantics.
+
+    Usage::
+
+        bridge = Phase1ToPhase2EvaluatorBridgeAdapter()
+        result = bridge.build(phase1_evaluator_result.to_dict())
+    """
+
+    VERSION = "1.0.0"
+
+    def __init__(
+        self,
+        default_session_sources: list[str] | None = None,
+        default_psychology_sources: list[str] | None = None,
+    ) -> None:
+        self.default_session_sources = default_session_sources or [
+            "session_engine",
+            "expectancy_engine",
+        ]
+        self.default_psychology_sources = default_psychology_sources or [
+            "discipline_engine",
+            "risk_event_feed",
+        ]
+
+    @staticmethod
+    def _extract_meta(
+        phase1_result: dict[str, Any],
+    ) -> tuple[str, str]:
+        input_ref = str(phase1_result.get("input_ref", "")).strip()
+        timestamp = str(phase1_result.get("timestamp", "")).strip()
+        if not input_ref or not timestamp:
+            raise ValueError(
+                "Phase 1 result must contain non-empty input_ref and timestamp."
+            )
+        return input_ref, timestamp
+
+    @staticmethod
+    def _phase1_is_bridgeable(
+        phase1_result: dict[str, Any],
+    ) -> tuple[bool, list[str]]:
+        reasons: list[str] = []
+        if phase1_result.get("halted", False):
+            reasons.append("PHASE1_HALTED")
+        if not bool(phase1_result.get("continuation_allowed", False)):
+            reasons.append("PHASE1_CONTINUATION_DISALLOWED")
+
+        next_targets = [
+            str(x) for x in phase1_result.get("next_legal_targets", [])
+        ]
+        if "L4" not in next_targets:
+            reasons.append("PHASE1_NEXT_TARGET_NOT_L4")
+
+        chain_status = (
+            str(phase1_result.get("chain_status", "")).strip().upper()
+        )
+        if chain_status not in {"PASS", "WARN"}:
+            reasons.append("PHASE1_CHAIN_STATUS_NOT_BRIDGEABLE")
+
+        return (len(reasons) == 0, reasons)
+
+    @staticmethod
+    def _derive_l4_score(phase1_result: dict[str, Any]) -> float:
+        layer_results = phase1_result.get("layer_results", {})
+        scores: list[float] = []
+        for layer_name in ("L1", "L2", "L3"):
+            layer = layer_results.get(layer_name, {})
+            for key in ("score_numeric", "coherence_score", "alignment_score", "confirmation_score"):
+                value = layer.get(key)
+                if isinstance(value, (int, float)):
+                    scores.append(float(value))
+                    break
+        if not scores:
+            return 0.0
+        return round(sum(scores) / len(scores), 4)
+
+    @staticmethod
+    def _derive_l5_score(
+        phase1_result: dict[str, Any],
+        l4_score: float,
+    ) -> float:
+        chain_status = str(
+            phase1_result.get("chain_status", "FAIL")
+        ).upper()
+        if chain_status == "PASS":
+            return max(0.85, round(l4_score, 4))
+        if chain_status == "WARN":
+            return min(max(0.65, round(l4_score, 4)), 0.84)
+        return min(round(l4_score, 4), 0.64)
+
+    @staticmethod
+    def _derive_freshness_state(phase1_result: dict[str, Any]) -> str:
+        layer_results = phase1_result.get("layer_results", {})
+        states: list[str] = []
+        for layer_name in ("L1", "L2", "L3"):
+            layer = layer_results.get(layer_name, {})
+            state = str(layer.get("freshness_state", "")).strip().upper()
+            if state:
+                states.append(state)
+        priority = ["NO_PRODUCER", "DEGRADED", "STALE_PRESERVED", "FRESH"]
+        for state in priority:
+            if state in states:
+                return state
+        return "FRESH"
+
+    @staticmethod
+    def _derive_warmup_state(phase1_result: dict[str, Any]) -> str:
+        layer_results = phase1_result.get("layer_results", {})
+        states: list[str] = []
+        for layer_name in ("L1", "L2", "L3"):
+            layer = layer_results.get(layer_name, {})
+            state = str(layer.get("warmup_state", "")).strip().upper()
+            if state:
+                states.append(state)
+        priority = ["INSUFFICIENT", "PARTIAL", "READY"]
+        for state in priority:
+            if state in states:
+                return state
+        return "READY"
+
+    @staticmethod
+    def _derive_fallback_class(phase1_result: dict[str, Any]) -> str:
+        layer_results = phase1_result.get("layer_results", {})
+        fallback_values: list[str] = []
+        for layer_name in ("L1", "L2", "L3"):
+            layer = layer_results.get(layer_name, {})
+            value = str(layer.get("fallback_class", "")).strip().upper()
+            if value:
+                fallback_values.append(value)
+        priority = [
+            "ILLEGAL_FALLBACK",
+            "LEGAL_EMERGENCY_PRESERVE",
+            "LEGAL_PRIMARY_SUBSTITUTE",
+            "NO_FALLBACK",
+        ]
+        for value in priority:
+            if value in fallback_values:
+                return value
+        return "NO_FALLBACK"
+
+    @staticmethod
+    def _derive_warning_pressure(
+        phase1_result: dict[str, Any],
+    ) -> dict[str, bool]:
+        warning_map = phase1_result.get("warning_map", {})
+        warnings: list[str] = []
+        for layer_name in ("L1", "L2", "L3"):
+            warnings.extend(
+                [str(w) for w in warning_map.get(layer_name, [])]
+            )
+        text = " ".join(warnings).upper()
+        return {
+            "stale_or_degraded": ("STALE" in text) or ("DEGRADED" in text),
+            "partial_warmup": "PARTIAL" in text,
+            "emergency_fallback": "EMERGENCY" in text,
+        }
+
+    def build(
+        self,
+        phase1_result: dict[str, Any],
+    ) -> Phase1ToPhase2EvaluatorBridgeResult:
+        """Build Phase 2 evaluator payloads from Phase 1 evaluator chain output."""
+        input_ref, timestamp = self._extract_meta(phase1_result)
+        bridge_allowed, reasons = self._phase1_is_bridgeable(phase1_result)
+
+        if not bridge_allowed:
+            return Phase1ToPhase2EvaluatorBridgeResult(
+                bridge="PHASE1_TO_PHASE2_EVALUATOR",
+                bridge_version=self.VERSION,
+                input_ref=input_ref,
+                timestamp=timestamp,
+                bridge_allowed=False,
+                bridge_status="FAIL",
+                next_legal_targets=[],
+                l4_payload={},
+                l5_payload={},
+                audit={
+                    "bridge_reasons": reasons,
+                    "notes": [
+                        "Phase 1 result is not legally bridgeable into Phase 2."
+                    ],
+                },
+            )
+
+        freshness_state = self._derive_freshness_state(phase1_result)
+        warmup_state = self._derive_warmup_state(phase1_result)
+        fallback_class = self._derive_fallback_class(phase1_result)
+        warning_pressure = self._derive_warning_pressure(phase1_result)
+
+        l4_score = self._derive_l4_score(phase1_result)
+        l5_score = self._derive_l5_score(phase1_result, l4_score)
+
+        phase1_chain_status = str(
+            phase1_result.get("chain_status", "FAIL")
+        ).upper()
+        prime_session = phase1_chain_status == "PASS"
+        degraded_scoring_mode = phase1_chain_status == "WARN"
+
+        l4_payload: dict[str, Any] = {
+            "input_ref": input_ref,
+            "timestamp": timestamp,
+            "upstream_l3_continuation_allowed": True,
+            "session_sources_used": list(self.default_session_sources),
+            "required_session_sources": [self.default_session_sources[0]],
+            "available_session_sources": list(self.default_session_sources),
+            "session_score": l4_score,
+            "session_valid": True,
+            "expectancy_available": True,
+            "prime_session": prime_session,
+            "degraded_scoring_mode": degraded_scoring_mode,
+            "fallback_class": fallback_class,
+            "freshness_state": freshness_state,
+            "warmup_state": warmup_state,
+        }
+
+        fatigue_level = "LOW"
+        focus_level = 0.95
+        caution_event = False
+        if phase1_chain_status == "WARN":
+            fatigue_level = "MEDIUM"
+            focus_level = 0.55
+            caution_event = True
+        if warning_pressure["partial_warmup"]:
+            focus_level = min(focus_level, 0.55)
+        if warning_pressure["stale_or_degraded"]:
+            caution_event = True
+
+        l5_payload: dict[str, Any] = {
+            "input_ref": input_ref,
+            "timestamp": timestamp,
+            "upstream_l4_continuation_allowed": True,
+            "psychology_sources_used": list(self.default_psychology_sources),
+            "required_psychology_inputs": [
+                self.default_psychology_sources[0]
+            ],
+            "available_psychology_inputs": list(
+                self.default_psychology_sources
+            ),
+            "psychology_score": l5_score,
+            "discipline_score": 0.9 if prime_session else 0.75,
+            "fatigue_level": fatigue_level,
+            "focus_level": focus_level,
+            "revenge_trading": False,
+            "fomo_level": 0.2 if prime_session else 0.65,
+            "emotional_bias": 0.1 if prime_session else 0.6,
+            "risk_event_active": False,
+            "caution_event": caution_event,
+            "fallback_class": fallback_class,
+            "freshness_state": freshness_state,
+            "warmup_state": warmup_state,
+        }
+
+        bridge_status = (
+            "WARN" if phase1_chain_status == "WARN" else "PASS"
+        )
+        return Phase1ToPhase2EvaluatorBridgeResult(
+            bridge="PHASE1_TO_PHASE2_EVALUATOR",
+            bridge_version=self.VERSION,
+            input_ref=input_ref,
+            timestamp=timestamp,
+            bridge_allowed=True,
+            bridge_status=bridge_status,
+            next_legal_targets=["L4", "L5"],
+            l4_payload=l4_payload,
+            l5_payload=l5_payload,
+            audit={
+                "bridge_reasons": ["PHASE1_BRIDGEABLE"],
+                "derived": {
+                    "freshness_state": freshness_state,
+                    "warmup_state": warmup_state,
+                    "fallback_class": fallback_class,
+                    "warning_pressure": warning_pressure,
+                    "l4_score": l4_score,
+                    "l5_score": l5_score,
+                },
+                "notes": [
+                    "Bridge payloads derived from Phase 1 evaluator chain "
+                    "result under strict constitutional mode."
+                ],
+            },
+        )

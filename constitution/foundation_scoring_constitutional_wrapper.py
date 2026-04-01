@@ -210,3 +210,202 @@ class FoundationScoringConstitutionalWrapper:
                 "reason": "Foundation + Scoring completed legally",
             },
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §3  EVALUATOR-BASED WRAPPER
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class FoundationScoringEvaluatorWrapper:
+    """Halt-safe wrapper: Phase 1 → Bridge → Phase 2 (evaluator path).
+
+    Uses ``Phase1RouterEvaluatorAdapter``, ``Phase1ToPhase2EvaluatorBridgeAdapter``,
+    and ``Phase2RouterEvaluatorAdapter`` for the full evaluator-based pipeline
+    running Phase 1 (L1→L2→L3) → Bridge → Phase 2 (L4→L5).
+
+    Usage::
+
+        wrapper = FoundationScoringEvaluatorWrapper()
+        result = wrapper.run(payload)
+    """
+
+    VERSION = "1.0.0"
+
+    def __init__(
+        self,
+        phase1_adapter: Any | None = None,
+        bridge_adapter: Any | None = None,
+        phase2_adapter: Any | None = None,
+    ) -> None:
+        if phase1_adapter is None:
+            from constitution.phase1_chain_adapter import (
+                Phase1RouterEvaluatorAdapter,
+            )
+
+            phase1_adapter = Phase1RouterEvaluatorAdapter()
+        if bridge_adapter is None:
+            from constitution.phase1_to_phase2_bridge_adapter import (
+                Phase1ToPhase2EvaluatorBridgeAdapter,
+            )
+
+            bridge_adapter = Phase1ToPhase2EvaluatorBridgeAdapter()
+        if phase2_adapter is None:
+            from constitution.phase2_chain_adapter import (
+                Phase2RouterEvaluatorAdapter,
+            )
+
+            phase2_adapter = Phase2RouterEvaluatorAdapter()
+
+        self.phase1_adapter = phase1_adapter
+        self.bridge_adapter = bridge_adapter
+        self.phase2_adapter = phase2_adapter
+
+    @staticmethod
+    def _extract_meta(payload: dict[str, Any]) -> tuple[str, str]:
+        refs: list[str] = []
+        timestamps: list[str] = []
+        for layer in ("L1", "L2", "L3"):
+            lp = payload.get(layer, {})
+            r = str(lp.get("input_ref", "")).strip()
+            t = str(lp.get("timestamp", "")).strip()
+            if r:
+                refs.append(r)
+            if t:
+                timestamps.append(t)
+        if not refs or not timestamps:
+            raise ValueError(
+                "Wrapper requires at least one non-empty input_ref and "
+                "timestamp in Phase 1 payload."
+            )
+        return refs[0], timestamps[0]
+
+    def run(self, payload: dict[str, Any]) -> FoundationScoringWrapperResult:
+        """Run the full evaluator-based Foundation+Scoring wrapper."""
+        input_ref, timestamp = self._extract_meta(payload)
+
+        # Extract L1/L2/L3 evaluator payloads
+        l1_payload = dict(payload.get("L1", {}))
+        l2_payload = dict(payload.get("L2", {}))
+        l3_payload = dict(payload.get("L3", {}))
+
+        audit_steps: list[str] = ["Phase 1 (evaluator) start"]
+        phase1_result = self.phase1_adapter.run(
+            l1_payload, l2_payload, l3_payload
+        )
+        phase_status: dict[str, str] = {"PHASE_1": phase1_result.chain_status}
+        phase_results: dict[str, dict[str, Any]] = {
+            "PHASE_1": phase1_result.to_dict()
+        }
+        audit_steps.append(
+            f"Phase 1 completed with status={phase1_result.chain_status}"
+        )
+
+        if phase1_result.halted or not phase1_result.continuation_allowed:
+            audit_steps.append("Wrapper halted at Phase 1")
+            return FoundationScoringWrapperResult(
+                wrapper="FOUNDATION_SCORING_EVALUATOR_WRAPPER",
+                wrapper_version=self.VERSION,
+                input_ref=input_ref,
+                timestamp=timestamp,
+                halted=True,
+                halted_at="PHASE_1",
+                continuation_allowed=False,
+                next_legal_targets=[],
+                wrapper_status="FAIL",
+                phase_status=phase_status,
+                phase_results=phase_results,
+                bridge_result={},
+                audit={
+                    "halt_safe": True,
+                    "steps": audit_steps,
+                    "reason": "Phase 1 not continuable",
+                },
+            )
+
+        audit_steps.append("Bridge (evaluator) start")
+        bridge_result = self.bridge_adapter.build(phase1_result.to_dict())
+        audit_steps.append(
+            f"Bridge completed with status={bridge_result.bridge_status}"
+        )
+
+        if not bridge_result.bridge_allowed:
+            audit_steps.append("Wrapper halted at BRIDGE")
+            return FoundationScoringWrapperResult(
+                wrapper="FOUNDATION_SCORING_EVALUATOR_WRAPPER",
+                wrapper_version=self.VERSION,
+                input_ref=input_ref,
+                timestamp=timestamp,
+                halted=True,
+                halted_at="BRIDGE",
+                continuation_allowed=False,
+                next_legal_targets=[],
+                wrapper_status="FAIL",
+                phase_status=phase_status,
+                phase_results=phase_results,
+                bridge_result=bridge_result.to_dict(),
+                audit={
+                    "halt_safe": True,
+                    "steps": audit_steps,
+                    "reason": "Bridge not allowed",
+                },
+            )
+
+        audit_steps.append("Phase 2 (evaluator) start")
+        phase2_result = self.phase2_adapter.run(
+            bridge_result.l4_payload, bridge_result.l5_payload
+        )
+        phase_status["PHASE_2"] = phase2_result.chain_status
+        phase_results["PHASE_2"] = phase2_result.to_dict()
+        audit_steps.append(
+            f"Phase 2 completed with status={phase2_result.chain_status}"
+        )
+
+        if phase2_result.halted or not phase2_result.continuation_allowed:
+            audit_steps.append("Wrapper halted at Phase 2")
+            return FoundationScoringWrapperResult(
+                wrapper="FOUNDATION_SCORING_EVALUATOR_WRAPPER",
+                wrapper_version=self.VERSION,
+                input_ref=input_ref,
+                timestamp=timestamp,
+                halted=True,
+                halted_at="PHASE_2",
+                continuation_allowed=False,
+                next_legal_targets=[],
+                wrapper_status="FAIL",
+                phase_status=phase_status,
+                phase_results=phase_results,
+                bridge_result=bridge_result.to_dict(),
+                audit={
+                    "halt_safe": True,
+                    "steps": audit_steps,
+                    "reason": "Phase 2 not continuable",
+                },
+            )
+
+        wrapper_status = "PASS"
+        if any(s == "WARN" for s in phase_status.values()):
+            wrapper_status = "WARN"
+        if bridge_result.bridge_status == "WARN":
+            wrapper_status = "WARN"
+
+        audit_steps.append("Foundation + Scoring (evaluator) wrapper completed")
+        return FoundationScoringWrapperResult(
+            wrapper="FOUNDATION_SCORING_EVALUATOR_WRAPPER",
+            wrapper_version=self.VERSION,
+            input_ref=input_ref,
+            timestamp=timestamp,
+            halted=False,
+            halted_at=None,
+            continuation_allowed=True,
+            next_legal_targets=["PHASE_2_5"],
+            wrapper_status=wrapper_status,
+            phase_status=phase_status,
+            phase_results=phase_results,
+            bridge_result=bridge_result.to_dict(),
+            audit={
+                "halt_safe": True,
+                "steps": audit_steps,
+                "reason": "Foundation + Scoring completed legally",
+            },
+        )
