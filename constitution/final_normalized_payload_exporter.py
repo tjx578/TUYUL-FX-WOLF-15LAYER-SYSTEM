@@ -202,6 +202,13 @@ class FinalNormalizedPayloadExporter:
             "verdict_status": str(l12_result.get("verdict_status", "FAIL")).upper(),
             "synthesis_score": float(l12_result.get("score_numeric", 0.0)),
             "gate_summary": dict(l12_result.get("gate_summary", {})),
+            # v2 penalty engine fields
+            "raw_confidence": float(l12_result.get("raw_confidence", 0.0)),
+            "penalized_confidence": float(l12_result.get("penalized_confidence", 0.0)),
+            "sizing_multiplier": float(l12_result.get("sizing_multiplier", 1.0)),
+            "soft_fail_count": int(l12_result.get("soft_fail_count", 0)),
+            "soft_warn_count": int(l12_result.get("soft_warn_count", 0)),
+            "penalty_breakdown": list(l12_result.get("penalty_breakdown", [])),
         }
 
         trace = {

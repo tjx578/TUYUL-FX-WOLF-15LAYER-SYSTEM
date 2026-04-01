@@ -29,6 +29,7 @@ class L12Status(str, Enum):
 
 class L12Verdict(str, Enum):
     EXECUTE = "EXECUTE"
+    EXECUTE_REDUCED_RISK = "EXECUTE_REDUCED_RISK"
     HOLD = "HOLD"
     NO_TRADE = "NO_TRADE"
 
@@ -112,6 +113,13 @@ class L12EvaluationResult:
     blocker_codes: list[str]
     warning_codes: list[str]
     audit: dict[str, Any]
+    # v2.0 fields: soft penalty + adaptive sizing + navigation confidence
+    raw_confidence: float = 0.0
+    penalized_confidence: float = 0.0
+    sizing_multiplier: float = 1.0
+    soft_fail_count: int = 0
+    soft_warn_count: int = 0
+    penalty_breakdown: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -128,14 +136,21 @@ class L12EvaluationResult:
             "blocker_codes": self.blocker_codes,
             "warning_codes": self.warning_codes,
             "audit": self.audit,
+            "raw_confidence": self.raw_confidence,
+            "penalized_confidence": self.penalized_confidence,
+            "sizing_multiplier": self.sizing_multiplier,
+            "soft_fail_count": self.soft_fail_count,
+            "soft_warn_count": self.soft_warn_count,
+            "penalty_breakdown": self.penalty_breakdown,
         }
 
 
 class L12RouterEvaluator:
-    VERSION = "1.0.0"
+    VERSION = "2.0.0"
 
-    # Synthesis score thresholds
+    # Score thresholds (applied to penalized confidence)
     EXECUTE_MIN_SCORE = 0.65
+    EXECUTE_REDUCED_MIN_SCORE = 0.50
     HOLD_MIN_SCORE = 0.40
 
     # Hard gates: FAIL on any of these -> NO_TRADE
@@ -145,6 +160,10 @@ class L12RouterEvaluator:
         L12GateName.RISK_CHAIN_OK,
         L12GateName.FIREWALL_OK,
     }
+
+    def __init__(self) -> None:
+        from constitution.gate_penalty_engine import GatePenaltyEngine
+        self._penalty_engine = GatePenaltyEngine()
 
     @staticmethod
     def _status_to_gate(status_str: str) -> str:
@@ -199,72 +218,117 @@ class L12RouterEvaluator:
         # ── 9-gate evaluation ──
         gate_summary = self._build_gate_summary(payload)
 
-        gate_blocker_map = {
-            L12GateName.FOUNDATION_OK: L12BlockerCode.FOUNDATION_FAIL,
-            L12GateName.SCORING_OK: L12BlockerCode.SCORING_FAIL,
-            L12GateName.STRUCTURE_OK: L12BlockerCode.STRUCTURE_FAIL,
-            L12GateName.RISK_CHAIN_OK: L12BlockerCode.RISK_CHAIN_FAIL,
-            L12GateName.INTEGRITY_OK: L12BlockerCode.INTEGRITY_FAIL,
-            L12GateName.PROBABILITY_OK: L12BlockerCode.PROBABILITY_FAIL,
-            L12GateName.FIREWALL_OK: L12BlockerCode.FIREWALL_FAIL,
-            L12GateName.GOVERNANCE_OK: L12BlockerCode.GOVERNANCE_FAIL,
-        }
-
-        for gate_name, gate_status in gate_summary.items():
-            gate_enum = L12GateName(gate_name)
-            if gate_status == "FAIL":
-                blocker_code = gate_blocker_map.get(gate_enum)
-                if blocker_code:
-                    blockers.append(blocker_code.value)
-                    rule_hits.append(f"{gate_name}=FAIL -> blocker")
-                elif gate_enum == L12GateName.ENRICHMENT_OK:
-                    # Enrichment FAIL is not a hard blocker per spec
-                    warnings.append("ENRICHMENT_DEGRADED")
-                    rule_hits.append(f"{gate_name}=FAIL -> warning (enrichment is advisory)")
-            elif gate_status == "WARN":
-                warnings.append(f"{gate_name}_WARN")
-                rule_hits.append(f"{gate_name}=WARN")
-
-        # ── Hard gate check ──
-        has_hard_gate_fail = any(
-            gate_summary.get(g.value) == "FAIL"
-            for g in self.HARD_GATES
+        # ── Penalty engine: soft penalty + navigation confidence + sizing ──
+        penalty_result = self._penalty_engine.evaluate(
+            gate_summary=gate_summary,
+            layer_scores=payload.layer_scores,
         )
 
-        # ── Synthesis score check ──
-        synthesis_score = round(payload.synthesis_score, 4)
-        if synthesis_score < self.HOLD_MIN_SCORE and not blockers:
+        # Hard gate blockers from penalty engine
+        hard_gate_blocker_map: dict[str, str] = {
+            L12GateName.FOUNDATION_OK.value: L12BlockerCode.FOUNDATION_FAIL.value,
+            L12GateName.STRUCTURE_OK.value: L12BlockerCode.STRUCTURE_FAIL.value,
+            L12GateName.RISK_CHAIN_OK.value: L12BlockerCode.RISK_CHAIN_FAIL.value,
+            L12GateName.FIREWALL_OK.value: L12BlockerCode.FIREWALL_FAIL.value,
+        }
+        for veto_gate in penalty_result.hard_veto_gates:
+            blocker_code = hard_gate_blocker_map.get(veto_gate)
+            if blocker_code:
+                blockers.append(blocker_code)
+                rule_hits.append(f"{veto_gate}=FAIL -> HARD_VETO")
+
+        # Soft gate FAILs → warnings (not blockers)
+        soft_gate_warning_map: dict[str, str] = {
+            L12GateName.SCORING_OK.value: "SCORING_DEGRADED",
+            L12GateName.INTEGRITY_OK.value: "INTEGRITY_DEGRADED",
+            L12GateName.PROBABILITY_OK.value: "PROBABILITY_DEGRADED",
+            L12GateName.GOVERNANCE_OK.value: "GOVERNANCE_DEGRADED",
+        }
+        for gp in penalty_result.gate_penalties:
+            if gp.status == "FAIL" and gp.tier == "SOFT":
+                warning_label = soft_gate_warning_map.get(gp.gate, f"{gp.gate}_DEGRADED")
+                warnings.append(warning_label)
+                rule_hits.append(
+                    f"{gp.gate}=FAIL -> soft penalty={gp.confidence_penalty:.2f}, "
+                    f"sizing×{gp.sizing_factor:.2f}"
+                )
+            elif gp.status == "FAIL" and gp.tier == "ADVISORY":
+                warnings.append("ENRICHMENT_DEGRADED")
+                rule_hits.append(f"{gp.gate}=FAIL -> advisory warning")
+            elif gp.status == "WARN":
+                warnings.append(f"{gp.gate}_WARN")
+                rule_hits.append(f"{gp.gate}=WARN")
+
+        # ── Navigation-weighted penalized confidence ──
+        penalized_score = penalty_result.penalized_confidence
+        raw_confidence = penalty_result.raw_confidence
+        sizing_multiplier = penalty_result.sizing_multiplier
+
+        # ── Synthesis score check (on penalized confidence) ──
+        if penalized_score < self.HOLD_MIN_SCORE and not blockers:
             blockers.append(L12BlockerCode.SYNTHESIS_SCORE_TOO_LOW.value)
-            rule_hits.append(f"synthesis_score={synthesis_score} < {self.HOLD_MIN_SCORE}")
+            rule_hits.append(
+                f"penalized_confidence={penalized_score:.4f} < {self.HOLD_MIN_SCORE}"
+            )
 
         # ── Verdict determination ──
-        if blockers or has_hard_gate_fail:
+        if blockers or penalty_result.hard_veto:
             verdict = L12Verdict.NO_TRADE
             verdict_status = L12Status.FAIL
             continuation_allowed = False
             next_targets: list[str] = []
             notes.append("Hard blocker or gate FAIL detected -> NO_TRADE")
-        elif synthesis_score >= self.EXECUTE_MIN_SCORE and not any(
-            gate_summary.get(g.value) == "FAIL"
-            for g in L12GateName
-            if g != L12GateName.ENRICHMENT_OK  # enrichment FAIL is non-fatal
+        elif (
+            penalized_score >= self.EXECUTE_MIN_SCORE
+            and penalty_result.soft_fail_count == 0
         ):
             verdict = L12Verdict.EXECUTE
             verdict_status = L12Status.WARN if warnings else L12Status.PASS
             continuation_allowed = True
             next_targets = ["PHASE_6"]
-            notes.append("All critical gates legal, synthesis high -> EXECUTE")
-        else:
+            notes.append(
+                f"Penalized confidence={penalized_score:.4f} >= {self.EXECUTE_MIN_SCORE}, "
+                f"no soft fails -> EXECUTE"
+            )
+        elif penalized_score >= self.EXECUTE_REDUCED_MIN_SCORE:
+            verdict = L12Verdict.EXECUTE_REDUCED_RISK
+            verdict_status = L12Status.WARN
+            continuation_allowed = True
+            next_targets = ["PHASE_6"]
+            notes.append(
+                f"Penalized confidence={penalized_score:.4f} >= {self.EXECUTE_REDUCED_MIN_SCORE}, "
+                f"soft_fails={penalty_result.soft_fail_count}, "
+                f"sizing_multiplier={sizing_multiplier:.4f} -> EXECUTE_REDUCED_RISK"
+            )
+        elif penalized_score >= self.HOLD_MIN_SCORE:
             verdict = L12Verdict.HOLD
             verdict_status = L12Status.WARN
             continuation_allowed = True
             next_targets = ["PHASE_6"]
-            notes.append("No hard blockers but confluence insufficient -> HOLD")
+            notes.append(
+                f"Penalized confidence={penalized_score:.4f} in HOLD band -> HOLD"
+            )
+        else:
+            verdict = L12Verdict.NO_TRADE
+            verdict_status = L12Status.FAIL
+            continuation_allowed = False
+            next_targets = []
+            notes.append(
+                f"Penalized confidence={penalized_score:.4f} < {self.HOLD_MIN_SCORE} -> NO_TRADE"
+            )
 
-        audit = {
+        audit: dict[str, Any] = {
             "rule_hits": rule_hits,
             "blocker_triggered": bool(blockers),
             "notes": notes,
+            "penalty_engine": {
+                "raw_confidence": raw_confidence,
+                "penalized_confidence": penalized_score,
+                "sizing_multiplier": sizing_multiplier,
+                "soft_fail_count": penalty_result.soft_fail_count,
+                "soft_warn_count": penalty_result.soft_warn_count,
+                "penalty_breakdown": penalty_result.penalty_breakdown,
+            },
         }
 
         return L12EvaluationResult(
@@ -276,11 +340,17 @@ class L12RouterEvaluator:
             verdict_status=verdict_status.value,
             continuation_allowed=continuation_allowed,
             next_legal_targets=next_targets,
-            score_numeric=synthesis_score,
+            score_numeric=penalized_score,
             gate_summary=gate_summary,
             blocker_codes=list(dict.fromkeys(blockers)),
             warning_codes=list(dict.fromkeys(warnings)),
             audit=audit,
+            raw_confidence=raw_confidence,
+            penalized_confidence=penalized_score,
+            sizing_multiplier=sizing_multiplier,
+            soft_fail_count=penalty_result.soft_fail_count,
+            soft_warn_count=penalty_result.soft_warn_count,
+            penalty_breakdown=penalty_result.penalty_breakdown,
         )
 
 

@@ -17,6 +17,27 @@ from constitution.l12_router_evaluator import (
 
 
 class TestL12RouterEvaluator(unittest.TestCase):
+    HIGH_SCORES: dict[str, float] = {
+        "L1": 0.91, "L2": 0.88, "L3": 0.87,
+        "L4": 0.82, "L5": 0.78,
+        "L7": 0.75, "L8": 0.92, "L9": 0.80,
+        "L11": 0.85, "L6": 0.90,
+    }
+
+    MID_SCORES: dict[str, float] = {
+        "L1": 0.62, "L2": 0.62, "L3": 0.62,
+        "L4": 0.62, "L5": 0.62,
+        "L7": 0.62, "L8": 0.62, "L9": 0.62,
+        "L11": 0.62, "L6": 0.62,
+    }
+
+    LOW_SCORES: dict[str, float] = {
+        "L1": 0.30, "L2": 0.30, "L3": 0.30,
+        "L4": 0.30, "L5": 0.30,
+        "L7": 0.30, "L8": 0.30, "L9": 0.30,
+        "L11": 0.30, "L6": 0.30,
+    }
+
     def setUp(self) -> None:
         self.evaluator = L12RouterEvaluator()
         self.base_input = L12Input(
@@ -29,6 +50,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="PASS",
             structure_status="PASS",
             risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -49,7 +71,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
     def test_result_layer(self) -> None:
         result = self.evaluator.evaluate(self.base_input)
         self.assertEqual(result.layer, "L12")
-        self.assertEqual(result.layer_version, "1.0.0")
+        self.assertEqual(result.layer_version, "2.0.0")
 
     def test_result_to_dict(self) -> None:
         result = self.evaluator.evaluate(self.base_input)
@@ -82,6 +104,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="WARN",
             structure_status="PASS",
             risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -109,18 +132,20 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="WARN",
             structure_status="PASS",
             risk_chain_status="PASS",
+            layer_scores=dict(self.MID_SCORES),
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
             phase4_available=True,
-            synthesis_score=0.55,  # above HOLD_MIN but below EXECUTE_MIN
+            synthesis_score=0.55,
             integrity_status="WARN",
             probability_status="WARN",
             firewall_status="PASS",
             governance_status="PASS",
         )
         result = self.evaluator.evaluate(inp)
-        self.assertEqual(result.verdict, "HOLD")
+        # With WARN penalties on soft gates, penalized confidence < EXECUTE threshold
+        self.assertIn(result.verdict, ("HOLD", "EXECUTE_REDUCED_RISK"))
         self.assertEqual(result.verdict_status, "WARN")
         self.assertTrue(result.continuation_allowed)
 
@@ -164,6 +189,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="PASS",
             structure_status="PASS",
             risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -189,6 +215,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="PASS",
             structure_status="FAIL",
             risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -214,6 +241,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="PASS",
             structure_status="PASS",
             risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -239,6 +267,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="PASS",
             structure_status="PASS",
             risk_chain_status="FAIL",
+            layer_scores=dict(self.HIGH_SCORES),
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -264,11 +293,12 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="PASS",
             structure_status="PASS",
             risk_chain_status="PASS",
+            layer_scores=dict(self.LOW_SCORES),  # produces nav-weighted ~0.30
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
             phase4_available=True,
-            synthesis_score=0.30,  # below HOLD_MIN
+            synthesis_score=0.30,
             integrity_status="PASS",
             probability_status="PASS",
             firewall_status="PASS",
@@ -365,6 +395,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
             enrichment_status="FAIL",
             structure_status="PASS",
             risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -376,7 +407,7 @@ class TestL12RouterEvaluator(unittest.TestCase):
             governance_status="PASS",
         )
         result = self.evaluator.evaluate(inp)
-        # Enrichment FAIL is non-fatal → should still EXECUTE
+        # Enrichment FAIL is advisory → small penalty, should still EXECUTE
         self.assertEqual(result.verdict, "EXECUTE")
         self.assertIn("ENRICHMENT_DEGRADED", result.warning_codes)
 
@@ -394,9 +425,11 @@ class TestL12RouterEvaluator(unittest.TestCase):
 
     # ── Score numeric ──
 
-    def test_score_numeric_matches_input(self) -> None:
+    def test_score_numeric_is_penalized_confidence(self) -> None:
         result = self.evaluator.evaluate(self.base_input)
-        self.assertEqual(round(result.score_numeric, 2), 0.82)
+        # score_numeric is now navigation-weighted penalized confidence
+        self.assertGreater(result.score_numeric, 0.65)
+        self.assertEqual(result.score_numeric, result.penalized_confidence)
 
     # ── Blocker deduplication ──
 
@@ -475,6 +508,279 @@ class TestBuildL12InputFromUpstream(unittest.TestCase):
         self.assertTrue(result.phase1_available)
         self.assertTrue(result.phase4_available)
         self.assertGreater(result.synthesis_score, 0.0)
+
+    # ── v2.0 soft penalty / adaptive sizing / navigation confidence tests ──
+
+
+class TestL12V2SoftPenalty(unittest.TestCase):
+    """Tests for v2.0 soft penalty + adaptive sizing + navigation-weighted confidence."""
+
+    HIGH_SCORES: dict[str, float] = {
+        "L1": 0.91, "L2": 0.88, "L3": 0.87,
+        "L4": 0.82, "L5": 0.78,
+        "L7": 0.75, "L8": 0.92, "L9": 0.80,
+        "L11": 0.85, "L6": 0.90,
+    }
+
+    def setUp(self) -> None:
+        self.evaluator = L12RouterEvaluator()
+
+    def test_scoring_fail_not_blocker(self) -> None:
+        """SCORING_FAIL should produce warning, not blocker."""
+        inp = L12Input(
+            input_ref="TEST_SOFT_1",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="FAIL",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        # Scoring is SOFT — should NOT be in blocker_codes
+        self.assertNotIn("SCORING_FAIL", result.blocker_codes)
+        self.assertIn("SCORING_DEGRADED", result.warning_codes)
+        # Should still allow execution with reduced risk
+        self.assertIn(result.verdict, ("EXECUTE", "EXECUTE_REDUCED_RISK"))
+        self.assertTrue(result.continuation_allowed)
+
+    def test_integrity_fail_produces_reduced_risk(self) -> None:
+        """INTEGRITY_FAIL should degrade to EXECUTE_REDUCED_RISK, not NO_TRADE."""
+        inp = L12Input(
+            input_ref="TEST_SOFT_2",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="FAIL",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertNotIn("INTEGRITY_FAIL", result.blocker_codes)
+        self.assertIn("INTEGRITY_DEGRADED", result.warning_codes)
+        self.assertIn(result.verdict, ("EXECUTE", "EXECUTE_REDUCED_RISK"))
+
+    def test_sizing_multiplier_reduced_on_soft_fail(self) -> None:
+        """Sizing multiplier should be < 1.0 when soft gates fail."""
+        inp = L12Input(
+            input_ref="TEST_SOFT_3",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="FAIL",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertLess(result.sizing_multiplier, 1.0)
+        self.assertGreater(result.sizing_multiplier, 0.0)
+
+    def test_sizing_multiplier_1_when_all_pass(self) -> None:
+        """Sizing multiplier should be 1.0 when no penalties apply."""
+        inp = L12Input(
+            input_ref="TEST_SOFT_4",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertEqual(result.sizing_multiplier, 1.0)
+
+    def test_raw_confidence_populated(self) -> None:
+        """raw_confidence should reflect navigation-weighted score."""
+        inp = L12Input(
+            input_ref="TEST_SOFT_5",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertGreater(result.raw_confidence, 0.0)
+        self.assertLessEqual(result.raw_confidence, 1.0)
+
+    def test_penalty_breakdown_in_audit(self) -> None:
+        """Audit should contain penalty_engine details."""
+        inp = L12Input(
+            input_ref="TEST_SOFT_6",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="FAIL",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertIn("penalty_engine", result.audit)
+        pe = result.audit["penalty_engine"]
+        self.assertIn("raw_confidence", pe)
+        self.assertIn("penalized_confidence", pe)
+        self.assertIn("sizing_multiplier", pe)
+        self.assertIn("penalty_breakdown", pe)
+
+    def test_multiple_soft_fails_stack_penalties(self) -> None:
+        """Multiple soft gate FAILs should stack penalties and reduce sizing."""
+        inp = L12Input(
+            input_ref="TEST_SOFT_7",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="FAIL",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="FAIL",
+            probability_status="FAIL",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertEqual(result.soft_fail_count, 3)
+        # Sizing should be heavily reduced
+        self.assertLess(result.sizing_multiplier, 0.25)
+        # Still not a hard veto
+        self.assertNotIn("SCORING_FAIL", result.blocker_codes)
+
+    def test_hard_gate_still_vetoes(self) -> None:
+        """Hard gate FAIL must still produce NO_TRADE even with high scores."""
+        inp = L12Input(
+            input_ref="TEST_SOFT_8",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="FAIL",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.95,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertEqual(result.verdict, "NO_TRADE")
+        self.assertIn("FOUNDATION_FAIL", result.blocker_codes)
+
+    def test_to_dict_includes_v2_fields(self) -> None:
+        """to_dict() should include v2 fields."""
+        result = self.evaluator.evaluate(L12Input(
+            input_ref="TEST_V2_DICT",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES),
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        ))
+        d = result.to_dict()
+        self.assertIn("raw_confidence", d)
+        self.assertIn("penalized_confidence", d)
+        self.assertIn("sizing_multiplier", d)
+        self.assertIn("soft_fail_count", d)
+        self.assertIn("penalty_breakdown", d)
 
 
 if __name__ == "__main__":
