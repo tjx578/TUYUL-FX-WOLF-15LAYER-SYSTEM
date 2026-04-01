@@ -83,6 +83,7 @@ class _L7:
         trade_returns: list[float] | None = None,
         prior_wins: int = 0,
         prior_losses: int = 0,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         self.last_trade_returns = trade_returns
         return {
@@ -109,17 +110,17 @@ class _L8:
 
 
 class _L9:
-    def analyze(self, symbol: str) -> dict[str, Any]:
+    def analyze(self, symbol: str, **kwargs: Any) -> dict[str, Any]:
         return {"confidence": 0.73, "liquidity_score": 0.71}
 
 
 class _L10:
-    def analyze(self, risk_ok: bool, smc_confidence: float) -> dict[str, Any]:
-        return {"position_sizing_ok": risk_ok, "score": smc_confidence}
+    def analyze(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"position_sizing_ok": True, "score": 0.73}
 
 
 class _L11:
-    def calculate_rr(self, symbol: str, direction: str) -> dict[str, Any]:
+    def calculate_rr(self, symbol: str, direction: str, **kwargs: Any) -> dict[str, Any]:
         return {
             "rr": 2.0,
             "entry_price": 1.1006,

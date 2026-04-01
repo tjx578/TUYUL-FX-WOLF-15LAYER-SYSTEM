@@ -802,6 +802,11 @@ class L1ContextAnalyzer:
 
     The Wolf Constitutional Pipeline instantiates ``L1ContextAnalyzer()``
     and calls ``.analyze(symbol)``.  Pulls OHLCV from LiveContextBus.
+
+    v1.1: Integrates L1 Constitutional Governor (Strict Mode v1.0.0).
+    The raw analysis result is wrapped through constitutional sub-gates
+    (contract → data → freshness → fallback → coherence → compress)
+    and the output includes the full L1 constitutional contract.
     """
 
     def __init__(self, weights: LogisticWeights | None = None) -> None:
@@ -811,26 +816,76 @@ class L1ContextAnalyzer:
         self._weights = weights or DEFAULT_WEIGHTS
 
     def analyze(self, symbol: str) -> dict[str, Any]:
-        """Run L1 context analysis for *symbol*."""
+        """Run L1 context analysis with constitutional governance for *symbol*.
+
+        Evaluation order (frozen v1):
+          1. Run raw probabilistic analysis (analyze_context)
+          2. Collect governance inputs (freshness, warmup, fallback)
+          3. Evaluate constitutional sub-gates
+          4. Compress to PASS/WARN/FAIL
+          5. Set continuation legality
+          6. Emit canonical L1 output contract
+        """
+        from analysis.layers.L1_constitutional import (  # noqa: PLC0415
+            L1GateInput,
+            WARMUP_MIN_BARS,
+            evaluate_l1_constitutional,
+        )
+
         candles = self._bus.get_candle_history(symbol, "H1", count=80)
 
         if not candles:
-            return analyze_context({}, pair=symbol, weights=self._weights)
+            raw_result = analyze_context({}, pair=symbol, weights=self._weights)
+        else:
+            closes = [float(c["close"]) for c in candles]
+            highs = [float(c["high"]) for c in candles]
+            lows = [float(c["low"]) for c in candles]
+            volumes = [float(c.get("volume", 1.0)) for c in candles]
 
-        closes = [float(c["close"]) for c in candles]
-        highs = [float(c["high"]) for c in candles]
-        lows = [float(c["low"]) for c in candles]
-        volumes = [float(c.get("volume", 1.0)) for c in candles]
+            market_data: dict[str, Any] = {
+                "closes": closes,
+                "highs": highs,
+                "lows": lows,
+                "volumes": volumes,
+            }
 
-        market_data: dict[str, Any] = {
-            "closes": closes,
-            "highs": highs,
-            "lows": lows,
-            "volumes": volumes,
-        }
+            raw_result = analyze_context(
+                market_data,
+                pair=symbol,
+                weights=self._weights,
+            )
 
-        return analyze_context(
-            market_data,
-            pair=symbol,
-            weights=self._weights,
+        # ── Collect governance inputs ─────────────────────────────
+        feed_ts = self._bus.get_feed_timestamp(symbol) if hasattr(self._bus, "get_feed_timestamp") else None
+
+        candle_counts: dict[str, int] = {}
+        for tf in WARMUP_MIN_BARS:
+            tf_candles = self._bus.get_candle_history(symbol, tf, count=100)
+            candle_counts[tf] = len(tf_candles) if tf_candles else 0
+
+        context_sources: list[str] = ["live_context_bus"]
+        if feed_ts is not None:
+            context_sources.append("feed_timestamp")
+        if _regime_classifier is not None:
+            context_sources.append("regime_classifier")
+
+        # ── Build gate input ──────────────────────────────────────
+        gate_input = L1GateInput(
+            analysis_result=raw_result,
+            symbol=symbol,
+            feed_timestamp=feed_ts,
+            candle_counts=candle_counts,
+            producer_available=bool(candles),
+            snapshot_valid=bool(candles),
+            session_state_valid=True,
+            regime_service_available=_regime_classifier is not None,
+            fallback_used=False,
+            fallback_source="",
+            fallback_approved=False,
+            context_sources_used=context_sources,
         )
+
+        # ── Evaluate constitutional sub-gates ─────────────────────
+        constitutional_result = evaluate_l1_constitutional(gate_input)
+
+        return constitutional_result.to_dict()

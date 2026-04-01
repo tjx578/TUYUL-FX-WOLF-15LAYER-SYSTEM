@@ -497,7 +497,7 @@ class TestEarlyExit:
         assert mocked_pipeline._l1 is not None, "_l1 analyzer not initialized"
         mocked_pipeline._l1.analyze = MagicMock(return_value=_l1(valid=False))
         result = mocked_pipeline.execute("EURUSD")
-        assert "L1_CONTEXT_INVALID" in result["errors"]
+        assert any(e.startswith("L1_CONTEXT_INVALID") for e in result["errors"])
         # Should have NO_TRADE verdict from early exit
         assert result["l12_verdict"]["verdict"] in ("NO_TRADE", "HOLD", "ABORT", "SKIP")
 

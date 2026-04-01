@@ -887,9 +887,42 @@ class WolfConstitutionalPipeline:
             l3 = phase1_results["L3"]
             layers_executed.extend(["L1", "L2", "L3"])
 
-            if not l1.get("valid"):
-                errors.append("L1_CONTEXT_INVALID")
+            # L1 constitutional governance: check continuation_allowed (v1.0.0)
+            # Falls back to legacy 'valid' check for backward compatibility
+            _l1_continue = l1.get("continuation_allowed", l1.get("valid"))
+            if not _l1_continue:
+                _l1_status = l1.get("status", "FAIL")
+                _l1_blockers = l1.get("blocker_codes", [])
+                errors.append(f"L1_CONTEXT_INVALID:status={_l1_status}")
+                if _l1_blockers:
+                    errors.extend(
+                        f"L1_BLOCKER:{b}" for b in _l1_blockers
+                    )
+                logger.warning(
+                    "[Pipeline v8.0] L1 constitutional FAIL | symbol={} status={} "
+                    "blockers={} freshness={} warmup={} coherence_band={}",
+                    symbol,
+                    _l1_status,
+                    _l1_blockers,
+                    l1.get("freshness_state", "?"),
+                    l1.get("warmup_state", "?"),
+                    l1.get("coherence_band", "?"),
+                )
                 return _early_exit_with_map(errors, time.time() - start_time)
+
+            # L1 WARN: continuation allowed but with degraded context
+            _l1_status = l1.get("status", "PASS")
+            if _l1_status == "WARN":
+                _l1_warnings = l1.get("warning_codes", [])
+                logger.warning(
+                    "[Pipeline v8.0] L1 constitutional WARN | symbol={} "
+                    "warnings={} coherence_band={} fallback_class={}",
+                    symbol,
+                    _l1_warnings,
+                    l1.get("coherence_band", "?"),
+                    l1.get("fallback_class", "?"),
+                )
+
             if not l2.get("valid"):
                 errors.append("L2_MTA_INVALID")
                 return _early_exit_with_map(errors, time.time() - start_time)
