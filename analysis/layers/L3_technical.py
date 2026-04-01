@@ -254,19 +254,30 @@ class L3TechnicalAnalyzer:
         unique_highs = len(set(round(h, 8) for h in highs))
         unique_lows = len(set(round(l, 8) for l in lows))  # noqa: E741
 
-        # Detect stale/flat data: close variance near-zero but HL range exists
-        _close_is_flat = unique_closes < max(3, len(closes) // 10)
+        # Detect stale/flat data using TWO criteria:
+        # 1. Unique-count threshold (original) — catches identical closes
+        # 2. Close-range-vs-ATR ratio — avoids false positives on low-vol pairs
+        #    where few unique closes is NORMAL (e.g. CADCHF ATR=3.5 pips)
+        _pre_atr = mean_hl * 1.2 if mean_hl > 0 else 1e-10  # rough ATR proxy before formal ATR calc
+        _close_range_ratio = close_range / _pre_atr if _pre_atr > 0 else 0.0
+        _unique_count_low = unique_closes < max(3, len(closes) // 10)
+        # STALE = close range < 10% of ATR proxy (truly no close movement)
+        # OR all closes literally identical (unique_closes <= 2)
+        _close_is_flat = (unique_closes <= 2) or (_unique_count_low and _close_range_ratio < 0.10)
         _hl_is_real = mean_hl > 0 and unique_highs > 3 and unique_lows > 3
         _data_quality = "HEALTHY"
         if _close_is_flat and _hl_is_real:
             _data_quality = "STALE_CLOSE"
             logger.warning(
-                "[L3] %s DATA QUALITY: close prices appear stale "
-                "(unique_closes=%d/%d) but HL data is real (mean_hl=%.6f). "
-                "Close data may not be updating. Fallback to HL-based metrics.",
+                "[L3] %s DATA QUALITY: close prices stale "
+                "(unique_closes=%d/%d range_ratio=%.4f close_range=%.8f "
+                "atr_proxy=%.8f mean_hl=%.6f). Fallback to HL-based metrics.",
                 symbol,
                 unique_closes,
                 len(closes),
+                _close_range_ratio,
+                close_range,
+                _pre_atr,
                 mean_hl,
             )
         elif _close_is_flat and not _hl_is_real:
@@ -283,13 +294,14 @@ class L3TechnicalAnalyzer:
 
         logger.info(
             "[L3] %s candle_diag: bars=%d quality=%s close_range=%.6f close_std=%.6f "
-            "mean_hl=%.6f unique=C%d/H%d/L%d/%d",
+            "mean_hl=%.6f range_ratio=%.4f unique=C%d/H%d/L%d/%d",
             symbol,
             len(candles_h1),
             _data_quality,
             close_range,
             close_std,
             mean_hl,
+            _close_range_ratio,
             unique_closes,
             unique_highs,
             unique_lows,
