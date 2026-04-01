@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -22,14 +22,36 @@ if TYPE_CHECKING:
 __all__ = ["seed_candles_on_startup"]
 
 
+def _extract_timestamp(candle: dict) -> datetime | None:
+    """Extract a datetime from a candle dict, supporting both key formats.
+
+    Candle formats in the system:
+      - Finnhub REST: ``"timestamp"`` (datetime or Unix float)
+      - CandleBuilder / PG recovery: ``"open_time"`` (ISO string or datetime)
+
+    Returns a ``datetime`` or ``None`` if neither key contains a usable value.
+    """
+    raw = candle.get("timestamp") or candle.get("open_time")
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return datetime.fromisoformat(raw)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(raw, (int, float)):
+        return datetime.fromtimestamp(raw, tz=UTC)
+    return None
+
+
 def _synthesize_h4_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
     """Synthesize H4 candles from H1 data for pairs missing 4-hour bars.
 
     Groups H1 bars into 4-hour blocks (00-03, 04-07, 08-11, 12-15, 16-19, 20-23)
     and aggregates OHLCV.  Mirrors the D1-from-H1 pattern.
     """
-    from datetime import datetime
-
     for pair in pairs:
         h4_candles = bus.get_candles(pair, "H4")
         if h4_candles:
@@ -40,19 +62,8 @@ def _synthesize_h4_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
 
         h4_groups: dict[tuple[int, int, int, int], list[dict]] = {}
         for h1 in h1_candles:
-            ts = h1.get("timestamp")
-            if ts is None:
-                continue
-            if isinstance(ts, str):
-                try:
-                    dt = datetime.fromisoformat(ts)
-                except (ValueError, TypeError):
-                    continue
-            elif isinstance(ts, datetime):
-                dt = ts
-            elif isinstance(ts, (int, float)):
-                dt = datetime.fromtimestamp(ts, tz=UTC)
-            else:
+            dt = _extract_timestamp(h1)
+            if dt is None:
                 continue
             ohlc = [h1.get(k, -1) for k in ("open", "high", "low", "close")]
             if any(v <= 0 for v in ohlc):
@@ -66,7 +77,7 @@ def _synthesize_h4_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
 
         synthesized = []
         for _key, group in sorted(h4_groups.items()):
-            last_ts = group[-1].get("timestamp")
+            last_ts = _extract_timestamp(group[-1])
             synthesized.append(
                 {
                     "symbol": pair,
@@ -77,6 +88,7 @@ def _synthesize_h4_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
                     "close": group[-1]["close"],
                     "volume": sum(c.get("volume", 0) for c in group),
                     "timestamp": last_ts,
+                    "open_time": last_ts,
                     "source": "h1_aggregated",
                 }
             )
@@ -97,7 +109,6 @@ def _synthesize_d1_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
     This mirrors the H4-from-H1 aggregation pattern.
     """
     from collections import defaultdict
-    from datetime import datetime
 
     for pair in pairs:
         d1_candles = bus.get_candles(pair, "D1")
@@ -109,19 +120,8 @@ def _synthesize_d1_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
 
         daily_groups: dict[tuple[int, int, int], list[dict]] = defaultdict(list)
         for h1 in h1_candles:
-            ts = h1.get("timestamp")
-            if ts is None:
-                continue
-            if isinstance(ts, str):
-                try:
-                    dt = datetime.fromisoformat(ts)
-                except (ValueError, TypeError):
-                    continue
-            elif isinstance(ts, datetime):
-                dt = ts
-            elif isinstance(ts, (int, float)):
-                dt = datetime.fromtimestamp(ts, tz=UTC)
-            else:
+            dt = _extract_timestamp(h1)
+            if dt is None:
                 continue
             ohlc = [h1.get(k, -1) for k in ("open", "high", "low", "close")]
             if any(v <= 0 for v in ohlc):
@@ -133,7 +133,7 @@ def _synthesize_d1_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
 
         synthesized = []
         for (_y, _m, _d), group in sorted(daily_groups.items()):
-            last_ts = group[-1].get("timestamp")
+            last_ts = _extract_timestamp(group[-1])
             synthesized.append(
                 {
                     "symbol": pair,
@@ -144,6 +144,7 @@ def _synthesize_d1_from_h1(bus: LiveContextBus, pairs: list[str]) -> None:
                     "close": group[-1]["close"],
                     "volume": sum(c.get("volume", 0) for c in group),
                     "timestamp": last_ts,
+                    "open_time": last_ts,
                     "source": "h1_aggregated",
                 }
             )
@@ -163,7 +164,6 @@ def _synthesize_w1_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
     Finnhub free tier often returns no_data for weekly resolution on OANDA forex.
     """
     from collections import defaultdict
-    from datetime import datetime
 
     for pair in pairs:
         w1_candles = bus.get_candles(pair, "W1")
@@ -175,19 +175,8 @@ def _synthesize_w1_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
 
         weekly_groups: dict[tuple[int, int], list[dict]] = defaultdict(list)
         for d1 in d1_candles:
-            ts = d1.get("timestamp")
-            if ts is None:
-                continue
-            if isinstance(ts, str):
-                try:
-                    dt = datetime.fromisoformat(ts)
-                except (ValueError, TypeError):
-                    continue
-            elif isinstance(ts, datetime):
-                dt = ts
-            elif isinstance(ts, (int, float)):
-                dt = datetime.fromtimestamp(ts, tz=UTC)
-            else:
+            dt = _extract_timestamp(d1)
+            if dt is None:
                 continue
             ohlc = [d1.get(k, -1) for k in ("open", "high", "low", "close")]
             if any(v <= 0 for v in ohlc):
@@ -200,7 +189,7 @@ def _synthesize_w1_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
 
         synthesized = []
         for (_y, _w), group in sorted(weekly_groups.items()):
-            last_ts = group[-1].get("timestamp")
+            last_ts = _extract_timestamp(group[-1])
             synthesized.append(
                 {
                     "symbol": pair,
@@ -231,8 +220,6 @@ def _synthesize_mn_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
     This mirrors the H4-from-H1 aggregation pattern already used in the fetcher.
     """
     from collections import defaultdict
-    from datetime import datetime
-
     for pair in pairs:
         mn_candles = bus.get_candles(pair, "MN")
         if mn_candles:
@@ -244,19 +231,8 @@ def _synthesize_mn_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
         # Group D1 bars by (year, month)
         monthly_groups: dict[tuple[int, int], list[dict]] = defaultdict(list)
         for d1 in d1_candles:
-            ts = d1.get("timestamp")
-            if ts is None:
-                continue
-            if isinstance(ts, str):
-                try:
-                    dt = datetime.fromisoformat(ts)
-                except (ValueError, TypeError):
-                    continue
-            elif isinstance(ts, datetime):
-                dt = ts
-            elif isinstance(ts, (int, float)):
-                dt = datetime.fromtimestamp(ts, tz=UTC)
-            else:
+            dt = _extract_timestamp(d1)
+            if dt is None:
                 continue
             ohlc = [d1.get(k, -1) for k in ("open", "high", "low", "close")]
             if any(v <= 0 for v in ohlc):
@@ -268,7 +244,7 @@ def _synthesize_mn_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
 
         synthesized = []
         for (_y, _m), group in sorted(monthly_groups.items()):
-            last_ts = group[-1].get("timestamp")
+            last_ts = _extract_timestamp(group[-1])
             synthesized.append(
                 {
                     "symbol": pair,
@@ -279,6 +255,7 @@ def _synthesize_mn_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
                     "close": group[-1]["close"],
                     "volume": sum(c.get("volume", 0) for c in group),
                     "timestamp": last_ts,
+                    "open_time": last_ts,
                     "source": "d1_aggregated",
                 }
             )
@@ -334,6 +311,36 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
             degraded_pairs,
         )
     logger.info("[SEED] Warmup ready: {}/{} pairs", ready_count, len(pairs))
+
+    # ── Candle data quality diagnostic ────────────────────────────
+    for pair in pairs:
+        h1 = bus.get_candles(pair, "H1")
+        if len(h1) < 10:
+            continue
+        closes = [float(c.get("close", 0)) for c in h1[-60:] if c.get("close", 0) > 0]
+        highs = [float(c.get("high", 0)) for c in h1[-60:] if c.get("high", 0) > 0]
+        lows = [float(c.get("low", 0)) for c in h1[-60:] if c.get("low", 0) > 0]
+        if not closes:
+            continue
+        close_std = max(closes) - min(closes) if len(closes) > 1 else 0.0
+        hl_mean = sum(h - l for h, l in zip(highs, lows, strict=False)) / max(len(highs), 1) if highs and lows else 0.0  # noqa: E741
+        has_ts = any(c.get("timestamp") or c.get("open_time") for c in h1[:5])
+        quality = "HEALTHY"
+        if close_std < 1e-8 and hl_mean > 1e-8:
+            quality = "STALE_CLOSE"
+        elif close_std < 1e-8 and hl_mean < 1e-8:
+            quality = "FLAT"
+        if quality != "HEALTHY":
+            logger.warning(
+                "[SEED] {} H1 data quality: {} (close_range={:.8f} mean_hl={:.8f} bars={} has_ts={})",
+                pair,
+                quality,
+                close_std,
+                hl_mean,
+                len(h1),
+                has_ts,
+            )
+
     logger.info(
         "[SEED] Hydration report: source={} seeded_pairs={} attempts={} status={}",
         hydration_report.get("source", "unknown"),

@@ -244,20 +244,87 @@ class L3TechnicalAnalyzer:
         lows = [float(c["low"]) for c in candles_h1]
         volumes = [float(c.get("volume", 1.0)) for c in candles_h1]
 
+        # ── v6.2: Candle data quality diagnostic + staleness detection ──
+        close_min, close_max = min(closes), max(closes)
+        close_range = close_max - close_min
+        close_std = float(np.std(closes)) if len(closes) >= 2 else 0.0
+        hl_ranges = [h - l for h, l in zip(highs, lows, strict=False)]  # noqa: E741
+        mean_hl = sum(hl_ranges) / len(hl_ranges) if hl_ranges else 0.0
+        unique_closes = len(set(round(c, 8) for c in closes))
+        unique_highs = len(set(round(h, 8) for h in highs))
+        unique_lows = len(set(round(l, 8) for l in lows))  # noqa: E741
+
+        # Detect stale/flat data: close variance near-zero but HL range exists
+        _close_is_flat = unique_closes < max(3, len(closes) // 10)
+        _hl_is_real = mean_hl > 0 and unique_highs > 3 and unique_lows > 3
+        _data_quality = "HEALTHY"
+        if _close_is_flat and _hl_is_real:
+            _data_quality = "STALE_CLOSE"
+            logger.warning(
+                "[L3] %s DATA QUALITY: close prices appear stale "
+                "(unique_closes=%d/%d) but HL data is real (mean_hl=%.6f). "
+                "Close data may not be updating. Fallback to HL-based metrics.",
+                symbol,
+                unique_closes,
+                len(closes),
+                mean_hl,
+            )
+        elif _close_is_flat and not _hl_is_real:
+            _data_quality = "FLAT"
+            logger.warning(
+                "[L3] %s DATA QUALITY: ALL price data appears flat/stale "
+                "(unique_closes=%d, unique_highs=%d, unique_lows=%d). "
+                "Check candle seeding/ingestion pipeline.",
+                symbol,
+                unique_closes,
+                unique_highs,
+                unique_lows,
+            )
+
+        logger.info(
+            "[L3] %s candle_diag: bars=%d quality=%s close_range=%.6f close_std=%.6f "
+            "mean_hl=%.6f unique=C%d/H%d/L%d/%d",
+            symbol,
+            len(candles_h1),
+            _data_quality,
+            close_range,
+            close_std,
+            mean_hl,
+            unique_closes,
+            unique_highs,
+            unique_lows,
+            len(closes),
+        )
+
         # ATR for asset-agnostic normalization (shared across sub-methods)
         atr = self._compute_atr(highs, lows, closes, period=14)
 
-        trend, trend_strength = self._detect_trend(highs, lows, closes, atr)
+        # ── v6.2: When close data is stale, derive synthetic closes from HL midpoints
+        # This prevents all downstream analytics (trend, structure, TRQ3D)
+        # from seeing flat data when HL data is actually live.
+        analysis_closes = closes
+        if _data_quality == "STALE_CLOSE" and len(highs) >= 30:
+            analysis_closes = [(h + l) / 2.0 for h, l in zip(highs, lows, strict=False)]  # noqa: E741
+            logger.info(
+                "[L3] %s using HL-midpoint synthetic closes for analysis "
+                "(stale close data detected). std=%.6f → %.6f",
+                symbol,
+                close_std,
+                float(np.std(analysis_closes)),
+            )
 
-        structure = self._analyze_structure(highs, lows, closes, atr)
+        trend, trend_strength = self._detect_trend(highs, lows, analysis_closes, atr)
 
-        confluence = self._find_confluence(highs, lows, closes, volumes, atr)
+        structure = self._analyze_structure(highs, lows, analysis_closes, atr)
+
+        confluence = self._find_confluence(highs, lows, analysis_closes, volumes, atr)
 
         trq3d = self._compute_trq3d(
             symbol,
             candles_h1,
             candles_h4,
             candles_d1,
+            use_hl_midpoint=(_data_quality == "STALE_CLOSE"),
         )
 
         # Liquidity sweep scorer expects candle dicts + direction string.
@@ -283,8 +350,8 @@ class L3TechnicalAnalyzer:
         )
 
         # ── v6 edge enrichment (ADDITIVE) ─────────────────────────
-        adx_raw = self._adx_wilder(highs, lows, closes, period=14)
-        atr_expansion = self._vol_factor(highs, lows, closes)
+        adx_raw = self._adx_wilder(highs, lows, analysis_closes, period=14)
+        atr_expansion = self._vol_factor(highs, lows, analysis_closes)
         atr_exp_norm = float(np.clip((atr_expansion - 0.7) / 1.3, 0.0, 1.0))
 
         edge_prob, edge_detail = _compute_edge_probability(
@@ -300,7 +367,8 @@ class L3TechnicalAnalyzer:
 
         logger.info(
             "[L3] %s trend=%s tech=%d P_edge=%.4f drift_state=%s "
-            "struct=%s conf=%d liq=%.2f trq=%.3f drift=%.5f atr=%.6f",
+            "struct=%s conf=%d liq=%.4f trq=%.6f drift=%.8f atr=%.6f "
+            "adx=%.2f trend_str=%.4f struct_sc=%.4f dq=%s",
             symbol,
             trend,
             technical_score,
@@ -312,6 +380,10 @@ class L3TechnicalAnalyzer:
             trq3d["energy"],
             trq3d["drift"],
             atr,
+            adx_raw,
+            trend_strength,
+            float(structure["score"]),
+            _data_quality,
         )
 
         return {
@@ -341,6 +413,8 @@ class L3TechnicalAnalyzer:
             "volume_profile_poc": confluence.get("volume_profile_poc", 0.0),
             "volume_profile_poc_hit": confluence.get("volume_profile_poc_hit", False),
             "vpc_zones": confluence.get("vpc_zones", []),
+            # ── v6.2 data quality (ADDITIVE) ──────────────────────
+            "data_quality": _data_quality,
         }
 
     # ═══════════════════════════════════════════════════════════════
@@ -412,11 +486,41 @@ class L3TechnicalAnalyzer:
         ema_gap = abs(ema20 - ema50) / price
         gap_threshold = (atr / price) * 0.3 * vol_factor
 
+        # ── v6.1: Diagnostic for trend detection reasoning ─────────
+        logger.debug(
+            "[L3] %s trend_diag: ema20=%.6f ema50=%.6f gap=%.8f thr=%.8f adx=%.2f vol_f=%.3f",
+            "N/A",  # symbol not passed; caller logs symbol
+            ema20,
+            ema50,
+            ema_gap,
+            gap_threshold,
+            adx,
+            vol_factor,
+        )
+
         if ema20 > ema50 and ema_gap >= gap_threshold and adx >= 20.0:
             return "BULLISH", float(min(1.0, (adx - 20.0) / 25.0))
 
         if ema20 < ema50 and ema_gap >= gap_threshold and adx >= 20.0:
             return "BEARISH", float(min(1.0, (adx - 20.0) / 25.0))
+
+        # ── v6.1: Soft trend detection for low-ADX regimes ────────
+        # When ADX is between 15-20 and EMA alignment exists, still
+        # report a weak directional lean instead of pure NEUTRAL.
+        # This prevents ALL pairs from showing identical NEUTRAL when
+        # market has mild directional bias.
+        if adx >= 15.0 and ema_gap >= gap_threshold:
+            strength = float(min(0.3, (adx - 15.0) / 20.0))
+            if ema20 > ema50:
+                return "BULLISH", strength
+            return "BEARISH", strength
+
+        # ── v6.1: EMA-only lean when gap exists but ADX is very low
+        if ema_gap >= gap_threshold * 0.5 and adx >= 10.0:
+            strength = float(min(0.15, (adx - 10.0) / 40.0))
+            if ema20 > ema50:
+                return "BULLISH", strength
+            return "BEARISH", strength
 
         if adx < 15.0:
             return "NEUTRAL", 0.1
@@ -907,6 +1011,8 @@ class L3TechnicalAnalyzer:
         candles_h1: list[dict[str, Any]],
         candles_h4: list[dict[str, Any]],
         candles_d1: list[dict[str, Any]],
+        *,
+        use_hl_midpoint: bool = False,
     ) -> dict[str, float]:
         """Compute TRQ-3D energy and drift.
 
@@ -920,6 +1026,17 @@ class L3TechnicalAnalyzer:
             This yields momentum-relative-to-expected-volatility [0, ~1].
 
         Falls back to price normalization when ATR is unavailable.
+
+        v6.1 fix: When TRQ3DEngine returns near-zero energy from batch-
+        loaded data (close-to-close variance negligible), supplement with
+        candle HL-range momentum and direct close-return calculation.
+        Also uses windowed VWAP (last 20 bars) for drift instead of all-
+        history VWAP which converges to the series mean on batch load.
+
+        v6.2 fix: When use_hl_midpoint=True (stale close data detected),
+        feed TRQ3DEngine with HL-midpoint prices instead of close prices.
+        This ensures energy and drift reflect actual market movement even
+        when close prices are stale/flat.
         """
         if not candles_h1:
             return {"energy": 0.0, "drift": 0.0}
@@ -927,12 +1044,20 @@ class L3TechnicalAnalyzer:
         trq = TRQ3DEngine()
 
         feed = candles_h1[-60:] if len(candles_h1) >= 60 else candles_h1
-        for c in feed:
-            trq.update(symbol, float(c["close"]))
+
+        # v6.2: Use HL-midpoint when close data is detected as stale
+        if use_hl_midpoint:
+            for c in feed:
+                mid = (float(c["high"]) + float(c["low"])) / 2.0
+                trq.update(symbol, mid)
+            price = (float(candles_h1[-1]["high"]) + float(candles_h1[-1]["low"])) / 2.0
+        else:
+            for c in feed:
+                trq.update(symbol, float(c["close"]))
+            price = float(candles_h1[-1]["close"])
 
         raw_energy = float(trq.get_energy(symbol))
 
-        price = float(candles_h1[-1]["close"])
         highs = [float(c["high"]) for c in candles_h1]
         lows = [float(c["low"]) for c in candles_h1]
         closes = [float(c["close"]) for c in candles_h1]
@@ -944,8 +1069,69 @@ class L3TechnicalAnalyzer:
 
         energy = float(min(1.0, max(0.0, normalized_energy)))
 
-        vwap = float(trq.get_vwap(symbol))
-        drift = float(abs(price - vwap) / max(price, 1e-9))
+        # ── v6.2: HL-based energy floor ──────────────────────────────
+        # When TRQ3DEngine produces near-zero energy OR close data is
+        # stale (use_hl_midpoint), supplement with candle-derived momentum.
+        # For healthy data with reasonable engine output, skip supplementation.
+        _needs_supplement = use_hl_midpoint or energy < 0.05
+        if _needs_supplement and len(candles_h1) >= 10:
+            recent = candles_h1[-20:]
+
+            # Close/midpoint-return momentum
+            if use_hl_midpoint:
+                recent_prices = [(float(c["high"]) + float(c["low"])) / 2.0 for c in recent]
+            else:
+                recent_prices = [float(c["close"]) for c in recent]
+
+            if len(recent_prices) >= 2:
+                close_deltas = [
+                    abs(recent_prices[i] - recent_prices[i - 1])
+                    for i in range(1, len(recent_prices))
+                ]
+                mean_close_delta = sum(close_deltas) / len(close_deltas)
+                close_energy = mean_close_delta / max(atr, 1e-9) if atr > 0 else 0.0
+                close_energy = float(min(1.0, max(0.0, close_energy)))
+            else:
+                close_energy = 0.0
+
+            # HL-range momentum: mean(high-low) / ATR — captures intra-bar vol
+            recent_hl = [float(c["high"]) - float(c["low"]) for c in recent]
+            mean_hl = sum(recent_hl) / len(recent_hl) if recent_hl else 0.0
+            hl_energy = mean_hl / max(atr, 1e-9) if atr > 0 else 0.0
+            hl_energy = float(min(1.0, max(0.0, hl_energy)))
+
+            # Blend: close-return (60%) + HL-range (40%), floor at engine value
+            blended = close_energy * 0.6 + hl_energy * 0.4
+            if blended > energy:
+                logger.info(
+                    "[L3] %s TRQ3D supplemented: engine=%.6f close_e=%.4f hl_e=%.4f blended=%.4f → energy=%.4f",
+                    symbol,
+                    normalized_energy,
+                    close_energy,
+                    hl_energy,
+                    blended,
+                    max(energy, blended),
+                )
+                energy = float(min(1.0, max(energy, blended)))
+
+        # ── v6.2: Windowed drift from analysis prices ─────────────────
+        # Use HL-midpoint for drift when close data is stale.
+        if use_hl_midpoint:  # noqa: SIM108
+            drift_prices = [(h + l) / 2.0 for h, l in zip(highs, lows, strict=False)]  # noqa: E741
+        else:
+            drift_prices = closes
+
+        if len(drift_prices) >= 5:
+            window = drift_prices[-20:] if len(drift_prices) >= 20 else drift_prices
+            n = len(window)
+            # Recency-weighted VWAP (matching TRQ3DEngine weighting scheme)
+            weights = [1.0 + i / n for i in range(n)]
+            w_sum = sum(weights)
+            windowed_vwap = sum(p * w for p, w in zip(window, weights, strict=False)) / w_sum
+            drift = float(abs(price - windowed_vwap) / max(price, 1e-9))
+        else:
+            vwap = float(trq.get_vwap(symbol))
+            drift = float(abs(price - vwap) / max(price, 1e-9))
 
         return {"energy": energy, "drift": drift}
 
@@ -1027,4 +1213,6 @@ class L3TechnicalAnalyzer:
             "volume_profile_poc": 0.0,
             "volume_profile_poc_hit": False,
             "vpc_zones": [],
+            # v6.2 data quality
+            "data_quality": "INSUFFICIENT",
         }

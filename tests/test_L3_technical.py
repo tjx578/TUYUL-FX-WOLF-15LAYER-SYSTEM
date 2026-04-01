@@ -1155,7 +1155,10 @@ class TestInsufficientData:
             "volume_profile_poc_hit",
             "vpc_zones",
         }
-        expected_keys = v5_keys | v6_keys | v7_keys
+        v62_keys = {
+            "data_quality",
+        }
+        expected_keys = v5_keys | v6_keys | v7_keys | v62_keys
         assert set(result.keys()) == expected_keys
 
     def test_safe_defaults(self):
