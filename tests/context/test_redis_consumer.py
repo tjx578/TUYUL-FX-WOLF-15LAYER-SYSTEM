@@ -17,6 +17,12 @@ from context.redis_consumer import RedisConsumer  # noqa: E402
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture(autouse=True)
+def _reset_bus() -> None:  # type: ignore[misc]
+    """Reset LiveContextBus singleton between tests to prevent data leaking."""
+    LiveContextBus.reset_singleton()
+
+
 def _make_candle(symbol: str, timeframe: str, close: float) -> bytes:
     return orjson.dumps({"symbol": symbol, "timeframe": timeframe, "close": close})
 

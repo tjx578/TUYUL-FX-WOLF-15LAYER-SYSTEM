@@ -77,6 +77,8 @@ from config_loader import CONFIG
 # third-party imports
 # import ...
 # local imports
+from constitution.final_normalized_payload_exporter import FinalNormalizedPayloadExporter
+from constitution.l12_router_evaluator import L12Input, L12RouterEvaluator
 from constitution.signal_throttle import SignalThrottle
 from constitution.verdict_engine import generate_l12_verdict
 from core.dag_engine import DagEngine
@@ -1877,6 +1879,24 @@ class WolfConstitutionalPipeline:
             l12_verdict = generate_l12_verdict(synthesis, governance_penalty=_dq_penalty)
             l12_verdict["gates_v74"] = gates
 
+            # ── Constitutional Phase 5 overlay (L12 router evaluator) ──
+            # Runs the new constitutional L12 governor in parallel with the
+            # legacy verdict path. Result is injected into synthesis for
+            # audit, replay, and downstream governance consumption.
+            try:
+                _const_l12 = self._run_constitutional_phase5(
+                    l12_verdict=l12_verdict,
+                    gates=gates,
+                    synthesis=synthesis,
+                )
+                synthesis["constitutional_phase5"] = _const_l12
+            except Exception as _cp5_exc:
+                logger.warning(
+                    "[Pipeline v8.0] Constitutional Phase 5 overlay failed (non-fatal): {}",
+                    _cp5_exc,
+                )
+                synthesis["constitutional_phase5"] = {"error": str(_cp5_exc)}
+
             # ═══════════════════════════════════════════════════════
             # PHASE 6 -- TWO-PASS L13 GOVERNANCE (from Sovereign)
             #   Pass 1: baseline (meta=1.0) -> L15 meta -> Pass 2: refined
@@ -2176,6 +2196,67 @@ class WolfConstitutionalPipeline:
         Delegates to pipeline.phases.vault.compute_vault_sync.
         """
         return compute_vault_sync(synthesis, self._vault_checker)
+
+    # ══════════════════════════════════════════════════════════════
+    #  CONSTITUTIONAL PHASE 5 OVERLAY
+    # ══════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _run_constitutional_phase5(
+        l12_verdict: dict[str, Any],
+        gates: dict[str, Any],
+        synthesis: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run the constitutional L12 router evaluator as a Phase 5 overlay.
+
+        Maps the existing pipeline gate results + verdict into the
+        constitutional L12Input contract and evaluates. The result is
+        purely diagnostic / audit — it does NOT override the legacy
+        verdict. Analysis-only, no execution authority.
+        """
+        # Map 9-gate results to constitutional gate statuses
+        total_gates = int(gates.get("total_gates", 9))
+        total_passed = int(gates.get("total_passed", 0))
+
+        def _gate_to_status(key: str) -> str:
+            val = str(gates.get(key, "FAIL")).upper()
+            return "PASS" if val == "PASS" else ("WARN" if val == "CONDITIONAL" else "FAIL")
+
+        foundation_status = "PASS" if _gate_to_status("gate_6_integrity") == "PASS" else "WARN"
+        scoring_status = "PASS" if _gate_to_status("gate_4_conf12") == "PASS" else "WARN"
+        structure_status = _gate_to_status("gate_1_tii")
+        probability_status = _gate_to_status("gate_2_montecarlo")
+        integrity_status = _gate_to_status("gate_3_frpc")
+        firewall_status = _gate_to_status("gate_7_propfirm")
+        risk_chain_status = _gate_to_status("gate_5_rr")
+        governance_status = _gate_to_status("gate_9_drawdown")
+
+        # Synthesis score from verdict engine
+        synthesis_score = float(l12_verdict.get("confidence", 0.0))
+
+        evaluator = L12RouterEvaluator()
+        l12_input = L12Input(
+            input_ref=str(synthesis.get("symbol", "UNKNOWN")),
+            timestamp=str(synthesis.get("system", {}).get("timestamp", "")),
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status=foundation_status,
+            scoring_status=scoring_status,
+            enrichment_status="PASS" if total_passed >= 7 else "WARN",
+            structure_status=structure_status,
+            risk_chain_status=risk_chain_status,
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=synthesis_score,
+            integrity_status=integrity_status,
+            probability_status=probability_status,
+            firewall_status=firewall_status,
+            governance_status=governance_status,
+        )
+        result = evaluator.evaluate(l12_input)
+        return result.to_dict()
 
     # ══════════════════════════════════════════════════════════════
     #  METRICS RECORDING
