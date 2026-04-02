@@ -7,9 +7,9 @@ REGIME_TYPE = Literal["LOW_VOL", "NORMAL_VOL", "HIGH_VOL"]
 
 THRESHOLD_TABLE: dict[str, dict[str, float]] = {
     "LOW_VOL": {
-        "tii": 0.93,
-        "frpc": 0.96,
-        "integrity": 0.97,
+        "tii": 0.88,
+        "frpc": 0.91,
+        "integrity": 0.90,
         "mc_win": 0.60,
         "mc_pf": 1.5,
         "posterior": 0.65,
@@ -18,9 +18,9 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "conf12": 0.78,  # Tighter — data quality is higher in low-vol regimes
     },
     "NORMAL_VOL": {
-        "tii": 0.90,
-        "frpc": 0.93,
-        "integrity": 0.95,
+        "tii": 0.85,
+        "frpc": 0.88,
+        "integrity": 0.88,
         "mc_win": 0.58,
         "mc_pf": 1.4,
         "posterior": 0.62,
@@ -29,9 +29,9 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "conf12": 0.72,  # Standard — balanced threshold for normal conditions
     },
     "HIGH_VOL": {
-        "tii": 0.88,
-        "frpc": 0.90,
-        "integrity": 0.93,
+        "tii": 0.83,
+        "frpc": 0.85,
+        "integrity": 0.86,
         "mc_win": 0.55,
         "mc_pf": 1.5,
         "posterior": 0.60,

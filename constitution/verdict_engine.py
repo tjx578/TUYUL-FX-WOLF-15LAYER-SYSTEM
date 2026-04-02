@@ -21,8 +21,8 @@ class VerdictThresholds:
     """Constitutional score thresholds for the evaluate() V1 path."""
 
     wolf_min_score: float = 0.70
-    tii_min_score: float = 0.90
-    frpc_min_score: float = 0.93
+    tii_min_score: float = 0.85
+    frpc_min_score: float = 0.88
     exhaustion_min_confidence: float = 0.70
     exhaustion_min_score: float = 0.65
 

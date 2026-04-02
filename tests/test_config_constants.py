@@ -8,10 +8,10 @@ from config.constants import CONSTITUTION_THRESHOLDS, get_all_thresholds, get_th
 def test_get_threshold_top_level():
     """Test getting top-level threshold values."""
     tii_min = get_threshold("tii_min")
-    assert tii_min == 0.93
+    assert tii_min == 0.88
 
     integrity_min = get_threshold("integrity_min")
-    assert integrity_min == 0.97
+    assert integrity_min == 0.90
 
     rr_min = get_threshold("rr_min")
     assert rr_min == 2.0
@@ -20,7 +20,7 @@ def test_get_threshold_top_level():
 def test_get_threshold_nested():
     """Test getting nested threshold values with dot notation."""
     tii_const_min = get_threshold("tii.constitutional_min")
-    assert tii_const_min == 0.93
+    assert tii_const_min == 0.88
 
     wolf_min = get_threshold("wolf_discipline.minimum")
     assert wolf_min == 0.75
@@ -37,7 +37,7 @@ def test_get_threshold_with_default():
 
     # Existing key should ignore default
     value = get_threshold("tii_min", 99.9)
-    assert value == 0.93
+    assert value == 0.88
 
 
 def test_get_threshold_deeply_nested():
@@ -52,13 +52,13 @@ def test_get_threshold_deeply_nested():
 def test_backward_compatibility():
     """Test that CONSTITUTION_THRESHOLDS works for legacy code."""
     # Should be able to access top-level keys
-    assert CONSTITUTION_THRESHOLDS["tii_min"] == 0.93
-    assert CONSTITUTION_THRESHOLDS["integrity_min"] == 0.97
+    assert CONSTITUTION_THRESHOLDS["tii_min"] == 0.88
+    assert CONSTITUTION_THRESHOLDS["integrity_min"] == 0.90
     assert CONSTITUTION_THRESHOLDS["rr_min"] == 2.0
 
     # Should be able to access nested structures
     assert "tii" in CONSTITUTION_THRESHOLDS
-    assert CONSTITUTION_THRESHOLDS["tii"]["constitutional_min"] == 0.93
+    assert CONSTITUTION_THRESHOLDS["tii"]["constitutional_min"] == 0.88
 
 
 def test_get_all_thresholds():
@@ -82,7 +82,7 @@ def test_threshold_values_reconciled():
     assert get_threshold("tii_min") == get_threshold("tii.constitutional_min")
 
     # Integrity: should be 0.97 (reconciled value)
-    assert get_threshold("integrity_min") == 0.97
+    assert get_threshold("integrity_min") == 0.90
 
     # Monte Carlo: should be 0.55 (reconciled value)
     assert get_threshold("monte_min") == 0.55

@@ -5,12 +5,12 @@ This module provides easy access to constitutional thresholds
 for the Wolf 15-Layer Pipeline without hardcoding magic numbers.
 
 9-Gate Constitutional Check thresholds:
-    GATE 1: TIIₛᵧₘ ≥ 0.93
+    GATE 1: TIIₛⱥₘ ≥ 0.88
     GATE 2: Monte Carlo ≥ 60% (0.55 in config, multiplied by 100)
     GATE 3: FRPC State = SYNC
     GATE 4: CONF₁₂ ≥ 0.75
     GATE 5: RR ≥ 1:2.0
-    GATE 6: Integrity ≥ 0.97
+    GATE 6: Integrity ≥ 0.90
     GATE 7: PropFirm Compliant
     GATE 8: Drawdown ≤ 5.0%
     GATE 9: Latency ≤ 250ms
@@ -22,13 +22,13 @@ from config.constitution import CONSTITUTION_THRESHOLDS
 
 
 def get_tii_min() -> float:
-    """Get TII minimum threshold (default: 0.93)."""
-    return CONSTITUTION_THRESHOLDS.get("tii_min", 0.93)
+    """Get TII minimum threshold (default: 0.88)."""
+    return CONSTITUTION_THRESHOLDS.get("tii_min", 0.88)
 
 
 def get_integrity_min() -> float:
-    """Get integrity minimum threshold (default: 0.97)."""
-    return CONSTITUTION_THRESHOLDS.get("integrity_min", 0.97)
+    """Get integrity minimum threshold (default: 0.90)."""
+    return CONSTITUTION_THRESHOLDS.get("integrity_min", 0.90)
 
 
 def get_rr_min() -> float:

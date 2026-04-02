@@ -120,25 +120,25 @@ class TestRegimeAdaptiveThresholds:
         assert verdict["gates"]["gate_9_conf12"] == "PASS"
 
     def test_normal_vol_uses_tii_threshold(self) -> None:
-        """NORMAL_VOL regime uses tii threshold from THRESHOLD_TABLE (0.90)."""
-        # tii=0.91 is above NORMAL_VOL threshold (0.90)
-        synthesis = _make_synthesis(tii=0.91, regime_type="NORMAL_VOL")
+        """NORMAL_VOL regime uses tii threshold from THRESHOLD_TABLE (0.85)."""
+        # tii=0.86 is above NORMAL_VOL threshold (0.85)
+        synthesis = _make_synthesis(tii=0.86, regime_type="NORMAL_VOL")
         verdict = generate_l12_verdict(synthesis)
 
         assert verdict["gates"]["gate_1_tii"] == "PASS"
 
     def test_high_vol_uses_relaxed_tii_threshold(self) -> None:
-        """HIGH_VOL regime uses relaxed tii threshold (0.88)."""
-        # tii=0.89 is above HIGH_VOL threshold (0.88) but below NORMAL_VOL (0.90)
-        synthesis = _make_synthesis(tii=0.89, regime_type="HIGH_VOL")
+        """HIGH_VOL regime uses relaxed tii threshold (0.83)."""
+        # tii=0.84 is above HIGH_VOL threshold (0.83) but below NORMAL_VOL (0.85)
+        synthesis = _make_synthesis(tii=0.84, regime_type="HIGH_VOL")
         verdict = generate_l12_verdict(synthesis)
 
         assert verdict["gates"]["gate_1_tii"] == "PASS"
 
     def test_low_vol_uses_tighter_tii_threshold(self) -> None:
-        """LOW_VOL regime uses tighter tii threshold (0.93)."""
-        # tii=0.91 passes NORMAL_VOL (0.90) but fails LOW_VOL (0.93)
-        synthesis = _make_synthesis(tii=0.91, regime_type="LOW_VOL")
+        """LOW_VOL regime uses tighter tii threshold (0.88)."""
+        # tii=0.86 passes NORMAL_VOL (0.85) but fails LOW_VOL (0.88)
+        synthesis = _make_synthesis(tii=0.86, regime_type="LOW_VOL")
         verdict = generate_l12_verdict(synthesis)
 
         assert verdict["gates"]["gate_1_tii"] == "FAIL"
@@ -179,9 +179,9 @@ class TestRegimeAdaptiveThresholds:
         assert verdict["gates"]["gate_5_montecarlo"] == "PASS"
 
     def test_regime_thresholds_applied_to_integrity(self) -> None:
-        """HIGH_VOL regime applies relaxed integrity threshold (0.93)."""
-        # integrity=0.94 passes HIGH_VOL (0.93) but would fail LOW_VOL (0.97)
-        synthesis = _make_synthesis(integrity=0.94, regime_type="HIGH_VOL")
+        """HIGH_VOL regime applies relaxed integrity threshold (0.86)."""
+        # integrity=0.87 passes HIGH_VOL (0.86) but would fail LOW_VOL (0.90)
+        synthesis = _make_synthesis(integrity=0.87, regime_type="HIGH_VOL")
         verdict = generate_l12_verdict(synthesis)
 
         assert verdict["gates"]["gate_2_integrity"] == "PASS"

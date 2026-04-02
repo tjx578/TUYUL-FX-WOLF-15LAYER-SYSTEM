@@ -314,10 +314,10 @@ DECISION_THRESHOLDS: dict[str, float] = {
 }
 
 CONFIDENCE_THRESHOLDS: dict[str, float] = {
-    "frpc_min": 0.96,
-    "tii_min": 0.92,
-    "frpc_optimal": 0.98,
-    "tii_optimal": 0.95,
+    "frpc_min": 0.91,
+    "tii_min": 0.87,
+    "frpc_optimal": 0.95,
+    "tii_optimal": 0.92,
 }
 
 # Battle Strategies Configuration (akan di-populate oleh QuantumScenarioMatrix)

@@ -21,7 +21,7 @@ def _make_synthesis(
     """Build a minimal synthesis dict with all 10 gates passing by default.
 
     Default values are calibrated to pass all gates under NORMAL_VOL regime
-    (tii >= 0.90, integrity >= 0.95, mc_win >= 0.58, conf12 >= 0.72, rr >= 2.0).
+    (tii >= 0.85, integrity >= 0.88, mc_win >= 0.58, conf12 >= 0.72, rr >= 2.0).
     """
     synth = {
         "pair": "XAUUSD",
