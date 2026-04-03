@@ -272,6 +272,34 @@ def build_l12_synthesis(
     synthesis["regime_type"] = _regime_type
     synthesis["atr_ratio"] = _atr_ratio
 
+    # ── Legacy FTA advisory block (WOLF ARSENAL v4.0) ────────────────────
+    # Injected from pipeline via layer_results["legacy_fta"].
+    # Default neutral block ensures downstream consumers never KeyError.
+    _legacy_fta_raw = layer_results.get("legacy_fta", {})
+    synthesis["legacy_fta"] = {
+        "base_score_50": float(_legacy_fta_raw.get("base_score_50", 0.0)),
+        "quote_score_50": float(_legacy_fta_raw.get("quote_score_50", 0.0)),
+        "pair_gap_points": float(_legacy_fta_raw.get("pair_gap_points", 0.0)),
+        "pair_gap_norm": float(_legacy_fta_raw.get("pair_gap_norm", 0.0)),
+        "technical_score_100": float(_legacy_fta_raw.get("technical_score_100", 0.0)),
+        "fta_score_100": float(_legacy_fta_raw.get("fta_score_100", 0.0)),
+        "fta_norm": float(_legacy_fta_raw.get("fta_norm", 0.0)),
+        "confidence_hint": float(_legacy_fta_raw.get("confidence_hint", 0.0)),
+        "trade_band": str(_legacy_fta_raw.get("trade_band", "NONE")),
+        "direction": str(_legacy_fta_raw.get("direction", "HOLD")),
+        "fundamental_score_claimed_100": _legacy_fta_raw.get("fundamental_score_claimed_100"),
+        "fundamental_score_calibrated_100": float(_legacy_fta_raw.get("fundamental_score_calibrated_100", 0.0)),
+        "legacy_fta_present": bool(_legacy_fta_raw.get("legacy_fta_present", False)),
+    }
+    # Confidence blend provenance for audit trail
+    _blend_info = layer_results.get("legacy_fta_confidence_blend", {})
+    if _blend_info:
+        synthesis["legacy_fta"]["confidence_blend"] = {
+            "repo_confidence": float(_blend_info.get("repo_confidence", 0.0)),
+            "legacy_hint": float(_blend_info.get("legacy_hint", 0.0)),
+            "effective_confidence": float(_blend_info.get("effective_confidence", 0.0)),
+        }
+
     # ── Lorentzian Field Stabilizer placeholder (overwritten by pipeline) ──
     _trq3d = synthesis.get("trq3d", {})
     synthesis["lorentzian"] = {

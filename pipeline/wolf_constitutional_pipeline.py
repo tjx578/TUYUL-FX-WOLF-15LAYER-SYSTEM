@@ -268,6 +268,9 @@ class WolfConstitutionalPipeline:
         # Engine Enrichment Layer (Phase 2.5 — 9 facade engines)
         self._enrichment: Any = None  # lazy-loaded
 
+        # Legacy FTA Enricher — WOLF ARSENAL v4.0 advisory adapter (pre-L10)
+        self._legacy_fta: Any = None  # lazy-loaded
+
         # Lorentzian Field Stabilizer — advisory enricher (Phase 2.5)
         self._lorentzian: Any = None  # lazy-loaded
         self._lfs_history: dict[str, dict[str, float]] = {}  # per-symbol α–β–γ snapshots
@@ -1512,6 +1515,34 @@ class WolfConstitutionalPipeline:
             smc_confidence: Any = l9.get("confidence", 0.0)
             assert self._l10 is not None
 
+            # ── Legacy FTA advisory hint (pre-L10, advisory-only) ──────
+            legacy_fta: dict[str, Any] = {}
+            _legacy_conf_hint: float = 0.0
+            try:
+                if self._legacy_fta is None:
+                    from engines.legacy_fta_enricher import LegacyFTAEnricher  # noqa: PLC0415
+
+                    self._legacy_fta = LegacyFTAEnricher()
+                legacy_fta = self._legacy_fta.run(symbol=symbol)
+                _legacy_conf_hint = float(legacy_fta.get("confidence_hint", 0.0))
+            except Exception as _lfta_exc:
+                logger.debug("[Pipeline v8.0] Legacy FTA advisory skipped: {}", _lfta_exc)
+
+            # ── Blend confidence: 85% repo + 15% legacy (advisory) ─────
+            _repo_conf = float(smc_confidence)
+            if _legacy_conf_hint > 0.0 and legacy_fta.get("legacy_fta_present", False):
+                from engines.legacy_fta_enricher import blend_confidence  # noqa: PLC0415
+
+                _effective_confidence = blend_confidence(_repo_conf, _legacy_conf_hint)
+                logger.info(
+                    "[Pipeline v8.0] Legacy FTA blend: repo={:.4f} legacy={:.4f} → effective={:.4f}",
+                    _repo_conf,
+                    _legacy_conf_hint,
+                    _effective_confidence,
+                )
+            else:
+                _effective_confidence = _repo_conf
+
             # ── Constitutional: inject L6 upstream into L10 ────────────
             if hasattr(self._l10, "set_upstream_output"):
                 self._l10.set_upstream_output(l6)
@@ -1530,7 +1561,7 @@ class WolfConstitutionalPipeline:
                 _l10_trade_params,
                 _l10_balance,
                 symbol,
-                confidence=float(smc_confidence),
+                confidence=_effective_confidence,
                 trade_returns=trade_returns,
                 win_probability=l7.get("win_probability"),
                 bayesian_posterior=l7.get("bayesian_posterior"),
@@ -1728,6 +1759,14 @@ class WolfConstitutionalPipeline:
                 "L9": l9,
                 "L10": l10,
                 "L11": l11,
+                # Legacy FTA advisory (WOLF ARSENAL v4.0 adapter)
+                "legacy_fta": legacy_fta if legacy_fta else {},
+                "legacy_fta_confidence_blend": {
+                    "repo_confidence": _repo_conf,
+                    "legacy_hint": _legacy_conf_hint,
+                    "effective_confidence": _effective_confidence,
+                    "legacy_fta_present": legacy_fta.get("legacy_fta_present", False),
+                },
                 # MonthlyRegimeAnalyzer — pass full result fields so
                 # build_l12_synthesis can populate synthesis["macro"] correctly.
                 "macro": macro.get("regime", "UNKNOWN"),
