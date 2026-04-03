@@ -102,12 +102,12 @@ class TestRegimeAdaptiveThresholds:
         assert verdict["gates"]["gate_9_conf12"] == "PASS"
 
     def test_low_vol_regime_uses_tighter_conf12(self) -> None:
-        """LOW_VOL regime applies tighter conf12 threshold of 0.78."""
-        # conf12=0.74 is above NORMAL_VOL (0.72) but below LOW_VOL (0.78)
-        synthesis = _make_synthesis(conf12=0.74, regime_type="LOW_VOL")
+        """LOW_VOL regime applies tighter conf12 threshold of 0.68."""
+        # conf12=0.64 is below LOW_VOL (0.68) but above HIGH_VOL (0.58)
+        synthesis = _make_synthesis(conf12=0.64, regime_type="LOW_VOL")
         verdict = generate_l12_verdict(synthesis)
 
-        # LOW_VOL conf12 threshold is 0.78, so 0.74 should FAIL
+        # LOW_VOL conf12 threshold is 0.68, so 0.64 should FAIL
         assert verdict["gates"]["gate_9_conf12"] == "FAIL"
 
     def test_high_vol_regime_uses_relaxed_conf12(self) -> None:
@@ -136,17 +136,17 @@ class TestRegimeAdaptiveThresholds:
         assert verdict["gates"]["gate_1_tii"] == "PASS"
 
     def test_low_vol_uses_tighter_tii_threshold(self) -> None:
-        """LOW_VOL regime uses tighter tii threshold (0.88)."""
-        # tii=0.86 passes NORMAL_VOL (0.85) but fails LOW_VOL (0.88)
-        synthesis = _make_synthesis(tii=0.86, regime_type="LOW_VOL")
+        """LOW_VOL regime uses tighter tii threshold (0.75)."""
+        # tii=0.73 fails LOW_VOL (0.75) but passes NORMAL_VOL (0.70)
+        synthesis = _make_synthesis(tii=0.73, regime_type="LOW_VOL")
         verdict = generate_l12_verdict(synthesis)
 
         assert verdict["gates"]["gate_1_tii"] == "FAIL"
 
     def test_normal_vol_uses_rr_threshold(self) -> None:
-        """NORMAL_VOL regime uses rr threshold from THRESHOLD_TABLE (2.0)."""
-        # rr=1.8 is above hardcoded fallback (1.5) but below NORMAL_VOL (2.0)
-        synthesis = _make_synthesis(rr=1.8, regime_type="NORMAL_VOL")
+        """NORMAL_VOL regime uses rr threshold from THRESHOLD_TABLE (1.5)."""
+        # rr=1.4 is below NORMAL_VOL threshold (1.5)
+        synthesis = _make_synthesis(rr=1.4, regime_type="NORMAL_VOL")
         verdict = generate_l12_verdict(synthesis)
 
         assert verdict["gates"]["gate_3_rr"] == "FAIL"
@@ -218,9 +218,9 @@ class TestNearPassExecuteReducedRisk:
         assert verdict["gates"]["passed"] == 8
 
     def test_seven_gates_pass_yields_hold(self) -> None:
-        """When only 7/10 gates pass (no critical fail), yield HOLD."""
-        # Fail 3 non-critical gates
-        synthesis = _make_synthesis(tii=0.50, monte=0.40, rr=0.5, regime_type="NORMAL_VOL")
+        """When only 6/10 gates pass (no critical fail), yield HOLD."""
+        # Fail 4 non-critical gates to drop below near-pass threshold of 7
+        synthesis = _make_synthesis(tii=0.30, monte=0.20, rr=0.5, fta=0.20, regime_type="NORMAL_VOL")
         verdict = generate_l12_verdict(synthesis)
 
         assert verdict["verdict"] == "HOLD"

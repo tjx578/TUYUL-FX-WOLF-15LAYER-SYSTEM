@@ -194,7 +194,7 @@ class TestL12VerdictGateFailures:
 
     def test_latency_gate_failure(self) -> None:
         """Test verdict when latency is too high — single non-critical failure triggers near-pass."""
-        synthesis = _make_synthesis(latency=300)  # Above 250ms threshold
+        synthesis = _make_synthesis(latency=600)  # Above 500ms threshold
 
         verdict = generate_l12_verdict(synthesis)
 
@@ -245,13 +245,13 @@ class TestL12VerdictTypes:
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
 
     def test_hold_verdict(self) -> None:
-        """Test HOLD verdict when 7 or fewer gates pass (below near-pass threshold)."""
-        # Fail 3 non-critical gates to drop below near-pass threshold of 8
-        synthesis = _make_synthesis(tii=0.3, integrity=0.3, rr=0.5)
+        """Test HOLD verdict when fewer than 7 gates pass (below near-pass threshold)."""
+        # Fail 4 non-critical gates to drop below near-pass threshold of 7
+        synthesis = _make_synthesis(tii=0.3, integrity=0.3, rr=0.5, fta=0.2)
 
         verdict = generate_l12_verdict(synthesis)
 
-        # Should be HOLD (3 failures, no critical fail, < 8 passing)
+        # Should be HOLD (4 failures, no critical fail, < 7 passing)
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
 
     def test_execute_buy_verdict(self) -> None:
@@ -370,8 +370,8 @@ class TestL12EnrichmentInjection:
 
     def test_enrichment_never_overrides_verdict(self) -> None:
         """Enrichment adjusts confidence, never upgrades HOLD to EXECUTE."""
-        # Fail 3 non-critical gates → 7 pass → HOLD (below near-pass threshold of 8)
-        synthesis = _make_synthesis(tii=0.3, integrity=0.3, rr=0.5)
+        # Fail 4 non-critical gates → 6 pass → HOLD (below near-pass threshold of 7)
+        synthesis = _make_synthesis(tii=0.3, integrity=0.3, rr=0.5, fta=0.2)
         synthesis["layers"]["enrichment_score"] = 0.95
         verdict = generate_l12_verdict(synthesis)
         # Even with very high enrichment, HOLD stays HOLD

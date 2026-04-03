@@ -8,19 +8,19 @@ from config.constants import CONSTITUTION_THRESHOLDS, get_all_thresholds, get_th
 def test_get_threshold_top_level():
     """Test getting top-level threshold values."""
     tii_min = get_threshold("tii_min")
-    assert tii_min == 0.88
+    assert tii_min == 0.72
 
     integrity_min = get_threshold("integrity_min")
-    assert integrity_min == 0.90
+    assert integrity_min == 0.78
 
     rr_min = get_threshold("rr_min")
-    assert rr_min == 2.0
+    assert rr_min == 1.5
 
 
 def test_get_threshold_nested():
     """Test getting nested threshold values with dot notation."""
     tii_const_min = get_threshold("tii.constitutional_min")
-    assert tii_const_min == 0.88
+    assert tii_const_min == 0.72
 
     wolf_min = get_threshold("wolf_discipline.minimum")
     assert wolf_min == 0.75
@@ -37,7 +37,7 @@ def test_get_threshold_with_default():
 
     # Existing key should ignore default
     value = get_threshold("tii_min", 99.9)
-    assert value == 0.88
+    assert value == 0.72
 
 
 def test_get_threshold_deeply_nested():
@@ -52,13 +52,13 @@ def test_get_threshold_deeply_nested():
 def test_backward_compatibility():
     """Test that CONSTITUTION_THRESHOLDS works for legacy code."""
     # Should be able to access top-level keys
-    assert CONSTITUTION_THRESHOLDS["tii_min"] == 0.88
-    assert CONSTITUTION_THRESHOLDS["integrity_min"] == 0.90
-    assert CONSTITUTION_THRESHOLDS["rr_min"] == 2.0
+    assert CONSTITUTION_THRESHOLDS["tii_min"] == 0.72
+    assert CONSTITUTION_THRESHOLDS["integrity_min"] == 0.78
+    assert CONSTITUTION_THRESHOLDS["rr_min"] == 1.5
 
     # Should be able to access nested structures
     assert "tii" in CONSTITUTION_THRESHOLDS
-    assert CONSTITUTION_THRESHOLDS["tii"]["constitutional_min"] == 0.88
+    assert CONSTITUTION_THRESHOLDS["tii"]["constitutional_min"] == 0.72
 
 
 def test_get_all_thresholds():
@@ -81,11 +81,11 @@ def test_threshold_values_reconciled():
     # TII: top-level should match nested
     assert get_threshold("tii_min") == get_threshold("tii.constitutional_min")
 
-    # Integrity: should be 0.97 (reconciled value)
-    assert get_threshold("integrity_min") == 0.90
+    # Integrity: should be 0.78 (reconciled value)
+    assert get_threshold("integrity_min") == 0.78
 
-    # Monte Carlo: should be 0.55 (reconciled value)
-    assert get_threshold("monte_min") == 0.55
+    # Monte Carlo: should be 0.48 (reconciled value)
+    assert get_threshold("monte_min") == 0.48
 
     # Max drawdown: should be 5.0 (reconciled value)
     assert get_threshold("max_drawdown") == 5.0
@@ -117,8 +117,8 @@ def test_l11_rr_by_regime():
     """Test L11 RR regime thresholds."""
     rr_by_regime = get_threshold("rr.by_regime")
 
-    assert rr_by_regime["HIGH"] == 2.5
-    assert rr_by_regime["NORMAL"] == 2.0
-    assert rr_by_regime["LOW"] == 1.5
-    assert rr_by_regime["TRENDING"] == 2.0
-    assert rr_by_regime["RANGING"] == 1.8
+    assert rr_by_regime["HIGH"] == 2.0
+    assert rr_by_regime["NORMAL"] == 1.5
+    assert rr_by_regime["LOW"] == 1.2
+    assert rr_by_regime["TRENDING"] == 1.5
+    assert rr_by_regime["RANGING"] == 1.3

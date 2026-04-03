@@ -2,14 +2,14 @@
 # WOLF-15 CONSTITUTIONAL THRESHOLDS (v7.4r∞)
 # ===================================================================
 # Top-level verdict gates (read directly by verdict_engine.py)
-tii_min: 0.88
-integrity_min: 0.90
-rr_min: 2.0
-fta_min: 0.75
-monte_min: 0.55
-conf12_min: 0.75
+tii_min: 0.72
+integrity_min: 0.78
+rr_min: 1.5
+fta_min: 0.60
+monte_min: 0.48
+conf12_min: 0.62
 max_drawdown: 5.0
-max_latency_ms: 250
+max_latency_ms: 500
 
 # ===================================================================
 # AUTHORITY
@@ -29,7 +29,7 @@ market_law:
 # L8 — TII (Convex Weighted v2)
 # ===================================================================
 tii:
-  constitutional_min: 0.88
+  constitutional_min: 0.72
   weights:
     structure: 0.25
     discipline: 0.25
@@ -44,7 +44,7 @@ tii:
 # L8 — FRPC (Field-Risk-Probability-Confidence)
 # ===================================================================
 frpc:
-  minimum: 0.91
+  minimum: 0.78
 
 # ===================================================================
 # L8 — DVG (Divergence Analysis)
@@ -67,8 +67,8 @@ monte_carlo:
   default_runs: 1000
   default_horizon: 50
   gate:
-    win_prob_min: 68.0
-    profit_factor_min: 2.0
+    win_prob_min: 55.0
+    profit_factor_min: 1.3
     max_drawdown: 5.0
 
 # ===================================================================
@@ -87,16 +87,16 @@ wolf_discipline:
 # L11 — Risk/Reward Ratios
 # ===================================================================
 rr:
-  min_rr_ratio: 1.5
-  constitutional_min: 2.0
+  min_rr_ratio: 1.2
+  constitutional_min: 1.5
   by_regime:
-    HIGH: 2.5
-    NORMAL: 2.0
-    LOW: 1.5
-    EXPANSION: 2.5
-    CONTRACTION: 1.5
-    TRENDING: 2.0
-    RANGING: 1.8
+    HIGH: 2.0
+    NORMAL: 1.5
+    LOW: 1.2
+    EXPANSION: 2.0
+    CONTRACTION: 1.2
+    TRENDING: 1.5
+    RANGING: 1.3
 
 # ===================================================================
 # L4 — Wolf 30-Point Scoring

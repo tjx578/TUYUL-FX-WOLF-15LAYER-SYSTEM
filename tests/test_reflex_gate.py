@@ -36,18 +36,18 @@ class TestReflexGateController:
 
     def test_open_at_exact_threshold(self) -> None:
         gate = ReflexGateController()
-        decision = gate.evaluate(0.85)
+        decision = gate.evaluate(0.75)
         assert decision.gate == "OPEN"
 
     def test_caution_below_open(self) -> None:
         gate = ReflexGateController()
         decision = gate.evaluate(0.72)
         assert decision.gate == "CAUTION"
-        assert decision.lot_scale == 0.5
+        assert decision.lot_scale == 0.6
 
     def test_caution_at_exact_threshold(self) -> None:
         gate = ReflexGateController()
-        decision = gate.evaluate(0.70)
+        decision = gate.evaluate(0.55)
         assert decision.gate == "CAUTION"
 
     def test_lock_below_caution(self) -> None:
@@ -99,7 +99,7 @@ class TestCustomThresholds:
             caution_lot_scale=0.3,
             lock_lot_scale=0.1,
         )
-        assert gate.evaluate(0.75).lot_scale == 0.3
+        assert gate.evaluate(0.65).lot_scale == 0.3
         assert gate.evaluate(0.40).lot_scale == 0.1
 
     def test_invalid_threshold_order_raises(self) -> None:

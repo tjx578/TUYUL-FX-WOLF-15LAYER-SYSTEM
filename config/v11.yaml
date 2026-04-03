@@ -15,35 +15,35 @@ enabled: true
 # ===================================================================
 selectivity:
   # Minimum composite score (weighted from Layer 2)
-  score_min: 0.78
+  score_min: 0.65
   
   # Monte Carlo win probability minimum
-  monte_carlo_win_min: 0.70
+  monte_carlo_win_min: 0.55
   
   # Bayesian posterior confidence minimum
-  posterior_min: 0.72
+  posterior_min: 0.58
   
   # Monte Carlo profit factor minimum
-  mc_pf_min: 1.8
+  mc_pf_min: 1.3
   
   # Volume expansion ratio minimum
-  vol_expansion_min: 1.4
+  vol_expansion_min: 1.2
 
 # ===================================================================
 # VETO RULES (Layer 1 - Binary Conditions)
 # ===================================================================
 veto:
   # Regime confidence floor (below = veto)
-  regime_confidence_floor: 0.65
+  regime_confidence_floor: 0.55
   
   # Regime transition risk ceiling (above = veto)
   regime_transition_risk_ceiling: 0.40
   
   # Discipline score floor (below = veto)
-  discipline_min: 0.90
+  discipline_min: 0.75
   
   # EAF score floor (below = veto)
-  eaf_min: 0.75
+  eaf_min: 0.60
   
   # Cluster exposure ceiling (above = veto)
   cluster_exposure_max: 0.75
