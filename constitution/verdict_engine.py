@@ -20,11 +20,11 @@ class MetaResults(TypedDict):
 class VerdictThresholds:
     """Constitutional score thresholds for the evaluate() V1 path."""
 
-    wolf_min_score: float = 0.70
-    tii_min_score: float = 0.85
-    frpc_min_score: float = 0.88
-    exhaustion_min_confidence: float = 0.70
-    exhaustion_min_score: float = 0.65
+    wolf_min_score: float = 0.60
+    tii_min_score: float = 0.70
+    frpc_min_score: float = 0.78
+    exhaustion_min_confidence: float = 0.60
+    exhaustion_min_score: float = 0.55
 
 
 @dataclass
@@ -400,13 +400,13 @@ _REQUIRED_SYNTHESIS_FIELDS: tuple[str, ...] = (
 # Constitutional gate thresholds — LEGACY fallbacks (used only when regime
 # detection is unavailable).  Active path now reads from THRESHOLD_TABLE via
 # config.thresholds.get_thresholds(regime).
-_THRESH_TII: float = 0.65  # gate_1  — L8_tii_sym
-_THRESH_INTEGRITY: float = 0.75  # gate_2  — L8_integrity_index
+_THRESH_TII: float = 0.60  # gate_1  — L8_tii_sym
+_THRESH_INTEGRITY: float = 0.70  # gate_2  — L8_integrity_index
 _THRESH_RR: float = 1.5  # gate_3  — execution.rr_ratio
-_THRESH_FTA: float = 0.65  # gate_4  — scores.fta_score (no THRESHOLD_TABLE entry)
-_THRESH_MONTE: float = 0.60  # gate_5  — layers.L7_monte_carlo_win
-_THRESH_LATENCY_MS: int = 250  # gate_8  — system.latency_ms (no THRESHOLD_TABLE entry)
-_THRESH_CONF12: float = 0.75  # gate_9  — layers.conf12
+_THRESH_FTA: float = 0.55  # gate_4  — scores.fta_score (no THRESHOLD_TABLE entry)
+_THRESH_MONTE: float = 0.50  # gate_5  — layers.L7_monte_carlo_win
+_THRESH_LATENCY_MS: int = 500  # gate_8  — system.latency_ms (no THRESHOLD_TABLE entry)
+_THRESH_CONF12: float = 0.62  # gate_9  — layers.conf12
 # Gate 10: Reflex Quality — LOCK is critical fail, CAUTION passes with lot_scale
 
 # VIX regime_state → THRESHOLD_TABLE key (fallback when volatility_regime absent)
@@ -578,7 +578,7 @@ def generate_l12_verdict(
 
     all_pass: bool = passed == 10
     critical_fail: bool = g6 == "FAIL" or g7 == "FAIL" or g10 == "FAIL"
-    near_pass: bool = passed >= 8 and not all_pass and not critical_fail
+    near_pass: bool = passed >= 7 and not critical_fail
 
     # ── Direction from technical bias ─────────────────────────────────────────
     technical_bias: str = str(bias.get("technical", "NEUTRAL")).upper()

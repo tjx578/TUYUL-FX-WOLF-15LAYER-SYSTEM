@@ -9,8 +9,8 @@ Sources:
     engines/bayesian_update_engine.py -> BayesianProbabilityEngine
 
 Gate Logic:
-    IF Win% ≥ 60% AND PF ≥ 1.5  -> PASS      -> continue to L8+
-    IF Win% ≥ 55% AND PF ≥ 1.2  -> CONDITIONAL -> continue with caution flag
+    IF Win% ≥ 55% AND PF ≥ 1.3  -> PASS      -> continue to L8+
+    IF Win% ≥ 48% AND PF ≥ 1.1  -> CONDITIONAL -> continue with caution flag
     OTHERWISE                     -> FAIL       -> HOLD (no execution candidate)
 
 Produces:
@@ -68,10 +68,10 @@ except Exception:  # pragma: no cover
 _SENTINEL = object()
 
 # ── Gate thresholds ──────────────────────────────────────────────────────────
-_MC_WIN_THRESHOLD = 0.60  # Win-rate ≥ 60% -> PASS tier
-_MC_WIN_CONDITIONAL = 0.55  # Win-rate ≥ 55% -> CONDITIONAL tier
-_PF_THRESHOLD = 1.5  # Profit factor ≥ 1.5 -> PASS tier
-_PF_CONDITIONAL = 1.2  # Profit factor ≥ 1.2 -> CONDITIONAL tier
+_MC_WIN_THRESHOLD = 0.55  # Win-rate ≥ 55% -> PASS tier
+_MC_WIN_CONDITIONAL = 0.48  # Win-rate ≥ 48% -> CONDITIONAL tier
+_PF_THRESHOLD = 1.3  # Profit factor ≥ 1.3 -> PASS tier
+_PF_CONDITIONAL = 1.1  # Profit factor ≥ 1.1 -> CONDITIONAL tier
 _MIN_TRADES = 30  # Minimum sample for bootstrap MC
 
 # ── CONF12 blending weights ─────────────────────────────────────────────────
@@ -191,7 +191,8 @@ class L7ProbabilityAnalyzer:
                 required=_MIN_TRADES,
             )
             return self._apply_constitutional(
-                self._fallback_result(symbol, len(returns)), symbol,
+                self._fallback_result(symbol, len(returns)),
+                symbol,
             )
 
         try:
@@ -301,8 +302,7 @@ class L7ProbabilityAnalyzer:
                     result.setdefault("wf_avg_profit_factor", None)
             elif synthetic_returns and self._wf_validator is not None and len(returns) >= 130:
                 logger.info(
-                    "[L7] {symbol} WF skipped — returns are candle-derived (synthetic), "
-                    "not real trade P&L",
+                    "[L7] {symbol} WF skipped — returns are candle-derived (synthetic), not real trade P&L",
                     symbol=symbol,
                 )
                 result["wf_passed"] = None
@@ -338,7 +338,8 @@ class L7ProbabilityAnalyzer:
                 exc=exc,
             )
             return self._apply_constitutional(
-                self._fallback_result(symbol, len(returns)), symbol,
+                self._fallback_result(symbol, len(returns)),
+                symbol,
             )
 
     # ── Private helpers ──────────────────────────────────────────────────────
@@ -386,7 +387,9 @@ class L7ProbabilityAnalyzer:
 
     # ── Constitutional Governance Wrapper ────────────────────────────
     def _apply_constitutional(
-        self, raw_result: dict[str, Any], symbol: str,
+        self,
+        raw_result: dict[str, Any],
+        symbol: str,
     ) -> dict[str, Any]:
         """Wrap raw L7 output with constitutional governance envelope.
 
@@ -406,7 +409,8 @@ class L7ProbabilityAnalyzer:
 
             raw_result["constitutional"] = envelope
             raw_result["continuation_allowed"] = envelope.get(
-                "continuation_allowed", True,
+                "continuation_allowed",
+                True,
             )
 
             status = envelope.get("status", "PASS")
