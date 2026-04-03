@@ -67,6 +67,7 @@ import numpy as np
 from analysis.market.indicators import IndicatorEngine
 from context.live_context_bus import LiveContextBus
 from core.core_quantum_unified import TRQ3DEngine
+from core.metrics import L3_DATA_QUALITY_FLAT_TOTAL
 from engines.v11.liquidity_sweep_scorer import LiquiditySweepScorer
 
 logger = logging.getLogger(__name__)
@@ -271,13 +272,19 @@ class L3TechnicalAnalyzer:
         _pre_atr = mean_hl * 1.2 if mean_hl > 0 else 1e-10  # rough ATR proxy before formal ATR calc
         _close_range_ratio = close_range / _pre_atr if _pre_atr > 0 else 0.0
         _unique_count_low = unique_closes < max(3, len(closes) // 10)
-        # STALE = close range < 10% of ATR proxy (truly no close movement)
+        # Adaptive flatness threshold: low-ATR pairs use lower bar so they
+        # are not falsely flagged as STALE/FLAT (e.g. NZDUSD, CADCHF).
+        # Heuristic: if ATR proxy < 0.0020 (≈20 pips) → low-vol → 0.04
+        #            otherwise → standard 0.10
+        _flat_ratio_threshold = 0.04 if _pre_atr < 0.0020 else 0.10
+        # STALE = close range below adaptive ATR-ratio threshold
         # OR all closes literally identical (unique_closes <= 2)
-        _close_is_flat = (unique_closes <= 2) or (_unique_count_low and _close_range_ratio < 0.10)
+        _close_is_flat = (unique_closes <= 2) or (_unique_count_low and _close_range_ratio < _flat_ratio_threshold)
         _hl_is_real = mean_hl > 0 and unique_highs > 3 and unique_lows > 3
         _data_quality = "HEALTHY"
         if _close_is_flat and _hl_is_real:
             _data_quality = "STALE_CLOSE"
+            L3_DATA_QUALITY_FLAT_TOTAL.labels(symbol=symbol, quality="STALE_CLOSE").inc()
             logger.warning(
                 "[L3] %s DATA QUALITY: close prices stale "
                 "(unique_closes=%d/%d range_ratio=%.4f close_range=%.8f "
@@ -292,6 +299,7 @@ class L3TechnicalAnalyzer:
             )
         elif _close_is_flat and not _hl_is_real:
             _data_quality = "FLAT"
+            L3_DATA_QUALITY_FLAT_TOTAL.labels(symbol=symbol, quality="FLAT").inc()
             logger.warning(
                 "[L3] %s DATA QUALITY: ALL price data appears flat/stale "
                 "(unique_closes=%d, unique_highs=%d, unique_lows=%d). "
@@ -328,8 +336,7 @@ class L3TechnicalAnalyzer:
         if _data_quality == "STALE_CLOSE" and len(highs) >= 30:
             analysis_closes = [(h + l) / 2.0 for h, l in zip(highs, lows, strict=False)]  # noqa: E741
             logger.info(
-                "[L3] %s using HL-midpoint synthetic closes for analysis "
-                "(stale close data detected). std=%.6f → %.6f",
+                "[L3] %s using HL-midpoint synthetic closes for analysis (stale close data detected). std=%.6f → %.6f",
                 symbol,
                 close_std,
                 float(np.std(analysis_closes)),
@@ -1152,10 +1159,7 @@ class L3TechnicalAnalyzer:
                 recent_prices = [float(c["close"]) for c in recent]
 
             if len(recent_prices) >= 2:
-                close_deltas = [
-                    abs(recent_prices[i] - recent_prices[i - 1])
-                    for i in range(1, len(recent_prices))
-                ]
+                close_deltas = [abs(recent_prices[i] - recent_prices[i - 1]) for i in range(1, len(recent_prices))]
                 mean_close_delta = sum(close_deltas) / len(close_deltas)
                 close_energy = mean_close_delta / max(atr, 1e-9) if atr > 0 else 0.0
                 close_energy = float(min(1.0, max(0.0, close_energy)))

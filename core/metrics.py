@@ -913,3 +913,23 @@ VAULT_SYNC = _R.gauge(
     "Vault sync composite score from sovereignty enforcement (0-1)",
     label_names=("symbol",),
 )
+
+# ══════════════════════════════════════════════════════════
+#  L3 data quality observability
+# ══════════════════════════════════════════════════════════
+
+L3_DATA_QUALITY_FLAT_TOTAL = _R.counter(
+    "wolf_l3_data_quality_flat_total",
+    "Number of L3 data-quality FLAT or STALE_CLOSE detections",
+    label_names=("symbol", "quality"),
+)
+
+# ══════════════════════════════════════════════════════════
+#  Per-pair tick ingest gauge
+# ══════════════════════════════════════════════════════════
+
+INGEST_TICKS_PER_PAIR = _R.counter(
+    "wolf_ingest_ticks_per_pair_total",
+    "Accepted (non-duplicate) ticks per symbol",
+    label_names=("symbol",),
+)

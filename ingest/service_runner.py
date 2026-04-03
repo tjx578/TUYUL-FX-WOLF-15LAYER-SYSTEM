@@ -264,7 +264,6 @@ async def run_ingest_services(
             forming_pub.register_builder(_sym, "H1", _h1b)
 
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
-            mark_pair_tick(symbol, ts.timestamp())
             tick_ts = ts.timestamp()
             if is_duplicate_pair_tick(symbol, price, tick_ts):
                 return

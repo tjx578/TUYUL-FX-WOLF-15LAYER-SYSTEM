@@ -16,6 +16,7 @@ from core.metrics import (
     INGEST_CACHE_MODE,
     INGEST_FRESH_PAIRS,
     INGEST_HEARTBEAT_AGE_SECONDS,
+    INGEST_TICKS_PER_PAIR,
     INGEST_WS_CONNECTED,
 )
 
@@ -31,9 +32,12 @@ producer_last_heartbeat_ts = 0.0
 
 # ── Per-pair tick tracking ────────────────────────────────────────
 pair_last_tick_ts: dict[str, float] = {}
-pair_last_tick_fingerprint: dict[str, tuple[float, float]] = {}
+pair_last_tick_fingerprint: dict[str, tuple[tuple[int, float], float]] = {}
 
 _PRODUCER_FRESHNESS_SEC = max(5.0, float(os.getenv("INGEST_PRODUCER_FRESHNESS_SEC", "20")))
+# Ticks with same exchange fingerprint arriving within this window are true duplicates.
+# Beyond this window, same-fingerprint ticks are treated as separate events.
+_DEDUP_REFRACTORY_S = float(os.getenv("INGEST_DEDUP_REFRACTORY_S", "0.05"))
 _WS_CONNECT_GRACE_SEC = float(os.getenv("INGEST_WS_CONNECT_GRACE_SEC", "45"))
 _CACHE_MODES = ("unknown", "warmup", "stale_cache", "failed_no_cache")
 
@@ -52,6 +56,7 @@ def mark_pair_tick(symbol: str, ts: float | None = None) -> None:
     if not pair:
         return
     pair_last_tick_ts[pair] = time() if ts is None else float(ts)
+    INGEST_TICKS_PER_PAIR.labels(symbol=pair).inc()
 
 
 def set_cache_mode(mode: str) -> None:
@@ -78,14 +83,25 @@ def emit_ingest_runtime_metrics(connected: bool) -> None:
 
 
 def is_duplicate_pair_tick(symbol: str, price: float, ts: float) -> bool:
-    """Return True when tick fingerprint matches the last accepted tick."""
+    """Return True when tick fingerprint matches the last accepted tick.
+
+    Uses ms-precision timestamp + refractory window to avoid aggressively
+    deduplicating legitimate ticks that share the same second-precision
+    exchange timestamp on low-volatility pairs (e.g. NZDUSD).
+    """
     pair = str(symbol).strip().upper()
     if not pair:
         return False
-    fingerprint = (float(ts), float(price))
-    if pair_last_tick_fingerprint.get(pair) == fingerprint:
-        return True
-    pair_last_tick_fingerprint[pair] = fingerprint
+    ts_ms = round(ts * 1000)
+    price_r = round(price, 8)
+    fingerprint = (ts_ms, price_r)
+    now = time()
+    prev = pair_last_tick_fingerprint.get(pair)
+    if prev is not None:
+        prev_fp, prev_local = prev
+        if prev_fp == fingerprint and (now - prev_local) < _DEDUP_REFRACTORY_S:
+            return True
+    pair_last_tick_fingerprint[pair] = (fingerprint, now)
     return False
 
 
