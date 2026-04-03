@@ -281,6 +281,9 @@ class L8PipelineAdapter:
 
         if self._inner is not None:
             result = self._inner.analyze(layer_outputs)
+            # Pass-through LFS data if available (for L8 constitutional rescue)
+            if "lorentzian" in kwargs:
+                result["lorentzian"] = kwargs["lorentzian"]
             return self._apply_constitutional(result)
 
         # Minimal fallback when L8TIIIntegrityAnalyzer unavailable
@@ -364,7 +367,8 @@ class L8PipelineAdapter:
 
             raw_result["constitutional"] = envelope
             raw_result["continuation_allowed"] = envelope.get(
-                "continuation_allowed", True,
+                "continuation_allowed",
+                True,
             )
 
             status = envelope.get("status", "PASS")

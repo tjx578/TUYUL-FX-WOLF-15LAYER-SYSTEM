@@ -26,6 +26,7 @@ Zone: analysis/ — pure read-only analysis, no execution side-effects.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
@@ -89,6 +90,14 @@ class L8BlockerCode(str, Enum):
 
 HIGH_THRESHOLD = 0.88
 MID_THRESHOLD = 0.75
+
+# ── LFS borderline rescue constants (conservative) ───────────────
+_ENABLE_L8_LFS_RESCUE: bool = os.getenv("ENABLE_L8_LFS_RESCUE", "0") == "1"
+_LFS_RESCUE_SCORE_MIN = 0.72
+_LFS_RESCUE_SCORE_MAX = MID_THRESHOLD  # 0.75
+_LFS_RESCUE_LRCE_MIN = 0.970
+_LFS_RESCUE_DRIFT_MAX = 0.0045
+_LFS_RESCUE_GRAD_MAX = 0.005
 MIN_SAMPLE_WARN = 10
 
 
@@ -104,6 +113,51 @@ def _score_band(integrity_score: float) -> L8CoherenceBand:
     if integrity_score >= MID_THRESHOLD:
         return L8CoherenceBand.MID
     return L8CoherenceBand.LOW
+
+
+def _can_apply_lfs_borderline_rescue(
+    l8_analysis: dict[str, Any],
+    integrity_score: float,
+    freshness: L8FreshnessState,
+    warmup: L8WarmupState,
+    fallback: L8FallbackClass,
+    blockers: list[L8BlockerCode],
+) -> bool:
+    """Check whether LFS borderline rescue may promote FAIL → WARN.
+
+    Conditions (ALL must hold):
+    - No hard blockers except INTEGRITY_SCORE_BELOW_MINIMUM (which is the
+      exact condition rescue is designed to soften)
+    - Freshness == FRESH
+    - Warmup == READY
+    - Fallback is not ILLEGAL
+    - Integrity score in narrow borderline window [0.72, 0.75)
+    - LFS rescue_eligible == True with strict LRCE/drift/gradient checks
+    """
+    # Allow INTEGRITY_SCORE_BELOW_MINIMUM — that's the blocker we rescue.
+    # Any OTHER blocker → reject.
+    hard_blockers = [b for b in blockers if b != L8BlockerCode.INTEGRITY_SCORE_BELOW_MINIMUM]
+    if hard_blockers:
+        return False
+    if freshness != L8FreshnessState.FRESH:
+        return False
+    if warmup != L8WarmupState.READY:
+        return False
+    if fallback == L8FallbackClass.ILLEGAL_FALLBACK:
+        return False
+    if not (_LFS_RESCUE_SCORE_MIN <= integrity_score < _LFS_RESCUE_SCORE_MAX):
+        return False
+
+    lfs = l8_analysis.get("lorentzian", {})
+    if not isinstance(lfs, dict):
+        return False
+
+    return bool(
+        lfs.get("rescue_eligible", False)
+        and float(lfs.get("lrce", 0.0)) >= _LFS_RESCUE_LRCE_MIN
+        and float(lfs.get("drift", 1.0)) <= _LFS_RESCUE_DRIFT_MAX
+        and abs(float(lfs.get("gradient_signed", 1.0))) <= _LFS_RESCUE_GRAD_MAX
+    )
 
 
 def _check_upstream(upstream_output: dict[str, Any]) -> list[L8BlockerCode]:
@@ -281,13 +335,15 @@ def _compress_status(
 
     # Legal degraded envelope → WARN
     is_legal_warn = (
-        freshness in (
+        freshness
+        in (
             L8FreshnessState.FRESH,
             L8FreshnessState.STALE_PRESERVED,
             L8FreshnessState.DEGRADED,
         )
         and warmup in (L8WarmupState.READY, L8WarmupState.PARTIAL)
-        and fallback in (
+        and fallback
+        in (
             L8FallbackClass.NO_FALLBACK,
             L8FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             L8FallbackClass.LEGAL_EMERGENCY_PRESERVE,
@@ -412,8 +468,14 @@ class L8ConstitutionalGovernor:
 
         # ── Step 10: compress status ─────────────────────────────────
         status = _compress_status(
-            blockers, band, freshness, warmup, fallback,
-            tii_warnings, integrity_score, sample_count,
+            blockers,
+            band,
+            freshness,
+            warmup,
+            fallback,
+            tii_warnings,
+            integrity_score,
+            sample_count,
         )
 
         continuation_allowed = status != L8Status.FAIL
@@ -421,12 +483,44 @@ class L8ConstitutionalGovernor:
 
         # ── Step 11: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(
-            freshness, warmup, fallback, band,
-            tii_warnings, sample_count, gate_status,
+            freshness,
+            warmup,
+            fallback,
+            band,
+            tii_warnings,
+            sample_count,
+            gate_status,
         )
         if status == L8Status.PASS and fallback == L8FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:  # noqa: SIM102
             if "PRIMARY_SUBSTITUTE_USED" not in warning_codes:
                 warning_codes.append("PRIMARY_SUBSTITUTE_USED")
+
+        # ── Step 11b: LFS borderline rescue (guarded by feature flag) ─
+        if (
+            _ENABLE_L8_LFS_RESCUE
+            and status == L8Status.FAIL
+            and _can_apply_lfs_borderline_rescue(
+                l8_analysis,
+                integrity_score,
+                freshness,
+                warmup,
+                fallback,
+                blockers,
+            )
+        ):
+            status = L8Status.WARN
+            continuation_allowed = True
+            next_targets = ["L9"]
+            warning_codes.append("LFS_BORDERLINE_RESCUE")
+            notes.append(
+                f"LFS rescue applied: score={integrity_score:.4f} "
+                f"lrce={l8_analysis.get('lorentzian', {}).get('lrce', 0):.4f}"
+            )
+            logger.info(
+                "[L8-GOV] %s LFS borderline rescue: score=%.4f → status promoted FAIL→WARN",
+                input_ref,
+                integrity_score,
+            )
 
         # ── Step 12: assemble features ───────────────────────────────
         features = {
@@ -443,10 +537,7 @@ class L8ConstitutionalGovernor:
         }
 
         routing = {
-            "source_used": [
-                s for s in ["tii", "twms", "integrity"]
-                if l8_analysis.get("valid", False)
-            ],
+            "source_used": [s for s in ["tii", "twms", "integrity"] if l8_analysis.get("valid", False)],
             "fallback_used": fallback != L8FallbackClass.NO_FALLBACK,
             "next_legal_targets": next_targets,
         }

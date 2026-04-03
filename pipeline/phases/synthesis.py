@@ -272,4 +272,17 @@ def build_l12_synthesis(
     synthesis["regime_type"] = _regime_type
     synthesis["atr_ratio"] = _atr_ratio
 
+    # ── Lorentzian Field Stabilizer placeholder (overwritten by pipeline) ──
+    _trq3d = synthesis.get("trq3d", {})
+    synthesis["lorentzian"] = {
+        "e_norm": 0.0,
+        "lrce": 0.0,
+        "gradient_signed": 0.0,
+        "gradient_abs": 0.0,
+        "drift": float(_trq3d.get("drift", 0.0)) if isinstance(_trq3d, dict) else 0.0,
+        "field_phase": "UNKNOWN",
+        "quality_band": "UNKNOWN",
+        "rescue_eligible": False,
+    }
+
     return synthesis

@@ -18,6 +18,11 @@ from core.metrics import (
     L7_PROFIT_FACTOR,
     L7_RISK_OF_RUIN,
     L7_WIN_PROBABILITY,
+    LFS_CONFIDENCE_ADJ,
+    LFS_DRIFT,
+    LFS_LRCE,
+    LFS_QUALITY_BAND_TOTAL,
+    LFS_RESCUE_TOTAL,
     PIPELINE_DURATION,
     PIPELINE_ERROR,
     PIPELINE_RUNS,
@@ -188,3 +193,22 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
     )
     if vault_sync is not None:
         VAULT_SYNC.labels(symbol=symbol).set(_to_float(vault_sync))
+
+    # ── Lorentzian Field Stabilizer (LFS) observability ──────────────────
+    lfs = synthesis.get("lorentzian", {})
+    if isinstance(lfs, dict) and lfs.get("field_phase") not in (None, "UNKNOWN"):
+        LFS_LRCE.labels(symbol=symbol).set(_to_float(lfs.get("lrce", 0.0)))
+        LFS_DRIFT.labels(symbol=symbol).set(_to_float(lfs.get("drift", 0.0)))
+        _lfs_band = str(lfs.get("quality_band", "UNKNOWN"))
+        LFS_QUALITY_BAND_TOTAL.labels(symbol=symbol, band=_lfs_band).inc()
+
+    # LFS confidence_adj from enrichment
+    _lfs_enrich = result.get("synthesis", {}).get("enrichment", {}).get("lorentzian", {})
+    if isinstance(_lfs_enrich, dict) and "confidence_adj" in _lfs_enrich:
+        LFS_CONFIDENCE_ADJ.labels(symbol=symbol).set(_to_float(_lfs_enrich["confidence_adj"]))
+
+    # L8 rescue counter
+    l8_const = result.get("synthesis", {}).get("enrichment", {})
+    _l8_warnings = result.get("l8", {}).get("constitutional", {}).get("warning_codes", [])
+    if "LFS_BORDERLINE_RESCUE" in _l8_warnings:
+        LFS_RESCUE_TOTAL.labels(symbol=symbol).inc()

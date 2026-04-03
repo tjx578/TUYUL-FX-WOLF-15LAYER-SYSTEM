@@ -77,7 +77,6 @@ from config_loader import CONFIG
 # third-party imports
 # import ...
 # local imports
-from constitution.final_normalized_payload_exporter import FinalNormalizedPayloadExporter
 from constitution.l12_router_evaluator import L12Input, L12RouterEvaluator
 from constitution.signal_throttle import SignalThrottle
 from constitution.verdict_engine import generate_l12_verdict
@@ -208,6 +207,9 @@ class WolfConstitutionalPipeline:
     # Avoid warmup reject error storms during startup/reconnect windows.
     WARMUP_WARNING_LOG_INTERVAL_SEC: float = 900.0
 
+    # ── Feature flags (env-driven, safe rollout) ──────────────────
+    ENABLE_LFS_SOFTENER: bool = os.getenv("ENABLE_LFS_SOFTENER", "0") == "1"
+
     def __init__(self) -> None:
         """Initialize with lazy loading to avoid circular imports."""
         super().__init__()
@@ -265,6 +267,10 @@ class WolfConstitutionalPipeline:
 
         # Engine Enrichment Layer (Phase 2.5 — 9 facade engines)
         self._enrichment: Any = None  # lazy-loaded
+
+        # Lorentzian Field Stabilizer — advisory enricher (Phase 2.5)
+        self._lorentzian: Any = None  # lazy-loaded
+        self._lfs_history: dict[str, dict[str, float]] = {}  # per-symbol α–β–γ snapshots
 
         # Vault health checker (lazy-initialized on first use)
         self._vault_checker: Any = None  # type: VaultHealthChecker | None
@@ -886,13 +892,16 @@ class WolfConstitutionalPipeline:
 
             _phase1_adapter = Phase1ChainAdapter(
                 l1_callable=lambda sym: cast(
-                    dict[str, Any], _timed_layer_call(l1_analyzer.analyze, "L1", sym),
+                    dict[str, Any],
+                    _timed_layer_call(l1_analyzer.analyze, "L1", sym),
                 ),
                 l2_callable=lambda sym: cast(
-                    dict[str, Any], _timed_layer_call(l2_analyzer.analyze, "L2", sym),
+                    dict[str, Any],
+                    _timed_layer_call(l2_analyzer.analyze, "L2", sym),
                 ),
                 l3_callable=lambda sym: cast(
-                    dict[str, Any], _timed_layer_call(l3_analyzer.analyze, "L3", sym),
+                    dict[str, Any],
+                    _timed_layer_call(l3_analyzer.analyze, "L3", sym),
                 ),
                 l3_l2_injector=l3_analyzer.set_l2_output,
             )
@@ -911,8 +920,7 @@ class WolfConstitutionalPipeline:
                 _halt = _phase1_result.halted_at or "UNKNOWN"
                 errors.extend(_phase1_result.errors)
                 logger.warning(
-                    "[Pipeline v8.0] Phase 1 HALT at {} | symbol={} "
-                    "chain_status={} errors={}",
+                    "[Pipeline v8.0] Phase 1 HALT at {} | symbol={} chain_status={} errors={}",
                     _halt,
                     symbol,
                     _phase1_result.status.value,
@@ -965,17 +973,13 @@ class WolfConstitutionalPipeline:
             # Halt check: L4 must allow continuation before L5 runs
             if not l4.get("continuation_allowed", l4.get("valid", True)):
                 logger.warning(
-                    "[Pipeline v8.0] Phase 2 HALT at L4 | symbol={} "
-                    "status={} blockers={}",
+                    "[Pipeline v8.0] Phase 2 HALT at L4 | symbol={} status={} blockers={}",
                     symbol,
                     _l4_status,
                     _l4_const.get("blocker_codes", []),
                 )
                 errors.append(f"L4_HALT:status={_l4_status}")
-                errors.extend(
-                    f"L4_BLOCKER:{b}"
-                    for b in _l4_const.get("blocker_codes", [])
-                )
+                errors.extend(f"L4_BLOCKER:{b}" for b in _l4_const.get("blocker_codes", []))
                 return _early_exit_with_map(errors, time.time() - start_time)
 
             # ── Step 2: L5 (sequential, with L4 upstream) ────────
@@ -986,7 +990,10 @@ class WolfConstitutionalPipeline:
             l5 = cast(
                 dict[str, Any],
                 _timed_layer_call(
-                    l5_engine.analyze, "L5", symbol, volatility_profile=l2,
+                    l5_engine.analyze,
+                    "L5",
+                    symbol,
+                    volatility_profile=l2,
                 ),
             )
             layers_executed.append("L5")
@@ -1005,17 +1012,13 @@ class WolfConstitutionalPipeline:
             # Halt check: L5 must allow continuation before Phase 3
             if not l5.get("continuation_allowed", l5.get("valid", True)):
                 logger.warning(
-                    "[Pipeline v8.0] Phase 2 HALT at L5 | symbol={} "
-                    "status={} blockers={}",
+                    "[Pipeline v8.0] Phase 2 HALT at L5 | symbol={} status={} blockers={}",
                     symbol,
                     _l5_status,
                     _l5_const.get("blocker_codes", []),
                 )
                 errors.append(f"L5_HALT:status={_l5_status}")
-                errors.extend(
-                    f"L5_BLOCKER:{b}"
-                    for b in _l5_const.get("blocker_codes", [])
-                )
+                errors.extend(f"L5_BLOCKER:{b}" for b in _l5_const.get("blocker_codes", []))
                 return _early_exit_with_map(errors, time.time() - start_time)
 
             # ═══════════════════════════════════════════════════════
@@ -1539,8 +1542,7 @@ class WolfConstitutionalPipeline:
             _p4_l6_status = l6.get("constitutional", {}).get("status", "N/A")
             _p4_l10_status = l10.get("constitutional", {}).get("status", "N/A")
             logger.info(
-                "[Pipeline v8.0] Phase 4 constitutional: L11={} L6={} L10={} "
-                "| L11_cont={} L6_cont={} L10_cont={}",
+                "[Pipeline v8.0] Phase 4 constitutional: L11={} L6={} L10={} | L11_cont={} L6_cont={} L10_cont={}",
                 _p4_l11_status,
                 _p4_l6_status,
                 _p4_l10_status,
@@ -1559,8 +1561,7 @@ class WolfConstitutionalPipeline:
             if not _raw_sl or _raw_sl <= 0 or not _raw_tp or _raw_tp <= 0:
                 _l11_reason = l11.get("reason", "unknown")
                 logger.warning(
-                    "[Pipeline v8.0] {} SL/TP=0 → NO_TRADE "
-                    "(reason={} sl={:.5f} tp={:.5f})",
+                    "[Pipeline v8.0] {} SL/TP=0 → NO_TRADE (reason={} sl={:.5f} tp={:.5f})",
                     symbol,
                     _l11_reason,
                     _raw_sl or 0.0,
@@ -1649,8 +1650,7 @@ class WolfConstitutionalPipeline:
                 enrichment_data["constitutional"] = _phase25_constitutional
 
                 logger.info(
-                    "[Pipeline v8.0] Phase 2.5: Enrichment -- {} "
-                    "score={:.3f} engines_ok={}/9 status={}",
+                    "[Pipeline v8.0] Phase 2.5: Enrichment -- {} score={:.3f} engines_ok={}/9 status={}",
                     symbol,
                     enrichment_result.enrichment_score,
                     _enrich_ok,
@@ -1821,6 +1821,78 @@ class WolfConstitutionalPipeline:
                 current_adj = synthesis["layers"].get("enrichment_confidence_adj", 0.0)
                 synthesis["layers"]["enrichment_confidence_adj"] = current_adj - _dq_penalty
                 synthesis["layers"]["data_quality_penalty"] = round(_dq_penalty, 4)
+
+            # ── Lorentzian Field Stabilizer (advisory enrichment) ─────
+            # Runs under ENABLE_LFS_SOFTENER feature flag.
+            # Injects bounded confidence_adj and diagnostic block into
+            # synthesis. Never overrides L12. Guards: data quality, warmup.
+            if self.ENABLE_LFS_SOFTENER:
+                try:
+                    if self._lorentzian is None:
+                        from engines.lorentzian_enricher import (  # noqa: PLC0415
+                            LorentzianFieldEnricher,
+                        )
+
+                        self._lorentzian = LorentzianFieldEnricher()
+
+                    _lfs_prev = self._lfs_history.get(symbol)
+                    _lfs_result = self._lorentzian.analyze(synthesis, history=_lfs_prev)
+
+                    # Store α–β–γ snapshot for next cycle delta computation
+                    from analysis.reflective.lorentzian_field_adapter import (  # noqa: PLC0415
+                        map_layer_results_to_abg,
+                    )
+
+                    _a, _b, _g = map_layer_results_to_abg(synthesis)
+                    self._lfs_history[symbol] = {"alpha": _a, "beta": _b, "gamma": _g}
+
+                    # Inject into enrichment data
+                    enrichment_data["lorentzian"] = {
+                        "e_norm": _lfs_result.e_norm,
+                        "lrce": _lfs_result.lrce,
+                        "gradient_signed": _lfs_result.gradient_signed,
+                        "gradient_abs": _lfs_result.gradient_abs,
+                        "drift": _lfs_result.drift,
+                        "field_phase": _lfs_result.field_phase,
+                        "quality_band": _lfs_result.quality_band,
+                        "rescue_eligible": _lfs_result.rescue_eligible,
+                        "confidence_adj": _lfs_result.confidence_adj,
+                        "advisory_only": True,
+                    }
+
+                    # Overwrite synthesis placeholder with real values
+                    synthesis["lorentzian"] = {
+                        "e_norm": round(_lfs_result.e_norm, 4),
+                        "lrce": round(_lfs_result.lrce, 4),
+                        "gradient_signed": round(_lfs_result.gradient_signed, 4),
+                        "gradient_abs": round(_lfs_result.gradient_abs, 4),
+                        "drift": round(_lfs_result.drift, 4),
+                        "field_phase": _lfs_result.field_phase,
+                        "quality_band": _lfs_result.quality_band,
+                        "rescue_eligible": _lfs_result.rescue_eligible,
+                    }
+
+                    # Guard: disable rescue if data quality degraded or warmup not ready
+                    _warmup_ready = warmup.get("ready", True)
+                    if _dq_penalty > 0 or not _warmup_ready:
+                        synthesis["lorentzian"]["rescue_eligible"] = False
+
+                    # Apply bounded confidence adjustment
+                    _lfs_adj = _lfs_result.confidence_adj
+                    if _lfs_adj != 0.0:
+                        _cur = synthesis["layers"].get("enrichment_confidence_adj", 0.0)
+                        synthesis["layers"]["enrichment_confidence_adj"] = _cur + _lfs_adj
+
+                    logger.info(
+                        "[Pipeline v8.0] LFS {} | lrce={:.4f} band={} rescue={} adj={:.3f}",
+                        symbol,
+                        _lfs_result.lrce,
+                        _lfs_result.quality_band,
+                        synthesis["lorentzian"]["rescue_eligible"],
+                        _lfs_adj,
+                    )
+                except Exception as exc:
+                    logger.warning("[Pipeline v8.0] LFS enrichment failed (non-fatal): {}", exc)
 
             # ── L14-B Adaptive Penalty Injection ─────────────────────
             # Mines J3/J4 journal records for historically underperforming

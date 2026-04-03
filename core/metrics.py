@@ -933,3 +933,37 @@ INGEST_TICKS_PER_PAIR = _R.counter(
     "Accepted (non-duplicate) ticks per symbol",
     label_names=("symbol",),
 )
+
+# ══════════════════════════════════════════════════════════
+#  Lorentzian Field Stabilizer (LFS) observability
+# ══════════════════════════════════════════════════════════
+
+LFS_LRCE = _R.gauge(
+    "wolf_lfs_lrce",
+    "LFS Lorentzian Reflective Coherence Estimate (0-1)",
+    label_names=("symbol",),
+)
+
+LFS_DRIFT = _R.gauge(
+    "wolf_lfs_drift",
+    "LFS drift value (lower is better)",
+    label_names=("symbol",),
+)
+
+LFS_CONFIDENCE_ADJ = _R.gauge(
+    "wolf_lfs_confidence_adj",
+    "LFS confidence adjustment applied to enrichment (-0.04 to +0.03)",
+    label_names=("symbol",),
+)
+
+LFS_QUALITY_BAND_TOTAL = _R.counter(
+    "wolf_lfs_quality_band_total",
+    "LFS quality band occurrences",
+    label_names=("symbol", "band"),
+)
+
+LFS_RESCUE_TOTAL = _R.counter(
+    "wolf_lfs_rescue_total",
+    "Number of L8 borderline rescues triggered by LFS",
+    label_names=("symbol",),
+)
