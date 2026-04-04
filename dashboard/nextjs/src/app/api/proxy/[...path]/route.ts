@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveDashboardUpstream } from "@/lib/server/dashboardTopology";
 
 /**
  * Single canonical backend proxy — runtime route handler.
@@ -16,9 +17,14 @@ import { NextRequest, NextResponse } from "next/server";
  * Traceability headers on every response:
  *   x-proxy-target  — resolved backend origin (no credentials/path)
  *   x-proxy-status  — "ok" | "misconfigured" | "error"
+ *   x-proxy-surface — "core-api" | "bff" (hybrid topology indicator)
  */
 
-/** Resolved backend origin or null when not configured. */
+/**
+ * Resolved backend origin or null when not configured.
+ * Retained as fallback for non-topology callers; prefer
+ * resolveDashboardUpstream() for proxy routing.
+ */
 function getBackendUrl(): string | null {
   const url =
     process.env.INTERNAL_API_URL ||
@@ -40,10 +46,13 @@ async function proxyRequest(
   request: NextRequest,
   path: string[]
 ): Promise<NextResponse> {
-  const backendUrl = getBackendUrl();
+  const joinedPath = path.join("/");
+
+  // Resolve upstream via hybrid topology (core-api or BFF).
+  const upstream = resolveDashboardUpstream(joinedPath);
 
   // Fail-fast: no backend URL configured outside of local dev
-  if (!backendUrl) {
+  if (!upstream) {
     console.error(
       "[api/proxy] PROXY_MISCONFIGURED: INTERNAL_API_URL / NEXT_PUBLIC_API_BASE_URL not set."
     );
@@ -59,12 +68,13 @@ async function proxyRequest(
         headers: {
           "x-proxy-target": "unresolved",
           "x-proxy-status": "misconfigured",
+          "x-proxy-surface": "unknown",
         },
       }
     );
   }
 
-  const joinedPath = path.join("/");
+  const backendUrl = upstream.url;
 
   // Canonical path mapping.
   //
@@ -144,6 +154,7 @@ async function proxyRequest(
     // Traceability headers
     responseHeaders.set("x-proxy-target", targetLabel);
     responseHeaders.set("x-proxy-status", "ok");
+    responseHeaders.set("x-proxy-surface", upstream.surface);
 
     return new NextResponse(response.body, {
       status: response.status,
@@ -164,6 +175,7 @@ async function proxyRequest(
         headers: {
           "x-proxy-target": targetLabel,
           "x-proxy-status": "error",
+          "x-proxy-surface": upstream.surface,
         },
       }
     );

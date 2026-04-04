@@ -80,6 +80,13 @@ eliminating stale-env bugs.
 Edge middleware injects the session cookie as an `Authorization` header
 only for `/api/proxy/` requests.
 
+When an optional dashboard-BFF service is deployed, the proxy may route
+a defined allowlist of paths to the BFF upstream instead of core-api.
+The routing decision is made by `resolveDashboardUpstream()` at request
+time. Non-allowlisted paths always resolve to core-api. See
+`docs/architecture/dashboard-hybrid-topology.md` for the full routing
+matrix and safety rules.
+
 Internal Next.js routes (`/api/set-session`, `/api/auth/ws-ticket`) are
 NOT proxied — they handle their own auth.
 
@@ -107,3 +114,31 @@ The dashboard is allowed to control.
 It is not allowed to decide constitutionally.
 
 Layer 12 remains the sole trade verdict authority.
+
+This rule applies equally to any optional dashboard-BFF service.
+A BFF may aggregate, cache, or pre-process dashboard-facing data,
+but it must not synthesize verdicts, override Layer 12, or bypass
+risk/execution boundaries.
+
+## Optional Dashboard-BFF Topology
+
+An optional backend-for-frontend (BFF) service may be deployed alongside
+core-api to serve dashboard-specific aggregation, caching, or
+pre-processing workloads.
+
+Rules:
+
+- The BFF is non-authoritative. It must not produce constitutional
+  verdicts, risk decisions, or execution commands.
+- The BFF is surface-scoped. It serves only the dashboard frontend
+  and must not become a general-purpose API gateway.
+- Routing to the BFF is controlled by an explicit allowlist in the
+  Next.js proxy layer (`resolveDashboardUpstream()`).
+- All WebSocket channels remain direct to core-api in Phase 1.
+- The BFF must forward session auth headers unchanged.
+- If the BFF is unreachable, the proxy must NOT fall back silently
+  to core-api for BFF-allowlisted paths — it must return an error.
+  This prevents phantom routing drift.
+
+For the full routing matrix, deployment rules, and observability
+contract, see `docs/architecture/dashboard-hybrid-topology.md`.

@@ -20,6 +20,7 @@ The system is composed of distinct runtime concerns:
 - trade service / allocation + execution workers
 - API surfaces
 - dashboard frontend
+- dashboard-bff / dashboard-realtime-gateway (optional, non-authoritative)
 - Redis and persistence services
 
 ## Topology Rule
@@ -57,6 +58,15 @@ Responsible for allocation and execution worker runtime behavior.
 Responsible for owner-operated control, diagnostics, and frontend transport orchestration.
 It is not constitutional verdict authority.
 
+### Dashboard-BFF (Optional)
+
+When deployed, responsible for dashboard-specific data aggregation, caching,
+and pre-processing. It is surface-scoped to the dashboard frontend only.
+It is not constitutional verdict authority and must not produce risk decisions
+or execution commands. The Next.js proxy routes a defined allowlist of paths
+to the BFF upstream; all other paths resolve to core-api.
+See `docs/architecture/dashboard-hybrid-topology.md` for the full contract.
+
 ## Current Known Architecture Debt
 
 The following debt is acknowledged until removed:
@@ -75,6 +85,8 @@ The following items were previously listed as debt and have been resolved:
 - `/healthz` and `/readyz` are infrastructure/service health surfaces
 - dashboard/operator status must be presented on a separate surface
 - frontend relay endpoints must not redefine infra semantics
+- if a dashboard-BFF is deployed, it must expose its own `/healthz` and
+  `/readyz` endpoints; its health must not be conflated with core-api health
 
 ## Concurrency Model
 
@@ -92,6 +104,7 @@ Use this file for:
 - current deployment reasoning
 - current service boundary review
 - current auth/proxy/health cleanup decisions
+- optional hybrid dashboard topology decisions
 
 Use historical lineage files for:
 

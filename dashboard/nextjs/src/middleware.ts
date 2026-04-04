@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
  *   1. AUTH RESOLUTION — read session cookie, nothing more.
  *   2. PROXY HEADER INJECTION — attach resolved token to outgoing
  *      proxy requests so secrets stay out of the client JS bundle.
+ *      This injection is surface-agnostic: it applies whether the
+ *      proxy routes to core-api or to the optional dashboard-BFF.
  *   3. PAGE ROUTING — owner-only dashboard, no redirect guards.
  *
  * These concerns are kept as pure functions called from the

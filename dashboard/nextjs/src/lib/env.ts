@@ -7,8 +7,12 @@
  *   REST  → always through /api/proxy/[...path] runtime proxy.
  *          No build-time rewrites — the proxy reads INTERNAL_API_URL at
  *          request time, so stale-env bugs are impossible.
+ *          Hybrid routing: when INTERNAL_DASHBOARD_BFF_URL is set, the
+ *          proxy routes BFF-allowlisted paths to a separate upstream.
+ *          See lib/server/dashboardTopology.ts for the resolver.
  *   WS    → MUST be direct  → Vercel cannot upgrade WebSocket connections.
  *          Set NEXT_PUBLIC_WS_BASE_URL to the Railway/backend wss:// origin.
+ *          Phase 1: WS remains direct-to-backend; no BFF WS relay.
  *
  * Env vars in use (exactly these two, nothing else):
  *   NEXT_PUBLIC_API_BASE_URL   optional  override REST base (default: relative via proxy)

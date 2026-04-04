@@ -220,6 +220,7 @@ Sistem berjalan dalam beberapa service:
 ```text
 Vercel → Dashboard
 Railway → API + Engine + Orchestrator
+Railway → Dashboard-BFF (optional, non-authoritative)
 Railway → Redis
 Railway → PostgreSQL
 Railway → EA Bridge (optional)
@@ -514,6 +515,11 @@ It must not:
 * mutate execution truth arbitrarily,
 * rewrite journal history,
 * weaken protected constraints without proper governance.
+
+An optional dashboard-BFF service may be deployed alongside core-api
+to serve dashboard-specific aggregation and caching workloads.
+The BFF is non-authoritative and surface-scoped to the dashboard only.
+See `docs/architecture/dashboard-hybrid-topology.md` for the full contract.
 
 ---
 
