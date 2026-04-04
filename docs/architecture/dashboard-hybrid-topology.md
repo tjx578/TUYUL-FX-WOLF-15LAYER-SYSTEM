@@ -72,8 +72,25 @@ Proxy and status route handlers add surface headers for debugging:
 | `x-status-surface` | `core-api` or `bff` | `/api/status` |
 | `x-proxy-target` | upstream URL | `/api/proxy/[...path]` (existing) |
 | `x-proxy-status` | HTTP status code | `/api/proxy/[...path]` (existing) |
+| `x-request-id` | UUID v4 | All proxied requests |
 
 These headers are informational and must not be used for routing decisions.
+
+### Trace ID Propagation
+
+Every proxied request must carry an `x-request-id` header for end-to-end
+tracing across the request chain: browser → Next.js proxy → BFF → core-api.
+
+Rules:
+
+- The Next.js proxy generates `x-request-id` (UUID v4) if the inbound
+  request does not already carry one.
+- The proxy forwards `x-request-id` to the upstream (core-api or BFF).
+- The BFF must forward the same `x-request-id` on any sub-requests it
+  makes to core-api — it must not generate a new ID.
+- The proxy copies `x-request-id` onto the response so the browser can
+  correlate requests with backend logs.
+- Backend services should log `x-request-id` for incident correlation.
 
 ## Safety Rules
 
@@ -132,6 +149,47 @@ No Vercel config changes are needed. The Next.js proxy reads
 all traffic routes to core-api — the system operates in single-upstream
 mode identical to the pre-hybrid state.
 
+## Cache / TTL Contract
+
+The BFF may cache responses from core-api to reduce load and improve
+dashboard responsiveness. Caching must follow these rules:
+
+### Cacheable surfaces
+
+| BFF Route | Max TTL | Stale-While-Revalidate | Notes |
+| --- | --- | --- | --- |
+| `dashboard/overview` | 5 s | 10 s | Composite operator snapshot |
+| `dashboard/prices` | 2 s | 5 s | Latest price grid |
+| `dashboard/feed-status` | 10 s | 20 s | Ingest health summary |
+| `bff/aggregated-status` | 5 s | 10 s | Multi-source status rollup |
+
+### Non-cacheable surfaces
+
+The following must never be cached by the BFF:
+
+- Any path containing `/verdict`, `/execution`, `/risk`, `/governance`
+- Any write operation (POST, PUT, PATCH, DELETE)
+- Any response with `cache-control: no-store` from core-api
+
+### Cache identity
+
+- Cache key: `{path}:{query_params_sorted}` — auth headers are NOT
+  part of the cache key (owner-only, single-user).
+- Cache storage: in-process memory (Phase 1). Redis-backed cache is
+  a Phase 2 option.
+
+### Stale read detection
+
+BFF responses must include:
+
+| Header | Value | Purpose |
+| --- | --- | --- |
+| `x-bff-cache` | `HIT`, `MISS`, or `STALE` | Cache status |
+| `x-bff-cache-age` | seconds since cache fill | Staleness indicator |
+
+The dashboard frontend may use these headers to display freshness
+indicators but must not make routing or retry decisions based on them.
+
 ## Phasing
 
 ### Phase 1 (Current)
@@ -140,13 +198,15 @@ mode identical to the pre-hybrid state.
 - WS remains direct-to-backend
 - No circuit breaker (BFF failure = error, not fallback)
 - Single BFF instance, no load balancing
+- x-request-id propagation for end-to-end tracing
 
 ### Phase 2 (Future)
 
 - Circuit breaker with configurable thresholds
 - WS relay through BFF (requires multiplexer refactoring)
 - BFF health monitoring in dashboard diagnostics
-- Optional BFF-side caching with TTL policy
+- BFF-side caching per Cache / TTL Contract above
+- Redis-backed shared cache (optional)
 
 ## Related Documents
 

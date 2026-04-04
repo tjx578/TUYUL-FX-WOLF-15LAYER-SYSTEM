@@ -20,33 +20,15 @@ import { resolveDashboardUpstream } from "@/lib/server/dashboardTopology";
  *   x-proxy-surface — "core-api" | "bff" (hybrid topology indicator)
  */
 
-/**
- * Resolved backend origin or null when not configured.
- * Retained as fallback for non-topology callers; prefer
- * resolveDashboardUpstream() for proxy routing.
- */
-function getBackendUrl(): string | null {
-  const url =
-    process.env.INTERNAL_API_URL ||
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    "";
-
-  if (!url) {
-    if (process.env.NODE_ENV === "development") {
-      return "http://localhost:8000";
-    }
-    return null;
-  }
-
-  // Normalize: strip trailing slash and accidental /api suffix
-  return url.replace(/\/+$/, "").replace(/\/api$/, "");
-}
-
 async function proxyRequest(
   request: NextRequest,
   path: string[]
 ): Promise<NextResponse> {
   const joinedPath = path.join("/");
+
+  // Trace ID: reuse inbound or generate — available for all response paths.
+  const requestId =
+    request.headers.get("x-request-id") || crypto.randomUUID();
 
   // Resolve upstream via hybrid topology (core-api or BFF).
   const upstream = resolveDashboardUpstream(joinedPath);
@@ -69,6 +51,7 @@ async function proxyRequest(
           "x-proxy-target": "unresolved",
           "x-proxy-status": "misconfigured",
           "x-proxy-surface": "unknown",
+          "x-request-id": requestId,
         },
       }
     );
@@ -123,6 +106,9 @@ async function proxyRequest(
   // Auth comes from the session cookie injected by middleware, or from
   // the client's own Authorization header.  No API_KEY fallback.
 
+  // Ensure x-request-id is forwarded to upstream.
+  headers.set("x-request-id", requestId);
+
   // Safe target label for headers (origin only, no credentials/path)
   const targetLabel = `${targetUrl.protocol}//${targetUrl.host}`;
 
@@ -155,6 +141,7 @@ async function proxyRequest(
     responseHeaders.set("x-proxy-target", targetLabel);
     responseHeaders.set("x-proxy-status", "ok");
     responseHeaders.set("x-proxy-surface", upstream.surface);
+    responseHeaders.set("x-request-id", requestId);
 
     return new NextResponse(response.body, {
       status: response.status,
@@ -176,6 +163,7 @@ async function proxyRequest(
           "x-proxy-target": targetLabel,
           "x-proxy-status": "error",
           "x-proxy-surface": upstream.surface,
+          "x-request-id": requestId,
         },
       }
     );
