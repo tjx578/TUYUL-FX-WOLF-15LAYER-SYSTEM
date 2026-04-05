@@ -119,6 +119,11 @@ class VerdictEngine:
         """
         Constitutional verdict evaluation from raw gate scores.
 
+        .. deprecated::
+            This method is NOT used by the production pipeline.
+            Use ``generate_l12_verdict()`` standalone function instead.
+            Retained for backward compatibility with existing tests.
+
         Returns:
             {
                 "verdict": "EXECUTE" | "HOLD" | "NO_TRADE" | "ABORT",
@@ -281,6 +286,11 @@ class VerdictEngine:
     ) -> dict[str, Any]:
         """
         Full constitutional verdict from layer results and gate evaluations.
+
+        .. deprecated::
+            This method is NOT used by the production pipeline.
+            Use ``generate_l12_verdict()`` standalone function instead.
+            Retained for backward compatibility with existing tests.
 
         Authority rule: enrichment scores may modulate *confidence* but
         CANNOT promote a HOLD/NO_TRADE verdict to EXECUTE.
@@ -577,8 +587,23 @@ def generate_l12_verdict(
     gate_results["total"] = 10
 
     all_pass: bool = passed == 10
-    critical_fail: bool = g6 == "FAIL" or g7 == "FAIL" or g10 == "FAIL"
+
+    # ── Data-availability critical fail ───────────────────────────────────────
+    # When BOTH L7 (probability) and L8 (integrity) data are absent or
+    # invalid, the near-pass loophole can produce EXECUTE_REDUCED_RISK
+    # despite having no validated probability or integrity data.  Treat
+    # this combination as a critical fail to close the loophole.
+    _data_avail: dict[str, Any] = synthesis.get("data_availability", {})
+    _l7_absent = not _data_avail.get("L7_data_available", True)
+    _l8_absent = not _data_avail.get("L8_data_available", True)
+    _data_critical_fail = _l7_absent and _l8_absent
+
+    critical_fail: bool = g6 == "FAIL" or g7 == "FAIL" or g10 == "FAIL" or _data_critical_fail
     near_pass: bool = passed >= 7 and not critical_fail
+
+    if _data_critical_fail:
+        gate_results["data_critical_fail"] = True
+        gate_results["data_critical_reason"] = "L7_AND_L8_ABSENT"
 
     # ── Direction from technical bias ─────────────────────────────────────────
     technical_bias: str = str(bias.get("technical", "NEUTRAL")).upper()
@@ -668,9 +693,19 @@ def compute_verdict(
     """
     Stateless constitutional verdict function.
 
+    .. deprecated::
+        Not used by the production pipeline.  Use
+        ``generate_l12_verdict()`` instead.  Retained for backward
+        compatibility with boundary tests in ``tests/__init__.py``.
+
     Must NOT accept account-state parameters (balance, equity, account).
     Authority boundary: this is a pure constitutional gate with no
     market-direction logic.
     """
+    warnings.warn(
+        "compute_verdict() is deprecated. Use generate_l12_verdict() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     engine = VerdictEngine(thresholds=thresholds)
     return engine.evaluate(wolf_score, tii_score, frpc_score, exhaustion_input)

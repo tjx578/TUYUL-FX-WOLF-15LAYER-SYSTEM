@@ -81,18 +81,30 @@ def build_l12_synthesis(
         else:
             entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
 
-    # -- Risk (from L10/dashboard -- placeholders) --
+    # -- Risk (from L10/dashboard -- analytical estimates, not authoritative) --
     lot_size = layer_results.get("L10", {}).get("lot_size", 0.01)
     risk_percent = layer_results.get("L10", {}).get("adjusted_risk_pct", 1.0)
     risk_amount = layer_results.get("L10", {}).get("risk_amount", 0.0)
 
+    # -- Data availability flags (for downstream gate semantics) --
+    _l7_data = layer_results.get("L7", {})
+    _l8_data = layer_results.get("L8", {})
+    _l7_data_available = bool(_l7_data and _l7_data.get("valid", False))
+    _l8_data_available = bool(_l8_data and _l8_data.get("valid", False))
+
     # -- Metrics --
-    tii_sym = layer_results.get("L8", {}).get("tii_sym", 0.0)
-    integrity = layer_results.get("L8", {}).get("integrity", 0.0)
-    conf12 = layer_results.get("L2", {}).get("conf12", (tii_sym + integrity) / 2.0)
+    tii_sym = _l8_data.get("tii_sym", 0.0)
+    integrity = _l8_data.get("integrity", 0.0)
+    _l2_conf12_raw = layer_results.get("L2", {}).get("conf12")
+    if _l2_conf12_raw is not None:
+        conf12 = _l2_conf12_raw
+        _conf12_source = "L2_fusion"
+    else:
+        conf12 = (tii_sym + integrity) / 2.0
+        _conf12_source = "L8_derived"
     frpc_state = layer_results.get("L2", {}).get("frpc_state", "DESYNC")
     current_drawdown = layer_results.get("L5", {}).get("current_drawdown", 0.0)
-    prop_compliant = layer_results.get("L6", {}).get("propfirm_compliant", True)
+    prop_compliant = layer_results.get("L6", {}).get("propfirm_compliant", False)
     # If propfirm checks are disabled, force compliant=True
     if os.getenv("PROPFIRM_MODE") == "disabled":
         prop_compliant = True
@@ -148,6 +160,7 @@ def build_l12_synthesis(
             "L9_dvg_confidence": layer_results.get("L9", {}).get("dvg_confidence", 0.0),
             "L9_liquidity_score": layer_results.get("L9", {}).get("liquidity_score", 0.0),
             "conf12": conf12,
+            "conf12_data_source": _conf12_source,
         },
         "execution": {
             "direction": direction,
@@ -161,6 +174,10 @@ def build_l12_synthesis(
             "lot_size": lot_size,
             "risk_percent": risk_percent,
             "risk_amount": risk_amount,
+            # Boundary-clarity aliases: L10 sizing is analytical, not
+            # authoritative.  Dashboard/risk zone holds final authority.
+            "analytical_lot_hint": lot_size,
+            "analytical_risk_estimate": risk_amount,
             "slippage_estimate": 0.0,
             "optimal_timing": "",
         },
@@ -243,6 +260,12 @@ def build_l12_synthesis(
             "risk_multiplier": layer_results.get("macro_vix_state", {}).get("risk_multiplier", 1.0),
         },
         "volatility_regime": volatility_regime,
+        "data_availability": {
+            "L7_data_available": _l7_data_available,
+            "L8_data_available": _l8_data_available,
+            "L7_validation": _l7_data.get("validation", "ABSENT"),
+            "L8_tii_present": tii_sym > 0.0 or integrity > 0.0,
+        },
         "system": {
             "latency_ms": 0.0,
             "safe_mode": False,
@@ -259,7 +282,7 @@ def build_l12_synthesis(
     synthesis["bayesian_ci_low"] = layer_results.get("L7", {}).get("bayesian_ci_low", 0.0)
     synthesis["bayesian_ci_high"] = layer_results.get("L7", {}).get("bayesian_ci_high", 0.0)
     synthesis["mc_passed_threshold"] = layer_results.get("L7", {}).get("mc_passed_threshold", False)
-    synthesis["risk_of_ruin"] = layer_results.get("L7", {}).get("risk_of_ruin", 0.0)
+    synthesis["risk_of_ruin"] = layer_results.get("L7", {}).get("risk_of_ruin", 1.0)
     synthesis["profit_factor"] = layer_results.get("L7", {}).get("profit_factor", 0.0)
     synthesis["l7_validation"] = layer_results.get("L7", {}).get("validation", "FAIL")
 
