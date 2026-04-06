@@ -47,14 +47,14 @@ Downstream consumers that don't read new fields see no change.
 
 ## 3. Phase Ordering (Strict)
 
-```
+```text
 Phase A → Phase B → Phase C → Phase D → Phase E
 ```
 
 **Do not reorder**. Each phase depends on the previous:
 
 | Phase | Dependency | Produces |
-|---|---|---|
+| --- | --- | --- |
 | A | None | Divergence map, governance docs |
 | B | A | Config keys, additive payload fields |
 | C | B | Enforcement logic reading B's config |
@@ -105,7 +105,7 @@ Phase A → Phase B → Phase C → Phase D → Phase E
 Each phase must include or maintain:
 
 | Phase | Test Requirement |
-|---|---|
+| --- | --- |
 | B | Config key presence assertions |
 | C | Enforcement unit tests (fundamental_min fail, fta_conflict advisory/hard) |
 | D | Profile loading + effective config merge tests |
@@ -127,5 +127,5 @@ All changes are designed for safe rollback:
 ## 7. Change Log
 
 | Date | Phase | Change | Author |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 2026-04 | A | Initial governance document created | System |
