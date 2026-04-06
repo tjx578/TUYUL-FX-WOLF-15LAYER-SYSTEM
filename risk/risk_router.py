@@ -35,7 +35,7 @@ from accounts.risk_engine import RiskEngine
 from allocation.signal_service import SignalService
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
-from core.redis_keys import compliance_state
+from core.redis_keys import ACCOUNT_STATE, compliance_state
 from journal.audit_trail import AuditAction, AuditTrail
 from risk.exceptions import RiskException
 from risk.kill_switch import GlobalKillSwitch
@@ -46,6 +46,40 @@ from storage.redis_client import redis_client
 
 router = APIRouter(prefix="/api/v1/risk", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 _kill_switch = GlobalKillSwitch()
+
+
+def _publish_account_state_to_redis(state: AccountRiskState) -> None:
+    """Bridge: publish account state snapshot to the Redis key the orchestrator reads.
+
+    The orchestrator's compliance guard reads ``wolf15:account:state`` every tick.
+    Without this bridge, the key stays empty and triggers KILL_SWITCH with
+    ``ACCOUNT_STATE_MISSING``.
+    """
+    import json
+
+    payload = json.dumps(
+        {
+            "balance": state.balance,
+            "equity": state.equity,
+            "compliance_mode": state.compliance_mode,
+            "account_locked": state.account_locked,
+            "system_state": state.system_state,
+            "circuit_breaker": state.circuit_breaker_open,
+            "daily_dd_percent": state.daily_loss_used_percent,
+            "max_daily_dd_percent": state.max_daily_loss_percent,
+            "total_dd_percent": state.total_loss_used_percent,
+            "max_total_dd_percent": state.max_total_loss_percent,
+            "max_concurrent_trades": state.max_concurrent_trades,
+            "open_trades": state.open_trades_count,
+            "account_id": state.account_id,
+            "prop_firm_code": state.prop_firm_code,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+    )
+    try:
+        redis_client.set(ACCOUNT_STATE, payload)
+    except Exception:
+        logger.warning("Failed to publish account state to Redis")
 _account_repo = AccountRepository.get_default()
 _account_risk_engine = AccountScopedRiskEngine()
 _audit = AuditTrail()
@@ -607,6 +641,7 @@ async def upsert_account_context(
         ea_instances=ea_instances,
     )
     _account_repo.upsert_state(state)
+    _publish_account_state_to_redis(state)
     return {
         "status": "saved",
         "account_id": account_id,
