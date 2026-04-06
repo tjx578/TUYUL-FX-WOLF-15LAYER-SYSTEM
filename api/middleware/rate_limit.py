@@ -164,6 +164,23 @@ if _extra_exempt:
     EXEMPT_PATHS |= _extra
     logger.info("Rate-limit exempt paths extended: {}", _extra)
 
+# Known WebSocket paths for diagnostics — unmatched WS upgrades get 403 from
+# Starlette and surface as "connection rejected (403 Forbidden)" in logs.
+_KNOWN_WS_PATHS: frozenset[str] = frozenset({
+    "/ws",
+    "/ws/prices",
+    "/ws/trades",
+    "/ws/candles",
+    "/ws/risk",
+    "/ws/equity",
+    "/ws/verdict",
+    "/ws/signals",
+    "/ws/pipeline",
+    "/ws/live",
+    "/ws/alerts",
+    "/ws/trq",
+})
+
 
 # ---------------------------------------------------------------------------
 # Sliding window storage
@@ -597,16 +614,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
 
-        # Log WebSocket upgrade attempts to non-existent routes for diagnostics.
+        # Log WebSocket upgrade attempts for diagnostics.
         # Starlette returns 403 for unmatched WS paths, which surfaces as
         # "connection rejected (403 Forbidden)" in websockets library logs.
         if _is_websocket(request):
-            logger.debug(
-                "WS upgrade attempt: path={} origin={} ip={}",
-                path,
-                request.headers.get("origin", "-"),
-                _client_ip(request),
-            )
+            if path in _KNOWN_WS_PATHS:
+                logger.debug(
+                    "WS upgrade attempt: path={} origin={} ip={}",
+                    path,
+                    request.headers.get("origin", "-"),
+                    _client_ip(request),
+                )
+            else:
+                logger.warning(
+                    "WS upgrade to unknown path (will 403): path={} origin={} ip={} ua={}",
+                    path,
+                    request.headers.get("origin", "-"),
+                    _client_ip(request),
+                    request.headers.get("user-agent", "-"),
+                )
 
         if path in EXEMPT_PATHS:
             return await call_next(request)
