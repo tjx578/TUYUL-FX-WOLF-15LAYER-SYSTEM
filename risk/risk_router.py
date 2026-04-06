@@ -71,6 +71,8 @@ def _publish_account_state_to_redis(state: AccountRiskState) -> None:
             "max_total_dd_percent": state.max_total_loss_percent,
             "max_concurrent_trades": state.max_concurrent_trades,
             "open_trades": state.open_trades_count,
+            "news_lock_active": state.news_lock,
+            "correlation_breached": state.correlation_bucket == "RED",
             "account_id": state.account_id,
             "prop_firm_code": state.prop_firm_code,
             "updated_at": datetime.now(UTC).isoformat(),
