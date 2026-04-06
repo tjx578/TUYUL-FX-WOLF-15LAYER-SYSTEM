@@ -856,7 +856,8 @@ class WolfConstitutionalPipeline:
             layers_executed.append("GovernanceGate")
             engines_invoked.append("GovernanceGate")
             VERDICT_PATH_EVENT_TOTAL.labels(event="governance_blocked", symbol=symbol, status="hold").inc()
-            logger.warning(
+            _gov_log = logger.debug if "market_closed" in _governance.reasons else logger.warning
+            _gov_log(
                 "[VerdictPath] governance hold | symbol={} reasons={} penalty={}",
                 symbol,
                 list(_governance.reasons),

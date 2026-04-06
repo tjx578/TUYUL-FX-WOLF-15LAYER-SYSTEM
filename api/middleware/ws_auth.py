@@ -61,12 +61,19 @@ if _ORIGIN_REGEX_RAW:
         logger.error("Invalid CORS_ORIGIN_REGEX: %s", _ORIGIN_REGEX_RAW)
 else:
     # Auto-derive regex for Vercel preview deployments from static origins.
-    # Preview URLs follow the pattern: <project>-<hash>-<scope>.vercel.app
+    # Vercel preview URLs come in two flavours:
+    #   1. Custom-domain style: <custom-domain>-<hash>.vercel.app
+    #   2. Project-name style:  <project>-<hash>-<scope>.vercel.app
+    # We derive patterns for (1) from the static origins AND for (2) from
+    # VERCEL_PROJECT_NAME if set.
     _vercel_patterns: list[str] = []
     for _o in WS_ALLOWED_ORIGINS:
         if _o.endswith(".vercel.app"):
             _prefix = re.escape(_o.rsplit(".vercel.app", 1)[0])
             _vercel_patterns.append(f"{_prefix}(-[a-z0-9-]+)?\\.vercel\\.app")
+    _vercel_project = os.getenv("VERCEL_PROJECT_NAME", "").strip()
+    if _vercel_project:
+        _vercel_patterns.append(f"https://{re.escape(_vercel_project)}[a-z0-9-]*\\.vercel\\.app")
     if _vercel_patterns:
         with contextlib.suppress(re.error):
             _ORIGIN_REGEX = re.compile("|".join(_vercel_patterns))
@@ -194,6 +201,41 @@ async def ws_authenticate(websocket: WebSocket) -> bool:
     return False
 
 
+async def _ws_reject(
+    websocket: WebSocket, code: int, reason: str, log_msg: str,
+) -> None:
+    """Log a warning and close the WebSocket.  Swallows close errors."""
+    logger.warning(log_msg)
+    with contextlib.suppress(Exception):
+        await websocket.close(code=code, reason=reason)
+
+
+def _check_origin(websocket: WebSocket) -> str | None:
+    """Return a rejection message if the browser origin is disallowed, else *None*."""
+    if not (WS_ALLOWED_ORIGINS or _ORIGIN_REGEX):
+        return None
+    origin = (websocket.headers.get("origin") or "").strip().rstrip("/")
+    # No origin header → non-browser client (EA, service-to-service); allow.
+    if origin and not _is_origin_allowed(origin):
+        return f"WS auth rejected: forbidden origin {origin}"
+    return None
+
+
+def _validate_jwt_claims(payload: dict[str, Any]) -> str | None:
+    """Return a rejection message if JWT claims are invalid, else *None*.
+
+    API-key payloads skip expiry checks.
+    """
+    if payload.get("auth_method") == "api_key":
+        return None
+    exp = payload.get("exp")
+    if exp is None:
+        return "WS auth rejected: JWT missing exp claim"
+    if int(exp) <= int(time.time()):
+        return "WS auth rejected: token expired"
+    return None
+
+
 async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
     """
     High-level WebSocket auth guard for route handlers.
@@ -205,60 +247,46 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
             user = await ws_auth_guard(websocket)
             if not user:
                 return  # Connection already closed
-            # ... handle authenticated connection
 
     Returns:
         User payload dict if authenticated, ``None`` if auth failed.
     """
-    if WS_ALLOWED_ORIGINS or _ORIGIN_REGEX:
-        origin = (websocket.headers.get("origin") or "").strip().rstrip("/")
-        if origin and not _is_origin_allowed(origin):
-            # Browser client with a disallowed origin — reject immediately.
-            logger.warning("WS auth rejected: forbidden origin %s", origin)
-            with contextlib.suppress(Exception):
-                await websocket.close(code=4003, reason="Forbidden origin")
-            return None
-        # No origin header = non-browser client (EA, service-to-service).
-        # Allow through; token validation below will still gate access.
-
-    token = extract_token(dict(websocket.headers), dict(websocket.query_params))
-    if not token:
-        logger.warning("WS auth rejected: missing token")
-        with contextlib.suppress(Exception):
-            await websocket.close(code=4001, reason="Missing authentication token")
+    # --- Origin check ---
+    origin_err = _check_origin(websocket)
+    if origin_err:
+        await _ws_reject(websocket, 4003, "Forbidden origin", origin_err)
         return None
 
+    # --- Token extraction ---
+    token = extract_token(dict(websocket.headers), dict(websocket.query_params))
+    if not token:
+        await _ws_reject(websocket, 4001, "Missing authentication token", "WS auth rejected: missing token")
+        return None
+
+    # --- Token verification ---
     payload = verify_token(token)
-    if payload is not None:
-        if payload.get("auth_method") != "api_key":
-            exp = payload.get("exp")
-            if exp is None:
-                logger.warning("WS auth rejected: JWT missing exp claim")
-                with contextlib.suppress(Exception):
-                    await websocket.close(code=4001, reason="Token missing exp claim")
-                return None
-            if int(exp) <= int(time.time()):
-                logger.warning("WS auth rejected: token expired")
-                with contextlib.suppress(Exception):
-                    await websocket.close(code=4001, reason="Token expired")
-                return None
+    if payload is None:
+        await _ws_reject(websocket, 4001, "Invalid or expired token", "WS auth rejected: invalid or expired token")
+        return None
 
-        requested_account = websocket.query_params.get("account_id")
-        if not _has_account_access(payload, requested_account):
-            logger.warning("WS auth rejected: account scope denied")
-            with contextlib.suppress(Exception):
-                await websocket.close(code=4003, reason="Account scope denied")
-            return None
+    # --- JWT claim validation (expiry) ---
+    claim_err = _validate_jwt_claims(payload)
+    if claim_err:
+        reason = "Token expired" if "expired" in claim_err else "Token missing exp claim"
+        await _ws_reject(websocket, 4001, reason, claim_err)
+        return None
 
-        websocket.state.auth_payload = payload
-        websocket.state.auth_exp = int(payload.get("exp", 0) or 0)
-        logger.debug(f"WS auth OK: user={payload.get('sub')}")
-        return payload
+    # --- Account scope ---
+    requested_account = websocket.query_params.get("account_id")
+    if not _has_account_access(payload, requested_account):
+        await _ws_reject(websocket, 4003, "Account scope denied", "WS auth rejected: account scope denied")
+        return None
 
-    logger.warning("WS auth rejected: invalid or expired token")
-    with contextlib.suppress(Exception):
-        await websocket.close(code=4001, reason="Invalid or expired token")
-    return None
+    # --- Success ---
+    websocket.state.auth_payload = payload
+    websocket.state.auth_exp = int(payload.get("exp", 0) or 0)
+    logger.debug(f"WS auth OK: user={payload.get('sub')}")
+    return payload
 
 
 def require_ws_token(websocket: fastapi.WebSocket) -> str | None:

@@ -276,7 +276,10 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
 def _add_cors(app: FastAPI) -> None:
     # Production should set CORS_ORIGINS explicitly. Keep fallback minimal and stable
     # so redeploy-specific hostnames (e.g., Railway-generated domains) are never baked in.
-    raw = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:8000,https://tuyul-fx-dashboard.vercel.app,https://tuyul-fx-wolf-15-layer-system.vercel.app")
+    raw = os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:3001,http://localhost:8000,https://tuyul-fx-dashboard.vercel.app,https://tuyul-fx-wolf-15-layer-system.vercel.app",
+    )
     if "CORS_ORIGINS" not in os.environ:
         logger.warning(
             "CORS_ORIGINS not set; using fallback origins. Set CORS_ORIGINS explicitly in deployed services."
@@ -313,6 +316,7 @@ def _add_cors(app: FastAPI) -> None:
         logger.info("CORS origin regex: %s", origin_regex)
     else:
         # Auto-derive regex for Vercel preview deployments from static origins.
+        # Covers custom-domain previews AND project-name previews.
         import re as _re
 
         _vercel_patterns: list[str] = []
@@ -320,6 +324,9 @@ def _add_cors(app: FastAPI) -> None:
             if o.endswith(".vercel.app"):
                 _prefix = _re.escape(o.rsplit(".vercel.app", 1)[0])
                 _vercel_patterns.append(f"{_prefix}(-[a-z0-9-]+)?\\.vercel\\.app")
+        _vercel_project = os.getenv("VERCEL_PROJECT_NAME", "").strip()
+        if _vercel_project:
+            _vercel_patterns.append(f"https://{_re.escape(_vercel_project)}[a-z0-9-]*\\.vercel\\.app")
         if _vercel_patterns:
             origin_regex = "|".join(_vercel_patterns)
             logger.info("CORS origin regex (auto-derived for Vercel previews): %s", origin_regex)

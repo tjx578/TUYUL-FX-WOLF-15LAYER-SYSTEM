@@ -31,6 +31,7 @@ from state.data_freshness import (
     classify_feed_freshness,
     stale_threshold_seconds,
 )
+from utils.market_hours import is_forex_market_open, weekend_gap_seconds
 
 # ---------------------------------------------------------------------------
 # Governance verdict
@@ -201,6 +202,17 @@ def assess_governance(
             warmup_ready=warmup_ready,
         )
 
+    # ── A2. Market hours ────────────────────────────────────────
+    if not is_forex_market_open():
+        logger.debug("Governance market_closed for {}", symbol)
+        return GovernanceVerdict(
+            action=GovernanceAction.HOLD,
+            symbol=symbol,
+            confidence_penalty=0.0,
+            reasons=("market_closed",),
+            warmup_ready=warmup_ready,
+        )
+
     # ── B. Warmup check ─────────────────────────────────────────
     if not warmup_ready:
         reasons.append("warmup_insufficient")
@@ -214,10 +226,24 @@ def assess_governance(
         now_ts=now,
     )
 
+    # Adjust for forex weekend gap (Fri 22:00 → Sun 22:00 UTC).
+    # Raw wall-clock staleness overstates the real data age when the
+    # interval spans a market closure.
+    _effective_staleness = freshness.staleness_seconds
+    _wk_gap = 0.0
+    if (
+        not math.isinf(freshness.staleness_seconds)
+        and last_seen_ts is not None
+        and last_seen_ts > 0
+    ):
+        _wk_gap = weekend_gap_seconds(last_seen_ts, now)
+        if _wk_gap > 0:
+            _effective_staleness = max(0.0, freshness.staleness_seconds - _wk_gap)
+
     # Hard stale threshold — only report when staleness is finite;
     # infinite staleness is already covered by no_producer / no_transport.
-    if not math.isinf(freshness.staleness_seconds) and freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
-        reasons.append(f"hard_stale:{freshness.staleness_seconds:.0f}s>{HARD_STALE_THRESHOLD_SEC:.0f}s")
+    if not math.isinf(_effective_staleness) and _effective_staleness > HARD_STALE_THRESHOLD_SEC:
+        reasons.append(f"hard_stale:{_effective_staleness:.0f}s>{HARD_STALE_THRESHOLD_SEC:.0f}s")
 
     if freshness.state == "no_producer":
         reasons.append("no_producer_signal")
@@ -226,8 +252,11 @@ def assess_governance(
     elif freshness.state == "config_error":
         reasons.append("config_error")
     elif freshness.state == "stale_preserved":
-        total_penalty += 0.15
-        reasons.append(f"stale_preserved:{freshness.staleness_seconds:.0f}s")
+        if _wk_gap > 0 and _effective_staleness <= freshness.threshold_seconds:
+            pass  # Weekend-adjusted: effectively fresh — no penalty
+        else:
+            total_penalty += 0.15
+            reasons.append(f"stale_preserved:{_effective_staleness:.0f}s")
 
     # ── D. Producer health ───────────────────────────────────────
     producer_alive, hb_age = check_producer_health(heartbeat_ts, max_age_sec=HEARTBEAT_MAX_AGE_SEC, now_ts=now)
@@ -265,10 +294,16 @@ def assess_governance(
         # new-trade flow must remain blocked.
         # P0: config_error is equally untrustworthy — ambiguous freshness → HOLD.
         action = GovernanceAction.HOLD
-    elif not warmup_ready or freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
+    elif not warmup_ready or _effective_staleness > HARD_STALE_THRESHOLD_SEC:
         action = GovernanceAction.HOLD
     elif freshness.state == "stale_preserved":
-        if in_ws_warmup and ws_connected_at is not None:
+        if _wk_gap > 0 and _effective_staleness <= freshness.threshold_seconds:
+            # Weekend-adjusted: data is effectively within freshness threshold.
+            if total_penalty > 0 or dq_degraded:
+                action = GovernanceAction.ALLOW_REDUCED
+            else:
+                action = GovernanceAction.ALLOW
+        elif in_ws_warmup and ws_connected_at is not None:
             # WS just reconnected — HTF candles are stale but will refresh soon.
             # Downgrade to ALLOW_REDUCED with penalty instead of hard HOLD.
             action = GovernanceAction.ALLOW_REDUCED
@@ -279,15 +314,15 @@ def assess_governance(
                 symbol,
                 now - ws_connected_at,
             )
-        elif STALE_GRACE_SEC > 0 and freshness.staleness_seconds <= STALE_GRACE_SEC:
+        elif STALE_GRACE_SEC > 0 and _effective_staleness <= STALE_GRACE_SEC:
             # Recent stale — within configurable grace window, allow with penalty.
             action = GovernanceAction.ALLOW_REDUCED
             total_penalty = min(total_penalty + 0.20, 1.0)
-            reasons.append(f"stale_grace:{freshness.staleness_seconds:.0f}s<={STALE_GRACE_SEC:.0f}s")
+            reasons.append(f"stale_grace:{_effective_staleness:.0f}s<={STALE_GRACE_SEC:.0f}s")
             logger.info(
                 "Governance stale grace for {}: stale_preserved {:.0f}s <= grace {:.0f}s — ALLOW_REDUCED",
                 symbol,
-                freshness.staleness_seconds,
+                _effective_staleness,
                 STALE_GRACE_SEC,
             )
         else:
