@@ -1,0 +1,49 @@
+# ═══════════════════════════════════════════════════════════════════════
+# Profile: wolf_curriculum_strict
+# ═══════════════════════════════════════════════════════════════════════
+# Curriculum-aligned strict thresholds from the pedagogical doctrine
+# "Dasar Kuantifikasi Peluang" (Wolf 30-Point scoring philosophy).
+#
+# Activating this profile overrides constitution.yaml values with the
+# aspirational targets defined in the curriculum document.
+#
+# See: docs/architecture/wolf30-divergence-map.md for full divergence map.
+#
+# Authority: curriculum doctrine (aspirational)
+# Zone: Risk / Dashboard (analysis zone reads via config_loader)
+# ═══════════════════════════════════════════════════════════════════════
+
+constitution:
+  # ── Top-level verdict gates (stricter) ──
+  tii_min: 0.93
+  integrity_min: 0.85
+  rr_min: 2.0
+  fta_min: 0.75
+  monte_min: 0.60
+  conf12_min: 0.75
+
+  # ── Wolf 30-Point (curriculum-strict sub-thresholds) ──
+  wolf_30_point:
+    min_score: 22
+    sub_thresholds:
+      technical_min: 9
+      fta_min: 3
+      execution_min: 4
+      fundamental_min: 5
+
+    # Enable hard FTA conflict veto for curriculum mode
+    fta_conflict_veto:
+      enabled: true
+      mode: "HARD"
+      hard_fail_on_conflict: true
+
+  # ── Monte Carlo (stricter) ──
+  monte_carlo:
+    gate:
+      win_prob_min: 60.0
+      profit_factor_min: 1.8
+      max_drawdown: 5.0
+
+  # ── Risk/Reward (stricter) ──
+  rr:
+    constitutional_min: 2.0

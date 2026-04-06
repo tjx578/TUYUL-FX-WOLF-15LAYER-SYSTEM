@@ -108,6 +108,23 @@ wolf_30_point:
     technical_min: 9
     fta_min: 3
     execution_min: 4
+    fundamental_min: 5          # Phase B additive — curriculum F-score floor
+
+  # Curriculum-aligned grade thresholds (stricter than production)
+  # Production runtime uses _GRADE_THRESHOLDS in L4_session_scoring.py.
+  # These are reference values for curriculum_grade classification.
+  curriculum_grade_thresholds:
+    PERFECT: 27
+    EXCELLENT: 24
+    GOOD: 20
+    MARGINAL: 15
+
+  # FTA conflict veto — Phase B additive config
+  # When enabled, L4 constitutional checks L1↔L2 direction conflict.
+  fta_conflict_veto:
+    enabled: false                # false = no enforcement (advisory only)
+    mode: "ADVISORY"              # ADVISORY | HARD
+    hard_fail_on_conflict: false  # true = blocker; false = warning only
 
 # ===================================================================
 # L6 — Risk Management

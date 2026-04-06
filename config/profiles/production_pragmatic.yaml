@@ -1,0 +1,14 @@
+# ═══════════════════════════════════════════════════════════════════════
+# Profile: production_pragmatic
+# ═══════════════════════════════════════════════════════════════════════
+# Current production baseline. All values match constitution.yaml defaults.
+# This profile exists as a named anchor — activating it is equivalent
+# to running without any profile override.
+#
+# Authority: config/constitution.yaml + config/thresholds.py
+# Zone: Risk / Dashboard (read-only reference for analysis zone)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Empty override block — inherits all defaults from constitution.yaml.
+# Explicit profile ensures audit trail when switching between profiles.
+constitution: {}

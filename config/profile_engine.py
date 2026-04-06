@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from threading import Lock
 from typing import Any, cast
 
+import yaml
+
 from config_loader import CONFIG
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -75,7 +81,39 @@ class ConfigProfileEngine:
         for name, override in yaml_profiles.items():
             if isinstance(override, dict):
                 base[str(name)] = cast(dict[str, Any], override)
+
+        # Auto-load profiles from config/profiles/*.yaml directory
+        base.update(self._load_directory_profiles())
+
         return base
+
+    @staticmethod
+    def _load_directory_profiles() -> dict[str, dict[str, Any]]:
+        """Load profile YAMLs from config/profiles/ directory.
+
+        Each YAML file becomes a profile named after the file stem.
+        Files that fail to parse are logged and skipped.
+        """
+        profiles_dir = Path(__file__).parent / "profiles"
+        loaded: dict[str, dict[str, Any]] = {}
+
+        if not profiles_dir.is_dir():
+            return loaded
+
+        for yaml_file in sorted(profiles_dir.glob("*.yaml")):
+            profile_name = yaml_file.stem.strip().lower()
+            if not profile_name:
+                continue
+            try:
+                with open(yaml_file, encoding="utf-8") as fh:
+                    raw = yaml.safe_load(fh)
+                if isinstance(raw, dict):
+                    loaded[profile_name] = cast(dict[str, Any], raw)
+                    logger.debug("Loaded profile '%s' from %s", profile_name, yaml_file)
+            except Exception:  # noqa: BLE001
+                logger.warning("Failed to load profile from %s", yaml_file, exc_info=True)
+
+        return loaded
 
     def list_profiles(self) -> list[str]:
         return sorted(self._profiles.keys())

@@ -205,6 +205,15 @@ _GRADE_THRESHOLDS: Final[list[tuple[int, str]]] = [
     (0, "FAIL"),
 ]
 
+# Curriculum-aligned grade thresholds (stricter — see divergence map)
+_CURRICULUM_GRADE_THRESHOLDS: Final[list[tuple[int, str]]] = [
+    (27, "PERFECT"),
+    (24, "EXCELLENT"),
+    (20, "GOOD"),
+    (15, "MARGINAL"),
+    (0, "FAIL"),
+]
+
 # F-score sub-weights (within 8 points)
 _F_WEIGHT_BIAS_STRENGTH: Final = 3.0
 _F_WEIGHT_CONFIDENCE: Final = 3.0
@@ -779,6 +788,31 @@ def _classify_grade(total: float) -> str:
     return "FAIL"
 
 
+def _classify_curriculum_grade(total: float) -> str:
+    """Classify Wolf 30-Point total into curriculum-strict grade.
+
+    Uses stricter thresholds from the pedagogical doctrine.
+    See docs/architecture/wolf30-divergence-map.md §3.
+    """
+    t = int(total)
+    for threshold, grade in _CURRICULUM_GRADE_THRESHOLDS:
+        if t >= threshold:
+            return grade
+    return "FAIL"
+
+
+def _detect_fta_conflict(fta_detail: dict[str, Any]) -> bool:
+    """Detect fundamental-technical alignment conflict (L1↔L2 direction mismatch).
+
+    Returns True when L1 and L2 have opposing non-NEUTRAL directions.
+    """
+    l1_dir = fta_detail.get("l1_direction", "NEUTRAL")
+    l2_dir = fta_detail.get("l2_direction", "NEUTRAL")
+    if l1_dir == "NEUTRAL" or l2_dir == "NEUTRAL":
+        return False
+    return l1_dir != l2_dir
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # §5B  BAYESIAN WIN PROBABILITY ENGINE (NEW — v3)
 # ═══════════════════════════════════════════════════════════════════════
@@ -1165,6 +1199,11 @@ class L4SessionScoring:
         # ── PHASE 3: Grade classification (PRESERVED 100%) ───────────
 
         grade = _classify_grade(wolf_total)
+        curriculum_grade = _classify_curriculum_grade(wolf_total)
+
+        # ── PHASE 3B: FTA conflict detection (Phase B additive) ──────
+
+        fta_conflict = _detect_fta_conflict(fta_detail)
 
         technical_score = round((t_score / _T_SCORE_MAX) * 100) if _T_SCORE_MAX > 0 else 0
 
@@ -1219,7 +1258,7 @@ class L4SessionScoring:
             "event_name": ctx["event_name"],
             "hour_utc": ctx["hour_utc"],
             "day_of_week": ctx["day_of_week"],
-            # ── Wolf 30-Point (PRESERVED byte-identical) ──
+            # ── Wolf 30-Point (PRESERVED + additive fields) ──
             "wolf_30_point": {
                 "total": wolf_total,
                 "f_score": f_score,
@@ -1231,6 +1270,9 @@ class L4SessionScoring:
                 "t_detail": t_detail,
                 "fta_detail": fta_detail,
                 "exec_detail": exec_detail,
+                # Phase B additive fields
+                "curriculum_grade": curriculum_grade,
+                "fta_conflict": fta_conflict,
             },
             # ── Bayesian Enrichment (NEW — additive) ──
             "bayesian": bayesian,
@@ -1245,9 +1287,7 @@ class L4SessionScoring:
         return self._apply_constitutional(raw_result, pair)
 
     # ── Constitutional Governance Wrapper ────────────────────────────
-    def _apply_constitutional(
-        self, raw_result: dict[str, Any], symbol: str
-    ) -> dict[str, Any]:
+    def _apply_constitutional(self, raw_result: dict[str, Any], symbol: str) -> dict[str, Any]:
         """Wrap raw L4 output with constitutional governance envelope.
 
         Follows the same pattern as L2 / L3 constitutional wrappers:
@@ -1267,9 +1307,7 @@ class L4SessionScoring:
             )
 
             raw_result["constitutional"] = envelope
-            raw_result["continuation_allowed"] = envelope.get(
-                "continuation_allowed", True
-            )
+            raw_result["continuation_allowed"] = envelope.get("continuation_allowed", True)
 
             # Map constitutional status → valid flag
             status = envelope.get("status", "PASS")
@@ -1329,13 +1367,16 @@ class L4ScoringEngine:
         """
         full = self._inner.analyze(l1=l1, l2=l2, l3=l3)
 
+        w30 = full["wolf_30_point"]
         return {
             "wolf_30_point": {
-                "total": full["wolf_30_point"]["total"],
-                "f_score": full["wolf_30_point"]["f_score"],
-                "t_score": full["wolf_30_point"]["t_score"],
-                "fta_score": full["wolf_30_point"]["fta_score"],
-                "exec_score": full["wolf_30_point"]["exec_score"],
+                "total": w30["total"],
+                "f_score": w30["f_score"],
+                "t_score": w30["t_score"],
+                "fta_score": w30["fta_score"],
+                "exec_score": w30["exec_score"],
+                "curriculum_grade": w30.get("curriculum_grade", "UNKNOWN"),
+                "fta_conflict": w30.get("fta_conflict", False),
             },
             "grade": full["grade"],
             "technical_score": full["technical_score"],

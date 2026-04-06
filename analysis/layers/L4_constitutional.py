@@ -219,6 +219,74 @@ def _check_session_validity(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# §9B  WOLF 30-POINT SUB-THRESHOLD ENFORCEMENT (Phase C)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _load_wolf_constitution() -> dict[str, Any]:
+    """Lazy-load wolf_30_point config from constitution.yaml."""
+    try:
+        from config_loader import load_constitution  # noqa: PLC0415
+
+        constitution = load_constitution()
+        return constitution.get("wolf_30_point", {})
+    except Exception:  # noqa: BLE001
+        logger.warning("[L4 Constitutional] Could not load wolf_30_point config")
+        return {}
+
+
+def _enforce_wolf_sub_thresholds(
+    wolf: dict[str, Any],
+    l4_analysis: dict[str, Any],
+    blockers: list[BlockerCode],
+    warnings: list[str],
+    rule_hits: list[str],
+) -> None:
+    """Enforce fundamental_min and fta_conflict_veto from constitution.
+
+    Phase C additive enforcement:
+    - fundamental_min: F-score must meet floor → blocker if below
+    - fta_conflict_veto: L1↔L2 direction conflict → blocker or warning
+
+    Config-driven: reads wolf_30_point section from constitution.yaml.
+    When config keys are absent, enforcement is skipped (safe default).
+    """
+    cfg = _load_wolf_constitution()
+    sub = cfg.get("sub_thresholds", {})
+
+    # ── fundamental_min enforcement ──
+    f_min = sub.get("fundamental_min")
+    if f_min is not None:
+        f_score = wolf.get("f_score", 0.0)
+        rule_hits.append(f"fundamental_min_check: f_score={f_score} floor={f_min}")
+        if f_score < f_min:
+            blockers.append(BlockerCode.SESSION_STATE_INVALID)
+            warnings.append(
+                f"FUNDAMENTAL_BELOW_MIN: f_score={f_score} < fundamental_min={f_min}"
+            )
+
+    # ── fta_conflict_veto enforcement ──
+    veto_cfg = cfg.get("fta_conflict_veto", {})
+    if not veto_cfg.get("enabled", False):
+        return
+
+    fta_conflict = wolf.get("fta_conflict", False)
+    if not fta_conflict:
+        rule_hits.append("fta_conflict_veto: no conflict detected")
+        return
+
+    mode = veto_cfg.get("mode", "ADVISORY")
+    hard_fail = veto_cfg.get("hard_fail_on_conflict", False)
+    rule_hits.append(f"fta_conflict_veto: conflict=True mode={mode} hard_fail={hard_fail}")
+
+    if mode == "HARD" or hard_fail:
+        blockers.append(BlockerCode.SESSION_STATE_INVALID)
+        warnings.append("FTA_CONFLICT_VETO_HARD: L1↔L2 direction conflict → blocked")
+    else:
+        warnings.append("FTA_CONFLICT_VETO_ADVISORY: L1↔L2 direction conflict → warning only")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # §10  COMPRESSION LOGIC
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -364,6 +432,11 @@ class L4ConstitutionalGovernor:
 
         sv_blockers = _check_session_validity(session_valid, expectancy_available)
         all_blockers.extend(sv_blockers)
+
+        # ── 7b. Wolf 30-Point sub-threshold enforcement (Phase C) ─
+        _enforce_wolf_sub_thresholds(
+            wolf, l4_analysis, all_blockers, all_warnings, all_rule_hits,
+        )
 
         # ── 8. Compute score band ────────────────────────────────
         # Normalize session score: Wolf 30-point total / 30 → [0, 1]
