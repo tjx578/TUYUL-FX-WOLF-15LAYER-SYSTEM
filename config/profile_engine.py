@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -61,6 +62,12 @@ class ConfigProfileEngine:
                     cls._instance._state = ConfigProfileState(active_profile="default")
                     cls._instance._revisions = []
                     cls._instance._revision_seq = 0
+
+                    # Env-var bootstrap: activate profile from WOLF15_CONSTITUTION_PROFILE
+                    env_profile = os.environ.get("WOLF15_CONSTITUTION_PROFILE", "").strip().lower()
+                    if env_profile and env_profile in cls._instance._profiles:
+                        cls._instance._state = ConfigProfileState(active_profile=env_profile)
+                        logger.info("Activated constitution profile '%s' from env", env_profile)
         return cls._instance
 
     def _build_profiles(self) -> dict[str, dict[str, Any]]:

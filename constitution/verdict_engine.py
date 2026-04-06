@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 
@@ -471,6 +472,16 @@ def _downgrade_confidence(conf: str) -> str:
     return _CONFIDENCE_LEVELS[max(idx - 1, 0)]
 
 
+def _get_active_constitution_profile() -> str:
+    """Return the active constitution profile name (telemetry only)."""
+    try:
+        from config.profile_engine import ConfigProfileEngine  # noqa: PLC0415
+
+        return ConfigProfileEngine().get_active_profile()
+    except Exception:  # noqa: BLE001
+        return "default"
+
+
 def generate_l12_verdict(
     synthesis: dict[str, Any],
     *,
@@ -674,6 +685,7 @@ def generate_l12_verdict(
         "governance_penalty": round(governance_penalty, 4),
         "governance_downgraded": governance_downgraded,
         "regime": regime,
+        "constitution_profile": _get_active_constitution_profile(),
         "scores": {
             "tii": tii,
             "integrity": integrity,
