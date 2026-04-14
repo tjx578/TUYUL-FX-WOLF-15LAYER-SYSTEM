@@ -325,7 +325,7 @@ class L15MetaSovereigntyEngine:
         self,
         synthesis: dict[str, Any],
         l12_verdict: dict[str, Any],
-        reflective_pass1: dict[str, Any],
+        reflective_pass1: dict[str, Any] | None,
         sovereignty: dict[str, Any],
         gates: dict[str, Any],
     ) -> dict[str, Any]:

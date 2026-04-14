@@ -553,6 +553,369 @@ class WolfConstitutionalPipeline:
         return cast(dict[str, dict[str, Any]], cls._run_coro_sync(_run_batches()))
 
     # ══════════════════════════════════════════════════════════════
+    #  EXTRACTED HELPERS — reduce execute() branch complexity
+    # ══════════════════════════════════════════════════════════════
+
+    def _assess_data_quality(
+        self,
+        symbol: str,
+        redis_client: Any,
+    ) -> tuple[float, list[dict[str, Any]]]:
+        """Pre-analysis: assess candle data quality across timeframes.
+
+        Returns ``(confidence_penalty, dq_report_dicts)``.
+        """
+        import contextlib  # noqa: PLC0415
+
+        from analysis.data_quality_gate import DataQualityGate  # noqa: PLC0415
+        from core.redis_keys import latest_candle as _latest_candle_key  # noqa: PLC0415
+
+        dq_gate = DataQualityGate()
+        penalty: float = 0.0
+        reports: list[dict[str, Any]] = []
+
+        for tf in self.WARMUP_MIN_BARS:
+            candles = self._context_bus.get_candles(symbol, tf)
+            last_ts: float | None = None
+            if redis_client is not None:
+                with contextlib.suppress(Exception):
+                    raw_ts = redis_client.hget(_latest_candle_key(symbol, tf), "last_seen_ts")
+                    if raw_ts is not None:
+                        last_ts = float(str(raw_ts))
+            if last_ts is None and candles:
+                last_c = candles[-1]
+                last_ts = _coerce_timestamp_to_epoch(
+                    last_c.get("timestamp_close")
+                    or last_c.get("close_time")
+                    or last_c.get("timestamp")
+                    or last_c.get("time")
+                    or last_c.get("open_time")
+                )
+            report = dq_gate.assess(symbol, tf, candles, last_update_ts=last_ts)
+            reports.append(report.to_dict())
+            if report.confidence_penalty > penalty:
+                penalty = report.confidence_penalty
+
+        degraded = [r for r in reports if r["degraded"]]
+        if penalty > 0:
+            now_ts = time.time()
+            reason_key = tuple(sorted(";".join(r.get("reasons", [])) for r in degraded))
+            state = self._dq_warning_state.get(symbol, {})
+            should_log = (
+                not state.get("degraded", False)
+                or state.get("reason_key") != reason_key
+                or (now_ts - float(state.get("last_log_ts", 0.0))) >= self._dq_warning_log_interval_sec
+            )
+            if should_log:
+                logger.warning(
+                    "[Pipeline v8.0] {} DATA QUALITY degraded - penalty={:.2f}, reports={}",
+                    symbol,
+                    penalty,
+                    degraded,
+                )
+                self._dq_warning_state[symbol] = {
+                    "degraded": True,
+                    "reason_key": reason_key,
+                    "last_log_ts": now_ts,
+                }
+        else:
+            state = self._dq_warning_state.get(symbol)
+            if state and state.get("degraded", False):
+                logger.info("[Pipeline v8.0] {} DATA QUALITY recovered", symbol)
+            self._dq_warning_state[symbol] = {
+                "degraded": False,
+                "reason_key": (),
+                "last_log_ts": 0.0,
+            }
+
+        return penalty, reports
+
+    def _assess_governance(
+        self,
+        symbol: str,
+        *,
+        redis_client: Any,
+        warmup_ready: bool,
+        dq_penalty: float,
+        dq_degraded: bool,
+    ) -> Any:
+        """Run governance gate assessment.
+
+        Returns the governance result object (has ``.action``, ``.reasons``,
+        ``.confidence_penalty``, ``.to_dict()``).
+        """
+        import contextlib  # noqa: PLC0415
+
+        from state.governance_gate import assess_governance  # noqa: PLC0415
+
+        feed_age_ts: float | None = None
+        if redis_client is not None:
+            with contextlib.suppress(Exception):
+                from core.redis_keys import latest_tick as _latest_tick_key  # noqa: PLC0415
+
+                raw_feed_ts = redis_client.hget(_latest_tick_key(symbol), "last_seen_ts")
+                if raw_feed_ts is not None:
+                    feed_age_ts = float(str(raw_feed_ts))
+        if feed_age_ts is None:
+            feed_age_ts = (
+                self._context_bus.get_feed_timestamp(symbol)
+                if hasattr(self._context_bus, "get_feed_timestamp")
+                else None
+            )
+
+        heartbeat_ts: float | None = None
+        kill_switch_val: str | None = None
+        ws_connected_at: float | None = None
+        try:
+            from state.redis_keys import HEARTBEAT_INGEST, KILL_SWITCH, WS_CONNECTED_AT  # noqa: PLC0415
+
+            if redis_client is not None:
+                with contextlib.suppress(Exception):
+                    hb_raw = redis_client.get(HEARTBEAT_INGEST)
+                    if hb_raw is not None:
+                        heartbeat_ts = _parse_heartbeat_timestamp(hb_raw)
+                with contextlib.suppress(Exception):
+                    ks_raw = redis_client.get(KILL_SWITCH)
+                    if ks_raw is not None:
+                        kill_switch_val = str(ks_raw)
+                with contextlib.suppress(Exception):
+                    ws_raw = redis_client.get(WS_CONNECTED_AT)
+                    if ws_raw is not None:
+                        ws_connected_at = float(str(ws_raw))
+        except Exception:
+            pass
+
+        return assess_governance(
+            symbol=symbol,
+            last_seen_ts=feed_age_ts,
+            transport_ok=True,
+            heartbeat_ts=heartbeat_ts,
+            warmup_ready=warmup_ready,
+            dq_penalty=dq_penalty,
+            dq_degraded=dq_degraded,
+            kill_switch_value=kill_switch_val,
+            ws_connected_at=ws_connected_at,
+        )
+
+    def _resolve_trade_returns(
+        self,
+        symbol: str,
+        system_metrics: dict[str, Any] | None,
+    ) -> tuple[list[float] | None, bool, dict[str, Any] | None]:
+        """Resolve trade returns from context bus / metrics / candles.
+
+        Returns ``(trade_returns, preconditioned, conditioning_diagnostics)``.
+        """
+        trade_returns: list[float] | None = None
+        preconditioned = False
+        diag: dict[str, Any] | None = None
+
+        # Primary: context bus trade history
+        bus_returns: list[float] | None = cast(
+            list[float] | None,
+            self._context_bus.get_trade_history(symbol=symbol, lookback=200),
+        )
+        if bus_returns:
+            trade_returns = bus_returns
+            logger.info(
+                "[Phase-3] {} Loaded {} historical returns via context bus",
+                symbol,
+                len(bus_returns),
+            )
+
+        # Fallback 1: system_metrics pass-through
+        if not trade_returns and system_metrics:
+            raw = system_metrics.get("trade_returns", None)
+            if isinstance(raw, list | tuple) and len(cast(list[Any], raw)) > 0:
+                trade_returns = [float(r) for r in cast(list[Any], raw)]
+
+        # Fallback 2: conditioned returns from realtime tick ingest
+        if not trade_returns:
+            cond = cast(
+                list[float],
+                self._context_bus.get_conditioned_returns(symbol, count=200),
+            )
+            if cond:
+                trade_returns = cond
+                preconditioned = True
+                diag = cast(
+                    dict[str, Any] | None,
+                    self._context_bus.get_conditioning_meta(symbol),
+                )
+                logger.info(
+                    "[Phase-3] {} Loaded {} conditioned returns via realtime tick path",
+                    symbol,
+                    len(cond),
+                )
+
+        # Fallback 3: derive from candle closes
+        if not trade_returns:
+            h1 = cast(list[dict[str, Any]], self._context_bus.get_candles(symbol, "H1"))
+            m15 = cast(list[dict[str, Any]], self._context_bus.get_candles(symbol, "M15"))
+            source = "H1" if len(h1) >= len(m15) else "M15"
+            candles = h1 if source == "H1" else m15
+            prices: list[float] = []
+            for c in candles:
+                cv = c.get("close")
+                if isinstance(cv, int | float | str):
+                    with contextlib.suppress(TypeError, ValueError):
+                        prices.append(float(cv))
+            if len(prices) >= 2:
+                conditioned = self._signal_conditioner.condition_prices(prices[-300:])
+                trade_returns = conditioned.conditioned_returns
+                preconditioned = True
+                diag = conditioned.diagnostics()
+                diag["source"] = f"candle_{source}"
+                logger.info(
+                    "[Phase-3] {} Derived {} conditioned returns from {} candle closes",
+                    symbol,
+                    len(trade_returns),
+                    source,
+                )
+
+        return trade_returns, preconditioned, diag
+
+    @staticmethod
+    def _log_layer_constitutional(
+        symbol: str,
+        phase: str,
+        layer: str,
+        result: dict[str, Any],
+        *,
+        metric_label: str = "score",
+    ) -> tuple[str, bool]:
+        """Log constitutional diagnostic for a layer.
+
+        Returns ``(constitutional_status, continuation_allowed)``.
+        """
+        const = result.get("constitutional", {})
+        status = const.get("status", "N/A")
+        cont = result.get("continuation_allowed", True)
+
+        if status == "FAIL":
+            blockers = const.get("blocker_codes", [])
+            logger.warning(
+                "[{}] {} {} constitutional FAIL — blockers={} continuation={}",
+                phase,
+                symbol,
+                layer,
+                blockers,
+                cont,
+            )
+        elif status == "WARN":
+            warns = const.get("warning_codes", [])
+            logger.info(
+                "[{}] {} {} constitutional WARN — warnings={} band={}",
+                phase,
+                symbol,
+                layer,
+                warns,
+                const.get("coherence_band", "N/A"),
+            )
+        else:
+            logger.info(
+                "[{}] {} {} constitutional {} — band={} {}={:.4f}",
+                phase,
+                symbol,
+                layer,
+                status,
+                const.get("coherence_band", "N/A"),
+                metric_label,
+                const.get("score_numeric", 0.0),
+            )
+
+        return status, cont
+
+    def _run_enrichment_phase(
+        self,
+        symbol: str,
+        direction: str,
+        layer_results: dict[str, dict[str, Any]],
+        *,
+        raw_sl: float,
+        raw_tp: float,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Run Phase 2.5 engine enrichment (advisory, non-fatal, isolated).
+
+        Returns ``(enrichment_data, phase25_constitutional)``.
+        """
+        enrichment_data: dict[str, Any] = {}
+        phase25_constitutional: dict[str, Any] = {}
+
+        try:
+            if self._enrichment is None:
+                from engines.enrichment_orchestrator import (  # noqa: PLC0415
+                    EngineEnrichmentLayer,
+                )
+
+                self._enrichment = EngineEnrichmentLayer(
+                    context_bus=self._context_bus,
+                )
+
+            enrichment_result = self._enrichment.run(
+                symbol=symbol,
+                direction=direction,
+                layer_results=layer_results,
+                entry_price=layer_results["L11"].get("entry_price", layer_results["L11"].get("entry", 0.0)),
+                stop_loss=raw_sl,
+                take_profit=raw_tp,
+            )
+
+            enrichment_data = enrichment_result.to_dict()
+
+            engines_ok = 9 - len(enrichment_result.errors)
+            warnings: list[str] = list(enrichment_result.errors)
+            if engines_ok < 5:
+                warnings.append("ENRICHMENT_ENGINES_DEGRADED")
+            phase_status = "PASS" if not warnings else "WARN"
+            phase25_constitutional = {
+                "phase": "PHASE_2_5_ENRICHMENT",
+                "phase_status": phase_status,
+                "continuation_allowed": True,
+                "next_legal_targets": ["PHASE_5"],
+                "engines_ok": engines_ok,
+                "engines_total": 9,
+                "enrichment_score": enrichment_result.enrichment_score,
+                "warnings": warnings,
+                "advisory_only": True,
+                "audit": {
+                    "non_fatal": True,
+                    "parallel_semantic": True,
+                    "advisory_after_collection": True,
+                },
+            }
+            enrichment_data["constitutional"] = phase25_constitutional
+
+            logger.info(
+                "[Pipeline v8.0] Phase 2.5: Enrichment -- {} score={:.3f} engines_ok={}/9 status={}",
+                symbol,
+                enrichment_result.enrichment_score,
+                engines_ok,
+                phase_status,
+            )
+            if phase_status == "WARN":
+                logger.warning(
+                    "[Pipeline v8.0] Phase 2.5 WARN | symbol={} warnings={}",
+                    symbol,
+                    warnings,
+                )
+        except Exception as exc:
+            logger.warning("[Pipeline v8.0] Phase 2.5 enrichment failed (non-fatal): {}", exc)
+            enrichment_data = {"error": str(exc)}
+            phase25_constitutional = {
+                "phase": "PHASE_2_5_ENRICHMENT",
+                "phase_status": "WARN",
+                "continuation_allowed": True,
+                "engines_ok": 0,
+                "engines_total": 9,
+                "enrichment_score": 0.0,
+                "warnings": [f"ENRICHMENT_EXCEPTION:{type(exc).__name__}"],
+                "advisory_only": True,
+            }
+
+        return enrichment_data, phase25_constitutional
+
+    # ══════════════════════════════════════════════════════════════
     #  MAIN EXECUTE -- the single canonical entry point
     # ══════════════════════════════════════════════════════════════
 
@@ -707,132 +1070,22 @@ class WolfConstitutionalPipeline:
                 _redis_client = _SyncRedisClient()
 
         # ═══════════════════════════════════════════════════════
-        # DATA QUALITY GATE -- assess candle gap ratio / staleness
-        # and compute confidence penalty to degrade gracefully
-        # rather than trading on bad data.
+        # DATA QUALITY GATE
         # ═══════════════════════════════════════════════════════
-        from analysis.data_quality_gate import DataQualityGate  # noqa: PLC0415
-        from core.redis_keys import latest_candle as _latest_candle_key  # noqa: PLC0415
-
-        _dq_gate = DataQualityGate()
-        _dq_penalty: float = 0.0
-        _dq_reports: list[dict[str, Any]] = []
-        for tf in self.WARMUP_MIN_BARS:
-            candles = self._context_bus.get_candles(symbol, tf)
-            # Read authoritative last_seen_ts from Redis candle hash
-            # (written by ingest via RedisContextBridge.write_candle).
-            _last_ts: float | None = None
-            if _redis_client is not None:
-                with _rctx.suppress(Exception):
-                    _raw_ts = _redis_client.hget(_latest_candle_key(symbol, tf), "last_seen_ts")
-                    if _raw_ts is not None:
-                        _last_ts = float(str(_raw_ts))
-            # Fallback: extract from candle dict if Redis unavailable
-            if _last_ts is None and candles:
-                _last_c = candles[-1]
-                _last_ts = _coerce_timestamp_to_epoch(
-                    _last_c.get("timestamp_close")
-                    or _last_c.get("close_time")
-                    or _last_c.get("timestamp")
-                    or _last_c.get("time")
-                    or _last_c.get("open_time")
-                )
-            dq_report = _dq_gate.assess(symbol, tf, candles, last_update_ts=_last_ts)
-            _dq_reports.append(dq_report.to_dict())
-            if dq_report.confidence_penalty > _dq_penalty:
-                _dq_penalty = dq_report.confidence_penalty
-
+        _dq_penalty, _dq_reports = self._assess_data_quality(symbol, _redis_client)
         _degraded_reports = [r for r in _dq_reports if r["degraded"]]
-        if _dq_penalty > 0:
-            now_ts = time.time()
-            reason_key = tuple(sorted(";".join(r.get("reasons", [])) for r in _degraded_reports))
-            state = self._dq_warning_state.get(symbol, {})
-            should_log = (
-                not state.get("degraded", False)
-                or state.get("reason_key") != reason_key
-                or (now_ts - float(state.get("last_log_ts", 0.0))) >= self._dq_warning_log_interval_sec
-            )
-            if should_log:
-                logger.warning(
-                    "[Pipeline v8.0] {} DATA QUALITY degraded - penalty={:.2f}, reports={}",
-                    symbol,
-                    _dq_penalty,
-                    _degraded_reports,
-                )
-                self._dq_warning_state[symbol] = {
-                    "degraded": True,
-                    "reason_key": reason_key,
-                    "last_log_ts": now_ts,
-                }
-        else:
-            state = self._dq_warning_state.get(symbol)
-            if state and state.get("degraded", False):
-                logger.info("[Pipeline v8.0] {} DATA QUALITY recovered", symbol)
-            self._dq_warning_state[symbol] = {
-                "degraded": False,
-                "reason_key": (),
-                "last_log_ts": 0.0,
-            }
 
         # ═══════════════════════════════════════════════════════
-        # GOVERNANCE GATE -- unified freshness / producer health /
-        # kill-switch enforcement.  Must pass before any analysis
-        # layer runs.  Integrates DQ penalty, feed staleness,
-        # producer heartbeat, and operator kill-switch into a
-        # single ALLOW / HOLD / BLOCK decision.
+        # GOVERNANCE GATE
         # ═══════════════════════════════════════════════════════
-        from state.governance_gate import GovernanceAction, assess_governance  # noqa: PLC0415
+        from state.governance_gate import GovernanceAction  # noqa: PLC0415
 
-        # Read feed freshness from Redis (authoritative) via latest_tick hash.
-        _feed_age_ts: float | None = None
-        if _redis_client is not None:
-            with _rctx.suppress(Exception):
-                from core.redis_keys import latest_tick as _latest_tick_key  # noqa: PLC0415
-
-                _raw_feed_ts = _redis_client.hget(_latest_tick_key(symbol), "last_seen_ts")
-                if _raw_feed_ts is not None:
-                    _feed_age_ts = float(str(_raw_feed_ts))
-        # Fallback to LiveContextBus if Redis unavailable
-        if _feed_age_ts is None:
-            _feed_age_ts = (
-                self._context_bus.get_feed_timestamp(symbol)
-                if hasattr(self._context_bus, "get_feed_timestamp")
-                else None
-            )
-        _heartbeat_ts: float | None = None
-        _kill_switch_val: str | None = None
-        _ws_connected_at: float | None = None
-        try:
-            from state.redis_keys import HEARTBEAT_INGEST, KILL_SWITCH, WS_CONNECTED_AT  # noqa: PLC0415
-
-            if _redis_client is not None:
-                with _rctx.suppress(Exception):
-                    _hb_raw = _redis_client.get(HEARTBEAT_INGEST)
-                    if _hb_raw is not None:
-                        _heartbeat_ts = _parse_heartbeat_timestamp(_hb_raw)
-                with _rctx.suppress(Exception):
-                    _ks_raw = _redis_client.get(KILL_SWITCH)
-                    if _ks_raw is not None:
-                        _kill_switch_val = str(_ks_raw)
-                with _rctx.suppress(Exception):
-                    _ws_raw = _redis_client.get(WS_CONNECTED_AT)
-                    if _ws_raw is not None:
-                        _ws_connected_at = float(str(_ws_raw))
-        except Exception:
-            pass  # Redis unavailable — governance proceeds with env defaults
-
-        _warmup_ready_gov = warmup.get("ready", True)
-
-        _governance = assess_governance(
-            symbol=symbol,
-            last_seen_ts=_feed_age_ts,
-            transport_ok=True,
-            heartbeat_ts=_heartbeat_ts,
-            warmup_ready=_warmup_ready_gov,
+        _governance = self._assess_governance(
+            symbol,
+            redis_client=_redis_client,
+            warmup_ready=warmup.get("ready", True),
             dq_penalty=_dq_penalty,
             dq_degraded=len(_degraded_reports) > 0,
-            kill_switch_value=_kill_switch_val,
-            ws_connected_at=_ws_connected_at,
         )
 
         if _governance.action == GovernanceAction.BLOCK:
@@ -1044,83 +1297,9 @@ class WolfConstitutionalPipeline:
             technical_score: Any = l4.get("technical_score", 0)
 
             # ── Trade history for Monte Carlo ────────────────────────────────
-            # Source: LiveContextBus.get_trade_history() resolves from
-            # trade_archive (Redis → PostgreSQL → ledger) automatically.
-            # Fallback: system_metrics pass-through (caller-provided / test).
-
-            trade_returns: list[float] | None = None
-            trade_returns_preconditioned = False
-            preconditioning_diag: dict[str, Any] | None = None
-            _bus_returns: list[float] | None = cast(
-                list[float] | None,
-                self._context_bus.get_trade_history(
-                    symbol=symbol,
-                    lookback=200,
-                ),
+            trade_returns, trade_returns_preconditioned, preconditioning_diag = self._resolve_trade_returns(
+                symbol, system_metrics
             )
-            if _bus_returns:
-                trade_returns = _bus_returns
-                logger.info(
-                    "[Phase-3] {} Loaded {} historical returns via context bus",
-                    symbol,
-                    len(_bus_returns),
-                )
-
-            # Fallback: system_metrics pass-through (for test harness / manual override)
-            if not trade_returns and system_metrics:
-                _raw = system_metrics.get("trade_returns", None)
-                if isinstance(_raw, list | tuple) and len(cast(list[Any], _raw)) > 0:
-                    trade_returns = [float(r) for r in cast(list[Any], _raw)]
-
-            # Fallback: conditioned returns produced by realtime tick ingest.
-            if not trade_returns:
-                _cond_returns = cast(
-                    list[float],
-                    self._context_bus.get_conditioned_returns(symbol, count=200),
-                )
-                if _cond_returns:
-                    trade_returns = _cond_returns
-                    trade_returns_preconditioned = True
-                    preconditioning_diag = cast(
-                        dict[str, Any] | None,
-                        self._context_bus.get_conditioning_meta(symbol),
-                    )
-                    logger.info(
-                        "[Phase-3] {} Loaded {} conditioned returns via realtime tick path",
-                        symbol,
-                        len(_cond_returns),
-                    )
-
-            # Fallback: derive returns from candle closes and condition them.
-            if not trade_returns:
-                _h1 = cast(
-                    list[dict[str, Any]],
-                    self._context_bus.get_candles(symbol, "H1"),
-                )
-                _m15 = cast(
-                    list[dict[str, Any]],
-                    self._context_bus.get_candles(symbol, "M15"),
-                )
-                _candle_source = "H1" if len(_h1) >= len(_m15) else "M15"
-                _candles = _h1 if _candle_source == "H1" else _m15
-                _prices: list[float] = []
-                for c in _candles:
-                    _close = c.get("close")
-                    if isinstance(_close, int | float | str):
-                        with contextlib.suppress(TypeError, ValueError):
-                            _prices.append(float(_close))
-                if len(_prices) >= 2:
-                    _conditioned = self._signal_conditioner.condition_prices(_prices[-300:])
-                    trade_returns = _conditioned.conditioned_returns
-                    trade_returns_preconditioned = True
-                    preconditioning_diag = _conditioned.diagnostics()
-                    preconditioning_diag["source"] = f"candle_{_candle_source}"
-                    logger.info(
-                        "[Phase-3] {} Derived {} conditioned returns from {} candle closes",
-                        symbol,
-                        len(trade_returns),
-                        _candle_source,
-                    )
 
             # ── Bayesian prior state ─────────────────────────────────────────
             # Primary: derive from trade archive. Fallback: system_metrics.
@@ -2063,7 +2242,7 @@ class WolfConstitutionalPipeline:
                 l15_meta = l15_engine.compute_meta(
                     synthesis=synthesis,
                     l12_verdict=l12_verdict,
-                    reflective_pass1=None,  # pyright: ignore[reportArgumentType]
+                    reflective_pass1=None,
                     sovereignty=sovereignty,
                     gates=gates,
                 )
@@ -2327,7 +2506,7 @@ class WolfConstitutionalPipeline:
         verdict. Analysis-only, no execution authority.
         """
         # Map 9-gate results to constitutional gate statuses
-        total_gates = int(gates.get("total_gates", 9))
+        int(gates.get("total_gates", 9))
         total_passed = int(gates.get("total_passed", 0))
 
         def _gate_to_status(key: str) -> str:
@@ -2545,12 +2724,15 @@ class WolfConstitutionalPipeline:
             "latency_ms": latency_ms,
             "errors": errors,
         }
+        # Prefer specific blocker codes over generic Lx_HALT prefix
+        _blocker_errors = [e for e in errors if "_BLOCKER:" in e]
+        _halt_reason = _blocker_errors[0] if _blocker_errors else errors[0] if errors else "UNKNOWN"
         result["execution_map"] = build_execution_map(
             pair=symbol,
             timestamp=result["timestamp"],
             layers_executed=layers_executed or [],
             engines_invoked=engines_invoked or [],
-            halt_reason=errors[0] if errors else "UNKNOWN",
+            halt_reason=_halt_reason,
             constitutional_verdict=str(result.get("l12_verdict", {}).get("verdict", "HOLD")),
         )
         self._record_metrics(symbol, result)

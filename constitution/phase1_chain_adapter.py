@@ -24,7 +24,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class ChainStatus(str, Enum):
+class ChainStatus(StrEnum):
     """Phase 1 chain execution status."""
 
     PASS = "PASS"
@@ -173,9 +173,14 @@ class Phase1ChainAdapter:
         if not l1_continue:
             errors.append(f"L1_HALT:status={l1_status}")
             errors.extend(f"L1_BLOCKER:{b}" for b in l1_blockers)
+            if not l1_blockers:
+                errors.append("L1_BLOCKER:UNCLASSIFIED_HALT")
             logger.warning(
-                "[Phase1] L1 HALT | symbol=%s status=%s blockers=%s",
-                symbol, l1_status, l1_blockers,
+                "[Phase1] L1 HALT | symbol=%s status=%s blockers=%s warnings=%s",
+                symbol,
+                l1_status,
+                l1_blockers,
+                l1_warnings,
             )
             return ChainResult(
                 status=ChainStatus.FAIL,
@@ -216,9 +221,14 @@ class Phase1ChainAdapter:
         if not l2_continue:
             errors.append(f"L2_HALT:status={l2_status}")
             errors.extend(f"L2_BLOCKER:{b}" for b in l2_blockers)
+            if not l2_blockers:
+                errors.append("L2_BLOCKER:UNCLASSIFIED_HALT")
             logger.warning(
-                "[Phase1] L2 HALT | symbol=%s status=%s blockers=%s",
-                symbol, l2_status, l2_blockers,
+                "[Phase1] L2 HALT | symbol=%s status=%s blockers=%s warnings=%s",
+                symbol,
+                l2_status,
+                l2_blockers,
+                l2_warnings,
             )
             return ChainResult(
                 status=ChainStatus.FAIL,
@@ -264,9 +274,14 @@ class Phase1ChainAdapter:
         if not l3_continue:
             errors.append(f"L3_HALT:status={l3_status}")
             errors.extend(f"L3_BLOCKER:{b}" for b in l3_blockers)
+            if not l3_blockers:
+                errors.append("L3_BLOCKER:UNCLASSIFIED_HALT")
             logger.warning(
-                "[Phase1] L3 HALT | symbol=%s status=%s blockers=%s",
-                symbol, l3_status, l3_blockers,
+                "[Phase1] L3 HALT | symbol=%s status=%s blockers=%s warnings=%s",
+                symbol,
+                l3_status,
+                l3_blockers,
+                l3_warnings,
             )
             return ChainResult(
                 status=ChainStatus.FAIL,
@@ -282,8 +297,7 @@ class Phase1ChainAdapter:
 
         # ── All three layers passed ──────────────────────────
         logger.info(
-            "[Phase1] PASS | symbol=%s chain_status=%s L1=%s L2=%s L3=%s "
-            "timing_ms=L1:%.1f/L2:%.1f/L3:%.1f",
+            "[Phase1] PASS | symbol=%s chain_status=%s L1=%s L2=%s L3=%s timing_ms=L1:%.1f/L2:%.1f/L3:%.1f",
             symbol,
             worst_status.value,
             l1_status,
@@ -358,8 +372,11 @@ class Phase1ChainAdapter:
             logger.error("[Phase1.run] L1 raised: %s", exc, exc_info=True)
             errors.append(f"L1_EXCEPTION:{type(exc).__name__}")
             return ChainResult(
-                status=ChainStatus.FAIL, continuation_allowed=False,
-                halted_at="L1", errors=errors, timing_ms=timing,
+                status=ChainStatus.FAIL,
+                continuation_allowed=False,
+                halted_at="L1",
+                errors=errors,
+                timing_ms=timing,
             )
         timing["L1"] = (time.monotonic() - t0) * 1000
 
@@ -371,8 +388,12 @@ class Phase1ChainAdapter:
         if not l1_continue:
             errors.append(f"L1_HALT:status={l1_status}")
             return ChainResult(
-                status=ChainStatus.FAIL, continuation_allowed=False,
-                halted_at="L1", l1=l1, errors=errors, warnings=warnings,
+                status=ChainStatus.FAIL,
+                continuation_allowed=False,
+                halted_at="L1",
+                l1=l1,
+                errors=errors,
+                warnings=warnings,
                 timing_ms=timing,
             )
 
@@ -387,7 +408,8 @@ class Phase1ChainAdapter:
                 symbol=l2_payload.get("symbol", ""),
                 fallback_used=bool(l2_payload.get("fallback_class")),
                 fallback_source=l2_payload.get("fallback_class", ""),
-                fallback_approved=l2_payload.get("fallback_class", "") in (
+                fallback_approved=l2_payload.get("fallback_class", "")
+                in (
                     "LEGAL_PRIMARY_SUBSTITUTE",
                     "LEGAL_EMERGENCY_PRESERVE",
                 ),
@@ -396,8 +418,12 @@ class Phase1ChainAdapter:
             logger.error("[Phase1.run] L2 raised: %s", exc, exc_info=True)
             errors.append(f"L2_EXCEPTION:{type(exc).__name__}")
             return ChainResult(
-                status=ChainStatus.FAIL, continuation_allowed=False,
-                halted_at="L2", l1=l1, errors=errors, timing_ms=timing,
+                status=ChainStatus.FAIL,
+                continuation_allowed=False,
+                halted_at="L2",
+                l1=l1,
+                errors=errors,
+                timing_ms=timing,
             )
         timing["L2"] = (time.monotonic() - t0) * 1000
 
@@ -409,9 +435,14 @@ class Phase1ChainAdapter:
         if not l2_continue:
             errors.append(f"L2_HALT:status={l2_status}")
             return ChainResult(
-                status=ChainStatus.FAIL, continuation_allowed=False,
-                halted_at="L2", l1=l1, l2=l2, errors=errors,
-                warnings=warnings, timing_ms=timing,
+                status=ChainStatus.FAIL,
+                continuation_allowed=False,
+                halted_at="L2",
+                l1=l1,
+                l2=l2,
+                errors=errors,
+                warnings=warnings,
+                timing_ms=timing,
             )
 
         # ── L3 ────────────────────────────────────────────────
@@ -425,7 +456,8 @@ class Phase1ChainAdapter:
                 symbol=l3_payload.get("symbol", ""),
                 fallback_used=bool(l3_payload.get("fallback_class")),
                 fallback_source=l3_payload.get("fallback_class", ""),
-                fallback_approved=l3_payload.get("fallback_class", "") in (
+                fallback_approved=l3_payload.get("fallback_class", "")
+                in (
                     "LEGAL_PRIMARY_SUBSTITUTE",
                     "LEGAL_EMERGENCY_PRESERVE",
                 ),
@@ -434,8 +466,12 @@ class Phase1ChainAdapter:
             logger.error("[Phase1.run] L3 raised: %s", exc, exc_info=True)
             errors.append(f"L3_EXCEPTION:{type(exc).__name__}")
             return ChainResult(
-                status=ChainStatus.FAIL, continuation_allowed=False,
-                halted_at="L3", l1=l1, l2=l2, errors=errors,
+                status=ChainStatus.FAIL,
+                continuation_allowed=False,
+                halted_at="L3",
+                l1=l1,
+                l2=l2,
+                errors=errors,
                 timing_ms=timing,
             )
         timing["L3"] = (time.monotonic() - t0) * 1000
@@ -448,14 +484,26 @@ class Phase1ChainAdapter:
         if not l3_continue:
             errors.append(f"L3_HALT:status={l3_status}")
             return ChainResult(
-                status=ChainStatus.FAIL, continuation_allowed=False,
-                halted_at="L3", l1=l1, l2=l2, l3=l3, errors=errors,
-                warnings=warnings, timing_ms=timing,
+                status=ChainStatus.FAIL,
+                continuation_allowed=False,
+                halted_at="L3",
+                l1=l1,
+                l2=l2,
+                l3=l3,
+                errors=errors,
+                warnings=warnings,
+                timing_ms=timing,
             )
 
         return ChainResult(
-            status=worst, continuation_allowed=True, halted_at=None,
-            l1=l1, l2=l2, l3=l3, errors=errors, warnings=warnings,
+            status=worst,
+            continuation_allowed=True,
+            halted_at=None,
+            l1=l1,
+            l2=l2,
+            l3=l3,
+            errors=errors,
+            warnings=warnings,
             timing_ms=timing,
         )
 
@@ -562,10 +610,20 @@ class Phase1EvaluatorChainResult:
     """
 
     __slots__ = (
-        "phase", "phase_version", "input_ref", "timestamp",
-        "halted", "halted_at", "continuation_allowed",
-        "next_legal_targets", "chain_status", "summary_status",
-        "blocker_map", "warning_map", "layer_results", "audit",
+        "phase",
+        "phase_version",
+        "input_ref",
+        "timestamp",
+        "halted",
+        "halted_at",
+        "continuation_allowed",
+        "next_legal_targets",
+        "chain_status",
+        "summary_status",
+        "blocker_map",
+        "warning_map",
+        "layer_results",
+        "audit",
     )
 
     def __init__(self, **kwargs: Any) -> None:

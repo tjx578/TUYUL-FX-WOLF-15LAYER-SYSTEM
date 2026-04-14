@@ -25,7 +25,7 @@ Zone: analysis/ — pure read-only analysis, no execution side-effects.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from loguru import logger
@@ -35,43 +35,44 @@ from loguru import logger
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L2Status(str, Enum):
+class L2Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class FreshnessState(str, Enum):
+class FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class WarmupState(str, Enum):
+class WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class FallbackClass(str, Enum):
+class FallbackClass(StrEnum):
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
     NO_FALLBACK = "NO_FALLBACK"
 
 
-class CoherenceBand(str, Enum):
+class CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class BlockerCode(str, Enum):
+class BlockerCode(StrEnum):
     UPSTREAM_L1_NOT_CONTINUABLE = "UPSTREAM_L1_NOT_CONTINUABLE"
     REQUIRED_TIMEFRAME_MISSING = "REQUIRED_TIMEFRAME_MISSING"
     TIMEFRAME_SET_INSUFFICIENT = "TIMEFRAME_SET_INSUFFICIENT"
     MTA_HIERARCHY_VIOLATED = "MTA_HIERARCHY_VIOLATED"
+    LOW_ALIGNMENT_BAND = "LOW_ALIGNMENT_BAND"
     STRUCTURE_SOURCE_INVALID = "STRUCTURE_SOURCE_INVALID"
     FRESHNESS_GOVERNANCE_HARD_FAIL = "FRESHNESS_GOVERNANCE_HARD_FAIL"
     WARMUP_INSUFFICIENT = "WARMUP_INSUFFICIENT"
@@ -330,7 +331,8 @@ def _compress_status(
         and warmup in (WarmupState.READY, WarmupState.PARTIAL)
         and hierarchy_followed
         and band in (CoherenceBand.HIGH, CoherenceBand.MID)
-        and fallback in (
+        and fallback
+        in (
             FallbackClass.NO_FALLBACK,
             FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             FallbackClass.LEGAL_EMERGENCY_PRESERVE,
@@ -486,16 +488,25 @@ class L2ConstitutionalGovernor:
         rule_hits.append(f"aligned={aligned}")
 
         # Partial coverage check
-        partial_coverage = any(
-            tf not in available_tfs for tf in COVERAGE_TARGET_TIMEFRAMES
+        partial_coverage = any(tf not in available_tfs for tf in COVERAGE_TARGET_TIMEFRAMES)
+
+        # ── Step 6b: Close alignment band gap ─────────────────
+        # If band is LOW but MTA says hierarchy_followed (threshold gap
+        # between MTA warn_threshold and constitutional ALIGNMENT_MID_GTE),
+        # add an explicit blocker so halts are never silent.
+        _has_alignment_blocker = any(
+            str(b) in (BlockerCode.MTA_HIERARCHY_VIOLATED, BlockerCode.LOW_ALIGNMENT_BAND)
+            if isinstance(b, BlockerCode)
+            else b in (BlockerCode.MTA_HIERARCHY_VIOLATED.value, BlockerCode.LOW_ALIGNMENT_BAND.value)
+            for b in blockers
         )
+        if band == CoherenceBand.LOW and not _has_alignment_blocker:
+            blockers.append(BlockerCode.LOW_ALIGNMENT_BAND)
+            rule_hits.append("low_alignment_band_blocker_injected")
 
         # ── Step 7: Compress status ───────────────────────────
         # Deduplicate blockers
-        blocker_strs = list(dict.fromkeys(
-            b.value if isinstance(b, BlockerCode) else str(b)
-            for b in blockers
-        ))
+        blocker_strs = list(dict.fromkeys(b.value if isinstance(b, BlockerCode) else str(b) for b in blockers))
 
         status = _compress_status(
             blocker_strs,
@@ -512,7 +523,11 @@ class L2ConstitutionalGovernor:
         warning_codes: list[str] = []
         if status in (L2Status.PASS, L2Status.WARN):
             warning_codes = _collect_warning_codes(
-                freshness, warmup, fallback, aligned, partial_coverage,
+                freshness,
+                warmup,
+                fallback,
+                aligned,
+                partial_coverage,
             )
             if hierarchy_band == "WARN":
                 warning_codes.append("MTA_HIERARCHY_DEGRADED")
@@ -533,8 +548,7 @@ class L2ConstitutionalGovernor:
 
         # Log constitutional result
         logger.info(
-            "[L2] {} constitutional: status={} band={} alignment={:.4f} "
-            "freshness={} warmup={} fallback={} blockers={}",
+            "[L2] {} constitutional: status={} band={} alignment={:.4f} freshness={} warmup={} fallback={} blockers={}",
             symbol,
             status.value,
             band.value,
