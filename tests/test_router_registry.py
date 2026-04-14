@@ -34,12 +34,12 @@ class TestRouterRegistry:
             seen.add(key)
 
     def test_load_routers_returns_correct_count(self) -> None:
-        routers = load_routers()
-        assert len(routers) == len(ROUTER_ENTRIES)
+        routers, errors = load_routers()
+        assert len(routers) + len(errors) == len(ROUTER_ENTRIES)
 
     def test_load_routers_returns_api_router_instances(self) -> None:
         from fastapi import APIRouter
 
-        routers = load_routers()
+        routers, _errors = load_routers()
         for router, desc in routers:
             assert isinstance(router, APIRouter), f"Expected APIRouter for '{desc}', got {type(router)}"

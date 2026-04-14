@@ -8,12 +8,15 @@ This keeps api_server.py lean and makes it trivial to add/remove routes.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from fastapi import APIRouter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,16 +91,25 @@ ROUTER_ENTRIES: list[RouterEntry] = [
 ]
 
 
-def load_routers() -> list[tuple[APIRouter, str]]:
+def load_routers() -> tuple[list[tuple[APIRouter, str]], list[str]]:
     """
     Import and return all routers with their descriptions.
 
+    Each entry is loaded independently so a single failing module
+    does not prevent the remaining routers from mounting.
+
     Returns:
-        List of (router_instance, description) tuples in mount order.
+        Tuple of (successful routers, error descriptions).
     """
     result: list[tuple[APIRouter, str]] = []
+    errors: list[str] = []
     for entry in ROUTER_ENTRIES:
-        mod = import_module(entry.module)
-        router: APIRouter = getattr(mod, entry.attr)
-        result.append((router, entry.description))
-    return result
+        try:
+            mod = import_module(entry.module)
+            router: APIRouter = getattr(mod, entry.attr)
+            result.append((router, entry.description))
+        except Exception as exc:
+            msg = f"{entry.module}.{entry.attr}: {exc!s}"
+            errors.append(msg)
+            logger.error("Failed to load router %s.%s: %s", entry.module, entry.attr, exc)
+    return result, errors

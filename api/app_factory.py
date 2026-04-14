@@ -794,17 +794,27 @@ def _create_app_inner() -> FastAPI:
     # keep process alive with health endpoints so orchestrators can
     # inspect diagnostics instead of seeing a dead container.
     fail_open = _env_bool("ROUTER_BOOT_FAIL_OPEN", default=True)
+    routers, router_import_errors = load_routers()
+    if router_import_errors:
+        router_boot_errors.extend(router_import_errors)
+        logger.warning(
+            "Router import failures (%d/%d): %s",
+            len(router_import_errors),
+            len(router_import_errors) + len(routers),
+            "; ".join(router_import_errors),
+        )
+
     try:
-        for router, description in load_routers():
+        for router, description in routers:
             app.include_router(router)
             logger.debug("Mounted router: %s", description)
 
-        # Guard: fail fast if any (method, path) was registered more than once.
+        # Guard: fail fast if any (method, path) pair is registered more than once.
         _assert_no_duplicate_routes(app)
     except Exception as exc:
-        detail = f"router_bootstrap_failed: {exc!s}"
+        detail = f"router_mount_failed: {exc!s}"
         router_boot_errors.append(detail)
-        logger.exception("Router bootstrap failed")
+        logger.exception("Router mount failed")
         if not fail_open:
             raise
 
