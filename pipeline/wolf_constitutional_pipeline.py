@@ -1478,95 +1478,30 @@ class WolfConstitutionalPipeline:
                 l9.get("valid", False),
             )
 
-            # ── L7 Constitutional Diagnostic ─────────────────────────
-            _l7_const = l7.get("constitutional", {})
-            _l7_const_status = _l7_const.get("status", "N/A")
-            _l7_cont_allowed = l7.get("continuation_allowed", True)
-            if _l7_const_status == "FAIL":
-                _l7_blockers = _l7_const.get("blocker_codes", [])
-                logger.warning(
-                    "[Phase-3] {} L7 constitutional FAIL — blockers={} continuation={}",
-                    symbol,
-                    _l7_blockers,
-                    _l7_cont_allowed,
-                )
-            elif _l7_const_status == "WARN":
-                _l7_warns = _l7_const.get("warning_codes", [])
-                logger.info(
-                    "[Phase-3] {} L7 constitutional WARN — warnings={} band={}",
-                    symbol,
-                    _l7_warns,
-                    _l7_const.get("coherence_band", "N/A"),
-                )
-            else:
-                logger.info(
-                    "[Phase-3] {} L7 constitutional {} — band={} wp={:.4f}",
-                    symbol,
-                    _l7_const_status,
-                    _l7_const.get("coherence_band", "N/A"),
-                    _l7_const.get("score_numeric", 0.0),
-                )
-
-            # ── L8 Constitutional Diagnostic ─────────────────────────
-            _l8_const = l8.get("constitutional", {})
-            _l8_const_status = _l8_const.get("status", "N/A")
-            _l8_cont_allowed = l8.get("continuation_allowed", True)
-            if _l8_const_status == "FAIL":
-                _l8_blockers = _l8_const.get("blocker_codes", [])
-                logger.warning(
-                    "[Phase-3] {} L8 constitutional FAIL — blockers={} continuation={}",
-                    symbol,
-                    _l8_blockers,
-                    _l8_cont_allowed,
-                )
-            elif _l8_const_status == "WARN":
-                _l8_warns = _l8_const.get("warning_codes", [])
-                logger.info(
-                    "[Phase-3] {} L8 constitutional WARN — warnings={} band={}",
-                    symbol,
-                    _l8_warns,
-                    _l8_const.get("coherence_band", "N/A"),
-                )
-            else:
-                logger.info(
-                    "[Phase-3] {} L8 constitutional {} — band={} integrity={:.4f}",
-                    symbol,
-                    _l8_const_status,
-                    _l8_const.get("coherence_band", "N/A"),
-                    _l8_const.get("score_numeric", 0.0),
-                )
-
-            # ── L9 Constitutional Diagnostic ─────────────────────────
-            _l9_const = l9.get("constitutional", {})
-            _l9_const_status = _l9_const.get("status", "N/A")
-            _l9_cont_allowed = l9.get("continuation_allowed", True)
-            if _l9_const_status == "FAIL":
-                _l9_blockers = _l9_const.get("blocker_codes", [])
-                logger.warning(
-                    "[Phase-3] {} L9 constitutional FAIL — blockers={} continuation={}",
-                    symbol,
-                    _l9_blockers,
-                    _l9_cont_allowed,
-                )
-            elif _l9_const_status == "WARN":
-                _l9_warns = _l9_const.get("warning_codes", [])
-                logger.info(
-                    "[Phase-3] {} L9 constitutional WARN — warnings={} band={}",
-                    symbol,
-                    _l9_warns,
-                    _l9_const.get("coherence_band", "N/A"),
-                )
-            else:
-                logger.info(
-                    "[Phase-3] {} L9 constitutional {} — band={} structure={:.4f}",
-                    symbol,
-                    _l9_const_status,
-                    _l9_const.get("coherence_band", "N/A"),
-                    _l9_const.get("score_numeric", 0.0),
-                )
+            # ── L7/L8/L9 Constitutional Diagnostics ─────────────────
+            _l7_const_status, _l7_cont_allowed = self._log_layer_constitutional(
+                symbol,
+                "Phase-3",
+                "L7",
+                l7,
+                metric_label="wp",
+            )
+            _l8_const_status, _l8_cont_allowed = self._log_layer_constitutional(
+                symbol,
+                "Phase-3",
+                "L8",
+                l8,
+                metric_label="integrity",
+            )
+            _l9_const_status, _l9_cont_allowed = self._log_layer_constitutional(
+                symbol,
+                "Phase-3",
+                "L9",
+                l9,
+                metric_label="structure",
+            )
 
             # ── Phase-3 Chain Integrity Check (post-hoc) ─────────────
-            # If L7 FAIL, downstream L8/L9 should also be treated as blocked
             if _l7_const_status == "FAIL" and (_l8_cont_allowed or _l9_cont_allowed):
                 logger.warning(
                     "[Phase-3] {} CHAIN WARNING: L7 FAIL but L8/L9 continuation allowed "
@@ -1792,39 +1727,27 @@ class WolfConstitutionalPipeline:
             #   ADR-011: cognitive/fusion/quantum enrichment before L12
             #   Constitutional wrapper: advisory-only, non-fatal, isolated
             # ═══════════════════════════════════════════════════════
-            enrichment_data: dict[str, Any] = {}
-            _phase25_constitutional: dict[str, Any] = {}
-            try:
-                if self._enrichment is None:
-                    from engines.enrichment_orchestrator import (  # noqa: PLC0415
-                        EngineEnrichmentLayer,
-                    )
-
-                    self._enrichment = EngineEnrichmentLayer(
-                        context_bus=self._context_bus,
-                    )
-
-                _enrich_lr: dict[str, Any] = {
-                    "L1": l1,
-                    "L2": l2,
-                    "L3": l3,
-                    "L4": l4,
-                    "L5": l5,
-                    "L6": l6,
-                    "L7": l7,
-                    "L8": l8,
-                    "L9": l9,
-                    "L10": l10,
-                    "L11": l11,
-                }
-                enrichment_result = self._enrichment.run(
-                    symbol=symbol,
-                    direction=direction,
-                    layer_results=_enrich_lr,
-                    entry_price=l11.get("entry_price", l11.get("entry", 0.0)),
-                    stop_loss=_raw_sl,
-                    take_profit=_raw_tp,
-                )
+            _enrich_lr: dict[str, Any] = {
+                "L1": l1,
+                "L2": l2,
+                "L3": l3,
+                "L4": l4,
+                "L5": l5,
+                "L6": l6,
+                "L7": l7,
+                "L8": l8,
+                "L9": l9,
+                "L10": l10,
+                "L11": l11,
+            }
+            enrichment_data, _phase25_constitutional = self._run_enrichment_phase(
+                symbol,
+                direction,
+                _enrich_lr,
+                raw_sl=_raw_sl,
+                raw_tp=_raw_tp,
+            )
+            if "error" not in enrichment_data:
                 engines_invoked.extend(
                     [
                         "EngineEnrichmentLayer",
@@ -1834,58 +1757,6 @@ class WolfConstitutionalPipeline:
                         "QuantumReflectiveBridge",
                     ]
                 )
-                enrichment_data = enrichment_result.to_dict()
-
-                # ── Constitutional governance envelope for Phase 2.5 ──
-                _enrich_ok = 9 - len(enrichment_result.errors)
-                _enrich_warnings: list[str] = list(enrichment_result.errors)
-                if _enrich_ok < 5:
-                    _enrich_warnings.append("ENRICHMENT_ENGINES_DEGRADED")
-                _phase25_status = "PASS" if not _enrich_warnings else "WARN"
-                _phase25_constitutional = {
-                    "phase": "PHASE_2_5_ENRICHMENT",
-                    "phase_status": _phase25_status,
-                    "continuation_allowed": True,  # enrichment never halts
-                    "next_legal_targets": ["PHASE_5"],
-                    "engines_ok": _enrich_ok,
-                    "engines_total": 9,
-                    "enrichment_score": enrichment_result.enrichment_score,
-                    "warnings": _enrich_warnings,
-                    "advisory_only": True,
-                    "audit": {
-                        "non_fatal": True,
-                        "parallel_semantic": True,
-                        "advisory_after_collection": True,
-                    },
-                }
-                enrichment_data["constitutional"] = _phase25_constitutional
-
-                logger.info(
-                    "[Pipeline v8.0] Phase 2.5: Enrichment -- {} score={:.3f} engines_ok={}/9 status={}",
-                    symbol,
-                    enrichment_result.enrichment_score,
-                    _enrich_ok,
-                    _phase25_status,
-                )
-                if _phase25_status == "WARN":
-                    logger.warning(
-                        "[Pipeline v8.0] Phase 2.5 WARN | symbol={} warnings={}",
-                        symbol,
-                        _enrich_warnings,
-                    )
-            except Exception as exc:
-                logger.warning("[Pipeline v8.0] Phase 2.5 enrichment failed (non-fatal): {}", exc)
-                enrichment_data = {"error": str(exc)}
-                _phase25_constitutional = {
-                    "phase": "PHASE_2_5_ENRICHMENT",
-                    "phase_status": "WARN",
-                    "continuation_allowed": True,
-                    "engines_ok": 0,
-                    "engines_total": 9,
-                    "enrichment_score": 0.0,
-                    "warnings": [f"ENRICHMENT_EXCEPTION:{type(exc).__name__}"],
-                    "advisory_only": True,
-                }
 
             # ── LRCE patch: feed enrichment into L6 (Check 4) ────────
             # L6 ran before enrichment (needed for L10/L12), but

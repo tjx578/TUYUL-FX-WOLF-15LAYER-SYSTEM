@@ -18,8 +18,11 @@
     "load",
     "e2e"
   ],
-  "extraPaths": [
-    "."
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": ["."]
+    }
   ],
   "venvPath": ".",
   "venv": ".venv"
