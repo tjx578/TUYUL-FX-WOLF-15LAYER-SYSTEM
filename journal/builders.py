@@ -65,7 +65,7 @@ def build_j2(pair: str, synthesis: dict[str, Any], l12: dict[str, Any]) -> Decis
         wolf_30_score=int(scores.get("wolf_30_point", 0)),
         f_score=int(scores.get("f_score", 0)),
         t_score=int(scores.get("t_score", 0)),
-        fta_score=int((scores.get("fta_score") or 0) * 10),
+        fta_score=int((scores.get("fta_score") or 0) / 10),
         exec_score=int(scores.get("exec_score", 0)),
         tii_sym=float(layers.get("L8_tii_sym", 0.0)),
         integrity_index=float(layers.get("L8_integrity_index", 0.0)),
