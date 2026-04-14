@@ -23,7 +23,7 @@
 
 ## 2. System Flow Overview
 
-```
+```text
 Finnhub WebSocket
   → SpikeFilter + DedupCache        (ZONE A: Ingest & Filter)
   → TickBuffer + CandleBuilder       (ZONE B: Buffer & Candle)
@@ -39,7 +39,7 @@ Finnhub WebSocket
 
 ## 3. Master Pipeline Diagram
 
-```
+```text
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  ZONE A  DATA INGESTION                                                      ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
@@ -357,7 +357,7 @@ Finnhub WebSocket
 
 ## 6. Constitutional Boundaries (Locked)
 
-```
+```text
 analysis/      → BERPIKIR    — read-only market analysis; zero side effects
 constitution/  → MEMUTUSKAN  — L12 is sole verdict authority; nothing overrides it
 execution/     → MENJALANKAN — blind state machine; no strategy logic
@@ -373,7 +373,7 @@ dashboard issuing verdicts) renders the system constitutionally invalid.
 
 ## 7. Changelog
 
-```
+```text
 v1.0 — Initial diagram (compact visual style, some naming inaccuracies)
 v2.0 — Source-verified rewrite (complete inventory, verbose)
 v2.1 — Unified architecture (best of both; this is the MASTER reference)
