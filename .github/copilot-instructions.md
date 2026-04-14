@@ -121,10 +121,15 @@ Jika salah satu gagal:
 - L12 akan melihat structure_status dan mengevaluasi dampaknya
 
 ### Phase 4 — RISK CHAIN
-Strict chain, tidak boleh diparalelkan:
+Strict chain, **always-forward**, tidak boleh diparalelkan:
 - L11 RR / battle strategy
 - L6 capital firewall / veto
 - L10 position sizing bridge / risk geometry packaging
+
+Jika salah satu gagal:
+- catat degradasi (status=FAIL, blocker_codes)
+- **tetap lanjut** ke layer berikutnya dalam chain dengan skor terdegradasi
+- L12 akan melihat risk_chain_status dan mengevaluasi dampaknya
 
 ### Phase 5 — SYNTHESIS & VERDICT
 - synthesis

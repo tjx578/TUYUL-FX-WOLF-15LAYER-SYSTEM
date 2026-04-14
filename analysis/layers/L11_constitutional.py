@@ -17,8 +17,9 @@ Authority boundary:
   L11 is a risk-reward / battle-strategy legality governor only.
   L11 must never emit direction, execute, position_size, or verdict.
   Hard legality checks run before score band evaluation.
-  status == FAIL implies continuation_allowed == false.
-  continuation_allowed == true implies next_legal_targets == ["L6"].
+  Always-forward scoring: continuation_allowed is always True.
+  L12 is sole verdict authority. FAIL status records degradation but does not halt.
+  next_legal_targets always includes ["L6"].
 
 Zone: analysis/ — pure read-only analysis, no execution side-effects.
 """
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -38,39 +39,39 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L11Status(str, Enum):
+class L11Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class L11FreshnessState(str, Enum):
+class L11FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class L11WarmupState(str, Enum):
+class L11WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class L11FallbackClass(str, Enum):
+class L11FallbackClass(StrEnum):
     NO_FALLBACK = "NO_FALLBACK"
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class L11CoherenceBand(str, Enum):
+class L11CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class L11BlockerCode(str, Enum):
+class L11BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
     REQUIRED_RR_SOURCE_MISSING = "REQUIRED_RR_SOURCE_MISSING"
     ENTRY_UNAVAILABLE = "ENTRY_UNAVAILABLE"
@@ -278,13 +279,15 @@ def _compress_status(
         return L11Status.PASS
 
     is_legal_warn = (
-        freshness in (
+        freshness
+        in (
             L11FreshnessState.FRESH,
             L11FreshnessState.STALE_PRESERVED,
             L11FreshnessState.DEGRADED,
         )
         and warmup in (L11WarmupState.READY, L11WarmupState.PARTIAL)
-        and fallback in (
+        and fallback
+        in (
             L11FallbackClass.NO_FALLBACK,
             L11FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             L11FallbackClass.LEGAL_EMERGENCY_PRESERVE,
@@ -395,15 +398,26 @@ class L11ConstitutionalGovernor:
 
         # ── Step 9: compress status ──────────────────────────────────
         status = _compress_status(
-            blockers, band, freshness, warmup, fallback, rr_warnings,
+            blockers,
+            band,
+            freshness,
+            warmup,
+            fallback,
+            rr_warnings,
         )
 
-        continuation_allowed = status != L11Status.FAIL
-        next_targets = ["L6"] if continuation_allowed else []
+        # Always-forward: L12 is sole verdict authority.
+        # FAIL status is recorded for diagnostics but never halts the pipeline.
+        continuation_allowed = True
+        next_targets = ["L6"]
 
         # ── Step 10: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(
-            freshness, warmup, fallback, band, rr_warnings,
+            freshness,
+            warmup,
+            fallback,
+            band,
+            rr_warnings,
         )
 
         # ── Step 11: assemble features ───────────────────────────────
@@ -421,10 +435,7 @@ class L11ConstitutionalGovernor:
         }
 
         routing = {
-            "source_used": [
-                s for s in ["atr", "tp1_generator", "quantum"]
-                if l11_analysis.get("valid", False)
-            ],
+            "source_used": [s for s in ["atr", "tp1_generator", "quantum"] if l11_analysis.get("valid", False)],
             "fallback_used": fallback != L11FallbackClass.NO_FALLBACK,
             "next_legal_targets": next_targets,
         }

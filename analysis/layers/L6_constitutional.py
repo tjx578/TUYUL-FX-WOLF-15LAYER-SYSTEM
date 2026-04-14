@@ -17,8 +17,9 @@ Authority boundary:
   L6 is a capital firewall / correlation-risk legality governor only.
   L6 must never emit direction, execute, trade_valid, position_size, or verdict.
   Hard legality checks run before score band evaluation.
-  status == FAIL implies continuation_allowed == false.
-  continuation_allowed == true implies next_legal_targets == ["L10"].
+  Always-forward scoring: continuation_allowed is always True.
+  L12 is sole verdict authority. FAIL status records degradation but does not halt.
+  next_legal_targets always includes ["L10"].
 
 Zone: analysis/ — pure read-only analysis, no execution side-effects.
 """
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -38,39 +39,39 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L6Status(str, Enum):
+class L6Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class L6FreshnessState(str, Enum):
+class L6FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class L6WarmupState(str, Enum):
+class L6WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class L6FallbackClass(str, Enum):
+class L6FallbackClass(StrEnum):
     NO_FALLBACK = "NO_FALLBACK"
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class L6CoherenceBand(str, Enum):
+class L6CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class L6BlockerCode(str, Enum):
+class L6BlockerCode(StrEnum):
     UPSTREAM_L11_NOT_CONTINUABLE = "UPSTREAM_L11_NOT_CONTINUABLE"
     REQUIRED_RISK_SOURCE_MISSING = "REQUIRED_RISK_SOURCE_MISSING"
     ACCOUNT_STATE_UNAVAILABLE = "ACCOUNT_STATE_UNAVAILABLE"
@@ -296,13 +297,15 @@ def _compress_status(
         return L6Status.PASS
 
     is_legal_warn = (
-        freshness in (
+        freshness
+        in (
             L6FreshnessState.FRESH,
             L6FreshnessState.STALE_PRESERVED,
             L6FreshnessState.DEGRADED,
         )
         and warmup in (L6WarmupState.READY, L6WarmupState.PARTIAL)
-        and fallback in (
+        and fallback
+        in (
             L6FallbackClass.NO_FALLBACK,
             L6FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             L6FallbackClass.LEGAL_EMERGENCY_PRESERVE,
@@ -410,15 +413,26 @@ class L6ConstitutionalGovernor:
 
         # ── Step 8: compress status ──────────────────────────────────
         status = _compress_status(
-            blockers, band, freshness, warmup, fallback, capital_warnings,
+            blockers,
+            band,
+            freshness,
+            warmup,
+            fallback,
+            capital_warnings,
         )
 
-        continuation_allowed = status != L6Status.FAIL
-        next_targets = ["L10"] if continuation_allowed else []
+        # Always-forward: L12 is sole verdict authority.
+        # FAIL status is recorded for diagnostics but never halts the pipeline.
+        continuation_allowed = True
+        next_targets = ["L10"]
 
         # ── Step 9: warning codes ────────────────────────────────────
         warning_codes = _collect_warning_codes(
-            freshness, warmup, fallback, band, capital_warnings,
+            freshness,
+            warmup,
+            fallback,
+            band,
+            capital_warnings,
         )
 
         # ── Step 10: assemble features ───────────────────────────────
@@ -437,7 +451,8 @@ class L6ConstitutionalGovernor:
 
         routing = {
             "source_used": [
-                s for s in ["account_state", "drawdown_engine", "vol_cluster", "correlation"]
+                s
+                for s in ["account_state", "drawdown_engine", "vol_cluster", "correlation"]
                 if l6_analysis.get("valid", False)
             ],
             "fallback_used": fallback != L6FallbackClass.NO_FALLBACK,

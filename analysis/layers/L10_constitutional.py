@@ -17,8 +17,9 @@ Authority boundary:
   L10 is a position-sizing / risk-geometry legality governor only.
   L10 must never emit direction, execute, trade_valid, or verdict.
   Hard legality checks run before score band evaluation.
-  status == FAIL implies continuation_allowed == false.
-  continuation_allowed == true implies next_legal_targets == ["PHASE_5"].
+  Always-forward scoring: continuation_allowed is always True.
+  L12 is sole verdict authority. FAIL status records degradation but does not halt.
+  next_legal_targets always includes ["PHASE_5"].
 
 Zone: analysis/ — pure read-only analysis, no execution side-effects.
 """
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -38,39 +39,39 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L10Status(str, Enum):
+class L10Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class L10FreshnessState(str, Enum):
+class L10FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class L10WarmupState(str, Enum):
+class L10WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class L10FallbackClass(str, Enum):
+class L10FallbackClass(StrEnum):
     NO_FALLBACK = "NO_FALLBACK"
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class L10CoherenceBand(str, Enum):
+class L10CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class L10BlockerCode(str, Enum):
+class L10BlockerCode(StrEnum):
     UPSTREAM_L6_NOT_CONTINUABLE = "UPSTREAM_L6_NOT_CONTINUABLE"
     REQUIRED_SIZING_SOURCE_MISSING = "REQUIRED_SIZING_SOURCE_MISSING"
     ENTRY_UNAVAILABLE = "ENTRY_UNAVAILABLE"
@@ -301,13 +302,15 @@ def _compress_status(
         return L10Status.PASS
 
     is_legal_warn = (
-        freshness in (
+        freshness
+        in (
             L10FreshnessState.FRESH,
             L10FreshnessState.STALE_PRESERVED,
             L10FreshnessState.DEGRADED,
         )
         and warmup in (L10WarmupState.READY, L10WarmupState.PARTIAL)
-        and fallback in (
+        and fallback
+        in (
             L10FallbackClass.NO_FALLBACK,
             L10FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             L10FallbackClass.LEGAL_EMERGENCY_PRESERVE,
@@ -415,15 +418,26 @@ class L10ConstitutionalGovernor:
 
         # ── Step 8: compress status ──────────────────────────────────
         status = _compress_status(
-            blockers, band, freshness, warmup, fallback, sizing_warnings,
+            blockers,
+            band,
+            freshness,
+            warmup,
+            fallback,
+            sizing_warnings,
         )
 
-        continuation_allowed = status != L10Status.FAIL
-        next_targets = ["PHASE_5"] if continuation_allowed else []
+        # Always-forward: L12 is sole verdict authority.
+        # FAIL status is recorded for diagnostics but never halts the pipeline.
+        continuation_allowed = True
+        next_targets = ["PHASE_5"]
 
         # ── Step 9: warning codes ────────────────────────────────────
         warning_codes = _collect_warning_codes(
-            freshness, warmup, fallback, band, sizing_warnings,
+            freshness,
+            warmup,
+            fallback,
+            band,
+            sizing_warnings,
         )
 
         # ── Step 10: assemble features ───────────────────────────────
@@ -445,8 +459,7 @@ class L10ConstitutionalGovernor:
 
         routing = {
             "source_used": [
-                s for s in ["risk_geometry", "fta_engine", "prop_compliance"]
-                if l10_analysis.get("valid", False)
+                s for s in ["risk_geometry", "fta_engine", "prop_compliance"] if l10_analysis.get("valid", False)
             ],
             "fallback_used": fallback != L10FallbackClass.NO_FALLBACK,
             "next_legal_targets": next_targets,
