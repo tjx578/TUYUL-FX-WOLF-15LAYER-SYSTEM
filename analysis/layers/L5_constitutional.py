@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -39,39 +39,39 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L5Status(str, Enum):
+class L5Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class FreshnessState(str, Enum):
+class FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class WarmupState(str, Enum):
+class WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class FallbackClass(str, Enum):
+class FallbackClass(StrEnum):
     NO_FALLBACK = "NO_FALLBACK"
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class CoherenceBand(str, Enum):
+class CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class BlockerCode(str, Enum):
+class BlockerCode(StrEnum):
     UPSTREAM_L4_NOT_CONTINUABLE = "UPSTREAM_L4_NOT_CONTINUABLE"
     REQUIRED_PSYCHOLOGY_INPUT_MISSING = "REQUIRED_PSYCHOLOGY_INPUT_MISSING"
     DISCIPLINE_BELOW_MINIMUM = "DISCIPLINE_BELOW_MINIMUM"
@@ -249,12 +249,16 @@ def _compress_status(
     l5_analysis: dict[str, Any],
     warnings: list[str],
 ) -> tuple[L5Status, bool]:
-    """Compress to final PASS/WARN/FAIL per frozen spec."""
+    """Compress to final PASS/WARN/FAIL per frozen spec.
+
+    Always-forward scoring: continuation_allowed is always True.
+    L5 is a scoring layer, not a decision gate. L12 is sole verdict authority.
+    """
     if blockers:
-        return L5Status.FAIL, False
+        return L5Status.FAIL, True
 
     if band == CoherenceBand.LOW:
-        return L5Status.FAIL, False
+        return L5Status.FAIL, True
 
     freshness = l5_analysis.get("freshness_state", "FRESH")
     warmup = l5_analysis.get("warmup_state", "READY")
@@ -283,7 +287,7 @@ def _compress_status(
     if legal_degraded:
         return L5Status.WARN, True
 
-    return L5Status.FAIL, False
+    return L5Status.FAIL, True
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -321,7 +325,10 @@ class L5ConstitutionalGovernor:
 
         # Step 12–13: compress
         status, continuation_allowed = _compress_status(
-            blockers, band, l5_analysis, warnings,
+            blockers,
+            band,
+            l5_analysis,
+            warnings,
         )
 
         next_targets = ["PHASE_2_5"] if continuation_allowed else []
@@ -340,7 +347,11 @@ class L5ConstitutionalGovernor:
 
         logger.debug(
             "L5 constitutional: symbol=%s status=%s band=%s score=%.4f blockers=%d",
-            symbol, status.value, band.value, psych_score, len(blockers),
+            symbol,
+            status.value,
+            band.value,
+            psych_score,
+            len(blockers),
         )
 
         return {
@@ -365,7 +376,9 @@ class L5ConstitutionalGovernor:
                     "focus_level": round(float(l5_analysis.get("focus_level", 1.0)), 4),
                     "revenge_trading": bool(l5_analysis.get("revenge_trading", False)),
                     "fomo_level": round(float(l5_analysis.get("fomo_level", l5_analysis.get("fomo_score", 0.0))), 4),
-                    "emotional_bias": round(float(l5_analysis.get("emotional_bias", l5_analysis.get("emotion_delta", 0.0))), 4),
+                    "emotional_bias": round(
+                        float(l5_analysis.get("emotional_bias", l5_analysis.get("emotion_delta", 0.0))), 4
+                    ),
                     "risk_event_active": bool(l5_analysis.get("risk_event_active", False)),
                     "caution_event": bool(l5_analysis.get("caution_event", False)),
                     "eaf_score": round(float(l5_analysis.get("eaf_score", 0.0)), 4),

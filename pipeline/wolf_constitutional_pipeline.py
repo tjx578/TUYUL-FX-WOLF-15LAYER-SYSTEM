@@ -1226,16 +1226,15 @@ class WolfConstitutionalPipeline:
                 )
 
             # Halt check: L4 must allow continuation before L5 runs
-            if not l4.get("continuation_allowed", l4.get("valid", True)):
+            if _l4_status == "FAIL":
                 logger.warning(
-                    "[Pipeline v8.0] Phase 2 HALT at L4 | symbol={} status={} blockers={}",
+                    "[Pipeline v8.0] Phase 2 L4 DEGRADED | symbol={} status={} blockers={} | forwarding to L12",
                     symbol,
                     _l4_status,
                     _l4_const.get("blocker_codes", []),
                 )
-                errors.append(f"L4_HALT:status={_l4_status}")
+                errors.append(f"L4_FAIL:status={_l4_status}")
                 errors.extend(f"L4_BLOCKER:{b}" for b in _l4_const.get("blocker_codes", []))
-                return _early_exit_with_map(errors, time.time() - start_time)
 
             # ── Step 2: L5 (sequential, with L4 upstream) ────────
             # Inject L4 output for L5 upstream legality check
@@ -1265,16 +1264,15 @@ class WolfConstitutionalPipeline:
                 )
 
             # Halt check: L5 must allow continuation before Phase 3
-            if not l5.get("continuation_allowed", l5.get("valid", True)):
+            if _l5_status == "FAIL":
                 logger.warning(
-                    "[Pipeline v8.0] Phase 2 HALT at L5 | symbol={} status={} blockers={}",
+                    "[Pipeline v8.0] Phase 2 L5 DEGRADED | symbol={} status={} blockers={} | forwarding to L12",
                     symbol,
                     _l5_status,
                     _l5_const.get("blocker_codes", []),
                 )
-                errors.append(f"L5_HALT:status={_l5_status}")
+                errors.append(f"L5_FAIL:status={_l5_status}")
                 errors.extend(f"L5_BLOCKER:{b}" for b in _l5_const.get("blocker_codes", []))
-                return _early_exit_with_map(errors, time.time() - start_time)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 3 -- ZONA PROBABILITY & VALIDATION (L7, L8, L9)

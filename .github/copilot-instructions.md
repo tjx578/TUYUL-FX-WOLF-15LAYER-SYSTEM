@@ -94,9 +94,14 @@ Jika salah satu gagal:
 - L12 akan melihat foundation_status=FAIL dan menghasilkan NO_TRADE
 
 ### Phase 2 — SCORING
-Sequential:
+Sequential, **always-forward**:
 - L4 Session / score / expectancy support
 - L5 Psychology / EAF / discipline / event-awareness
+
+Jika salah satu gagal:
+- catat degradasi (status=FAIL, blocker_codes)
+- **tetap lanjut** ke phase berikut dengan skor terdegradasi
+- L12 akan melihat scoring_status=FAIL dan mengevaluasi dampaknya
 
 ### Phase 2.5 — ENRICHMENT
 - enrichment engines 1–8 boleh berjalan paralel

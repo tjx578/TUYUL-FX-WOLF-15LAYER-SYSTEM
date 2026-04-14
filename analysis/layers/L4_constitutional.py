@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -38,39 +38,39 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L4Status(str, Enum):
+class L4Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class FreshnessState(str, Enum):
+class FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class WarmupState(str, Enum):
+class WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class FallbackClass(str, Enum):
+class FallbackClass(StrEnum):
     NO_FALLBACK = "NO_FALLBACK"
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class CoherenceBand(str, Enum):
+class CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class BlockerCode(str, Enum):
+class BlockerCode(StrEnum):
     UPSTREAM_L3_NOT_CONTINUABLE = "UPSTREAM_L3_NOT_CONTINUABLE"
     REQUIRED_SESSION_SOURCE_MISSING = "REQUIRED_SESSION_SOURCE_MISSING"
     SESSION_STATE_INVALID = "SESSION_STATE_INVALID"
@@ -261,9 +261,7 @@ def _enforce_wolf_sub_thresholds(
         rule_hits.append(f"fundamental_min_check: f_score={f_score} floor={f_min}")
         if f_score < f_min:
             blockers.append(BlockerCode.SESSION_STATE_INVALID)
-            warnings.append(
-                f"FUNDAMENTAL_BELOW_MIN: f_score={f_score} < fundamental_min={f_min}"
-            )
+            warnings.append(f"FUNDAMENTAL_BELOW_MIN: f_score={f_score} < fundamental_min={f_min}")
 
     # ── fta_conflict_veto enforcement ──
     veto_cfg = cfg.get("fta_conflict_veto", {})
@@ -300,12 +298,16 @@ def _compress_status(
     prime_session: bool,
     degraded_scoring: bool,
 ) -> tuple[L4Status, bool]:
-    """Return (status, continuation_allowed)."""
+    """Return (status, continuation_allowed).
+
+    Always-forward scoring: continuation_allowed is always True.
+    L4 is a scoring layer, not a decision gate. L12 is sole verdict authority.
+    """
     if blockers:
-        return L4Status.FAIL, False
+        return L4Status.FAIL, True
 
     if band == CoherenceBand.LOW:
-        return L4Status.FAIL, False
+        return L4Status.FAIL, True
 
     # Check for clean PASS
     is_clean = (
@@ -435,7 +437,11 @@ class L4ConstitutionalGovernor:
 
         # ── 7b. Wolf 30-Point sub-threshold enforcement (Phase C) ─
         _enforce_wolf_sub_thresholds(
-            wolf, l4_analysis, all_blockers, all_warnings, all_rule_hits,
+            wolf,
+            l4_analysis,
+            all_blockers,
+            all_warnings,
+            all_rule_hits,
         )
 
         # ── 8. Compute score band ────────────────────────────────
@@ -464,14 +470,17 @@ class L4ConstitutionalGovernor:
 
         # ── 10. Compress status ───────────────────────────────────
         status, continuation_allowed = _compress_status(
-            all_blockers, band, freshness, warmup, fallback,
-            prime_session, degraded_scoring,
+            all_blockers,
+            band,
+            freshness,
+            warmup,
+            fallback,
+            prime_session,
+            degraded_scoring,
         )
 
         # LOW band adds synthetic blocker for audit
-        if band == CoherenceBand.LOW and not any(
-            b == BlockerCode.UPSTREAM_L3_NOT_CONTINUABLE for b in all_blockers
-        ):
+        if band == CoherenceBand.LOW and not any(b == BlockerCode.UPSTREAM_L3_NOT_CONTINUABLE for b in all_blockers):
             all_blockers.append(BlockerCode.SESSION_STATE_INVALID)
             all_notes.append(f"Session score too low: {session_score:.4f}")
 
@@ -532,10 +541,14 @@ class L4ConstitutionalGovernor:
         }
 
         logger.info(
-            "[L4 Constitutional] %s status=%s band=%s score=%.4f "
-            "continuation=%s blockers=%s warnings=%s",
-            symbol, status.value, band.value, session_score,
-            continuation_allowed, blocker_codes, warning_codes,
+            "[L4 Constitutional] %s status=%s band=%s score=%.4f continuation=%s blockers=%s warnings=%s",
+            symbol,
+            status.value,
+            band.value,
+            session_score,
+            continuation_allowed,
+            blocker_codes,
+            warning_codes,
         )
 
         return result

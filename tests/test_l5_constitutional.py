@@ -77,7 +77,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("UPSTREAM_L4_NOT_CONTINUABLE", result["blocker_codes"])
 
     def test_fail_missing_input_low_score(self) -> None:
@@ -88,7 +88,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
 
     def test_fail_discipline_below_minimum(self) -> None:
         result = self.gov.evaluate(
@@ -97,7 +97,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("DISCIPLINE_BELOW_MINIMUM", result["blocker_codes"])
 
     def test_fail_revenge_trading(self) -> None:
@@ -107,7 +107,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("REVENGE_TRADING_ACTIVE", result["blocker_codes"])
 
     def test_fail_risk_event(self) -> None:
@@ -117,7 +117,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("RISK_EVENT_HARD_BLOCK", result["blocker_codes"])
 
     def test_fail_fatigue_critical(self) -> None:
@@ -127,7 +127,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("FATIGUE_CRITICAL", result["blocker_codes"])
 
     def test_fail_focus_critical(self) -> None:
@@ -137,7 +137,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("FOCUS_CRITICAL", result["blocker_codes"])
 
     def test_fail_freshness_no_producer(self) -> None:
@@ -147,7 +147,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("FRESHNESS_GOVERNANCE_HARD_FAIL", result["blocker_codes"])
 
     def test_fail_warmup_insufficient(self) -> None:
@@ -157,7 +157,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("WARMUP_INSUFFICIENT", result["blocker_codes"])
 
     def test_fail_illegal_fallback(self) -> None:
@@ -167,7 +167,7 @@ class TestL5ConstitutionalGovernor(unittest.TestCase):
             "EURUSD",
         )
         self.assertEqual(result["status"], "FAIL")
-        self.assertFalse(result["continuation_allowed"])
+        self.assertTrue(result["continuation_allowed"])  # Always-forward
         self.assertIn("FALLBACK_DECLARED_BUT_NOT_ALLOWED", result["blocker_codes"])
 
     def test_warn_stale_preserved(self) -> None:

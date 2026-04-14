@@ -44,6 +44,7 @@ def _l4_analysis(
     ev: float = 0.15,
     ci: float = 0.90,
     valid: bool = True,
+    f_score: float = 10.0,
 ) -> dict:
     return {
         "session": session,
@@ -51,7 +52,7 @@ def _l4_analysis(
         "tradeable": tradeable,
         "valid": valid,
         "grade": grade,
-        "wolf_30_point": {"total": wolf_total},
+        "wolf_30_point": {"total": wolf_total, "f_score": f_score},
         "bayesian": {
             "expected_value": ev,
             "confidence_index": ci,
@@ -196,72 +197,116 @@ class TestCompressionLogic:
     def test_fail_on_blockers(self):
         status, cont = _compress_status(
             [BlockerCode.UPSTREAM_L3_NOT_CONTINUABLE],
-            CoherenceBand.HIGH, FreshnessState.FRESH, WarmupState.READY,
-            FallbackClass.NO_FALLBACK, True, False,
+            CoherenceBand.HIGH,
+            FreshnessState.FRESH,
+            WarmupState.READY,
+            FallbackClass.NO_FALLBACK,
+            True,
+            False,
         )
         assert status == L4Status.FAIL
-        assert cont is False
+        assert cont is True  # Always-forward: scoring only, L12 decides
 
     def test_fail_on_low_band(self):
         status, cont = _compress_status(
-            [], CoherenceBand.LOW, FreshnessState.FRESH, WarmupState.READY,
-            FallbackClass.NO_FALLBACK, True, False,
+            [],
+            CoherenceBand.LOW,
+            FreshnessState.FRESH,
+            WarmupState.READY,
+            FallbackClass.NO_FALLBACK,
+            True,
+            False,
         )
         assert status == L4Status.FAIL
-        assert cont is False
+        assert cont is True  # Always-forward: scoring only, L12 decides
 
     def test_pass_on_clean_envelope(self):
         status, cont = _compress_status(
-            [], CoherenceBand.HIGH, FreshnessState.FRESH, WarmupState.READY,
-            FallbackClass.NO_FALLBACK, True, False,
+            [],
+            CoherenceBand.HIGH,
+            FreshnessState.FRESH,
+            WarmupState.READY,
+            FallbackClass.NO_FALLBACK,
+            True,
+            False,
         )
         assert status == L4Status.PASS
         assert cont is True
 
     def test_warn_on_mid_band(self):
         status, cont = _compress_status(
-            [], CoherenceBand.MID, FreshnessState.FRESH, WarmupState.READY,
-            FallbackClass.NO_FALLBACK, True, False,
+            [],
+            CoherenceBand.MID,
+            FreshnessState.FRESH,
+            WarmupState.READY,
+            FallbackClass.NO_FALLBACK,
+            True,
+            False,
         )
         assert status == L4Status.WARN
         assert cont is True
 
     def test_warn_on_non_prime(self):
         status, cont = _compress_status(
-            [], CoherenceBand.HIGH, FreshnessState.FRESH, WarmupState.READY,
-            FallbackClass.NO_FALLBACK, False, False,
+            [],
+            CoherenceBand.HIGH,
+            FreshnessState.FRESH,
+            WarmupState.READY,
+            FallbackClass.NO_FALLBACK,
+            False,
+            False,
         )
         assert status == L4Status.WARN
         assert cont is True
 
     def test_warn_on_degraded_scoring(self):
         status, cont = _compress_status(
-            [], CoherenceBand.HIGH, FreshnessState.FRESH, WarmupState.READY,
-            FallbackClass.NO_FALLBACK, True, True,
+            [],
+            CoherenceBand.HIGH,
+            FreshnessState.FRESH,
+            WarmupState.READY,
+            FallbackClass.NO_FALLBACK,
+            True,
+            True,
         )
         assert status == L4Status.WARN
         assert cont is True
 
     def test_warn_on_stale_freshness(self):
         status, cont = _compress_status(
-            [], CoherenceBand.HIGH, FreshnessState.STALE_PRESERVED, WarmupState.READY,
-            FallbackClass.NO_FALLBACK, True, False,
+            [],
+            CoherenceBand.HIGH,
+            FreshnessState.STALE_PRESERVED,
+            WarmupState.READY,
+            FallbackClass.NO_FALLBACK,
+            True,
+            False,
         )
         assert status == L4Status.WARN
         assert cont is True
 
     def test_pass_with_primary_substitute(self):
         status, cont = _compress_status(
-            [], CoherenceBand.HIGH, FreshnessState.FRESH, WarmupState.READY,
-            FallbackClass.LEGAL_PRIMARY_SUBSTITUTE, True, False,
+            [],
+            CoherenceBand.HIGH,
+            FreshnessState.FRESH,
+            WarmupState.READY,
+            FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
+            True,
+            False,
         )
         assert status == L4Status.PASS
         assert cont is True
 
     def test_warn_on_emergency_preserve(self):
         status, cont = _compress_status(
-            [], CoherenceBand.HIGH, FreshnessState.FRESH, WarmupState.READY,
-            FallbackClass.LEGAL_EMERGENCY_PRESERVE, True, False,
+            [],
+            CoherenceBand.HIGH,
+            FreshnessState.FRESH,
+            WarmupState.READY,
+            FallbackClass.LEGAL_EMERGENCY_PRESERVE,
+            True,
+            False,
         )
         assert status == L4Status.WARN
         assert cont is True
@@ -295,7 +340,7 @@ class TestL4Governor:
             symbol="EURUSD",
         )
         assert result["status"] == "FAIL"
-        assert result["continuation_allowed"] is False
+        assert result["continuation_allowed"] is True  # Always-forward
         assert "UPSTREAM_L3_NOT_CONTINUABLE" in result["blocker_codes"]
 
     def test_fail_low_wolf_score(self):
@@ -305,7 +350,7 @@ class TestL4Governor:
             symbol="EURUSD",
         )
         assert result["status"] == "FAIL"
-        assert result["continuation_allowed"] is False
+        assert result["continuation_allowed"] is True  # Always-forward
         assert result["coherence_band"] == "LOW"
 
     def test_warn_non_prime_session(self):
@@ -336,6 +381,7 @@ class TestL4Governor:
         )
         # session_engine source missing → blocker
         assert result["status"] == "FAIL"
+        assert result["continuation_allowed"] is True  # Always-forward
         assert "REQUIRED_SESSION_SOURCE_MISSING" in result["blocker_codes"]
 
     def test_fail_no_bayesian_expectancy(self):
@@ -396,11 +442,22 @@ class TestL4Governor:
             symbol="EURUSD",
         )
         required_keys = {
-            "layer", "layer_version", "timestamp", "input_ref",
-            "status", "continuation_allowed", "blocker_codes",
-            "warning_codes", "fallback_class", "freshness_state",
-            "warmup_state", "coherence_band", "score_numeric",
-            "features", "routing", "audit",
+            "layer",
+            "layer_version",
+            "timestamp",
+            "input_ref",
+            "status",
+            "continuation_allowed",
+            "blocker_codes",
+            "warning_codes",
+            "fallback_class",
+            "freshness_state",
+            "warmup_state",
+            "coherence_band",
+            "score_numeric",
+            "features",
+            "routing",
+            "audit",
         }
         assert required_keys.issubset(result.keys())
 
