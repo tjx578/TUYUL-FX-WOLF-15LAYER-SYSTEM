@@ -174,10 +174,12 @@ class H1RefreshScheduler:
             logger.error(f"M15 cold-start recovery failed: {exc}")
 
     async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
-        """RPUSH candle dicts to Redis history lists (best-effort)."""
+        """RPUSH candle dicts to Redis history lists (best-effort, deduplicated)."""
         if not self._redis or not candles:
             return
         import time as _time  # noqa: PLC0415
+
+        from core.candle_bridge_fix import is_duplicate_candle
 
         for candle in candles:
             symbol = candle.get("symbol")
@@ -186,6 +188,11 @@ class H1RefreshScheduler:
                 continue
             key = candle_history(symbol, timeframe)
             try:
+                # ── Dedup: skip candles whose open_time already in Redis tail ──
+                if await is_duplicate_candle(self._redis, key, candle):
+                    logger.debug("[H1Refresh] Dedup skip {} {}", symbol, timeframe)
+                    continue
+
                 candle_json = orjson.dumps(candle).decode("utf-8")
                 await self._redis.rpush(key, candle_json)
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)

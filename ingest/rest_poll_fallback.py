@@ -84,12 +84,12 @@ class RestPollFallback:
             )
         else:
             logger.info(
-                "[RestPoll] redis_client injected OK: %s",
+                "[RestPoll] redis_client injected OK: {}",
                 type(self._redis).__name__,
             )
 
         logger.info(
-            "RestPollFallback initialized: interval=%.1fs, grace=%.1fs, m15_bars=%d, refresh_h1=%s, symbols=%d",
+            "RestPollFallback initialized: interval={:.1f}s, grace={:.1f}s, m15_bars={}, refresh_h1={}, symbols={}",
             self._poll_interval,
             self._grace_sec,
             self._bars,
@@ -100,33 +100,50 @@ class RestPollFallback:
     async def run(self) -> None:
         """Monitor WS and activate REST fallback when needed."""
         self._running = True
-        grace_period = 30  # seconds
+        _last_full_poll_ts: float = 0.0
+        _ws_down_since: float = 0.0
         logger.info(
-            "RestPollFallback started — aggressive WS down detection enabled (grace=%ss)",
-            grace_period,
+            "RestPollFallback started — grace={:.0f}s, poll_interval={:.0f}s",
+            self._grace_sec,
+            self._poll_interval,
         )
 
         while self._running:
             try:
-                # Check if WS is connected
                 if not self._ws_connected():
-                    logger.warning("[RestFallback] WS disconnected - activating REST fallback")
-                    await self._poll_all_symbols()
+                    now = time.time()
+                    # Track when WS first went down for grace period
+                    if _ws_down_since == 0.0:
+                        _ws_down_since = now
+                    # Grace period — wait before first poll to allow WS reconnect
+                    if now - _ws_down_since < self._grace_sec:
+                        await asyncio.sleep(min(1.0, self._grace_sec))
+                        continue
+                    elapsed = now - _last_full_poll_ts
+                    if elapsed >= self._poll_interval:
+                        logger.warning(
+                            "[RestFallback] WS disconnected — REST poll cycle (interval={:.0f}s)",
+                            self._poll_interval,
+                        )
+                        await self._poll_all_symbols()
+                        _last_full_poll_ts = time.time()
+                    # Check WS state frequently for fast reconnect detection
+                    await asyncio.sleep(10)
                 else:
-                    # WS connected - check for silent symbols
+                    # WS reconnected — reset down tracker
+                    _ws_down_since = 0.0
+                    # WS connected — check for silent symbols at silence interval
                     silent_symbols = self._get_silent_symbols()
                     if silent_symbols:
-                        logger.info(f"[RestFallback] Polling {len(silent_symbols)} silent symbols")
+                        logger.info("[RestFallback] Polling {} silent symbols", len(silent_symbols))
                         await self._poll_symbols(silent_symbols)
-
-                # Check every 10 seconds for faster failover response.
-                await asyncio.sleep(10)
+                    await asyncio.sleep(self._silence_check_interval)
 
             except asyncio.CancelledError:
                 logger.info("[RestFallback] Task cancelled")
                 raise
             except Exception as e:
-                logger.error(f"[RestFallback] Error: {e}")
+                logger.error("[RestFallback] Error: {}", e)
                 await asyncio.sleep(10)
 
     def _get_silent_pairs(self) -> list[str]:
@@ -166,8 +183,8 @@ class RestPollFallback:
                 break
 
             try:
-                # Fetch H1, H4, D1, W1
-                for tf in ["H1", "H4", "D1", "W1"]:
+                # Fetch M15, H1, H4, D1, W1 — M15 is critical when WS is down
+                for tf in ["M15", "H1", "H4", "D1", "W1"]:
                     candles = await self._fetch_candles(symbol, tf)
                     if candles:
                         await self._save_to_redis(symbol, tf, candles)
@@ -175,11 +192,12 @@ class RestPollFallback:
                 await asyncio.sleep(1)  # Rate limit
 
             except Exception as e:
-                logger.error(f"[RestFallback] Error polling {symbol}: {e}")
+                logger.error("[RestFallback] Error polling {}: {}", symbol, e)
 
     async def _fetch_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
         """Fetch candles for one symbol/timeframe using the shared fetcher."""
         bars_by_tf = {
+            "M15": self._bars,
             "H1": self._h1_bars,
             "H4": max(1, self._h1_bars),
             "D1": 1,
@@ -189,7 +207,7 @@ class RestPollFallback:
         try:
             return await self._fetcher.fetch(symbol, timeframe, bars)
         except FinnhubCandleError as exc:
-            logger.warning("[RestFallback] Fetch failed %s %s: %s", symbol, timeframe, exc)
+            logger.warning("[RestFallback] Fetch failed {} {}: {}", symbol, timeframe, exc)
             return []
 
     async def _save_to_redis(self, symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> None:
@@ -357,9 +375,12 @@ class RestPollFallback:
             return
 
         written_in_batch = 0
+        dedup_skipped = 0
 
         # ── Group valid candles by Redis key to batch writes ─────────────────
         # Reduces round trips: 4 × N → 3 × K + N  (K = unique keys, K ≤ N).
+        from core.candle_bridge_fix import is_duplicate_candle
+
         key_batches: dict[str, list[tuple[str, str, dict[str, Any]]]] = defaultdict(list)
         for candle in candles:
             symbol = candle.get("symbol")
@@ -374,6 +395,15 @@ class RestPollFallback:
                 )
                 continue
             key = candle_history(symbol, timeframe)
+
+            # ── Dedup: skip candles whose open_time already exists in Redis tail ──
+            try:
+                if await is_duplicate_candle(self._redis, key, candle):
+                    dedup_skipped += 1
+                    continue
+            except Exception:
+                pass  # On error, allow write
+
             candle_json = orjson.dumps(candle).decode("utf-8")
             pub_channel = channel_candle(symbol, timeframe)
             key_batches[key].append((candle_json, pub_channel, candle))
@@ -409,11 +439,12 @@ class RestPollFallback:
 
         if written_in_batch > 0:
             logger.info(
-                "[RestPoll] Wrote %d/%d candles to Redis (%s/%s) — total writes: %d",
+                "[RestPoll] Wrote %d/%d candles to Redis (%s/%s) — dedup_skipped: %d, total writes: %d",
                 written_in_batch,
                 len(candles),
                 candles[0].get("symbol", "?"),
                 candles[0].get("timeframe", "?"),
+                dedup_skipped,
                 self._redis_writes,
             )
         elif candles:

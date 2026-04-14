@@ -99,7 +99,7 @@ async def _run_supervised(
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("[%s] crashed - restarting in %.1fs", name, restart_delay)
+            logger.exception("[{}] crashed - restarting in {:.1f}s", name, restart_delay)
             await asyncio.sleep(restart_delay)
 
 
@@ -142,7 +142,7 @@ class _HealthCheckRunner:
                 status = "HEALTHY" if (ws_connected and redis_ok) else "DEGRADED"
 
                 logger.info(
-                    "[HealthCheck] %s | WS: %s | Redis: %s",
+                    "[HealthCheck] {} | WS: {} | Redis: {}",
                     status,
                     ws_connected,
                     redis_ok,
@@ -179,7 +179,7 @@ async def run_ingest_services(
 
     enabled_symbols = get_enabled_symbols()
     logger.info(
-        "[Ingest] enabled symbols count=%d symbols=%s",
+        "[Ingest] enabled symbols count={} symbols={}",
         len(enabled_symbols),
         enabled_symbols[:10],
     )
@@ -223,6 +223,15 @@ async def run_ingest_services(
         h1_builders: dict[str, CandleBuilder] = {}
 
         def _h1_on_complete(candle: Any) -> None:
+            logger.info(
+                "[CandleComplete] H1 {} O={} H={} L={} C={} ticks={}",
+                candle.symbol,
+                candle.open,
+                candle.high,
+                candle.low,
+                candle.close,
+                getattr(candle, "tick_count", "?"),
+            )
             publish_candle_sync(candle.to_dict(), redis=redis)
 
         for _sym in enabled_symbols:
@@ -234,6 +243,15 @@ async def run_ingest_services(
 
         def _make_m15_callback(sym: str) -> Any:
             def _cb(candle: Any) -> None:
+                logger.info(
+                    "[CandleComplete] M15 {} O={} H={} L={} C={} ticks={}",
+                    candle.symbol,
+                    candle.open,
+                    candle.high,
+                    candle.low,
+                    candle.close,
+                    getattr(candle, "tick_count", "?"),
+                )
                 publish_candle_sync(candle.to_dict(), redis=redis)
                 h1b = h1_builders.get(sym)
                 if h1b is not None:
@@ -250,7 +268,7 @@ async def run_ingest_services(
             for symbol in enabled_symbols
         }
         logger.info(
-            "[CandleBridge] M15→H1 chain wired for %d symbols — completed candles will RPUSH to Redis",
+            "[CandleBridge] M15→H1 chain wired for {} symbols — completed candles will RPUSH to Redis",
             len(enabled_symbols),
         )
 
@@ -263,11 +281,30 @@ async def run_ingest_services(
         for _sym, _h1b in h1_builders.items():
             forming_pub.register_builder(_sym, "H1", _h1b)
 
+        _tick_counts: dict[str, int] = {}
+        _tick_prices: dict[str, float] = {}
+        _tick_diag_counter: list[int] = [0]  # mutable counter for closure
+
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
             tick_ts = ts.timestamp()
             if is_duplicate_pair_tick(symbol, price, tick_ts):
                 return
             mark_pair_tick(symbol, tick_ts)
+
+            # ── Diagnostic: track tick flow ──
+            _tick_counts[symbol] = _tick_counts.get(symbol, 0) + 1
+            _tick_prices[symbol] = price
+            _tick_diag_counter[0] += 1
+            if _tick_diag_counter[0] % 500 == 0:
+                active = sum(1 for c in _tick_counts.values() if c > 0)
+                total = sum(_tick_counts.values())
+                logger.info(
+                    "[TickFlow] {} ticks received across {} symbols (total={})",
+                    _tick_diag_counter[0],
+                    active,
+                    total,
+                )
+
             cb = candle_builders.get(symbol)
             if cb is not None:
                 cb.on_tick(price, ts, volume)
@@ -303,7 +340,7 @@ async def run_ingest_services(
         health_probe.set_detail("redis", "connected")
         health_probe.set_detail("system_state", system_state.get_state().value)
         logger.info(
-            "Ingest startup mode: %s | ready=%s degraded=%s",
+            "Ingest startup mode: {} | ready={} degraded={}",
             startup_mode,
             sm.ingest_ready,
             sm.ingest_degraded,
@@ -371,10 +408,10 @@ async def run_ingest_services(
         ]
         await asyncio.gather(*supervised_tasks)
     except asyncio.CancelledError:
-        logger.info("Ingest services cancelled during phase '%s' - shutting down", _phase)
+        logger.info("Ingest services cancelled during phase '{}' - shutting down", _phase)
         raise
     except Exception:
-        logger.error("Ingest services failed during phase '%s'", _phase)
+        logger.error("Ingest services failed during phase '{}'", _phase)
         raise
     finally:
         cleanup_errors: list[tuple[str, Exception]] = []

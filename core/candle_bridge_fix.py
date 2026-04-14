@@ -20,9 +20,75 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
 from typing import Any
 
+import orjson
+
 logger = logging.getLogger(__name__)
+
+
+def _candle_open_epoch(candle: dict) -> float | None:
+    """Extract the candle open-time as epoch seconds.
+
+    Handles both WS-built candles (``open_time`` ISO string) and
+    REST-sourced candles (``timestamp`` as datetime or epoch float).
+    Returns ``None`` if no usable timestamp is found.
+    """
+    for key in ("open_time", "timestamp", "time"):
+        val = candle.get(key)
+        if val is None:
+            continue
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, datetime):
+            return val.timestamp()
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                try:
+                    return datetime.fromisoformat(val).timestamp()
+                except Exception:
+                    continue
+    return None
+
+
+async def is_duplicate_candle(
+    redis: Any,
+    history_key: str,
+    candle_dict: dict[str, Any],
+    *,
+    tail_size: int = 10,
+) -> bool:
+    """Check whether a candle with the same open-time already exists in the Redis list tail.
+
+    Reads the last *tail_size* entries from the ``history_key`` LIST,
+    deserialises them, and compares their open-time epoch with the incoming
+    candle.  Returns ``True`` if a duplicate is found.
+
+    This is intentionally cheap: it only checks the tail, not the full list.
+    For the dedup use-case (preventing the same REST/WS bar from being
+    appended within seconds/minutes of each other) this is sufficient.
+    """
+    new_epoch = _candle_open_epoch(candle_dict)
+    if new_epoch is None:
+        return False  # Can't dedup without a timestamp — allow write
+
+    try:
+        tail: list[bytes] = await redis.lrange(history_key, -tail_size, -1)
+    except Exception:
+        return False  # Redis error — allow write to avoid data loss
+
+    for raw in tail:
+        try:
+            existing = orjson.loads(raw)
+            existing_epoch = _candle_open_epoch(existing)
+            if existing_epoch is not None and abs(existing_epoch - new_epoch) < 1.0:
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _safe_epoch(candle: dict) -> float:
@@ -38,6 +104,7 @@ def _safe_epoch(candle: dict) -> float:
                 return float(val)
             except ValueError:
                 from datetime import datetime
+
                 try:
                     return datetime.fromisoformat(val).timestamp()
                 except Exception:
@@ -77,11 +144,15 @@ async def _push_candle_to_redis_safe(
     timeframe = str(timeframe).strip().upper()
 
     try:
-        import orjson
-
         from core.redis_keys import candle_history, channel_candle
 
         key = candle_history(symbol, timeframe)
+
+        # ── Dedup: skip if this candle's open_time already exists in tail ──
+        if rpush_fn is None and await is_duplicate_candle(redis, key, candle_dict):
+            logger.debug("[CandleBridgeFix] Dedup skip %s:%s — same open_time in tail", symbol, timeframe)
+            return
+
         candle_json = orjson.dumps(candle_dict).decode("utf-8")
 
         if rpush_fn is not None:

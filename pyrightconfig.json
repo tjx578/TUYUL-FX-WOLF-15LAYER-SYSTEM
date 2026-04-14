@@ -18,6 +18,7 @@
     "load",
     "e2e"
   ],
+  "extraPaths": ["."],
   "executionEnvironments": [
     {
       "root": ".",

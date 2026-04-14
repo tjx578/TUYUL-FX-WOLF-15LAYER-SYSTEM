@@ -188,17 +188,17 @@ async def supplemental_htf_fetch(
                 results[symbol][tf] = candles
                 for candle in candles:
                     fetcher.context_bus.update_candle(candle)
-                logger.info("[SuppHTF] %s/%s: fetched %d bars", symbol, tf, len(candles))
+                logger.info("[SuppHTF] {}/{}: fetched {} bars", symbol, tf, len(candles))
             else:
-                logger.warning("[SuppHTF] %s/%s: REST returned 0 bars", symbol, tf)
+                logger.warning("[SuppHTF] {}/{}: REST returned 0 bars", symbol, tf)
         except Exception as exc:
-            logger.error("[SuppHTF] %s/%s fetch failed: %s", symbol, tf, exc)
+            logger.error("[SuppHTF] {}/{} fetch failed: {}", symbol, tf, exc)
 
     tasks = [_fetch_one(sym, tf) for sym, tfs in deficit_map.items() for tf in tfs]
     await asyncio.gather(*tasks, return_exceptions=True)
 
     filled = sum(len(tfs) for tfs in results.values())
-    logger.info("[SuppHTF] Supplemental fetch complete: %d/%d symbol/tf combos filled", filled, total_tasks)
+    logger.info("[SuppHTF] Supplemental fetch complete: {}/{} symbol/tf combos filled", filled, total_tasks)
     if filled > 0:
         warmup_circuit.record_success()
     return results
@@ -229,7 +229,7 @@ async def push_candle_to_redis(
         pub_channel = channel_candle(symbol, timeframe)
         await redis.publish(pub_channel, candle_json)
     except Exception as exc:
-        logger.warning("[CandleBridge] RPUSH/PUBLISH failed %s: %s", key, exc)
+        logger.warning("[CandleBridge] RPUSH/PUBLISH failed {}: {}", key, exc)
 
 
 async def seed_redis_candle_history(
@@ -302,7 +302,7 @@ async def seed_redis_candle_history(
                     )
                 else:
                     await redis.delete(temp_key)
-                    logger.warning("[Seed] %s: temp key empty after write — keeping old data", key)
+                    logger.warning("[Seed] {}: temp key empty after write — keeping old data", key)
 
             except Exception as exc:
                 with contextlib.suppress(Exception):
@@ -310,7 +310,7 @@ async def seed_redis_candle_history(
                 logger.error("[Seed] Failed to seed {}: {} — old data preserved", key, exc)
 
     if total_dirty:
-        logger.warning("[Seed] Total dirty candles rejected across all pairs: %d", total_dirty)
+        logger.warning("[Seed] Total dirty candles rejected across all pairs: {}", total_dirty)
     logger.info("[Seed] Completed: {} symbol/tf combos seeded to Redis", seeded)
 
 
