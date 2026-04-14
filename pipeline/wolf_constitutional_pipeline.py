@@ -2185,6 +2185,31 @@ class WolfConstitutionalPipeline:
                 errors.append(f"V11_ERROR: {v11_exc}")
 
             # ═══════════════════════════════════════════════════════
+            # PHASE 8.6 -- GOVERNANCE HOOK (drift + rollout, optional)
+            # ═══════════════════════════════════════════════════════
+            try:
+                from governance.drift_monitor import DriftMonitor  # noqa: PLC0415
+                from governance.pipeline_hook import GovernancePipelineHook  # noqa: PLC0415
+                from governance.rollout_controller import RolloutController  # noqa: PLC0415
+
+                _gov_hook = GovernancePipelineHook(
+                    drift_monitor=DriftMonitor(redis_client=getattr(self, "_redis", None)),
+                    rollout_controller=RolloutController(redis_client=getattr(self, "_redis", None)),
+                )
+                _gov_result = _gov_hook.run(
+                    {
+                        "pair": symbol,
+                        "synthesis": synthesis,
+                        "l12_verdict": l12_verdict,
+                    }
+                )
+                synthesis["governance"] = _gov_result.get("governance")
+            except ImportError:
+                pass  # Governance module optional
+            except Exception as gov_exc:
+                logger.debug(f"[Pipeline v8.0] Governance hook error for {symbol}: {gov_exc}")
+
+            # ═══════════════════════════════════════════════════════
             # PHASE 8 -- L14 JSON EXPORT + FINAL ASSEMBLY
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 8: L14/Result Assembly -- {symbol}")

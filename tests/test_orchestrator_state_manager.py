@@ -101,7 +101,7 @@ class _FakeRedis:
 
 
 def _new_manager(redis_client: _FakeRedis) -> StateManager:
-    manager = StateManager(redis_client=redis_client)
+    manager = StateManager(redis_client=redis_client)  # type: ignore[arg-type]
     manager.configure_intervals(compliance_interval_sec=1.0, heartbeat_interval_sec=300.0)
     return manager
 
@@ -109,6 +109,7 @@ def _new_manager(redis_client: _FakeRedis) -> StateManager:
 def _seed_compliance_signals(redis: _FakeRedis) -> None:
     """Populate Redis keys needed by _refresh_compliance_signals so it doesn't inject blockers."""
     from core.redis_keys import HEARTBEAT_INGEST
+
     redis.values[HEARTBEAT_INGEST] = json.dumps({"producer": "ingest", "ts": time.time()})
 
 

@@ -57,6 +57,7 @@ async def supervised_task(
     while restarts <= max_restarts:
         if shutdown_event and shutdown_event.is_set():
             return
+        started_at = time.monotonic()
         try:
             logger.info(
                 "[SUPERVISOR] Starting task '{}' (consecutive restarts: {}/{})",
@@ -64,14 +65,13 @@ async def supervised_task(
                 restarts,
                 max_restarts,
             )
-            started_at = time.monotonic()
             await coro_factory()
             return  # clean exit
         except asyncio.CancelledError:
             logger.info("[SUPERVISOR] Task '{}' cancelled", name)
             return
         except Exception as exc:
-            elapsed = time.monotonic() - started_at if "started_at" in dir() else 0.0
+            elapsed = time.monotonic() - started_at
 
             # If task survived long enough, treat crash as transient → reset counter
             if elapsed >= _SUCCESS_WINDOW:

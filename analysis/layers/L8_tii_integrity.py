@@ -227,7 +227,7 @@ class L8TIIIntegrityAnalyzer:
             return
         try:
             if _core_reflective is not None and _ConfidenceMultiplier is not None:
-                self._tii_thresholds = _core_reflective.AdaptiveTIIThresholds()  # pyright: ignore[reportAttributeAccessIssue]
+                self._tii_thresholds = _core_reflective.AdaptiveTIIThresholds()
                 self._confidence_mult = _ConfidenceMultiplier()
                 logger.debug("[L8] Core modules loaded for enhanced TII")
         except Exception as exc:

@@ -2,7 +2,7 @@
   "typeCheckingMode": "standard",
   "pythonVersion": "3.11",
   "reportMissingTypeStubs": false,
-  "reportUnnecessaryTypeIgnoreComment": true,
+  "reportUnnecessaryTypeIgnoreComment": "warning",
   "include": ["."],
   "exclude": [
     "node_modules",

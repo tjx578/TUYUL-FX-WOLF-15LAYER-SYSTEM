@@ -903,7 +903,7 @@ async def websocket_candles(websocket: fastapi.WebSocket):
     logger.info(f"Candle WebSocket connected (filter={symbol_filter or 'all'})")
 
     # Feed meta polling: check every 5s (not every 500ms) to avoid Redis overhead
-    _FEED_META_INTERVAL = 5.0
+    _FEED_META_INTERVAL = 5.0  # noqa: N806
     _last_feed_meta_ts: float = 0.0
     _cached_feed_meta: dict[str, object] = {}
 
@@ -915,9 +915,7 @@ async def websocket_candles(websocket: fastapi.WebSocket):
             _last_feed_meta_ts = time.time()
         except Exception:
             pass
-        await websocket.send_json(
-            _ws_event("candle.snapshot", {"bars": snapshot, "feed_meta": _cached_feed_meta})
-        )
+        await websocket.send_json(_ws_event("candle.snapshot", {"bars": snapshot, "feed_meta": _cached_feed_meta}))
 
         while websocket in candle_manager.active_connections:
             forming = await _candle_agg.fetch_forming_bars_async(symbol_filter)
@@ -925,10 +923,8 @@ async def websocket_candles(websocket: fastapi.WebSocket):
             # Refresh feed meta periodically (every 5s, not every tick)
             now = time.time()
             if now - _last_feed_meta_ts >= _FEED_META_INTERVAL:
-                try:
+                with contextlib.suppress(Exception):
                     _cached_feed_meta = await _candle_agg.fetch_feed_meta_async(symbol_filter)
-                except Exception:
-                    pass
                 _last_feed_meta_ts = now
 
             if not await candle_manager.send_stamped(
@@ -989,10 +985,8 @@ async def websocket_risk(websocket: fastapi.WebSocket):
             rm = _get_risk_manager()
             rm_snapshot = None
             if rm is not None:
-                try:
+                with contextlib.suppress(Exception):
                     rm_snapshot = rm.get_risk_snapshot()  # type: ignore[union-attr]
-                except Exception:
-                    pass
 
             # Get drawdown tracker status
             dd_status = None
@@ -1035,20 +1029,12 @@ async def websocket_risk(websocket: fastapi.WebSocket):
                     "can_trade": can_trade,
                     "block_reason": block_reason,
                     "account_id": account_id,
-                    "daily_dd_percent": (
-                        dd_status.get("daily_pct", 0) if isinstance(dd_status, dict) else 0
-                    ),
+                    "daily_dd_percent": (dd_status.get("daily_pct", 0) if isinstance(dd_status, dict) else 0),
                     "daily_dd_limit": 10.0,  # Default limit, adjust if available from config
-                    "total_dd_percent": (
-                        dd_status.get("total_pct", 0) if isinstance(dd_status, dict) else 0
-                    ),
+                    "total_dd_percent": (dd_status.get("total_pct", 0) if isinstance(dd_status, dict) else 0),
                     "total_dd_limit": 20.0,  # Default limit, adjust if available from config
-                    "open_risk_percent": (
-                        account.open_risk_percent if hasattr(account, "open_risk_percent") else 0.0
-                    ),
-                    "open_trades": (
-                        account.open_trades if hasattr(account, "open_trades") else 0
-                    ),
+                    "open_risk_percent": getattr(account, "open_risk_percent", 0.0),
+                    "open_trades": getattr(account, "open_trades", 0),
                     "circuit_breaker": cb_state,
                     "severity": severity,
                     "timestamp": time.time(),

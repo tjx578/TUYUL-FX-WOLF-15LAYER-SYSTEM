@@ -109,6 +109,18 @@ class AllocationService:
         account_results: list[AccountAllocationResult] = []
         symbol = str(signal_raw.get("pair") or signal_raw.get("symbol") or "").upper()
 
+        # ── Rollout allocation scaling (governance) ──────────────
+        rollout_pct = 1.0
+        try:
+            from governance.rollout_controller import RolloutController  # noqa: PLC0415
+
+            _rollout = RolloutController()
+            rollout_pct = _rollout.get_allocation_pct(symbol) or 1.0
+        except ImportError:
+            pass  # Governance module optional
+        except Exception:
+            pass  # Degrade gracefully — use full allocation
+
         for account_id in request.account_ids:
             account_state = self._repo.get_state(account_id)
             if not account_state:
@@ -145,7 +157,13 @@ class AllocationService:
             account_results.append(result)
 
             if result.allowed and request.action.upper() == "TAKE":
-                self._push_execution_plan(request, signal_raw, account_id, result.lot_size)
+                scaled_lot = round(result.lot_size * rollout_pct, 2) if rollout_pct < 1.0 else result.lot_size
+                if scaled_lot >= 0.01:
+                    self._push_execution_plan(request, signal_raw, account_id, scaled_lot)
+                else:
+                    logger.info(
+                        "AllocationService: rollout_pct={} scaled lot < 0.01, skipping {}", rollout_pct, account_id
+                    )
 
         approved = sum(1 for r in account_results if r.allowed)
         rejected = len(account_results) - approved

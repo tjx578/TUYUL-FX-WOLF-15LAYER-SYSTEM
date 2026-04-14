@@ -278,6 +278,30 @@ API_GROUP = f"{PREFIX}:api:group"
 # ══════════════════════════════════════════════════════════════════════════════
 #  TYPE MAP (for sanitizer / health checks)
 # ══════════════════════════════════════════════════════════════════════════════
+#  GOVERNANCE — staged validation, drift monitor, rollout controller
+# ══════════════════════════════════════════════════════════════════════════════
+GOVERNANCE_STAGE_PREFIX = f"{PREFIX}:governance:stage"
+GOVERNANCE_DRIFT_BASELINE = f"{PREFIX}:governance:drift:baseline"
+GOVERNANCE_DRIFT_LATEST = f"{PREFIX}:governance:drift:latest"
+GOVERNANCE_ROLLOUT_PREFIX = f"{PREFIX}:governance:rollout"
+
+
+def governance_stage_key(strategy_id: str) -> str:
+    """Stage state: wolf15:governance:stage:{strategy_id}. Type: STRING (JSON), TTL=90d."""
+    return f"{GOVERNANCE_STAGE_PREFIX}:{strategy_id}"
+
+
+def governance_passport_key(strategy_id: str, stage: str) -> str:
+    """Stage passport: wolf15:governance:stage:{strategy_id}:passport:{stage}. Type: STRING."""
+    return f"{GOVERNANCE_STAGE_PREFIX}:{strategy_id}:passport:{stage}"
+
+
+def governance_rollout_key(strategy_id: str) -> str:
+    """Rollout state: wolf15:governance:rollout:{strategy_id}. Type: STRING (JSON), TTL=90d."""
+    return f"{GOVERNANCE_ROLLOUT_PREFIX}:{strategy_id}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 TYPE_MAP: dict[str, str] = {
     "wolf15:tick:*": "stream",
     "wolf15:latest_tick:*": "hash",
