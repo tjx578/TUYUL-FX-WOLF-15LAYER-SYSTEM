@@ -34,7 +34,6 @@ from core.metrics import (
     get_registry,
 )
 from infrastructure.redis_client import get_async_redis
-from monitoring.pipeline_metrics import evaluate_latency_slo
 from state.redis_keys import ORCHESTRATOR_STATE
 
 from .middleware.machine_auth import verify_observability_machine_auth
@@ -190,6 +189,8 @@ async def metrics_slo(
     _refresh_runtime_gauges()
     await _refresh_orchestrator_gauges()
     await _refresh_heartbeat_gauges()
+    from monitoring.pipeline_metrics import evaluate_latency_slo  # noqa: PLC0415
+
     status = evaluate_latency_slo(
         latency_threshold_ms=latency_threshold_ms,
         min_samples=min_samples,
