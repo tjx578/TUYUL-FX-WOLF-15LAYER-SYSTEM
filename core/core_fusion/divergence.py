@@ -55,7 +55,14 @@ class MultiIndicatorDivergenceDetector:
         cci_div = self._detect_divergence(highs, lows, closes, indicators.get("cci", []), "CCI")
         mfi_div = self._detect_divergence(highs, lows, closes, indicators.get("mfi", []), "MFI")
 
+        cci_mfi_cross = self._detect_cci_mfi_cross_divergence(
+            indicators.get("cci", []),
+            indicators.get("mfi", []),
+        )
+
         valid = [d for d in [rsi_div, macd_div, cci_div, mfi_div] if d is not None]
+        # CCI-MFI cross-divergence adds to confluence when detected
+        valid_count = len(valid) + 1 if cci_mfi_cross and cci_mfi_cross.get("divergence_detected") else len(valid)
         overall_signal, overall_strength = self._determine_overall_signal(valid)
 
         return MultiDivergenceResult(
@@ -66,11 +73,52 @@ class MultiIndicatorDivergenceDetector:
             macd_divergence=macd_div,
             cci_divergence=cci_div,
             mfi_divergence=mfi_div,
-            confluence_count=len(valid),
+            cci_mfi_cross=cci_mfi_cross,
+            confluence_count=valid_count,
             overall_signal=overall_signal,
             overall_strength=overall_strength,
-            confidence=self._calculate_confidence(valid, len(valid)),
+            confidence=self._calculate_confidence(valid, valid_count),
         )
+
+    # ── CCI-MFI cross-indicator divergence (delta-based) ─────────────────────
+
+    @staticmethod
+    def _detect_cci_mfi_cross_divergence(
+        cci_values: list[float],
+        mfi_values: list[float],
+    ) -> dict[str, Any] | None:
+        """Rapid delta-based CCI vs MFI directional mismatch detection.
+
+        Ported from cci_mfi_divergence_detector_v6.  Compares the last two
+        bars of each indicator: if CCI rises while MFI falls (or vice-versa)
+        a cross-divergence is flagged.  The magnitude is normalised to [0, 1]
+        and classified as bullish or bearish.
+        """
+        if len(cci_values) < 2 or len(mfi_values) < 2:
+            return None
+
+        cci_delta = cci_values[-1] - cci_values[-2]
+        mfi_delta = mfi_values[-1] - mfi_values[-2]
+
+        divergence_detected = (cci_delta > 0 and mfi_delta < 0) or (cci_delta < 0 and mfi_delta > 0)
+        divergence_strength = abs(cci_delta - mfi_delta)
+        # Normalise: CCI typically ranges ±200, MFI 0-100, combined delta
+        # rarely exceeds 300; /150 maps a moderate divergence into ~0.5-0.7.
+        score = min(1.0, divergence_strength / 150.0)
+
+        if divergence_detected and score >= 0.35:
+            signal = "Bullish Divergence" if cci_delta > 0 else "Bearish Divergence"
+        else:
+            signal = "No Divergence"
+
+        return {
+            "cci_delta": round(cci_delta, 3),
+            "mfi_delta": round(mfi_delta, 3),
+            "divergence_detected": divergence_detected,
+            "divergence_strength": round(divergence_strength, 3),
+            "score": round(score, 3),
+            "signal": signal,
+        }
 
     # ── Indicator calculations ────────────────────────────────────────────────
 

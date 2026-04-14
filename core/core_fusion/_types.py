@@ -232,6 +232,7 @@ class MultiDivergenceResult:
     macd_divergence: DivergenceSignal | None
     cci_divergence: DivergenceSignal | None
     mfi_divergence: DivergenceSignal | None
+    cci_mfi_cross: dict[str, Any] | None
     confluence_count: int
     overall_signal: DivergenceType
     overall_strength: DivergenceStrength

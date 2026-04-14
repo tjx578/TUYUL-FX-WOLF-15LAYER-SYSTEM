@@ -123,6 +123,8 @@ def evaluate_fusion_metrics(fusion_data: dict[str, Any], threshold: float = 0.75
     direction = fusion_data.get("direction", "NEUTRAL")
     valid = conf >= threshold and direction != "NEUTRAL"
     score = _calculate_composite_score(fusion_data)
+    integrity = _calculate_integrity_index(fusion_data)
+    status = "Stable" if integrity >= 0.90 else "Degraded"
     action = (
         FusionAction.EXECUTE.value
         if valid and score >= 0.8
@@ -135,6 +137,8 @@ def evaluate_fusion_metrics(fusion_data: dict[str, Any], threshold: float = 0.75
         "direction": direction,
         "signal_valid": valid,
         "composite_score": score,
+        "integrity_index": integrity,
+        "integrity_status": status,
         "action": action,
         "threshold": threshold,
         "timestamp": datetime.now(UTC).isoformat(),
@@ -142,8 +146,24 @@ def evaluate_fusion_metrics(fusion_data: dict[str, Any], threshold: float = 0.75
 
 
 def _calculate_composite_score(fusion_data: dict[str, Any]) -> float:
-    weights = {"fusion_strength": 0.4, "coherence": 0.3, "resonance": 0.2, "integrity": 0.1}
-    return round(_clamp01(sum(_safe_float(fusion_data.get(k, 0.5), 0.5) * w for k, w in weights.items())), 3)
+    # Integrity-based weight scheme (from fusion_metrics_analyzer.py):
+    # conf12_raw (fusion_strength) = 0.45, reflective_coherence = 0.40,
+    # stability (resonance+integrity blend) = 0.15
+    conf12_raw = _safe_float(fusion_data.get("fusion_strength", 0.5), 0.5)
+    reflective_coherence = _safe_float(fusion_data.get("coherence", 0.5), 0.5)
+    stability = (
+        _safe_float(fusion_data.get("resonance", 0.5), 0.5) * 0.6
+        + _safe_float(fusion_data.get("integrity", 0.5), 0.5) * 0.4
+    )
+    return round(_clamp01(conf12_raw * 0.45 + reflective_coherence * 0.40 + stability * 0.15), 3)
+
+
+def _calculate_integrity_index(fusion_data: dict[str, Any]) -> float:
+    """Conservative integrity index: (conf12 * 0.45) + (coherence * 0.40) + (stability * 0.15)."""
+    conf12_raw = _safe_float(fusion_data.get("fusion_strength", 0.5), 0.5)
+    coherence = _safe_float(fusion_data.get("coherence", 0.5), 0.5)
+    stability = _safe_float(fusion_data.get("stability_index", fusion_data.get("resonance", 0.5)), 0.5)
+    return round(_clamp01(conf12_raw * 0.45 + coherence * 0.40 + stability * 0.15), 4)
 
 
 def aggregate_multi_timeframe_metrics(metrics_list: list) -> dict[str, Any]:
