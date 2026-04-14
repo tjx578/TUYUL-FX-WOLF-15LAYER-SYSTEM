@@ -17,8 +17,9 @@ Authority boundary:
   L8 is an integrity / TII legality governor only.
   L8 must never emit direction, execute, trade_valid, position_size, or verdict.
   Hard legality checks run before score band evaluation.
-  status == FAIL implies continuation_allowed == false.
-  continuation_allowed == true implies next_legal_targets == ["L9"].
+  Always-forward scoring: continuation_allowed is always True.
+  L12 evaluates degradation via status/blocker_codes.
+  next_legal_targets always includes ["L9"].
 
 Zone: analysis/ — pure read-only analysis, no execution side-effects.
 """
@@ -28,7 +29,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -39,39 +40,39 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L8Status(str, Enum):
+class L8Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class L8FreshnessState(str, Enum):
+class L8FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class L8WarmupState(str, Enum):
+class L8WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class L8FallbackClass(str, Enum):
+class L8FallbackClass(StrEnum):
     NO_FALLBACK = "NO_FALLBACK"
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class L8CoherenceBand(str, Enum):
+class L8CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class L8BlockerCode(str, Enum):
+class L8BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
     REQUIRED_INTEGRITY_SOURCE_MISSING = "REQUIRED_INTEGRITY_SOURCE_MISSING"
     TII_UNAVAILABLE = "TII_UNAVAILABLE"
@@ -478,8 +479,10 @@ class L8ConstitutionalGovernor:
             sample_count,
         )
 
-        continuation_allowed = status != L8Status.FAIL
-        next_targets = ["L9"] if continuation_allowed else []
+        # Always-forward: continuation_allowed is always True.
+        # L12 evaluates degradation via status/blocker_codes.
+        continuation_allowed = True
+        next_targets = ["L9"]
 
         # ── Step 11: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(

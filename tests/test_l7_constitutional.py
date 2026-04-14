@@ -387,13 +387,13 @@ class TestL7GovernorEnvelope:
     def test_fail_upstream_blocked(self):
         env = self.gov.evaluate(_l7_analysis(), _upstream_fail())
         assert env["status"] == "FAIL"
-        assert env["continuation_allowed"] is False
+        assert env["continuation_allowed"] is True  # always-forward
         assert "UPSTREAM_NOT_CONTINUABLE" in env["blocker_codes"]
 
     def test_fail_fallback_insufficient(self):
         env = self.gov.evaluate(_l7_fallback(), _upstream_pass())
         assert env["status"] == "FAIL"
-        assert env["continuation_allowed"] is False
+        assert env["continuation_allowed"] is True  # always-forward
 
     def test_warn_mid_band(self):
         data = _l7_analysis(win_probability=58.0)  # 0.58 → MID band
@@ -410,7 +410,7 @@ class TestL7GovernorEnvelope:
         )
         env = self.gov.evaluate(data, _upstream_pass())
         assert env["status"] == "FAIL"
-        assert env["continuation_allowed"] is False
+        assert env["continuation_allowed"] is True  # always-forward
 
     def test_warn_synthetic_returns(self):
         data = _l7_analysis(returns_source="synthetic")

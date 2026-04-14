@@ -125,6 +125,11 @@ class LiveContextBus:
 
         Enforces ``CANDLE_MAX_BUFFER`` per key to prevent unbounded memory growth.
         When the limit is reached the oldest candles are dropped.
+
+        Stale-OHLC guard: if the last ``_STALE_OHLC_CONSECUTIVE_LIMIT``
+        candles have the exact same OHLC as the incoming candle, the push
+        is silently skipped.  This prevents REST-fallback stale price data
+        from accumulating in the bus and reaching L3 as "flat" data.
         """
         symbol = candle.get("symbol", "")
         timeframe = candle.get("timeframe", "")
@@ -134,6 +139,43 @@ class LiveContextBus:
         if key not in self._candle_history:
             self._candle_history[key] = []
         buf = self._candle_history[key]
+
+        # ── Stale-OHLC guard ──────────────────────────────────────────
+        _STALE_LIMIT = 3  # noqa: N806
+        if len(buf) >= _STALE_LIMIT:
+            try:
+                new_fp = (
+                    round(float(candle["open"]), 8),
+                    round(float(candle["high"]), 8),
+                    round(float(candle["low"]), 8),
+                    round(float(candle["close"]), 8),
+                )
+                all_match = True
+                for prev in buf[-_STALE_LIMIT:]:
+                    try:
+                        prev_fp = (
+                            round(float(prev["open"]), 8),
+                            round(float(prev["high"]), 8),
+                            round(float(prev["low"]), 8),
+                            round(float(prev["close"]), 8),
+                        )
+                        if prev_fp != new_fp:
+                            all_match = False
+                            break
+                    except (KeyError, TypeError, ValueError):
+                        all_match = False
+                        break
+                if all_match:
+                    logger.debug(
+                        "push_candle: stale OHLC skip %s:%s — last %d bars identical",
+                        symbol,
+                        timeframe,
+                        _STALE_LIMIT,
+                    )
+                    return
+            except (KeyError, TypeError, ValueError):
+                pass  # Can't fingerprint — allow push
+
         buf.append(candle)
         if len(buf) > CANDLE_MAX_BUFFER:
             self._candle_history[key] = buf[-CANDLE_MAX_BUFFER:]

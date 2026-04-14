@@ -17,8 +17,9 @@ Authority boundary:
   L9 is a structure / entry-timing legality governor only.
   L9 must never emit direction, execute, trade_valid, position_size, or verdict.
   Hard legality checks run before score band evaluation.
-  status == FAIL implies continuation_allowed == false.
-  continuation_allowed == true implies next_legal_targets == ["PHASE_4"].
+  Always-forward scoring: continuation_allowed is always True.
+  L12 evaluates degradation via status/blocker_codes.
+  next_legal_targets always includes ["PHASE_4"].
 
 Zone: analysis/ — pure read-only analysis, no execution side-effects.
 """
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -38,39 +39,39 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L9Status(str, Enum):
+class L9Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class L9FreshnessState(str, Enum):
+class L9FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class L9WarmupState(str, Enum):
+class L9WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class L9FallbackClass(str, Enum):
+class L9FallbackClass(StrEnum):
     NO_FALLBACK = "NO_FALLBACK"
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class L9CoherenceBand(str, Enum):
+class L9CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class L9BlockerCode(str, Enum):
+class L9BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
     REQUIRED_STRUCTURE_SOURCE_MISSING = "REQUIRED_STRUCTURE_SOURCE_MISSING"
     SMC_UNAVAILABLE = "SMC_UNAVAILABLE"
@@ -181,13 +182,15 @@ def _eval_warmup(l9_analysis: dict[str, Any]) -> L9WarmupState:
         return L9WarmupState.INSUFFICIENT
 
     # Count SMC detection features present
-    smc_features = sum([
-        bool(l9_analysis.get("bos_detected", False)),
-        bool(l9_analysis.get("choch_detected", False)),
-        bool(l9_analysis.get("fvg_present", False)),
-        bool(l9_analysis.get("ob_present", False)),
-        bool(l9_analysis.get("sweep_detected", False)),
-    ])
+    smc_features = sum(
+        [
+            bool(l9_analysis.get("bos_detected", False)),
+            bool(l9_analysis.get("choch_detected", False)),
+            bool(l9_analysis.get("fvg_present", False)),
+            bool(l9_analysis.get("ob_present", False)),
+            bool(l9_analysis.get("sweep_detected", False)),
+        ]
+    )
 
     if smc_features >= 2:
         return L9WarmupState.READY
@@ -295,13 +298,15 @@ def _compress_status(
 
     # Legal degraded envelope → WARN
     is_legal_warn = (
-        freshness in (
+        freshness
+        in (
             L9FreshnessState.FRESH,
             L9FreshnessState.STALE_PRESERVED,
             L9FreshnessState.DEGRADED,
         )
         and warmup in (L9WarmupState.READY, L9WarmupState.PARTIAL)
-        and fallback in (
+        and fallback
+        in (
             L9FallbackClass.NO_FALLBACK,
             L9FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             L9FallbackClass.LEGAL_EMERGENCY_PRESERVE,
@@ -417,27 +422,41 @@ class L9ConstitutionalGovernor:
             blockers.append(L9BlockerCode.STRUCTURE_SCORE_BELOW_MINIMUM)
 
         # ── Step 9: SMC feature count ────────────────────────────────
-        smc_feature_count = sum([
-            bool(l9_analysis.get("bos_detected", False)),
-            bool(l9_analysis.get("choch_detected", False)),
-            bool(l9_analysis.get("fvg_present", False)),
-            bool(l9_analysis.get("ob_present", False)),
-            bool(l9_analysis.get("sweep_detected", False)),
-        ])
+        smc_feature_count = sum(
+            [
+                bool(l9_analysis.get("bos_detected", False)),
+                bool(l9_analysis.get("choch_detected", False)),
+                bool(l9_analysis.get("fvg_present", False)),
+                bool(l9_analysis.get("ob_present", False)),
+                bool(l9_analysis.get("sweep_detected", False)),
+            ]
+        )
 
         # ── Step 10: compress status ─────────────────────────────────
         status = _compress_status(
-            blockers, band, freshness, warmup, fallback,
-            smc_warnings, structure_score, smc_feature_count,
+            blockers,
+            band,
+            freshness,
+            warmup,
+            fallback,
+            smc_warnings,
+            structure_score,
+            smc_feature_count,
         )
 
-        continuation_allowed = status != L9Status.FAIL
-        next_targets = ["PHASE_4"] if continuation_allowed else []
+        # Always-forward: continuation_allowed is always True.
+        # L12 evaluates degradation via status/blocker_codes.
+        continuation_allowed = True
+        next_targets = ["PHASE_4"]
 
         # ── Step 11: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(
-            freshness, warmup, fallback, band,
-            smc_warnings, smc_feature_count,
+            freshness,
+            warmup,
+            fallback,
+            band,
+            smc_warnings,
+            smc_feature_count,
         )
         if status == L9Status.PASS and fallback == L9FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:  # noqa: SIM102
             if "PRIMARY_SUBSTITUTE_USED" not in warning_codes:
@@ -462,10 +481,7 @@ class L9ConstitutionalGovernor:
         }
 
         routing = {
-            "source_used": [
-                s for s in ["smc", "liquidity", "divergence"]
-                if l9_analysis.get("valid", False)
-            ],
+            "source_used": [s for s in ["smc", "liquidity", "divergence"] if l9_analysis.get("valid", False)],
             "fallback_used": fallback != L9FallbackClass.NO_FALLBACK,
             "next_legal_targets": next_targets,
         }

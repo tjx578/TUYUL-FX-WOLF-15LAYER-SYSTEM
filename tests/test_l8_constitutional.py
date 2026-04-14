@@ -56,9 +56,16 @@ def _l8_analysis(
 ) -> dict:
     if components is None:
         components = {
-            "trend": 0.8, "momentum": 0.7, "volatility": 0.6, "volume": 0.5,
-            "correlation": 0.4, "rsi": 0.6, "macd": 0.7, "cci": 0.5,
-            "mfi": 0.6, "atr": 0.8,
+            "trend": 0.8,
+            "momentum": 0.7,
+            "volatility": 0.6,
+            "volume": 0.5,
+            "correlation": 0.4,
+            "rsi": 0.6,
+            "macd": 0.7,
+            "cci": 0.5,
+            "mfi": 0.6,
+            "atr": 0.8,
         }
     if twms_signals is None:
         twms_signals = {"rsi": "BUY", "macd": "BUY", "cci": "NEUTRAL"}
@@ -303,47 +310,61 @@ class TestCompression:
             L8FreshnessState.FRESH,
             L8WarmupState.READY,
             L8FallbackClass.NO_FALLBACK,
-            [], 0.95, 10,
+            [],
+            0.95,
+            10,
         )
         assert status == L8Status.FAIL
 
     def test_low_band_fail(self):
         status = _compress_status(
-            [], L8CoherenceBand.LOW,
+            [],
+            L8CoherenceBand.LOW,
             L8FreshnessState.FRESH,
             L8WarmupState.READY,
             L8FallbackClass.NO_FALLBACK,
-            [], 0.50, 10,
+            [],
+            0.50,
+            10,
         )
         assert status == L8Status.FAIL
 
     def test_clean_pass(self):
         status = _compress_status(
-            [], L8CoherenceBand.HIGH,
+            [],
+            L8CoherenceBand.HIGH,
             L8FreshnessState.FRESH,
             L8WarmupState.READY,
             L8FallbackClass.NO_FALLBACK,
-            [], 0.95, 10,
+            [],
+            0.95,
+            10,
         )
         assert status == L8Status.PASS
 
     def test_degraded_warn(self):
         status = _compress_status(
-            [], L8CoherenceBand.MID,
+            [],
+            L8CoherenceBand.MID,
             L8FreshnessState.DEGRADED,
             L8WarmupState.PARTIAL,
             L8FallbackClass.LEGAL_EMERGENCY_PRESERVE,
-            [], 0.80, 5,
+            [],
+            0.80,
+            5,
         )
         assert status == L8Status.WARN
 
     def test_gate_closed_warns(self):
         status = _compress_status(
-            [], L8CoherenceBand.HIGH,
+            [],
+            L8CoherenceBand.HIGH,
             L8FreshnessState.FRESH,
             L8WarmupState.READY,
             L8FallbackClass.NO_FALLBACK,
-            ["TII_GATE_CLOSED"], 0.90, 10,
+            ["TII_GATE_CLOSED"],
+            0.90,
+            10,
         )
         assert status == L8Status.WARN
 
@@ -356,17 +377,25 @@ class TestCompression:
 class TestWarningCodes:
     def test_clean(self):
         codes = _collect_warning_codes(
-            L8FreshnessState.FRESH, L8WarmupState.READY,
-            L8FallbackClass.NO_FALLBACK, L8CoherenceBand.HIGH,
-            [], 10, "OPEN",
+            L8FreshnessState.FRESH,
+            L8WarmupState.READY,
+            L8FallbackClass.NO_FALLBACK,
+            L8CoherenceBand.HIGH,
+            [],
+            10,
+            "OPEN",
         )
         assert codes == []
 
     def test_degraded(self):
         codes = _collect_warning_codes(
-            L8FreshnessState.DEGRADED, L8WarmupState.PARTIAL,
-            L8FallbackClass.LEGAL_EMERGENCY_PRESERVE, L8CoherenceBand.MID,
-            [], 5, "CLOSED",
+            L8FreshnessState.DEGRADED,
+            L8WarmupState.PARTIAL,
+            L8FallbackClass.LEGAL_EMERGENCY_PRESERVE,
+            L8CoherenceBand.MID,
+            [],
+            5,
+            "CLOSED",
         )
         assert "DEGRADED_CONTEXT" in codes
         assert "PARTIAL_WARMUP" in codes
@@ -431,7 +460,7 @@ class TestL8GovernorFailEnvelope:
         gov = L8ConstitutionalGovernor()
         result = gov.evaluate(_l8_analysis(), _upstream_fail())
         assert result["status"] == "FAIL"
-        assert result["continuation_allowed"] is False
+        assert result["continuation_allowed"] is True  # always-forward
         assert "UPSTREAM_NOT_CONTINUABLE" in result["blocker_codes"]
 
     def test_low_integrity_fail(self):
@@ -439,17 +468,14 @@ class TestL8GovernorFailEnvelope:
         data = _l8_analysis(integrity=0.50, tii_sym=0.50)
         result = gov.evaluate(data, _upstream_pass())
         assert result["status"] == "FAIL"
-        assert result["continuation_allowed"] is False
+        assert result["continuation_allowed"] is True  # always-forward
 
     def test_missing_source_fail(self):
         gov = L8ConstitutionalGovernor()
         data = {"valid": False}
         result = gov.evaluate(data, _upstream_pass())
         assert result["status"] == "FAIL"
-        assert any(
-            b in result["blocker_codes"]
-            for b in ["TII_UNAVAILABLE", "TWMS_UNAVAILABLE", "WARMUP_INSUFFICIENT"]
-        )
+        assert any(b in result["blocker_codes"] for b in ["TII_UNAVAILABLE", "TWMS_UNAVAILABLE", "WARMUP_INSUFFICIENT"])
 
     def test_invalid_state_fail(self):
         gov = L8ConstitutionalGovernor()

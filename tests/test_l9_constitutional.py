@@ -319,47 +319,61 @@ class TestCompression:
             L9FreshnessState.FRESH,
             L9WarmupState.READY,
             L9FallbackClass.NO_FALLBACK,
-            [], 0.95, 5,
+            [],
+            0.95,
+            5,
         )
         assert status == L9Status.FAIL
 
     def test_low_band_fail(self):
         status = _compress_status(
-            [], L9CoherenceBand.LOW,
+            [],
+            L9CoherenceBand.LOW,
             L9FreshnessState.FRESH,
             L9WarmupState.READY,
             L9FallbackClass.NO_FALLBACK,
-            [], 0.30, 5,
+            [],
+            0.30,
+            5,
         )
         assert status == L9Status.FAIL
 
     def test_clean_pass(self):
         status = _compress_status(
-            [], L9CoherenceBand.HIGH,
+            [],
+            L9CoherenceBand.HIGH,
             L9FreshnessState.FRESH,
             L9WarmupState.READY,
             L9FallbackClass.NO_FALLBACK,
-            [], 0.90, 3,
+            [],
+            0.90,
+            3,
         )
         assert status == L9Status.PASS
 
     def test_no_smc_signal_warn(self):
         status = _compress_status(
-            [], L9CoherenceBand.HIGH,
+            [],
+            L9CoherenceBand.HIGH,
             L9FreshnessState.FRESH,
             L9WarmupState.READY,
             L9FallbackClass.NO_FALLBACK,
-            ["NO_SMC_SIGNAL"], 0.85, 3,
+            ["NO_SMC_SIGNAL"],
+            0.85,
+            3,
         )
         assert status == L9Status.WARN
 
     def test_degraded_warn(self):
         status = _compress_status(
-            [], L9CoherenceBand.MID,
+            [],
+            L9CoherenceBand.MID,
             L9FreshnessState.DEGRADED,
             L9WarmupState.PARTIAL,
             L9FallbackClass.LEGAL_EMERGENCY_PRESERVE,
-            [], 0.70, 2,
+            [],
+            0.70,
+            2,
         )
         assert status == L9Status.WARN
 
@@ -372,17 +386,23 @@ class TestCompression:
 class TestWarningCodes:
     def test_clean(self):
         codes = _collect_warning_codes(
-            L9FreshnessState.FRESH, L9WarmupState.READY,
-            L9FallbackClass.NO_FALLBACK, L9CoherenceBand.HIGH,
-            [], 5,
+            L9FreshnessState.FRESH,
+            L9WarmupState.READY,
+            L9FallbackClass.NO_FALLBACK,
+            L9CoherenceBand.HIGH,
+            [],
+            5,
         )
         assert codes == []
 
     def test_degraded(self):
         codes = _collect_warning_codes(
-            L9FreshnessState.DEGRADED, L9WarmupState.PARTIAL,
-            L9FallbackClass.LEGAL_EMERGENCY_PRESERVE, L9CoherenceBand.MID,
-            ["NO_DIVERGENCE_DATA"], 2,
+            L9FreshnessState.DEGRADED,
+            L9WarmupState.PARTIAL,
+            L9FallbackClass.LEGAL_EMERGENCY_PRESERVE,
+            L9CoherenceBand.MID,
+            ["NO_DIVERGENCE_DATA"],
+            2,
         )
         assert "DEGRADED_CONTEXT" in codes
         assert "PARTIAL_WARMUP" in codes
@@ -459,7 +479,7 @@ class TestL9GovernorFailEnvelope:
         gov = L9ConstitutionalGovernor()
         result = gov.evaluate(_l9_analysis(), _upstream_fail())
         assert result["status"] == "FAIL"
-        assert result["continuation_allowed"] is False
+        assert result["continuation_allowed"] is True  # always-forward
         assert "UPSTREAM_NOT_CONTINUABLE" in result["blocker_codes"]
 
     def test_low_score_fail(self):
@@ -467,7 +487,7 @@ class TestL9GovernorFailEnvelope:
         data = _l9_analysis(smc_score=30)
         result = gov.evaluate(data, _upstream_pass())
         assert result["status"] == "FAIL"
-        assert result["continuation_allowed"] is False
+        assert result["continuation_allowed"] is True  # always-forward
 
     def test_no_structure_data_fail(self):
         gov = L9ConstitutionalGovernor()

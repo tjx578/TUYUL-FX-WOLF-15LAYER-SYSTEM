@@ -80,10 +80,10 @@ def test_candle_history_count_limit(context_bus: LiveContextBus) -> None:
         candle = {
             "symbol": "EURUSD",
             "timeframe": "H1",
-            "open": 1.1000,
-            "high": 1.1010,
-            "low": 1.0990,
-            "close": 1.1005,
+            "open": 1.1000 + (i * 0.0001),
+            "high": 1.1010 + (i * 0.0001),
+            "low": 1.0990 + (i * 0.0001),
+            "close": 1.1005 + (i * 0.0001),
             "volume": 1000,
             "timestamp": f"2024-01-{day:02d}T{hour:02d}:00:00Z",
         }
@@ -107,10 +107,10 @@ def test_candle_history_max_buffer_size(context_bus: LiveContextBus) -> None:
         candle: dict[str, Any] = {
             "symbol": "EURUSD",
             "timeframe": "H1",
-            "open": 1.1000,
-            "high": 1.1010,
-            "low": 1.0990,
-            "close": 1.1005,
+            "open": 1.1000 + (i * 0.0001),
+            "high": 1.1010 + (i * 0.0001),
+            "low": 1.0990 + (i * 0.0001),
+            "close": 1.1005 + (i * 0.0001),
             "volume": 1000,
             "timestamp": f"2024-01-{day:02d}T{hour:02d}:00:00Z",
         }
@@ -128,10 +128,10 @@ def test_candle_history_multiple_symbols(context_bus: LiveContextBus) -> None:
         candle = {
             "symbol": "EURUSD",
             "timeframe": "H1",
-            "open": 1.1000,
-            "high": 1.1010,
-            "low": 1.0990,
-            "close": 1.1005,
+            "open": 1.1000 + (i * 0.0001),
+            "high": 1.1010 + (i * 0.0001),
+            "low": 1.0990 + (i * 0.0001),
+            "close": 1.1005 + (i * 0.0001),
             "volume": 1000,
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
@@ -142,10 +142,10 @@ def test_candle_history_multiple_symbols(context_bus: LiveContextBus) -> None:
         candle = {
             "symbol": "GBPUSD",
             "timeframe": "H1",
-            "open": 1.2000,
-            "high": 1.2010,
-            "low": 1.1990,
-            "close": 1.2005,
+            "open": 1.2000 + (i * 0.0001),
+            "high": 1.2010 + (i * 0.0001),
+            "low": 1.1990 + (i * 0.0001),
+            "close": 1.2005 + (i * 0.0001),
             "volume": 1000,
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
@@ -165,10 +165,10 @@ def test_candle_history_multiple_timeframes(context_bus: LiveContextBus) -> None
         candle_h1: dict[str, Any] = {
             "symbol": "EURUSD",
             "timeframe": "H1",
-            "open": 1.1000,
-            "high": 1.1010,
-            "low": 1.0990,
-            "close": 1.1005,
+            "open": 1.1000 + (i * 0.0001),
+            "high": 1.1010 + (i * 0.0001),
+            "low": 1.0990 + (i * 0.0001),
+            "close": 1.1005 + (i * 0.0001),
             "volume": 1000,
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
@@ -179,10 +179,10 @@ def test_candle_history_multiple_timeframes(context_bus: LiveContextBus) -> None
         candle_m15: dict[str, Any] = {
             "symbol": "EURUSD",
             "timeframe": "M15",
-            "open": 1.1000,
-            "high": 1.1010,
-            "low": 1.0990,
-            "close": 1.1005,
+            "open": 1.1000 + (i * 0.0001),
+            "high": 1.1010 + (i * 0.0001),
+            "low": 1.0990 + (i * 0.0001),
+            "close": 1.1005 + (i * 0.0001),
             "volume": 1000,
             "timestamp": f"2024-01-01T00:{i * 15:02d}:00Z",
         }

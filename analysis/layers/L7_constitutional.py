@@ -17,8 +17,9 @@ Authority boundary:
   L7 is a probability/survivability legality governor only.
   L7 must never emit direction, execute, trade_valid, position_size, or verdict.
   Hard legality checks run before score band evaluation.
-  status == FAIL implies continuation_allowed == false.
-  continuation_allowed == true implies next_legal_targets == ["L8"].
+  Always-forward scoring: continuation_allowed is always True.
+  L12 evaluates degradation via status/blocker_codes.
+  next_legal_targets always includes ["L8"].
 
 Zone: analysis/ — pure read-only analysis, no execution side-effects.
 """
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -38,39 +39,39 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L7Status(str, Enum):
+class L7Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class FreshnessState(str, Enum):
+class FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class WarmupState(str, Enum):
+class WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class FallbackClass(str, Enum):
+class FallbackClass(StrEnum):
     NO_FALLBACK = "NO_FALLBACK"
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class CoherenceBand(str, Enum):
+class CoherenceBand(str, Enum):  # noqa: UP042
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class BlockerCode(str, Enum):
+class BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
     REQUIRED_PROBABILITY_SOURCE_MISSING = "REQUIRED_PROBABILITY_SOURCE_MISSING"
     EDGE_VALIDATION_UNAVAILABLE = "EDGE_VALIDATION_UNAVAILABLE"
@@ -271,13 +272,15 @@ def _compress_status(
 
     # Legal degraded envelope → WARN
     is_legal_warn = (
-        freshness in (
+        freshness
+        in (
             FreshnessState.FRESH,
             FreshnessState.STALE_PRESERVED,
             FreshnessState.DEGRADED,
         )
         and warmup in (WarmupState.READY, WarmupState.PARTIAL)
-        and fallback in (
+        and fallback
+        in (
             FallbackClass.NO_FALLBACK,
             FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             FallbackClass.LEGAL_EMERGENCY_PRESERVE,
@@ -403,17 +406,30 @@ class L7ConstitutionalGovernor:
 
         # ── Step 10: compress status ─────────────────────────────────
         status = _compress_status(
-            blockers, band, freshness, warmup, fallback,
-            edge_warnings, win_prob, sample_count,
+            blockers,
+            band,
+            freshness,
+            warmup,
+            fallback,
+            edge_warnings,
+            win_prob,
+            sample_count,
         )
 
-        continuation_allowed = status != L7Status.FAIL
-        next_targets = ["L8"] if continuation_allowed else []
+        # Always-forward: continuation_allowed is always True.
+        # L12 evaluates degradation via status/blocker_codes.
+        continuation_allowed = True
+        next_targets = ["L8"]
 
         # ── Step 11: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(
-            freshness, warmup, fallback, band,
-            edge_warnings, sample_count, validation,
+            freshness,
+            warmup,
+            fallback,
+            band,
+            edge_warnings,
+            sample_count,
+            validation,
         )
         # PASS status can also carry advisory warnings
         if status == L7Status.PASS and fallback == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:  # noqa: SIM102
@@ -431,16 +447,17 @@ class L7ConstitutionalGovernor:
             "conf12_raw": round(float(l7_analysis.get("conf12_raw", 0.0)), 4),
             "risk_of_ruin": round(float(l7_analysis.get("risk_of_ruin", 1.0)), 4),
             "bayesian_posterior": round(
-                float(l7_analysis.get("bayesian_posterior", 0.0)), 4,
+                float(l7_analysis.get("bayesian_posterior", 0.0)),
+                4,
             ),
             "feature_hash": f"L7_{band.value}_{status.value}_{int(round(win_prob * 100))}",
         }
 
         routing = {
             "source_used": [
-                s for s in ["monte_carlo", "bayesian", "walk_forward"]
-                if l7_analysis.get("simulations", 0) > 0
-                or s not in ("monte_carlo", "bayesian")
+                s
+                for s in ["monte_carlo", "bayesian", "walk_forward"]
+                if l7_analysis.get("simulations", 0) > 0 or s not in ("monte_carlo", "bayesian")
             ],
             "fallback_used": fallback != FallbackClass.NO_FALLBACK,
             "next_legal_targets": next_targets,

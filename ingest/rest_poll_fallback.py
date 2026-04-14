@@ -379,7 +379,7 @@ class RestPollFallback:
 
         # ── Group valid candles by Redis key to batch writes ─────────────────
         # Reduces round trips: 4 × N → 3 × K + N  (K = unique keys, K ≤ N).
-        from core.candle_bridge_fix import is_duplicate_candle
+        from core.candle_bridge_fix import is_duplicate_candle, is_ohlc_stale
 
         key_batches: dict[str, list[tuple[str, str, dict[str, Any]]]] = defaultdict(list)
         for candle in candles:
@@ -403,6 +403,19 @@ class RestPollFallback:
                     continue
             except Exception:
                 pass  # On error, allow write
+
+            # ── Stale-OHLC guard: skip if last N bars have identical prices ──
+            try:
+                if await is_ohlc_stale(self._redis, key, candle):
+                    dedup_skipped += 1
+                    logger.debug(
+                        "[RestPoll] Stale OHLC skip %s:%s — consecutive identical prices",
+                        symbol,
+                        timeframe,
+                    )
+                    continue
+            except Exception:
+                pass
 
             candle_json = orjson.dumps(candle).decode("utf-8")
             pub_channel = channel_candle(symbol, timeframe)

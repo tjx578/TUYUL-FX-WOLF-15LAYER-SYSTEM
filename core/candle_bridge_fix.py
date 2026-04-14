@@ -54,6 +54,19 @@ def _candle_open_epoch(candle: dict) -> float | None:
     return None
 
 
+def _ohlc_fingerprint(candle: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    """Return (open, high, low, close) rounded to 8 decimals, or None if missing."""
+    try:
+        return (
+            round(float(candle["open"]), 8),
+            round(float(candle["high"]), 8),
+            round(float(candle["low"]), 8),
+            round(float(candle["close"]), 8),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 async def is_duplicate_candle(
     redis: Any,
     history_key: str,
@@ -89,6 +102,54 @@ async def is_duplicate_candle(
         except Exception:
             continue
     return False
+
+
+# Maximum consecutive bars with identical OHLC before we consider the feed stale.
+# In live forex even the most illiquid cross will not produce 3 consecutive H1
+# bars with exactly the same open/high/low/close to 8 decimal places.
+_STALE_OHLC_CONSECUTIVE_LIMIT: int = 3
+
+
+async def is_ohlc_stale(
+    redis: Any,
+    history_key: str,
+    candle_dict: dict[str, Any],
+    *,
+    consecutive_limit: int = _STALE_OHLC_CONSECUTIVE_LIMIT,
+) -> bool:
+    """Detect stale-price ingestion: reject if last *consecutive_limit* bars in
+    the Redis tail have the exact same OHLC as the incoming candle.
+
+    This guards against REST-fallback polling a stale endpoint and flooding
+    Redis with bars that have different timestamps but identical prices —
+    the root cause of 'ALL price data appears flat/stale' errors in L3.
+
+    Returns ``True`` (stale) only when the incoming OHLC matches every one
+    of the last *consecutive_limit* entries.  Single or occasional duplicate
+    bars (which can happen legitimately at session boundaries) are allowed.
+    """
+    new_fp = _ohlc_fingerprint(candle_dict)
+    if new_fp is None:
+        return False  # Can't check without OHLC — allow write
+
+    try:
+        tail: list[bytes] = await redis.lrange(history_key, -consecutive_limit, -1)
+    except Exception:
+        return False
+
+    if len(tail) < consecutive_limit:
+        return False  # Not enough history to judge
+
+    for raw in tail:
+        try:
+            existing = orjson.loads(raw)
+            existing_fp = _ohlc_fingerprint(existing)
+            if existing_fp != new_fp:
+                return False  # At least one bar is different — not stale
+        except Exception:
+            return False  # Can't parse — give benefit of the doubt
+
+    return True
 
 
 def _safe_epoch(candle: dict) -> float:
@@ -151,6 +212,16 @@ async def _push_candle_to_redis_safe(
         # ── Dedup: skip if this candle's open_time already exists in tail ──
         if rpush_fn is None and await is_duplicate_candle(redis, key, candle_dict):
             logger.debug("[CandleBridgeFix] Dedup skip %s:%s — same open_time in tail", symbol, timeframe)
+            return
+
+        # ── Stale-OHLC guard: skip if last N bars have identical prices ──
+        if rpush_fn is None and await is_ohlc_stale(redis, key, candle_dict):
+            logger.warning(
+                "[CandleBridgeFix] Stale OHLC skip %s:%s — last %d bars have identical prices",
+                symbol,
+                timeframe,
+                _STALE_OHLC_CONSECUTIVE_LIMIT,
+            )
             return
 
         candle_json = orjson.dumps(candle_dict).decode("utf-8")

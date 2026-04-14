@@ -110,9 +110,15 @@ Jika salah satu gagal:
 - enrichment failure menambah warning, bukan menjatuhkan pipeline secara total kecuali ada hard gate eksplisit
 
 ### Phase 3 — STRUCTURE / VALIDATION
+Parallel, **always-forward**:
 - L7 probability / validation
 - L8 integrity / TII / TWMS / FRPC support
 - L9 SMC / entry timing / structural best-effort
+
+Jika salah satu gagal:
+- catat degradasi (status=FAIL, blocker_codes)
+- **tetap lanjut** ke phase berikut dengan skor terdegradasi
+- L12 akan melihat structure_status dan mengevaluasi dampaknya
 
 ### Phase 4 — RISK CHAIN
 Strict chain, tidak boleh diparalelkan:

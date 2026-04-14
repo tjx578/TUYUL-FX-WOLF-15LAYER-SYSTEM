@@ -261,6 +261,44 @@ class RedisConsumer:
                 )
                 continue
 
+            # ── Stale-OHLC dedup: collapse consecutive bars with identical OHLC ──
+            # If REST fallback pushed many bars with the same price (stale feed),
+            # Redis will contain them.  Collapse runs of identical OHLC down to a
+            # single representative bar so L3 doesn't see artificial "flat" data.
+            if len(candles) > 1:
+                deduped: list[dict[str, Any]] = [candles[0]]
+                _run_len = 1
+                for c in candles[1:]:
+                    try:
+                        prev = deduped[-1]
+                        same = (
+                            round(float(c.get("open", 0)), 8) == round(float(prev.get("open", -1)), 8)
+                            and round(float(c.get("high", 0)), 8) == round(float(prev.get("high", -1)), 8)
+                            and round(float(c.get("low", 0)), 8) == round(float(prev.get("low", -1)), 8)
+                            and round(float(c.get("close", 0)), 8) == round(float(prev.get("close", -1)), 8)
+                        )
+                    except (TypeError, ValueError):
+                        same = False
+                    if same:
+                        _run_len += 1
+                        if _run_len <= 2:
+                            # Allow up to 2 consecutive identical bars (session boundary)
+                            deduped.append(c)
+                    else:
+                        _run_len = 1
+                        deduped.append(c)
+                dropped = len(candles) - len(deduped)
+                if dropped > 0:
+                    logger.warning(
+                        "RedisConsumer: %s:%s collapsed %d stale-OHLC duplicates (%d → %d bars)",
+                        symbol,
+                        timeframe,
+                        dropped,
+                        len(candles),
+                        len(deduped),
+                    )
+                    candles = deduped
+
             self._bus.set_candle_history(symbol, timeframe, candles)
             logger.info(
                 "RedisConsumer: warmup loaded %d candles for %s:%s",

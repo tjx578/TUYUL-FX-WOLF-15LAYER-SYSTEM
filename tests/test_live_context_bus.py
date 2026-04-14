@@ -201,10 +201,10 @@ class TestLiveContextBusCandleHistory:
             candle = {
                 "symbol": symbol,
                 "timeframe": "M15",
-                "open": 1.0850,
-                "high": 1.0860,
-                "low": 1.0840,
-                "close": 1.0855,
+                "open": 1.0850 + (_i * 0.0001),
+                "high": 1.0860 + (_i * 0.0001),
+                "low": 1.0840 + (_i * 0.0001),
+                "close": 1.0855 + (_i * 0.0001),
                 "timestamp": datetime.now(UTC),
             }
             bus.update_candle(candle)
@@ -214,10 +214,10 @@ class TestLiveContextBusCandleHistory:
             candle = {
                 "symbol": symbol,
                 "timeframe": "H1",
-                "open": 1.0850,
-                "high": 1.0860,
-                "low": 1.0840,
-                "close": 1.0855,
+                "open": 1.0850 + (_i * 0.0001),
+                "high": 1.0860 + (_i * 0.0001),
+                "low": 1.0840 + (_i * 0.0001),
+                "close": 1.0855 + (_i * 0.0001),
                 "timestamp": datetime.now(UTC),
             }
             bus.update_candle(candle)
