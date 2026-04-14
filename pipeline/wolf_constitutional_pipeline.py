@@ -26,8 +26,8 @@ Core Modules:
     ZONA 5 - Meta & Reflective      : L13, L14, L15
 
 Execution order (CRITICAL -- 8 phases):
-    Phase 1: L1, L2, L3 (Perception -- independent, halt-on-failure)
-    Phase 2: L4, L5 (Confluence & Psychology -- depend on L1-L3)
+    Phase 1: L1, L2, L3 (Perception -- always-forward, degradation recorded)
+    Phase 2: L4, L5 (Confluence & Psychology -- always-forward, depend on L1-L3)
     Phase 3: L7, L8, L9 (Probability & Validation -- depend on L4/L5)
     Phase 4: L11 -> L6 -> L10 (Execution + Risk -- L11 BEFORE L6!)
     Phase 5: Build synthesis -> 9-Gate Check -> L12 verdict (SOLE AUTHORITY)
@@ -36,10 +36,10 @@ Execution order (CRITICAL -- 8 phases):
     Phase 8: L14 JSON export + final result assembly
 
 Runtime model (capital-protection first):
-    SEMI-PARALLEL HALT-SAFE DAG
+    SEMI-PARALLEL ALWAYS-FORWARD DAG
     batch_1 -> sync barrier -> batch_2 -> sync barrier -> ...
-    If any runnable layer in a batch fails, the pipeline halts before
-    entering the next batch.
+    Layers are scoring systems, not decision gates.
+    Degradation is recorded and forwarded; L12 is sole verdict authority.
 
 Merged improvements over v7.4r∞:
     ✓ Two-pass L13 governance (from Sovereign pipeline)
@@ -170,7 +170,7 @@ class WolfConstitutionalPipeline:
 
     Merged from Constitutional v7.4r∞ + Sovereign governance features.
     This is the ONLY entry point for analysis in the entire system.
-    Runtime is a semi-parallel halt-safe DAG with batch barriers.
+    Runtime is a semi-parallel always-forward DAG with batch barriers.
     Independent nodes inside the same DAG batch may run concurrently, while
     cross-batch progression is strictly synchronized (batch -> barrier -> batch).
     Layer-12 is the SOLE decision authority (Constitutional Verdict).
@@ -509,13 +509,13 @@ class WolfConstitutionalPipeline:
         dag_batches: list[list[str]],
         batch_calls: dict[str, Callable[[], dict[str, Any]]],
     ) -> dict[str, dict[str, Any]]:
-        """Execute callable layers in a halt-safe DAG batch pipeline.
+        """Execute callable layers in an always-forward DAG batch pipeline.
 
         Semantics:
         - Within a batch: runnable layers execute concurrently.
         - Between batches: strict synchronization barrier.
-        - Failure mode: fail-fast; if one runnable layer raises, no later
-          batch is entered.
+        - Failure mode: record degradation and continue; L12 is sole
+          verdict authority.
         """
 
         async def _run_single(layer_id: str) -> tuple[str, dict[str, Any]]:
@@ -1130,7 +1130,7 @@ class WolfConstitutionalPipeline:
         try:
             # ═══════════════════════════════════════════════════════
             # PHASE 1 -- ZONA PERCEPTION & CONTEXT (L1, L2, L3)
-            # Strict sequential halt-on-failure via Phase1ChainAdapter
+            # Sequential always-forward via Phase1ChainAdapter
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context -- {symbol}")
             engines_invoked.extend(["L1ContextAnalyzer", "L2MTAAnalyzer", "L3TechnicalAnalyzer"])
@@ -1193,7 +1193,7 @@ class WolfConstitutionalPipeline:
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2 -- ZONA CONFLUENCE & SCORING (L4, L5)
-            # Strict sequential halt-on-failure: L4 → L5
+            # Sequential always-forward: L4 → L5
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring -- {symbol}")
             engines_invoked.extend(["L4ScoringEngine", "L5PsychologyAnalyzer"])
