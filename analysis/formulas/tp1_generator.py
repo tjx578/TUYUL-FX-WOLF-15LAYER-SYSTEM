@@ -83,6 +83,26 @@ class TP1Generator:
 
     def __init__(self, *, min_rr: float = _DEFAULT_MIN_RR) -> None:
         self.min_rr = min_rr
+        self._structural_zones: dict[str, Any] | None = None
+
+    def set_structural_zones(self, zones: dict[str, Any] | None) -> None:
+        """Inject pre-computed structural zones from L3/L9 upstream layers.
+
+        Expected keys (all optional):
+            vpc_zones: list[dict] — Volume Profile Clusters from L3
+                Each: {"price_low": float, "price_high": float, "strength": float}
+            volume_profile_poc: float — Point of Control from L3
+            fvg_zones: list[dict] — FVG zones from L9/L3
+                Each: {"high": float, "low": float}
+            ob_zones: list[dict] — Order Block zones from L9/L3
+                Each: {"high": float, "low": float}
+            liquidity_levels: list[float] — key liquidity prices from L9
+            bos_level: float — Break of Structure level from L9
+
+        This is advisory enrichment — zone candidates are scored alongside
+        internally detected candidates, not replacing them.
+        """
+        self._structural_zones = dict(zones) if zones else None
 
     # ------------------------------------------------------------------
     # Main entry
@@ -96,11 +116,15 @@ class TP1Generator:
         direction: str,
         *,
         atr: float | None = None,
+        structural_zones: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Generate TP1 from multiple structural candidates.
 
         Returns the nearest valid candidate satisfying ``self.min_rr``.
         Falls back to the ATR-based target when no structural level qualifies.
+
+        If *structural_zones* is provided (from L3/L9), zone-derived candidates
+        are added alongside internally detected ones.
         """
         if direction not in {"BUY", "SELL"}:
             return self._fail("invalid_direction")
@@ -147,6 +171,11 @@ class TP1Generator:
         # 4. Fibonacci extensions
         for price, label in _fib_extensions(candles, entry, direction):
             candidates.append({"price": price, "source": f"fib_{label}"})
+
+        # 5. Upstream structural zones (L3/L9 enrichment)
+        zones = structural_zones or self._structural_zones
+        if zones:
+            candidates.extend(_zone_candidates(zones, entry, direction))
 
         # --- Score candidates ---
         scored: list[dict[str, Any]] = []
@@ -357,3 +386,76 @@ def _fib_extensions(
                 results.append((target, label))
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Upstream structural zone candidates (L3 / L9 enrichment)
+# ---------------------------------------------------------------------------
+
+
+def _zone_candidates(
+    zones: dict[str, Any],
+    entry: float,
+    direction: str,
+) -> list[dict[str, Any]]:
+    """Build TP candidates from pre-computed upstream structural zones.
+
+    Accepts zone data from L3 (VPC, POC) and L9 (FVG, OB, liquidity, BOS).
+    Each valid zone midpoint or level becomes a candidate with a source tag
+    prefixed with ``l3_`` or ``l9_`` to distinguish from internally detected
+    candidates.
+    """
+    candidates: list[dict[str, Any]] = []
+
+    def _add(price: float, source: str) -> None:
+        if price <= 0:
+            return
+        if direction == "BUY" and price <= entry:
+            return
+        if direction == "SELL" and price >= entry:
+            return
+        candidates.append({"price": round(price, 5), "source": source})
+
+    # --- L3: Volume Profile Clusters ---
+    for vpc in zones.get("vpc_zones", []):
+        if not isinstance(vpc, dict):
+            continue
+        lo = vpc.get("price_low", 0.0)
+        hi = vpc.get("price_high", 0.0)
+        if lo > 0 and hi > 0:
+            _add((lo + hi) / 2.0, "l3_vpc")
+
+    # --- L3: Volume Profile POC ---
+    poc = zones.get("volume_profile_poc", 0.0)
+    if isinstance(poc, (int, float)):
+        _add(float(poc), "l3_poc")
+
+    # --- L9: FVG zones ---
+    for fvg in zones.get("fvg_zones", []):
+        if not isinstance(fvg, dict):
+            continue
+        lo = fvg.get("low", 0.0)
+        hi = fvg.get("high", 0.0)
+        if lo > 0 and hi > 0:
+            _add((lo + hi) / 2.0, "l9_fvg")
+
+    # --- L9: Order Block zones ---
+    for ob in zones.get("ob_zones", []):
+        if not isinstance(ob, dict):
+            continue
+        lo = ob.get("low", 0.0)
+        hi = ob.get("high", 0.0)
+        if lo > 0 and hi > 0:
+            _add((lo + hi) / 2.0, "l9_ob")
+
+    # --- L9: Liquidity levels ---
+    for level in zones.get("liquidity_levels", []):
+        if isinstance(level, (int, float)):
+            _add(float(level), "l9_liquidity")
+
+    # --- L9: BOS level ---
+    bos = zones.get("bos_level", 0.0)
+    if isinstance(bos, (int, float)):
+        _add(float(bos), "l9_bos")
+
+    return candidates

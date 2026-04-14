@@ -1130,10 +1130,22 @@ class L4SessionScoring:
         self._call_count: int = 0
         self._bayesian_config = bayesian_config or _DEFAULT_BAYESIAN_CONFIG
         self._l3_output: dict[str, Any] | None = l3_output
+        self._macro_context: dict[str, Any] = {}
 
     def set_l3_output(self, l3_output: dict[str, Any]) -> None:
         """Inject L3 constitutional output for upstream legality check."""
         self._l3_output = l3_output
+
+    def set_macro_context(self, macro_context: dict[str, Any]) -> None:
+        """Inject weekly macro narrative for bias-aware scoring.
+
+        Expected fields (all optional):
+            weekly_bias: str          — BULLISH / BEARISH / NEUTRAL per currency
+            risk_sentiment: str       — RISK_ON / RISK_OFF / MIXED
+            macro_themes: list[str]   — thematic context
+            calendar_events: list     — high-impact events this week
+        """
+        self._macro_context = dict(macro_context) if macro_context else {}
 
     def analyze(
         self,
@@ -1220,6 +1232,10 @@ class L4SessionScoring:
             cfg=self._bayesian_config,
         )
 
+        # ── PHASE 4B: Macro narrative context (advisory) ─────────────
+
+        macro_narrative = self._compute_macro_narrative_context(pair)
+
         # ── PHASE 5: Integration gate ────────────────────────────────
 
         score_ok = grade in ("PERFECT", "EXCELLENT", "GOOD", "MARGINAL")
@@ -1276,6 +1292,8 @@ class L4SessionScoring:
             },
             # ── Bayesian Enrichment (NEW — additive) ──
             "bayesian": bayesian,
+            # ── Macro Narrative (advisory context for L12) ──
+            "macro_narrative": macro_narrative,  # noqa: F821
             # ── Classification ──
             "grade": grade,
             "technical_score": technical_score,
@@ -1285,6 +1303,72 @@ class L4SessionScoring:
             "timestamp": now.isoformat(),
         }
         return self._apply_constitutional(raw_result, pair)
+
+    # ── Macro Narrative Context ───────────────────────────────────
+    def _compute_macro_narrative_context(self, pair: str) -> dict[str, Any]:
+        """Extract and structure macro narrative context for this pair.
+
+        This is advisory-only information that L12 can use to assess
+        macro alignment.  It does NOT modify Wolf 30-Point scores.
+
+        Returns a dict with:
+            available: bool — whether macro narrative has been injected
+            risk_sentiment: str — RISK_ON / RISK_OFF / MIXED / UNKNOWN
+            weekly_bias: str — BULLISH / BEARISH / NEUTRAL / UNKNOWN
+            bias_alignment: str — ALIGNED / CONFLICTING / NEUTRAL / UNKNOWN
+            macro_themes: list[str] — thematic context
+            events_this_week: int — count of pending high-impact events
+        """
+        ctx = self._macro_context
+        if not ctx:
+            return {
+                "available": False,
+                "risk_sentiment": "UNKNOWN",
+                "weekly_bias": "UNKNOWN",
+                "bias_alignment": "UNKNOWN",
+                "macro_themes": [],
+                "events_this_week": 0,
+            }
+
+        risk_sentiment = str(ctx.get("risk_sentiment", "UNKNOWN")).upper()
+        weekly_bias_raw = ctx.get("weekly_bias", {})
+        macro_themes = list(ctx.get("macro_themes", []))
+        calendar_events = list(ctx.get("calendar_events", []))
+
+        # Extract per-currency bias for this pair
+        base = pair[:3].upper() if len(pair) >= 6 else ""
+        quote = pair[3:6].upper() if len(pair) >= 6 else ""
+
+        base_bias = "NEUTRAL"
+        quote_bias = "NEUTRAL"
+
+        if isinstance(weekly_bias_raw, dict):
+            base_bias = str(weekly_bias_raw.get(base, "NEUTRAL")).upper()
+            quote_bias = str(weekly_bias_raw.get(quote, "NEUTRAL")).upper()
+        elif isinstance(weekly_bias_raw, str):
+            # Single narrative bias for the whole pair
+            base_bias = weekly_bias_raw.upper()
+
+        # Determine alignment: base BULLISH + quote BEARISH = ALIGNED for BUY
+        if base_bias == "BULLISH" and quote_bias == "BEARISH":
+            alignment = "ALIGNED_BUY"
+        elif base_bias == "BEARISH" and quote_bias == "BULLISH":
+            alignment = "ALIGNED_SELL"
+        elif base_bias == quote_bias:
+            alignment = "NEUTRAL"
+        else:
+            alignment = "MIXED"
+
+        return {
+            "available": True,
+            "risk_sentiment": risk_sentiment,
+            "weekly_bias": f"{base}:{base_bias} {quote}:{quote_bias}",
+            "base_bias": base_bias,
+            "quote_bias": quote_bias,
+            "bias_alignment": alignment,
+            "macro_themes": macro_themes,
+            "events_this_week": len(calendar_events),
+        }
 
     # ── Constitutional Governance Wrapper ────────────────────────────
     def _apply_constitutional(self, raw_result: dict[str, Any], symbol: str) -> dict[str, Any]:
@@ -1353,6 +1437,10 @@ class L4ScoringEngine:
     def set_l3_output(self, l3_output: dict[str, Any]) -> None:
         """Propagate L3 constitutional output to inner engine."""
         self._inner.set_l3_output(l3_output)
+
+    def set_macro_context(self, macro_context: dict[str, Any]) -> None:
+        """Propagate macro narrative to inner engine."""
+        self._inner.set_macro_context(macro_context)
 
     def score(
         self,

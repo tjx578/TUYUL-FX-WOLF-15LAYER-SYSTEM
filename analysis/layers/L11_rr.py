@@ -77,10 +77,27 @@ class L11RRAnalyzer:
         self._scenario_matrix = None
         self._exec_optimizer = None
         self._upstream_output: dict[str, Any] = {}
+        self._structural_zones: dict[str, Any] | None = None
 
     def set_upstream_output(self, upstream: dict[str, Any]) -> None:
         """Inject upstream output (Phase 3 / L9 result) for constitutional governance."""
         self._upstream_output = upstream
+
+    def set_structural_zones(self, zones: dict[str, Any] | None) -> None:
+        """Inject pre-computed structural zones from L3/L9 for TP1 enrichment.
+
+        Expected keys (all optional):
+            vpc_zones: list[dict] — Volume Profile Clusters from L3
+            volume_profile_poc: float — Point of Control from L3
+            fvg_zones: list[dict] — FVG zones from L9/L3
+            ob_zones: list[dict] — Order Block zones from L9/L3
+            liquidity_levels: list[float] — key liquidity prices from L9
+            bos_level: float — Break of Structure level from L9
+
+        This is advisory enrichment — L11 remains ATR-first, zones add
+        structural candidates to TP1Generator's selection pool.
+        """
+        self._structural_zones = dict(zones) if zones else None
 
     def _ensure_loaded(self) -> None:
         if self._scenario_matrix is not None:
@@ -155,7 +172,9 @@ class L11RRAnalyzer:
         if len(candles) < _MIN_CANDLES:
             logger.warning(
                 "[L11] {} candle count={} < {} required",
-                symbol, len(candles), _MIN_CANDLES,
+                symbol,
+                len(candles),
+                _MIN_CANDLES,
             )
             return self._apply_constitutional(self._fail("no_data", symbol), symbol)
 
@@ -208,6 +227,7 @@ class L11RRAnalyzer:
                     sl=sl,
                     direction=direction,
                     atr=atr,
+                    structural_zones=self._structural_zones,
                 )
                 if gen_result.get("valid") and gen_result.get("tp1", 0.0) > 0:
                     tp1 = gen_result["tp1"]
@@ -222,23 +242,26 @@ class L11RRAnalyzer:
             rr = round(abs(tp1 - entry) / sl_distance, 2)
 
         if rr < _MIN_RR:
-            return self._apply_constitutional({
-                "valid": False,
-                "reason": "rr_too_low",
-                "rr": rr,
-                "entry": round(entry, 5),
-                "sl": sl,
-                "tp1": tp1,
-                "atr": round(atr, 5),
-                "direction": direction,
-                "battle_strategy": "SHADOW_STRIKE",
-                "execution_mode": "TP1_ONLY",
-                "entry_price": round(entry, 5),
-                "stop_loss": sl,
-                "take_profit_1": tp1,
-                "entry_zone": f"{sl:.5f}-{tp1:.5f}",
-                "tp1_source": tp1_source,
-            }, symbol)
+            return self._apply_constitutional(
+                {
+                    "valid": False,
+                    "reason": "rr_too_low",
+                    "rr": rr,
+                    "entry": round(entry, 5),
+                    "sl": sl,
+                    "tp1": tp1,
+                    "atr": round(atr, 5),
+                    "direction": direction,
+                    "battle_strategy": "SHADOW_STRIKE",
+                    "execution_mode": "TP1_ONLY",
+                    "entry_price": round(entry, 5),
+                    "stop_loss": sl,
+                    "take_profit_1": tp1,
+                    "entry_zone": f"{sl:.5f}-{tp1:.5f}",
+                    "tp1_source": tp1_source,
+                },
+                symbol,
+            )
 
         # --- Battle strategy selection ---
         if rr >= 3.0:
@@ -250,23 +273,26 @@ class L11RRAnalyzer:
         else:
             strategy = "SHADOW_STRIKE"
 
-        return self._apply_constitutional({
-            "valid": True,
-            "reason": "rr_ok",
-            "rr": rr,
-            "entry": round(entry, 5),
-            "sl": sl,
-            "tp1": tp1,
-            "atr": round(atr, 5),
-            "direction": direction,
-            "battle_strategy": strategy,
-            "execution_mode": "TP1_ONLY",
-            "entry_price": round(entry, 5),
-            "stop_loss": sl,
-            "take_profit_1": tp1,
-            "entry_zone": f"{sl:.5f}-{tp1:.5f}",
-            "tp1_source": tp1_source,
-        }, symbol)
+        return self._apply_constitutional(
+            {
+                "valid": True,
+                "reason": "rr_ok",
+                "rr": rr,
+                "entry": round(entry, 5),
+                "sl": sl,
+                "tp1": tp1,
+                "atr": round(atr, 5),
+                "direction": direction,
+                "battle_strategy": strategy,
+                "execution_mode": "TP1_ONLY",
+                "entry_price": round(entry, 5),
+                "stop_loss": sl,
+                "take_profit_1": tp1,
+                "entry_zone": f"{sl:.5f}-{tp1:.5f}",
+                "tp1_source": tp1_source,
+            },
+            symbol,
+        )
 
     # ------------------------------------------------------------------
     # Legacy compatibility
@@ -331,7 +357,8 @@ class L11RRAnalyzer:
 
             raw_result["constitutional"] = envelope
             raw_result["continuation_allowed"] = envelope.get(
-                "continuation_allowed", True,
+                "continuation_allowed",
+                True,
             )
 
             status = envelope.get("status", "PASS")

@@ -94,6 +94,7 @@ class LiveContextBus:
         self._liquidity_map: dict[str, Any] = {}  # SMC zone abstractions
         self._news_pressure_vector: dict[str, Any] = {}  # impact-weighted sentiment
         self._news: dict[str, Any] = {}  # raw news events
+        self._macro_narrative: dict[str, Any] = {}  # weekly outlook / macro bias
         self._signal_stack: list[dict[str, Any]] = []  # pending signal candidates
         self._inference_ts: float = 0.0  # last inference update epoch
 
@@ -285,6 +286,23 @@ class LiveContextBus:
             self._news_pressure_vector = dict(pressure)
             self._inference_ts = time.time()
 
+    def update_macro_narrative(self, narrative: dict[str, Any]) -> None:
+        """Update weekly macro narrative / outlook context.
+
+        Expected fields (all optional):
+            weekly_bias: str          — BULLISH / BEARISH / NEUTRAL per currency
+            key_levels: dict          — { ccy: {support: [], resistance: []} }
+            macro_themes: list[str]   — ["USD_strength_on_Fed_hold", ...]
+            risk_sentiment: str       — RISK_ON / RISK_OFF / MIXED
+            calendar_events: list     — high-impact events this week
+            narrative_text: str       — free-form analyst commentary
+            source: str               — origin of the narrative
+            timestamp: str            — ISO timestamp
+        """
+        with self._lock:
+            self._macro_narrative = dict(narrative)
+            self._inference_ts = time.time()
+
     def push_signal(self, signal: dict[str, Any]) -> None:
         """Push a signal candidate onto the stack.
 
@@ -336,6 +354,11 @@ class LiveContextBus:
         with self._lock:
             return dict(self._news_pressure_vector)
 
+    def get_macro_narrative(self) -> dict[str, Any]:
+        """Return current macro narrative / weekly outlook (copy)."""
+        with self._lock:
+            return dict(self._macro_narrative)
+
     def get_signal_stack(self) -> list[dict[str, Any]]:
         """Return current signal candidate stack (copy)."""
         with self._lock:
@@ -354,6 +377,7 @@ class LiveContextBus:
                 "session_state": dict(self._session_state),
                 "liquidity_map": dict(self._liquidity_map),
                 "news_pressure_vector": dict(self._news_pressure_vector),
+                "macro_narrative": dict(self._macro_narrative),
                 "signal_stack": [dict(s) for s in self._signal_stack],
                 "inference_ts": self._inference_ts,
             }

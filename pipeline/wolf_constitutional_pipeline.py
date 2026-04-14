@@ -1207,6 +1207,12 @@ class WolfConstitutionalPipeline:
             if hasattr(l4_engine, "set_l3_output"):
                 l4_engine.set_l3_output(l3)
 
+            # Inject macro narrative for L4 bias-aware scoring (advisory)
+            if hasattr(l4_engine, "set_macro_context") and self._context_bus is not None:
+                _macro_narrative = self._context_bus.get_macro_narrative()
+                if _macro_narrative:
+                    l4_engine.set_macro_context(_macro_narrative)
+
             # ── Step 1: L4 (sequential) ──────────────────────────
             l4 = cast(
                 dict[str, Any],
@@ -1534,6 +1540,22 @@ class WolfConstitutionalPipeline:
             if self._l11 is not None and hasattr(self._l11, "set_upstream_output"):
                 _l9_upstream = l9 if l9 else {"valid": True, "continuation_allowed": True}
                 self._l11.set_upstream_output(_l9_upstream)
+
+            # ── Structural zones: merge L3/L9 zone data for TP1 enrichment ──
+            if self._l11 is not None and hasattr(self._l11, "set_structural_zones"):
+                _sz: dict[str, Any] = {}
+                if l3:
+                    _sz["vpc_zones"] = l3.get("vpc_zones", [])
+                    _sz["volume_profile_poc"] = l3.get("volume_profile_poc", 0.0)
+                if l9:
+                    _sz["fvg_zones"] = l9.get("fvg_zones", [])
+                    _sz["ob_zones"] = l9.get("ob_zones", [])
+                    _sz["liquidity_levels"] = l9.get("liquidity_levels", [])
+                    _sz["bos_level"] = l9.get("bos_level", 0.0)
+                if any(v for v in _sz.values() if v):
+                    self._l11.set_structural_zones(_sz)
+                else:
+                    self._l11.set_structural_zones(None)
 
             phase4_batch0_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "macro": lambda: cast(dict[str, Any], _timed_layer_call(macro_engine.analyze, "macro", symbol)),
