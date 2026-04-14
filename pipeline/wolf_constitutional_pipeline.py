@@ -1173,20 +1173,18 @@ class WolfConstitutionalPipeline:
             for _layer_id, _layer_ms in _phase1_result.timing_ms.items():
                 layer_timings_ms[_layer_id] = _layer_ms
 
-            if not _phase1_result.continuation_allowed:
-                _halt = _phase1_result.halted_at or "UNKNOWN"
+            # Phase 1 always forwards — L12 is sole verdict authority.
+            # Record errors/warnings for L12 consumption.
+            if _phase1_result.status == ChainStatus.FAIL:
                 errors.extend(_phase1_result.errors)
                 logger.warning(
-                    "[Pipeline v8.0] Phase 1 HALT at {} | symbol={} chain_status={} errors={}",
-                    _halt,
+                    "[Pipeline v8.0] Phase 1 DEGRADED at {} | symbol={} chain_status={} errors={} (forwarding to L12)",
+                    _phase1_result.failed_at or "UNKNOWN",
                     symbol,
                     _phase1_result.status.value,
                     _phase1_result.errors,
                 )
-                return _early_exit_with_map(errors, time.time() - start_time)
-
-            # Phase 1 WARN diagnostics
-            if _phase1_result.status == ChainStatus.WARN:
+            elif _phase1_result.status == ChainStatus.WARN:
                 logger.warning(
                     "[Pipeline v8.0] Phase 1 WARN | symbol={} warnings={}",
                     symbol,
@@ -2050,6 +2048,7 @@ class WolfConstitutionalPipeline:
                     l12_verdict=l12_verdict,
                     gates=gates,
                     synthesis=synthesis,
+                    phase1_status=_phase1_result.status.value,
                 )
                 synthesis["constitutional_phase5"] = _const_l12
             except Exception as _cp5_exc:
@@ -2388,11 +2387,13 @@ class WolfConstitutionalPipeline:
     #  CONSTITUTIONAL PHASE 5 OVERLAY
     # ══════════════════════════════════════════════════════════════
 
-    @staticmethod
     def _run_constitutional_phase5(
+        self,
         l12_verdict: dict[str, Any],
         gates: dict[str, Any],
         synthesis: dict[str, Any],
+        *,
+        phase1_status: str = "PASS",
     ) -> dict[str, Any]:
         """Run the constitutional L12 router evaluator as a Phase 5 overlay.
 
@@ -2409,7 +2410,11 @@ class WolfConstitutionalPipeline:
             val = str(gates.get(key, "FAIL")).upper()
             return "PASS" if val == "PASS" else ("WARN" if val == "CONDITIONAL" else "FAIL")
 
-        foundation_status = "PASS" if _gate_to_status("gate_6_integrity") == "PASS" else "WARN"
+        foundation_status = (
+            phase1_status
+            if phase1_status == "FAIL"
+            else ("PASS" if _gate_to_status("gate_6_integrity") == "PASS" else "WARN")
+        )
         scoring_status = "PASS" if _gate_to_status("gate_4_conf12") == "PASS" else "WARN"
         structure_status = _gate_to_status("gate_1_tii")
         probability_status = _gate_to_status("gate_2_montecarlo")

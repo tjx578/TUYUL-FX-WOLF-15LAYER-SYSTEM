@@ -75,21 +75,23 @@ Jangan mencampur otoritas antar zona.
 
 Baca runtime sebagai:
 
-**SEMI-PARALLEL HALT-SAFE DAG**  
+**SEMI-PARALLEL ALWAYS-FORWARD DAG**  
 `batch_1 -> sync barrier -> batch_2 -> sync barrier -> ...`
 
 Ini bukan full sequential dan bukan full parallel.
+Layers adalah **scoring system**, bukan decision gates.
+Hanya **L12 yang memutuskan** verdict (EXECUTE / HOLD / NO_TRADE).
 
 ### Phase 1 — FOUNDATION
-Urutan wajib, sequential, halt-on-failure:
+Urutan wajib, sequential, **always-forward**:
 - L1 Context / Bias
 - L2 MTA Structure
 - L3 Trend Confirmation
 
 Jika salah satu gagal:
-- hentikan progresi
-- hasilkan `NO_TRADE` / invalid-context outcome
-- jangan lanjut ke phase berikut
+- catat degradasi (status=FAIL, blocker_codes)
+- **tetap lanjut** ke phase berikut dengan skor terdegradasi
+- L12 akan melihat foundation_status=FAIL dan menghasilkan NO_TRADE
 
 ### Phase 2 — SCORING
 Sequential:

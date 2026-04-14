@@ -1,19 +1,21 @@
 """
-Phase 1 Chain Adapter — Strict Sequential Halt-on-Failure
-=========================================================
+Phase 1 Chain Adapter — Always-Forward Scoring
+================================================
 
-Enforces the Phase 1 canonical pipeline semantics:
-    L1 → L2 → L3 (strict sequential, halt-on-failure)
+Enforces Phase 1 canonical pipeline semantics:
+    L1 → L2 → L3 (strict sequential, always-forward)
 
-Each layer's constitutional governor is evaluated before proceeding
-to the next layer. If any layer produces `continuation_allowed == false`,
-the chain halts and returns a ChainResult with the failure details.
+Each layer always executes regardless of upstream failure.
+Layer failures are recorded as degraded scores and blockers,
+but the chain never halts. L12 is the sole verdict authority.
+
+If a layer raises an exception, the chain records the error
+and continues with an empty result for that layer.
 
 Authority boundary:
   This adapter orchestrates Phase 1 only. It does not emit direction,
-  verdict, or execution authority. It connects constitutional governors
-  to enforce halt-on-failure semantics that the parallel DAG batch
-  runner cannot enforce.
+  verdict, or execution authority. It connects layers sequentially
+  and collects scores for downstream consumption by L12.
 
 Zone: constitution/ — pipeline governance, no execution side-effects.
 """
@@ -49,7 +51,8 @@ class ChainResult:
 
     status: ChainStatus
     continuation_allowed: bool
-    halted_at: str | None = None  # Layer ID where chain halted (None = completed)
+    halted_at: str | None = None  # Deprecated — always None (chain never halts)
+    failed_at: str | None = None  # First layer that failed (diagnostics only)
     l1: dict[str, Any] = field(default_factory=dict)
     l2: dict[str, Any] = field(default_factory=dict)
     l3: dict[str, Any] = field(default_factory=dict)
@@ -64,8 +67,9 @@ class ChainResult:
             "status": self.status.value,
             "chain_status": self.status.value,
             "continuation_allowed": self.continuation_allowed,
-            "halted": self.halted_at is not None,
-            "halted_at": self.halted_at,
+            "halted": False,
+            "halted_at": None,
+            "failed_at": self.failed_at,
             "l1": self.l1,
             "l2": self.l2,
             "l3": self.l3,
@@ -81,8 +85,11 @@ class ChainResult:
 
     @property
     def halted(self) -> bool:
-        """Whether the chain halted before completing all layers."""
-        return self.halted_at is not None
+        """Whether the chain halted before completing all layers.
+
+        .. deprecated:: Always returns False — chain always completes.
+        """
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -91,7 +98,7 @@ class ChainResult:
 
 
 class Phase1ChainAdapter:
-    """Strict sequential halt-on-failure chain for Phase 1 (L1 → L2 → L3).
+    """Always-forward scoring chain for Phase 1 (L1 → L2 → L3).
 
     Usage::
 
@@ -103,10 +110,14 @@ class Phase1ChainAdapter:
         result = adapter.execute("EURUSD")
 
     The adapter:
-    1. Runs L1, checks continuation_allowed
-    2. If L1 passes, runs L2, checks continuation_allowed
-    3. If L2 passes, injects L2 output into L3, runs L3, checks continuation_allowed
-    4. Returns ChainResult with all layer outputs and halt details
+    1. Runs L1, records status/blockers
+    2. Always runs L2 (even if L1 failed), records status/blockers
+    3. Injects L2 output into L3, always runs L3, records status/blockers
+    4. Returns ChainResult with all layer outputs — L12 decides verdict
+
+    Layer failures degrade the chain status and are recorded as errors,
+    but the chain never halts early. ``failed_at`` tracks the first
+    layer that failed (for diagnostics), but all layers always execute.
     """
 
     def __init__(
@@ -138,12 +149,19 @@ class Phase1ChainAdapter:
     def execute(self, symbol: str) -> ChainResult:
         """Execute the Phase 1 chain for *symbol*.
 
-        Returns ChainResult with layer outputs and halt details.
+        All three layers always execute. Failures are recorded but
+        never halt the chain. Returns ChainResult with layer outputs
+        and degradation details for L12 consumption.
         """
         timing: dict[str, float] = {}
         errors: list[str] = []
         warnings: list[str] = []
         worst_status = ChainStatus.PASS
+        failed_at: str | None = None
+
+        l1: dict[str, Any] = {}
+        l2: dict[str, Any] = {}
+        l3: dict[str, Any] = {}
 
         # ── Step 1: L1 ───────────────────────────────────────
         l1_start = time.monotonic()
@@ -152,13 +170,8 @@ class Phase1ChainAdapter:
         except Exception as exc:
             logger.error("[Phase1] L1 raised: %s: %s", type(exc).__name__, exc, exc_info=True)
             errors.append(f"L1_EXCEPTION:{type(exc).__name__}")
-            return ChainResult(
-                status=ChainStatus.FAIL,
-                continuation_allowed=False,
-                halted_at="L1",
-                errors=errors,
-                timing_ms=timing,
-            )
+            worst_status = ChainStatus.FAIL
+            failed_at = failed_at or "L1"
         timing["L1"] = (time.monotonic() - l1_start) * 1000
 
         l1_continue = l1.get("continuation_allowed", l1.get("valid", False))
@@ -167,46 +180,34 @@ class Phase1ChainAdapter:
         l1_warnings = l1.get("warning_codes", [])
 
         if l1_status == "WARN":
-            worst_status = ChainStatus.WARN
+            if worst_status == ChainStatus.PASS:
+                worst_status = ChainStatus.WARN
             warnings.extend(f"L1:{w}" for w in l1_warnings)
 
         if not l1_continue:
-            errors.append(f"L1_HALT:status={l1_status}")
+            worst_status = ChainStatus.FAIL
+            failed_at = failed_at or "L1"
+            errors.append(f"L1_FAIL:status={l1_status}")
             errors.extend(f"L1_BLOCKER:{b}" for b in l1_blockers)
-            if not l1_blockers:
-                errors.append("L1_BLOCKER:UNCLASSIFIED_HALT")
+            if not l1_blockers and not any("L1_EXCEPTION" in e for e in errors):
+                errors.append("L1_BLOCKER:UNCLASSIFIED_FAIL")
             logger.warning(
-                "[Phase1] L1 HALT | symbol=%s status=%s blockers=%s warnings=%s",
+                "[Phase1] L1 FAIL | symbol=%s status=%s blockers=%s warnings=%s (chain continues)",
                 symbol,
                 l1_status,
                 l1_blockers,
                 l1_warnings,
             )
-            return ChainResult(
-                status=ChainStatus.FAIL,
-                continuation_allowed=False,
-                halted_at="L1",
-                l1=l1,
-                errors=errors,
-                warnings=warnings,
-                timing_ms=timing,
-            )
 
-        # ── Step 2: L2 ───────────────────────────────────────
+        # ── Step 2: L2 (always runs) ─────────────────────────
         l2_start = time.monotonic()
         try:
             l2 = self._l2(symbol)
         except Exception as exc:
             logger.error("[Phase1] L2 raised: %s: %s", type(exc).__name__, exc, exc_info=True)
             errors.append(f"L2_EXCEPTION:{type(exc).__name__}")
-            return ChainResult(
-                status=ChainStatus.FAIL,
-                continuation_allowed=False,
-                halted_at="L2",
-                l1=l1,
-                errors=errors,
-                timing_ms=timing,
-            )
+            worst_status = ChainStatus.FAIL
+            failed_at = failed_at or "L2"
         timing["L2"] = (time.monotonic() - l2_start) * 1000
 
         l2_continue = l2.get("continuation_allowed", l2.get("valid", False))
@@ -219,29 +220,21 @@ class Phase1ChainAdapter:
             warnings.extend(f"L2:{w}" for w in l2_warnings)
 
         if not l2_continue:
-            errors.append(f"L2_HALT:status={l2_status}")
+            worst_status = ChainStatus.FAIL
+            failed_at = failed_at or "L2"
+            errors.append(f"L2_FAIL:status={l2_status}")
             errors.extend(f"L2_BLOCKER:{b}" for b in l2_blockers)
-            if not l2_blockers:
-                errors.append("L2_BLOCKER:UNCLASSIFIED_HALT")
+            if not l2_blockers and not any("L2_EXCEPTION" in e for e in errors):
+                errors.append("L2_BLOCKER:UNCLASSIFIED_FAIL")
             logger.warning(
-                "[Phase1] L2 HALT | symbol=%s status=%s blockers=%s warnings=%s",
+                "[Phase1] L2 FAIL | symbol=%s status=%s blockers=%s warnings=%s (chain continues)",
                 symbol,
                 l2_status,
                 l2_blockers,
                 l2_warnings,
             )
-            return ChainResult(
-                status=ChainStatus.FAIL,
-                continuation_allowed=False,
-                halted_at="L2",
-                l1=l1,
-                l2=l2,
-                errors=errors,
-                warnings=warnings,
-                timing_ms=timing,
-            )
 
-        # ── Step 3: L3 (with L2 injection) ───────────────────
+        # ── Step 3: L3 (always runs, with L2 injection) ──────
         if self._l3_l2_injector is not None:
             self._l3_l2_injector(l2)
 
@@ -251,15 +244,8 @@ class Phase1ChainAdapter:
         except Exception as exc:
             logger.error("[Phase1] L3 raised: %s: %s", type(exc).__name__, exc, exc_info=True)
             errors.append(f"L3_EXCEPTION:{type(exc).__name__}")
-            return ChainResult(
-                status=ChainStatus.FAIL,
-                continuation_allowed=False,
-                halted_at="L3",
-                l1=l1,
-                l2=l2,
-                errors=errors,
-                timing_ms=timing,
-            )
+            worst_status = ChainStatus.FAIL
+            failed_at = failed_at or "L3"
         timing["L3"] = (time.monotonic() - l3_start) * 1000
 
         l3_continue = l3.get("continuation_allowed", l3.get("valid", False))
@@ -272,46 +258,54 @@ class Phase1ChainAdapter:
             warnings.extend(f"L3:{w}" for w in l3_warnings)
 
         if not l3_continue:
-            errors.append(f"L3_HALT:status={l3_status}")
+            worst_status = ChainStatus.FAIL
+            failed_at = failed_at or "L3"
+            errors.append(f"L3_FAIL:status={l3_status}")
             errors.extend(f"L3_BLOCKER:{b}" for b in l3_blockers)
-            if not l3_blockers:
-                errors.append("L3_BLOCKER:UNCLASSIFIED_HALT")
+            if not l3_blockers and not any("L3_EXCEPTION" in e for e in errors):
+                errors.append("L3_BLOCKER:UNCLASSIFIED_FAIL")
             logger.warning(
-                "[Phase1] L3 HALT | symbol=%s status=%s blockers=%s warnings=%s",
+                "[Phase1] L3 FAIL | symbol=%s status=%s blockers=%s warnings=%s",
                 symbol,
                 l3_status,
                 l3_blockers,
                 l3_warnings,
             )
-            return ChainResult(
-                status=ChainStatus.FAIL,
-                continuation_allowed=False,
-                halted_at="L3",
-                l1=l1,
-                l2=l2,
-                l3=l3,
-                errors=errors,
-                warnings=warnings,
-                timing_ms=timing,
-            )
 
-        # ── All three layers passed ──────────────────────────
-        logger.info(
-            "[Phase1] PASS | symbol=%s chain_status=%s L1=%s L2=%s L3=%s timing_ms=L1:%.1f/L2:%.1f/L3:%.1f",
-            symbol,
-            worst_status.value,
-            l1_status,
-            l2_status,
-            l3_status,
-            timing.get("L1", 0),
-            timing.get("L2", 0),
-            timing.get("L3", 0),
-        )
+        # ── Chain complete — always forward to L12 ───────────
+        # continuation_allowed is always True: L12 decides verdict.
+        # failed_at records the first failure for diagnostics only.
+        if worst_status == ChainStatus.FAIL:
+            logger.warning(
+                "[Phase1] DEGRADED | symbol=%s failed_at=%s L1=%s L2=%s L3=%s "
+                "timing_ms=L1:%.1f/L2:%.1f/L3:%.1f (forwarding to L12)",
+                symbol,
+                failed_at,
+                l1_status,
+                l2_status,
+                l3_status,
+                timing.get("L1", 0),
+                timing.get("L2", 0),
+                timing.get("L3", 0),
+            )
+        else:
+            logger.info(
+                "[Phase1] %s | symbol=%s L1=%s L2=%s L3=%s timing_ms=L1:%.1f/L2:%.1f/L3:%.1f",
+                worst_status.value,
+                symbol,
+                l1_status,
+                l2_status,
+                l3_status,
+                timing.get("L1", 0),
+                timing.get("L2", 0),
+                timing.get("L3", 0),
+            )
 
         return ChainResult(
             status=worst_status,
-            continuation_allowed=True,
-            halted_at=None,
+            continuation_allowed=True,  # Always forward — L12 is sole verdict authority
+            halted_at=None,  # Chain never halts
+            failed_at=failed_at,
             l1=l1,
             l2=l2,
             l3=l3,

@@ -1,4 +1,4 @@
-"""Tests for Phase 1 Chain Adapter — strict sequential halt-on-failure."""
+"""Tests for Phase 1 Chain Adapter — always-forward scoring chain."""
 
 from __future__ import annotations
 
@@ -108,12 +108,12 @@ class TestChainAllPass:
 
 
 # ═══════════════════════════════════════════════════════════════
-# §2  Chain halts at L1
+# §2  Chain always-forward on L1 failure
 # ═══════════════════════════════════════════════════════════════
 
 
-class TestChainHaltsAtL1:
-    def test_l1_fail_halts(self):
+class TestChainL1Failure:
+    def test_l1_fail_continues(self):
         l2_called = False
         l3_called = False
 
@@ -134,14 +134,15 @@ class TestChainHaltsAtL1:
         )
         result = adapter.execute("EURUSD")
         assert result.status == ChainStatus.FAIL
-        assert result.continuation_allowed is False
-        assert result.halted_at == "L1"
-        assert not l2_called, "L2 should NOT be called when L1 fails"
-        assert not l3_called, "L3 should NOT be called when L1 fails"
-        assert any("L1_HALT" in e for e in result.errors)
+        assert result.continuation_allowed is True  # Always forward to L12
+        assert result.halted_at is None  # Chain never halts
+        assert result.failed_at == "L1"
+        assert l2_called, "L2 MUST be called even when L1 fails"
+        assert l3_called, "L3 MUST be called even when L1 fails"
+        assert any("L1_FAIL" in e for e in result.errors)
         assert any("L1_BLOCKER:DATA_UNAVAILABLE" in e for e in result.errors)
 
-    def test_l1_exception_halts(self):
+    def test_l1_exception_continues(self):
         adapter = Phase1ChainAdapter(
             l1_callable=lambda sym: (_ for _ in ()).throw(RuntimeError("L1 boom")),
             l2_callable=lambda sym: _l2_pass(),
@@ -149,17 +150,18 @@ class TestChainHaltsAtL1:
         )
         result = adapter.execute("EURUSD")
         assert result.status == ChainStatus.FAIL
-        assert result.halted_at == "L1"
+        assert result.continuation_allowed is True
+        assert result.failed_at == "L1"
         assert any("L1_EXCEPTION" in e for e in result.errors)
 
 
 # ═══════════════════════════════════════════════════════════════
-# §3  Chain halts at L2
+# §3  Chain always-forward on L2 failure
 # ═══════════════════════════════════════════════════════════════
 
 
-class TestChainHaltsAtL2:
-    def test_l2_fail_halts(self):
+class TestChainL2Failure:
+    def test_l2_fail_continues(self):
         l3_called = False
 
         def _l3(sym):
@@ -174,13 +176,13 @@ class TestChainHaltsAtL2:
         )
         result = adapter.execute("EURUSD")
         assert result.status == ChainStatus.FAIL
-        assert result.continuation_allowed is False
-        assert result.halted_at == "L2"
-        assert not l3_called, "L3 should NOT be called when L2 fails"
+        assert result.continuation_allowed is True  # Always forward to L12
+        assert result.failed_at == "L2"
+        assert l3_called, "L3 MUST be called even when L2 fails"
         assert result.l1["status"] == "PASS"  # L1 completed
-        assert any("L2_HALT" in e for e in result.errors)
+        assert any("L2_FAIL" in e for e in result.errors)
 
-    def test_l2_exception_halts(self):
+    def test_l2_exception_continues(self):
         adapter = Phase1ChainAdapter(
             l1_callable=lambda sym: _l1_pass(),
             l2_callable=lambda sym: (_ for _ in ()).throw(ValueError("L2 crash")),
@@ -188,16 +190,17 @@ class TestChainHaltsAtL2:
         )
         result = adapter.execute("EURUSD")
         assert result.status == ChainStatus.FAIL
-        assert result.halted_at == "L2"
+        assert result.continuation_allowed is True
+        assert result.failed_at == "L2"
 
 
 # ═══════════════════════════════════════════════════════════════
-# §4  Chain halts at L3
+# §4  Chain always-forward on L3 failure
 # ═══════════════════════════════════════════════════════════════
 
 
-class TestChainHaltsAtL3:
-    def test_l3_fail_halts(self):
+class TestChainL3Failure:
+    def test_l3_fail_continues(self):
         adapter = Phase1ChainAdapter(
             l1_callable=lambda sym: _l1_pass(),
             l2_callable=lambda sym: _l2_pass(),
@@ -205,14 +208,15 @@ class TestChainHaltsAtL3:
         )
         result = adapter.execute("EURUSD")
         assert result.status == ChainStatus.FAIL
-        assert result.continuation_allowed is False
-        assert result.halted_at == "L3"
+        assert result.continuation_allowed is True  # Always forward to L12
+        assert result.halted_at is None
+        assert result.failed_at == "L3"
         assert result.l1["status"] == "PASS"
         assert result.l2["status"] == "PASS"
         assert result.l3["status"] == "FAIL"
-        assert any("L3_HALT" in e for e in result.errors)
+        assert any("L3_FAIL" in e for e in result.errors)
 
-    def test_l3_exception_halts(self):
+    def test_l3_exception_continues(self):
         adapter = Phase1ChainAdapter(
             l1_callable=lambda sym: _l1_pass(),
             l2_callable=lambda sym: _l2_pass(),
@@ -220,7 +224,8 @@ class TestChainHaltsAtL3:
         )
         result = adapter.execute("EURUSD")
         assert result.status == ChainStatus.FAIL
-        assert result.halted_at == "L3"
+        assert result.continuation_allowed is True
+        assert result.failed_at == "L3"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -285,7 +290,7 @@ class TestL2Injection:
         assert result.status == ChainStatus.PASS
         assert injected_l2.get("continuation_allowed") is True
 
-    def test_l2_injection_not_called_if_l1_fails(self):
+    def test_l2_injection_called_even_if_l1_fails(self):
         injector_called = False
 
         def _injector(l2_out):
@@ -299,7 +304,7 @@ class TestL2Injection:
             l3_l2_injector=_injector,
         )
         adapter.execute("EURUSD")
-        assert not injector_called
+        assert injector_called, "L2 always runs → injector MUST be called"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -319,7 +324,7 @@ class TestLegacyCompat:
         assert result.status == ChainStatus.PASS
         assert result.continuation_allowed is True
 
-    def test_legacy_valid_false_halts(self):
+    def test_legacy_valid_false_continues(self):
         adapter = Phase1ChainAdapter(
             l1_callable=lambda sym: {"valid": False},
             l2_callable=lambda sym: {"valid": True},
@@ -327,7 +332,9 @@ class TestLegacyCompat:
         )
         result = adapter.execute("EURUSD")
         assert result.status == ChainStatus.FAIL
-        assert result.halted_at == "L1"
+        assert result.continuation_allowed is True
+        assert result.failed_at == "L1"
+        assert result.halted_at is None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -348,7 +355,7 @@ class TestTiming:
         assert "L3" in result.timing_ms
         assert all(t >= 0 for t in result.timing_ms.values())
 
-    def test_timing_partial_on_halt(self):
+    def test_timing_complete_even_on_failure(self):
         adapter = Phase1ChainAdapter(
             l1_callable=lambda sym: _l1_pass(),
             l2_callable=lambda sym: _l2_fail(),
@@ -357,4 +364,4 @@ class TestTiming:
         result = adapter.execute("EURUSD")
         assert "L1" in result.timing_ms
         assert "L2" in result.timing_ms
-        assert "L3" not in result.timing_ms  # L3 never ran
+        assert "L3" in result.timing_ms  # All layers always run
