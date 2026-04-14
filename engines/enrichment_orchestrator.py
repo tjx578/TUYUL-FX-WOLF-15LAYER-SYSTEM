@@ -63,6 +63,7 @@ class EnrichmentResult:
     quantum_field: dict[str, Any] = field(default_factory=dict)
     quantum_probability: dict[str, Any] = field(default_factory=dict)
     quantum_advisory: dict[str, Any] = field(default_factory=dict)
+    relative_strength: dict[str, Any] = field(default_factory=dict)
 
     # Aggregate metrics produced by the enrichment layer itself
     confidence_adjustment: float = 0.0
@@ -87,6 +88,7 @@ class EnrichmentResult:
                 self.quantum_field,
                 self.quantum_probability,
                 self.quantum_advisory,
+                self.relative_strength,
             ]
         )
 
@@ -101,6 +103,7 @@ class EnrichmentResult:
             "quantum_field": self.quantum_field,
             "quantum_probability": self.quantum_probability,
             "quantum_advisory": self.quantum_advisory,
+            "relative_strength": self.relative_strength,
             "confidence_adjustment": self.confidence_adjustment,
             "integrity_boost": self.integrity_boost,
             "tail_risk_dampening": self.tail_risk_dampening,
@@ -408,6 +411,20 @@ class EngineEnrichmentLayer:
 
             tasks.append(("quantum_probability", "probability", _run_probability, (), {}))
 
+        # 9. Relative Strength (needs context_bus, not candles dict)
+        def _run_relative_strength() -> Any:
+            rs_engine = engines.get("relative_strength")
+            if rs_engine is None:
+                return {}
+            rs_out = rs_engine.analyze(self._context_bus, symbol=symbol)
+            return (
+                rs_out.to_dict()
+                if hasattr(rs_out, "to_dict")
+                else (rs_out.__dict__ if hasattr(rs_out, "__dict__") else {"raw": str(rs_out)})
+            )
+
+        tasks.append(("relative_strength", "relative_strength", _run_relative_strength, (), {}))
+
         # Submit all tasks concurrently
         t_parallel = time.time()
         # We manage the executor manually (not via `with`) so that shutdown can
@@ -562,6 +579,20 @@ class EngineEnrichmentLayer:
                 result.errors.append(f"probability: {exc}")
                 logger.warning("Enrichment: probability engine failed: %s", exc)
 
+        # ── 9. Relative Strength (needs context_bus, not candles dict) ──
+        try:
+            rs_engine = engines.get("relative_strength")
+            if rs_engine is not None:
+                rs_out = rs_engine.analyze(self._context_bus, symbol=symbol)
+                result.relative_strength = (
+                    rs_out.to_dict()
+                    if hasattr(rs_out, "to_dict")
+                    else (rs_out.__dict__ if hasattr(rs_out, "__dict__") else {"raw": str(rs_out)})
+                )
+        except Exception as exc:
+            result.errors.append(f"relative_strength: {exc}")
+            logger.warning("Enrichment: relative_strength engine failed: %s", exc)
+
         return result
 
     # ------------------------------------------------------------------
@@ -620,6 +651,15 @@ class EngineEnrichmentLayer:
             if isinstance(prec_score, bool):
                 prec_score = 0.7 if prec_score else 0.3
             scores.append(float(prec_score))
+
+        # Relative strength contribution
+        rs = result.relative_strength
+        if isinstance(rs, dict) and rs:
+            rs_conf = rs.get("confidence", 0.0)
+            rs_delta = abs(rs.get("relative_strength_delta", 0.0))
+            # Higher absolute delta with higher confidence → stronger signal
+            if rs_conf > 0:
+                scores.append(min(1.0, rs_delta + rs_conf * 0.3))
 
         # Composite enrichment score
         if scores:

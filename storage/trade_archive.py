@@ -205,14 +205,29 @@ def _from_postgres(symbol: str | None, lookback: int) -> list[float]:
                 )
             return [float(row["pnl"]) for row in rows]
 
-        # Run in existing event loop or create a temporary one
+        # Run in existing event loop or dispatch to the pool's loop
         try:
             asyncio.get_running_loop()
             # We're inside an async context — can't block.  Skip Postgres.
             logger.debug("[TradeArchive] Async loop running; skipping sync PG query")
             return []
         except RuntimeError:
-            return asyncio.run(_query())
+            pass
+
+        # No running loop in this thread.  The pool was created on the
+        # main event loop, so we must dispatch onto *that* loop instead
+        # of creating a new one (asyncio.run would create a fresh loop
+        # whose futures are incompatible with the pool's loop).
+        pool_loop = getattr(pg, "_loop", None)
+        if pool_loop is not None and pool_loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(_query(), pool_loop)
+            return future.result(timeout=15)
+
+        # Pool's loop is not running (e.g. tests, CLI) — safe to use a
+        # new loop, but the pool was never initialised on an active loop
+        # so skip to avoid the same mismatch.
+        logger.debug("[TradeArchive] Pool loop unavailable; skipping PG query")
+        return []
 
     except Exception as exc:
         logger.warning("[TradeArchive] PostgreSQL read failed: %s", exc)

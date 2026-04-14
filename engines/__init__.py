@@ -64,6 +64,10 @@ if TYPE_CHECKING:
         ProbabilityResult,
         QuantumProbabilityEngine,
     )
+    from .relative_strength_engine import (
+        CurrencyStrengthResult,
+        RelativeStrengthEngine,
+    )
 
     class EngineSuite(TypedDict):
         coherence: CognitiveCoherenceEngine
@@ -76,6 +80,7 @@ if TYPE_CHECKING:
         field: QuantumFieldEngine
         probability: QuantumProbabilityEngine
         advisory: QuantumAdvisoryEngine
+        relative_strength: RelativeStrengthEngine
 
     FusionStructure = StructureResult
 else:
@@ -94,6 +99,7 @@ else:
         field: object
         probability: object
         advisory: object
+        relative_strength: object
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +135,9 @@ _LAZY_IMPORTS: dict[str, tuple[str, str | None]] = {
     "FieldResult": (".quantum_field_engine", None),
     "QuantumProbabilityEngine": (".quantum_probability_engine", None),
     "ProbabilityResult": (".quantum_probability_engine", None),
+    # --- Relative Strength ---
+    "RelativeStrengthEngine": (".relative_strength_engine", None),
+    "CurrencyStrengthResult": (".relative_strength_engine", None),
 }
 
 # Backward-compat aliases: resolved lazily via the same mechanism.
@@ -172,6 +181,9 @@ __all__ = [
     "QuantumAdvisoryEngine",
     "QuantumFieldEngine",
     "QuantumProbabilityEngine",
+    # Relative Strength
+    "RelativeStrengthEngine",
+    "CurrencyStrengthResult",
     "RiskSimulationResult",
     "StructureResult",
     "StructureState",
@@ -229,6 +241,7 @@ def create_engine_suite() -> EngineSuite:
         "field": "QuantumFieldEngine",
         "probability": "QuantumProbabilityEngine",
         "advisory": "QuantumAdvisoryEngine",
+        "relative_strength": "RelativeStrengthEngine",
     }
 
     suite: dict[str, object] = {}

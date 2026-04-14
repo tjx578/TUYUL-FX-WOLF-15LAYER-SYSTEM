@@ -63,6 +63,7 @@ class PostgresClient:
             cls._instance = super().__new__(cls)
             cls._instance._pool = None
             cls._instance._keepalive_task: asyncio.Task[None] | None = None  # type: ignore
+            cls._instance._loop: asyncio.AbstractEventLoop | None = None  # type: ignore
         return cls._instance
 
     async def initialize(self) -> None:
@@ -93,6 +94,7 @@ class PostgresClient:
                 timeout=30,
             )
             logger.info("PostgreSQL connection pool initialized")
+            self._loop = asyncio.get_running_loop()
 
             self._keepalive_task = asyncio.create_task(
                 self._keepalive_loop(),
