@@ -1,4 +1,5 @@
 # 🐺 TUYUL FX — UNIFIED ARCHITECTURE v2.1
+
 ## Master End-to-End Data Flow — Best of v1 + v2
 
 **Version**: 2.1 (Unified)
@@ -261,7 +262,6 @@ Finnhub WebSocket
 ║  CONTEXT_MODE: local | redis                                                 ║
 ║                                                                              ║
 ║  Railway:       railway.toml + railway-ingestor.toml                         ║
-║  Hostinger VPS: deploy/hostinger/                                            ║
 ║  Vercel:        dashboard/nextjs/                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
@@ -309,7 +309,7 @@ Finnhub WebSocket
 | G | TuyulFX_Bridge_EA | `ea_interface/TuyulFX_Bridge_EA.mq5` | MQL5 dumb executor, magic 151515 | ✅ |
 | H | Docker Compose | `docker-compose.yml` | 8 services | ✅ |
 | H | Railway config | `railway.toml`, `railway-ingestor.toml` | dual-service deploy | ✅ |
-| H | Hostinger deploy | `deploy/hostinger/` | VPS configuration | ✅ |
+| H | ~~Hostinger deploy~~ | ~~`deploy/hostinger/`~~ | ~~VPS configuration~~ | Removed |
 
 ---
 
@@ -329,12 +329,14 @@ Finnhub WebSocket
 | **WEIGHTED AVERAGE** | **5.7/10** | **9.1/10** | **9.3/10** | |
 
 ### What was adopted from v1
+
 - Compact ASCII labeling style (shorter, scannable box descriptions)
 - Design principles section placed upfront
 - Clean linear flow overview before the deep-dive diagram
 - Grouped phase naming (Phase 1 through Phase 8)
 
 ### What was preserved from v2
+
 - All source-verified class names and constructor signatures
 - All file paths with line references where applicable
 - V11 complete architecture: 3-layer gate + decision matrix + 6 sub-engines
@@ -344,6 +346,7 @@ Finnhub WebSocket
 - Component inventory table
 
 ### What is NEW in v2.1
+
 - Merged compact clarity with verified depth in a single document
 - Cross-zone flow arrows in the ASCII diagram
 - Assessment scoring table with a v2.1 column

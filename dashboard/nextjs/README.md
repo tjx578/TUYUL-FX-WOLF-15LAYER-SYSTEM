@@ -165,13 +165,9 @@ docker run -p 3000:3000 \
   tuyulfx-dashboard
 ```
 
-### Systemd Service
+### Deployment
 
-See `deploy/hostinger/tuyulfx-dashboard.service` for systemd configuration.
-
-### Nginx Reverse Proxy
-
-See `deploy/hostinger/nginx.conf` for Nginx configuration.
+See `docker-compose.yml` or `deploy/railway/` for deployment configuration.
 
 ## Troubleshooting
 
