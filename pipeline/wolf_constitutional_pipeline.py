@@ -1715,6 +1715,25 @@ class WolfConstitutionalPipeline:
                 l10.get("continuation_allowed", "N/A"),
             )
 
+            # ── Direction guard ────────────────────────────────
+            # When L3 trend is NEUTRAL, direction=HOLD and L11 is
+            # intentionally skipped.  Exit early with a precise reason
+            # instead of falling through to the SL/TP zero guard.
+            if direction not in ("BUY", "SELL"):
+                logger.info(
+                    "[Pipeline v8.0] {} direction={} → NO_TRADE (no directional bias from L3)",
+                    symbol,
+                    direction,
+                )
+                result = _early_exit_with_map(
+                    ["no_directional_bias"],
+                    time.time() - start_time,
+                )
+                result["verdict"] = "NO_TRADE"
+                result["verdict_reason"] = f"No directional bias (direction={direction})"
+                result["l12_verdict"] = {"verdict": "NO_TRADE", "reason": "no_direction"}
+                return result
+
             # ── SL/TP zero guard ─────────────────────────────────
             # When ATR=0 (warmup insufficient), L11 returns SL=0/TP=0.
             # Schema validation rejects these → verdict never set →

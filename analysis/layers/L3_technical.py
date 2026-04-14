@@ -300,7 +300,7 @@ class L3TechnicalAnalyzer:
         elif _close_is_flat and not _hl_is_real:
             _data_quality = "FLAT"
             L3_DATA_QUALITY_FLAT_TOTAL.labels(symbol=symbol, quality="FLAT").inc()
-            logger.warning(
+            logger.error(
                 "[L3] %s DATA QUALITY: ALL price data appears flat/stale "
                 "(unique_closes=%d, unique_highs=%d, unique_lows=%d). "
                 "Check candle seeding/ingestion pipeline.",
@@ -309,6 +309,12 @@ class L3TechnicalAnalyzer:
                 unique_highs,
                 unique_lows,
             )
+            # All OHLC identical → no recoverable signal.
+            # Return insufficient-data so pipeline sees valid=False
+            # and avoids producing garbage analysis from flat prices.
+            _flat_result = self._insufficient_data(symbol)
+            _flat_result["data_quality"] = "FLAT"
+            return self._apply_constitutional(_flat_result, symbol)
 
         logger.info(
             "[L3] %s candle_diag: bars=%d quality=%s close_range=%.6f close_std=%.6f "
