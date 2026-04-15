@@ -22,18 +22,22 @@ Only material that should be treated as production truth:
 
 ## Canonical reading order
 
-1. `data-flow.md`
-2. `system-overview.md`
-3. `dashboard-control-surface.md`
-4. `runtime-topology-current.md`
-5. `engine-lineage-zones.md`
-6. `config-resolver.md`
-7. `lock-enforcement.md`
-8. `config-governance.md`
-9. `risk-stack.md`
-10. `risk-monitor.md`
-11. `deployment-railway.md`
-12. `topology.md`
+1. `reference-architecture.md` — constitutional worldview & zone model (v3.0)
+2. `data-flow.md`
+3. `system-overview.md`
+4. `dashboard-control-surface.md`
+5. `runtime-topology-current.md`
+6. `component-inventory-current.md`
+7. `deployment-classification.md`
+8. `realtime-interfaces-current.md`
+9. `engine-lineage-zones.md`
+10. `config-resolver.md`
+11. `lock-enforcement.md`
+12. `config-governance.md`
+13. `risk-stack.md`
+14. `risk-monitor.md`
+15. `deployment-railway.md`
+16. `topology.md`
 
 ## Existing detailed references
 

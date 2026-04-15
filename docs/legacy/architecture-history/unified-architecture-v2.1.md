@@ -1,11 +1,25 @@
-# 🐺 TUYUL FX — UNIFIED ARCHITECTURE v2.1
+# 🐺 TUYUL FX — UNIFIED ARCHITECTURE v2.1 → v2.2
 
-## Master End-to-End Data Flow — Best of v1 + v2
+## Reference Architecture / Constitutional Worldview
 
-**Version**: 2.1 (Unified)
-**Verified Against**: commit ce0f0437
-**Authority**: This document is the MASTER architectural reference
-**Last Updated**: 2026-03-05
+**Version**: 2.2 (Revised)
+**Lineage**: v2.1 Unified → v2.2 Reference
+**Authority**: Reference Architecture — NOT current-state master
+**Last Updated**: 2026-04-15
+
+> **⚠️ STATUS NOTICE**
+>
+> This document has been **downgraded from MASTER to Reference Architecture**.
+> It remains valid for constitutional worldview, design principles, and zone
+> boundary definitions. It is **not** the source of truth for:
+>
+> - **Runtime thresholds** → `config/constitution.yaml`, `config/v11.yaml`
+> - **Current runtime topology** → `docs/architecture/runtime-topology-current.md`
+> - **Dashboard authority** → `docs/architecture/dashboard-control-surface.md`
+> - **Service entrypoints** → `services/api/main.py`, `services/engine/runner.py`
+> - **Current deployment shape** → `docker-compose.yml`, `docs/architecture/deployment-classification.md`
+> - **WS/output channels** → `api/ws_routes.py`
+> - **Component inventory** → `docs/architecture/component-inventory-current.md`
 
 ---
 
@@ -16,7 +30,7 @@
 | Constitutional separation | `analysis/` ≠ `execution/` ≠ `dashboard/` — each zone has one role |
 | Sole decision authority | **L12 is the ONLY module that may issue EXECUTE/HOLD/NO_TRADE** |
 | Dumb executor | EA is a **ZERO-INTELLIGENCE** file-polling executor; it never evaluates market state |
-| Read-only monitoring | Dashboard **MONITORS**; it never modifies verdicts or risk parameters at runtime |
+| Owner-operated control surface | Dashboard is an **owner-operated control surface** for visibility, diagnostics, and transport orchestration; it is **NOT** constitutional verdict authority (see `docs/architecture/dashboard-control-surface.md`) |
 | No bypass | Any module that overrides L12 output = **INVALID SYSTEM** |
 
 ---
@@ -95,12 +109,17 @@ Finnhub WebSocket
 ╔════════▼═════════════════════════════════════════════════════════════════════╗
 ║  ZONE D  ANALYSIS LOOP                                                       ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  analysis_loop()  in main.py                                                 ║
+║  analysis_loop()  (startup/analysis_loop.py)                                 ║
 ║    Event-driven: wakes on CANDLE_CLOSED  (<2 s latency)                      ║
-║    Fallback:      polling every 60 s                                         ║
+║    Fallback:      polling every 60 s (ANALYSIS_LOOP_INTERVAL_SEC)            ║
 ║    Per-symbol:    only re-analyzes symbol from event                         ║
-║    Warmup gate:   M15≥20 bars · H1≥20 · H4≥10 · D1≥5                        ║
+║    Warmup gate:   H1≥20 · H4≥10 · D1≥5 (M15 excluded — arrives via WS)      ║
 ║    Candle seed:   Redis history OR Finnhub REST on startup                   ║
+║                                                                              ║
+║  NOTE: Runtime entrypoints are now service-oriented:                         ║
+║    services/api/main.py        — dedicated API service (ASGI)                ║
+║    services/engine/runner.py   — dedicated engine process (no HTTP)           ║
+║    main.py remains as logical flow reference                                 ║
 ╚════════╪═════════════════════════════════════════════════════════════════════╝
          │
 ╔════════▼═════════════════════════════════════════════════════════════════════╗
@@ -128,9 +147,12 @@ Finnhub WebSocket
 ║  ┌──────────────────────────────────────────────────────────────────────┐    ║
 ║  │  Build Synthesis  →  9-Gate Check  →  Verdict                        │    ║
 ║  │                                                                      │    ║
-║  │  G1 integrity≥0.97   G2 TII≥0.93      G3 win_prob                   │    ║
-║  │  G4 RR≥2.0           G5 position      G6 TF law                     │    ║
+║  │  G1 integrity≥min    G2 TII≥min        G3 win_prob                   │    ║
+║  │  G4 RR≥min           G5 position      G6 TF law                     │    ║
 ║  │  G7 market law       G8 PENDING_ONLY  G9 all layers present         │    ║
+║  │                                                                      │    ║
+║  │  ⚠ Thresholds are in config/constitution.yaml (not hardcoded here)   │    ║
+║  │  Current runtime: tii≥0.72 integrity≥0.78 rr≥1.5 conf12≥0.62        │    ║
 ║  │                                                                      │    ║
 ║  │  Safety:  SignalDedup(SHA-256) · SignalExpiry                        │    ║
 ║  │           SignalThrottle(3/5 min) · ViolationLog                    │    ║
@@ -152,19 +174,22 @@ Finnhub WebSocket
 ║  │    L12=HOLD / NO_TRADE      → ❌  (L12 authority preserved)         │    ║
 ║  │                                                                      │    ║
 ║  │  Layer 1 VETO  (9 binary — ANY trips block)                         │    ║
-║  │    regime_confidence<0.65 · transition_risk>0.40                    │    ║
-║  │    discipline<0.90 · eaf<0.75 · cluster>0.75                        │    ║
-║  │    correlation>0.90 · emotion_delta>0.25                            │    ║
+║  │    regime_confidence<min · transition_risk>max                      │    ║
+║  │    discipline<min · eaf<min · cluster>max                           │    ║
+║  │    correlation>max · emotion_delta>max                              │    ║
 ║  │    vol_state invalid · regime=SHOCK                                  │    ║
 ║  │                                                                      │    ║
-║  │  Layer 2 SCORING  (7 weighted → composite≥0.78)                     │    ║
+║  │  Layer 2 SCORING  (7 weighted → composite≥min)                      │    ║
 ║  │    regime(0.20) · liq_sweep(0.15) · exhaustion(0.15)                │    ║
 ║  │    divergence(0.10) · mc_win(0.15) · posterior(0.15)                │    ║
 ║  │    cluster_inv(0.10)                                                 │    ║
 ║  │                                                                      │    ║
 ║  │  Layer 3 EXECUTION  (5 AND — all must pass)                         │    ║
-║  │    MC≥0.70 · posterior≥0.72 · PF≥1.8                                │    ║
-║  │    vol_expansion≥1.4 · composite≥min                                │    ║
+║  │    MC≥min · posterior≥min · PF≥min                                  │    ║
+║  │    vol_expansion≥min · composite≥min                                │    ║
+║  │                                                                      │    ║
+║  │  ⚠ All V11 thresholds are in config/v11.yaml                        │    ║
+║  │  Current runtime values differ from original doc targets             │    ║
 ║  │                                                                      │    ║
 ║  │  V11 Sub-Engines:                                                    │    ║
 ║  │    ExhaustionDetector       engines/v11/exhaustion_detector.py       │    ║
@@ -200,8 +225,9 @@ Finnhub WebSocket
 ║  2. Redis State                                                              ║
 ║       wolf15:latest_tick:* · candle history · macro state                    ║
 ║                                                                              ║
-║  3. Dashboard WebSocket  (5 channels)                                        ║
-║       /ws/verdicts  /ws/ticks  /ws/risk  /ws/candles  /ws/positions          ║
+║  3. Dashboard WebSocket  (9+ channels — see api/ws_routes.py)                ║
+║       /ws · /ws/prices · /ws/trades · /ws/candles · /ws/risk                 ║
+║       /ws/equity · /ws/verdict · /ws/signals · /ws/pipeline                  ║
 ║                                                                              ║
 ║  4. Telegram Alerts  (alerts/telegram_notifier.py)                           ║
 ║       L12 verdict · order events · violations                                ║
@@ -246,23 +272,37 @@ Finnhub WebSocket
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  ZONE H  DEPLOYMENT TOPOLOGY                                                 ║
+║  ZONE H  DEPLOYMENT TOPOLOGY  (⚠ see deployment-classification.md)           ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  Docker Compose services:                                                    ║
-║    app              :8000   — main Wolf-15 engine                            ║
-║    wolf-allocation          — allocation manager                             ║
-║    wolf-execution           — execution worker                               ║
-║    wolf-dashboard   :3000   — Next.js dashboard                              ║
-║    redis 7          :6379                                                    ║
-║    postgresql 16    :5432                                                    ║
-║    prometheus       :9090                                                    ║
-║    grafana          :3001                                                    ║
 ║                                                                              ║
-║  RUN_MODE:     all | engine-only | ingest-only                               ║
+║  Docker Compose — HYBRID TRANSITIONAL TOPOLOGY:                              ║
+║                                                                              ║
+║  Monolith-compatible stack:                                                  ║
+║    app              :8000   — main Wolf-15 engine (ASGI)                     ║
+║    wolf-allocation  :9102   — allocation manager worker                      ║
+║    wolf-execution   :9103   — execution worker                               ║
+║    wolf-dashboard   :3000   — Next.js dashboard                              ║
+║                                                                              ║
+║  Per-service builds (service-oriented):                                      ║
+║    wolf-api         :8000   — dedicated API (services/api/Dockerfile)        ║
+║    wolf-engine              — dedicated engine (services/engine/Dockerfile)   ║
+║    wolf-ingest              — dedicated ingest (services/ingest/Dockerfile)   ║
+║    wolf-orchestrator        — orchestrator (services/orchestrator/Dockerfile) ║
+║                                                                              ║
+║  Infrastructure / Observability:                                             ║
+║    redis 7          :6379   — cache + pubsub                                 ║
+║    postgresql 16    :5432   — persistence                                    ║
+║    prometheus       :9090   — metrics                                        ║
+║    grafana          :3001   — dashboards                                     ║
+║    tempo            :4317   — distributed tracing (OTLP)                     ║
+║                                                                              ║
 ║  CONTEXT_MODE: local | redis                                                 ║
 ║                                                                              ║
-║  Railway:       railway.toml + railway-ingestor.toml                         ║
-║  Vercel:        dashboard/nextjs/                                            ║
+║  Railway: 10+ toml configs (API, engine, ingest, orchestrator, workers...)   ║
+║  Vercel: dashboard/nextjs/                                                   ║
+║                                                                              ║
+║  ⚠ This section is a snapshot. See docker-compose.yml and                    ║
+║    docs/architecture/deployment-classification.md for current truth.          ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -275,15 +315,15 @@ Finnhub WebSocket
 | A | FinnhubWebSocket | `ingest/finnhub_ws.py` | leader election, backoff, key rotation | ✅ |
 | A | SpikeFilter | `analysis/tick_filter.py` | per-symbol % threshold, staleness reset | ✅ |
 | A | DedupCache | `analysis/tick_filter.py` | TTL OrderedDict, thread-safe | ✅ |
-| A | DLQ | (in-process) | rejected tick audit trail | ✅ |
+| A | DLQ | `ingest/tick_dlq.py` | Redis Stream (maxlen 50k), async push, audit trail | ✅ |
 | A | News/Calendar | `news/` | economic calendar, news lock | ✅ |
-| B | TickBuffer | `analysis/candle_builder.py` | 10,000 max, 3 consumers, non-destructive | ✅ |
+| B | TickBuffer | `analysis/tick_pipeline.py` (shim: `analysis/candle_builder.py`) | 10,000 max, generic consumer-id, non-destructive | ✅ |
 | B | MultiTimeframeCandleBuilder | `ingest/candle_builder.py` | Tick→M15→H1 chained | ✅ |
-| B | CandleAccumulator | `analysis/candle_accumulator.py` | gap-aware fill | ✅ |
+| B | CandleAccumulator | embedded in `ingest/candle_builder.py` (private `_CandleAccumulator`) | gap-aware fill; stale-OHLC guard in LiveContextBus | ✅ |
 | C | LiveContextBus | `context/live_context_bus.py` | singleton, local/redis dual mode | ✅ |
 | C | RedisContextBridge | `context/live_context_bus.py` | activated by CONTEXT_MODE=redis | ✅ |
-| C | EventBus | `core/event_bus.py` | 17+ event types, authority-gated | ✅ |
-| D | analysis_loop | `main.py` | event-driven + 60 s fallback polling | ✅ |
+| C | EventBus | `core/event_bus.py` | 19 event types, authority-gated, PermissionError enforced | ✅ |
+| D | analysis_loop | `startup/analysis_loop.py` | event-driven + 60 s fallback; service entrypoints in `services/` | ✅ |
 | E | Pipeline v8.0 | `pipeline/` | L1–L15 orchestration | ✅ |
 | E | L12 VerdictEngine | `constitution/verdict_engine.py` | 9-gate, signal dedup, throttle | ✅ |
 | E | ExhaustionDetector | `engines/v11/exhaustion_detector.py` | signal exhaustion binary | ✅ |
@@ -307,9 +347,9 @@ Finnhub WebSocket
 | G | ExecutionGuard | `execution/` | structural pre-check | ✅ |
 | G | FileBasedMT5Bridge | `ea_interface/mt5_bridge.py` | file-poll JSON protocol | ✅ |
 | G | TuyulFX_Bridge_EA | `ea_interface/TuyulFX_Bridge_EA.mq5` | MQL5 dumb executor, magic 151515 | ✅ |
-| H | Docker Compose | `docker-compose.yml` | 8 services | ✅ |
-| H | Railway config | `railway.toml`, `railway-ingestor.toml` | dual-service deploy | ✅ |
-| H | ~~Hostinger deploy~~ | ~~`deploy/hostinger/`~~ | ~~VPS configuration~~ | Removed |
+| H | Docker Compose | `docker-compose.yml` | 13 services (hybrid transitional: monolith + per-service + infra) | ✅ |
+| H | Railway config | `railway.toml` + 9 `railway-*.toml` | multi-service deploy (API, engine, ingest, orchestrator, workers) | ✅ |
+| H | Vercel | `dashboard/nextjs/` | dashboard frontend deployment | ✅ |
 
 ---
 
@@ -362,7 +402,7 @@ analysis/      → BERPIKIR    — read-only market analysis; zero side effects
 constitution/  → MEMUTUSKAN  — L12 is sole verdict authority; nothing overrides it
 execution/     → MENJALANKAN — blind state machine; no strategy logic
 ea_interface/  → MENGEKSEKUSI — zero intelligence; polls files, reports results
-dashboard/     → MEMONITOR   — read-only UI; no decision authority at runtime
+dashboard/     → MEMONITOR   — owner-operated control surface; NOT verdict authority
 journal/       → MENCATAT    — append-only audit; no runtime influence
 ```
 
@@ -376,5 +416,15 @@ dashboard issuing verdicts) renders the system constitutionally invalid.
 ```text
 v1.0 — Initial diagram (compact visual style, some naming inaccuracies)
 v2.0 — Source-verified rewrite (complete inventory, verbose)
-v2.1 — Unified architecture (best of both; this is the MASTER reference)
+v2.1 — Unified architecture (best of both; was MASTER reference)
+v2.2 — Revised to Reference Architecture status (2026-04-15)
+       - Downgraded from MASTER to Reference Architecture / Constitutional Worldview
+       - Dashboard: "read-only monitor" → "owner-operated control surface"
+       - Zone D: main.py → startup/analysis_loop.py; service entrypoints added
+       - Zone E: hardcoded thresholds → references to config/constitution.yaml
+       - Zone F: 5 WS channels → 9+ channels (see api/ws_routes.py)
+       - Zone H: 8 services → hybrid transitional topology (13 services)
+       - V11: hardcoded thresholds → references to config/v11.yaml
+       - Component inventory: corrected file paths (TickBuffer, CandleAccumulator, DLQ)
+       - Canonical current-state docs split to docs/architecture/
 ```
