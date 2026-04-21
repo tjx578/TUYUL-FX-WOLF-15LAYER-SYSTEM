@@ -225,8 +225,9 @@ class TestAuthorizedOrderIntent:
 
     def test_secret_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(AUTHORITY_SECRET_ENV, SECRET)
-        sig_env = compute_signature(_execute_payload())
-        sig_explicit = compute_signature(_execute_payload(), secret=SECRET)
+        payload = _execute_payload()  # cache once — datetime.now() otherwise diverges
+        sig_env = compute_signature(payload)
+        sig_explicit = compute_signature(payload, secret=SECRET)
         assert sig_env == sig_explicit
 
     def test_empty_secret_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:

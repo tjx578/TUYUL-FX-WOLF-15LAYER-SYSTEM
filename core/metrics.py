@@ -566,6 +566,26 @@ VERDICT_PATH_EVENT_TOTAL = _R.counter(
     label_names=("event", "symbol", "status"),
 )
 
+# Shadow capture (P1-A.5) — journal writes by outcome
+SHADOW_CAPTURE_WRITES_TOTAL = _R.counter(
+    "wolf_shadow_capture_writes_total",
+    "Shadow DecisionBundle journal writes by outcome",
+    label_names=("outcome",),  # "ok" | "error"
+)
+
+# Shadow capture — per-session summary (envelope/failure counts)
+SHADOW_CAPTURE_ENVELOPES_TOTAL = _R.counter(
+    "wolf_shadow_capture_envelopes_total",
+    "Total envelopes captured across shadow sessions",
+    label_names=("symbol",),
+)
+
+SHADOW_CAPTURE_FAILURES_TOTAL = _R.counter(
+    "wolf_shadow_capture_projection_failures_total",
+    "Projection failures recorded by shadow capture (isolated per dual_emit)",
+    label_names=("symbol",),
+)
+
 # Per-layer execution latency (seconds) — observe inside pipeline execute()
 LAYER_LATENCY = _R.histogram(
     "wolf_layer_latency_seconds",

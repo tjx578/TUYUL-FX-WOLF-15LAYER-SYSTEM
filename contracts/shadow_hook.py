@@ -35,6 +35,32 @@ from contracts.shadow_sink import ShadowJournalSink
 
 logger = logging.getLogger(__name__)
 
+# Best-effort metrics. Any import/attribute failure here MUST NOT break
+# the hook — metrics are advisory for ops dashboards only.
+try:
+    from core.metrics import (
+        SHADOW_CAPTURE_ENVELOPES_TOTAL,
+        SHADOW_CAPTURE_FAILURES_TOTAL,
+        SHADOW_CAPTURE_WRITES_TOTAL,
+    )
+
+    _METRICS_OK = True
+except Exception:  # noqa: BLE001
+    SHADOW_CAPTURE_ENVELOPES_TOTAL = None  # type: ignore[assignment]
+    SHADOW_CAPTURE_FAILURES_TOTAL = None  # type: ignore[assignment]
+    SHADOW_CAPTURE_WRITES_TOTAL = None  # type: ignore[assignment]
+    _METRICS_OK = False
+
+
+def _safe_inc(counter: Any, **labels: str) -> None:
+    if counter is None:
+        return
+    try:
+        counter.labels(**labels).inc()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("shadow metrics inc failed: %s", exc)
+
+
 _FLAG_ENV = "WOLF_SHADOW_CAPTURE_ENABLED"
 _TRUTHY = frozenset({"1", "true", "TRUE", "True", "yes", "on"})
 
@@ -108,7 +134,18 @@ def finalize_shadow_session(
     try:
         bundle, _diag = session.try_build()
         summary = session.summary()
-        _get_sink().record(summary, bundle)
+        ok = _get_sink().record(summary, bundle)
+        _safe_inc(SHADOW_CAPTURE_WRITES_TOTAL, outcome="ok" if ok else "error")
+        _safe_inc(
+            SHADOW_CAPTURE_ENVELOPES_TOTAL,
+            symbol=str(summary.get("symbol", "UNKNOWN")),
+        )
+        fc = int(summary.get("failure_count", 0) or 0)
+        if fc > 0 and SHADOW_CAPTURE_FAILURES_TOTAL is not None:
+            try:
+                SHADOW_CAPTURE_FAILURES_TOTAL.labels(symbol=str(summary.get("symbol", "UNKNOWN"))).inc(fc)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("shadow failure counter inc failed: %s", exc)
         return summary
     except Exception as exc:  # noqa: BLE001
         logger.debug("finalize_shadow_session failed: %s", exc)
