@@ -406,12 +406,35 @@ class FinnhubWebSocket:
         """
         self._running = True
         attempt = 0
+        # Observability: before first successful connect, surface that the loop
+        # has started but not yet connected. This removes the "last_ws_reason=None
+        # while WS=False" blind spot that masked not-leader / pre-connect states.
+        if self._last_disconnect_reason is None:
+            self._last_disconnect_reason = "pending:awaiting_first_connect"
 
         while self._running:
             try:
                 # Acquire leader lock
                 if not await self._acquire_leader_lock():
-                    logger.info("[WS] Not leader — waiting 10 s before retry")
+                    # Observability: expose that this replica is parked as a
+                    # follower waiting for leader. Operator sees a concrete
+                    # reason in provider heartbeat instead of None.
+                    current_leader: str | None = None
+                    try:
+                        current_leader_raw = await self._redis.get(LEADER_LOCK_KEY)
+                        if current_leader_raw is not None:
+                            current_leader = (
+                                current_leader_raw.decode()
+                                if isinstance(current_leader_raw, bytes)
+                                else str(current_leader_raw)
+                            )
+                    except Exception:
+                        current_leader = None
+                    self._last_disconnect_reason = f"not_leader:held_by={current_leader or 'unknown'}"
+                    logger.info(
+                        "[WS] Not leader — waiting 10 s before retry (held_by=%s)",
+                        current_leader or "unknown",
+                    )
                     await asyncio.sleep(10)
                     continue
 
