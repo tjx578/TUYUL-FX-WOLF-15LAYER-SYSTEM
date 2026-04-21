@@ -316,6 +316,43 @@ class TestEngineHeartbeatCheck:
         assert detail["symbols_total"] == 30
         assert detail["last_ws_disconnect_reason"] == "ConnectionClosedError:network_drop"
 
+    def test_check_ingest_heartbeat_missing_provider_uses_process_reason(self) -> None:
+        """When provider heartbeat is missing, engine detail should still carry WS reason from process heartbeat."""
+        from unittest.mock import MagicMock, patch
+
+        import startup.analysis_loop as analysis_loop_module
+
+        now = time.time()
+        mock_redis = MagicMock()
+
+        def mock_get(key: str) -> str | None:
+            if "process" in key:
+                return orjson.dumps(
+                    {
+                        "producer": "ingest_service",
+                        "ts": now - 2,
+                        "ws_connected": False,
+                        "ingest_state": "DEGRADED_REST_FALLBACK",
+                        "market_data_mode": "REST_DEGRADED",
+                        "last_ws_disconnect_reason": "not_leader:held_by=replica-2",
+                    }
+                ).decode()
+            if "provider" in key:
+                return None
+            return None
+
+        mock_redis.get.side_effect = mock_get
+
+        with (
+            patch.object(analysis_loop_module, "_last_ingest_heartbeat_log_ts", 0.0),
+            patch.object(analysis_loop_module, "logger") as mock_logger,
+        ):
+            analysis_loop_module._check_ingest_heartbeat(mock_redis)
+
+        assert mock_logger.warning.called
+        detail = mock_logger.warning.call_args.args[4]
+        assert detail["last_ws_disconnect_reason"] == "not_leader:held_by=replica-2"
+
 
 # ══════════════════════════════════════════════════════════
 #  API route tests

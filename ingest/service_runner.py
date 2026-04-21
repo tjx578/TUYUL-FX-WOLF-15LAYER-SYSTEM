@@ -59,10 +59,12 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient, shutdown_ev
 
     while not (shutdown_event and shutdown_event.is_set()):
         connected = bool(getattr(ws_feed, "is_connected", False))
+        last_ws_disconnect_reason = getattr(ws_feed, "last_disconnect_reason", None)
         update_producer_health(connected)
         snapshot = build_runtime_snapshot(ws_connected=connected)
         health_probe.set_detail("producer_present", "1" if connected else "0")
         health_probe.set_detail("producer_fresh", "1" if producer_fresh() else "0")
+        health_probe.set_detail("last_ws_disconnect_reason", str(last_ws_disconnect_reason or ""))
         from ingest.service_metrics import producer_last_heartbeat_ts
 
         health_probe.set_detail(
@@ -75,6 +77,7 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient, shutdown_ev
         process_payload = {
             "producer": "ingest_service",
             "ts": time(),
+            "last_ws_disconnect_reason": last_ws_disconnect_reason,
             **snapshot,
         }
         with contextlib.suppress(Exception):
@@ -86,7 +89,7 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient, shutdown_ev
                 "ts": time(),
                 "ws_connected": True,
                 "subscribed_symbols": snapshot["symbols_total"],
-                "last_disconnect_reason": getattr(ws_feed, "last_disconnect_reason", None),
+                "last_disconnect_reason": last_ws_disconnect_reason,
             }
             with contextlib.suppress(Exception):
                 await redis.set(HEARTBEAT_INGEST_PROVIDER, orjson.dumps(provider_payload).decode("utf-8"))

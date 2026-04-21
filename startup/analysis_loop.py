@@ -408,6 +408,8 @@ def _build_ingest_health_detail(
         ):
             if key in process_payload:
                 detail[key] = process_payload.get(key)
+        if "last_ws_disconnect_reason" in process_payload:
+            detail["last_ws_disconnect_reason"] = process_payload.get("last_ws_disconnect_reason")
     if provider_payload and "last_disconnect_reason" in provider_payload:
         detail["last_ws_disconnect_reason"] = provider_payload.get("last_disconnect_reason")
     return detail
