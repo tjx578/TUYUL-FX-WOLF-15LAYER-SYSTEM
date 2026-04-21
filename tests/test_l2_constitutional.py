@@ -524,3 +524,70 @@ class TestL2ConstitutionalGovernor:
         )
         # continuation_allowed maps to the old valid behavior
         assert result["continuation_allowed"] is True
+
+    def test_mta_diagnostics_expose_primary_conflict(self):
+        result = self.gov.evaluate(
+            l1_output=_l1_pass(),
+            l2_analysis=_l2_analysis(
+                alignment_strength=0.42,
+                hierarchy_followed=False,
+                aligned=False,
+                per_tf_bias={
+                    "D1": {"p_bull": 0.78},
+                    "H4": {"p_bull": 0.22},
+                    "H1": {"p_bull": 0.25},
+                    "M15": {"p_bull": 0.5},
+                },
+            )
+            | {"candle_age_by_tf": {"D1": 58000, "H4": 9000, "H1": 1800, "M15": 300}},
+            symbol="GBPAUD",
+            candle_counts={"D1": 15, "H4": 60, "H1": 44, "M15": 120},
+        )
+        diagnostics = result["mta_diagnostics"]
+        assert diagnostics["alignment_score"] == 0.42
+        assert diagnostics["required_alignment"] == 0.65
+        assert diagnostics["primary_conflict"] == "D1_H4_DIRECTION_CONFLICT"
+        assert diagnostics["per_tf_bias"]["D1"] == "BULLISH"
+        assert diagnostics["per_tf_bias"]["H4"] == "BEARISH"
+        assert diagnostics["candle_counts"]["H4"] == 60
+        assert diagnostics["candle_age_by_tf"]["D1"] == 58000
+
+    def test_mta_diagnostics_present_on_pass_without_status_change(self):
+        result = self.gov.evaluate(
+            l1_output=_l1_pass(),
+            l2_analysis=_l2_analysis(
+                alignment_strength=0.9,
+                per_tf_bias={
+                    "MN": {"p_bull": 0.7},
+                    "W1": {"p_bull": 0.72},
+                    "D1": {"p_bull": 0.74},
+                    "H4": {"p_bull": 0.68},
+                    "H1": {"p_bull": 0.66},
+                    "M15": {"p_bull": 0.61},
+                },
+            ),
+            symbol="EURUSD",
+            candle_counts={"MN": 3, "W1": 8, "D1": 15, "H4": 60, "H1": 44, "M15": 120},
+        )
+        diagnostics = result["mta_diagnostics"]
+        assert result["status"] == "PASS"
+        assert diagnostics["direction_consensus"] == "bullish"
+        assert diagnostics["primary_conflict"] is None
+        assert diagnostics["per_tf_strength"]["D1"] > 0.0
+
+    def test_mta_diagnostics_include_missing_timeframes(self):
+        result = self.gov.evaluate(
+            l1_output=_l1_pass(),
+            l2_analysis=_l2_analysis(
+                per_tf_bias={
+                    "D1": {"p_bull": 0.7},
+                    "H4": {"p_bull": 0.65},
+                    "H1": {"p_bull": 0.6},
+                }
+            ),
+            symbol="EURUSD",
+        )
+        diagnostics = result["mta_diagnostics"]
+        assert "MN" in diagnostics["missing_timeframes"]
+        assert "W1" in diagnostics["missing_timeframes"]
+        assert diagnostics["available_timeframes"] == ["D1", "H4", "H1"]

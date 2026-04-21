@@ -279,6 +279,117 @@ def _compute_alignment_score(l2_analysis: dict[str, Any]) -> float:
         return 0.0
 
 
+def _coerce_float(value: Any) -> float | None:
+    """Best-effort float coercion for optional diagnostics fields."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _tf_bias_direction(detail: Any) -> str:
+    """Derive a normalized directional label for one timeframe detail."""
+    if isinstance(detail, dict):
+        explicit = detail.get("bias")
+        if isinstance(explicit, str) and explicit:
+            label = explicit.strip().upper()
+            if label in {"BULLISH", "BEARISH", "NEUTRAL"}:
+                return label
+
+        p_value = _coerce_float(detail.get("p_bull"))
+        if p_value is None:
+            return "NEUTRAL"
+        if p_value > 0.5:
+            return "BULLISH"
+        if p_value < 0.5:
+            return "BEARISH"
+    return "NEUTRAL"
+
+
+def _tf_bias_strength(detail: Any) -> float:
+    """Derive a normalized 0-1 directional strength for one timeframe detail."""
+    if isinstance(detail, dict):
+        explicit = _coerce_float(detail.get("strength"))
+        if explicit is not None:
+            return round(max(0.0, min(1.0, explicit)), 4)
+
+        p_bull = _coerce_float(detail.get("p_bull"))
+        if p_bull is None:
+            return 0.0
+        return round(max(0.0, min(1.0, abs(p_bull - 0.5) * 2.0)), 4)
+    return 0.0
+
+
+def _resolve_direction_consensus(per_tf_bias: dict[str, Any]) -> str:
+    """Summarize directional agreement across timeframes."""
+    directions = [_tf_bias_direction(detail) for detail in per_tf_bias.values()]
+    non_neutral = [direction for direction in directions if direction != "NEUTRAL"]
+    if not non_neutral:
+        return "neutral"
+    if all(direction == "BULLISH" for direction in non_neutral):
+        return "bullish"
+    if all(direction == "BEARISH" for direction in non_neutral):
+        return "bearish"
+    return "mixed"
+
+
+def _build_conflict_matrix(available_tfs: list[str], per_tf_bias: dict[str, Any]) -> tuple[list[str], str | None]:
+    """Build adjacent-timeframe conflicts ordered from HTF to LTF."""
+    conflicts: list[str] = []
+    for left_tf, right_tf in zip(available_tfs, available_tfs[1:], strict=False):
+        left_dir = _tf_bias_direction(per_tf_bias.get(left_tf, {}))
+        right_dir = _tf_bias_direction(per_tf_bias.get(right_tf, {}))
+        if "NEUTRAL" in (left_dir, right_dir):
+            continue
+        if left_dir != right_dir:
+            conflicts.append(f"{left_tf} {left_dir.lower()} vs {right_tf} {right_dir.lower()}")
+
+    primary_conflict = None
+    if conflicts:
+        first = conflicts[0]
+        first_left, _, _, first_right, _ = first.split()
+        primary_conflict = f"{first_left}_{first_right}_DIRECTION_CONFLICT"
+    return conflicts, primary_conflict
+
+
+def _build_mta_diagnostics(
+    *,
+    l2_analysis: dict[str, Any],
+    available_tfs: list[str],
+    alignment_score: float,
+    candle_counts: dict[str, int] | None,
+) -> dict[str, Any]:
+    """Assemble audit-friendly L2 MTA diagnostics without affecting decisions."""
+    per_tf_bias = l2_analysis.get("per_tf_bias", {})
+    if not isinstance(per_tf_bias, dict):
+        per_tf_bias = {}
+
+    per_tf_direction = {tf: _tf_bias_direction(per_tf_bias.get(tf, {})) for tf in available_tfs}
+    per_tf_strength = {tf: _tf_bias_strength(per_tf_bias.get(tf, {})) for tf in available_tfs}
+    candle_age_by_tf = l2_analysis.get("candle_age_by_tf", {})
+    if not isinstance(candle_age_by_tf, dict):
+        candle_age_by_tf = {}
+
+    conflict_matrix, primary_conflict = _build_conflict_matrix(available_tfs, per_tf_bias)
+    missing_timeframes = [tf for tf in COVERAGE_TARGET_TIMEFRAMES if tf not in available_tfs]
+
+    return {
+        "alignment_score": round(alignment_score, 4),
+        "required_alignment": ALIGNMENT_MID_GTE,
+        "direction_consensus": _resolve_direction_consensus(per_tf_bias),
+        "available_timeframes": list(available_tfs),
+        "missing_timeframes": missing_timeframes,
+        "per_tf_bias": per_tf_direction,
+        "per_tf_strength": per_tf_strength,
+        "candle_age_by_tf": {tf: candle_age_by_tf.get(tf) for tf in available_tfs if tf in candle_age_by_tf},
+        "candle_counts": {tf: (candle_counts or {}).get(tf, 0) for tf in available_tfs},
+        "conflict_matrix": conflict_matrix,
+        "primary_conflict": primary_conflict,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §4  COMPRESSION LOGIC (frozen strict mode)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -545,6 +656,12 @@ class L2ConstitutionalGovernor:
 
         # ── Step 9: Emit contract ─────────────────────────────
         missing_required = [tf for tf in REQUIRED_TIMEFRAMES if tf not in available_tfs]
+        mta_diagnostics = _build_mta_diagnostics(
+            l2_analysis=l2_analysis,
+            available_tfs=available_tfs,
+            alignment_score=alignment_score,
+            candle_counts=candle_counts,
+        )
 
         # Log constitutional result
         logger.info(
@@ -577,6 +694,7 @@ class L2ConstitutionalGovernor:
             # Features
             "features": {
                 "alignment_score": round(alignment_score, 4),
+                "required_alignment": ALIGNMENT_MID_GTE,
                 "hierarchy_followed": hierarchy_followed,
                 "aligned": aligned,
                 "candle_age_seconds": candle_age_seconds,
@@ -585,8 +703,15 @@ class L2ConstitutionalGovernor:
                 "required_timeframes": list(REQUIRED_TIMEFRAMES),
                 "coverage_target_timeframes": list(COVERAGE_TARGET_TIMEFRAMES),
                 "available_timeframes": available_tfs,
+                "missing_timeframes": mta_diagnostics["missing_timeframes"],
                 "missing_required_timeframes": missing_required,
+                "direction_consensus": mta_diagnostics["direction_consensus"],
+                "per_tf_bias": dict(mta_diagnostics["per_tf_bias"]),
+                "per_tf_strength": dict(mta_diagnostics["per_tf_strength"]),
+                "conflict_matrix": list(mta_diagnostics["conflict_matrix"]),
+                "primary_conflict": mta_diagnostics["primary_conflict"],
             },
+            "mta_diagnostics": mta_diagnostics,
             # Routing
             "routing": {
                 "source_used": list(l2_analysis.get("per_tf_bias", {}).keys()),
