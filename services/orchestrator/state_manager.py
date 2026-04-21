@@ -168,15 +168,17 @@ class StateManager:
         return self._state
 
     def start_listener(self) -> None:
-        self._pubsub = self._redis.pubsub()
-        self._pubsub.subscribe(self._channel)
+        pubsub = self._redis.pubsub()
+        pubsub.subscribe(self._channel)
+        self._pubsub = pubsub
         logger.info("orchestrator subscribed to channel {}", self._channel)
 
     def close(self) -> None:
-        if self._pubsub is None:
+        pubsub = self._pubsub
+        if pubsub is None:
             return
         try:
-            self._pubsub.close()
+            pubsub.close()
         finally:
             self._pubsub = None
 
@@ -364,11 +366,12 @@ class StateManager:
         self.publish_state("MODE_CHANGED", {"origin": "command"})
 
     def _poll_channel(self) -> None:
-        if self._pubsub is None:
+        pubsub = self._pubsub
+        if pubsub is None:
             return
 
         for _ in range(64):
-            message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
+            message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
             if not message:
                 break
             raw: Any = message.get("data")
