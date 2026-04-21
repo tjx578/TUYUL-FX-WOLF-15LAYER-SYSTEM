@@ -64,6 +64,28 @@ def _safe_inc(counter: Any, **labels: str) -> None:
 _FLAG_ENV = "WOLF_SHADOW_CAPTURE_ENABLED"
 _TRUTHY = frozenset({"1", "true", "TRUE", "True", "yes", "on"})
 
+# One-shot init log so operators can confirm from runtime logs that the
+# shadow hook is active in the service where they set the flag. Without
+# this, flag-on/flag-off is indistinguishable from the engine log.
+_INIT_LOGGED = False
+
+
+def _log_init_once() -> None:
+    global _INIT_LOGGED
+    if _INIT_LOGGED:
+        return
+    _INIT_LOGGED = True
+    try:
+        sink_path = _get_sink().path
+        logger.info(
+            "[ShadowHook] enabled=%s path=%s metrics=%s",
+            True,
+            str(sink_path),
+            "available" if _METRICS_OK else "unavailable",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[ShadowHook] init log failed: %s", exc)
+
 
 def is_enabled() -> bool:
     """Check the feature flag. Pure, re-read every call."""
@@ -90,6 +112,7 @@ def begin_shadow_session(
     if not is_enabled():
         return None
     try:
+        _log_init_once()
         sid = signal_id or f"shadow-{uuid.uuid4().hex[:16]}"
         ctx = runtime_context_ref or f"runtime:{symbol}:{sid}"
         return ShadowCaptureSession(

@@ -114,6 +114,42 @@ _TZ_GMT8 = timezone(timedelta(hours=8))
 # aborted and recorded as FATAL_ERROR so the pipeline can fail fast.
 _LAYER_TIMEOUT_SEC: float = 30.0
 
+# Confidence-band → numeric [0, 1] mapping for L12 router synthesis_score.
+# generate_l12_verdict() returns "confidence" as a band string
+# ("LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH"), so a naked float() would
+# raise ValueError. Thresholds mirror _wolf30_to_confidence midpoints.
+_CONFIDENCE_BAND_TO_SCORE: dict[str, float] = {
+    "LOW": 0.25,
+    "MEDIUM": 0.50,
+    "HIGH": 0.75,
+    "VERY_HIGH": 0.95,
+}
+
+
+def _coerce_confidence_to_score(value: Any) -> tuple[float, str | None]:
+    """Coerce a verdict-engine confidence (band string or numeric) to [0, 1].
+
+    Returns (score, warning_code). warning_code is non-None only when the
+    input is not directly coercible and a fallback was used — callers can
+    surface it for audit instead of silently defaulting to 0.0.
+    """
+    if isinstance(value, bool):
+        # Treat bools as unmappable to avoid truthy-ambiguity.
+        return 0.0, "PHASE5_NON_NUMERIC_CONFIDENCE"
+    if isinstance(value, (int, float)):
+        # Clamp to valid [0, 1] range.
+        return max(0.0, min(1.0, float(value))), None
+    if isinstance(value, str):
+        key = value.strip().upper()
+        if key in _CONFIDENCE_BAND_TO_SCORE:
+            return _CONFIDENCE_BAND_TO_SCORE[key], None
+        # Tolerate numeric-looking strings defensively.
+        try:
+            return max(0.0, min(1.0, float(value))), None
+        except (TypeError, ValueError):
+            return 0.0, "PHASE5_NON_NUMERIC_CONFIDENCE"
+    return 0.0, "PHASE5_NON_NUMERIC_CONFIDENCE"
+
 
 def _parse_heartbeat_timestamp(raw: Any) -> float | None:
     """Extract a valid heartbeat timestamp from a Redis JSON payload."""
@@ -2472,8 +2508,20 @@ class WolfConstitutionalPipeline:
         risk_chain_status = _gate_to_status("gate_5_rr")
         governance_status = _gate_to_status("gate_9_drawdown")
 
-        # Synthesis score from verdict engine
-        synthesis_score = float(l12_verdict.get("confidence", 0.0))
+        # Synthesis score from verdict engine.
+        # verdict_engine.generate_l12_verdict() returns "confidence" as a band
+        # string (LOW/MEDIUM/HIGH/VERY_HIGH). Historically this site called
+        # float(...) directly, producing 74+ non-fatal ValueErrors/min in the
+        # engine log ("could not convert string to float: 'LOW'"). The coercer
+        # accepts both numeric and band forms and surfaces a warning on
+        # unmappable values instead of silently defaulting.
+        synthesis_score, _conf_warning = _coerce_confidence_to_score(l12_verdict.get("confidence"))
+        if _conf_warning is not None:
+            logger.warning(
+                "[Pipeline v8.0] Phase 5 confidence not mappable: value={!r} -> score=0.0 (warning={})",
+                l12_verdict.get("confidence"),
+                _conf_warning,
+            )
 
         evaluator = L12RouterEvaluator()
         l12_input = L12Input(

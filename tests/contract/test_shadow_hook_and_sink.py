@@ -48,6 +48,10 @@ def _reset_flag_and_sink(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(FLAG, raising=False)
     monkeypatch.delenv("WOLF_SHADOW_JOURNAL_PATH", raising=False)
     set_sink(None)
+    # Reset one-shot init log so each test can verify it independently.
+    import contracts.shadow_hook as _sh  # noqa: PLC0415
+
+    _sh._INIT_LOGGED = False
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -243,3 +247,45 @@ class TestFlagOffIsNoop:
         finalize_shadow_session(sess)
 
         assert not sink_path.exists()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# One-shot init log — operator diagnostic signal
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestInitLog:
+    def test_init_log_fires_once_when_flag_on(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        monkeypatch.setenv(FLAG, "1")
+        set_sink(ShadowJournalSink(path=tmp_path / "shadow.jsonl"))
+
+        with caplog.at_level("INFO", logger="contracts.shadow_hook"):
+            s1 = begin_shadow_session(symbol="EURUSD")
+            s2 = begin_shadow_session(symbol="GBPUSD")
+
+        assert s1 is not None
+        assert s2 is not None
+        init_logs = [r for r in caplog.records if "[ShadowHook] enabled=" in r.getMessage()]
+        # Must fire exactly once, not per session.
+        assert len(init_logs) == 1
+        msg = init_logs[0].getMessage()
+        assert "enabled=True" in msg
+        assert "path=" in msg
+        assert "metrics=" in msg
+
+    def test_init_log_does_not_fire_when_flag_off(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        set_sink(ShadowJournalSink(path=tmp_path / "shadow.jsonl"))
+        with caplog.at_level("INFO", logger="contracts.shadow_hook"):
+            s = begin_shadow_session(symbol="EURUSD")
+        assert s is None
+        init_logs = [r for r in caplog.records if "[ShadowHook] enabled=" in r.getMessage()]
+        assert init_logs == []
