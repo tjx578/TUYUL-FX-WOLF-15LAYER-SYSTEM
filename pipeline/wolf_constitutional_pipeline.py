@@ -831,24 +831,77 @@ class WolfConstitutionalPipeline:
 
         if status == "FAIL":
             blockers = const.get("blocker_codes", [])
-            logger.warning(
-                "[{}] {} {} constitutional FAIL — blockers={} continuation={}",
-                phase,
-                symbol,
-                layer,
-                blockers,
-                cont,
-            )
+            if layer == "L2" and isinstance(const.get("mta_diagnostics"), dict):
+                diagnostics = const["mta_diagnostics"]
+                logger.warning(
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} primary_conflict={} alignment={} consensus={} missing_tfs={}",
+                    phase,
+                    symbol,
+                    layer,
+                    blockers,
+                    cont,
+                    diagnostics.get("primary_conflict"),
+                    diagnostics.get("alignment_score"),
+                    diagnostics.get("direction_consensus"),
+                    diagnostics.get("missing_timeframes"),
+                )
+            elif layer == "L9" and isinstance(const.get("structure_diagnostics"), dict):
+                diagnostics = const["structure_diagnostics"]
+                logger.warning(
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} missing_sources={} builder_state={} available_sources={}",
+                    phase,
+                    symbol,
+                    layer,
+                    blockers,
+                    cont,
+                    diagnostics.get("missing_sources"),
+                    diagnostics.get("source_builder_state"),
+                    diagnostics.get("available_sources"),
+                )
+            else:
+                logger.warning(
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={}",
+                    phase,
+                    symbol,
+                    layer,
+                    blockers,
+                    cont,
+                )
         elif status == "WARN":
             warns = const.get("warning_codes", [])
-            logger.info(
-                "[{}] {} {} constitutional WARN — warnings={} band={}",
-                phase,
-                symbol,
-                layer,
-                warns,
-                const.get("coherence_band", "N/A"),
-            )
+            if layer == "L2" and isinstance(const.get("mta_diagnostics"), dict):
+                diagnostics = const["mta_diagnostics"]
+                logger.info(
+                    "[{}] {} {} constitutional WARN — warnings={} band={} primary_conflict={} alignment={}",
+                    phase,
+                    symbol,
+                    layer,
+                    warns,
+                    const.get("coherence_band", "N/A"),
+                    diagnostics.get("primary_conflict"),
+                    diagnostics.get("alignment_score"),
+                )
+            elif layer == "L9" and isinstance(const.get("structure_diagnostics"), dict):
+                diagnostics = const["structure_diagnostics"]
+                logger.info(
+                    "[{}] {} {} constitutional WARN — warnings={} band={} missing_sources={} builder_state={}",
+                    phase,
+                    symbol,
+                    layer,
+                    warns,
+                    const.get("coherence_band", "N/A"),
+                    diagnostics.get("missing_sources"),
+                    diagnostics.get("source_builder_state"),
+                )
+            else:
+                logger.info(
+                    "[{}] {} {} constitutional WARN — warnings={} band={}",
+                    phase,
+                    symbol,
+                    layer,
+                    warns,
+                    const.get("coherence_band", "N/A"),
+                )
         else:
             logger.info(
                 "[{}] {} {} constitutional {} — band={} {}={:.4f}",

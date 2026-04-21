@@ -453,6 +453,17 @@ class TestL9GovernorPassEnvelope:
         # bos + ob + fvg + sweep = 4 features (choch=False)
         assert f["smc_feature_count"] == 4
 
+    def test_structure_diagnostics_present_on_pass(self):
+        gov = L9ConstitutionalGovernor()
+        result = gov.evaluate(_l9_analysis(), _upstream_pass())
+
+        diagnostics = result["structure_diagnostics"]
+        assert diagnostics["required_sources"] == ["smc", "liquidity", "divergence"]
+        assert diagnostics["available_sources"] == ["smc", "liquidity", "divergence"]
+        assert diagnostics["missing_sources"] == []
+        assert diagnostics["source_builder_state"] == "ready"
+        assert diagnostics["primary_structure_gap"] is None
+
 
 class TestL9GovernorWarnEnvelope:
     """WARN envelope: mid score or degraded state."""
@@ -498,6 +509,29 @@ class TestL9GovernorFailEnvelope:
             b in result["blocker_codes"]
             for b in ["REQUIRED_STRUCTURE_SOURCE_MISSING", "FRESHNESS_GOVERNANCE_HARD_FAIL", "WARMUP_INSUFFICIENT"]
         )
+        diagnostics = result["structure_diagnostics"]
+        assert diagnostics["available_sources"] == []
+        assert diagnostics["missing_sources"] == ["smc", "liquidity", "divergence"]
+        assert diagnostics["source_builder_state"] == "not_ready"
+        assert diagnostics["primary_structure_gap"] == "REQUIRED_STRUCTURE_SOURCE_MISSING"
+
+    def test_structure_diagnostics_preserve_explicit_builder_payload(self):
+        gov = L9ConstitutionalGovernor()
+        data = {
+            **_l9_fail("invalid_structure"),
+            "structure_sources": {"smc": True, "liquidity": False, "divergence": False},
+            "warmup_required_bars": {"H1": 100, "H4": 50, "D1": 20},
+            "warmup_available_bars": {"H1": 44, "H4": 80, "D1": 10},
+            "source_builder_state": "not_ready",
+        }
+        result = gov.evaluate(data, _upstream_pass())
+
+        diagnostics = result["structure_diagnostics"]
+        assert diagnostics["available_sources"] == ["smc"]
+        assert diagnostics["missing_sources"] == ["liquidity", "divergence"]
+        assert diagnostics["warmup_required_bars"] == {"H1": 100, "H4": 50, "D1": 20}
+        assert diagnostics["warmup_available_bars"] == {"H1": 44, "H4": 80, "D1": 10}
+        assert diagnostics["source_builder_state"] == "not_ready"
 
     def test_invalid_score_range_fail(self):
         gov = L9ConstitutionalGovernor()

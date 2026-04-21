@@ -91,6 +91,7 @@ class L9BlockerCode(StrEnum):
 HIGH_THRESHOLD = 0.80
 MID_THRESHOLD = 0.65
 MIN_SAMPLE_WARN = 3
+REQUIRED_STRUCTURE_SOURCES: tuple[str, ...] = ("smc", "liquidity", "divergence")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -258,6 +259,82 @@ def _derive_structure_score(l9_analysis: dict[str, Any]) -> float:
         score_01 = float(smc_score) / 100.0
         return max(0.0, min(1.0, score_01))
     return 0.0
+
+
+def _coerce_float(value: Any) -> float:
+    """Best-effort float coercion for diagnostics fields."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _structure_source_flags(l9_analysis: dict[str, Any]) -> dict[str, bool]:
+    """Derive structure source readiness from the current L9 contract."""
+    explicit = l9_analysis.get("structure_sources")
+    if isinstance(explicit, dict):
+        return {str(name): bool(state) for name, state in explicit.items()}
+
+    return {
+        "smc": bool(l9_analysis.get("smc", False)),
+        "liquidity": _coerce_float(l9_analysis.get("liquidity_score", 0.0)) > 0.0,
+        "divergence": _coerce_float(l9_analysis.get("dvg_confidence", 0.0)) > 0.0,
+    }
+
+
+def _build_structure_diagnostics(
+    *,
+    l9_analysis: dict[str, Any],
+    blockers: list[L9BlockerCode],
+    warmup: L9WarmupState,
+    structure_score: float,
+    smc_feature_count: int,
+) -> dict[str, Any]:
+    """Assemble audit-friendly L9 diagnostics without affecting legality."""
+    source_flags = _structure_source_flags(l9_analysis)
+    required_sources = list(REQUIRED_STRUCTURE_SOURCES)
+    available_sources = [name for name in required_sources if source_flags.get(name, False)]
+    missing_sources = [name for name in required_sources if name not in available_sources]
+
+    warmup_required_bars = l9_analysis.get("warmup_required_bars", {})
+    if not isinstance(warmup_required_bars, dict):
+        warmup_required_bars = {}
+
+    warmup_available_bars = l9_analysis.get("warmup_available_bars", {})
+    if not isinstance(warmup_available_bars, dict):
+        warmup_available_bars = {}
+
+    explicit_builder_state = l9_analysis.get("source_builder_state")
+    if isinstance(explicit_builder_state, str) and explicit_builder_state.strip():
+        source_builder_state = explicit_builder_state.strip()
+    elif not available_sources:
+        source_builder_state = "not_ready"
+    elif missing_sources or warmup == L9WarmupState.INSUFFICIENT:
+        source_builder_state = "partial"
+    else:
+        source_builder_state = "ready"
+
+    primary_structure_gap = blockers[0].value if blockers else None
+
+    return {
+        "required_sources": required_sources,
+        "available_sources": available_sources,
+        "missing_sources": missing_sources,
+        "warmup_required_bars": warmup_required_bars,
+        "warmup_available_bars": warmup_available_bars,
+        "source_builder_state": source_builder_state,
+        "primary_structure_gap": primary_structure_gap,
+        "structure_score_components": {
+            "smc_score": int(_coerce_float(l9_analysis.get("smc_score", 0.0))),
+            "liquidity_score": round(_coerce_float(l9_analysis.get("liquidity_score", 0.0)), 4),
+            "dvg_confidence": round(_coerce_float(l9_analysis.get("dvg_confidence", 0.0)), 4),
+            "confidence": round(_coerce_float(l9_analysis.get("confidence", 0.0)), 4),
+            "smc_feature_count": smc_feature_count,
+            "structure_score": round(structure_score, 4),
+        },
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -431,6 +508,13 @@ class L9ConstitutionalGovernor:
                 bool(l9_analysis.get("sweep_detected", False)),
             ]
         )
+        structure_diagnostics = _build_structure_diagnostics(
+            l9_analysis=l9_analysis,
+            blockers=blockers,
+            warmup=warmup,
+            structure_score=structure_score,
+            smc_feature_count=smc_feature_count,
+        )
 
         # ── Step 10: compress status ─────────────────────────────────
         status = _compress_status(
@@ -517,6 +601,7 @@ class L9ConstitutionalGovernor:
             "coherence_band": band.value,
             "score_numeric": round(structure_score, 4),
             "features": features,
+            "structure_diagnostics": structure_diagnostics,
             "routing": routing,
             "audit": audit,
         }
