@@ -33,7 +33,9 @@ Zone: analysis/ — Perception & Context (read-only, no execution).
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, cast
+
+from analysis.candle_freshness import candle_age_seconds
 
 try:
     from loguru import logger
@@ -397,6 +399,35 @@ class L2MTAAnalyzer:
         except (AttributeError, Exception):
             return None
 
+    @staticmethod
+    def _latest_candle_age_by_tf(candles_by_tf: dict[str, dict[str, Any]]) -> dict[str, float | None]:
+        return {tf: candle_age_seconds(candle) for tf, candle in candles_by_tf.items()}
+
+    @staticmethod
+    def _aggregate_candle_age(candle_age_by_tf: dict[str, float | None]) -> float | None:
+        required_tfs = ("D1", "H4", "H1")
+        required_ages = [age for tf, age in candle_age_by_tf.items() if tf in required_tfs and age is not None]
+        if required_ages:
+            return max(required_ages)
+        all_ages = [age for age in candle_age_by_tf.values() if age is not None]
+        if all_ages:
+            return max(all_ages)
+        return None
+
+    @staticmethod
+    def _candle_counts_by_tf(candle_source: Any, symbol: str, timeframes: list[str]) -> dict[str, int] | None:
+        if candle_source is None or not hasattr(candle_source, "get_candle_history"):
+            return None
+        counts: dict[str, int] = {}
+        for tf in timeframes:
+            try:
+                history = candle_source.get_candle_history(symbol, tf)
+            except Exception:
+                continue
+            if isinstance(history, list):
+                counts[tf] = len(history)
+        return counts or None
+
     # ──────────────────────────────────────────────────────────
     #  L3 sensitivity control
     # ──────────────────────────────────────────────────────────
@@ -460,6 +491,7 @@ class L2MTAAnalyzer:
         # ── Collect per-TF candle features & probabilities ────
         tf_probs: dict[str, float] = {}
         per_tf_detail: dict[str, dict[str, Any]] = {}
+        latest_candles_by_tf: dict[str, dict[str, Any]] = {}
         available: int = 0
 
         for tf in _TF_ORDER:
@@ -472,6 +504,8 @@ class L2MTAAnalyzer:
 
             if candle is None:
                 continue
+
+            latest_candles_by_tf[tf] = candle
 
             slope, body_str, wick_rej = _candle_features(candle)
             p_i = _per_tf_probability(slope, body_str, wick_rej)
@@ -535,7 +569,8 @@ class L2MTAAnalyzer:
 
         # ── Regime-adaptive alignment gate ────────────────────
         _pass_t, _fail_t = _ALIGNMENT_THRESHOLDS.get(
-            regime, _ALIGNMENT_THRESHOLDS_DEFAULT,
+            regime,
+            _ALIGNMENT_THRESHOLDS_DEFAULT,
         )
         if alignment_strength >= _pass_t:
             aligned = True
@@ -691,6 +726,7 @@ class L2MTAAnalyzer:
             "aligned": aligned,
             "alignment_strength": round(alignment_strength, 4),
             "per_tf_bias": per_tf_detail,
+            "candle_age_by_tf": self._latest_candle_age_by_tf(latest_candles_by_tf),
             # ── New Bayesian fields ──
             "p_mta_bull": round(p_mta_bull, 4),
             "p_mta_bear": round(p_mta_bear, 4),
@@ -734,10 +770,20 @@ class L2MTAAnalyzer:
         # Build L1 output for upstream legality check
         l1_output = l1_ctx if l1_ctx else {"valid": True, "continuation_allowed": True}
 
+        candle_age_by_tf = raw_result.get("candle_age_by_tf", {})
+        aggregate_candle_age = None
+        if isinstance(candle_age_by_tf, dict):
+            aggregate_candle_age = self._aggregate_candle_age(cast(dict[str, float | None], candle_age_by_tf))
+
+        candle_source = self.bus or self.context
+        candle_counts = self._candle_counts_by_tf(candle_source, symbol, list(_TF_ORDER))
+
         constitutional = gov.evaluate(
             l1_output=l1_output,
             l2_analysis=raw_result,
             symbol=symbol,
+            candle_age_seconds=aggregate_candle_age,
+            candle_counts=candle_counts,
         )
 
         # Merge: raw fields first, then constitutional overlay

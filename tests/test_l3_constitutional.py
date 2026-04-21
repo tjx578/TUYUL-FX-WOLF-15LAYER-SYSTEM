@@ -246,62 +246,172 @@ class TestStructureConflict:
 
 class TestCompression:
     def test_fail_with_blockers(self):
-        assert _compress_status(["X"], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.HIGH,
-                                True, False, True) == L3Status.FAIL
+        assert (
+            _compress_status(
+                ["X"],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.HIGH,
+                True,
+                False,
+                True,
+            )
+            == L3Status.FAIL
+        )
 
     def test_warn_low_band_in_warn_range(self):
         """LOW band without blockers = score in WARN range (above hard floor)."""
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.LOW,
-                                True, False, True) == L3Status.WARN
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.LOW,
+                True,
+                False,
+                True,
+            )
+            == L3Status.WARN
+        )
 
     def test_fail_not_confirmed(self):
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.HIGH,
-                                False, False, True) == L3Status.FAIL
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.HIGH,
+                False,
+                False,
+                True,
+            )
+            == L3Status.FAIL
+        )
 
     def test_fail_structure_conflict(self):
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.HIGH,
-                                True, True, True) == L3Status.FAIL
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.HIGH,
+                True,
+                True,
+                True,
+            )
+            == L3Status.FAIL
+        )
 
     def test_pass_clean(self):
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.HIGH,
-                                True, False, True) == L3Status.PASS
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.HIGH,
+                True,
+                False,
+                True,
+            )
+            == L3Status.PASS
+        )
 
     def test_pass_with_primary_substitute(self):
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.LEGAL_PRIMARY_SUBSTITUTE, CoherenceBand.MID,
-                                True, False, True) == L3Status.PASS
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
+                CoherenceBand.MID,
+                True,
+                False,
+                True,
+            )
+            == L3Status.PASS
+        )
 
     def test_warn_stale_preserved(self):
-        assert _compress_status([], FreshnessState.STALE_PRESERVED, WarmupState.READY,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.HIGH,
-                                True, False, True) == L3Status.WARN
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.STALE_PRESERVED,
+                WarmupState.READY,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.HIGH,
+                True,
+                False,
+                True,
+            )
+            == L3Status.WARN
+        )
 
     def test_warn_partial_warmup(self):
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.PARTIAL,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.MID,
-                                True, False, True) == L3Status.WARN
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.PARTIAL,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.MID,
+                True,
+                False,
+                True,
+            )
+            == L3Status.WARN
+        )
 
     def test_warn_emergency_preserve(self):
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.LEGAL_EMERGENCY_PRESERVE, CoherenceBand.HIGH,
-                                True, False, True) == L3Status.WARN
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.LEGAL_EMERGENCY_PRESERVE,
+                CoherenceBand.HIGH,
+                True,
+                False,
+                True,
+            )
+            == L3Status.WARN
+        )
 
     def test_warn_neutral_trend(self):
         """NEUTRAL trend with valid analysis → WARN (not FAIL)."""
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.HIGH,
-                                True, False, False) == L3Status.WARN
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.HIGH,
+                True,
+                False,
+                False,
+            )
+            == L3Status.WARN
+        )
 
     def test_warn_neutral_trend_low_band(self):
         """NEUTRAL trend with LOW band (above hard floor) → WARN."""
-        assert _compress_status([], FreshnessState.FRESH, WarmupState.READY,
-                                FallbackClass.NO_FALLBACK, CoherenceBand.LOW,
-                                True, False, False) == L3Status.WARN
+        assert (
+            _compress_status(
+                [],
+                FreshnessState.FRESH,
+                WarmupState.READY,
+                FallbackClass.NO_FALLBACK,
+                CoherenceBand.LOW,
+                True,
+                False,
+                False,
+            )
+            == L3Status.WARN
+        )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -311,18 +421,21 @@ class TestCompression:
 
 class TestWarningCodes:
     def test_stale_close(self):
-        warnings = _collect_warning_codes(FreshnessState.FRESH, WarmupState.READY,
-                                          FallbackClass.NO_FALLBACK, "STALE_CLOSE")
+        warnings = _collect_warning_codes(
+            FreshnessState.FRESH, WarmupState.READY, FallbackClass.NO_FALLBACK, "STALE_CLOSE"
+        )
         assert "STALE_CLOSE_DATA" in warnings
 
     def test_emergency_preserve(self):
-        warnings = _collect_warning_codes(FreshnessState.FRESH, WarmupState.READY,
-                                          FallbackClass.LEGAL_EMERGENCY_PRESERVE, "HEALTHY")
+        warnings = _collect_warning_codes(
+            FreshnessState.FRESH, WarmupState.READY, FallbackClass.LEGAL_EMERGENCY_PRESERVE, "HEALTHY"
+        )
         assert "EMERGENCY_PRESERVE_FALLBACK" in warnings
 
     def test_primary_substitute(self):
-        warnings = _collect_warning_codes(FreshnessState.FRESH, WarmupState.READY,
-                                          FallbackClass.LEGAL_PRIMARY_SUBSTITUTE, "HEALTHY")
+        warnings = _collect_warning_codes(
+            FreshnessState.FRESH, WarmupState.READY, FallbackClass.LEGAL_PRIMARY_SUBSTITUTE, "HEALTHY"
+        )
         assert "PRIMARY_SUBSTITUTE_USED" in warnings
 
 
@@ -432,6 +545,20 @@ class TestGovernorIntegration:
         )
         assert result["status"] == "WARN"
         assert "STALE_PRESERVED_TREND" in result["warning_codes"]
+
+    def test_features_include_candle_age_evidence(self):
+        l3 = _healthy_l3()
+        l3["candle_age_by_tf"] = {"D1": 400000.0, "H4": 15000.0, "H1": 1800.0}
+        result = self.gov.evaluate(
+            l2_output=_healthy_l2(),
+            l3_analysis=l3,
+            symbol="EURUSD",
+            candle_age_seconds=400000.0,
+            h1_bar_count=30,
+        )
+        assert result["features"]["candle_age_seconds"] == 400000.0
+        assert result["features"]["candle_age_by_tf"]["D1"] == 400000.0
+        assert result["features"]["h1_bar_count"] == 30
 
     def test_pass_has_available_sources(self):
         result = self.gov.evaluate(

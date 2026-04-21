@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from analysis.layers.L2_constitutional import (
-    ALIGNMENT_HIGH_GTE,
-    ALIGNMENT_MID_GTE,
     BlockerCode,
     CoherenceBand,
     FallbackClass,
@@ -19,7 +15,6 @@ from analysis.layers.L2_constitutional import (
     _check_upstream_legality,
     _collect_warning_codes,
     _compress_status,
-    _compute_alignment_score,
     _eval_fallback,
     _eval_freshness,
     _eval_warmup,
@@ -440,11 +435,22 @@ class TestL2ConstitutionalGovernor:
             symbol="EURUSD",
         )
         required_keys = {
-            "layer", "layer_version", "timestamp", "input_ref",
-            "status", "continuation_allowed", "blocker_codes", "warning_codes",
-            "fallback_class", "freshness_state", "warmup_state",
-            "coherence_band", "coherence_score",
-            "features", "routing", "audit",
+            "layer",
+            "layer_version",
+            "timestamp",
+            "input_ref",
+            "status",
+            "continuation_allowed",
+            "blocker_codes",
+            "warning_codes",
+            "fallback_class",
+            "freshness_state",
+            "warmup_state",
+            "coherence_band",
+            "coherence_score",
+            "features",
+            "routing",
+            "audit",
         }
         assert required_keys.issubset(set(result.keys()))
 
@@ -455,6 +461,18 @@ class TestL2ConstitutionalGovernor:
             symbol="EURUSD",
         )
         assert result["features"]["alignment_score"] == 0.88
+
+    def test_features_include_candle_age_evidence(self):
+        result = self.gov.evaluate(
+            l1_output=_l1_pass(),
+            l2_analysis=_l2_analysis() | {"candle_age_by_tf": {"D1": 400000.0, "H4": 1000.0, "H1": 300.0}},
+            symbol="EURUSD",
+            candle_age_seconds=400000.0,
+            candle_counts={"D1": 6, "H4": 12, "H1": 30},
+        )
+        assert result["features"]["candle_age_seconds"] == 400000.0
+        assert result["features"]["candle_age_by_tf"]["D1"] == 400000.0
+        assert result["features"]["candle_counts"]["D1"] == 6
 
     def test_coherence_score_equals_alignment_score(self):
         result = self.gov.evaluate(

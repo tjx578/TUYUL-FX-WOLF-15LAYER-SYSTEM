@@ -60,10 +60,11 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
+from analysis.candle_freshness import candle_age_seconds
 from analysis.market.indicators import IndicatorEngine
 from context.live_context_bus import LiveContextBus
 from core.core_quantum_unified import TRQ3DEngine
@@ -233,6 +234,26 @@ class L3TechnicalAnalyzer:
     def set_l2_output(self, l2_output: dict[str, Any]) -> None:
         """Inject L2 output for constitutional upstream check."""
         self._l2_output = l2_output
+
+    @staticmethod
+    def _build_candle_age_by_tf(
+        candles_h1: list[dict[str, Any]],
+        candles_h4: list[dict[str, Any]],
+        candles_d1: list[dict[str, Any]],
+    ) -> dict[str, float | None]:
+        return {
+            "H1": candle_age_seconds(candles_h1[-1]) if candles_h1 else None,
+            "H4": candle_age_seconds(candles_h4[-1]) if candles_h4 else None,
+            "D1": candle_age_seconds(candles_d1[-1]) if candles_d1 else None,
+        }
+
+    @staticmethod
+    def _aggregate_candle_age(candle_age_by_tf: dict[str, float | None]) -> float | None:
+        required_tfs = ("D1", "H4", "H1")
+        required_ages = [age for tf, age in candle_age_by_tf.items() if tf in required_tfs and age is not None]
+        if required_ages:
+            return max(required_ages)
+        return None
 
     # ── public API ─────────────────────────────────────────────────
 
@@ -421,6 +442,8 @@ class L3TechnicalAnalyzer:
             _data_quality,
         )
 
+        candle_age_by_tf = self._build_candle_age_by_tf(candles_h1, candles_h4, candles_d1)
+
         raw_result = {
             # ── v5 contract (PRESERVED IDENTICAL) ─────────────────
             "technical_score": technical_score,
@@ -450,6 +473,7 @@ class L3TechnicalAnalyzer:
             "vpc_zones": confluence.get("vpc_zones", []),
             # ── v6.2 data quality (ADDITIVE) ──────────────────────
             "data_quality": _data_quality,
+            "candle_age_by_tf": candle_age_by_tf,
         }
 
         # ── v6.3 Constitutional governor wrapper ──────────────────
@@ -483,10 +507,20 @@ class L3TechnicalAnalyzer:
         # Build L2 output for upstream legality check
         l2_output = self._l2_output if self._l2_output else {"valid": True, "continuation_allowed": True}
 
+        aggregate_candle_age = self._aggregate_candle_age(cast(dict[str, float | None], raw_result["candle_age_by_tf"]))
+
+        h1_bar_count = None
+        try:
+            h1_bar_count = len(self._bus.get_candle_history(symbol, "H1"))
+        except Exception:
+            h1_bar_count = None
+
         constitutional = gov.evaluate(
             l2_output=l2_output,
             l3_analysis=raw_result,
             symbol=symbol,
+            candle_age_seconds=aggregate_candle_age,
+            h1_bar_count=h1_bar_count,
         )
 
         # Merge: raw fields first, then constitutional overlay

@@ -25,7 +25,7 @@ Zone: analysis/ — pure read-only analysis, no execution side-effects.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from loguru import logger
@@ -35,39 +35,39 @@ from loguru import logger
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L3Status(str, Enum):
+class L3Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class FreshnessState(str, Enum):
+class FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class WarmupState(str, Enum):
+class WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class FallbackClass(str, Enum):
+class FallbackClass(StrEnum):
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
     NO_FALLBACK = "NO_FALLBACK"
 
 
-class CoherenceBand(str, Enum):
+class CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class BlockerCode(str, Enum):
+class BlockerCode(StrEnum):
     UPSTREAM_L2_NOT_CONTINUABLE = "UPSTREAM_L2_NOT_CONTINUABLE"
     REQUIRED_TREND_SOURCE_MISSING = "REQUIRED_TREND_SOURCE_MISSING"
     TREND_CONFIRMATION_UNAVAILABLE = "TREND_CONFIRMATION_UNAVAILABLE"
@@ -321,10 +321,11 @@ def _compress_status(
 
     # LOW band: if no blockers (i.e. above hard floor), allow as WARN
     if band == CoherenceBand.LOW:
-        low_warn_legal = (
-            freshness in (FreshnessState.FRESH, FreshnessState.STALE_PRESERVED, FreshnessState.DEGRADED)
-            and warmup in (WarmupState.READY, WarmupState.PARTIAL)
-        )
+        low_warn_legal = freshness in (
+            FreshnessState.FRESH,
+            FreshnessState.STALE_PRESERVED,
+            FreshnessState.DEGRADED,
+        ) and warmup in (WarmupState.READY, WarmupState.PARTIAL)
         return L3Status.WARN if low_warn_legal else L3Status.FAIL
 
     # NEUTRAL trend (confirmed but non-directional) → WARN envelope
@@ -350,7 +351,8 @@ def _compress_status(
         freshness in (FreshnessState.FRESH, FreshnessState.STALE_PRESERVED, FreshnessState.DEGRADED)
         and warmup in (WarmupState.READY, WarmupState.PARTIAL)
         and band in (CoherenceBand.HIGH, CoherenceBand.MID)
-        and fallback in (
+        and fallback
+        in (
             FallbackClass.NO_FALLBACK,
             FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             FallbackClass.LEGAL_EMERGENCY_PRESERVE,
@@ -536,10 +538,7 @@ class L3ConstitutionalGovernor:
                 rule_hits.append("low_confirmation_score_warn_band")
 
         # ── Step 7: Compress status ───────────────────────────
-        blocker_strs = list(dict.fromkeys(
-            b.value if isinstance(b, BlockerCode) else str(b)
-            for b in blockers
-        ))
+        blocker_strs = list(dict.fromkeys(b.value if isinstance(b, BlockerCode) else str(b) for b in blockers))
 
         status = _compress_status(
             blocker_strs,
@@ -556,7 +555,10 @@ class L3ConstitutionalGovernor:
         warning_codes: list[str] = []
         if status in (L3Status.PASS, L3Status.WARN):
             warning_codes = _collect_warning_codes(
-                freshness, warmup, fallback, dq,
+                freshness,
+                warmup,
+                fallback,
+                dq,
             )
             if not trend_is_directional:
                 warning_codes.append("NEUTRAL_TREND_NON_DIRECTIONAL")
@@ -589,9 +591,7 @@ class L3ConstitutionalGovernor:
         if l3_analysis.get("ob_detected", False):
             available_sources.append("ob_detection")
 
-        missing_sources = [
-            s for s in REQUIRED_TREND_SOURCES if s not in available_sources
-        ]
+        missing_sources = [s for s in REQUIRED_TREND_SOURCES if s not in available_sources]
 
         # Log constitutional result
         logger.info(
@@ -630,6 +630,9 @@ class L3ConstitutionalGovernor:
                 "confirmation_score": round(confirmation_score, 4),
                 "trend_confirmed": trend_confirmed,
                 "structure_conflict": structure_conflict,
+                "candle_age_seconds": candle_age_seconds,
+                "candle_age_by_tf": dict(l3_analysis.get("candle_age_by_tf", {})),
+                "h1_bar_count": h1_bar_count,
                 "required_trend_sources": list(REQUIRED_TREND_SOURCES),
                 "available_trend_sources": available_sources,
                 "missing_trend_sources": missing_sources,
