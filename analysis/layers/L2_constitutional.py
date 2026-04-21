@@ -24,6 +24,7 @@ Zone: analysis/ — pure read-only analysis, no execution side-effects.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -484,6 +485,149 @@ def _collect_warning_codes(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# §4b  GRANULAR MTA DIAGNOSTICS EMITTER
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Blocker codes that warrant full per-timeframe forensic output
+_DIAGNOSTIC_TRIGGER_BLOCKERS: frozenset[str] = frozenset(
+    {
+        BlockerCode.MTA_HIERARCHY_VIOLATED.value,
+        BlockerCode.LOW_ALIGNMENT_BAND.value,
+    }
+)
+
+# Adjacent TF pairs in HTF→LTF order used for conflict analysis
+_ADJACENT_TF_PAIRS: list[tuple[str, str]] = [
+    ("MN", "W1"),
+    ("W1", "D1"),
+    ("D1", "H4"),
+    ("H4", "H1"),
+    ("H1", "M15"),
+]
+
+
+def _emit_mta_diagnostics_warning(
+    *,
+    symbol: str,
+    l2_analysis: dict[str, Any],
+    available_tfs: list[str],
+    alignment_score: float,
+    candle_counts: dict[str, int] | None,
+    blocker_strs: list[str],
+) -> None:
+    """Emit granular per-timeframe MTA diagnostics at WARNING level.
+
+    Called before a blocker is raised so forensic data is always present
+    in logs alongside the blocker name.  Pure read-only — no side-effects
+    on the evaluation result.
+
+    Emits a single WARNING line with key ``L2_MTA_DIAGNOSTICS`` and a
+    JSON payload that includes per-TF bias, candle counts, freshness,
+    alignment score vs threshold, conflict analysis, and a human-readable
+    recommendation.
+    """
+    # Only emit when a hierarchy or alignment blocker is present
+    if not any(b in _DIAGNOSTIC_TRIGGER_BLOCKERS for b in blocker_strs):
+        return
+
+    per_tf_bias_raw: dict[str, Any] = l2_analysis.get("per_tf_bias", {})
+    if not isinstance(per_tf_bias_raw, dict):
+        per_tf_bias_raw = {}
+
+    candle_age_by_tf: dict[str, Any] = l2_analysis.get("candle_age_by_tf", {})
+    if not isinstance(candle_age_by_tf, dict):
+        candle_age_by_tf = {}
+
+    counts: dict[str, int] = candle_counts or {}
+
+    # ── Per-timeframe analysis block ─────────────────────────────────────
+    timeframe_analysis: dict[str, dict[str, Any]] = {}
+    for tf in available_tfs:
+        detail = per_tf_bias_raw.get(tf, {})
+        bias_label = _tf_bias_direction(detail).lower()  # "bullish" / "bearish" / "neutral"
+
+        age_raw = candle_age_by_tf.get(tf)
+        try:
+            age_sec: float | None = float(age_raw) if age_raw is not None else None
+        except (TypeError, ValueError):
+            age_sec = None
+
+        is_fresh = (age_sec is not None and age_sec <= FRESHNESS_STALE_THRESHOLD_SEC)
+
+        timeframe_analysis[tf] = {
+            "bias": bias_label,
+            "candle_count": counts.get(tf, 0),
+            "latest_age_seconds": round(age_sec, 1) if age_sec is not None else None,
+            "is_fresh": is_fresh,
+        }
+
+    # ── Conflict analysis ─────────────────────────────────────────────────
+    conflict_pairs: dict[str, str] = {}
+    conflict_descriptions: list[str] = []
+
+    for htf, ltf in _ADJACENT_TF_PAIRS:
+        if htf not in available_tfs or ltf not in available_tfs:
+            continue
+        htf_dir = _tf_bias_direction(per_tf_bias_raw.get(htf, {}))
+        ltf_dir = _tf_bias_direction(per_tf_bias_raw.get(ltf, {}))
+        pair_key = f"{htf}_vs_{ltf}"
+
+        if "NEUTRAL" in (htf_dir, ltf_dir):
+            conflict_pairs[pair_key] = "indeterminate"
+        elif htf_dir == ltf_dir:
+            conflict_pairs[pair_key] = "aligned"
+        else:
+            conflict_pairs[pair_key] = "conflict"
+            conflict_descriptions.append(
+                f"{htf} {htf_dir.lower()} but {ltf} {ltf_dir.lower()}"
+            )
+
+    # Build human-readable reason string
+    if conflict_descriptions:
+        reason_str = "; ".join(conflict_descriptions) + " — hierarchy broken"
+    elif BlockerCode.LOW_ALIGNMENT_BAND.value in blocker_strs:
+        reason_str = f"alignment_score={alignment_score:.4f} below required threshold={ALIGNMENT_MID_GTE}"
+    else:
+        reason_str = "MTA hierarchy or alignment constraint violated"
+
+    conflict_analysis: dict[str, Any] = dict(conflict_pairs)
+    conflict_analysis["reason"] = reason_str
+
+    # ── Failed reason & recommendation ───────────────────────────────────
+    active_blockers = [b for b in blocker_strs if b in _DIAGNOSTIC_TRIGGER_BLOCKERS]
+    failed_reason = " + ".join(
+        f"{b} due to {reason_str}" if i == 0 else b
+        for i, b in enumerate(active_blockers)
+    )
+
+    recommendation = (
+        "Check if market is genuinely not aligned (accept HOLD), "
+        "threshold needs calibration (adjust with evidence), "
+        "H1/H4 producer has gaps (fix producer), "
+        "or candle counts are insufficient (wait for warmup)"
+    )
+
+    # ── Assemble and emit ─────────────────────────────────────────────────
+    payload: dict[str, Any] = {
+        "symbol": symbol,
+        "timeframe_analysis": timeframe_analysis,
+        "alignment_score": round(alignment_score, 4),
+        "required_alignment_threshold": ALIGNMENT_MID_GTE,
+        "available_timeframes": list(available_tfs),
+        "conflict_analysis": conflict_analysis,
+        "failed_reason": failed_reason,
+        "recommendation": recommendation,
+    }
+
+    try:
+        payload_json = json.dumps(payload, default=str)
+    except Exception:
+        payload_json = str(payload)
+
+    logger.warning("L2_MTA_DIAGNOSTICS {}", payload_json)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # §5  L2 CONSTITUTIONAL GOVERNOR
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -618,6 +762,18 @@ class L2ConstitutionalGovernor:
         # ── Step 7: Compress status ───────────────────────────
         # Deduplicate blockers
         blocker_strs = list(dict.fromkeys(b.value if isinstance(b, BlockerCode) else str(b) for b in blockers))
+
+        # ── Step 6c: Emit granular MTA diagnostics before blocking ────────
+        # Fires only when MTA_HIERARCHY_VIOLATED or LOW_ALIGNMENT_BAND are
+        # present.  Pure read-only — no effect on evaluation outcome.
+        _emit_mta_diagnostics_warning(
+            symbol=symbol,
+            l2_analysis=l2_analysis,
+            available_tfs=available_tfs,
+            alignment_score=alignment_score,
+            candle_counts=candle_counts,
+            blocker_strs=blocker_strs,
+        )
 
         status = _compress_status(
             blocker_strs,
