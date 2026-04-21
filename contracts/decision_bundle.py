@@ -36,9 +36,10 @@ class DecisionBundle(BaseModel):
 
       - ``context``      : L1 regime/coherence/bias.
       - ``alpha``        : L2 MTA, L3 technical, L4 confluence, L9 SMC.
-      - ``validation``   : L5 psychology, L7 Monte Carlo, L8 TII, L11 RR.
+      - ``validation``   : L5 psychology, L7 Monte Carlo, L8 TII.
       - ``risk``         : L6 risk matrix + runtime_risk + capital_guardian.
       - ``portfolio``    : L10 position sizing / exposure.
+      - ``economics``    : L11 RR / battle strategy / expectancy economics.
       - ``meta``         : L13 reflective, L15 learning (advisory only).
 
     ``post_authority_veto`` (V11) is intentionally NOT part of the bundle:
@@ -66,6 +67,7 @@ class DecisionBundle(BaseModel):
     validation_evidence: list[LayerEnvelope] = Field(default_factory=list)
     risk_evidence: list[LayerEnvelope] = Field(default_factory=list)
     portfolio_evidence: list[LayerEnvelope] = Field(default_factory=list)
+    economics_evidence: list[LayerEnvelope] = Field(default_factory=list)
     meta_evidence: list[LayerEnvelope] = Field(default_factory=list)
 
     created_at: datetime
@@ -76,6 +78,7 @@ class DecisionBundle(BaseModel):
         "validation_evidence",
         "risk_evidence",
         "portfolio_evidence",
+        "economics_evidence",
         "meta_evidence",
     )
     @classmethod
@@ -98,6 +101,7 @@ class DecisionBundle(BaseModel):
             *self.validation_evidence,
             *self.risk_evidence,
             *self.portfolio_evidence,
+            *self.economics_evidence,
             *self.meta_evidence,
         ]
 
@@ -138,6 +142,7 @@ class DecisionBundle(BaseModel):
                 "validation": len(self.validation_evidence),
                 "risk": len(self.risk_evidence),
                 "portfolio": len(self.portfolio_evidence),
+                "economics": len(self.economics_evidence),
                 "meta": len(self.meta_evidence),
             },
             "hard_blockers": self.hard_blockers(),
