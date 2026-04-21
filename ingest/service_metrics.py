@@ -19,6 +19,7 @@ from core.metrics import (
     INGEST_TICKS_PER_PAIR,
     INGEST_WS_CONNECTED,
 )
+from ingest.dependencies import _pair_last_tick_ts as pair_last_tick_ts
 
 # ── Health probe for container orchestration ──────────────────────
 _INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
@@ -33,7 +34,8 @@ producer_present = False
 producer_last_heartbeat_ts = 0.0
 
 # ── Per-pair tick tracking ────────────────────────────────────────
-pair_last_tick_ts: dict[str, float] = {}
+# Use the same receipt-time map as REST fallback silence detection so
+# readiness, health reporting, and fallback logic cannot drift apart.
 pair_last_tick_fingerprint: dict[str, tuple[tuple[int, float], float]] = {}
 
 _PRODUCER_FRESHNESS_SEC = max(5.0, float(os.getenv("INGEST_PRODUCER_FRESHNESS_SEC", "20")))
@@ -97,7 +99,10 @@ def mark_pair_tick(symbol: str, ts: float | None = None) -> None:
     pair = str(symbol).strip().upper()
     if not pair:
         return
-    pair_last_tick_ts[pair] = time() if ts is None else float(ts)
+    # Freshness is based on local receipt time, not provider event time.
+    # The optional ts is kept for call-site compatibility only.
+    _ = ts
+    pair_last_tick_ts[pair] = time()
     INGEST_TICKS_PER_PAIR.labels(symbol=pair).inc()
 
 

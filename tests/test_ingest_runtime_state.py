@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from ingest import service_metrics
+import time as pytime
+
+from ingest import dependencies, service_metrics
 
 
 def test_build_runtime_snapshot_reports_rest_degraded_mode(monkeypatch) -> None:
@@ -34,3 +36,27 @@ def test_build_runtime_snapshot_reports_ready_ws_primary(monkeypatch) -> None:
     assert snapshot["ingest_state"] == "READY"
     assert snapshot["market_data_mode"] == "WS_PRIMARY"
     assert snapshot["rest_fallback_active"] is False
+
+
+def test_mark_pair_tick_uses_local_receipt_time_for_freshness(monkeypatch) -> None:
+    fake_now = 1234.5
+    monkeypatch.setattr(service_metrics, "time", lambda: fake_now)
+    monkeypatch.setattr(service_metrics, "pair_last_tick_ts", {})
+
+    service_metrics.mark_pair_tick("EURUSD", ts=fake_now - 60)
+
+    assert service_metrics.pair_last_tick_ts["EURUSD"] == fake_now
+
+
+def test_fresh_pair_count_uses_shared_dependencies_tick_map(monkeypatch) -> None:
+    now = pytime.time()
+    monkeypatch.setattr(service_metrics, "pair_last_tick_ts", dependencies._pair_last_tick_ts)
+    dependencies._pair_last_tick_ts.clear()
+    dependencies._pair_last_tick_ts.update(
+        {
+            "EURUSD": now,
+            "GBPUSD": now - service_metrics._PRODUCER_FRESHNESS_SEC - 1,
+        }
+    )
+
+    assert service_metrics.fresh_pair_count() == 1

@@ -325,7 +325,7 @@ async def run_ingest_services(
             tick_ts = ts.timestamp()
             if is_duplicate_pair_tick(symbol, price, tick_ts):
                 return
-            mark_pair_tick(symbol, tick_ts)
+            mark_pair_tick(symbol)
 
             # ── Diagnostic: track tick flow ──
             _tick_counts[symbol] = _tick_counts.get(symbol, 0) + 1
