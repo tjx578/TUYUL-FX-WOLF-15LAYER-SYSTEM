@@ -13,6 +13,7 @@ These tests are boundary-only; no market logic is exercised.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -29,8 +30,8 @@ from contracts.layer_envelope import LayerEnvelope
 SECRET = "unit-test-secret-do-not-use-in-prod"
 
 
-def _base_envelope(**overrides) -> LayerEnvelope:
-    payload = dict(
+def _base_envelope(**overrides: Any) -> LayerEnvelope:
+    payload: dict[str, Any] = dict(
         signal_id="sig-001",
         symbol="EURUSD",
         layer_id="L1",
@@ -51,8 +52,8 @@ def _base_envelope(**overrides) -> LayerEnvelope:
 class TestLayerEnvelope:
     def test_frozen(self) -> None:
         env = _base_envelope()
-        with pytest.raises(Exception):
-            env.status = "FAIL"  # type: ignore[misc]
+        with pytest.raises(Exception):  # noqa: B017
+            env.status = "FAIL"
 
     def test_rejects_account_state_in_evidence(self) -> None:
         with pytest.raises(ValueError, match="account state"):
