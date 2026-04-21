@@ -99,7 +99,10 @@ async def engine_diagnostic() -> dict[str, Any]:
             "engine_heartbeat_utc": "<ISO UTC string> | null",
             "engine_heartbeat_age_seconds": <float> | null,
             "verdict_meta": {
-                "<PAIR>": { "verdict": ..., "confidence": ..., "cached_at": ... },
+                "<PAIR>": {
+                    "verdict": ..., "confidence": ..., "cached_at": ...,
+                    "l2_mta_summary": { ... } | null
+                },
                 ...
             }
         }

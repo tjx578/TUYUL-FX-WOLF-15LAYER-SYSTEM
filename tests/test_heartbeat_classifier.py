@@ -575,6 +575,41 @@ class TestHeartbeatRoute:
         assert result["overall"] == "DEGRADED"
         assert result["ingest_health"] == "DEGRADED"
 
+    @pytest.mark.asyncio
+    async def test_engine_diagnostic_includes_l2_mta_summary(self) -> None:
+        from unittest.mock import patch
+
+        from core.redis_keys import ENGINE_HEARTBEAT_SIMPLE, L12_VERDICT_META_PREFIX
+
+        redis = AsyncMock()
+
+        async def _fake_get(key: str) -> str | None:
+            if key == ENGINE_HEARTBEAT_SIMPLE:
+                return "2026-04-01T00:00:00+00:00"
+            if key == f"{L12_VERDICT_META_PREFIX}EURUSD":
+                return orjson.dumps(
+                    {
+                        "pair": "EURUSD",
+                        "verdict": "HOLD",
+                        "l2_mta_summary": {
+                            "alignment_score": 0.42,
+                            "required_alignment": 0.65,
+                            "primary_conflict": "D1_H4_DIRECTION_CONFLICT",
+                        },
+                    }
+                ).decode("utf-8")
+            return None
+
+        redis.get.side_effect = _fake_get
+        redis.scan.side_effect = [(0, [f"{L12_VERDICT_META_PREFIX}EURUSD"])]
+
+        with patch("api.heartbeat_routes.get_async_redis", return_value=redis):
+            from api.heartbeat_routes import engine_diagnostic
+
+            result = await engine_diagnostic()
+
+        assert result["verdict_meta"]["EURUSD"]["l2_mta_summary"]["primary_conflict"] == "D1_H4_DIRECTION_CONFLICT"
+
 
 # ══════════════════════════════════════════════════════════
 #  classify_ingest_health — split heartbeat logic tests

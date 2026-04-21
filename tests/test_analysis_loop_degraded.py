@@ -282,3 +282,27 @@ class TestBuildVerdictCachePayload:
             }
             payload = _build_verdict_cache_payload("EURUSD", result)
             assert payload["confidence"] == expected, f"{label} → {payload['confidence']}"
+
+    def test_payload_includes_mta_diagnostics_when_present(self):
+        from startup.analysis_loop import _build_verdict_cache_payload
+
+        result = {
+            "synthesis": {},
+            "l12_verdict": {"verdict": "HOLD", "confidence": "LOW"},
+            "execution_map": {},
+            "governance": {},
+            "mta_diagnostics": {
+                "alignment_score": 0.42,
+                "required_alignment": 0.65,
+                "direction_consensus": "mixed",
+                "primary_conflict": "D1_H4_DIRECTION_CONFLICT",
+                "available_timeframes": ["D1", "H4", "H1"],
+                "missing_timeframes": ["W1"],
+                "conflict_matrix": [{"left": "D1", "right": "H4"}],
+            },
+        }
+
+        payload = _build_verdict_cache_payload("EURUSD", result)
+
+        assert payload["mta_diagnostics"]["alignment_score"] == 0.42
+        assert payload["mta_diagnostics"]["primary_conflict"] == "D1_H4_DIRECTION_CONFLICT"

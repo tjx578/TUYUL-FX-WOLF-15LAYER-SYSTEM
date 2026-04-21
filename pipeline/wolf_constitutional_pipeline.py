@@ -2497,6 +2497,12 @@ class WolfConstitutionalPipeline:
 
             result_dict = result.to_dict()
 
+            l2_constitutional = l2.get("constitutional") if isinstance(l2, dict) else None
+            if isinstance(l2_constitutional, dict):
+                mta_diagnostics = l2_constitutional.get("mta_diagnostics")
+                if isinstance(mta_diagnostics, dict):
+                    result_dict["mta_diagnostics"] = dict(mta_diagnostics)
+
             # ── Tick→verdict end-to-end latency ────────────────────
             if tick_ts is not None:
                 e2e_latency = time.time() - tick_ts

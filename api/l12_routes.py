@@ -96,6 +96,15 @@ def _extract_governance_action(raw: dict[str, Any] | None) -> str:
     return "ALLOW"
 
 
+def _extract_mta_diagnostics(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    diagnostics = raw.get("mta_diagnostics")
+    if isinstance(diagnostics, dict):
+        return dict(diagnostics)
+    return None
+
+
 @router.get("/api/v1/l12/{pair}", dependencies=[Depends(verify_token)])
 def fetch_l12(pair: str):
     """Get L12 verdict for a specific pair with timezone info."""
@@ -493,6 +502,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     scores: dict[str, Any] = verdict_data.get("scores", {})
     execution: dict[str, Any] = verdict_data.get("execution", {})
     layers_raw: dict[str, Any] = verdict_data.get("layers", {})
+    mta_diagnostics = _extract_mta_diagnostics(verdict_data)
 
     verdict_str: str = verdict_data.get("verdict", "UNKNOWN")
     confidence = verdict_data.get("confidence", 0)
@@ -686,6 +696,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         "observability": {
             "signal_conditioning": verdict_data.get("system", {}).get("signal_conditioning", {}),
         },
+        "mta_diagnostics": mta_diagnostics,
         "dag": {
             "nodes": dag_nodes,
             "edges": dag_edges,

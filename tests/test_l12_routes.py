@@ -135,6 +135,27 @@ def test_build_pipeline_data_includes_signal_conditioning_observability() -> Non
     assert obs["source"] == "candle_H1"
 
 
+def test_build_pipeline_data_exposes_mta_diagnostics() -> None:
+    verdict_data = {
+        "verdict": "HOLD",
+        "confidence": 0.42,
+        "gates": {"passed": 4, "total": 9, "gate_1_tii": "PASS"},
+        "mta_diagnostics": {
+            "alignment_score": 0.42,
+            "required_alignment": 0.65,
+            "direction_consensus": "mixed",
+            "primary_conflict": "D1_H4_DIRECTION_CONFLICT",
+            "available_timeframes": ["D1", "H4", "H1"],
+            "missing_timeframes": ["W1"],
+        },
+    }
+
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+
+    assert pipeline["mta_diagnostics"]["alignment_score"] == 0.42
+    assert pipeline["mta_diagnostics"]["primary_conflict"] == "D1_H4_DIRECTION_CONFLICT"
+
+
 def test_extract_hold_block_reason_prefers_cached_field() -> None:
     raw = {
         "last_hold_block_reason": "GOVERNANCE_HOLD:stale_preserved",

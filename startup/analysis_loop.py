@@ -166,6 +166,28 @@ def _extract_last_hold_block_reason(result: dict[str, Any]) -> str | None:
     return None
 
 
+def _extract_mta_diagnostics(result: dict[str, Any]) -> dict[str, Any] | None:
+    raw = result.get("mta_diagnostics")
+    if isinstance(raw, dict):
+        return dict(raw)
+
+    diagnostics = result.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        nested = diagnostics.get("mta_diagnostics")
+        if isinstance(nested, dict):
+            return dict(nested)
+
+    l2 = result.get("l2")
+    if isinstance(l2, dict):
+        constitutional = l2.get("constitutional")
+        if isinstance(constitutional, dict):
+            nested = constitutional.get("mta_diagnostics")
+            if isinstance(nested, dict):
+                return dict(nested)
+
+    return None
+
+
 def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str, Any]:
     synthesis = dict(result.get("synthesis") or {})
     l12 = dict(result.get("l12_verdict") or {})
@@ -233,6 +255,10 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
         "errors": list(result.get("errors") or []),
         "last_hold_block_reason": hold_block_reason,
     }
+
+    mta_diagnostics = _extract_mta_diagnostics(result)
+    if mta_diagnostics is not None:
+        payload["mta_diagnostics"] = mta_diagnostics
 
     gates_v74 = l12.get("gates_v74")
     if isinstance(gates_v74, dict):

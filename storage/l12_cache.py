@@ -29,9 +29,29 @@ VERDICT_TTL_SEC = 3600
 VERDICT_STREAM_MAXLEN = 1000
 
 
+def _build_l2_mta_summary(data: dict[str, Any]) -> dict[str, Any] | None:
+    diagnostics = data.get("mta_diagnostics")
+    if not isinstance(diagnostics, dict):
+        return None
+
+    alignment_score = float(diagnostics.get("alignment_score") or 0.0)
+    required_alignment = float(diagnostics.get("required_alignment") or 0.0)
+    return {
+        "alignment_score": alignment_score,
+        "required_alignment": required_alignment,
+        "alignment_gap": round(required_alignment - alignment_score, 4),
+        "direction_consensus": diagnostics.get("direction_consensus"),
+        "primary_conflict": diagnostics.get("primary_conflict"),
+        "available_timeframes": list(diagnostics.get("available_timeframes") or []),
+        "missing_timeframes": list(diagnostics.get("missing_timeframes") or []),
+        "conflict_count": len(list(diagnostics.get("conflict_matrix") or [])),
+    }
+
+
 def set_verdict(pair: str, data: dict[str, Any]) -> None:
     # Inject server timestamp for staleness detection
     data_with_ts = {**data, "_cached_at": time.time()}
+    l2_mta_summary = _build_l2_mta_summary(data_with_ts)
     redis_client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
     logger.debug("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
     VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="ok").inc()
@@ -45,6 +65,8 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
             "cached_at": data_with_ts.get("_cached_at"),
             "timestamp": data_with_ts.get("timestamp"),
         }
+        if l2_mta_summary is not None:
+            meta["l2_mta_summary"] = l2_mta_summary
         redis_client.set(l12_verdict_meta(pair), json.dumps(meta), ex=VERDICT_TTL_SEC)
     except Exception as exc:
         logger.debug("[VerdictPath] Failed to write verdict meta for {}: {}", pair, exc)
@@ -80,12 +102,14 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
                 "cached_at": data_with_ts.get("_cached_at"),
                 "scores": data_with_ts.get("scores"),
                 "gates": data_with_ts.get("gates"),
+                "l2_mta_summary": l2_mta_summary,
             },
         )
 
 
 async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
     data_with_ts = {**data, "_cached_at": time.time()}
+    l2_mta_summary = _build_l2_mta_summary(data_with_ts)
     client = await get_client()
     await client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
     logger.debug("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
@@ -100,6 +124,8 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
             "cached_at": data_with_ts.get("_cached_at"),
             "timestamp": data_with_ts.get("timestamp"),
         }
+        if l2_mta_summary is not None:
+            meta["l2_mta_summary"] = l2_mta_summary
         await client.set(l12_verdict_meta(pair), json.dumps(meta), ex=VERDICT_TTL_SEC)
     except Exception as exc:
         logger.debug("[VerdictPath] Failed to write async verdict meta for {}: {}", pair, exc)
@@ -135,6 +161,7 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
                 "cached_at": data_with_ts.get("_cached_at"),
                 "scores": data_with_ts.get("scores"),
                 "gates": data_with_ts.get("gates"),
+                "l2_mta_summary": l2_mta_summary,
             },
         )
 
