@@ -7,6 +7,7 @@ Tests periodic refresh, Redis RPUSH + PUBLISH, and error handling.
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import orjson
 import pytest
 
 from ingest.htf_refresh_scheduler import HTFRefreshScheduler
@@ -109,14 +110,18 @@ class TestHTFRefreshScheduler:
         fetcher.fetch = AsyncMock(return_value=[_d1_candle("EURUSD")])
 
         mock_redis = AsyncMock()
+        mock_redis.lrange = AsyncMock(return_value=[])
+        mock_redis.delete = AsyncMock(return_value=1)
         mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.llen = AsyncMock(return_value=0)
         with patch("ingest.htf_refresh_scheduler.enqueue_candle_dict"):
             scheduler = HTFRefreshScheduler(redis_client=mock_redis)
             await scheduler._push_candles_to_redis([_d1_candle("EURUSD")])
 
+        mock_redis.delete.assert_called_once()
         mock_redis.rpush.assert_called_once()
         mock_redis.ltrim.assert_called_once()
+        mock_redis.hset.assert_called_once()
         mock_redis.publish.assert_called_once()
         # Verify the pub/sub channel format
         pub_call = mock_redis.publish.call_args
@@ -170,7 +175,7 @@ class TestHTFRefreshScheduler:
         assert scheduler.d1_bars == 10
         assert scheduler.w1_bars == 8
 
-    def test_build_write_result_telemetry_advanced_latest(self, _patch_deps: dict) -> None:
+    def test_build_write_result_telemetry_latest_updated(self, _patch_deps: dict) -> None:
         scheduler = HTFRefreshScheduler()
         candles = [_d1_candle("CADJPY")]
         before = {
@@ -194,14 +199,16 @@ class TestHTFRefreshScheduler:
             candles=candles,
             before=before,
             after=after,
+            written_count=1,
+            dedup_skipped=0,
         )
 
-        assert result == "advanced_latest"
+        assert result == "latest_updated"
         assert telemetry["written_count"] == 1
-        assert telemetry["result"] == "advanced_latest"
+        assert telemetry["result"] == "latest_updated"
         assert telemetry["history_len_after"] == 51
 
-    def test_build_write_result_telemetry_provider_stale(self, _patch_deps: dict) -> None:
+    def test_build_write_result_telemetry_provider_older_ignored(self, _patch_deps: dict) -> None:
         scheduler = HTFRefreshScheduler()
         candles = [_d1_candle("CADJPY")]
         before = {
@@ -219,14 +226,127 @@ class TestHTFRefreshScheduler:
             candles=candles,
             before=before,
             after=after,
+            written_count=0,
+            dedup_skipped=1,
         )
 
-        assert result == "provider_stale"
-        assert telemetry["result"] == "provider_stale"
+        assert result == "provider_older_ignored"
+        assert telemetry["result"] == "provider_older_ignored"
+
+    def test_build_write_result_telemetry_latest_update_failed(self, _patch_deps: dict) -> None:
+        scheduler = HTFRefreshScheduler()
+        candles = [
+            {
+                **_d1_candle("CADJPY"),
+                "timestamp": datetime(2026, 4, 20, 21, 0, 0, tzinfo=UTC).timestamp(),
+            }
+        ]
+        before = {
+            "redis_latest_ts": "2026-04-13T21:00:00+00:00",
+            "history_len": 300,
+        }
+        after = {
+            "redis_latest_ts": "2026-04-13T21:00:00+00:00",
+            "history_len": 300,
+        }
+
+        result, telemetry = scheduler._build_write_result_telemetry(
+            symbol="CADJPY",
+            timeframe="D1",
+            candles=candles,
+            before=before,
+            after=after,
+            written_count=1,
+            dedup_skipped=0,
+        )
+
+        assert result == "latest_update_failed"
+        assert telemetry["result"] == "latest_update_failed"
+
+    def test_merge_candle_history_keeps_newest_capped_window(self, _patch_deps: dict) -> None:
+        scheduler = HTFRefreshScheduler()
+        existing = [
+            {
+                **_d1_candle("CADJPY"),
+                "timestamp": datetime(2025, 6, 18 + offset, 21, 0, 0, tzinfo=UTC).timestamp(),
+            }
+            for offset in range(300)
+        ]
+        incoming = [
+            {
+                **_d1_candle("CADJPY"),
+                "timestamp": datetime(2026, 4, 11 + offset, 21, 0, 0, tzinfo=UTC).timestamp(),
+            }
+            for offset in range(10)
+        ]
+
+        retained, latest_payload, written_count, dedup_skipped = scheduler._merge_candle_history(existing, incoming, 300)
+
+        assert len(retained) == 300
+        assert latest_payload is not None
+        assert scheduler._candle_timestamp(latest_payload) == datetime(2026, 4, 20, 21, 0, 0, tzinfo=UTC)
+        assert scheduler._candle_timestamp(retained[0]) == datetime(2025, 6, 28, 21, 0, 0, tzinfo=UTC)
+        assert written_count == 10
+        assert dedup_skipped == 0
+
+    @pytest.mark.asyncio
+    async def test_push_candles_promotes_latest_hash_when_history_is_capped(self, _patch_deps: dict) -> None:
+        existing_history = [
+            orjson.dumps(
+                {
+                    **_d1_candle("CADJPY"),
+                    "timestamp": datetime(2025, 6, 18 + offset, 21, 0, 0, tzinfo=UTC).timestamp(),
+                }
+            )
+            for offset in range(300)
+        ]
+        incoming = [
+            {
+                **_d1_candle("CADJPY"),
+                "timestamp": datetime(2026, 4, 11 + offset, 21, 0, 0, tzinfo=UTC).timestamp(),
+            }
+            for offset in range(10)
+        ]
+
+        before_hash = {
+            b"data": orjson.dumps(
+                {
+                    **_d1_candle("CADJPY"),
+                    "timestamp": datetime(2026, 4, 13, 21, 0, 0, tzinfo=UTC).timestamp(),
+                }
+            ),
+            b"last_seen_ts": b"100.0",
+        }
+        after_hash = {
+            b"data": orjson.dumps(
+                {
+                    **_d1_candle("CADJPY"),
+                    "timestamp": datetime(2026, 4, 20, 21, 0, 0, tzinfo=UTC).timestamp(),
+                }
+            ),
+            b"last_seen_ts": b"200.0",
+        }
+
+        mock_redis = AsyncMock()
+        mock_redis.lrange = AsyncMock(return_value=existing_history)
+        mock_redis.delete = AsyncMock(return_value=1)
+        mock_redis.hgetall = AsyncMock(side_effect=[before_hash, after_hash])
+        mock_redis.llen = AsyncMock(side_effect=[300, 300])
+
+        with patch("ingest.htf_refresh_scheduler.enqueue_candle_dict"):
+            scheduler = HTFRefreshScheduler(redis_client=mock_redis)
+            await scheduler._push_candles_to_redis(incoming)
+
+        hset_call = mock_redis.hset.call_args
+        assert hset_call.args[0] == "wolf15:candle:CADJPY:D1"
+        latest_payload = orjson.loads(hset_call.kwargs["mapping"]["data"])
+        assert latest_payload["timestamp"] == datetime(2026, 4, 20, 21, 0, 0, tzinfo=UTC).timestamp()
 
     @pytest.mark.asyncio
     async def test_push_candles_logs_redis_write_error_telemetry(self, _patch_deps: dict) -> None:
         mock_redis = AsyncMock()
+        mock_redis.lrange = AsyncMock(return_value=[])
+        mock_redis.delete = AsyncMock(return_value=1)
         mock_redis.hgetall = AsyncMock(return_value={})
         mock_redis.llen = AsyncMock(return_value=0)
         mock_redis.rpush = AsyncMock(side_effect=RuntimeError("boom"))

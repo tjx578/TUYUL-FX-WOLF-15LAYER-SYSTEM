@@ -173,6 +173,81 @@ class HTFRefreshScheduler:
                     break
         return latest
 
+    @classmethod
+    def _candle_timestamp(cls, candle: dict[str, Any]) -> datetime | None:
+        for key in ("timestamp", "open_time", "close_time", "time", "datetime"):
+            parsed = cls._parse_candle_timestamp(candle.get(key))
+            if parsed is not None:
+                return parsed
+        return None
+
+    @staticmethod
+    def _decode_candle_payload(raw: Any) -> dict[str, Any] | None:
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, bytes | bytearray):
+            raw = raw.decode("utf-8")
+        if not isinstance(raw, str):
+            return None
+        try:
+            payload = orjson.loads(raw)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @classmethod
+    def _merge_candle_history(
+        cls,
+        existing: list[dict[str, Any]],
+        incoming: list[dict[str, Any]],
+        cap: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, int, int]:
+        merged_by_ts: dict[datetime, dict[str, Any]] = {}
+        incoming_ts: set[datetime] = set()
+
+        for candle in existing:
+            candle_ts = cls._candle_timestamp(candle)
+            if candle_ts is None:
+                continue
+            merged_by_ts[candle_ts] = candle
+
+        for candle in incoming:
+            candle_ts = cls._candle_timestamp(candle)
+            if candle_ts is None:
+                continue
+            incoming_ts.add(candle_ts)
+            merged_by_ts[candle_ts] = candle
+
+        merged = [merged_by_ts[candle_ts] for candle_ts in sorted(merged_by_ts)]
+        retained = merged[-cap:] if cap > 0 else merged
+        latest = retained[-1] if retained else None
+
+        retained_ts = {
+            candle_ts
+            for candle in retained
+            if (candle_ts := cls._candle_timestamp(candle)) is not None
+        }
+        written_count = sum(1 for candle_ts in incoming_ts if candle_ts in retained_ts)
+        dedup_skipped = max(0, len(incoming) - written_count)
+
+        return retained, latest, written_count, dedup_skipped
+
+    async def _read_redis_history_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
+        if not self._redis:
+            return []
+
+        try:
+            raw_history = await self._redis.lrange(candle_history(symbol, timeframe), 0, -1)
+        except Exception:
+            return []
+
+        candles: list[dict[str, Any]] = []
+        for item in raw_history:
+            candle = self._decode_candle_payload(item)
+            if candle is not None:
+                candles.append(candle)
+        return candles
+
     async def _read_redis_candle_state(self, symbol: str, timeframe: str) -> dict[str, Any]:
         if not self._redis:
             return {}
@@ -186,6 +261,7 @@ class HTFRefreshScheduler:
             "redis_latest_ts": None,
             "redis_last_seen_ts": None,
             "history_len": None,
+            "redis_latest_candle": None,
         }
 
         try:
@@ -201,6 +277,7 @@ class HTFRefreshScheduler:
                     try:
                         latest_candle_payload = orjson.loads(decoded["data"])
                         if isinstance(latest_candle_payload, dict):
+                            state["redis_latest_candle"] = latest_candle_payload
                             latest_dt = self._latest_candle_dt([latest_candle_payload])
                             if latest_dt is not None:
                                 state["redis_latest_ts"] = latest_dt.isoformat()
@@ -233,6 +310,8 @@ class HTFRefreshScheduler:
         candles: list[dict[str, Any]],
         before: dict[str, Any],
         after: dict[str, Any],
+        written_count: int | None = None,
+        dedup_skipped: int | None = None,
         write_error: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         provider_latest_dt = cls._latest_candle_dt(candles)
@@ -240,32 +319,41 @@ class HTFRefreshScheduler:
         before_dt = cls._parse_candle_timestamp(before.get("redis_latest_ts"))
         after_dt = cls._parse_candle_timestamp(after.get("redis_latest_ts"))
 
-        result = "advanced_latest"
+        result = "latest_updated"
         if write_error:
             result = "redis_write_error"
         elif provider_latest_dt is None:
             result = "timestamp_parse_error"
         elif after_dt is None:
             result = "write_not_proven"
-        elif after_dt > (before_dt or datetime.min.replace(tzinfo=UTC)):
-            result = "advanced_latest"
-        elif before_dt is not None and provider_latest_dt <= before_dt:
-            result = "provider_stale"
-        else:
+        elif provider_latest_dt > (before_dt or datetime.min.replace(tzinfo=UTC)) and after_dt >= provider_latest_dt:
+            result = "latest_updated"
+        elif before_dt is not None and provider_latest_dt == before_dt and after_dt == before_dt:
             result = "same_latest_dedup_ok"
+        elif before_dt is not None and provider_latest_dt < before_dt and after_dt == before_dt:
+            result = "provider_older_ignored"
+        elif provider_latest_dt > (before_dt or datetime.min.replace(tzinfo=UTC)) and after_dt < provider_latest_dt:
+            result = "latest_update_failed"
+        else:
+            result = "write_not_proven"
 
         latest_age_seconds_after = None
         if after_dt is not None:
             latest_age_seconds_after = max(0.0, (datetime.now(tz=UTC) - after_dt).total_seconds())
 
-        written_count = len(candles) if write_error is None else 0
+        effective_written_count = 0 if write_error is not None else (written_count if written_count is not None else len(candles))
+        effective_dedup_skipped = (
+            dedup_skipped
+            if dedup_skipped is not None
+            else max(0, len(candles) - effective_written_count)
+        )
         telemetry = {
             "event": "htf_refresh_write_result",
             "symbol": symbol,
             "timeframe": timeframe,
             "fetched_count": len(candles),
-            "written_count": written_count,
-            "dedup_skipped": max(0, len(candles) - written_count),
+            "written_count": effective_written_count,
+            "dedup_skipped": effective_dedup_skipped,
             "provider_latest_ts": provider_latest_ts,
             "redis_latest_ts_before": before.get("redis_latest_ts"),
             "redis_latest_ts_after": after.get("redis_latest_ts"),
@@ -277,6 +365,7 @@ class HTFRefreshScheduler:
             "redis_history_key": after.get("redis_history_key") or before.get("redis_history_key"),
             "redis_latest_key": after.get("redis_latest_key") or before.get("redis_latest_key"),
             "result": result,
+            "latest_updated": result == "latest_updated",
         }
         if write_error:
             telemetry["write_error"] = write_error
@@ -288,27 +377,11 @@ class HTFRefreshScheduler:
 
     @staticmethod
     def _telemetry_log_method(result: str) -> str:
-        if result in {"redis_write_error", "timestamp_parse_error"}:
+        if result in {"redis_write_error", "timestamp_parse_error", "latest_update_failed"}:
             return "error"
         if result == "write_not_proven":
             return "warning"
         return "info"
-
-    async def _emit_htf_write_result(self, symbol: str, timeframe: str, candles: list[dict[str, Any]], write_error: str | None = None) -> None:
-        before = await self._read_redis_candle_state(symbol, timeframe)
-        after = before
-        if write_error is None:
-            after = await self._read_redis_candle_state(symbol, timeframe)
-        result, telemetry = self._build_write_result_telemetry(
-            symbol=symbol,
-            timeframe=timeframe,
-            candles=candles,
-            before=before,
-            after=after,
-            write_error=write_error,
-        )
-        log_method = self._telemetry_log_method(result)
-        getattr(logger, log_method)("HTF write result {}", telemetry)
 
     async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
         """RPUSH + PUBLISH candle dicts to Redis (best-effort).
@@ -339,21 +412,52 @@ class HTFRefreshScheduler:
             timeframe = str(items[0][2].get("timeframe", ""))
             before = await self._read_redis_candle_state(symbol, timeframe) if symbol and timeframe else {}
             try:
-                # Push all candles for this key in one RPUSH call, then trim once
-                await self._redis.rpush(key, *[item[0] for item in items])
-                await self._redis.ltrim(key, -self._redis_maxlen, -1)
+                existing_history = await self._read_redis_history_candles(symbol, timeframe)
+                if latest_candle_payload := before.get("redis_latest_candle"):
+                    existing_history.append(latest_candle_payload)
+
+                incoming_candles = [item[2] for item in items]
+                retained, latest_payload, written_count, dedup_skipped = self._merge_candle_history(
+                    existing_history,
+                    incoming_candles,
+                    self._redis_maxlen,
+                )
+
+                await self._redis.delete(key)
+                if retained:
+                    retained_json = [orjson.dumps(candle).decode("utf-8") for candle in retained]
+                    await self._redis.rpush(key, *retained_json)
+                    await self._redis.ltrim(key, -self._redis_maxlen, -1)
+
+                if latest_payload is not None:
+                    await self._redis.hset(
+                        latest_candle(symbol, timeframe),
+                        mapping={
+                            "data": orjson.dumps(latest_payload).decode("utf-8"),
+                            "last_seen_ts": str(datetime.now(tz=UTC).timestamp()),
+                        },
+                    )
+
+                incoming_by_ts: dict[datetime, tuple[str, str, dict[str, Any]]] = {}
                 for candle_json, pub_channel, candle in items:
+                    candle_ts = self._candle_timestamp(candle)
+                    if candle_ts is None:
+                        continue
+                    incoming_by_ts[candle_ts] = (candle_json, pub_channel, candle)
+
+                for _, (candle_json, pub_channel, candle) in sorted(incoming_by_ts.items()):
                     enqueue_candle_dict(candle)
-                    # PUBLISH so engine RedisConsumer sees the update in real-time
                     await self._redis.publish(pub_channel, candle_json)
                 if symbol and timeframe:
                     after = await self._read_redis_candle_state(symbol, timeframe)
                     result, telemetry = self._build_write_result_telemetry(
                         symbol=symbol,
                         timeframe=timeframe,
-                        candles=[item[2] for item in items],
+                        candles=incoming_candles,
                         before=before,
                         after=after,
+                        written_count=written_count,
+                        dedup_skipped=dedup_skipped,
                     )
                     getattr(logger, self._telemetry_log_method(result))("HTF write result {}", telemetry)
             except Exception as exc:
@@ -365,6 +469,8 @@ class HTFRefreshScheduler:
                         candles=[item[2] for item in items],
                         before=before,
                         after=before,
+                        written_count=0,
+                        dedup_skipped=len(items),
                         write_error=f"{type(exc).__name__}:{exc}",
                     )
                     getattr(logger, self._telemetry_log_method(result))("HTF write result {}", telemetry)

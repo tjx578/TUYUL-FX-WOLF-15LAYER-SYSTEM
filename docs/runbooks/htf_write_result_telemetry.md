@@ -43,20 +43,23 @@ Emit per symbol/timeframe untuk D1 dan W1 setelah write attempt selesai.
   "latest_age_seconds_after": 126000.0,
   "redis_history_key": "wolf15:candle_history:CADJPY:D1",
   "redis_latest_key": "wolf15:candle:CADJPY:D1",
-  "result": "advanced_latest"
+  "result": "latest_updated"
 }
 ```
 
 ## Result Enum
 
-- `advanced_latest`
+- `latest_updated`
   Redis latest timestamp sesudah write lebih baru dari sebelum write.
 
 - `same_latest_dedup_ok`
   Provider latest tidak lebih baru dari Redis latest; tidak ada indikasi write path rusak.
 
-- `provider_stale`
-  Provider latest timestamp lebih tua atau sama dengan Redis latest sebelum write.
+- `provider_older_ignored`
+  Provider latest timestamp lebih tua dari Redis latest sebelum write, sehingga latest existing dipertahankan.
+
+- `latest_update_failed`
+  Provider latest lebih baru dari Redis latest sebelum write, tetapi latest sesudah write masih tertinggal.
 
 - `write_not_proven`
   Fetch ada, tetapi latest Redis setelah write tidak bisa dibuktikan.
@@ -70,14 +73,15 @@ Emit per symbol/timeframe untuk D1 dan W1 setelah write attempt selesai.
 ## Severity Rules
 
 - `info`
-  - `advanced_latest`
+  - `latest_updated`
   - `same_latest_dedup_ok`
-  - `provider_stale`
+  - `provider_older_ignored`
 
 - `warning`
   - `write_not_proven`
 
 - `error`
+  - `latest_update_failed`
   - `redis_write_error`
   - `timestamp_parse_error`
 
@@ -88,13 +92,14 @@ Operator harus bisa menjawab dari log saja:
 1. Apakah CADJPY D1 benar-benar menulis ke Redis?
 2. Apakah latest Redis timestamp bergerak maju?
 3. Apakah write nol terjadi karena duplicate normal atau karena bug?
-4. Apakah provider sendiri stale?
+4. Apakah provider lebih tua dari latest existing atau latest update justru gagal?
 5. Apakah latest hash dan history list tetap sinkron?
 
 ## Test Minimum
 
-- provider latest > redis latest before => `advanced_latest`
-- provider latest <= redis latest before => `provider_stale`
+- provider latest > redis latest before dan latest hash maju => `latest_updated`
+- provider latest > redis latest before tapi latest hash tetap tertinggal => `latest_update_failed`
+- provider latest < redis latest before => `provider_older_ignored`
 - redis write exception => `redis_write_error`
 - invalid timestamp => `timestamp_parse_error`
 
