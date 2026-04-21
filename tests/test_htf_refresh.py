@@ -4,7 +4,7 @@ Unit tests for HTFRefreshScheduler — periodic D1/W1 candle refresh.
 Tests periodic refresh, Redis RPUSH + PUBLISH, and error handling.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import orjson
@@ -265,22 +265,26 @@ class TestHTFRefreshScheduler:
 
     def test_merge_candle_history_keeps_newest_capped_window(self, _patch_deps: dict) -> None:
         scheduler = HTFRefreshScheduler()
+        existing_start = datetime(2025, 6, 18, 21, 0, 0, tzinfo=UTC)
+        incoming_start = datetime(2026, 4, 11, 21, 0, 0, tzinfo=UTC)
         existing = [
             {
                 **_d1_candle("CADJPY"),
-                "timestamp": datetime(2025, 6, 18 + offset, 21, 0, 0, tzinfo=UTC).timestamp(),
+                "timestamp": (existing_start + timedelta(days=offset)).timestamp(),
             }
             for offset in range(300)
         ]
         incoming = [
             {
                 **_d1_candle("CADJPY"),
-                "timestamp": datetime(2026, 4, 11 + offset, 21, 0, 0, tzinfo=UTC).timestamp(),
+                "timestamp": (incoming_start + timedelta(days=offset)).timestamp(),
             }
             for offset in range(10)
         ]
 
-        retained, latest_payload, written_count, dedup_skipped = scheduler._merge_candle_history(existing, incoming, 300)
+        retained, latest_payload, written_count, dedup_skipped = scheduler._merge_candle_history(
+            existing, incoming, 300
+        )
 
         assert len(retained) == 300
         assert latest_payload is not None
@@ -291,11 +295,13 @@ class TestHTFRefreshScheduler:
 
     @pytest.mark.asyncio
     async def test_push_candles_promotes_latest_hash_when_history_is_capped(self, _patch_deps: dict) -> None:
+        existing_start = datetime(2025, 6, 18, 21, 0, 0, tzinfo=UTC)
+        incoming_start = datetime(2026, 4, 11, 21, 0, 0, tzinfo=UTC)
         existing_history = [
             orjson.dumps(
                 {
                     **_d1_candle("CADJPY"),
-                    "timestamp": datetime(2025, 6, 18 + offset, 21, 0, 0, tzinfo=UTC).timestamp(),
+                    "timestamp": (existing_start + timedelta(days=offset)).timestamp(),
                 }
             )
             for offset in range(300)
@@ -303,7 +309,7 @@ class TestHTFRefreshScheduler:
         incoming = [
             {
                 **_d1_candle("CADJPY"),
-                "timestamp": datetime(2026, 4, 11 + offset, 21, 0, 0, tzinfo=UTC).timestamp(),
+                "timestamp": (incoming_start + timedelta(days=offset)).timestamp(),
             }
             for offset in range(10)
         ]
