@@ -532,6 +532,56 @@ class TestPushCandlesToRedis:
         # Each candle still published individually to pub/sub
         assert redis_mock.publish.call_count == 4
 
+    @pytest.mark.asyncio
+    async def test_logs_skip_reason_summary_for_duplicate_batch(self):
+        """All-skipped warning should surface duplicate-open-time as the skip reason."""
+        redis_mock = AsyncMock()
+        poller = self._make_poller_with_redis(redis_mock)
+        candles = [
+            _make_candle("EURUSD", "M15", 1.09, 1700000000.0),
+            _make_candle("EURUSD", "M15", 1.10, 1700000900.0),
+        ]
+
+        with (
+            patch("core.candle_bridge_fix.is_duplicate_candle", new=AsyncMock(return_value=True)),
+            patch("core.candle_bridge_fix.is_ohlc_stale", new=AsyncMock(return_value=False)),
+            patch("ingest.rest_poll_fallback.logger") as mock_logger,
+        ):
+            await poller._push_candles_to_redis(candles)
+
+        redis_mock.rpush.assert_not_called()
+        message_args = mock_logger.warning.call_args.args
+        assert message_args[0] == (
+            "[RestPoll] 0/{} candles written — all skipped! symbol={} timeframe={} reasons={} sample={} first_keys={}"
+        )
+        assert message_args[1] == 2
+        assert message_args[2] == "EURUSD"
+        assert message_args[3] == "M15"
+        assert message_args[4] == {"duplicate_open_time": 2}
+        assert message_args[5][0]["reason"] == "duplicate_open_time"
+
+    @pytest.mark.asyncio
+    async def test_logs_skip_reason_summary_for_stale_ohlc_batch(self):
+        """All-skipped warning should surface stale-OHLC as the skip reason."""
+        redis_mock = AsyncMock()
+        poller = self._make_poller_with_redis(redis_mock)
+        candles = [
+            _make_candle("EURUSD", "M15", 1.09, 1700000000.0),
+            _make_candle("EURUSD", "M15", 1.09, 1700000900.0),
+        ]
+
+        with (
+            patch("core.candle_bridge_fix.is_duplicate_candle", new=AsyncMock(return_value=False)),
+            patch("core.candle_bridge_fix.is_ohlc_stale", new=AsyncMock(return_value=True)),
+            patch("ingest.rest_poll_fallback.logger") as mock_logger,
+        ):
+            await poller._push_candles_to_redis(candles)
+
+        redis_mock.rpush.assert_not_called()
+        message_args = mock_logger.warning.call_args.args
+        assert message_args[4] == {"stale_ohlc": 2}
+        assert message_args[5][0]["reason"] == "stale_ohlc"
+
 
 class TestGetSilentPairs:
     """Tests for RestPollFallback._get_silent_pairs()."""

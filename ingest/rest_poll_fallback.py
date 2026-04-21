@@ -357,7 +357,6 @@ class RestPollFallback:
 
         if not self._redis:
             self._redis_skips += len(candles)
-            # Log loudly on first skip, then throttle
             if self._redis_skips <= len(candles):
                 logger.error(
                     "[RestPoll] REDIS CLIENT IS NONE — "
@@ -376,6 +375,8 @@ class RestPollFallback:
 
         written_in_batch = 0
         dedup_skipped = 0
+        skip_reasons: dict[str, int] = defaultdict(int)
+        skip_samples: list[dict[str, Any]] = []
 
         # ── Group valid candles by Redis key to batch writes ─────────────────
         # Reduces round trips: 4 × N → 3 × K + N  (K = unique keys, K ≤ N).
@@ -386,7 +387,16 @@ class RestPollFallback:
             symbol = candle.get("symbol")
             timeframe = candle.get("timeframe")
             if not symbol or not timeframe:
-                # ── FIX: log skip instead of silent continue ──
+                skip_reasons["missing_symbol_or_timeframe"] += 1
+                if len(skip_samples) < 3:
+                    skip_samples.append(
+                        {
+                            "reason": "missing_symbol_or_timeframe",
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "timestamp": candle.get("timestamp") or candle.get("time"),
+                        }
+                    )
                 logger.warning(
                     "[RestPoll] Candle skipped — missing symbol=%s timeframe=%s keys=%s",
                     symbol,
@@ -396,18 +406,36 @@ class RestPollFallback:
                 continue
             key = candle_history(symbol, timeframe)
 
-            # ── Dedup: skip candles whose open_time already exists in Redis tail ──
             try:
                 if await is_duplicate_candle(self._redis, key, candle):
                     dedup_skipped += 1
+                    skip_reasons["duplicate_open_time"] += 1
+                    if len(skip_samples) < 3:
+                        skip_samples.append(
+                            {
+                                "reason": "duplicate_open_time",
+                                "symbol": symbol,
+                                "timeframe": timeframe,
+                                "timestamp": candle.get("timestamp") or candle.get("time"),
+                            }
+                        )
                     continue
             except Exception:
                 pass  # On error, allow write
 
-            # ── Stale-OHLC guard: skip if last N bars have identical prices ──
             try:
                 if await is_ohlc_stale(self._redis, key, candle):
                     dedup_skipped += 1
+                    skip_reasons["stale_ohlc"] += 1
+                    if len(skip_samples) < 3:
+                        skip_samples.append(
+                            {
+                                "reason": "stale_ohlc",
+                                "symbol": symbol,
+                                "timeframe": timeframe,
+                                "timestamp": candle.get("timestamp") or candle.get("time"),
+                            }
+                        )
                     logger.debug(
                         "[RestPoll] Stale OHLC skip %s:%s — consecutive identical prices",
                         symbol,
@@ -452,7 +480,7 @@ class RestPollFallback:
 
         if written_in_batch > 0:
             logger.info(
-                "[RestPoll] Wrote {}/{} candles to Redis ({}/{}) \u2014 dedup_skipped: {}, total writes: {}",
+                "[RestPoll] Wrote {}/{} candles to Redis ({}/{}) — dedup_skipped: {}, total writes: {}",
                 written_in_batch,
                 len(candles),
                 candles[0].get("symbol", "?"),
@@ -462,7 +490,11 @@ class RestPollFallback:
             )
         elif candles:
             logger.warning(
-                "[RestPoll] 0/{} candles written \u2014 all skipped! First candle keys: {}",
+                "[RestPoll] 0/{} candles written — all skipped! symbol={} timeframe={} reasons={} sample={} first_keys={}",
                 len(candles),
+                candles[0].get("symbol", "?"),
+                candles[0].get("timeframe", "?"),
+                dict(skip_reasons),
+                skip_samples,
                 list(candles[0].keys())[:10],
             )
