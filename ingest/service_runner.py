@@ -29,11 +29,14 @@ from ingest.micro_candle_chain import MicroCandleChain
 from ingest.redis_setup import RedisClient, connect_redis_with_retry
 from ingest.rest_poll_fallback import RestPollFallback
 from ingest.service_metrics import (
+    build_runtime_snapshot,
+    current_ingest_state,
     emit_ingest_runtime_metrics,
     health_probe,
     is_duplicate_pair_tick,
     mark_pair_tick,
     producer_fresh,
+    set_enabled_symbol_count,
     set_startup_mode,
     update_producer_health,
 )
@@ -57,6 +60,7 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient, shutdown_ev
     while not (shutdown_event and shutdown_event.is_set()):
         connected = bool(getattr(ws_feed, "is_connected", False))
         update_producer_health(connected)
+        snapshot = build_runtime_snapshot(ws_connected=connected)
         health_probe.set_detail("producer_present", "1" if connected else "0")
         health_probe.set_detail("producer_fresh", "1" if producer_fresh() else "0")
         from ingest.service_metrics import producer_last_heartbeat_ts
@@ -68,17 +72,31 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient, shutdown_ev
         health_probe.set_detail("fresh_pairs", str(fresh_pair_count()))
         emit_ingest_runtime_metrics(connected)
 
-        process_payload = {"producer": "ingest_service", "ts": time(), "ws_connected": connected}
+        process_payload = {
+            "producer": "ingest_service",
+            "ts": time(),
+            **snapshot,
+        }
         with contextlib.suppress(Exception):
             await redis.set(HEARTBEAT_INGEST_PROCESS, orjson.dumps(process_payload).decode("utf-8"))
 
         if connected:
-            provider_payload = {"producer": "finnhub_ws", "ts": time()}
+            provider_payload = {
+                "producer": "finnhub_ws",
+                "ts": time(),
+                "ws_connected": True,
+                "subscribed_symbols": snapshot["symbols_total"],
+                "last_disconnect_reason": getattr(ws_feed, "last_disconnect_reason", None),
+            }
             with contextlib.suppress(Exception):
                 await redis.set(HEARTBEAT_INGEST_PROVIDER, orjson.dumps(provider_payload).decode("utf-8"))
 
         if connected:
-            legacy_payload = {"producer": "finnhub_ws", "ts": time()}
+            legacy_payload = {
+                "producer": "finnhub_ws",
+                "ts": time(),
+                "market_data_mode": snapshot["market_data_mode"],
+            }
             with contextlib.suppress(Exception):
                 await redis.set(_PRODUCER_HEARTBEAT_KEY, orjson.dumps(legacy_payload).decode("utf-8"))
 
@@ -128,9 +146,10 @@ async def _check_redis(redis: RedisClient | None) -> bool:
 class _HealthCheckRunner:
     """Periodic health monitor for WS + Redis connectivity."""
 
-    def __init__(self, ws_connected_fn: Any, redis: RedisClient | None) -> None:
+    def __init__(self, ws_connected_fn: Any, redis: RedisClient | None, ws_feed: Any = None) -> None:
         self._ws_connected_fn = ws_connected_fn
         self._redis = redis
+        self._ws_feed = ws_feed
 
     async def run(self) -> None:
         """Monitor system health and log status."""
@@ -139,13 +158,26 @@ class _HealthCheckRunner:
                 ws_connected = bool(self._ws_connected_fn())
                 redis_ok = await _check_redis(self._redis)
 
-                status = "HEALTHY" if (ws_connected and redis_ok) else "DEGRADED"
+                snapshot = build_runtime_snapshot(ws_connected=ws_connected)
+                status = "HEALTHY" if (ws_connected and redis_ok and snapshot["ready"]) else "DEGRADED"
+                health_probe.set_detail("redis", "connected" if redis_ok else "disconnected")
+                health_probe.set_detail(
+                    "last_ws_disconnect_reason", str(getattr(self._ws_feed, "last_disconnect_reason", ""))
+                )
 
                 logger.info(
-                    "[HealthCheck] {} | WS: {} | Redis: {}",
+                    "[HealthCheck] {} | ingest_state={} mode={} ready={} degraded={} WS: {} Redis: {} producer_fresh={} fresh_pairs={}/{} last_ws_reason={}",
                     status,
+                    snapshot["ingest_state"],
+                    snapshot["market_data_mode"],
+                    snapshot["ready"],
+                    snapshot["degraded"],
                     ws_connected,
                     redis_ok,
+                    snapshot["producer_fresh"],
+                    snapshot["symbols_ready"],
+                    snapshot["symbols_total"],
+                    getattr(self._ws_feed, "last_disconnect_reason", None),
                 )
 
                 await asyncio.sleep(60)  # Check every minute
@@ -178,6 +210,7 @@ async def run_ingest_services(
         return
 
     enabled_symbols = get_enabled_symbols()
+    set_enabled_symbol_count(len(enabled_symbols))
     logger.info(
         "[Ingest] enabled symbols count={} symbols={}",
         len(enabled_symbols),
@@ -340,10 +373,12 @@ async def run_ingest_services(
         health_probe.set_detail("redis", "connected")
         health_probe.set_detail("system_state", system_state.get_state().value)
         logger.info(
-            "Ingest startup mode: {} | ready={} degraded={}",
+            "Ingest startup mode: {} | ready={} degraded={} ingest_state={} market_data_mode={}",
             startup_mode,
             sm.ingest_ready,
             sm.ingest_degraded,
+            current_ingest_state(ws_connected=False),
+            build_runtime_snapshot(ws_connected=False)["market_data_mode"],
         )
 
         macro_monthly = MacroMonthlyScheduler(enabled_symbols, redis_client=redis)
@@ -401,7 +436,7 @@ async def run_ingest_services(
             ),
             asyncio.create_task(
                 _run_supervised(
-                    "health_check", _HealthCheckRunner(_ws_connected_fn, redis), shutdown_event=shutdown_event
+                    "health_check", _HealthCheckRunner(_ws_connected_fn, redis, ws_feed), shutdown_event=shutdown_event
                 ),
                 name="IngestSupervisor:health_check",
             ),

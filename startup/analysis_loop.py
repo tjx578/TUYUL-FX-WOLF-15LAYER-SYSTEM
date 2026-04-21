@@ -17,6 +17,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+import orjson
 from loguru import logger
 
 from analysis.latency_tracker import LatencyTracker
@@ -246,7 +247,7 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
     raw_gates = payload.get("gates")
     if isinstance(raw_gates, dict):
         gate_array: list[dict[str, Any]] = []
-        _GATE_NAMES = {
+        _GATE_NAMES = {  # noqa: N806
             "gate_1_tii": "TII Symmetry",
             "gate_2_montecarlo": "Monte Carlo Win %",
             "gate_3_frpc": "FRPC Sync",
@@ -376,8 +377,10 @@ def _build_ingest_health_detail(
     health: IngestHealthState,
     process_status: Any,
     provider_status: Any,
+    process_payload: dict[str, Any] | None = None,
+    provider_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    detail = {
         "event": "ingest_health_degraded",
         "health": health.value,
         "process_state": process_status.state.value,
@@ -390,6 +393,36 @@ def _build_ingest_health_detail(
         "provider_last_ts": _heartbeat_last_ts_iso(provider_status.last_ts),
         "threshold_seconds": _INGEST_HEARTBEAT_MAX_AGE_SEC,
     }
+    if process_payload:
+        for key in (
+            "ingest_state",
+            "market_data_mode",
+            "startup_mode",
+            "ready",
+            "degraded",
+            "ws_connected",
+            "rest_fallback_active",
+            "producer_fresh",
+            "symbols_ready",
+            "symbols_total",
+        ):
+            if key in process_payload:
+                detail[key] = process_payload.get(key)
+    if provider_payload and "last_disconnect_reason" in provider_payload:
+        detail["last_ws_disconnect_reason"] = provider_payload.get("last_disconnect_reason")
+    return detail
+
+
+def _parse_heartbeat_payload(payload_raw: Any) -> dict[str, Any]:
+    if payload_raw is None:
+        return {}
+    import orjson as _orjson  # noqa: PLC0415
+
+    try:
+        data = _orjson.loads(payload_raw)
+    except (_orjson.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _check_ingest_heartbeat(redis_client: Any) -> None:
@@ -411,6 +444,8 @@ def _check_ingest_heartbeat(redis_client: Any) -> None:
 
     process_status = classify_heartbeat(raw_process, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest_process")
     provider_status = classify_heartbeat(raw_provider, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest_provider")
+    process_payload = _parse_heartbeat_payload(raw_process)
+    provider_payload = _parse_heartbeat_payload(raw_provider)
 
     # If split keys not yet populated, fall back to legacy combined key
     if process_status.state == HeartbeatState.MISSING and provider_status.state == HeartbeatState.MISSING:
@@ -442,7 +477,13 @@ def _check_ingest_heartbeat(redis_client: Any) -> None:
     if health.state != IngestHealthState.HEALTHY:  # noqa: SIM102
         if (now - _last_ingest_heartbeat_log_ts) >= _INGEST_HEARTBEAT_LOG_INTERVAL_SEC:
             _last_ingest_heartbeat_log_ts = now
-            detail = _build_ingest_health_detail(health.state, process_status, provider_status)
+            detail = _build_ingest_health_detail(
+                health.state,
+                process_status,
+                provider_status,
+                process_payload,
+                provider_payload,
+            )
             if health.state == IngestHealthState.DEGRADED:
                 INGEST_PROVIDER_DEGRADED_TOTAL.labels(provider_state=provider_status.state.value).inc()
             logger.warning(
@@ -458,7 +499,6 @@ async def _engine_heartbeat_loop(
     shutdown_event: asyncio.Event | None = None,
 ) -> None:
     """Publish engine heartbeat and consume ingest heartbeat for cross-service health."""
-    import orjson  # noqa: PLC0415
 
     _redis_client = None
     try:

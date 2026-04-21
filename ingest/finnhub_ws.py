@@ -168,6 +168,11 @@ class FinnhubWebSocket:
         self._connected: bool = False
         self._ws: websockets.asyncio.client.ClientConnection | None = None
         self._lock_renewal_task: asyncio.Task[None] | None = None
+        self._last_disconnect_reason: str | None = None
+
+    @property
+    def last_disconnect_reason(self) -> str | None:
+        return self._last_disconnect_reason
 
     @property
     def is_connected(self) -> bool:
@@ -292,6 +297,7 @@ class FinnhubWebSocket:
                 "Subscribed to symbol",
                 extra={"symbol": symbol},
             )
+        logger.info("[WS] Subscribed {} symbols", len(self._symbols))
 
     async def _connect(self) -> websockets.asyncio.client.ClientConnection:
         """Establish WebSocket connection to Finnhub.
@@ -433,6 +439,7 @@ class FinnhubWebSocket:
                     ws = cast(websockets.asyncio.client.ClientConnection, ws_raw)
                     self._ws = ws
                     self._connected = True
+                    self._last_disconnect_reason = None
                     attempt = 0  # Reset on success
 
                     # Record WS connect timestamp for pipeline warmup grace
@@ -459,7 +466,11 @@ class FinnhubWebSocket:
                         with contextlib.suppress(Exception):
                             asyncio.create_task(self._on_connect(), name="WsOnConnectCallback")
 
-                    logger.info("[WS] Connected successfully")
+                    logger.info(
+                        "[WS] Connected successfully | subscribed_symbols={} replica_id={}",
+                        len(self._symbols),
+                        self._replica_id,
+                    )
 
                     # Subscribe to symbols
                     await self._subscribe(ws)
@@ -474,9 +485,8 @@ class FinnhubWebSocket:
             except FinnhubRateLimitError as exc:
                 attempt += 1
                 delay = exc.retry_after
-                finnhub_ws_reconnect_attempts.labels(
-                    replica_id=self._replica_id, error_type="rate_limit"
-                ).inc()
+                self._last_disconnect_reason = f"rate_limit:{type(exc).__name__}"
+                finnhub_ws_reconnect_attempts.labels(replica_id=self._replica_id, error_type="rate_limit").inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
                 logger.warning(
                     "[WS] Rate limited (429). Retry in %.1f s (attempt %d)",
@@ -490,9 +500,8 @@ class FinnhubWebSocket:
             except websockets.exceptions.ConnectionClosedError as exc:
                 attempt += 1
                 delay = _calculate_backoff(attempt)
-                finnhub_ws_reconnect_attempts.labels(
-                    replica_id=self._replica_id, error_type="connection_closed"
-                ).inc()
+                self._last_disconnect_reason = f"connection_closed:{exc}"
+                finnhub_ws_reconnect_attempts.labels(replica_id=self._replica_id, error_type="connection_closed").inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
                 logger.warning(
                     "[WS] Connection closed: %s. Retry in %.1f s (attempt %d)",
@@ -508,9 +517,8 @@ class FinnhubWebSocket:
                 attempt += 1
                 delay = _calculate_backoff(attempt)
                 error_type = type(exc).__name__
-                finnhub_ws_reconnect_attempts.labels(
-                    replica_id=self._replica_id, error_type=error_type
-                ).inc()
+                self._last_disconnect_reason = f"{error_type}:{exc}"
+                finnhub_ws_reconnect_attempts.labels(replica_id=self._replica_id, error_type=error_type).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
                 logger.error(
                     "[WS] Error: %s (%s). Retry in %.1f s (attempt %d)",

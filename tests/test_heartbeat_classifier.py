@@ -266,9 +266,26 @@ class TestEngineHeartbeatCheck:
 
         def mock_get(key: str) -> str | None:
             if "process" in key:
-                return orjson.dumps({"producer": "ingest_service", "ts": now - 2, "ws_connected": True}).decode()
+                return orjson.dumps(
+                    {
+                        "producer": "ingest_service",
+                        "ts": now - 2,
+                        "ws_connected": False,
+                        "ingest_state": "DEGRADED_REST_FALLBACK",
+                        "market_data_mode": "REST_DEGRADED",
+                        "rest_fallback_active": True,
+                        "symbols_ready": 30,
+                        "symbols_total": 30,
+                    }
+                ).decode()
             if "provider" in key:
-                return orjson.dumps({"producer": "finnhub_ws", "ts": now - 45}).decode()
+                return orjson.dumps(
+                    {
+                        "producer": "finnhub_ws",
+                        "ts": now - 45,
+                        "last_disconnect_reason": "ConnectionClosedError:network_drop",
+                    }
+                ).decode()
             return None
 
         mock_redis.get.side_effect = mock_get
@@ -292,6 +309,12 @@ class TestEngineHeartbeatCheck:
         assert detail["process_producer"] == "ingest_service"
         assert detail["threshold_seconds"] == 30.0
         assert detail["provider_last_ts"] is not None
+        assert detail["ingest_state"] == "DEGRADED_REST_FALLBACK"
+        assert detail["market_data_mode"] == "REST_DEGRADED"
+        assert detail["rest_fallback_active"] is True
+        assert detail["symbols_ready"] == 30
+        assert detail["symbols_total"] == 30
+        assert detail["last_ws_disconnect_reason"] == "ConnectionClosedError:network_drop"
 
 
 # ══════════════════════════════════════════════════════════

@@ -25,6 +25,8 @@ _INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "
 health_probe: HealthProbe = HealthProbe(port=_INGEST_HEALTH_PORT, service_name="ingest")
 ingest_ready = False
 ingest_degraded = False
+startup_mode = "unknown"
+enabled_symbol_count = 0
 
 # ── Producer state ────────────────────────────────────────────────
 producer_present = False
@@ -40,6 +42,46 @@ _PRODUCER_FRESHNESS_SEC = max(5.0, float(os.getenv("INGEST_PRODUCER_FRESHNESS_SE
 _DEDUP_REFRACTORY_S = float(os.getenv("INGEST_DEDUP_REFRACTORY_S", "0.05"))
 _WS_CONNECT_GRACE_SEC = float(os.getenv("INGEST_WS_CONNECT_GRACE_SEC", "45"))
 _CACHE_MODES = ("unknown", "warmup", "stale_cache", "failed_no_cache")
+
+
+def set_enabled_symbol_count(count: int) -> None:
+    global enabled_symbol_count
+    enabled_symbol_count = max(0, int(count))
+
+
+def market_data_mode(*, ws_connected: bool) -> str:
+    return "WS_PRIMARY" if ws_connected else "REST_DEGRADED"
+
+
+def current_ingest_state(*, ws_connected: bool) -> str:
+    if ingest_ready and ws_connected:
+        return "READY"
+    if ingest_degraded and not ws_connected:
+        return "DEGRADED_REST_FALLBACK"
+    if ingest_degraded and ws_connected:
+        return "DEGRADED"
+    if startup_mode == "stale_cache":
+        return "STALE_CACHE"
+    if not ws_connected:
+        return "WS_DOWN"
+    return "NOT_READY"
+
+
+def build_runtime_snapshot(*, ws_connected: bool) -> dict[str, Any]:
+    fresh_pairs = fresh_pair_count()
+    return {
+        "ingest_state": current_ingest_state(ws_connected=ws_connected),
+        "market_data_mode": market_data_mode(ws_connected=ws_connected),
+        "startup_mode": startup_mode,
+        "ready": ingest_ready,
+        "degraded": ingest_degraded,
+        "ws_connected": ws_connected,
+        "rest_fallback_active": not ws_connected,
+        "producer_present": producer_present,
+        "producer_fresh": producer_fresh(),
+        "symbols_ready": fresh_pairs,
+        "symbols_total": enabled_symbol_count,
+    }
 
 
 def fresh_pair_count() -> int:
@@ -68,7 +110,8 @@ def set_cache_mode(mode: str) -> None:
 
 def emit_ingest_runtime_metrics(connected: bool) -> None:
     heartbeat_age = max(0.0, time() - producer_last_heartbeat_ts) if producer_last_heartbeat_ts > 0 else float("inf")
-    fresh_pairs = fresh_pair_count()
+    snapshot = build_runtime_snapshot(ws_connected=connected)
+    fresh_pairs = int(snapshot["symbols_ready"])
 
     INGEST_WS_CONNECTED.set(1.0 if connected else 0.0)
     INGEST_FRESH_PAIRS.set(float(fresh_pairs))
@@ -80,6 +123,12 @@ def emit_ingest_runtime_metrics(connected: bool) -> None:
         "producer_heartbeat_age_sec", f"{heartbeat_age if heartbeat_age != float('inf') else 0.0:.2f}"
     )
     health_probe.set_detail("fresh_pairs", str(fresh_pairs))
+    health_probe.set_detail("ingest_state", str(snapshot["ingest_state"]))
+    health_probe.set_detail("market_data_mode", str(snapshot["market_data_mode"]))
+    health_probe.set_detail("rest_fallback_active", "1" if snapshot["rest_fallback_active"] else "0")
+    health_probe.set_detail("symbols_ready", str(snapshot["symbols_ready"]))
+    health_probe.set_detail("symbols_total", str(snapshot["symbols_total"]))
+    health_probe.set_detail("ws_connected", "1" if snapshot["ws_connected"] else "0")
 
 
 def is_duplicate_pair_tick(symbol: str, price: float, ts: float) -> bool:
@@ -151,8 +200,9 @@ def set_startup_mode(
     warmup_results: dict[str, dict[str, list[dict[str, Any]]]],
     redis_has_data: bool,
 ) -> None:
-    global ingest_ready, ingest_degraded
+    global ingest_ready, ingest_degraded, startup_mode
 
+    startup_mode = str(mode).strip().lower() or "unknown"
     set_cache_mode(mode)
 
     if mode == "warmup":
