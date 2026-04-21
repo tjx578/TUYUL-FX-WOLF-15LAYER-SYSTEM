@@ -220,7 +220,7 @@ class TestImmutabilityAndSummary:
         from pydantic import ValidationError
 
         with pytest.raises((TypeError, AttributeError, ValidationError)):
-            bundle.timeframe = "M15"  # type: ignore[misc]
+            bundle.timeframe = "M15"
 
     def test_summary_counts_include_economics(self):
         coll = EnvelopeCollection(SIGNAL_ID, SYMBOL)

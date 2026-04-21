@@ -138,7 +138,7 @@ class TestLayerDictToEnvelope:
 
     def test_rejects_unsupported_input_type(self):
         with pytest.raises(TypeError):
-            layer_dict_to_envelope("not a mapping", signal_id=SIGNAL_ID, symbol=SYMBOL)  # type: ignore[arg-type]
+            layer_dict_to_envelope("not a mapping", signal_id=SIGNAL_ID, symbol=SYMBOL)
 
     def test_direction_never_fabricated_from_missing_field(self):
         # Even if result carries no direction, envelope defaults to NONE.

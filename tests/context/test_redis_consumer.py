@@ -18,7 +18,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture(autouse=True)
-def _reset_bus() -> None:  # type: ignore[misc]
+def _reset_bus() -> None:
     """Reset LiveContextBus singleton between tests to prevent data leaking."""
     LiveContextBus.reset_singleton()
 

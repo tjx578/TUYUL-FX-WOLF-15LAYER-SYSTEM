@@ -46,9 +46,9 @@ try:
 
     _METRICS_OK = True
 except Exception:  # noqa: BLE001
-    SHADOW_CAPTURE_ENVELOPES_TOTAL = None  # type: ignore[assignment]
-    SHADOW_CAPTURE_FAILURES_TOTAL = None  # type: ignore[assignment]
-    SHADOW_CAPTURE_WRITES_TOTAL = None  # type: ignore[assignment]
+    SHADOW_CAPTURE_ENVELOPES_TOTAL = None
+    SHADOW_CAPTURE_FAILURES_TOTAL = None
+    SHADOW_CAPTURE_WRITES_TOTAL = None
     _METRICS_OK = False
 
 
