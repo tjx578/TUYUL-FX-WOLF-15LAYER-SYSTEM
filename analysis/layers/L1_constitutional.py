@@ -27,7 +27,7 @@ import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ class CoherenceBand(StrEnum):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class BlockerCode(str, Enum):
+class BlockerCode(StrEnum):
     """Critical blocker codes (frozen v1)."""
 
     CONTRACT_PAYLOAD_MALFORMED = "CONTRACT_PAYLOAD_MALFORMED"
