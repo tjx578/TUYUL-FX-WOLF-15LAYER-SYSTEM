@@ -78,15 +78,27 @@ class LayerEnvelope(BaseModel):
     @field_validator("evidence")
     @classmethod
     def _reject_account_state_keys(cls, v: dict[str, Any]) -> dict[str, Any]:
-        """Guard against account-state leak into evidence payload.
+        """Guard against account-state leak into evidence payload (recursive).
 
         Constitutional invariant: L12 signal MUST NOT contain balance/equity/margin.
-        We enforce the same at the envelope level to prevent leakage upstream.
+        Nested evidence namespaces (features/routing/audit) are walked recursively
+        so adapters cannot smuggle account state through sub-dictionaries.
         """
         forbidden = {"balance", "equity", "margin", "free_margin", "account_balance"}
-        leaked = forbidden.intersection({k.lower() for k in v})
-        if leaked:
-            raise ValueError(f"Evidence payload must not carry account state; forbidden keys: {sorted(leaked)}")
+
+        def _walk(node: Any, path: str = "") -> None:
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if isinstance(key, str) and key.lower() in forbidden:
+                        raise ValueError(
+                            f"Evidence payload must not carry account state; forbidden key at '{path}{key}'"
+                        )
+                    _walk(value, f"{path}{key}.")
+            elif isinstance(node, (list, tuple)):
+                for idx, item in enumerate(node):
+                    _walk(item, f"{path}[{idx}].")
+
+        _walk(v)
         return v
 
     @field_validator("blockers", "warnings")
