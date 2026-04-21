@@ -9,8 +9,96 @@ Zone: infrastructure/ — observability glue.  No analysis or execution logic.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
+
+
+def _as_int(mapping: Mapping[str, object], key: str) -> int:
+    value = mapping.get(key, 0)
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+
+
+def _as_float(mapping: Mapping[str, object], key: str) -> float:
+    value = mapping.get(key, 0.0)
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _as_str(mapping: Mapping[str, object], key: str, default: str = "") -> str:
+    value = mapping.get(key, default)
+    if value is None:
+        return default
+    return str(value)
+
+
+def _aggregate_keyspace(keyspace: Mapping[str, object]) -> dict[str, int]:
+    total_keys = 0
+    total_expires = 0
+    db_count = 0
+    for name, raw_value in keyspace.items():
+        if not str(name).startswith("db") or not isinstance(raw_value, Mapping):
+            continue
+        db_count += 1
+        total_keys += _as_int(raw_value, "keys")
+        total_expires += _as_int(raw_value, "expires")
+    return {
+        "db_count": db_count,
+        "total_keys": total_keys,
+        "total_expires": total_expires,
+    }
+
+
+def build_extended_redis_report(
+    *,
+    pong: bool,
+    stats: Mapping[str, object],
+    clients: Mapping[str, object],
+    memory: Mapping[str, object],
+    persistence: Mapping[str, object],
+    keyspace: Mapping[str, object],
+    slowlog_len: int,
+    latency_ms: float,
+    timestamp: str,
+) -> dict[str, object]:
+    """Build a stable Redis runtime snapshot from INFO sections."""
+    keyspace_totals = _aggregate_keyspace(keyspace)
+    bgsave_status = _as_str(persistence, "rdb_last_bgsave_status", "unknown").lower()
+    aof_rewrite_status = _as_str(persistence, "aof_last_bgrewrite_status", "unknown").lower()
+
+    return {
+        "status": "ok" if pong else "degraded",
+        "latency_ms": round(latency_ms, 2),
+        "timestamp": timestamp,
+        "connected_clients": _as_int(clients, "connected_clients"),
+        "blocked_clients": _as_int(clients, "blocked_clients"),
+        "instantaneous_ops_per_sec": _as_int(stats, "instantaneous_ops_per_sec"),
+        "slowlog_len": int(slowlog_len),
+        "used_memory": _as_int(memory, "used_memory"),
+        "used_memory_peak": _as_int(memory, "used_memory_peak"),
+        "maxmemory": _as_int(memory, "maxmemory"),
+        "mem_fragmentation_ratio": round(_as_float(memory, "mem_fragmentation_ratio"), 4),
+        "expired_keys": _as_int(stats, "expired_keys"),
+        "evicted_keys": _as_int(stats, "evicted_keys"),
+        "keyspace_hits": _as_int(stats, "keyspace_hits"),
+        "keyspace_misses": _as_int(stats, "keyspace_misses"),
+        "total_keys": keyspace_totals["total_keys"],
+        "keyspace_db_count": keyspace_totals["db_count"],
+        "keyspace_expires": keyspace_totals["total_expires"],
+        "rdb_last_bgsave_status": bgsave_status,
+        "rdb_last_bgsave_time_sec": _as_int(persistence, "rdb_last_bgsave_time_sec"),
+        "rdb_changes_since_last_save": _as_int(persistence, "rdb_changes_since_last_save"),
+        "aof_enabled": bool(_as_int(persistence, "aof_enabled")),
+        "aof_last_bgrewrite_status": aof_rewrite_status,
+        "total_commands_processed": _as_int(stats, "total_commands_processed"),
+        "total_net_input_bytes": _as_int(stats, "total_net_input_bytes"),
+        "total_net_output_bytes": _as_int(stats, "total_net_output_bytes"),
+    }
 
 
 def _compute_pool_metrics(pool: object) -> tuple[int, int, int, int, int]:

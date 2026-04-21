@@ -13,6 +13,8 @@ from typing import Any, Protocol, cast
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.redis_keys import CANDLE_HASH_PREFIX, CANDLE_HISTORY_PREFIX
+from infrastructure.redis_health import build_extended_redis_report
+from monitoring.redis_metrics import update_redis_metrics
 from .middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 
@@ -88,6 +90,39 @@ async def redis_health(request: Request) -> dict[str, Any]:
         }
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Redis health check failed: {exc}") from exc
+
+
+@router.get("/health/extended", dependencies=[Depends(verify_token)])
+async def redis_health_extended(request: Request) -> dict[str, Any]:
+    """Return extended Redis INFO diagnostics and refresh exported metrics."""
+    r = cast(RedisClient, request.app.state.redis)
+    started = datetime.now(UTC)
+    try:
+        pong = await r.ping()
+        stats = await r.info(section="stats")
+        clients = await r.info(section="clients")
+        memory = await r.info(section="memory")
+        persistence = await r.info(section="persistence")
+        keyspace = await r.info(section="keyspace")
+        slowlog_len = await r.slowlog_len()
+        now = datetime.now(UTC)
+        elapsed_ms = (now - started).total_seconds() * 1000.0
+
+        report = build_extended_redis_report(
+            pong=pong,
+            stats=stats,
+            clients=clients,
+            memory=memory,
+            persistence=persistence,
+            keyspace=keyspace,
+            slowlog_len=slowlog_len,
+            latency_ms=elapsed_ms,
+            timestamp=now.isoformat(),
+        )
+        update_redis_metrics(report)
+        return report
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Redis extended health check failed: {exc}") from exc
 
 
 @router.delete("/candles", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])

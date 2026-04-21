@@ -15,7 +15,8 @@ import json
 import logging
 import os
 import time
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -34,6 +35,8 @@ from core.metrics import (
     get_registry,
 )
 from infrastructure.redis_client import get_async_redis
+from infrastructure.redis_health import build_extended_redis_report
+from monitoring.redis_metrics import update_redis_metrics
 from state.redis_keys import ORCHESTRATOR_STATE
 
 from .middleware.machine_auth import verify_observability_machine_auth
@@ -75,6 +78,35 @@ def _refresh_runtime_gauges() -> None:
         ACTIVE_PAIRS.set(float(active))
     except Exception:
         logger.debug("SystemStateManager active-pairs refresh skipped", exc_info=True)
+
+
+async def _refresh_redis_gauges() -> None:
+    """Pull Redis INFO state into Prometheus gauges/counters."""
+    try:
+        redis = await get_async_redis()
+        started = datetime.now(UTC)
+        pong = cast(bool, await redis.ping())  # type: ignore[misc]
+        stats = await redis.info(section="stats")
+        clients = await redis.info(section="clients")
+        memory = await redis.info(section="memory")
+        persistence = await redis.info(section="persistence")
+        keyspace = await redis.info(section="keyspace")
+        slowlog_len = int(await redis.slowlog_len())
+        now = datetime.now(UTC)
+        report = build_extended_redis_report(
+            pong=pong,
+            stats=stats,
+            clients=clients,
+            memory=memory,
+            persistence=persistence,
+            keyspace=keyspace,
+            slowlog_len=slowlog_len,
+            latency_ms=(now - started).total_seconds() * 1000.0,
+            timestamp=now.isoformat(),
+        )
+        update_redis_metrics(report)
+    except Exception:
+        logger.debug("Redis metrics refresh skipped", exc_info=True)
 
 
 async def _refresh_orchestrator_gauges() -> None:
@@ -165,6 +197,7 @@ async def prometheus_metrics() -> PlainTextResponse:
             media_type="application/json",
         )
     _refresh_runtime_gauges()
+    await _refresh_redis_gauges()
     await _refresh_orchestrator_gauges()
     await _refresh_heartbeat_gauges()
     payload = get_registry().exposition()
@@ -187,6 +220,7 @@ async def metrics_slo(
     if not _HAS_ENGINE_CONTEXT:
         return {"status": "metrics_not_available", "reason": "engine_only"}
     _refresh_runtime_gauges()
+    await _refresh_redis_gauges()
     await _refresh_orchestrator_gauges()
     await _refresh_heartbeat_gauges()
     from monitoring.pipeline_metrics import evaluate_latency_slo  # noqa: PLC0415
