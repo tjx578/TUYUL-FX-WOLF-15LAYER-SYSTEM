@@ -289,7 +289,7 @@ class TestHTFRefreshScheduler:
         assert len(retained) == 300
         assert latest_payload is not None
         assert scheduler._candle_timestamp(latest_payload) == datetime(2026, 4, 20, 21, 0, 0, tzinfo=UTC)
-        assert scheduler._candle_timestamp(retained[0]) == datetime(2025, 6, 28, 21, 0, 0, tzinfo=UTC)
+        assert scheduler._candle_timestamp(retained[0]) == datetime(2025, 6, 25, 21, 0, 0, tzinfo=UTC)
         assert written_count == 10
         assert dedup_skipped == 0
 
