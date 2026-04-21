@@ -234,6 +234,48 @@ def _derive_win_probability(l7_analysis: dict[str, Any]) -> float:
     return 0.0
 
 
+def _build_edge_diagnostics(
+    *,
+    l7_analysis: dict[str, Any],
+    blockers: list[BlockerCode],
+    edge_warnings: list[str],
+    win_prob: float,
+    band: CoherenceBand,
+    sample_count: int,
+) -> dict[str, Any]:
+    """Assemble audit-friendly L7 diagnostics without affecting legality."""
+    validation = str(l7_analysis.get("validation", "FAIL")).upper()
+    primary_edge_gap = None
+    for blocker in blockers:
+        if blocker in (
+            BlockerCode.EDGE_STATUS_INVALID,
+            BlockerCode.WIN_PROBABILITY_BELOW_MINIMUM,
+            BlockerCode.REQUIRED_PROBABILITY_SOURCE_MISSING,
+            BlockerCode.WARMUP_INSUFFICIENT,
+        ):
+            primary_edge_gap = blocker.value
+            break
+
+    return {
+        "edge_status": validation,
+        "primary_edge_gap": primary_edge_gap,
+        "win_probability": round(win_prob, 4),
+        "required_win_probability": MID_THRESHOLD,
+        "coherence_band": band.value,
+        "simulations": sample_count,
+        "warn_sample_floor": MIN_SAMPLE_WARN,
+        "mc_passed_threshold": bool(l7_analysis.get("mc_passed_threshold", False)),
+        "wf_passed": l7_analysis.get("wf_passed"),
+        "wf_skipped_reason": l7_analysis.get("wf_skipped_reason"),
+        "returns_source": str(l7_analysis.get("returns_source", "")),
+        "profit_factor": round(float(l7_analysis.get("profit_factor", 0.0)), 4),
+        "risk_of_ruin": round(float(l7_analysis.get("risk_of_ruin", 1.0)), 4),
+        "conf12_raw": round(float(l7_analysis.get("conf12_raw", 0.0)), 4),
+        "bayesian_posterior": round(float(l7_analysis.get("bayesian_posterior", 0.0)), 4),
+        "warnings": list(edge_warnings),
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §4  COMPRESSION LOGIC
 # ═══════════════════════════════════════════════════════════════════════════
@@ -420,6 +462,14 @@ class L7ConstitutionalGovernor:
         # L12 evaluates degradation via status/blocker_codes.
         continuation_allowed = True
         next_targets = ["L8"]
+        edge_diagnostics = _build_edge_diagnostics(
+            l7_analysis=l7_analysis,
+            blockers=blockers,
+            edge_warnings=edge_warnings,
+            win_prob=win_prob,
+            band=band,
+            sample_count=sample_count,
+        )
 
         # ── Step 11: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(
@@ -494,6 +544,7 @@ class L7ConstitutionalGovernor:
             "coherence_band": band.value,
             "score_numeric": round(win_prob, 4),
             "features": features,
+            "edge_diagnostics": edge_diagnostics,
             "routing": routing,
             "audit": audit,
         }

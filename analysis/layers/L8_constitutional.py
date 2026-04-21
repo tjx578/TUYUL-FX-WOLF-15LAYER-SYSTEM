@@ -298,6 +298,54 @@ def _derive_integrity_score(l8_analysis: dict[str, Any]) -> float:
     return 0.0
 
 
+def _build_integrity_diagnostics(
+    *,
+    l8_analysis: dict[str, Any],
+    blockers: list[L8BlockerCode],
+    tii_warnings: list[str],
+    integrity_score: float,
+    band: L8CoherenceBand,
+    sample_count: int,
+) -> dict[str, Any]:
+    """Assemble audit-friendly L8 diagnostics without affecting legality."""
+    source_states = {
+        "tii": l8_analysis.get("tii_sym") is not None,
+        "twms": l8_analysis.get("twms_score") is not None,
+        "components": bool(isinstance(l8_analysis.get("components"), dict) and l8_analysis.get("components")),
+    }
+    available_sources = [name for name, present in source_states.items() if present]
+    missing_sources = [name for name, present in source_states.items() if not present]
+
+    primary_integrity_gap = None
+    for blocker in blockers:
+        if blocker in (
+            L8BlockerCode.INTEGRITY_SCORE_BELOW_MINIMUM,
+            L8BlockerCode.TII_UNAVAILABLE,
+            L8BlockerCode.TWMS_UNAVAILABLE,
+            L8BlockerCode.WARMUP_INSUFFICIENT,
+            L8BlockerCode.INVALID_INTEGRITY_STATE,
+        ):
+            primary_integrity_gap = blocker.value
+            break
+
+    return {
+        "integrity_score": round(integrity_score, 4),
+        "required_integrity": MID_THRESHOLD,
+        "coherence_band": band.value,
+        "primary_integrity_gap": primary_integrity_gap,
+        "available_sources": available_sources,
+        "missing_sources": missing_sources,
+        "tii_sym": round(float(l8_analysis.get("tii_sym", 0.0)), 4),
+        "twms_score": round(float(l8_analysis.get("twms_score", 0.0)), 4),
+        "gate_status": str(l8_analysis.get("gate_status", "CLOSED")).upper(),
+        "gate_passed": bool(l8_analysis.get("gate_passed", False)),
+        "component_count": sample_count,
+        "warn_component_floor": MIN_SAMPLE_WARN,
+        "fallback_note": str(l8_analysis.get("note", "")),
+        "warnings": list(tii_warnings),
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §4  COMPRESSION LOGIC
 # ═══════════════════════════════════════════════════════════════════════════
@@ -483,6 +531,14 @@ class L8ConstitutionalGovernor:
         # L12 evaluates degradation via status/blocker_codes.
         continuation_allowed = True
         next_targets = ["L9"]
+        integrity_diagnostics = _build_integrity_diagnostics(
+            l8_analysis=l8_analysis,
+            blockers=blockers,
+            tii_warnings=tii_warnings,
+            integrity_score=integrity_score,
+            band=band,
+            sample_count=sample_count,
+        )
 
         # ── Step 11: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(
@@ -576,6 +632,7 @@ class L8ConstitutionalGovernor:
             "coherence_band": band.value,
             "score_numeric": round(integrity_score, 4),
             "features": features,
+            "integrity_diagnostics": integrity_diagnostics,
             "routing": routing,
             "audit": audit,
         }

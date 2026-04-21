@@ -27,7 +27,7 @@ import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class L1Status(str, Enum):
+class L1Status(StrEnum):
     """Final compressed status for L1 output."""
 
     PASS = "PASS"
@@ -46,7 +46,7 @@ class L1Status(str, Enum):
     FAIL = "FAIL"
 
 
-class FreshnessState(str, Enum):
+class FreshnessState(StrEnum):
     """Data freshness classification."""
 
     FRESH = "FRESH"
@@ -55,7 +55,7 @@ class FreshnessState(str, Enum):
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class WarmupState(str, Enum):
+class WarmupState(StrEnum):
     """Warmup completeness classification."""
 
     READY = "READY"
@@ -63,7 +63,7 @@ class WarmupState(str, Enum):
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class FallbackClass(str, Enum):
+class FallbackClass(StrEnum):
     """Fallback legality classification."""
 
     NO_FALLBACK = "NO_FALLBACK"
@@ -72,7 +72,7 @@ class FallbackClass(str, Enum):
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
 
 
-class CoherenceBand(str, Enum):
+class CoherenceBand(StrEnum):
     """Context coherence band."""
 
     HIGH = "HIGH"
@@ -94,9 +94,7 @@ class BlockerCode(str, Enum):
     WARMUP_INSUFFICIENT = "WARMUP_INSUFFICIENT"
     SNAPSHOT_INVALID_OR_CORRUPT = "SNAPSHOT_INVALID_OR_CORRUPT"
     SESSION_STATE_INVALID = "SESSION_STATE_INVALID"
-    REGIME_SERVICE_UNAVAILABLE_NO_LEGAL_FALLBACK = (
-        "REGIME_SERVICE_UNAVAILABLE_NO_LEGAL_FALLBACK"
-    )
+    REGIME_SERVICE_UNAVAILABLE_NO_LEGAL_FALLBACK = "REGIME_SERVICE_UNAVAILABLE_NO_LEGAL_FALLBACK"
     FALLBACK_DECLARED_BUT_NOT_ALLOWED = "FALLBACK_DECLARED_BUT_NOT_ALLOWED"
     LOW_CONTEXT_COHERENCE = "LOW_CONTEXT_COHERENCE"
 
@@ -305,16 +303,10 @@ def _check_fallback_legality(
     if fallback_class == FallbackClass.ILLEGAL_FALLBACK:
         blockers.append(BlockerCode.FALLBACK_DECLARED_BUT_NOT_ALLOWED)
 
-    if (
-        fallback_class == FallbackClass.NO_FALLBACK
-        and producer_missing
-    ):
+    if fallback_class == FallbackClass.NO_FALLBACK and producer_missing:
         blockers.append(BlockerCode.REQUIRED_PRODUCER_MISSING)
 
-    if (
-        not producer_missing
-        and fallback_class == FallbackClass.NO_FALLBACK
-    ):
+    if not producer_missing and fallback_class == FallbackClass.NO_FALLBACK:
         # Check if regime service is down with no legal fallback
         pass  # handled by data availability gate
 
@@ -375,8 +367,7 @@ def _compress_status(
         freshness == FreshnessState.FRESH
         and warmup == WarmupState.READY
         and coherence_band in (CoherenceBand.HIGH, CoherenceBand.MID)
-        and fallback_class
-        in (FallbackClass.NO_FALLBACK, FallbackClass.LEGAL_PRIMARY_SUBSTITUTE)
+        and fallback_class in (FallbackClass.NO_FALLBACK, FallbackClass.LEGAL_PRIMARY_SUBSTITUTE)
     )
 
     if clean_pass:
@@ -391,8 +382,7 @@ def _compress_status(
             FreshnessState.FRESH,
         )
         and warmup in (WarmupState.READY, WarmupState.PARTIAL)
-        and coherence_band
-        in (CoherenceBand.HIGH, CoherenceBand.MID, CoherenceBand.LOW)
+        and coherence_band in (CoherenceBand.HIGH, CoherenceBand.MID, CoherenceBand.LOW)
         and fallback_class
         in (
             FallbackClass.NO_FALLBACK,
@@ -440,6 +430,60 @@ def _compute_feature_hash(
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+def _build_context_diagnostics(
+    inp: L1GateInput,
+    *,
+    coherence_score: float,
+    coherence_band: CoherenceBand,
+) -> dict[str, Any]:
+    """Assemble audit-friendly L1 diagnostics without affecting legality."""
+    ar = inp.analysis_result if isinstance(inp.analysis_result, dict) else {}
+    now_ts = datetime.now(UTC).timestamp()
+    feed_age_seconds = None
+    if inp.feed_timestamp is not None:
+        feed_age_seconds = max(0.0, round(now_ts - float(inp.feed_timestamp), 3))
+
+    candle_counts = inp.candle_counts if isinstance(inp.candle_counts, dict) else {}
+    missing_warmup_by_tf = {
+        tf: max(0, required - int(candle_counts.get(tf, 0)))
+        for tf, required in WARMUP_MIN_BARS.items()
+        if int(candle_counts.get(tf, 0)) < required
+    }
+    regime = str(ar.get("regime", "UNKNOWN"))
+
+    return {
+        "coherence_score": round(coherence_score, 4),
+        "coherence_band": coherence_band.value,
+        "required_coherence": COHERENCE_MID_GTE,
+        "trend_regime_requires_block": regime in ("TREND_UP", "TREND_DOWN"),
+        "regime": regime,
+        "regime_probability": round(float(ar.get("regime_probability", 0.0)), 4),
+        "dominant_force": str(ar.get("dominant_force", "NEUTRAL")),
+        "context_sources_used": list(inp.context_sources_used),
+        "producer_available": bool(inp.producer_available),
+        "snapshot_valid": bool(inp.snapshot_valid),
+        "session_state_valid": bool(inp.session_state_valid),
+        "regime_service_available": bool(inp.regime_service_available),
+        "fallback_used": bool(inp.fallback_used),
+        "fallback_source": str(inp.fallback_source or ""),
+        "feed_age_seconds": feed_age_seconds,
+        "freshness_thresholds": {
+            "stale": FRESHNESS_STALE_THRESHOLD_SEC,
+            "degraded": FRESHNESS_DEGRADED_THRESHOLD_SEC,
+        },
+        "warmup_min_bars": dict(WARMUP_MIN_BARS),
+        "candle_counts": {tf: int(candle_counts.get(tf, 0)) for tf in WARMUP_MIN_BARS},
+        "missing_warmup_by_tf": missing_warmup_by_tf,
+        "feature_vector": {
+            "context_coherence": round(coherence_score, 4),
+            "feature_spread": round(float(ar.get("feature_spread", 0.0)), 6),
+            "feature_atr_frac": round(float(ar.get("feature_atr_frac", 0.0)), 6),
+            "feature_hurst": round(float(ar.get("feature_hurst", 0.5)), 6),
+            "feature_zscore": round(float(ar.get("feature_zscore", 0.0)), 6),
+        },
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §9  MAIN EVALUATOR — evaluate_l1_constitutional()
 # ═══════════════════════════════════════════════════════════════════════════
@@ -471,6 +515,9 @@ class L1ConstitutionalResult:
 
     # Features (from analysis result)
     features: dict[str, Any] = field(default_factory=dict)
+
+    # Audit-friendly diagnostics
+    context_diagnostics: dict[str, Any] = field(default_factory=dict)
 
     # Routing
     routing: dict[str, Any] = field(default_factory=dict)
@@ -532,6 +579,7 @@ class L1ConstitutionalResult:
             "coherence_score": self.coherence_score,
             "coherence_band": self.coherence_band,
             "features": self.features,
+            "context_diagnostics": self.context_diagnostics,
             "routing": self.routing,
             "audit": self.audit,
             # Backward compat
@@ -610,7 +658,12 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
             blocker_codes,
         )
         return _build_fail_result(
-            inp, blocker_codes, warning_codes, rule_hits, now_iso, input_ref,
+            inp,
+            blocker_codes,
+            warning_codes,
+            rule_hits,
+            now_iso,
+            input_ref,
         )
 
     # ── Step 2: Data availability ─────────────────────────────────
@@ -624,7 +677,12 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
             data_blockers,
         )
         return _build_fail_result(
-            inp, blocker_codes, warning_codes, rule_hits, now_iso, input_ref,
+            inp,
+            blocker_codes,
+            warning_codes,
+            rule_hits,
+            now_iso,
+            input_ref,
         )
 
     # ── Step 3: Freshness & warmup ────────────────────────────────
@@ -647,14 +705,21 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
     if fw_blockers:
         rule_hits.append("freshness_warmup_gate_failed")
         return _build_fail_result(
-            inp, blocker_codes, warning_codes, rule_hits, now_iso, input_ref,
-            freshness=freshness, warmup=warmup,
+            inp,
+            blocker_codes,
+            warning_codes,
+            rule_hits,
+            now_iso,
+            input_ref,
+            freshness=freshness,
+            warmup=warmup,
         )
 
     # ── Step 4: Fallback legality ─────────────────────────────────
     fallback_class = _eval_fallback(inp)
     fb_blockers = _check_fallback_legality(
-        fallback_class, not inp.producer_available,
+        fallback_class,
+        not inp.producer_available,
     )
     blocker_codes.extend(fb_blockers)
 
@@ -664,8 +729,15 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
     if fb_blockers:
         rule_hits.append("fallback_legality_failed")
         return _build_fail_result(
-            inp, blocker_codes, warning_codes, rule_hits, now_iso, input_ref,
-            freshness=freshness, warmup=warmup, fallback_class=fallback_class,
+            inp,
+            blocker_codes,
+            warning_codes,
+            rule_hits,
+            now_iso,
+            input_ref,
+            freshness=freshness,
+            warmup=warmup,
+            fallback_class=fallback_class,
         )
 
     # ── Step 5: Context coherence (from analysis result) ──────────
@@ -690,7 +762,11 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
 
     # ── Step 7: Compress status ───────────────────────────────────
     status = _compress_status(
-        blocker_codes, freshness, warmup, coherence_band, fallback_class,
+        blocker_codes,
+        freshness,
+        warmup,
+        coherence_band,
+        fallback_class,
     )
     rule_hits.append(f"compressed_status={status.value}")
 
@@ -701,7 +777,15 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
     dominant_force = str(ar.get("dominant_force", "NEUTRAL"))
 
     feature_hash = _compute_feature_hash(
-        regime, dominant_force, status.value, coherence_score,
+        regime,
+        dominant_force,
+        status.value,
+        coherence_score,
+    )
+    context_diagnostics = _build_context_diagnostics(
+        inp,
+        coherence_score=coherence_score,
+        coherence_band=coherence_band,
     )
 
     result = L1ConstitutionalResult(
@@ -709,7 +793,7 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
         input_ref=input_ref,
         status=status.value,
         continuation_allowed=continuation_allowed,
-        blocker_codes=[str(b) for b in blocker_codes],
+        blocker_codes=[b.value if isinstance(b, BlockerCode) else str(b) for b in blocker_codes],
         warning_codes=warning_codes,
         fallback_class=fallback_class.value,
         freshness_state=freshness.value,
@@ -731,6 +815,7 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
             },
             "feature_hash": feature_hash,
         },
+        context_diagnostics=context_diagnostics,
         routing={
             "source_used": inp.context_sources_used,
             "fallback_used": inp.fallback_used,
@@ -740,7 +825,11 @@ def evaluate_l1_constitutional(inp: L1GateInput) -> L1ConstitutionalResult:
             "rule_hits": rule_hits,
             "blocker_triggered": len(blocker_codes) > 0,
             "notes": _build_audit_notes(
-                status, freshness, warmup, coherence_band, fallback_class,
+                status,
+                freshness,
+                warmup,
+                coherence_band,
+                fallback_class,
             ),
         },
         # Backward compatibility pass-through
@@ -816,19 +905,21 @@ def _build_fail_result(
 ) -> L1ConstitutionalResult:
     """Build a FAIL result with early exit."""
     ar = inp.analysis_result if isinstance(inp.analysis_result, dict) else {}
+    coherence_score = float(ar.get("context_coherence", 0.0))
+    coherence_band = _derive_coherence_band(coherence_score)
 
     return L1ConstitutionalResult(
         timestamp=now_iso,
         input_ref=input_ref,
         status=L1Status.FAIL.value,
         continuation_allowed=False,
-        blocker_codes=[str(b) for b in blocker_codes],
+        blocker_codes=[b.value if isinstance(b, BlockerCode) else str(b) for b in blocker_codes],
         warning_codes=warning_codes,
         fallback_class=fallback_class.value,
         freshness_state=freshness.value,
         warmup_state=warmup.value,
-        coherence_score=float(ar.get("context_coherence", 0.0)),
-        coherence_band=CoherenceBand.LOW.value,
+        coherence_score=coherence_score,
+        coherence_band=coherence_band.value,
         features={
             "market_regime": str(ar.get("regime", "UNKNOWN")),
             "dominant_force": str(ar.get("dominant_force", "NEUTRAL")),
@@ -836,6 +927,11 @@ def _build_fail_result(
             "feature_vector": {},
             "feature_hash": "",
         },
+        context_diagnostics=_build_context_diagnostics(
+            inp,
+            coherence_score=coherence_score,
+            coherence_band=coherence_band,
+        ),
         routing={
             "source_used": inp.context_sources_used,
             "fallback_used": inp.fallback_used,

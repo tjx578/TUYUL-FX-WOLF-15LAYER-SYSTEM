@@ -831,7 +831,22 @@ class WolfConstitutionalPipeline:
 
         if status == "FAIL":
             blockers = const.get("blocker_codes", [])
-            if layer == "L2" and isinstance(const.get("mta_diagnostics"), dict):
+            if layer == "L1" and isinstance(const.get("context_diagnostics"), dict):
+                diagnostics = const["context_diagnostics"]
+                logger.warning(
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} regime={} coherence={} required={} feed_age={} warmup_gap={}",
+                    phase,
+                    symbol,
+                    layer,
+                    blockers,
+                    cont,
+                    diagnostics.get("regime"),
+                    diagnostics.get("coherence_score"),
+                    diagnostics.get("required_coherence"),
+                    diagnostics.get("feed_age_seconds"),
+                    diagnostics.get("missing_warmup_by_tf"),
+                )
+            elif layer == "L2" and isinstance(const.get("mta_diagnostics"), dict):
                 diagnostics = const["mta_diagnostics"]
                 logger.warning(
                     "[{}] {} {} constitutional FAIL — blockers={} continuation={} primary_conflict={} alignment={} consensus={} missing_tfs={}",
@@ -844,6 +859,38 @@ class WolfConstitutionalPipeline:
                     diagnostics.get("alignment_score"),
                     diagnostics.get("direction_consensus"),
                     diagnostics.get("missing_timeframes"),
+                )
+            elif layer == "L7" and isinstance(const.get("edge_diagnostics"), dict):
+                diagnostics = const["edge_diagnostics"]
+                logger.warning(
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} edge_status={} win_probability={} required={} simulations={} wf_passed={} gap={}",
+                    phase,
+                    symbol,
+                    layer,
+                    blockers,
+                    cont,
+                    diagnostics.get("edge_status"),
+                    diagnostics.get("win_probability"),
+                    diagnostics.get("required_win_probability"),
+                    diagnostics.get("simulations"),
+                    diagnostics.get("wf_passed"),
+                    diagnostics.get("primary_edge_gap"),
+                )
+            elif layer == "L8" and isinstance(const.get("integrity_diagnostics"), dict):
+                diagnostics = const["integrity_diagnostics"]
+                logger.warning(
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} integrity={} required={} gate_status={} missing_sources={} component_count={} gap={}",
+                    phase,
+                    symbol,
+                    layer,
+                    blockers,
+                    cont,
+                    diagnostics.get("integrity_score"),
+                    diagnostics.get("required_integrity"),
+                    diagnostics.get("gate_status"),
+                    diagnostics.get("missing_sources"),
+                    diagnostics.get("component_count"),
+                    diagnostics.get("primary_integrity_gap"),
                 )
             elif layer == "L9" and isinstance(const.get("structure_diagnostics"), dict):
                 diagnostics = const["structure_diagnostics"]
@@ -869,7 +916,21 @@ class WolfConstitutionalPipeline:
                 )
         elif status == "WARN":
             warns = const.get("warning_codes", [])
-            if layer == "L2" and isinstance(const.get("mta_diagnostics"), dict):
+            if layer == "L1" and isinstance(const.get("context_diagnostics"), dict):
+                diagnostics = const["context_diagnostics"]
+                logger.info(
+                    "[{}] {} {} constitutional WARN — warnings={} band={} regime={} coherence={} feed_age={} warmup_gap={}",
+                    phase,
+                    symbol,
+                    layer,
+                    warns,
+                    const.get("coherence_band", "N/A"),
+                    diagnostics.get("regime"),
+                    diagnostics.get("coherence_score"),
+                    diagnostics.get("feed_age_seconds"),
+                    diagnostics.get("missing_warmup_by_tf"),
+                )
+            elif layer == "L2" and isinstance(const.get("mta_diagnostics"), dict):
                 diagnostics = const["mta_diagnostics"]
                 logger.info(
                     "[{}] {} {} constitutional WARN — warnings={} band={} primary_conflict={} alignment={}",
@@ -880,6 +941,34 @@ class WolfConstitutionalPipeline:
                     const.get("coherence_band", "N/A"),
                     diagnostics.get("primary_conflict"),
                     diagnostics.get("alignment_score"),
+                )
+            elif layer == "L7" and isinstance(const.get("edge_diagnostics"), dict):
+                diagnostics = const["edge_diagnostics"]
+                logger.info(
+                    "[{}] {} {} constitutional WARN — warnings={} band={} edge_status={} win_probability={} simulations={} gap={}",
+                    phase,
+                    symbol,
+                    layer,
+                    warns,
+                    const.get("coherence_band", "N/A"),
+                    diagnostics.get("edge_status"),
+                    diagnostics.get("win_probability"),
+                    diagnostics.get("simulations"),
+                    diagnostics.get("primary_edge_gap"),
+                )
+            elif layer == "L8" and isinstance(const.get("integrity_diagnostics"), dict):
+                diagnostics = const["integrity_diagnostics"]
+                logger.info(
+                    "[{}] {} {} constitutional WARN — warnings={} band={} integrity={} gate_status={} missing_sources={} gap={}",
+                    phase,
+                    symbol,
+                    layer,
+                    warns,
+                    const.get("coherence_band", "N/A"),
+                    diagnostics.get("integrity_score"),
+                    diagnostics.get("gate_status"),
+                    diagnostics.get("missing_sources"),
+                    diagnostics.get("primary_integrity_gap"),
                 )
             elif layer == "L9" and isinstance(const.get("structure_diagnostics"), dict):
                 diagnostics = const["structure_diagnostics"]
