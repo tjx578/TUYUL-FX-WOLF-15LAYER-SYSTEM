@@ -79,7 +79,7 @@ class MicroCandleChain:
         for sym in symbols:
             self._build_chain(sym)
         logger.info(
-            "[MicroCandleChain] Zone A wired for %d symbols (M1→M5→M15)",
+            "[MicroCandleChain] Zone A wired for {} symbols (M1→M5→M15)",
             len(symbols),
         )
 

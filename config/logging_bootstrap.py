@@ -88,17 +88,25 @@ def configure_loguru_logging(level: str | None = None) -> None:
         "<level>{message}</level>"
     )
 
+    # Route DEBUG/INFO/SUCCESS -> stdout, WARNING/ERROR/CRITICAL -> stderr.
+    # Railway and most platform log collectors tag stdout as severity=info and
+    # stderr as severity=error/warning, so this split is what drives correct
+    # severity labelling in the log aggregator (the loguru text format itself
+    # is not parsed for level by the collector).
+    # WARNING_LEVEL_NO = 30 per loguru defaults.
+    _WARNING_LEVEL_NO = 30
+
     loguru_logger.add(
         sys.stdout,
         format=log_format,
         level=resolved_level,
-        filter=lambda record: record["level"].no < 40 and _allowed(record),
+        filter=lambda record: record["level"].no < _WARNING_LEVEL_NO and _allowed(record),
         enqueue=True,
     )
     loguru_logger.add(
         sys.stderr,
         format=log_format,
-        level="ERROR",
+        level="WARNING",
         filter=lambda record: _allowed(record),
         enqueue=True,
     )

@@ -452,7 +452,7 @@ class RestPollFallback:
 
         if written_in_batch > 0:
             logger.info(
-                "[RestPoll] Wrote %d/%d candles to Redis (%s/%s) — dedup_skipped: %d, total writes: %d",
+                "[RestPoll] Wrote {}/{} candles to Redis ({}/{}) \u2014 dedup_skipped: {}, total writes: {}",
                 written_in_batch,
                 len(candles),
                 candles[0].get("symbol", "?"),
@@ -462,7 +462,7 @@ class RestPollFallback:
             )
         elif candles:
             logger.warning(
-                "[RestPoll] 0/%d candles written — all skipped! First candle keys: %s",
+                "[RestPoll] 0/{} candles written \u2014 all skipped! First candle keys: {}",
                 len(candles),
                 list(candles[0].keys())[:10],
             )
