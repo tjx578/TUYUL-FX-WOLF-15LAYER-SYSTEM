@@ -109,6 +109,8 @@ class TestHTFRefreshScheduler:
         fetcher.fetch = AsyncMock(return_value=[_d1_candle("EURUSD")])
 
         mock_redis = AsyncMock()
+        mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.llen = AsyncMock(return_value=0)
         with patch("ingest.htf_refresh_scheduler.enqueue_candle_dict"):
             scheduler = HTFRefreshScheduler(redis_client=mock_redis)
             await scheduler._push_candles_to_redis([_d1_candle("EURUSD")])
@@ -167,3 +169,77 @@ class TestHTFRefreshScheduler:
         assert scheduler.interval_sec == 14400
         assert scheduler.d1_bars == 10
         assert scheduler.w1_bars == 8
+
+    def test_build_write_result_telemetry_advanced_latest(self, _patch_deps: dict) -> None:
+        scheduler = HTFRefreshScheduler()
+        candles = [_d1_candle("CADJPY")]
+        before = {
+            "redis_latest_ts": "2026-03-15T00:00:00+00:00",
+            "redis_last_seen_ts": 100.0,
+            "history_len": 50,
+            "redis_history_key": "wolf15:candle_history:CADJPY:D1",
+            "redis_latest_key": "wolf15:candle:CADJPY:D1",
+        }
+        after = {
+            "redis_latest_ts": "2026-03-19T00:00:00+00:00",
+            "redis_last_seen_ts": 200.0,
+            "history_len": 51,
+            "redis_history_key": "wolf15:candle_history:CADJPY:D1",
+            "redis_latest_key": "wolf15:candle:CADJPY:D1",
+        }
+
+        result, telemetry = scheduler._build_write_result_telemetry(
+            symbol="CADJPY",
+            timeframe="D1",
+            candles=candles,
+            before=before,
+            after=after,
+        )
+
+        assert result == "advanced_latest"
+        assert telemetry["written_count"] == 1
+        assert telemetry["result"] == "advanced_latest"
+        assert telemetry["history_len_after"] == 51
+
+    def test_build_write_result_telemetry_provider_stale(self, _patch_deps: dict) -> None:
+        scheduler = HTFRefreshScheduler()
+        candles = [_d1_candle("CADJPY")]
+        before = {
+            "redis_latest_ts": "2026-03-20T00:00:00+00:00",
+            "history_len": 50,
+        }
+        after = {
+            "redis_latest_ts": "2026-03-20T00:00:00+00:00",
+            "history_len": 50,
+        }
+
+        result, telemetry = scheduler._build_write_result_telemetry(
+            symbol="CADJPY",
+            timeframe="D1",
+            candles=candles,
+            before=before,
+            after=after,
+        )
+
+        assert result == "provider_stale"
+        assert telemetry["result"] == "provider_stale"
+
+    @pytest.mark.asyncio
+    async def test_push_candles_logs_redis_write_error_telemetry(self, _patch_deps: dict) -> None:
+        mock_redis = AsyncMock()
+        mock_redis.hgetall = AsyncMock(return_value={})
+        mock_redis.llen = AsyncMock(return_value=0)
+        mock_redis.rpush = AsyncMock(side_effect=RuntimeError("boom"))
+
+        with (
+            patch("ingest.htf_refresh_scheduler.enqueue_candle_dict"),
+            patch("ingest.htf_refresh_scheduler.logger") as mock_logger,
+        ):
+            scheduler = HTFRefreshScheduler(redis_client=mock_redis)
+            await scheduler._push_candles_to_redis([_d1_candle("CADJPY")])
+
+        assert mock_logger.warning.called
+        assert mock_logger.error.called
+        message_args = mock_logger.error.call_args.args
+        assert message_args[0] == "HTF write result {}"
+        assert message_args[1]["result"] == "redis_write_error"
