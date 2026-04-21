@@ -28,6 +28,9 @@ from core.metrics import (
     ENGINE_HEARTBEAT_READY,
     INGEST_HEARTBEAT_AGE_SECONDS,
     INGEST_HEARTBEAT_READY,
+    INGEST_PROCESS_HEARTBEAT_AGE_SECONDS,
+    INGEST_PROVIDER_DEGRADED_TOTAL,
+    INGEST_PROVIDER_HEARTBEAT_AGE_SECONDS,
     VERDICT_PATH_EVENT_TOTAL,
 )
 from infrastructure.tracing import setup_tracer
@@ -256,12 +259,14 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
         }
         for key in sorted(_GATE_NAMES):
             status = raw_gates.get(key, "FAIL")
-            gate_array.append({
-                "gate_id": key,
-                "name": _GATE_NAMES[key],
-                "passed": status == "PASS",
-                "value": status,
-            })
+            gate_array.append(
+                {
+                    "gate_id": key,
+                    "name": _GATE_NAMES[key],
+                    "passed": status == "PASS",
+                    "value": status,
+                }
+            )
         payload["gates"] = gate_array
 
     return payload
@@ -358,6 +363,35 @@ _INGEST_HEARTBEAT_LOG_INTERVAL_SEC = 60.0  # rate-limit repeated warnings
 _last_ingest_heartbeat_log_ts: float = 0.0
 
 
+def _heartbeat_last_ts_iso(last_ts: float | None) -> str | None:
+    if last_ts is None:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(float(last_ts), tz=datetime.UTC).isoformat()
+    except (OverflowError, OSError, ValueError, TypeError):
+        return None
+
+
+def _build_ingest_health_detail(
+    health: IngestHealthState,
+    process_status: Any,
+    provider_status: Any,
+) -> dict[str, Any]:
+    return {
+        "event": "ingest_health_degraded",
+        "health": health.value,
+        "process_state": process_status.state.value,
+        "provider_state": provider_status.state.value,
+        "process_age_seconds": process_status.age_seconds,
+        "provider_age_seconds": provider_status.age_seconds,
+        "process_producer": process_status.producer,
+        "provider_producer": provider_status.producer,
+        "process_last_ts": _heartbeat_last_ts_iso(process_status.last_ts),
+        "provider_last_ts": _heartbeat_last_ts_iso(provider_status.last_ts),
+        "threshold_seconds": _INGEST_HEARTBEAT_MAX_AGE_SEC,
+    }
+
+
 def _check_ingest_heartbeat(redis_client: Any) -> None:
     """Read the split ingest heartbeat keys and update metrics/logging.
 
@@ -396,6 +430,10 @@ def _check_ingest_heartbeat(redis_client: Any) -> None:
     display_age = provider_status.age_seconds if provider_status.age_seconds is not None else process_status.age_seconds
     if display_age is not None:
         INGEST_HEARTBEAT_AGE_SECONDS.set(display_age)
+    if process_status.age_seconds is not None:
+        INGEST_PROCESS_HEARTBEAT_AGE_SECONDS.set(process_status.age_seconds)
+    if provider_status.age_seconds is not None:
+        INGEST_PROVIDER_HEARTBEAT_AGE_SECONDS.set(provider_status.age_seconds)
 
     # HEALTHY or DEGRADED both mean the process is alive
     INGEST_HEARTBEAT_READY.set(1.0 if health.state != IngestHealthState.NO_PRODUCER else 0.0)
@@ -404,11 +442,15 @@ def _check_ingest_heartbeat(redis_client: Any) -> None:
     if health.state != IngestHealthState.HEALTHY:  # noqa: SIM102
         if (now - _last_ingest_heartbeat_log_ts) >= _INGEST_HEARTBEAT_LOG_INTERVAL_SEC:
             _last_ingest_heartbeat_log_ts = now
+            detail = _build_ingest_health_detail(health.state, process_status, provider_status)
+            if health.state == IngestHealthState.DEGRADED:
+                INGEST_PROVIDER_DEGRADED_TOTAL.labels(provider_state=provider_status.state.value).inc()
             logger.warning(
-                "[EngineHeartbeat] Ingest health {} | process={} provider={}",
+                "[EngineHeartbeat] Ingest health {} | process={} provider={} | detail={}",
                 health.state.value,
                 process_status.state.value,
                 provider_status.state.value,
+                detail,
             )
 
 

@@ -255,6 +255,44 @@ class TestEngineHeartbeatCheck:
 
         _check_ingest_heartbeat(mock_redis)  # Must not raise
 
+    def test_check_ingest_heartbeat_degraded_logs_detail(self) -> None:
+        """Degraded ingest heartbeat should log process/provider detail for auditability."""
+        from unittest.mock import MagicMock, patch
+
+        import startup.analysis_loop as analysis_loop_module
+
+        now = time.time()
+        mock_redis = MagicMock()
+
+        def mock_get(key: str) -> str | None:
+            if "process" in key:
+                return orjson.dumps({"producer": "ingest_service", "ts": now - 2, "ws_connected": True}).decode()
+            if "provider" in key:
+                return orjson.dumps({"producer": "finnhub_ws", "ts": now - 45}).decode()
+            return None
+
+        mock_redis.get.side_effect = mock_get
+
+        with (
+            patch.object(analysis_loop_module, "_last_ingest_heartbeat_log_ts", 0.0),
+            patch.object(analysis_loop_module, "logger") as mock_logger,
+        ):
+            analysis_loop_module._check_ingest_heartbeat(mock_redis)
+
+        assert mock_logger.warning.called
+        log_args = mock_logger.warning.call_args.args
+        assert log_args[0] == "[EngineHeartbeat] Ingest health {} | process={} provider={} | detail={}"
+        assert log_args[1] == "DEGRADED"
+        assert log_args[2] == "ALIVE"
+        assert log_args[3] == "STALE"
+        detail = log_args[4]
+        assert detail["event"] == "ingest_health_degraded"
+        assert detail["provider_producer"] == "finnhub_ws"
+        assert detail["provider_age_seconds"] == pytest.approx(45.0, abs=1.0)
+        assert detail["process_producer"] == "ingest_service"
+        assert detail["threshold_seconds"] == 30.0
+        assert detail["provider_last_ts"] is not None
+
 
 # ══════════════════════════════════════════════════════════
 #  API route tests

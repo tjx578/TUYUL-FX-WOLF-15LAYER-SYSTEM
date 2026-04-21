@@ -791,9 +791,25 @@ INGEST_HEARTBEAT_AGE_SECONDS = _R.gauge(
     "Seconds since last ingest producer heartbeat",
 )
 
+INGEST_PROCESS_HEARTBEAT_AGE_SECONDS = _R.gauge(
+    "wolf_ingest_process_heartbeat_age_seconds",
+    "Seconds since last ingest process heartbeat",
+)
+
+INGEST_PROVIDER_HEARTBEAT_AGE_SECONDS = _R.gauge(
+    "wolf_ingest_provider_heartbeat_age_seconds",
+    "Seconds since last ingest provider heartbeat",
+)
+
 INGEST_HEARTBEAT_READY = _R.gauge(
     "wolf_ingest_heartbeat_ready",
     "Ingest producer heartbeat readiness (1=alive, 0=stale/missing)",
+)
+
+INGEST_PROVIDER_DEGRADED_TOTAL = _R.counter(
+    "wolf_ingest_provider_degraded_total",
+    "Number of degraded ingest heartbeat observations grouped by provider state",
+    label_names=("provider_state",),
 )
 
 ENGINE_HEARTBEAT_AGE_SECONDS = _R.gauge(
