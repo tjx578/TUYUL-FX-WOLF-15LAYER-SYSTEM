@@ -24,7 +24,5 @@
       "root": ".",
       "extraPaths": ["."]
     }
-  ],
-  "venvPath": ".",
-  "venv": ".venv"
+  ]
 }
