@@ -80,6 +80,7 @@ from config_loader import CONFIG
 from constitution.l12_router_evaluator import L12Input, L12RouterEvaluator
 from constitution.signal_throttle import SignalThrottle
 from constitution.verdict_engine import generate_l12_verdict
+from contracts.shadow_hook import begin_shadow_session, finalize_shadow_session
 from core.dag_engine import DagEngine
 from core.metrics import (
     LAYER_LATENCY,
@@ -1163,6 +1164,15 @@ class WolfConstitutionalPipeline:
                 l3_l2_injector=l3_analyzer.set_l2_output,
             )
             _phase1_result = _phase1_adapter.execute(symbol)
+
+            # ── P1-A.5 live wiring: opt-in shadow capture ───────────────
+            # Feature flag: WOLF_SHADOW_CAPTURE_ENABLED. Flag-off is a
+            # zero-cost no-op. All exceptions are swallowed inside the
+            # hook — the legacy path is never impacted.
+            _shadow_session = begin_shadow_session(symbol=symbol)
+            if _shadow_session is not None:
+                _shadow_session.ingest_chain_result(_phase1_result)
+                finalize_shadow_session(_shadow_session)
 
             l1 = _phase1_result.l1
             l2 = _phase1_result.l2
