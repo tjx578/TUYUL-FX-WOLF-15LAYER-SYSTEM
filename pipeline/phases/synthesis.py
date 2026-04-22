@@ -21,6 +21,35 @@ _VOL_LEVEL_TO_REGIME: dict[str, str] = {
 }
 
 
+def _extract_constitutional_plane(layer_payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a normalized constitutional sub-payload when available.
+
+    Accepts either nested ``payload["constitutional"]`` or a payload that is
+    already the constitutional envelope.
+    """
+    if not isinstance(layer_payload, dict):
+        return {}
+
+    nested = layer_payload.get("constitutional")
+    if isinstance(nested, dict):
+        return nested
+
+    if any(
+        key in layer_payload
+        for key in (
+            "evidence_score",
+            "confidence_penalty",
+            "hard_stop",
+            "hard_blockers",
+            "soft_blockers",
+            "coherence_band",
+        )
+    ):
+        return layer_payload
+
+    return {}
+
+
 def build_l12_synthesis(
     layer_results: dict[str, Any],
     symbol: str = "UNKNOWN",
@@ -89,6 +118,7 @@ def build_l12_synthesis(
     # -- Data availability flags (for downstream gate semantics) --
     _l7_data = layer_results.get("L7", {})
     _l8_data = layer_results.get("L8", {})
+    _l7_constitutional = _extract_constitutional_plane(_l7_data)
     _l7_data_available = bool(_l7_data and _l7_data.get("valid", False))
     _l8_data_available = bool(_l8_data and _l8_data.get("valid", False))
 
@@ -264,6 +294,8 @@ def build_l12_synthesis(
             "L7_data_available": _l7_data_available,
             "L8_data_available": _l8_data_available,
             "L7_validation": _l7_data.get("validation", "ABSENT"),
+            "L7_constitutional_available": bool(_l7_constitutional),
+            "L7_constitutional_status": _l7_constitutional.get("status", "ABSENT"),
             "L8_tii_present": tii_sym > 0.0 or integrity > 0.0,
         },
         "system": {
@@ -285,6 +317,17 @@ def build_l12_synthesis(
     synthesis["risk_of_ruin"] = layer_results.get("L7", {}).get("risk_of_ruin", 1.0)
     synthesis["profit_factor"] = layer_results.get("L7", {}).get("profit_factor", 0.0)
     synthesis["l7_validation"] = layer_results.get("L7", {}).get("validation", "FAIL")
+    synthesis["probability_evidence"] = {
+        "status": _l7_constitutional.get("status", "ABSENT"),
+        "coherence_band": _l7_constitutional.get("coherence_band", "ABSENT"),
+        "evidence_score": _l7_constitutional.get("evidence_score", 0.0),
+        "confidence_penalty": _l7_constitutional.get("confidence_penalty", 0.0),
+        "hard_stop": bool(_l7_constitutional.get("hard_stop", False)),
+        "advisory_continuation": bool(_l7_constitutional.get("advisory_continuation", False)),
+        "hard_blockers": list(_l7_constitutional.get("hard_blockers", [])),
+        "soft_blockers": list(_l7_constitutional.get("soft_blockers", [])),
+        "edge_diagnostics": dict(_l7_constitutional.get("edge_diagnostics", {})),
+    }
 
     # Inference state — ephemeral abstract state from LiveContextBus
     inference = layer_results.get("inference", {})

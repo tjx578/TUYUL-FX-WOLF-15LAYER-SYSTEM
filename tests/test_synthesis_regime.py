@@ -50,6 +50,17 @@ def _make_layer_results(
             "bayesian_ci_low": 0.55,
             "bayesian_ci_high": 0.71,
             "validation": "PASS",
+            "constitutional": {
+                "status": "WARN",
+                "coherence_band": "MID",
+                "evidence_score": 0.57,
+                "confidence_penalty": 0.05,
+                "hard_stop": False,
+                "advisory_continuation": True,
+                "hard_blockers": [],
+                "soft_blockers": ["PARTIAL_PROBABILITY_HISTORY"],
+                "edge_diagnostics": {"primary_edge_gap": None},
+            },
         },
         "L8": {"tii_sym": 0.91, "integrity": 0.94, "twms_score": 0.88},
         "L9": {"dvg_confidence": 0.78, "liquidity_score": 0.72, "smart_money_signal": "BULLISH"},
@@ -150,6 +161,26 @@ class TestSynthesisRegimePropagation:
 
         for field in required:
             assert field in synthesis, f"Missing required synthesis field: {field}"
+
+    def test_l7_constitutional_plane_forwarded_when_available(self) -> None:
+        layer_results = _make_layer_results(atr=0.0010, atr_mean_20=0.0010)
+        synthesis = build_l12_synthesis(layer_results, symbol="EURUSD")
+
+        assert synthesis["data_availability"]["L7_constitutional_available"] is True
+        assert synthesis["data_availability"]["L7_constitutional_status"] == "WARN"
+        assert synthesis["probability_evidence"]["status"] == "WARN"
+        assert synthesis["probability_evidence"]["evidence_score"] == pytest.approx(0.57)
+        assert synthesis["probability_evidence"]["soft_blockers"] == ["PARTIAL_PROBABILITY_HISTORY"]
+
+    def test_l7_constitutional_plane_defaults_when_absent(self) -> None:
+        layer_results = _make_layer_results(atr=0.0010, atr_mean_20=0.0010)
+        layer_results["L7"].pop("constitutional")
+        synthesis = build_l12_synthesis(layer_results, symbol="EURUSD")
+
+        assert synthesis["data_availability"]["L7_constitutional_available"] is False
+        assert synthesis["data_availability"]["L7_constitutional_status"] == "ABSENT"
+        assert synthesis["probability_evidence"]["status"] == "ABSENT"
+        assert synthesis["probability_evidence"]["hard_stop"] is False
 
     def test_regime_type_roundtrips_into_verdict_engine(self) -> None:
         """regime_type produced by synthesis is consumable by generate_l12_verdict()."""
