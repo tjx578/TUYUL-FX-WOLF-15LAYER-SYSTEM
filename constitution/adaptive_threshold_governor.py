@@ -31,6 +31,9 @@ class AdjustedThreshold:
     audit_signature: str
     controller_reason: str
     freeze_thresholds: bool
+    rollout_key: str
+    rollout_bucket: float
+    canary_selected: bool
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -48,6 +51,7 @@ class AdaptiveThresholdGovernor:
     VERSION = "1.0.0"
     DAILY_DELTA_BUDGET = 0.08
     SOURCE_COMPLETENESS_MIN = 0.80
+    DEFAULT_CANARY_RATE = 0.10
     _VALID_MODES: tuple[AdaptiveMode, ...] = ("force_base", "shadow", "canary", "live")
 
     def __init__(
@@ -56,11 +60,13 @@ class AdaptiveThresholdGovernor:
         controller: SupportsAdaptiveThresholdController | None = None,
         mode: AdaptiveMode | None = None,
         daily_delta_budget: float = DAILY_DELTA_BUDGET,
+        canary_rate: float = DEFAULT_CANARY_RATE,
     ) -> None:
         self._controller = controller or AdaptiveThresholdController()
         resolved_mode: AdaptiveMode = mode if mode is not None else self._read_mode_from_env()
         self._mode: AdaptiveMode = resolved_mode
         self._daily_delta_budget = float(daily_delta_budget)
+        self._canary_rate = max(0.0, min(1.0, float(canary_rate)))
 
     def _read_mode_from_env(self) -> AdaptiveMode:
         raw = str(os.getenv("ADAPTIVE_THRESHOLD_MODE", "shadow")).strip().lower()
@@ -74,6 +80,18 @@ class AdaptiveThresholdGovernor:
         if scoped in self._VALID_MODES:
             return cast(AdaptiveMode, scoped)
         return cast(AdaptiveMode, self._mode)
+
+    def _resolve_canary_rate(self, layer: str, metric: str) -> float:
+        scoped_name = f"ADAPTIVE_THRESHOLD_CANARY_RATE_{layer}_{metric}".upper()
+        scoped = os.getenv(scoped_name)
+        if scoped is None:
+            scoped = os.getenv("ADAPTIVE_THRESHOLD_CANARY_RATE")
+        if scoped is None:
+            return self._canary_rate
+        try:
+            return max(0.0, min(1.0, float(scoped)))
+        except (TypeError, ValueError):
+            return self._canary_rate
 
     def _budget_ok(self, adjustment_factor: float) -> bool:
         delta = abs(float(adjustment_factor) - 1.0)
@@ -89,6 +107,17 @@ class AdaptiveThresholdGovernor:
             return frpc_data
         return {}
 
+    def _resolve_rollout_key(self, layer: str, metric: str, rollout_key: str | None) -> str:
+        raw = str(rollout_key or "").strip()
+        if raw:
+            return raw
+        return f"{layer}:{metric}:default"
+
+    def _rollout_bucket(self, rollout_key: str) -> float:
+        digest = hashlib.sha256(rollout_key.encode("utf-8")).hexdigest()
+        bucket = int(digest[:8], 16) / 0xFFFFFFFF
+        return round(bucket, 6)
+
     def _build_result(
         self,
         *,
@@ -103,6 +132,9 @@ class AdaptiveThresholdGovernor:
         controller_reason: str,
         freeze_thresholds: bool,
         frpc_data: dict[str, Any],
+        rollout_key: str,
+        rollout_bucket: float,
+        canary_selected: bool,
     ) -> AdjustedThreshold:
         payload = {
             "timestamp": datetime.now(UTC).isoformat(),
@@ -117,6 +149,9 @@ class AdaptiveThresholdGovernor:
             "decision_reason": decision_reason,
             "controller_reason": controller_reason,
             "freeze_thresholds": freeze_thresholds,
+            "rollout_key": rollout_key,
+            "rollout_bucket": rollout_bucket,
+            "canary_selected": canary_selected,
             "frpc_data": frpc_data,
         }
         audit_id, audit_signature = self._sign_payload(payload)
@@ -133,6 +168,9 @@ class AdaptiveThresholdGovernor:
             audit_signature=audit_signature,
             controller_reason=controller_reason,
             freeze_thresholds=freeze_thresholds,
+            rollout_key=rollout_key,
+            rollout_bucket=round(float(rollout_bucket), 6),
+            canary_selected=canary_selected,
         )
 
     def get_adjusted(
@@ -144,9 +182,14 @@ class AdaptiveThresholdGovernor:
         frpc_data: dict[str, Any] | None,
         source_completeness: float,
         regime_tag: str | None = None,
+        rollout_key: str | None = None,
     ) -> AdjustedThreshold:
         del regime_tag
         mode = self._resolve_mode(layer, metric)
+        resolved_rollout_key = self._resolve_rollout_key(layer, metric, rollout_key)
+        rollout_bucket = self._rollout_bucket(resolved_rollout_key)
+        canary_rate = self._resolve_canary_rate(layer, metric)
+        canary_selected = rollout_bucket < canary_rate
         frpc_payload = self._coerce_frpc_data(frpc_data)
         update = self._controller.recompute(frpc_payload)
         proposed = update.get("proposed", {}) if isinstance(update, dict) else {}
@@ -165,6 +208,12 @@ class AdaptiveThresholdGovernor:
             decision_reason = f"controller_freeze:{controller_reason}"
         elif not self._budget_ok(adjustment_factor):
             decision_reason = "daily_budget_exceeded"
+        elif mode == "canary":
+            if canary_selected:
+                adjusted = float(base_threshold) * adjustment_factor
+                decision_reason = "canary_selected"
+            else:
+                decision_reason = "canary_holdout"
         elif mode == "live":
             adjusted = float(base_threshold) * adjustment_factor
 
@@ -180,6 +229,9 @@ class AdaptiveThresholdGovernor:
             controller_reason=controller_reason,
             freeze_thresholds=freeze_thresholds,
             frpc_data=frpc_payload,
+            rollout_key=resolved_rollout_key,
+            rollout_bucket=rollout_bucket,
+            canary_selected=canary_selected,
         )
 
 

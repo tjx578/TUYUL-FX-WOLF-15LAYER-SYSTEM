@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from analysis.layers.L8_constitutional import (
     REQUIRED_INTEGRITY_SOURCES,
     SOURCE_COMPLETENESS_THRESHOLD,
@@ -28,6 +30,7 @@ from analysis.layers.L8_constitutional import (
     _integrity_source_flags,
     _score_band,
 )
+from constitution.adaptive_threshold_governor import AdaptiveThresholdGovernor
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -36,6 +39,26 @@ from analysis.layers.L8_constitutional import (
 
 def _upstream_pass() -> dict:
     return {"valid": True, "continuation_allowed": True}
+
+
+def _frpc_snapshot() -> dict[str, float]:
+    return {
+        "gradient": 0.001,
+        "mean_energy": 0.2,
+        "integrity_index": 0.98,
+    }
+
+
+class _StubAdaptiveController:
+    def __init__(self, adjustment_factor: float) -> None:
+        self.adjustment_factor = adjustment_factor
+
+    def recompute(self, frpc_data: dict | None = None) -> dict:
+        return {
+            "reason": "ok",
+            "freeze_thresholds": False,
+            "proposed": {"adjustment_factor": self.adjustment_factor},
+        }
 
 
 def _upstream_fail() -> dict:
@@ -485,12 +508,31 @@ class TestEvaluateSourceAware:
         assert result["source_completeness"] == 1.0
         assert result["adaptive_threshold_audit"]["mode"] == "shadow"
         assert result["adaptive_threshold_audit"]["adjusted"] == 0.75
+        assert result["adaptive_threshold_audit"]["rollout_key"] == "EURUSD"
         assert result["features"]["effective_mid_threshold"] == 0.75
         diag = result["integrity_diagnostics"]
         assert diag["integrity_mode"] == "FULL"
         assert diag["source_completeness"] == 1.0
         assert diag["source_completeness_threshold"] == SOURCE_COMPLETENESS_THRESHOLD
         assert diag["required_sources"] == list(REQUIRED_INTEGRITY_SOURCES)
+
+    def test_canary_holdout_keeps_base_threshold(self):
+        gov = L8ConstitutionalGovernor()
+        governor = AdaptiveThresholdGovernor(
+            controller=_StubAdaptiveController(1.04),
+            mode="canary",
+            canary_rate=0.0,
+        )
+        with patch("analysis.layers.L8_constitutional.get_governor", return_value=governor):
+            result = gov.evaluate(
+                _l8_analysis(),
+                {**_upstream_pass(), "frpc_snapshot": _frpc_snapshot()},
+            )
+
+        assert result["adaptive_threshold_audit"]["mode"] == "canary"
+        assert result["adaptive_threshold_audit"]["canary_selected"] is False
+        assert result["adaptive_threshold_audit"]["decision_reason"] == "canary_holdout"
+        assert result["features"]["effective_mid_threshold"] == 0.75
 
     def test_valid_but_partial_sources_fails_with_incomplete_blocker(self):
         # components empty → only 2/3 sources present, still "valid" upstream.

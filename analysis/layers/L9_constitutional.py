@@ -516,6 +516,7 @@ class L9ConstitutionalGovernor:
             frpc_data=upstream.get("frpc_snapshot", l9_analysis.get("frpc_snapshot", {})),
             source_completeness=source_completeness,
             regime_tag=upstream.get("regime_tag"),
+            rollout_key=input_ref,
         )
         effective_mid_threshold = adaptive_threshold.adjusted
         band = _score_band(structure_score, mid_threshold=effective_mid_threshold)

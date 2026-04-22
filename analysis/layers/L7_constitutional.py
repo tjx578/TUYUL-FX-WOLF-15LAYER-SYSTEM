@@ -474,6 +474,7 @@ class L7ConstitutionalGovernor:
             frpc_data=upstream.get("frpc_snapshot", l7_analysis.get("frpc_snapshot", {})),
             source_completeness=source_completeness,
             regime_tag=upstream.get("regime_tag"),
+            rollout_key=input_ref,
         )
         effective_mid_threshold = adaptive_threshold.adjusted
         band = _score_band(win_prob, mid_threshold=effective_mid_threshold)

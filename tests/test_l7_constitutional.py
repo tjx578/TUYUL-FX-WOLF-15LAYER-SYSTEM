@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from analysis.layers.L7_constitutional import (
     BlockerCode,
     CoherenceBand,
@@ -21,6 +23,7 @@ from analysis.layers.L7_constitutional import (
     _eval_warmup,
     _score_band,
 )
+from constitution.adaptive_threshold_governor import AdaptiveThresholdGovernor
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -33,6 +36,26 @@ def _upstream_pass() -> dict:
 
 def _upstream_fail() -> dict:
     return {"valid": False, "continuation_allowed": False}
+
+
+def _frpc_snapshot() -> dict[str, float]:
+    return {
+        "gradient": 0.001,
+        "mean_energy": 0.2,
+        "integrity_index": 0.98,
+    }
+
+
+class _StubAdaptiveController:
+    def __init__(self, adjustment_factor: float) -> None:
+        self.adjustment_factor = adjustment_factor
+
+    def recompute(self, frpc_data: dict | None = None) -> dict:
+        return {
+            "reason": "ok",
+            "freeze_thresholds": False,
+            "proposed": {"adjustment_factor": self.adjustment_factor},
+        }
 
 
 def _l7_analysis(
@@ -451,6 +474,24 @@ class TestL7GovernorEnvelope:
         assert env["features"]["effective_mid_threshold"] == 0.55
         assert env["adaptive_threshold_audit"]["mode"] == "shadow"
         assert env["adaptive_threshold_audit"]["adjusted"] == 0.55
+        assert env["adaptive_threshold_audit"]["rollout_key"] == "EURUSD"
+
+    def test_canary_selected_updates_effective_threshold(self):
+        governor = AdaptiveThresholdGovernor(
+            controller=_StubAdaptiveController(1.04),
+            mode="canary",
+            canary_rate=1.0,
+        )
+        with patch("analysis.layers.L7_constitutional.get_governor", return_value=governor):
+            env = self.gov.evaluate(
+                _l7_analysis(win_probability=60.0),
+                {**_upstream_pass(), "frpc_snapshot": _frpc_snapshot()},
+            )
+
+        assert env["adaptive_threshold_audit"]["mode"] == "canary"
+        assert env["adaptive_threshold_audit"]["canary_selected"] is True
+        assert env["adaptive_threshold_audit"]["rollout_key"] == "EURUSD"
+        assert env["features"]["effective_mid_threshold"] != 0.55
 
     def test_version_present(self):
         env = self.gov.evaluate(_l7_analysis(), _upstream_pass())

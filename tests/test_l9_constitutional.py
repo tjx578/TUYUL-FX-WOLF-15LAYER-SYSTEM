@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from analysis.layers.L9_constitutional import (
     L9BlockerCode,
     L9CoherenceBand,
@@ -22,6 +24,7 @@ from analysis.layers.L9_constitutional import (
     _eval_warmup,
     _score_band,
 )
+from constitution.adaptive_threshold_governor import AdaptiveThresholdGovernor
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -34,6 +37,26 @@ def _upstream_pass() -> dict:
 
 def _upstream_fail() -> dict:
     return {"valid": False, "continuation_allowed": False}
+
+
+def _frpc_snapshot() -> dict[str, float]:
+    return {
+        "gradient": 0.001,
+        "mean_energy": 0.2,
+        "integrity_index": 0.98,
+    }
+
+
+class _StubAdaptiveController:
+    def __init__(self, adjustment_factor: float) -> None:
+        self.adjustment_factor = adjustment_factor
+
+    def recompute(self, frpc_data: dict | None = None) -> dict:
+        return {
+            "reason": "ok",
+            "freeze_thresholds": False,
+            "proposed": {"adjustment_factor": self.adjustment_factor},
+        }
 
 
 def _l9_analysis(
@@ -460,6 +483,25 @@ class TestL9GovernorPassEnvelope:
         assert result["status"] == "PASS"
         assert result["adaptive_threshold_audit"]["mode"] == "shadow"
         assert result["adaptive_threshold_audit"]["adjusted"] == 0.65
+        assert result["adaptive_threshold_audit"]["rollout_key"] == "EURUSD"
+
+    def test_canary_selected_updates_effective_threshold(self):
+        gov = L9ConstitutionalGovernor()
+        governor = AdaptiveThresholdGovernor(
+            controller=_StubAdaptiveController(1.04),
+            mode="canary",
+            canary_rate=1.0,
+        )
+        with patch("analysis.layers.L9_constitutional.get_governor", return_value=governor):
+            result = gov.evaluate(
+                _l9_analysis(smc_score=70),
+                {**_upstream_pass(), "frpc_snapshot": _frpc_snapshot()},
+            )
+
+        assert result["adaptive_threshold_audit"]["mode"] == "canary"
+        assert result["adaptive_threshold_audit"]["canary_selected"] is True
+        assert result["adaptive_threshold_audit"]["decision_reason"] == "canary_selected"
+        assert result["features"]["effective_mid_threshold"] != 0.65
 
     def test_structure_diagnostics_present_on_pass(self):
         gov = L9ConstitutionalGovernor()
