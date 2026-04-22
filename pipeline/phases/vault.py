@@ -74,18 +74,24 @@ def compute_vault_sync(
         feed_freshness = vault_report.feed_freshness
         redis_health = vault_report.redis_health
 
+        provider_state = vault_report.provider_state or "UNKNOWN"
+        provider_age = vault_report.provider_age_seconds
+        provider_last_ts = vault_report.provider_last_ts or "UNKNOWN"
+        provider_age_display = f"{provider_age:.2f}" if isinstance(provider_age, (int, float)) else "n/a"
+        worst_age = vault_report.worst_symbol_age_seconds
+        worst_age_display = f"{worst_age:.2f}" if worst_age != float("inf") else "inf"
+        vault_diag = (
+            f"reason={vault_report.details} | freshness_formula={vault_report.freshness_formula} | "
+            f"worst_symbol_age_seconds={worst_age_display} | symbols_fresh={vault_report.symbols_fresh}/{vault_report.symbols_total} | "
+            f"provider_state={provider_state} | provider_age_seconds={provider_age_display} | "
+            f"provider_last_ts={provider_last_ts} | redis_latency_ms={vault_report.redis_latency_ms:.0f} | "
+            f"should_block_analysis={vault_report.should_block_analysis}"
+        )
+
         if vault_report.should_block_analysis:
-            logger.warning(
-                "[VaultSync] Vault health CRITICAL for %s -- %s",
-                symbol,
-                vault_report.details,
-            )
+            logger.warning(f"[VaultSync] Vault health CRITICAL for {symbol} -- {vault_diag}")
         elif not vault_report.is_healthy:
-            logger.warning(
-                "[VaultSync] Vault health degraded for %s -- %s",
-                symbol,
-                vault_report.details,
-            )
+            logger.warning(f"[VaultSync] Vault health degraded for {symbol} -- {vault_diag}")
     except Exception as exc:
         logger.error(
             "[VaultSync] Vault health check FAILED for %s: %s -- defaulting to 0.0",

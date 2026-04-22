@@ -8,6 +8,9 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from state.heartbeat_classifier import SERVICE_HEARTBEAT_CONFIG, classify_heartbeat
 
 logger = logging.getLogger("tuyul.vault_health")
 
@@ -19,8 +22,16 @@ class VaultHealthReport:
     feed_freshness: float  # 0.0 = stale, 1.0 = fresh
     redis_health: float  # 0.0 = dead, 1.0 = healthy
     last_tick_age_seconds: float
+    worst_symbol_age_seconds: float
+    symbols_fresh: int
+    symbols_total: int
     redis_latency_ms: float
     is_healthy: bool
+    freshness_formula: str = ""
+    freshness_formula_raw: float | None = None
+    provider_state: str | None = None
+    provider_age_seconds: float | None = None
+    provider_last_ts: str | None = None
     details: str = ""
 
     @property
@@ -41,9 +52,12 @@ class VaultHealthChecker:
 
     def check(self, symbols: list[str] | None = None) -> VaultHealthReport:
         """Run health checks. Returns actual metrics."""
-        feed_freshness = self._check_feed_freshness(symbols or [])
+        feed_freshness, worst_age, symbols_fresh, symbols_total, freshness_formula, formula_raw = (
+            self._check_feed_freshness(symbols or [])
+        )
         redis_health, redis_latency = self._check_redis_health()
         tick_age = self._get_last_tick_age(symbols or [])
+        provider_state, provider_age, provider_last_ts = self._get_provider_status()
 
         is_healthy = feed_freshness >= 0.5 and redis_health >= 0.5
 
@@ -59,8 +73,16 @@ class VaultHealthChecker:
             feed_freshness=round(feed_freshness, 3),
             redis_health=round(redis_health, 3),
             last_tick_age_seconds=round(tick_age, 2),
+            worst_symbol_age_seconds=round(worst_age, 2),
+            symbols_fresh=symbols_fresh,
+            symbols_total=symbols_total,
             redis_latency_ms=round(redis_latency, 2),
             is_healthy=is_healthy,
+            freshness_formula=freshness_formula,
+            freshness_formula_raw=round(formula_raw, 4) if formula_raw is not None else None,
+            provider_state=provider_state,
+            provider_age_seconds=round(provider_age, 2) if provider_age is not None else None,
+            provider_last_ts=provider_last_ts,
             details="; ".join(details_parts),
         )
 
@@ -69,26 +91,43 @@ class VaultHealthChecker:
 
         return report
 
-    def _check_feed_freshness(self, symbols: list[str]) -> float:
+    def _check_feed_freshness(self, symbols: list[str]) -> tuple[float, float, int, int, str, float | None]:
         if self._context_bus is None or not symbols:
-            return 0.0
+            return 0.0, float("inf"), 0, len(symbols), "1.0 - (inf / 10.0) = -inf -> clamped to 0.0", None
         try:
             ages: list[float] = []
+            fresh_count = 0
             for symbol in symbols:
                 last_ts = self._context_bus.get_last_tick_time(symbol)
                 if last_ts is None or last_ts == 0:
                     ages.append(float("inf"))
                 else:
-                    ages.append(time.time() - last_ts)
+                    age = time.time() - last_ts
+                    ages.append(age)
+                    if age <= self.MAX_TICK_AGE_SECONDS:
+                        fresh_count += 1
             if not ages:
-                return 0.0
+                return 0.0, float("inf"), 0, 0, "1.0 - (inf / 10.0) = -inf -> clamped to 0.0", None
             worst_age = max(ages)
             if worst_age == float("inf"):
-                return 0.0
-            return max(0.0, 1.0 - (worst_age / self.MAX_TICK_AGE_SECONDS))
+                return (
+                    0.0,
+                    float("inf"),
+                    fresh_count,
+                    len(symbols),
+                    "1.0 - (inf / 10.0) = -inf -> clamped to 0.0",
+                    None,
+                )
+            raw_freshness = 1.0 - (worst_age / self.MAX_TICK_AGE_SECONDS)
+            clamped = max(0.0, raw_freshness)
+            formula = (
+                f"1.0 - ({worst_age:.2f} / {self.MAX_TICK_AGE_SECONDS:.1f}) = {raw_freshness:.4f} "
+                f"-> clamped to {clamped:.4f}"
+            )
+            return clamped, worst_age, fresh_count, len(symbols), formula, raw_freshness
         except Exception as e:
             logger.error("Feed freshness check failed: %s", e)
-            return 0.0
+            return 0.0, float("inf"), 0, len(symbols), "1.0 - (error / 10.0) = n/a -> clamped to 0.0", None
 
     def _check_redis_health(self) -> tuple[float, float]:
         if self._redis is None:
@@ -119,3 +158,25 @@ class VaultHealthChecker:
             return worst
         except Exception:
             return float("inf")
+
+    def _get_provider_status(self) -> tuple[str | None, float | None, str | None]:
+        if self._redis is None:
+            return None, None, None
+        try:
+            redis_reader = getattr(self._redis, "client", self._redis)
+            provider_key, max_age = SERVICE_HEARTBEAT_CONFIG["ingest_provider"]
+            status = classify_heartbeat(redis_reader.get(provider_key), max_age, service="ingest_provider")
+            last_ts_iso = self._iso_ts(status.last_ts)
+            return status.state.value, status.age_seconds, last_ts_iso
+        except Exception as exc:
+            logger.debug("Provider heartbeat read failed: %s", exc)
+            return None, None, None
+
+    @staticmethod
+    def _iso_ts(value: float | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return datetime.fromtimestamp(float(value), tz=UTC).isoformat()
+        except (OverflowError, OSError, TypeError, ValueError):
+            return None
