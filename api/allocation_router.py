@@ -63,6 +63,9 @@ STALE_DATA_THRESHOLD_SEC = int(stale_threshold_seconds())
 # age slightly exceeds the stale threshold (prevents the post-outage death spiral).
 RECOVERY_GRACE_SEC = int(os.getenv("STALE_RECOVERY_GRACE_SEC", "120"))
 PRODUCER_REQUIRED_STATES = {"no_producer", "no_transport"}
+EXECUTION_SYMBOL_COOLDOWN_SECONDS = 30 * 60
+EXECUTION_MAX_CONCURRENT_POSITIONS = 3
+_ACTIVE_TRADE_STATUSES = {"INTENDED", "PENDING", "OPEN"}
 
 
 # ── In-memory fallback stores ─────────────────────────────────────────────────
@@ -558,7 +561,47 @@ async def _feed_staleness_seconds(pair: str = "") -> float:
     return snapshot.staleness_seconds
 
 
+def _parse_trade_timestamp(raw: Any) -> float | None:
+    if raw is None:
+        return None
+    if isinstance(raw, int | float):
+        return float(raw)
+    if isinstance(raw, str):
+        with contextlib.suppress(ValueError):
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+    return None
+
+
+def _count_active_account_trades(account_id: str) -> int:
+    if not account_id:
+        return 0
+    return sum(
+        1
+        for trade in _trade_ledger.values()
+        if str(trade.get("account_id") or "") == account_id
+        and str(trade.get("status") or "").upper() in _ACTIVE_TRADE_STATUSES
+    )
+
+
+def _has_recent_symbol_trade(account_id: str, pair: str, *, now_ts: float | None = None) -> bool:
+    if not account_id or not pair:
+        return False
+    cutoff = (now_ts if now_ts is not None else datetime.now(UTC).timestamp()) - EXECUTION_SYMBOL_COOLDOWN_SECONDS
+    pair_upper = pair.strip().upper()
+    for trade in _trade_ledger.values():
+        if str(trade.get("account_id") or "") != account_id:
+            continue
+        if str(trade.get("pair") or "").strip().upper() != pair_upper:
+            continue
+        created_ts = _parse_trade_timestamp(trade.get("created_at"))
+        if created_ts is not None and created_ts >= cutoff:
+            return True
+    return False
+
+
 async def _runtime_take_precheck(account: dict[str, Any], pair: str = "") -> tuple[bool, str | None]:
+    account_id = str(account.get("account_id") or "")
+
     # Compliance mode default = ON (fail closed when explicitly OFF).
     if not _as_bool(account.get("compliance_mode", 1), default=True):
         return False, "COMPLIANCE_MODE_DISABLED"
@@ -607,10 +650,16 @@ async def _runtime_take_precheck(account: dict[str, Any], pair: str = "") -> tup
     if correlation_bucket in {"RED", "BLOCK", "BLOCKED"}:
         return False, "CORRELATION_BUCKET_BLOCKED"
 
-    open_trades = int(account.get("open_trades", 0) or 0)
-    max_open = int(account.get("max_concurrent_trades", 1) or 1)
+    live_open_trades = _count_active_account_trades(account_id)
+    open_trades = max(live_open_trades, int(account.get("open_trades", 0) or 0))
+    configured_max_open = int(account.get("max_concurrent_trades", 1) or 1)
+    max_open = min(configured_max_open, EXECUTION_MAX_CONCURRENT_POSITIONS)
     if open_trades >= max_open:
         return False, f"MAX_OPEN_TRADES {open_trades}/{max_open}"
+
+    if _has_recent_symbol_trade(account_id, pair):
+        cooldown_minutes = EXECUTION_SYMBOL_COOLDOWN_SECONDS // 60
+        return False, f"SYMBOL_COOLDOWN_ACTIVE {pair.upper()} {cooldown_minutes}m"
 
     if _as_bool(account.get("news_lock", 0), default=False) or await _global_news_lock_enabled():
         return False, "NEWS_LOCK"
@@ -878,6 +927,8 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
                 detail=f"Account {req.account_id} not found",
             )
         account = acct_data
+    account = dict(account)
+    account.setdefault("account_id", req.account_id)
 
     precheck_ok, precheck_reason = await _runtime_take_precheck(account, pair=req.pair)
     if not precheck_ok:

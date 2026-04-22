@@ -63,9 +63,6 @@ def _restore_modules():
             sys.modules[name] = original
 
 
-_install_stubs()
-
-
 # Resolve the real helper while dependency stubs are active.
 async def _missing_check_stale_data(_symbol: str) -> None:
     raise RuntimeError("_check_stale_data import failed")
@@ -76,9 +73,13 @@ check_stale_data: Callable[[str], Awaitable[None]] = _missing_check_stale_data
 try:
     from api.allocation_router import _check_stale_data as check_stale_data
 except Exception:
-    _import_failed = True
-
-_restore_modules()
+    _install_stubs()
+    try:
+        from api.allocation_router import _check_stale_data as check_stale_data
+    except Exception:
+        _import_failed = True
+    finally:
+        _restore_modules()
 
 pytestmark = pytest.mark.skipif(
     _import_failed,
@@ -259,3 +260,112 @@ class TestEnsureLiveProducer:
 
         with patch("api.allocation_router._feed_freshness_snapshot", return_value=snapshot):
             await _ensure_live_producer("EURUSD")
+
+
+class TestRuntimeTakePrecheck:
+    @pytest.mark.asyncio
+    async def test_clamps_max_concurrent_positions_to_three(self):
+        from api.allocation_router import _runtime_take_precheck
+
+        account = {
+            "account_id": "ACC-EXEC-1",
+            "compliance_mode": 1,
+            "daily_dd_percent": 0,
+            "max_daily_dd_percent": 5,
+            "total_dd_percent": 0,
+            "max_total_dd_percent": 10,
+            "correlation_bucket": "GREEN",
+            "open_trades": 3,
+            "max_concurrent_trades": 5,
+            "news_lock": 0,
+        }
+
+        with (
+            patch("api.allocation_router._feed_freshness_snapshot"),
+            patch("api.allocation_router._append_forensic_artifact"),
+            patch("api.allocation_router._global_news_lock_enabled", return_value=False),
+            patch("api.allocation_router._kill_switch.is_enabled", return_value=False),
+            patch("api.allocation_router._kill_switch.evaluate_and_trip", return_value={"enabled": False}),
+        ):
+            ok, reason = await _runtime_take_precheck(account, pair="EURUSD")
+
+        assert ok is False
+        assert reason == "MAX_OPEN_TRADES 3/3"
+
+    @pytest.mark.asyncio
+    async def test_blocks_repeat_symbol_within_thirty_minutes(self):
+        from api.allocation_router import _runtime_take_precheck, _trade_ledger
+
+        now = datetime.now(UTC)
+        account = {
+            "account_id": "ACC-EXEC-2",
+            "compliance_mode": 1,
+            "daily_dd_percent": 0,
+            "max_daily_dd_percent": 5,
+            "total_dd_percent": 0,
+            "max_total_dd_percent": 10,
+            "correlation_bucket": "GREEN",
+            "open_trades": 0,
+            "max_concurrent_trades": 5,
+            "news_lock": 0,
+        }
+
+        _trade_ledger.clear()
+        _trade_ledger["trade_recent"] = {
+            "trade_id": "trade_recent",
+            "account_id": "ACC-EXEC-2",
+            "pair": "EURUSD",
+            "status": "INTENDED",
+            "created_at": now.isoformat(),
+        }
+
+        with (
+            patch("api.allocation_router._feed_freshness_snapshot"),
+            patch("api.allocation_router._append_forensic_artifact"),
+            patch("api.allocation_router._global_news_lock_enabled", return_value=False),
+            patch("api.allocation_router._kill_switch.is_enabled", return_value=False),
+            patch("api.allocation_router._kill_switch.evaluate_and_trip", return_value={"enabled": False}),
+        ):
+            ok, reason = await _runtime_take_precheck(account, pair="EURUSD")
+
+        assert ok is False
+        assert reason == "SYMBOL_COOLDOWN_ACTIVE EURUSD 30m"
+
+    @pytest.mark.asyncio
+    async def test_allows_other_symbol_when_under_clamp(self):
+        from api.allocation_router import _runtime_take_precheck, _trade_ledger
+
+        now = datetime.now(UTC)
+        account = {
+            "account_id": "ACC-EXEC-3",
+            "compliance_mode": 1,
+            "daily_dd_percent": 0,
+            "max_daily_dd_percent": 5,
+            "total_dd_percent": 0,
+            "max_total_dd_percent": 10,
+            "correlation_bucket": "GREEN",
+            "open_trades": 0,
+            "max_concurrent_trades": 5,
+            "news_lock": 0,
+        }
+
+        _trade_ledger.clear()
+        _trade_ledger["trade_other_symbol"] = {
+            "trade_id": "trade_other_symbol",
+            "account_id": "ACC-EXEC-3",
+            "pair": "GBPUSD",
+            "status": "INTENDED",
+            "created_at": now.isoformat(),
+        }
+
+        with (
+            patch("api.allocation_router._feed_freshness_snapshot"),
+            patch("api.allocation_router._append_forensic_artifact"),
+            patch("api.allocation_router._global_news_lock_enabled", return_value=False),
+            patch("api.allocation_router._kill_switch.is_enabled", return_value=False),
+            patch("api.allocation_router._kill_switch.evaluate_and_trip", return_value={"enabled": False}),
+        ):
+            ok, reason = await _runtime_take_precheck(account, pair="EURUSD")
+
+        assert ok is True
+        assert reason is None
