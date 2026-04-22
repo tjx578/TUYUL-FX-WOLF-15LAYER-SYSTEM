@@ -6,6 +6,7 @@ Extracted from ingest_service.py for maintainability.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from time import time
 from typing import Any
 
@@ -28,6 +29,9 @@ ingest_ready = False
 ingest_degraded = False
 startup_mode = "unknown"
 enabled_symbol_count = 0
+_last_logged_ingest_state = ""
+_last_logged_reason = ""
+_last_logged_blocked_by = ""
 
 # ── Producer state ────────────────────────────────────────────────
 producer_present = False
@@ -43,7 +47,75 @@ _PRODUCER_FRESHNESS_SEC = max(5.0, float(os.getenv("INGEST_PRODUCER_FRESHNESS_SE
 # Beyond this window, same-fingerprint ticks are treated as separate events.
 _DEDUP_REFRACTORY_S = float(os.getenv("INGEST_DEDUP_REFRACTORY_S", "0.05"))
 _WS_CONNECT_GRACE_SEC = float(os.getenv("INGEST_WS_CONNECT_GRACE_SEC", "45"))
+_READY_MIN_FRESH_PAIR_RATIO = min(
+    1.0,
+    max(0.0, float(os.getenv("INGEST_READY_MIN_FRESH_PAIR_RATIO", "0.85"))),
+)
 _CACHE_MODES = ("unknown", "warmup", "stale_cache", "failed_no_cache")
+
+
+@dataclass(frozen=True)
+class IngestReadinessSnapshot:
+    startup_mode: str
+    ws_connected: bool
+    producer_present: bool
+    producer_fresh: bool
+    fresh_pairs: int
+    total_pairs: int
+
+
+def _min_ready_pairs(total_pairs: int) -> int:
+    total = max(0, int(total_pairs))
+    if total <= 1:
+        return total
+    return max(1, min(total, int(total * _READY_MIN_FRESH_PAIR_RATIO + 0.999999)))
+
+
+def compute_ingest_readiness(snapshot: IngestReadinessSnapshot) -> dict[str, Any]:
+    runtime_ready_allowed = snapshot.startup_mode != "failed_no_cache"
+    fresh_pair_target = _min_ready_pairs(snapshot.total_pairs)
+    fresh_pairs_ready = snapshot.fresh_pairs >= fresh_pair_target
+    producer_ready = snapshot.producer_present and snapshot.producer_fresh
+
+    blocked_by: list[str] = []
+    if not runtime_ready_allowed:
+        blocked_by.append("startup_not_bootstrapped")
+    if not producer_ready:
+        blocked_by.append("producer_not_fresh")
+    if not fresh_pairs_ready:
+        blocked_by.append("fresh_pairs_below_threshold")
+
+    if runtime_ready_allowed and snapshot.ws_connected and producer_ready and fresh_pairs_ready:
+        return {
+            "ready": True,
+            "degraded": False,
+            "ingest_state": "LIVE",
+            "market_data_mode": "WS_PRIMARY",
+            "reason": "live_ws_ready",
+            "blocked_by": [],
+            "fresh_pair_target": fresh_pair_target,
+        }
+
+    if runtime_ready_allowed and not snapshot.ws_connected:
+        return {
+            "ready": False,
+            "degraded": True,
+            "ingest_state": "DEGRADED_REST_FALLBACK",
+            "market_data_mode": "REST_DEGRADED",
+            "reason": "rest_fallback_ready_but_ws_down",
+            "blocked_by": blocked_by,
+            "fresh_pair_target": fresh_pair_target,
+        }
+
+    return {
+        "ready": False,
+        "degraded": runtime_ready_allowed,
+        "ingest_state": "DEGRADED" if runtime_ready_allowed else "NOT_READY",
+        "market_data_mode": "WS_PRIMARY" if snapshot.ws_connected else "REST_DEGRADED",
+        "reason": "readiness_conditions_not_met" if runtime_ready_allowed else "bootstrap_not_ready",
+        "blocked_by": blocked_by,
+        "fresh_pair_target": fresh_pair_target,
+    }
 
 
 def set_enabled_symbol_count(count: int) -> None:
@@ -56,33 +128,36 @@ def market_data_mode(*, ws_connected: bool) -> str:
 
 
 def current_ingest_state(*, ws_connected: bool) -> str:
-    if ingest_ready and ws_connected:
-        return "READY"
-    if ingest_degraded and not ws_connected:
-        return "DEGRADED_REST_FALLBACK"
-    if ingest_degraded and ws_connected:
-        return "DEGRADED"
-    if startup_mode == "stale_cache":
-        return "STALE_CACHE"
-    if not ws_connected:
-        return "WS_DOWN"
-    return "NOT_READY"
+    return build_runtime_snapshot(ws_connected=ws_connected)["ingest_state"]
 
 
 def build_runtime_snapshot(*, ws_connected: bool) -> dict[str, Any]:
     fresh_pairs = fresh_pair_count()
+    readiness = compute_ingest_readiness(
+        IngestReadinessSnapshot(
+            startup_mode=startup_mode,
+            ws_connected=ws_connected,
+            producer_present=producer_present,
+            producer_fresh=producer_fresh(),
+            fresh_pairs=fresh_pairs,
+            total_pairs=enabled_symbol_count,
+        )
+    )
     return {
-        "ingest_state": current_ingest_state(ws_connected=ws_connected),
-        "market_data_mode": market_data_mode(ws_connected=ws_connected),
+        "ingest_state": readiness["ingest_state"],
+        "market_data_mode": readiness["market_data_mode"],
         "startup_mode": startup_mode,
-        "ready": ingest_ready,
-        "degraded": ingest_degraded,
+        "ready": readiness["ready"],
+        "degraded": readiness["degraded"],
         "ws_connected": ws_connected,
         "rest_fallback_active": not ws_connected,
         "producer_present": producer_present,
-        "producer_fresh": producer_fresh(),
+        "producer_fresh": readiness["reason"] == "live_ws_ready" or producer_fresh(),
         "symbols_ready": fresh_pairs,
         "symbols_total": enabled_symbol_count,
+        "fresh_pair_target": readiness["fresh_pair_target"],
+        "reason": readiness["reason"],
+        "blocked_by": readiness["blocked_by"],
     }
 
 
@@ -128,12 +203,56 @@ def emit_ingest_runtime_metrics(connected: bool) -> None:
         "producer_heartbeat_age_sec", f"{heartbeat_age if heartbeat_age != float('inf') else 0.0:.2f}"
     )
     health_probe.set_detail("fresh_pairs", str(fresh_pairs))
+    health_probe.set_detail("fresh_pair_target", str(snapshot["fresh_pair_target"]))
     health_probe.set_detail("ingest_state", str(snapshot["ingest_state"]))
     health_probe.set_detail("market_data_mode", str(snapshot["market_data_mode"]))
+    health_probe.set_detail("readiness_reason", str(snapshot["reason"]))
+    health_probe.set_detail("readiness_blocked_by", ",".join(str(item) for item in snapshot["blocked_by"]))
     health_probe.set_detail("rest_fallback_active", "1" if snapshot["rest_fallback_active"] else "0")
     health_probe.set_detail("symbols_ready", str(snapshot["symbols_ready"]))
     health_probe.set_detail("symbols_total", str(snapshot["symbols_total"]))
     health_probe.set_detail("ws_connected", "1" if snapshot["ws_connected"] else "0")
+    _log_ingest_transition(snapshot)
+
+
+def _log_ingest_transition(snapshot: dict[str, Any]) -> None:
+    global _last_logged_blocked_by, _last_logged_ingest_state, _last_logged_reason
+
+    blocked_by = ",".join(str(item) for item in snapshot["blocked_by"])
+    state_changed = snapshot["ingest_state"] != _last_logged_ingest_state
+    reason_changed = snapshot["reason"] != _last_logged_reason
+    blockers_changed = blocked_by != _last_logged_blocked_by
+
+    if state_changed:
+        logger.info(
+            "[IngestTransition] {} -> {} reason={} ws_connected={} producer_fresh={} fresh_pairs={}/{} target={} startup_mode={}",
+            _last_logged_ingest_state or "UNKNOWN",
+            snapshot["ingest_state"],
+            snapshot["reason"],
+            snapshot["ws_connected"],
+            snapshot["producer_fresh"],
+            snapshot["symbols_ready"],
+            snapshot["symbols_total"],
+            snapshot["fresh_pair_target"],
+            snapshot["startup_mode"],
+        )
+    elif reason_changed or blockers_changed:
+        logger.info(
+            "[IngestReadinessBlocked] state={} reason={} blocked_by={} ws_connected={} producer_fresh={} fresh_pairs={}/{} target={} startup_mode={}",
+            snapshot["ingest_state"],
+            snapshot["reason"],
+            blocked_by or "none",
+            snapshot["ws_connected"],
+            snapshot["producer_fresh"],
+            snapshot["symbols_ready"],
+            snapshot["symbols_total"],
+            snapshot["fresh_pair_target"],
+            snapshot["startup_mode"],
+        )
+
+    _last_logged_ingest_state = str(snapshot["ingest_state"])
+    _last_logged_reason = str(snapshot["reason"])
+    _last_logged_blocked_by = blocked_by
 
 
 def is_duplicate_pair_tick(symbol: str, price: float, ts: float) -> bool:
@@ -174,8 +293,11 @@ def update_producer_health(connected: bool) -> None:
 
 def ingest_readiness() -> bool:
     """Readiness gate with grace period for freshly-connected WS."""
-    base_ready = ingest_ready or ingest_degraded
-    if not base_ready:
+    snapshot = build_runtime_snapshot(ws_connected=producer_present)
+    if snapshot["ready"]:
+        return True
+
+    if startup_mode == "failed_no_cache":
         return False
 
     is_fresh = producer_present and producer_fresh()

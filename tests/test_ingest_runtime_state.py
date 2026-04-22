@@ -29,13 +29,60 @@ def test_build_runtime_snapshot_reports_ready_ws_primary(monkeypatch) -> None:
     monkeypatch.setattr(service_metrics, "enabled_symbol_count", 30)
     monkeypatch.setattr(service_metrics, "producer_present", True)
     monkeypatch.setattr(service_metrics, "producer_last_heartbeat_ts", service_metrics.time())
-    monkeypatch.setattr(service_metrics, "pair_last_tick_ts", {"EURUSD": service_metrics.time()})
+    monkeypatch.setattr(
+        service_metrics,
+        "pair_last_tick_ts",
+        {f"PAIR{i}": service_metrics.time() for i in range(30)},
+    )
 
     snapshot = service_metrics.build_runtime_snapshot(ws_connected=True)
 
-    assert snapshot["ingest_state"] == "READY"
+    assert snapshot["ingest_state"] == "LIVE"
     assert snapshot["market_data_mode"] == "WS_PRIMARY"
     assert snapshot["rest_fallback_active"] is False
+
+
+def test_build_runtime_snapshot_promotes_stale_cache_to_live_when_runtime_is_healthy(monkeypatch) -> None:
+    monkeypatch.setattr(service_metrics, "ingest_ready", False)
+    monkeypatch.setattr(service_metrics, "ingest_degraded", True)
+    monkeypatch.setattr(service_metrics, "startup_mode", "stale_cache")
+    monkeypatch.setattr(service_metrics, "enabled_symbol_count", 30)
+    monkeypatch.setattr(service_metrics, "producer_present", True)
+    monkeypatch.setattr(service_metrics, "producer_last_heartbeat_ts", service_metrics.time())
+    monkeypatch.setattr(
+        service_metrics,
+        "pair_last_tick_ts",
+        {f"PAIR{i}": service_metrics.time() for i in range(26)},
+    )
+
+    snapshot = service_metrics.build_runtime_snapshot(ws_connected=True)
+
+    assert snapshot["ready"] is True
+    assert snapshot["degraded"] is False
+    assert snapshot["ingest_state"] == "LIVE"
+    assert snapshot["fresh_pair_target"] == 26
+    assert snapshot["blocked_by"] == []
+
+
+def test_build_runtime_snapshot_blocks_live_when_bootstrap_failed(monkeypatch) -> None:
+    monkeypatch.setattr(service_metrics, "ingest_ready", False)
+    monkeypatch.setattr(service_metrics, "ingest_degraded", False)
+    monkeypatch.setattr(service_metrics, "startup_mode", "failed_no_cache")
+    monkeypatch.setattr(service_metrics, "enabled_symbol_count", 30)
+    monkeypatch.setattr(service_metrics, "producer_present", True)
+    monkeypatch.setattr(service_metrics, "producer_last_heartbeat_ts", service_metrics.time())
+    monkeypatch.setattr(
+        service_metrics,
+        "pair_last_tick_ts",
+        {f"PAIR{i}": service_metrics.time() for i in range(30)},
+    )
+
+    snapshot = service_metrics.build_runtime_snapshot(ws_connected=True)
+
+    assert snapshot["ready"] is False
+    assert snapshot["degraded"] is False
+    assert snapshot["ingest_state"] == "NOT_READY"
+    assert snapshot["blocked_by"] == ["startup_not_bootstrapped"]
 
 
 def test_mark_pair_tick_uses_local_receipt_time_for_freshness(monkeypatch) -> None:
