@@ -1,12 +1,103 @@
+# railway-engine.toml
+# ============================================================
+# TUYUL FX WOLF 15-LAYER SYSTEM — ENGINE SERVICE
+# ============================================================
+#
+# Purpose:
+# - Railway service ini hanya menjalankan ENGINE / ANALYSIS /
+#   CONSTITUTIONAL PIPELINE.
+# - Ingest / market-data producer berjalan di service terpisah:
+#   railway-ingestor.toml
+#
+# Important:
+# - Railway healthcheck tetap memakai /healthz sebagai LIVENESS CHECK.
+# - Jangan pakai /readyz sebagai Railway healthcheck, karena /readyz
+#   bisa false saat ingest degraded padahal engine process sehat.
+# - Trading / verdict readiness harus dikontrol oleh internal engine gate:
+#   IngestStateConsumer + Gatekeeper + VerdictEngine.
+#
+# Current safe mode:
+# - RUN_MODE=engine-only
+# - EXECUTION_ENABLED=0
+# - Shadow/canary boleh aktif, execution tetap mati.
+#
+# ============================================================
+
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "bash deploy/railway/start_engine_consolidated.sh"
+
+# Liveness only:
+# /healthz = process alive / HTTP server alive.
+#
+# Jangan ganti ke /readyz untuk Railway healthcheck, karena itu bisa
+# menyebabkan Railway restart engine saat ingest service degraded.
+#
+# Readiness trading/verdict wajib dikontrol di dalam engine:
+# - IngestStateConsumer
+# - Gatekeeper
+# - VerdictEngine
 healthcheckPath = "/healthz"
 healthcheckTimeout = 300
+
+# Restart hanya jika process gagal/crash.
+#
+# Data degraded, ingest degraded, provider stale, atau evidence incomplete
+# harus ditangani oleh readiness gate internal, bukan Railway restart loop.
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
-# Engine-only mode (RUN_MODE=engine-only).
-# Ingest runs as a separate service (railway-ingestor.toml).
+
+# ============================================================
+# REQUIRED RAILWAY VARIABLES — ENGINE SERVICE
+# ============================================================
+#
+# Set di Railway dashboard → Engine service → Variables:
+#
+# RUN_MODE=engine-only
+# EXECUTION_ENABLED=0
+#
+# REDIS_URL=<railway redis internal url>
+#
+# WOLF_SHADOW_CAPTURE_ENABLED=1
+# WOLF_SHADOW_JOURNAL_PATH=/var/log/wolf/shadow_capture.jsonl
+#
+# Optional untuk fase adaptive threshold shadow:
+# ADAPTIVE_THRESHOLD_MODE=shadow
+#
+# Optional heartbeat thresholds:
+# HEARTBEAT_INGEST_PROCESS_MAX_AGE_SEC=30
+# HEARTBEAT_INGEST_PROVIDER_MAX_AGE_SEC=30
+# HEARTBEAT_ENGINE_MAX_AGE_SEC=60
+#
+# ============================================================
+# EXPECTED ENDPOINT SEMANTICS
+# ============================================================
+#
+# /healthz
+#   - Railway liveness.
+#   - Return 200 jika engine process hidup.
+#
+# /readyz
+#   - Operational readiness.
+#   - Boleh return 503 jika ingest/provider/producer tidak sehat.
+#   - Jangan dipakai sebagai Railway healthcheck.
+#
+# /status
+#   - Full structured status:
+#     run_mode, execution_enabled, redis status, ingest health,
+#     shadow capture status, last analysis loop age, etc.
+#
+# ============================================================
+# SAFETY RULE
+# ============================================================
+#
+# Selama recovery blueprint:
+# - Execution wajib tetap OFF.
+# - P1-D tetap HOLD.
+# - Engine boleh analyze/canary.
+# - Final executable verdict tidak boleh keluar jika ingest unhealthy.
+#
+# ============================================================
