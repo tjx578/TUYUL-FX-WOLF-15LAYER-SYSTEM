@@ -45,6 +45,7 @@ def evaluate_9_gates(synthesis: dict[str, Any]) -> dict[str, Any]:
     layers = synthesis.get("layers", {})
     execution = synthesis.get("execution", {})
     fusion_frpc = synthesis.get("fusion_frpc", {})
+    probability_evidence = synthesis.get("probability_evidence", {})
 
     # Gate 1: TIIsym >= 0.93
     tii = layers.get("L8_tii_sym", 0.0)
@@ -62,7 +63,11 @@ def evaluate_9_gates(synthesis: dict[str, Any]) -> dict[str, Any]:
     _ror_threshold = 0.20
     g2_ror = _risk_of_ruin < _ror_threshold
 
-    g2 = g2_win and g2_ror
+    # Constitutional L7 override: hard-stop probability illegality must fail
+    # Gate 2 even if legacy analytical metrics still look passable.
+    g2_constitutional = not bool(probability_evidence.get("hard_stop", False))
+
+    g2 = g2_win and g2_ror and g2_constitutional
 
     # Gate 3: FRPC State = SYNC
     frpc_state = fusion_frpc.get("frpc_state", "DESYNC")
@@ -96,13 +101,14 @@ def evaluate_9_gates(synthesis: dict[str, Any]) -> dict[str, Any]:
 
     # Log Gate 2 detail for audit trail
     logger.debug(
-        "[Gate-2] win_pct=%.1f%% (min=%.1f%%) %s | risk_of_ruin=%.4f (max=%.2f) %s | gate=%s",
+        "[Gate-2] win_pct=%.1f%% (min=%.1f%%) %s | risk_of_ruin=%.4f (max=%.2f) %s | constitutional=%s | gate=%s",
         win_pct,
         _monte_min * 100.0,
         "PASS" if g2_win else "FAIL",
         _risk_of_ruin,
         _ror_threshold,
         "PASS" if g2_ror else "FAIL",
+        "PASS" if g2_constitutional else "FAIL",
         "PASS" if g2 else "FAIL",
     )
 
@@ -111,6 +117,7 @@ def evaluate_9_gates(synthesis: dict[str, Any]) -> dict[str, Any]:
         "total_gates": 9,
         "gate_1_tii": "PASS" if g1 else "FAIL",
         "gate_2_montecarlo": "PASS" if g2 else "FAIL",
+        "gate_2_probability_evidence": "PASS" if g2_constitutional else "FAIL",
         "gate_3_frpc": "PASS" if g3 else "FAIL",
         "gate_4_conf12": "PASS" if g4 else "FAIL",
         "gate_5_rr": "PASS" if g5 else "FAIL",
