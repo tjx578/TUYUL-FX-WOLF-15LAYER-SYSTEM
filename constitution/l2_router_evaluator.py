@@ -71,6 +71,10 @@ class L2Input:
     structure_source_invalid: bool = False
     timeframe_set_insufficient: bool = False
     contract_payload_malformed: bool = False
+    adaptive_pass_threshold: float | None = None
+    adaptive_warn_threshold: float | None = None
+    adaptive_regime: str = "UNKNOWN"
+    adaptive_mode: str = "shadow"
     notes: list[str] = field(default_factory=list)
 
 
@@ -127,6 +131,16 @@ class L2RouterEvaluator:
         if score >= self.MID_THRESHOLD:
             return CoherenceBand.MID
         return CoherenceBand.LOW
+
+    @staticmethod
+    def _adaptive_band(score: float, pass_threshold: float | None, warn_threshold: float | None) -> str | None:
+        if pass_threshold is None or warn_threshold is None:
+            return None
+        if score >= pass_threshold:
+            return "PASS"
+        if score >= warn_threshold:
+            return "WARN"
+        return "FAIL"
 
     def _critical_blockers(self, payload: L2Input) -> list[BlockerCode]:
         blockers: list[BlockerCode] = []
@@ -204,6 +218,14 @@ class L2RouterEvaluator:
         rule_hits.append(f"hierarchy_followed={payload.hierarchy_followed}")
         rule_hits.append(f"hierarchy_band={payload.hierarchy_band}")
         rule_hits.append(f"aligned={payload.aligned}")
+        adaptive_band = self._adaptive_band(
+            payload.alignment_score,
+            payload.adaptive_pass_threshold,
+            payload.adaptive_warn_threshold,
+        )
+        adaptive_shadow_status = f"{adaptive_band}_SHADOW" if adaptive_band else None
+        if adaptive_band:
+            rule_hits.append(f"adaptive_band={adaptive_band}")
 
         target_timeframes = payload.coverage_target_timeframes or payload.required_timeframes
         partial_coverage = any(tf not in payload.available_timeframes for tf in target_timeframes)
@@ -261,6 +283,15 @@ class L2RouterEvaluator:
             "alignment_score": round(payload.alignment_score, 4),
             "evidence_score": evidence_score,
             "confidence_penalty": confidence_penalty,
+            "required_alignment": self.MID_THRESHOLD,
+            "frozen_required_alignment": self.MID_THRESHOLD,
+            "adaptive_warn_threshold": payload.adaptive_warn_threshold,
+            "adaptive_pass_threshold": payload.adaptive_pass_threshold,
+            "frozen_band": band.value,
+            "adaptive_band": adaptive_band,
+            "adaptive_shadow_status": adaptive_shadow_status,
+            "adaptive_mode": payload.adaptive_mode,
+            "adaptive_regime": payload.adaptive_regime,
             "hierarchy_followed": payload.hierarchy_followed,
             "hierarchy_band": payload.hierarchy_band,
             "aligned": payload.aligned,
@@ -344,4 +375,26 @@ def build_l2_input_from_dict(payload: dict[str, Any]) -> L2Input:
         timeframe_set_insufficient=bool(payload.get("timeframe_set_insufficient", False)),
         contract_payload_malformed=bool(payload.get("contract_payload_malformed", False)),
         notes=[str(x) for x in payload.get("notes", [])],
+        adaptive_pass_threshold=(
+            float(payload["alignment_thresholds"].get("pass"))
+            if isinstance(payload.get("alignment_thresholds"), dict)
+            and payload["alignment_thresholds"].get("pass") is not None
+            else None
+        ),
+        adaptive_warn_threshold=(
+            float(payload["alignment_thresholds"].get("warn"))
+            if isinstance(payload.get("alignment_thresholds"), dict)
+            and payload["alignment_thresholds"].get("warn") is not None
+            else None
+        ),
+        adaptive_regime=(
+            str(payload["alignment_thresholds"].get("regime", "UNKNOWN"))
+            if isinstance(payload.get("alignment_thresholds"), dict)
+            else "UNKNOWN"
+        ),
+        adaptive_mode=(
+            str(payload["alignment_thresholds"].get("mode", "shadow"))
+            if isinstance(payload.get("alignment_thresholds"), dict)
+            else "shadow"
+        ),
     )

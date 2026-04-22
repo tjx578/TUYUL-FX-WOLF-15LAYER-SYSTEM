@@ -564,7 +564,7 @@ class TestAnalyzerFallback:
         assert result["valid"] is False
         assert result["available_timeframes"] == 2
 
-    def test_exactly_three_timeframes_valid(
+    def test_exactly_three_timeframes_missing_required_htf_is_invalid(
         self,
         analyzer: L2MTAAnalyzer,
         bullish_candle: dict[str, float],
@@ -573,6 +573,23 @@ class TestAnalyzerFallback:
             "MN": bullish_candle,
             "W1": bullish_candle,
             "D1": bullish_candle,
+        }
+        analyzer.context = _make_candle_source(candle_map=candle_map)
+        result = analyzer.analyze("EURUSD")
+
+        assert result["valid"] is False
+        assert result["available_timeframes"] == 3
+        assert "REQUIRED_TIMEFRAME_MISSING" in result["blocker_codes"]
+
+    def test_exactly_three_timeframes_with_required_htfs_is_valid(
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict[str, float],
+    ) -> None:
+        candle_map: dict[str, dict[str, float] | None] = {
+            "D1": bullish_candle,
+            "H4": bullish_candle,
+            "H1": bullish_candle,
         }
         analyzer.context = _make_candle_source(candle_map=candle_map)
         result = analyzer.analyze("EURUSD")

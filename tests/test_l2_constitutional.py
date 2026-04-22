@@ -555,6 +555,9 @@ class TestL2ConstitutionalGovernor:
         diagnostics = result["mta_diagnostics"]
         assert diagnostics["alignment_score"] == 0.42
         assert diagnostics["required_alignment"] == 0.65
+        assert diagnostics["frozen_required_alignment"] == 0.65
+        assert diagnostics["adaptive_warn_threshold"] is None
+        assert diagnostics["adaptive_pass_threshold"] is None
         assert diagnostics["primary_conflict"] == "D1_H4_DIRECTION_CONFLICT"
         assert diagnostics["per_tf_bias"]["D1"] == "BULLISH"
         assert diagnostics["per_tf_bias"]["H4"] == "BEARISH"
@@ -587,6 +590,37 @@ class TestL2ConstitutionalGovernor:
         assert diagnostics["direction_consensus"] == "bullish"
         assert diagnostics["primary_conflict"] is None
         assert diagnostics["per_tf_strength"]["D1"] > 0.0
+
+    def test_mta_diagnostics_include_adaptive_shadow_thresholds(self):
+        result = self.gov.evaluate(
+            l1_output=_l1_pass(),
+            l2_analysis=_l2_analysis(
+                alignment_strength=0.52,
+                per_tf_bias={
+                    "D1": {"p_bull": 0.78},
+                    "H4": {"p_bull": 0.22},
+                    "H1": {"p_bull": 0.25},
+                },
+            )
+            | {
+                "alignment_thresholds": {
+                    "pass": 0.50,
+                    "warn": 0.35,
+                    "regime": "TRANSITION",
+                    "mode": "shadow",
+                }
+            },
+            symbol="EURUSD",
+            candle_counts={"D1": 15, "H4": 60, "H1": 44},
+        )
+        diagnostics = result["mta_diagnostics"]
+        assert diagnostics["frozen_band"] == "LOW"
+        assert diagnostics["adaptive_band"] == "PASS"
+        assert diagnostics["adaptive_shadow_status"] == "PASS_SHADOW"
+        assert diagnostics["adaptive_warn_threshold"] == 0.35
+        assert diagnostics["adaptive_pass_threshold"] == 0.5
+        assert diagnostics["adaptive_regime"] == "TRANSITION"
+        assert diagnostics["adaptive_mode"] == "shadow"
 
     def test_mta_diagnostics_include_missing_timeframes(self):
         result = self.gov.evaluate(

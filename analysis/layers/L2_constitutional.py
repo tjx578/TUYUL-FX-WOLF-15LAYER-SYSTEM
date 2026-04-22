@@ -390,6 +390,22 @@ def _build_mta_diagnostics(
     }
 
 
+def _shadow_band_from_thresholds(
+    score: float,
+    *,
+    pass_threshold: float | None,
+    warn_threshold: float | None,
+) -> str | None:
+    """Compute adaptive shadow band without affecting live status."""
+    if pass_threshold is None or warn_threshold is None:
+        return None
+    if score >= pass_threshold:
+        return "PASS"
+    if score >= warn_threshold:
+        return "WARN"
+    return "FAIL"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §4  COMPRESSION LOGIC (frozen strict mode)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -634,6 +650,21 @@ class L2ConstitutionalGovernor:
         rule_hits.append(f"hierarchy_band={hierarchy_band}")
         rule_hits.append(f"aligned={aligned}")
 
+        raw_thresholds = l2_analysis.get("alignment_thresholds", {})
+        if not isinstance(raw_thresholds, dict):
+            raw_thresholds = {}
+        adaptive_pass_threshold = _coerce_float(raw_thresholds.get("pass"))
+        adaptive_warn_threshold = _coerce_float(raw_thresholds.get("warn"))
+        adaptive_regime = str(raw_thresholds.get("regime", "UNKNOWN"))
+        adaptive_band = _shadow_band_from_thresholds(
+            alignment_score,
+            pass_threshold=adaptive_pass_threshold,
+            warn_threshold=adaptive_warn_threshold,
+        )
+        adaptive_shadow_status = f"{adaptive_band}_SHADOW" if adaptive_band else None
+        if adaptive_band:
+            rule_hits.append(f"adaptive_band={adaptive_band}")
+
         # Partial coverage check
         partial_coverage = any(tf not in available_tfs for tf in COVERAGE_TARGET_TIMEFRAMES)
 
@@ -699,6 +730,19 @@ class L2ConstitutionalGovernor:
             alignment_score=alignment_score,
             candle_counts=candle_counts,
         )
+        mta_diagnostics.update(
+            {
+                "frozen_required_alignment": ALIGNMENT_MID_GTE,
+                "adaptive_warn_threshold": adaptive_warn_threshold,
+                "adaptive_pass_threshold": adaptive_pass_threshold,
+                "frozen_band": band.value,
+                "adaptive_band": adaptive_band,
+                "live_status": status.value,
+                "adaptive_shadow_status": adaptive_shadow_status,
+                "adaptive_mode": str(raw_thresholds.get("mode", "shadow")),
+                "adaptive_regime": adaptive_regime,
+            }
+        )
 
         # Log constitutional result
         logger.info(
@@ -740,6 +784,14 @@ class L2ConstitutionalGovernor:
                 "evidence_score": evidence_score,
                 "confidence_penalty": confidence_penalty,
                 "required_alignment": ALIGNMENT_MID_GTE,
+                "frozen_required_alignment": ALIGNMENT_MID_GTE,
+                "adaptive_warn_threshold": adaptive_warn_threshold,
+                "adaptive_pass_threshold": adaptive_pass_threshold,
+                "frozen_band": band.value,
+                "adaptive_band": adaptive_band,
+                "adaptive_shadow_status": adaptive_shadow_status,
+                "adaptive_mode": str(raw_thresholds.get("mode", "shadow")),
+                "adaptive_regime": adaptive_regime,
                 "hierarchy_followed": hierarchy_followed,
                 "aligned": aligned,
                 "candle_age_seconds": candle_age_seconds,

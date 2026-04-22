@@ -728,6 +728,12 @@ class L2MTAAnalyzer:
             "mta_compliance": compliance,
             "hierarchy_followed": hierarchy_followed,
             "hierarchy_band": hierarchy_band,
+            "alignment_thresholds": {
+                "pass": round(_pass_t, 4),
+                "warn": round(_fail_t, 4),
+                "regime": regime,
+                "mode": "shadow",
+            },
             "reflex_coherence": reflex_coherence,
             "conf12": round(conf12, 4),
             "frpc_energy": round(frpc_energy, 4),
@@ -782,7 +788,12 @@ class L2MTAAnalyzer:
         gov = L2ConstitutionalGovernor()
 
         # Build L1 output for upstream legality check
-        l1_output = l1_ctx if l1_ctx else {"valid": True, "continuation_allowed": True}
+        l1_output = {"valid": True, "continuation_allowed": True}
+        if isinstance(l1_ctx, dict):
+            l1_output.update(l1_ctx)
+            if "continuation_allowed" not in l1_ctx and "valid" not in l1_ctx:
+                l1_output["valid"] = True
+                l1_output["continuation_allowed"] = True
 
         candle_age_by_tf = raw_result.get("candle_age_by_tf", {})
         aggregate_candle_age = None
@@ -864,6 +875,12 @@ class L2MTAAnalyzer:
             "mta_compliance": f"0/{len(_TF_WEIGHTS_DEFAULT)}",
             "hierarchy_followed": False,
             "hierarchy_band": "FAIL",
+            "alignment_thresholds": {
+                "pass": _ALIGNMENT_THRESHOLDS_DEFAULT[0],
+                "warn": _ALIGNMENT_THRESHOLDS_DEFAULT[1],
+                "regime": "UNKNOWN",
+                "mode": "shadow",
+            },
             "reflex_coherence": 0.0,
             "conf12": 0.0,
             "frpc_energy": 0.0,

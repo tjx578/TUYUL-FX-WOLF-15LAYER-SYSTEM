@@ -73,3 +73,33 @@ def test_l2_pass_still_exposes_diagnostics() -> None:
     assert result["mta_diagnostics"]["direction_consensus"] == "bullish"
     assert result["mta_diagnostics"]["primary_conflict"] is None
     assert result["mta_diagnostics"]["per_tf_bias"]["D1"] == "BULLISH"
+
+
+def test_l2_shadow_thresholds_exposed_without_changing_live_status() -> None:
+    gov = L2ConstitutionalGovernor()
+    analysis = {
+        "valid": True,
+        "alignment_strength": 0.52,
+        "hierarchy_followed": True,
+        "aligned": False,
+        "available_timeframes": 3,
+        "alignment_thresholds": {"pass": 0.50, "warn": 0.35, "regime": "TRANSITION", "mode": "shadow"},
+        "per_tf_bias": {
+            "D1": {"p_bull": 0.78},
+            "H4": {"p_bull": 0.22},
+            "H1": {"p_bull": 0.25},
+        },
+    }
+
+    result = gov.evaluate(
+        l1_output=_l1_pass(),
+        l2_analysis=analysis,
+        symbol="EURUSD",
+        candle_counts={"D1": 15, "H4": 60, "H1": 44},
+    )
+
+    assert result["status"] == "WARN"
+    assert result["mta_diagnostics"]["frozen_band"] == "LOW"
+    assert result["mta_diagnostics"]["adaptive_band"] == "PASS"
+    assert result["mta_diagnostics"]["adaptive_shadow_status"] == "PASS_SHADOW"
+    assert result["mta_diagnostics"]["adaptive_regime"] == "TRANSITION"
