@@ -39,6 +39,19 @@ def test_broker_executor_returns_execution_disabled_contract_without_http() -> N
     http_post.assert_not_called()
 
 
+def test_broker_executor_logs_disabled_mode_on_init() -> None:
+    with (
+        patch.dict("os.environ", {"EXECUTION_ENABLED": "0"}, clear=False),
+        patch("execution.broker_executor.logger") as mock_logger,
+    ):
+        BrokerExecutor(ea_url="http://ea-bridge:8081")
+
+    mock_logger.info.assert_called_with(
+        "BrokerExecutor: execution adapter disabled via EXECUTION_ENABLED=0 ea_url={} broker_calls_suppressed=true",
+        "http://ea-bridge:8081",
+    )
+
+
 def test_ea_manager_does_not_retry_execution_disabled_result() -> None:
     executor = MagicMock()
     executor.execute.return_value = ExecutionResult(

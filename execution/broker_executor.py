@@ -65,6 +65,8 @@ from execution.resilience import (  # noqa: E402
 
 
 class _LoggerLike(Protocol):
+    def info(self, message: str, *args: Any, **kwargs: Any) -> Any: ...
+
     def error(self, message: str, *args: Any, **kwargs: Any) -> Any: ...
 
 
@@ -137,11 +139,21 @@ class BrokerExecutor:  # noqa: F811
             failure_threshold=5,
             recovery_timeout_sec=30.0,
         )
+        self._log_runtime_mode()
 
     @staticmethod
     def _execution_enabled() -> bool:
         raw = str(os.getenv("EXECUTION_ENABLED", "1")).strip().lower()
         return raw not in {"0", "false", "off", "no"}
+
+    def _log_runtime_mode(self) -> None:
+        if self._execution_enabled():
+            logger.info("BrokerExecutor: execution adapter enabled ea_url={}", self._ea_url)
+            return
+        logger.info(
+            "BrokerExecutor: execution adapter disabled via EXECUTION_ENABLED=0 ea_url={} broker_calls_suppressed=true",
+            self._ea_url,
+        )
 
     def execute(self, req: ExecutionRequest) -> ExecutionResult:
         """Send a single execution request to EA bridge."""
