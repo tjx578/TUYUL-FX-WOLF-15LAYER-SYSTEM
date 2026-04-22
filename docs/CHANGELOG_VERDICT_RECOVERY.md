@@ -25,3 +25,11 @@ This changelog tracks verdict-recovery wiring, guardrail, and observability chan
 
 - Focused route and executor tests cover the explicit disabled contract and runtime endpoint exposure.
 - This changelog entry records blueprint-aligned wiring and observability work; it is not a production sign-off by itself.
+
+### Verification Gate Scaffolding
+
+- Scope: make the remaining sign-off path concrete for review, security, and performance gates.
+- Blueprint reference: Section 7 `Verification Gate`.
+- Change: added `docs/runbooks/verdict-recovery-signoff-pack.md` to centralize pending sign-off evidence paths.
+- Change: added pending verification artifacts under `journal/verification/` for review, security, and performance gate collection.
+- Rationale: the blueprint requires archived evidence, not only implemented code; these artifacts make the remaining gate work executable and auditable.

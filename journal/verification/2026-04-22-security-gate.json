@@ -1,0 +1,51 @@
+{
+  "run_id": "2026-04-22-security-gate",
+  "gate": "security",
+  "status": "pending_evidence",
+  "production_blocking": true,
+  "blueprint": {
+    "document": "analysis/STRATEGIC_BLUEPRINT_2026-04-22.md",
+    "references": [
+      "Section 7 / Gate Security",
+      "Section 6 / Risk Register"
+    ]
+  },
+  "guardrails_under_review": [
+    "No credential, secret, or account state enters the L12 synthesis payload.",
+    "Execution remains fail-closed when EXECUTION_ENABLED=0.",
+    "Operator observability does not create a new authority surface.",
+    "Audit trail assumptions remain append-only and non-authoritative."
+  ],
+  "required_evidence": [
+    {
+      "type": "workflow",
+      "path": ".github/workflows/wolf-security-scan.yml",
+      "commands": [
+        "pip-audit --desc --strict --ignore-vuln CVE-2026-4539",
+        "trufflehog filesystem . --no-update --fail --exclude-paths=.github/trufflehog-exclude.txt"
+      ],
+      "status": "pending"
+    },
+    {
+      "type": "test_suite",
+      "path": "tests/contract/test_blueprint_v2_contracts.py",
+      "command": "python -m pytest tests/contract/test_blueprint_v2_contracts.py -q",
+      "status": "pending"
+    },
+    {
+      "type": "slice_tests",
+      "path": "tests/test_broker_executor.py + tests/test_execution_router.py",
+      "command": "python -m pytest tests/test_broker_executor.py tests/test_execution_router.py -q",
+      "status": "partially_satisfied"
+    }
+  ],
+  "known_open_items": [
+    "Secret-scan and dependency-audit results have not yet been attached to this artifact.",
+    "L12 payload boundary review still needs an explicit reviewer conclusion, not just test execution."
+  ],
+  "evidence": [],
+  "notes": [
+    "Attach CI run URLs or local command outputs here when the security checks are executed.",
+    "Mark passed only after both workflow-level scans and contract-level boundary checks are attached."
+  ]
+}

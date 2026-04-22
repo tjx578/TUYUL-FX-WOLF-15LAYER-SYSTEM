@@ -1,0 +1,58 @@
+{
+  "run_id": "2026-04-22-performance-gate",
+  "gate": "performance",
+  "status": "pending_evidence",
+  "production_blocking": true,
+  "blueprint": {
+    "document": "analysis/STRATEGIC_BLUEPRINT_2026-04-22.md",
+    "references": [
+      "Section 4 / Performance & Latency Budget",
+      "Section 7 / Gate Performance"
+    ]
+  },
+  "target_budgets": {
+    "end_to_end_p95_ms": 410,
+    "end_to_end_p99_ms": 1020,
+    "nine_gate_single_call_ms": 250,
+    "critical_import_seconds": 10.0
+  },
+  "required_evidence": [
+    {
+      "type": "workflow",
+      "path": ".github/workflows/perf-guard.yml",
+      "checks": [
+        "import-budget",
+        "slow-test-enforcement",
+        "tick-module-size"
+      ],
+      "status": "pending"
+    },
+    {
+      "type": "integration_test",
+      "path": "tests/integration/test_9gate_concurrent.py",
+      "command": "python -m pytest tests/integration/test_9gate_concurrent.py -q",
+      "status": "pending"
+    },
+    {
+      "type": "integration_test",
+      "path": "tests/integration/test_feed_to_verdict_latency.py",
+      "command": "python -m pytest tests/integration/test_feed_to_verdict_latency.py -q",
+      "status": "pending"
+    },
+    {
+      "type": "load_probe",
+      "path": "tests/load/k6_ws_test.js",
+      "command": "k6 run tests/load/k6_ws_test.js",
+      "status": "optional_supporting_evidence"
+    }
+  ],
+  "known_open_items": [
+    "No benchmark artifact has been attached yet for the blueprint p95/p99 end-to-end budget.",
+    "Existing perf guard workflow covers import and unmarked slow tests, but not by itself the full 30-symbol steady-state budget."
+  ],
+  "evidence": [],
+  "notes": [
+    "Populate this artifact with CI links, local outputs, and measured latency summaries before sign-off.",
+    "Do not mark passed until at least one direct verdict-latency evidence source and the perf guard workflow results are attached."
+  ]
+}
