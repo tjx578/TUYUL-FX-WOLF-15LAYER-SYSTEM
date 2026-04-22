@@ -80,6 +80,10 @@ class BlockerCode(StrEnum):
     CONTRACT_PAYLOAD_MALFORMED = "CONTRACT_PAYLOAD_MALFORMED"
 
 
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §2  FROZEN THRESHOLDS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -170,10 +174,6 @@ def _check_critical_blockers(
     # Minimum timeframe set
     if len(available_tfs) < MIN_TIMEFRAMES_LEGAL:
         blockers.append(BlockerCode.TIMEFRAME_SET_INSUFFICIENT)
-
-    # Hierarchy check
-    if not l2_analysis.get("hierarchy_followed", False):
-        blockers.append(BlockerCode.MTA_HIERARCHY_VIOLATED)
 
     return blockers
 
@@ -407,20 +407,12 @@ def _compress_status(
 ) -> L2Status:
     """Step 7: Compress all sub-gate outputs into final status.
 
-    Truth table (frozen v1):
-      FAIL: any critical blocker, LOW band, hierarchy violated, no-producer,
-            insufficient warmup, illegal fallback
-      PASS: fresh + ready + hierarchy ok + aligned + no partial coverage +
-            band in {HIGH, MID} + fallback in {NO, PRIMARY_SUBSTITUTE}
-      WARN: legal degraded envelope (all other legal-but-degraded states)
-      else: FAIL
+    FAIL is reserved for hard legality/data-contract failures.
+    Weak alignment or degraded hierarchy remains continuable evidence and
+    compresses to WARN so L12 can evaluate the full evidence chain.
     """
     # Any critical blocker → FAIL
     if blockers:
-        return L2Status.FAIL
-
-    # Band LOW → FAIL
-    if band == CoherenceBand.LOW:
         return L2Status.FAIL
 
     # Clean PASS envelope
@@ -440,8 +432,6 @@ def _compress_status(
     legal_warn = (
         freshness in (FreshnessState.FRESH, FreshnessState.STALE_PRESERVED, FreshnessState.DEGRADED)
         and warmup in (WarmupState.READY, WarmupState.PARTIAL)
-        and hierarchy_followed
-        and band in (CoherenceBand.HIGH, CoherenceBand.MID)
         and fallback
         in (
             FallbackClass.NO_FALLBACK,
@@ -452,19 +442,28 @@ def _compress_status(
     if legal_warn:
         return L2Status.WARN
 
-    return L2Status.FAIL
+    return L2Status.WARN
 
 
 def _collect_warning_codes(
     freshness: FreshnessState,
     warmup: WarmupState,
     fallback: FallbackClass,
+    band: CoherenceBand,
+    hierarchy_followed: bool,
+    hierarchy_band: str,
     aligned: bool,
     partial_coverage: bool,
 ) -> list[str]:
     """Collect warning codes for the WARN envelope."""
     warnings: list[str] = []
 
+    if not hierarchy_followed:
+        warnings.append(BlockerCode.MTA_HIERARCHY_VIOLATED.value)
+    elif hierarchy_band == "WARN":
+        warnings.append("MTA_HIERARCHY_DEGRADED")
+    if band == CoherenceBand.LOW:
+        warnings.append(BlockerCode.LOW_ALIGNMENT_BAND.value)
     if not aligned:
         warnings.append("STRUCTURE_NOT_FULLY_ALIGNED")
     if partial_coverage:
@@ -481,6 +480,43 @@ def _collect_warning_codes(
         warnings.append("PRIMARY_SUBSTITUTE_USED")
 
     return warnings
+
+
+def _confidence_penalty(
+    *,
+    hard_blockers: list[str],
+    freshness: FreshnessState,
+    warmup: WarmupState,
+    fallback: FallbackClass,
+    band: CoherenceBand,
+    hierarchy_followed: bool,
+    aligned: bool,
+    partial_coverage: bool,
+) -> float:
+    """Compute an audit-friendly confidence penalty for degraded evidence."""
+    if hard_blockers:
+        return 1.0
+
+    penalty = 0.0
+    if band == CoherenceBand.LOW:
+        penalty += 0.35
+    if not hierarchy_followed:
+        penalty += 0.25
+    if not aligned:
+        penalty += 0.15
+    if partial_coverage:
+        penalty += 0.10
+    if freshness == FreshnessState.STALE_PRESERVED:
+        penalty += 0.10
+    elif freshness == FreshnessState.DEGRADED:
+        penalty += 0.20
+    if warmup == WarmupState.PARTIAL:
+        penalty += 0.10
+    if fallback == FallbackClass.LEGAL_EMERGENCY_PRESERVE:
+        penalty += 0.10
+    elif fallback == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:
+        penalty += 0.05
+    return round(_clamp01(penalty), 4)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -601,20 +637,6 @@ class L2ConstitutionalGovernor:
         # Partial coverage check
         partial_coverage = any(tf not in available_tfs for tf in COVERAGE_TARGET_TIMEFRAMES)
 
-        # ── Step 6b: Close alignment band gap ─────────────────
-        # If band is LOW but MTA says hierarchy_followed (threshold gap
-        # between MTA warn_threshold and constitutional ALIGNMENT_MID_GTE),
-        # add an explicit blocker so halts are never silent.
-        _has_alignment_blocker = any(
-            str(b) in (BlockerCode.MTA_HIERARCHY_VIOLATED, BlockerCode.LOW_ALIGNMENT_BAND)
-            if isinstance(b, BlockerCode)
-            else b in (BlockerCode.MTA_HIERARCHY_VIOLATED.value, BlockerCode.LOW_ALIGNMENT_BAND.value)
-            for b in blockers
-        )
-        if band == CoherenceBand.LOW and not _has_alignment_blocker:
-            blockers.append(BlockerCode.LOW_ALIGNMENT_BAND)
-            rule_hits.append("low_alignment_band_blocker_injected")
-
         # ── Step 7: Compress status ───────────────────────────
         # Deduplicate blockers
         blocker_strs = list(dict.fromkeys(b.value if isinstance(b, BlockerCode) else str(b) for b in blockers))
@@ -637,21 +659,36 @@ class L2ConstitutionalGovernor:
                 freshness,
                 warmup,
                 fallback,
+                band,
+                hierarchy_followed,
+                hierarchy_band,
                 aligned,
                 partial_coverage,
             )
-            if hierarchy_band == "WARN":
-                warning_codes.append("MTA_HIERARCHY_DEGRADED")
 
         if hierarchy_band == "WARN" and status != L2Status.FAIL:
             notes.append("Alignment in WARN band — regime-adaptive threshold applied.")
-        if band == CoherenceBand.LOW and status == L2Status.FAIL:
-            notes.append("Alignment below legal threshold.")
+        if band == CoherenceBand.LOW and status != L2Status.FAIL:
+            notes.append("Alignment below constitutional mid-band; carrying penalty evidence forward.")
+        if not hierarchy_followed and status != L2Status.FAIL:
+            notes.append("Hierarchy weakness downgraded to evidence penalty; continuation preserved.")
         if partial_coverage and status != L2Status.FAIL:
             notes.append("Coverage target incomplete but required TFs are present.")
 
+        confidence_penalty = _confidence_penalty(
+            hard_blockers=blocker_strs,
+            freshness=freshness,
+            warmup=warmup,
+            fallback=fallback,
+            band=band,
+            hierarchy_followed=hierarchy_followed,
+            aligned=aligned,
+            partial_coverage=partial_coverage,
+        )
+        evidence_score = round(_clamp01(alignment_score * (1.0 - confidence_penalty)), 4)
+
         # ── Step 8: Set continuation ──────────────────────────
-        continuation_allowed = status in (L2Status.PASS, L2Status.WARN)
+        continuation_allowed = not blocker_strs
         next_targets = ["L3"] if continuation_allowed else []
 
         # ── Step 9: Emit contract ─────────────────────────────
@@ -684,6 +721,12 @@ class L2ConstitutionalGovernor:
             "input_ref": input_ref,
             "status": status.value,
             "continuation_allowed": continuation_allowed,
+            "advisory_continuation": continuation_allowed,
+            "hard_stop": not continuation_allowed,
+            "evidence_score": evidence_score,
+            "confidence_penalty": confidence_penalty,
+            "hard_blockers": blocker_strs,
+            "soft_blockers": warning_codes,
             "blocker_codes": blocker_strs,
             "warning_codes": warning_codes,
             "fallback_class": fallback.value,
@@ -694,6 +737,8 @@ class L2ConstitutionalGovernor:
             # Features
             "features": {
                 "alignment_score": round(alignment_score, 4),
+                "evidence_score": evidence_score,
+                "confidence_penalty": confidence_penalty,
                 "required_alignment": ALIGNMENT_MID_GTE,
                 "hierarchy_followed": hierarchy_followed,
                 "aligned": aligned,

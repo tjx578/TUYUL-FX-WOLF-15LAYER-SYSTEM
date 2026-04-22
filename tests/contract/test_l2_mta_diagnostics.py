@@ -24,7 +24,7 @@ def _base_analysis() -> dict:
     }
 
 
-def test_l2_fail_exposes_primary_conflict_without_changing_status() -> None:
+def test_l2_warn_exposes_primary_conflict_without_hard_stop() -> None:
     gov = L2ConstitutionalGovernor()
     result = gov.evaluate(
         l1_output=_l1_pass(),
@@ -33,8 +33,11 @@ def test_l2_fail_exposes_primary_conflict_without_changing_status() -> None:
         candle_counts={"D1": 15, "H4": 60, "H1": 44, "M15": 120},
     )
 
-    assert result["status"] == "FAIL"
-    assert "MTA_HIERARCHY_VIOLATED" in result["blocker_codes"]
+    assert result["status"] == "WARN"
+    assert result["continuation_allowed"] is True
+    assert result["blocker_codes"] == []
+    assert "MTA_HIERARCHY_VIOLATED" in result["warning_codes"]
+    assert "LOW_ALIGNMENT_BAND" in result["warning_codes"]
     assert result["mta_diagnostics"]["primary_conflict"] == "D1_H4_DIRECTION_CONFLICT"
     assert result["mta_diagnostics"]["alignment_score"] == 0.42
     assert result["mta_diagnostics"]["required_alignment"] == 0.65

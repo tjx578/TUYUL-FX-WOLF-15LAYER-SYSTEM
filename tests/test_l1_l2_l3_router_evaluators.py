@@ -392,8 +392,10 @@ class TestL2RouterEvaluator:
             warmup_state=L2Warmup.READY,
         )
         result = ev.evaluate(inp)
-        assert result.status == L2Status.FAIL
-        assert L2Blocker.MTA_HIERARCHY_VIOLATED.value in result.blocker_codes
+        assert result.status == L2Status.WARN
+        assert result.continuation_allowed is True
+        assert result.blocker_codes == []
+        assert L2Blocker.MTA_HIERARCHY_VIOLATED.value in result.warning_codes
 
     def test_low_alignment_fail(self):
         ev = L2RouterEvaluator()
@@ -412,8 +414,10 @@ class TestL2RouterEvaluator:
             warmup_state=L2Warmup.READY,
         )
         result = ev.evaluate(inp)
-        assert result.status == L2Status.FAIL
+        assert result.status == L2Status.WARN
+        assert result.continuation_allowed is True
         assert result.coherence_band == "LOW"
+        assert "LOW_ALIGNMENT_BAND" in result.warning_codes
 
     def test_build_from_dict(self):
         payload = {

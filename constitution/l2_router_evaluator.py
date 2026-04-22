@@ -1,43 +1,43 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class L2Status(str, Enum):
+class L2Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class FreshnessState(str, Enum):
+class FreshnessState(StrEnum):
     FRESH = "FRESH"
     STALE_PRESERVED = "STALE_PRESERVED"
     DEGRADED = "DEGRADED"
     NO_PRODUCER = "NO_PRODUCER"
 
 
-class WarmupState(str, Enum):
+class WarmupState(StrEnum):
     READY = "READY"
     PARTIAL = "PARTIAL"
     INSUFFICIENT = "INSUFFICIENT"
 
 
-class FallbackClass(str, Enum):
+class FallbackClass(StrEnum):
     LEGAL_PRIMARY_SUBSTITUTE = "LEGAL_PRIMARY_SUBSTITUTE"
     LEGAL_EMERGENCY_PRESERVE = "LEGAL_EMERGENCY_PRESERVE"
     ILLEGAL_FALLBACK = "ILLEGAL_FALLBACK"
     NO_FALLBACK = "NO_FALLBACK"
 
 
-class CoherenceBand(str, Enum):
+class CoherenceBand(StrEnum):
     HIGH = "HIGH"
     MID = "MID"
     LOW = "LOW"
 
 
-class BlockerCode(str, Enum):
+class BlockerCode(StrEnum):
     UPSTREAM_L1_NOT_CONTINUABLE = "UPSTREAM_L1_NOT_CONTINUABLE"
     REQUIRED_TIMEFRAME_MISSING = "REQUIRED_TIMEFRAME_MISSING"
     TIMEFRAME_SET_INSUFFICIENT = "TIMEFRAME_SET_INSUFFICIENT"
@@ -141,9 +141,6 @@ class L2RouterEvaluator:
         if payload.timeframe_set_insufficient or len(payload.available_timeframes) < 3:
             blockers.append(BlockerCode.TIMEFRAME_SET_INSUFFICIENT)
 
-        if not payload.hierarchy_followed:
-            blockers.append(BlockerCode.MTA_HIERARCHY_VIOLATED)
-
         if payload.structure_source_invalid:
             blockers.append(BlockerCode.STRUCTURE_SOURCE_INVALID)
 
@@ -167,6 +164,32 @@ class L2RouterEvaluator:
                 deduped.append(blocker)
         return deduped
 
+    @staticmethod
+    def _confidence_penalty(payload: L2Input, band: CoherenceBand, partial_coverage: bool, blockers: list[BlockerCode]) -> float:
+        if blockers:
+            return 1.0
+
+        penalty = 0.0
+        if band == CoherenceBand.LOW:
+            penalty += 0.35
+        if not payload.hierarchy_followed:
+            penalty += 0.25
+        if not payload.aligned:
+            penalty += 0.15
+        if partial_coverage:
+            penalty += 0.10
+        if payload.freshness_state == FreshnessState.STALE_PRESERVED:
+            penalty += 0.10
+        elif payload.freshness_state == FreshnessState.DEGRADED:
+            penalty += 0.20
+        if payload.warmup_state == WarmupState.PARTIAL:
+            penalty += 0.10
+        if payload.fallback_class == FallbackClass.LEGAL_EMERGENCY_PRESERVE:
+            penalty += 0.10
+        elif payload.fallback_class == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:
+            penalty += 0.05
+        return round(max(0.0, min(1.0, penalty)), 4)
+
     def evaluate(self, payload: L2Input) -> L2EvaluationResult:
         blockers = self._critical_blockers(payload)
         warning_codes: list[str] = []
@@ -184,16 +207,14 @@ class L2RouterEvaluator:
 
         target_timeframes = payload.coverage_target_timeframes or payload.required_timeframes
         partial_coverage = any(tf not in payload.available_timeframes for tf in target_timeframes)
+        confidence_penalty = self._confidence_penalty(payload, band, partial_coverage, blockers)
+        evidence_score = round(max(0.0, min(1.0, payload.alignment_score * (1.0 - confidence_penalty))), 4)
 
         if blockers:
             status = L2Status.FAIL
             continuation_allowed = False
         else:
-            if band == CoherenceBand.LOW:
-                status = L2Status.FAIL
-                continuation_allowed = False
-                warning_codes.append("LOW_ALIGNMENT")
-            elif (
+            if (
                 payload.freshness_state == FreshnessState.FRESH
                 and payload.warmup_state == WarmupState.READY
                 and band in (CoherenceBand.HIGH, CoherenceBand.MID)
@@ -210,50 +231,36 @@ class L2RouterEvaluator:
                 if payload.fallback_class == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:
                     warning_codes.append("PRIMARY_SUBSTITUTE_USED")
             else:
-                legal_warn = (
-                    payload.upstream_l1_continuation_allowed
-                    and payload.freshness_state in (
-                        FreshnessState.FRESH,
-                        FreshnessState.STALE_PRESERVED,
-                        FreshnessState.DEGRADED,
-                    )
-                    and payload.warmup_state in (WarmupState.READY, WarmupState.PARTIAL)
-                    and band in (CoherenceBand.HIGH, CoherenceBand.MID)
-                    and payload.hierarchy_followed
-                    and payload.fallback_class in (
-                        FallbackClass.NO_FALLBACK,
-                        FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
-                        FallbackClass.LEGAL_EMERGENCY_PRESERVE,
-                    )
-                )
-                if legal_warn:
-                    status = L2Status.WARN
-                    continuation_allowed = True
-                    if payload.hierarchy_band == "WARN":
-                        warning_codes.append("MTA_HIERARCHY_DEGRADED")
-                    if not payload.aligned:
-                        warning_codes.append("STRUCTURE_NOT_FULLY_ALIGNED")
-                    if partial_coverage:
-                        warning_codes.append("PARTIAL_TIMEFRAME_COVERAGE")
-                    if payload.freshness_state == FreshnessState.STALE_PRESERVED:
-                        warning_codes.append("STALE_PRESERVED_STRUCTURE")
-                    if payload.freshness_state == FreshnessState.DEGRADED:
-                        warning_codes.append("DEGRADED_STRUCTURE")
-                    if payload.warmup_state == WarmupState.PARTIAL:
-                        warning_codes.append("PARTIAL_WARMUP")
-                    if payload.fallback_class == FallbackClass.LEGAL_EMERGENCY_PRESERVE:
-                        warning_codes.append("EMERGENCY_PRESERVE_FALLBACK")
-                    if payload.fallback_class == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:
-                        warning_codes.append("PRIMARY_SUBSTITUTE_USED")
-                else:
-                    status = L2Status.FAIL
-                    continuation_allowed = False
+                status = L2Status.WARN
+                continuation_allowed = True
+                if not payload.hierarchy_followed:
+                    warning_codes.append(BlockerCode.MTA_HIERARCHY_VIOLATED.value)
+                elif payload.hierarchy_band == "WARN":
+                    warning_codes.append("MTA_HIERARCHY_DEGRADED")
+                if band == CoherenceBand.LOW:
+                    warning_codes.append("LOW_ALIGNMENT_BAND")
+                if not payload.aligned:
+                    warning_codes.append("STRUCTURE_NOT_FULLY_ALIGNED")
+                if partial_coverage:
+                    warning_codes.append("PARTIAL_TIMEFRAME_COVERAGE")
+                if payload.freshness_state == FreshnessState.STALE_PRESERVED:
+                    warning_codes.append("STALE_PRESERVED_STRUCTURE")
+                if payload.freshness_state == FreshnessState.DEGRADED:
+                    warning_codes.append("DEGRADED_STRUCTURE")
+                if payload.warmup_state == WarmupState.PARTIAL:
+                    warning_codes.append("PARTIAL_WARMUP")
+                if payload.fallback_class == FallbackClass.LEGAL_EMERGENCY_PRESERVE:
+                    warning_codes.append("EMERGENCY_PRESERVE_FALLBACK")
+                if payload.fallback_class == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:
+                    warning_codes.append("PRIMARY_SUBSTITUTE_USED")
 
         next_targets = ["L3"] if continuation_allowed else []
         missing_required = [tf for tf in payload.required_timeframes if tf not in payload.available_timeframes]
 
         features = {
             "alignment_score": round(payload.alignment_score, 4),
+            "evidence_score": evidence_score,
+            "confidence_penalty": confidence_penalty,
             "hierarchy_followed": payload.hierarchy_followed,
             "hierarchy_band": payload.hierarchy_band,
             "aligned": payload.aligned,
@@ -261,6 +268,8 @@ class L2RouterEvaluator:
             "coverage_target_timeframes": payload.coverage_target_timeframes,
             "available_timeframes": payload.available_timeframes,
             "missing_required_timeframes": missing_required,
+            "hard_blockers": [b.value for b in blockers],
+            "soft_blockers": warning_codes,
         }
 
         routing = {

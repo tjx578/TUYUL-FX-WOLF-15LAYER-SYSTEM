@@ -129,7 +129,7 @@ class TestCriticalBlockers:
         analysis = _l2_analysis(hierarchy_followed=False)
         tfs = ["D1", "H4", "H1"]
         result = _check_critical_blockers(analysis, tfs)
-        assert BlockerCode.MTA_HIERARCHY_VIOLATED in result
+        assert result == []
 
     def test_malformed_payload(self):
         result = _check_critical_blockers({}, [])
@@ -274,11 +274,10 @@ class TestCompression:
             aligned=True,
             partial_coverage=False,
         )
-        assert status == L2Status.FAIL
+        assert status == L2Status.WARN
 
     def test_fail_when_hierarchy_violated_and_no_blocker(self):
-        # hierarchy_followed=False doesn't produce a blocker in compression,
-        # but WARN envelope requires hierarchy_followed=True
+        # Hierarchy weakness is carried forward as degraded evidence.
         status = _compress_status(
             blockers=[],
             freshness=FreshnessState.FRESH,
@@ -289,7 +288,7 @@ class TestCompression:
             aligned=True,
             partial_coverage=False,
         )
-        assert status == L2Status.FAIL
+        assert status == L2Status.WARN
 
     def test_warn_emergency_preserve_with_partial_warmup(self):
         status = _compress_status(
@@ -316,9 +315,14 @@ class TestWarningCodes:
             FreshnessState.STALE_PRESERVED,
             WarmupState.PARTIAL,
             FallbackClass.LEGAL_EMERGENCY_PRESERVE,
+            CoherenceBand.LOW,
+            False,
+            "WARN",
             aligned=False,
             partial_coverage=True,
         )
+        assert "MTA_HIERARCHY_VIOLATED" in codes
+        assert "LOW_ALIGNMENT_BAND" in codes
         assert "STRUCTURE_NOT_FULLY_ALIGNED" in codes
         assert "PARTIAL_TIMEFRAME_COVERAGE" in codes
         assert "STALE_PRESERVED_STRUCTURE" in codes
@@ -330,6 +334,9 @@ class TestWarningCodes:
             FreshnessState.FRESH,
             WarmupState.READY,
             FallbackClass.NO_FALLBACK,
+            CoherenceBand.HIGH,
+            True,
+            "PASS",
             aligned=True,
             partial_coverage=False,
         )
@@ -388,9 +395,10 @@ class TestL2ConstitutionalGovernor:
             l2_analysis=_l2_analysis(alignment_strength=0.50),
             symbol="EURUSD",
         )
-        assert result["status"] == "FAIL"
-        assert result["continuation_allowed"] is False
+        assert result["status"] == "WARN"
+        assert result["continuation_allowed"] is True
         assert result["coherence_band"] == "LOW"
+        assert "LOW_ALIGNMENT_BAND" in result["warning_codes"]
 
     def test_warn_on_stale_preserved(self):
         result = self.gov.evaluate(
@@ -496,8 +504,9 @@ class TestL2ConstitutionalGovernor:
             l2_analysis=_l2_analysis(hierarchy_followed=False),
             symbol="EURUSD",
         )
-        assert result["status"] == "FAIL"
-        assert "MTA_HIERARCHY_VIOLATED" in result["blocker_codes"]
+        assert result["status"] == "WARN"
+        assert result["continuation_allowed"] is True
+        assert "MTA_HIERARCHY_VIOLATED" in result["warning_codes"]
 
     def test_pass_with_primary_substitute_fallback(self):
         result = self.gov.evaluate(
@@ -551,6 +560,10 @@ class TestL2ConstitutionalGovernor:
         assert diagnostics["per_tf_bias"]["H4"] == "BEARISH"
         assert diagnostics["candle_counts"]["H4"] == 60
         assert diagnostics["candle_age_by_tf"]["D1"] == 58000
+        assert result["status"] == "WARN"
+        assert result["continuation_allowed"] is True
+        assert "MTA_HIERARCHY_VIOLATED" in result["warning_codes"]
+        assert "LOW_ALIGNMENT_BAND" in result["warning_codes"]
 
     def test_mta_diagnostics_present_on_pass_without_status_change(self):
         result = self.gov.evaluate(
