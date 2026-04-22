@@ -452,6 +452,7 @@ class TestL12Verdict:
         assert verdict["gates_v74"]["gate_2_montecarlo"] == "FAIL"
         assert verdict["gates_v74"]["gate_2_probability_evidence"] == "FAIL"
         assert "L7_HARD_PROBABILITY_ILLEGALITY" in synthesis["constitutional_phase5"]["blocker_codes"]
+        assert synthesis["constitutional_phase5"]["audit"]["l7_evidence"]["hard_stop"] is True
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -526,7 +527,8 @@ class TestEarlyExit:
         assert mocked_pipeline._l1 is not None, "_l1 analyzer not initialized"
         mocked_pipeline._l1.analyze = MagicMock(return_value=_l1(valid=False))
         result = mocked_pipeline.execute("EURUSD")
-        assert any(e.startswith("L1_HALT") or e.startswith("L1_CONTEXT_INVALID") for e in result["errors"])
+        assert any(e.startswith("L1_FAIL:") for e in result["errors"])
+        assert any(e.startswith("L1_BLOCKER:") for e in result["errors"])
         # Should have NO_TRADE verdict from early exit
         assert result["l12_verdict"]["verdict"] in ("NO_TRADE", "HOLD", "ABORT", "SKIP")
 
@@ -534,13 +536,15 @@ class TestEarlyExit:
         assert mocked_pipeline._l2 is not None, "_l2 analyzer not initialized"
         mocked_pipeline._l2.analyze = MagicMock(return_value=_l2(valid=False))
         result = mocked_pipeline.execute("EURUSD")
-        assert any(e.startswith("L2_HALT") or e.startswith("L2_MTA_INVALID") for e in result["errors"])
+        assert any(e.startswith("L2_FAIL:") for e in result["errors"])
+        assert any(e.startswith("L2_BLOCKER:") for e in result["errors"])
 
     def test_l3_invalid_returns_early(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         assert mocked_pipeline._l3 is not None, "_l3 analyzer not initialized"
         mocked_pipeline._l3.analyze = MagicMock(return_value=_l3(valid=False))
         result = mocked_pipeline.execute("EURUSD")
-        assert any(e.startswith("L3_HALT") or e == "L3_TECHNICAL_INVALID" for e in result["errors"])
+        assert any(e.startswith("L3_FAIL:") for e in result["errors"])
+        assert any(e.startswith("L3_BLOCKER:") for e in result["errors"])
 
 
 # ──────────────────────────────────────────────────────────────────
