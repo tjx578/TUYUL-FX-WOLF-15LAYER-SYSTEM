@@ -188,6 +188,44 @@ def _extract_mta_diagnostics(result: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+# (layer_key, diagnostic_key) mapping for constitutional diagnostics export.
+_CONSTITUTIONAL_DIAGNOSTIC_KEYS: tuple[tuple[str, str], ...] = (
+    ("l1", "context_diagnostics"),
+    ("l7", "edge_diagnostics"),
+    ("l8", "integrity_diagnostics"),
+    ("l9", "structure_diagnostics"),
+)
+
+
+def _extract_constitutional_diagnostic(result: dict[str, Any], layer_key: str, diag_key: str) -> dict[str, Any] | None:
+    """Extract a constitutional diagnostic payload from a pipeline result.
+
+    Preference order:
+      1. top-level ``result[diag_key]`` (exported by pipeline)
+      2. ``result["diagnostics"][diag_key]`` (legacy compat)
+      3. ``result[layer_key]["constitutional"][diag_key]`` (raw layer payload)
+    """
+    raw = result.get(diag_key)
+    if isinstance(raw, dict):
+        return dict(raw)
+
+    diagnostics = result.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        nested = diagnostics.get(diag_key)
+        if isinstance(nested, dict):
+            return dict(nested)
+
+    layer = result.get(layer_key)
+    if isinstance(layer, dict):
+        constitutional = layer.get("constitutional")
+        if isinstance(constitutional, dict):
+            nested = constitutional.get(diag_key)
+            if isinstance(nested, dict):
+                return dict(nested)
+
+    return None
+
+
 def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str, Any]:
     synthesis = dict(result.get("synthesis") or {})
     l12 = dict(result.get("l12_verdict") or {})
@@ -259,6 +297,11 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
     mta_diagnostics = _extract_mta_diagnostics(result)
     if mta_diagnostics is not None:
         payload["mta_diagnostics"] = mta_diagnostics
+
+    for _layer_key, _diag_key in _CONSTITUTIONAL_DIAGNOSTIC_KEYS:
+        _diag = _extract_constitutional_diagnostic(result, _layer_key, _diag_key)
+        if _diag is not None:
+            payload[_diag_key] = _diag
 
     gates_v74 = l12.get("gates_v74")
     if isinstance(gates_v74, dict):

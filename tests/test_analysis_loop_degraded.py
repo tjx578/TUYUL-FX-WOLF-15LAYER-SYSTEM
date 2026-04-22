@@ -306,3 +306,40 @@ class TestBuildVerdictCachePayload:
 
         assert payload["mta_diagnostics"]["alignment_score"] == 0.42
         assert payload["mta_diagnostics"]["primary_conflict"] == "D1_H4_DIRECTION_CONFLICT"
+
+    def test_payload_includes_constitutional_diagnostics_when_present(self):
+        from startup.analysis_loop import _build_verdict_cache_payload
+
+        result = {
+            "synthesis": {},
+            "l12_verdict": {"verdict": "NO_TRADE", "confidence": "LOW"},
+            "execution_map": {},
+            "governance": {},
+            "context_diagnostics": {
+                "regime": "HIGH_VOL",
+                "coherence_score": 0.30,
+                "required_coherence": 0.60,
+            },
+            "edge_diagnostics": {
+                "edge_status": "FAIL",
+                "win_probability": 0.48,
+                "required_win_probability": 0.55,
+            },
+            "integrity_diagnostics": {
+                "integrity_score": 0.40,
+                "required_integrity": 0.60,
+                "gate_status": "FAIL",
+            },
+            "structure_diagnostics": {
+                "missing_sources": ["SMC"],
+                "source_builder_state": "DEGRADED",
+                "available_sources": ["VP"],
+            },
+        }
+
+        payload = _build_verdict_cache_payload("EURUSD", result)
+
+        assert payload["context_diagnostics"]["regime"] == "HIGH_VOL"
+        assert payload["edge_diagnostics"]["edge_status"] == "FAIL"
+        assert payload["integrity_diagnostics"]["gate_status"] == "FAIL"
+        assert payload["structure_diagnostics"]["missing_sources"] == ["SMC"]

@@ -156,6 +156,41 @@ def test_build_pipeline_data_exposes_mta_diagnostics() -> None:
     assert pipeline["mta_diagnostics"]["primary_conflict"] == "D1_H4_DIRECTION_CONFLICT"
 
 
+def test_build_pipeline_data_exposes_constitutional_diagnostics() -> None:
+    verdict_data = {
+        "verdict": "NO_TRADE",
+        "confidence": 0.25,
+        "gates": {"passed": 2, "total": 9},
+        "context_diagnostics": {
+            "regime": "HIGH_VOL",
+            "coherence_score": 0.30,
+            "required_coherence": 0.60,
+        },
+        "edge_diagnostics": {
+            "edge_status": "FAIL",
+            "win_probability": 0.48,
+            "required_win_probability": 0.55,
+        },
+        "integrity_diagnostics": {
+            "integrity_score": 0.40,
+            "required_integrity": 0.60,
+            "gate_status": "FAIL",
+        },
+        "structure_diagnostics": {
+            "missing_sources": ["SMC"],
+            "source_builder_state": "DEGRADED",
+            "available_sources": ["VP"],
+        },
+    }
+
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+
+    assert pipeline["context_diagnostics"]["regime"] == "HIGH_VOL"
+    assert pipeline["edge_diagnostics"]["edge_status"] == "FAIL"
+    assert pipeline["integrity_diagnostics"]["gate_status"] == "FAIL"
+    assert pipeline["structure_diagnostics"]["missing_sources"] == ["SMC"]
+
+
 def test_extract_hold_block_reason_prefers_cached_field() -> None:
     raw = {
         "last_hold_block_reason": "GOVERNANCE_HOLD:stale_preserved",

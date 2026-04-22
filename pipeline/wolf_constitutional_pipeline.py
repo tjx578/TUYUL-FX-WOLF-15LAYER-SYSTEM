@@ -2497,11 +2497,25 @@ class WolfConstitutionalPipeline:
 
             result_dict = result.to_dict()
 
-            l2_constitutional = l2.get("constitutional") if isinstance(l2, dict) else None
-            if isinstance(l2_constitutional, dict):
-                mta_diagnostics = l2_constitutional.get("mta_diagnostics")
-                if isinstance(mta_diagnostics, dict):
-                    result_dict["mta_diagnostics"] = dict(mta_diagnostics)
+            # ── Export per-layer constitutional diagnostics (non-invasive) ──
+            # L2/L1/L7/L8/L9 already compute diagnostics internally for constitutional
+            # logging; surface them on the pipeline result so downstream consumers
+            # (verdict cache, API, operator CLI) can read them without re-parsing
+            # nested layer payloads. This does NOT alter verdict logic — L12 is
+            # still the sole decision authority.
+            _diag_exports: tuple[tuple[Any, str], ...] = (
+                (l1, "context_diagnostics"),
+                (l2, "mta_diagnostics"),
+                (l7, "edge_diagnostics"),
+                (l8, "integrity_diagnostics"),
+                (l9, "structure_diagnostics"),
+            )
+            for _layer_payload, _diag_key in _diag_exports:
+                _const = _layer_payload.get("constitutional") if isinstance(_layer_payload, dict) else None
+                if isinstance(_const, dict):
+                    _diag = _const.get(_diag_key)
+                    if isinstance(_diag, dict):
+                        result_dict[_diag_key] = dict(_diag)
 
             # ── Tick→verdict end-to-end latency ────────────────────
             if tick_ts is not None:

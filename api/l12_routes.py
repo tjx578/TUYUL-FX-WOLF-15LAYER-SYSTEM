@@ -105,6 +105,24 @@ def _extract_mta_diagnostics(raw: dict[str, Any] | None) -> dict[str, Any] | Non
     return None
 
 
+# Additional constitutional diagnostic keys surfaced in the pipeline payload.
+_PIPELINE_CONSTITUTIONAL_DIAGNOSTIC_KEYS: tuple[str, ...] = (
+    "context_diagnostics",
+    "edge_diagnostics",
+    "integrity_diagnostics",
+    "structure_diagnostics",
+)
+
+
+def _extract_constitutional_diagnostic(raw: dict[str, Any] | None, diag_key: str) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    diagnostics = raw.get(diag_key)
+    if isinstance(diagnostics, dict):
+        return dict(diagnostics)
+    return None
+
+
 @router.get("/api/v1/l12/{pair}", dependencies=[Depends(verify_token)])
 def fetch_l12(pair: str):
     """Get L12 verdict for a specific pair with timezone info."""
@@ -503,6 +521,9 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     execution: dict[str, Any] = verdict_data.get("execution", {})
     layers_raw: dict[str, Any] = verdict_data.get("layers", {})
     mta_diagnostics = _extract_mta_diagnostics(verdict_data)
+    constitutional_diagnostics: dict[str, Any] = {
+        key: _extract_constitutional_diagnostic(verdict_data, key) for key in _PIPELINE_CONSTITUTIONAL_DIAGNOSTIC_KEYS
+    }
 
     verdict_str: str = verdict_data.get("verdict", "UNKNOWN")
     confidence = verdict_data.get("confidence", 0)
@@ -697,6 +718,10 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
             "signal_conditioning": verdict_data.get("system", {}).get("signal_conditioning", {}),
         },
         "mta_diagnostics": mta_diagnostics,
+        "context_diagnostics": constitutional_diagnostics.get("context_diagnostics"),
+        "edge_diagnostics": constitutional_diagnostics.get("edge_diagnostics"),
+        "integrity_diagnostics": constitutional_diagnostics.get("integrity_diagnostics"),
+        "structure_diagnostics": constitutional_diagnostics.get("structure_diagnostics"),
         "dag": {
             "nodes": dag_nodes,
             "edges": dag_edges,
