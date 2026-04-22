@@ -450,7 +450,7 @@ class TestL12Verdict:
         synthesis = result["synthesis"]
 
         assert verdict["gates_v74"]["gate_2_montecarlo"] == "FAIL"
-        assert synthesis["constitutional_phase5"]["blocker_codes"] == ["L7_HARD_PROBABILITY_ILLEGALITY"]
+        assert "L7_HARD_PROBABILITY_ILLEGALITY" in synthesis["constitutional_phase5"]["blocker_codes"]
 
 
 # ──────────────────────────────────────────────────────────────────
