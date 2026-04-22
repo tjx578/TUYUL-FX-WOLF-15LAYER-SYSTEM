@@ -100,28 +100,11 @@ class OrchestratorCoordinator:
 
     # ── Public entry point ────────────────────────────────────────────────
 
-    async def process_take_signal(
-        self,
-        take_id: str,
-        signal: dict[str, Any],
-        account_state: dict[str, Any],
-    ) -> OrchestrationResult:
-        """Run the ordered orchestration flow for a take-signal.
-
-        Pipeline:
-          1. Validate take-signal exists and is in PENDING state
-          2. Enforce compliance auto-mode (block if paused)
-          3. Run risk firewall checks
-          4. If firewall rejects → handle rejection, stop
-          5. If firewall approves → dispatch to execution, complete
-
-        The orchestrator does NOT modify the signal, verdict, or direction.
-        """
+    async def process_take_signal(self, take_id: str, signal: dict[str, Any], account_state: dict[str, Any]) -> OrchestrationResult:
         take_response = await self._validate_take(take_id)
         if isinstance(take_response, OrchestrationResult):
             return take_response
 
-        # ── Compliance gate: must pass BEFORE firewall ────────────────
         compliance_block = await self._enforce_compliance(take_id)
         if compliance_block is not None:
             return compliance_block
