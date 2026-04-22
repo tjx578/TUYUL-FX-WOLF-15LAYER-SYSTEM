@@ -2672,6 +2672,7 @@ class WolfConstitutionalPipeline:
         firewall_status = _gate_to_status("gate_7_propfirm")
         risk_chain_status = _gate_to_status("gate_5_rr")
         governance_status = _gate_to_status("gate_9_drawdown")
+        probability_evidence = synthesis.get("probability_evidence", {})
 
         # Synthesis score from verdict engine.
         # verdict_engine.generate_l12_verdict() returns "confidence" as a band
@@ -2690,8 +2691,8 @@ class WolfConstitutionalPipeline:
 
         evaluator = L12RouterEvaluator()
         l12_input = L12Input(
-            input_ref=str(synthesis.get("symbol", "UNKNOWN")),
-            timestamp=str(synthesis.get("system", {}).get("timestamp", "")),
+            input_ref=str(synthesis.get("symbol") or synthesis.get("pair") or "UNKNOWN"),
+            timestamp=str(synthesis.get("timestamp") or synthesis.get("system", {}).get("timestamp") or datetime.now(_TZ_GMT8).isoformat()),
             upstream_continuation_allowed=True,
             upstream_next_legal_targets=["PHASE_5"],
             foundation_status=foundation_status,
@@ -2699,6 +2700,13 @@ class WolfConstitutionalPipeline:
             enrichment_status="PASS" if total_passed >= 7 else "WARN",
             structure_status=structure_status,
             risk_chain_status=risk_chain_status,
+            l7_status=str(probability_evidence.get("status", probability_status)).upper(),
+            l7_evidence_score=float(probability_evidence.get("evidence_score", 0.0) or 0.0),
+            l7_confidence_penalty=float(probability_evidence.get("confidence_penalty", 0.0) or 0.0),
+            l7_hard_stop=bool(probability_evidence.get("hard_stop", False)),
+            l7_advisory_continuation=bool(probability_evidence.get("advisory_continuation", False)),
+            l7_hard_blockers=[str(x) for x in probability_evidence.get("hard_blockers", [])],
+            l7_soft_blockers=[str(x) for x in probability_evidence.get("soft_blockers", [])],
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
