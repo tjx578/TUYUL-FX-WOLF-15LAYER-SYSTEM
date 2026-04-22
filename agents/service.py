@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from importlib import import_module
 from typing import Any
 from uuid import UUID
 
@@ -46,18 +47,22 @@ def _safe_str(value: Any) -> str | None:
     return str(value) if value is not None else None
 
 
+def _load_asyncpg_module() -> Any | None:
+    try:
+        return import_module("asyncpg")
+    except ModuleNotFoundError:
+        return None
+
+
 def _is_unique_violation(exc: Exception) -> bool:
     """Return True if *exc* is an asyncpg unique-constraint violation.
 
     Uses structured exception type when asyncpg is available; falls back to
     message inspection as a last resort for environments without asyncpg.
     """
-    try:
-        import asyncpg  # noqa: PLC0415
-
+    asyncpg = _load_asyncpg_module()
+    if asyncpg is not None:
         return isinstance(exc, asyncpg.UniqueViolationError)
-    except ImportError:
-        pass
     _msg = str(exc).lower()
     return "unique" in _msg or "duplicate" in _msg
 
