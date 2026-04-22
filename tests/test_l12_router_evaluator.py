@@ -631,6 +631,67 @@ class TestBuildL12InputFromUpstream(unittest.TestCase):
         self.assertEqual(result.l9_soft_blockers, ["DIVERGENCE_SOURCE_MISSING"])
         self.assertEqual(result.l9_source_builder_state, "partial")
 
+    def test_build_input_extracts_l7_evidence_payload(self) -> None:
+        upstream = {
+            "input_ref": "EURUSD_H1_run_2002",
+            "timestamp": "2026-04-02T10:00:00+07:00",
+            "continuation_allowed": True,
+            "next_legal_targets": ["PHASE_5"],
+            "phase4_result": {
+                "chain_status": "PASS",
+                "summary_status": {"L11": "PASS", "L6": "PASS", "L10": "PASS"},
+                "layer_results": {"L11": {"score_numeric": 0.85}, "L6": {"score_numeric": 0.90}, "L10": {"score_numeric": 0.80}},
+            },
+            "upstream_result": {
+                "upstream_result": {
+                    "upstream_result": {
+                        "phase_results": {
+                            "PHASE_1": {
+                                "chain_status": "PASS",
+                                "summary_status": {"L1": "PASS", "L2": "PASS", "L3": "PASS"},
+                                "layer_results": {
+                                    "L1": {"score_numeric": 0.91},
+                                    "L2": {"score_numeric": 0.88},
+                                    "L3": {"score_numeric": 0.87},
+                                },
+                            },
+                            "PHASE_2": {
+                                "chain_status": "PASS",
+                                "summary_status": {"L4": "PASS", "L5": "PASS"},
+                                "layer_results": {"L4": {"score_numeric": 0.82}, "L5": {"score_numeric": 0.78}},
+                            },
+                        },
+                    },
+                    "phase25_result": {"phase_status": "PASS"},
+                },
+                "phase3_result": {
+                    "chain_status": "WARN",
+                    "summary_status": {"L7": "WARN", "L8": "PASS", "L9": "PASS"},
+                    "layer_results": {
+                        "L7": {
+                            "status": "WARN",
+                            "score_numeric": 0.52,
+                            "evidence_score": 0.36,
+                            "confidence_penalty": 0.16,
+                            "hard_stop": False,
+                            "advisory_continuation": True,
+                            "hard_blockers": [],
+                            "soft_blockers": ["WIN_PROBABILITY_NEAR_MISS"],
+                        },
+                        "L8": {"score_numeric": 0.92},
+                        "L9": {"score_numeric": 0.80},
+                    },
+                },
+            },
+        }
+
+        result = build_l12_input_from_upstream(upstream)
+        self.assertEqual(result.layer_scores["L7"], 0.36)
+        self.assertEqual(result.l7_status, "WARN")
+        self.assertEqual(result.l7_confidence_penalty, 0.16)
+        self.assertFalse(result.l7_hard_stop)
+        self.assertEqual(result.l7_soft_blockers, ["WIN_PROBABILITY_NEAR_MISS"])
+
     # ── v2.0 soft penalty / adaptive sizing / navigation confidence tests ──
 
 
@@ -1045,6 +1106,74 @@ class TestL12V2SoftPenalty(unittest.TestCase):
         self.assertEqual(result.verdict, "NO_TRADE")
         self.assertIn(L12BlockerCode.L9_HARD_STRUCTURE_ILLEGALITY.value, result.blocker_codes)
         self.assertEqual(result.audit["l9_evidence"]["hard_blockers"], ["REQUIRED_STRUCTURE_SOURCE_MISSING"])
+
+    def test_l7_weak_probability_evidence_emits_warning_not_blocker(self) -> None:
+        inp = L12Input(
+            input_ref="TEST_L7_SOFT",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="WARN",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES) | {"L7": 0.36},
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="WARN",
+            firewall_status="PASS",
+            governance_status="PASS",
+            l7_status="WARN",
+            l7_evidence_score=0.36,
+            l7_confidence_penalty=0.16,
+            l7_hard_stop=False,
+            l7_advisory_continuation=True,
+            l7_hard_blockers=[],
+            l7_soft_blockers=["WIN_PROBABILITY_NEAR_MISS"],
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertNotIn(L12BlockerCode.L7_HARD_PROBABILITY_ILLEGALITY.value, result.blocker_codes)
+        self.assertIn("L7_WEAK_PROBABILITY_EVIDENCE", result.warning_codes)
+        self.assertEqual(result.audit["l7_evidence"]["status"], "WARN")
+
+    def test_l7_hard_probability_illegality_emits_dedicated_blocker(self) -> None:
+        inp = L12Input(
+            input_ref="TEST_L7_HARD",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="FAIL",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES) | {"L7": 0.0},
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="FAIL",
+            firewall_status="PASS",
+            governance_status="PASS",
+            l7_status="FAIL",
+            l7_evidence_score=0.0,
+            l7_confidence_penalty=1.0,
+            l7_hard_stop=True,
+            l7_advisory_continuation=False,
+            l7_hard_blockers=["REQUIRED_PROBABILITY_SOURCE_MISSING"],
+            l7_soft_blockers=[],
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertEqual(result.verdict, "NO_TRADE")
+        self.assertIn(L12BlockerCode.L7_HARD_PROBABILITY_ILLEGALITY.value, result.blocker_codes)
+        self.assertEqual(result.audit["l7_evidence"]["hard_blockers"], ["REQUIRED_PROBABILITY_SOURCE_MISSING"])
 
 
 if __name__ == "__main__":

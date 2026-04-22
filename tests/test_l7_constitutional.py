@@ -428,6 +428,25 @@ class TestL7GovernorEnvelope:
         assert env["continuation_allowed"] is True
         assert env["coherence_band"] == "MID"
 
+    def test_low_band_pass_validation_becomes_soft_evidence(self):
+        data = _l7_analysis(
+            win_probability=52.0,
+            validation="PASS",
+            mc_passed_threshold=True,
+            simulations=1000,
+        )
+        env = self.gov.evaluate(data, _upstream_pass())
+        assert env["status"] == "WARN"
+        assert env["hard_stop"] is False
+        assert "WIN_PROBABILITY_NEAR_MISS" in env["soft_blockers"]
+        assert env["evidence_score"] < env["score_numeric"]
+
+    def test_probability_source_missing_remains_hard_stop(self):
+        env = self.gov.evaluate(_l7_fallback(), _upstream_pass())
+        assert env["status"] == "FAIL"
+        assert env["hard_stop"] is True
+        assert "REQUIRED_PROBABILITY_SOURCE_MISSING" in env["hard_blockers"]
+
     def test_fail_low_band(self):
         data = _l7_analysis(
             win_probability=45.0,
@@ -446,6 +465,7 @@ class TestL7GovernorEnvelope:
         assert env["continuation_allowed"] is True
         assert env["freshness_state"] == "DEGRADED"
         assert env["fallback_class"] == "LEGAL_EMERGENCY_PRESERVE"
+        assert "EMERGENCY_PROBABILITY_PRESERVE" in env["soft_blockers"]
 
     def test_features_present(self):
         env = self.gov.evaluate(_l7_analysis(), _upstream_pass())

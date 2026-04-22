@@ -37,6 +37,7 @@ class L12Verdict(StrEnum):
 class L12BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
     UPSTREAM_TARGET_NOT_PHASE5 = "UPSTREAM_TARGET_NOT_PHASE5"
+    L7_HARD_PROBABILITY_ILLEGALITY = "L7_HARD_PROBABILITY_ILLEGALITY"
     L2_HARD_ILLEGALITY = "L2_HARD_ILLEGALITY"
     L9_HARD_STRUCTURE_ILLEGALITY = "L9_HARD_STRUCTURE_ILLEGALITY"
     PHASE1_MISSING = "PHASE1_MISSING"
@@ -83,6 +84,15 @@ class L12Input:
 
     # Layer scores (per-layer numeric)
     layer_scores: dict[str, float] = field(default_factory=dict)
+
+    # L7 probability evidence plane forwarded for verdict differentiation
+    l7_status: str = "FAIL"
+    l7_evidence_score: float | None = None
+    l7_confidence_penalty: float = 0.0
+    l7_hard_stop: bool = False
+    l7_advisory_continuation: bool = False
+    l7_hard_blockers: list[str] = field(default_factory=list)
+    l7_soft_blockers: list[str] = field(default_factory=list)
 
     # L2 evidence plane forwarded for verdict differentiation
     l2_status: str = "FAIL"
@@ -222,6 +232,18 @@ class L12RouterEvaluator:
         # ── Upstream continuability ──
         if not payload.upstream_continuation_allowed:
             blockers.append(L12BlockerCode.UPSTREAM_NOT_CONTINUABLE.value)
+
+        if payload.l7_hard_stop and payload.l7_hard_blockers:
+            blockers.append(L12BlockerCode.L7_HARD_PROBABILITY_ILLEGALITY.value)
+            rule_hits.append(
+                "L7 hard probability illegality -> " + ",".join(sorted(dict.fromkeys(payload.l7_hard_blockers)))
+            )
+        elif payload.l7_soft_blockers:
+            warnings.append("L7_WEAK_PROBABILITY_EVIDENCE")
+            rule_hits.append(
+                f"L7 weak probability evidence -> penalty={payload.l7_confidence_penalty:.2f}, "
+                f"soft_blockers={','.join(sorted(dict.fromkeys(payload.l7_soft_blockers)))}"
+            )
 
         if payload.l2_hard_stop and payload.l2_hard_blockers:
             blockers.append(L12BlockerCode.L2_HARD_ILLEGALITY.value)
@@ -381,6 +403,15 @@ class L12RouterEvaluator:
                 "soft_blockers": list(payload.l2_soft_blockers),
                 "primary_conflict": payload.l2_primary_conflict,
             },
+            "l7_evidence": {
+                "status": payload.l7_status,
+                "evidence_score": payload.l7_evidence_score,
+                "confidence_penalty": payload.l7_confidence_penalty,
+                "hard_stop": payload.l7_hard_stop,
+                "advisory_continuation": payload.l7_advisory_continuation,
+                "hard_blockers": list(payload.l7_hard_blockers),
+                "soft_blockers": list(payload.l7_soft_blockers),
+            },
             "l9_evidence": {
                 "status": payload.l9_status,
                 "evidence_score": payload.l9_evidence_score,
@@ -458,6 +489,9 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
         if isinstance(fallback_l2, dict):
             l2_layer = fallback_l2
     phase3_layers = phase3_result.get("layer_results", {}) if isinstance(phase3_result, dict) else {}
+    l7_layer = phase3_layers.get("L7", {}) if isinstance(phase3_layers, dict) else {}
+    if not isinstance(l7_layer, dict):
+        l7_layer = {}
     l9_layer = phase3_layers.get("L9", {}) if isinstance(phase3_layers, dict) else {}
     if not isinstance(l9_layer, dict):
         l9_layer = {}
@@ -495,6 +529,11 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
     for layer_name, layer in phase3_result.get("layer_results", {}).items():
         if not isinstance(layer, dict):
             continue
+        if layer_name == "L7":
+            l7_evidence_score = layer.get("evidence_score")
+            if isinstance(l7_evidence_score, (int, float)):
+                layer_scores[layer_name] = float(l7_evidence_score)
+                continue
         if layer_name == "L9":
             l9_evidence_score = layer.get("evidence_score")
             if isinstance(l9_evidence_score, (int, float)):
@@ -533,6 +572,21 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
         if isinstance(primary, str) and primary:
             l2_primary_conflict = primary
 
+    l7_evidence_score = l7_layer.get("evidence_score")
+    if not isinstance(l7_evidence_score, (int, float)):
+        l7_evidence_score = l7_layer.get("features", {}).get("evidence_score") if isinstance(l7_layer.get("features"), dict) else None
+
+    l7_confidence_penalty = l7_layer.get("confidence_penalty")
+    if not isinstance(l7_confidence_penalty, (int, float)):
+        l7_confidence_penalty = l7_layer.get("features", {}).get("confidence_penalty") if isinstance(l7_layer.get("features"), dict) else 0.0
+
+    l7_hard_blockers = l7_layer.get("hard_blockers", l7_layer.get("blocker_codes", []))
+    if not isinstance(l7_hard_blockers, list):
+        l7_hard_blockers = []
+    l7_soft_blockers = l7_layer.get("soft_blockers", l7_layer.get("warning_codes", []))
+    if not isinstance(l7_soft_blockers, list):
+        l7_soft_blockers = []
+
     l9_evidence_score = l9_layer.get("evidence_score")
     if not isinstance(l9_evidence_score, (int, float)):
         l9_evidence_score = l9_layer.get("features", {}).get("evidence_score") if isinstance(l9_layer.get("features"), dict) else None
@@ -565,6 +619,13 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
         structure_status=structure_status,
         risk_chain_status=risk_chain_status,
         layer_scores=layer_scores,
+        l7_status=str(l7_layer.get("status", "FAIL")).upper(),
+        l7_evidence_score=float(l7_evidence_score) if isinstance(l7_evidence_score, (int, float)) else None,
+        l7_confidence_penalty=float(l7_confidence_penalty) if isinstance(l7_confidence_penalty, (int, float)) else 0.0,
+        l7_hard_stop=bool(l7_layer.get("hard_stop", False)),
+        l7_advisory_continuation=bool(l7_layer.get("advisory_continuation", False)),
+        l7_hard_blockers=[str(x) for x in l7_hard_blockers],
+        l7_soft_blockers=[str(x) for x in l7_soft_blockers],
         l2_status=str(l2_layer.get("status", "FAIL")).upper(),
         l2_evidence_score=float(l2_evidence_score) if isinstance(l2_evidence_score, (int, float)) else None,
         l2_confidence_penalty=float(l2_confidence_penalty) if isinstance(l2_confidence_penalty, (int, float)) else 0.0,

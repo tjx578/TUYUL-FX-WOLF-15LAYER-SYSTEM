@@ -94,6 +94,10 @@ MID_THRESHOLD = 0.55
 MIN_SAMPLE_WARN = 30
 
 
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §3  SUB-GATE HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -251,6 +255,78 @@ def _compute_source_completeness(l7_analysis: dict[str, Any]) -> float:
     return parse_history_ratio(str(l7_analysis.get("note", "")))
 
 
+def _probability_source_summary(
+    l7_analysis: dict[str, Any],
+    warmup: WarmupState,
+    fallback: FallbackClass,
+) -> dict[str, Any]:
+    simulations = int(l7_analysis.get("simulations", 0) or 0)
+    validation = str(l7_analysis.get("validation", "FAIL")).upper()
+    history_ratio = parse_history_ratio(str(l7_analysis.get("note", "")))
+    hard_blockers: list[str] = []
+    soft_blockers: list[str] = []
+
+    if simulations <= 0:
+        if validation == "FAIL":
+            hard_blockers.append(BlockerCode.REQUIRED_PROBABILITY_SOURCE_MISSING.value)
+        elif history_ratio > 0.0 or fallback != FallbackClass.NO_FALLBACK:
+            soft_blockers.append("PARTIAL_PROBABILITY_HISTORY")
+        else:
+            hard_blockers.append(BlockerCode.REQUIRED_PROBABILITY_SOURCE_MISSING.value)
+    elif simulations < 500 or warmup == WarmupState.PARTIAL:
+        soft_blockers.append("PARTIAL_PROBABILITY_HISTORY")
+
+    if warmup == WarmupState.INSUFFICIENT:
+        hard_blockers.append(BlockerCode.WARMUP_INSUFFICIENT.value)
+
+    if fallback == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE and simulations <= 0:
+        soft_blockers.append("PRIMARY_PROBABILITY_SUBSTITUTE")
+    elif fallback == FallbackClass.LEGAL_EMERGENCY_PRESERVE:
+        soft_blockers.append("EMERGENCY_PROBABILITY_PRESERVE")
+
+    return {
+        "simulations": simulations,
+        "history_ratio": round(history_ratio, 4),
+        "hard_blockers": list(dict.fromkeys(hard_blockers)),
+        "soft_blockers": list(dict.fromkeys(soft_blockers)),
+    }
+
+
+def _confidence_penalty(
+    *,
+    band: CoherenceBand,
+    freshness: FreshnessState,
+    warmup: WarmupState,
+    fallback: FallbackClass,
+    sample_count: int,
+    edge_warnings: list[str],
+    source_soft_blockers: list[str],
+) -> float:
+    penalty = 0.0
+
+    if band == CoherenceBand.MID:
+        penalty += 0.10
+    if freshness == FreshnessState.STALE_PRESERVED:
+        penalty += 0.06
+    elif freshness == FreshnessState.DEGRADED:
+        penalty += 0.12
+    if warmup == WarmupState.PARTIAL:
+        penalty += 0.08
+    if fallback == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:
+        penalty += 0.08
+    elif fallback == FallbackClass.LEGAL_EMERGENCY_PRESERVE:
+        penalty += 0.15
+    if sample_count < MIN_SAMPLE_WARN and sample_count > 0:
+        penalty += 0.05
+    if any("FAILED" in warning for warning in edge_warnings):
+        penalty += 0.10
+    if any("WF_SKIPPED" in warning for warning in edge_warnings):
+        penalty += 0.04
+    penalty += 0.06 * len(source_soft_blockers)
+
+    return _clamp01(penalty)
+
+
 def _build_edge_diagnostics(
     *,
     l7_analysis: dict[str, Any],
@@ -319,19 +395,21 @@ def _compress_status(
     win_prob: float,
     sample_count: int,
     validation: str = "FAIL",
+    source_soft_blockers: list[str] | None = None,
 ) -> L7Status:
     allow_low_band_primary_substitute = _is_low_band_primary_substitute(
         band=band,
         fallback=fallback,
         validation=validation,
     )
+    allow_low_band_soft_evidence = band == CoherenceBand.LOW and "WIN_PROBABILITY_NEAR_MISS" in (source_soft_blockers or [])
 
     # Any blocker → FAIL
     if blockers:
         return L7Status.FAIL
 
     # LOW band → FAIL (win_probability below minimum)
-    if band == CoherenceBand.LOW and not allow_low_band_primary_substitute:
+    if band == CoherenceBand.LOW and not allow_low_band_primary_substitute and not allow_low_band_soft_evidence:
         return L7Status.FAIL
 
     # Check for clean PASS envelope
@@ -361,7 +439,11 @@ def _compress_status(
             FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             FallbackClass.LEGAL_EMERGENCY_PRESERVE,
         )
-        and (band in (CoherenceBand.HIGH, CoherenceBand.MID) or allow_low_band_primary_substitute)
+        and (
+            band in (CoherenceBand.HIGH, CoherenceBand.MID)
+            or allow_low_band_primary_substitute
+            or allow_low_band_soft_evidence
+        )
     )
     if is_legal_warn:
         return L7Status.WARN
@@ -377,6 +459,7 @@ def _collect_warning_codes(
     edge_warnings: list[str],
     sample_count: int,
     validation: str,
+    source_soft_blockers: list[str] | None = None,
 ) -> list[str]:
     """Collect non-fatal warning codes."""
     codes: list[str] = []
@@ -396,6 +479,7 @@ def _collect_warning_codes(
         codes.append("LOW_SAMPLE_COUNT")
     if validation == "CONDITIONAL":
         codes.append("VALIDATION_CONDITIONAL")
+    codes.extend(source_soft_blockers or [])
     codes.extend(edge_warnings)
     return codes
 
@@ -450,8 +534,6 @@ class L7ConstitutionalGovernor:
 
         # ── Step 5: warmup ───────────────────────────────────────────
         warmup = _eval_warmup(l7_analysis)
-        if warmup == WarmupState.INSUFFICIENT:
-            blockers.append(BlockerCode.WARMUP_INSUFFICIENT)
         rule_hits.append(f"warmup_state={warmup.value}")
 
         # ── Step 6: fallback legality ────────────────────────────────
@@ -459,6 +541,14 @@ class L7ConstitutionalGovernor:
         if fallback == FallbackClass.ILLEGAL_FALLBACK:
             blockers.append(BlockerCode.FALLBACK_DECLARED_BUT_NOT_ALLOWED)
         rule_hits.append(f"fallback_class={fallback.value}")
+
+        source_summary = _probability_source_summary(l7_analysis, warmup, fallback)
+        for blocker in source_summary["hard_blockers"]:
+            if blocker not in {b.value for b in blockers}:
+                try:
+                    blockers.append(BlockerCode(blocker))
+                except ValueError:
+                    pass
 
         # ── Step 7: edge validation ──────────────────────────────────
         edge_blockers, edge_warnings = _check_edge_validation(l7_analysis)
@@ -492,7 +582,10 @@ class L7ConstitutionalGovernor:
                 fallback=fallback,
                 validation=validation,
             ):
-                blockers.append(BlockerCode.WIN_PROBABILITY_BELOW_MINIMUM)
+                if validation == "PASS":
+                    source_summary["soft_blockers"] = list(dict.fromkeys([*source_summary["soft_blockers"], "WIN_PROBABILITY_NEAR_MISS"]))
+                else:
+                    blockers.append(BlockerCode.WIN_PROBABILITY_BELOW_MINIMUM)
 
         # ── Step 9: sample count ─────────────────────────────────────
         sample_count = int(l7_analysis.get("simulations", 0))
@@ -508,6 +601,7 @@ class L7ConstitutionalGovernor:
             win_prob,
             sample_count,
             validation,
+            source_summary["soft_blockers"],
         )
 
         # Always-forward: continuation_allowed is always True.
@@ -522,6 +616,20 @@ class L7ConstitutionalGovernor:
             band=band,
             sample_count=sample_count,
         )
+        confidence_penalty = _confidence_penalty(
+            band=band,
+            freshness=freshness,
+            warmup=warmup,
+            fallback=fallback,
+            sample_count=sample_count,
+            edge_warnings=edge_warnings,
+            source_soft_blockers=source_summary["soft_blockers"],
+        )
+        evidence_score = _clamp01(win_prob - confidence_penalty)
+        hard_blockers = [b.value for b in dict.fromkeys(blockers)]
+        soft_blockers = list(dict.fromkeys(source_summary["soft_blockers"]))
+        hard_stop = bool(hard_blockers)
+        advisory_continuation = not hard_stop
 
         # ── Step 11: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(
@@ -532,6 +640,7 @@ class L7ConstitutionalGovernor:
             edge_warnings,
             sample_count,
             validation,
+            source_summary["soft_blockers"],
         )
         # PASS status can also carry advisory warnings
         if status == L7Status.PASS and fallback == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:  # noqa: SIM102
@@ -554,6 +663,8 @@ class L7ConstitutionalGovernor:
                 4,
             ),
             "feature_hash": f"L7_{band.value}_{status.value}_{int(round(win_prob * 100))}",
+            "evidence_score": round(evidence_score, 4),
+            "confidence_penalty": round(confidence_penalty, 4),
         }
 
         routing = {
@@ -571,6 +682,12 @@ class L7ConstitutionalGovernor:
             "blocker_triggered": bool(blockers),
             "notes": notes,
             "adaptive_threshold": adaptive_threshold.to_dict(),
+            "probability_evidence": {
+                "hard_blockers": hard_blockers,
+                "soft_blockers": soft_blockers,
+                "history_ratio": source_summary["history_ratio"],
+                "simulations": source_summary["simulations"],
+            },
         }
 
         logger.info(
@@ -597,6 +714,12 @@ class L7ConstitutionalGovernor:
             "warmup_state": warmup.value,
             "coherence_band": band.value,
             "score_numeric": round(win_prob, 4),
+            "evidence_score": round(evidence_score, 4),
+            "confidence_penalty": round(confidence_penalty, 4),
+            "hard_blockers": hard_blockers,
+            "soft_blockers": soft_blockers,
+            "hard_stop": hard_stop,
+            "advisory_continuation": advisory_continuation,
             "adaptive_threshold_audit": adaptive_threshold.to_dict(),
             "features": features,
             "edge_diagnostics": edge_diagnostics,
