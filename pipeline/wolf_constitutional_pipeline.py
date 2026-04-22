@@ -828,6 +828,10 @@ class WolfConstitutionalPipeline:
         const = result.get("constitutional", {})
         status = const.get("status", "N/A")
         cont = result.get("continuation_allowed", True)
+        evidence_score = const.get("evidence_score")
+        confidence_penalty = const.get("confidence_penalty")
+        hard_stop = const.get("hard_stop")
+        soft_blockers = const.get("soft_blockers", [])
 
         if status == "FAIL":
             blockers = const.get("blocker_codes", [])
@@ -860,59 +864,95 @@ class WolfConstitutionalPipeline:
                     diagnostics.get("direction_consensus"),
                     diagnostics.get("missing_timeframes"),
                 )
-            elif layer == "L7" and isinstance(const.get("edge_diagnostics"), dict):
-                diagnostics = const["edge_diagnostics"]
+            elif layer == "L3" and isinstance(const.get("trend_diagnostics"), dict):
+                diagnostics = const["trend_diagnostics"]
                 logger.warning(
-                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} edge_status={} win_probability={} required={} simulations={} wf_passed={} gap={}",
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} trend={} confirmation={} conflict={} missing_sources={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
                     blockers,
                     cont,
+                    hard_stop,
+                    evidence_score,
+                    confidence_penalty,
+                    diagnostics.get("trend"),
+                    diagnostics.get("confirmation_score"),
+                    diagnostics.get("structure_conflict"),
+                    diagnostics.get("missing_sources"),
+                    soft_blockers,
+                )
+            elif layer == "L7" and isinstance(const.get("edge_diagnostics"), dict):
+                diagnostics = const["edge_diagnostics"]
+                logger.warning(
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} edge_status={} win_probability={} required={} simulations={} source={} profit_factor={} wf_passed={} gap={} soft_blockers={}",
+                    phase,
+                    symbol,
+                    layer,
+                    blockers,
+                    cont,
+                    hard_stop,
+                    evidence_score,
+                    confidence_penalty,
                     diagnostics.get("edge_status"),
                     diagnostics.get("win_probability"),
                     diagnostics.get("required_win_probability"),
                     diagnostics.get("simulations"),
+                    diagnostics.get("returns_source"),
+                    diagnostics.get("profit_factor"),
                     diagnostics.get("wf_passed"),
                     diagnostics.get("primary_edge_gap"),
+                    soft_blockers,
                 )
             elif layer == "L8" and isinstance(const.get("integrity_diagnostics"), dict):
                 diagnostics = const["integrity_diagnostics"]
                 logger.warning(
-                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} integrity={} required={} gate_status={} missing_sources={} component_count={} gap={}",
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} integrity={} required={} gate_status={} missing_sources={} component_count={} gap={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
                     blockers,
                     cont,
+                    hard_stop,
+                    evidence_score,
+                    confidence_penalty,
                     diagnostics.get("integrity_score"),
                     diagnostics.get("required_integrity"),
                     diagnostics.get("gate_status"),
                     diagnostics.get("missing_sources"),
                     diagnostics.get("component_count"),
                     diagnostics.get("primary_integrity_gap"),
+                    soft_blockers,
                 )
             elif layer == "L9" and isinstance(const.get("structure_diagnostics"), dict):
                 diagnostics = const["structure_diagnostics"]
                 logger.warning(
-                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} missing_sources={} builder_state={} available_sources={}",
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} missing_sources={} builder_state={} available_sources={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
                     blockers,
                     cont,
+                    hard_stop,
+                    evidence_score,
+                    confidence_penalty,
                     diagnostics.get("missing_sources"),
                     diagnostics.get("source_builder_state"),
                     diagnostics.get("available_sources"),
+                    soft_blockers,
                 )
             else:
                 logger.warning(
-                    "[{}] {} {} constitutional FAIL — blockers={} continuation={}",
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
                     blockers,
                     cont,
+                    hard_stop,
+                    evidence_score,
+                    confidence_penalty,
+                    soft_blockers,
                 )
         elif status == "WARN":
             warns = const.get("warning_codes", [])
@@ -942,54 +982,85 @@ class WolfConstitutionalPipeline:
                     diagnostics.get("primary_conflict"),
                     diagnostics.get("alignment_score"),
                 )
-            elif layer == "L7" and isinstance(const.get("edge_diagnostics"), dict):
-                diagnostics = const["edge_diagnostics"]
+            elif layer == "L3" and isinstance(const.get("trend_diagnostics"), dict):
+                diagnostics = const["trend_diagnostics"]
                 logger.info(
-                    "[{}] {} {} constitutional WARN — warnings={} band={} edge_status={} win_probability={} simulations={} gap={}",
+                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} trend={} confirmation={} conflict={} missing_sources={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
                     warns,
                     const.get("coherence_band", "N/A"),
+                    evidence_score,
+                    confidence_penalty,
+                    diagnostics.get("trend"),
+                    diagnostics.get("confirmation_score"),
+                    diagnostics.get("structure_conflict"),
+                    diagnostics.get("missing_sources"),
+                    soft_blockers,
+                )
+            elif layer == "L7" and isinstance(const.get("edge_diagnostics"), dict):
+                diagnostics = const["edge_diagnostics"]
+                logger.info(
+                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} edge_status={} win_probability={} simulations={} source={} gap={} soft_blockers={}",
+                    phase,
+                    symbol,
+                    layer,
+                    warns,
+                    const.get("coherence_band", "N/A"),
+                    evidence_score,
+                    confidence_penalty,
                     diagnostics.get("edge_status"),
                     diagnostics.get("win_probability"),
                     diagnostics.get("simulations"),
+                    diagnostics.get("returns_source"),
                     diagnostics.get("primary_edge_gap"),
+                    soft_blockers,
                 )
             elif layer == "L8" and isinstance(const.get("integrity_diagnostics"), dict):
                 diagnostics = const["integrity_diagnostics"]
                 logger.info(
-                    "[{}] {} {} constitutional WARN — warnings={} band={} integrity={} gate_status={} missing_sources={} gap={}",
+                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} integrity={} gate_status={} missing_sources={} gap={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
                     warns,
                     const.get("coherence_band", "N/A"),
+                    evidence_score,
+                    confidence_penalty,
                     diagnostics.get("integrity_score"),
                     diagnostics.get("gate_status"),
                     diagnostics.get("missing_sources"),
                     diagnostics.get("primary_integrity_gap"),
+                    soft_blockers,
                 )
             elif layer == "L9" and isinstance(const.get("structure_diagnostics"), dict):
                 diagnostics = const["structure_diagnostics"]
                 logger.info(
-                    "[{}] {} {} constitutional WARN — warnings={} band={} missing_sources={} builder_state={}",
+                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} missing_sources={} builder_state={} available_sources={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
                     warns,
                     const.get("coherence_band", "N/A"),
+                    evidence_score,
+                    confidence_penalty,
                     diagnostics.get("missing_sources"),
                     diagnostics.get("source_builder_state"),
+                    diagnostics.get("available_sources"),
+                    soft_blockers,
                 )
             else:
                 logger.info(
-                    "[{}] {} {} constitutional WARN — warnings={} band={}",
+                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
                     warns,
                     const.get("coherence_band", "N/A"),
+                    evidence_score,
+                    confidence_penalty,
+                    soft_blockers,
                 )
         else:
             logger.info(
@@ -2279,6 +2350,8 @@ class WolfConstitutionalPipeline:
                     gates=gates,
                     synthesis=synthesis,
                     phase1_status=_phase1_result.status.value,
+                    l2_layer=l2,
+                    l9_layer=l9,
                 )
                 synthesis["constitutional_phase5"] = _const_l12
             except Exception as _cp5_exc:
@@ -2644,6 +2717,8 @@ class WolfConstitutionalPipeline:
         synthesis: dict[str, Any],
         *,
         phase1_status: str = "PASS",
+        l2_layer: dict[str, Any] | None = None,
+        l9_layer: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run the constitutional L12 router evaluator as a Phase 5 overlay.
 
@@ -2673,6 +2748,8 @@ class WolfConstitutionalPipeline:
         risk_chain_status = _gate_to_status("gate_5_rr")
         governance_status = _gate_to_status("gate_9_drawdown")
         probability_evidence = synthesis.get("probability_evidence", {})
+        l2_layer = l2_layer if isinstance(l2_layer, dict) else {}
+        l9_layer = l9_layer if isinstance(l9_layer, dict) else {}
 
         # Synthesis score from verdict engine.
         # verdict_engine.generate_l12_verdict() returns "confidence" as a band
@@ -2707,6 +2784,22 @@ class WolfConstitutionalPipeline:
             l7_advisory_continuation=bool(probability_evidence.get("advisory_continuation", False)),
             l7_hard_blockers=[str(x) for x in probability_evidence.get("hard_blockers", [])],
             l7_soft_blockers=[str(x) for x in probability_evidence.get("soft_blockers", [])],
+            l2_status=str(l2_layer.get("status", "WARN" if phase1_status == "WARN" else "PASS")).upper(),
+            l2_evidence_score=float(l2_layer.get("evidence_score", 0.0) or 0.0),
+            l2_confidence_penalty=float(l2_layer.get("confidence_penalty", 0.0) or 0.0),
+            l2_hard_stop=bool(l2_layer.get("hard_stop", False)),
+            l2_advisory_continuation=bool(l2_layer.get("advisory_continuation", False)),
+            l2_hard_blockers=[str(x) for x in l2_layer.get("hard_blockers", [])],
+            l2_soft_blockers=[str(x) for x in l2_layer.get("soft_blockers", [])],
+            l2_primary_conflict=str(l2_layer.get("mta_diagnostics", {}).get("primary_conflict", "")) or None,
+            l9_status=str(l9_layer.get("status", structure_status)).upper(),
+            l9_evidence_score=float(l9_layer.get("evidence_score", 0.0) or 0.0),
+            l9_confidence_penalty=float(l9_layer.get("confidence_penalty", 0.0) or 0.0),
+            l9_hard_stop=bool(l9_layer.get("hard_stop", False)),
+            l9_advisory_continuation=bool(l9_layer.get("advisory_continuation", False)),
+            l9_hard_blockers=[str(x) for x in l9_layer.get("hard_blockers", [])],
+            l9_soft_blockers=[str(x) for x in l9_layer.get("soft_blockers", [])],
+            l9_source_builder_state=str(l9_layer.get("structure_diagnostics", {}).get("source_builder_state", "")) or None,
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -2718,7 +2811,21 @@ class WolfConstitutionalPipeline:
             governance_status=governance_status,
         )
         result = evaluator.evaluate(l12_input)
-        return result.to_dict()
+        result_dict = result.to_dict()
+        logger.info(
+            "[Pipeline v8.0] L12 final verdict | symbol={} verdict={} status={} score={} execution_allowed={} blockers={} warnings={} l2_status={} l7_status={} l9_status={} authority=L12",
+            l12_input.input_ref,
+            result_dict.get("verdict"),
+            result_dict.get("verdict_status"),
+            result_dict.get("score_numeric"),
+            result_dict.get("continuation_allowed"),
+            result_dict.get("blocker_codes", []),
+            result_dict.get("warning_codes", []),
+            result_dict.get("audit", {}).get("l2_evidence", {}).get("status"),
+            result_dict.get("audit", {}).get("l7_evidence", {}).get("status"),
+            result_dict.get("audit", {}).get("l9_evidence", {}).get("status"),
+        )
+        return result_dict
 
     # ══════════════════════════════════════════════════════════════
     #  METRICS RECORDING

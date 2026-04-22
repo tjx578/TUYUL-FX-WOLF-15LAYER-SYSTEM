@@ -1,23 +1,20 @@
 """
-L3 Constitutional Governor — Strict Mode v1.0.0
-================================================
+L3 Constitutional Governor — Evidence-Aware Mode v1.1.0
+========================================================
 
 Constitutional sub-gate evaluator for L3 trend confirmation legality.
 
-Implements the frozen L3 spec:
-  - Evaluation order: blockers → freshness → warmup → fallback → confirmation → compress → emit
-  - Critical blockers spec (frozen v1)
-  - Fallback legality matrix (frozen v1)
-  - Freshness / warmup states
-  - Confirmation thresholds (frozen baseline v1)
-  - Final compression logic (strict mode)
+Implements the L3 evidence-governor flow:
+    - Evaluation order: blockers → freshness → warmup → fallback → confirmation → evidence → compress → emit
+    - Hard legality is reserved for contract/infrastructure invalidity
+    - Weak trend confirmation and structure conflict degrade evidence instead of vetoing Phase 1
 
 Authority boundary:
-  L3 is a trend confirmation legality governor only.
-  L3 must never emit direction, entry, execute, trade_valid, or verdict.
-  Hard legality checks run before confirmation scoring.
-  status == FAIL implies continuation_allowed == false.
-  continuation_allowed == true implies next_legal_targets == ["L4"].
+    L3 is a trend confirmation evidence governor only.
+    L3 must never emit direction, entry, execute, trade_valid, or verdict.
+    Hard legality checks run before confirmation scoring.
+    status == FAIL implies continuation_allowed == false.
+    continuation_allowed == true implies next_legal_targets == ["L4"].
 
 Zone: analysis/ — pure read-only analysis, no execution side-effects.
 """
@@ -104,6 +101,10 @@ FRESHNESS_DEGRADED_THRESHOLD_SEC = 7200  # 2 hours → DEGRADED
 
 # Minimum bars for warmup legality (L3 uses H1 primarily)
 WARMUP_MIN_BARS_H1 = 30
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -300,23 +301,14 @@ def _compress_status(
 ) -> L3Status:
     """Step 6: Compress sub-gate outputs into final status.
 
-    Truth table (v1.2):
-      FAIL: any critical blocker, analysis invalid (not confirmed),
-            insufficient warmup, illegal fallback, structure conflict,
-            LOW band below hard floor
-      PASS: fresh + ready + directional trend + no conflict +
-            band in {HIGH, MID} + fallback in {NO, PRIMARY_SUBSTITUTE}
-      WARN: NEUTRAL trend (confirmed non-directional), degraded freshness,
-            partial warmup, emergency fallback, LOW band in warn range
-      else: FAIL
+        Hard blockers still fail closed, but low confirmation and structure
+        conflict are now handled as degradations when the contract is otherwise
+        usable and the pipeline can keep forwarding evidence to L12.
     """
     if blockers:
         return L3Status.FAIL
 
     if not trend_confirmed:
-        return L3Status.FAIL
-
-    if structure_conflict:
         return L3Status.FAIL
 
     # LOW band: if no blockers (i.e. above hard floor), allow as WARN
@@ -369,6 +361,7 @@ def _collect_warning_codes(
     warmup: WarmupState,
     fallback: FallbackClass,
     data_quality: str,
+    soft_blockers: list[str] | None = None,
 ) -> list[str]:
     """Collect warning codes for the PASS/WARN envelope."""
     warnings: list[str] = []
@@ -387,8 +380,70 @@ def _collect_warning_codes(
         warnings.append("EMERGENCY_PRESERVE_FALLBACK")
     if fallback == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:
         warnings.append("PRIMARY_SUBSTITUTE_USED")
+    warnings.extend(soft_blockers or [])
 
     return warnings
+
+
+def _trend_source_summary(available_sources: list[str]) -> dict[str, Any]:
+    required_sources = list(REQUIRED_TREND_SOURCES)
+    available_required = [name for name in required_sources if name in available_sources]
+    missing_required = [name for name in required_sources if name not in available_required]
+
+    hard_blockers: list[str] = []
+    soft_blockers: list[str] = []
+
+    if not available_required:
+        hard_blockers.append(BlockerCode.REQUIRED_TREND_SOURCE_MISSING.value)
+    elif missing_required:
+        soft_blockers.extend(f"{name.upper()}_SOURCE_MISSING" for name in missing_required)
+
+    return {
+        "required_sources": required_sources,
+        "available_required": available_required,
+        "missing_required": missing_required,
+        "source_completeness": round(len(available_required) / len(required_sources), 4),
+        "hard_blockers": list(dict.fromkeys(hard_blockers)),
+        "soft_blockers": list(dict.fromkeys(soft_blockers)),
+    }
+
+
+def _confidence_penalty(
+    *,
+    band: CoherenceBand,
+    freshness: FreshnessState,
+    warmup: WarmupState,
+    fallback: FallbackClass,
+    structure_conflict: bool,
+    source_soft_blockers: list[str],
+) -> float:
+    penalty = 0.0
+
+    if band == CoherenceBand.MID:
+        penalty += 0.08
+    elif band == CoherenceBand.LOW:
+        penalty += 0.24
+
+    if freshness == FreshnessState.STALE_PRESERVED:
+        penalty += 0.08
+    elif freshness == FreshnessState.DEGRADED:
+        penalty += 0.14
+
+    if warmup == WarmupState.PARTIAL:
+        penalty += 0.10
+
+    if fallback == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:
+        penalty += 0.06
+    elif fallback == FallbackClass.LEGAL_EMERGENCY_PRESERVE:
+        penalty += 0.12
+
+    if structure_conflict:
+        penalty += 0.22
+
+    if source_soft_blockers:
+        penalty += min(0.18, 0.09 * len(source_soft_blockers))
+
+    return round(_clamp01(penalty), 4)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -397,7 +452,7 @@ def _collect_warning_codes(
 
 
 class L3ConstitutionalGovernor:
-    """Strict constitutional evaluator for L3 trend confirmation legality.
+    """Evidence-aware constitutional evaluator for L3 trend confirmation legality.
 
     Wraps raw L3 analysis output with constitutional envelope.
     Evaluation order is frozen:
@@ -412,7 +467,7 @@ class L3ConstitutionalGovernor:
       9. emit_contract
     """
 
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"
 
     def evaluate(
         self,
@@ -521,62 +576,17 @@ class L3ConstitutionalGovernor:
         rule_hits.append(f"structure_conflict={structure_conflict}")
         rule_hits.append(f"trend={trend}")
 
-        if structure_conflict and not any(
-            b == BlockerCode.TREND_STRUCTURE_CONFLICT
-            or (isinstance(b, str) and b == BlockerCode.TREND_STRUCTURE_CONFLICT.value)
-            for b in blockers
-        ):
-            blockers.append(BlockerCode.TREND_STRUCTURE_CONFLICT)
+        soft_blockers: list[str] = []
+        if structure_conflict:
+            soft_blockers.append(BlockerCode.TREND_STRUCTURE_CONFLICT.value)
+            rule_hits.append("trend_structure_conflict_soft")
 
-        # Explicit blocker for LOW confirmation score (diagnostic visibility)
-        # WARN band: scores between HARD_FLOOR and MID_GTE get a warning, not a blocker
         if band == CoherenceBand.LOW:
-            if confirmation_score < CONFIRMATION_HARD_FLOOR:
-                blockers.append(BlockerCode.LOW_CONFIRMATION_SCORE)
-                rule_hits.append("low_confirmation_score_blocker")
-            else:
-                rule_hits.append("low_confirmation_score_warn_band")
+            soft_blockers.append(BlockerCode.LOW_CONFIRMATION_SCORE.value)
+            rule_hits.append("low_confirmation_score_soft")
 
         # ── Step 7: Compress status ───────────────────────────
         blocker_strs = list(dict.fromkeys(b.value if isinstance(b, BlockerCode) else str(b) for b in blockers))
-
-        status = _compress_status(
-            blocker_strs,
-            freshness,
-            warmup,
-            fallback,
-            band,
-            trend_confirmed,
-            structure_conflict,
-            trend_is_directional,
-        )
-
-        # Collect warning codes (for PASS and WARN — PASS can have advisory warnings)
-        warning_codes: list[str] = []
-        if status in (L3Status.PASS, L3Status.WARN):
-            warning_codes = _collect_warning_codes(
-                freshness,
-                warmup,
-                fallback,
-                dq,
-            )
-            if not trend_is_directional:
-                warning_codes.append("NEUTRAL_TREND_NON_DIRECTIONAL")
-            if band == CoherenceBand.LOW:
-                warning_codes.append("LOW_CONFIRMATION_SCORE_DEGRADED")
-
-        if band == CoherenceBand.LOW and status == L3Status.FAIL:
-            notes.append("Confirmation score below legal threshold.")
-        if structure_conflict:
-            notes.append("Trend confirmation conflicts with upstream structure.")
-        if not trend_confirmed and status == L3Status.FAIL:
-            notes.append("L3 analysis invalid — trend confirmation unavailable.")
-        if not trend_is_directional and status == L3Status.WARN:
-            notes.append("NEUTRAL trend — non-directional confirmation, pipeline continues with reduced confidence.")
-
-        # ── Step 8: Set continuation ──────────────────────────
-        continuation_allowed = status in (L3Status.PASS, L3Status.WARN)
-        next_targets = ["L4"] if continuation_allowed else []
 
         # Available trend sources built from L3 analysis
         available_sources: list[str] = []
@@ -591,22 +601,92 @@ class L3ConstitutionalGovernor:
         if l3_analysis.get("ob_detected", False):
             available_sources.append("ob_detection")
 
+        source_summary = _trend_source_summary(available_sources)
+        for blocker in source_summary["hard_blockers"]:
+            if blocker not in blocker_strs:
+                blocker_strs.append(blocker)
+        if source_summary["soft_blockers"]:
+            soft_blockers = list(dict.fromkeys([*soft_blockers, *source_summary["soft_blockers"]]))
+            rule_hits.append("trend_source_soft_blockers=" + ",".join(source_summary["soft_blockers"]))
+
+        status = _compress_status(
+            blocker_strs,
+            freshness,
+            warmup,
+            fallback,
+            band,
+            trend_confirmed,
+            structure_conflict,
+            trend_is_directional,
+        )
+
+        if soft_blockers and status == L3Status.PASS:
+            status = L3Status.WARN
+            rule_hits.append("soft_evidence_downgrade")
+
+        confidence_penalty = _confidence_penalty(
+            band=band,
+            freshness=freshness,
+            warmup=warmup,
+            fallback=fallback,
+            structure_conflict=structure_conflict,
+            source_soft_blockers=soft_blockers,
+        )
+        evidence_score = _clamp01(confirmation_score - confidence_penalty)
+        hard_blockers = list(dict.fromkeys(blocker_strs))
+        soft_blockers = list(dict.fromkeys(soft_blockers))
+        hard_stop = bool(hard_blockers)
+        advisory_continuation = not hard_stop
+
+        # Collect warning codes (for PASS and WARN — PASS can have advisory warnings)
+        warning_codes: list[str] = []
+        if status in (L3Status.PASS, L3Status.WARN):
+            warning_codes = _collect_warning_codes(
+                freshness,
+                warmup,
+                fallback,
+                dq,
+                soft_blockers,
+            )
+            if not trend_is_directional:
+                warning_codes.append("NEUTRAL_TREND_NON_DIRECTIONAL")
+            if band == CoherenceBand.LOW:
+                warning_codes.append("LOW_CONFIRMATION_SCORE_DEGRADED")
+            if structure_conflict:
+                warning_codes.append("TREND_STRUCTURE_CONFLICT_DEGRADED")
+
+        if band == CoherenceBand.LOW:
+            notes.append("Confirmation score is below the directional ideal and is treated as degraded evidence.")
+        if structure_conflict:
+            notes.append("Trend confirmation conflicts with upstream structure and is forwarded as degraded evidence.")
+        if not trend_confirmed and status == L3Status.FAIL:
+            notes.append("L3 analysis invalid — trend confirmation unavailable.")
+        if not trend_is_directional and status == L3Status.WARN:
+            notes.append("NEUTRAL trend — non-directional confirmation, pipeline continues with reduced confidence.")
+
+        # ── Step 8: Set continuation ──────────────────────────
+        continuation_allowed = status in (L3Status.PASS, L3Status.WARN)
+        next_targets = ["L4"] if continuation_allowed else []
+
         missing_sources = [s for s in REQUIRED_TREND_SOURCES if s not in available_sources]
 
         # Log constitutional result
         logger.info(
-            "[L3] {} constitutional: status={} band={} confirmation={:.4f} "
-            "freshness={} warmup={} fallback={} trend={} conflict={} blockers={}",
+            "[L3] {} constitutional: status={} band={} confirmation={:.4f} evidence={:.4f} penalty={:.4f} "
+            "freshness={} warmup={} fallback={} trend={} conflict={} hard={} soft={}",
             symbol,
             status.value,
             band.value,
             confirmation_score,
+            evidence_score,
+            confidence_penalty,
             freshness.value,
             warmup.value,
             fallback.value,
             trend,
             structure_conflict,
-            len(blocker_strs),
+            len(hard_blockers),
+            len(soft_blockers),
         )
 
         # ── Step 9: Emit contract ─────────────────────────────
@@ -618,13 +698,20 @@ class L3ConstitutionalGovernor:
             "input_ref": input_ref,
             "status": status.value,
             "continuation_allowed": continuation_allowed,
-            "blocker_codes": blocker_strs,
+            "blocker_codes": hard_blockers,
             "warning_codes": warning_codes,
             "fallback_class": fallback.value,
             "freshness_state": freshness.value,
             "warmup_state": warmup.value,
             "coherence_band": band.value,
             "coherence_score": round(confirmation_score, 4),
+            "score_numeric": round(confirmation_score, 4),
+            "evidence_score": round(evidence_score, 4),
+            "confidence_penalty": round(confidence_penalty, 4),
+            "hard_blockers": hard_blockers,
+            "soft_blockers": soft_blockers,
+            "hard_stop": hard_stop,
+            "advisory_continuation": advisory_continuation,
             # Features
             "features": {
                 "confirmation_score": round(confirmation_score, 4),
@@ -636,6 +723,23 @@ class L3ConstitutionalGovernor:
                 "required_trend_sources": list(REQUIRED_TREND_SOURCES),
                 "available_trend_sources": available_sources,
                 "missing_trend_sources": missing_sources,
+                "evidence_score": round(evidence_score, 4),
+                "confidence_penalty": round(confidence_penalty, 4),
+            },
+            "trend_diagnostics": {
+                "trend": trend,
+                "trend_confirmed": trend_confirmed,
+                "trend_is_directional": trend_is_directional,
+                "structure_conflict": structure_conflict,
+                "confirmation_score": round(confirmation_score, 4),
+                "required_confirmation_floor": CONFIRMATION_HARD_FLOOR,
+                "required_confirmation_mid": CONFIRMATION_MID_GTE,
+                "required_sources": list(REQUIRED_TREND_SOURCES),
+                "available_sources": available_sources,
+                "missing_sources": missing_sources,
+                "source_completeness": source_summary["source_completeness"],
+                "hard_blockers": hard_blockers,
+                "soft_blockers": soft_blockers,
             },
             # Routing
             "routing": {
@@ -646,7 +750,12 @@ class L3ConstitutionalGovernor:
             # Audit
             "audit": {
                 "rule_hits": rule_hits,
-                "blocker_triggered": bool(blocker_strs),
+                "blocker_triggered": bool(hard_blockers),
                 "notes": notes,
+                "trend_evidence": {
+                    "hard_blockers": hard_blockers,
+                    "soft_blockers": soft_blockers,
+                    "source_completeness": source_summary["source_completeness"],
+                },
             },
         }

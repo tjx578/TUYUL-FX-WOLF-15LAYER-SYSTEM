@@ -28,6 +28,15 @@ _POOL_MAX_INACTIVE_LIFETIME_SEC: float = float(os.getenv("PG_POOL_MAX_INACTIVE_S
 _POOL_KEEPALIVE_INTERVAL_SEC: int = int(os.getenv("PG_POOL_KEEPALIVE_SEC", "120"))
 
 
+def _load_asyncpg_module() -> Any:
+    try:
+        return import_module("asyncpg")
+    except ModuleNotFoundError as exc:
+        raise PostgresConnectionError(
+            "Missing dependency asyncpg. Install requirements before enabling PostgreSQL backup."
+        ) from exc
+
+
 def _pg_retry_exceptions() -> tuple[type[Exception], ...]:
     """Build tuple of exceptions that should trigger query retry.
 
@@ -35,7 +44,7 @@ def _pg_retry_exceptions() -> tuple[type[Exception], ...]:
     """
     base: list[type[Exception]] = [OSError, RuntimeError, ConnectionResetError]
     try:
-        import asyncpg  # noqa: PLC0415
+        asyncpg = _load_asyncpg_module()
 
         base.extend(
             [
@@ -182,7 +191,6 @@ class PostgresClient:
         """Return PostgreSQL health details for API status endpoints."""
         if self._pool is None:
             return {"connected": False, "reason": "DATABASE_URL not configured"}
-
         try:
             row = await self.fetchrow("SELECT 1 AS ok")
             pool_size = self._pool.get_size()
@@ -212,12 +220,3 @@ class PostgresClient:
 
 
 pg_client = PostgresClient()
-
-
-def _load_asyncpg_module() -> Any:
-    try:
-        return import_module("asyncpg")
-    except ModuleNotFoundError as exc:
-        raise PostgresConnectionError(
-            "Missing dependency asyncpg. Install requirements before enabling PostgreSQL backup."
-        ) from exc

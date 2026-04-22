@@ -1,4 +1,4 @@
-"""Tests for L3 Constitutional Governor — frozen spec v1.0.0."""
+"""Tests for L3 Constitutional Governor evidence-aware semantics."""
 
 from __future__ import annotations
 
@@ -303,7 +303,7 @@ class TestCompression:
                 True,
                 True,
             )
-            == L3Status.FAIL
+            == L3Status.WARN
         )
 
     def test_pass_clean(self):
@@ -458,11 +458,13 @@ class TestGovernorIntegration:
         assert result["continuation_allowed"] is True
         assert result["routing"]["next_legal_targets"] == ["L4"]
         assert result["layer"] == "L3"
-        assert result["layer_version"] == "1.0.0"
+        assert result["layer_version"] == "1.1.0"
         assert result["coherence_band"] in ("HIGH", "MID")
         assert result["blocker_codes"] == []
         assert result["features"]["trend_confirmed"] is True
         assert result["features"]["structure_conflict"] is False
+        assert result["hard_stop"] is False
+        assert result["soft_blockers"] == []
 
     def test_fail_upstream_l2_not_continuable(self):
         result = self.gov.evaluate(
@@ -608,8 +610,11 @@ class TestGovernorIntegration:
             l3_analysis=l3,
             symbol="GBPUSD",
         )
-        assert result["status"] == "FAIL"
-        assert BlockerCode.TREND_STRUCTURE_CONFLICT.value in result["blocker_codes"]
+        assert result["status"] == "WARN"
+        assert BlockerCode.TREND_STRUCTURE_CONFLICT.value in result["soft_blockers"]
+        assert result["blocker_codes"] == []
+        assert result["continuation_allowed"] is True
+        assert result["hard_stop"] is False
         assert result["features"]["structure_conflict"] is True
 
     def test_warn_neutral_trend_cadchf(self):
@@ -626,13 +631,11 @@ class TestGovernorIntegration:
             symbol="CADCHF",
         )
         assert result["status"] == "WARN"
-        assert result["continuation_allowed"] is True
         assert "NEUTRAL_TREND_NON_DIRECTIONAL" in result["warning_codes"]
         assert result["features"]["trend_confirmed"] is True
-        assert result["features"]["structure_conflict"] is False
 
-    def test_fail_low_confirmation_score_has_blocker_code(self):
-        """LOW band should produce explicit LOW_CONFIRMATION_SCORE blocker for diagnostics."""
+    def test_warn_low_confirmation_score_becomes_soft_evidence(self):
+        """LOW confirmation now degrades evidence instead of hard-stopping Phase 1."""
         l3 = _healthy_l3()
         l3["edge_probability"] = 0.10  # Very low → LOW band
         result = self.gov.evaluate(
@@ -640,8 +643,25 @@ class TestGovernorIntegration:
             l3_analysis=l3,
             symbol="GBPJPY",
         )
+        assert result["status"] == "WARN"
+        assert BlockerCode.LOW_CONFIRMATION_SCORE.value in result["soft_blockers"]
+        assert result["blocker_codes"] == []
+        assert result["continuation_allowed"] is True
+        assert result["hard_stop"] is False
+        assert result["evidence_score"] < result["score_numeric"]
+
+    def test_missing_required_trend_sources_remains_hard_fail(self):
+        l3 = _healthy_l3()
+        l3["trend_strength"] = 0.0
+        l3["trq3d_energy"] = 0.0
+        result = self.gov.evaluate(
+            l2_output=_healthy_l2(),
+            l3_analysis=l3,
+            symbol="AUDUSD",
+        )
         assert result["status"] == "FAIL"
-        assert BlockerCode.LOW_CONFIRMATION_SCORE.value in result["blocker_codes"]
+        assert BlockerCode.REQUIRED_TREND_SOURCE_MISSING.value in result["blocker_codes"]
+        assert result["hard_stop"] is True
         assert result["continuation_allowed"] is False
 
     def test_warn_moderate_edge_probability_eurjpy(self):
