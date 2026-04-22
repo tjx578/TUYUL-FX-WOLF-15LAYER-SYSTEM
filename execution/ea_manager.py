@@ -194,6 +194,9 @@ class EAManager:
             if result.success:
                 logger.info(f"EAManager: OK request_id={req.request_id} ticket={result.ticket}")
                 return result
+            if isinstance(result.raw, dict) and str(result.raw.get("reason") or "") == "execution_disabled":
+                logger.info(f"EAManager: execution disabled request_id={req.request_id}")
+                return result
             logger.warning(
                 f"EAManager: attempt {attempt}/{_MAX_RETRIES} failed request_id={req.request_id} err={result.error_msg}"
             )

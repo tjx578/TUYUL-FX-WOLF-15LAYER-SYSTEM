@@ -8,6 +8,7 @@ the dashboard; all authority comes from the constitution (Layer-12).
 
 from __future__ import annotations
 
+import os
 from typing import Any, Protocol, cast
 
 from risk.prop_firm import BasePropFirmGuard, GuardResult
@@ -137,9 +138,27 @@ class BrokerExecutor:  # noqa: F811
             recovery_timeout_sec=30.0,
         )
 
+    @staticmethod
+    def _execution_enabled() -> bool:
+        raw = str(os.getenv("EXECUTION_ENABLED", "1")).strip().lower()
+        return raw not in {"0", "false", "off", "no"}
+
     def execute(self, req: ExecutionRequest) -> ExecutionResult:
         """Send a single execution request to EA bridge."""
         _broker_start = time.perf_counter()
+        if not self._execution_enabled():
+            self._record_broker_latency(_broker_start, "execution_disabled")
+            return ExecutionResult(
+                success=False,
+                request_id=req.request_id,
+                error_msg="execution_disabled",
+                raw={
+                    "sent": False,
+                    "reason": "execution_disabled",
+                    "request_id": req.request_id,
+                },
+            )
+
         payload = {
             "action": req.action,
             "account_id": req.account_id,
