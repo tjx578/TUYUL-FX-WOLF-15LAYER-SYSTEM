@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from analysis.layers.L8_constitutional import (
+    REQUIRED_INTEGRITY_SOURCES,
+    SOURCE_COMPLETENESS_THRESHOLD,
     L8BlockerCode,
     L8CoherenceBand,
     L8ConstitutionalGovernor,
     L8FallbackClass,
     L8FreshnessState,
+    L8IntegrityMode,
     L8Status,
     L8WarmupState,
     _check_contract,
@@ -16,10 +19,13 @@ from analysis.layers.L8_constitutional import (
     _check_upstream,
     _collect_warning_codes,
     _compress_status,
+    _compute_source_completeness,
+    _derive_integrity_mode,
     _derive_integrity_score,
     _eval_fallback,
     _eval_freshness,
     _eval_warmup,
+    _integrity_source_flags,
     _score_band,
 )
 
@@ -402,6 +408,133 @@ class TestWarningCodes:
         assert "LEGAL_EMERGENCY_PRESERVE_USED" in codes
         assert "INTEGRITY_MID_BAND" in codes
         assert "TII_GATE_CLOSED" in codes
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §12  Source-Aware Integrity Tests (PR-4)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestIntegritySourceFlags:
+    def test_all_sources_inferred(self):
+        flags = _integrity_source_flags(_l8_analysis())  # noqa: F821
+        assert flags == {"tii": True, "twms": True, "components": True}
+
+    def test_tii_missing(self):
+        data = {**_l8_analysis(), "tii_sym": None}
+        flags = _integrity_source_flags(data)  # noqa: F821
+        assert flags["tii"] is False
+        assert flags["twms"] is True
+        assert flags["components"] is True
+
+    def test_twms_missing(self):
+        data = {**_l8_analysis(), "twms_score": None}
+        flags = _integrity_source_flags(data)  # noqa: F821
+        assert flags["twms"] is False
+
+    def test_components_empty_counts_as_missing(self):
+        data = {**_l8_analysis(), "components": {}}
+        flags = _integrity_source_flags(data)  # noqa: F821
+        assert flags["components"] is False
+
+    def test_explicit_integrity_sources_override(self):
+        # Explicit override wins even if raw fields are present.
+        data = {
+            **_l8_analysis(),
+            "integrity_sources": {"tii": False, "twms": False, "components": True},
+        }
+        flags = _integrity_source_flags(data)
+        assert flags == {"tii": False, "twms": False, "components": True}
+
+
+class TestSourceCompleteness:
+    def test_full_completeness(self):
+        flags = {name: True for name in REQUIRED_INTEGRITY_SOURCES}
+        assert _compute_source_completeness(flags) == 1.0
+
+    def test_partial_completeness(self):
+        flags = {"tii": True, "twms": True, "components": False}
+        # 2/3 ≈ 0.6667 → below 0.80 threshold
+        assert _compute_source_completeness(flags) < SOURCE_COMPLETENESS_THRESHOLD
+
+    def test_degraded_completeness(self):
+        flags = {name: False for name in REQUIRED_INTEGRITY_SOURCES}
+        assert _compute_source_completeness(flags) == 0.0
+
+
+class TestIntegrityMode:
+    def test_mode_full(self):
+        assert _derive_integrity_mode(1.0) == L8IntegrityMode.FULL
+
+    def test_mode_at_threshold_is_full(self):
+        assert _derive_integrity_mode(SOURCE_COMPLETENESS_THRESHOLD) == L8IntegrityMode.FULL
+
+    def test_mode_partial(self):
+        assert _derive_integrity_mode(0.5) == L8IntegrityMode.PARTIAL
+
+    def test_mode_degraded(self):
+        assert _derive_integrity_mode(0.0) == L8IntegrityMode.DEGRADED
+
+
+class TestEvaluateSourceAware:
+    def test_full_sources_pass_envelope_exposes_mode(self):
+        gov = L8ConstitutionalGovernor()
+        result = gov.evaluate(_l8_analysis(), _upstream_pass())
+        assert result["status"] == "PASS"
+        assert result["integrity_mode"] == "FULL"
+        assert result["source_completeness"] == 1.0
+        diag = result["integrity_diagnostics"]
+        assert diag["integrity_mode"] == "FULL"
+        assert diag["source_completeness"] == 1.0
+        assert diag["source_completeness_threshold"] == SOURCE_COMPLETENESS_THRESHOLD
+        assert diag["required_sources"] == list(REQUIRED_INTEGRITY_SOURCES)
+
+    def test_valid_but_partial_sources_fails_with_incomplete_blocker(self):
+        # components empty → only 2/3 sources present, still "valid" upstream.
+        data = {**_l8_analysis(), "components": {}}
+        gov = L8ConstitutionalGovernor()
+        result = gov.evaluate(data, _upstream_pass())
+        assert result["status"] == "FAIL"
+        assert L8BlockerCode.INTEGRITY_SOURCE_INCOMPLETE.value in result["blocker_codes"]
+        # TII/TWMS are still present so those blockers must NOT fire.
+        assert L8BlockerCode.TII_UNAVAILABLE.value not in result["blocker_codes"]
+        assert L8BlockerCode.TWMS_UNAVAILABLE.value not in result["blocker_codes"]
+        assert result["integrity_mode"] == "PARTIAL"
+        assert "PARTIAL_INTEGRITY_SOURCES" in result["warning_codes"]
+        diag = result["integrity_diagnostics"]
+        assert diag["primary_integrity_gap"] == "INTEGRITY_SOURCE_INCOMPLETE"
+        assert "components" in diag["missing_sources"]
+
+    def test_incomplete_not_emitted_when_tii_already_unavailable(self):
+        # If tii_sym missing AND valid=False, TII_UNAVAILABLE fires;
+        # new blocker should not stack to avoid duplicative diagnostics.
+        data = {**_l8_analysis(), "valid": False, "tii_sym": None, "components": {}}
+        gov = L8ConstitutionalGovernor()
+        result = gov.evaluate(data, _upstream_pass())
+        assert result["status"] == "FAIL"
+        assert L8BlockerCode.TII_UNAVAILABLE.value in result["blocker_codes"]
+        assert L8BlockerCode.INTEGRITY_SOURCE_INCOMPLETE.value not in result["blocker_codes"]
+
+    def test_explicit_integrity_sources_can_force_incomplete(self):
+        # Raw fields look healthy but explicit override marks sources as missing.
+        data = {
+            **_l8_analysis(),
+            "integrity_sources": {"tii": True, "twms": False, "components": False},
+        }
+        gov = L8ConstitutionalGovernor()
+        result = gov.evaluate(data, _upstream_pass())
+        assert result["status"] == "FAIL"
+        assert L8BlockerCode.INTEGRITY_SOURCE_INCOMPLETE.value in result["blocker_codes"]
+        assert result["integrity_mode"] == "PARTIAL"
+
+    def test_high_band_blocked_by_incomplete_sources(self):
+        # Integrity score is HIGH but completeness below threshold → still FAIL.
+        data = {**_l8_analysis(), "integrity": 0.95, "components": {}}
+        gov = L8ConstitutionalGovernor()
+        result = gov.evaluate(data, _upstream_pass())
+        assert result["status"] == "FAIL"
+        assert result["coherence_band"] == "HIGH"
+        assert L8BlockerCode.INTEGRITY_SOURCE_INCOMPLETE.value in result["blocker_codes"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

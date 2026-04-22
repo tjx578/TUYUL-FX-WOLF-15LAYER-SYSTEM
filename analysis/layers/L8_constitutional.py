@@ -72,11 +72,25 @@ class L8CoherenceBand(StrEnum):
     LOW = "LOW"
 
 
+class L8IntegrityMode(StrEnum):
+    """Source-aware integrity availability mode.
+
+    FULL      → source_completeness >= SOURCE_COMPLETENESS_THRESHOLD
+    PARTIAL   → 0 < source_completeness < SOURCE_COMPLETENESS_THRESHOLD
+    DEGRADED  → no required integrity sources available
+    """
+
+    FULL = "FULL"
+    PARTIAL = "PARTIAL"
+    DEGRADED = "DEGRADED"
+
+
 class L8BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
     REQUIRED_INTEGRITY_SOURCE_MISSING = "REQUIRED_INTEGRITY_SOURCE_MISSING"
     TII_UNAVAILABLE = "TII_UNAVAILABLE"
     TWMS_UNAVAILABLE = "TWMS_UNAVAILABLE"
+    INTEGRITY_SOURCE_INCOMPLETE = "INTEGRITY_SOURCE_INCOMPLETE"
     INTEGRITY_SCORE_BELOW_MINIMUM = "INTEGRITY_SCORE_BELOW_MINIMUM"
     FRESHNESS_GOVERNANCE_HARD_FAIL = "FRESHNESS_GOVERNANCE_HARD_FAIL"
     WARMUP_INSUFFICIENT = "WARMUP_INSUFFICIENT"
@@ -91,6 +105,14 @@ class L8BlockerCode(StrEnum):
 
 HIGH_THRESHOLD = 0.88
 MID_THRESHOLD = 0.75
+
+# ── Source-aware integrity completeness (PR-4) ────────────────────
+# Required integrity sources that feed the L8 composite integrity score.
+# Completeness = count(available) / len(REQUIRED_INTEGRITY_SOURCES).
+# Blueprint P4: HIGH band must be gated by source completeness to prevent
+# nil-padding from L7/L9 upstream producing deceptively high integrity.
+REQUIRED_INTEGRITY_SOURCES: tuple[str, ...] = ("tii", "twms", "components")
+SOURCE_COMPLETENESS_THRESHOLD: float = 0.80
 
 # ── LFS borderline rescue constants (conservative) ───────────────
 _ENABLE_L8_LFS_RESCUE: bool = os.getenv("ENABLE_L8_LFS_RESCUE", "0") == "1"
@@ -298,6 +320,61 @@ def _derive_integrity_score(l8_analysis: dict[str, Any]) -> float:
     return 0.0
 
 
+def _integrity_source_flags(l8_analysis: dict[str, Any]) -> dict[str, bool]:
+    """Derive per-source readiness flags for REQUIRED_INTEGRITY_SOURCES.
+
+    An explicit ``integrity_sources`` dict on the analysis payload overrides
+    inferred flags (mirrors L9's ``structure_sources`` escape hatch).
+    Otherwise flags are inferred from raw fields:
+      - tii        → ``tii_sym`` is not None
+      - twms       → ``twms_score`` is not None
+      - components → ``components`` is a non-empty dict
+    """
+    explicit = l8_analysis.get("integrity_sources")
+    if isinstance(explicit, dict):
+        return {name: bool(explicit.get(name, False)) for name in REQUIRED_INTEGRITY_SOURCES}
+
+    components = l8_analysis.get("components")
+    return {
+        "tii": l8_analysis.get("tii_sym") is not None,
+        "twms": l8_analysis.get("twms_score") is not None,
+        "components": bool(isinstance(components, dict) and components),
+    }
+
+
+def _compute_source_completeness(flags: dict[str, bool]) -> float:
+    """Return ratio of available required integrity sources in [0.0, 1.0]."""
+    total = len(REQUIRED_INTEGRITY_SOURCES)
+    if total == 0:
+        return 1.0
+    available = sum(1 for name in REQUIRED_INTEGRITY_SOURCES if flags.get(name, False))
+    return round(available / total, 4)
+
+
+def _derive_integrity_mode(completeness: float) -> L8IntegrityMode:
+    """Map source completeness ratio to an integrity mode."""
+    if completeness >= SOURCE_COMPLETENESS_THRESHOLD:
+        return L8IntegrityMode.FULL
+    if completeness > 0.0:
+        return L8IntegrityMode.PARTIAL
+    return L8IntegrityMode.DEGRADED
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Coerce value to float, tolerating None/non-numeric inputs.
+
+    PR-4: required because source-aware integrity formally accepts missing
+    (None) tii_sym / twms_score upstream, which previously raised TypeError
+    in diagnostics / features assembly.
+    """
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _build_integrity_diagnostics(
     *,
     l8_analysis: dict[str, Any],
@@ -308,13 +385,11 @@ def _build_integrity_diagnostics(
     sample_count: int,
 ) -> dict[str, Any]:
     """Assemble audit-friendly L8 diagnostics without affecting legality."""
-    source_states = {
-        "tii": l8_analysis.get("tii_sym") is not None,
-        "twms": l8_analysis.get("twms_score") is not None,
-        "components": bool(isinstance(l8_analysis.get("components"), dict) and l8_analysis.get("components")),
-    }
-    available_sources = [name for name, present in source_states.items() if present]
-    missing_sources = [name for name, present in source_states.items() if not present]
+    source_states = _integrity_source_flags(l8_analysis)
+    available_sources = [name for name in REQUIRED_INTEGRITY_SOURCES if source_states.get(name)]
+    missing_sources = [name for name in REQUIRED_INTEGRITY_SOURCES if not source_states.get(name)]
+    source_completeness = _compute_source_completeness(source_states)
+    integrity_mode = _derive_integrity_mode(source_completeness)
 
     primary_integrity_gap = None
     for blocker in blockers:
@@ -322,6 +397,7 @@ def _build_integrity_diagnostics(
             L8BlockerCode.INTEGRITY_SCORE_BELOW_MINIMUM,
             L8BlockerCode.TII_UNAVAILABLE,
             L8BlockerCode.TWMS_UNAVAILABLE,
+            L8BlockerCode.INTEGRITY_SOURCE_INCOMPLETE,
             L8BlockerCode.WARMUP_INSUFFICIENT,
             L8BlockerCode.INVALID_INTEGRITY_STATE,
         ):
@@ -335,8 +411,12 @@ def _build_integrity_diagnostics(
         "primary_integrity_gap": primary_integrity_gap,
         "available_sources": available_sources,
         "missing_sources": missing_sources,
-        "tii_sym": round(float(l8_analysis.get("tii_sym", 0.0)), 4),
-        "twms_score": round(float(l8_analysis.get("twms_score", 0.0)), 4),
+        "required_sources": list(REQUIRED_INTEGRITY_SOURCES),
+        "source_completeness": source_completeness,
+        "source_completeness_threshold": SOURCE_COMPLETENESS_THRESHOLD,
+        "integrity_mode": integrity_mode.value,
+        "tii_sym": round(_safe_float(l8_analysis.get("tii_sym")), 4),
+        "twms_score": round(_safe_float(l8_analysis.get("twms_score")), 4),
         "gate_status": str(l8_analysis.get("gate_status", "CLOSED")).upper(),
         "gate_passed": bool(l8_analysis.get("gate_passed", False)),
         "component_count": sample_count,
@@ -478,6 +558,24 @@ class L8ConstitutionalGovernor:
         # ── Step 3: integrity source availability ────────────────────
         blockers.extend(_check_integrity_sources(l8_analysis))
 
+        # ── Step 3b: source completeness (PR-4 source-aware integrity) ─
+        # Guard HIGH band from nil-padded upstream (L7/L9) by requiring
+        # required integrity sources to be sufficiently complete.
+        # Only fires when upstream didn't already report missing TII/TWMS
+        # so the new blocker is strictly a "valid-but-incomplete" signal.
+        source_flags = _integrity_source_flags(l8_analysis)
+        source_completeness = _compute_source_completeness(source_flags)
+        integrity_mode = _derive_integrity_mode(source_completeness)
+        if (
+            l8_analysis.get("valid", False)
+            and source_completeness < SOURCE_COMPLETENESS_THRESHOLD
+            and L8BlockerCode.TII_UNAVAILABLE not in blockers
+            and L8BlockerCode.TWMS_UNAVAILABLE not in blockers
+        ):
+            blockers.append(L8BlockerCode.INTEGRITY_SOURCE_INCOMPLETE)
+        rule_hits.append(f"integrity_mode={integrity_mode.value}")
+        rule_hits.append(f"source_completeness={source_completeness:.4f}")
+
         # ── Step 4: freshness ────────────────────────────────────────
         freshness = _eval_freshness(l8_analysis)
         if freshness == L8FreshnessState.NO_PRODUCER:
@@ -554,6 +652,14 @@ class L8ConstitutionalGovernor:
             if "PRIMARY_SUBSTITUTE_USED" not in warning_codes:
                 warning_codes.append("PRIMARY_SUBSTITUTE_USED")
 
+        # Source-aware integrity warnings (PR-4). The blocker above already
+        # forces FAIL when valid-but-incomplete; these codes keep the
+        # diagnostic trail explicit in both FAIL and degraded envelopes.
+        if integrity_mode == L8IntegrityMode.PARTIAL:
+            warning_codes.append("PARTIAL_INTEGRITY_SOURCES")
+        elif integrity_mode == L8IntegrityMode.DEGRADED:
+            warning_codes.append("INTEGRITY_SOURCES_DEGRADED")
+
         # ── Step 11b: LFS borderline rescue (guarded by feature flag) ─
         if (
             _ENABLE_L8_LFS_RESCUE
@@ -584,8 +690,8 @@ class L8ConstitutionalGovernor:
         # ── Step 12: assemble features ───────────────────────────────
         features = {
             "integrity_score": round(integrity_score, 4),
-            "tii_sym": round(float(l8_analysis.get("tii_sym", 0.0)), 4),
-            "twms_score": round(float(l8_analysis.get("twms_score", 0.0)), 4),
+            "tii_sym": round(_safe_float(l8_analysis.get("tii_sym")), 4),
+            "twms_score": round(_safe_float(l8_analysis.get("twms_score")), 4),
             "tii_status": str(l8_analysis.get("tii_status", "UNKNOWN")),
             "tii_grade": str(l8_analysis.get("tii_grade", "UNKNOWN")),
             "gate_passed": bool(l8_analysis.get("gate_passed", False)),
@@ -630,6 +736,8 @@ class L8ConstitutionalGovernor:
             "freshness_state": freshness.value,
             "warmup_state": warmup.value,
             "coherence_band": band.value,
+            "integrity_mode": integrity_mode.value,
+            "source_completeness": source_completeness,
             "score_numeric": round(integrity_score, 4),
             "features": features,
             "integrity_diagnostics": integrity_diagnostics,
