@@ -430,6 +430,7 @@ class TestL7GovernorEnvelope:
         assert "win_probability" in feat
         assert "profit_factor" in feat
         assert "sample_count" in feat
+        assert "effective_mid_threshold" in feat
         assert "feature_hash" in feat
 
     def test_routing_present(self):
@@ -442,6 +443,14 @@ class TestL7GovernorEnvelope:
         env = self.gov.evaluate(_l7_analysis(), _upstream_pass())
         audit = env.get("audit", {})
         assert "rule_hits" in audit
+        assert "adaptive_threshold" in audit
+
+    def test_shadow_adaptive_threshold_is_audit_only(self):
+        env = self.gov.evaluate(_l7_analysis(), _upstream_pass())
+        assert env["status"] == "PASS"
+        assert env["features"]["effective_mid_threshold"] == 0.55
+        assert env["adaptive_threshold_audit"]["mode"] == "shadow"
+        assert env["adaptive_threshold_audit"]["adjusted"] == 0.55
 
     def test_version_present(self):
         env = self.gov.evaluate(_l7_analysis(), _upstream_pass())

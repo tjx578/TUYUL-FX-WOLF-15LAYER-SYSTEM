@@ -31,6 +31,8 @@ from datetime import UTC, datetime
 from enum import Enum, StrEnum
 from typing import Any
 
+from constitution.adaptive_threshold_governor import get_governor, parse_history_ratio
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,11 +99,11 @@ MIN_SAMPLE_WARN = 30
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _score_band(win_probability: float) -> CoherenceBand:
+def _score_band(win_probability: float, *, mid_threshold: float = MID_THRESHOLD) -> CoherenceBand:
     """Map win probability to coherence band."""
     if win_probability >= HIGH_THRESHOLD:
         return CoherenceBand.HIGH
-    if win_probability >= MID_THRESHOLD:
+    if win_probability >= mid_threshold:
         return CoherenceBand.MID
     return CoherenceBand.LOW
 
@@ -234,6 +236,19 @@ def _derive_win_probability(l7_analysis: dict[str, Any]) -> float:
             return wp / 100.0
         return float(wp)
     return 0.0
+
+
+def _compute_source_completeness(l7_analysis: dict[str, Any]) -> float:
+    """Estimate probability-source completeness for adaptive shadow wiring."""
+    history_count = l7_analysis.get("history_count")
+    if isinstance(history_count, (int, float)):
+        return max(0.0, min(1.0, float(history_count) / 30.0))
+
+    sims = l7_analysis.get("simulations", 0)
+    if isinstance(sims, (int, float)) and float(sims) > 0:
+        return 1.0
+
+    return parse_history_ratio(str(l7_analysis.get("note", "")))
 
 
 def _build_edge_diagnostics(
@@ -451,10 +466,22 @@ class L7ConstitutionalGovernor:
 
         # ── Step 8: win probability score band ───────────────────────
         win_prob = _derive_win_probability(l7_analysis)
-        band = _score_band(win_prob)
+        source_completeness = _compute_source_completeness(l7_analysis)
+        adaptive_threshold = get_governor().get_adjusted(
+            layer="L7",
+            metric="win_probability",
+            base_threshold=MID_THRESHOLD,
+            frpc_data=upstream.get("frpc_snapshot", l7_analysis.get("frpc_snapshot", {})),
+            source_completeness=source_completeness,
+            regime_tag=upstream.get("regime_tag"),
+        )
+        effective_mid_threshold = adaptive_threshold.adjusted
+        band = _score_band(win_prob, mid_threshold=effective_mid_threshold)
         validation = str(l7_analysis.get("validation", "FAIL")).upper()
         rule_hits.append(f"coherence_band={band.value}")
         rule_hits.append(f"win_probability={win_prob:.4f}")
+        rule_hits.append(f"adaptive_mode={adaptive_threshold.mode}")
+        rule_hits.append(f"effective_mid_threshold={effective_mid_threshold:.4f}")
 
         # LOW band with valid MC → add blocker
         if band == CoherenceBand.LOW and not blockers:
@@ -513,6 +540,7 @@ class L7ConstitutionalGovernor:
         # ── Step 12: assemble features ───────────────────────────────
         features = {
             "win_probability": round(win_prob, 4),
+            "effective_mid_threshold": round(effective_mid_threshold, 4),
             "profit_factor": round(float(l7_analysis.get("profit_factor", 0.0)), 4),
             "sample_count": sample_count,
             "edge_validation_available": bool(l7_analysis.get("simulations", 0) > 0),
@@ -541,6 +569,7 @@ class L7ConstitutionalGovernor:
             "rule_hits": rule_hits,
             "blocker_triggered": bool(blockers),
             "notes": notes,
+            "adaptive_threshold": adaptive_threshold.to_dict(),
         }
 
         logger.info(
@@ -567,6 +596,7 @@ class L7ConstitutionalGovernor:
             "warmup_state": warmup.value,
             "coherence_band": band.value,
             "score_numeric": round(win_prob, 4),
+            "adaptive_threshold_audit": adaptive_threshold.to_dict(),
             "features": features,
             "edge_diagnostics": edge_diagnostics,
             "routing": routing,

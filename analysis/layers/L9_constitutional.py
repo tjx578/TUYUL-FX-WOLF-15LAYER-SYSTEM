@@ -31,6 +31,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+from constitution.adaptive_threshold_governor import get_governor
+
 logger = logging.getLogger(__name__)
 
 
@@ -99,11 +101,11 @@ REQUIRED_STRUCTURE_SOURCES: tuple[str, ...] = ("smc", "liquidity", "divergence")
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _score_band(structure_score: float) -> L9CoherenceBand:
+def _score_band(structure_score: float, *, mid_threshold: float = MID_THRESHOLD) -> L9CoherenceBand:
     """Map structure score to coherence band."""
     if structure_score >= HIGH_THRESHOLD:
         return L9CoherenceBand.HIGH
-    if structure_score >= MID_THRESHOLD:
+    if structure_score >= mid_threshold:
         return L9CoherenceBand.MID
     return L9CoherenceBand.LOW
 
@@ -282,6 +284,13 @@ def _structure_source_flags(l9_analysis: dict[str, Any]) -> dict[str, bool]:
         "liquidity": _coerce_float(l9_analysis.get("liquidity_score", 0.0)) > 0.0,
         "divergence": _coerce_float(l9_analysis.get("dvg_confidence", 0.0)) > 0.0,
     }
+
+
+def _compute_source_completeness(l9_analysis: dict[str, Any]) -> float:
+    """Return ratio of available required structure sources in [0.0, 1.0]."""
+    flags = _structure_source_flags(l9_analysis)
+    available = sum(1 for name in REQUIRED_STRUCTURE_SOURCES if flags.get(name, False))
+    return round(available / len(REQUIRED_STRUCTURE_SOURCES), 4)
 
 
 def _build_structure_diagnostics(
@@ -499,9 +508,21 @@ class L9ConstitutionalGovernor:
 
         # ── Step 8: structure score band ─────────────────────────────
         structure_score = _derive_structure_score(l9_analysis)
-        band = _score_band(structure_score)
+        source_completeness = _compute_source_completeness(l9_analysis)
+        adaptive_threshold = get_governor().get_adjusted(
+            layer="L9",
+            metric="structure_score",
+            base_threshold=MID_THRESHOLD,
+            frpc_data=upstream.get("frpc_snapshot", l9_analysis.get("frpc_snapshot", {})),
+            source_completeness=source_completeness,
+            regime_tag=upstream.get("regime_tag"),
+        )
+        effective_mid_threshold = adaptive_threshold.adjusted
+        band = _score_band(structure_score, mid_threshold=effective_mid_threshold)
         rule_hits.append(f"coherence_band={band.value}")
         rule_hits.append(f"structure_score={structure_score:.4f}")
+        rule_hits.append(f"adaptive_mode={adaptive_threshold.mode}")
+        rule_hits.append(f"effective_mid_threshold={effective_mid_threshold:.4f}")
 
         # LOW band with valid result → add blocker
         if band == L9CoherenceBand.LOW and not blockers and l9_analysis.get("valid", False):
@@ -558,6 +579,7 @@ class L9ConstitutionalGovernor:
         # ── Step 12: assemble features ───────────────────────────────
         features = {
             "structure_score": round(structure_score, 4),
+            "effective_mid_threshold": round(effective_mid_threshold, 4),
             "smc_score": int(l9_analysis.get("smc_score", 0)),
             "confidence": round(float(l9_analysis.get("confidence", 0.0)), 4),
             "liquidity_score": round(float(l9_analysis.get("liquidity_score", 0.0)), 4),
@@ -583,6 +605,7 @@ class L9ConstitutionalGovernor:
             "rule_hits": rule_hits,
             "blocker_triggered": bool(blockers),
             "notes": notes,
+            "adaptive_threshold": adaptive_threshold.to_dict(),
         }
 
         logger.info(
@@ -609,6 +632,7 @@ class L9ConstitutionalGovernor:
             "warmup_state": warmup.value,
             "coherence_band": band.value,
             "score_numeric": round(structure_score, 4),
+            "adaptive_threshold_audit": adaptive_threshold.to_dict(),
             "features": features,
             "structure_diagnostics": structure_diagnostics,
             "routing": routing,

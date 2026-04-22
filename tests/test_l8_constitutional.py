@@ -483,6 +483,9 @@ class TestEvaluateSourceAware:
         assert result["status"] == "PASS"
         assert result["integrity_mode"] == "FULL"
         assert result["source_completeness"] == 1.0
+        assert result["adaptive_threshold_audit"]["mode"] == "shadow"
+        assert result["adaptive_threshold_audit"]["adjusted"] == 0.75
+        assert result["features"]["effective_mid_threshold"] == 0.75
         diag = result["integrity_diagnostics"]
         assert diag["integrity_mode"] == "FULL"
         assert diag["source_completeness"] == 1.0

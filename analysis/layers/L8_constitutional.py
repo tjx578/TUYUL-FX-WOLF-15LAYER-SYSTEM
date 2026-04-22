@@ -32,6 +32,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+from constitution.adaptive_threshold_governor import get_governor
+
 logger = logging.getLogger(__name__)
 
 
@@ -129,11 +131,11 @@ MIN_SAMPLE_WARN = 10
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _score_band(integrity_score: float) -> L8CoherenceBand:
+def _score_band(integrity_score: float, *, mid_threshold: float = MID_THRESHOLD) -> L8CoherenceBand:
     """Map integrity score to coherence band."""
     if integrity_score >= HIGH_THRESHOLD:
         return L8CoherenceBand.HIGH
-    if integrity_score >= MID_THRESHOLD:
+    if integrity_score >= mid_threshold:
         return L8CoherenceBand.MID
     return L8CoherenceBand.LOW
 
@@ -600,9 +602,20 @@ class L8ConstitutionalGovernor:
 
         # ── Step 8: integrity score band ─────────────────────────────
         integrity_score = _derive_integrity_score(l8_analysis)
-        band = _score_band(integrity_score)
+        adaptive_threshold = get_governor().get_adjusted(
+            layer="L8",
+            metric="integrity",
+            base_threshold=MID_THRESHOLD,
+            frpc_data=upstream.get("frpc_snapshot", l8_analysis.get("frpc_snapshot", {})),
+            source_completeness=source_completeness,
+            regime_tag=upstream.get("regime_tag"),
+        )
+        effective_mid_threshold = adaptive_threshold.adjusted
+        band = _score_band(integrity_score, mid_threshold=effective_mid_threshold)
         rule_hits.append(f"coherence_band={band.value}")
         rule_hits.append(f"integrity_score={integrity_score:.4f}")
+        rule_hits.append(f"adaptive_mode={adaptive_threshold.mode}")
+        rule_hits.append(f"effective_mid_threshold={effective_mid_threshold:.4f}")
 
         # LOW band with valid result → add blocker
         if band == L8CoherenceBand.LOW and not blockers and l8_analysis.get("valid", False):
@@ -690,6 +703,7 @@ class L8ConstitutionalGovernor:
         # ── Step 12: assemble features ───────────────────────────────
         features = {
             "integrity_score": round(integrity_score, 4),
+            "effective_mid_threshold": round(effective_mid_threshold, 4),
             "tii_sym": round(_safe_float(l8_analysis.get("tii_sym")), 4),
             "twms_score": round(_safe_float(l8_analysis.get("twms_score")), 4),
             "tii_status": str(l8_analysis.get("tii_status", "UNKNOWN")),
@@ -711,6 +725,7 @@ class L8ConstitutionalGovernor:
             "rule_hits": rule_hits,
             "blocker_triggered": bool(blockers),
             "notes": notes,
+            "adaptive_threshold": adaptive_threshold.to_dict(),
         }
 
         logger.info(
@@ -739,6 +754,7 @@ class L8ConstitutionalGovernor:
             "integrity_mode": integrity_mode.value,
             "source_completeness": source_completeness,
             "score_numeric": round(integrity_score, 4),
+            "adaptive_threshold_audit": adaptive_threshold.to_dict(),
             "features": features,
             "integrity_diagnostics": integrity_diagnostics,
             "routing": routing,

@@ -259,5 +259,6 @@ class TestL8GovernorRescue:
             upstream_output=_upstream_pass(),
         )
         assert result["status"] == L8Status.FAIL.value
-        assert result["continuation_allowed"] is False
+        # Constitutional governors are always-forward even on FAIL.
+        assert result["continuation_allowed"] is True
         assert "LFS_BORDERLINE_RESCUE" not in result.get("warning_codes", [])

@@ -448,10 +448,18 @@ class TestL9GovernorPassEnvelope:
         result = gov.evaluate(_l9_analysis(), _upstream_pass())
         f = result["features"]
         assert f["structure_score"] == 0.85
+        assert f["effective_mid_threshold"] == 0.65
         assert f["smc_signal"] is True
         assert f["bos_detected"] is True
         # bos + ob + fvg + sweep = 4 features (choch=False)
         assert f["smc_feature_count"] == 4
+
+    def test_shadow_adaptive_threshold_is_audit_only(self):
+        gov = L9ConstitutionalGovernor()
+        result = gov.evaluate(_l9_analysis(), _upstream_pass())
+        assert result["status"] == "PASS"
+        assert result["adaptive_threshold_audit"]["mode"] == "shadow"
+        assert result["adaptive_threshold_audit"]["adjusted"] == 0.65
 
     def test_structure_diagnostics_present_on_pass(self):
         gov = L9ConstitutionalGovernor()
