@@ -163,6 +163,8 @@ class Phase1ChainAdapter:
         l2: dict[str, Any] = {}
         l3: dict[str, Any] = {}
 
+        logger.info(f"event=phase1_enter symbol={symbol} pipeline=phase1_chain_adapter")
+
         # ── Step 1: L1 ───────────────────────────────────────
         l1_start = time.monotonic()
         try:
@@ -252,6 +254,12 @@ class Phase1ChainAdapter:
         l3_status = l3.get("status", "PASS" if l3_continue else "FAIL")
         l3_blockers = l3.get("blocker_codes", [])
         l3_warnings = l3.get("warning_codes", [])
+        logger.info(
+            f"event=l3_constitutional_result symbol={symbol} layer=L3 status={l3_status} "
+            f"evidence_score={l3.get('evidence_score')} confidence_penalty={l3.get('confidence_penalty')} "
+            f"hard_stop={bool(l3.get('hard_stop', False))} advisory_continuation={bool(l3.get('advisory_continuation', False))} "
+            f"hard_blockers={l3.get('hard_blockers', l3_blockers)} soft_blockers={l3.get('soft_blockers', [])}"
+        )
 
         if l3_status == "WARN" and worst_status == ChainStatus.PASS:
             worst_status = ChainStatus.WARN
@@ -300,6 +308,11 @@ class Phase1ChainAdapter:
                 timing.get("L2", 0),
                 timing.get("L3", 0),
             )
+
+        logger.info(
+            f"event=phase1_exit symbol={symbol} l1={l1_status} l2={l2_status} l3={l3_status} "
+            f"failed_at={failed_at or 'NONE'} forward_to_l12=True"
+        )
 
         return ChainResult(
             status=worst_status,

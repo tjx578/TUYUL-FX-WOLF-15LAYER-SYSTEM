@@ -2751,6 +2751,11 @@ class WolfConstitutionalPipeline:
         l2_layer = l2_layer if isinstance(l2_layer, dict) else {}
         l9_layer = l9_layer if isinstance(l9_layer, dict) else {}
 
+        logger.info(
+            f"event=l12_synthesis_enter symbol={synthesis.get('symbol') or synthesis.get('pair') or 'UNKNOWN'} "
+            f"phase1_status={phase1_status} phase3_status={structure_status}"
+        )
+
         # Synthesis score from verdict engine.
         # verdict_engine.generate_l12_verdict() returns "confidence" as a band
         # string (LOW/MEDIUM/HIGH/VERY_HIGH). Historically this site called
@@ -2769,7 +2774,11 @@ class WolfConstitutionalPipeline:
         evaluator = L12RouterEvaluator()
         l12_input = L12Input(
             input_ref=str(synthesis.get("symbol") or synthesis.get("pair") or "UNKNOWN"),
-            timestamp=str(synthesis.get("timestamp") or synthesis.get("system", {}).get("timestamp") or datetime.now(_TZ_GMT8).isoformat()),
+            timestamp=str(
+                synthesis.get("timestamp")
+                or synthesis.get("system", {}).get("timestamp")
+                or datetime.now(_TZ_GMT8).isoformat()
+            ),
             upstream_continuation_allowed=True,
             upstream_next_legal_targets=["PHASE_5"],
             foundation_status=foundation_status,
@@ -2799,7 +2808,8 @@ class WolfConstitutionalPipeline:
             l9_advisory_continuation=bool(l9_layer.get("advisory_continuation", False)),
             l9_hard_blockers=[str(x) for x in l9_layer.get("hard_blockers", [])],
             l9_soft_blockers=[str(x) for x in l9_layer.get("soft_blockers", [])],
-            l9_source_builder_state=str(l9_layer.get("structure_diagnostics", {}).get("source_builder_state", "")) or None,
+            l9_source_builder_state=str(l9_layer.get("structure_diagnostics", {}).get("source_builder_state", ""))
+            or None,
             phase1_available=True,
             phase2_available=True,
             phase3_available=True,
@@ -2813,17 +2823,13 @@ class WolfConstitutionalPipeline:
         result = evaluator.evaluate(l12_input)
         result_dict = result.to_dict()
         logger.info(
-            "[Pipeline v8.0] L12 final verdict | symbol={} verdict={} status={} score={} execution_allowed={} blockers={} warnings={} l2_status={} l7_status={} l9_status={} authority=L12",
-            l12_input.input_ref,
-            result_dict.get("verdict"),
-            result_dict.get("verdict_status"),
-            result_dict.get("score_numeric"),
-            result_dict.get("continuation_allowed"),
-            result_dict.get("blocker_codes", []),
-            result_dict.get("warning_codes", []),
-            result_dict.get("audit", {}).get("l2_evidence", {}).get("status"),
-            result_dict.get("audit", {}).get("l7_evidence", {}).get("status"),
-            result_dict.get("audit", {}).get("l9_evidence", {}).get("status"),
+            f"event=l12_final_verdict symbol={l12_input.input_ref} authority=L12 "
+            f"verdict={result_dict.get('verdict')} verdict_status={result_dict.get('verdict_status')} "
+            f"hard_blockers={result_dict.get('blocker_codes', [])} soft_warnings={result_dict.get('warning_codes', [])} "
+            f"evidence_score={result_dict.get('score_numeric')} execution_allowed={result_dict.get('continuation_allowed')} "
+            f"l2_status={result_dict.get('audit', {}).get('l2_evidence', {}).get('status')} "
+            f"l7_status={result_dict.get('audit', {}).get('l7_evidence', {}).get('status')} "
+            f"l9_status={result_dict.get('audit', {}).get('l9_evidence', {}).get('status')}"
         )
         return result_dict
 

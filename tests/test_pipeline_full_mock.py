@@ -26,6 +26,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import constitution.phase1_chain_adapter as phase1_chain_adapter_module
+import pipeline.wolf_constitutional_pipeline as pipeline_module
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 # ──────────────────────────────────────────────────────────────────
@@ -453,6 +455,48 @@ class TestL12Verdict:
         assert verdict["gates_v74"]["gate_2_probability_evidence"] == "FAIL"
         assert "L7_HARD_PROBABILITY_ILLEGALITY" in synthesis["constitutional_phase5"]["blocker_codes"]
         assert synthesis["constitutional_phase5"]["audit"]["l7_evidence"]["hard_stop"] is True
+
+    def test_runtime_emits_phase1_and_l12_sentinel_logs(
+        self,
+        mocked_pipeline: WolfConstitutionalPipeline,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        assert mocked_pipeline._l3 is not None, "_l3 analyzer not initialized"
+        mocked_pipeline._l3.analyze = MagicMock(
+            return_value=_l3(
+                valid=True,
+                status="WARN",
+                continuation_allowed=True,
+                evidence_score=0.54,
+                confidence_penalty=0.22,
+                hard_stop=False,
+                advisory_continuation=True,
+                hard_blockers=[],
+                soft_blockers=["TREND_STRUCTURE_CONFLICT", "LOW_CONFIRMATION_SCORE"],
+                warning_codes=["TREND_STRUCTURE_CONFLICT_DEGRADED", "LOW_CONFIRMATION_SCORE_DEGRADED"],
+            )
+        )
+
+        messages: list[str] = []
+
+        def _capture(msg: object, *args: object, **kwargs: Any) -> None:
+            messages.append(str(msg))
+
+        monkeypatch.setattr(pipeline_module.logger, "info", _capture)
+        monkeypatch.setattr(pipeline_module.logger, "warning", _capture)
+        monkeypatch.setattr(phase1_chain_adapter_module.logger, "info", _capture)
+        monkeypatch.setattr(phase1_chain_adapter_module.logger, "warning", _capture)
+
+        mocked_pipeline.execute("EURUSD")
+
+        assert any("event=phase1_enter symbol=EURUSD" in msg for msg in messages)
+        assert any("event=l3_constitutional_result symbol=EURUSD layer=L3 status=WARN" in msg for msg in messages)
+        assert any("hard_stop=False" in msg for msg in messages)
+        assert any("soft_blockers=['TREND_STRUCTURE_CONFLICT', 'LOW_CONFIRMATION_SCORE']" in msg for msg in messages)
+        assert any("event=phase1_exit symbol=EURUSD" in msg for msg in messages)
+        assert any("event=l12_synthesis_enter symbol=EURUSD" in msg for msg in messages)
+        assert any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in messages)
+        assert any("verdict=" in msg and "execution_allowed=" in msg for msg in messages)
 
 
 # ──────────────────────────────────────────────────────────────────
