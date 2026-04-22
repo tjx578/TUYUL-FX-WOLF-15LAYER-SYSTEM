@@ -1,0 +1,50 @@
+{
+  "run_id": "2026-04-22-post-p6-execution-observability",
+  "date": "2026-04-22",
+  "scope": "Post-P6 execution evaluation and observability slice",
+  "status": "verified_for_slice",
+  "production_signoff": false,
+  "blueprint": {
+    "document": "analysis/STRATEGIC_BLUEPRINT_2026-04-22.md",
+    "references": [
+      "Section 5 / P0 — Freeze Execution / Pastikan Execution Tetap Off",
+      "Section 5 / P6 — Canary -> Promote -> Baru Evaluasi P1-D / Execution",
+      "Section 7 / Verification Gate"
+    ]
+  },
+  "changes_verified": [
+    {
+      "area": "execution_disabled_contract",
+      "summary": "Broker executor returns a fail-closed disabled contract and suppresses broker calls when EXECUTION_ENABLED=0."
+    },
+    {
+      "area": "execution_retry_behavior",
+      "summary": "EA manager does not retry explicit execution_disabled results."
+    },
+    {
+      "area": "execution_rollout_clamp",
+      "summary": "Runtime take-signal precheck clamps rollout to one trade per 30 minutes per symbol and three concurrent positions total."
+    },
+    {
+      "area": "operator_observability",
+      "summary": "Execution queue runtime endpoint exposes execution_enabled, broker_calls_suppressed, and ea_url for operator inspection."
+    }
+  ],
+  "evidence": [
+    {
+      "type": "test_command",
+      "command": ".venv/Scripts/python.exe -m pytest tests/test_execution_router.py tests/test_broker_executor.py -q",
+      "result": "passed",
+      "details": "4 passed"
+    }
+  ],
+  "open_gates": [
+    "Gate Suitability still requires long-running adaptive telemetry, not part of this slice.",
+    "Gate Performance benchmark evidence is not attached in this verification artifact.",
+    "Gate Final Verification by independent reviewers is still pending."
+  ],
+  "notes": [
+    "This artifact archives code-level verification for the post-P6 execution evaluation and observability slice only.",
+    "The artifact does not authorize live execution and does not override the requirement to keep execution fail-closed until broader verification gates are satisfied."
+  ]
+}
