@@ -1596,7 +1596,10 @@ class WolfConstitutionalPipeline:
             # L8 needs L7 output, L9 needs L8 output for constitutional chain.
             # Since Phase 3 runs L7/L8/L9 in parallel, we set Phase 2 output
             # as upstream for L8/L9. Post-hoc chain verification follows.
-            l8_engine.set_upstream_output(_l7_upstream)
+            _l8_upstream = dict(_l7_upstream)
+            if l2:
+                _l8_upstream["l2_context"] = l2
+            l8_engine.set_upstream_output(_l8_upstream)
             l9_engine.set_upstream_output(_l7_upstream)
 
             phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {

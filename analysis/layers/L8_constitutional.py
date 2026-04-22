@@ -89,6 +89,7 @@ class L8IntegrityMode(StrEnum):
 
 class L8BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
+    UPSTREAM_L2_HARD_STOP = "UPSTREAM_L2_HARD_STOP"
     REQUIRED_INTEGRITY_SOURCE_MISSING = "REQUIRED_INTEGRITY_SOURCE_MISSING"
     TII_UNAVAILABLE = "TII_UNAVAILABLE"
     TWMS_UNAVAILABLE = "TWMS_UNAVAILABLE"
@@ -196,6 +197,59 @@ def _check_upstream(upstream_output: dict[str, Any]) -> list[L8BlockerCode]:
     if not allowed:
         return [L8BlockerCode.UPSTREAM_NOT_CONTINUABLE]
     return []
+
+
+def _extract_upstream_l2_context(upstream_output: dict[str, Any]) -> dict[str, Any]:
+    """Best-effort extraction of L2 constitutional context from upstream payload."""
+    direct = upstream_output.get("l2_context")
+    if isinstance(direct, dict):
+        constitutional = direct.get("constitutional")
+        if isinstance(constitutional, dict):
+            return constitutional
+        return direct
+
+    nested = upstream_output.get("phase1_layer_results")
+    if isinstance(nested, dict):
+        l2_layer = nested.get("L2")
+        if isinstance(l2_layer, dict):
+            constitutional = l2_layer.get("constitutional")
+            if isinstance(constitutional, dict):
+                return constitutional
+            return l2_layer
+
+    phase_results = upstream_output.get("phase_results")
+    if isinstance(phase_results, dict):
+        phase1 = phase_results.get("PHASE_1")
+        if isinstance(phase1, dict):
+            layer_results = phase1.get("layer_results")
+            if isinstance(layer_results, dict):
+                l2_layer = layer_results.get("L2")
+                if isinstance(l2_layer, dict):
+                    constitutional = l2_layer.get("constitutional")
+                    if isinstance(constitutional, dict):
+                        return constitutional
+                    return l2_layer
+
+    return {}
+
+
+def _classify_upstream_l2_dependency(upstream_output: dict[str, Any]) -> tuple[str, list[str]]:
+    """Classify upstream L2 dependency severity for L8 diagnostics."""
+    l2_context = _extract_upstream_l2_context(upstream_output)
+    if not l2_context:
+        return "NONE", []
+
+    status = str(l2_context.get("status", "")).upper()
+    hard_blockers = [str(code) for code in l2_context.get("hard_blockers", [])]
+    soft_blockers = [str(code) for code in l2_context.get("soft_blockers", l2_context.get("warning_codes", []))]
+    hard_stop = bool(l2_context.get("hard_stop", False))
+    advisory_continuation = bool(l2_context.get("advisory_continuation", l2_context.get("continuation_allowed", True)))
+
+    if hard_stop or hard_blockers or (status == "FAIL" and not advisory_continuation):
+        return "HARD_STOP", hard_blockers or ["UPSTREAM_L2_HARD_STOP"]
+    if status == "WARN" or soft_blockers:
+        return "WEAK_EVIDENCE", soft_blockers
+    return "NONE", []
 
 
 def _check_contract(l8_analysis: dict[str, Any]) -> list[L8BlockerCode]:
@@ -553,6 +607,11 @@ class L8ConstitutionalGovernor:
 
         # ── Step 1: upstream legality ────────────────────────────────
         blockers.extend(_check_upstream(upstream))
+        upstream_l2_state, upstream_l2_codes = _classify_upstream_l2_dependency(upstream)
+        if upstream_l2_state == "HARD_STOP":
+            blockers.append(L8BlockerCode.UPSTREAM_L2_HARD_STOP)
+        if upstream_l2_state != "NONE":
+            rule_hits.append(f"upstream_l2_state={upstream_l2_state}")
 
         # ── Step 2: contract integrity ───────────────────────────────
         blockers.extend(_check_contract(l8_analysis))
@@ -639,6 +698,10 @@ class L8ConstitutionalGovernor:
             sample_count,
         )
 
+        if upstream_l2_state == "WEAK_EVIDENCE" and status == L8Status.PASS:
+            status = L8Status.WARN
+            notes.append("L2 weak evidence downgraded L8 envelope from PASS to WARN")
+
         # Always-forward: continuation_allowed is always True.
         # L12 evaluates degradation via status/blocker_codes.
         continuation_allowed = True
@@ -662,6 +725,8 @@ class L8ConstitutionalGovernor:
             sample_count,
             gate_status,
         )
+        if upstream_l2_state == "WEAK_EVIDENCE":
+            warning_codes.append("UPSTREAM_L2_WEAK_EVIDENCE")
         if status == L8Status.PASS and fallback == L8FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:  # noqa: SIM102
             if "PRIMARY_SUBSTITUTE_USED" not in warning_codes:
                 warning_codes.append("PRIMARY_SUBSTITUTE_USED")
@@ -726,6 +791,8 @@ class L8ConstitutionalGovernor:
             "rule_hits": rule_hits,
             "blocker_triggered": bool(blockers),
             "notes": notes,
+            "upstream_l2_state": upstream_l2_state,
+            "upstream_l2_codes": upstream_l2_codes,
             "adaptive_threshold": adaptive_threshold.to_dict(),
         }
 

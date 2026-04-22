@@ -630,6 +630,23 @@ class TestL8GovernorWarnEnvelope:
         result = gov.evaluate(data, _upstream_pass())
         assert result["status"] == "WARN"
 
+    def test_upstream_l2_weak_evidence_downgrades_pass_to_warn(self):
+        gov = L8ConstitutionalGovernor()
+        upstream = {
+            **_upstream_pass(),
+            "l2_context": {
+                "status": "WARN",
+                "soft_blockers": ["WEAK_MTF_ALIGNMENT"],
+                "hard_stop": False,
+                "advisory_continuation": True,
+            },
+        }
+        result = gov.evaluate(_l8_analysis(), upstream)
+        assert result["status"] == "WARN"
+        assert "UPSTREAM_L2_WEAK_EVIDENCE" in result["warning_codes"]
+        assert L8BlockerCode.UPSTREAM_L2_HARD_STOP.value not in result["blocker_codes"]
+        assert result["audit"]["upstream_l2_state"] == "WEAK_EVIDENCE"
+
 
 class TestL8GovernorFailEnvelope:
     """FAIL envelope: blockers or low score."""
@@ -667,6 +684,23 @@ class TestL8GovernorFailEnvelope:
         result = gov.evaluate({}, _upstream_pass())
         assert result["status"] == "FAIL"
         assert "CONTRACT_PAYLOAD_MALFORMED" in result["blocker_codes"]
+
+    def test_upstream_l2_hard_stop_adds_distinct_blocker(self):
+        gov = L8ConstitutionalGovernor()
+        upstream = {
+            **_upstream_pass(),
+            "l2_context": {
+                "status": "FAIL",
+                "hard_blockers": ["UPSTREAM_L1_INVALID"],
+                "hard_stop": True,
+                "advisory_continuation": False,
+            },
+        }
+        result = gov.evaluate(_l8_analysis(), upstream)
+        assert result["status"] == "FAIL"
+        assert L8BlockerCode.UPSTREAM_L2_HARD_STOP.value in result["blocker_codes"]
+        assert "UPSTREAM_L2_WEAK_EVIDENCE" not in result["warning_codes"]
+        assert result["audit"]["upstream_l2_state"] == "HARD_STOP"
 
 
 class TestL8GovernorMinimalFallback:
