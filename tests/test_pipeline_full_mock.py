@@ -424,6 +424,34 @@ class TestL12Verdict:
         verdict = result["l12_verdict"]
         assert "gates_v74" in verdict
 
+    def test_gate2_fails_when_constitutional_phase5_carries_l7_hard_probability_illegality(
+        self,
+        mocked_pipeline: WolfConstitutionalPipeline,
+    ) -> None:
+        assert mocked_pipeline._l7 is not None, "_l7 analyzer not initialized"
+        mocked_pipeline._l7.analyze = MagicMock(
+            return_value=_l7(
+                constitutional={
+                    "status": "FAIL",
+                    "coherence_band": "LOW",
+                    "evidence_score": 0.0,
+                    "confidence_penalty": 1.0,
+                    "hard_stop": True,
+                    "advisory_continuation": False,
+                    "hard_blockers": ["REQUIRED_PROBABILITY_SOURCE_MISSING"],
+                    "soft_blockers": [],
+                    "edge_diagnostics": {"primary_edge_gap": "REQUIRED_PROBABILITY_SOURCE_MISSING"},
+                }
+            )
+        )
+
+        result = mocked_pipeline.execute("EURUSD")
+        verdict = result["l12_verdict"]
+        synthesis = result["synthesis"]
+
+        assert verdict["gates_v74"]["gate_2_montecarlo"] == "FAIL"
+        assert synthesis["constitutional_phase5"]["blocker_codes"] == ["L7_HARD_PROBABILITY_ILLEGALITY"]
+
 
 # ──────────────────────────────────────────────────────────────────
 #  Constitutional boundary: no account data in verdict
