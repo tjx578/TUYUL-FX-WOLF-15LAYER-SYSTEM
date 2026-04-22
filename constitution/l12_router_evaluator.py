@@ -38,6 +38,7 @@ class L12BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
     UPSTREAM_TARGET_NOT_PHASE5 = "UPSTREAM_TARGET_NOT_PHASE5"
     L2_HARD_ILLEGALITY = "L2_HARD_ILLEGALITY"
+    L9_HARD_STRUCTURE_ILLEGALITY = "L9_HARD_STRUCTURE_ILLEGALITY"
     PHASE1_MISSING = "PHASE1_MISSING"
     PHASE2_MISSING = "PHASE2_MISSING"
     PHASE3_MISSING = "PHASE3_MISSING"
@@ -92,6 +93,16 @@ class L12Input:
     l2_hard_blockers: list[str] = field(default_factory=list)
     l2_soft_blockers: list[str] = field(default_factory=list)
     l2_primary_conflict: str | None = None
+
+    # L9 structure evidence plane forwarded for verdict differentiation
+    l9_status: str = "FAIL"
+    l9_evidence_score: float | None = None
+    l9_confidence_penalty: float = 0.0
+    l9_hard_stop: bool = False
+    l9_advisory_continuation: bool = False
+    l9_hard_blockers: list[str] = field(default_factory=list)
+    l9_soft_blockers: list[str] = field(default_factory=list)
+    l9_source_builder_state: str | None = None
 
     # Phase availability flags
     phase1_available: bool = False
@@ -226,6 +237,20 @@ class L12RouterEvaluator:
             if payload.l2_primary_conflict:
                 warnings.append(payload.l2_primary_conflict)
 
+        if payload.l9_hard_stop and payload.l9_hard_blockers:
+            blockers.append(L12BlockerCode.L9_HARD_STRUCTURE_ILLEGALITY.value)
+            rule_hits.append(
+                "L9 hard structure illegality -> " + ",".join(sorted(dict.fromkeys(payload.l9_hard_blockers)))
+            )
+        elif payload.l9_soft_blockers:
+            warnings.append("L9_WEAK_STRUCTURE_EVIDENCE")
+            rule_hits.append(
+                f"L9 weak structure evidence -> penalty={payload.l9_confidence_penalty:.2f}, "
+                f"soft_blockers={','.join(sorted(dict.fromkeys(payload.l9_soft_blockers)))}"
+            )
+            if payload.l9_source_builder_state:
+                warnings.append(f"L9_SOURCE_BUILDER_{payload.l9_source_builder_state.upper()}")
+
         targets = [str(t).upper().strip() for t in payload.upstream_next_legal_targets]
         if targets and "PHASE_5" not in targets:
             blockers.append(L12BlockerCode.UPSTREAM_TARGET_NOT_PHASE5.value)
@@ -356,6 +381,16 @@ class L12RouterEvaluator:
                 "soft_blockers": list(payload.l2_soft_blockers),
                 "primary_conflict": payload.l2_primary_conflict,
             },
+            "l9_evidence": {
+                "status": payload.l9_status,
+                "evidence_score": payload.l9_evidence_score,
+                "confidence_penalty": payload.l9_confidence_penalty,
+                "hard_stop": payload.l9_hard_stop,
+                "advisory_continuation": payload.l9_advisory_continuation,
+                "hard_blockers": list(payload.l9_hard_blockers),
+                "soft_blockers": list(payload.l9_soft_blockers),
+                "source_builder_state": payload.l9_source_builder_state,
+            },
             "penalty_engine": {
                 "raw_confidence": raw_confidence,
                 "penalized_confidence": penalized_score,
@@ -422,6 +457,10 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
         fallback_l2 = phase1_result.get("l2", {})
         if isinstance(fallback_l2, dict):
             l2_layer = fallback_l2
+    phase3_layers = phase3_result.get("layer_results", {}) if isinstance(phase3_result, dict) else {}
+    l9_layer = phase3_layers.get("L9", {}) if isinstance(phase3_layers, dict) else {}
+    if not isinstance(l9_layer, dict):
+        l9_layer = {}
 
     # Derive statuses
     foundation_status = str(phase1_result.get("chain_status", "FAIL")).upper()
@@ -454,6 +493,13 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
             if isinstance(val, (int, float)):
                 layer_scores[layer_name] = float(val)
     for layer_name, layer in phase3_result.get("layer_results", {}).items():
+        if not isinstance(layer, dict):
+            continue
+        if layer_name == "L9":
+            l9_evidence_score = layer.get("evidence_score")
+            if isinstance(l9_evidence_score, (int, float)):
+                layer_scores[layer_name] = float(l9_evidence_score)
+                continue
         val = layer.get("score_numeric")
         if isinstance(val, (int, float)):
             layer_scores[layer_name] = float(val)
@@ -487,6 +533,27 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
         if isinstance(primary, str) and primary:
             l2_primary_conflict = primary
 
+    l9_evidence_score = l9_layer.get("evidence_score")
+    if not isinstance(l9_evidence_score, (int, float)):
+        l9_evidence_score = l9_layer.get("features", {}).get("evidence_score") if isinstance(l9_layer.get("features"), dict) else None
+
+    l9_confidence_penalty = l9_layer.get("confidence_penalty")
+    if not isinstance(l9_confidence_penalty, (int, float)):
+        l9_confidence_penalty = l9_layer.get("features", {}).get("confidence_penalty") if isinstance(l9_layer.get("features"), dict) else 0.0
+
+    l9_hard_blockers = l9_layer.get("hard_blockers", l9_layer.get("blocker_codes", []))
+    if not isinstance(l9_hard_blockers, list):
+        l9_hard_blockers = []
+    l9_soft_blockers = l9_layer.get("soft_blockers", l9_layer.get("warning_codes", []))
+    if not isinstance(l9_soft_blockers, list):
+        l9_soft_blockers = []
+    l9_source_builder_state = None
+    l9_structure = l9_layer.get("structure_diagnostics", {})
+    if isinstance(l9_structure, dict):
+        builder_state = l9_structure.get("source_builder_state")
+        if isinstance(builder_state, str) and builder_state:
+            l9_source_builder_state = builder_state
+
     return L12Input(
         input_ref=input_ref,
         timestamp=timestamp,
@@ -506,6 +573,14 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
         l2_hard_blockers=[str(x) for x in l2_hard_blockers],
         l2_soft_blockers=[str(x) for x in l2_soft_blockers],
         l2_primary_conflict=l2_primary_conflict,
+        l9_status=str(l9_layer.get("status", "FAIL")).upper(),
+        l9_evidence_score=float(l9_evidence_score) if isinstance(l9_evidence_score, (int, float)) else None,
+        l9_confidence_penalty=float(l9_confidence_penalty) if isinstance(l9_confidence_penalty, (int, float)) else 0.0,
+        l9_hard_stop=bool(l9_layer.get("hard_stop", False)),
+        l9_advisory_continuation=bool(l9_layer.get("advisory_continuation", False)),
+        l9_hard_blockers=[str(x) for x in l9_hard_blockers],
+        l9_soft_blockers=[str(x) for x in l9_soft_blockers],
+        l9_source_builder_state=l9_source_builder_state,
         phase1_available=bool(phase1_result),
         phase2_available=bool(phase2_result),
         phase3_available=bool(phase3_result),

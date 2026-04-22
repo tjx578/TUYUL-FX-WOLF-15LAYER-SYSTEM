@@ -96,6 +96,10 @@ MIN_SAMPLE_WARN = 3
 REQUIRED_STRUCTURE_SOURCES: tuple[str, ...] = ("smc", "liquidity", "divergence")
 
 
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §3  SUB-GATE HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -293,27 +297,15 @@ def _compute_source_completeness(l9_analysis: dict[str, Any]) -> float:
     return round(available / len(REQUIRED_STRUCTURE_SOURCES), 4)
 
 
-def _build_structure_diagnostics(
-    *,
+def _structure_source_summary(
     l9_analysis: dict[str, Any],
-    blockers: list[L9BlockerCode],
     warmup: L9WarmupState,
-    structure_score: float,
-    smc_feature_count: int,
 ) -> dict[str, Any]:
-    """Assemble audit-friendly L9 diagnostics without affecting legality."""
+    """Summarize structure source readiness for legality and evidence routing."""
     source_flags = _structure_source_flags(l9_analysis)
     required_sources = list(REQUIRED_STRUCTURE_SOURCES)
     available_sources = [name for name in required_sources if source_flags.get(name, False)]
     missing_sources = [name for name in required_sources if name not in available_sources]
-
-    warmup_required_bars = l9_analysis.get("warmup_required_bars", {})
-    if not isinstance(warmup_required_bars, dict):
-        warmup_required_bars = {}
-
-    warmup_available_bars = l9_analysis.get("warmup_available_bars", {})
-    if not isinstance(warmup_available_bars, dict):
-        warmup_available_bars = {}
 
     explicit_builder_state = l9_analysis.get("source_builder_state")
     if isinstance(explicit_builder_state, str) and explicit_builder_state.strip():
@@ -324,6 +316,83 @@ def _build_structure_diagnostics(
         source_builder_state = "partial"
     else:
         source_builder_state = "ready"
+
+    hard_blockers: list[str] = []
+    soft_blockers: list[str] = []
+    source_count = len(available_sources)
+
+    if source_count <= 1:
+        hard_blockers.append(L9BlockerCode.REQUIRED_STRUCTURE_SOURCE_MISSING.value)
+    else:
+        soft_blockers.extend(f"{name.upper()}_SOURCE_MISSING" for name in missing_sources)
+
+    if warmup == L9WarmupState.PARTIAL:
+        soft_blockers.append("PARTIAL_STRUCTURE_WARMUP")
+    elif warmup == L9WarmupState.INSUFFICIENT:
+        hard_blockers.append(L9BlockerCode.WARMUP_INSUFFICIENT.value)
+
+    return {
+        "required_sources": required_sources,
+        "available_sources": available_sources,
+        "missing_sources": missing_sources,
+        "source_builder_state": source_builder_state,
+        "source_count": source_count,
+        "source_completeness": round(source_count / len(required_sources), 4),
+        "hard_blockers": list(dict.fromkeys(hard_blockers)),
+        "soft_blockers": list(dict.fromkeys(soft_blockers)),
+    }
+
+
+def _confidence_penalty(
+    *,
+    source_count: int,
+    warmup: L9WarmupState,
+    freshness: L9FreshnessState,
+) -> float:
+    """Compute conservative confidence penalty for source-aware L9 evidence."""
+    base_penalty = {
+        3: 0.0,
+        2: 0.18,
+        1: 0.45,
+        0: 1.0,
+    }.get(source_count, 1.0)
+
+    if warmup == L9WarmupState.PARTIAL:
+        base_penalty += 0.10
+    elif warmup == L9WarmupState.INSUFFICIENT:
+        return 1.0
+
+    if freshness == L9FreshnessState.STALE_PRESERVED:
+        base_penalty += 0.10
+    elif freshness in (L9FreshnessState.DEGRADED, L9FreshnessState.NO_PRODUCER):
+        base_penalty += 0.20
+
+    return round(_clamp01(base_penalty), 4)
+
+
+def _build_structure_diagnostics(
+    *,
+    l9_analysis: dict[str, Any],
+    blockers: list[L9BlockerCode],
+    warmup: L9WarmupState,
+    structure_score: float,
+    smc_feature_count: int,
+) -> dict[str, Any]:
+    """Assemble audit-friendly L9 diagnostics without affecting legality."""
+    source_summary = _structure_source_summary(l9_analysis, warmup)
+    required_sources = source_summary["required_sources"]
+    available_sources = source_summary["available_sources"]
+    missing_sources = source_summary["missing_sources"]
+
+    warmup_required_bars = l9_analysis.get("warmup_required_bars", {})
+    if not isinstance(warmup_required_bars, dict):
+        warmup_required_bars = {}
+
+    warmup_available_bars = l9_analysis.get("warmup_available_bars", {})
+    if not isinstance(warmup_available_bars, dict):
+        warmup_available_bars = {}
+
+    source_builder_state = source_summary["source_builder_state"]
 
     primary_structure_gap = blockers[0].value if blockers else None
     source_diagnostics = l9_analysis.get("source_diagnostics", {})
@@ -338,9 +407,13 @@ def _build_structure_diagnostics(
         "required_sources": required_sources,
         "available_sources": available_sources,
         "missing_sources": missing_sources,
+        "source_count": source_summary["source_count"],
+        "source_completeness": source_summary["source_completeness"],
         "warmup_required_bars": warmup_required_bars,
         "warmup_available_bars": warmup_available_bars,
         "source_builder_state": source_builder_state,
+        "hard_blockers": source_summary["hard_blockers"],
+        "soft_blockers": source_summary["soft_blockers"],
         "source_diagnostics": source_diagnostics,
         "publisher_metadata": publisher_metadata,
         "primary_structure_gap": primary_structure_gap,
@@ -421,6 +494,7 @@ def _collect_warning_codes(
     band: L9CoherenceBand,
     smc_warnings: list[str],
     smc_feature_count: int,
+    source_soft_blockers: list[str] | None = None,
 ) -> list[str]:
     """Collect non-fatal warning codes."""
     codes: list[str] = []
@@ -438,6 +512,7 @@ def _collect_warning_codes(
         codes.append("STRUCTURE_MID_BAND")
     if smc_feature_count < MIN_SAMPLE_WARN and smc_feature_count > 0:
         codes.append("LOW_SMC_FEATURE_COUNT")
+    codes.extend(source_soft_blockers or [])
     codes.extend(smc_warnings)
     return codes
 
@@ -496,6 +571,13 @@ class L9ConstitutionalGovernor:
             blockers.append(L9BlockerCode.WARMUP_INSUFFICIENT)
         rule_hits.append(f"warmup_state={warmup.value}")
 
+        source_summary = _structure_source_summary(l9_analysis, warmup)
+        source_count = int(source_summary["source_count"])
+        for code in source_summary["hard_blockers"]:
+            blockers.append(L9BlockerCode(code))
+        if source_summary["soft_blockers"]:
+            rule_hits.append("source_soft_blockers=" + ",".join(source_summary["soft_blockers"]))
+
         # ── Step 6: fallback legality ────────────────────────────────
         fallback = _eval_fallback(l9_analysis)
         if fallback == L9FallbackClass.ILLEGAL_FALLBACK:
@@ -546,6 +628,12 @@ class L9ConstitutionalGovernor:
             structure_score=structure_score,
             smc_feature_count=smc_feature_count,
         )
+        confidence_penalty = _confidence_penalty(
+            source_count=source_count,
+            warmup=warmup,
+            freshness=freshness,
+        )
+        evidence_score = round(_clamp01(structure_score - confidence_penalty), 4)
 
         # ── Step 10: compress status ─────────────────────────────────
         status = _compress_status(
@@ -558,11 +646,18 @@ class L9ConstitutionalGovernor:
             structure_score,
             smc_feature_count,
         )
+        if source_summary["soft_blockers"] and status == L9Status.PASS:
+            status = L9Status.WARN
+            notes.append("Partial structure sources downgraded PASS to WARN")
 
         # Always-forward: continuation_allowed is always True.
         # L12 evaluates degradation via status/blocker_codes.
         continuation_allowed = True
         next_targets = ["PHASE_4"]
+        hard_blocker_codes = [b.value for b in dict.fromkeys(blockers)]
+        soft_blocker_codes = list(dict.fromkeys(source_summary["soft_blockers"]))
+        hard_stop = bool(hard_blocker_codes)
+        advisory_continuation = not hard_stop
 
         # ── Step 11: warning codes ───────────────────────────────────
         warning_codes = _collect_warning_codes(
@@ -572,6 +667,7 @@ class L9ConstitutionalGovernor:
             band,
             smc_warnings,
             smc_feature_count,
+            soft_blocker_codes,
         )
         if status == L9Status.PASS and fallback == L9FallbackClass.LEGAL_PRIMARY_SUBSTITUTE:  # noqa: SIM102
             if "PRIMARY_SUBSTITUTE_USED" not in warning_codes:
@@ -593,11 +689,13 @@ class L9ConstitutionalGovernor:
             "sweep_detected": bool(l9_analysis.get("sweep_detected", False)),
             "smart_money_signal": str(l9_analysis.get("smart_money_signal", "NEUTRAL")),
             "smc_feature_count": smc_feature_count,
+            "evidence_score": evidence_score,
+            "confidence_penalty": confidence_penalty,
             "feature_hash": f"L9_{band.value}_{status.value}_{int(round(structure_score * 100))}",
         }
 
         routing = {
-            "source_used": [s for s in ["smc", "liquidity", "divergence"] if l9_analysis.get("valid", False)],
+            "source_used": list(source_summary["available_sources"]),
             "fallback_used": fallback != L9FallbackClass.NO_FALLBACK,
             "next_legal_targets": next_targets,
         }
@@ -626,13 +724,19 @@ class L9ConstitutionalGovernor:
             "input_ref": input_ref,
             "status": status.value,
             "continuation_allowed": continuation_allowed,
-            "blocker_codes": [b.value for b in dict.fromkeys(blockers)],
+            "blocker_codes": hard_blocker_codes,
             "warning_codes": list(dict.fromkeys(warning_codes)),
+            "hard_blockers": hard_blocker_codes,
+            "soft_blockers": soft_blocker_codes,
+            "hard_stop": hard_stop,
+            "advisory_continuation": advisory_continuation,
             "fallback_class": fallback.value,
             "freshness_state": freshness.value,
             "warmup_state": warmup.value,
             "coherence_band": band.value,
             "score_numeric": round(structure_score, 4),
+            "evidence_score": evidence_score,
+            "confidence_penalty": confidence_penalty,
             "adaptive_threshold_audit": adaptive_threshold.to_dict(),
             "features": features,
             "structure_diagnostics": structure_diagnostics,

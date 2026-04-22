@@ -532,6 +532,31 @@ class TestL9GovernorWarnEnvelope:
         # Still HIGH band but NO_SMC_SIGNAL → WARN
         assert result["status"] == "WARN"
 
+    def test_two_sources_becomes_soft_evidence_warn(self):
+        gov = L9ConstitutionalGovernor()
+        data = _l9_analysis(dvg_confidence=0.0)
+        result = gov.evaluate(data, _upstream_pass())
+        assert result["status"] == "WARN"
+        assert result["hard_stop"] is False
+        assert result["soft_blockers"] == ["DIVERGENCE_SOURCE_MISSING"]
+        assert result["confidence_penalty"] == 0.18
+        assert result["evidence_score"] == 0.67
+
+    def test_partial_warmup_adds_soft_penalty(self):
+        gov = L9ConstitutionalGovernor()
+        data = _l9_analysis(
+            bos_detected=True,
+            choch_detected=False,
+            fvg_present=False,
+            ob_present=False,
+            sweep_detected=False,
+        )
+        result = gov.evaluate(data, _upstream_pass())
+        assert result["status"] == "WARN"
+        assert result["hard_stop"] is False
+        assert "PARTIAL_STRUCTURE_WARMUP" in result["soft_blockers"]
+        assert result["confidence_penalty"] > 0.0
+
 
 class TestL9GovernorFailEnvelope:
     """FAIL envelope: blockers or low score."""
@@ -582,6 +607,7 @@ class TestL9GovernorFailEnvelope:
         assert diagnostics["warmup_required_bars"] == {"H1": 100, "H4": 50, "D1": 20}
         assert diagnostics["warmup_available_bars"] == {"H1": 44, "H4": 80, "D1": 10}
         assert diagnostics["source_builder_state"] == "not_ready"
+        assert diagnostics["hard_blockers"] == ["REQUIRED_STRUCTURE_SOURCE_MISSING", "WARMUP_INSUFFICIENT"]
 
     def test_invalid_score_range_fail(self):
         gov = L9ConstitutionalGovernor()
@@ -595,6 +621,18 @@ class TestL9GovernorFailEnvelope:
         result = gov.evaluate({}, _upstream_pass())
         assert result["status"] == "FAIL"
         assert "CONTRACT_PAYLOAD_MALFORMED" in result["blocker_codes"]
+
+    def test_single_source_stays_hard_fail(self):
+        gov = L9ConstitutionalGovernor()
+        data = {
+            **_l9_analysis(liquidity_score=0.0, dvg_confidence=0.0),
+            "source_builder_state": "partial",
+        }
+        result = gov.evaluate(data, _upstream_pass())
+        assert result["status"] == "FAIL"
+        assert result["hard_stop"] is True
+        assert result["hard_blockers"] == ["REQUIRED_STRUCTURE_SOURCE_MISSING"]
+        assert result["advisory_continuation"] is False
 
 
 class TestL9GovernorDefaultUpstream:
