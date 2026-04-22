@@ -17,26 +17,27 @@ Analysis-only module. No execution authority.
 """
 
 from dataclasses import dataclass, field  # noqa: E402
-from enum import Enum  # noqa: E402
+from enum import StrEnum  # noqa: E402
 from typing import Any  # noqa: E402
 
 
-class L12Status(str, Enum):
+class L12Status(StrEnum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
 
 
-class L12Verdict(str, Enum):
+class L12Verdict(StrEnum):
     EXECUTE = "EXECUTE"
     EXECUTE_REDUCED_RISK = "EXECUTE_REDUCED_RISK"
     HOLD = "HOLD"
     NO_TRADE = "NO_TRADE"
 
 
-class L12BlockerCode(str, Enum):
+class L12BlockerCode(StrEnum):
     UPSTREAM_NOT_CONTINUABLE = "UPSTREAM_NOT_CONTINUABLE"
     UPSTREAM_TARGET_NOT_PHASE5 = "UPSTREAM_TARGET_NOT_PHASE5"
+    L2_HARD_ILLEGALITY = "L2_HARD_ILLEGALITY"
     PHASE1_MISSING = "PHASE1_MISSING"
     PHASE2_MISSING = "PHASE2_MISSING"
     PHASE3_MISSING = "PHASE3_MISSING"
@@ -53,7 +54,7 @@ class L12BlockerCode(str, Enum):
     CONTRACT_PAYLOAD_MALFORMED = "CONTRACT_PAYLOAD_MALFORMED"
 
 
-class L12GateName(str, Enum):
+class L12GateName(StrEnum):
     FOUNDATION_OK = "FOUNDATION_OK"
     SCORING_OK = "SCORING_OK"
     ENRICHMENT_OK = "ENRICHMENT_OK"
@@ -81,6 +82,16 @@ class L12Input:
 
     # Layer scores (per-layer numeric)
     layer_scores: dict[str, float] = field(default_factory=dict)
+
+    # L2 evidence plane forwarded for verdict differentiation
+    l2_status: str = "FAIL"
+    l2_evidence_score: float | None = None
+    l2_confidence_penalty: float = 0.0
+    l2_hard_stop: bool = False
+    l2_advisory_continuation: bool = False
+    l2_hard_blockers: list[str] = field(default_factory=list)
+    l2_soft_blockers: list[str] = field(default_factory=list)
+    l2_primary_conflict: str | None = None
 
     # Phase availability flags
     phase1_available: bool = False
@@ -200,6 +211,20 @@ class L12RouterEvaluator:
         # ── Upstream continuability ──
         if not payload.upstream_continuation_allowed:
             blockers.append(L12BlockerCode.UPSTREAM_NOT_CONTINUABLE.value)
+
+        if payload.l2_hard_stop and payload.l2_hard_blockers:
+            blockers.append(L12BlockerCode.L2_HARD_ILLEGALITY.value)
+            rule_hits.append(
+                "L2 hard illegality -> " + ",".join(sorted(dict.fromkeys(payload.l2_hard_blockers)))
+            )
+        elif payload.l2_soft_blockers:
+            warnings.append("L2_WEAK_EVIDENCE")
+            rule_hits.append(
+                f"L2 weak evidence -> penalty={payload.l2_confidence_penalty:.2f}, "
+                f"soft_blockers={','.join(sorted(dict.fromkeys(payload.l2_soft_blockers)))}"
+            )
+            if payload.l2_primary_conflict:
+                warnings.append(payload.l2_primary_conflict)
 
         targets = [str(t).upper().strip() for t in payload.upstream_next_legal_targets]
         if targets and "PHASE_5" not in targets:
@@ -321,6 +346,16 @@ class L12RouterEvaluator:
             "rule_hits": rule_hits,
             "blocker_triggered": bool(blockers),
             "notes": notes,
+            "l2_evidence": {
+                "status": payload.l2_status,
+                "evidence_score": payload.l2_evidence_score,
+                "confidence_penalty": payload.l2_confidence_penalty,
+                "hard_stop": payload.l2_hard_stop,
+                "advisory_continuation": payload.l2_advisory_continuation,
+                "hard_blockers": list(payload.l2_hard_blockers),
+                "soft_blockers": list(payload.l2_soft_blockers),
+                "primary_conflict": payload.l2_primary_conflict,
+            },
             "penalty_engine": {
                 "raw_confidence": raw_confidence,
                 "penalized_confidence": penalized_score,
@@ -379,6 +414,14 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
 
     # Phase 3
     phase3_result = phase3_e2e.get("phase3_result", {})
+    phase1_layers = phase1_result.get("layer_results", {}) if isinstance(phase1_result, dict) else {}
+    l2_layer = phase1_layers.get("L2", {}) if isinstance(phase1_layers, dict) else {}
+    if not isinstance(l2_layer, dict):
+        l2_layer = {}
+    if not l2_layer and isinstance(phase1_result, dict):
+        fallback_l2 = phase1_result.get("l2", {})
+        if isinstance(fallback_l2, dict):
+            l2_layer = fallback_l2
 
     # Derive statuses
     foundation_status = str(phase1_result.get("chain_status", "FAIL")).upper()
@@ -400,6 +443,13 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
     for phase_name in ("PHASE_1", "PHASE_2"):
         phase = phase_results.get(phase_name, {})
         for layer_name, layer in phase.get("layer_results", {}).items():
+            if not isinstance(layer, dict):
+                continue
+            if layer_name == "L2":
+                l2_evidence_score = layer.get("evidence_score")
+                if isinstance(l2_evidence_score, (int, float)):
+                    layer_scores[layer_name] = float(l2_evidence_score)
+                    continue
             val = layer.get("score_numeric")
             if isinstance(val, (int, float)):
                 layer_scores[layer_name] = float(val)
@@ -416,6 +466,27 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
     scores = [v for v in layer_scores.values() if isinstance(v, (int, float))]
     synthesis_score = sum(scores) / len(scores) if scores else 0.0
 
+    l2_evidence_score = l2_layer.get("evidence_score")
+    if not isinstance(l2_evidence_score, (int, float)):
+        l2_evidence_score = l2_layer.get("features", {}).get("evidence_score") if isinstance(l2_layer.get("features"), dict) else None
+
+    l2_confidence_penalty = l2_layer.get("confidence_penalty")
+    if not isinstance(l2_confidence_penalty, (int, float)):
+        l2_confidence_penalty = l2_layer.get("features", {}).get("confidence_penalty") if isinstance(l2_layer.get("features"), dict) else 0.0
+
+    l2_hard_blockers = l2_layer.get("hard_blockers", l2_layer.get("blocker_codes", []))
+    if not isinstance(l2_hard_blockers, list):
+        l2_hard_blockers = []
+    l2_soft_blockers = l2_layer.get("soft_blockers", l2_layer.get("warning_codes", []))
+    if not isinstance(l2_soft_blockers, list):
+        l2_soft_blockers = []
+    l2_primary_conflict = None
+    l2_mta = l2_layer.get("mta_diagnostics", {})
+    if isinstance(l2_mta, dict):
+        primary = l2_mta.get("primary_conflict")
+        if isinstance(primary, str) and primary:
+            l2_primary_conflict = primary
+
     return L12Input(
         input_ref=input_ref,
         timestamp=timestamp,
@@ -427,6 +498,14 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
         structure_status=structure_status,
         risk_chain_status=risk_chain_status,
         layer_scores=layer_scores,
+        l2_status=str(l2_layer.get("status", "FAIL")).upper(),
+        l2_evidence_score=float(l2_evidence_score) if isinstance(l2_evidence_score, (int, float)) else None,
+        l2_confidence_penalty=float(l2_confidence_penalty) if isinstance(l2_confidence_penalty, (int, float)) else 0.0,
+        l2_hard_stop=bool(l2_layer.get("hard_stop", False)),
+        l2_advisory_continuation=bool(l2_layer.get("advisory_continuation", False)),
+        l2_hard_blockers=[str(x) for x in l2_hard_blockers],
+        l2_soft_blockers=[str(x) for x in l2_soft_blockers],
+        l2_primary_conflict=l2_primary_conflict,
         phase1_available=bool(phase1_result),
         phase2_available=bool(phase2_result),
         phase3_available=bool(phase3_result),

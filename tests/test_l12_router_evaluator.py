@@ -509,6 +509,65 @@ class TestBuildL12InputFromUpstream(unittest.TestCase):
         self.assertTrue(result.phase4_available)
         self.assertGreater(result.synthesis_score, 0.0)
 
+    def test_build_input_prefers_l2_evidence_payload(self) -> None:
+        upstream = {
+            "input_ref": "EURUSD_H1_run_2000",
+            "timestamp": "2026-04-02T10:00:00+07:00",
+            "continuation_allowed": True,
+            "next_legal_targets": ["PHASE_5"],
+            "phase4_result": {
+                "chain_status": "PASS",
+                "summary_status": {"L11": "PASS", "L6": "PASS", "L10": "PASS"},
+                "layer_results": {"L11": {"score_numeric": 0.85}, "L6": {"score_numeric": 0.90}, "L10": {"score_numeric": 0.80}},
+            },
+            "upstream_result": {
+                "upstream_result": {
+                    "upstream_result": {
+                        "phase_results": {
+                            "PHASE_1": {
+                                "chain_status": "WARN",
+                                "summary_status": {"L1": "PASS", "L2": "WARN", "L3": "PASS"},
+                                "layer_results": {
+                                    "L1": {"score_numeric": 0.91},
+                                    "L2": {
+                                        "score_numeric": 0.88,
+                                        "evidence_score": 0.52,
+                                        "confidence_penalty": 0.25,
+                                        "status": "WARN",
+                                        "advisory_continuation": True,
+                                        "hard_stop": False,
+                                        "hard_blockers": [],
+                                        "soft_blockers": ["LOW_ALIGNMENT_BAND", "STRUCTURE_NOT_FULLY_ALIGNED"],
+                                        "mta_diagnostics": {"primary_conflict": "D1_H4_DIRECTION_CONFLICT"},
+                                    },
+                                    "L3": {"score_numeric": 0.87},
+                                },
+                            },
+                            "PHASE_2": {
+                                "chain_status": "PASS",
+                                "summary_status": {"L4": "PASS", "L5": "PASS"},
+                                "layer_results": {"L4": {"score_numeric": 0.82}, "L5": {"score_numeric": 0.78}},
+                            },
+                        },
+                    },
+                    "phase25_result": {"phase_status": "PASS"},
+                },
+                "phase3_result": {
+                    "chain_status": "PASS",
+                    "summary_status": {"L7": "PASS", "L8": "PASS", "L9": "PASS"},
+                    "layer_results": {"L7": {"score_numeric": 0.75}, "L8": {"score_numeric": 0.92}, "L9": {"score_numeric": 0.80}},
+                },
+            },
+        }
+
+        result = build_l12_input_from_upstream(upstream)
+        self.assertEqual(result.layer_scores["L2"], 0.52)
+        self.assertEqual(result.l2_status, "WARN")
+        self.assertEqual(result.l2_confidence_penalty, 0.25)
+        self.assertFalse(result.l2_hard_stop)
+        self.assertEqual(result.l2_soft_blockers, ["LOW_ALIGNMENT_BAND", "STRUCTURE_NOT_FULLY_ALIGNED"])
+        self.assertEqual(result.l2_primary_conflict, "D1_H4_DIRECTION_CONFLICT")
+
     # ── v2.0 soft penalty / adaptive sizing / navigation confidence tests ──
 
 
@@ -781,6 +840,77 @@ class TestL12V2SoftPenalty(unittest.TestCase):
         self.assertIn("sizing_multiplier", d)
         self.assertIn("soft_fail_count", d)
         self.assertIn("penalty_breakdown", d)
+
+    def test_l2_weak_evidence_emits_warning_not_blocker(self) -> None:
+        inp = L12Input(
+            input_ref="TEST_L2_SOFT",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES) | {"L2": 0.52},
+            l2_status="WARN",
+            l2_evidence_score=0.52,
+            l2_confidence_penalty=0.25,
+            l2_hard_stop=False,
+            l2_advisory_continuation=True,
+            l2_hard_blockers=[],
+            l2_soft_blockers=["LOW_ALIGNMENT_BAND", "STRUCTURE_NOT_FULLY_ALIGNED"],
+            l2_primary_conflict="D1_H4_DIRECTION_CONFLICT",
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertNotIn(L12BlockerCode.L2_HARD_ILLEGALITY.value, result.blocker_codes)
+        self.assertIn("L2_WEAK_EVIDENCE", result.warning_codes)
+        self.assertIn("D1_H4_DIRECTION_CONFLICT", result.warning_codes)
+        self.assertEqual(result.audit["l2_evidence"]["status"], "WARN")
+        self.assertFalse(result.audit["l2_evidence"]["hard_stop"])
+
+    def test_l2_hard_illegality_emits_dedicated_blocker(self) -> None:
+        inp = L12Input(
+            input_ref="TEST_L2_HARD",
+            timestamp="2026-04-02T10:00:00+07:00",
+            upstream_continuation_allowed=True,
+            upstream_next_legal_targets=["PHASE_5"],
+            foundation_status="PASS",
+            scoring_status="PASS",
+            enrichment_status="PASS",
+            structure_status="PASS",
+            risk_chain_status="PASS",
+            layer_scores=dict(self.HIGH_SCORES) | {"L2": 0.0},
+            l2_status="FAIL",
+            l2_evidence_score=0.0,
+            l2_confidence_penalty=1.0,
+            l2_hard_stop=True,
+            l2_advisory_continuation=False,
+            l2_hard_blockers=["REQUIRED_TIMEFRAME_MISSING"],
+            l2_soft_blockers=[],
+            phase1_available=True,
+            phase2_available=True,
+            phase3_available=True,
+            phase4_available=True,
+            synthesis_score=0.80,
+            integrity_status="PASS",
+            probability_status="PASS",
+            firewall_status="PASS",
+            governance_status="PASS",
+        )
+        result = self.evaluator.evaluate(inp)
+        self.assertEqual(result.verdict, "NO_TRADE")
+        self.assertIn(L12BlockerCode.L2_HARD_ILLEGALITY.value, result.blocker_codes)
+        self.assertEqual(result.audit["l2_evidence"]["hard_blockers"], ["REQUIRED_TIMEFRAME_MISSING"])
 
 
 if __name__ == "__main__":
