@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from analysis.layers.L7_probability import L7ProbabilityAnalyzer
+from engines.monte_carlo_engine import MonteCarloResult
 
 
 def _make_returns(n: int = 100, win_rate: float = 0.65, seed: int = 42) -> list[float]:
@@ -61,16 +62,46 @@ class TestL7ProbabilityAnalyzer:
         assert result["win_probability"] == 0.0
         assert result["mc_passed_threshold"] is False
 
-    def test_gate_logic_conditional(self) -> None:
+    def test_analyze_uses_cluster_fallback_for_cold_start(self) -> None:
+        analyzer = L7ProbabilityAnalyzer(mc_simulations=100, mc_seed=42)
+        result = analyzer.analyze(
+            "EURUSD",
+            technical_score=60,
+            trade_returns=[1.0, -0.5, 2.0],
+            cluster_pool={"majors": _make_returns(60, win_rate=0.62, seed=7)},
+        )
+
+        assert result["valid"] is True
+        assert result["validation"] == "CONDITIONAL"
+        assert result["returns_source"] == "cluster:majors"
+        assert result["fallback_cluster"] == "majors"
+        assert result["confidence_penalty"] == 0.1
+        assert str(result.get("note", "")).startswith("cluster_fallback_")
+
+    def test_gate_logic_conditional(self, monkeypatch) -> None:
         analyzer = L7ProbabilityAnalyzer(mc_simulations=300, mc_seed=42)
-        # ~55% win rate -> should be CONDITIONAL or FAIL
+        monkeypatch.setattr(
+            analyzer._mc_engine,
+            "run",
+            lambda returns: MonteCarloResult(
+                win_probability=0.54,
+                profit_factor=1.2,
+                max_drawdown_mean=150.0,
+                max_drawdown_p95=220.0,
+                risk_of_ruin=0.08,
+                expected_value=12.0,
+                simulations=300,
+                passed_threshold=False,
+            ),
+        )
         returns = _make_returns(100, win_rate=0.55, seed=11)
         result = analyzer.analyze(
             "AUDUSD",
             technical_score=60,
             trade_returns=returns,
         )
-        assert result["validation"] in ("CONDITIONAL", "FAIL")
+        assert result["validation"] == "CONDITIONAL"
+        assert result["simulations"] == 300
 
     def test_all_expected_keys_present(self) -> None:
         analyzer = L7ProbabilityAnalyzer(mc_simulations=100, mc_seed=42)

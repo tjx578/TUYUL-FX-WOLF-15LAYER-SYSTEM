@@ -31,6 +31,12 @@ def _setup_context_bus():
     # No cleanup needed for singleton
 
 
+@pytest.fixture(autouse=True)
+def _disable_ingest_gate_env(monkeypatch: pytest.MonkeyPatch):
+    """Keep legacy L12 baseline tests independent from rollout env flags."""
+    monkeypatch.delenv("WOLF15_ENABLE_INGEST_GATE", raising=False)
+
+
 def _make_synthesis(
     tii: float = 0.95,
     integrity: float = 0.98,

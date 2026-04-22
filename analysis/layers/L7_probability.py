@@ -42,6 +42,7 @@ from typing import Any
 
 from loguru import logger
 
+from analysis.probability_cluster_fallback import ProbabilityClusterFallback
 from core.core_fusion._utils import _clamp01
 from engines.bayesian_update_engine import (
     BayesianProbabilityEngine,
@@ -122,6 +123,7 @@ class L7ProbabilityAnalyzer:
         )
         self._bayesian = BayesianProbabilityEngine(seed=seed)
         self._trade_history: list[float] = []
+        self._cluster_fallback = ProbabilityClusterFallback()
         # Injectable WF validator: default uses module-level singleton.
         self._wf_validator = _wf_validator if wf_validator is _SENTINEL else wf_validator
         # Upstream output for constitutional governance (Phase 2 / enrichment result)
@@ -154,6 +156,7 @@ class L7ProbabilityAnalyzer:
         dvg_confidence: float = 0.5,
         liquidity_score: float = 0.5,
         synthetic_returns: bool = False,
+        cluster_pool: dict[str, list[float]] | None = None,
     ) -> dict[str, Any]:
         """Run Monte Carlo + Bayesian probability validation.
 
@@ -181,19 +184,43 @@ class L7ProbabilityAnalyzer:
         """
         # Resolve trade returns: explicit > instance > empty
         returns = trade_returns if trade_returns is not None else self._trade_history
+        returns_source = "synthetic" if synthetic_returns else "trade_history"
+        fallback_note: str | None = None
+        fallback_penalty = 0.0
+        cluster_name: str | None = None
 
         # ── Guard: insufficient data -> graceful fallback ─────────────
         if len(returns) < _MIN_TRADES:
-            logger.warning(
-                "[L7] {symbol} -- Insufficient trade history ({available}/{required}). Using fallback.",
+            cluster_fallback = self._cluster_fallback.derive(
                 symbol=symbol,
-                available=len(returns),
-                required=_MIN_TRADES,
+                own_history=list(returns),
+                cluster_pool=cluster_pool,
             )
-            return self._apply_constitutional(
-                self._fallback_result(symbol, len(returns)),
-                symbol,
-            )
+            if cluster_fallback.status == "CONDITIONAL":
+                logger.warning(
+                    "[L7] {symbol} -- Insufficient own trade history ({available}/{required}). Using cluster fallback {cluster} ({cluster_count} samples).",
+                    symbol=symbol,
+                    available=len(returns),
+                    required=_MIN_TRADES,
+                    cluster=cluster_fallback.cluster_name,
+                    cluster_count=cluster_fallback.sample_count,
+                )
+                returns = cluster_fallback.trade_returns
+                returns_source = cluster_fallback.source
+                fallback_note = cluster_fallback.note
+                fallback_penalty = cluster_fallback.confidence_penalty
+                cluster_name = cluster_fallback.cluster_name
+            else:
+                logger.warning(
+                    "[L7] {symbol} -- Insufficient trade history ({available}/{required}). Using fallback.",
+                    symbol=symbol,
+                    available=len(returns),
+                    required=_MIN_TRADES,
+                )
+                return self._apply_constitutional(
+                    self._fallback_result(symbol, len(returns), note=cluster_fallback.note),
+                    symbol,
+                )
 
         try:
             # ── Monte Carlo Bootstrap ────────────────────────────────
@@ -228,11 +255,16 @@ class L7ProbabilityAnalyzer:
             else:
                 validation = "FAIL"
 
+            if returns_source.startswith("cluster:") and validation == "PASS":
+                validation = "CONDITIONAL"
+
             # ── CONF12 raw score ─────────────────────────────────────
             # Blended confidence for Layer-12 consumption.
             # Bayesian posterior carries more weight (0.6) because it
             # incorporates both prior belief and new MC evidence.
             conf12_raw = bayes_result.posterior_win_probability * _CONF12_W_BAYES + wp * _CONF12_W_MC
+            if fallback_penalty > 0.0:
+                conf12_raw = max(0.0, conf12_raw - fallback_penalty)
 
             result: dict[str, Any] = {
                 # ── Core MC outputs ──────────────────────────────────
@@ -260,8 +292,12 @@ class L7ProbabilityAnalyzer:
                 "valid": True,
                 # ── Metadata ─────────────────────────────────────────
                 "symbol": symbol,
-                "returns_source": "synthetic" if synthetic_returns else "trade_history",
+                "returns_source": returns_source,
             }
+            if fallback_note is not None:
+                result["note"] = fallback_note
+                result["confidence_penalty"] = round(fallback_penalty, 4)
+                result["fallback_cluster"] = cluster_name
 
             # ── Walk-Forward Enrichment (optional) ───────────────────
             # Skip WF for synthetic (candle-derived) returns: WF thresholds
@@ -348,6 +384,8 @@ class L7ProbabilityAnalyzer:
         self,
         symbol: str,
         available_trades: int,
+        *,
+        note: str | None = None,
     ) -> dict[str, Any]:
         """Graceful degradation when MC cannot run.
 
@@ -382,7 +420,7 @@ class L7ProbabilityAnalyzer:
             "valid": True,  # Layer executed successfully
             # ── Metadata ─────────────────────────────────────────────
             "symbol": symbol,
-            "note": f"insufficient_data_{available_trades}/{_MIN_TRADES}",
+            "note": note or f"insufficient_data_{available_trades}/{_MIN_TRADES}",
         }
 
     # ── Constitutional Governance Wrapper ────────────────────────────

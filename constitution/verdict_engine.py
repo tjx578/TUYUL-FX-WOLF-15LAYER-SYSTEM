@@ -486,6 +486,7 @@ def generate_l12_verdict(
     synthesis: dict[str, Any],
     *,
     governance_penalty: float = 0.0,
+    ingest_state_consumer: Any | None = None,
 ) -> dict[str, Any]:
     """
     Generate a Layer-12 constitutional verdict from a synthesis dict.
@@ -518,6 +519,45 @@ def generate_l12_verdict(
             raise ValueError(f"Missing required synthesis field: {field}")
 
     symbol: str = synthesis.get("pair", synthesis.get("symbol", "UNKNOWN"))
+    regime: str = _resolve_regime(synthesis)
+
+    from state.ingest_state_consumer import (  # noqa: PLC0415
+        get_ingest_state_consumer,
+        ingest_gate_enabled_by_default,
+    )
+
+    if ingest_state_consumer is not None or ingest_gate_enabled_by_default():
+        consumer = ingest_state_consumer or get_ingest_state_consumer()
+        ingest_decision = consumer.is_blocking()
+        if ingest_decision.blocking:
+            return {
+                "symbol": symbol,
+                "verdict": "NO_TRADE",
+                "verdict_reason": f"ingest_unhealthy:{ingest_decision.reason}",
+                "confidence": "LOW",
+                "direction": None,
+                "wolf_status": "WEAK",
+                "proceed_to_L13": False,
+                "gates": {
+                    "ingest_gate": "FAIL",
+                    "passed": 0,
+                    "total": 1,
+                },
+                "enrichment_applied": False,
+                "reflex_gate": "UNKNOWN",
+                "lot_scale": 1.0,
+                "governance_penalty": round(max(0.0, min(1.0, governance_penalty)), 4),
+                "governance_downgraded": False,
+                "regime": regime,
+                "constitution_profile": _get_active_constitution_profile(),
+                "scores": {},
+                "audit": {
+                    "ingest_state": ingest_decision.state,
+                    "ingest_audit_id": ingest_decision.audit_id,
+                    "ingest_process_age": ingest_decision.process_age,
+                    "ingest_provider_age": ingest_decision.provider_age,
+                },
+            }
 
     layers: dict[str, Any] = synthesis["layers"]
     scores: dict[str, Any] = synthesis["scores"]
@@ -552,7 +592,6 @@ def generate_l12_verdict(
     g10 = "FAIL" if reflex_gate_label == "LOCK" else "PASS"
 
     # ── Regime-adaptive thresholds ────────────────────────────────────────────
-    regime: str = _resolve_regime(synthesis)
     try:
         from config.thresholds import get_thresholds  # noqa: PLC0415
 

@@ -13,5 +13,23 @@ from analysis.orchestrators.position_sizing_bridge import (
     DashboardRiskOutput,
     package_for_dashboard,
 )
+from analysis.orchestrators.source_builder_orchestrator import (
+    DivergencePublisher,
+    LiquidityPublisher,
+    SmcPublisher,
+    SourceBuilderOrchestrator,
+    SourceSnapshot,
+    derive_candle_age_seconds,
+)
 
-__all__ = ["AnalysisRiskInput", "DashboardRiskOutput", "package_for_dashboard"]
+__all__ = [
+    "AnalysisRiskInput",
+    "DashboardRiskOutput",
+    "DivergencePublisher",
+    "LiquidityPublisher",
+    "SmcPublisher",
+    "SourceBuilderOrchestrator",
+    "SourceSnapshot",
+    "derive_candle_age_seconds",
+    "package_for_dashboard",
+]

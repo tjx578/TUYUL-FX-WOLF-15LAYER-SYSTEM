@@ -190,6 +190,8 @@ def _eval_fallback(l7_analysis: dict[str, Any]) -> FallbackClass:
             pass
 
     source = str(l7_analysis.get("returns_source", ""))
+    if source.startswith("cluster:"):
+        return FallbackClass.LEGAL_PRIMARY_SUBSTITUTE
     if source == "synthetic":
         return FallbackClass.LEGAL_EMERGENCY_PRESERVE
     return FallbackClass.NO_FALLBACK
@@ -276,6 +278,17 @@ def _build_edge_diagnostics(
     }
 
 
+def _is_low_band_primary_substitute(
+    *,
+    band: CoherenceBand,
+    fallback: FallbackClass,
+    validation: str,
+) -> bool:
+    return (
+        band == CoherenceBand.LOW and fallback == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE and validation == "CONDITIONAL"
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # §4  COMPRESSION LOGIC
 # ═══════════════════════════════════════════════════════════════════════════
@@ -290,14 +303,20 @@ def _compress_status(
     edge_warnings: list[str],
     win_prob: float,
     sample_count: int,
+    validation: str = "FAIL",
 ) -> L7Status:
-    """Deterministic status compression per spec."""
+    allow_low_band_primary_substitute = _is_low_band_primary_substitute(
+        band=band,
+        fallback=fallback,
+        validation=validation,
+    )
+
     # Any blocker → FAIL
     if blockers:
         return L7Status.FAIL
 
     # LOW band → FAIL (win_probability below minimum)
-    if band == CoherenceBand.LOW:
+    if band == CoherenceBand.LOW and not allow_low_band_primary_substitute:
         return L7Status.FAIL
 
     # Check for clean PASS envelope
@@ -327,7 +346,7 @@ def _compress_status(
             FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
             FallbackClass.LEGAL_EMERGENCY_PRESERVE,
         )
-        and band in (CoherenceBand.HIGH, CoherenceBand.MID)
+        and (band in (CoherenceBand.HIGH, CoherenceBand.MID) or allow_low_band_primary_substitute)
     )
     if is_legal_warn:
         return L7Status.WARN
@@ -433,18 +452,22 @@ class L7ConstitutionalGovernor:
         # ── Step 8: win probability score band ───────────────────────
         win_prob = _derive_win_probability(l7_analysis)
         band = _score_band(win_prob)
+        validation = str(l7_analysis.get("validation", "FAIL")).upper()
         rule_hits.append(f"coherence_band={band.value}")
         rule_hits.append(f"win_probability={win_prob:.4f}")
 
         # LOW band with valid MC → add blocker
         if band == CoherenceBand.LOW and not blockers:
             sims = l7_analysis.get("simulations", 0)
-            if sims > 0:
+            if sims > 0 and not _is_low_band_primary_substitute(
+                band=band,
+                fallback=fallback,
+                validation=validation,
+            ):
                 blockers.append(BlockerCode.WIN_PROBABILITY_BELOW_MINIMUM)
 
         # ── Step 9: sample count ─────────────────────────────────────
         sample_count = int(l7_analysis.get("simulations", 0))
-        validation = str(l7_analysis.get("validation", "FAIL")).upper()
 
         # ── Step 10: compress status ─────────────────────────────────
         status = _compress_status(
@@ -456,6 +479,7 @@ class L7ConstitutionalGovernor:
             edge_warnings,
             win_prob,
             sample_count,
+            validation,
         )
 
         # Always-forward: continuation_allowed is always True.

@@ -2,6 +2,9 @@
 Test L9 Smart Money Concepts layer
 """
 
+import time
+from unittest import mock
+
 import pytest
 
 from analysis.layers.L9_smc import L9SMCAnalyzer
@@ -117,6 +120,52 @@ def test_smc_bearish_bos_detected(analyzer, context_bus):
     if result["bos_detected"]:
         assert result["confidence"] == pytest.approx(0.85, abs=0.1)
         assert result["displacement"] is True
+
+
+def test_smc_emits_explicit_source_orchestration_contract(analyzer):
+    """L9 should expose explicit source readiness independent of positive scores."""
+    now_ts = time.time()
+    recent_candles = [
+        {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "open": 1.1000,
+            "high": 1.1010,
+            "low": 1.0990,
+            "close": 1.1005,
+            "volume": 1000,
+            "timestamp": now_ts - (20 - i),
+        }
+        for i in range(20)
+    ]
+
+    structure = {
+        "valid": True,
+        "trend": "BULLISH",
+        "bos": False,
+        "choch": False,
+    }
+
+    analyzer._dvg_engine = object()
+    with (
+        mock.patch.object(L9SMCAnalyzer, "_get_candles", return_value=recent_candles),
+        mock.patch.object(L9SMCAnalyzer, "_detect_bos", return_value=False),
+        mock.patch.object(L9SMCAnalyzer, "_detect_fvg", return_value=False),
+        mock.patch.object(L9SMCAnalyzer, "_detect_orderblock", return_value=False),
+        mock.patch.object(L9SMCAnalyzer, "_detect_sweep", return_value=(False, 0.0)),
+        mock.patch.object(L9SMCAnalyzer, "_compute_divergence", return_value=0.0),
+    ):
+        result = analyzer.analyze("EURUSD", structure=structure)
+
+    assert result["structure_sources"] == {
+        "smc": True,
+        "liquidity": True,
+        "divergence": True,
+    }
+    assert result["source_builder_state"] == "ready"
+    assert "source_diagnostics" in result
+    assert "publisher_metadata" in result
+    assert result["source_diagnostics"]["sources"]["liquidity"]["state"] == "ready"
 
 
 def test_smc_choch_bullish_to_bearish(analyzer, context_bus):

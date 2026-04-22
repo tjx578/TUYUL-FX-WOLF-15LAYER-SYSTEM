@@ -11,16 +11,30 @@ from typing import Any
 
 from config_loader import load_constitution, load_pairs
 from constitution.violation_log import ViolationLogger
+from state.ingest_state_consumer import (
+    SupportsIngestGateDecision,
+    get_ingest_state_consumer,
+    ingest_gate_enabled_by_default,
+)
 
 logger = logging.getLogger("WOLF_CONSTITUTION")
 
 
 class Gatekeeper:
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        ingest_state_consumer: SupportsIngestGateDecision | None = None,
+        enable_ingest_gate: bool | None = None,
+    ):
         self._constitution = self._freeze_constitution()
         self._allowed_timeframes = self._build_allowed_timeframes()
         self._enabled_symbols = self._build_enabled_symbols()
         self.logger = ViolationLogger()
+        self._enable_ingest_gate = (
+            ingest_gate_enabled_by_default() if enable_ingest_gate is None else enable_ingest_gate
+        )
+        self._ingest = ingest_state_consumer
 
     @property
     def constitution(self) -> dict[str, Any]:
@@ -67,6 +81,9 @@ class Gatekeeper:
             self._gate_completeness,
         ]
 
+        if self._enable_ingest_gate or self._ingest is not None:
+            gates.insert(0, self._gate_ingest_health)
+
         for gate in gates:
             result, reason = gate(candidate)
             if not result:
@@ -85,6 +102,13 @@ class Gatekeeper:
     # =========================
     # INDIVIDUAL GATES
     # =========================
+
+    def _gate_ingest_health(self, c: dict):
+        consumer = self._ingest or get_ingest_state_consumer()
+        decision = consumer.is_blocking()
+        if decision.blocking:
+            return False, f"ingest_blocked:{decision.reason}"
+        return True, decision.reason
 
     def _gate_integrity(self, c: dict):
         # Use top-level integrity_min (reconciled value)

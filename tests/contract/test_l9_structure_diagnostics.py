@@ -61,3 +61,30 @@ def test_l9_pass_still_exposes_structure_diagnostics() -> None:
     assert diagnostics["available_sources"] == ["smc", "liquidity", "divergence"]
     assert diagnostics["missing_sources"] == []
     assert diagnostics["source_builder_state"] == "ready"
+
+
+def test_l9_structure_diagnostics_prefers_explicit_source_flags_over_scores() -> None:
+    gov = L9ConstitutionalGovernor()
+    result = gov.evaluate(
+        {
+            "symbol": "EURUSD",
+            "smc_score": 0,
+            "liquidity_score": 0.0,
+            "dvg_confidence": 0.0,
+            "confidence": 0.35,
+            "valid": True,
+            "smc": False,
+            "reason": "no_signal",
+            "structure_sources": {"smc": True, "liquidity": True, "divergence": True},
+            "source_builder_state": "ready",
+            "source_diagnostics": {"sources": {"liquidity": {"state": "ready"}}},
+            "publisher_metadata": {"smc": {"publisher_id": "smc-publisher"}},
+        },
+        _upstream_pass(),
+    )
+
+    diagnostics = result["structure_diagnostics"]
+    assert diagnostics["available_sources"] == ["smc", "liquidity", "divergence"]
+    assert diagnostics["missing_sources"] == []
+    assert diagnostics["source_diagnostics"]["sources"]["liquidity"]["state"] == "ready"
+    assert diagnostics["publisher_metadata"]["smc"]["publisher_id"] == "smc-publisher"

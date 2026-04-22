@@ -31,6 +31,15 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
+from analysis.orchestrators.source_builder_orchestrator import (
+    DivergencePublisher,
+    LiquidityPublisher,
+    SmcPublisher,
+    SourceBuilderOrchestrator,
+    SourceSnapshot,
+    derive_candle_age_seconds,
+)
+
 try:
     import core.core_cognitive_unified
     from core.core_fusion import (
@@ -64,6 +73,7 @@ class L9SMCAnalyzer:
         self._liquidity_mapper = None
         self._liq_scorer = None
         self._dvg_engine: object | None = None
+        self._source_orchestrator: SourceBuilderOrchestrator | None = None
         self._prev_trend: str | None = None  # Track for CHoCH detection
         self._upstream_output: dict[str, Any] = {}
 
@@ -93,6 +103,15 @@ class L9SMCAnalyzer:
                 self._dvg_engine = ExhaustionDivergenceFusionEngine()
             except Exception as exc:
                 logger.warning(f"[L9] Could not init DivergenceEngine: {exc}")
+
+    def _ensure_source_orchestrator(self) -> SourceBuilderOrchestrator:
+        if self._source_orchestrator is None:
+            self._source_orchestrator = SourceBuilderOrchestrator(
+                smc_publisher=SmcPublisher(self._build_smc_source_snapshot),
+                liquidity_publisher=LiquidityPublisher(self._build_liquidity_source_snapshot),
+                divergence_publisher=DivergencePublisher(self._build_divergence_source_snapshot),
+            )
+        return self._source_orchestrator
 
     # ------------------------------------------------------------------
     # Candle retrieval
@@ -291,6 +310,101 @@ class L9SMCAnalyzer:
             logger.warning("[L9] Divergence analysis failed: {}", exc)
             return 0.0
 
+    def _build_smc_source_snapshot(
+        self,
+        *,
+        symbol: str,
+        trend: str,
+        context: dict[str, Any],
+        publisher_id: str,
+        schema_version: str,
+    ) -> SourceSnapshot:
+        analysis = context.get("analysis") or {}
+        candles = context.get("candles") or []
+        reason = str(analysis.get("reason", "smc_unavailable"))
+        valid = bool(analysis.get("valid", False))
+        return SourceSnapshot(
+            name="smc",
+            score=float(analysis.get("smc_score", 0.0)) / 100.0,
+            valid=valid,
+            confidence=float(analysis.get("confidence", 0.0)),
+            age_seconds=derive_candle_age_seconds(candles, now_ts=context.get("now_ts")),
+            publisher_id=publisher_id,
+            schema_version=schema_version,
+            diagnostics={
+                "reason": reason,
+                "trend": trend,
+                "bos_detected": bool(analysis.get("bos_detected", False)),
+                "choch_detected": bool(analysis.get("choch_detected", False)),
+                "fvg_present": bool(analysis.get("fvg_present", False)),
+                "ob_present": bool(analysis.get("ob_present", False)),
+            },
+        )
+
+    def _build_liquidity_source_snapshot(
+        self,
+        *,
+        symbol: str,
+        trend: str,
+        context: dict[str, Any],
+        publisher_id: str,
+        schema_version: str,
+    ) -> SourceSnapshot:
+        analysis = context.get("analysis") or {}
+        candles = context.get("candles") or []
+        if not candles:
+            return SourceSnapshot(
+                name="liquidity",
+                score=0.0,
+                valid=False,
+                confidence=0.0,
+                age_seconds=None,
+                publisher_id=publisher_id,
+                schema_version=schema_version,
+                diagnostics={"reason": "no_candles"},
+            )
+        return SourceSnapshot(
+            name="liquidity",
+            score=float(analysis.get("liquidity_score", 0.0)),
+            valid=True,
+            confidence=float(analysis.get("liquidity_score", 0.0)),
+            age_seconds=derive_candle_age_seconds(candles, now_ts=context.get("now_ts")),
+            publisher_id=publisher_id,
+            schema_version=schema_version,
+            diagnostics={
+                "reason": "liquidity_scorer_evaluated",
+                "trend": trend,
+                "sweep_detected": bool(analysis.get("sweep_detected", False)),
+                "liquidity_sweep": bool(analysis.get("liquidity_sweep", False)),
+            },
+        )
+
+    def _build_divergence_source_snapshot(
+        self,
+        *,
+        symbol: str,
+        trend: str,
+        context: dict[str, Any],
+        publisher_id: str,
+        schema_version: str,
+    ) -> SourceSnapshot:
+        analysis = context.get("analysis") or {}
+        divergence_reason = str(context.get("divergence_reason", "divergence_unavailable"))
+        divergence_valid = not divergence_reason.startswith("INSUFFICIENT_DATA")
+        return SourceSnapshot(
+            name="divergence",
+            score=float(analysis.get("dvg_confidence", 0.0)),
+            valid=divergence_valid,
+            confidence=float(analysis.get("dvg_confidence", 0.0)),
+            age_seconds=context.get("divergence_age_seconds"),
+            publisher_id=publisher_id,
+            schema_version=schema_version,
+            diagnostics={
+                "reason": divergence_reason,
+                "trend": trend,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Main entry
     # ------------------------------------------------------------------
@@ -385,6 +499,36 @@ class L9SMCAnalyzer:
             "liquidity_sweep": sweep_detected,
             "reason": "smc_ok" if smc else "no_signal",
         }
+
+        divergence_reason = "divergence_engine_unavailable"
+        divergence_age_seconds = None
+        if self._dvg_engine is not None:
+            divergence_reason = "INSUFFICIENT_DATA"
+            tf_ages: list[float] = []
+            for tf in _DVG_TIMEFRAMES:
+                tf_candles = self._get_candles(symbol, timeframe=tf, count=30)
+                tf_age = derive_candle_age_seconds(tf_candles)
+                if tf_age is not None:
+                    tf_ages.append(tf_age)
+                if len(tf_candles) >= _RSI_PERIOD + 2:
+                    divergence_reason = "divergence_engine_evaluated"
+            if tf_ages:
+                divergence_age_seconds = max(tf_ages)
+
+        source_context = {
+            "analysis": result,
+            "candles": candles,
+            "now_ts": None,
+            "divergence_reason": divergence_reason,
+            "divergence_age_seconds": divergence_age_seconds,
+        }
+        result.update(
+            self._ensure_source_orchestrator().build_for_l9(
+                symbol=symbol,
+                trend=trend,
+                context=source_context,
+            )
+        )
         return self._apply_constitutional(result, symbol)
 
     # ------------------------------------------------------------------
@@ -426,7 +570,8 @@ class L9SMCAnalyzer:
 
             raw_result["constitutional"] = envelope
             raw_result["continuation_allowed"] = envelope.get(
-                "continuation_allowed", True,
+                "continuation_allowed",
+                True,
             )
 
             status = envelope.get("status", "PASS")

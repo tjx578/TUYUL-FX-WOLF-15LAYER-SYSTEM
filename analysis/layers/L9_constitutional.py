@@ -317,6 +317,13 @@ def _build_structure_diagnostics(
         source_builder_state = "ready"
 
     primary_structure_gap = blockers[0].value if blockers else None
+    source_diagnostics = l9_analysis.get("source_diagnostics", {})
+    if not isinstance(source_diagnostics, dict):
+        source_diagnostics = {}
+
+    publisher_metadata = l9_analysis.get("publisher_metadata", {})
+    if not isinstance(publisher_metadata, dict):
+        publisher_metadata = {}
 
     return {
         "required_sources": required_sources,
@@ -325,6 +332,8 @@ def _build_structure_diagnostics(
         "warmup_required_bars": warmup_required_bars,
         "warmup_available_bars": warmup_available_bars,
         "source_builder_state": source_builder_state,
+        "source_diagnostics": source_diagnostics,
+        "publisher_metadata": publisher_metadata,
         "primary_structure_gap": primary_structure_gap,
         "structure_score_components": {
             "smc_score": int(_coerce_float(l9_analysis.get("smc_score", 0.0))),

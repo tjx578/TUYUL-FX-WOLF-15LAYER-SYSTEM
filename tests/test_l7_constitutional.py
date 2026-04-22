@@ -198,6 +198,9 @@ class TestEvalFallback:
     def test_no_fallback(self):
         assert _eval_fallback(_l7_analysis()) == FallbackClass.NO_FALLBACK
 
+    def test_cluster_primary_substitute(self):
+        assert _eval_fallback(_l7_analysis(returns_source="cluster:majors")) == FallbackClass.LEGAL_PRIMARY_SUBSTITUTE
+
     def test_synthetic_emergency(self):
         assert _eval_fallback(_l7_analysis(returns_source="synthetic")) == FallbackClass.LEGAL_EMERGENCY_PRESERVE
 
@@ -494,6 +497,22 @@ class TestL7AnalyzerConstitutionalWrapper:
         result = analyzer.analyze("EURUSD", trade_returns=returns)
         assert "constitutional" in result
         assert result["validation"] == "FAIL"
+
+    def test_cluster_fallback_degrades_to_warn_not_fail(self):
+        from analysis.layers.L7_probability import L7ProbabilityAnalyzer
+
+        analyzer = L7ProbabilityAnalyzer(simulations=100, seed=42)
+        result = analyzer.analyze(
+            "EURUSD",
+            trade_returns=[0.01, -0.005],
+            cluster_pool={"majors": [0.02, -0.01, 0.015, -0.004] * 15},
+        )
+
+        const = result.get("constitutional", {})
+        assert result["validation"] == "CONDITIONAL"
+        assert const.get("status") == "WARN"
+        assert const.get("fallback_class") == "LEGAL_PRIMARY_SUBSTITUTE"
+        assert "PRIMARY_SUBSTITUTE_USED" in const.get("warning_codes", [])
 
     def test_upstream_injection(self):
         from analysis.layers.L7_probability import L7ProbabilityAnalyzer
