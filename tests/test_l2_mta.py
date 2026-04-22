@@ -492,6 +492,52 @@ class TestAnalyzerMixed:
             "Mixed signals should have lower alignment than uniform"
         )
 
+    def test_required_hierarchy_can_remain_legal_when_alignment_is_weak(
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict[str, float],
+        bearish_candle: dict[str, float],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Required TF legality must not collapse just because alignment is weak."""
+        candle_map: dict[str, dict[str, float] | None] = {
+            "D1": bullish_candle,
+            "H4": bearish_candle,
+            "H1": bearish_candle,
+        }
+        analyzer.context = _make_candle_source(candle_map=candle_map)
+        monkeypatch.setattr("analysis.layers.L2_mta._entropy_alignment", lambda _pb, _pr: 0.2)
+
+        result = analyzer.analyze("EURUSD")
+
+        assert result["hierarchy_followed"] is True
+        assert result["aligned"] is False
+        assert result["status"] == "WARN"
+        assert "LOW_ALIGNMENT_BAND" in result["warning_codes"]
+        assert "MTA_HIERARCHY_VIOLATED" not in result["warning_codes"]
+
+    def test_missing_required_hierarchy_stays_illegal_even_with_strong_alignment(
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict[str, float],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Strong directional agreement must not mask missing required HTFs."""
+        candle_map: dict[str, dict[str, float] | None] = {
+            "MN": bullish_candle,
+            "W1": bullish_candle,
+            "D1": bullish_candle,
+        }
+        analyzer.context = _make_candle_source(candle_map=candle_map)
+        monkeypatch.setattr("analysis.layers.L2_mta._entropy_alignment", lambda _pb, _pr: 0.95)
+
+        result = analyzer.analyze("EURUSD")
+
+        assert result["hierarchy_followed"] is False
+        assert result["aligned"] is True
+        assert result["status"] == "FAIL"
+        assert "REQUIRED_TIMEFRAME_MISSING" in result["blocker_codes"]
+
 
 class TestAnalyzerFallback:
     """Insufficient data → fallback with valid=False."""

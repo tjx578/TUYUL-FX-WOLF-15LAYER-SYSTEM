@@ -428,6 +428,19 @@ class L2MTAAnalyzer:
                 counts[tf] = len(history)
         return counts or None
 
+    @staticmethod
+    def _is_hierarchy_structurally_legal(tf_probs: dict[str, float]) -> bool:
+        """Hierarchy legality is structural, not directional.
+
+        L2 treats hierarchy as legal when the required HTFs are present and the
+        analyzer has enough timeframes to form an MTA view. Alignment strength
+        remains a separate evidence dimension.
+        """
+        available_tfs = [tf for tf in _TF_ORDER if tf in tf_probs]
+        required_present = all(tf in tf_probs for tf in ("D1", "H4"))
+        min_tf_ok = len(available_tfs) >= _MIN_TIMEFRAMES
+        return required_present and min_tf_ok
+
     # ──────────────────────────────────────────────────────────
     #  L3 sensitivity control
     # ──────────────────────────────────────────────────────────
@@ -586,6 +599,7 @@ class L2MTAAnalyzer:
         bullish_tfs = sum(1 for p in tf_probs.values() if p > 0.5)
         bearish_tfs = sum(1 for p in tf_probs.values() if p < 0.5)
         compliance = f"{max(bullish_tfs, bearish_tfs)}/{available}"
+        hierarchy_followed = self._is_hierarchy_structurally_legal(tf_probs)
 
         # ══════════════════════════════════════════════════════
         #  ENGINE INTEGRATION
@@ -712,7 +726,7 @@ class L2MTAAnalyzer:
         raw_result = {
             # ── Pipeline-required fields ──
             "mta_compliance": compliance,
-            "hierarchy_followed": aligned,
+            "hierarchy_followed": hierarchy_followed,
             "hierarchy_band": hierarchy_band,
             "reflex_coherence": reflex_coherence,
             "conf12": round(conf12, 4),
