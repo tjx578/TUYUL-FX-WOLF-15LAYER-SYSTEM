@@ -155,6 +155,14 @@ class BrokerExecutor:  # noqa: F811
             self._ea_url,
         )
 
+    def runtime_snapshot(self) -> dict[str, Any]:
+        execution_enabled = self._execution_enabled()
+        return {
+            "execution_enabled": execution_enabled,
+            "ea_url": self._ea_url,
+            "broker_calls_suppressed": not execution_enabled,
+        }
+
     def execute(self, req: ExecutionRequest) -> ExecutionResult:
         """Send a single execution request to EA bridge."""
         _broker_start = time.perf_counter()

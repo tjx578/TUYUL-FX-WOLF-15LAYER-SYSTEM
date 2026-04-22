@@ -30,6 +30,7 @@ class CancelRequest(BaseModel):
 async def queue_stats() -> dict:
     """Return current execution queue depth."""
     snapshot = _ea_manager.queue_snapshot()
+    runtime = _broker.runtime_snapshot()
     return {
         "queue_depth": snapshot["queue_depth"],
         "max_size": snapshot["queue_max"],
@@ -37,6 +38,9 @@ async def queue_stats() -> dict:
         "overload_mode": snapshot["overload_mode"],
         "overload_rejections": snapshot["overload_rejections"],
         "overload_drops": snapshot["overload_drops"],
+        "execution_enabled": runtime["execution_enabled"],
+        "broker_calls_suppressed": runtime["broker_calls_suppressed"],
+        "ea_url": runtime["ea_url"],
     }
 
 
