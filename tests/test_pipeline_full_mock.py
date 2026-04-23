@@ -498,7 +498,7 @@ class TestL12Verdict:
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in messages)
         assert any("event=l12_synthesis_enter symbol=EURUSD direction=BUY" in msg for msg in messages)
         assert any(
-            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=" in msg for msg in messages
+            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=BUY" in msg for msg in messages
         )
         assert any("verdict=" in msg and "execution_allowed=" in msg for msg in messages)
 
@@ -530,7 +530,7 @@ class TestL12Verdict:
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in warnings)
         assert any("event=l12_synthesis_enter symbol=EURUSD direction=BUY" in msg for msg in warnings)
         assert any(
-            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=" in msg for msg in warnings
+            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=BUY" in msg for msg in warnings
         )
         assert not any("event=phase1_enter symbol=EURUSD" in msg for msg in infos)
         assert not any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in infos)

@@ -2759,6 +2759,7 @@ class WolfConstitutionalPipeline:
         probability_evidence = synthesis.get("probability_evidence", {})
         l2_layer = l2_layer if isinstance(l2_layer, dict) else {}
         l9_layer = l9_layer if isinstance(l9_layer, dict) else {}
+        verdict_direction = l12_verdict.get("direction", synthesis.get("execution", {}).get("direction"))
 
         _emit_canary_event(
             f"event=l12_synthesis_enter symbol={synthesis.get('symbol') or synthesis.get('pair') or 'UNKNOWN'} "
@@ -2834,7 +2835,7 @@ class WolfConstitutionalPipeline:
         result_dict = result.to_dict()
         _emit_canary_event(
             f"event=l12_final_verdict symbol={l12_input.input_ref} authority=L12 "
-            f"verdict={result_dict.get('verdict')} direction={result_dict.get('direction')} "
+            f"verdict={result_dict.get('verdict')} direction={verdict_direction} "
             f"verdict_status={result_dict.get('verdict_status')} "
             f"hard_blockers={result_dict.get('blocker_codes', [])} soft_warnings={result_dict.get('warning_codes', [])} "
             f"evidence_score={result_dict.get('score_numeric')} execution_allowed={result_dict.get('continuation_allowed')} "
