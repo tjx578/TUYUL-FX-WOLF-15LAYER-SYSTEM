@@ -2762,6 +2762,7 @@ class WolfConstitutionalPipeline:
 
         _emit_canary_event(
             f"event=l12_synthesis_enter symbol={synthesis.get('symbol') or synthesis.get('pair') or 'UNKNOWN'} "
+            f"direction={synthesis.get('execution', {}).get('direction')} "
             f"phase1_status={phase1_status} phase3_status={structure_status}"
         )
 
@@ -2833,7 +2834,8 @@ class WolfConstitutionalPipeline:
         result_dict = result.to_dict()
         _emit_canary_event(
             f"event=l12_final_verdict symbol={l12_input.input_ref} authority=L12 "
-            f"verdict={result_dict.get('verdict')} verdict_status={result_dict.get('verdict_status')} "
+            f"verdict={result_dict.get('verdict')} direction={result_dict.get('direction')} "
+            f"verdict_status={result_dict.get('verdict_status')} "
             f"hard_blockers={result_dict.get('blocker_codes', [])} soft_warnings={result_dict.get('warning_codes', [])} "
             f"evidence_score={result_dict.get('score_numeric')} execution_allowed={result_dict.get('continuation_allowed')} "
             f"l2_status={result_dict.get('audit', {}).get('l2_evidence', {}).get('status')} "

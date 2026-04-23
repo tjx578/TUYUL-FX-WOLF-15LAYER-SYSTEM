@@ -496,8 +496,10 @@ class TestL12Verdict:
         assert any("hard_stop=False" in msg for msg in messages)
         assert any("soft_blockers=['TREND_STRUCTURE_CONFLICT', 'LOW_CONFIRMATION_SCORE']" in msg for msg in messages)
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in messages)
-        assert any("event=l12_synthesis_enter symbol=EURUSD" in msg for msg in messages)
-        assert any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in messages)
+        assert any("event=l12_synthesis_enter symbol=EURUSD direction=BUY" in msg for msg in messages)
+        assert any(
+            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=" in msg for msg in messages
+        )
         assert any("verdict=" in msg and "execution_allowed=" in msg for msg in messages)
 
     def test_production_canary_sentinels_escalate_to_warning(
@@ -526,8 +528,10 @@ class TestL12Verdict:
         assert any("event=phase1_enter symbol=EURUSD" in msg for msg in warnings)
         assert any("event=l3_constitutional_result symbol=EURUSD layer=L3" in msg for msg in warnings)
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in warnings)
-        assert any("event=l12_synthesis_enter symbol=EURUSD" in msg for msg in warnings)
-        assert any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in warnings)
+        assert any("event=l12_synthesis_enter symbol=EURUSD direction=BUY" in msg for msg in warnings)
+        assert any(
+            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=" in msg for msg in warnings
+        )
         assert not any("event=phase1_enter symbol=EURUSD" in msg for msg in infos)
         assert not any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in infos)
 
