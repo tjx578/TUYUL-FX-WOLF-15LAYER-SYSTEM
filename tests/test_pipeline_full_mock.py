@@ -496,6 +496,7 @@ class TestL12Verdict:
         assert any("hard_stop=False" in msg for msg in messages)
         assert any("soft_blockers=['TREND_STRUCTURE_CONFLICT', 'LOW_CONFIRMATION_SCORE']" in msg for msg in messages)
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in messages)
+        assert any("event=l12_legacy_verdict symbol=EURUSD authority=L12_LEGACY" in msg for msg in messages)
         assert any("event=l12_synthesis_enter symbol=EURUSD direction=BUY" in msg for msg in messages)
         assert any(
             "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=BUY" in msg for msg in messages
@@ -528,6 +529,7 @@ class TestL12Verdict:
         assert any("event=phase1_enter symbol=EURUSD" in msg for msg in warnings)
         assert any("event=l3_constitutional_result symbol=EURUSD layer=L3" in msg for msg in warnings)
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in warnings)
+        assert any("event=l12_legacy_verdict symbol=EURUSD authority=L12_LEGACY" in msg for msg in warnings)
         assert any("event=l12_synthesis_enter symbol=EURUSD direction=BUY" in msg for msg in warnings)
         assert any(
             "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=BUY" in msg for msg in warnings

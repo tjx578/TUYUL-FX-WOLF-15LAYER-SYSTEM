@@ -2348,6 +2348,11 @@ class WolfConstitutionalPipeline:
             gates = self._evaluate_9_gates(synthesis)
             l12_verdict = generate_l12_verdict(synthesis, governance_penalty=_dq_penalty)
             l12_verdict["gates_v74"] = gates
+            _emit_canary_event(
+                f"event=l12_legacy_verdict symbol={symbol} authority=L12_LEGACY "
+                f"verdict={l12_verdict.get('verdict')} direction={l12_verdict.get('direction')} "
+                f"confidence={l12_verdict.get('confidence')} proceed={l12_verdict.get('proceed_to_L13')}"
+            )
 
             # ── Constitutional Phase 5 overlay (L12 router evaluator) ──
             # Runs the new constitutional L12 governor in parallel with the
