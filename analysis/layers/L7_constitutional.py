@@ -26,6 +26,7 @@ Zone: analysis/ — pure read-only analysis, no execution side-effects.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import UTC, datetime
 from enum import Enum, StrEnum
@@ -92,6 +93,7 @@ class BlockerCode(StrEnum):
 HIGH_THRESHOLD = 0.67
 MID_THRESHOLD = 0.55
 MIN_SAMPLE_WARN = 30
+MIN_PROFIT_FACTOR_REQUIRED = 1.0
 
 
 def _clamp01(value: float) -> float:
@@ -338,6 +340,9 @@ def _build_edge_diagnostics(
 ) -> dict[str, Any]:
     """Assemble audit-friendly L7 diagnostics without affecting legality."""
     validation = str(l7_analysis.get("validation", "FAIL")).upper()
+    mc_passed = bool(l7_analysis.get("mc_passed_threshold", False))
+    returns_source = str(l7_analysis.get("returns_source", ""))
+    profit_factor = round(float(l7_analysis.get("profit_factor", 0.0)), 4)
     primary_edge_gap = None
     for blocker in blockers:
         if blocker in (
@@ -349,24 +354,85 @@ def _build_edge_diagnostics(
             primary_edge_gap = blocker.value
             break
 
+    edge_status_reason = _derive_edge_status_reason(
+        validation=validation,
+        blockers=blockers,
+        band=band,
+        sample_count=sample_count,
+        returns_source=returns_source,
+        profit_factor=profit_factor,
+        mc_passed=mc_passed,
+    )
+
     return {
         "edge_status": validation,
+        "edge_status_reason": edge_status_reason,
         "primary_edge_gap": primary_edge_gap,
         "win_probability": round(win_prob, 4),
         "required_win_probability": MID_THRESHOLD,
         "coherence_band": band.value,
         "simulations": sample_count,
         "warn_sample_floor": MIN_SAMPLE_WARN,
-        "mc_passed_threshold": bool(l7_analysis.get("mc_passed_threshold", False)),
+        "mc_passed_threshold": mc_passed,
         "wf_passed": l7_analysis.get("wf_passed"),
         "wf_skipped_reason": l7_analysis.get("wf_skipped_reason"),
-        "returns_source": str(l7_analysis.get("returns_source", "")),
-        "profit_factor": round(float(l7_analysis.get("profit_factor", 0.0)), 4),
+        "returns_source": returns_source,
+        "history_source_type": _history_source_type(returns_source),
+        "synthetic_fallback_used": returns_source == "synthetic",
+        "profit_factor": profit_factor,
+        "profit_factor_min_required": MIN_PROFIT_FACTOR_REQUIRED,
         "risk_of_ruin": round(float(l7_analysis.get("risk_of_ruin", 1.0)), 4),
         "conf12_raw": round(float(l7_analysis.get("conf12_raw", 0.0)), 4),
         "bayesian_posterior": round(float(l7_analysis.get("bayesian_posterior", 0.0)), 4),
         "warnings": list(edge_warnings),
     }
+
+
+def _history_source_type(returns_source: str) -> str:
+    source = returns_source.strip().lower()
+    if not source:
+        return "none"
+    if source == "synthetic":
+        return "synthetic"
+    if source.startswith("cluster:"):
+        return "cluster"
+    if source in {"trade_history", "journal", "ledger"}:
+        return "real"
+    return source
+
+
+def _derive_edge_status_reason(
+    *,
+    validation: str,
+    blockers: list[BlockerCode],
+    band: CoherenceBand,
+    sample_count: int,
+    returns_source: str,
+    profit_factor: float,
+    mc_passed: bool,
+) -> str | None:
+    blocker_set = set(blockers)
+    history_source_type = _history_source_type(returns_source)
+
+    if BlockerCode.REQUIRED_PROBABILITY_SOURCE_MISSING in blocker_set:
+        if history_source_type == "synthetic":
+            return "SYNTHETIC_HISTORY_LOW_CONFIDENCE"
+        return "INSUFFICIENT_REAL_SAMPLE"
+    if BlockerCode.WARMUP_INSUFFICIENT in blocker_set:
+        return "INSUFFICIENT_REAL_SAMPLE"
+    if BlockerCode.EDGE_STATUS_INVALID in blocker_set:
+        if history_source_type == "synthetic":
+            return "SYNTHETIC_HISTORY_LOW_CONFIDENCE"
+        if profit_factor < MIN_PROFIT_FACTOR_REQUIRED:
+            return "PF_BELOW_MINIMUM"
+        if sample_count < MIN_SAMPLE_WARN:
+            return "INSUFFICIENT_REAL_SAMPLE"
+        if validation == "FAIL" and not mc_passed:
+            return "MC_THRESHOLD_NOT_MET"
+        return "EDGE_VALIDATION_FAILED"
+    if BlockerCode.WIN_PROBABILITY_BELOW_MINIMUM in blocker_set or band == CoherenceBand.LOW:
+        return "WIN_PROBABILITY_BELOW_MINIMUM"
+    return None
 
 
 def _is_low_band_primary_substitute(
@@ -402,7 +468,9 @@ def _compress_status(
         fallback=fallback,
         validation=validation,
     )
-    allow_low_band_soft_evidence = band == CoherenceBand.LOW and "WIN_PROBABILITY_NEAR_MISS" in (source_soft_blockers or [])
+    allow_low_band_soft_evidence = band == CoherenceBand.LOW and "WIN_PROBABILITY_NEAR_MISS" in (
+        source_soft_blockers or []
+    )
 
     # Any blocker → FAIL
     if blockers:
@@ -545,10 +613,8 @@ class L7ConstitutionalGovernor:
         source_summary = _probability_source_summary(l7_analysis, warmup, fallback)
         for blocker in source_summary["hard_blockers"]:
             if blocker not in {b.value for b in blockers}:
-                try:
+                with contextlib.suppress(ValueError):
                     blockers.append(BlockerCode(blocker))
-                except ValueError:
-                    pass
 
         # ── Step 7: edge validation ──────────────────────────────────
         edge_blockers, edge_warnings = _check_edge_validation(l7_analysis)
@@ -583,7 +649,9 @@ class L7ConstitutionalGovernor:
                 validation=validation,
             ):
                 if validation == "PASS":
-                    source_summary["soft_blockers"] = list(dict.fromkeys([*source_summary["soft_blockers"], "WIN_PROBABILITY_NEAR_MISS"]))
+                    source_summary["soft_blockers"] = list(
+                        dict.fromkeys([*source_summary["soft_blockers"], "WIN_PROBABILITY_NEAR_MISS"])
+                    )
                 else:
                     blockers.append(BlockerCode.WIN_PROBABILITY_BELOW_MINIMUM)
 

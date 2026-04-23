@@ -403,6 +403,12 @@ def _build_structure_diagnostics(
     if not isinstance(publisher_metadata, dict):
         publisher_metadata = {}
 
+    runtime_bucket, runtime_bucket_reason, builder_path_ran = _classify_runtime_bucket(
+        l9_analysis=l9_analysis,
+        source_diagnostics=source_diagnostics,
+        publisher_metadata=publisher_metadata,
+    )
+
     return {
         "required_sources": required_sources,
         "available_sources": available_sources,
@@ -416,6 +422,9 @@ def _build_structure_diagnostics(
         "soft_blockers": source_summary["soft_blockers"],
         "source_diagnostics": source_diagnostics,
         "publisher_metadata": publisher_metadata,
+        "runtime_bucket": runtime_bucket,
+        "runtime_bucket_reason": runtime_bucket_reason,
+        "builder_path_ran": builder_path_ran,
         "primary_structure_gap": primary_structure_gap,
         "structure_score_components": {
             "smc_score": int(_coerce_float(l9_analysis.get("smc_score", 0.0))),
@@ -426,6 +435,52 @@ def _build_structure_diagnostics(
             "structure_score": round(structure_score, 4),
         },
     }
+
+
+def _classify_runtime_bucket(
+    *,
+    l9_analysis: dict[str, Any],
+    source_diagnostics: dict[str, Any],
+    publisher_metadata: dict[str, Any],
+) -> tuple[str, str, bool]:
+    sources = source_diagnostics.get("sources", {})
+    if not isinstance(sources, dict):
+        sources = {}
+
+    builder_path_ran = bool(
+        sources or source_diagnostics.get("errored") or source_diagnostics.get("missing") or publisher_metadata
+    )
+    reason = str(l9_analysis.get("reason", "")).strip()
+
+    if not builder_path_ran and reason in {"no_structure_data", "invalid_structure"}:
+        return "upstream_structure_invalid", reason, False
+
+    errored = source_diagnostics.get("errored", [])
+    if isinstance(errored, list) and errored:
+        first = errored[0]
+        if isinstance(first, dict):
+            return "publisher_error", str(first.get("error", "publisher_exception")), True
+        return "publisher_error", "publisher_exception", True
+
+    liquidity_state = sources.get("liquidity", {}) if isinstance(sources.get("liquidity"), dict) else {}
+    if liquidity_state.get("reason") == "no_candles":
+        return "no_h1_candles", "liquidity:no_candles", True
+
+    divergence_state = sources.get("divergence", {}) if isinstance(sources.get("divergence"), dict) else {}
+    divergence_reason = str(divergence_state.get("reason", ""))
+    if divergence_reason.startswith("INSUFFICIENT_DATA"):
+        return "divergence_insufficient_data", divergence_reason, True
+
+    stale = source_diagnostics.get("stale", [])
+    if isinstance(stale, list) and stale:
+        return "snapshot_stale_over_15s", ",".join(str(item) for item in stale), True
+
+    if reason in {"no_structure_data", "invalid_structure"}:
+        return "upstream_structure_invalid", reason, builder_path_ran
+
+    if builder_path_ran:
+        return "mixed_or_unknown", "builder_ran_no_dominant_source_failure", True
+    return "mixed_or_unknown", reason or "insufficient_runtime_context", False
 
 
 # ═══════════════════════════════════════════════════════════════════════════

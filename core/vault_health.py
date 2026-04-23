@@ -26,6 +26,9 @@ class VaultHealthReport:
     symbols_fresh: int
     symbols_total: int
     redis_latency_ms: float
+    redis_roundtrip_ms: float
+    context_hydration_ms: float
+    bus_read_age_ms: float
     is_healthy: bool
     freshness_formula: str = ""
     freshness_formula_raw: float | None = None
@@ -52,12 +55,19 @@ class VaultHealthChecker:
 
     def check(self, symbols: list[str] | None = None) -> VaultHealthReport:
         """Run health checks. Returns actual metrics."""
-        feed_freshness, worst_age, symbols_fresh, symbols_total, freshness_formula, formula_raw = (
-            self._check_feed_freshness(symbols or [])
-        )
+        (
+            feed_freshness,
+            worst_age,
+            symbols_fresh,
+            symbols_total,
+            freshness_formula,
+            formula_raw,
+            context_hydration_ms,
+        ) = self._check_feed_freshness(symbols or [])
         redis_health, redis_latency = self._check_redis_health()
         tick_age = self._get_last_tick_age(symbols or [])
         provider_state, provider_age, provider_last_ts = self._get_provider_status()
+        bus_read_age_ms = float("inf") if tick_age == float("inf") else tick_age * 1000.0
 
         is_healthy = feed_freshness >= 0.5 and redis_health >= 0.5
 
@@ -77,6 +87,9 @@ class VaultHealthChecker:
             symbols_fresh=symbols_fresh,
             symbols_total=symbols_total,
             redis_latency_ms=round(redis_latency, 2),
+            redis_roundtrip_ms=round(redis_latency, 2),
+            context_hydration_ms=round(context_hydration_ms, 2),
+            bus_read_age_ms=round(bus_read_age_ms, 2) if bus_read_age_ms != float("inf") else float("inf"),
             is_healthy=is_healthy,
             freshness_formula=freshness_formula,
             freshness_formula_raw=round(formula_raw, 4) if formula_raw is not None else None,
@@ -91,9 +104,11 @@ class VaultHealthChecker:
 
         return report
 
-    def _check_feed_freshness(self, symbols: list[str]) -> tuple[float, float, int, int, str, float | None]:
+    def _check_feed_freshness(self, symbols: list[str]) -> tuple[float, float, int, int, str, float | None, float]:
+        started = time.monotonic()
         if self._context_bus is None or not symbols:
-            return 0.0, float("inf"), 0, len(symbols), "1.0 - (inf / 10.0) = -inf -> clamped to 0.0", None
+            elapsed_ms = (time.monotonic() - started) * 1000
+            return 0.0, float("inf"), 0, len(symbols), "1.0 - (inf / 10.0) = -inf -> clamped to 0.0", None, elapsed_ms
         try:
             ages: list[float] = []
             fresh_count = 0
@@ -107,9 +122,11 @@ class VaultHealthChecker:
                     if age <= self.MAX_TICK_AGE_SECONDS:
                         fresh_count += 1
             if not ages:
-                return 0.0, float("inf"), 0, 0, "1.0 - (inf / 10.0) = -inf -> clamped to 0.0", None
+                elapsed_ms = (time.monotonic() - started) * 1000
+                return 0.0, float("inf"), 0, 0, "1.0 - (inf / 10.0) = -inf -> clamped to 0.0", None, elapsed_ms
             worst_age = max(ages)
             if worst_age == float("inf"):
+                elapsed_ms = (time.monotonic() - started) * 1000
                 return (
                     0.0,
                     float("inf"),
@@ -117,6 +134,7 @@ class VaultHealthChecker:
                     len(symbols),
                     "1.0 - (inf / 10.0) = -inf -> clamped to 0.0",
                     None,
+                    elapsed_ms,
                 )
             raw_freshness = 1.0 - (worst_age / self.MAX_TICK_AGE_SECONDS)
             clamped = max(0.0, raw_freshness)
@@ -124,10 +142,12 @@ class VaultHealthChecker:
                 f"1.0 - ({worst_age:.2f} / {self.MAX_TICK_AGE_SECONDS:.1f}) = {raw_freshness:.4f} "
                 f"-> clamped to {clamped:.4f}"
             )
-            return clamped, worst_age, fresh_count, len(symbols), formula, raw_freshness
+            elapsed_ms = (time.monotonic() - started) * 1000
+            return clamped, worst_age, fresh_count, len(symbols), formula, raw_freshness, elapsed_ms
         except Exception as e:
             logger.error("Feed freshness check failed: %s", e)
-            return 0.0, float("inf"), 0, len(symbols), "1.0 - (error / 10.0) = n/a -> clamped to 0.0", None
+            elapsed_ms = (time.monotonic() - started) * 1000
+            return 0.0, float("inf"), 0, len(symbols), "1.0 - (error / 10.0) = n/a -> clamped to 0.0", None, elapsed_ms
 
     def _check_redis_health(self) -> tuple[float, float]:
         if self._redis is None:

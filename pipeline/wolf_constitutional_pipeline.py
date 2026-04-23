@@ -894,7 +894,7 @@ class WolfConstitutionalPipeline:
             elif layer == "L7" and isinstance(const.get("edge_diagnostics"), dict):
                 diagnostics = const["edge_diagnostics"]
                 logger.warning(
-                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} edge_status={} win_probability={} required={} simulations={} source={} profit_factor={} wf_passed={} gap={} soft_blockers={}",
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} edge_status={} edge_reason={} win_probability={} required={} simulations={} source={} profit_factor={} wf_passed={} gap={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
@@ -904,6 +904,7 @@ class WolfConstitutionalPipeline:
                     evidence_score,
                     confidence_penalty,
                     diagnostics.get("edge_status"),
+                    diagnostics.get("edge_status_reason"),
                     diagnostics.get("win_probability"),
                     diagnostics.get("required_win_probability"),
                     diagnostics.get("simulations"),
@@ -916,7 +917,7 @@ class WolfConstitutionalPipeline:
             elif layer == "L8" and isinstance(const.get("integrity_diagnostics"), dict):
                 diagnostics = const["integrity_diagnostics"]
                 logger.warning(
-                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} integrity={} required={} gate_status={} missing_sources={} component_count={} gap={} soft_blockers={}",
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} integrity={} required={} gate_status={} missing_sources={} component_count={} l2_component={} l7_component={} gap={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
@@ -930,13 +931,15 @@ class WolfConstitutionalPipeline:
                     diagnostics.get("gate_status"),
                     diagnostics.get("missing_sources"),
                     diagnostics.get("component_count"),
+                    diagnostics.get("component_attribution", {}).get("l2_alignment_component"),
+                    diagnostics.get("component_attribution", {}).get("l7_probability_component"),
                     diagnostics.get("primary_integrity_gap"),
                     soft_blockers,
                 )
             elif layer == "L9" and isinstance(const.get("structure_diagnostics"), dict):
                 diagnostics = const["structure_diagnostics"]
                 logger.warning(
-                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} missing_sources={} builder_state={} available_sources={} soft_blockers={}",
+                    "[{}] {} {} constitutional FAIL — blockers={} continuation={} hard_stop={} evidence_score={} penalty={} missing_sources={} builder_state={} bucket={} bucket_reason={} available_sources={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
@@ -947,6 +950,8 @@ class WolfConstitutionalPipeline:
                     confidence_penalty,
                     diagnostics.get("missing_sources"),
                     diagnostics.get("source_builder_state"),
+                    diagnostics.get("runtime_bucket"),
+                    diagnostics.get("runtime_bucket_reason"),
                     diagnostics.get("available_sources"),
                     soft_blockers,
                 )
@@ -1011,7 +1016,7 @@ class WolfConstitutionalPipeline:
             elif layer == "L7" and isinstance(const.get("edge_diagnostics"), dict):
                 diagnostics = const["edge_diagnostics"]
                 logger.info(
-                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} edge_status={} win_probability={} simulations={} source={} gap={} soft_blockers={}",
+                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} edge_status={} edge_reason={} win_probability={} simulations={} source={} gap={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
@@ -1020,6 +1025,7 @@ class WolfConstitutionalPipeline:
                     evidence_score,
                     confidence_penalty,
                     diagnostics.get("edge_status"),
+                    diagnostics.get("edge_status_reason"),
                     diagnostics.get("win_probability"),
                     diagnostics.get("simulations"),
                     diagnostics.get("returns_source"),
@@ -1029,7 +1035,7 @@ class WolfConstitutionalPipeline:
             elif layer == "L8" and isinstance(const.get("integrity_diagnostics"), dict):
                 diagnostics = const["integrity_diagnostics"]
                 logger.info(
-                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} integrity={} gate_status={} missing_sources={} gap={} soft_blockers={}",
+                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} integrity={} gate_status={} missing_sources={} l2_component={} l7_component={} gap={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
@@ -1040,13 +1046,15 @@ class WolfConstitutionalPipeline:
                     diagnostics.get("integrity_score"),
                     diagnostics.get("gate_status"),
                     diagnostics.get("missing_sources"),
+                    diagnostics.get("component_attribution", {}).get("l2_alignment_component"),
+                    diagnostics.get("component_attribution", {}).get("l7_probability_component"),
                     diagnostics.get("primary_integrity_gap"),
                     soft_blockers,
                 )
             elif layer == "L9" and isinstance(const.get("structure_diagnostics"), dict):
                 diagnostics = const["structure_diagnostics"]
                 logger.info(
-                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} missing_sources={} builder_state={} available_sources={} soft_blockers={}",
+                    "[{}] {} {} constitutional WARN — warnings={} band={} evidence_score={} penalty={} missing_sources={} builder_state={} bucket={} bucket_reason={} available_sources={} soft_blockers={}",
                     phase,
                     symbol,
                     layer,
@@ -1056,6 +1064,8 @@ class WolfConstitutionalPipeline:
                     confidence_penalty,
                     diagnostics.get("missing_sources"),
                     diagnostics.get("source_builder_state"),
+                    diagnostics.get("runtime_bucket"),
+                    diagnostics.get("runtime_bucket_reason"),
                     diagnostics.get("available_sources"),
                     soft_blockers,
                 )

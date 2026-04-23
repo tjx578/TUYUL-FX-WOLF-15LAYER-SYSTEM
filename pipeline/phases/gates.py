@@ -17,7 +17,7 @@ except ImportError:
 
     logger = logging.getLogger(__name__)
 
-from pipeline.constants import (
+from ..constants import (
     get_conf12_min,
     get_integrity_min,
     get_max_drawdown,

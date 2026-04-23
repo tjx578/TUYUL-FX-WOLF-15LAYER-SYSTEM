@@ -38,7 +38,7 @@ def test_vault_health_report_exposes_freshness_and_provider_breakdown(
     redis_client = _FakeRedis(f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode())
     checker = VaultHealthChecker(redis_client=redis_client, context_bus=context_bus)
 
-    monotonic_values = iter([1.0, 2.003])
+    monotonic_values = iter([1.0, 1.001, 2.0, 3.003])
     monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
     monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
 
@@ -54,6 +54,9 @@ def test_vault_health_report_exposes_freshness_and_provider_breakdown(
     assert report.provider_last_ts is not None
     assert "1.0 - (34.96 / 10.0)" in report.freshness_formula
     assert report.redis_latency_ms == pytest.approx(1003.0, abs=0.1)
+    assert report.redis_roundtrip_ms == pytest.approx(1003.0, abs=0.1)
+    assert report.context_hydration_ms >= 0.0
+    assert report.bus_read_age_ms == pytest.approx(34960.0, abs=20.0)
     assert report.should_block_analysis is True
 
 
@@ -72,6 +75,9 @@ def test_compute_vault_sync_logs_structured_vault_diagnostics(monkeypatch: pytes
     vault_report.provider_age_seconds = 34.96
     vault_report.provider_last_ts = "2026-04-22T19:21:07.739065+00:00"
     vault_report.redis_latency_ms = 1003.0
+    vault_report.redis_roundtrip_ms = 1003.0
+    vault_report.context_hydration_ms = 1.0
+    vault_report.bus_read_age_ms = 34960.0
 
     vault_checker = MagicMock()
     vault_checker.check.return_value = vault_report
@@ -91,4 +97,7 @@ def test_compute_vault_sync_logs_structured_vault_diagnostics(monkeypatch: pytes
     assert "provider_age_seconds=34.96" in log_line
     assert "provider_last_ts=2026-04-22T19:21:07.739065+00:00" in log_line
     assert "redis_latency_ms=1003" in log_line
+    assert "redis_roundtrip_ms=1003" in log_line
+    assert "context_hydration_ms=" in log_line
+    assert "bus_read_age_ms=" in log_line
     assert "should_block_analysis=True" in log_line

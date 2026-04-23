@@ -33,6 +33,8 @@ def test_l9_fail_exposes_structure_diagnostics_without_changing_status() -> None
     assert diagnostics["warmup_required_bars"] == {"H1": 100, "H4": 50, "D1": 20}
     assert diagnostics["warmup_available_bars"] == {"H1": 44, "H4": 80, "D1": 10}
     assert diagnostics["source_builder_state"] == "not_ready"
+    assert diagnostics["runtime_bucket"] == "upstream_structure_invalid"
+    assert diagnostics["builder_path_ran"] is False
 
 
 def test_l9_pass_still_exposes_structure_diagnostics() -> None:
@@ -61,6 +63,8 @@ def test_l9_pass_still_exposes_structure_diagnostics() -> None:
     assert diagnostics["available_sources"] == ["smc", "liquidity", "divergence"]
     assert diagnostics["missing_sources"] == []
     assert diagnostics["source_builder_state"] == "ready"
+    assert diagnostics["runtime_bucket"] == "mixed_or_unknown"
+    assert diagnostics["builder_path_ran"] is False
 
 
 def test_l9_structure_diagnostics_prefers_explicit_source_flags_over_scores() -> None:
@@ -88,3 +92,4 @@ def test_l9_structure_diagnostics_prefers_explicit_source_flags_over_scores() ->
     assert diagnostics["missing_sources"] == []
     assert diagnostics["source_diagnostics"]["sources"]["liquidity"]["state"] == "ready"
     assert diagnostics["publisher_metadata"]["smc"]["publisher_id"] == "smc-publisher"
+    assert diagnostics["builder_path_ran"] is True

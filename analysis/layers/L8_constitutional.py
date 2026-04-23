@@ -431,9 +431,60 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _clamp_unit(value: Any, *, divide_by_100: bool = False) -> float:
+    number = _safe_float(value)
+    if divide_by_100 and number > 1.0:
+        number /= 100.0
+    return max(0.0, min(1.0, number))
+
+
+def _build_component_attribution(
+    *,
+    l8_analysis: dict[str, Any],
+    upstream_output: dict[str, Any],
+    source_completeness: float,
+) -> dict[str, Any]:
+    l2_context = upstream_output.get("l2_context", {})
+    if not isinstance(l2_context, dict):
+        l2_context = {}
+
+    l2_diagnostics = l2_context.get("mta_diagnostics", {})
+    if not isinstance(l2_diagnostics, dict):
+        l2_diagnostics = {}
+
+    l2_alignment = _clamp_unit(
+        l2_context.get("evidence_score", l2_context.get("alignment_score", l2_diagnostics.get("alignment_score", 0.0)))
+    )
+    l7_probability = _clamp_unit(
+        upstream_output.get(
+            "evidence_score", upstream_output.get("score_numeric", upstream_output.get("win_probability", 0.0))
+        ),
+        divide_by_100=True,
+    )
+    tii_component = _clamp_unit(l8_analysis.get("tii_sym", 0.0))
+    twms_component = _clamp_unit(l8_analysis.get("twms_score", 0.0))
+    gate_component = 1.0 if l8_analysis.get("gate_passed", False) else 0.0
+
+    components = l8_analysis.get("components", {})
+    if not isinstance(components, dict):
+        components = {}
+
+    return {
+        "l2_alignment_component": round(l2_alignment, 4),
+        "l7_probability_component": round(l7_probability, 4),
+        "tii_component": round(tii_component, 4),
+        "twms_component": round(twms_component, 4),
+        "gate_component": round(gate_component, 4),
+        "source_completeness_component": round(source_completeness, 4),
+        "raw_integrity_components": {str(name): round(_safe_float(value), 4) for name, value in components.items()},
+        "unavailable_components": ["l9_structure_component"],
+    }
+
+
 def _build_integrity_diagnostics(
     *,
     l8_analysis: dict[str, Any],
+    upstream_output: dict[str, Any],
     blockers: list[L8BlockerCode],
     tii_warnings: list[str],
     integrity_score: float,
@@ -446,6 +497,11 @@ def _build_integrity_diagnostics(
     missing_sources = [name for name in REQUIRED_INTEGRITY_SOURCES if not source_states.get(name)]
     source_completeness = _compute_source_completeness(source_states)
     integrity_mode = _derive_integrity_mode(source_completeness)
+    component_attribution = _build_component_attribution(
+        l8_analysis=l8_analysis,
+        upstream_output=upstream_output,
+        source_completeness=source_completeness,
+    )
 
     primary_integrity_gap = None
     for blocker in blockers:
@@ -477,6 +533,7 @@ def _build_integrity_diagnostics(
         "gate_passed": bool(l8_analysis.get("gate_passed", False)),
         "component_count": sample_count,
         "warn_component_floor": MIN_SAMPLE_WARN,
+        "component_attribution": component_attribution,
         "fallback_note": str(l8_analysis.get("note", "")),
         "warnings": list(tii_warnings),
     }
@@ -708,6 +765,7 @@ class L8ConstitutionalGovernor:
         next_targets = ["L9"]
         integrity_diagnostics = _build_integrity_diagnostics(
             l8_analysis=l8_analysis,
+            upstream_output=upstream,
             blockers=blockers,
             tii_warnings=tii_warnings,
             integrity_score=integrity_score,

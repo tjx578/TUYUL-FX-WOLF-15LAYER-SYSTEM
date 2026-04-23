@@ -36,6 +36,9 @@ def test_l8_fail_exposes_integrity_diagnostics_without_changing_status() -> None
     assert diagnostics["required_integrity"] == 0.75
     assert diagnostics["component_count"] == 2
     assert diagnostics["missing_sources"] == []
+    assert diagnostics["component_attribution"]["l2_alignment_component"] == 0.0
+    assert diagnostics["component_attribution"]["l7_probability_component"] == 0.0
+    assert diagnostics["component_attribution"]["unavailable_components"] == ["l9_structure_component"]
 
 
 def test_l8_pass_still_exposes_integrity_diagnostics() -> None:
@@ -81,6 +84,8 @@ def test_l8_pass_still_exposes_integrity_diagnostics() -> None:
     assert diagnostics["source_completeness"] == 1.0
     assert diagnostics["source_completeness_threshold"] == 0.80
     assert diagnostics["integrity_mode"] == "FULL"
+    assert diagnostics["component_attribution"]["tii_component"] == 0.92
+    assert diagnostics["component_attribution"]["twms_component"] == 0.85
     assert result["integrity_mode"] == "FULL"
     assert result["source_completeness"] == 1.0
 

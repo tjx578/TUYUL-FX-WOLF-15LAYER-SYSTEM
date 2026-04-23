@@ -32,8 +32,12 @@ def test_l7_fail_exposes_edge_diagnostics_without_changing_status() -> None:
     diagnostics = result["edge_diagnostics"]
     assert diagnostics["edge_status"] == "FAIL"
     assert diagnostics["primary_edge_gap"] == "EDGE_STATUS_INVALID"
+    assert diagnostics["edge_status_reason"] == "PF_BELOW_MINIMUM"
     assert diagnostics["required_win_probability"] == 0.55
     assert diagnostics["simulations"] == 1000
+    assert diagnostics["profit_factor_min_required"] == 1.0
+    assert diagnostics["history_source_type"] == "real"
+    assert diagnostics["synthetic_fallback_used"] is False
 
 
 def test_l7_pass_still_exposes_edge_diagnostics() -> None:
@@ -59,5 +63,6 @@ def test_l7_pass_still_exposes_edge_diagnostics() -> None:
     assert result["status"] == "PASS"
     diagnostics = result["edge_diagnostics"]
     assert diagnostics["edge_status"] == "PASS"
+    assert diagnostics["edge_status_reason"] is None
     assert diagnostics["primary_edge_gap"] is None
     assert diagnostics["win_probability"] == 0.72

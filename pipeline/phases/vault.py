@@ -17,7 +17,7 @@ except ImportError:
 
     logger = logging.getLogger(__name__)
 
-from pipeline.constants import get_vault_sync_thresholds, get_vault_sync_weights
+from ..constants import get_vault_sync_thresholds, get_vault_sync_weights
 
 
 def compute_vault_sync(
@@ -85,6 +85,8 @@ def compute_vault_sync(
             f"worst_symbol_age_seconds={worst_age_display} | symbols_fresh={vault_report.symbols_fresh}/{vault_report.symbols_total} | "
             f"provider_state={provider_state} | provider_age_seconds={provider_age_display} | "
             f"provider_last_ts={provider_last_ts} | redis_latency_ms={vault_report.redis_latency_ms:.0f} | "
+            f"redis_roundtrip_ms={vault_report.redis_roundtrip_ms:.0f} | context_hydration_ms={vault_report.context_hydration_ms:.0f} | "
+            f"bus_read_age_ms={vault_report.bus_read_age_ms:.0f} | "
             f"should_block_analysis={vault_report.should_block_analysis}"
         )
 
