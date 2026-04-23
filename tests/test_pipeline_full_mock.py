@@ -498,6 +498,37 @@ class TestL12Verdict:
         assert any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in messages)
         assert any("verdict=" in msg and "execution_allowed=" in msg for msg in messages)
 
+    def test_production_canary_sentinels_escalate_to_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        mocked_pipeline: WolfConstitutionalPipeline,
+    ) -> None:
+        monkeypatch.setenv("APP_ENV", "production")
+
+        warnings: list[str] = []
+        infos: list[str] = []
+
+        def _capture_warning(msg: object, *args: object, **kwargs: Any) -> None:
+            warnings.append(str(msg))
+
+        def _capture_info(msg: object, *args: object, **kwargs: Any) -> None:
+            infos.append(str(msg))
+
+        monkeypatch.setattr(pipeline_module.logger, "warning", _capture_warning)
+        monkeypatch.setattr(pipeline_module.logger, "info", _capture_info)
+        monkeypatch.setattr(phase1_chain_adapter_module.logger, "warning", _capture_warning)
+        monkeypatch.setattr(phase1_chain_adapter_module.logger, "info", _capture_info)
+
+        mocked_pipeline.execute("EURUSD")
+
+        assert any("event=phase1_enter symbol=EURUSD" in msg for msg in warnings)
+        assert any("event=l3_constitutional_result symbol=EURUSD layer=L3" in msg for msg in warnings)
+        assert any("event=phase1_exit symbol=EURUSD" in msg for msg in warnings)
+        assert any("event=l12_synthesis_enter symbol=EURUSD" in msg for msg in warnings)
+        assert any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in warnings)
+        assert not any("event=phase1_enter symbol=EURUSD" in msg for msg in infos)
+        assert not any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in infos)
+
 
 # ──────────────────────────────────────────────────────────────────
 #  Constitutional boundary: no account data in verdict

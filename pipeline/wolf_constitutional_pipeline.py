@@ -126,6 +126,15 @@ _CONFIDENCE_BAND_TO_SCORE: dict[str, float] = {
 }
 
 
+def _emit_canary_event(message: str) -> None:
+    """Promote canary sentinel logs in production so Railway captures them."""
+    app_env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
+    if app_env == "production":
+        logger.warning(message)
+        return
+    logger.info(message)
+
+
 def _coerce_confidence_to_score(value: Any) -> tuple[float, str | None]:
     """Coerce a verdict-engine confidence (band string or numeric) to [0, 1].
 
@@ -2751,7 +2760,7 @@ class WolfConstitutionalPipeline:
         l2_layer = l2_layer if isinstance(l2_layer, dict) else {}
         l9_layer = l9_layer if isinstance(l9_layer, dict) else {}
 
-        logger.info(
+        _emit_canary_event(
             f"event=l12_synthesis_enter symbol={synthesis.get('symbol') or synthesis.get('pair') or 'UNKNOWN'} "
             f"phase1_status={phase1_status} phase3_status={structure_status}"
         )
@@ -2822,7 +2831,7 @@ class WolfConstitutionalPipeline:
         )
         result = evaluator.evaluate(l12_input)
         result_dict = result.to_dict()
-        logger.info(
+        _emit_canary_event(
             f"event=l12_final_verdict symbol={l12_input.input_ref} authority=L12 "
             f"verdict={result_dict.get('verdict')} verdict_status={result_dict.get('verdict_status')} "
             f"hard_blockers={result_dict.get('blocker_codes', [])} soft_warnings={result_dict.get('warning_codes', [])} "

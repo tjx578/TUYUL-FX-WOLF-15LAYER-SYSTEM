@@ -23,13 +23,26 @@ Zone: constitution/ — pipeline governance, no execution side-effects.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-logger = logging.getLogger(__name__)
+try:
+    from loguru import logger
+except ImportError:
+    logger = logging.getLogger(__name__)
+
+
+def _emit_canary_event(message: str) -> None:
+    """Promote canary sentinel logs in production so Railway captures them."""
+    app_env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
+    if app_env == "production":
+        logger.warning(message)
+        return
+    logger.info(message)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -163,7 +176,7 @@ class Phase1ChainAdapter:
         l2: dict[str, Any] = {}
         l3: dict[str, Any] = {}
 
-        logger.info(f"event=phase1_enter symbol={symbol} pipeline=phase1_chain_adapter")
+        _emit_canary_event(f"event=phase1_enter symbol={symbol} pipeline=phase1_chain_adapter")
 
         # ── Step 1: L1 ───────────────────────────────────────
         l1_start = time.monotonic()
@@ -254,7 +267,7 @@ class Phase1ChainAdapter:
         l3_status = l3.get("status", "PASS" if l3_continue else "FAIL")
         l3_blockers = l3.get("blocker_codes", [])
         l3_warnings = l3.get("warning_codes", [])
-        logger.info(
+        _emit_canary_event(
             f"event=l3_constitutional_result symbol={symbol} layer=L3 status={l3_status} "
             f"evidence_score={l3.get('evidence_score')} confidence_penalty={l3.get('confidence_penalty')} "
             f"hard_stop={bool(l3.get('hard_stop', False))} advisory_continuation={bool(l3.get('advisory_continuation', False))} "
@@ -309,7 +322,7 @@ class Phase1ChainAdapter:
                 timing.get("L3", 0),
             )
 
-        logger.info(
+        _emit_canary_event(
             f"event=phase1_exit symbol={symbol} l1={l1_status} l2={l2_status} l3={l3_status} "
             f"failed_at={failed_at or 'NONE'} forward_to_l12=True"
         )
