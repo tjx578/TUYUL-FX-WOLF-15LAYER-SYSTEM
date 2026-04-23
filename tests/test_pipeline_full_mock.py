@@ -512,6 +512,10 @@ class TestL12Verdict:
             "event=l12_effective_verdict symbol=EURUSD authority=L12_EFFECTIVE" in msg
             and "verdict_stream=effective_final" in msg
             and "direction=BUY" in msg
+            and "legacy_verdict=" in msg
+            and "effective_reason=" in msg
+            and "v11_should_trade=" in msg
+            and "v11_skipped_reason=" in msg
             for msg in messages
         )
         assert any("verdict=" in msg and "execution_allowed=" in msg for msg in messages)
@@ -558,6 +562,10 @@ class TestL12Verdict:
             "event=l12_effective_verdict symbol=EURUSD authority=L12_EFFECTIVE" in msg
             and "verdict_stream=effective_final" in msg
             and "direction=BUY" in msg
+            and "legacy_verdict=" in msg
+            and "effective_reason=" in msg
+            and "v11_should_trade=" in msg
+            and "v11_skipped_reason=" in msg
             for msg in warnings
         )
         assert not any("event=phase1_enter symbol=EURUSD" in msg for msg in infos)
@@ -628,7 +636,75 @@ class TestL12Verdict:
             "event=l12_effective_verdict symbol=EURUSD authority=L12_EFFECTIVE" in msg
             and "verdict_stream=effective_final" in msg
             and "verdict=HOLD" in msg
+            and "legacy_verdict=EXECUTE_BUY" in msg
+            and "effective_reason=SIGNAL_THROTTLED" in msg
             and "throttled_from=EXECUTE_BUY" in msg
+            and "v11_should_trade=False" in msg
+            and "v11_skipped_reason=L12_verdict=HOLD" in msg
+            for msg in messages
+        )
+
+    def test_runtime_emits_effective_v11_veto_context(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        mocked_pipeline: WolfConstitutionalPipeline,
+    ) -> None:
+        messages: list[str] = []
+
+        def _capture(msg: object, *args: object, **kwargs: Any) -> None:
+            messages.append(str(msg))
+
+        class _FakeV11Hook:
+            def evaluate(self, pipeline_result: Any, symbol: str, timeframe: str = "H1") -> Any:
+                assert pipeline_result.l12_verdict["verdict"] == "EXECUTE_BUY"
+                assert symbol == "EURUSD"
+                assert timeframe == "H1"
+
+                class _Overlay:
+                    should_trade = False
+
+                    @staticmethod
+                    def to_dict() -> dict[str, Any]:
+                        return {
+                            "enabled": True,
+                            "should_trade": False,
+                            "gate_result": {"verdict": "BLOCK"},
+                            "adapter_input": {"symbol": "EURUSD"},
+                            "latency_ms": 1.0,
+                            "skipped_reason": None,
+                            "error": None,
+                        }
+
+                return _Overlay()
+
+        monkeypatch.setattr(
+            pipeline_module,
+            "generate_l12_verdict",
+            lambda *_args, **_kwargs: {
+                "verdict": "EXECUTE_BUY",
+                "direction": "BUY",
+                "confidence": "HIGH",
+                "proceed_to_L13": True,
+            },
+        )
+        monkeypatch.setattr("engines.v11.V11PipelineHook", _FakeV11Hook)
+        monkeypatch.setattr(pipeline_module.logger, "info", _capture)
+        monkeypatch.setattr(pipeline_module.logger, "warning", _capture)
+        mocked_pipeline._signal_throttle.is_throttled = MagicMock(return_value=False)
+
+        result = mocked_pipeline.execute("EURUSD")
+
+        assert result["l12_verdict"]["verdict"] == "HOLD"
+        assert result["l12_verdict"]["v11_veto"] is True
+        assert any(
+            "event=l12_effective_verdict symbol=EURUSD authority=L12_EFFECTIVE" in msg
+            and "verdict_stream=effective_final" in msg
+            and "verdict=HOLD" in msg
+            and "legacy_verdict=EXECUTE_BUY" in msg
+            and "effective_reason=V11_VETO" in msg
+            and "v11_should_trade=False" in msg
+            and "v11_skipped_reason=None" in msg
+            and "v11_veto=True" in msg
             for msg in messages
         )
 

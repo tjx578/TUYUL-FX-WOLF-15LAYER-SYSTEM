@@ -2348,6 +2348,7 @@ class WolfConstitutionalPipeline:
             gates = self._evaluate_9_gates(synthesis)
             l12_verdict = generate_l12_verdict(synthesis, governance_penalty=_dq_penalty)
             l12_verdict["gates_v74"] = gates
+            legacy_verdict = l12_verdict.get("verdict")
             self._emit_verdict_stream_event(
                 event="l12_legacy_verdict",
                 symbol=symbol,
@@ -2407,6 +2408,7 @@ class WolfConstitutionalPipeline:
                 symbol=symbol,
                 synthesis=synthesis,
                 l12_verdict=l12_verdict,
+                legacy_verdict=legacy_verdict,
                 safe_mode=safe_mode,
                 errors=errors,
             )
@@ -2860,10 +2862,12 @@ class WolfConstitutionalPipeline:
         symbol: str,
         synthesis: dict[str, Any],
         l12_verdict: dict[str, Any],
+        legacy_verdict: Any,
         safe_mode: bool,
         errors: list[str],
     ) -> None:
         final_verdict = l12_verdict.get("verdict", "")
+        v11_overlay_dict: dict[str, Any] | None = None
         if final_verdict.startswith("EXECUTE") and not safe_mode:
             if self._signal_throttle.is_throttled(symbol):
                 logger.warning(
@@ -2889,6 +2893,7 @@ class WolfConstitutionalPipeline:
                 symbol=symbol,
                 timeframe="H1",
             )
+            v11_overlay_dict = v11_overlay.to_dict() if v11_overlay else None
             if v11_overlay.should_trade is False and l12_verdict["verdict"].startswith("EXECUTE"):
                 logger.warning(
                     f"[Pipeline v8.0] {symbol} V11 VETO — verdict {l12_verdict['verdict']} downgraded to HOLD"
@@ -2896,24 +2901,41 @@ class WolfConstitutionalPipeline:
                 l12_verdict["verdict"] = "HOLD"
                 l12_verdict["v11_veto"] = True
                 errors.append("V11_VETO")
-            synthesis["v11"] = v11_overlay.to_dict() if v11_overlay else None
+            synthesis["v11"] = v11_overlay_dict
         except ImportError:
             pass
         except Exception as v11_exc:
             logger.warning(f"[Pipeline v8.0] V11 error for {symbol}: {v11_exc}")
             errors.append(f"V11_ERROR: {v11_exc}")
 
+        final_effective_verdict = l12_verdict.get("verdict")
+        effective_reason = "FINAL_STATE_UNCLASSIFIED"
+        if l12_verdict.get("throttled_from"):
+            effective_reason = "SIGNAL_THROTTLED"
+        elif l12_verdict.get("v11_veto"):
+            effective_reason = "V11_VETO"
+        elif final_effective_verdict == "NO_TRADE":
+            effective_reason = "PRE_V11_NO_TRADE"
+        elif final_effective_verdict == "HOLD":
+            effective_reason = "PRE_V11_HOLD"
+        elif isinstance(final_effective_verdict, str) and final_effective_verdict.startswith("EXECUTE"):
+            effective_reason = "EFFECTIVE_EXECUTE"
+
         self._emit_verdict_stream_event(
             event="l12_effective_verdict",
             symbol=symbol,
             authority="L12_EFFECTIVE",
             verdict_stream="effective_final",
-            verdict=l12_verdict.get("verdict"),
+            verdict=final_effective_verdict,
             direction=l12_verdict.get("direction"),
             extras={
                 "confidence": l12_verdict.get("confidence"),
                 "proceed": l12_verdict.get("proceed_to_L13"),
+                "legacy_verdict": legacy_verdict,
+                "effective_reason": effective_reason,
                 "throttled_from": l12_verdict.get("throttled_from"),
+                "v11_should_trade": None if v11_overlay_dict is None else v11_overlay_dict.get("should_trade"),
+                "v11_skipped_reason": None if v11_overlay_dict is None else v11_overlay_dict.get("skipped_reason"),
                 "v11_veto": bool(l12_verdict.get("v11_veto", False)),
             },
         )
