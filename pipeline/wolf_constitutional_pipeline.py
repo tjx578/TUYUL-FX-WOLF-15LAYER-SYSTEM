@@ -2348,10 +2348,17 @@ class WolfConstitutionalPipeline:
             gates = self._evaluate_9_gates(synthesis)
             l12_verdict = generate_l12_verdict(synthesis, governance_penalty=_dq_penalty)
             l12_verdict["gates_v74"] = gates
-            _emit_canary_event(
-                f"event=l12_legacy_verdict symbol={symbol} authority=L12_LEGACY "
-                f"verdict={l12_verdict.get('verdict')} direction={l12_verdict.get('direction')} "
-                f"confidence={l12_verdict.get('confidence')} proceed={l12_verdict.get('proceed_to_L13')}"
+            self._emit_verdict_stream_event(
+                event="l12_legacy_verdict",
+                symbol=symbol,
+                authority="L12_LEGACY",
+                verdict_stream="canonical_pre_enforcement",
+                verdict=l12_verdict.get("verdict"),
+                direction=l12_verdict.get("direction"),
+                extras={
+                    "confidence": l12_verdict.get("confidence"),
+                    "proceed": l12_verdict.get("proceed_to_L13"),
+                },
             )
 
             # ── Constitutional Phase 5 overlay (L12 router evaluator) ──
@@ -2379,75 +2386,15 @@ class WolfConstitutionalPipeline:
             # PHASE 6 -- TWO-PASS L13 GOVERNANCE (from Sovereign)
             #   Pass 1: baseline (meta=1.0) -> L15 meta -> Pass 2: refined
             # ═══════════════════════════════════════════════════════
-            reflective_pass1 = None
-            reflective_pass2 = None
-            l15_meta = None
-
-            proceed = l12_verdict.get("proceed_to_L13", False) or l12_verdict.get("verdict", "").startswith("EXECUTE")
-
-            l13_engine = self._get_l13_engine()
-            l15_engine = self._get_l15_engine()
-
-            if proceed:
-                logger.info(f"[Pipeline v8.0] Phase 6: Two-Pass L13 Governance -- {symbol}")
-                layers_executed.append("L13")
-                engines_invoked.append("L13ReflectiveEngine")
-
-                # Pass 1: Baseline reflective (meta_integrity = 1.0)
-                synthesis["_meta_integrity"] = 1.0
-                reflective_pass1 = l13_engine.reflect(
-                    symbol,
-                    [l12_verdict],
-                    synthesis,
-                )
-
-                # Compute vault sync for sovereignty
-                sovereignty = self._compute_vault_sync(synthesis, l12_verdict, reflective_pass1)
-
-                # L15 meta computation (uses Pass 1 + sovereignty)
-                l15_meta = l15_engine.compute_meta(
+            reflective_pass1, reflective_pass2, l15_meta, sovereignty, enforcement = (
+                self._run_reflective_governance_cycle(
+                    symbol=symbol,
                     synthesis=synthesis,
                     l12_verdict=l12_verdict,
-                    reflective_pass1=reflective_pass1,
-                    sovereignty=sovereignty,
                     gates=gates,
+                    layers_executed=layers_executed,
+                    engines_invoked=engines_invoked,
                 )
-                layers_executed.append("L14")
-                engines_invoked.append("L15MetaSovereigntyEngine")
-
-                # Pass 2: Refined reflective (uses real meta_integrity from L15)
-                real_meta = l15_meta.get("meta_integrity", 1.0)
-                synthesis["_meta_integrity"] = real_meta
-                reflective_pass2 = l13_engine.reflect(
-                    symbol,
-                    [l12_verdict],
-                    synthesis,
-                )
-            else:
-                # No L13 -- still compute vault sync and meta
-                sovereignty = self._compute_vault_sync(synthesis, l12_verdict, None)
-                l15_meta = l15_engine.compute_meta(
-                    synthesis=synthesis,
-                    l12_verdict=l12_verdict,
-                    reflective_pass1=None,
-                    sovereignty=sovereignty,
-                    gates=gates,
-                )
-                layers_executed.append("L14")
-                engines_invoked.append("L15MetaSovereigntyEngine")
-
-            # ═══════════════════════════════════════════════════════
-            # PHASE 7 -- SOVEREIGNTY ENFORCEMENT (drift + downgrade)
-            # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v8.0] Phase 7: Sovereignty Enforcement -- {symbol}")
-            engines_invoked.append("SovereigntyEnforcer")
-
-            enforcement = l15_engine.enforce_sovereignty(
-                l12_verdict=l12_verdict,
-                reflective_pass1=reflective_pass1,
-                reflective_pass2=reflective_pass2,
-                meta=l15_meta,
-                sovereignty=sovereignty,
             )
 
             # ═══════════════════════════════════════════════════════
@@ -2456,49 +2403,13 @@ class WolfConstitutionalPipeline:
             # check whether this symbol has exceeded the emission rate
             # limit. If so, downgrade to HOLD.
             # ═══════════════════════════════════════════════════════
-            final_verdict = l12_verdict.get("verdict", "")
-            if final_verdict.startswith("EXECUTE") and not safe_mode:
-                if self._signal_throttle.is_throttled(symbol):
-                    logger.warning(
-                        f"[Pipeline v8.0] {symbol} SIGNAL THROTTLED — verdict {final_verdict} downgraded to HOLD"
-                    )
-                    l12_verdict["verdict"] = "HOLD"
-                    l12_verdict["throttled_from"] = final_verdict
-                    errors.append("SIGNAL_THROTTLED")
-                    SIGNAL_THROTTLED.labels(symbol=symbol).inc()
-                else:
-                    self._signal_throttle.record(symbol)
-
-            # ═══════════════════════════════════════════════════════
-            # PHASE 8.5 -- V11 SNIPER FILTER (optional)
-            # ═══════════════════════════════════════════════════════
-            v11_overlay = None
-            try:
-                from engines.v11 import V11PipelineHook  # noqa: PLC0415
-
-                _v11 = V11PipelineHook()
-                v11_input = SimpleNamespace(  # noqa: F821
-                    synthesis=synthesis,
-                    l12_verdict=l12_verdict,
-                )
-                v11_overlay = _v11.evaluate(
-                    pipeline_result=v11_input,
-                    symbol=symbol,
-                    timeframe="H1",
-                )
-                if v11_overlay.should_trade is False and l12_verdict["verdict"].startswith("EXECUTE"):
-                    logger.warning(
-                        f"[Pipeline v8.0] {symbol} V11 VETO — verdict {l12_verdict['verdict']} downgraded to HOLD"
-                    )
-                    l12_verdict["verdict"] = "HOLD"
-                    l12_verdict["v11_veto"] = True
-                    errors.append("V11_VETO")
-                synthesis["v11"] = v11_overlay.to_dict() if v11_overlay else None
-            except ImportError:
-                pass  # V11 optional — not installed = skip
-            except Exception as v11_exc:
-                logger.warning(f"[Pipeline v8.0] V11 error for {symbol}: {v11_exc}")
-                errors.append(f"V11_ERROR: {v11_exc}")
+            self._apply_effective_verdict_controls(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+                safe_mode=safe_mode,
+                errors=errors,
+            )
 
             # ═══════════════════════════════════════════════════════
             # PHASE 8.6 -- GOVERNANCE HOOK (drift + rollout, optional)
@@ -2838,17 +2749,174 @@ class WolfConstitutionalPipeline:
         )
         result = evaluator.evaluate(l12_input)
         result_dict = result.to_dict()
-        _emit_canary_event(
-            f"event=l12_final_verdict symbol={l12_input.input_ref} authority=L12 "
-            f"verdict={result_dict.get('verdict')} direction={verdict_direction} "
-            f"verdict_status={result_dict.get('verdict_status')} "
-            f"hard_blockers={result_dict.get('blocker_codes', [])} soft_warnings={result_dict.get('warning_codes', [])} "
-            f"evidence_score={result_dict.get('score_numeric')} execution_allowed={result_dict.get('continuation_allowed')} "
-            f"l2_status={result_dict.get('audit', {}).get('l2_evidence', {}).get('status')} "
-            f"l7_status={result_dict.get('audit', {}).get('l7_evidence', {}).get('status')} "
-            f"l9_status={result_dict.get('audit', {}).get('l9_evidence', {}).get('status')}"
+        self._emit_verdict_stream_event(
+            event="l12_final_verdict",
+            symbol=l12_input.input_ref,
+            authority="L12",
+            verdict_stream="phase5_overlay",
+            verdict=result_dict.get("verdict"),
+            direction=verdict_direction,
+            extras={
+                "verdict_status": result_dict.get("verdict_status"),
+                "hard_blockers": result_dict.get("blocker_codes", []),
+                "soft_warnings": result_dict.get("warning_codes", []),
+                "evidence_score": result_dict.get("score_numeric"),
+                "execution_allowed": result_dict.get("continuation_allowed"),
+                "l2_status": result_dict.get("audit", {}).get("l2_evidence", {}).get("status"),
+                "l7_status": result_dict.get("audit", {}).get("l7_evidence", {}).get("status"),
+                "l9_status": result_dict.get("audit", {}).get("l9_evidence", {}).get("status"),
+            },
         )
         return result_dict
+
+    @staticmethod
+    def _emit_verdict_stream_event(
+        *,
+        event: str,
+        symbol: str,
+        authority: str,
+        verdict_stream: str,
+        verdict: Any,
+        direction: Any,
+        extras: dict[str, Any] | None = None,
+    ) -> None:
+        parts = [
+            f"event={event}",
+            f"symbol={symbol}",
+            f"authority={authority}",
+            f"verdict_stream={verdict_stream}",
+            f"verdict={verdict}",
+            f"direction={direction}",
+        ]
+        for key, value in (extras or {}).items():
+            parts.append(f"{key}={value}")
+        _emit_canary_event(" ".join(parts))
+
+    def _run_reflective_governance_cycle(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        gates: dict[str, Any],
+        layers_executed: list[str],
+        engines_invoked: list[str],
+    ) -> tuple[Any, Any, Any, dict[str, Any], Any]:
+        reflective_pass1 = None
+        reflective_pass2 = None
+        l15_meta = None
+
+        proceed = l12_verdict.get("proceed_to_L13", False) or l12_verdict.get("verdict", "").startswith("EXECUTE")
+        l13_engine = self._get_l13_engine()
+        l15_engine = self._get_l15_engine()
+
+        if proceed:
+            logger.info(f"[Pipeline v8.0] Phase 6: Two-Pass L13 Governance -- {symbol}")
+            layers_executed.append("L13")
+            engines_invoked.append("L13ReflectiveEngine")
+
+            synthesis["_meta_integrity"] = 1.0
+            reflective_pass1 = l13_engine.reflect(symbol, [l12_verdict], synthesis)
+
+            sovereignty = self._compute_vault_sync(synthesis, l12_verdict, reflective_pass1)
+            l15_meta = l15_engine.compute_meta(
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+                reflective_pass1=reflective_pass1,
+                sovereignty=sovereignty,
+                gates=gates,
+            )
+            layers_executed.append("L14")
+            engines_invoked.append("L15MetaSovereigntyEngine")
+
+            synthesis["_meta_integrity"] = l15_meta.get("meta_integrity", 1.0)
+            reflective_pass2 = l13_engine.reflect(symbol, [l12_verdict], synthesis)
+        else:
+            sovereignty = self._compute_vault_sync(synthesis, l12_verdict, None)
+            l15_meta = l15_engine.compute_meta(
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+                reflective_pass1=None,
+                sovereignty=sovereignty,
+                gates=gates,
+            )
+            layers_executed.append("L14")
+            engines_invoked.append("L15MetaSovereigntyEngine")
+
+        logger.info(f"[Pipeline v8.0] Phase 7: Sovereignty Enforcement -- {symbol}")
+        engines_invoked.append("SovereigntyEnforcer")
+        enforcement = l15_engine.enforce_sovereignty(
+            l12_verdict=l12_verdict,
+            reflective_pass1=reflective_pass1,
+            reflective_pass2=reflective_pass2,
+            meta=l15_meta,
+            sovereignty=sovereignty,
+        )
+        return reflective_pass1, reflective_pass2, l15_meta, sovereignty, enforcement
+
+    def _apply_effective_verdict_controls(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        safe_mode: bool,
+        errors: list[str],
+    ) -> None:
+        final_verdict = l12_verdict.get("verdict", "")
+        if final_verdict.startswith("EXECUTE") and not safe_mode:
+            if self._signal_throttle.is_throttled(symbol):
+                logger.warning(
+                    f"[Pipeline v8.0] {symbol} SIGNAL THROTTLED — verdict {final_verdict} downgraded to HOLD"
+                )
+                l12_verdict["verdict"] = "HOLD"
+                l12_verdict["throttled_from"] = final_verdict
+                errors.append("SIGNAL_THROTTLED")
+                SIGNAL_THROTTLED.labels(symbol=symbol).inc()
+            else:
+                self._signal_throttle.record(symbol)
+
+        try:
+            from engines.v11 import V11PipelineHook  # noqa: PLC0415
+
+            _v11 = V11PipelineHook()
+            v11_input = SimpleNamespace(
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+            )
+            v11_overlay = _v11.evaluate(
+                pipeline_result=v11_input,
+                symbol=symbol,
+                timeframe="H1",
+            )
+            if v11_overlay.should_trade is False and l12_verdict["verdict"].startswith("EXECUTE"):
+                logger.warning(
+                    f"[Pipeline v8.0] {symbol} V11 VETO — verdict {l12_verdict['verdict']} downgraded to HOLD"
+                )
+                l12_verdict["verdict"] = "HOLD"
+                l12_verdict["v11_veto"] = True
+                errors.append("V11_VETO")
+            synthesis["v11"] = v11_overlay.to_dict() if v11_overlay else None
+        except ImportError:
+            pass
+        except Exception as v11_exc:
+            logger.warning(f"[Pipeline v8.0] V11 error for {symbol}: {v11_exc}")
+            errors.append(f"V11_ERROR: {v11_exc}")
+
+        self._emit_verdict_stream_event(
+            event="l12_effective_verdict",
+            symbol=symbol,
+            authority="L12_EFFECTIVE",
+            verdict_stream="effective_final",
+            verdict=l12_verdict.get("verdict"),
+            direction=l12_verdict.get("direction"),
+            extras={
+                "confidence": l12_verdict.get("confidence"),
+                "proceed": l12_verdict.get("proceed_to_L13"),
+                "throttled_from": l12_verdict.get("throttled_from"),
+                "v11_veto": bool(l12_verdict.get("v11_veto", False)),
+            },
+        )
 
     # ══════════════════════════════════════════════════════════════
     #  METRICS RECORDING

@@ -496,10 +496,23 @@ class TestL12Verdict:
         assert any("hard_stop=False" in msg for msg in messages)
         assert any("soft_blockers=['TREND_STRUCTURE_CONFLICT', 'LOW_CONFIRMATION_SCORE']" in msg for msg in messages)
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in messages)
-        assert any("event=l12_legacy_verdict symbol=EURUSD authority=L12_LEGACY" in msg for msg in messages)
+        assert any(
+            "event=l12_legacy_verdict symbol=EURUSD authority=L12_LEGACY" in msg
+            and "verdict_stream=canonical_pre_enforcement" in msg
+            for msg in messages
+        )
         assert any("event=l12_synthesis_enter symbol=EURUSD direction=BUY" in msg for msg in messages)
         assert any(
-            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=BUY" in msg for msg in messages
+            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg
+            and "verdict_stream=phase5_overlay" in msg
+            and "direction=BUY" in msg
+            for msg in messages
+        )
+        assert any(
+            "event=l12_effective_verdict symbol=EURUSD authority=L12_EFFECTIVE" in msg
+            and "verdict_stream=effective_final" in msg
+            and "direction=BUY" in msg
+            for msg in messages
         )
         assert any("verdict=" in msg and "execution_allowed=" in msg for msg in messages)
 
@@ -529,13 +542,95 @@ class TestL12Verdict:
         assert any("event=phase1_enter symbol=EURUSD" in msg for msg in warnings)
         assert any("event=l3_constitutional_result symbol=EURUSD layer=L3" in msg for msg in warnings)
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in warnings)
-        assert any("event=l12_legacy_verdict symbol=EURUSD authority=L12_LEGACY" in msg for msg in warnings)
+        assert any(
+            "event=l12_legacy_verdict symbol=EURUSD authority=L12_LEGACY" in msg
+            and "verdict_stream=canonical_pre_enforcement" in msg
+            for msg in warnings
+        )
         assert any("event=l12_synthesis_enter symbol=EURUSD direction=BUY" in msg for msg in warnings)
         assert any(
-            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg and "direction=BUY" in msg for msg in warnings
+            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg
+            and "verdict_stream=phase5_overlay" in msg
+            and "direction=BUY" in msg
+            for msg in warnings
+        )
+        assert any(
+            "event=l12_effective_verdict symbol=EURUSD authority=L12_EFFECTIVE" in msg
+            and "verdict_stream=effective_final" in msg
+            and "direction=BUY" in msg
+            for msg in warnings
         )
         assert not any("event=phase1_enter symbol=EURUSD" in msg for msg in infos)
         assert not any("event=l12_final_verdict symbol=EURUSD authority=L12" in msg for msg in infos)
+
+    def test_runtime_emits_divergent_verdict_streams(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        mocked_pipeline: WolfConstitutionalPipeline,
+    ) -> None:
+        messages: list[str] = []
+
+        def _capture(msg: object, *args: object, **kwargs: Any) -> None:
+            messages.append(str(msg))
+
+        class _FakeOverlayEvaluator:
+            def evaluate(self, _payload: Any) -> Any:
+                class _FakeResult:
+                    def to_dict(self) -> dict[str, Any]:
+                        return {
+                            "verdict": "NO_TRADE",
+                            "verdict_status": "FAIL",
+                            "continuation_allowed": False,
+                            "score_numeric": 0.0,
+                            "blocker_codes": ["STRUCTURE_FAIL"],
+                            "warning_codes": [],
+                            "audit": {
+                                "l2_evidence": {"status": "WARN"},
+                                "l7_evidence": {"status": "FAIL"},
+                                "l9_evidence": {"status": "FAIL"},
+                            },
+                        }
+
+                return _FakeResult()
+
+        monkeypatch.setattr(
+            pipeline_module,
+            "generate_l12_verdict",
+            lambda *_args, **_kwargs: {
+                "verdict": "EXECUTE_BUY",
+                "direction": "BUY",
+                "confidence": "HIGH",
+                "proceed_to_L13": True,
+            },
+        )
+        monkeypatch.setattr(pipeline_module, "L12RouterEvaluator", lambda: _FakeOverlayEvaluator())
+        monkeypatch.setattr(pipeline_module.logger, "info", _capture)
+        monkeypatch.setattr(pipeline_module.logger, "warning", _capture)
+        mocked_pipeline._signal_throttle.is_throttled = MagicMock(return_value=True)
+
+        result = mocked_pipeline.execute("EURUSD")
+
+        assert result["l12_verdict"]["verdict"] == "HOLD"
+        assert result["l12_verdict"]["throttled_from"] == "EXECUTE_BUY"
+        assert any(
+            "event=l12_legacy_verdict symbol=EURUSD authority=L12_LEGACY" in msg
+            and "verdict_stream=canonical_pre_enforcement" in msg
+            and "verdict=EXECUTE_BUY" in msg
+            for msg in messages
+        )
+        assert any(
+            "event=l12_final_verdict symbol=EURUSD authority=L12" in msg
+            and "verdict_stream=phase5_overlay" in msg
+            and "verdict=NO_TRADE" in msg
+            for msg in messages
+        )
+        assert any(
+            "event=l12_effective_verdict symbol=EURUSD authority=L12_EFFECTIVE" in msg
+            and "verdict_stream=effective_final" in msg
+            and "verdict=HOLD" in msg
+            and "throttled_from=EXECUTE_BUY" in msg
+            for msg in messages
+        )
 
 
 # ──────────────────────────────────────────────────────────────────
