@@ -267,8 +267,9 @@ class Phase1ChainAdapter:
         l3_status = l3.get("status", "PASS" if l3_continue else "FAIL")
         l3_blockers = l3.get("blocker_codes", [])
         l3_warnings = l3.get("warning_codes", [])
+        l3_trend = str(l3.get("trend", l3.get("trend_diagnostics", {}).get("trend", "UNKNOWN"))).upper()
         _emit_canary_event(
-            f"event=l3_constitutional_result symbol={symbol} layer=L3 status={l3_status} "
+            f"event=l3_constitutional_result symbol={symbol} layer=L3 trend={l3_trend} status={l3_status} "
             f"evidence_score={l3.get('evidence_score')} confidence_penalty={l3.get('confidence_penalty')} "
             f"hard_stop={bool(l3.get('hard_stop', False))} advisory_continuation={bool(l3.get('advisory_continuation', False))} "
             f"hard_blockers={l3.get('hard_blockers', l3_blockers)} soft_blockers={l3.get('soft_blockers', [])}"

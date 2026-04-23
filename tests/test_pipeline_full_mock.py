@@ -490,7 +490,9 @@ class TestL12Verdict:
         mocked_pipeline.execute("EURUSD")
 
         assert any("event=phase1_enter symbol=EURUSD" in msg for msg in messages)
-        assert any("event=l3_constitutional_result symbol=EURUSD layer=L3 status=WARN" in msg for msg in messages)
+        assert any(
+            "event=l3_constitutional_result symbol=EURUSD layer=L3 trend=BULLISH status=WARN" in msg for msg in messages
+        )
         assert any("hard_stop=False" in msg for msg in messages)
         assert any("soft_blockers=['TREND_STRUCTURE_CONFLICT', 'LOW_CONFIRMATION_SCORE']" in msg for msg in messages)
         assert any("event=phase1_exit symbol=EURUSD" in msg for msg in messages)
