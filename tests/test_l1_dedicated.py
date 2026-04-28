@@ -13,6 +13,8 @@ from __future__ import annotations
 import math
 from datetime import UTC, datetime
 
+import pytest
+
 from analysis.layers.L1_context import (
     L1ContextAnalyzer,
     analyze_context,
@@ -143,8 +145,34 @@ class TestEdgeCases:
 class TestL1ContextAnalyzerWrapper:
     """L1ContextAnalyzer pipeline wrapper returns dict with valid key."""
 
-    def test_returns_dict(self) -> None:
+    def test_returns_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("state.data_freshness.read_authoritative_last_seen_ts", lambda symbol: None)
         analyzer = L1ContextAnalyzer()
         result = analyzer.analyze("EURUSD")
         assert isinstance(result, dict)
         assert "valid" in result
+
+    def test_prefers_redis_authoritative_feed_timestamp(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        analyzer = L1ContextAnalyzer()
+        h1 = [{"open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 100.0} for _ in range(80)]
+        analyzer._bus.set_candle_history("EURUSD", "H1", h1)
+        analyzer._bus.record_feed_update("EURUSD", 10.0)
+
+        captured: dict[str, float | None] = {"feed_timestamp": None}
+
+        monkeypatch.setattr("state.data_freshness.read_authoritative_last_seen_ts", lambda symbol: 1234.5)
+
+        class _FakeResult:
+            def to_dict(self) -> dict[str, object]:
+                return {"valid": True}
+
+        def _fake_evaluate(inp):
+            captured["feed_timestamp"] = inp.feed_timestamp
+            return _FakeResult()
+
+        monkeypatch.setattr("analysis.layers.L1_constitutional.evaluate_l1_constitutional", _fake_evaluate)
+
+        result = analyzer.analyze("EURUSD")
+
+        assert result["valid"] is True
+        assert captured["feed_timestamp"] == 1234.5

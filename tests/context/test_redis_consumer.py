@@ -473,6 +473,19 @@ def test_handle_tick_dict_valid_updates_feed_timestamp() -> None:
     assert bus.get_feed_timestamp("EURUSD") is not None
 
 
+def test_handle_candle_dict_prefers_payload_last_seen_ts() -> None:
+    """Candle payload last_seen_ts should seed feed freshness without local clock rewrite."""
+    redis = _make_redis({})
+    bus = LiveContextBus()
+    bus.reset_state()
+    consumer = RedisConsumer(["EURUSD"], redis, bus)
+
+    payload_ts = 1714302222.75
+    consumer._handle_candle_dict({"symbol": "EURUSD", "timeframe": "M15", "close": 1.08, "last_seen_ts": payload_ts})
+
+    assert bus.get_feed_timestamp("EURUSD") == _approx(payload_ts)
+
+
 def test_handle_tick_dict_missing_symbol_ignored() -> None:
     """Tick payload without a valid symbol must be ignored."""
     redis = _make_redis({})

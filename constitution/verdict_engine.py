@@ -315,14 +315,18 @@ class VerdictEngine:
         # ── STALE DATA CIRCUIT BREAKER (Constitutional Safety Gate) ──
         # Prevents EXECUTE verdicts when the data feed is stale.
         # This is a read-only check — no execution authority.
-        # Local import to avoid circular dependency with context layer at
-        # module load time; verdict_engine is imported by many analysis modules.
-        from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+        from state.data_freshness import classify_feed_freshness, read_authoritative_last_seen_ts  # noqa: PLC0415
 
-        _bus = LiveContextBus()
         _stale_threshold_sec = float(self.config.get("feed_stale_threshold_sec", 120.0))
-        if _bus.is_feed_stale(symbol, threshold_sec=_stale_threshold_sec):
-            _feed_age = _bus.get_feed_age(symbol)
+        _feed_last_seen_ts = read_authoritative_last_seen_ts(symbol)
+        _freshness = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=_feed_last_seen_ts is not None,
+            threshold_seconds=_stale_threshold_sec,
+            last_seen_ts=_feed_last_seen_ts,
+        )
+        if _freshness.staleness_seconds > _stale_threshold_sec:
+            _feed_age = None if _feed_last_seen_ts is None else _freshness.staleness_seconds
             return {
                 "verdict": "HOLD",
                 "confidence": 0.0,

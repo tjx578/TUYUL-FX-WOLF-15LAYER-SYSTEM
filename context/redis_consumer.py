@@ -621,7 +621,10 @@ class RedisConsumer:
         self._bus.push_candle(candle)
 
         # Update feed-timestamp so is_feed_stale() works in redis mode.
-        self._bus.record_feed_update(symbol.strip())
+        candle_last_seen = self._coerce_last_seen_ts(
+            candle.get("last_seen_ts") or candle.get("timestamp") or candle.get("ts")
+        )
+        self._bus.record_feed_update(symbol.strip(), candle_last_seen)
 
         # Emit CANDLE_CLOSED so analysis_loop wakes immediately.
         self._emit_candle_closed(symbol.strip(), timeframe.strip())

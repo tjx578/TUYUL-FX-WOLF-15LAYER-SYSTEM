@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 from dataclasses import dataclass
@@ -58,6 +59,7 @@ FRESHNESS_LIVE_MAX_AGE_SEC: float = _env_threshold("WOLF_FRESHNESS_LIVE_MAX_AGE_
 FEED_ADAPTER_STALE_SEC: float = _env_threshold("WOLF_FEED_ADAPTER_STALE_SEC", 30.0)
 
 _DEFAULT_STALE_THRESHOLD_SECONDS = 300.0
+_DEFAULT_LAST_SEEN_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1", "MN")
 
 
 def stale_threshold_config() -> tuple[float, bool]:
@@ -76,6 +78,57 @@ def stale_threshold_config() -> tuple[float, bool]:
 def stale_threshold_seconds() -> float:
     """Single config authority for cross-layer stale checks."""
     return stale_threshold_config()[0]
+
+
+def _coerce_last_seen_ts(raw_value: object) -> float | None:
+    if raw_value is None:
+        return None
+    try:
+        ts = float(raw_value.decode() if isinstance(raw_value, bytes | bytearray) else str(raw_value))
+    except (TypeError, ValueError):
+        return None
+    return ts if ts > 0 else None
+
+
+def read_authoritative_last_seen_ts(
+    symbol: str,
+    redis_client: object | None = None,
+    *,
+    candle_timeframes: tuple[str, ...] = _DEFAULT_LAST_SEEN_TIMEFRAMES,
+) -> float | None:
+    """Read authoritative feed freshness from Redis-preserved ``last_seen_ts``."""
+    if not symbol:
+        return None
+
+    client = redis_client
+    if client is None:
+        with contextlib.suppress(Exception):
+            from storage.redis_client import RedisClient  # noqa: PLC0415
+
+            client = RedisClient()
+
+    if client is None:
+        return None
+
+    from core.redis_keys import latest_candle, latest_tick  # noqa: PLC0415
+
+    best_last_seen: float | None = None
+
+    with contextlib.suppress(Exception):
+        raw_tick_ts = client.hget(latest_tick(symbol), "last_seen_ts")
+        best_last_seen = _coerce_last_seen_ts(raw_tick_ts)
+
+    if best_last_seen is not None:
+        return best_last_seen
+
+    for timeframe in candle_timeframes:
+        with contextlib.suppress(Exception):
+            raw_candle_ts = client.hget(latest_candle(symbol, timeframe), "last_seen_ts")
+            ts = _coerce_last_seen_ts(raw_candle_ts)
+            if ts is not None and (best_last_seen is None or ts > best_last_seen):
+                best_last_seen = ts
+
+    return best_last_seen
 
 
 @dataclass(frozen=True)

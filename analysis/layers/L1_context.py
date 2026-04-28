@@ -888,7 +888,9 @@ class L1ContextAnalyzer:
             )
 
         # ── Collect governance inputs ─────────────────────────────
-        feed_ts = self._bus.get_feed_timestamp(symbol) if hasattr(self._bus, "get_feed_timestamp") else None
+        from state.data_freshness import read_authoritative_last_seen_ts  # noqa: PLC0415
+
+        feed_ts = read_authoritative_last_seen_ts(symbol)
 
         candle_counts: dict[str, int] = {}
         for tf in WARMUP_MIN_BARS:
@@ -897,7 +899,7 @@ class L1ContextAnalyzer:
 
         context_sources: list[str] = ["live_context_bus"]
         if feed_ts is not None:
-            context_sources.append("feed_timestamp")
+            context_sources.append("redis_last_seen_ts")
         if _regime_classifier is not None:
             context_sources.append("regime_classifier")
 
