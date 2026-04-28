@@ -43,6 +43,102 @@ class TestLoadCandleHistory:
     """Test _load_candle_history populates LiveContextBus from Redis Lists."""
 
     @pytest.mark.asyncio
+    async def test_hydrates_feed_timestamp_from_latest_tick_last_seen_ts(self, fresh_bus: LiveContextBus) -> None:
+        """Warmup should seed feed freshness from Redis latest_tick last_seen_ts."""
+        symbols = ["EURUSD"]
+        h1_candles = [_make_candle("EURUSD", "H1", i) for i in range(3)]
+        serialized = [orjson.dumps(c) for c in h1_candles]
+        expected_ts = 1714300000.5
+
+        mock_redis = AsyncMock()
+
+        async def mock_scan(cursor: int, match: str | None = None, count: int | None = None) -> tuple[int, list[str]]:
+            if match and "candle_history" in match:
+                return 0, ["wolf15:candle_history:EURUSD:H1"]
+            return 0, []
+
+        async def mock_type(key: str) -> str:
+            if key == "wolf15:candle_history:EURUSD:H1":
+                return "list"
+            return "none"
+
+        async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
+            if key == "wolf15:candle_history:EURUSD:H1":
+                return serialized
+            return []
+
+        async def mock_hget(key: str, field: str) -> bytes | None:
+            if key == "wolf15:latest_tick:EURUSD" and field == "last_seen_ts":
+                return str(expected_ts).encode()
+            return None
+
+        mock_redis.scan = AsyncMock(side_effect=mock_scan)
+        mock_redis.type = AsyncMock(side_effect=mock_type)
+        mock_redis.lrange = AsyncMock(side_effect=mock_lrange)
+        mock_redis.hget = AsyncMock(side_effect=mock_hget)
+        mock_redis.hgetall = AsyncMock(return_value={})
+
+        consumer = RedisConsumer(
+            symbols=symbols,
+            redis_client=mock_redis,
+            context_bus=fresh_bus,
+        )
+        await consumer.load_candle_history()
+
+        assert fresh_bus.get_feed_timestamp("EURUSD") == pytest.approx(expected_ts)
+
+    @pytest.mark.asyncio
+    async def test_hydrates_feed_timestamp_from_latest_candle_when_tick_missing(
+        self, fresh_bus: LiveContextBus
+    ) -> None:
+        """Warmup should fall back to latest_candle last_seen_ts when latest_tick is absent."""
+        symbols = ["EURUSD"]
+        m15_candles = [_make_candle("EURUSD", "M15", i) for i in range(2)]
+        serialized = [orjson.dumps(c) for c in m15_candles]
+        expected_ts = 1714301111.25
+
+        mock_redis = AsyncMock()
+
+        async def mock_scan(cursor: int, match: str | None = None, count: int | None = None) -> tuple[int, list[str]]:
+            if match and "candle_history" in match:
+                return 0, ["wolf15:candle_history:EURUSD:M15"]
+            return 0, []
+
+        async def mock_type(key: str) -> str:
+            if key == "wolf15:candle_history:EURUSD:M15":
+                return "list"
+            return "none"
+
+        async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
+            if key == "wolf15:candle_history:EURUSD:M15":
+                return serialized
+            return []
+
+        async def mock_hget(key: str, field: str) -> bytes | None:
+            if field != "last_seen_ts":
+                return None
+            if key == "wolf15:latest_tick:EURUSD":
+                return None
+            if key == "wolf15:candle:EURUSD:M15":
+                return str(expected_ts).encode()
+            return None
+
+        mock_redis.scan = AsyncMock(side_effect=mock_scan)
+        mock_redis.type = AsyncMock(side_effect=mock_type)
+        mock_redis.lrange = AsyncMock(side_effect=mock_lrange)
+        mock_redis.hget = AsyncMock(side_effect=mock_hget)
+        mock_redis.hgetall = AsyncMock(return_value={})
+
+        consumer = RedisConsumer(
+            symbols=symbols,
+            redis_client=mock_redis,
+            context_bus=fresh_bus,
+        )
+        await consumer.load_candle_history()
+
+        assert fresh_bus.get_feed_timestamp("EURUSD") == pytest.approx(expected_ts)
+
+    @pytest.mark.asyncio
     async def test_loads_h1_candles_from_redis(self, fresh_bus: LiveContextBus) -> None:
         """Candles stored in Redis Lists are loaded into LiveContextBus."""
         symbols = ["EURUSD"]

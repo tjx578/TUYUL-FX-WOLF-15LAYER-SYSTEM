@@ -203,7 +203,7 @@ class LiveContextBus:
         else:
             logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
 
-    def record_feed_update(self, symbol: str) -> None:
+    def record_feed_update(self, symbol: str, last_seen_ts: float | None = None) -> None:
         """Record that fresh data arrived for *symbol* (updates feed-timestamp).
 
         Called by RedisConsumer when a candle arrives via Pub/Sub so that
@@ -212,7 +212,7 @@ class LiveContextBus:
         """
         if symbol:
             with self._lock:
-                self._feed_timestamps[str(symbol)] = time.time()
+                self._feed_timestamps[str(symbol)] = last_seen_ts if last_seen_ts is not None else time.time()
 
     def reset_state(self) -> None:
         """Clear all internal state. Used for test isolation."""

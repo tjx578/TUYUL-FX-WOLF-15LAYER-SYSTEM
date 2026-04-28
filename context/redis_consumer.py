@@ -30,6 +30,8 @@ from core.redis_keys import (
     CANDLE_HASH_SCAN,
     CANDLE_HISTORY_PREFIX,
     CANDLE_HISTORY_SCAN,
+    latest_candle,
+    latest_tick,
 )
 
 logger = logging.getLogger(__name__)
@@ -306,6 +308,48 @@ class RedisConsumer:
                 symbol,
                 timeframe,
             )
+
+        await self._hydrate_feed_timestamps()
+
+    @staticmethod
+    def _coerce_last_seen_ts(raw_value: Any) -> float | None:
+        if raw_value is None:
+            return None
+        try:
+            ts = float(raw_value.decode() if isinstance(raw_value, bytes | bytearray) else str(raw_value))
+        except (TypeError, ValueError):
+            return None
+        return ts if ts > 0 else None
+
+    async def _hydrate_feed_timestamps(self) -> None:
+        """Seed bus feed timestamps from Redis-preserved last_seen_ts values."""
+        for symbol in self._symbols:
+            best_last_seen: float | None = None
+
+            try:
+                raw_tick_ts = await self._redis.hget(latest_tick(symbol), "last_seen_ts")
+                best_last_seen = self._coerce_last_seen_ts(raw_tick_ts)
+            except Exception:
+                logger.debug("RedisConsumer: latest_tick last_seen_ts warmup failed for %s", symbol, exc_info=True)
+
+            if best_last_seen is None:
+                for timeframe in WARMUP_TIMEFRAMES:
+                    try:
+                        raw_candle_ts = await self._redis.hget(latest_candle(symbol, timeframe), "last_seen_ts")
+                    except Exception:
+                        logger.debug(
+                            "RedisConsumer: latest_candle last_seen_ts warmup failed for %s:%s",
+                            symbol,
+                            timeframe,
+                            exc_info=True,
+                        )
+                        continue
+                    ts = self._coerce_last_seen_ts(raw_candle_ts)
+                    if ts is not None and (best_last_seen is None or ts > best_last_seen):
+                        best_last_seen = ts
+
+            if best_last_seen is not None:
+                self._bus.record_feed_update(symbol, best_last_seen)
 
     async def load_candle_history_with_retry(
         self,
@@ -592,7 +636,8 @@ class RedisConsumer:
         symbol = tick.get("symbol")
         if not isinstance(symbol, str) or not symbol.strip():
             return
-        self._bus.record_feed_update(symbol.strip())
+        tick_last_seen = self._coerce_last_seen_ts(tick.get("last_seen_ts") or tick.get("timestamp") or tick.get("ts"))
+        self._bus.record_feed_update(symbol.strip(), tick_last_seen)
 
     def _emit_candle_closed(self, symbol: str, timeframe: str) -> None:
         """Fire CANDLE_CLOSED event on the in-process EventBus.
