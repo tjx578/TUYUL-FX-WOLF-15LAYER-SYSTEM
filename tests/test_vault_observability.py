@@ -20,12 +20,16 @@ class _FakeRedis:
     def __init__(self, heartbeat_payload: bytes) -> None:
         self._heartbeat_payload = heartbeat_payload
         self.client = self
+        self._last_seen: dict[tuple[str, str], bytes] = {("wolf15:latest_tick:EURUSD", "last_seen_ts"): b"65.04"}
 
     def ping(self) -> bool:
         return True
 
     def get(self, _key: str) -> bytes:
         return self._heartbeat_payload
+
+    def hget(self, key: str, field: str) -> bytes | None:
+        return self._last_seen.get((key, field))
 
 
 @pytest.mark.parametrize("symbol", ["EURUSD"])

@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from state.data_freshness import read_authoritative_last_seen_ts
 from state.heartbeat_classifier import SERVICE_HEARTBEAT_CONFIG, classify_heartbeat
 
 logger = logging.getLogger("tuyul.vault_health")
@@ -106,14 +107,14 @@ class VaultHealthChecker:
 
     def _check_feed_freshness(self, symbols: list[str]) -> tuple[float, float, int, int, str, float | None, float]:
         started = time.monotonic()
-        if self._context_bus is None or not symbols:
+        if not symbols:
             elapsed_ms = (time.monotonic() - started) * 1000
             return 0.0, float("inf"), 0, len(symbols), "1.0 - (inf / 10.0) = -inf -> clamped to 0.0", None, elapsed_ms
         try:
             ages: list[float] = []
             fresh_count = 0
             for symbol in symbols:
-                last_ts = self._context_bus.get_last_tick_time(symbol)
+                last_ts = read_authoritative_last_seen_ts(symbol, self._redis)
                 if last_ts is None or last_ts == 0:
                     ages.append(float("inf"))
                 else:
@@ -165,12 +166,12 @@ class VaultHealthChecker:
             return 0.0, float("inf")
 
     def _get_last_tick_age(self, symbols: list[str]) -> float:
-        if self._context_bus is None or not symbols:
+        if not symbols:
             return float("inf")
         try:
             worst = 0.0
             for symbol in symbols:
-                ts = self._context_bus.get_last_tick_time(symbol)
+                ts = read_authoritative_last_seen_ts(symbol, self._redis)
                 if ts is None or ts == 0:
                     return float("inf")
                 age = time.time() - ts

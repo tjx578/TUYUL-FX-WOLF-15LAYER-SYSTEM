@@ -30,6 +30,17 @@ def _make_candle(symbol: str, timeframe: str, idx: int) -> dict[str, Any]:
     }
 
 
+def _make_mock_redis() -> AsyncMock:
+    """Return an async Redis mock with safe defaults for unused fallbacks."""
+    mock_redis = AsyncMock()
+    mock_redis.scan = AsyncMock(side_effect=NotImplementedError)
+    mock_redis.type = AsyncMock(return_value="mock")
+    mock_redis.lrange = AsyncMock(return_value=[])
+    mock_redis.hget = AsyncMock(return_value=None)
+    mock_redis.hgetall = AsyncMock(return_value={})
+    return mock_redis
+
+
 @pytest.fixture()
 def fresh_bus() -> Generator[LiveContextBus, None, None]:
     """Return a fresh LiveContextBus (reset singleton)."""
@@ -50,7 +61,7 @@ class TestLoadCandleHistory:
         serialized = [orjson.dumps(c) for c in h1_candles]
         expected_ts = 1714300000.5
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_scan(cursor: int, match: str | None = None, count: int | None = None) -> tuple[int, list[str]]:
             if match and "candle_history" in match:
@@ -97,7 +108,7 @@ class TestLoadCandleHistory:
         serialized = [orjson.dumps(c) for c in m15_candles]
         expected_ts = 1714301111.25
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_scan(cursor: int, match: str | None = None, count: int | None = None) -> tuple[int, list[str]]:
             if match and "candle_history" in match:
@@ -145,7 +156,7 @@ class TestLoadCandleHistory:
         h1_candles = [_make_candle("EURUSD", "H1", i) for i in range(25)]
         serialized = [orjson.dumps(c) for c in h1_candles]
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
             if "candle_history:EURUSD:H1" in key:
@@ -175,7 +186,7 @@ class TestLoadCandleHistory:
             "W1": [_make_candle("EURUSD", "W1", i) for i in range(5)],
         }
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
             for tf, candles in tf_data.items():
@@ -200,7 +211,7 @@ class TestLoadCandleHistory:
     @pytest.mark.asyncio
     async def test_empty_redis_returns_zero_bars(self, fresh_bus: LiveContextBus) -> None:
         """When Redis Lists are empty, bars stay at zero."""
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
         mock_redis.lrange = AsyncMock(return_value=[])
 
         consumer = RedisConsumer(
@@ -218,7 +229,7 @@ class TestLoadCandleHistory:
         """RedisConsumer exposes a public load_candle_history coroutine."""
         import inspect
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
         mock_redis.lrange = AsyncMock(return_value=[])
 
         consumer = RedisConsumer(
@@ -241,7 +252,7 @@ class TestLoadCandleHistory:
             "GBPUSD": {"H1": [_make_candle("GBPUSD", "H1", i) for i in range(18)]},
         }
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
             for sym, tfs in candle_map.items():
@@ -268,7 +279,7 @@ class TestLoadCandleHistory:
         symbols = ["EURUSD"]
         h4_candles = [_make_candle("EURUSD", "H4", i) for i in range(12)]
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
             if "candle_history:EURUSD:H1" in key:
@@ -297,7 +308,7 @@ class TestLoadCandleHistory:
         bad_entry = b"not-valid-json{{{"
         mixed = valid_candles[:2] + [bad_entry] + valid_candles[2:]
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
             if "candle_history:EURUSD:H1" in key:
@@ -323,7 +334,7 @@ class TestLoadCandleHistory:
         h1_candles = [_make_candle("EURUSD", "H1", i) for i in range(10)]
         serialized = [orjson.dumps(c) for c in h1_candles]
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
             if "candle_history:EURUSD:H1" in key:
@@ -354,7 +365,7 @@ class TestLoadCandleHistory:
             "H1": [_make_candle("EURUSD", "H1", i) for i in range(5)],  # below 20
         }
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
 
         async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
             for tf, candles in tf_data.items():
@@ -383,7 +394,7 @@ class TestPubsubReconnect:
         """run() should retry _consume_pubsub when it raises ConnectionError."""
         from redis.exceptions import ConnectionError as RedisConnectionError
 
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
         mock_redis.lrange = AsyncMock(return_value=[])
         mock_redis.scan = AsyncMock(return_value=(0, []))
 
@@ -412,7 +423,7 @@ class TestPubsubReconnect:
     @pytest.mark.asyncio
     async def test_run_does_not_retry_on_cancellation(self, fresh_bus: LiveContextBus) -> None:
         """CancelledError should propagate immediately, not be retried."""
-        mock_redis = AsyncMock()
+        mock_redis = _make_mock_redis()
         mock_redis.lrange = AsyncMock(return_value=[])
         mock_redis.scan = AsyncMock(return_value=(0, []))
 
