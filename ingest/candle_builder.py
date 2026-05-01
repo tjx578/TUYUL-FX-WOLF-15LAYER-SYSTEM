@@ -9,11 +9,14 @@ Zone: ingest (data pipeline). No analysis side-effects.
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+
+_log = logging.getLogger(__name__)
 
 
 class Timeframe(Enum):
@@ -234,18 +237,61 @@ class CandleBuilder:
         The sub-candle's open_time determines which higher-TF period it
         belongs to.
         """
+        _log.debug(
+            "[%sBuilder] on_candle called for %s, complete=%s",
+            self.timeframe.label,
+            candle.symbol,
+            candle.complete,
+        )
+
         if not candle.complete:
+            _log.debug(
+                "[%sBuilder] Skipping non-complete candle for %s",
+                self.timeframe.label,
+                candle.symbol,
+            )
             return None  # only aggregate finalized candles
 
         period_start = _align_to_period(candle.open_time, self.timeframe.minutes)
+        _log.debug(
+            "[%sBuilder] Period alignment: open_time=%s, period_start=%s",
+            self.timeframe.label,
+            candle.open_time,
+            period_start,
+        )
 
         if self._acc.open_time is None or period_start != self._acc.open_time:
+            _log.debug(
+                "[%sBuilder] Period rollover detected for %s "
+                "(acc.open_time=%s → new period_start=%s), emitting candle",
+                self.timeframe.label,
+                candle.symbol,
+                self._acc.open_time,
+                period_start,
+            )
             completed = self._maybe_close()
             self._acc.reset(period_start)
             self._acc.update_from_candle(candle)
+            _log.debug(
+                "[%sBuilder] Accumulator update after rollover: "
+                "open=%s, high=%s, low=%s, close=%s",
+                self.timeframe.label,
+                self._acc.open,
+                self._acc.high,
+                self._acc.low,
+                self._acc.close,
+            )
             return completed
 
         self._acc.update_from_candle(candle)
+        _log.debug(
+            "[%sBuilder] Accumulator update: open=%s, high=%s, low=%s, close=%s",
+            self.timeframe.label,
+            self._acc.open,
+            self._acc.high,
+            self._acc.low,
+            self._acc.close,
+        )
         return None
 
     # ------------------------------------------------------------------
@@ -287,16 +333,39 @@ class CandleBuilder:
     def _maybe_close(self) -> Candle | None:
         """Close the current accumulator if it has data. Returns completed candle or None."""
         if self._acc.is_empty:
+            _log.debug(
+                "[%sBuilder] _maybe_close: accumulator is empty for %s, nothing to emit",
+                self.timeframe.label,
+                self.symbol,
+            )
             return None
         candle = self._acc.emit()
+        _log.debug(
+            "[%sBuilder] Emitting candle for %s: O=%s H=%s L=%s C=%s ticks=%s",
+            self.timeframe.label,
+            candle.symbol,
+            candle.open,
+            candle.high,
+            candle.low,
+            candle.close,
+            candle.tick_count,
+        )
         self._completed.append(candle)
         if self.on_complete:
+            _log.debug(
+                "[%sBuilder] Executing on_complete callback for %s",
+                self.timeframe.label,
+                candle.symbol,
+            )
             try:
                 self.on_complete(candle)
+                _log.debug(
+                    "[%sBuilder] on_complete callback succeeded for %s",
+                    self.timeframe.label,
+                    candle.symbol,
+                )
             except Exception as exc:
-                import logging
-
-                logging.getLogger(__name__).error(
+                _log.error(
                     "[CandleBuilder] on_complete callback failed for %s/%s: %s",
                     candle.symbol,
                     candle.timeframe,

@@ -276,6 +276,15 @@ async def run_ingest_services(
                 timeframe=Timeframe.H1,
                 on_complete=_h1_on_complete,
             )
+            logger.debug(
+                "[H1Builder] Created H1 builder for {} with on_complete=_h1_on_complete",
+                _sym,
+            )
+        logger.debug(
+            "[H1Builder] H1 builders created for {} symbols: {}",
+            len(h1_builders),
+            list(h1_builders.keys()),
+        )
 
         def _make_m15_callback(sym: str) -> Any:
             def _cb(candle: Any) -> None:
@@ -288,10 +297,31 @@ async def run_ingest_services(
                     candle.close,
                     getattr(candle, "tick_count", "?"),
                 )
+                logger.debug(
+                    "[M15Callback] Executing for sym={} candle.symbol={} candle.complete={}",
+                    sym,
+                    candle.symbol,
+                    candle.complete,
+                )
                 publish_candle_sync(candle.to_dict(), redis=redis)
                 h1b = h1_builders.get(sym)
-                if h1b is not None:
-                    h1b.on_candle(candle)
+                if h1b is None:
+                    logger.warning(
+                        "[M15Callback] No H1 builder found for sym={} — h1_builders keys={}",
+                        sym,
+                        list(h1_builders.keys()),
+                    )
+                else:
+                    logger.debug(
+                        "[M15Callback] Found H1 builder for sym={}, calling on_candle()",
+                        sym,
+                    )
+                    result = h1b.on_candle(candle)
+                    logger.debug(
+                        "[M15Callback] h1b.on_candle() returned {} for sym={}",
+                        result,
+                        sym,
+                    )
 
             return _cb
 
