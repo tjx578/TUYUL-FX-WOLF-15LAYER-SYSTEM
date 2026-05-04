@@ -40,7 +40,7 @@ def _log_exception(message: str, exc: Exception) -> None:
     """Log exceptions correctly with either Loguru or stdlib logging."""
     opt = getattr(logger, "opt", None)
     if callable(opt):
-        opt(exception=exc).error(message)
+        opt(exception=exc).error(message)  # type: ignore[attr-defined]
         return
     logger.error(message, exc_info=True)
 
@@ -290,8 +290,7 @@ class Phase1ChainAdapter:
             if not l3_blockers and not any("L3_EXCEPTION" in e for e in errors):
                 errors.append("L3_BLOCKER:UNCLASSIFIED_FAIL")
             logger.warning(
-                f"[Phase1] L3 FAIL | symbol={symbol} status={l3_status} blockers={l3_blockers} "
-                f"warnings={l3_warnings}"
+                f"[Phase1] L3 FAIL | symbol={symbol} status={l3_status} blockers={l3_blockers} warnings={l3_warnings}"
             )
 
         # ── Chain complete — always forward to L12 ───────────
