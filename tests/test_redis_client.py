@@ -91,6 +91,26 @@ class TestRedisConfig:
             cfg = RedisConfig.from_env()
             assert cfg.password is None
 
+    def test_from_env_pool_tuning(self) -> None:
+        env = {
+            "REDIS_URL": "redis://localhost:6379/0",
+            "REDIS_MAX_CONNECTIONS": "77",
+            "REDIS_SOCKET_TIMEOUT_SEC": "15",
+            "REDIS_SOCKET_CONNECT_TIMEOUT_SEC": "6",
+            "REDIS_POOL_TIMEOUT_SEC": "4",
+            "REDIS_HEALTH_CHECK_INTERVAL_SEC": "20",
+            "REDIS_RETRY_ATTEMPTS": "7",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            cfg = RedisConfig.from_env()
+
+        assert cfg.max_connections == 77
+        assert cfg.socket_timeout == 15.0
+        assert cfg.socket_connect_timeout == 6.0
+        assert cfg.blocking_pool_timeout == 4.0
+        assert cfg.health_check_interval == 20
+        assert cfg.retry_attempts == 7
+
     def test_railway_style_vars_fallback(self) -> None:
         """Railway-style vars (REDISHOST etc.) used when standard vars absent."""
         env = {
@@ -132,18 +152,39 @@ class TestRedisClientManager:
 
     @pytest.mark.asyncio
     async def test_pool_has_retry_config(self) -> None:
-        """Pool must be created with a Retry object and retry_on_error list."""
+        """Pool must be blocking and created with retry configuration."""
         from redis.retry import Retry
 
         mgr = RedisClientManager()
-        with patch.dict(os.environ, {"REDIS_URL": "redis://localhost:6379/0"}, clear=True):
+        env = {
+            "REDIS_URL": "redis://localhost:6379/0",
+            "REDIS_MAX_CONNECTIONS": "9",
+            "REDIS_POOL_TIMEOUT_SEC": "3",
+        }
+        with patch.dict(os.environ, env, clear=True):
             pool = await mgr.get_pool()
             # ConnectionPool.from_url passes retry/retry_on_error to
             # connection_kwargs; verify they propagate.
             ckw: dict[str, object] = dict(pool.connection_kwargs)
+            assert pool.__class__.__name__ == "BlockingConnectionPool"
+            assert pool.max_connections == 9
+            assert pool.timeout == 3.0
             assert "retry" in ckw, "Retry object must be set on pool"
             assert isinstance(ckw["retry"], Retry)
             assert ckw.get("retry_on_error") is not None
+            await mgr.close()
+
+    @pytest.mark.asyncio
+    async def test_rediss_pool_lets_from_url_select_ssl_connection(self) -> None:
+        """rediss:// must not pass an extra ssl=True kwarg to redis-py."""
+        mgr = RedisClientManager()
+        with patch.dict(os.environ, {"REDIS_URL": "rediss://:secret@redis.prod.internal:6379/0"}, clear=True):
+            pool = await mgr.get_pool()
+            ckw: dict[str, object] = dict(pool.connection_kwargs)
+
+            assert "ssl" not in ckw
+            connection = pool.make_connection()
+            assert connection.__class__.__name__ == "SSLConnection"
             await mgr.close()
 
     @pytest.mark.asyncio

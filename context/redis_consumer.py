@@ -130,7 +130,7 @@ class RedisConsumer:
 
         self._stop_event = asyncio.Event()
         self._logged_empty_seed = False
-        self._warmup_max_concurrency = self._read_int_env("REDIS_WARMUP_MAX_CONCURRENCY", default=8)
+        self._warmup_max_concurrency = self._read_int_env("REDIS_WARMUP_MAX_CONCURRENCY", default=4)
         self._warmup_semaphore = asyncio.Semaphore(self._warmup_max_concurrency)
         self._warmup_error_log_interval_sec = self._read_float_env("REDIS_WARMUP_ERROR_LOG_INTERVAL_SEC", default=60.0)
         self._warmup_error_log_state: dict[str, float] = {}

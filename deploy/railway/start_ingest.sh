@@ -8,6 +8,7 @@ if [[ -n "${PORT:-}" ]]; then
 fi
 
 export WOLF15_SERVICE_ROLE="ingest"
+export CONTEXT_MODE="${CONTEXT_MODE:-redis}"
 
 echo "[startup] Ingest service starting — PORT=${PORT:-8082} INGEST_HEALTH_PORT=${INGEST_HEALTH_PORT:-<unset>}"
 

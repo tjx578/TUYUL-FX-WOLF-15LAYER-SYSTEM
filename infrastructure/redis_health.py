@@ -70,18 +70,35 @@ def build_extended_redis_report(
     keyspace_totals = _aggregate_keyspace(keyspace)
     bgsave_status = _as_str(persistence, "rdb_last_bgsave_status", "unknown").lower()
     aof_rewrite_status = _as_str(persistence, "aof_last_bgrewrite_status", "unknown").lower()
+    maxmemory = _as_int(memory, "maxmemory")
+    used_memory = _as_int(memory, "used_memory")
+    memory_headroom = max(0, maxmemory - used_memory) if maxmemory > 0 else 0
+    memory_used_ratio = (used_memory / maxmemory) if maxmemory > 0 else 0.0
+    maxclients = _as_int(clients, "maxclients")
+    connected_clients = _as_int(clients, "connected_clients")
+    client_used_ratio = (connected_clients / maxclients) if maxclients > 0 else 0.0
 
     return {
         "status": "ok" if pong else "degraded",
         "latency_ms": round(latency_ms, 2),
         "timestamp": timestamp,
-        "connected_clients": _as_int(clients, "connected_clients"),
+        "connected_clients": connected_clients,
         "blocked_clients": _as_int(clients, "blocked_clients"),
+        "maxclients": maxclients,
+        "client_used_ratio": round(client_used_ratio, 4),
+        "rejected_connections": _as_int(stats, "rejected_connections"),
+        "total_connections_received": _as_int(stats, "total_connections_received"),
         "instantaneous_ops_per_sec": _as_int(stats, "instantaneous_ops_per_sec"),
+        "instantaneous_input_kbps": round(_as_float(stats, "instantaneous_input_kbps"), 4),
+        "instantaneous_output_kbps": round(_as_float(stats, "instantaneous_output_kbps"), 4),
+        "client_recent_max_input_buffer": _as_int(clients, "client_recent_max_input_buffer"),
+        "client_recent_max_output_buffer": _as_int(clients, "client_recent_max_output_buffer"),
         "slowlog_len": int(slowlog_len),
-        "used_memory": _as_int(memory, "used_memory"),
+        "used_memory": used_memory,
         "used_memory_peak": _as_int(memory, "used_memory_peak"),
-        "maxmemory": _as_int(memory, "maxmemory"),
+        "maxmemory": maxmemory,
+        "memory_headroom_bytes": memory_headroom,
+        "memory_used_ratio": round(memory_used_ratio, 4),
         "mem_fragmentation_ratio": round(_as_float(memory, "mem_fragmentation_ratio"), 4),
         "expired_keys": _as_int(stats, "expired_keys"),
         "evicted_keys": _as_int(stats, "evicted_keys"),
@@ -103,9 +120,21 @@ def build_extended_redis_report(
 
 def _compute_pool_metrics(pool: object) -> tuple[int, int, int, int, int]:
     """Return (available, in_use, created, max_conns, headroom)."""
-    available = len(getattr(pool, "_available_connections", []))
-    in_use = len(getattr(pool, "_in_use_connections", []))
-    created = available + in_use
+    free_getter = getattr(pool, "_get_free_connections", None)
+    in_use_getter = getattr(pool, "_get_in_use_connections", None)
+    if callable(free_getter) and callable(in_use_getter):
+        try:
+            available = len(free_getter())
+            in_use = len(in_use_getter())
+            created = len(getattr(pool, "_connections", []))
+        except Exception:
+            available = len(getattr(pool, "_available_connections", []))
+            in_use = len(getattr(pool, "_in_use_connections", []))
+            created = available + in_use
+    else:
+        available = len(getattr(pool, "_available_connections", []))
+        in_use = len(getattr(pool, "_in_use_connections", []))
+        created = available + in_use
     max_conns = int(getattr(pool, "max_connections", 0) or 0)
     headroom = max(0, max_conns - in_use) if max_conns > 0 else available
     return available, in_use, created, max_conns, headroom

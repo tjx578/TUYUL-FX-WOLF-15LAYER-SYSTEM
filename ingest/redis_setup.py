@@ -36,10 +36,16 @@ def build_redis_client() -> RedisClient:
     except ModuleNotFoundError as exc:
         raise RuntimeError("Missing dependency 'redis'. Install it with: pip install redis") from exc
 
+    from infrastructure.redis_client import RedisConfig
     from infrastructure.redis_url import get_redis_url, get_safe_redis_url
 
     url = get_redis_url()
-    socket_timeout = float(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "10"))
+    cfg = RedisConfig.from_env()
+    try:
+        max_connections = int(os.getenv("INGEST_REDIS_MAX_CONNECTIONS", str(cfg.max_connections)))
+    except (TypeError, ValueError):
+        max_connections = cfg.max_connections
+    max_connections = max(1, max_connections)
 
     from redis.backoff import ExponentialBackoff
     from redis.exceptions import ConnectionError as RedisConnectionError
@@ -47,21 +53,28 @@ def build_redis_client() -> RedisClient:
     from redis.retry import Retry
 
     retry = Retry(
-        backoff=ExponentialBackoff(cap=10, base=1),
-        retries=5,
+        backoff=ExponentialBackoff(cap=cfg.retry_backoff_cap, base=cfg.retry_backoff_base),
+        retries=cfg.retry_attempts,
         supported_errors=(RedisConnectionError, RedisTimeoutError),
     )
 
-    logger.info("Ingest Redis: {}", get_safe_redis_url())
-    pool = redis_asyncio.ConnectionPool.from_url(
+    logger.info(
+        "Ingest Redis: {} max={} wait={}s timeout={}s",
+        get_safe_redis_url(),
+        max_connections,
+        cfg.blocking_pool_timeout,
+        cfg.socket_timeout,
+    )
+    pool = redis_asyncio.BlockingConnectionPool.from_url(
         url,
-        decode_responses=True,
-        max_connections=100,
-        socket_timeout=socket_timeout,
-        socket_connect_timeout=socket_timeout,
-        socket_keepalive=True,
-        health_check_interval=30,
-        retry_on_timeout=True,
+        decode_responses=cfg.decode_responses,
+        max_connections=max_connections,
+        timeout=cfg.blocking_pool_timeout,
+        socket_timeout=cfg.socket_timeout,
+        socket_connect_timeout=cfg.socket_connect_timeout,
+        socket_keepalive=cfg.socket_keepalive,
+        health_check_interval=cfg.health_check_interval,
+        retry_on_timeout=cfg.retry_on_timeout,
         retry_on_error=[RedisConnectionError, RedisTimeoutError],
         retry=retry,
     )

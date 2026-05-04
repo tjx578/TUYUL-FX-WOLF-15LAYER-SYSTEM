@@ -27,6 +27,8 @@ import redis  # noqa: E402
 import redis.client  # noqa: E402
 import redis.exceptions  # noqa: E402
 from loguru import logger  # noqa: E402
+from redis.backoff import ExponentialBackoff  # noqa: E402
+from redis.retry import Retry as RedisRetry  # noqa: E402
 from tenacity import (  # noqa: E402
     retry,
     retry_if_exception_type,
@@ -34,15 +36,15 @@ from tenacity import (  # noqa: E402
     wait_exponential,
 )
 
+_RETRY_EXCEPTIONS: tuple[type[Exception], ...] = (
+    redis.exceptions.ConnectionError,
+    redis.exceptions.TimeoutError,
+)
+
 from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
 from infrastructure.redis_url import sanitize_redis_url as _sanitize_redis_url  # noqa: E402
 
 configure_loguru_logging()
-
-_RETRY_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    redis.exceptions.ConnectionError,
-    redis.exceptions.TimeoutError,
-)
 
 
 class RedisClient:
@@ -66,32 +68,51 @@ class RedisClient:
 
     def _init(self) -> None:
         """Initialize Redis connection pool."""
+        from infrastructure.redis_client import RedisConfig
         from infrastructure.redis_url import get_redis_url
 
         url = get_redis_url()
-        socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "10"))
+        cfg = RedisConfig.from_env()
+        try:
+            max_connections = int(os.getenv("REDIS_SYNC_MAX_CONNECTIONS", str(cfg.max_connections)))
+        except (TypeError, ValueError):
+            max_connections = cfg.max_connections
+        max_connections = max(1, max_connections)
 
-        # TCP_OVERWINDOW fix: enable keepalive, reduce pool size,
-        # add health-check interval to prune idle connections.
+        retry = RedisRetry(
+            backoff=ExponentialBackoff(cap=cfg.retry_backoff_cap, base=cfg.retry_backoff_base),
+            retries=cfg.retry_attempts,
+            supported_errors=_RETRY_EXCEPTIONS,
+        )
+
+        # TCP transport hardening: enable keepalive, use a blocking pool so
+        # bursts wait briefly for an idle connection, and add health checks to
+        # prune stale sockets before they carry command traffic.
         # NOTE: Only SO_KEEPALIVE is set here (socket_keepalive=True).
         # Detailed keepalive timing (idle/interval/count) is handled
         # server-side via Redis --tcp-keepalive.  Passing
         # socket_keepalive_options with TCP_KEEPIDLE etc. causes EINVAL
         # on some container runtimes (e.g. Railway Alpine).
-        self._pool = redis.ConnectionPool.from_url(
+        self._pool = redis.BlockingConnectionPool.from_url(
             url,
-            decode_responses=True,
-            socket_timeout=socket_timeout,
-            socket_connect_timeout=socket_timeout,
-            max_connections=10,
-            socket_keepalive=True,
-            health_check_interval=30,
-            retry_on_timeout=True,
+            decode_responses=cfg.decode_responses,
+            socket_timeout=cfg.socket_timeout,
+            socket_connect_timeout=cfg.socket_connect_timeout,
+            max_connections=max_connections,
+            timeout=cfg.blocking_pool_timeout,
+            socket_keepalive=cfg.socket_keepalive,
+            health_check_interval=cfg.health_check_interval,
+            retry_on_timeout=cfg.retry_on_timeout,
+            retry_on_error=_RETRY_EXCEPTIONS,
+            retry=retry,
         )
         self.client = redis.Redis(connection_pool=self._pool)
         logger.info(
-            "Redis client initialized with connection pool: {}",
+            "Redis client initialized with blocking connection pool: {} max={} wait={}s timeout={}s",
             _sanitize_redis_url(url),
+            max_connections,
+            cfg.blocking_pool_timeout,
+            cfg.socket_timeout,
         )
 
     @retry(

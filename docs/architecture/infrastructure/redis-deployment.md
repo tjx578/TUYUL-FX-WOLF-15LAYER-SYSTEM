@@ -118,7 +118,13 @@ CONTEXT_MODE=redis          # redis | local (default: local)
 # Redis Connection
 REDIS_URL=redis://redis:6379/0
 REDIS_PREFIX=wolf15
-REDIS_SOCKET_TIMEOUT_SEC=5
+REDIS_SOCKET_TIMEOUT_SEC=15
+REDIS_SOCKET_CONNECT_TIMEOUT_SEC=10
+REDIS_MAX_CONNECTIONS=50
+REDIS_POOL_TIMEOUT_SEC=5
+REDIS_HEALTH_CHECK_INTERVAL_SEC=30
+REDIS_RETRY_ATTEMPTS=5
+REDIS_WARMUP_MAX_CONCURRENCY=4
 
 # Economic calendar provider-chain ingestion (ingest/calendar_news.py)
 NEWS_INGEST_ENABLED=true
@@ -218,12 +224,14 @@ Subscribers: Engine RedisConsumer
 ### Connection Pool
 
 - **Max connections**: 50
-- **Timeout**: 5 seconds
-- **Retry**: 3 attempts with exponential backoff
+- **Pool wait**: 5 seconds before declaring pool exhaustion
+- **Socket timeout**: 15 seconds
+- **Retry**: 5 attempts with exponential backoff
+- **Warmup concurrency**: 4 parallel symbol/timeframe reads by default
 
 ### Memory Usage
 
-Redis memory cap: 512MB (configured in docker-compose.yml)
+Redis memory cap: 512MB by default (configured in docker-compose.yml via `REDIS_MAXMEMORY`)
 Policy: allkeys-lru (evict least recently used)
 
 ## Backward Compatibility
@@ -325,6 +333,20 @@ pytest tests/test_redis_bridge.py -v
 2. Check `REDIS_URL` environment variable
 3. Check network connectivity: `docker-compose exec engine ping redis`
 4. Review Redis logs: `docker-compose logs redis`
+5. Inspect pool and Redis pressure: `/api/v1/redis/health/extended`
+6. If headroom is low, raise `REDIS_MAX_CONNECTIONS` or lower `REDIS_WARMUP_MAX_CONCURRENCY`
+
+### TCP Retransmits / TCP_OLD_DATA Drops
+
+**Symptoms**: flow logs show retransmitted Redis packets, engine warmup returns zero candles, or vault reports `FEED STALE`.
+
+**Solutions**:
+
+1. Keep Engine and Ingest on the same private network Redis endpoint.
+2. Confirm `CONTEXT_MODE=redis` on the engine service.
+3. Use blocking Redis pools (`REDIS_POOL_TIMEOUT_SEC`) instead of fail-fast connection exhaustion.
+4. Monitor `rejected_connections`, `client_recent_max_*_buffer`, `instantaneous_*_kbps`, and pool headroom.
+5. Reduce warmup/read fan-out with `REDIS_WARMUP_MAX_CONCURRENCY` if Redis or network buffers are pressured.
 
 ### High Memory Usage
 

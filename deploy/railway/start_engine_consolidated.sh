@@ -16,4 +16,5 @@ fi
 
 export WOLF15_SERVICE_ROLE="engine"
 export RUN_MODE="engine-only"
+export CONTEXT_MODE="${CONTEXT_MODE:-redis}"
 exec python -m services.engine.runner

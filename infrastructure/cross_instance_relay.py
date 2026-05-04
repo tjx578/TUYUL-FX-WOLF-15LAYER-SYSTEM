@@ -187,20 +187,33 @@ class CrossInstanceRelay:
             return
 
         if self._pubsub_client is None:
+            from redis.backoff import ExponentialBackoff
+            from redis.exceptions import ConnectionError as RedisConnectionError
+            from redis.exceptions import TimeoutError as RedisTimeoutError
+            from redis.retry import Retry
+
+            from infrastructure.redis_client import RedisConfig
             from infrastructure.redis_url import get_redis_url
 
             url = get_redis_url()
-            use_tls = url.startswith("rediss://")
-            pool = aioredis.ConnectionPool.from_url(
+            cfg = RedisConfig.from_env()
+            retry = Retry(
+                backoff=ExponentialBackoff(cap=cfg.retry_backoff_cap, base=cfg.retry_backoff_base),
+                retries=cfg.retry_attempts,
+                supported_errors=(RedisConnectionError, RedisTimeoutError),
+            )
+            pool = aioredis.BlockingConnectionPool.from_url(
                 url,
                 decode_responses=True,
                 max_connections=2,
+                timeout=cfg.blocking_pool_timeout,
                 socket_timeout=None,  # Pub/Sub idles — no read timeout
-                socket_connect_timeout=10.0,  # connect still has a deadline
-                socket_keepalive=True,
-                health_check_interval=30,
-                retry_on_timeout=True,
-                **({"ssl": True} if use_tls else {}),
+                socket_connect_timeout=cfg.socket_connect_timeout,  # connect still has a deadline
+                socket_keepalive=cfg.socket_keepalive,
+                health_check_interval=cfg.health_check_interval,
+                retry_on_timeout=cfg.retry_on_timeout,
+                retry_on_error=[RedisConnectionError, RedisTimeoutError],
+                retry=retry,
             )
             self._pubsub_client = aioredis.Redis(connection_pool=pool)
 

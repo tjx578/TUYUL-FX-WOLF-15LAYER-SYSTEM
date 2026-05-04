@@ -38,6 +38,41 @@ from redis.retry import Retry
 logger = logging.getLogger(__name__)
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float, *, minimum: float | None = None) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %.2f", name, raw, default)
+        return default
+    if minimum is not None:
+        return max(minimum, value)
+    return value
+
+
+def _env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s=%r; using default %d", name, raw, default)
+        return default
+    if minimum is not None:
+        return max(minimum, value)
+    return value
+
+
 @dataclass(frozen=True)
 class RedisConfig:
     """
@@ -55,12 +90,16 @@ class RedisConfig:
     password: str | None = None
     db: int = 0
     decode_responses: bool = True
-    max_connections: int = 20
-    socket_timeout: float = 10.0
+    max_connections: int = 50
+    socket_timeout: float = 15.0
     socket_connect_timeout: float = 10.0
     retry_on_timeout: bool = True
     health_check_interval: int = 30
     socket_keepalive: bool = True
+    retry_attempts: int = 5
+    retry_backoff_base: float = 1.0
+    retry_backoff_cap: float = 10.0
+    blocking_pool_timeout: float = 5.0
 
     @classmethod
     def from_env(cls) -> RedisConfig:
@@ -97,17 +136,41 @@ class RedisConfig:
         if password == "":
             password = None
 
-        # Allow env-var override for socket timeout (parity with storage/redis_client.py)
-        timeout_str = os.environ.get("REDIS_SOCKET_TIMEOUT_SEC")
-        socket_timeout = float(timeout_str) if timeout_str else cls.socket_timeout
+        # Pool and TCP tuning. These defaults intentionally prefer modest
+        # backpressure over failing fast when a short Redis burst checks out
+        # every pooled connection.
+        socket_timeout = _env_float("REDIS_SOCKET_TIMEOUT_SEC", cls.socket_timeout, minimum=1.0)
+        socket_connect_timeout = _env_float(
+            "REDIS_SOCKET_CONNECT_TIMEOUT_SEC",
+            cls.socket_connect_timeout,
+            minimum=1.0,
+        )
+        max_connections = _env_int("REDIS_MAX_CONNECTIONS", cls.max_connections, minimum=1)
+        health_check_interval = _env_int(
+            "REDIS_HEALTH_CHECK_INTERVAL_SEC",
+            cls.health_check_interval,
+            minimum=1,
+        )
+        retry_attempts = _env_int("REDIS_RETRY_ATTEMPTS", cls.retry_attempts, minimum=0)
+        retry_backoff_base = _env_float("REDIS_RETRY_BACKOFF_BASE_SEC", cls.retry_backoff_base, minimum=0.1)
+        retry_backoff_cap = _env_float("REDIS_RETRY_BACKOFF_CAP_SEC", cls.retry_backoff_cap, minimum=0.1)
+        blocking_pool_timeout = _env_float("REDIS_POOL_TIMEOUT_SEC", cls.blocking_pool_timeout, minimum=0.1)
 
         return cls(
             host=host,
             port=port,
             password=password,
             db=db,
+            max_connections=max_connections,
             socket_timeout=socket_timeout,
-            socket_connect_timeout=socket_timeout,
+            socket_connect_timeout=socket_connect_timeout,
+            retry_on_timeout=_env_bool("REDIS_RETRY_ON_TIMEOUT", cls.retry_on_timeout),
+            health_check_interval=health_check_interval,
+            socket_keepalive=_env_bool("REDIS_SOCKET_KEEPALIVE", cls.socket_keepalive),
+            retry_attempts=retry_attempts,
+            retry_backoff_base=retry_backoff_base,
+            retry_backoff_cap=retry_backoff_cap,
+            blocking_pool_timeout=blocking_pool_timeout,
         )
 
 
@@ -118,10 +181,10 @@ class RedisClientManager:
     Thread-safe singleton pattern for the connection pool.
     All methods are native async — no run_in_executor.
 
-    The pool is created with ``ConnectionPool.from_url()`` (same strategy as
-    storage/redis_client.py) so both clients always target the same Redis
-    instance.  Pool-tuning parameters (max_connections, timeouts) are sourced
-    from ``RedisConfig``.
+    The pool is created with ``BlockingConnectionPool.from_url()`` so callers
+    wait briefly for an available connection instead of failing immediately
+    during short bursts. Both async and sync clients resolve the same Redis
+    URL and expose matching pool-tuning environment variables.
     """
 
     def __init__(self) -> None:
@@ -143,15 +206,16 @@ class RedisClientManager:
             # but uses redis-py's native Retry mechanism which works at the
             # connection level (retries inside parse_response / send_command).
             retry = Retry(
-                backoff=ExponentialBackoff(cap=10, base=1),
-                retries=5,
+                backoff=ExponentialBackoff(cap=cfg.retry_backoff_cap, base=cfg.retry_backoff_base),
+                retries=cfg.retry_attempts,
                 supported_errors=(RedisConnectionError, RedisTimeoutError),
             )
 
-            self._pool = aioredis.ConnectionPool.from_url(
+            self._pool = aioredis.BlockingConnectionPool.from_url(
                 url,
                 decode_responses=cfg.decode_responses,
                 max_connections=cfg.max_connections,
+                timeout=cfg.blocking_pool_timeout,
                 socket_timeout=cfg.socket_timeout,
                 socket_connect_timeout=cfg.socket_connect_timeout,
                 retry_on_timeout=cfg.retry_on_timeout,
@@ -159,14 +223,22 @@ class RedisClientManager:
                 retry=retry,
                 health_check_interval=cfg.health_check_interval,
                 socket_keepalive=cfg.socket_keepalive,
-                **({"ssl": True} if use_tls else {}),
             )
             logger.info(
-                "Redis async pool created: %s:%d db=%d (native async, from_url, tls=%s, retry=3)",
+                (
+                    "Redis async pool created: %s:%d db=%d "
+                    "(blocking_pool, max=%d, wait=%.1fs, socket_timeout=%.1fs, "
+                    "connect_timeout=%.1fs, tls=%s, retries=%d)"
+                ),
                 cfg.host,
                 cfg.port,
                 cfg.db,
+                cfg.max_connections,
+                cfg.blocking_pool_timeout,
+                cfg.socket_timeout,
+                cfg.socket_connect_timeout,
                 use_tls,
+                cfg.retry_attempts,
             )
         return self._pool
 
