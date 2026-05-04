@@ -62,6 +62,12 @@ export function SignalBoardDetail({
                 Signal ID: {signal.signalId ?? "—"}
             </div>
 
+            {signal.throttledFrom && (
+                <div style={{ fontSize: 14 }}>
+                    Throttle: {signal.throttledFrom} -&gt; {signal.verdict}
+                </div>
+            )}
+
             {signal.scores && (
                 <div style={{ fontSize: 14 }}>
                     Wolf: {signal.scores.wolfScore ?? "—"} • TII: {signal.scores.tiiScore ?? "—"} •

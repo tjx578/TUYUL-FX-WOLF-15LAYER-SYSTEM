@@ -343,3 +343,25 @@ class TestBuildVerdictCachePayload:
         assert payload["edge_diagnostics"]["edge_status"] == "FAIL"
         assert payload["integrity_diagnostics"]["gate_status"] == "FAIL"
         assert payload["structure_diagnostics"]["missing_sources"] == ["SMC"]
+
+    def test_payload_preserves_signal_throttle_metadata(self):
+        from startup.analysis_loop import _build_verdict_cache_payload
+
+        result = {
+            "synthesis": {},
+            "l12_verdict": {
+                "verdict": "HOLD",
+                "confidence": "HIGH",
+                "throttled_from": "EXECUTE_BUY",
+            },
+            "execution_map": {},
+            "governance": {},
+            "errors": ["SIGNAL_THROTTLED"],
+        }
+
+        payload = _build_verdict_cache_payload("EURUSD", result)
+
+        assert payload["verdict"] == "HOLD"
+        assert payload["throttled_from"] == "EXECUTE_BUY"
+        assert payload["effective_reason"] == "SIGNAL_THROTTLED"
+        assert payload["errors"] == ["SIGNAL_THROTTLED"]

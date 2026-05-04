@@ -104,6 +104,10 @@ export interface L12Verdict {
   expires_at?: number;
   wolf_status?: string;
   session?: string;
+  errors?: string[];
+  effective_reason?: string;
+  throttled_from?: string;
+  last_hold_block_reason?: string;
 }
 
 // ─── SIGNAL ──────────────────────────────────────────────────

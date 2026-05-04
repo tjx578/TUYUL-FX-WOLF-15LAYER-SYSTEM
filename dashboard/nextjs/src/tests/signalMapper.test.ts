@@ -114,6 +114,20 @@ describe("mapVerdictToSignalViewModel", () => {
         expect(vm.holdReason).toBe("TII below threshold");
     });
 
+    it("surfaces engine signal throttle diagnostics", () => {
+        const verdict = makeVerdict({
+            verdict: VerdictType.HOLD,
+            throttled_from: "EXECUTE_BUY",
+            effective_reason: "SIGNAL_THROTTLED",
+            errors: ["SIGNAL_THROTTLED"],
+        });
+
+        const vm = mapVerdictToSignalViewModel(verdict);
+        expect(vm.throttledFrom).toBe("EXECUTE_BUY");
+        expect(vm.effectiveReason).toBe("SIGNAL_THROTTLED");
+        expect(vm.holdReason).toBe("Signal throttled from EXECUTE_BUY by engine throttle");
+    });
+
     it("returns null holdReason for non-HOLD verdict", () => {
         const verdict = makeVerdict({ verdict: VerdictType.EXECUTE });
         const vm = mapVerdictToSignalViewModel(verdict);

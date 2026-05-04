@@ -7,7 +7,17 @@ type ExtendedVerdict = L12Verdict & {
 };
 
 function deriveHoldReason(verdict: L12Verdict): string | null {
+    if (
+        verdict.throttled_from ||
+        verdict.effective_reason === "SIGNAL_THROTTLED" ||
+        verdict.errors?.includes("SIGNAL_THROTTLED")
+    ) {
+        return `Signal throttled from ${verdict.throttled_from ?? "EXECUTE"} by engine throttle`;
+    }
+
     if (verdict.verdict !== "HOLD") return null;
+
+    if (verdict.last_hold_block_reason) return verdict.last_hold_block_reason;
 
     const failedGates = verdict.gates?.filter((g) => !g.passed) ?? [];
     if (failedGates.length === 0) return "HOLD with no explicit failed gate";
@@ -59,5 +69,7 @@ export function mapVerdictToSignalViewModel(
             }
             : undefined,
         holdReason: deriveHoldReason(verdict),
+        effectiveReason: verdict.effective_reason,
+        throttledFrom: verdict.throttled_from,
     };
 }

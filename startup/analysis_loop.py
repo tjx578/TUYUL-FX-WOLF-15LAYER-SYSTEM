@@ -268,6 +268,12 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
     _raw_direction = _exec_dir if _exec_dir is not None else l12.get("direction")
     # Normalize direction: only BUY/SELL are valid, everything else → None
     _normalized_direction: str | None = _raw_direction if _raw_direction in ("BUY", "SELL") else None
+    errors = list(result.get("errors") or [])
+    throttled_from = l12.get("throttled_from")
+    effective_reason = l12.get("effective_reason")
+    if not effective_reason and (throttled_from or "SIGNAL_THROTTLED" in errors):
+        effective_reason = "SIGNAL_THROTTLED"
+
     payload: dict[str, Any] = {
         "symbol": pair,
         "signal_id": str(l12.get("signal_id") or f"SIG-{pair}-{uuid4().hex[:12].upper()}"),
@@ -290,9 +296,14 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
         "risk_reward_ratio": execution.get("rr_ratio"),
         "execution_map": execution_map,
         "governance": governance,
-        "errors": list(result.get("errors") or []),
+        "errors": errors,
         "last_hold_block_reason": hold_block_reason,
     }
+
+    if throttled_from:
+        payload["throttled_from"] = str(throttled_from)
+    if effective_reason:
+        payload["effective_reason"] = str(effective_reason)
 
     mta_diagnostics = _extract_mta_diagnostics(result)
     if mta_diagnostics is not None:

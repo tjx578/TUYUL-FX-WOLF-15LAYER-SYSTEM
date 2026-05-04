@@ -50,6 +50,20 @@ function getVerdictSnapshotPayload(
   return { verdicts };
 }
 
+function pickVerdictDiagnostics(source: Record<string, unknown>): Partial<L12Verdict> {
+  const errors = Array.isArray(source.errors)
+    ? source.errors.filter((item): item is string => typeof item === "string")
+    : undefined;
+
+  return {
+    errors,
+    effective_reason: typeof source.effective_reason === "string" ? source.effective_reason : undefined,
+    throttled_from: typeof source.throttled_from === "string" ? source.throttled_from : undefined,
+    last_hold_block_reason:
+      typeof source.last_hold_block_reason === "string" ? source.last_hold_block_reason : undefined,
+  };
+}
+
 /**
  * useLiveSignals
  *
@@ -132,6 +146,7 @@ export function useLiveSignals(
             wolf_status: verdict.wolf_status as string | undefined,
             scores: verdict.scores as L12Verdict["scores"],
             expires_at: verdict.expires_at as number | undefined,
+            ...pickVerdictDiagnostics(verdict),
           };
           setVerdicts((prev) => {
             const idx = prev.findIndex((v) => v.symbol === pair);
@@ -167,6 +182,7 @@ export function useLiveSignals(
               wolf_status: v.wolf_status as string | undefined,
               scores: v.scores as L12Verdict["scores"],
               expires_at: v.expires_at as number | undefined,
+              ...pickVerdictDiagnostics(v),
             })
           );
           // Snapshot replaces all — use latest timestamps per symbol
@@ -210,6 +226,7 @@ export function useLiveSignals(
               wolf_status: signalData.wolf_status as string | undefined,
               scores: signalData.scores as L12Verdict["scores"],
               expires_at: signalData.expires_at as number | undefined,
+              ...pickVerdictDiagnostics(signalData),
             };
             setVerdicts((prev) => {
               const idx = prev.findIndex((v) => v.symbol === symbol);
