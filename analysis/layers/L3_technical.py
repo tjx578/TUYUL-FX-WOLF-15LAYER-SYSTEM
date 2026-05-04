@@ -1327,4 +1327,5 @@ class L3TechnicalAnalyzer:
             "vpc_zones": [],
             # v6.2 data quality
             "data_quality": "INSUFFICIENT",
+            "candle_age_by_tf": {"H1": None, "H4": None, "D1": None},
         }
