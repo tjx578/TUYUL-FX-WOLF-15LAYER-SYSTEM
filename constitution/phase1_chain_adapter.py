@@ -28,7 +28,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol, cast
 
 try:
     from loguru import logger
@@ -36,11 +36,19 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 
+class _ExceptionLogger(Protocol):
+    def error(self, message: str, *args: object, **kwargs: object) -> None: ...
+
+
+class _LoguruOptCallable(Protocol):
+    def __call__(self, *args: object, **kwargs: object) -> _ExceptionLogger: ...
+
+
 def _log_exception(message: str, exc: Exception) -> None:
     """Log exceptions correctly with either Loguru or stdlib logging."""
     opt = getattr(logger, "opt", None)
     if callable(opt):
-        opt(exception=exc).error(message)  # type: ignore[attr-defined]
+        cast(_LoguruOptCallable, opt)(exception=exc).error(message)
         return
     logger.error(message, exc_info=True)
 
