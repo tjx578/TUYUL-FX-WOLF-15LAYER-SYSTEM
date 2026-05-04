@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from execution.broker_executor import BrokerExecutor
+from execution.broker_executor import BrokerExecutor, ExecutionResult
 from execution.ea_manager import EAManager
 
 router = APIRouter(prefix="/api/v1/execution", tags=["execution"])
@@ -50,6 +50,8 @@ async def get_result(request_id: str) -> dict:
     result = _ea_manager.get_result(request_id)
     if not result:
         raise HTTPException(status_code=404, detail="Execution result not found")
+    # Type checker now knows result is ExecutionResult
+    assert isinstance(result, ExecutionResult)
     return {
         "request_id": result.request_id,
         "success": result.success,
@@ -67,6 +69,8 @@ async def cancel_order(req: CancelRequest) -> dict:
         ticket=req.ticket,
         symbol=req.symbol,
     )
+    # Type checker now knows result is ExecutionResult
+    assert isinstance(result, ExecutionResult)
     if not result.success:
         raise HTTPException(status_code=502, detail=result.error_msg)
     return {"success": True, "ticket": result.ticket, "request_id": result.request_id}

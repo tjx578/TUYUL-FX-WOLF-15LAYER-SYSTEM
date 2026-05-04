@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import constitution.phase1_chain_adapter as phase1_chain_adapter_module
 from constitution.phase1_chain_adapter import (
     ChainStatus,
     Phase1ChainAdapter,
@@ -226,6 +227,36 @@ class TestChainL3Failure:
         assert result.status == ChainStatus.FAIL
         assert result.continuation_allowed is True
         assert result.failed_at == "L3"
+
+    def test_l3_exception_log_interpolates_exception(self, monkeypatch):
+        messages: list[str] = []
+
+        class _FakeLogger:
+            def error(self, message: str, *args, **kwargs) -> None:
+                messages.append(message)
+                assert args == ()
+
+            def warning(self, message: str, *args, **kwargs) -> None:
+                messages.append(message)
+                assert args == ()
+
+            def info(self, message: str, *args, **kwargs) -> None:
+                messages.append(message)
+                assert args == ()
+
+        monkeypatch.setattr(phase1_chain_adapter_module, "logger", _FakeLogger())
+
+        adapter = Phase1ChainAdapter(
+            l1_callable=lambda sym: _l1_pass(),
+            l2_callable=lambda sym: _l2_pass(),
+            l3_callable=lambda sym: (_ for _ in ()).throw(RuntimeError("L3 boom")),
+        )
+
+        result = adapter.execute("EURUSD")
+
+        assert result.failed_at == "L3"
+        assert any("[Phase1] L3 raised: RuntimeError: L3 boom" in msg for msg in messages)
+        assert not any("%s" in msg for msg in messages)
 
 
 # ═══════════════════════════════════════════════════════════════

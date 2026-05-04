@@ -36,6 +36,15 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 
+def _log_exception(message: str, exc: Exception) -> None:
+    """Log exceptions correctly with either Loguru or stdlib logging."""
+    opt = getattr(logger, "opt", None)
+    if callable(opt):
+        opt(exception=exc).error(message)
+        return
+    logger.error(message, exc_info=True)
+
+
 def _emit_canary_event(message: str) -> None:
     """Promote canary sentinel logs in production so Railway captures them."""
     app_env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
@@ -183,7 +192,7 @@ class Phase1ChainAdapter:
         try:
             l1 = self._l1(symbol)
         except Exception as exc:
-            logger.error("[Phase1] L1 raised: %s: %s", type(exc).__name__, exc, exc_info=True)
+            _log_exception(f"[Phase1] L1 raised: {type(exc).__name__}: {exc}", exc)
             errors.append(f"L1_EXCEPTION:{type(exc).__name__}")
             worst_status = ChainStatus.FAIL
             failed_at = failed_at or "L1"
@@ -207,11 +216,8 @@ class Phase1ChainAdapter:
             if not l1_blockers and not any("L1_EXCEPTION" in e for e in errors):
                 errors.append("L1_BLOCKER:UNCLASSIFIED_FAIL")
             logger.warning(
-                "[Phase1] L1 FAIL | symbol=%s status=%s blockers=%s warnings=%s (chain continues)",
-                symbol,
-                l1_status,
-                l1_blockers,
-                l1_warnings,
+                f"[Phase1] L1 FAIL | symbol={symbol} status={l1_status} blockers={l1_blockers} "
+                f"warnings={l1_warnings} (chain continues)"
             )
 
         # ── Step 2: L2 (always runs) ─────────────────────────
@@ -219,7 +225,7 @@ class Phase1ChainAdapter:
         try:
             l2 = self._l2(symbol)
         except Exception as exc:
-            logger.error("[Phase1] L2 raised: %s: %s", type(exc).__name__, exc, exc_info=True)
+            _log_exception(f"[Phase1] L2 raised: {type(exc).__name__}: {exc}", exc)
             errors.append(f"L2_EXCEPTION:{type(exc).__name__}")
             worst_status = ChainStatus.FAIL
             failed_at = failed_at or "L2"
@@ -242,11 +248,8 @@ class Phase1ChainAdapter:
             if not l2_blockers and not any("L2_EXCEPTION" in e for e in errors):
                 errors.append("L2_BLOCKER:UNCLASSIFIED_FAIL")
             logger.warning(
-                "[Phase1] L2 FAIL | symbol=%s status=%s blockers=%s warnings=%s (chain continues)",
-                symbol,
-                l2_status,
-                l2_blockers,
-                l2_warnings,
+                f"[Phase1] L2 FAIL | symbol={symbol} status={l2_status} blockers={l2_blockers} "
+                f"warnings={l2_warnings} (chain continues)"
             )
 
         # ── Step 3: L3 (always runs, with L2 injection) ──────
@@ -257,7 +260,7 @@ class Phase1ChainAdapter:
         try:
             l3 = self._l3(symbol)
         except Exception as exc:
-            logger.error("[Phase1] L3 raised: %s: %s", type(exc).__name__, exc, exc_info=True)
+            _log_exception(f"[Phase1] L3 raised: {type(exc).__name__}: {exc}", exc)
             errors.append(f"L3_EXCEPTION:{type(exc).__name__}")
             worst_status = ChainStatus.FAIL
             failed_at = failed_at or "L3"
@@ -287,11 +290,8 @@ class Phase1ChainAdapter:
             if not l3_blockers and not any("L3_EXCEPTION" in e for e in errors):
                 errors.append("L3_BLOCKER:UNCLASSIFIED_FAIL")
             logger.warning(
-                "[Phase1] L3 FAIL | symbol=%s status=%s blockers=%s warnings=%s",
-                symbol,
-                l3_status,
-                l3_blockers,
-                l3_warnings,
+                f"[Phase1] L3 FAIL | symbol={symbol} status={l3_status} blockers={l3_blockers} "
+                f"warnings={l3_warnings}"
             )
 
         # ── Chain complete — always forward to L12 ───────────
@@ -299,28 +299,15 @@ class Phase1ChainAdapter:
         # failed_at records the first failure for diagnostics only.
         if worst_status == ChainStatus.FAIL:
             logger.warning(
-                "[Phase1] DEGRADED | symbol=%s failed_at=%s L1=%s L2=%s L3=%s "
-                "timing_ms=L1:%.1f/L2:%.1f/L3:%.1f (forwarding to L12)",
-                symbol,
-                failed_at,
-                l1_status,
-                l2_status,
-                l3_status,
-                timing.get("L1", 0),
-                timing.get("L2", 0),
-                timing.get("L3", 0),
+                f"[Phase1] DEGRADED | symbol={symbol} failed_at={failed_at} L1={l1_status} "
+                f"L2={l2_status} L3={l3_status} timing_ms=L1:{timing.get('L1', 0):.1f}/"
+                f"L2:{timing.get('L2', 0):.1f}/L3:{timing.get('L3', 0):.1f} (forwarding to L12)"
             )
         else:
             logger.info(
-                "[Phase1] %s | symbol=%s L1=%s L2=%s L3=%s timing_ms=L1:%.1f/L2:%.1f/L3:%.1f",
-                worst_status.value,
-                symbol,
-                l1_status,
-                l2_status,
-                l3_status,
-                timing.get("L1", 0),
-                timing.get("L2", 0),
-                timing.get("L3", 0),
+                f"[Phase1] {worst_status.value} | symbol={symbol} L1={l1_status} L2={l2_status} "
+                f"L3={l3_status} timing_ms=L1:{timing.get('L1', 0):.1f}/"
+                f"L2:{timing.get('L2', 0):.1f}/L3:{timing.get('L3', 0):.1f}"
             )
 
         _emit_canary_event(
@@ -390,7 +377,7 @@ class Phase1ChainAdapter:
             l1_result_obj = evaluate_l1_constitutional(l1_inp)
             l1 = l1_result_obj.to_dict()
         except Exception as exc:
-            logger.error("[Phase1.run] L1 raised: %s", exc, exc_info=True)
+            _log_exception(f"[Phase1.run] L1 raised: {type(exc).__name__}: {exc}", exc)
             errors.append(f"L1_EXCEPTION:{type(exc).__name__}")
             return ChainResult(
                 status=ChainStatus.FAIL,
@@ -436,7 +423,7 @@ class Phase1ChainAdapter:
                 ),
             )
         except Exception as exc:
-            logger.error("[Phase1.run] L2 raised: %s", exc, exc_info=True)
+            _log_exception(f"[Phase1.run] L2 raised: {type(exc).__name__}: {exc}", exc)
             errors.append(f"L2_EXCEPTION:{type(exc).__name__}")
             return ChainResult(
                 status=ChainStatus.FAIL,
@@ -484,7 +471,7 @@ class Phase1ChainAdapter:
                 ),
             )
         except Exception as exc:
-            logger.error("[Phase1.run] L3 raised: %s", exc, exc_info=True)
+            _log_exception(f"[Phase1.run] L3 raised: {type(exc).__name__}: {exc}", exc)
             errors.append(f"L3_EXCEPTION:{type(exc).__name__}")
             return ChainResult(
                 status=ChainStatus.FAIL,
