@@ -149,7 +149,9 @@ async def run_warmup(
 
 # ── Supplemental HTF fetch for stale-cache mode ──────────────────
 _SUPP_HTF_MIN_BARS: dict[str, int] = {
-    "H1": 20,
+    # L3 refuses analysis below 30 H1 bars, so stale-cache recovery must
+    # repair to at least that floor before the engine pipeline sees the pair.
+    "H1": 30,
     "H4": 10,
 }
 _SUPP_HTF_MAX_AGE_SEC: dict[str, float] = {

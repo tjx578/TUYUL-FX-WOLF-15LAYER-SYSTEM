@@ -36,6 +36,11 @@ def test_warmup_min_bars_requires_h1_h4_d1() -> None:
         )
 
 
+def test_warmup_h1_floor_matches_l3_requirement() -> None:
+    """The pipeline must not call L3 before L3 has enough H1 candles."""
+    assert WolfConstitutionalPipeline.WARMUP_MIN_BARS["H1"] >= 30
+
+
 # ── Engine _seed_from_redis H1 readiness check ─────────────────────
 
 

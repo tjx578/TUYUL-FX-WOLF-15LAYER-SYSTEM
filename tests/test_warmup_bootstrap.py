@@ -57,6 +57,46 @@ async def test_supplemental_htf_fetch_refreshes_stale_cache_even_with_enough_bar
 
 
 @pytest.mark.asyncio
+async def test_supplemental_htf_fetch_repairs_h1_below_l3_floor(monkeypatch: pytest.MonkeyPatch):
+    from ingest import warmup_bootstrap
+
+    fake_redis = AsyncMock()
+
+    async def _llen(key: str) -> int:
+        if "XAGUSD:H1" in key:
+            return 25
+        if "XAGUSD:H4" in key:
+            return 10
+        return 50
+
+    fake_redis.llen = AsyncMock(side_effect=_llen)
+    fake_redis.lrange = AsyncMock(return_value=[_serialized_candle(timedelta(minutes=30))])
+
+    fake_fetcher = MagicMock()
+    fake_fetcher.fetch = AsyncMock(
+        return_value=[
+            {
+                "symbol": "XAGUSD",
+                "timeframe": "H1",
+                "open": 30.0,
+                "high": 31.0,
+                "low": 29.5,
+                "close": 30.5,
+                "volume": 100.0,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        ]
+    )
+    fake_fetcher.context_bus = MagicMock()
+    monkeypatch.setattr(warmup_bootstrap, "FinnhubCandleFetcher", MagicMock(return_value=fake_fetcher))
+
+    result = await warmup_bootstrap.supplemental_htf_fetch(fake_redis, ["XAGUSD"])
+
+    assert set(result["XAGUSD"]) == {"H1"}
+    fake_fetcher.fetch.assert_awaited_once_with("XAGUSD", "H1", 50)
+
+
+@pytest.mark.asyncio
 async def test_seed_redis_candle_history_updates_latest_candle_hash():
     from ingest import warmup_bootstrap
 

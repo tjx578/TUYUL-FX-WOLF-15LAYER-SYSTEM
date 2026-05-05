@@ -240,7 +240,7 @@ class WolfConstitutionalPipeline:
     # These are pipeline-gate minimums, intentionally lower than
     # config/finnhub.yaml min_bars (which are fetch targets).
     WARMUP_MIN_BARS: dict[str, int] = {
-        "H1": 20,
+        "H1": 30,
         "H4": 10,
         "D1": 5,
         "W1": 5,
