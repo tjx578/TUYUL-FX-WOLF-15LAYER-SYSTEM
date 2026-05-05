@@ -78,3 +78,45 @@ def test_l3_passes_htf_candle_age_to_governor(monkeypatch):
     assert candle_age_by_tf["D1"] is not None
     assert candle_age_by_tf["H4"] is not None
     assert candle_age_by_tf["H1"] is not None
+
+
+def test_l3_governor_bridge_tolerates_missing_candle_age(monkeypatch):
+    captured: dict[str, Any] = {}
+
+    class _FakeGovernor:
+        def evaluate(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "continuation_allowed": False,
+                "status": "FAIL",
+                "features": {},
+                "routing": {},
+                "warning_codes": [],
+                "blocker_codes": ["WARMUP_INSUFFICIENT"],
+            }
+
+    monkeypatch.setattr("analysis.layers.L3_constitutional.L3ConstitutionalGovernor", _FakeGovernor)
+
+    analyzer = L3TechnicalAnalyzer(l2_output={"valid": True, "continuation_allowed": True})
+    cast(Any, analyzer)._bus = _FakeBus()
+
+    raw_result: dict[str, Any] = {
+        "technical_score": 0,
+        "structure_validity": "WEAK",
+        "confluence_points": 0,
+        "trq3d_energy": 0.0,
+        "drift": 0.0,
+        "trend": "NEUTRAL",
+        "confidence": 0.0,
+        "structure_score": 0.0,
+        "valid": False,
+        "edge_probability": 0.0,
+        "data_quality": "INSUFFICIENT",
+    }
+
+    result = analyzer._apply_constitutional(raw_result, "XAGUSD")
+
+    l3_analysis = cast(dict[str, Any], captured["l3_analysis"])
+    assert captured["candle_age_seconds"] is None
+    assert l3_analysis["candle_age_by_tf"] == {"H1": None, "H4": None, "D1": None}
+    assert result["valid"] is False

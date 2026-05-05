@@ -23,7 +23,17 @@ from context.live_context_bus import LiveContextBus
 from core.redis_keys import candle_history, channel_candle, latest_candle
 from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 from ingest.finnhub_ws import is_forex_market_open
-from storage.candle_persistence import enqueue_candle_dict
+
+
+def enqueue_candle_dict(candle: dict[str, Any]) -> None:
+    """Best-effort persistence enqueue without making Postgres a hard ingest dependency."""
+
+    try:
+        from storage.candle_persistence import enqueue_candle_dict as _enqueue  # noqa: PLC0415
+
+        _enqueue(candle)
+    except Exception as exc:
+        logger.debug("[RestPoll] candle persistence enqueue skipped: {}", exc)
 
 
 class RestPollFallback:
@@ -64,6 +74,12 @@ class RestPollFallback:
         # Also refresh H1 during fallback
         self._refresh_h1: bool = bool(rest_poll_cfg.get("refresh_h1", True))
         self._h1_bars: int = int(rest_poll_cfg.get("h1_bars", 2))
+        # When WS is connected but a symbol is silent, H1/H4 alone can recover
+        # intraday analysis while D1/W1 remain stale.  Refresh HTF on a slower
+        # cadence to keep governance freshness from holding metals/crosses.
+        self._silent_refresh_htf: bool = bool(rest_poll_cfg.get("silent_refresh_htf", True))
+        self._silent_htf_min_interval_sec: float = float(rest_poll_cfg.get("silent_htf_min_interval_sec", 3600))
+        self._last_silent_htf_poll_ts: dict[str, float] = {}
         # Per-symbol silence check interval (when WS is up)
         self._silence_check_interval: float = float(rest_poll_cfg.get("silence_check_interval_sec", 60))
 
@@ -89,11 +105,12 @@ class RestPollFallback:
             )
 
         logger.info(
-            "RestPollFallback initialized: interval={:.1f}s, grace={:.1f}s, m15_bars={}, refresh_h1={}, symbols={}",
+            "RestPollFallback initialized: interval={:.1f}s, grace={:.1f}s, m15_bars={}, refresh_h1={}, silent_refresh_htf={}, symbols={}",
             self._poll_interval,
             self._grace_sec,
             self._bars,
             self._refresh_h1,
+            self._silent_refresh_htf,
             len(self._symbols),
         )
 
@@ -334,6 +351,29 @@ class RestPollFallback:
                 logger.warning("REST poll H1 failed for {}: {}", symbol, exc)
             except Exception as exc:
                 logger.error("REST poll H1 unexpected error for {}: {}", symbol, exc)
+
+        await self._maybe_refresh_silent_htf(symbol)
+
+    async def _maybe_refresh_silent_htf(self, symbol: str) -> None:
+        if not self._silent_refresh_htf:
+            return
+
+        now = time.time()
+        last_poll_ts = self._last_silent_htf_poll_ts.get(symbol, 0.0)
+        if now - last_poll_ts < self._silent_htf_min_interval_sec:
+            return
+
+        self._last_silent_htf_poll_ts[symbol] = now
+        for tf in ("D1", "W1"):
+            try:
+                candles = await self._fetch_candles(symbol, tf)
+                if candles:
+                    await self._save_to_redis(symbol, tf, candles)
+                    logger.info("[RestFallback] Silent {}: refreshed {} bars for {}", symbol, len(candles), tf)
+                else:
+                    logger.warning("[RestFallback] Silent {}: REST returned 0 {} bars", symbol, tf)
+            except Exception as exc:
+                logger.warning("[RestFallback] Silent {}: {} refresh failed: {}", symbol, tf, exc)
 
     async def stop(self) -> None:
         """Signal the fallback scheduler to stop."""

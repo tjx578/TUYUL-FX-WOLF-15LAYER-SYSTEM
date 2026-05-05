@@ -60,7 +60,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 
@@ -254,6 +254,24 @@ class L3TechnicalAnalyzer:
         if required_ages:
             return max(required_ages)
         return None
+
+    @staticmethod
+    def _normalize_candle_age_by_tf(raw_value: Any) -> dict[str, float | None]:
+        """Return a stable candle-age payload for the governor bridge."""
+
+        normalized: dict[str, float | None] = {"H1": None, "H4": None, "D1": None}
+        if not isinstance(raw_value, dict):
+            return normalized
+
+        for tf in normalized:
+            value = raw_value.get(tf)
+            if value is None:
+                continue
+            try:
+                normalized[tf] = float(value)
+            except (TypeError, ValueError):
+                normalized[tf] = None
+        return normalized
 
     # ── public API ─────────────────────────────────────────────────
 
@@ -507,7 +525,10 @@ class L3TechnicalAnalyzer:
         # Build L2 output for upstream legality check
         l2_output = self._l2_output if self._l2_output else {"valid": True, "continuation_allowed": True}
 
-        aggregate_candle_age = self._aggregate_candle_age(cast(dict[str, float | None], raw_result["candle_age_by_tf"]))
+        candle_age_by_tf = self._normalize_candle_age_by_tf(raw_result.get("candle_age_by_tf"))
+        raw_result = dict(raw_result)
+        raw_result["candle_age_by_tf"] = candle_age_by_tf
+        aggregate_candle_age = self._aggregate_candle_age(candle_age_by_tf)
 
         h1_bar_count = None
         try:

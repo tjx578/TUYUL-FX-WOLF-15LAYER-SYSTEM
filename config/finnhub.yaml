@@ -48,6 +48,8 @@ rest_poll_fallback:
   bars: 5                             # M15 bars per symbol per cycle (increased from 4 — short-term fix while WS is down)
   refresh_h1: true                    # Also fetch H1 + re-aggregate H4
   h1_bars: 2                          # H1 bars per symbol per cycle
+  silent_refresh_htf: true            # When one symbol is silent, also refresh D1/W1 on a slower cadence
+  silent_htf_min_interval_sec: 3600   # Rate-limit HTF recovery per silent symbol
 
 symbols:
   include_forex: true

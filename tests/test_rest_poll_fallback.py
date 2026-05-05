@@ -522,6 +522,7 @@ class TestPushCandlesToRedis:
                 redis_client=redis_mock,
             )
             poller._refresh_h1 = False
+            poller._silent_refresh_htf = False
 
             await poller._poll_symbol("EURUSD")
 
@@ -743,6 +744,41 @@ class TestHybridSilenceMode:
 
         # No fetches despite silence — market is closed
         mock_fetcher.fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_silent_symbol_refreshes_daily_weekly_on_slow_cadence(self):
+        """Silent-symbol recovery should refresh D1/W1, not only intraday bars."""
+        raw_candles = [_make_raw_finnhub_candle(1.09)]
+
+        with (
+            patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,
+            patch(
+                "ingest.rest_poll_fallback.load_finnhub",
+                return_value={
+                    "rest_poll_fallback": {
+                        "silent_refresh_htf": True,
+                        "silent_htf_min_interval_sec": 0,
+                    }
+                },
+            ),
+        ):
+            mock_fetcher = MockFetcher.return_value
+            mock_fetcher.fetch = AsyncMock(return_value=raw_candles)
+
+            from ingest.rest_poll_fallback import RestPollFallback
+
+            poller = RestPollFallback(
+                ws_connected_fn=lambda: True,
+                symbols=["XAGUSD"],
+                redis_client=AsyncMock(),
+            )
+
+            with patch.object(poller, "_save_to_redis", new=AsyncMock()) as save_mock:
+                await poller._maybe_refresh_silent_htf("XAGUSD")
+
+        call_timeframes = [call.args[1] for call in mock_fetcher.fetch.call_args_list]
+        assert call_timeframes == ["D1", "W1"]
+        assert save_mock.await_count == 2
 
 
 class TestFinnhubWebSocketIsConnected:

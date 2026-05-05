@@ -7,21 +7,34 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import os
+import time
 from datetime import datetime
 from typing import Any
 
 import orjson
 from loguru import logger
 
+from analysis.candle_freshness import candle_age_seconds
 from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from context.system_state import SystemState, SystemStateManager
-from core.redis_keys import CANDLE_HISTORY_SCAN, candle_history, channel_candle
+from core.redis_keys import CANDLE_HISTORY_SCAN, candle_history, channel_candle, latest_candle
 from infrastructure.circuit_breaker import CircuitBreaker
 from ingest.finnhub_candles import FinnhubCandleFetcher
 from ingest.redis_setup import RedisClient
 from ingest.service_metrics import health_probe
-from storage.candle_persistence import enqueue_candle_dict
+
+
+def enqueue_candle_dict(candle: dict[str, Any]) -> None:
+    """Best-effort persistence enqueue without blocking Redis candle freshness."""
+
+    try:
+        from storage.candle_persistence import enqueue_candle_dict as _enqueue  # noqa: PLC0415
+
+        _enqueue(candle)
+    except Exception as exc:
+        logger.debug("[Seed] candle persistence enqueue skipped: {}", exc)
 
 MAX_RETRIES = 10
 BASE_DELAY = 1.0
@@ -139,14 +152,66 @@ _SUPP_HTF_MIN_BARS: dict[str, int] = {
     "H1": 20,
     "H4": 10,
 }
+_SUPP_HTF_MAX_AGE_SEC: dict[str, float] = {
+    "H1": float(os.getenv("WOLF15_SUPP_HTF_H1_MAX_AGE_SEC", "7200")),
+    "H4": float(os.getenv("WOLF15_SUPP_HTF_H4_MAX_AGE_SEC", "18000")),
+}
 _SUPP_FETCH_BARS = 50
+
+
+async def _maybe_await(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+async def _latest_history_candle_age_seconds(redis: RedisClient, key: str) -> float | None:
+    lrange = getattr(redis, "lrange", None)
+    if not callable(lrange):
+        return None
+    try:
+        raw_items = await _maybe_await(lrange(key, -1, -1))
+    except Exception as exc:
+        logger.debug("[SuppHTF] Unable to inspect latest candle age for {}: {}", key, exc)
+        return None
+    if not raw_items:
+        return None
+
+    raw = raw_items[-1]
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+    try:
+        candle = orjson.loads(raw)
+    except Exception as exc:
+        logger.debug("[SuppHTF] Unable to decode latest candle for {}: {}", key, exc)
+        return None
+    if not isinstance(candle, dict):
+        return None
+    return candle_age_seconds(candle)
+
+
+async def _refresh_reason(redis: RedisClient, key: str, *, required: int, max_age_sec: float) -> str | None:
+    try:
+        have = await redis.llen(key)
+    except Exception:
+        have = 0
+
+    if have < required:
+        return f"bar_deficit:{have}<{required}"
+
+    age_sec = await _latest_history_candle_age_seconds(redis, key)
+    if age_sec is None:
+        return None
+    if age_sec > max_age_sec:
+        return f"stale_cache:{age_sec:.0f}s>{max_age_sec:.0f}s"
+    return None
 
 
 async def supplemental_htf_fetch(
     redis: RedisClient,
     enabled_symbols: list[str],
 ) -> dict[str, dict[str, list[dict[str, Any]]]]:
-    """Fetch H1/H4 bars via REST for symbols whose Redis counts are below threshold."""
+    """Fetch H1/H4 bars via REST when cached data is missing or stale."""
     if warmup_circuit.is_open():
         logger.warning("[SuppHTF] Circuit breaker OPEN — skipping supplemental fetch")
         return {}
@@ -156,17 +221,20 @@ async def supplemental_htf_fetch(
         missing_tfs: list[str] = []
         for tf, required in _SUPP_HTF_MIN_BARS.items():
             key = candle_history(symbol, tf)
-            try:
-                have = await redis.llen(key)
-            except Exception:
-                have = 0
-            if have < required:
+            reason = await _refresh_reason(
+                redis,
+                key,
+                required=required,
+                max_age_sec=_SUPP_HTF_MAX_AGE_SEC[tf],
+            )
+            if reason:
+                logger.warning("[SuppHTF] {}/{} refresh needed: {}", symbol, tf, reason)
                 missing_tfs.append(tf)
         if missing_tfs:
             deficit_map[symbol] = missing_tfs
 
     if not deficit_map:
-        logger.info("[SuppHTF] All symbols meet H1/H4 thresholds — no supplemental fetch needed")
+        logger.info("[SuppHTF] All symbols meet H1/H4 count and freshness thresholds — no supplemental fetch needed")
         return {}
 
     total_tasks = sum(len(tfs) for tfs in deficit_map.values())
@@ -228,8 +296,27 @@ async def push_candle_to_redis(
 
         pub_channel = channel_candle(symbol, timeframe)
         await redis.publish(pub_channel, candle_json)
+        await _update_latest_candle_hash(redis, str(symbol), str(timeframe), candle_json)
     except Exception as exc:
         logger.warning("[CandleBridge] RPUSH/PUBLISH failed {}: {}", key, exc)
+
+
+async def _update_latest_candle_hash(redis: RedisClient, symbol: str, timeframe: str, candle_json: str) -> None:
+    hset = getattr(redis, "hset", None)
+    if not callable(hset):
+        return
+    try:
+        await _maybe_await(
+            hset(
+                latest_candle(symbol, timeframe),
+                mapping={
+                    "data": candle_json,
+                    "last_seen_ts": str(time.time()),
+                },
+            )
+        )
+    except Exception as exc:
+        logger.warning("[Seed] latest_candle update failed for {}/{}: {}", symbol, timeframe, exc)
 
 
 async def seed_redis_candle_history(
@@ -294,6 +381,7 @@ async def seed_redis_candle_history(
 
                 if await redis.llen(temp_key) > 0:
                     await redis.rename(temp_key, key)
+                    await _update_latest_candle_hash(redis, symbol, timeframe, serialized[-1])
                     seeded += 1
                     logger.info(
                         "[Seed] {}: {} bars written (atomic swap)",
