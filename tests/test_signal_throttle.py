@@ -14,6 +14,7 @@ Validates:
 from __future__ import annotations
 
 import time
+from typing import Any
 from unittest.mock import MagicMock
 
 from constitution.signal_throttle import SignalThrottle
@@ -221,6 +222,70 @@ class TestPipelineSignalThrottle:
 
         assert l12_verdict["verdict"] == "HOLD"
         assert l12_verdict["throttled_from"] == "EXECUTE_SELL"
+
+    def test_throttled_execute_emits_structured_log_event(self, monkeypatch):
+        """Throttle checks must be visible in engine logs when EXECUTE is evaluated."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+
+        pipe = self._make_pipeline()
+        symbol = "LOG_THROTTLE_TEST"
+        for _ in range(3):
+            pipe._signal_throttle.record(symbol)
+
+        events: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            WolfConstitutionalPipeline,
+            "_emit_verdict_stream_event",
+            staticmethod(lambda **kwargs: events.append(kwargs)),
+        )
+
+        errors: list[str] = []
+        l12_verdict = {"verdict": "EXECUTE_BUY", "direction": "BUY"}
+        pipe._apply_effective_verdict_controls(
+            symbol=symbol,
+            synthesis={},
+            l12_verdict=l12_verdict,
+            legacy_verdict="EXECUTE_BUY",
+            safe_mode=False,
+            errors=errors,
+        )
+
+        throttle_events = [event for event in events if event["event"] == "signal_throttle_check"]
+        assert throttle_events
+        assert throttle_events[0]["authority"] == "SIGNAL_THROTTLE"
+        assert throttle_events[0]["extras"]["status"] == "throttled"
+        assert throttle_events[0]["extras"]["source_verdict"] == "EXECUTE_BUY"
+        assert l12_verdict["verdict"] == "HOLD"
+        assert "SIGNAL_THROTTLED" in errors
+
+    def test_allowed_execute_emits_structured_log_event(self, monkeypatch):
+        """Allowed EXECUTE verdicts should log the throttle check too."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+
+        pipe = self._make_pipeline()
+        events: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            WolfConstitutionalPipeline,
+            "_emit_verdict_stream_event",
+            staticmethod(lambda **kwargs: events.append(kwargs)),
+        )
+
+        errors: list[str] = []
+        l12_verdict = {"verdict": "EXECUTE_SELL", "direction": "SELL"}
+        pipe._apply_effective_verdict_controls(
+            symbol="LOG_ALLOWED_TEST",
+            synthesis={},
+            l12_verdict=l12_verdict,
+            legacy_verdict="EXECUTE_SELL",
+            safe_mode=False,
+            errors=errors,
+        )
+
+        throttle_events = [event for event in events if event["event"] == "signal_throttle_check"]
+        assert throttle_events
+        assert throttle_events[0]["extras"]["status"] == "allowed"
+        assert throttle_events[0]["extras"]["source_verdict"] == "EXECUTE_SELL"
+        assert "SIGNAL_THROTTLED" not in errors
 
 
 # =========================================================================

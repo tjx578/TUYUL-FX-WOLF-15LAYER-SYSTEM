@@ -2879,16 +2879,67 @@ class WolfConstitutionalPipeline:
         final_verdict = l12_verdict.get("verdict", "")
         v11_overlay_dict: dict[str, Any] | None = None
         if final_verdict.startswith("EXECUTE") and not safe_mode:
+            count_before = self._signal_throttle.get_count(symbol)
+            remaining_before = self._signal_throttle.get_remaining(symbol)
             if self._signal_throttle.is_throttled(symbol):
                 logger.warning(
-                    f"[Pipeline v8.0] {symbol} SIGNAL THROTTLED — verdict {final_verdict} downgraded to HOLD"
+                    f"[SignalThrottle] {symbol} THROTTLED — verdict {final_verdict} downgraded to HOLD "
+                    f"(count={count_before}, remaining={remaining_before})"
+                )
+                self._emit_verdict_stream_event(
+                    event="signal_throttle_check",
+                    symbol=symbol,
+                    authority="SIGNAL_THROTTLE",
+                    verdict_stream="post_l12_pre_v11",
+                    verdict="HOLD",
+                    direction=l12_verdict.get("direction"),
+                    extras={
+                        "status": "throttled",
+                        "source_verdict": final_verdict,
+                        "count_before": count_before,
+                        "remaining_before": remaining_before,
+                        "safe_mode": safe_mode,
+                    },
                 )
                 l12_verdict["verdict"] = "HOLD"
                 l12_verdict["throttled_from"] = final_verdict
                 errors.append("SIGNAL_THROTTLED")
                 SIGNAL_THROTTLED.labels(symbol=symbol).inc()
             else:
+                logger.info(
+                    f"[SignalThrottle] {symbol} allowed — verdict {final_verdict} "
+                    f"(count={count_before}, remaining={remaining_before})"
+                )
+                self._emit_verdict_stream_event(
+                    event="signal_throttle_check",
+                    symbol=symbol,
+                    authority="SIGNAL_THROTTLE",
+                    verdict_stream="post_l12_pre_v11",
+                    verdict=final_verdict,
+                    direction=l12_verdict.get("direction"),
+                    extras={
+                        "status": "allowed",
+                        "source_verdict": final_verdict,
+                        "count_before": count_before,
+                        "remaining_before": remaining_before,
+                        "safe_mode": safe_mode,
+                    },
+                )
                 self._signal_throttle.record(symbol)
+        elif final_verdict.startswith("EXECUTE") and safe_mode:
+            self._emit_verdict_stream_event(
+                event="signal_throttle_check",
+                symbol=symbol,
+                authority="SIGNAL_THROTTLE",
+                verdict_stream="post_l12_pre_v11",
+                verdict=final_verdict,
+                direction=l12_verdict.get("direction"),
+                extras={
+                    "status": "bypassed_safe_mode",
+                    "source_verdict": final_verdict,
+                    "safe_mode": safe_mode,
+                },
+            )
 
         try:
             from engines.v11 import V11PipelineHook  # noqa: PLC0415
