@@ -276,7 +276,7 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
 
     hydration_report: dict[str, object]
     if context_mode == "redis":
-        hydration_report = await _seed_from_redis(pairs)
+        hydration_report = await _seed_from_redis(pairs, warmup_min_bars)
     else:
         hydration_report = await _seed_from_finnhub(pairs)
 
@@ -299,6 +299,24 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
                 missing,
                 status.get("bars", {}),
                 status.get("required", {}),
+            )
+
+    if degraded_pairs:
+        topped_up = await _top_up_missing_from_finnhub(degraded_pairs, warmup_min_bars, bus)
+        if topped_up:
+            ready_count = 0
+            degraded_pairs = []
+            for pair in pairs:
+                status = bus.check_warmup(pair, warmup_min_bars)
+                if status.get("ready"):
+                    ready_count += 1
+                else:
+                    degraded_pairs.append(pair)
+            logger.info(
+                "[SEED] REST top-up repaired {} symbol/timeframe combos; warmup ready now {}/{} pairs",
+                topped_up,
+                ready_count,
+                len(pairs),
             )
 
     if degraded_pairs:
@@ -350,7 +368,10 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
     )
 
 
-async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
+async def _seed_from_redis(
+    pairs: list[str],
+    warmup_min_bars: dict[str, int] | None = None,
+) -> dict[str, object]:
     """Load candle history from Redis Lists into LiveContextBus.
 
     Retries with backoff when Redis has no data yet (race condition: engine
@@ -376,30 +397,33 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
             consumer = RedisConsumer(symbols=pairs, redis_client=redis_client)
             bus = LiveContextBus()
 
-            _h4_warmup = {"H1": 1, "H4": 5}
+            readiness_min_bars = dict(warmup_min_bars or {"H1": 1, "H4": 5})
             _htf_verify = {"D1": 1, "W1": 1, "MN": 1}
 
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
 
-                h1_count = sum(1 for pair in pairs if bus.check_warmup(pair, _h4_warmup).get("ready"))
+                # Synthesize H4/D1/W1/MN before readiness evaluation so the
+                # seed gate measures the same data the pipeline will consume.
+                _synthesize_h4_from_h1(bus, pairs)
+                _synthesize_d1_from_h1(bus, pairs)
+                _synthesize_w1_from_d1(bus, pairs)
+                _synthesize_mn_from_d1(bus, pairs)
 
-                if h1_count > 0:
+                h1_count = sum(1 for pair in pairs if bus.get_warmup_bar_count(pair, "H1") > 0)
+                ready_count = sum(1 for pair in pairs if bus.check_warmup(pair, readiness_min_bars).get("ready"))
+
+                if ready_count == len(pairs):
                     logger.info(
                         "[SEED] Redis candle history loaded into LiveContextBus "
-                        "({}/{} pairs with H1 data, attempt {}). "
+                        "({}/{} pairs ready, {}/{} pairs with H1 data, attempt {}). "
                         "M15 will arrive from tick stream after ~15 min.",
+                        ready_count,
+                        len(pairs),
                         h1_count,
                         len(pairs),
                         attempt,
                     )
-
-                    # Synthesize H4 from H1, D1 from H1, W1 from D1, MN from D1
-                    # when ingest didn't provide those timeframes
-                    _synthesize_h4_from_h1(bus, pairs)
-                    _synthesize_d1_from_h1(bus, pairs)
-                    _synthesize_w1_from_d1(bus, pairs)
-                    _synthesize_mn_from_d1(bus, pairs)
 
                     for pair in pairs:
                         htf_status = bus.check_warmup(pair, _htf_verify)
@@ -416,8 +440,11 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
 
                 if attempt < max_retries:
                     logger.warning(
-                        "[SEED] No candle data in Redis yet (H1={}, attempt {}/{}) — waiting {:.0f}s",
+                        "[SEED] Redis warmup not ready yet (ready={}/{} H1={}/{}, attempt {}/{}) — waiting {:.0f}s",
+                        ready_count,
+                        len(pairs),
                         h1_count,
+                        len(pairs),
                         attempt,
                         max_retries,
                         retry_delay,
@@ -425,7 +452,7 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
                     await asyncio.sleep(retry_delay)
 
             logger.critical(
-                "[SEED] Redis still empty after {} retries ({:.0f}s total wait). "
+                "[SEED] Redis warmup still incomplete after {} retries ({:.0f}s total wait). "
                 "Attempting PostgreSQL candle recovery before degraded mode.",
                 max_retries,
                 max_retries * retry_delay,
@@ -446,6 +473,86 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Redis: {exc}")
         return {"source": "redis", "seeded_pairs": 0, "attempts": 1, "status": "failed"}
+
+
+def _env_true(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+async def _top_up_missing_from_finnhub(
+    pairs: list[str],
+    warmup_min_bars: dict[str, int],
+    bus: LiveContextBus,
+) -> int:
+    """Best-effort REST repair for Redis seed shortfalls before analysis starts."""
+    if not _env_true("ENGINE_WARMUP_REST_TOPUP", True):
+        logger.info("[SEED] REST top-up disabled by ENGINE_WARMUP_REST_TOPUP")
+        return 0
+
+    try:
+        from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
+        if not finnhub_keys.available:
+            logger.warning("[SEED] REST top-up skipped — no Finnhub API key configured")
+            return 0
+
+        from ingest.finnhub_candles import FinnhubCandleFetcher  # noqa: PLC0415
+
+        fetcher = FinnhubCandleFetcher()
+    except Exception as exc:
+        logger.warning("[SEED] REST top-up unavailable: {}", exc)
+        return 0
+
+    repaired = 0
+    for pair in pairs:
+        status = bus.check_warmup(pair, warmup_min_bars)
+        missing = status.get("missing", {})
+        if not isinstance(missing, dict) or not missing:
+            continue
+
+        for timeframe in missing:
+            tf = str(timeframe).upper()
+            if tf == "M15":
+                continue
+            required = int(warmup_min_bars.get(tf, 0))
+            if required <= 0:
+                continue
+            have = bus.get_warmup_bar_count(pair, tf)
+            bars_to_fetch = max(required + 20, have + int(missing.get(timeframe, 0)) + 20)
+            try:
+                candles = await fetcher.fetch(pair, tf, bars_to_fetch)
+            except Exception as exc:
+                logger.warning("[SEED] REST top-up failed for {}:{}: {}", pair, tf, exc)
+                continue
+            if len(candles) <= have:
+                logger.warning(
+                    "[SEED] REST top-up returned insufficient {}:{} bars={} existing={} required={}",
+                    pair,
+                    tf,
+                    len(candles),
+                    have,
+                    required,
+                )
+                continue
+            bus.set_candle_history(pair, tf, candles)
+            repaired += 1
+            logger.info(
+                "[SEED] REST top-up repaired {}:{} — {} -> {} bars",
+                pair,
+                tf,
+                have,
+                len(candles),
+            )
+
+    if repaired:
+        _synthesize_h4_from_h1(bus, pairs)
+        _synthesize_d1_from_h1(bus, pairs)
+        _synthesize_w1_from_d1(bus, pairs)
+        _synthesize_mn_from_d1(bus, pairs)
+    return repaired
 
 
 async def _seed_from_finnhub(pairs: list[str]) -> dict[str, object]:
