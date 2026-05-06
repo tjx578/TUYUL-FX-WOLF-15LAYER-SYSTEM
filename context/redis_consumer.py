@@ -332,21 +332,20 @@ class RedisConsumer:
             except Exception:
                 logger.debug("RedisConsumer: latest_tick last_seen_ts warmup failed for %s", symbol, exc_info=True)
 
-            if best_last_seen is None:
-                for timeframe in WARMUP_TIMEFRAMES:
-                    try:
-                        raw_candle_ts = await self._redis.hget(latest_candle(symbol, timeframe), "last_seen_ts")
-                    except Exception:
-                        logger.debug(
-                            "RedisConsumer: latest_candle last_seen_ts warmup failed for %s:%s",
-                            symbol,
-                            timeframe,
-                            exc_info=True,
-                        )
-                        continue
-                    ts = self._coerce_last_seen_ts(raw_candle_ts)
-                    if ts is not None and (best_last_seen is None or ts > best_last_seen):
-                        best_last_seen = ts
+            for timeframe in WARMUP_TIMEFRAMES:
+                try:
+                    raw_candle_ts = await self._redis.hget(latest_candle(symbol, timeframe), "last_seen_ts")
+                except Exception:
+                    logger.debug(
+                        "RedisConsumer: latest_candle last_seen_ts warmup failed for %s:%s",
+                        symbol,
+                        timeframe,
+                        exc_info=True,
+                    )
+                    continue
+                ts = self._coerce_last_seen_ts(raw_candle_ts)
+                if ts is not None and (best_last_seen is None or ts > best_last_seen):
+                    best_last_seen = ts
 
             if best_last_seen is not None:
                 self._bus.record_feed_update(symbol, best_last_seen)

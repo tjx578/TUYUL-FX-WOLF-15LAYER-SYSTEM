@@ -211,8 +211,12 @@ class LiveContextBus:
         CONTEXT_MODE=redis where ``update_tick()`` is never called.
         """
         if symbol:
+            resolved_ts = last_seen_ts if last_seen_ts is not None else time.time()
             with self._lock:
-                self._feed_timestamps[str(symbol)] = last_seen_ts if last_seen_ts is not None else time.time()
+                sym = str(symbol)
+                current_ts = self._feed_timestamps.get(sym)
+                if current_ts is None or resolved_ts >= current_ts:
+                    self._feed_timestamps[sym] = resolved_ts
 
     def reset_state(self) -> None:
         """Clear all internal state. Used for test isolation."""

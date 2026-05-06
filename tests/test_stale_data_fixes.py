@@ -60,6 +60,33 @@ class TestFeedStalenessSecondsKeyFix:
         mock_redis.hget.assert_any_call("wolf15:latest_tick:EURUSD", "last_seen_ts")
 
     @pytest.mark.asyncio
+    async def test_uses_newer_candle_when_tick_is_stale(self) -> None:
+        """Dashboard/API freshness should not stay stale when candle ingest has refreshed."""
+        from api.allocation_router import _feed_staleness_seconds
+        from core.redis_keys import latest_candle, latest_tick
+
+        now = time.time()
+        stale_tick_ts = now - 8906.0
+        fresh_candle_ts = now - 5.0
+
+        async def _hget_side_effect(key: str, field: str):
+            if field != "last_seen_ts":
+                return None
+            if key == latest_tick("EURJPY"):
+                return str(stale_tick_ts).encode()
+            if key == latest_candle("EURJPY", "H1"):
+                return str(fresh_candle_ts).encode()
+            return None
+
+        mock_redis = AsyncMock()
+        mock_redis.hget = AsyncMock(side_effect=_hget_side_effect)
+
+        with patch("api.allocation_router.get_client", new=AsyncMock(return_value=mock_redis)):
+            result = await _feed_staleness_seconds("EURJPY")
+
+        assert result == pytest.approx(5.0, abs=1.0)
+
+    @pytest.mark.asyncio
     async def test_returns_inf_when_hash_key_missing(self) -> None:
         """Expired/missing key (None from HGET) → inf."""
         from api.allocation_router import _feed_staleness_seconds

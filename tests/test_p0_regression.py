@@ -248,6 +248,40 @@ class TestP0_3_LastSeenTs:  # noqa: N801
         assert candle is not None, "Candle must survive a 5-minute outage"
         assert candle["last_seen_ts"] == pytest.approx(five_min_ago, abs=1.0)
 
+    def test_authoritative_last_seen_uses_newer_candle_over_stale_tick(self):
+        """Freshness must use the newest tick/candle last_seen_ts, not stale tick first."""
+        from core.redis_keys import latest_candle, latest_tick
+        from state.data_freshness import read_authoritative_last_seen_ts
+
+        now = time.time()
+        stale_tick = now - 8906.0
+        fresh_candle = now - 15.0
+
+        class _Redis:
+            def hget(self, key: str, field: str) -> str | None:
+                if field != "last_seen_ts":
+                    return None
+                if key == latest_tick("EURJPY"):
+                    return str(stale_tick)
+                if key == latest_candle("EURJPY", "H1"):
+                    return str(fresh_candle)
+                return None
+
+        assert read_authoritative_last_seen_ts("EURJPY", redis_client=_Redis()) == pytest.approx(fresh_candle)
+
+    def test_record_feed_update_does_not_downgrade_to_older_payload(self):
+        """Delayed candle payload timestamps must not make a fresh feed look stale."""
+        from context.live_context_bus import LiveContextBus
+
+        bus = LiveContextBus()
+        bus.reset_state()
+        now = time.time()
+
+        bus.record_feed_update("EURJPY", now - 10.0)
+        bus.record_feed_update("EURJPY", now - 8906.0)
+
+        assert bus.get_feed_timestamp("EURJPY") == pytest.approx(now - 10.0)
+
     # -- freshness computed from timestamp, not key absence -----------------
 
     def test_freshness_from_last_seen_ts_not_key_absence(self):

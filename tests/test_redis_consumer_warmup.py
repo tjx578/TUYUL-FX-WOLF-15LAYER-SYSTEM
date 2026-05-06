@@ -150,6 +150,58 @@ class TestLoadCandleHistory:
         assert fresh_bus.get_feed_timestamp("EURUSD") == pytest.approx(expected_ts)
 
     @pytest.mark.asyncio
+    async def test_hydrates_feed_timestamp_from_newer_candle_when_tick_stale(
+        self, fresh_bus: LiveContextBus
+    ) -> None:
+        """Warmup should not keep a stale tick timestamp when candles refreshed later."""
+        symbols = ["EURJPY"]
+        h1_candles = [_make_candle("EURJPY", "H1", i) for i in range(3)]
+        serialized = [orjson.dumps(c) for c in h1_candles]
+        stale_tick_ts = 1714300000.5
+        fresh_candle_ts = stale_tick_ts + 8906.0
+
+        mock_redis = _make_mock_redis()
+
+        async def mock_scan(cursor: int, match: str | None = None, count: int | None = None) -> tuple[int, list[str]]:
+            if match and "candle_history" in match:
+                return 0, ["wolf15:candle_history:EURJPY:H1"]
+            return 0, []
+
+        async def mock_type(key: str) -> str:
+            if key == "wolf15:candle_history:EURJPY:H1":
+                return "list"
+            return "none"
+
+        async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
+            if key == "wolf15:candle_history:EURJPY:H1":
+                return serialized
+            return []
+
+        async def mock_hget(key: str, field: str) -> bytes | None:
+            if field != "last_seen_ts":
+                return None
+            if key == "wolf15:latest_tick:EURJPY":
+                return str(stale_tick_ts).encode()
+            if key == "wolf15:candle:EURJPY:H1":
+                return str(fresh_candle_ts).encode()
+            return None
+
+        mock_redis.scan = AsyncMock(side_effect=mock_scan)
+        mock_redis.type = AsyncMock(side_effect=mock_type)
+        mock_redis.lrange = AsyncMock(side_effect=mock_lrange)
+        mock_redis.hget = AsyncMock(side_effect=mock_hget)
+        mock_redis.hgetall = AsyncMock(return_value={})
+
+        consumer = RedisConsumer(
+            symbols=symbols,
+            redis_client=mock_redis,
+            context_bus=fresh_bus,
+        )
+        await consumer.load_candle_history()
+
+        assert fresh_bus.get_feed_timestamp("EURJPY") == pytest.approx(fresh_candle_ts)
+
+    @pytest.mark.asyncio
     async def test_loads_h1_candles_from_redis(self, fresh_bus: LiveContextBus) -> None:
         """Candles stored in Redis Lists are loaded into LiveContextBus."""
         symbols = ["EURUSD"]

@@ -697,11 +697,9 @@ class WolfConstitutionalPipeline:
         feed_age_ts: float | None = None
         if redis_client is not None:
             with contextlib.suppress(Exception):
-                from core.redis_keys import latest_tick as _latest_tick_key  # noqa: PLC0415
+                from state.data_freshness import read_authoritative_last_seen_ts  # noqa: PLC0415
 
-                raw_feed_ts = redis_client.hget(_latest_tick_key(symbol), "last_seen_ts")
-                if raw_feed_ts is not None:
-                    feed_age_ts = float(str(raw_feed_ts))
+                feed_age_ts = read_authoritative_last_seen_ts(symbol, redis_client=redis_client)
         if feed_age_ts is None:
             feed_age_ts = (
                 self._context_bus.get_feed_timestamp(symbol)

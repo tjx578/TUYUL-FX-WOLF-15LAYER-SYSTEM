@@ -10,7 +10,6 @@ from loguru import logger
 from core.metrics import VERDICT_PATH_EVENT_TOTAL
 from core.redis_keys import l12_verdict_meta
 from infrastructure.redis_client import get_client
-from journal.forensic_replay import append_replay_artifact
 from storage.redis_client import redis_client
 
 KEY_PREFIX = "L12:VERDICT:"
@@ -27,6 +26,18 @@ VERDICT_STREAM_MAXLEN = 1000
 VERDICT_TTL_SEC = 3600
 # Maximum entries retained in the verdict stream (ring-buffer behaviour)
 VERDICT_STREAM_MAXLEN = 1000
+
+
+def _append_replay_artifact(
+    artifact_type: str,
+    *,
+    correlation_id: str,
+    payload: dict[str, Any],
+) -> None:
+    with contextlib.suppress(Exception):
+        from journal.forensic_replay import append_replay_artifact  # noqa: PLC0415
+
+        append_replay_artifact(artifact_type, correlation_id=correlation_id, payload=payload)
 
 
 def _build_l2_mta_summary(data: dict[str, Any]) -> dict[str, Any] | None:
@@ -90,21 +101,20 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
         redis_client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
         logger.warning("[L12Cache] Failed to publish VERDICT_READY for {}", pair, exc_info=True)
-    with contextlib.suppress(Exception):
-        append_replay_artifact(
-            "verdict_provenance",
-            correlation_id=str(data_with_ts.get("signal_id") or pair),
-            payload={
-                "pair": pair,
-                "verdict": data_with_ts.get("verdict"),
-                "confidence": data_with_ts.get("confidence"),
-                "timestamp": data_with_ts.get("timestamp"),
-                "cached_at": data_with_ts.get("_cached_at"),
-                "scores": data_with_ts.get("scores"),
-                "gates": data_with_ts.get("gates"),
-                "l2_mta_summary": l2_mta_summary,
-            },
-        )
+    _append_replay_artifact(
+        "verdict_provenance",
+        correlation_id=str(data_with_ts.get("signal_id") or pair),
+        payload={
+            "pair": pair,
+            "verdict": data_with_ts.get("verdict"),
+            "confidence": data_with_ts.get("confidence"),
+            "timestamp": data_with_ts.get("timestamp"),
+            "cached_at": data_with_ts.get("_cached_at"),
+            "scores": data_with_ts.get("scores"),
+            "gates": data_with_ts.get("gates"),
+            "l2_mta_summary": l2_mta_summary,
+        },
+    )
 
 
 async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
@@ -149,21 +159,20 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
         await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
         logger.warning("[L12Cache] Failed to publish async VERDICT_READY for {}", pair, exc_info=True)
-    with contextlib.suppress(Exception):
-        append_replay_artifact(
-            "verdict_provenance",
-            correlation_id=str(data_with_ts.get("signal_id") or pair),
-            payload={
-                "pair": pair,
-                "verdict": data_with_ts.get("verdict"),
-                "confidence": data_with_ts.get("confidence"),
-                "timestamp": data_with_ts.get("timestamp"),
-                "cached_at": data_with_ts.get("_cached_at"),
-                "scores": data_with_ts.get("scores"),
-                "gates": data_with_ts.get("gates"),
-                "l2_mta_summary": l2_mta_summary,
-            },
-        )
+    _append_replay_artifact(
+        "verdict_provenance",
+        correlation_id=str(data_with_ts.get("signal_id") or pair),
+        payload={
+            "pair": pair,
+            "verdict": data_with_ts.get("verdict"),
+            "confidence": data_with_ts.get("confidence"),
+            "timestamp": data_with_ts.get("timestamp"),
+            "cached_at": data_with_ts.get("_cached_at"),
+            "scores": data_with_ts.get("scores"),
+            "gates": data_with_ts.get("gates"),
+            "l2_mta_summary": l2_mta_summary,
+        },
+    )
 
 
 def get_verdict(pair: str) -> dict[str, Any] | None:

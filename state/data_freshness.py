@@ -5,7 +5,7 @@ import os
 import time
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 FeedFreshnessState = Literal[
     "fresh",
@@ -96,11 +96,11 @@ def read_authoritative_last_seen_ts(
     *,
     candle_timeframes: tuple[str, ...] = _DEFAULT_LAST_SEEN_TIMEFRAMES,
 ) -> float | None:
-    """Read authoritative feed freshness from Redis-preserved ``last_seen_ts``."""
+    """Read the newest Redis-preserved ``last_seen_ts`` for tick or candles."""
     if not symbol:
         return None
 
-    client = redis_client
+    client: Any = redis_client
     if client is None:
         with contextlib.suppress(Exception):
             from storage.redis_client import RedisClient  # noqa: PLC0415
@@ -117,9 +117,6 @@ def read_authoritative_last_seen_ts(
     with contextlib.suppress(Exception):
         raw_tick_ts = client.hget(latest_tick(symbol), "last_seen_ts")
         best_last_seen = _coerce_last_seen_ts(raw_tick_ts)
-
-    if best_last_seen is not None:
-        return best_last_seen
 
     for timeframe in candle_timeframes:
         with contextlib.suppress(Exception):

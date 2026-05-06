@@ -34,15 +34,13 @@ from accounts.account_model import (
     RiskMode as DashRiskMode,
 )
 from accounts.risk_engine import RiskEngine  # noqa: F401
-from allocation.signal_service import SignalService
 from api.middleware.governance import enforce_write_policy
 from config_loader import load_pairs
+from core.redis_keys import latest_candle as _latest_candle_key
 from core.redis_keys import latest_tick as _latest_tick_key
 from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
-from journal.forensic_replay import append_replay_artifact
-from journal.trade_journal_service import trade_journal_automation_service
 from risk.kill_switch import GlobalKillSwitch
 from state.data_freshness import (
     FeedFreshnessSnapshot,
@@ -50,7 +48,6 @@ from state.data_freshness import (
     stale_threshold_config,
     stale_threshold_seconds,
 )
-from storage.trade_write_through import persist_trade_snapshot
 
 from .middleware.auth import verify_token
 
@@ -66,13 +63,14 @@ PRODUCER_REQUIRED_STATES = {"no_producer", "no_transport"}
 EXECUTION_SYMBOL_COOLDOWN_SECONDS = 30 * 60
 EXECUTION_MAX_CONCURRENT_POSITIONS = 3
 _ACTIVE_TRADE_STATUSES = {"INTENDED", "PENDING", "OPEN"}
+_FRESHNESS_CANDLE_TIMEFRAMES = ("M15", "H1", "H4", "D1", "W1", "MN")
 
 
 # ── In-memory fallback stores ─────────────────────────────────────────────────
 _signal_pool: dict[str, dict[str, Any]] = {}
 _trade_ledger: dict[str, dict[str, Any]] = {}
 _account_registry: dict[str, dict[str, Any]] = {}
-_signal_service: SignalService | None = None
+_signal_service: Any | None = None
 _kill_switch = GlobalKillSwitch()
 _confirm_lock = threading.Lock()
 _execution_idempotency = ExecutionIdempotencyLedger()
@@ -88,7 +86,35 @@ class _TradeJournalAutomationServiceProtocol(Protocol):
     def on_trade_closed(self, trade: dict[str, Any], reason: str) -> None: ...
 
 
-_journal_service = cast(_TradeJournalAutomationServiceProtocol, trade_journal_automation_service)
+class _NoopTradeJournalAutomationService:
+    def on_signal_taken(self, trade: dict[str, Any]) -> None:
+        return None
+
+    def on_trade_confirmed(self, trade: dict[str, Any]) -> None:
+        return None
+
+    def on_signal_skipped(self, signal_id: str, pair: str, reason: str) -> None:
+        return None
+
+    def on_trade_closed(self, trade: dict[str, Any], reason: str) -> None:
+        return None
+
+
+trade_journal_automation_service: _TradeJournalAutomationServiceProtocol | None = None
+
+
+def _get_journal_service() -> _TradeJournalAutomationServiceProtocol:
+    global trade_journal_automation_service
+    if trade_journal_automation_service is not None:
+        return trade_journal_automation_service
+    try:
+        from journal.trade_journal_service import trade_journal_automation_service as _service  # noqa: PLC0415
+
+        trade_journal_automation_service = cast(_TradeJournalAutomationServiceProtocol, _service)
+    except Exception:
+        logger.debug("Trade journal automation service unavailable", exc_info=True)
+        trade_journal_automation_service = _NoopTradeJournalAutomationService()
+    return trade_journal_automation_service
 
 ALLOC_REQUEST_STREAM = "allocation:request"
 IDEMPOTENCY_KEY_PREFIX = "idempotency:confirm:"
@@ -103,6 +129,8 @@ def _append_forensic_artifact(
     payload: dict[str, Any],
 ) -> None:
     with contextlib.suppress(Exception):
+        from journal.forensic_replay import append_replay_artifact  # noqa: PLC0415
+
         append_replay_artifact(
             artifact_type,
             correlation_id=correlation_id,
@@ -110,11 +138,13 @@ def _append_forensic_artifact(
         )
 
 
-def _get_signal_service() -> SignalService:
+def _get_signal_service() -> Any:
     """Lazily create SignalService so app boot does not require Redis."""
     global _signal_service
     if _signal_service is None:
         try:
+            from allocation.signal_service import SignalService  # noqa: PLC0415
+
             _signal_service = SignalService()
         except RuntimeError as exc:
             raise HTTPException(
@@ -353,6 +383,8 @@ async def _persist_trade_write_through(
 ) -> bool:
     """Best-effort PostgreSQL write-through for trade lifecycle changes."""
     with contextlib.suppress(Exception):
+        from storage.trade_write_through import persist_trade_snapshot  # noqa: PLC0415
+
         return await persist_trade_snapshot(
             trade,
             event_type=event_type,
@@ -476,11 +508,10 @@ async def _global_news_lock_enabled() -> bool:
 
 
 async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
-    """Return feed staleness based on latest tick heartbeat in Redis.
+    """Return feed staleness based on the newest tick/candle heartbeat in Redis.
 
-    Reads ``wolf15:latest_tick:{symbol}`` HSET keys written by
-    ``RedisContextBridge.write_tick()``.  Returns the staleness of the
-    *freshest* tick across all configured pairs (best-case metric).
+    Reads Redis ``last_seen_ts`` fields written by ``RedisContextBridge``.
+    Returns the staleness of the freshest update across all requested symbols.
     """
     try:
         redis = cast(Any, await get_client())
@@ -506,7 +537,7 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
             )
 
         best_last_seen_ts: float | None = None
-        has_tick = False
+        has_producer_signal = False
 
         for symbol in symbols:
             # P0: Read `last_seen_ts` hash field directly — this is the
@@ -532,14 +563,46 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
                 ts = float(payload.get("timestamp", 0.0) or 0.0)
 
             if ts <= 0:
-                continue
-            has_tick = True
-            if best_last_seen_ts is None or ts > best_last_seen_ts:
+                ts = 0.0
+            if ts > 0:
+                has_producer_signal = True
+                if best_last_seen_ts is None or ts > best_last_seen_ts:
+                    best_last_seen_ts = ts
+
+            for timeframe in _FRESHNESS_CANDLE_TIMEFRAMES:
+                candle_ts = 0.0
+                last_seen_raw = await redis.hget(_latest_candle_key(symbol, timeframe), "last_seen_ts")
+                if last_seen_raw:
+                    try:
+                        candle_ts = float(
+                            last_seen_raw
+                            if isinstance(last_seen_raw, str)
+                            else last_seen_raw.decode("utf-8")
+                        )
+                    except (TypeError, ValueError):
+                        candle_ts = 0.0
+
+                if candle_ts <= 0:
+                    data_raw = await redis.hget(_latest_candle_key(symbol, timeframe), "data")
+                    if data_raw:
+                        if isinstance(data_raw, bytes):
+                            data_raw = data_raw.decode("utf-8", errors="ignore")
+                        payload = _json.loads(data_raw) if isinstance(data_raw, str) else {}
+                        if isinstance(payload, dict):
+                            candle_ts = float(payload.get("last_seen_ts") or payload.get("timestamp") or 0.0)
+
+                if candle_ts <= 0:
+                    continue
+                has_producer_signal = True
+                if best_last_seen_ts is None or candle_ts > best_last_seen_ts:
+                    best_last_seen_ts = candle_ts
+
+            if ts > 0 and (best_last_seen_ts is None or ts > best_last_seen_ts):
                 best_last_seen_ts = ts
 
         return classify_feed_freshness(
             transport_ok=True,
-            has_producer_signal=has_tick,
+            has_producer_signal=has_producer_signal,
             last_seen_ts=best_last_seen_ts,
             now_ts=datetime.now(UTC).timestamp(),
             threshold_seconds=threshold_seconds,
@@ -843,7 +906,7 @@ async def _confirm_trade_internal(
         },
     )
 
-    _journal_service.on_trade_confirmed(trade)
+    _get_journal_service().on_trade_confirmed(trade)
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
 
@@ -1028,7 +1091,7 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
         "risk_reward_ratio": _build_risk_signal(req.pair, req.direction, req.entry, req.sl, req.tp).rr,
     }
     _get_signal_service().publish(signal_payload)
-    _journal_service.on_signal_taken(trade)
+    _get_journal_service().on_signal_taken(trade)
 
     # Push to live websocket feed (best-effort)
     with contextlib.suppress(Exception):
@@ -1134,7 +1197,7 @@ async def skip_signal(req: SkipSignalRequest) -> dict[str, Any]:
     import json
 
     await _redis_set(f"JOURNAL:{entry_id}", json.dumps(journal_entry), ex=604800)
-    _journal_service.on_signal_skipped(req.signal_id, req.pair, req.reason or "MANUAL_SKIP")
+    _get_journal_service().on_signal_skipped(req.signal_id, req.pair, req.reason or "MANUAL_SKIP")
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
 
@@ -1219,7 +1282,7 @@ async def close_trade(req: CloseTradeRequest) -> dict[str, Any]:
         topic="trade_closed",
         payload={"trade": trade},
     )
-    _journal_service.on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
+    _get_journal_service().on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
 
@@ -1365,7 +1428,7 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
         )
 
     if event_type in {"ORDER_CANCELLED", "ORDER_EXPIRED", "SYSTEM_VIOLATION"}:
-        _journal_service.on_trade_closed(trade, reason)
+        _get_journal_service().on_trade_closed(trade, reason)
 
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
