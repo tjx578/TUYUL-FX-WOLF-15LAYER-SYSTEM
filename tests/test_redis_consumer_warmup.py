@@ -150,12 +150,13 @@ class TestLoadCandleHistory:
         assert fresh_bus.get_feed_timestamp("EURUSD") == pytest.approx(expected_ts)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("symbol", ["EURJPY", "XAGUSD", "GBPUSD"])
     async def test_hydrates_feed_timestamp_from_newer_candle_when_tick_stale(
-        self, fresh_bus: LiveContextBus
+        self, fresh_bus: LiveContextBus, symbol: str
     ) -> None:
         """Warmup should not keep a stale tick timestamp when candles refreshed later."""
-        symbols = ["EURJPY"]
-        h1_candles = [_make_candle("EURJPY", "H1", i) for i in range(3)]
+        symbols = [symbol]
+        h1_candles = [_make_candle(symbol, "H1", i) for i in range(3)]
         serialized = [orjson.dumps(c) for c in h1_candles]
         stale_tick_ts = 1714300000.5
         fresh_candle_ts = stale_tick_ts + 8906.0
@@ -164,25 +165,25 @@ class TestLoadCandleHistory:
 
         async def mock_scan(cursor: int, match: str | None = None, count: int | None = None) -> tuple[int, list[str]]:
             if match and "candle_history" in match:
-                return 0, ["wolf15:candle_history:EURJPY:H1"]
+                return 0, [f"wolf15:candle_history:{symbol}:H1"]
             return 0, []
 
         async def mock_type(key: str) -> str:
-            if key == "wolf15:candle_history:EURJPY:H1":
+            if key == f"wolf15:candle_history:{symbol}:H1":
                 return "list"
             return "none"
 
         async def mock_lrange(key: str, start: int, end: int) -> list[bytes]:
-            if key == "wolf15:candle_history:EURJPY:H1":
+            if key == f"wolf15:candle_history:{symbol}:H1":
                 return serialized
             return []
 
         async def mock_hget(key: str, field: str) -> bytes | None:
             if field != "last_seen_ts":
                 return None
-            if key == "wolf15:latest_tick:EURJPY":
+            if key == f"wolf15:latest_tick:{symbol}":
                 return str(stale_tick_ts).encode()
-            if key == "wolf15:candle:EURJPY:H1":
+            if key == f"wolf15:candle:{symbol}:H1":
                 return str(fresh_candle_ts).encode()
             return None
 
@@ -199,7 +200,7 @@ class TestLoadCandleHistory:
         )
         await consumer.load_candle_history()
 
-        assert fresh_bus.get_feed_timestamp("EURJPY") == pytest.approx(fresh_candle_ts)
+        assert fresh_bus.get_feed_timestamp(symbol) == pytest.approx(fresh_candle_ts)
 
     @pytest.mark.asyncio
     async def test_loads_h1_candles_from_redis(self, fresh_bus: LiveContextBus) -> None:
