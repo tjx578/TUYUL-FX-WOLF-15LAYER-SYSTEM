@@ -486,20 +486,21 @@ async def create_finnhub_ws(
         payload = dict(tick)
         payload["symbol"] = symbol
         tick_json = orjson.dumps(payload).decode("utf-8")
-        await redis.xadd(
+        redis_client = cast(Any, redis)
+        await redis_client.xadd(
             tick_stream(symbol),
             {"data": tick_json},
             maxlen=TICK_STREAM_MAXLEN,
             approximate=True,
         )
-        await redis.hset(
+        await redis_client.hset(
             latest_tick(symbol),
             mapping={
                 "data": tick_json,
                 "last_seen_ts": str(time.time()),
             },
         )
-        await redis.publish(CHANNEL_TICK_UPDATES, tick_json)
+        await redis_client.publish(CHANNEL_TICK_UPDATES, tick_json)
 
     return FinnhubWebSocket(
         redis=redis,
