@@ -287,6 +287,41 @@ class TestPipelineSignalThrottle:
         assert throttle_events[0]["extras"]["source_verdict"] == "EXECUTE_SELL"
         assert "SIGNAL_THROTTLED" not in errors
 
+    def test_sovereignty_downgrade_emits_throttle_skipped_event(self, monkeypatch):
+        """When vault sovereignty downgrades EXECUTE before throttle, emit an explicit skip event."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+
+        pipe = self._make_pipeline()
+        events: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            WolfConstitutionalPipeline,
+            "_emit_verdict_stream_event",
+            staticmethod(lambda **kwargs: events.append(kwargs)),
+        )
+
+        errors: list[str] = []
+        l12_verdict = {
+            "verdict": "HOLD",
+            "direction": "BUY",
+            "sovereignty_downgrade": True,
+        }
+        pipe._apply_effective_verdict_controls(
+            symbol="VAULT_STALE_TEST",
+            synthesis={},
+            l12_verdict=l12_verdict,
+            legacy_verdict="EXECUTE_BUY",
+            safe_mode=False,
+            errors=errors,
+        )
+
+        throttle_events = [event for event in events if event["event"] == "signal_throttle_check"]
+        assert throttle_events
+        assert throttle_events[0]["extras"]["status"] == "skipped"
+        assert throttle_events[0]["extras"]["reason"] == "sovereignty_downgraded_to_hold"
+        assert throttle_events[0]["extras"]["source_verdict"] == "EXECUTE_BUY"
+        assert throttle_events[0]["extras"]["sovereignty_downgrade"] is True
+        assert "SIGNAL_THROTTLED" not in errors
+
 
 # =========================================================================
 # Prometheus metric test

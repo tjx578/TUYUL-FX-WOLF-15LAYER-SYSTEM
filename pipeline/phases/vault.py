@@ -77,12 +77,20 @@ def compute_vault_sync(
         provider_state = vault_report.provider_state or "UNKNOWN"
         provider_age = vault_report.provider_age_seconds
         provider_last_ts = vault_report.provider_last_ts or "UNKNOWN"
+        process_state = getattr(vault_report, "process_state", None) or "UNKNOWN"
+        process_age = getattr(vault_report, "process_age_seconds", None)
+        freshness_class = getattr(vault_report, "freshness_class", None) or "UNKNOWN"
+        feed_last_seen_ts = getattr(vault_report, "feed_last_seen_ts", None)
         provider_age_display = f"{provider_age:.2f}" if isinstance(provider_age, (int, float)) else "n/a"
+        process_age_display = f"{process_age:.2f}" if isinstance(process_age, (int, float)) else "n/a"
+        feed_last_seen_display = f"{feed_last_seen_ts:.3f}" if isinstance(feed_last_seen_ts, (int, float)) else "n/a"
         worst_age = vault_report.worst_symbol_age_seconds
         worst_age_display = f"{worst_age:.2f}" if worst_age != float("inf") else "inf"
         vault_diag = (
-            f"reason={vault_report.details} | freshness_formula={vault_report.freshness_formula} | "
+            f"reason={vault_report.details} | freshness_class={freshness_class} | "
+            f"freshness_formula={vault_report.freshness_formula} | feed_last_seen_ts={feed_last_seen_display} | "
             f"worst_symbol_age_seconds={worst_age_display} | symbols_fresh={vault_report.symbols_fresh}/{vault_report.symbols_total} | "
+            f"process_state={process_state} | process_age_seconds={process_age_display} | "
             f"provider_state={provider_state} | provider_age_seconds={provider_age_display} | "
             f"provider_last_ts={provider_last_ts} | redis_latency_ms={vault_report.redis_latency_ms:.0f} | "
             f"redis_roundtrip_ms={vault_report.redis_roundtrip_ms:.0f} | context_hydration_ms={vault_report.context_hydration_ms:.0f} | "

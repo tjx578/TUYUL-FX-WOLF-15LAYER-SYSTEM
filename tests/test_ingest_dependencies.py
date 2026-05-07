@@ -2,7 +2,7 @@
 Unit tests for ingest/dependencies.py - Finnhub WS factory and tick handling.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -263,6 +263,14 @@ class TestHandleTick:
 class TestCreateFinnhubWs:
     """Test create_finnhub_ws factory function."""
 
+    def setup_method(self) -> None:
+        """Reset unified filter state between tests."""
+        _last_prices.clear()
+        _last_timestamps.clear()
+        _last_exchange_ts_ms.clear()
+        _spike_filter.clear()
+        _unified_dedup.clear()
+
     @pytest.mark.asyncio
     async def test_factory_creates_instance_with_defaults(self) -> None:
         """Test factory creates FinnhubWebSocket with default symbols."""
@@ -292,3 +300,30 @@ class TestCreateFinnhubWs:
 
             call_kwargs = mock_ws_class.call_args[1]
             assert call_kwargs["symbols"] == custom_symbols
+
+    @pytest.mark.asyncio
+    async def test_factory_tick_handler_persists_latest_tick_with_ingest_redis(self) -> None:
+        """Accepted WS ticks must update latest_tick using the injected ingest Redis client."""
+        mock_redis = MagicMock()
+        mock_redis.xadd = AsyncMock()
+        mock_redis.hset = AsyncMock()
+        mock_redis.publish = AsyncMock()
+
+        with patch("ingest.dependencies.FinnhubWebSocket") as mock_ws_class:
+            await create_finnhub_ws(redis=mock_redis, symbols=["EURUSD"])
+
+            on_message = mock_ws_class.call_args.kwargs["on_message"]
+            await on_message(
+                {
+                    "type": "trade",
+                    "data": [{"s": "OANDA:EUR_USD", "p": 1.0842, "t": 1700000000000}],
+                }
+            )
+
+        mock_redis.xadd.assert_awaited_once()
+        assert mock_redis.xadd.await_args.args[0] == "wolf15:tick:EURUSD"
+        mock_redis.hset.assert_awaited_once()
+        assert mock_redis.hset.await_args.args[0] == "wolf15:latest_tick:EURUSD"
+        assert "last_seen_ts" in mock_redis.hset.await_args.kwargs["mapping"]
+        mock_redis.publish.assert_awaited_once()
+        assert mock_redis.publish.await_args.args[0] == "tick_updates"

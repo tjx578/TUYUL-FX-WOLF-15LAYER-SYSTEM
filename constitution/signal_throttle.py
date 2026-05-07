@@ -30,12 +30,16 @@ Usage::
 
 from __future__ import annotations
 
-import logging
 import threading
 import time
 from collections import defaultdict, deque
 
-logger = logging.getLogger("tuyul.constitution.throttle")
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+
+    logger = logging.getLogger("tuyul.constitution.throttle")
 
 # Defaults: max 3 EXECUTE signals per 5 minutes per symbol
 _DEFAULT_MAX_SIGNALS = 3
@@ -78,11 +82,8 @@ class SignalThrottle:
             throttled = count >= self.max_signals
             if throttled:
                 logger.warning(
-                    "[SignalThrottle] %s THROTTLED — %d signals in last %.0fs (max %d)",
-                    symbol,
-                    count,
-                    self.window_seconds,
-                    self.max_signals,
+                    f"[SignalThrottle] {symbol} THROTTLED — {count} signals in last "
+                    f"{self.window_seconds:.0f}s (max {self.max_signals})"
                 )
             return throttled
 

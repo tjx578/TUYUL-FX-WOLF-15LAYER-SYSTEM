@@ -17,10 +17,12 @@ class _FakeContextBus:
 
 
 class _FakeRedis:
-    def __init__(self, heartbeat_payload: bytes) -> None:
+    def __init__(self, heartbeat_payload: bytes, *, symbol: str = "EURUSD", last_seen_ts: float = 65.04) -> None:
         self._heartbeat_payload = heartbeat_payload
         self.client = self
-        self._last_seen: dict[tuple[str, str], bytes] = {("wolf15:latest_tick:EURUSD", "last_seen_ts"): b"65.04"}
+        self._last_seen: dict[tuple[str, str], bytes] = {
+            (f"wolf15:latest_tick:{symbol}", "last_seen_ts"): str(last_seen_ts).encode()
+        }
 
     def ping(self) -> bool:
         return True
@@ -33,13 +35,121 @@ class _FakeRedis:
 
 
 @pytest.mark.parametrize("symbol", ["EURUSD"])
+def test_vault_health_treats_live_window_as_nominal(monkeypatch: pytest.MonkeyPatch, symbol: str) -> None:
+    now_ts = 100.0
+    last_seen_ts = now_ts - 7.4
+    context_bus = _FakeContextBus({symbol: last_seen_ts})
+    redis_client = _FakeRedis(
+        f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(),
+        symbol=symbol,
+        last_seen_ts=last_seen_ts,
+    )
+    checker = VaultHealthChecker(redis_client=redis_client, context_bus=context_bus)
+
+    monotonic_values = iter([1.0, 1.001, 2.0, 2.001])
+    monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
+    monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
+
+    report = checker.check(symbols=[symbol])
+
+    assert report.feed_freshness == 1.0
+    assert report.freshness_state == "fresh"
+    assert report.freshness_class == "LIVE"
+    assert report.worst_symbol_age_seconds == pytest.approx(7.4, abs=0.01)
+    assert report.symbols_fresh == 1
+    assert report.symbols_total == 1
+    assert report.details == "All vault systems nominal"
+    assert report.is_healthy is True
+    assert report.should_block_analysis is False
+
+
+@pytest.mark.parametrize("symbol", ["EURUSD"])
+def test_vault_health_keeps_degraded_refreshing_nonblocking(
+    monkeypatch: pytest.MonkeyPatch, symbol: str
+) -> None:
+    now_ts = 200.0
+    last_seen_ts = now_ts - 60.0
+    context_bus = _FakeContextBus({symbol: last_seen_ts})
+    redis_client = _FakeRedis(
+        f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(),
+        symbol=symbol,
+        last_seen_ts=last_seen_ts,
+    )
+    checker = VaultHealthChecker(redis_client=redis_client, context_bus=context_bus)
+
+    monotonic_values = iter([1.0, 1.001, 2.0, 2.001])
+    monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
+    monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
+
+    report = checker.check(symbols=[symbol])
+
+    assert report.feed_freshness > 0.5
+    assert report.freshness_state == "fresh"
+    assert report.freshness_class == "DEGRADED_BUT_REFRESHING"
+    assert report.details == "FEED DEGRADED_BUT_REFRESHING (freshness=0.94)"
+    assert report.is_healthy is True
+    assert report.should_block_analysis is False
+
+
+@pytest.mark.parametrize("symbol", ["OANDA:EUR_USD", "EUR/USD", "EURUSDm"])
+def test_vault_health_normalizes_symbol_aliases(monkeypatch: pytest.MonkeyPatch, symbol: str) -> None:
+    now_ts = 100.0
+    last_seen_ts = now_ts - 5.0
+    context_bus = _FakeContextBus({"EURUSD": last_seen_ts})
+    redis_client = _FakeRedis(
+        f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(),
+        symbol="EURUSD",
+        last_seen_ts=last_seen_ts,
+    )
+    checker = VaultHealthChecker(redis_client=redis_client, context_bus=context_bus)
+
+    monotonic_values = iter([1.0, 1.001, 2.0, 2.001])
+    monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
+    monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
+
+    report = checker.check(symbols=[symbol])
+
+    assert report.feed_freshness == 1.0
+    assert report.freshness_class == "LIVE"
+    assert report.should_block_analysis is False
+
+
+def test_vault_health_empty_symbol_uses_enabled_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    now_ts = 100.0
+    last_seen_ts = now_ts - 4.0
+    context_bus = _FakeContextBus({"EURUSD": last_seen_ts})
+    redis_client = _FakeRedis(
+        f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(),
+        symbol="EURUSD",
+        last_seen_ts=last_seen_ts,
+    )
+    checker = VaultHealthChecker(redis_client=redis_client, context_bus=context_bus)
+
+    monotonic_values = iter([1.0, 1.001, 2.0, 2.001])
+    monkeypatch.setattr("config_loader.get_enabled_symbols", lambda: ["EURUSD"])
+    monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
+    monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
+
+    report = checker.check(symbols=[])
+
+    assert report.feed_freshness == 1.0
+    assert report.symbols_total == 1
+    assert report.freshness_class == "LIVE"
+    assert report.should_block_analysis is False
+
+
+@pytest.mark.parametrize("symbol", ["EURUSD"])
 def test_vault_health_report_exposes_freshness_and_provider_breakdown(
     monkeypatch: pytest.MonkeyPatch, symbol: str
 ) -> None:
-    now_ts = 100.0
-    last_seen_ts = now_ts - 34.96
+    now_ts = 1000.0
+    last_seen_ts = now_ts - 334.96
     context_bus = _FakeContextBus({symbol: last_seen_ts})
-    redis_client = _FakeRedis(f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode())
+    redis_client = _FakeRedis(
+        f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(),
+        symbol=symbol,
+        last_seen_ts=last_seen_ts,
+    )
     checker = VaultHealthChecker(redis_client=redis_client, context_bus=context_bus)
 
     monotonic_values = iter([1.0, 1.001, 2.0, 3.003])
@@ -49,18 +159,22 @@ def test_vault_health_report_exposes_freshness_and_provider_breakdown(
     report = checker.check(symbols=[symbol])
 
     assert report.feed_freshness == 0.0
-    assert report.worst_symbol_age_seconds == pytest.approx(34.96, abs=0.01)
-    assert report.last_tick_age_seconds == pytest.approx(34.96, abs=0.01)
+    assert report.freshness_state == "stale_preserved"
+    assert report.freshness_class == "STALE_PRESERVED"
+    assert report.freshness_threshold_seconds == pytest.approx(300.0)
+    assert report.feed_last_seen_ts == pytest.approx(last_seen_ts)
+    assert report.worst_symbol_age_seconds == pytest.approx(334.96, abs=0.01)
+    assert report.last_tick_age_seconds == pytest.approx(334.96, abs=0.01)
     assert report.symbols_fresh == 0
     assert report.symbols_total == 1
     assert report.provider_state == "STALE"
-    assert report.provider_age_seconds == pytest.approx(34.96, abs=0.01)
+    assert report.provider_age_seconds == pytest.approx(334.96, abs=0.01)
     assert report.provider_last_ts is not None
-    assert "1.0 - (34.96 / 10.0)" in report.freshness_formula
+    assert "age 334.96s > stale threshold 300.0s" in report.freshness_formula
     assert report.redis_latency_ms == pytest.approx(1003.0, abs=0.1)
     assert report.redis_roundtrip_ms == pytest.approx(1003.0, abs=0.1)
     assert report.context_hydration_ms >= 0.0
-    assert report.bus_read_age_ms == pytest.approx(34960.0, abs=20.0)
+    assert report.bus_read_age_ms == pytest.approx(334960.0, abs=20.0)
     assert report.should_block_analysis is True
 
 

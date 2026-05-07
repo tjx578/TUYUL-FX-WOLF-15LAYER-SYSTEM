@@ -64,9 +64,11 @@ def configure_loguru_logging(level: str | None = None) -> None:
     - WOLF15_LOG_BURST_LIMIT: max identical log lines per window (default: 20)
     - WOLF15_LOG_BURST_WINDOW_SEC: window length in seconds (default: 1)
     - WOLF15_LOG_BURST_ENABLED: enable/disable limiter (default: true)
+    - WOLF15_LOG_ENQUEUE: route logs through multiprocessing queue (default: false)
     """
     resolved_level = (level or os.getenv("WOLF15_LOG_LEVEL", "INFO")).upper().strip() or "INFO"
     burst_enabled = _env_bool("WOLF15_LOG_BURST_ENABLED", True)
+    enqueue_enabled = _env_bool("WOLF15_LOG_ENQUEUE", False)
     burst_limit = int(os.getenv("WOLF15_LOG_BURST_LIMIT", "20"))
     burst_window = float(os.getenv("WOLF15_LOG_BURST_WINDOW_SEC", "1.0"))
 
@@ -94,19 +96,35 @@ def configure_loguru_logging(level: str | None = None) -> None:
     # severity labelling in the log aggregator (the loguru text format itself
     # is not parsed for level by the collector).
     # WARNING_LEVEL_NO = 30 per loguru defaults.
-    _WARNING_LEVEL_NO = 30
+    _WARNING_LEVEL_NO = 30  # noqa: N806
 
-    loguru_logger.add(
+    def _add_handler(sink: Any, *, level_name: str, filter_fn: Any) -> None:
+        try:
+            loguru_logger.add(
+                sink,
+                format=log_format,
+                level=level_name,
+                filter=filter_fn,
+                enqueue=enqueue_enabled,
+            )
+        except (OSError, PermissionError):
+            if not enqueue_enabled:
+                raise
+            loguru_logger.add(
+                sink,
+                format=log_format,
+                level=level_name,
+                filter=filter_fn,
+                enqueue=False,
+            )
+
+    _add_handler(
         sys.stdout,
-        format=log_format,
-        level=resolved_level,
-        filter=lambda record: record["level"].no < _WARNING_LEVEL_NO and _allowed(record),
-        enqueue=True,
+        level_name=resolved_level,
+        filter_fn=lambda record: record["level"].no < _WARNING_LEVEL_NO and _allowed(record),
     )
-    loguru_logger.add(
+    _add_handler(
         sys.stderr,
-        format=log_format,
-        level="WARNING",
-        filter=lambda record: _allowed(record),
-        enqueue=True,
+        level_name="WARNING",
+        filter_fn=lambda record: _allowed(record),
     )

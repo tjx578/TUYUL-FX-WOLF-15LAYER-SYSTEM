@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from collections import deque
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
+import orjson
 from redis.asyncio import Redis
 
 from analysis.latency_tracker import LatencyTracker
@@ -21,12 +23,13 @@ from analysis.tick_filter import (
 )
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
+from core.redis_keys import CHANNEL_TICK_UPDATES, TICK_STREAM_MAXLEN, latest_tick, tick_stream
 from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
 from ingest.spread_estimator import estimate_spread
 from ingest.tick_dlq import get_dlq
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Coroutine
+    from collections.abc import Callable, Coroutine
 
 logger = logging.getLogger(__name__)
 
@@ -306,7 +309,7 @@ def _build_tick_handler(
     mapper: FinnhubSymbolMapper,
     allowed_symbols: set[str],
     candle_callback: Callable[[str, float, datetime, float], None] | None = None,
-    tick_redis_callback: Callable[[dict[str, Any]], None] | None = None,
+    tick_redis_callback: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None,
 ) -> Callable[[dict[str, Any]], Awaitable[None]]:
     """Create WS message handler that normalizes and writes ticks to context."""
     context_bus = LiveContextBus()
@@ -411,7 +414,15 @@ def _build_tick_handler(
 
                 # Persist tick to Redis for cross-container staleness tracking
                 if tick_redis_callback is not None:
-                    tick_redis_callback(normalized_tick)
+                    try:
+                        maybe_awaitable = tick_redis_callback(normalized_tick)
+                        if inspect.isawaitable(maybe_awaitable):
+                            await maybe_awaitable
+                    except Exception as exc:
+                        logger.warning(
+                            "Tick Redis persistence failed",
+                            extra={"symbol": internal_symbol, "error": str(exc)},
+                        )
 
                 _update_realtime_conditioning(
                     context_bus=context_bus,
@@ -466,21 +477,29 @@ async def create_finnhub_ws(
     external_symbols = [mapper.register(symbol) for symbol in internal_symbols]
 
     # Wire tick → Redis persistence so wolf15:latest_tick:{symbol} stays current.
-    # Uses RedisContextBridge.write_tick() which does XADD + HSET + PUBLISH.
-    from context.redis_context_bridge import RedisContextBridge  # noqa: PLC0415
-
-    bridge: RedisContextBridge | None = None
-    try:
-        bridge = RedisContextBridge()
-    except Exception:
-        logger.warning("Failed to create RedisContextBridge for tick persistence — skipping")
-
-    def _tick_to_redis(tick: dict[str, Any]) -> None:
-        if bridge is not None:
-            try:  # noqa: SIM105
-                bridge.write_tick(tick)
-            except Exception:
-                pass  # Best-effort; don't break tick processing
+    # Use the same async Redis connection that writes ingest heartbeats; this
+    # prevents a sidecar sync client/config from drifting away from ingest.
+    async def _tick_to_redis(tick: dict[str, Any]) -> None:
+        symbol = str(tick.get("symbol", "")).strip().upper()
+        if not symbol:
+            return
+        payload = dict(tick)
+        payload["symbol"] = symbol
+        tick_json = orjson.dumps(payload).decode("utf-8")
+        await redis.xadd(
+            tick_stream(symbol),
+            {"data": tick_json},
+            maxlen=TICK_STREAM_MAXLEN,
+            approximate=True,
+        )
+        await redis.hset(
+            latest_tick(symbol),
+            mapping={
+                "data": tick_json,
+                "last_seen_ts": str(time.time()),
+            },
+        )
+        await redis.publish(CHANNEL_TICK_UPDATES, tick_json)
 
     return FinnhubWebSocket(
         redis=redis,
@@ -488,7 +507,7 @@ async def create_finnhub_ws(
             mapper=mapper,
             allowed_symbols=allowed_symbols,
             candle_callback=candle_callback,
-            tick_redis_callback=_tick_to_redis if bridge else None,
+            tick_redis_callback=_tick_to_redis,
         ),
         symbols=external_symbols,
         on_connect=on_connect,

@@ -294,8 +294,20 @@ class WolfConstitutionalPipeline:
         self._l13_engine: L13ReflectiveEngine | None = None
         self._l15_engine: L15MetaSovereigntyEngine | None = None
 
-        # Signal rate throttle (max 3 EXECUTE per symbol in 5 minutes)
-        self._signal_throttle = SignalThrottle(max_signals=3, window_seconds=300)
+        # Signal rate throttle (default: max 3 EXECUTE per symbol in 5 minutes)
+        try:
+            throttle_max_signals = max(1, int(os.getenv("SIGNAL_THROTTLE_MAX_SIGNALS", "3")))
+        except (TypeError, ValueError):
+            throttle_max_signals = 3
+        throttle_window_seconds = self._parse_env_float("SIGNAL_THROTTLE_WINDOW_SECONDS", 300.0)
+        self._signal_throttle = SignalThrottle(
+            max_signals=throttle_max_signals,
+            window_seconds=throttle_window_seconds,
+        )
+        _emit_canary_event(
+            "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
+            f"max_signals={throttle_max_signals} window_seconds={throttle_window_seconds:.0f}"
+        )
 
         settings = CONFIG.get("settings", {})
         self._rqi_sigma_sec = float(settings.get("rqi_sigma_sec", settings.get("loop_interval_sec", 60)))
@@ -2904,7 +2916,7 @@ class WolfConstitutionalPipeline:
                 errors.append("SIGNAL_THROTTLED")
                 SIGNAL_THROTTLED.labels(symbol=symbol).inc()
             else:
-                logger.info(
+                _emit_canary_event(
                     f"[SignalThrottle] {symbol} allowed — verdict {final_verdict} "
                     f"(count={count_before}, remaining={remaining_before})"
                 )
@@ -2936,6 +2948,26 @@ class WolfConstitutionalPipeline:
                     "status": "bypassed_safe_mode",
                     "source_verdict": final_verdict,
                     "safe_mode": safe_mode,
+                },
+            )
+        else:
+            throttle_skip_reason = "non_execute_verdict"
+            if l12_verdict.get("sovereignty_downgrade"):
+                throttle_skip_reason = "sovereignty_downgraded_to_hold"
+            self._emit_verdict_stream_event(
+                event="signal_throttle_check",
+                symbol=symbol,
+                authority="SIGNAL_THROTTLE",
+                verdict_stream="post_l12_pre_v11",
+                verdict=final_verdict,
+                direction=l12_verdict.get("direction"),
+                extras={
+                    "status": "skipped",
+                    "reason": throttle_skip_reason,
+                    "source_verdict": legacy_verdict,
+                    "safe_mode": safe_mode,
+                    "sovereignty_downgrade": bool(l12_verdict.get("sovereignty_downgrade")),
+                    "throttled_from": l12_verdict.get("throttled_from"),
                 },
             )
 
