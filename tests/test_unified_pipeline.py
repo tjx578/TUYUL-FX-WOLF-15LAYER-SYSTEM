@@ -648,6 +648,19 @@ class TestBuildL12Synthesis:
 
         assert synthesis["execution"]["direction"] == "HOLD"
 
+    def test_synthesis_direction_holds_on_l2_l3_conflict(self):
+        """Opposite L2 HTF/MTA bias should suppress executable direction."""
+        layer_results = self._make_layer_results()
+        layer_results["L3"]["trend"] = "BEARISH"
+        layer_results["L2"]["htf_bias"] = "BULLISH"
+
+        synthesis = build_l12_synthesis(layer_results)
+
+        assert synthesis["execution"]["direction"] == "HOLD"
+        assert synthesis["execution"]["direction_source"] == "direction_conflict"
+        assert synthesis["bias"]["technical"] == "NEUTRAL"
+        assert synthesis["bias"]["raw_l3_trend"] == "BEARISH"
+
     def test_macro_regime_fields_in_synthesis(self):
         """MonthlyRegimeAnalyzer fields should flow into synthesis['macro']."""
         layer_results = self._make_layer_results()

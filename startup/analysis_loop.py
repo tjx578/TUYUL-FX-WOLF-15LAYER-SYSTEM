@@ -102,13 +102,19 @@ def _normalize_boundary_direction(
     """
     from schemas.direction import normalize_direction  # noqa: PLC0415
 
-    # Prefer execution direction, then L12 direction, then infer from verdict
-    for raw in (exec_direction, l12_direction):
-        result = normalize_direction(str(raw) if raw else None, str(verdict) if verdict else None)
+    verdict_text = str(verdict) if verdict else None
+
+    # L12 verdict is the authority.  If it is executable, infer direction
+    # from verdict first so stale/raw execution.direction cannot invert BUY/SELL.
+    result = normalize_direction(None, verdict_text)
+    if result is not None or verdict_text:
+        return result
+
+    for raw in (l12_direction, exec_direction):
+        result = normalize_direction(str(raw) if raw else None)
         if result is not None:
             return result
-    # Fallback: try verdict-only inference
-    return normalize_direction(None, str(verdict) if verdict else None)
+    return None
 
 
 def _build_degraded_verdict(pair: str, reason: str) -> dict[str, Any]:
@@ -264,10 +270,11 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
     timestamp = time.time()
     hold_block_reason = _extract_last_hold_block_reason(result)
 
-    _exec_dir = execution.get("direction")
-    _raw_direction = _exec_dir if _exec_dir is not None else l12.get("direction")
-    # Normalize direction: only BUY/SELL are valid, everything else → None
-    _normalized_direction: str | None = _raw_direction if _raw_direction in ("BUY", "SELL") else None
+    _normalized_direction = _normalize_boundary_direction(
+        execution.get("direction"),
+        l12.get("direction"),
+        l12.get("verdict"),
+    )
     errors = list(result.get("errors") or [])
     throttled_from = l12.get("throttled_from")
     effective_reason = l12.get("effective_reason")

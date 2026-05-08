@@ -20,6 +20,122 @@ _VOL_LEVEL_TO_REGIME: dict[str, str] = {
     "DEAD": "LOW_VOL",
 }
 
+_BUY_HINTS = frozenset({"BUY", "LONG", "BULL", "BULLISH", "TREND_UP", "UP"})
+_SELL_HINTS = frozenset({"SELL", "SHORT", "BEAR", "BEARISH", "TREND_DOWN", "DOWN"})
+
+
+def _direction_from_hint(value: Any) -> str | None:
+    text = str(value or "").strip().upper()
+    if not text:
+        return None
+    if text in _BUY_HINTS or "BULLISH" in text or text.endswith("_UP"):
+        return "BUY"
+    if text in _SELL_HINTS or "BEARISH" in text or text.endswith("_DOWN"):
+        return "SELL"
+    return None
+
+
+def _bias_from_direction(direction: str) -> str:
+    if direction == "BUY":
+        return "BULLISH"
+    if direction == "SELL":
+        return "BEARISH"
+    return "NEUTRAL"
+
+
+def _extract_per_tf_direction(l2: dict[str, Any]) -> str | None:
+    per_tf = l2.get("per_tf_bias")
+    if not isinstance(per_tf, dict):
+        return None
+
+    counts = {"BUY": 0, "SELL": 0}
+    for raw in per_tf.values():
+        if isinstance(raw, dict):
+            raw = raw.get("bias", raw.get("direction"))
+        direction = _direction_from_hint(raw)
+        if direction in counts:
+            counts[direction] += 1
+
+    if counts["BUY"] > counts["SELL"]:
+        return "BUY"
+    if counts["SELL"] > counts["BUY"]:
+        return "SELL"
+    return None
+
+
+def _extract_l2_direction(l2: dict[str, Any]) -> str | None:
+    for key in ("htf_bias", "trend_bias", "bias", "direction_consensus", "direction", "trend"):
+        direction = _direction_from_hint(l2.get(key))
+        if direction is not None:
+            return direction
+    return _extract_per_tf_direction(l2)
+
+
+def resolve_trade_direction(layer_results: dict[str, Any]) -> dict[str, Any]:
+    """Resolve executable direction from upstream analysis with conflict guard.
+
+    L3 trend remains the primary tactical source, but a direct HTF/MTA
+    contradiction from L2 suppresses execution instead of emitting the opposite
+    BUY/SELL.  This keeps L12 from producing a direction when the evidence plane
+    is split.
+    """
+    l1 = layer_results.get("L1", {}) if isinstance(layer_results.get("L1"), dict) else {}
+    l2 = layer_results.get("L2", {}) if isinstance(layer_results.get("L2"), dict) else {}
+    l3 = layer_results.get("L3", {}) if isinstance(layer_results.get("L3"), dict) else {}
+    l9 = layer_results.get("L9", {}) if isinstance(layer_results.get("L9"), dict) else {}
+
+    l3_direction = _direction_from_hint(l3.get("trend")) or _direction_from_hint(l3.get("direction"))
+    l2_direction = _extract_l2_direction(l2)
+    l1_direction = _direction_from_hint(l1.get("dominant_force")) or _direction_from_hint(l1.get("direction"))
+    l9_direction = _direction_from_hint(l9.get("smart_money_bias")) or _direction_from_hint(l9.get("structure"))
+
+    conflicts: list[str] = []
+    if l3_direction and l2_direction and l2_direction != l3_direction:
+        conflicts.append("L2_HTF_MTA")
+    if l3_direction and l9_direction and l9_direction != l3_direction:
+        conflicts.append("L9_SMC")
+
+    if not l3_direction:
+        return {
+            "direction": "HOLD",
+            "technical_bias": "NEUTRAL",
+            "reason": "no_l3_direction",
+            "conflicts": conflicts,
+            "sources": {
+                "l1": l1_direction,
+                "l2": l2_direction,
+                "l3": l3_direction,
+                "l9": l9_direction,
+            },
+        }
+
+    if conflicts:
+        return {
+            "direction": "HOLD",
+            "technical_bias": "NEUTRAL",
+            "reason": "direction_conflict",
+            "conflicts": conflicts,
+            "sources": {
+                "l1": l1_direction,
+                "l2": l2_direction,
+                "l3": l3_direction,
+                "l9": l9_direction,
+            },
+        }
+
+    return {
+        "direction": l3_direction,
+        "technical_bias": _bias_from_direction(l3_direction),
+        "reason": "l3_confirmed",
+        "conflicts": [],
+        "sources": {
+            "l1": l1_direction,
+            "l2": l2_direction,
+            "l3": l3_direction,
+            "l9": l9_direction,
+        },
+    }
+
 
 def _extract_constitutional_plane(layer_payload: dict[str, Any] | None) -> dict[str, Any]:
     """Return a normalized constitutional sub-payload when available.
@@ -89,9 +205,11 @@ def build_l12_synthesis(
     if exec_score == 0:
         exec_score = 6 if layer_results.get("L10", {}).get("position_ok", False) else 0
 
-    # -- Direction from L3 --
+    # -- Direction from upstream evidence plane --
     trend = layer_results.get("L3", {}).get("trend", "NEUTRAL")
-    direction = {"BULLISH": "BUY", "BEARISH": "SELL"}.get(trend, "HOLD")
+    direction_resolution = resolve_trade_direction(layer_results)
+    direction = str(direction_resolution["direction"])
+    technical_bias = str(direction_resolution["technical_bias"])
 
     # -- Execution details from L11 --
     entry_price = layer_results.get("L11", {}).get("entry_price", layer_results.get("L11", {}).get("entry", 0.0))
@@ -194,6 +312,8 @@ def build_l12_synthesis(
         },
         "execution": {
             "direction": direction,
+            "direction_source": direction_resolution["reason"],
+            "direction_diagnostics": direction_resolution,
             "entry_price": entry_price,
             "entry_zone": entry_zone,
             "stop_loss": stop_loss,
@@ -228,8 +348,9 @@ def build_l12_synthesis(
         },
         "bias": {
             "fundamental": "NEUTRAL" if not layer_results.get("L1", {}).get("valid") else trend,
-            "technical": trend,
+            "technical": technical_bias,
             "macro": layer_results.get("macro", "UNKNOWN"),
+            "raw_l3_trend": trend,
         },
         "cognitive": {
             "regime": layer_results.get("L1", {}).get("regime", "TREND"),

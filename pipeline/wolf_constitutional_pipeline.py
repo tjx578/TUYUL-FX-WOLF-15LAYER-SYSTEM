@@ -94,7 +94,7 @@ from pipeline.execution_map import build_execution_map
 from pipeline.phases.assembly import build_l14_json
 from pipeline.phases.gates import evaluate_9_gates
 from pipeline.phases.metrics_recorder import record_pipeline_metrics
-from pipeline.phases.synthesis import build_l12_synthesis
+from pipeline.phases.synthesis import build_l12_synthesis, resolve_trade_direction
 from pipeline.phases.vault import compute_vault_sync
 from pipeline.result import PipelineResult
 from pipeline.warmup_utils import normalize_warmup  # noqa: E402  # delayed import to avoid circular dependency
@@ -1815,13 +1815,16 @@ class WolfConstitutionalPipeline:
             logger.info(f"[Pipeline v8.0] Phase 4: Execution & Decision -- {symbol}")
             engines_invoked.extend(["L11RRAnalyzer", "L6RiskAnalyzer", "L10PositionAnalyzer", "MonthlyRegimeAnalyzer"])
 
-            trend = l3.get("trend", "NEUTRAL")
-            if trend == "BULLISH":
-                direction = "BUY"
-            elif trend == "BEARISH":
-                direction = "SELL"
-            else:
-                direction = "HOLD"
+            direction_resolution = resolve_trade_direction({"L1": l1, "L2": l2, "L3": l3, "L9": l9})
+            direction = str(direction_resolution["direction"])
+            logger.info(
+                "[Pipeline v8.0] {} direction_resolution direction={} reason={} sources={} conflicts={}",
+                symbol,
+                direction,
+                direction_resolution.get("reason"),
+                direction_resolution.get("sources"),
+                direction_resolution.get("conflicts"),
+            )
 
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
             assert self._macro is not None
@@ -2011,18 +2014,27 @@ class WolfConstitutionalPipeline:
             # intentionally skipped.  Exit early with a precise reason
             # instead of falling through to the SL/TP zero guard.
             if direction not in ("BUY", "SELL"):
+                direction_reason = str(direction_resolution.get("reason", "no_directional_bias"))
+                direction_conflicts = direction_resolution.get("conflicts", [])
                 logger.info(
-                    "[Pipeline v8.0] {} direction={} → NO_TRADE (no directional bias from L3)",
+                    "[Pipeline v8.0] {} direction={} → NO_TRADE (reason={} conflicts={})",
                     symbol,
                     direction,
+                    direction_reason,
+                    direction_conflicts,
                 )
                 result = _early_exit_with_map(
-                    ["no_directional_bias"],
+                    [direction_reason],
                     time.time() - start_time,
                 )
                 result["verdict"] = "NO_TRADE"
-                result["verdict_reason"] = f"No directional bias (direction={direction})"
-                result["l12_verdict"] = {"verdict": "NO_TRADE", "reason": "no_direction"}
+                result["verdict_reason"] = f"No executable direction (reason={direction_reason})"
+                result["direction_resolution"] = direction_resolution
+                result["l12_verdict"] = {
+                    "verdict": "NO_TRADE",
+                    "reason": direction_reason,
+                    "direction_resolution": direction_resolution,
+                }
                 return result
 
             # ── SL/TP zero guard ─────────────────────────────────

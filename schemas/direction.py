@@ -29,15 +29,17 @@ def normalize_direction(
     Returns:
         "BUY", "SELL", or None. Non-executable values always become None.
     """
-    d = (raw_direction or "").strip().upper()
-    if d in _VALID_DIRECTIONS:
-        return d
-
     v = (raw_verdict or "").strip().upper()
     if "EXECUTE_BUY" in v or "EXECUTE_REDUCED_RISK_BUY" in v:
         return "BUY"
     if "EXECUTE_SELL" in v or "EXECUTE_REDUCED_RISK_SELL" in v:
         return "SELL"
+    if v:
+        return None
+
+    d = (raw_direction or "").strip().upper()
+    if d in _VALID_DIRECTIONS:
+        return d
 
     # HOLD / NO_TRADE / NEUTRAL / ABORT / empty → no execution direction
     return None

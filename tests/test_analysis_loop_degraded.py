@@ -365,3 +365,44 @@ class TestBuildVerdictCachePayload:
         assert payload["throttled_from"] == "EXECUTE_BUY"
         assert payload["effective_reason"] == "SIGNAL_THROTTLED"
         assert payload["errors"] == ["SIGNAL_THROTTLED"]
+
+    def test_payload_direction_follows_execute_verdict_not_stale_execution_direction(self):
+        from startup.analysis_loop import _build_verdict_cache_payload
+
+        result = {
+            "synthesis": {
+                "execution": {
+                    "direction": "BUY",
+                    "entry_price": 1.1000,
+                    "stop_loss": 1.0950,
+                    "take_profit_1": 1.1100,
+                },
+            },
+            "l12_verdict": {
+                "verdict": "EXECUTE_REDUCED_RISK_SELL",
+                "confidence": "HIGH",
+                "direction": "SELL",
+            },
+            "execution_map": {},
+            "governance": {},
+            "errors": [],
+        }
+
+        payload = _build_verdict_cache_payload("EURUSD", result)
+
+        assert payload["direction"] == "SELL"
+
+    def test_payload_holds_do_not_leak_stale_execution_direction(self):
+        from startup.analysis_loop import _build_verdict_cache_payload
+
+        result = {
+            "synthesis": {"execution": {"direction": "BUY"}},
+            "l12_verdict": {"verdict": "HOLD", "confidence": "LOW", "direction": None},
+            "execution_map": {},
+            "governance": {},
+            "errors": [],
+        }
+
+        payload = _build_verdict_cache_payload("EURUSD", result)
+
+        assert payload["direction"] is None

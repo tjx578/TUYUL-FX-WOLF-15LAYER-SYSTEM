@@ -48,7 +48,11 @@ class TestNormalizeDirection:
     def test_no_trade_verdict_returns_none(self) -> None:
         assert normalize_direction(None, "NO_TRADE") is None
 
-    def test_raw_direction_takes_precedence(self) -> None:
-        # Valid direction should win over verdict inference
-        assert normalize_direction("BUY", "EXECUTE_SELL") == "BUY"
-        assert normalize_direction("SELL", "EXECUTE_BUY") == "SELL"
+    def test_execute_verdict_takes_precedence(self) -> None:
+        # L12 verdict is the authority when direction/verdict disagree.
+        assert normalize_direction("BUY", "EXECUTE_SELL") == "SELL"
+        assert normalize_direction("SELL", "EXECUTE_BUY") == "BUY"
+
+    def test_non_execute_verdict_suppresses_raw_direction(self) -> None:
+        assert normalize_direction("BUY", "HOLD") is None
+        assert normalize_direction("SELL", "NO_TRADE") is None
