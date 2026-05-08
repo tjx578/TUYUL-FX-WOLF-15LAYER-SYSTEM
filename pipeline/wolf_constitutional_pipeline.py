@@ -2917,6 +2917,7 @@ class WolfConstitutionalPipeline:
                 SIGNAL_THROTTLED.labels(symbol=symbol).inc()
             else:
                 self._signal_throttle.record(symbol)
+                self._signal_throttle.emit_allowed(symbol, final_verdict)
         elif final_verdict.startswith("EXECUTE") and safe_mode:
             self._emit_verdict_stream_event(
                 event="signal_throttle_check",

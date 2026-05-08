@@ -35,6 +35,8 @@ import threading
 import time
 from collections import defaultdict, deque
 
+__all__ = ["SignalThrottle"]
+
 # Defaults: max 3 EXECUTE signals per 5 minutes per symbol
 _DEFAULT_MAX_SIGNALS = 3
 _DEFAULT_WINDOW_SECONDS = 300.0
@@ -44,6 +46,12 @@ def _emit_throttle_error(message: str) -> None:
     """Emit throttle-limit events as plain stderr lines for platform severity."""
     sys.stderr.write(f"{message}\n")
     sys.stderr.flush()
+
+
+def _emit_throttle_info(message: str) -> None:
+    """Emit allowed throttle events as plain stdout lines for info severity."""
+    sys.stdout.write(f"{message}\n")
+    sys.stdout.flush()
 
 
 class SignalThrottle:
@@ -92,6 +100,10 @@ class SignalThrottle:
         with self._lock:
             self._purge(symbol)
             self._windows[symbol].append(time.time())
+
+    def emit_allowed(self, symbol: str, verdict: str) -> None:
+        """Emit a plain info event after an EXECUTE signal passes throttle."""
+        _emit_throttle_info(f"[SignalThrottle] {symbol} allowed — verdict {verdict}")
 
     def get_count(self, symbol: str) -> int:
         """Return the current signal count in the active window."""

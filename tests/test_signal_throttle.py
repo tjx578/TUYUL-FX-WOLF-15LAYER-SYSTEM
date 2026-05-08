@@ -14,7 +14,7 @@ Validates:
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 from constitution.signal_throttle import SignalThrottle
@@ -115,9 +115,17 @@ class TestSignalThrottle:
         assert t.is_throttled("XAUUSD") is True
         captured = capsys.readouterr()
         assert captured.out == ""
-        assert captured.err.splitlines() == [
-            "[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"
-        ]
+        assert captured.err.splitlines() == ["[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"]
+
+    def test_allowed_logs_plain_info_event(self, capsys):
+        """Allowed signals must reach the platform as plain stdout events."""
+        t = SignalThrottle(max_signals=3, window_seconds=300)
+
+        t.emit_allowed("NZDCHF", "EXECUTE_REDUCED_RISK_BUY")
+
+        captured = capsys.readouterr()
+        assert captured.out.splitlines() == ["[SignalThrottle] NZDCHF allowed — verdict EXECUTE_REDUCED_RISK_BUY"]
+        assert captured.err == ""
 
 
 # =========================================================================
@@ -266,25 +274,24 @@ class TestPipelineSignalThrottle:
         assert throttle_events == []
         assert l12_verdict["verdict"] == "HOLD"
         assert l12_verdict["throttled_from"] == "EXECUTE_BUY"
-        assert l12_verdict["signal_throttle"]["status"] == "throttled"
-        assert l12_verdict["signal_throttle"]["count"] == 3
-        assert l12_verdict["signal_throttle"]["remaining"] == 0
+        throttle_meta = cast(dict[str, Any], l12_verdict["signal_throttle"])
+        assert throttle_meta["status"] == "throttled"
+        assert throttle_meta["count"] == 3
+        assert throttle_meta["remaining"] == 0
         assert "SIGNAL_THROTTLED" in errors
 
-    def test_allowed_execute_records_without_visible_throttle_log(self, monkeypatch):
-        """Allowed EXECUTE verdicts should stay quiet and only update the window."""
-        import pipeline.wolf_constitutional_pipeline as pipeline_module
+    def test_allowed_execute_emits_plain_info_event(self, monkeypatch, capsys):
+        """Allowed EXECUTE verdicts should emit only the plain info event."""
         from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
         pipe = self._make_pipeline()
         events: list[dict[str, Any]] = []
-        messages: list[str] = []
-        monkeypatch.setattr(pipeline_module, "_emit_canary_event", lambda message: messages.append(message))
         monkeypatch.setattr(
             WolfConstitutionalPipeline,
             "_emit_verdict_stream_event",
             staticmethod(lambda **kwargs: events.append(kwargs)),
         )
+        capsys.readouterr()
 
         errors: list[str] = []
         l12_verdict = {"verdict": "EXECUTE_SELL", "direction": "SELL"}
@@ -298,8 +305,10 @@ class TestPipelineSignalThrottle:
         )
 
         throttle_events = [event for event in events if event["event"] == "signal_throttle_check"]
+        captured = capsys.readouterr()
         assert throttle_events == []
-        assert messages == []
+        assert captured.out.splitlines() == ["[SignalThrottle] LOG_ALLOWED_TEST allowed — verdict EXECUTE_SELL"]
+        assert captured.err == ""
         assert pipe._signal_throttle.get_count("LOG_ALLOWED_TEST") == 1
         assert "SIGNAL_THROTTLED" not in errors
 
