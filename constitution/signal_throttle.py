@@ -81,7 +81,7 @@ class SignalThrottle:
             count = len(self._windows[symbol])
             throttled = count >= self.max_signals
             if throttled:
-                logger.warning(
+                logger.error(
                     f"[SignalThrottle] {symbol} THROTTLED — {count} signals in last "
                     f"{self.window_seconds:.0f}s (max {self.max_signals})"
                 )

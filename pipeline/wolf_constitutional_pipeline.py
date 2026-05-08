@@ -2892,7 +2892,7 @@ class WolfConstitutionalPipeline:
             count_before = self._signal_throttle.get_count(symbol)
             remaining_before = self._signal_throttle.get_remaining(symbol)
             if self._signal_throttle.is_throttled(symbol):
-                logger.warning(
+                logger.error(
                     f"[SignalThrottle] {symbol} THROTTLED — verdict {final_verdict} downgraded to HOLD "
                     f"(count={count_before}, remaining={remaining_before})"
                 )
