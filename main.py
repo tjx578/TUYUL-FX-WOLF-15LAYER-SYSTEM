@@ -183,9 +183,9 @@ async def main() -> None:
     logger.remove()
 
     _app_env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
-    _stdout_level = "INFO" if _app_env == "production" else "DEBUG"
+    _stdout_level = "WARNING" if _app_env == "production" else "INFO"
 
-    # DEBUG/INFO/SUCCESS -> stdout (Railway classifies as "info")
+    # INFO/WARNING (or WARNING-only in production) -> stdout (Railway classifies as "info")
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
@@ -193,17 +193,17 @@ async def main() -> None:
         "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
         "<level>{message}</level>",
         level=_stdout_level,
-        filter=lambda record: record["level"].no < 30,  # Below WARNING
+        filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
 
-    # WARNING/ERROR/CRITICAL -> stderr (Railway classifies as warning/error)
+    # ERROR/CRITICAL -> stderr (Railway classifies as "error")
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
         "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
         "<level>{message}</level>",
-        level="WARNING",
+        level="ERROR",
     )
 
     install_signal_handlers(_shutdown_event)

@@ -17,7 +17,6 @@ import time
 from typing import Any
 from unittest.mock import MagicMock
 
-import constitution.signal_throttle as throttle_module
 from constitution.signal_throttle import SignalThrottle
 from core.metrics import SIGNAL_THROTTLED
 
@@ -108,21 +107,15 @@ class TestSignalThrottle:
         assert t.is_throttled("EURUSD") is False
         assert t.get_count("EURUSD") == 1
 
-    def test_throttled_logs_as_error(self, monkeypatch):
-        """Throttled signals must reach the platform as error-level events."""
-        messages: list[str] = []
-
-        class FakeLogger:
-            def error(self, message: str) -> None:
-                messages.append(message)
-
-        monkeypatch.setattr(throttle_module, "logger", FakeLogger())
-
+    def test_throttled_logs_plain_error_event(self, capsys):
+        """Throttled signals must reach the platform as plain stderr events."""
         t = SignalThrottle(max_signals=1, window_seconds=300)
         t.record("XAUUSD")
 
         assert t.is_throttled("XAUUSD") is True
-        assert messages == [
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.splitlines() == [
             "[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"
         ]
 
