@@ -235,8 +235,8 @@ class TestPipelineSignalThrottle:
         assert l12_verdict["verdict"] == "HOLD"
         assert l12_verdict["throttled_from"] == "EXECUTE_SELL"
 
-    def test_throttled_execute_emits_structured_log_event(self, monkeypatch):
-        """Throttle checks must be visible in engine logs when EXECUTE is evaluated."""
+    def test_throttled_execute_downgrades_without_extra_canary_event(self, monkeypatch):
+        """Throttled EXECUTE keeps the visible log simple and stores metadata."""
         from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
         pipe = self._make_pipeline()
@@ -263,19 +263,23 @@ class TestPipelineSignalThrottle:
         )
 
         throttle_events = [event for event in events if event["event"] == "signal_throttle_check"]
-        assert throttle_events
-        assert throttle_events[0]["authority"] == "SIGNAL_THROTTLE"
-        assert throttle_events[0]["extras"]["status"] == "throttled"
-        assert throttle_events[0]["extras"]["source_verdict"] == "EXECUTE_BUY"
+        assert throttle_events == []
         assert l12_verdict["verdict"] == "HOLD"
+        assert l12_verdict["throttled_from"] == "EXECUTE_BUY"
+        assert l12_verdict["signal_throttle"]["status"] == "throttled"
+        assert l12_verdict["signal_throttle"]["count"] == 3
+        assert l12_verdict["signal_throttle"]["remaining"] == 0
         assert "SIGNAL_THROTTLED" in errors
 
-    def test_allowed_execute_emits_structured_log_event(self, monkeypatch):
-        """Allowed EXECUTE verdicts should log the throttle check too."""
+    def test_allowed_execute_records_without_visible_throttle_log(self, monkeypatch):
+        """Allowed EXECUTE verdicts should stay quiet and only update the window."""
+        import pipeline.wolf_constitutional_pipeline as pipeline_module
         from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
         pipe = self._make_pipeline()
         events: list[dict[str, Any]] = []
+        messages: list[str] = []
+        monkeypatch.setattr(pipeline_module, "_emit_canary_event", lambda message: messages.append(message))
         monkeypatch.setattr(
             WolfConstitutionalPipeline,
             "_emit_verdict_stream_event",
@@ -294,9 +298,9 @@ class TestPipelineSignalThrottle:
         )
 
         throttle_events = [event for event in events if event["event"] == "signal_throttle_check"]
-        assert throttle_events
-        assert throttle_events[0]["extras"]["status"] == "allowed"
-        assert throttle_events[0]["extras"]["source_verdict"] == "EXECUTE_SELL"
+        assert throttle_events == []
+        assert messages == []
+        assert pipe._signal_throttle.get_count("LOG_ALLOWED_TEST") == 1
         assert "SIGNAL_THROTTLED" not in errors
 
     def test_sovereignty_downgrade_emits_throttle_skipped_event(self, monkeypatch):
