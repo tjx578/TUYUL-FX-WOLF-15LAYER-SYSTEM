@@ -35,6 +35,8 @@ import threading
 import time
 from collections import defaultdict, deque
 
+from schemas.direction import normalize_direction
+
 __all__ = ["SignalThrottle"]
 
 # Defaults: max 3 EXECUTE signals per 5 minutes per symbol
@@ -74,6 +76,9 @@ class SignalThrottle:
         self.window_seconds = window_seconds
         # symbol -> deque of Unix timestamps (ascending)
         self._windows: dict[str, deque[float]] = defaultdict(deque)
+        self._allowed_streak_symbol: str | None = None
+        self._allowed_streak_direction: str | None = None
+        self._allowed_streak_count: int = 0
         self._lock = threading.Lock()
 
     # ── public API ───────────────────────────────────────
@@ -105,6 +110,27 @@ class SignalThrottle:
         """Emit a plain info event after an EXECUTE signal passes throttle."""
         _emit_throttle_info(f"[SignalThrottle] {symbol} allowed — verdict {verdict}")
 
+    def record_allowed_streak(self, symbol: str, verdict: str) -> int:
+        """Track consecutive allowed events by symbol and direction.
+
+        Only allowed events call this method, so stderr throttle/error lines do
+        not break the streak.  A different allowed symbol or direction resets it.
+        """
+        direction = normalize_direction(None, verdict)
+        normalized_symbol = str(symbol).upper()
+        with self._lock:
+            if (
+                direction
+                and self._allowed_streak_symbol == normalized_symbol
+                and self._allowed_streak_direction == direction
+            ):
+                self._allowed_streak_count += 1
+            else:
+                self._allowed_streak_symbol = normalized_symbol if direction else None
+                self._allowed_streak_direction = direction
+                self._allowed_streak_count = 1 if direction else 0
+            return self._allowed_streak_count
+
     def get_count(self, symbol: str) -> int:
         """Return the current signal count in the active window."""
         with self._lock:
@@ -122,8 +148,15 @@ class SignalThrottle:
         with self._lock:
             if symbol is None:
                 self._windows.clear()
+                self._allowed_streak_symbol = None
+                self._allowed_streak_direction = None
+                self._allowed_streak_count = 0
             else:
                 self._windows.pop(symbol, None)
+                if self._allowed_streak_symbol == str(symbol).upper():
+                    self._allowed_streak_symbol = None
+                    self._allowed_streak_direction = None
+                    self._allowed_streak_count = 0
 
     # ── internals ────────────────────────────────────────
 

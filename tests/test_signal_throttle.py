@@ -127,6 +127,25 @@ class TestSignalThrottle:
         assert captured.out.splitlines() == ["[SignalThrottle] NZDCHF allowed — verdict EXECUTE_REDUCED_RISK_BUY"]
         assert captured.err == ""
 
+    def test_allowed_streak_ignores_errors_but_resets_on_other_allowed_symbol(self):
+        """Allowed quorum uses only allowed events; throttle errors do not break it."""
+        t = SignalThrottle(max_signals=1, window_seconds=300)
+
+        assert t.record_allowed_streak("AUDCAD", "EXECUTE_BUY") == 1
+        t.record("AUDCAD")
+        assert t.is_throttled("AUDCAD") is True
+        assert t.record_allowed_streak("AUDCAD", "EXECUTE_BUY") == 2
+        assert t.record_allowed_streak("EURCAD", "EXECUTE_BUY") == 1
+        assert t.record_allowed_streak("AUDCAD", "EXECUTE_BUY") == 1
+
+    def test_allowed_streak_resets_on_direction_change(self):
+        """Same symbol but opposite raw direction starts a new allowed streak."""
+        t = SignalThrottle(max_signals=3, window_seconds=300)
+
+        assert t.record_allowed_streak("GBPCAD", "EXECUTE_BUY") == 1
+        assert t.record_allowed_streak("GBPCAD", "EXECUTE_BUY") == 2
+        assert t.record_allowed_streak("GBPCAD", "EXECUTE_SELL") == 1
+
 
 # =========================================================================
 # Pipeline integration tests
@@ -307,9 +326,30 @@ class TestPipelineSignalThrottle:
         throttle_events = [event for event in events if event["event"] == "signal_throttle_check"]
         captured = capsys.readouterr()
         assert throttle_events == []
-        assert captured.out.splitlines() == ["[SignalThrottle] LOG_ALLOWED_TEST allowed — verdict EXECUTE_SELL"]
+        assert captured.out.splitlines() == [
+            "[SignalThrottle] LOG_ALLOWED_TEST allowed — verdict EXECUTE_SELL",
+            "[SignalThrottleIntel] symbol=LOG_ALLOWED_TEST raw_direction=SELL final_direction=WAIT "
+            "direction_status=ALLOWED_CANDIDATE phase=IGNITION action=WAIT_PRICE_CONFIRMATION "
+            "verdict=EXECUTE_SELL count=1 remaining=2 streak=1 max=3 window=300s "
+            "reason=allowed_is_candidate_until_price_theme_structure_validation",
+        ]
         assert captured.err == ""
         assert pipe._signal_throttle.get_count("LOG_ALLOWED_TEST") == 1
+        assert l12_verdict["signal_throttle_intel"] == {
+            "symbol": "LOG_ALLOWED_TEST",
+            "verdict": "EXECUTE_SELL",
+            "raw_direction": "SELL",
+            "final_direction": "WAIT",
+            "direction_status": "ALLOWED_CANDIDATE",
+            "phase": "IGNITION",
+            "action": "WAIT_PRICE_CONFIRMATION",
+            "count": 1,
+            "remaining": 2,
+            "allowed_streak": 1,
+            "max_signals": 3,
+            "window_seconds": 300.0,
+            "reason": "allowed_is_candidate_until_price_theme_structure_validation",
+        }
         assert "SIGNAL_THROTTLED" not in errors
 
     def test_sovereignty_downgrade_emits_throttle_skipped_event(self, monkeypatch):

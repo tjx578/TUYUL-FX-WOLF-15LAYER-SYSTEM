@@ -72,6 +72,10 @@ from analysis.reflex_emc import EMCFilter
 from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
+from analysis.signal_throttle_intelligence import (
+    classify_allowed_signal,
+    emit_signal_throttle_intel,
+)
 from config_loader import CONFIG
 
 # third-party imports
@@ -2918,6 +2922,22 @@ class WolfConstitutionalPipeline:
             else:
                 self._signal_throttle.record(symbol)
                 self._signal_throttle.emit_allowed(symbol, final_verdict)
+                allowed_streak = self._signal_throttle.record_allowed_streak(symbol, final_verdict)
+                count_after = self._signal_throttle.get_count(symbol)
+                remaining_after = self._signal_throttle.get_remaining(symbol)
+                throttle_intel = classify_allowed_signal(
+                    symbol=symbol,
+                    verdict=final_verdict,
+                    l12_direction=l12_verdict.get("direction"),
+                    synthesis=synthesis,
+                    count=count_after,
+                    remaining=remaining_after,
+                    max_signals=self._signal_throttle.max_signals,
+                    window_seconds=self._signal_throttle.window_seconds,
+                    allowed_streak=allowed_streak,
+                )
+                l12_verdict["signal_throttle_intel"] = throttle_intel.to_dict()
+                emit_signal_throttle_intel(throttle_intel)
         elif final_verdict.startswith("EXECUTE") and safe_mode:
             self._emit_verdict_stream_event(
                 event="signal_throttle_check",
