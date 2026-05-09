@@ -76,6 +76,7 @@ from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
     emit_signal_throttle_intel,
 )
+from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer
 from config_loader import CONFIG
 
 # third-party imports
@@ -307,6 +308,10 @@ class WolfConstitutionalPipeline:
         self._signal_throttle = SignalThrottle(
             max_signals=throttle_max_signals,
             window_seconds=throttle_window_seconds,
+        )
+        self._signal_throttle_live_analyzer = SignalThrottleLiveAnalyzer(
+            latest_window_seconds=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_LATEST_WINDOW_SECONDS", 3600.0)),
+            retention_seconds=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_RETENTION_SECONDS", 7200.0)),
         )
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
@@ -2919,9 +2924,19 @@ class WolfConstitutionalPipeline:
                 }
                 errors.append("SIGNAL_THROTTLED")
                 SIGNAL_THROTTLED.labels(symbol=symbol).inc()
+                self._signal_throttle_live_analyzer.record_throttled(
+                    symbol=symbol,
+                    verdict=final_verdict,
+                    count=count_before,
+                    remaining=remaining_before,
+                    max_signals=self._signal_throttle.max_signals,
+                    window_seconds=self._signal_throttle.window_seconds,
+                )
+                l12_verdict["signal_throttle_live_report"] = self._signal_throttle_live_analyzer.snapshot()
             else:
                 self._signal_throttle.record(symbol)
                 self._signal_throttle.emit_allowed(symbol, final_verdict)
+                self._signal_throttle_live_analyzer.record_allowed(symbol=symbol, verdict=final_verdict)
                 allowed_streak = self._signal_throttle.record_allowed_streak(symbol, final_verdict)
                 count_after = self._signal_throttle.get_count(symbol)
                 remaining_after = self._signal_throttle.get_remaining(symbol)
@@ -2937,6 +2952,7 @@ class WolfConstitutionalPipeline:
                     allowed_streak=allowed_streak,
                 )
                 l12_verdict["signal_throttle_intel"] = throttle_intel.to_dict()
+                l12_verdict["signal_throttle_live_report"] = self._signal_throttle_live_analyzer.snapshot()
                 emit_signal_throttle_intel(throttle_intel)
         elif final_verdict.startswith("EXECUTE") and safe_mode:
             self._emit_verdict_stream_event(
