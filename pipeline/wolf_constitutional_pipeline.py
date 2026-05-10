@@ -309,10 +309,38 @@ class WolfConstitutionalPipeline:
             max_signals=throttle_max_signals,
             window_seconds=throttle_window_seconds,
         )
+        try:
+            fragmented_min_unique_pairs = max(
+                1,
+                int(os.getenv("SIGNAL_THROTTLE_INTEL_FRAGMENTED_MIN_UNIQUE_PAIRS", "5")),
+            )
+        except (TypeError, ValueError):
+            fragmented_min_unique_pairs = 5
+        try:
+            throttle_intel_max_events = max(100, int(os.getenv("SIGNAL_THROTTLE_INTEL_MAX_EVENTS", "20000")))
+        except (TypeError, ValueError):
+            throttle_intel_max_events = 20000
         self._signal_throttle_live_analyzer = SignalThrottleLiveAnalyzer(
-            latest_window_seconds=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_LATEST_WINDOW_SECONDS", 3600.0)),
+            latest_window_minutes=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_LATEST_WINDOW_MINUTES", 60.0)),
             retention_seconds=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_RETENTION_SECONDS", 7200.0)),
+            max_events=throttle_intel_max_events,
+            active_block_ttl_seconds=int(
+                self._parse_env_float("SIGNAL_THROTTLE_INTEL_ACTIVE_BLOCK_TTL_SECONDS", 300.0)
+            ),
+            min_clean_block_minutes=self._parse_env_float("SIGNAL_THROTTLE_INTEL_MIN_CLEAN_BLOCK_MINUTES", 5.0),
+            microboost_window_minutes=int(
+                self._parse_env_float("SIGNAL_THROTTLE_INTEL_MICROBOOST_WINDOW_MINUTES", 15.0)
+            ),
+            allowed_quorum_window_seconds=int(
+                self._parse_env_float("SIGNAL_THROTTLE_INTEL_ALLOWED_QUORUM_WINDOW_SECONDS", 120.0)
+            ),
+            fragmented_min_unique_pairs=fragmented_min_unique_pairs,
+            fragmented_max_clean_block_minutes=self._parse_env_float(
+                "SIGNAL_THROTTLE_INTEL_FRAGMENTED_MAX_CLEAN_BLOCK_MINUTES",
+                1.0,
+            ),
         )
+        self._governance_now_ts: float | None = None
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
             f"max_signals={throttle_max_signals} window_seconds={throttle_window_seconds:.0f}"
@@ -705,6 +733,7 @@ class WolfConstitutionalPipeline:
         warmup_ready: bool,
         dq_penalty: float,
         dq_degraded: bool,
+        now_ts: float | None = None,
     ) -> Any:
         """Run governance gate assessment.
 
@@ -760,6 +789,7 @@ class WolfConstitutionalPipeline:
             dq_degraded=dq_degraded,
             kill_switch_value=kill_switch_val,
             ws_connected_at=ws_connected_at,
+            now_ts=now_ts,
         )
 
     def _resolve_trade_returns(
@@ -1368,12 +1398,21 @@ class WolfConstitutionalPipeline:
         # ═══════════════════════════════════════════════════════
         from state.governance_gate import GovernanceAction  # noqa: PLC0415
 
+        _governance_now_ts: float | None = None
+        raw_governance_now = metrics.get("governance_now_ts", metrics.get("now_ts"))
+        if raw_governance_now is None:
+            raw_governance_now = getattr(self, "_governance_now_ts", None)
+        with contextlib.suppress(TypeError, ValueError):
+            if raw_governance_now is not None:
+                _governance_now_ts = float(raw_governance_now)
+
         _governance = self._assess_governance(
             symbol,
             redis_client=_redis_client,
             warmup_ready=warmup.get("ready", True),
             dq_penalty=_dq_penalty,
             dq_degraded=len(_degraded_reports) > 0,
+            now_ts=_governance_now_ts,
         )
 
         if _governance.action == GovernanceAction.BLOCK:

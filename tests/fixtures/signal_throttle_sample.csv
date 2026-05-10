@@ -1,0 +1,4 @@
+message,severity,attributes,tags,timestamp
+[SignalThrottle] XAUUSD THROTTLED - 3 signals in last 300s (max 3),error,"{""level"":""error""}","{}",2026-05-08T12:00:00Z
+"[SignalThrottle] GBPCAD allowed - verdict EXECUTE_BUY",info,"{""level"":""info""}","{}",2026-05-08T12:00:10Z
+"[SignalThrottle] GBPCAD THROTTLED - verdict EXECUTE_BUY downgraded to HOLD (count=3, remaining=0)",info,"{""level"":""info""}","{}",2026-05-08T12:00:20Z

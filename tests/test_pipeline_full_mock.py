@@ -21,6 +21,7 @@ the entire 8-phase pipeline code path end-to-end and validates:
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -204,6 +205,7 @@ def mocked_pipeline(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("storage.redis_client.RedisClient", lambda: _FakeRedisClient())
 
     pipeline = WolfConstitutionalPipeline()
+    pipeline._governance_now_ts = datetime(2026, 5, 6, 12, 0, tzinfo=UTC).timestamp()
 
     # Replace lazy loader so it doesn't import real analyzers
     pipeline._ensure_analyzers = lambda: None

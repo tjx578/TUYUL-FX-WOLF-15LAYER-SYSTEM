@@ -21,6 +21,7 @@ import math
 import os
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -203,7 +204,7 @@ def assess_governance(
         )
 
     # ── A2. Market hours ────────────────────────────────────────
-    if not is_forex_market_open():
+    if not is_forex_market_open(datetime.fromtimestamp(now, tz=UTC)):
         logger.debug("Governance market_closed for {}", symbol)
         return GovernanceVerdict(
             action=GovernanceAction.HOLD,
@@ -231,11 +232,7 @@ def assess_governance(
     # interval spans a market closure.
     _effective_staleness = freshness.staleness_seconds
     _wk_gap = 0.0
-    if (
-        not math.isinf(freshness.staleness_seconds)
-        and last_seen_ts is not None
-        and last_seen_ts > 0
-    ):
+    if not math.isinf(freshness.staleness_seconds) and last_seen_ts is not None and last_seen_ts > 0:
         _wk_gap = weekend_gap_seconds(last_seen_ts, now)
         if _wk_gap > 0:
             _effective_staleness = max(0.0, freshness.staleness_seconds - _wk_gap)
@@ -299,10 +296,7 @@ def assess_governance(
     elif freshness.state == "stale_preserved":
         if _wk_gap > 0 and _effective_staleness <= freshness.threshold_seconds:
             # Weekend-adjusted: data is effectively within freshness threshold.
-            if total_penalty > 0 or dq_degraded:
-                action = GovernanceAction.ALLOW_REDUCED
-            else:
-                action = GovernanceAction.ALLOW
+            action = GovernanceAction.ALLOW_REDUCED if total_penalty > 0 or dq_degraded else GovernanceAction.ALLOW
         elif in_ws_warmup and ws_connected_at is not None:
             # WS just reconnected — HTF candles are stale but will refresh soon.
             # Downgrade to ALLOW_REDUCED with penalty instead of hard HOLD.
