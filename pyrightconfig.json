@@ -1,6 +1,8 @@
 {
   "typeCheckingMode": "standard",
   "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": ".venv",
   "reportMissingTypeStubs": false,
   "reportUnnecessaryTypeIgnoreComment": "warning",
   "include": ["."],
