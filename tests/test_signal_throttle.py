@@ -14,6 +14,7 @@ Validates:
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -460,6 +461,87 @@ class TestPipelineSignalThrottle:
         assert market_context_validation["final_direction"] == "BUY"
         assert "market_context_downgrade" not in l12_verdict
         assert pipe._signal_throttle.get_count("EURUSD") == 1
+        assert not any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
+        assert any(event["event"] == "market_context_validation" for event in events)
+
+    def test_pipeline_live_report_applies_priced_microboost_context(self, monkeypatch, capsys):
+        """Live throttle report should price microboost when market context is available."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+
+        pipe = self._make_pipeline()
+
+        class _FakeV11Hook:
+            def evaluate(self, *_args: Any, **_kwargs: Any) -> Any:
+                class _Overlay:
+                    should_trade = True
+
+                    @staticmethod
+                    def to_dict() -> dict[str, Any]:
+                        return {"enabled": True, "should_trade": True, "skipped_reason": None}
+
+                return _Overlay()
+
+        monkeypatch.setattr("engines.v11.V11PipelineHook", _FakeV11Hook)
+        pipe._context_bus.update_tick(
+            {
+                "symbol": "EURUSD",
+                "bid": 1.1010,
+                "ask": 1.1011,
+                "timestamp": time.time(),
+            }
+        )
+        for candle in (
+            {"symbol": "EURUSD", "timeframe": "M15", "open": 1.0990, "close": 1.1000},
+            {"symbol": "EURUSD", "timeframe": "M15", "open": 1.1002, "close": 1.1010},
+            {"symbol": "EURUSD", "timeframe": "H1", "open": 1.0980, "close": 1.1000},
+            {"symbol": "EURUSD", "timeframe": "H1", "open": 1.1001, "close": 1.1010},
+        ):
+            pipe._context_bus.update_candle(candle)
+
+        base = datetime.now(UTC) - timedelta(minutes=2)
+        for index in range(30):
+            pipe._signal_throttle_live_analyzer.record_allowed(
+                symbol="EURUSD",
+                verdict="EXECUTE_BUY",
+                timestamp=base + timedelta(seconds=index * 2),
+            )
+
+        events: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            WolfConstitutionalPipeline,
+            "_emit_verdict_stream_event",
+            staticmethod(lambda **kwargs: events.append(kwargs)),
+        )
+        capsys.readouterr()
+
+        errors: list[str] = []
+        l12_verdict = {"verdict": "EXECUTE_BUY", "direction": "BUY"}
+        pipe._apply_effective_verdict_controls(
+            symbol="EURUSD",
+            synthesis={
+                "execution": {
+                    "direction": "BUY",
+                    "entry_price": 1.1000,
+                    "direction_diagnostics": {
+                        "conflicts": [],
+                        "sources": {"l2": "BUY", "l3": "BUY", "l9": "BUY"},
+                    },
+                },
+                "legacy_fta": {"legacy_fta_present": True, "direction": "BUY"},
+            },
+            l12_verdict=l12_verdict,
+            legacy_verdict="EXECUTE_BUY",
+            safe_mode=False,
+            errors=errors,
+        )
+
+        report = cast(dict[str, Any], l12_verdict["signal_throttle_live_report"])
+        latest = cast(dict[str, Any], report["microboost_summary"]["latest"])
+        assert report["microboost_summary"]["market_context_applied"] is True
+        assert latest["phase_unpriced"] == "DENSE_MICROBOOST"
+        assert latest["phase_priced"] == "CONTINUATION_MICROBOOST"
+        assert latest["market_context_validation"]["final_direction"] == "BUY"
+        assert latest["requires_market_context"] is False
         assert not any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
         assert any(event["event"] == "market_context_validation" for event in events)
 
