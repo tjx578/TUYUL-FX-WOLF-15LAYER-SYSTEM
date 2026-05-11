@@ -241,7 +241,9 @@ def analyze_signal_throttle_events(
     final_mode = "PAIR_SIGNAL_CANDIDATE" if pair_timing_candidate else "THEME_ALERT_AND_PAIR_SELECTION"
     candidate = _candidate_from_blocks(latest_blocks, clean_block_seconds) if pair_timing_candidate else None  # noqa: F821
     validation_symbol = str((candidate or {}).get("symbol") or (main_watchlist[0] if main_watchlist else "UNKNOWN"))
-    validation_direction = (candidate or {}).get("direction") or _latest_direction_for_symbol(ordered, validation_symbol)
+    validation_direction = (candidate or {}).get("direction") or _latest_direction_for_symbol(
+        ordered, validation_symbol
+    )
     market_context_validation = missing_market_context_result(validation_symbol, validation_direction).to_dict()
 
     return {
