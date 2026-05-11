@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from analysis.market_context_validator import missing_market_context_result
+from analysis.microboost_detector import build_microboost_summary
 from schemas.direction import normalize_direction
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
@@ -173,6 +174,7 @@ def analyze_signal_throttle_events(
     row_count: int | None = None,
     unparsed_count: int = 0,
     timezone_assumption: str = "UTC",
+    market_contexts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if latest_window_minutes is not None:
         latest_window_seconds = int(latest_window_minutes * 60)
@@ -196,6 +198,11 @@ def analyze_signal_throttle_events(
             "theme_scores": [],
             "event_counts": _event_counts([]),  # noqa: F821
             "top_microboost": [],
+            "microboost_summary": build_microboost_summary(
+                [],
+                window_minutes=microboost_window_minutes,
+                clean_block_seconds=clean_block_seconds,
+            ),
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "market_context_validation": missing_market_context_result("UNKNOWN").to_dict(),
             "data_quality": _data_quality_block(
@@ -245,6 +252,19 @@ def analyze_signal_throttle_events(
         ordered, validation_symbol
     )
     market_context_validation = missing_market_context_result(validation_symbol, validation_direction).to_dict()
+    allowed_quorum = compute_allowed_quorum(ordered)
+    ranked_microboost_blocks = rank_microboost_blocks(
+        microboost_blocks,
+        clean_block_seconds=clean_block_seconds,
+    )
+    microboost_summary = build_microboost_summary(
+        microboost_blocks,
+        window_minutes=microboost_window_minutes,
+        clean_block_seconds=clean_block_seconds,
+        theme_scores=theme_scores,
+        allowed_quorum=allowed_quorum,
+        market_contexts=market_contexts,
+    )
 
     return {
         "final_mode": final_mode,
@@ -259,9 +279,10 @@ def analyze_signal_throttle_events(
         "candidate": candidate,
         "top_microboost": [
             _microboost_payload(block)
-            for block in rank_microboost_blocks(microboost_blocks, clean_block_seconds=clean_block_seconds)[:10]
+            for block in ranked_microboost_blocks[:10]
         ],
-        "allowed_quorum": compute_allowed_quorum(ordered),
+        "microboost_summary": microboost_summary,
+        "allowed_quorum": allowed_quorum,
         "event_counts": event_type_counts,
         "time_range": {
             "start_utc": ordered[0].timestamp.isoformat(),
@@ -444,7 +465,7 @@ class SignalThrottleLiveAnalyzer:
                 )
             )
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self, *, market_contexts: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
             events = list(self._events)
         report = analyze_signal_throttle_events(
@@ -455,6 +476,7 @@ class SignalThrottleLiveAnalyzer:
             microboost_window_minutes=self.microboost_window_minutes,
             fragmented_min_unique_pairs=self.fragmented_min_unique_pairs,
             fragmented_max_clean_block_minutes=self.fragmented_max_clean_block_minutes,
+            market_contexts=market_contexts,
         )
         report["runtime_config"]["retention_seconds"] = self.retention_seconds
         report["runtime_config"]["active_block_ttl_seconds"] = self.active_block_ttl_seconds
