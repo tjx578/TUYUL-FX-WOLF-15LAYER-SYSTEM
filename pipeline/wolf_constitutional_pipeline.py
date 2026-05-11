@@ -68,6 +68,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, cast
 
+from analysis.market_context_validator import MarketContext, validate_market_context
 from analysis.reflex_emc import EMCFilter
 from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
@@ -344,6 +345,21 @@ class WolfConstitutionalPipeline:
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
             f"max_signals={throttle_max_signals} window_seconds={throttle_window_seconds:.0f}"
+        )
+        self._market_context_guard_enabled = os.getenv("MARKET_CONTEXT_EXECUTE_GUARD_ENABLED", "1") != "0"
+        guard_mode = os.getenv("MARKET_CONTEXT_EXECUTE_GUARD_MODE", "audit").strip().lower()
+        self._market_context_guard_mode = guard_mode if guard_mode in {"audit", "block"} else "audit"
+        try:
+            self._market_context_spread_multiplier = max(
+                1.0,
+                float(os.getenv("MARKET_CONTEXT_MAX_SPREAD_MULTIPLIER", "2.5")),
+            )
+        except (TypeError, ValueError):
+            self._market_context_spread_multiplier = 2.5
+        _emit_canary_event(
+            "event=market_context_guard_config symbol=* authority=MARKET_CONTEXT "
+            f"enabled={self._market_context_guard_enabled} mode={self._market_context_guard_mode} "
+            f"spread_multiplier={self._market_context_spread_multiplier:.2f}"
         )
 
         settings = CONFIG.get("settings", {})
@@ -2936,6 +2952,223 @@ class WolfConstitutionalPipeline:
         )
         return reflective_pass1, reflective_pass2, l15_meta, sovereignty, enforcement
 
+    def _apply_market_context_guard(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        errors: list[str],
+    ) -> None:
+        if not self._market_context_guard_enabled:
+            return
+
+        source_verdict = str(l12_verdict.get("verdict", ""))
+        if not source_verdict.startswith("EXECUTE"):
+            return
+
+        context = self._build_market_context(symbol=symbol, synthesis=synthesis, l12_verdict=l12_verdict)
+        validation = validate_market_context(context)
+        validation_payload = validation.to_dict()
+        l12_verdict["market_context_validation"] = validation_payload
+        synthesis["market_context_validation"] = validation_payload
+
+        self._emit_verdict_stream_event(
+            event="market_context_validation",
+            symbol=symbol,
+            authority="MARKET_CONTEXT",
+            verdict_stream="post_l12_pre_throttle",
+            verdict=source_verdict,
+            direction=l12_verdict.get("direction"),
+            extras={
+                "mode": self._market_context_guard_mode,
+                "final_direction": validation.final_direction,
+                "direction_validated": validation.direction_validated,
+                "action": validation.action,
+                "reason": validation.reason,
+            },
+        )
+
+        if validation.direction_validated or self._market_context_guard_mode != "block":
+            return
+
+        l12_verdict["verdict"] = "HOLD"
+        l12_verdict["market_context_from"] = source_verdict
+        l12_verdict["market_context_downgrade"] = True
+        l12_verdict["effective_reason"] = "MARKET_CONTEXT_UNVALIDATED"
+        errors.append(f"MARKET_CONTEXT_UNVALIDATED:{validation.action}")
+
+    def _build_market_context(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+    ) -> MarketContext:
+        execution = synthesis.get("execution", {}) if isinstance(synthesis.get("execution"), dict) else {}
+        direction = self._normalize_market_context_direction(
+            l12_verdict.get("direction"),
+            source_verdict=l12_verdict.get("verdict"),
+            execution_direction=execution.get("direction"),
+        )
+        tick_mid = self._latest_tick_mid(symbol)
+        latest_m15_close = self._latest_candle_close(symbol, "M15")
+        latest_h1_close = self._latest_candle_close(symbol, "H1")
+        entry_price = self._coerce_positive_float(execution.get("entry_price"))
+
+        return MarketContext(
+            symbol=symbol,
+            raw_allowed_direction=direction,
+            price_at_signal_start=entry_price or latest_m15_close or latest_h1_close or tick_mid,
+            price_at_5m_confirm=latest_m15_close or tick_mid,
+            price_at_signal_end=tick_mid or latest_m15_close or latest_h1_close,
+            m15_phase=self._derive_timeframe_phase(symbol, "M15"),
+            h1_phase=self._derive_timeframe_phase(symbol, "H1"),
+            theme_aligned=self._is_market_theme_aligned(synthesis, direction),
+            spread_normal=self._is_spread_normal(symbol),
+        )
+
+    @staticmethod
+    def _normalize_market_context_direction(
+        *raw_values: Any,
+        source_verdict: Any | None = None,
+        execution_direction: Any | None = None,
+    ) -> str | None:
+        from schemas.direction import normalize_direction  # noqa: PLC0415
+
+        for raw in (source_verdict, *raw_values, execution_direction):
+            direction = normalize_direction(str(raw) if raw else None, str(source_verdict) if source_verdict else None)
+            if direction in {"BUY", "SELL"}:
+                return direction
+        return None
+
+    def _latest_tick_mid(self, symbol: str) -> float | None:
+        tick = self._context_bus.get_latest_tick(symbol)
+        if not isinstance(tick, dict):
+            return None
+        bid = self._coerce_positive_float(tick.get("bid") or tick.get("price"))
+        ask = self._coerce_positive_float(tick.get("ask") or tick.get("price"))
+        if bid is not None and ask is not None:
+            return (bid + ask) / 2.0
+        return bid or ask
+
+    def _latest_candle_close(self, symbol: str, timeframe: str) -> float | None:
+        candles = self._context_bus.get_candle_history(symbol, timeframe, count=1)
+        if not candles:
+            return None
+        return self._candle_price(candles[-1], "close")
+
+    def _derive_timeframe_phase(self, symbol: str, timeframe: str) -> str | None:
+        candles = self._context_bus.get_candle_history(symbol, timeframe, count=2)
+        if len(candles) < 2:
+            return None
+        previous = candles[-2]
+        latest = candles[-1]
+        previous_close = self._candle_price(previous, "close")
+        latest_open = self._candle_price(latest, "open")
+        latest_close = self._candle_price(latest, "close")
+        if previous_close is None or latest_open is None or latest_close is None:
+            return None
+
+        bullish = latest_close >= previous_close and latest_close >= latest_open
+        bearish = latest_close <= previous_close and latest_close <= latest_open
+        if timeframe.upper() == "M15":
+            if bullish:
+                return "BULLISH_PULLBACK"
+            if bearish:
+                return "BEARISH_PULLBACK"
+            return "HIGH_BASE_CONTINUATION" if latest_close >= previous_close else "LOWER_HIGH"
+
+        if bullish:
+            return "BULLISH"
+        if bearish:
+            return "BEARISH"
+        return "UPTREND" if latest_close >= previous_close else "DOWNTREND"
+
+    def _is_market_theme_aligned(self, synthesis: dict[str, Any], direction: str | None) -> bool | None:
+        if direction not in {"BUY", "SELL"}:
+            return None
+        execution = synthesis.get("execution", {}) if isinstance(synthesis.get("execution"), dict) else {}
+        diagnostics = execution.get("direction_diagnostics", {})
+        if isinstance(diagnostics, dict):
+            conflicts = diagnostics.get("conflicts")
+            if isinstance(conflicts, list) and conflicts:
+                return False
+            sources = diagnostics.get("sources")
+            if isinstance(sources, dict):
+                for raw in sources.values():
+                    source_direction = self._direction_hint(raw)
+                    if source_direction and source_direction != direction:
+                        return False
+
+        legacy_fta = synthesis.get("legacy_fta", {})
+        if isinstance(legacy_fta, dict) and legacy_fta.get("legacy_fta_present"):
+            legacy_direction = self._direction_hint(legacy_fta.get("direction"))
+            if legacy_direction and legacy_direction != direction:
+                return False
+
+        return True
+
+    def _is_spread_normal(self, symbol: str) -> bool | None:
+        tick = self._context_bus.get_latest_tick(symbol)
+        if not isinstance(tick, dict):
+            return None
+        bid = self._coerce_positive_float(tick.get("bid"))
+        ask = self._coerce_positive_float(tick.get("ask"))
+        spread_raw = self._coerce_positive_float(tick.get("spread"))
+        if bid is not None and ask is not None:
+            spread_price = abs(ask - bid)
+        elif spread_raw is not None:
+            spread_price = spread_raw
+        else:
+            return None
+
+        try:
+            from config.pair_spreads import get_spread_pips  # noqa: PLC0415
+            from utils.pip_calc import get_pip_multiplier  # noqa: PLC0415
+
+            pip_multiplier = float(get_pip_multiplier(symbol))
+            normal_spread_pips = float(get_spread_pips(symbol))
+        except Exception:
+            pip_multiplier = 100.0 if "JPY" in symbol.upper() else 10000.0
+            normal_spread_pips = 2.0
+
+        spread_pips = spread_price if spread_price > 0.05 else spread_price * pip_multiplier
+        return spread_pips <= normal_spread_pips * self._market_context_spread_multiplier
+
+    @staticmethod
+    def _direction_hint(raw: Any) -> str | None:
+        text = str(raw or "").strip().upper()
+        if not text:
+            return None
+        if text in {"BUY", "LONG", "BULL", "BULLISH"} or "BULLISH" in text or text.endswith("_UP"):
+            return "BUY"
+        if text in {"SELL", "SHORT", "BEAR", "BEARISH"} or "BEARISH" in text or text.endswith("_DOWN"):
+            return "SELL"
+        return None
+
+    @staticmethod
+    def _candle_price(candle: dict[str, Any], field: str) -> float | None:
+        aliases = {
+            "open": ("open", "o"),
+            "close": ("close", "c"),
+        }
+        for key in aliases.get(field, (field,)):
+            value = WolfConstitutionalPipeline._coerce_positive_float(candle.get(key))
+            if value is not None:
+                return value
+        return None
+
+    @staticmethod
+    def _coerce_positive_float(value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
     def _apply_effective_verdict_controls(
         self,
         *,
@@ -2947,6 +3180,15 @@ class WolfConstitutionalPipeline:
         errors: list[str],
     ) -> None:
         final_verdict = l12_verdict.get("verdict", "")
+        if final_verdict.startswith("EXECUTE") and not safe_mode:
+            self._apply_market_context_guard(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+                errors=errors,
+            )
+            final_verdict = l12_verdict.get("verdict", "")
+
         v11_overlay_dict: dict[str, Any] | None = None
         if final_verdict.startswith("EXECUTE") and not safe_mode:
             count_before = self._signal_throttle.get_count(symbol)
@@ -3011,6 +3253,8 @@ class WolfConstitutionalPipeline:
             throttle_skip_reason = "non_execute_verdict"
             if l12_verdict.get("sovereignty_downgrade"):
                 throttle_skip_reason = "sovereignty_downgraded_to_hold"
+            elif l12_verdict.get("market_context_downgrade"):
+                throttle_skip_reason = "market_context_unvalidated"
             self._emit_verdict_stream_event(
                 event="signal_throttle_check",
                 symbol=symbol,
@@ -3058,7 +3302,9 @@ class WolfConstitutionalPipeline:
 
         final_effective_verdict = l12_verdict.get("verdict")
         effective_reason = "FINAL_STATE_UNCLASSIFIED"
-        if l12_verdict.get("throttled_from"):
+        if l12_verdict.get("market_context_downgrade"):
+            effective_reason = "MARKET_CONTEXT_UNVALIDATED"
+        elif l12_verdict.get("throttled_from"):
             effective_reason = "SIGNAL_THROTTLED"
         elif l12_verdict.get("v11_veto"):
             effective_reason = "V11_VETO"

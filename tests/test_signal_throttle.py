@@ -352,6 +352,117 @@ class TestPipelineSignalThrottle:
         }
         assert "SIGNAL_THROTTLED" not in errors
 
+    def test_market_context_guard_blocks_unvalidated_execute_before_throttle(self, monkeypatch):
+        """Block mode should hold EXECUTE when price/phase/spread context is missing."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+
+        pipe = self._make_pipeline()
+        pipe._market_context_guard_mode = "block"
+        events: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            WolfConstitutionalPipeline,
+            "_emit_verdict_stream_event",
+            staticmethod(lambda **kwargs: events.append(kwargs)),
+        )
+
+        errors: list[str] = []
+        l12_verdict = {"verdict": "EXECUTE_BUY", "direction": "BUY"}
+        pipe._apply_effective_verdict_controls(
+            symbol="MISSING_CONTEXT_TEST",
+            synthesis={
+                "execution": {
+                    "direction": "BUY",
+                    "direction_diagnostics": {"conflicts": [], "sources": {"l3": "BUY"}},
+                }
+            },
+            l12_verdict=l12_verdict,
+            legacy_verdict="EXECUTE_BUY",
+            safe_mode=False,
+            errors=errors,
+        )
+
+        assert l12_verdict["verdict"] == "HOLD"
+        assert l12_verdict["market_context_from"] == "EXECUTE_BUY"
+        assert l12_verdict["market_context_downgrade"] is True
+        market_context_validation = cast(dict[str, Any], l12_verdict["market_context_validation"])
+        assert market_context_validation["action"] == "FETCH_MARKET_CONTEXT"
+        assert any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
+        assert pipe._signal_throttle.get_count("MISSING_CONTEXT_TEST") == 0
+        assert any(event["event"] == "market_context_validation" for event in events)
+
+    def test_market_context_guard_allows_validated_execute_in_block_mode(self, monkeypatch, capsys):
+        """Complete aligned context should validate BUY and still pass through throttle."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+
+        pipe = self._make_pipeline()
+        pipe._market_context_guard_mode = "block"
+
+        class _FakeV11Hook:
+            def evaluate(self, *_args: Any, **_kwargs: Any) -> Any:
+                class _Overlay:
+                    should_trade = True
+
+                    @staticmethod
+                    def to_dict() -> dict[str, Any]:
+                        return {"enabled": True, "should_trade": True, "skipped_reason": None}
+
+                return _Overlay()
+
+        monkeypatch.setattr("engines.v11.V11PipelineHook", _FakeV11Hook)
+        pipe._context_bus.update_tick(
+            {
+                "symbol": "EURUSD",
+                "bid": 1.1010,
+                "ask": 1.1011,
+                "timestamp": time.time(),
+            }
+        )
+        for candle in (
+            {"symbol": "EURUSD", "timeframe": "M15", "open": 1.0990, "close": 1.1000},
+            {"symbol": "EURUSD", "timeframe": "M15", "open": 1.1002, "close": 1.1010},
+            {"symbol": "EURUSD", "timeframe": "H1", "open": 1.0980, "close": 1.1000},
+            {"symbol": "EURUSD", "timeframe": "H1", "open": 1.1001, "close": 1.1010},
+        ):
+            pipe._context_bus.update_candle(candle)
+
+        events: list[dict[str, Any]] = []
+        monkeypatch.setattr(
+            WolfConstitutionalPipeline,
+            "_emit_verdict_stream_event",
+            staticmethod(lambda **kwargs: events.append(kwargs)),
+        )
+        capsys.readouterr()
+
+        errors: list[str] = []
+        l12_verdict = {"verdict": "EXECUTE_BUY", "direction": "BUY"}
+        pipe._apply_effective_verdict_controls(
+            symbol="EURUSD",
+            synthesis={
+                "execution": {
+                    "direction": "BUY",
+                    "entry_price": 1.1000,
+                    "direction_diagnostics": {
+                        "conflicts": [],
+                        "sources": {"l2": "BUY", "l3": "BUY", "l9": "BUY"},
+                    },
+                },
+                "legacy_fta": {"legacy_fta_present": True, "direction": "BUY"},
+            },
+            l12_verdict=l12_verdict,
+            legacy_verdict="EXECUTE_BUY",
+            safe_mode=False,
+            errors=errors,
+        )
+
+        assert l12_verdict["verdict"] == "EXECUTE_BUY"
+        market_context_validation = cast(dict[str, Any], l12_verdict["market_context_validation"])
+        assert market_context_validation["direction_validated"] is True
+        assert market_context_validation["final_direction"] == "BUY"
+        assert "market_context_downgrade" not in l12_verdict
+        assert pipe._signal_throttle.get_count("EURUSD") == 1
+        assert not any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
+        assert any(event["event"] == "market_context_validation" for event in events)
+
     def test_sovereignty_downgrade_emits_throttle_skipped_event(self, monkeypatch):
         """When vault sovereignty downgrades EXECUTE before throttle, emit an explicit skip event."""
         from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline

@@ -20,6 +20,7 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
+from analysis.market_context_validator import missing_market_context_result
 from schemas.direction import normalize_direction
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
@@ -192,9 +193,11 @@ def analyze_signal_throttle_events(
             "main_watchlist": [],
             "watchlist": [],
             "dominant_themes": [],
+            "theme_scores": [],
             "event_counts": _event_counts([]),  # noqa: F821
             "top_microboost": [],
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
+            "market_context_validation": missing_market_context_result("UNKNOWN").to_dict(),
             "data_quality": _data_quality_block(
                 events=[],
                 source=source,
@@ -226,7 +229,8 @@ def analyze_signal_throttle_events(
     verdict_counts = Counter(event.verdict for event in ordered if event.verdict)
     event_type_counts = _event_counts(ordered)  # noqa: F821
     currency_pressure = compute_currency_pressure(ordered)
-    dominant_themes = classify_themes(pair_counts=pair_counts, currency_pressure=currency_pressure)
+    theme_scores = classify_themes(pair_counts=pair_counts, currency_pressure=currency_pressure)
+    dominant_themes = theme_scores[:5]
     main_watchlist = [symbol for symbol, _ in latest_pair_counts.most_common(8)]
     if not main_watchlist:
         main_watchlist = [symbol for symbol, _ in pair_counts.most_common(8)]
@@ -236,6 +240,9 @@ def analyze_signal_throttle_events(
     requires_market_context = True
     final_mode = "PAIR_SIGNAL_CANDIDATE" if pair_timing_candidate else "THEME_ALERT_AND_PAIR_SELECTION"
     candidate = _candidate_from_blocks(latest_blocks, clean_block_seconds) if pair_timing_candidate else None  # noqa: F821
+    validation_symbol = str((candidate or {}).get("symbol") or (main_watchlist[0] if main_watchlist else "UNKNOWN"))
+    validation_direction = (candidate or {}).get("direction") or _latest_direction_for_symbol(ordered, validation_symbol)
+    market_context_validation = missing_market_context_result(validation_symbol, validation_direction).to_dict()
 
     return {
         "final_mode": final_mode,
@@ -246,6 +253,7 @@ def analyze_signal_throttle_events(
         "main_watchlist": main_watchlist,
         "watchlist": main_watchlist,
         "dominant_themes": dominant_themes,
+        "theme_scores": theme_scores,
         "candidate": candidate,
         "top_microboost": [
             _microboost_payload(block)
@@ -289,6 +297,7 @@ def analyze_signal_throttle_events(
         ),
         "currency_pressure": currency_pressure,
         "top_clean_blocks": [block.to_dict() for block in rank_pressure_blocks(blocks)[:10]],
+        "market_context_validation": market_context_validation,
         "recommended_action": _recommended_action(latest_phase),
     }
 
@@ -563,11 +572,7 @@ def compute_currency_pressure(events: Iterable[SignalThrottleLogEvent]) -> dict[
     return pressure
 
 
-def classify_themes(*, pair_counts: Counter[str], currency_pressure: dict[str, int]) -> list[str]:
-    themes: list[str] = []
-    for currency, value in sorted(currency_pressure.items(), key=lambda item: abs(item[1]), reverse=True):
-        if abs(value) >= 25:
-            themes.append(f"{currency}_{'STRENGTH' if value > 0 else 'WEAKNESS'}")
+def classify_themes(*, pair_counts: Counter[str], currency_pressure: dict[str, int]) -> list[dict[str, Any]]:
     cross_counts: Counter[str] = Counter()
     for symbol, count in pair_counts.items():
         base_quote = _split_symbol(symbol)
@@ -578,9 +583,25 @@ def classify_themes(*, pair_counts: Counter[str], currency_pressure: dict[str, i
             cross_counts[base] += count
         if quote in _CURRENCIES:
             cross_counts[quote] += count
-    for currency, count in cross_counts.most_common(4):  # noqa: B007
-        themes.append(f"{currency}_CROSS_PRESSURE")
-    return list(dict.fromkeys(themes))[:8]
+
+    themes: list[dict[str, Any]] = []
+    for currency, raw_pressure in currency_pressure.items():
+        if raw_pressure == 0:
+            continue
+        cross_events = int(cross_counts.get(currency, 0))
+        themes.append(
+            {
+                "theme": f"{currency}_{'STRENGTH' if raw_pressure > 0 else 'WEAKNESS'}",
+                "score": int(abs(raw_pressure) + cross_events),
+                "raw_pressure": int(raw_pressure),
+                "cross_events": cross_events,
+            }
+        )
+    return sorted(
+        themes,
+        key=lambda item: (int(item["score"]), abs(int(item["raw_pressure"])), str(item["theme"])),
+        reverse=True,
+    )[:8]
 
 
 def _data_quality_block(
@@ -597,6 +618,8 @@ def _data_quality_block(
     return {
         "source": source,
         "file_found": source_found if source == "csv" else None,
+        "process_local": source == "live_process",
+        "global_aggregation": False,
         "row_count": resolved_row_count,
         "parsed_signal_count": parsed_signal_count,
         "unparsed_count": max(0, unparsed_count),
@@ -620,6 +643,7 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
         duration_seconds=duration_seconds,
         density_per_minute=round(density, 2),
         max_gap_seconds=max(gaps, default=0.0),
+        direction=_dominant_direction(events),
     )
 
 
@@ -692,9 +716,10 @@ def _recommended_action(latest_phase: str) -> str:
 
 def _event_counts(events: list[SignalThrottleLogEvent]) -> dict[str, int]:
     """Count events by type."""
-    counts: dict[str, int] = {}
+    counts: dict[str, int] = {"allowed": 0, "throttled": 0, "downgraded_to_hold": 0}
     for event in events:
-        counts[event.event_type] = counts.get(event.event_type, 0) + 1
+        key = str(event.event_type).strip().lower()
+        counts[key] = counts.get(key, 0) + 1
     return counts
 
 
@@ -709,11 +734,17 @@ def _candidate_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int
         return None
 
     best_block = max(clean_blocks, key=lambda b: b.duration_seconds)
+    valid_since = best_block.start + timedelta(seconds=clean_block_seconds)
     return {
         "symbol": best_block.symbol,
-        "duration_seconds": best_block.duration_seconds,
-        "events": best_block.events,
+        "block_start_utc": best_block.start.isoformat(),
+        "block_end_utc": best_block.end.isoformat(),
+        "valid_since_utc": valid_since.isoformat(),
+        "duration_minutes": round(best_block.duration_seconds / 60.0, 2),
         "density_per_minute": best_block.density_per_minute,
+        "events": best_block.events,
+        "direction": best_block.direction,
+        "phase": _candidate_phase(best_block),
     }
 
 
@@ -724,6 +755,7 @@ def _microboost_payload(block: PressureBlock) -> dict[str, Any]:
         "duration_seconds": block.duration_seconds,
         "events": block.events,
         "density_per_minute": block.density_per_minute,
+        "direction": block.direction,
         "start_utc": block.start.isoformat(),
         "end_utc": block.end.isoformat(),
     }
@@ -744,15 +776,54 @@ def compute_allowed_quorum(events: list[SignalThrottleLogEvent]) -> dict[str, An
     if not allowed_events:
         return {"count": 0, "symbols": [], "recent_window": {}}
 
-    symbols = list(set(e.symbol for e in allowed_events))
-    recent_cutoff = max(e.timestamp for e in allowed_events) - timedelta(minutes=15)
-    recent_allowed = [e for e in allowed_events if e.timestamp >= recent_cutoff]
+    streak_symbol: str | None = None
+    streak_direction: str | None = None
+    streak = 0
+    for event in allowed_events:
+        direction = normalize_direction(event.direction, event.verdict)
+        symbol = event.symbol.upper()
+        if direction and symbol == streak_symbol and direction == streak_direction:
+            streak += 1
+            continue
+        streak_symbol = symbol if direction else None
+        streak_direction = direction
+        streak = 1 if direction else 0
 
     return {
-        "count": len(allowed_events),
-        "symbols": symbols,
-        "recent_window": {
-            "count": len(recent_allowed),
-            "minutes": 15,
-        },
+        "symbol": streak_symbol,
+        "direction": streak_direction,
+        "streak": streak,
+        "quorum_size": 3,
+        "quorum_reached": streak >= 3,
     }
+
+
+def _dominant_direction(events: list[SignalThrottleLogEvent]) -> str | None:
+    counts: Counter[str] = Counter()
+    for event in events:
+        direction = normalize_direction(event.direction, event.verdict)
+        if direction:
+            counts[direction] += 1
+    if not counts:
+        return None
+    direction, count = counts.most_common(1)[0]
+    return direction if count > 0 else None
+
+
+def _latest_direction_for_symbol(events: list[SignalThrottleLogEvent], symbol: str) -> str | None:
+    normalized_symbol = symbol.upper()
+    for event in reversed(events):
+        if event.symbol.upper() != normalized_symbol:
+            continue
+        direction = normalize_direction(event.direction, event.verdict)
+        if direction:
+            return direction
+    return None
+
+
+def _candidate_phase(block: PressureBlock) -> str:
+    if block.density_per_minute < 3.0:
+        return "LOW_DENSITY_OPEN_LANE"
+    if block.density_per_minute < 8.0:
+        return "CLEAN_PRESSURE_LANE"
+    return "HIGH_DENSITY_PRESSURE_LANE"
