@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from analysis.market_context_validator import MarketContext
 from analysis.signal_throttle_log_analyzer import (
     SignalThrottleLiveAnalyzer,
     SignalThrottleLogEvent,
@@ -276,6 +277,124 @@ def test_live_analyzer_microboost_cluster_added_to_watchlist():
     assert report["main_watchlist"][0] == "NZDJPY"
     assert report["top_microboost"][0]["symbol"] == "NZDJPY"
     assert report["top_microboost"][0]["direction"] == "BUY"
+
+
+def test_microboost_summary_classifies_dense_unpriced_cluster():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    for index in range(30):
+        analyzer.record_allowed(symbol="NZDJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5))
+
+    summary = analyzer.snapshot()["microboost_summary"]
+
+    assert summary["enabled"] is True
+    assert summary["count_total"] == 1
+    assert summary["count_by_phase"] == {"DENSE_MICROBOOST": 1}
+    assert summary["top_symbols"] == ["NZDJPY"]
+    assert summary["latest"]["phase_unpriced"] == "DENSE_MICROBOOST"
+    assert summary["latest"]["phase_priced"] is None
+    assert summary["latest"]["late_pressure_candidate"] is True
+    assert summary["latest"]["requires_market_context"] is True
+    assert summary["latest"]["action"] == "VALIDATE_PRICE_THEME_STRUCTURE"
+    assert summary["reason"] == "dense_pressure_seen_but_late_pressure_requires_price_context"
+
+
+def test_microboost_summary_detects_strong_cluster_near_timing_gate_without_clean_entry():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    for index in range(25):
+        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 7.5))
+
+    report = analyzer.snapshot()
+    summary = report["microboost_summary"]
+
+    assert report["clean_entry_signal"] is False
+    assert report["requires_market_context"] is True
+    assert summary["timing_gate_5m"] is False
+    assert summary["latest"]["phase_unpriced"] == "NEAR_TIMING_GATE_MICROBOOST"
+    assert summary["latest"]["phase_priced"] is None
+    assert summary["action"] == "FETCH_MARKET_CONTEXT_FOR_TIMING_GATE"
+
+
+def test_microboost_summary_counts_recurrence_by_symbol():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    for offset in [0, 5, 10, 15, 20, 140, 145, 150, 155, 160]:
+        analyzer.record_allowed(symbol="AUDCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=offset))
+
+    summary = analyzer.snapshot()["microboost_summary"]
+
+    assert summary["count_total"] == 2
+    assert summary["count_by_symbol"] == {"AUDCAD": 2}
+    assert summary["count_by_phase"] == {"REPEATED_MICROBOOST": 2}
+    assert summary["latest"]["phase_unpriced"] == "REPEATED_MICROBOOST"
+    assert summary["latest"]["phase_priced"] is None
+    assert summary["latest"]["score_components"]["recurrence_score"] == 5
+
+
+def test_microboost_priced_phase_confirms_continuation_when_context_aligns():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    for index in range(30):
+        analyzer.record_allowed(symbol="NZDJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5))
+
+    report = analyzer.snapshot(
+        market_contexts={
+            "NZDJPY": MarketContext(
+                symbol="NZDJPY",
+                raw_allowed_direction="BUY",
+                price_at_signal_start=91.000,
+                price_at_5m_confirm=91.040,
+                price_at_signal_end=91.080,
+                m15_phase="PIVOT_RECLAIM",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+            )
+        }
+    )
+    latest = report["microboost_summary"]["latest"]
+
+    assert report["microboost_summary"]["market_context_applied"] is True
+    assert latest["phase_unpriced"] == "DENSE_MICROBOOST"
+    assert latest["phase_priced"] == "CONTINUATION_MICROBOOST"
+    assert latest["action"] == "VALIDATE_RETEST_OR_HOLD"
+    assert latest["requires_market_context"] is False
+    assert latest["market_context_validation"]["final_direction"] == "BUY"
+
+
+def test_microboost_late_pressure_requires_price_context_before_protect_action():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    for index in range(30):
+        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5))
+
+    unpriced = analyzer.snapshot()["microboost_summary"]["latest"]
+    priced_report = analyzer.snapshot(
+        market_contexts={
+            "GBPCAD": MarketContext(
+                symbol="GBPCAD",
+                raw_allowed_direction="BUY",
+                price_at_signal_start=1.8500,
+                price_at_5m_confirm=1.8550,
+                price_at_signal_end=1.8585,
+                m15_phase="PIVOT_RECLAIM",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+            )
+        }
+    )
+    priced = priced_report["microboost_summary"]["latest"]
+
+    assert unpriced["late_pressure_candidate"] is True
+    assert unpriced["phase_priced"] is None
+    assert unpriced["action"] == "VALIDATE_PRICE_THEME_STRUCTURE"
+    assert priced["phase_priced"] == "LATE_DENSE_PRESSURE"
+    assert priced["action"] == "PROTECT_PROFIT"
+    assert priced["score_components"]["late_risk_penalty"] == -24
+    assert priced["market_context_validation"]["final_direction"] == "NO_NEW_ENTRY"
+    assert priced_report["microboost_summary"]["action"] == "PROTECT_PROFIT"
 
 
 def test_live_report_requires_market_context_without_prices():
