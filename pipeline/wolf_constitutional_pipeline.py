@@ -3169,6 +3169,25 @@ class WolfConstitutionalPipeline:
             return None
         return number if number > 0 else None
 
+    def _signal_throttle_market_contexts(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        source_verdict: Any | None = None,
+    ) -> dict[str, MarketContext]:
+        context_verdict = dict(l12_verdict)
+        if source_verdict:
+            context_verdict["verdict"] = source_verdict
+        return {
+            symbol.upper(): self._build_market_context(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=context_verdict,
+            )
+        }
+
     def _apply_effective_verdict_controls(
         self,
         *,
@@ -3213,7 +3232,14 @@ class WolfConstitutionalPipeline:
                     max_signals=self._signal_throttle.max_signals,
                     window_seconds=self._signal_throttle.window_seconds,
                 )
-                l12_verdict["signal_throttle_live_report"] = self._signal_throttle_live_analyzer.snapshot()
+                l12_verdict["signal_throttle_live_report"] = self._signal_throttle_live_analyzer.snapshot(
+                    market_contexts=self._signal_throttle_market_contexts(
+                        symbol=symbol,
+                        synthesis=synthesis,
+                        l12_verdict=l12_verdict,
+                        source_verdict=final_verdict,
+                    )
+                )
             else:
                 self._signal_throttle.record(symbol)
                 self._signal_throttle.emit_allowed(symbol, final_verdict)
@@ -3233,7 +3259,14 @@ class WolfConstitutionalPipeline:
                     allowed_streak=allowed_streak,
                 )
                 l12_verdict["signal_throttle_intel"] = throttle_intel.to_dict()
-                l12_verdict["signal_throttle_live_report"] = self._signal_throttle_live_analyzer.snapshot()
+                l12_verdict["signal_throttle_live_report"] = self._signal_throttle_live_analyzer.snapshot(
+                    market_contexts=self._signal_throttle_market_contexts(
+                        symbol=symbol,
+                        synthesis=synthesis,
+                        l12_verdict=l12_verdict,
+                        source_verdict=final_verdict,
+                    )
+                )
                 emit_signal_throttle_intel(throttle_intel)
         elif final_verdict.startswith("EXECUTE") and safe_mode:
             self._emit_verdict_stream_event(
