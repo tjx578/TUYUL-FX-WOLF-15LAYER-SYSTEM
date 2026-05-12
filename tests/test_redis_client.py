@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import importlib
 import os
-from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from infrastructure.redis_client import RedisClientManager, RedisConfig
+_redis_client_module = importlib.import_module("infrastructure.redis_client")
+RedisClientManager = _redis_client_module.__dict__["RedisClientManager"]
+RedisConfig = _redis_client_module.__dict__["RedisConfig"]
 
 
 class TestRedisConfig:
@@ -140,8 +142,11 @@ class TestRedisConfig:
 
     def test_frozen(self) -> None:
         cfg = RedisConfig()
-        with pytest.raises(AttributeError):
-            cfg.host = "changed"  # type: ignore[misc]
+        try:
+            cfg.host = "changed"
+        except AttributeError:
+            return
+        raise AssertionError("RedisConfig should be frozen")
 
 
 class TestRedisClientManager:
@@ -169,7 +174,7 @@ class TestRedisClientManager:
             ckw: dict[str, object] = dict(pool.connection_kwargs)
             assert pool.__class__.__name__ == "BlockingConnectionPool"
             assert pool.max_connections == 9
-            assert cast(Any, pool).timeout == 3.0
+            assert vars(pool).get("timeout") == 3.0
             assert "retry" in ckw, "Retry object must be set on pool"
             assert isinstance(ckw["retry"], Retry)
             assert ckw.get("retry_on_error") is not None
