@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -168,7 +169,7 @@ class TestRedisClientManager:
             ckw: dict[str, object] = dict(pool.connection_kwargs)
             assert pool.__class__.__name__ == "BlockingConnectionPool"
             assert pool.max_connections == 9
-            assert getattr(pool, "timeout") == 3.0
+            assert cast(Any, pool).timeout == 3.0
             assert "retry" in ckw, "Retry object must be set on pool"
             assert isinstance(ckw["retry"], Retry)
             assert ckw.get("retry_on_error") is not None
