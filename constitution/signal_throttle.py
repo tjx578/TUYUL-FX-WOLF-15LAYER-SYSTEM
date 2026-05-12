@@ -30,6 +30,7 @@ Usage::
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -42,6 +43,7 @@ __all__ = ["SignalThrottle"]
 # Defaults: max 3 EXECUTE signals per 5 minutes per symbol
 _DEFAULT_MAX_SIGNALS = 3
 _DEFAULT_WINDOW_SECONDS = 300.0
+_DEFAULT_ERROR_LOG_MIN_INTERVAL_SECONDS = 30.0
 
 
 def _emit_throttle_error(message: str) -> None:
@@ -71,11 +73,19 @@ class SignalThrottle:
         self,
         max_signals: int = _DEFAULT_MAX_SIGNALS,
         window_seconds: float = _DEFAULT_WINDOW_SECONDS,
+        throttle_error_log_min_interval_seconds: float | None = None,
     ) -> None:
         self.max_signals = max_signals
         self.window_seconds = window_seconds
+        self.throttle_error_log_min_interval_seconds = _coerce_non_negative_float(
+            throttle_error_log_min_interval_seconds,
+            env_name="SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS",
+            default=_DEFAULT_ERROR_LOG_MIN_INTERVAL_SECONDS,
+        )
         # symbol -> deque of Unix timestamps (ascending)
         self._windows: dict[str, deque[float]] = defaultdict(deque)
+        self._last_throttle_error_log_at: dict[str, float] = {}
+        self._suppressed_throttle_error_logs: dict[str, int] = defaultdict(int)
         self._allowed_streak_symbol: str | None = None
         self._allowed_streak_direction: str | None = None
         self._allowed_streak_count: int = 0
@@ -94,10 +104,7 @@ class SignalThrottle:
             count = len(self._windows[symbol])
             throttled = count >= self.max_signals
             if throttled:
-                _emit_throttle_error(
-                    f"[SignalThrottle] {symbol} THROTTLED — {count} signals in last "
-                    f"{self.window_seconds:.0f}s (max {self.max_signals})"
-                )
+                self._emit_throttled_log_if_due(symbol, count, time.time())
             return throttled
 
     def record(self, symbol: str) -> None:
@@ -148,11 +155,16 @@ class SignalThrottle:
         with self._lock:
             if symbol is None:
                 self._windows.clear()
+                self._last_throttle_error_log_at.clear()
+                self._suppressed_throttle_error_logs.clear()
                 self._allowed_streak_symbol = None
                 self._allowed_streak_direction = None
                 self._allowed_streak_count = 0
             else:
                 self._windows.pop(symbol, None)
+                normalized_symbol = str(symbol).upper()
+                self._last_throttle_error_log_at.pop(normalized_symbol, None)
+                self._suppressed_throttle_error_logs.pop(normalized_symbol, None)
                 if self._allowed_streak_symbol == str(symbol).upper():
                     self._allowed_streak_symbol = None
                     self._allowed_streak_direction = None
@@ -160,9 +172,34 @@ class SignalThrottle:
 
     # ── internals ────────────────────────────────────────
 
+    def _emit_throttled_log_if_due(self, symbol: str, count: int, now: float) -> None:
+        normalized_symbol = str(symbol).upper()
+        last_logged_at = self._last_throttle_error_log_at.get(normalized_symbol)
+        min_interval = self.throttle_error_log_min_interval_seconds
+        if last_logged_at is not None and min_interval > 0 and (now - last_logged_at) < min_interval:
+            self._suppressed_throttle_error_logs[normalized_symbol] += 1
+            return
+
+        suppressed = self._suppressed_throttle_error_logs.pop(normalized_symbol, 0)
+        suffix = f" suppressed={suppressed}" if suppressed else ""
+        _emit_throttle_error(
+            f"[SignalThrottle] {normalized_symbol} THROTTLED — {count} signals in last "
+            f"{self.window_seconds:.0f}s (max {self.max_signals}){suffix}"
+        )
+        self._last_throttle_error_log_at[normalized_symbol] = now
+
     def _purge(self, symbol: str) -> None:
         """Remove entries older than the window.  Caller must hold lock."""
         cutoff = time.time() - self.window_seconds
         q = self._windows[symbol]
         while q and q[0] < cutoff:
             q.popleft()
+
+
+def _coerce_non_negative_float(value: float | None, *, env_name: str, default: float) -> float:
+    raw: str | float = os.getenv(env_name, str(default)) if value is None else value
+    try:
+        number = float(raw)
+    except (TypeError, ValueError):
+        number = default
+    return max(0.0, number)
