@@ -9,7 +9,7 @@ Zone: infrastructure/ — observability glue.  No analysis or execution logic.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sized
 
 logger = logging.getLogger(__name__)
 
@@ -124,20 +124,24 @@ def _compute_pool_metrics(pool: object) -> tuple[int, int, int, int, int]:
     in_use_getter = getattr(pool, "_get_in_use_connections", None)
     if callable(free_getter) and callable(in_use_getter):
         try:
-            available = len(free_getter())
-            in_use = len(in_use_getter())
-            created = len(getattr(pool, "_connections", []))
+            available = _safe_len(free_getter())
+            in_use = _safe_len(in_use_getter())
+            created = _safe_len(getattr(pool, "_connections", []))
         except Exception:
-            available = len(getattr(pool, "_available_connections", []))
-            in_use = len(getattr(pool, "_in_use_connections", []))
+            available = _safe_len(getattr(pool, "_available_connections", []))
+            in_use = _safe_len(getattr(pool, "_in_use_connections", []))
             created = available + in_use
     else:
-        available = len(getattr(pool, "_available_connections", []))
-        in_use = len(getattr(pool, "_in_use_connections", []))
+        available = _safe_len(getattr(pool, "_available_connections", []))
+        in_use = _safe_len(getattr(pool, "_in_use_connections", []))
         created = available + in_use
     max_conns = int(getattr(pool, "max_connections", 0) or 0)
     headroom = max(0, max_conns - in_use) if max_conns > 0 else available
     return available, in_use, created, max_conns, headroom
+
+
+def _safe_len(value: object) -> int:
+    return len(value) if isinstance(value, Sized) else 0
 
 
 async def check_redis_pool_health() -> dict[str, object]:
