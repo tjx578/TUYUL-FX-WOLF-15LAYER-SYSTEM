@@ -118,6 +118,32 @@ class TestSignalThrottle:
         assert captured.out == ""
         assert captured.err.splitlines() == ["[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"]
 
+    def test_throttled_logs_are_rate_limited_but_summarize_suppressed(self, monkeypatch, capsys):
+        """Repeated throttle checks should not flood platform logs."""
+        now = 1000.0
+        monkeypatch.setattr("constitution.signal_throttle.time.time", lambda: now)
+        t = SignalThrottle(
+            max_signals=1,
+            window_seconds=300,
+            throttle_error_log_min_interval_seconds=30,
+        )
+        t.record("XAUUSD")
+
+        assert t.is_throttled("XAUUSD") is True
+        first = capsys.readouterr()
+        assert first.err.splitlines() == ["[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"]
+
+        assert t.is_throttled("XAUUSD") is True
+        suppressed = capsys.readouterr()
+        assert suppressed.err == ""
+
+        now = 1031.0
+        assert t.is_throttled("XAUUSD") is True
+        summary = capsys.readouterr()
+        assert summary.err.splitlines() == [
+            "[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1) suppressed=1"
+        ]
+
     def test_allowed_logs_plain_info_event(self, capsys):
         """Allowed signals must reach the platform as plain stdout events."""
         t = SignalThrottle(max_signals=3, window_seconds=300)
