@@ -12,7 +12,7 @@ from datetime import datetime
 from numbers import Real
 from typing import Any
 
-from analysis.market_context_validator import MarketContext, validate_market_context
+from .market_context_validator import MarketContext, validate_market_context
 
 _CURRENCIES = ("AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD")
 _METAL_BASES = ("XAG", "XAU")
