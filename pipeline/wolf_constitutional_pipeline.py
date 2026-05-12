@@ -344,7 +344,8 @@ class WolfConstitutionalPipeline:
         self._governance_now_ts: float | None = None
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
-            f"max_signals={throttle_max_signals} window_seconds={throttle_window_seconds:.0f}"
+            f"max_signals={throttle_max_signals} window_seconds={throttle_window_seconds:.0f} "
+            f"error_log_min_interval_seconds={self._signal_throttle.throttle_error_log_min_interval_seconds:.0f}"
         )
         self._market_context_guard_enabled = os.getenv("MARKET_CONTEXT_EXECUTE_GUARD_ENABLED", "1") != "0"
         guard_mode = os.getenv("MARKET_CONTEXT_EXECUTE_GUARD_MODE", "audit").strip().lower()
