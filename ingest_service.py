@@ -38,14 +38,14 @@ def _env_true(value: str | None) -> bool:
 if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
     load_dotenv(override=False)
 
-from loguru import logger
+from loguru import logger  # noqa: E402
 
 from config.logging_bootstrap import configure_loguru_logging
 from context.system_state import SystemStateManager
 from core.health_probe import HealthProbe
-from ingest.service_metrics import ingest_readiness
-from ingest.service_runner import run_ingest_services
-from storage.startup import init_persistent_storage, shutdown_persistent_storage
+from ingest.service_metrics import ingest_readiness  # noqa: E402
+from ingest.service_runner import run_ingest_services  # noqa: E402
+from storage.startup import init_persistent_storage, shutdown_persistent_storage  # noqa: E402
 
 _shutdown_event: asyncio.Event | None = None
 
