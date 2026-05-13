@@ -6,12 +6,19 @@ Verifies that:
 - ERROR/CRITICAL logs go to stderr
 """
 
+import sys
 import time
 from io import StringIO
 
 from loguru import logger
 
-from config.logging_bootstrap import LogBurstLimiter, LogRateLimiter, resolve_log_level, resolve_stdlib_log_level
+from config.logging_bootstrap import (
+    LogBurstLimiter,
+    LogRateLimiter,
+    configure_loguru_logging,
+    resolve_log_level,
+    resolve_stdlib_log_level,
+)
 
 
 def test_split_stream_logging():
@@ -125,6 +132,30 @@ def test_level_boundary():
 
     # Cleanup
     logger.remove()
+
+
+def test_configure_loguru_routes_warning_stdout_error_stderr(monkeypatch):
+    stdout_buffer = StringIO()
+    stderr_buffer = StringIO()
+    monkeypatch.setattr(sys, "stdout", stdout_buffer)
+    monkeypatch.setattr(sys, "stderr", stderr_buffer)
+    monkeypatch.setenv("WOLF15_LOG_BURST_ENABLED", "0")
+    monkeypatch.setenv("WOLF15_LOG_RATE_LIMIT_ENABLED", "0")
+
+    try:
+        configure_loguru_logging(level="INFO")
+        logger.warning("warning should stay off stderr")
+        logger.error("error should use stderr")
+
+        stdout_output = stdout_buffer.getvalue()
+        stderr_output = stderr_buffer.getvalue()
+
+        assert "warning should stay off stderr" in stdout_output
+        assert "warning should stay off stderr" not in stderr_output
+        assert "error should use stderr" in stderr_output
+        assert "error should use stderr" not in stdout_output
+    finally:
+        logger.remove()
 
 
 def test_log_burst_limiter_allows_then_blocks_then_resets():
