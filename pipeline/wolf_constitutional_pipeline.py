@@ -3016,6 +3016,10 @@ class WolfConstitutionalPipeline:
         latest_m15_close = self._latest_candle_close(symbol, "M15")
         latest_h1_close = self._latest_candle_close(symbol, "H1")
         entry_price = self._coerce_positive_float(execution.get("entry_price"))
+        structure = self._derive_price_structure(
+            symbol=symbol,
+            current_price=tick_mid or latest_m15_close or latest_h1_close or entry_price,
+        )
 
         return MarketContext(
             symbol=symbol,
@@ -3027,6 +3031,12 @@ class WolfConstitutionalPipeline:
             h1_phase=self._derive_timeframe_phase(symbol, "H1"),
             theme_aligned=self._is_market_theme_aligned(synthesis, direction),
             spread_normal=self._is_spread_normal(symbol),
+            market_bias=self._derive_market_bias(symbol),
+            trend_direction=self._derive_market_bias(symbol),
+            price_position=structure.get("price_position"),
+            main_support=structure.get("main_support"),
+            main_resistance=structure.get("main_resistance"),
+            range_position=structure.get("range_position"),
         )
 
     @staticmethod
@@ -3058,6 +3068,55 @@ class WolfConstitutionalPipeline:
         if not candles:
             return None
         return self._candle_price(candles[-1], "close")
+
+    def _derive_price_structure(self, *, symbol: str, current_price: float | None) -> dict[str, Any]:
+        candles = self._context_bus.get_candle_history(symbol, "H1", count=24)
+        if len(candles) < 4:
+            candles = self._context_bus.get_candle_history(symbol, "M15", count=32)
+        highs = [price for candle in candles if (price := self._candle_price(candle, "high")) is not None]
+        lows = [price for candle in candles if (price := self._candle_price(candle, "low")) is not None]
+        if current_price is None or not highs or not lows:
+            return {"price_position": None, "main_support": None, "main_resistance": None, "range_position": None}
+
+        main_support = min(lows)
+        main_resistance = max(highs)
+        price_range = main_resistance - main_support
+        if price_range <= 0:
+            return {
+                "price_position": None,
+                "main_support": main_support,
+                "main_resistance": main_resistance,
+                "range_position": None,
+            }
+
+        range_position = max(0.0, min(1.0, (current_price - main_support) / price_range))
+        tolerance = max(price_range * 0.12, current_price * 0.0008)
+        if abs(main_resistance - current_price) <= tolerance or range_position >= 0.88:
+            price_position = "MAIN_RESISTANCE"
+        elif abs(current_price - main_support) <= tolerance or range_position <= 0.12:
+            price_position = "MAIN_SUPPORT"
+        else:
+            price_position = "MID_RANGE"
+        return {
+            "price_position": price_position,
+            "main_support": main_support,
+            "main_resistance": main_resistance,
+            "range_position": round(range_position, 4),
+        }
+
+    def _derive_market_bias(self, symbol: str) -> str | None:
+        candles = self._context_bus.get_candle_history(symbol, "H1", count=8)
+        if len(candles) < 2:
+            return None
+        first = self._candle_price(candles[0], "close")
+        latest = self._candle_price(candles[-1], "close")
+        if first is None or latest is None:
+            return None
+        if latest > first:
+            return "BUY"
+        if latest < first:
+            return "SELL"
+        return None
 
     def _derive_timeframe_phase(self, symbol: str, timeframe: str) -> str | None:
         candles = self._context_bus.get_candle_history(symbol, timeframe, count=2)
@@ -3153,6 +3212,8 @@ class WolfConstitutionalPipeline:
         aliases = {
             "open": ("open", "o"),
             "close": ("close", "c"),
+            "high": ("high", "h"),
+            "low": ("low", "l"),
         }
         for key in aliases.get(field, (field,)):
             value = WolfConstitutionalPipeline._coerce_positive_float(candle.get(key))
