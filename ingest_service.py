@@ -40,9 +40,9 @@ if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
 
 from loguru import logger  # noqa: E402
 
-from config.logging_bootstrap import configure_loguru_logging
-from context.system_state import SystemStateManager
-from core.health_probe import HealthProbe
+from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+from context.system_state import SystemStateManager  # noqa: E402
+from core.health_probe import HealthProbe  # noqa: E402
 from ingest.service_metrics import ingest_readiness  # noqa: E402
 from ingest.service_runner import run_ingest_services  # noqa: E402
 from storage.startup import init_persistent_storage, shutdown_persistent_storage  # noqa: E402
