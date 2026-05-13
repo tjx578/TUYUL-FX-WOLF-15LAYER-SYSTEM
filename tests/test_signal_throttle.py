@@ -565,7 +565,7 @@ class TestPipelineSignalThrottle:
         latest = cast(dict[str, Any], report["microboost_summary"]["latest"])
         assert report["microboost_summary"]["market_context_applied"] is True
         assert latest["phase_unpriced"] == "DENSE_MICROBOOST"
-        assert latest["phase_priced"] == "CONTINUATION_MICROBOOST"
+        assert latest["phase_priced"] == "TREND_CONTINUATION_MICROBOOST"
         assert latest["market_context_validation"]["final_direction"] == "BUY"
         assert latest["requires_market_context"] is False
         assert not any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
