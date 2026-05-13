@@ -54,6 +54,12 @@ class MicroboostBlockIntel:
     score_components: dict[str, int]
     market_context_validation: dict[str, Any] | None
     price_extension_ratio: float | None
+    market_bias: str | None
+    trend_direction: str | None
+    price_position: str | None
+    main_support: float | None
+    main_resistance: float | None
+    range_position: float | None
     reason: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -221,6 +227,12 @@ def _build_block_intel(
         score_components=score_components,
         market_context_validation=priced["market_context_validation"],
         price_extension_ratio=priced["price_extension_ratio"],
+        market_bias=priced["market_bias"],
+        trend_direction=priced["trend_direction"],
+        price_position=priced["price_position"],
+        main_support=priced["main_support"],
+        main_resistance=priced["main_resistance"],
+        range_position=priced["range_position"],
         reason=priced["reason"],
     )
 
@@ -316,6 +328,12 @@ def _allowed_quorum_bonus(symbol: str, direction: str | None, allowed_quorum: di
 
 
 def _summary_action(blocks: list[MicroboostBlockIntel], timing_gate_5m: bool) -> str:
+    if any(
+        block.phase_priced in {"EXHAUSTION_AT_RESISTANCE", "EXHAUSTION_AT_SUPPORT"} for block in blocks
+    ):
+        return "NO_NEW_ENTRY_WAIT_REVERSAL_OR_PULLBACK_CONFIRMATION"
+    if any(block.phase_priced in {"SUPPORT_BOUNCE_MICROBOOST", "RESISTANCE_REJECTION_MICROBOOST"} for block in blocks):
+        return "VALIDATE_STRUCTURE_REACTION"
     if any(block.phase_priced == "LATE_DENSE_PRESSURE" for block in blocks):
         return "PROTECT_PROFIT"
     if any(block.phase_priced in {"CONFIRMATION_MICROBOOST", "CONTINUATION_MICROBOOST"} for block in blocks):
@@ -358,19 +376,28 @@ def _priced_microboost_state(
     thresholds: MicroboostThresholds,
 ) -> dict[str, Any]:
     if market_context is None:
-        return {
-            "phase_priced": None,
-            "action": _action_for_phase(phase_unpriced),
-            "requires_market_context": True,
-            "market_context_validation": None,
-            "price_extension_ratio": None,
-            "late_risk_penalty": 0,
-            "reason": "unpriced_microboost_requires_market_context_before_entry_or_exit",
-        }
+        return _priced_state_payload(
+            context=None,
+            phase_priced=None,
+            action=_action_for_phase(phase_unpriced),
+            requires_market_context=True,
+            market_context_validation=None,
+            price_extension_ratio=None,
+            late_risk_penalty=0,
+            reason="unpriced_microboost_requires_market_context_before_entry_or_exit",
+        )
 
     price_extension_ratio = _price_extension_ratio(market_context)
+    structure_phase = _structure_microboost_phase(
+        context=market_context,
+        direction=direction,
+        late_pressure_candidate=late_pressure_candidate,
+        price_extension_ratio=price_extension_ratio,
+    )
     inferred_late = (
-        late_pressure_candidate
+        structure_phase is None
+        and market_context.price_position is None
+        and late_pressure_candidate
         and _directional_extension_confirmed(
             market_context,
             direction=direction,
@@ -384,72 +411,190 @@ def _priced_microboost_state(
     validation = validate_market_context(validation_context)
     validation_payload = validation.to_dict()
 
+    if structure_phase is not None:
+        phase_priced, action, reason, penalty = structure_phase
+        return _priced_state_payload(
+            context=market_context,
+            phase_priced=phase_priced,
+            action=action,
+            requires_market_context=False,
+            market_context_validation=validation_payload,
+            price_extension_ratio=price_extension_ratio,
+            late_risk_penalty=penalty,
+            reason=reason,
+        )
+
     if validation.requires_market_context:
-        return {
-            "phase_priced": None,
-            "action": validation.action,
-            "requires_market_context": True,
-            "market_context_validation": validation_payload,
-            "price_extension_ratio": price_extension_ratio,
-            "late_risk_penalty": 0,
-            "reason": validation.reason,
-        }
+        return _priced_state_payload(
+            context=market_context,
+            phase_priced=None,
+            action=validation.action,
+            requires_market_context=True,
+            market_context_validation=validation_payload,
+            price_extension_ratio=price_extension_ratio,
+            late_risk_penalty=0,
+            reason=validation.reason,
+        )
 
     if validation.action == "PROTECT_PROFIT":
-        return {
-            "phase_priced": "LATE_DENSE_PRESSURE",
-            "action": "PROTECT_PROFIT",
-            "requires_market_context": False,
-            "market_context_validation": validation_payload,
-            "price_extension_ratio": price_extension_ratio,
-            "late_risk_penalty": -24,
-            "reason": validation.reason,
-        }
+        return _priced_state_payload(
+            context=market_context,
+            phase_priced="LATE_DENSE_PRESSURE",
+            action="PROTECT_PROFIT",
+            requires_market_context=False,
+            market_context_validation=validation_payload,
+            price_extension_ratio=price_extension_ratio,
+            late_risk_penalty=-24,
+            reason=validation.reason,
+        )
 
     if validation.direction_validated:
         phase_priced = (
             "CONFIRMATION_MICROBOOST" if phase_unpriced == "IGNITION_MICROBOOST" else "CONTINUATION_MICROBOOST"
         )
-        return {
-            "phase_priced": phase_priced,
-            "action": "VALIDATE_RETEST_OR_HOLD",
-            "requires_market_context": False,
-            "market_context_validation": validation_payload,
-            "price_extension_ratio": price_extension_ratio,
-            "late_risk_penalty": 0,
-            "reason": validation.reason,
-        }
+        return _priced_state_payload(
+            context=market_context,
+            phase_priced=phase_priced,
+            action="VALIDATE_RETEST_OR_HOLD",
+            requires_market_context=False,
+            market_context_validation=validation_payload,
+            price_extension_ratio=price_extension_ratio,
+            late_risk_penalty=0,
+            reason=validation.reason,
+        )
 
     if validation.final_direction == "BLOCK_DIRECTION":
-        return {
-            "phase_priced": "ABSORPTION_WARNING",
-            "action": "BLOCK_NEW_ENTRY",
-            "requires_market_context": False,
-            "market_context_validation": validation_payload,
-            "price_extension_ratio": price_extension_ratio,
-            "late_risk_penalty": 0,
-            "reason": validation.reason,
-        }
+        return _priced_state_payload(
+            context=market_context,
+            phase_priced="ABSORPTION_WARNING",
+            action="BLOCK_NEW_ENTRY",
+            requires_market_context=False,
+            market_context_validation=validation_payload,
+            price_extension_ratio=price_extension_ratio,
+            late_risk_penalty=0,
+            reason=validation.reason,
+        )
 
     if _counter_direction_confirmed(market_context, direction):
-        return {
-            "phase_priced": "REVERSAL_WARNING",
-            "action": "BLOCK_NEW_ENTRY",
-            "requires_market_context": False,
-            "market_context_validation": validation_payload,
-            "price_extension_ratio": price_extension_ratio,
-            "late_risk_penalty": 0,
-            "reason": validation.reason,
-        }
+        return _priced_state_payload(
+            context=market_context,
+            phase_priced="REVERSAL_WARNING",
+            action="BLOCK_NEW_ENTRY",
+            requires_market_context=False,
+            market_context_validation=validation_payload,
+            price_extension_ratio=price_extension_ratio,
+            late_risk_penalty=0,
+            reason=validation.reason,
+        )
 
+    return _priced_state_payload(
+        context=market_context,
+        phase_priced=None,
+        action=validation.action,
+        requires_market_context=False,
+        market_context_validation=validation_payload,
+        price_extension_ratio=price_extension_ratio,
+        late_risk_penalty=0,
+        reason=validation.reason,
+    )
+
+
+def _structure_microboost_phase(
+    *,
+    context: MarketContext,
+    direction: str | None,
+    late_pressure_candidate: bool,
+    price_extension_ratio: float | None,
+) -> tuple[str, str, str, int] | None:
+    position = _normalize_structure_label(context.price_position)
+    trend = _normalize_direction(context.trend_direction)
+    bias = _normalize_direction(context.market_bias)
+    extended = late_pressure_candidate and (price_extension_ratio or 0.0) >= 0.0015
+
+    if position == "MAIN_RESISTANCE":
+        if direction == "BUY":
+            return (
+                "EXHAUSTION_AT_RESISTANCE" if extended else "RESISTANCE_PRESSURE_WARNING",
+                "NO_NEW_BUY_WAIT_SELL_OR_PULLBACK_CONFIRMATION",
+                "buy_microboost_at_main_resistance_requires_rejection_or_breakout_confirmation",
+                -24 if extended else -12,
+            )
+        if direction == "SELL":
+            return (
+                "RESISTANCE_REJECTION_MICROBOOST",
+                "SELL_ON_REJECTION_CONFIRMATION",
+                "sell_microboost_at_main_resistance_aligns_with_structure_rejection",
+                0,
+            )
+
+    if position == "MAIN_SUPPORT":
+        if direction == "SELL":
+            return (
+                "EXHAUSTION_AT_SUPPORT" if extended else "SUPPORT_PRESSURE_WARNING",
+                "NO_NEW_SELL_WAIT_BUY_OR_BREAKDOWN_CONFIRMATION",
+                "sell_microboost_at_main_support_requires_bounce_or_breakdown_confirmation",
+                -24 if extended else -12,
+            )
+        if direction == "BUY":
+            return (
+                "SUPPORT_BOUNCE_MICROBOOST",
+                "BUY_ON_RECLAIM_CONFIRMATION",
+                "buy_microboost_at_main_support_aligns_with_structure_bounce",
+                0,
+            )
+
+    if direction and direction == trend:
+        return (
+            "TREND_CONTINUATION_MICROBOOST",
+            "VALIDATE_RETEST_OR_HOLD",
+            "microboost_aligns_with_running_trend_away_from_main_extreme",
+            0,
+        )
+
+    if direction and trend and direction != trend:
+        return (
+            "MINOR_PULLBACK_MICROBOOST",
+            "WAIT_PULLBACK_COMPLETION",
+            "microboost_counter_to_running_trend_treat_as_pullback_until_structure_break",
+            -8,
+        )
+
+    if direction and bias and direction != bias:
+        return (
+            "COUNTER_BIAS_MICROBOOST",
+            "WAIT_BIAS_OR_STRUCTURE_CONFIRMATION",
+            "microboost_counter_to_pair_bias_requires_structure_confirmation",
+            -8,
+        )
+
+    return None
+
+
+def _priced_state_payload(
+    *,
+    context: MarketContext | None,
+    phase_priced: str | None,
+    action: str,
+    requires_market_context: bool,
+    market_context_validation: dict[str, Any] | None,
+    price_extension_ratio: float | None,
+    late_risk_penalty: int,
+    reason: str,
+) -> dict[str, Any]:
     return {
-        "phase_priced": None,
-        "action": validation.action,
-        "requires_market_context": False,
-        "market_context_validation": validation_payload,
+        "phase_priced": phase_priced,
+        "action": action,
+        "requires_market_context": requires_market_context,
+        "market_context_validation": market_context_validation,
         "price_extension_ratio": price_extension_ratio,
-        "late_risk_penalty": 0,
-        "reason": validation.reason,
+        "late_risk_penalty": late_risk_penalty,
+        "market_bias": None if context is None else _normalize_direction(context.market_bias),
+        "trend_direction": None if context is None else _normalize_direction(context.trend_direction),
+        "price_position": None if context is None else _normalize_structure_label(context.price_position),
+        "main_support": None if context is None else context.main_support,
+        "main_resistance": None if context is None else context.main_resistance,
+        "range_position": None if context is None else context.range_position,
+        "reason": reason,
     }
 
 
@@ -477,6 +622,12 @@ def _market_context_for_symbol(
         h1_phase=_optional_str(raw.get("h1_phase")),
         theme_aligned=_optional_bool(raw.get("theme_aligned")),
         spread_normal=_optional_bool(raw.get("spread_normal")),
+        market_bias=_optional_str(raw.get("market_bias")),
+        trend_direction=_optional_str(raw.get("trend_direction")),
+        price_position=_optional_str(raw.get("price_position")),
+        main_support=_optional_float(raw.get("main_support")),
+        main_resistance=_optional_float(raw.get("main_resistance")),
+        range_position=_optional_float(raw.get("range_position")),
         is_late_pressure=bool(raw.get("is_late_pressure", False)),
     )
 
@@ -585,7 +736,24 @@ def _normalize_direction(value: Any) -> str | None:
     text = str(value or "").strip().upper()
     if text in {"BUY", "SELL"}:
         return text
+    if text in {"BULL", "BULLISH", "LONG", "UPTREND", "TREND_UP"}:
+        return "BUY"
+    if text in {"BEAR", "BEARISH", "SHORT", "DOWNTREND", "TREND_DOWN"}:
+        return "SELL"
     return None
+
+
+def _normalize_structure_label(value: Any) -> str | None:
+    text = str(value or "").strip().upper()
+    if not text:
+        return None
+    if text in {"MAIN_RESISTANCE", "RESISTANCE", "NEAR_RESISTANCE", "UPPER_RANGE"}:
+        return "MAIN_RESISTANCE"
+    if text in {"MAIN_SUPPORT", "SUPPORT", "NEAR_SUPPORT", "LOWER_RANGE"}:
+        return "MAIN_SUPPORT"
+    if text in {"MID_RANGE", "VALUE_AREA", "RANGE_MID"}:
+        return "MID_RANGE"
+    return text
 
 
 def _iso_utc(value: Any) -> str:
