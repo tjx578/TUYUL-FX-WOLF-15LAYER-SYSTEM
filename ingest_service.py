@@ -13,7 +13,6 @@ import asyncio
 import contextlib
 import os
 import signal
-import sys
 import types
 
 from dotenv import load_dotenv
@@ -41,6 +40,7 @@ if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
 
 from loguru import logger
 
+from config.logging_bootstrap import configure_loguru_logging
 from context.system_state import SystemStateManager
 from core.health_probe import HealthProbe
 from ingest.service_metrics import ingest_readiness
@@ -117,26 +117,8 @@ async def main(
 
     hp = sm.health_probe
 
-    logger.remove()
-
-    logger.add(
-        sys.stdout,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-        "<level>{level: <8}</level> | "
-        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-        "<level>{message}</level>",
-        level="INFO",
-        filter=lambda record: record["level"].no < 40,
-    )
-
-    logger.add(
-        sys.stderr,
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
-        ),
-        level="ERROR",
-    )
+    # Shared Railway-safe routing and rate limiting.
+    configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
