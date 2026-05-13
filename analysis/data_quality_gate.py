@@ -180,6 +180,33 @@ class DataQualityGate:
         exempt = {x.strip().upper() for x in self._config.stale_penalty_exempt_timeframes}
         return tf not in exempt
 
+    @staticmethod
+    def _coerce_nonnegative_float(value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number < 0:
+            return None
+        return number
+
+    @classmethod
+    def _effective_tick_count(cls, candle: dict[str, Any]) -> float | None:
+        tick_count = cls._coerce_nonnegative_float(candle.get("tick_count"))
+        if tick_count is not None and tick_count > 0:
+            return tick_count
+
+        # REST and aggregated HTF candles often carry volume/tick-volume but
+        # are persisted with tick_count=0 when the source did not provide that
+        # exact field.  Do not treat that metadata gap as zero market activity.
+        volume = cls._coerce_nonnegative_float(candle.get("volume"))
+        if volume is not None and volume > 0:
+            return volume
+
+        return tick_count
+
     def assess(
         self,
         symbol: str,
@@ -223,7 +250,14 @@ class DataQualityGate:
         gap_ratio = gap_candles / total
 
         # Count low-tick candles
-        low_tick = sum(1 for c in window if (c.get("tick_count", cfg.min_tick_count) < cfg.min_tick_count))
+        low_tick = sum(
+            1
+            for c in window
+            if (
+                (effective_tick_count := self._effective_tick_count(c)) is not None
+                and effective_tick_count < cfg.min_tick_count
+            )
+        )
         low_tick_ratio = low_tick / total
 
         # Staleness — subtract weekend closure time so data from
