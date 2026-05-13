@@ -123,6 +123,32 @@ KILL_SWITCH_ENABLED_DEFAULT = _env_bool("WOLF_KILL_SWITCH_ACTIVE", False)
 # with a reduced-confidence penalty instead of forcing HOLD.  Set to 0 to disable.
 STALE_GRACE_SEC = _env_float("WOLF_GOVERNANCE_STALE_GRACE_SEC", 0.0)
 
+# Repeated HOLDs can occur every analysis cycle while a feed is stale.  The
+# verdict still HOLDs on every call; this only limits repeated diagnostics.
+GOVERNANCE_HOLD_LOG_INTERVAL_SEC = _env_float("WOLF_GOVERNANCE_HOLD_LOG_INTERVAL_SEC", 300.0)
+_GOVERNANCE_HOLD_LOG_STATE: dict[tuple[str, str, tuple[str, ...]], float] = {}
+
+
+def _reason_log_code(reason: str) -> str:
+    return str(reason).split(":", 1)[0]
+
+
+def _should_log_hold(action: GovernanceAction, symbol: str, reasons: tuple[str, ...], now_ts: float) -> bool:
+    interval = max(0.0, GOVERNANCE_HOLD_LOG_INTERVAL_SEC)
+    if interval <= 0:
+        return True
+
+    key = (
+        str(symbol).upper(),
+        action.value,
+        tuple(_reason_log_code(reason) for reason in reasons),
+    )
+    last_log_ts = _GOVERNANCE_HOLD_LOG_STATE.get(key)
+    if last_log_ts is None or (now_ts - last_log_ts) >= interval:
+        _GOVERNANCE_HOLD_LOG_STATE[key] = now_ts
+        return True
+    return False
+
 
 # ---------------------------------------------------------------------------
 # Governance check functions
@@ -344,7 +370,12 @@ def assess_governance(
         data_quality_degraded=dq_degraded,
     )
 
-    if action in (GovernanceAction.HOLD, GovernanceAction.BLOCK):
+    if action in (GovernanceAction.HOLD, GovernanceAction.BLOCK) and _should_log_hold(
+        action,
+        symbol,
+        verdict.reasons,
+        now,
+    ):
         logger.warning(
             "Governance {} for {}: {} | penalty={:.2f}",
             action.value,
