@@ -50,6 +50,7 @@ import uvicorn
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
 
+from config.logging_bootstrap import configure_loguru_logging
 from config_loader import get_enabled_symbols
 from core.health_probe import HealthProbe
 from core.startup_validator import validate_engine_startup_async
@@ -179,32 +180,8 @@ async def main() -> None:
     global _shutdown_event
     _shutdown_event = asyncio.Event()
 
-    # Configure logging — split streams for Railway compatibility
-    logger.remove()
-
-    _app_env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
-    _stdout_level = "WARNING" if _app_env == "production" else "INFO"
-
-    # INFO/WARNING (or WARNING-only in production) -> stdout (Railway classifies as "info")
-    logger.add(
-        sys.stdout,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-        "<level>{level: <8}</level> | "
-        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-        "<level>{message}</level>",
-        level=_stdout_level,
-        filter=lambda record: record["level"].no < 40,  # Below ERROR
-    )
-
-    # ERROR/CRITICAL -> stderr (Railway classifies as "error")
-    logger.add(
-        sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-        "<level>{level: <8}</level> | "
-        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-        "<level>{message}</level>",
-        level="ERROR",
-    )
+    # Shared Railway-safe routing and rate limiting.
+    configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
 
     install_signal_handlers(_shutdown_event)
 
