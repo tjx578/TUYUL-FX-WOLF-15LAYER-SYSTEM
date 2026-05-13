@@ -23,7 +23,7 @@ from typing import Any
 from dotenv import load_dotenv
 from typing_extensions import override
 
-from config.logging_bootstrap import configure_loguru_logging
+from config.logging_bootstrap import configure_loguru_logging, resolve_stdlib_log_level
 
 
 def _is_railway_runtime() -> bool:
@@ -52,13 +52,13 @@ if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
 def _configure_process_logging() -> None:
     """Configure stdlib + loguru logging for correct stdout/stderr severity routing."""
     logging.basicConfig(
-        level=logging.INFO,
+        level=resolve_stdlib_log_level(os.getenv("WOLF15_LOG_LEVEL")),
         format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
         stream=sys.stdout,
         force=True,
     )
 
-    configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL", "INFO"))
+    configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
 
 
 _configure_process_logging()
