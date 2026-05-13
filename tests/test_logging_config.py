@@ -11,7 +11,7 @@ from io import StringIO
 
 from loguru import logger
 
-from config.logging_bootstrap import LogBurstLimiter
+from config.logging_bootstrap import LogBurstLimiter, LogRateLimiter, resolve_log_level, resolve_stdlib_log_level
 
 
 def test_split_stream_logging():
@@ -136,3 +136,32 @@ def test_log_burst_limiter_allows_then_blocks_then_resets():
 
     time.sleep(0.25)
     assert limiter.allow("svc", "ERROR", "redis timeout") is True
+
+
+def test_log_rate_limiter_caps_aggregate_messages_then_resets():
+    limiter = LogRateLimiter(max_per_window=2, window_seconds=0.2)
+
+    assert limiter.allow() is True
+    assert limiter.allow() is True
+    assert limiter.allow() is False
+
+    time.sleep(0.25)
+    assert limiter.allow() is True
+
+
+def test_railway_defaults_to_warning_when_log_level_unset(monkeypatch):
+    monkeypatch.delenv("WOLF15_LOG_LEVEL", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_ID", "env_123")
+
+    assert resolve_log_level() == "WARNING"
+    assert resolve_stdlib_log_level() == 30
+
+
+def test_explicit_log_level_overrides_railway_default(monkeypatch):
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_ID", "env_123")
+    monkeypatch.setenv("WOLF15_LOG_LEVEL", "INFO")
+
+    assert resolve_log_level() == "INFO"
+    assert resolve_stdlib_log_level() == 20
