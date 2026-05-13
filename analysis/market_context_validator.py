@@ -41,6 +41,12 @@ class MarketContext:
     h1_phase: str | None = None
     theme_aligned: bool | None = None
     spread_normal: bool | None = None
+    market_bias: str | None = None
+    trend_direction: str | None = None
+    price_position: str | None = None
+    main_support: float | None = None
+    main_resistance: float | None = None
+    range_position: float | None = None
     is_late_pressure: bool = False
 
 
