@@ -15,19 +15,19 @@ import logging
 import os
 import sys
 
-from config.logging_bootstrap import configure_loguru_logging
+from config.logging_bootstrap import configure_loguru_logging, resolve_stdlib_log_level
 
 # ── Process-level logging (must run before any app import) ────────────────────
 
 
 def _configure_process_logging() -> None:
     logging.basicConfig(
-        level=logging.INFO,
+        level=resolve_stdlib_log_level(os.getenv("WOLF15_LOG_LEVEL")),
         format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
         stream=sys.stdout,
         force=True,
     )
-    configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL", "INFO"))
+    configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
 
 
 _configure_process_logging()
