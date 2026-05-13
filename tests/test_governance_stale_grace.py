@@ -323,3 +323,38 @@ class TestStaleGraceEnvConfig:
 
         importlib.reload(gg)
         assert pytest.approx(0.0) == gg.STALE_GRACE_SEC
+
+
+class TestGovernanceHoldLogging:
+    """Repeated HOLD diagnostics are throttled without changing verdicts."""
+
+    def test_hard_stale_hold_logs_once_inside_interval(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import state.governance_gate as gg
+
+        gg._GOVERNANCE_HOLD_LOG_STATE.clear()  # noqa: SLF001
+        monkeypatch.setattr(gg, "GOVERNANCE_HOLD_LOG_INTERVAL_SEC", 300.0)
+
+        warning_calls: list[tuple[object, ...]] = []
+        monkeypatch.setattr(gg.logger, "warning", lambda *args, **_kwargs: warning_calls.append(args))
+
+        now = _now()
+        kwargs = {
+            "symbol": "EURCAD",
+            "last_seen_ts": now - 1000.0,
+            "transport_ok": True,
+            "heartbeat_ts": now - 5.0,
+            "warmup_ready": True,
+            "dq_penalty": 0.30,
+            "dq_degraded": True,
+        }
+
+        first = gg.assess_governance(**{**kwargs, "now_ts": now})
+        second = gg.assess_governance(**{**kwargs, "now_ts": now + 1.0})
+        third = gg.assess_governance(**{**kwargs, "now_ts": now + 301.0})
+
+        assert first.action == gg.GovernanceAction.HOLD
+        assert second.action == gg.GovernanceAction.HOLD
+        assert third.action == gg.GovernanceAction.HOLD
+        assert len(warning_calls) == 2
+
+        gg._GOVERNANCE_HOLD_LOG_STATE.clear()  # noqa: SLF001
