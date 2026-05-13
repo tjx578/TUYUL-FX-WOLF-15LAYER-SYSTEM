@@ -59,6 +59,22 @@ class TestDataQualityGate:
         assert report.low_tick_candles == 50
         assert "low_tick_candles" in report.reasons[0]
 
+    def test_volume_proxy_prevents_false_low_tick_degradation(self) -> None:
+        gate = DataQualityGate(DataQualityConfig(min_tick_count=5, max_low_tick_ratio=0.10))
+        candles = [{**_make_candle(tick_count=0), "volume": 25} for _ in range(50)]
+        report = gate.assess("EURUSD", "D1", candles, last_update_ts=time.time())
+        assert report.degraded is False
+        assert report.low_tick_candles == 0
+        assert not any("low_tick_candles" in r for r in report.reasons)
+
+    def test_zero_tick_count_without_volume_still_degrades(self) -> None:
+        gate = DataQualityGate(DataQualityConfig(min_tick_count=5, max_low_tick_ratio=0.10))
+        candles = [{**_make_candle(tick_count=0), "volume": 0} for _ in range(50)]
+        report = gate.assess("EURUSD", "M15", candles, last_update_ts=time.time())
+        assert report.degraded is True
+        assert report.low_tick_candles == 50
+        assert any("low_tick_candles" in r for r in report.reasons)
+
     def test_stale_data_triggers_degradation(self) -> None:
         gate = DataQualityGate(DataQualityConfig(stale_threshold_seconds=10.0, stale_candle_multiplier=0.0))
         candles = [_make_candle() for _ in range(50)]
