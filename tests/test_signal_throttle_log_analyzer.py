@@ -397,6 +397,111 @@ def test_microboost_late_pressure_requires_price_context_before_protect_action()
     assert priced_report["microboost_summary"]["action"] == "PROTECT_PROFIT"
 
 
+def test_microboost_buy_at_main_resistance_becomes_exhaustion_warning():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 9, 9, 36, tzinfo=UTC)
+    for index in range(29):
+        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32))
+
+    report = analyzer.snapshot(
+        market_contexts={
+            "GBPCAD": MarketContext(
+                symbol="GBPCAD",
+                raw_allowed_direction="BUY",
+                price_at_signal_start=1.8500,
+                price_at_5m_confirm=1.8550,
+                price_at_signal_end=1.8580,
+                m15_phase="PIVOT_RECLAIM",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+                market_bias="BUY",
+                trend_direction="BUY",
+                price_position="MAIN_RESISTANCE",
+                main_support=1.8320,
+                main_resistance=1.8585,
+                range_position=0.98,
+            )
+        }
+    )
+    latest = report["microboost_summary"]["latest"]
+
+    assert latest["phase_unpriced"] == "DENSE_MICROBOOST"
+    assert latest["phase_priced"] == "EXHAUSTION_AT_RESISTANCE"
+    assert latest["action"] == "NO_NEW_BUY_WAIT_SELL_OR_PULLBACK_CONFIRMATION"
+    assert latest["price_position"] == "MAIN_RESISTANCE"
+    assert latest["trend_direction"] == "BUY"
+    assert latest["score_components"]["late_risk_penalty"] == -24
+
+
+def test_microboost_buy_at_main_support_becomes_bounce_candidate():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 9, 9, 36, tzinfo=UTC)
+    for index in range(29):
+        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32))
+
+    report = analyzer.snapshot(
+        market_contexts={
+            "GBPCAD": MarketContext(
+                symbol="GBPCAD",
+                raw_allowed_direction="BUY",
+                price_at_signal_start=1.8340,
+                price_at_5m_confirm=1.8355,
+                price_at_signal_end=1.8360,
+                m15_phase="SUPPORT_HOLD",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+                market_bias="BUY",
+                trend_direction="BUY",
+                price_position="MAIN_SUPPORT",
+                main_support=1.8320,
+                main_resistance=1.8585,
+                range_position=0.15,
+            )
+        }
+    )
+    latest = report["microboost_summary"]["latest"]
+
+    assert latest["phase_priced"] == "SUPPORT_BOUNCE_MICROBOOST"
+    assert latest["action"] == "BUY_ON_RECLAIM_CONFIRMATION"
+    assert latest["price_position"] == "MAIN_SUPPORT"
+
+
+def test_microboost_counter_to_running_trend_is_pullback_until_structure_break():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 9, 9, 36, tzinfo=UTC)
+    for index in range(29):
+        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_SELL", timestamp=base + timedelta(seconds=index * 5.32))
+
+    report = analyzer.snapshot(
+        market_contexts={
+            "GBPCAD": MarketContext(
+                symbol="GBPCAD",
+                raw_allowed_direction="SELL",
+                price_at_signal_start=1.8460,
+                price_at_5m_confirm=1.8445,
+                price_at_signal_end=1.8440,
+                m15_phase="BEARISH_PULLBACK",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+                market_bias="BUY",
+                trend_direction="BUY",
+                price_position="MID_RANGE",
+                main_support=1.8320,
+                main_resistance=1.8585,
+                range_position=0.48,
+            )
+        }
+    )
+    latest = report["microboost_summary"]["latest"]
+
+    assert latest["phase_priced"] == "MINOR_PULLBACK_MICROBOOST"
+    assert latest["action"] == "WAIT_PULLBACK_COMPLETION"
+    assert latest["price_position"] == "MID_RANGE"
+
+
 def test_live_report_requires_market_context_without_prices():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
     analyzer.record_allowed(symbol="EURCAD", verdict="EXECUTE_BUY")
