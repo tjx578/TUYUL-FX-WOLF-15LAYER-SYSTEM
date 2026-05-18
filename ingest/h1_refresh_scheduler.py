@@ -8,17 +8,37 @@ Detects price drift between REST and WebSocket feeds.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import contextlib
+from collections.abc import Callable
+from importlib import import_module
+from typing import Any, cast
 
 import orjson
 from loguru import logger
 
-from config_loader import get_enabled_symbols, load_finnhub
-from context.live_context_bus import LiveContextBus
-from context.system_state import SystemStateManager
-from core.redis_keys import candle_history, channel_candle, latest_candle
-from ingest.finnhub_candles import FinnhubCandleFetcher
-from storage.candle_persistence import enqueue_candle_dict
+
+def _module_attr(module_name: str, attr_name: str) -> Any:
+    return import_module(module_name).__dict__[attr_name]
+
+
+get_enabled_symbols = cast(Callable[[], list[str]], _module_attr("config_loader", "get_enabled_symbols"))
+load_finnhub = cast(Callable[[], dict[str, Any]], _module_attr("config_loader", "load_finnhub"))
+LiveContextBus = _module_attr("context.live_context_bus", "LiveContextBus")
+SystemState = _module_attr("context.system_state", "SystemState")
+SystemStateManager = _module_attr("context.system_state", "SystemStateManager")
+candle_history = cast(Callable[[str, str], str], _module_attr("core.redis_keys", "candle_history"))
+channel_candle = cast(Callable[[str, str], str], _module_attr("core.redis_keys", "channel_candle"))
+latest_candle = cast(Callable[[str, str], str], _module_attr("core.redis_keys", "latest_candle"))
+FinnhubCandleFetcher = _module_attr("ingest.finnhub_candles", "FinnhubCandleFetcher")
+
+
+def enqueue_candle_dict(candle: dict[str, Any]) -> None:
+    """Best-effort persistence enqueue without hard-importing PostgreSQL deps."""
+    try:
+        _enqueue = _module_attr("storage.candle_persistence", "enqueue_candle_dict")
+        _enqueue(candle)
+    except Exception as exc:
+        logger.debug("[H1Refresh] candle persistence enqueue skipped: {}", exc)
 
 
 class H1RefreshScheduler:
@@ -56,18 +76,35 @@ class H1RefreshScheduler:
             f"bars={self.h1_bars}, max_drift={self.max_drift_pips} pips"
         )
 
+    def _refresh_allowed(self) -> bool:
+        """Allow refresh once bootstrap has reached READY or DEGRADED.
+
+        DEGRADED stale-cache mode still needs this scheduler to run so it can
+        repair stale H1/H4 data instead of waiting forever for READY.
+        """
+        if self.system_state.is_ready():
+            return True
+        with contextlib.suppress(Exception):
+            return self.system_state.get_state() == SystemState.DEGRADED
+        return False
+
     async def run(self) -> None:
         """Main refresh loop."""
         logger.info("H1RefreshScheduler started")
 
-        # Wait for system to be ready before starting refresh
-        while not self.system_state.is_ready():
-            logger.debug("Waiting for system to be ready before starting H1 refresh...")
+        # Wait for bootstrap to settle.  In stale-cache mode the system can be
+        # DEGRADED until this refresh repairs cached H1/H4 data.
+        while not self._refresh_allowed():
+            logger.debug("Waiting for bootstrap before starting H1 refresh...")
             await asyncio.sleep(10)
 
+        first_cycle = True
         while True:
             try:
-                await asyncio.sleep(self.interval_sec)
+                if first_cycle:
+                    first_cycle = False
+                else:
+                    await asyncio.sleep(self.interval_sec)
                 await self.refresh_all_symbols()
             except asyncio.CancelledError:
                 logger.info("H1RefreshScheduler cancelled")
@@ -179,7 +216,7 @@ class H1RefreshScheduler:
             return
         import time as _time  # noqa: PLC0415
 
-        from core.candle_bridge_fix import is_duplicate_candle
+        is_duplicate_candle = _module_attr("core.candle_bridge_fix", "is_duplicate_candle")
 
         for candle in candles:
             symbol = candle.get("symbol")
