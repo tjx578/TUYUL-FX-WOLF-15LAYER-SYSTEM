@@ -65,6 +65,7 @@ import time
 # stdlib imports
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta, timezone
+from importlib import import_module
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -85,7 +86,6 @@ from config_loader import CONFIG
 # import ...
 # local imports
 from constitution.l12_router_evaluator import L12Input, L12RouterEvaluator
-from constitution.signal_throttle import SignalThrottle
 from constitution.verdict_engine import generate_l12_verdict
 from contracts.shadow_hook import begin_shadow_session, finalize_shadow_session
 from core.dag_engine import DagEngine
@@ -167,6 +167,11 @@ def _coerce_confidence_to_score(value: Any) -> tuple[float, str | None]:
         except (TypeError, ValueError):
             return 0.0, "PHASE5_NON_NUMERIC_CONFIDENCE"
     return 0.0, "PHASE5_NON_NUMERIC_CONFIDENCE"
+
+
+def _module_attr(module_name: str, attr_name: str) -> Any:
+    """Load a repo-local attribute lazily to keep editor resolution tolerant."""
+    return import_module(module_name).__dict__[attr_name]
 
 
 def _parse_heartbeat_timestamp(raw: Any) -> float | None:
@@ -309,7 +314,8 @@ class WolfConstitutionalPipeline:
         except (TypeError, ValueError):
             throttle_max_signals = 3
         throttle_window_seconds = self._parse_env_float("SIGNAL_THROTTLE_WINDOW_SECONDS", 300.0)
-        self._signal_throttle = SignalThrottle(
+        signal_throttle_cls = _module_attr("constitution.signal_throttle", "SignalThrottle")
+        self._signal_throttle = signal_throttle_cls(
             max_signals=throttle_max_signals,
             window_seconds=throttle_window_seconds,
         )
