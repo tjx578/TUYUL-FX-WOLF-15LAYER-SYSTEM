@@ -99,19 +99,21 @@ class SignalThrottle:
         Does NOT mutate state — call :meth:`record` separately after a
         signal is actually emitted.
         """
+        normalized_symbol = _normalize_symbol(symbol)
         with self._lock:
-            self._purge(symbol)
-            count = len(self._windows[symbol])
+            self._purge(normalized_symbol)
+            count = len(self._windows[normalized_symbol])
             throttled = count >= self.max_signals
             if throttled:
-                self._emit_throttled_log_if_due(symbol, count, time.time())
+                self._emit_throttled_log_if_due(normalized_symbol, count, time.time())
             return throttled
 
     def record(self, symbol: str) -> None:
         """Record an emitted EXECUTE signal for ``symbol``."""
+        normalized_symbol = _normalize_symbol(symbol)
         with self._lock:
-            self._purge(symbol)
-            self._windows[symbol].append(time.time())
+            self._purge(normalized_symbol)
+            self._windows[normalized_symbol].append(time.time())
 
     def emit_allowed(self, symbol: str, verdict: str) -> None:
         """Emit a plain info event after an EXECUTE signal passes throttle."""
@@ -124,7 +126,7 @@ class SignalThrottle:
         not break the streak.  A different allowed symbol or direction resets it.
         """
         direction = normalize_direction(None, verdict)
-        normalized_symbol = str(symbol).upper()
+        normalized_symbol = _normalize_symbol(symbol)
         with self._lock:
             if (
                 direction
@@ -140,15 +142,17 @@ class SignalThrottle:
 
     def get_count(self, symbol: str) -> int:
         """Return the current signal count in the active window."""
+        normalized_symbol = _normalize_symbol(symbol)
         with self._lock:
-            self._purge(symbol)
-            return len(self._windows[symbol])
+            self._purge(normalized_symbol)
+            return len(self._windows[normalized_symbol])
 
     def get_remaining(self, symbol: str) -> int:
         """Return how many signals can still fire before throttling."""
+        normalized_symbol = _normalize_symbol(symbol)
         with self._lock:
-            self._purge(symbol)
-            return max(0, self.max_signals - len(self._windows[symbol]))
+            self._purge(normalized_symbol)
+            return max(0, self.max_signals - len(self._windows[normalized_symbol]))
 
     def reset(self, symbol: str | None = None) -> None:
         """Clear history.  If *symbol* is None, clear everything."""
@@ -161,11 +165,11 @@ class SignalThrottle:
                 self._allowed_streak_direction = None
                 self._allowed_streak_count = 0
             else:
-                self._windows.pop(symbol, None)
-                normalized_symbol = str(symbol).upper()
+                normalized_symbol = _normalize_symbol(symbol)
+                self._windows.pop(normalized_symbol, None)
                 self._last_throttle_error_log_at.pop(normalized_symbol, None)
                 self._suppressed_throttle_error_logs.pop(normalized_symbol, None)
-                if self._allowed_streak_symbol == str(symbol).upper():
+                if self._allowed_streak_symbol == normalized_symbol:
                     self._allowed_streak_symbol = None
                     self._allowed_streak_direction = None
                     self._allowed_streak_count = 0
@@ -173,7 +177,7 @@ class SignalThrottle:
     # ── internals ────────────────────────────────────────
 
     def _emit_throttled_log_if_due(self, symbol: str, count: int, now: float) -> None:
-        normalized_symbol = str(symbol).upper()
+        normalized_symbol = _normalize_symbol(symbol)
         last_logged_at = self._last_throttle_error_log_at.get(normalized_symbol)
         min_interval = self.throttle_error_log_min_interval_seconds
         if last_logged_at is not None and min_interval > 0 and (now - last_logged_at) < min_interval:
@@ -203,3 +207,7 @@ def _coerce_non_negative_float(value: float | None, *, env_name: str, default: f
     except (TypeError, ValueError):
         number = default
     return max(0.0, number)
+
+
+def _normalize_symbol(symbol: str) -> str:
+    return str(symbol or "").strip().upper()
