@@ -70,6 +70,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from analysis.market_context_validator import MarketContext, validate_market_context
+from analysis.microboost_event_log import build_microboost_intel_event, emit_microboost_intel
 from analysis.reflex_emc import EMCFilter
 from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
@@ -350,6 +351,7 @@ class WolfConstitutionalPipeline:
                 1.0,
             ),
         )
+        self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._governance_now_ts: float | None = None
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
@@ -3419,6 +3421,36 @@ class WolfConstitutionalPipeline:
             )
         }
 
+    def _record_signal_throttle_live_report(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        source_verdict: Any | None,
+    ) -> dict[str, Any]:
+        report = self._signal_throttle_live_analyzer.snapshot(
+            market_contexts=self._signal_throttle_market_contexts(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+                source_verdict=source_verdict,
+            )
+        )
+        l12_verdict["signal_throttle_live_report"] = report
+        self._emit_microboost_intel_if_new(report)
+        return report
+
+    def _emit_microboost_intel_if_new(self, report: dict[str, Any]) -> None:
+        event = build_microboost_intel_event(report)
+        if event is None:
+            return
+        key = event.dedupe_key()
+        if key == self._last_microboost_log_key:
+            return
+        self._last_microboost_log_key = key
+        emit_microboost_intel(event)
+
     def _apply_effective_verdict_controls(
         self,
         *,
@@ -3463,13 +3495,11 @@ class WolfConstitutionalPipeline:
                     max_signals=self._signal_throttle.max_signals,
                     window_seconds=self._signal_throttle.window_seconds,
                 )
-                l12_verdict["signal_throttle_live_report"] = self._signal_throttle_live_analyzer.snapshot(
-                    market_contexts=self._signal_throttle_market_contexts(
-                        symbol=symbol,
-                        synthesis=synthesis,
-                        l12_verdict=l12_verdict,
-                        source_verdict=final_verdict,
-                    )
+                self._record_signal_throttle_live_report(
+                    symbol=symbol,
+                    synthesis=synthesis,
+                    l12_verdict=l12_verdict,
+                    source_verdict=final_verdict,
                 )
             else:
                 self._signal_throttle.record(symbol)
@@ -3490,13 +3520,11 @@ class WolfConstitutionalPipeline:
                     allowed_streak=allowed_streak,
                 )
                 l12_verdict["signal_throttle_intel"] = throttle_intel.to_dict()
-                l12_verdict["signal_throttle_live_report"] = self._signal_throttle_live_analyzer.snapshot(
-                    market_contexts=self._signal_throttle_market_contexts(
-                        symbol=symbol,
-                        synthesis=synthesis,
-                        l12_verdict=l12_verdict,
-                        source_verdict=final_verdict,
-                    )
+                self._record_signal_throttle_live_report(
+                    symbol=symbol,
+                    synthesis=synthesis,
+                    l12_verdict=l12_verdict,
+                    source_verdict=final_verdict,
                 )
                 emit_signal_throttle_intel(throttle_intel)
         elif final_verdict.startswith("EXECUTE") and safe_mode:
