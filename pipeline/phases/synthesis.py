@@ -389,6 +389,7 @@ def build_l12_synthesis(
             "fib_retracement_hit": layer_results.get("L3", {}).get("fib_retracement_hit", False),
             "volume_profile_poc": layer_results.get("L3", {}).get("volume_profile_poc", 0.0),
             "vpc_zones": layer_results.get("L3", {}).get("vpc_zones", []),
+            "basket_confirmation": layer_results.get("L9", {}).get("basket_confirmation", {}),
         },
         "wolf_discipline": {
             "score": wolf_30_point / 30.0 if wolf_30_point else 0.0,
@@ -454,6 +455,13 @@ def build_l12_synthesis(
     inference = layer_results.get("inference", {})
     if inference:
         synthesis["inference"] = inference
+
+    # Universe ranking / conditional watchlist is advisory-only. It is included
+    # so L12 audit consumers can compare "best to monitor" vs "executable now"
+    # without changing gate authority.
+    universe_ranking = layer_results.get("universe_ranking", {})
+    if isinstance(universe_ranking, dict) and universe_ranking:
+        synthesis["universe_ranking"] = universe_ranking
 
     # Regime metadata for downstream threshold adaptation
     synthesis["regime_type"] = _regime_type
