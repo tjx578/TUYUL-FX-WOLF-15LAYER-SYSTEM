@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from context.system_state import SystemState
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
 
 
@@ -236,3 +237,20 @@ class TestRefreshConfiguration:
             mock_load.return_value = {"candles": {"refresh": {"price_drift_max_pips": 100.0}}}
             scheduler = H1RefreshScheduler()
             assert scheduler.max_drift_pips == 100.0
+
+    def test_refresh_allowed_in_degraded_state(self) -> None:
+        """DEGRADED stale-cache mode must still allow H1/H4 repair."""
+        with (
+            patch("ingest.h1_refresh_scheduler.load_finnhub", return_value={"candles": {"refresh": {}}}),
+            patch("ingest.h1_refresh_scheduler.FinnhubCandleFetcher"),
+            patch("ingest.h1_refresh_scheduler.LiveContextBus"),
+            patch("ingest.h1_refresh_scheduler.SystemStateManager") as state_cls,
+        ):
+            state = MagicMock()
+            state.is_ready.return_value = False
+            state.get_state.return_value = SystemState.DEGRADED
+            state_cls.return_value = state
+
+            scheduler = H1RefreshScheduler()
+
+        assert scheduler._refresh_allowed() is True
