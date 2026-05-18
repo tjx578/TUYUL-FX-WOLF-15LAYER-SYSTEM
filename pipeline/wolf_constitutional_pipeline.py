@@ -70,7 +70,12 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from analysis.market_context_validator import MarketContext, validate_market_context
-from analysis.microboost_event_log import build_microboost_intel_event, emit_microboost_intel
+from analysis.microboost_event_log import (
+    build_microboost_intel_event,
+    build_microboost_table_events,
+    emit_microboost_intel,
+    emit_microboost_table_event,
+)
 from analysis.reflex_emc import EMCFilter
 from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
@@ -352,6 +357,7 @@ class WolfConstitutionalPipeline:
             ),
         )
         self._last_microboost_log_key: tuple[Any, ...] | None = None
+        self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
         self._governance_now_ts: float | None = None
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
@@ -3443,13 +3449,17 @@ class WolfConstitutionalPipeline:
 
     def _emit_microboost_intel_if_new(self, report: dict[str, Any]) -> None:
         event = build_microboost_intel_event(report)
-        if event is None:
-            return
-        key = event.dedupe_key()
-        if key == self._last_microboost_log_key:
-            return
-        self._last_microboost_log_key = key
-        emit_microboost_intel(event)
+        if event is not None:
+            key = event.dedupe_key()
+            if key != self._last_microboost_log_key:
+                self._last_microboost_log_key = key
+                emit_microboost_intel(event)
+        for table_event in build_microboost_table_events(report):
+            table_key = table_event.dedupe_key()
+            if table_key in self._emitted_microboost_table_keys:
+                continue
+            self._emitted_microboost_table_keys.add(table_key)
+            emit_microboost_table_event(table_event)
 
     def _apply_effective_verdict_controls(
         self,
