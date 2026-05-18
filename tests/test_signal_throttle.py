@@ -13,13 +13,31 @@ Validates:
 
 from __future__ import annotations
 
+import sys
 import time
 from datetime import UTC, datetime, timedelta
+from importlib import import_module
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from constitution.signal_throttle import SignalThrottle
-from core.metrics import SIGNAL_THROTTLED
+import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+
+def _repo_attr(module_name: str, attr_name: str) -> Any:
+    return getattr(import_module(module_name), attr_name)
+
+
+SignalThrottle = _repo_attr("constitution.signal_throttle", "SignalThrottle")
+SIGNAL_THROTTLED = _repo_attr("core.metrics", "SIGNAL_THROTTLED")
+
+
+def _pipeline_cls() -> Any:
+    return _repo_attr("pipeline.wolf_constitutional_pipeline", "WolfConstitutionalPipeline")
 
 # =========================================================================
 # SignalThrottle unit tests
@@ -192,10 +210,7 @@ class TestPipelineSignalThrottle:
     """Test the throttle gate inside WolfConstitutionalPipeline."""
 
     def _make_pipeline(self):
-        from pipeline.wolf_constitutional_pipeline import (  # noqa: PLC0415
-            WolfConstitutionalPipeline,
-        )
-
+        WolfConstitutionalPipeline = _pipeline_cls()
         pipe = WolfConstitutionalPipeline()
         pipe._ensure_analyzers = MagicMock()
         return pipe
@@ -300,7 +315,7 @@ class TestPipelineSignalThrottle:
 
     def test_throttled_execute_downgrades_without_extra_canary_event(self, monkeypatch):
         """Throttled EXECUTE keeps the visible log simple and stores metadata."""
-        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+        WolfConstitutionalPipeline = _pipeline_cls()
 
         pipe = self._make_pipeline()
         symbol = "LOG_THROTTLE_TEST"
@@ -337,7 +352,7 @@ class TestPipelineSignalThrottle:
 
     def test_allowed_execute_emits_plain_info_event(self, monkeypatch, capsys):
         """Allowed EXECUTE verdicts should emit only the plain info event."""
-        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+        WolfConstitutionalPipeline = _pipeline_cls()
 
         pipe = self._make_pipeline()
         events: list[dict[str, Any]] = []
@@ -390,7 +405,7 @@ class TestPipelineSignalThrottle:
 
     def test_market_context_guard_blocks_unvalidated_execute_before_throttle(self, monkeypatch):
         """Block mode should hold EXECUTE when price/phase/spread context is missing."""
-        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+        WolfConstitutionalPipeline = _pipeline_cls()
 
         pipe = self._make_pipeline()
         pipe._market_context_guard_mode = "block"
@@ -428,7 +443,7 @@ class TestPipelineSignalThrottle:
 
     def test_market_context_guard_allows_validated_execute_in_block_mode(self, monkeypatch, capsys):
         """Complete aligned context should validate BUY and still pass through throttle."""
-        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+        WolfConstitutionalPipeline = _pipeline_cls()
 
         pipe = self._make_pipeline()
         pipe._market_context_guard_mode = "block"
@@ -501,7 +516,7 @@ class TestPipelineSignalThrottle:
 
     def test_pipeline_live_report_applies_priced_microboost_context(self, monkeypatch, capsys):
         """Live throttle report should price microboost when market context is available."""
-        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+        WolfConstitutionalPipeline = _pipeline_cls()
 
         pipe = self._make_pipeline()
 
@@ -576,13 +591,17 @@ class TestPipelineSignalThrottle:
         assert latest["phase_unpriced"] == "DENSE_MICROBOOST"
         assert latest["phase_priced"] == "TREND_CONTINUATION_MICROBOOST"
         assert latest["market_context_validation"]["final_direction"] == "BUY"
+        assert latest["market_context_snapshot"]["price_at_signal_start"] == 1.1
+        assert latest["market_context_snapshot"]["price_at_signal_end"] == pytest.approx(1.10105)
+        assert latest["market_context_snapshot"]["m15_phase"] == "BULLISH_PULLBACK"
+        assert latest["market_context_snapshot"]["h1_phase"] == "BULLISH"
         assert latest["requires_market_context"] is False
         assert not any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
         assert any(event["event"] == "market_context_validation" for event in events)
 
     def test_sovereignty_downgrade_emits_throttle_skipped_event(self, monkeypatch):
         """When vault sovereignty downgrades EXECUTE before throttle, emit an explicit skip event."""
-        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+        WolfConstitutionalPipeline = _pipeline_cls()
 
         pipe = self._make_pipeline()
         events: list[dict[str, Any]] = []
