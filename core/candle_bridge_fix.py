@@ -21,9 +21,12 @@ import asyncio
 import logging
 import time
 from datetime import datetime
+from importlib import import_module
 from typing import Any
 
 import orjson
+
+from .redis_keys import candle_history, channel_candle, latest_candle
 
 logger = logging.getLogger(__name__)
 
@@ -152,27 +155,6 @@ async def is_ohlc_stale(
     return True
 
 
-def _safe_epoch(candle: dict) -> float:
-    """Extract epoch float from candle dict, handling ISO strings."""
-    for key in ("ts_close", "close_time", "timestamp", "time"):
-        val = candle.get(key)
-        if val is None:
-            continue
-        if isinstance(val, (int, float)):
-            return float(val)
-        if isinstance(val, str):
-            try:
-                return float(val)
-            except ValueError:
-                from datetime import datetime
-
-                try:
-                    return datetime.fromisoformat(val).timestamp()
-                except Exception:
-                    continue
-    return time.time()
-
-
 # Weak set of outstanding tasks so they aren't garbage-collected mid-flight.
 # (asyncio tasks are weak-referenced by the event loop; without a strong ref
 # a fire-and-forget task can be collected before it finishes.)
@@ -205,8 +187,6 @@ async def _push_candle_to_redis_safe(
     timeframe = str(timeframe).strip().upper()
 
     try:
-        from core.redis_keys import candle_history, channel_candle
-
         key = candle_history(symbol, timeframe)
 
         # ── Dedup: skip if this candle's open_time already exists in tail ──
@@ -233,13 +213,12 @@ async def _push_candle_to_redis_safe(
             await redis.ltrim(key, -500, -1)
 
             # Write latest_candle hash so pipeline gets last_seen_ts
-            from core.redis_keys import latest_candle
-
             lc_key = latest_candle(symbol, timeframe)
             await redis.hset(
                 lc_key,
                 mapping={
-                    "last_seen_ts": str(_safe_epoch(candle_dict)),
+                    "data": candle_json,
+                    "last_seen_ts": str(time.time()),
                     "symbol": symbol,
                     "timeframe": timeframe,
                 },
@@ -251,8 +230,7 @@ async def _push_candle_to_redis_safe(
 
         # Best-effort persistence for restart recovery
         try:
-            from storage.candle_persistence import enqueue_candle_dict
-
+            enqueue_candle_dict = import_module("storage.candle_persistence").enqueue_candle_dict
             enqueue_candle_dict(candle_dict)
         except Exception:
             pass
