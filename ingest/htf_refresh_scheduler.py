@@ -11,6 +11,7 @@ Follows the same pattern as H1RefreshScheduler.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
@@ -20,10 +21,19 @@ from loguru import logger
 
 from config_loader import get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
-from context.system_state import SystemStateManager
+from context.system_state import SystemState, SystemStateManager
 from core.redis_keys import candle_history, channel_candle, latest_candle
 from ingest.finnhub_candles import FinnhubCandleFetcher
-from storage.candle_persistence import enqueue_candle_dict
+
+
+def enqueue_candle_dict(candle: dict[str, Any]) -> None:
+    """Best-effort persistence enqueue without hard-importing PostgreSQL deps."""
+    try:
+        from storage.candle_persistence import enqueue_candle_dict as _enqueue  # noqa: PLC0415
+
+        _enqueue(candle)
+    except Exception as exc:
+        logger.debug("[HTFRefresh] candle persistence enqueue skipped: {}", exc)
 
 
 class HTFRefreshScheduler:
@@ -60,17 +70,29 @@ class HTFRefreshScheduler:
             self.w1_bars,
         )
 
+    def _refresh_allowed(self) -> bool:
+        """Allow refresh once bootstrap has reached READY or DEGRADED."""
+        if self.system_state.is_ready():
+            return True
+        with contextlib.suppress(Exception):
+            return self.system_state.get_state() == SystemState.DEGRADED
+        return False
+
     async def run(self) -> None:
         """Main refresh loop."""
         logger.info("HTFRefreshScheduler started")
 
-        while not self.system_state.is_ready():
-            logger.debug("HTFRefresh waiting for system ready…")
+        while not self._refresh_allowed():
+            logger.debug("HTFRefresh waiting for bootstrap state...")
             await asyncio.sleep(10)
 
+        first_cycle = True
         while True:
             try:
-                await asyncio.sleep(self.interval_sec)
+                if first_cycle:
+                    first_cycle = False
+                else:
+                    await asyncio.sleep(self.interval_sec)
                 await self.refresh_all_symbols()
             except asyncio.CancelledError:
                 logger.info("HTFRefreshScheduler cancelled")
