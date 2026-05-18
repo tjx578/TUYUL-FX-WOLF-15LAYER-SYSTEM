@@ -16,26 +16,23 @@ from typing import Any, cast
 import orjson
 from loguru import logger
 
-
-def _module_attr(module_name: str, attr_name: str) -> Any:
-    return import_module(module_name).__dict__[attr_name]
-
-
-get_enabled_symbols = cast(Callable[[], list[str]], _module_attr("config_loader", "get_enabled_symbols"))
-load_finnhub = cast(Callable[[], dict[str, Any]], _module_attr("config_loader", "load_finnhub"))
-LiveContextBus = _module_attr("context.live_context_bus", "LiveContextBus")
-SystemState = _module_attr("context.system_state", "SystemState")
-SystemStateManager = _module_attr("context.system_state", "SystemStateManager")
-candle_history = cast(Callable[[str, str], str], _module_attr("core.redis_keys", "candle_history"))
-channel_candle = cast(Callable[[str, str], str], _module_attr("core.redis_keys", "channel_candle"))
-latest_candle = cast(Callable[[str, str], str], _module_attr("core.redis_keys", "latest_candle"))
-FinnhubCandleFetcher = _module_attr("ingest.finnhub_candles", "FinnhubCandleFetcher")
+get_enabled_symbols = cast(Callable[[], list[str]], import_module("config_loader").get_enabled_symbols)
+load_finnhub = cast(Callable[[], dict[str, Any]], import_module("config_loader").load_finnhub)
+LiveContextBus = import_module("context.live_context_bus").LiveContextBus
+_system_state_mod = import_module("context.system_state")
+SystemState = _system_state_mod.SystemState
+SystemStateManager = _system_state_mod.SystemStateManager
+_redis_keys_mod = import_module("core.redis_keys")
+candle_history = cast(Callable[[str, str], str], _redis_keys_mod.candle_history)
+channel_candle = cast(Callable[[str, str], str], _redis_keys_mod.channel_candle)
+latest_candle = cast(Callable[[str, str], str], _redis_keys_mod.latest_candle)
+FinnhubCandleFetcher = import_module("ingest.finnhub_candles").FinnhubCandleFetcher
 
 
 def enqueue_candle_dict(candle: dict[str, Any]) -> None:
     """Best-effort persistence enqueue without hard-importing PostgreSQL deps."""
     try:
-        _enqueue = _module_attr("storage.candle_persistence", "enqueue_candle_dict")
+        _enqueue = import_module("storage.candle_persistence").enqueue_candle_dict
         _enqueue(candle)
     except Exception as exc:
         logger.debug("[H1Refresh] candle persistence enqueue skipped: {}", exc)
@@ -216,7 +213,7 @@ class H1RefreshScheduler:
             return
         import time as _time  # noqa: PLC0415
 
-        is_duplicate_candle = _module_attr("core.candle_bridge_fix", "is_duplicate_candle")
+        is_duplicate_candle = import_module("core.candle_bridge_fix").is_duplicate_candle
 
         for candle in candles:
             symbol = candle.get("symbol")
