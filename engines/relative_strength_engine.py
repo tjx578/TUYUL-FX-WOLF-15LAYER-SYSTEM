@@ -251,6 +251,7 @@ class RelativeStrengthEngine:
         CurrencyStrengthResult
         """
         result = CurrencyStrengthResult()
+        result.pairs_available = sum(1 for p in self._pair_universe if _decompose_pair(p) is not None)
 
         # Decompose target pair
         pair_parts = _decompose_pair(symbol)
@@ -288,8 +289,7 @@ class RelativeStrengthEngine:
         result.alignment = self._classify_alignment(result.relative_strength_delta)
 
         # ── Step 7: Confidence from data completeness ──
-        max_forex_pairs = sum(1 for p in self._pair_universe if _decompose_pair(p) is not None)
-        data_ratio = result.pairs_analyzed / max(max_forex_pairs, 1)
+        data_ratio = result.pairs_analyzed / max(result.pairs_available, 1)
         result.confidence = min(1.0, data_ratio * 1.1)  # slight boost, cap at 1.0
 
         logger.info(
