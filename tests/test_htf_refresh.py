@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import orjson
 import pytest
 
+from context.system_state import SystemState
 from ingest.htf_refresh_scheduler import HTFRefreshScheduler
 
 
@@ -136,6 +137,16 @@ class TestHTFRefreshScheduler:
         scheduler = HTFRefreshScheduler(redis_client=None)
         # Should not raise
         await scheduler._push_candles_to_redis([_d1_candle()])
+
+    def test_refresh_allowed_in_degraded_state(self, _patch_deps: dict) -> None:
+        """DEGRADED stale-cache mode must still allow D1/W1 repair."""
+        state = _patch_deps["ssm"]
+        state.is_ready.return_value = False
+        state.get_state.return_value = SystemState.DEGRADED
+
+        scheduler = HTFRefreshScheduler()
+
+        assert scheduler._refresh_allowed() is True
 
     @pytest.mark.asyncio
     async def test_empty_fetch_logged_not_crashed(self, _patch_deps: dict) -> None:
