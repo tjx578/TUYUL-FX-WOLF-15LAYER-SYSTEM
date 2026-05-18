@@ -22,6 +22,9 @@ _FIELD_RE = re.compile(r"(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\"[^\"]*\"|[^
 
 @dataclass(frozen=True)
 class MicroboostIntelEvent:
+    cluster_id: str | None
+    cluster_stage: str | None
+    cluster_age_seconds: float
     symbol: str
     raw_direction: str | None
     final_direction: str
@@ -49,12 +52,13 @@ class MicroboostIntelEvent:
 
     def dedupe_key(self) -> tuple[Any, ...]:
         return (
+            self.cluster_id,
             self.symbol,
-            self.end_utc,
             self.phase_unpriced,
             self.phase_priced,
             self.action,
-            self.effective_tick_count,
+            self.final_direction,
+            self.cluster_stage,
             self.requires_market_context,
         )
 
@@ -74,6 +78,9 @@ class MicroboostLogRecord:
 
 @dataclass(frozen=True)
 class MicroboostTableEvent:
+    cluster_id: str | None
+    cluster_stage: str | None
+    cluster_age_seconds: float
     symbol: str
     raw_direction: str | None
     window_local: str
@@ -99,11 +106,11 @@ class MicroboostTableEvent:
 
     def dedupe_key(self) -> tuple[Any, ...]:
         return (
+            self.cluster_id,
             self.symbol,
-            self.start_utc,
-            self.end_utc,
-            self.effective_tick_count,
             self.phase,
+            self.action,
+            self.cluster_stage,
             self.requires_market_context,
         )
 
@@ -135,8 +142,12 @@ def build_microboost_intel_event(report: dict[str, Any]) -> MicroboostIntelEvent
     validation = validation if isinstance(validation, dict) else {}
     snapshot = latest.get("market_context_snapshot")
     snapshot = snapshot if isinstance(snapshot, dict) else {}
+    event_context_applied = _block_market_context_applied(latest)
 
     return MicroboostIntelEvent(
+        cluster_id=_optional_str(latest.get("cluster_id")),
+        cluster_stage=_optional_str(latest.get("cluster_stage")),
+        cluster_age_seconds=round(_coerce_float(latest.get("cluster_age_seconds"), 0.0), 3),
         symbol=str(latest.get("symbol") or "").upper(),
         raw_direction=_optional_str(latest.get("direction")),
         final_direction=str(validation.get("final_direction") or "WAIT"),
@@ -149,7 +160,7 @@ def build_microboost_intel_event(report: dict[str, Any]) -> MicroboostIntelEvent
         effective_density_per_minute=round(_coerce_float(latest.get("effective_density_per_minute"), 0.0), 2),
         duration_seconds=round(_coerce_float(latest.get("duration_seconds"), 0.0), 3),
         requires_market_context=bool(latest.get("requires_market_context", True)),
-        market_context_applied=bool(summary.get("market_context_applied", False)),
+        market_context_applied=event_context_applied,
         price_position=_optional_str(latest.get("price_position") or snapshot.get("price_position")),
         m15_phase=_optional_str(snapshot.get("m15_phase")),
         h1_phase=_optional_str(snapshot.get("h1_phase")),
@@ -173,7 +184,6 @@ def build_microboost_table_events(
     blocks = summary.get("blocks")
     if not isinstance(blocks, list):
         return []
-    market_context_applied = bool(summary.get("market_context_applied", False))
     timezone_info, resolved_timezone_name = _local_timezone(timezone_name)
     rows: list[MicroboostTableEvent] = []
 
@@ -196,6 +206,9 @@ def build_microboost_table_events(
         phase_priced = _optional_str(block.get("phase_priced"))
         rows.append(
             MicroboostTableEvent(
+                cluster_id=_optional_str(block.get("cluster_id")),
+                cluster_stage=_optional_str(block.get("cluster_stage")),
+                cluster_age_seconds=round(_coerce_float(block.get("cluster_age_seconds"), 0.0), 3),
                 symbol=symbol,
                 raw_direction=_optional_str(block.get("direction")),
                 window_local=_window_local_text(
@@ -218,7 +231,7 @@ def build_microboost_table_events(
                 phase_priced=phase_priced,
                 action=str(block.get("action") or "WAIT"),
                 requires_market_context=bool(block.get("requires_market_context", True)),
-                market_context_applied=market_context_applied,
+                market_context_applied=_block_market_context_applied(block),
                 score=_coerce_int(block.get("score"), 0),
                 rank=rank,
                 reason=str(block.get("reason") or "microboost_detected"),
@@ -232,6 +245,9 @@ def emit_microboost_intel(event: MicroboostIntelEvent | None) -> None:
         return
     parts = [
         "[MicroboostIntel]",
+        f"cluster_id={event.cluster_id or 'NONE'}",
+        f"cluster_stage={event.cluster_stage or 'UNKNOWN'}",
+        f"cluster_age={event.cluster_age_seconds:.3f}s",
         f"symbol={event.symbol}",
         f"raw_direction={event.raw_direction or 'NONE'}",
         f"final_direction={event.final_direction}",
@@ -264,6 +280,9 @@ def emit_microboost_table_event(event: MicroboostTableEvent | None) -> None:
     parts = [
         "[MicroboostTable]",
         f"rank={event.rank}",
+        f"cluster_id={event.cluster_id or 'NONE'}",
+        f"cluster_stage={event.cluster_stage or 'UNKNOWN'}",
+        f"cluster_age={event.cluster_age_seconds:.3f}s",
         f"symbol={event.symbol}",
         f"raw_direction={event.raw_direction or 'NONE'}",
         f"window_{_timezone_suffix(event.local_timezone)}={event.window_local}",
@@ -300,6 +319,9 @@ def parse_microboost_intel_row(row: dict[str, Any]) -> MicroboostLogRecord | Non
         return None
 
     event = MicroboostIntelEvent(
+        cluster_id=_none_text(fields.get("cluster_id")),
+        cluster_stage=_none_text(fields.get("cluster_stage")),
+        cluster_age_seconds=_duration_seconds(fields.get("cluster_age")),
         symbol=symbol,
         raw_direction=_none_text(fields.get("raw_direction")),
         final_direction=str(fields.get("final_direction") or "WAIT"),
@@ -343,6 +365,9 @@ def parse_microboost_table_row(row: dict[str, Any]) -> MicroboostTableLogRecord 
         return None
     timezone_name = str(fields.get("timezone") or "Asia/Makassar")
     event = MicroboostTableEvent(
+        cluster_id=_none_text(fields.get("cluster_id")),
+        cluster_stage=_none_text(fields.get("cluster_stage")),
+        cluster_age_seconds=_duration_seconds(fields.get("cluster_age")),
         symbol=symbol,
         raw_direction=_none_text(fields.get("raw_direction")),
         window_local=_extract_window_local(fields),
@@ -472,6 +497,8 @@ def _phase_label(phase_unpriced: str, phase_priced: str | None, action: str) -> 
         return "confirmation"
     if priced == "LATE_DENSE_PRESSURE" or action == "PROTECT_PROFIT":
         return "late_dense"
+    if priced in {"BULLISH_PULLBACK_MICROBOOST", "BEARISH_PULLBACK_MICROBOOST"}:
+        return "pullback_validation"
     if priced in {"EXHAUSTION_AT_RESISTANCE", "EXHAUSTION_AT_SUPPORT"}:
         return "exhaustion_warning"
     if priced in {"RESISTANCE_PRESSURE_WARNING", "SUPPORT_PRESSURE_WARNING"}:
@@ -497,6 +524,18 @@ def _phase_label(phase_unpriced: str, phase_priced: str | None, action: str) -> 
     if unpriced == "IGNITION_MICROBOOST":
         return "ignition"
     return "microboost"
+
+
+def _block_market_context_applied(block: dict[str, Any]) -> bool:
+    snapshot = block.get("market_context_snapshot")
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    price_position = block.get("price_position") or snapshot.get("price_position")
+    return (
+        _optional_float(snapshot.get("price_at_signal_start")) is not None
+        and _optional_float(snapshot.get("price_at_5m_confirm")) is not None
+        and _optional_float(snapshot.get("price_at_signal_end")) is not None
+        and _none_text(price_position) is not None
+    )
 
 
 def _timezone_suffix(timezone_name: str) -> str:
