@@ -97,6 +97,48 @@ async def test_supplemental_htf_fetch_repairs_h1_below_l3_floor(monkeypatch: pyt
 
 
 @pytest.mark.asyncio
+async def test_supplemental_htf_fetch_repairs_stale_d1_cache(monkeypatch: pytest.MonkeyPatch):
+    from ingest import warmup_bootstrap
+
+    fake_redis = AsyncMock()
+
+    async def _llen(key: str) -> int:
+        if "XAGUSD:D1" in key:
+            return 46
+        return 50
+
+    async def _lrange(key: str, _start: int, _end: int) -> list[str]:
+        age = timedelta(days=5) if "XAGUSD:D1" in key else timedelta(minutes=30)
+        return [_serialized_candle(age)]
+
+    fake_redis.llen = AsyncMock(side_effect=_llen)
+    fake_redis.lrange = AsyncMock(side_effect=_lrange)
+
+    fake_fetcher = MagicMock()
+    fake_fetcher.fetch = AsyncMock(
+        return_value=[
+            {
+                "symbol": "XAGUSD",
+                "timeframe": "D1",
+                "open": 30.0,
+                "high": 31.0,
+                "low": 29.5,
+                "close": 30.5,
+                "volume": 100.0,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        ]
+    )
+    fake_fetcher.context_bus = MagicMock()
+    monkeypatch.setattr(warmup_bootstrap, "FinnhubCandleFetcher", MagicMock(return_value=fake_fetcher))
+
+    result = await warmup_bootstrap.supplemental_htf_fetch(fake_redis, ["XAGUSD"])
+
+    assert set(result["XAGUSD"]) == {"D1"}
+    fake_fetcher.fetch.assert_awaited_once_with("XAGUSD", "D1", 50)
+
+
+@pytest.mark.asyncio
 async def test_seed_redis_candle_history_updates_latest_candle_hash():
     from ingest import warmup_bootstrap
 
