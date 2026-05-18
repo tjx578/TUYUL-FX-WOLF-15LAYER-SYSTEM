@@ -110,8 +110,9 @@ class TestClassifyHeartbeat:
     def test_status_is_frozen_dataclass(self) -> None:
         result = classify_heartbeat(None, max_age_sec=30, service="test")
         assert isinstance(result, HeartbeatStatus)
+        field_name = "state"
         with pytest.raises(AttributeError):
-            result.state = HeartbeatState.ALIVE  # type: ignore[misc]
+            setattr(result, field_name, HeartbeatState.ALIVE)
 
 
 # ══════════════════════════════════════════════════════════
@@ -674,8 +675,9 @@ class TestClassifyIngestHealth:
         provider = self._make_status("ingest_provider", HeartbeatState.ALIVE)
         result = classify_ingest_health(process, provider)
         assert isinstance(result, IngestHealthStatus)
+        field_name = "state"
         with pytest.raises(AttributeError):
-            result.state = IngestHealthState.DEGRADED  # type: ignore[misc]
+            setattr(result, field_name, IngestHealthState.DEGRADED)
 
 
 # ══════════════════════════════════════════════════════════
