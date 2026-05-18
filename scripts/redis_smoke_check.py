@@ -16,12 +16,12 @@ def _load_env():
     if "REDIS_URL" not in os.environ:
         env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
         if os.path.exists(env_path):
-            with open(env_path) as f:
+            with open(env_path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         k, v = line.split("=", 1)
-                        os.environ.setdefault(k.strip(), v.strip())
+                        os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
 
 
 def _mask(url: str) -> str:
@@ -90,9 +90,9 @@ def main():
     try:
         r: Redis = redis.from_url(str(redis_url), decode_responses=True)  # type: ignore[attr-defined]
         bool(r.ping())  # type: ignore[arg-type]
-        print("\n[2] ✅ Redis alive — PONG")
+        print("\n[2] [OK] Redis alive - PONG")
     except Exception as e:
-        print(f"\n[2] ❌ Redis unreachable: {e}")
+        print(f"\n[2] [FAIL] Redis unreachable: {e}")
         sys.exit(1)
 
     # ── Key scan ──────────────────────────────────────────
@@ -103,7 +103,7 @@ def main():
             found_keys.add(key if isinstance(key, str) else str(key))  # type: ignore[arg-type]
 
     if not found_keys:
-        print(f"    ❌ NO matching keys in DB{db_index}")
+        print(f"    [FAIL] NO matching keys in DB{db_index}")
         print("    → Writer is NOT pushing to this DB.")
         print("\n    Cross-checking DB 0 and DB 1...")
         for alt_db in (0, 1):
@@ -114,7 +114,7 @@ def main():
                 count = sum(1 for _key in r_alt.scan_iter("*candle*", count=200))  # type: ignore[var-annotated]
                 print(f"    DB{alt_db}: {count} candle keys")
                 if count > 0:
-                    print(f"    ⚠️  MISMATCH: Writer uses DB{alt_db}, reader uses DB{db_index}")
+                    print(f"    [WARN] MISMATCH: Writer uses DB{alt_db}, reader uses DB{db_index}")
                     print(f"       → Fix: Set REDIS_URL=.../{alt_db} in analysis-engine .env")
             except Exception as e:
                 print(f"    DB{alt_db}: unreachable ({e})")
@@ -148,9 +148,9 @@ def main():
                 length = 0
             else:
                 length = "N/A"
-            marker = "✅" if isinstance(length, int) and length > 0 else "○ "
+            marker = "[OK]" if isinstance(length, int) and length > 0 else " -- "
             print(f"    {marker} {key:<45} LLEN={length}  TYPE={key_type}")
-            if marker == "✅":
+            if marker == "[OK]":
                 populated.append(key)
         except Exception as e:
             print(f"    ✗  {key} → error: {e}")
@@ -178,7 +178,7 @@ def main():
         print("  NEXT STEP  : Confirm writer's REDIS_URL db index")
     elif populated:
         prefix = populated[0].split(":")[0]
-        print(f" ✅ Data found under prefix '{prefix}'")
+        print(f" [OK] Data found under prefix '{prefix}'")
         print(f"    → Ensure analysis-engine uses CANDLE_KEY_PREFIX={prefix!r}")
     else:
         print(" Keys exist but all empty → writer push type/expiry issue")
