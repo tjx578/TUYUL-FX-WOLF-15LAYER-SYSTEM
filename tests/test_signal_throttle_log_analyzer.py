@@ -444,6 +444,7 @@ def test_microboost_priced_phase_confirms_continuation_when_context_aligns():
                 h1_phase="BULLISH",
                 theme_aligned=True,
                 spread_normal=True,
+                price_position="MID_RANGE",
             )
         }
     )
@@ -565,6 +566,76 @@ def test_microboost_buy_at_main_support_becomes_bounce_candidate():
     assert latest["phase_priced"] == "SUPPORT_BOUNCE_MICROBOOST"
     assert latest["action"] == "BUY_ON_RECLAIM_CONFIRMATION"
     assert latest["price_position"] == "MAIN_SUPPORT"
+
+
+def test_microboost_buy_pressure_inside_m15_bearish_pullback_waits_for_reclaim():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 18, 13, 30, tzinfo=UTC)
+    for index in range(29):
+        analyzer.record_allowed(symbol="CADJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32))
+
+    report = analyzer.snapshot(
+        market_contexts={
+            "CADJPY": MarketContext(
+                symbol="CADJPY",
+                raw_allowed_direction="BUY",
+                price_at_signal_start=115.5605,
+                price_at_5m_confirm=115.5290,
+                price_at_signal_end=115.5235,
+                m15_phase="BEARISH_PULLBACK",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+                market_bias="BUY",
+                trend_direction="BUY",
+                price_position="MID_RANGE",
+                main_support=115.10,
+                main_resistance=115.90,
+                range_position=0.52,
+            )
+        }
+    )
+    latest = report["microboost_summary"]["latest"]
+    lifecycle = report["microboost_summary"]["microboost_lifecycle"]
+
+    assert report["microboost_summary"]["market_context_applied"] is True
+    assert latest["phase_priced"] == "BULLISH_PULLBACK_MICROBOOST"
+    assert latest["action"] == "WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION"
+    assert latest["cluster_stage"] == "pullback_validation"
+    assert latest["cluster_id"].startswith("CADJPY_20260518T133000")
+    assert lifecycle["cluster_count"] == 1
+    assert lifecycle["raw_rows"] == 29
+    assert lifecycle["dedup_required"] is True
+
+
+def test_microboost_context_without_price_position_is_not_marked_applied():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 18, 13, 30, tzinfo=UTC)
+    for index in range(29):
+        analyzer.record_allowed(symbol="CADJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32))
+
+    report = analyzer.snapshot(
+        market_contexts={
+            "CADJPY": MarketContext(
+                symbol="CADJPY",
+                raw_allowed_direction="BUY",
+                price_at_signal_start=115.5000,
+                price_at_5m_confirm=115.5300,
+                price_at_signal_end=115.5600,
+                m15_phase="BULLISH_PULLBACK",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+                market_bias="BUY",
+                trend_direction="BUY",
+            )
+        }
+    )
+    latest = report["microboost_summary"]["latest"]
+
+    assert latest["phase_priced"] == "TREND_CONTINUATION_MICROBOOST"
+    assert latest["market_context_snapshot"]["price_position"] is None
+    assert report["microboost_summary"]["market_context_applied"] is False
 
 
 def test_microboost_counter_to_running_trend_is_pullback_until_structure_break():
