@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from datetime import UTC, datetime, timedelta
 
 from analysis.market_context_validator import MarketContext
@@ -35,7 +36,7 @@ def test_parse_signal_throttle_rows_extracts_allowed_and_throttled():
         {
             "timestamp": "2026-05-08T12:00:00Z",
             "severity": "error",
-            "message": "[SignalThrottle] XAUUSD THROTTLED - 3 signals in last 300s (max 3)",
+            "message": "[SignalThrottle] XAUUSD THROTTLED - 3 signals in last 300s (max 3) suppressed=2",
         },
         {
             "timestamp": "2026-05-08T12:00:10Z",
@@ -53,6 +54,8 @@ def test_parse_signal_throttle_rows_extracts_allowed_and_throttled():
     assert events[1].raw_verdict == "EXECUTE_BUY"
     assert events[1].effective_action == "ALLOWED"
     assert events[1].is_downgraded is False
+    assert events[0].suppressed == 2
+    assert events[0].effective_ticks == 3
 
 
 def test_parse_downgraded_hold_preserves_raw_verdict_and_effective_action():
@@ -89,6 +92,63 @@ def test_csv_fixture_reports_data_quality_without_large_raw_export():
         "start_utc": "2026-05-08T12:00:00+00:00",
         "end_utc": "2026-05-08T12:00:20+00:00",
         "timezone_assumption": "UTC",
+        "state_warmup": True,
+        "first_event_is_continuation": True,
+        "state_warmup_reason": "window_count_started_nonzero",
+        "first_event_state": {
+            "symbol": "XAUUSD",
+            "timestamp_utc": "2026-05-08T12:00:00+00:00",
+            "event_type": "THROTTLED",
+            "count": 3,
+            "remaining": None,
+            "streak": None,
+            "max_signals": 3,
+            "window_seconds": 300.0,
+            "suppressed": 0,
+        },
+    }
+
+
+def test_csv_state_warmup_detects_first_intel_continuation(tmp_path):
+    csv_path = tmp_path / "signal_throttle_with_intel.csv"
+    rows = [
+        {
+            "timestamp": "2026-05-18T07:28:00Z",
+            "severity": "info",
+            "message": "[SignalThrottle] CADJPY allowed - verdict EXECUTE_BUY",
+        },
+        {
+            "timestamp": "2026-05-18T07:28:00Z",
+            "severity": "info",
+            "message": (
+                "[SignalThrottleIntel] symbol=CADJPY raw_direction=BUY final_direction=WAIT "
+                "direction_status=CANARY_QUORUM_PENDING_VALIDATION phase=ALLOWED_CANARY_QUORUM "
+                "action=WAIT_PRICE_THEME_STRUCTURE verdict=EXECUTE_BUY count=1 remaining=2 "
+                "streak=10 max=3 window=300s reason=allowed_is_candidate_until_price_theme_structure_validation"
+            ),
+        },
+    ]
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["message", "severity", "timestamp"])
+        writer.writeheader()
+        writer.writerows(rows)
+
+    report = analyze_signal_throttle_csv(csv_path)
+
+    assert report["data_quality"]["parsed_signal_count"] == 1
+    assert report["state_warmup"] is True
+    assert report["first_event_is_continuation"] is True
+    assert report["state_warmup_reason"] == "streak_exceeds_window_count"
+    assert report["first_event_state"] == {
+        "symbol": "CADJPY",
+        "timestamp_utc": "2026-05-18T07:28:00+00:00",
+        "event_type": "ALLOWED",
+        "count": 1,
+        "remaining": 2,
+        "streak": 10,
+        "max_signals": 3,
+        "window_seconds": 300.0,
+        "suppressed": 0,
     }
 
 
@@ -178,6 +238,9 @@ def test_analyzer_classifies_clean_same_pair_block_as_pair_candidate():
         "duration_minutes": 5.5,
         "density_per_minute": 2.18,
         "events": 12,
+        "effective_ticks": 12,
+        "suppressed_ticks": 0,
+        "effective_density_per_minute": 2.18,
         "direction": None,
         "phase": "LOW_DENSITY_OPEN_LANE",
     }
@@ -299,6 +362,37 @@ def test_microboost_summary_classifies_dense_unpriced_cluster():
     assert summary["reason"] == "dense_pressure_seen_but_late_pressure_requires_price_context"
 
 
+def test_microboost_counts_suppressed_logs_as_effective_ticks():
+    base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    rows = [
+        {
+            "timestamp": (base + timedelta(seconds=index * 30)).isoformat(),
+            "severity": "error",
+            "message": (
+                "[SignalThrottle] CADJPY THROTTLED - verdict EXECUTE_BUY "
+                "1 signals in last 300s (max 1) suppressed=2"
+            ),
+        }
+        for index in range(4)
+    ]
+    events = parse_signal_throttle_rows(rows)
+
+    report = analyze_signal_throttle_events(events, latest_window_seconds=3600, microboost_window_minutes=15)
+    summary = report["microboost_summary"]
+
+    assert report["top_microboost"][0]["events"] == 4
+    assert report["top_microboost"][0]["effective_ticks"] == 12
+    assert report["top_microboost"][0]["suppressed_ticks"] == 8
+    assert report["top_microboost"][0]["effective_density_per_minute"] == 8.0
+    assert summary["count_total"] == 1
+    assert summary["latest"]["event_count"] == 4
+    assert summary["latest"]["effective_tick_count"] == 12
+    assert summary["latest"]["suppressed_tick_count"] == 8
+    assert summary["latest"]["effective_density_per_minute"] == 8.0
+    assert summary["latest"]["phase_unpriced"] == "DENSE_MICROBOOST"
+    assert summary["latest"]["direction"] == "BUY"
+
+
 def test_microboost_summary_detects_strong_cluster_near_timing_gate_without_clean_entry():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
     base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
@@ -361,6 +455,11 @@ def test_microboost_priced_phase_confirms_continuation_when_context_aligns():
     assert latest["action"] == "VALIDATE_RETEST_OR_HOLD"
     assert latest["requires_market_context"] is False
     assert latest["market_context_validation"]["final_direction"] == "BUY"
+    assert latest["market_context_snapshot"]["price_at_signal_start"] == 91.0
+    assert latest["market_context_snapshot"]["price_at_5m_confirm"] == 91.04
+    assert latest["market_context_snapshot"]["price_at_signal_end"] == 91.08
+    assert latest["market_context_snapshot"]["m15_phase"] == "PIVOT_RECLAIM"
+    assert latest["market_context_snapshot"]["h1_phase"] == "BULLISH"
 
 
 def test_microboost_late_pressure_requires_price_context_before_protect_action():
