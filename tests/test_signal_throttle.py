@@ -598,6 +598,12 @@ class TestPipelineSignalThrottle:
         assert latest["requires_market_context"] is False
         assert not any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
         assert any(event["event"] == "market_context_validation" for event in events)
+        output_lines = capsys.readouterr().out.splitlines()
+        assert any(line.startswith("[MicroboostIntel] symbol=EURUSD") for line in output_lines)
+        microboost_line = next(line for line in output_lines if line.startswith("[MicroboostIntel] symbol=EURUSD"))
+        assert "phase_priced=TREND_CONTINUATION_MICROBOOST" in microboost_line
+        assert "final_direction=BUY" in microboost_line
+        assert "m15_phase=BULLISH_PULLBACK" in microboost_line
 
     def test_sovereignty_downgrade_emits_throttle_skipped_event(self, monkeypatch):
         """When vault sovereignty downgrades EXECUTE before throttle, emit an explicit skip event."""
