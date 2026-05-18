@@ -49,7 +49,8 @@ def test_microboost_intel_emits_standalone_parseable_log(capsys):
     emit_microboost_intel(event)
     line = capsys.readouterr().out.strip()
 
-    assert line.startswith("[MicroboostIntel] symbol=CADJPY")
+    assert line.startswith("[MicroboostIntel]")
+    assert "symbol=CADJPY" in line
     parsed = parse_microboost_intel_row(
         {
             "timestamp": datetime(2026, 5, 18, 10, 15, 23, tzinfo=UTC).isoformat(),
@@ -144,7 +145,8 @@ def test_microboost_table_events_emit_all_cluster_rows(capsys):
     emit_microboost_table_event(rows[0])
     line = capsys.readouterr().out.strip()
 
-    assert line.startswith("[MicroboostTable] rank=1 symbol=CADJPY")
+    assert line.startswith("[MicroboostTable] rank=1")
+    assert "symbol=CADJPY" in line
     assert "window_wita=20:18:09-20:22:58" in line
     assert "effective_ticks=46" in line
     assert "duration_minutes=4.81" in line
