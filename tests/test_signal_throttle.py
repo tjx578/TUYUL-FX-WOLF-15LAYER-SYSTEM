@@ -51,6 +51,15 @@ class TestSignalThrottle:
         assert t.is_throttled("EURUSD") is True
         assert t.is_throttled("GBPJPY") is False
 
+    def test_symbol_keys_are_case_insensitive(self):
+        t = SignalThrottle(max_signals=2, window_seconds=300)
+        t.record("eurusd")
+        t.record("EURUSD")
+        assert t.get_count("EuRuSd") == 2
+        assert t.is_throttled("EURUSD") is True
+        t.reset("eurusd")
+        assert t.get_count("EURUSD") == 0
+
     def test_window_expiry(self):
         """Signals older than the window should not count."""
         t = SignalThrottle(max_signals=2, window_seconds=1.0)
