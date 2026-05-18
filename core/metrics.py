@@ -566,6 +566,19 @@ VERDICT_PATH_EVENT_TOTAL = _R.counter(
     label_names=("event", "symbol", "status"),
 )
 
+# Universe ranking telemetry (advisory watchlist before L12 execution gate)
+UNIVERSE_RANKING_SCORE = _R.gauge(
+    "wolf_universe_ranking_score",
+    "Latest advisory universe ranking score by symbol",
+    label_names=("symbol", "bias", "status"),
+)
+
+UNIVERSE_RANKING_POSITION = _R.gauge(
+    "wolf_universe_ranking_position",
+    "Latest advisory universe ranking position by symbol",
+    label_names=("symbol", "bias", "status"),
+)
+
 # Shadow capture (P1-A.5) — journal writes by outcome
 SHADOW_CAPTURE_WRITES_TOTAL = _R.counter(
     "wolf_shadow_capture_writes_total",
