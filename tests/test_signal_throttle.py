@@ -541,10 +541,10 @@ class TestPipelineSignalThrottle:
             }
         )
         for candle in (
-            {"symbol": "EURUSD", "timeframe": "M15", "open": 1.0990, "close": 1.1000},
-            {"symbol": "EURUSD", "timeframe": "M15", "open": 1.1002, "close": 1.1010},
-            {"symbol": "EURUSD", "timeframe": "H1", "open": 1.0980, "close": 1.1000},
-            {"symbol": "EURUSD", "timeframe": "H1", "open": 1.1001, "close": 1.1010},
+            {"symbol": "EURUSD", "timeframe": "M15", "open": 1.0990, "high": 1.1005, "low": 1.0985, "close": 1.1000},
+            {"symbol": "EURUSD", "timeframe": "M15", "open": 1.1002, "high": 1.1015, "low": 1.0995, "close": 1.1010},
+            {"symbol": "EURUSD", "timeframe": "H1", "open": 1.0980, "high": 1.1005, "low": 1.0975, "close": 1.1000},
+            {"symbol": "EURUSD", "timeframe": "H1", "open": 1.1001, "high": 1.1020, "low": 1.0995, "close": 1.1010},
         ):
             pipe._context_bus.update_candle(candle)
 
@@ -599,8 +599,10 @@ class TestPipelineSignalThrottle:
         assert not any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
         assert any(event["event"] == "market_context_validation" for event in events)
         output_lines = capsys.readouterr().out.splitlines()
-        assert any(line.startswith("[MicroboostIntel] symbol=EURUSD") for line in output_lines)
-        microboost_line = next(line for line in output_lines if line.startswith("[MicroboostIntel] symbol=EURUSD"))
+        assert any(line.startswith("[MicroboostIntel]") and "symbol=EURUSD" in line for line in output_lines)
+        microboost_line = next(
+            line for line in output_lines if line.startswith("[MicroboostIntel]") and "symbol=EURUSD" in line
+        )
         assert "phase_priced=TREND_CONTINUATION_MICROBOOST" in microboost_line
         assert "final_direction=BUY" in microboost_line
         assert "m15_phase=BULLISH_PULLBACK" in microboost_line
