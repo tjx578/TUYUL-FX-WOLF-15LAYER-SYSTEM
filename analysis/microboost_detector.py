@@ -12,7 +12,7 @@ from datetime import datetime
 from numbers import Real
 from typing import Any
 
-from .market_context_validator import MarketContext, validate_market_context
+from analysis.market_context_validator import MarketContext, validate_market_context
 
 _CURRENCIES = ("AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD")
 _METAL_BASES = ("XAG", "XAU")
@@ -36,6 +36,11 @@ class MicroboostThresholds:
 
 @dataclass(frozen=True)
 class MicroboostBlockIntel:
+    cluster_id: str
+    cluster_stage: str
+    cluster_age_seconds: float
+    cluster_event_count: int
+    cluster_density_per_minute: float
     symbol: str
     direction: str | None
     start_utc: str
@@ -84,6 +89,7 @@ class MicroboostSummary:
     timing_gate_5m: bool
     latest: dict[str, Any] | None
     blocks: list[dict[str, Any]]
+    microboost_lifecycle: dict[str, Any]
     action: str
     reason: str
 
@@ -109,7 +115,6 @@ def build_microboost_summary(
     """
     thresholds = thresholds or MicroboostThresholds()
     market_contexts = market_contexts or {}
-    market_context_applied = market_context_applied or bool(market_contexts)
     timing_gate_5m = any(_duration_seconds(block) >= clean_block_seconds for block in blocks)
     recurrence = Counter(str(_get(block, "symbol", "")).upper() for block in blocks if _get(block, "symbol", ""))
     qualifying_blocks: list[MicroboostBlockIntel] = []
@@ -157,10 +162,11 @@ def build_microboost_summary(
         )[:8]
     ]
 
+    context_applied_to_blocks = any(_has_applied_market_context(block) for block in qualifying_blocks)
     summary = MicroboostSummary(
         enabled=True,
         window_minutes=int(window_minutes),
-        market_context_applied=market_context_applied,
+        market_context_applied=context_applied_to_blocks,
         requires_market_context=any(block.requires_market_context for block in qualifying_blocks) or not qualifying_blocks,
         count_total=len(qualifying_blocks),
         count_by_phase=dict(count_by_phase),
@@ -170,6 +176,7 @@ def build_microboost_summary(
         timing_gate_5m=timing_gate_5m,
         latest=latest,
         blocks=[block.to_dict() for block in qualifying_blocks[:10]],
+        microboost_lifecycle=_microboost_lifecycle(qualifying_blocks),
         action=_summary_action(qualifying_blocks, timing_gate_5m),
         reason=_summary_reason(qualifying_blocks),
     )
@@ -220,11 +227,27 @@ def _build_block_intel(
     )
     score_components["late_risk_penalty"] = priced["late_risk_penalty"]
     score = max(0, min(100, sum(score_components.values())))
+    start_utc = _iso_utc(_get(block, "start", None))
+    end_utc = _iso_utc(_get(block, "end", None))
+    phase_priced = priced["phase_priced"]
+    action = priced["action"] or _action_for_phase(phase)
     return MicroboostBlockIntel(
+        cluster_id=_cluster_id(symbol, start_utc),
+        cluster_stage=_cluster_stage(
+            phase_unpriced=phase,
+            phase_priced=phase_priced,
+            action=action,
+            duration_seconds=duration_seconds,
+            clean_block_seconds=clean_block_seconds,
+            requires_market_context=priced["requires_market_context"],
+        ),
+        cluster_age_seconds=duration_seconds,
+        cluster_event_count=event_count,
+        cluster_density_per_minute=effective_density,
         symbol=symbol,
         direction=direction,
-        start_utc=_iso_utc(_get(block, "start", None)),
-        end_utc=_iso_utc(_get(block, "end", None)),
+        start_utc=start_utc,
+        end_utc=end_utc,
         duration_seconds=duration_seconds,
         duration_minutes=round(duration_seconds / 60.0, 2),
         event_count=event_count,
@@ -233,8 +256,8 @@ def _build_block_intel(
         suppressed_tick_count=suppressed_tick_count,
         effective_density_per_minute=effective_density,
         phase_unpriced=phase,
-        phase_priced=priced["phase_priced"],
-        action=priced["action"] or _action_for_phase(phase),
+        phase_priced=phase_priced,
+        action=action,
         requires_market_context=priced["requires_market_context"],
         late_pressure_candidate=late_candidate,
         theme_aligned=theme_aligned,
@@ -355,6 +378,8 @@ def _summary_action(blocks: list[MicroboostBlockIntel], timing_gate_5m: bool) ->
         return "VALIDATE_STRUCTURE_REACTION"
     if any(block.phase_priced == "LATE_DENSE_PRESSURE" for block in blocks):
         return "PROTECT_PROFIT"
+    if any(block.phase_priced in {"BULLISH_PULLBACK_MICROBOOST", "BEARISH_PULLBACK_MICROBOOST"} for block in blocks):
+        return "WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION"
     if any(block.phase_priced in {"CONFIRMATION_MICROBOOST", "CONTINUATION_MICROBOOST"} for block in blocks):
         return "VALIDATE_RETEST_OR_HOLD"
     if timing_gate_5m:
@@ -528,6 +553,8 @@ def _structure_microboost_phase(
     position = _normalize_structure_label(context.price_position)
     trend = _normalize_direction(context.trend_direction)
     bias = _normalize_direction(context.market_bias)
+    m15_direction = _m15_phase_direction(context.m15_phase)
+    h1_direction = _h1_phase_direction(context.h1_phase)
     extended = late_pressure_candidate and (price_extension_ratio or 0.0) >= 0.0015
 
     if position == "MAIN_RESISTANCE":
@@ -561,6 +588,23 @@ def _structure_microboost_phase(
                 "buy_microboost_at_main_support_aligns_with_structure_bounce",
                 0,
             )
+
+    if direction and h1_direction and direction != h1_direction:
+        return (
+            "MINOR_PULLBACK_MICROBOOST",
+            "WAIT_PULLBACK_COMPLETION",
+            "microboost_counter_to_h1_phase_treat_as_pullback_until_reclaim",
+            -8,
+        )
+
+    if direction and direction == trend and m15_direction and direction != m15_direction:
+        phase = "BULLISH_PULLBACK_MICROBOOST" if direction == "BUY" else "BEARISH_PULLBACK_MICROBOOST"
+        return (
+            phase,
+            "WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+            "microboost_aligns_with_h1_trend_but_m15_pullback_is_active",
+            -4,
+        )
 
     if direction and direction == trend:
         return (
@@ -718,6 +762,96 @@ def _price_extension_ratio(context: MarketContext) -> float | None:
 
 def _max_symbol_score(blocks: list[MicroboostBlockIntel], symbol: str) -> int:
     return max((block.score for block in blocks if block.symbol == symbol), default=0)
+
+
+def _microboost_lifecycle(blocks: list[MicroboostBlockIntel]) -> dict[str, Any]:
+    latest = max(blocks, key=lambda item: item.end_utc) if blocks else None
+    raw_rows = sum(max(0, block.event_count) for block in blocks)
+    effective_ticks = sum(max(0, block.effective_tick_count) for block in blocks)
+    return {
+        "cluster_count": len({block.cluster_id for block in blocks}),
+        "raw_rows": raw_rows,
+        "effective_ticks": effective_ticks,
+        "latest_cluster_id": None if latest is None else latest.cluster_id,
+        "latest_stage": None if latest is None else latest.cluster_stage,
+        "latest_phase_unpriced": None if latest is None else latest.phase_unpriced,
+        "latest_phase_priced": None if latest is None else latest.phase_priced,
+        "latest_action": None if latest is None else latest.action,
+        "dedup_required": raw_rows > len({block.cluster_id for block in blocks}),
+        "stages": dict(Counter(block.cluster_stage for block in blocks)),
+    }
+
+
+def _cluster_id(symbol: str, start_utc: str) -> str:
+    parsed = _parse_iso_datetime(start_utc)
+    if parsed is None:
+        return f"{symbol}_UNKNOWN"
+    return f"{symbol}_{parsed:%Y%m%dT%H%M%SZ}"
+
+
+def _cluster_stage(
+    *,
+    phase_unpriced: str,
+    phase_priced: str | None,
+    action: str,
+    duration_seconds: float,
+    clean_block_seconds: int,
+    requires_market_context: bool,
+) -> str:
+    priced = str(phase_priced or "").upper()
+    if priced in {"EXHAUSTION_AT_RESISTANCE", "EXHAUSTION_AT_SUPPORT", "LATE_DENSE_PRESSURE"}:
+        return "protect_or_no_chase"
+    if priced in {"BULLISH_PULLBACK_MICROBOOST", "BEARISH_PULLBACK_MICROBOOST", "MINOR_PULLBACK_MICROBOOST"}:
+        return "pullback_validation"
+    if priced in {"SUPPORT_BOUNCE_MICROBOOST", "RESISTANCE_REJECTION_MICROBOOST"}:
+        return "structure_reaction"
+    if str(action or "").upper() == "WAIT_PULLBACK_COMPLETION":
+        return "pullback_validation"
+    if duration_seconds >= clean_block_seconds * 0.85 or phase_unpriced == "NEAR_TIMING_GATE_MICROBOOST":
+        return "near_timing_gate"
+    if requires_market_context:
+        return "needs_market_context"
+    return "growing"
+
+
+def _has_applied_market_context(block: MicroboostBlockIntel) -> bool:
+    snapshot = block.market_context_snapshot
+    if not isinstance(snapshot, dict):
+        return False
+    return (
+        snapshot.get("price_at_signal_start") is not None
+        and snapshot.get("price_at_5m_confirm") is not None
+        and snapshot.get("price_at_signal_end") is not None
+        and block.price_position is not None
+    )
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _m15_phase_direction(value: Any) -> str | None:
+    text = str(value or "").strip().upper()
+    if text in {"PIVOT_RECLAIM", "BULLISH_PULLBACK", "BREAKOUT_RETEST", "SUPPORT_HOLD", "HIGH_BASE_CONTINUATION"}:
+        return "BUY"
+    if text in {"BREAKDOWN_RETEST", "BEARISH_PULLBACK", "RESISTANCE_REJECTION", "LOWER_HIGH", "SUPPORT_BREAK"}:
+        return "SELL"
+    return _normalize_direction(text)
+
+
+def _h1_phase_direction(value: Any) -> str | None:
+    text = str(value or "").strip().upper()
+    if text in {"BULLISH", "BULLISH_PULLBACK", "UPTREND", "ACCUMULATION_RECLAIM"}:
+        return "BUY"
+    if text in {"BEARISH", "BEARISH_PULLBACK", "DOWNTREND", "DISTRIBUTION_BREAKDOWN"}:
+        return "SELL"
+    return _normalize_direction(text)
 
 
 def _get(value: Any, key: str, default: Any) -> Any:
