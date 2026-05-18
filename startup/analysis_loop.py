@@ -14,7 +14,7 @@ import contextlib
 import datetime
 import os
 import time
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 import orjson
@@ -35,8 +35,6 @@ from core.metrics import (
     VERDICT_PATH_EVENT_TOTAL,
 )
 from infrastructure.tracing import setup_tracer
-from journal.builders import build_j1, build_j2
-from pipeline import WolfConstitutionalPipeline
 from services.shared.type_coerce import to_float as _to_float
 from state.heartbeat_classifier import (
     HeartbeatState,
@@ -63,6 +61,14 @@ _ENGINE_HEARTBEAT_INTERVAL_SEC = float(os.getenv("ENGINE_HEARTBEAT_INTERVAL_SEC"
 _engine_tracer = setup_tracer("wolf-engine-loop")
 _ERROR_LOG_WINDOW_SEC = float(os.getenv("PIPELINE_ERROR_LOG_WINDOW_SEC", "30"))
 _error_log_state: dict[str, dict[str, float | int]] = {}
+
+
+class PipelineExecutor(Protocol):
+    """Structural contract used by the engine loop."""
+
+    def execute(self, symbol: str, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        """Run one symbol through the analysis pipeline."""
+        ...
 
 
 def _log_pipeline_exception(pair: str, exc: BaseException, *, kind: str) -> None:
@@ -362,7 +368,7 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
 
 async def _analyze_pair(
     pair: str,
-    pipeline: WolfConstitutionalPipeline,
+    pipeline: PipelineExecutor,
 ) -> dict[str, Any] | None:
     """Run pipeline for a single pair with timeout + thread offload."""
     _lt = LatencyTracker()
@@ -416,12 +422,16 @@ async def _analyze_pair(
                 span.set_attribute("l12.verdict", str(l12.get("verdict", "")))
                 span.set_attribute("l12.confidence", str(l12.get("confidence", "")))
                 try:
+                    from journal.builders import build_j1  # noqa: PLC0415
+
                     j1 = build_j1(pair, synthesis)
                     logger.debug(f"[J1] Context journal created for {pair}: {j1.market_regime}")
                 except Exception as j1_exc:
                     logger.warning(f"[J1] Failed to build context journal for {pair}: {j1_exc}")
                 if l12:
                     try:
+                        from journal.builders import build_j2  # noqa: PLC0415
+
                         j2 = build_j2(pair, synthesis, l12)
                         logger.debug(f"[J2] Decision journal created for {pair}: verdict={j2.verdict}")
                     except Exception as j2_exc:
@@ -618,7 +628,7 @@ async def _engine_heartbeat_loop(
 
 async def analysis_loop(
     pairs: list[str],
-    pipeline: WolfConstitutionalPipeline,
+    pipeline: PipelineExecutor,
     shutdown_event: asyncio.Event | None = None,
     on_first_cycle: asyncio.Event | None = None,
 ) -> None:
