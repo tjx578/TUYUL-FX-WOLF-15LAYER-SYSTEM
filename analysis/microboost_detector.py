@@ -44,6 +44,9 @@ class MicroboostBlockIntel:
     duration_minutes: float
     event_count: int
     density_per_minute: float
+    effective_tick_count: int
+    suppressed_tick_count: int
+    effective_density_per_minute: float
     phase_unpriced: str
     phase_priced: str | None
     action: str
@@ -53,6 +56,7 @@ class MicroboostBlockIntel:
     score: int
     score_components: dict[str, int]
     market_context_validation: dict[str, Any] | None
+    market_context_snapshot: dict[str, Any] | None
     price_extension_ratio: float | None
     market_bias: str | None
     trend_direction: str | None
@@ -136,7 +140,10 @@ def build_microboost_summary(
             )
         )
 
-    qualifying_blocks.sort(key=lambda item: (item.score, item.event_count, item.density_per_minute), reverse=True)
+    qualifying_blocks.sort(
+        key=lambda item: (item.score, item.effective_tick_count, item.effective_density_per_minute, item.event_count),
+        reverse=True,
+    )
     count_by_phase = Counter(block.phase_unpriced for block in qualifying_blocks)
     count_by_priced_phase = Counter(block.phase_priced for block in qualifying_blocks if block.phase_priced)
     count_by_symbol = Counter(block.symbol for block in qualifying_blocks)
@@ -185,19 +192,24 @@ def _build_block_intel(
     duration_seconds = round(_duration_seconds(block), 3)
     event_count = max(0, _coerce_int(_get(block, "events", 0)))
     density = round(_coerce_float(_get(block, "density_per_minute", 0.0)), 2)
+    effective_tick_count = max(event_count, _coerce_int(_get(block, "effective_ticks", event_count)))
+    suppressed_tick_count = max(0, _coerce_int(_get(block, "suppressed_ticks", 0)))
+    effective_density = round(_coerce_float(_get(block, "effective_density_per_minute", density)), 2)
+    if effective_density <= 0.0:
+        effective_density = density
     theme_score, theme_aligned = _theme_alignment_score(symbol, direction, theme_scores)
     score_components = _score_components(
         duration_seconds=duration_seconds,
-        event_count=event_count,
-        density_per_minute=density,
+        event_count=effective_tick_count,
+        density_per_minute=effective_density,
         recurrence_count=max(1, symbol_block_count),
         theme_alignment_score=theme_score,
         allowed_quorum_bonus=_allowed_quorum_bonus(symbol, direction, allowed_quorum),
     )
     late_candidate = (
         duration_seconds < clean_block_seconds
-        and event_count >= thresholds.late_candidate_min_events
-        and density >= thresholds.late_candidate_min_density
+        and effective_tick_count >= thresholds.late_candidate_min_events
+        and effective_density >= thresholds.late_candidate_min_density
     )
     priced = _priced_microboost_state(
         market_context=market_context,
@@ -217,6 +229,9 @@ def _build_block_intel(
         duration_minutes=round(duration_seconds / 60.0, 2),
         event_count=event_count,
         density_per_minute=density,
+        effective_tick_count=effective_tick_count,
+        suppressed_tick_count=suppressed_tick_count,
+        effective_density_per_minute=effective_density,
         phase_unpriced=phase,
         phase_priced=priced["phase_priced"],
         action=priced["action"] or _action_for_phase(phase),
@@ -226,6 +241,7 @@ def _build_block_intel(
         score=score,
         score_components=score_components,
         market_context_validation=priced["market_context_validation"],
+        market_context_snapshot=priced["market_context_snapshot"],
         price_extension_ratio=priced["price_extension_ratio"],
         market_bias=priced["market_bias"],
         trend_direction=priced["trend_direction"],
@@ -245,8 +261,11 @@ def _classify_unpriced_phase(
     symbol_block_count: int,
 ) -> str | None:
     duration_seconds = _duration_seconds(block)
-    events = _coerce_int(_get(block, "events", 0))
-    density = _coerce_float(_get(block, "density_per_minute", 0.0))
+    raw_events = _coerce_int(_get(block, "events", 0))
+    events = max(raw_events, _coerce_int(_get(block, "effective_ticks", raw_events)))
+    density = _coerce_float(
+        _get(block, "effective_density_per_minute", _get(block, "density_per_minute", 0.0))
+    )
     if duration_seconds >= clean_block_seconds:
         return None
     if (
@@ -586,6 +605,7 @@ def _priced_state_payload(
         "action": action,
         "requires_market_context": requires_market_context,
         "market_context_validation": market_context_validation,
+        "market_context_snapshot": _market_context_snapshot(context),
         "price_extension_ratio": price_extension_ratio,
         "late_risk_penalty": late_risk_penalty,
         "market_bias": None if context is None else _normalize_direction(context.market_bias),
@@ -595,6 +615,29 @@ def _priced_state_payload(
         "main_resistance": None if context is None else context.main_resistance,
         "range_position": None if context is None else context.range_position,
         "reason": reason,
+    }
+
+
+def _market_context_snapshot(context: MarketContext | None) -> dict[str, Any] | None:
+    if context is None:
+        return None
+    return {
+        "symbol": context.symbol,
+        "raw_allowed_direction": _normalize_direction(context.raw_allowed_direction),
+        "price_at_signal_start": context.price_at_signal_start,
+        "price_at_5m_confirm": context.price_at_5m_confirm,
+        "price_at_signal_end": context.price_at_signal_end,
+        "m15_phase": context.m15_phase,
+        "h1_phase": context.h1_phase,
+        "theme_aligned": context.theme_aligned,
+        "spread_normal": context.spread_normal,
+        "market_bias": _normalize_direction(context.market_bias),
+        "trend_direction": _normalize_direction(context.trend_direction),
+        "price_position": _normalize_structure_label(context.price_position),
+        "main_support": context.main_support,
+        "main_resistance": context.main_resistance,
+        "range_position": context.range_position,
+        "is_late_pressure": context.is_late_pressure,
     }
 
 
