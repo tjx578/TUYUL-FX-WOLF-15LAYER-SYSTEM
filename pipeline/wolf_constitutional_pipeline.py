@@ -78,6 +78,7 @@ from analysis.signal_throttle_intelligence import (
     emit_signal_throttle_intel,
 )
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer
+from analysis.universe_ranking import UniverseRankingEngine
 from config_loader import CONFIG
 
 # third-party imports
@@ -92,6 +93,8 @@ from core.metrics import (
     LAYER_LATENCY,
     SIGNAL_THROTTLED,
     TICK_TO_VERDICT_LATENCY,
+    UNIVERSE_RANKING_POSITION,
+    UNIVERSE_RANKING_SCORE,
     VERDICT_PATH_EVENT_TOTAL,
 )
 from core.tracing import layer_span
@@ -379,6 +382,9 @@ class WolfConstitutionalPipeline:
 
         # Engine Enrichment Layer (Phase 2.5 — 9 facade engines)
         self._enrichment: Any = None  # lazy-loaded
+
+        # Universe ranking / conditional watchlist (advisory before L12)
+        self._universe_ranking = UniverseRankingEngine()
 
         # Legacy FTA Enricher — WOLF ARSENAL v4.0 advisory adapter (pre-L10)
         self._legacy_fta: Any = None  # lazy-loaded
@@ -886,6 +892,128 @@ class WolfConstitutionalPipeline:
                 )
 
         return trade_returns, preconditioned, diag
+
+    def _resolve_l7_cluster_pool(self, system_metrics: dict[str, Any] | None) -> dict[str, list[float]] | None:
+        """Build optional cluster-level return pools for L7 cold-start fallback."""
+        pool: dict[str, list[float]] = {}
+
+        for metrics_key in ("cluster_pool", "trade_return_clusters", "l7_cluster_pool"):
+            raw_pool = system_metrics.get(metrics_key) if isinstance(system_metrics, dict) else None
+            if not isinstance(raw_pool, dict):
+                continue
+            for cluster_name, raw_values in raw_pool.items():
+                if not isinstance(raw_values, list | tuple):
+                    continue
+                values: list[float] = []
+                for value in raw_values:
+                    with contextlib.suppress(TypeError, ValueError):
+                        values.append(float(value))
+                if values:
+                    pool[str(cluster_name)] = values
+
+        try:
+            from analysis import probability_cluster_fallback as _probability_cluster_fallback  # noqa: PLC0415
+        except Exception:
+            _symbol_clusters = {}
+        else:
+            _symbol_clusters = _probability_cluster_fallback.SYMBOL_CLUSTERS
+
+        for cluster_name, members in _symbol_clusters.items():
+            if cluster_name in pool and len(pool[cluster_name]) >= 30:
+                continue
+            values = list(pool.get(cluster_name, []))
+            for member in members:
+                history: Any = None
+                with contextlib.suppress(Exception):
+                    history = self._context_bus.get_trade_history(symbol=member, lookback=200)
+                if not isinstance(history, list | tuple):
+                    continue
+                for value in history:
+                    with contextlib.suppress(TypeError, ValueError):
+                        values.append(float(value))
+            if values:
+                pool[cluster_name] = values[-500:]
+
+        return pool or None
+
+    def _run_universe_ranking(
+        self,
+        *,
+        symbol: str,
+        warmup: dict[str, Any],
+        data_quality_reports: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Run advisory universe ranking and emit ranking telemetry."""
+        try:
+            engine = getattr(self, "_universe_ranking", None)
+            if engine is None:
+                engine = UniverseRankingEngine()
+                self._universe_ranking = engine
+
+            result = engine.analyze(
+                self._context_bus,
+                target_symbol=symbol,
+                warmup=warmup,
+                data_quality_reports=data_quality_reports,
+                top_n=5,
+            )
+            ranking = result.to_dict()
+            target_rank = ranking.get("target_rank") if isinstance(ranking, dict) else None
+            if isinstance(target_rank, dict):
+                status = str(target_rank.get("watchlist_status", "UNKNOWN"))
+                bias = str(target_rank.get("bias", "NEUTRAL"))
+                UNIVERSE_RANKING_SCORE.labels(symbol=symbol, bias=bias, status=status).set(
+                    float(target_rank.get("rank_score", 0.0) or 0.0)
+                )
+                UNIVERSE_RANKING_POSITION.labels(symbol=symbol, bias=bias, status=status).set(
+                    float(target_rank.get("rank", 0) or 0)
+                )
+                _emit_canary_event(
+                    "event=universe_ranking "
+                    f"symbol={symbol} authority=UNIVERSE_RANKING rank={target_rank.get('rank')} "
+                    f"bias={bias} status={status} score={target_rank.get('rank_score')} "
+                    f"data_ready={ranking.get('data_ready')}"
+                )
+            return ranking
+        except Exception as exc:
+            logger.warning("[Pipeline v8.0] Universe ranking failed (non-fatal): {}", exc)
+            return {
+                "target_symbol": symbol,
+                "data_ready": False,
+                "readiness_reasons": [f"universe_ranking_error:{type(exc).__name__}"],
+                "error": str(exc),
+            }
+
+    @staticmethod
+    def _annotate_universe_ranking_with_l12(
+        ranking: dict[str, Any],
+        l12_result: dict[str, Any],
+    ) -> None:
+        """Decorate advisory ranking with the later L12 verdict for audit."""
+        if not isinstance(ranking, dict) or not isinstance(l12_result, dict):
+            return
+
+        target_symbol = str(ranking.get("target_symbol", "")).upper()
+        verdict = str(l12_result.get("verdict", "UNKNOWN"))
+        execution_allowed = bool(l12_result.get("continuation_allowed", False))
+
+        def _annotate(item: dict[str, Any]) -> None:
+            item["l12_verdict"] = verdict
+            item["execution_allowed"] = execution_allowed
+            if execution_allowed:
+                item["watchlist_status"] = "EXECUTABLE"
+
+        target = ranking.get("target_rank")
+        if isinstance(target, dict):
+            _annotate(target)
+
+        for key in ("top_pairs", "ranked_pairs"):
+            pairs = ranking.get(key)
+            if not isinstance(pairs, list):
+                continue
+            for item in pairs:
+                if isinstance(item, dict) and str(item.get("symbol", "")).upper() == target_symbol:
+                    _annotate(item)
 
     @staticmethod
     def _log_layer_constitutional(
@@ -1746,6 +1874,7 @@ class WolfConstitutionalPipeline:
             # fails WF thresholds -> false downgrade.  Flag synthetic source
             # so L7 skips WF enrichment.
             _synthetic_returns = trade_returns_preconditioned
+            _l7_cluster_pool = self._resolve_l7_cluster_pool(system_metrics)
 
             # ── Inject upstream output for L7 constitutional governor ─
             # L7 constitutional needs Phase 2 / enrichment continuation
@@ -1755,7 +1884,8 @@ class WolfConstitutionalPipeline:
                 _l7_upstream = l5
             elif l4:
                 _l7_upstream = l4
-            l7_engine.set_upstream_output(_l7_upstream)
+            if hasattr(l7_engine, "set_upstream_output"):
+                l7_engine.set_upstream_output(_l7_upstream)
 
             # ── L8/L9 upstream injection will happen after L7 completes ─
             # L8 needs L7 output, L9 needs L8 output for constitutional chain.
@@ -1764,8 +1894,10 @@ class WolfConstitutionalPipeline:
             _l8_upstream = dict(_l7_upstream)
             if l2:
                 _l8_upstream["l2_context"] = l2
-            l8_engine.set_upstream_output(_l8_upstream)
-            l9_engine.set_upstream_output(_l7_upstream)
+            if hasattr(l8_engine, "set_upstream_output"):
+                l8_engine.set_upstream_output(_l8_upstream)
+            if hasattr(l9_engine, "set_upstream_output"):
+                l9_engine.set_upstream_output(_l7_upstream)
 
             phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "L7": lambda: cast(
@@ -1779,6 +1911,7 @@ class WolfConstitutionalPipeline:
                         prior_wins=prior_wins,
                         prior_losses=prior_losses,
                         synthetic_returns=_synthetic_returns,
+                        cluster_pool=_l7_cluster_pool,
                     ),
                 ),
                 "L8": lambda: cast(
@@ -1872,6 +2005,30 @@ class WolfConstitutionalPipeline:
                     "(parallel execution — Phase 2 upstream used)",
                     symbol,
                 )
+
+            # ── Universe ranking / conditional watchlist (advisory) ───
+            # This answers "what deserves attention?" before L12 answers
+            # "what is executable now?". It is injected into L9/synthesis for
+            # basket confirmation, but never relaxes constitutional gates.
+            universe_ranking = self._run_universe_ranking(
+                symbol=symbol,
+                warmup=warmup,
+                data_quality_reports=_dq_reports,
+            )
+            target_rank = universe_ranking.get("target_rank") if isinstance(universe_ranking, dict) else None
+            if isinstance(target_rank, dict):
+                l9["basket_confirmation"] = {
+                    "source": "universe_ranking",
+                    "rank": target_rank.get("rank"),
+                    "bias": target_rank.get("bias"),
+                    "phase": target_rank.get("phase"),
+                    "watchlist_status": target_rank.get("watchlist_status"),
+                    "rank_score": target_rank.get("rank_score"),
+                    "relative_strength_delta": target_rank.get("relative_strength_delta"),
+                    "cross_confirmation_score": target_rank.get("cross_confirmation_score"),
+                    "advisory_only": True,
+                }
+                l9["universe_ranking"] = target_rank
 
             # ═══════════════════════════════════════════════════════
             # PHASE 4 -- ZONA EXECUTION & DECISION (L11 -> L6 -> L10)
@@ -2095,6 +2252,7 @@ class WolfConstitutionalPipeline:
                 result["verdict"] = "NO_TRADE"
                 result["verdict_reason"] = f"No executable direction (reason={direction_reason})"
                 result["direction_resolution"] = direction_resolution
+                result["universe_ranking"] = universe_ranking
                 result["l12_verdict"] = {
                     "verdict": "NO_TRADE",
                     "reason": direction_reason,
@@ -2215,6 +2373,7 @@ class WolfConstitutionalPipeline:
                 "L9": l9,
                 "L10": l10,
                 "L11": l11,
+                "universe_ranking": universe_ranking,
                 # Legacy FTA advisory (WOLF ARSENAL v4.0 adapter)
                 "legacy_fta": legacy_fta if legacy_fta else {},
                 "legacy_fta_confidence_blend": {
@@ -2473,6 +2632,10 @@ class WolfConstitutionalPipeline:
                     l9_layer=l9,
                 )
                 synthesis["constitutional_phase5"] = _const_l12
+                self._annotate_universe_ranking_with_l12(
+                    synthesis.get("universe_ranking", {}),
+                    _const_l12,
+                )
             except Exception as _cp5_exc:
                 logger.warning(
                     "[Pipeline v8.0] Constitutional Phase 5 overlay failed (non-fatal): {}",
