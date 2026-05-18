@@ -153,10 +153,12 @@ _SUPP_HTF_MIN_BARS: dict[str, int] = {
     # repair to at least that floor before the engine pipeline sees the pair.
     "H1": 30,
     "H4": 10,
+    "D1": 5,
 }
 _SUPP_HTF_MAX_AGE_SEC: dict[str, float] = {
     "H1": float(os.getenv("WOLF15_SUPP_HTF_H1_MAX_AGE_SEC", "7200")),
     "H4": float(os.getenv("WOLF15_SUPP_HTF_H4_MAX_AGE_SEC", "18000")),
+    "D1": float(os.getenv("WOLF15_SUPP_HTF_D1_MAX_AGE_SEC", "259200")),
 }
 _SUPP_FETCH_BARS = 50
 
@@ -241,7 +243,7 @@ async def supplemental_htf_fetch(
 
     total_tasks = sum(len(tfs) for tfs in deficit_map.values())
     logger.info(
-        "[SuppHTF] %d symbols need supplemental H1/H4 data (%d fetch tasks)",
+        "[SuppHTF] %d symbols need supplemental HTF data (%d fetch tasks)",
         len(deficit_map),
         total_tasks,
     )
