@@ -36,6 +36,16 @@ _DOWNGRADED_RE = re.compile(
     rf"\[SignalThrottle\]\s+{_SYMBOL_RE}.*?verdict\s+(?P<verdict>[A-Z_]+).*?downgraded\s+to\s+HOLD",
     re.IGNORECASE,
 )
+_INTEL_RE = re.compile(r"\[SignalThrottleIntel\]\s+symbol=(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)", re.IGNORECASE)
+_SUPPRESSED_RE = re.compile(r"\bsuppressed=(?P<suppressed>\d+)\b", re.IGNORECASE)
+_COUNT_KV_RE = re.compile(r"\bcount=(?P<count>\d+)\b", re.IGNORECASE)
+_COUNT_SIGNAL_RE = re.compile(r"\b(?P<count>\d+)\s+signals?\s+in\s+last\b", re.IGNORECASE)
+_REMAINING_RE = re.compile(r"\bremaining=(?P<remaining>\d+)\b", re.IGNORECASE)
+_STREAK_RE = re.compile(r"\bstreak=(?P<streak>\d+)\b", re.IGNORECASE)
+_MAX_KV_RE = re.compile(r"\bmax=(?P<max>\d+)\b", re.IGNORECASE)
+_MAX_PAREN_RE = re.compile(r"\(max\s+(?P<max>\d+)\)", re.IGNORECASE)
+_WINDOW_KV_RE = re.compile(r"\bwindow=(?P<window>\d+(?:\.\d+)?)s\b", re.IGNORECASE)
+_WINDOW_SIGNAL_RE = re.compile(r"\blast\s+(?P<window>\d+(?:\.\d+)?)s\b", re.IGNORECASE)
 
 _CURRENCIES = ("AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD")
 _METAL_BASES = ("XAG", "XAU")
@@ -53,10 +63,21 @@ class SignalThrottleLogEvent:
     raw_verdict: str | None = None
     effective_action: str = "UNKNOWN"
     is_downgraded: bool = False
+    suppressed: int = 0
+    count: int | None = None
+    remaining: int | None = None
+    allowed_streak: int | None = None
+    max_signals: int | None = None
+    window_seconds: float | None = None
+
+    @property
+    def effective_ticks(self) -> int:
+        return 1 + max(0, int(self.suppressed))
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["timestamp"] = self.timestamp.isoformat()
+        payload["effective_ticks"] = self.effective_ticks
         return payload
 
 
@@ -70,6 +91,9 @@ class PressureBlock:
     density_per_minute: float
     max_gap_seconds: float
     direction: str | None = None
+    effective_ticks: int = 0
+    suppressed_ticks: int = 0
+    effective_density_per_minute: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -144,6 +168,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
     if verdict is None:
         verdict_match = _VERDICT_RE.search(message)
         verdict = verdict_match.group("verdict").upper() if verdict_match else None
+    state_fields = _extract_state_fields(message)
 
     return SignalThrottleLogEvent(
         timestamp=timestamp,
@@ -156,6 +181,12 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         raw_verdict=verdict,
         effective_action=effective_action,
         is_downgraded=is_downgraded,
+        suppressed=_extract_suppressed(message),
+        count=state_fields.get("count"),
+        remaining=state_fields.get("remaining"),
+        allowed_streak=state_fields.get("allowed_streak"),
+        max_signals=state_fields.get("max_signals"),
+        window_seconds=state_fields.get("window_seconds"),
     )
 
 
@@ -176,6 +207,7 @@ def analyze_signal_throttle_events(
     unparsed_count: int = 0,
     timezone_assumption: str = "UTC",
     market_contexts: dict[str, Any] | None = None,
+    state_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if latest_window_minutes is not None:
         latest_window_seconds = int(latest_window_minutes * 60)
@@ -186,12 +218,17 @@ def analyze_signal_throttle_events(
     fragmented_max_clean_block_seconds = fragmented_max_clean_block_minutes * 60.0
 
     ordered = sorted(events, key=lambda item: item.timestamp)
+    state_metadata = state_metadata or _state_metadata_from_events(ordered)
     if not ordered:
         return {
             "final_mode": "NO_SIGNAL_THROTTLE_DATA",
             "clean_entry_signal": False,
             "pair_timing_candidate": False,
             "requires_market_context": True,
+            "state_warmup": bool(state_metadata.get("state_warmup", False)),
+            "first_event_is_continuation": bool(state_metadata.get("first_event_is_continuation", False)),
+            "state_warmup_reason": state_metadata.get("state_warmup_reason"),
+            "first_event_state": state_metadata.get("first_event_state"),
             "latest_phase": "NO_DATA",
             "main_watchlist": [],
             "watchlist": [],
@@ -213,6 +250,7 @@ def analyze_signal_throttle_events(
                 row_count=row_count,
                 unparsed_count=unparsed_count,
                 timezone_assumption=timezone_assumption,
+                state_metadata=state_metadata,
             ),
         }
 
@@ -272,6 +310,10 @@ def analyze_signal_throttle_events(
         "clean_entry_signal": clean_entry_signal,
         "pair_timing_candidate": pair_timing_candidate,
         "requires_market_context": requires_market_context,
+        "state_warmup": bool(state_metadata.get("state_warmup", False)),
+        "first_event_is_continuation": bool(state_metadata.get("first_event_is_continuation", False)),
+        "state_warmup_reason": state_metadata.get("state_warmup_reason"),
+        "first_event_state": state_metadata.get("first_event_state"),
         "latest_phase": latest_phase,
         "main_watchlist": main_watchlist,
         "watchlist": main_watchlist,
@@ -318,6 +360,7 @@ def analyze_signal_throttle_events(
             row_count=row_count,
             unparsed_count=unparsed_count,
             timezone_assumption=timezone_assumption,
+            state_metadata=state_metadata,
         ),
         "currency_pressure": currency_pressure,
         "top_clean_blocks": [block.to_dict() for block in rank_pressure_blocks(blocks)[:10]],
@@ -339,12 +382,14 @@ def analyze_signal_throttle_csv(path: str | Path) -> dict[str, Any]:
     with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
     events = parse_signal_throttle_rows(rows)
+    state_metadata = _state_metadata_from_rows(rows, events)
     return analyze_signal_throttle_events(
         events,
         source="csv",
         source_found=True,
         row_count=len(rows),
         unparsed_count=max(0, len(rows) - len(events)),
+        state_metadata=state_metadata,
     )
 
 
@@ -415,6 +460,9 @@ class SignalThrottleLiveAnalyzer:
                 direction=normalize_direction(None, verdict),
                 raw_verdict=verdict,
                 effective_action="ALLOWED",
+                count=1,
+                remaining=None,
+                allowed_streak=1,
             )
         )
 
@@ -444,6 +492,10 @@ class SignalThrottleLiveAnalyzer:
                 symbol=symbol.upper(),
                 event_type="THROTTLED",
                 effective_action="HOLD",
+                count=count,
+                remaining=remaining,
+                max_signals=max_signals,
+                window_seconds=window_seconds,
             )
         )
         if verdict:
@@ -463,6 +515,10 @@ class SignalThrottleLiveAnalyzer:
                     raw_verdict=verdict,
                     effective_action="HOLD",
                     is_downgraded=True,
+                    count=count,
+                    remaining=remaining,
+                    max_signals=max_signals,
+                    window_seconds=window_seconds,
                 )
             )
 
@@ -552,7 +608,12 @@ def _has_hard_rotation_interrupt(
 def rank_pressure_blocks(blocks: Iterable[PressureBlock]) -> list[PressureBlock]:
     return sorted(
         blocks,
-        key=lambda block: (block.duration_seconds >= 300, block.events, block.density_per_minute),
+        key=lambda block: (
+            block.duration_seconds >= 300,
+            block.effective_ticks or block.events,
+            block.effective_density_per_minute or block.density_per_minute,
+            block.events,
+        ),
         reverse=True,
     )
 
@@ -637,9 +698,11 @@ def _data_quality_block(
     row_count: int | None,
     unparsed_count: int,
     timezone_assumption: str,
+    state_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     parsed_signal_count = len(events)
     resolved_row_count = parsed_signal_count if row_count is None else row_count
+    state_metadata = state_metadata or _state_metadata_from_events(events)
     return {
         "source": source,
         "file_found": source_found if source == "csv" else None,
@@ -651,6 +714,10 @@ def _data_quality_block(
         "start_utc": events[0].timestamp.isoformat() if events else None,
         "end_utc": events[-1].timestamp.isoformat() if events else None,
         "timezone_assumption": timezone_assumption,
+        "state_warmup": bool(state_metadata.get("state_warmup", False)),
+        "first_event_is_continuation": bool(state_metadata.get("first_event_is_continuation", False)),
+        "state_warmup_reason": state_metadata.get("state_warmup_reason"),
+        "first_event_state": state_metadata.get("first_event_state"),
     }
 
 
@@ -660,6 +727,9 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
     duration_seconds = max((end - start).total_seconds(), 0.0)
     gaps = [(events[index].timestamp - events[index - 1].timestamp).total_seconds() for index in range(1, len(events))]
     density = len(events) / max(duration_seconds / 60.0, 1.0 / 60.0)
+    suppressed_ticks = sum(max(0, int(event.suppressed)) for event in events)
+    effective_ticks = sum(event.effective_ticks for event in events)
+    effective_density = effective_ticks / max(duration_seconds / 60.0, 1.0 / 60.0)
     return PressureBlock(
         symbol=events[0].symbol,
         start=start,
@@ -669,6 +739,9 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
         density_per_minute=round(density, 2),
         max_gap_seconds=max(gaps, default=0.0),
         direction=_dominant_direction(events),
+        effective_ticks=effective_ticks,
+        suppressed_ticks=suppressed_ticks,
+        effective_density_per_minute=round(effective_density, 2),
     )
 
 
@@ -705,6 +778,183 @@ def _parse_timestamp(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _extract_state_fields(message: str) -> dict[str, Any]:
+    return {
+        "count": _extract_optional_int(message, _COUNT_KV_RE, _COUNT_SIGNAL_RE, group="count"),
+        "remaining": _extract_optional_int(message, _REMAINING_RE, group="remaining"),
+        "allowed_streak": _extract_optional_int(message, _STREAK_RE, group="streak"),
+        "max_signals": _extract_optional_int(message, _MAX_KV_RE, _MAX_PAREN_RE, group="max"),
+        "window_seconds": _extract_optional_float(message, _WINDOW_KV_RE, _WINDOW_SIGNAL_RE, group="window"),
+        "suppressed": _extract_suppressed(message),
+    }
+
+
+def _extract_optional_int(message: str, *patterns: re.Pattern[str], group: str) -> int | None:
+    for pattern in patterns:
+        match = pattern.search(message)
+        if not match:
+            continue
+        try:
+            return max(0, int(match.group(group)))
+        except (IndexError, TypeError, ValueError):
+            continue
+    return None
+
+
+def _extract_optional_float(message: str, *patterns: re.Pattern[str], group: str) -> float | None:
+    for pattern in patterns:
+        match = pattern.search(message)
+        if not match:
+            continue
+        try:
+            return max(0.0, float(match.group(group)))
+        except (IndexError, TypeError, ValueError):
+            continue
+    return None
+
+
+def _extract_suppressed(message: str) -> int:
+    match = _SUPPRESSED_RE.search(message)
+    if not match:
+        return 0
+    try:
+        return max(0, int(match.group("suppressed")))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _state_metadata_from_events(events: list[SignalThrottleLogEvent]) -> dict[str, Any]:
+    if not events:
+        return _state_metadata_payload(None)
+    first = events[0]
+    state = {
+        "symbol": first.symbol,
+        "timestamp_utc": first.timestamp.isoformat(),
+        "event_type": first.event_type,
+        "count": first.count,
+        "remaining": first.remaining,
+        "streak": first.allowed_streak,
+        "max_signals": first.max_signals,
+        "window_seconds": first.window_seconds,
+        "suppressed": first.suppressed,
+    }
+    return _state_metadata_payload(state)
+
+
+def _state_metadata_from_rows(
+    rows: list[dict[str, Any]],
+    events: list[SignalThrottleLogEvent],
+) -> dict[str, Any]:
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        message = _extract_field(row, "message", "body", "log", "text")
+        if "[SignalThrottle" not in message:
+            continue
+        timestamp = _parse_timestamp(_extract_field(row, "timestamp", "time", "@timestamp", "datetime"))
+        if timestamp is None:
+            continue
+        symbol = _state_symbol_from_message(message)
+        if not symbol:
+            continue
+        fields = _extract_state_fields(message)
+        records.append(
+            {
+                "symbol": symbol,
+                "timestamp": timestamp,
+                "event_type": "INTEL" if "[SignalThrottleIntel]" in message else "SIGNAL_THROTTLE",
+                **fields,
+            }
+        )
+
+    if not records:
+        return _state_metadata_from_events(events)
+
+    records.sort(key=lambda item: item["timestamp"])
+    first_symbol = events[0].symbol if events else str(records[0]["symbol"])
+    first_timestamp = events[0].timestamp if events else records[0]["timestamp"]
+    first_event_type = events[0].event_type if events else str(records[0]["event_type"])
+    state: dict[str, Any] = {
+        "symbol": first_symbol,
+        "timestamp_utc": first_timestamp.isoformat(),
+        "event_type": first_event_type,
+        "count": None,
+        "remaining": None,
+        "streak": None,
+        "max_signals": None,
+        "window_seconds": None,
+        "suppressed": 0,
+    }
+    for record in records:
+        if record["timestamp"] < first_timestamp:
+            continue
+        if str(record["symbol"]).upper() != first_symbol.upper():
+            break
+        if (record["timestamp"] - first_timestamp).total_seconds() > 30:
+            break
+        for source_name, target_name in (
+            ("count", "count"),
+            ("remaining", "remaining"),
+            ("allowed_streak", "streak"),
+            ("max_signals", "max_signals"),
+            ("window_seconds", "window_seconds"),
+        ):
+            if state[target_name] is None and record.get(source_name) is not None:
+                state[target_name] = record[source_name]
+        state["suppressed"] = max(int(state["suppressed"] or 0), int(record.get("suppressed") or 0))
+    return _state_metadata_payload(state)
+
+
+def _state_symbol_from_message(message: str) -> str | None:
+    for pattern in (_INTEL_RE, _THROTTLED_RE, _ALLOWED_RE, _DOWNGRADED_RE):
+        match = pattern.search(message)
+        if match:
+            return match.group("symbol").upper()
+    return None
+
+
+def _state_metadata_payload(first_state: dict[str, Any] | None) -> dict[str, Any]:
+    reasons = _continuation_reasons(first_state)
+    first_event_is_continuation = bool(reasons)
+    return {
+        "state_warmup": first_event_is_continuation,
+        "first_event_is_continuation": first_event_is_continuation,
+        "state_warmup_reason": ",".join(reasons) if reasons else None,
+        "first_event_state": first_state,
+    }
+
+
+def _continuation_reasons(first_state: dict[str, Any] | None) -> list[str]:
+    if not first_state:
+        return []
+    count = _coerce_optional_int(first_state.get("count"))
+    remaining = _coerce_optional_int(first_state.get("remaining"))
+    streak = _coerce_optional_int(first_state.get("streak"))
+    max_signals = _coerce_optional_int(first_state.get("max_signals"))
+    suppressed = _coerce_optional_int(first_state.get("suppressed")) or 0
+
+    reasons: list[str] = []
+    if streak is not None and count is not None and streak > count:
+        reasons.append("streak_exceeds_window_count")
+    elif streak is not None and streak > 1 and count is None:
+        reasons.append("streak_started_before_report")
+    if count is not None and count > 1:
+        reasons.append("window_count_started_nonzero")
+    if max_signals is not None and remaining is not None and remaining < max(max_signals - 1, 0):
+        reasons.append("remaining_capacity_already_consumed")
+    if suppressed > 0:
+        reasons.append("suppressed_events_before_visible_log")
+    return reasons
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _coerce_timestamp(value: datetime | None) -> datetime:
@@ -768,6 +1018,9 @@ def _candidate_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int
         "duration_minutes": round(best_block.duration_seconds / 60.0, 2),
         "density_per_minute": best_block.density_per_minute,
         "events": best_block.events,
+        "effective_ticks": best_block.effective_ticks,
+        "suppressed_ticks": best_block.suppressed_ticks,
+        "effective_density_per_minute": best_block.effective_density_per_minute,
         "direction": best_block.direction,
         "phase": _candidate_phase(best_block),
     }
@@ -780,6 +1033,9 @@ def _microboost_payload(block: PressureBlock) -> dict[str, Any]:
         "duration_seconds": block.duration_seconds,
         "events": block.events,
         "density_per_minute": block.density_per_minute,
+        "effective_ticks": block.effective_ticks,
+        "suppressed_ticks": block.suppressed_ticks,
+        "effective_density_per_minute": block.effective_density_per_minute,
         "direction": block.direction,
         "start_utc": block.start.isoformat(),
         "end_utc": block.end.isoformat(),
@@ -790,7 +1046,12 @@ def rank_microboost_blocks(blocks: list[PressureBlock], *, clean_block_seconds: 
     """Rank microboost blocks by relevance."""
     return sorted(
         blocks,
-        key=lambda block: (block.duration_seconds >= clean_block_seconds, block.events, block.density_per_minute),
+        key=lambda block: (
+            block.duration_seconds >= clean_block_seconds,
+            block.effective_ticks or block.events,
+            block.effective_density_per_minute or block.density_per_minute,
+            block.events,
+        ),
         reverse=True,
     )
 
@@ -847,8 +1108,9 @@ def _latest_direction_for_symbol(events: list[SignalThrottleLogEvent], symbol: s
 
 
 def _candidate_phase(block: PressureBlock) -> str:
-    if block.density_per_minute < 3.0:
+    density = block.effective_density_per_minute or block.density_per_minute
+    if density < 3.0:
         return "LOW_DENSITY_OPEN_LANE"
-    if block.density_per_minute < 8.0:
+    if density < 8.0:
         return "CLEAN_PRESSURE_LANE"
     return "HIGH_DENSITY_PRESSURE_LANE"
