@@ -181,3 +181,92 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_is_sell_timing_val
     assert result.rr_to_tp2_tight == pytest.approx(4.82)
     assert result.rr_status == "VALID"
     assert result.signal_valid_time_wita == "2026-05-19 04:33:08"
+
+
+def test_cadjpy_missing_support_ladder_uses_rr_fallback_without_validating():
+    cluster = _cluster(
+        symbol="CADJPY",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=13.31,
+        effective_tick_count=55,
+        duration_seconds=247.8,
+        price_at_signal_start=115.685,
+        price_at_signal_end=115.685,
+        end_utc="2026-05-19T20:05:57.041112+00:00",
+    )
+    market = _market(
+        symbol="CADJPY",
+        pip_value=0.01,
+        price_at_signal_start=115.685,
+        price_at_5m_confirm=115.685,
+        price_at_signal_end=115.685,
+        price_position="MAIN_RESISTANCE",
+        resistance_low=None,
+        resistance_high=None,
+        minor_support=None,
+        major_support=None,
+        m15_rejection_from_resistance=True,
+        m15_close_below_minor_support=True,
+        tp1_support=None,
+        tp2_support=None,
+        tp3_support=None,
+        tp4_support=None,
+        support_ladder_ready=False,
+        support_ladder_missing_reason="NO_M15_H1_SUPPORT_LEVELS",
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_TIMING_WATCH
+    assert result.final_direction == "WAIT"
+    assert result.valid_for_execution is False
+    assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
+    assert result.tp_status == "WATCH_PROVISIONAL"
+    assert result.tp_missing_reason == "NO_M15_H1_SUPPORT_LEVELS"
+    assert result.rr_status == "WATCH_PROVISIONAL"
+    assert result.support_ladder_ready is False
+    assert result.sl_tight == 115.805
+    assert result.tp1 == 115.565
+    assert result.tp2 == 115.445
+    assert result.tp3 == 115.385
+    assert result.tp4 == 115.325
+    assert result.tp_min_rr == 115.385
+    assert result.tp3_rr == 2.5
+
+
+def test_structure_targets_below_min_rr_do_not_promote_to_valid():
+    cluster = _cluster(
+        symbol="CADJPY",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=13.31,
+        duration_seconds=247.8,
+        price_at_signal_start=115.685,
+        price_at_signal_end=115.685,
+    )
+    market = _market(
+        symbol="CADJPY",
+        pip_value=0.01,
+        price_at_signal_start=115.685,
+        price_at_5m_confirm=115.685,
+        price_at_signal_end=115.685,
+        price_position="MAIN_RESISTANCE",
+        resistance_high=None,
+        minor_support=115.60,
+        major_support=115.50,
+        m15_rejection_from_resistance=True,
+        m15_close_below_minor_support=True,
+        sl_buffer=None,
+        tp1_support=115.60,
+        tp2_support=115.50,
+        tp3_support=None,
+        tp4_support=None,
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_TIMING_WATCH
+    assert result.final_direction == "WAIT"
+    assert result.rr_status == "FAIL_MIN_RR"
+    assert result.target_mode == "FINAL_MARKET_STRUCTURE"
+    assert result.structure_targets_available is True
+    assert result.valid_for_execution is False
