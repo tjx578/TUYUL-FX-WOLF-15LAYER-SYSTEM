@@ -34,6 +34,9 @@ _BEARISH_H1_PHASES = {"BEARISH", "BEARISH_PULLBACK", "DOWNTREND", "DISTRIBUTION_
 class MarketContext:
     symbol: str
     raw_allowed_direction: str | None
+    bid: float | None = None
+    ask: float | None = None
+    pip_value: float | None = None
     price_at_signal_start: float | None = None
     price_at_5m_confirm: float | None = None
     price_at_signal_end: float | None = None
@@ -48,6 +51,31 @@ class MarketContext:
     main_resistance: float | None = None
     range_position: float | None = None
     is_late_pressure: bool = False
+    resistance_low: float | None = None
+    resistance_high: float | None = None
+    minor_support: float | None = None
+    major_support: float | None = None
+    m15_close: float | None = None
+    m15_close_above_resistance: bool | None = None
+    m15_rejection_from_resistance: bool | None = None
+    m15_close_below_minor_support: bool | None = None
+    support_low: float | None = None
+    support_high: float | None = None
+    minor_resistance: float | None = None
+    m15_close_below_support: bool | None = None
+    m15_rejection_from_support: bool | None = None
+    m15_close_above_minor_resistance: bool | None = None
+    sl_buffer: float | None = None
+    sl_tight: float | None = None
+    sl_safe: float | None = None
+    tp1_support: float | None = None
+    tp2_support: float | None = None
+    tp3_support: float | None = None
+    tp4_support: float | None = None
+    tp1_resistance: float | None = None
+    tp2_resistance: float | None = None
+    tp3_resistance: float | None = None
+    tp4_resistance: float | None = None
 
 
 @dataclass(frozen=True)
