@@ -393,6 +393,107 @@ def test_microboost_counts_suppressed_logs_as_effective_ticks():
     assert summary["latest"]["direction"] == "BUY"
 
 
+def test_candidate_lifecycle_keeps_mature_pair_when_latest_isolated_ignition_arrives():
+    base = datetime(2026, 5, 19, 8, 0, tzinfo=UTC)
+
+    def pressure_block(
+        *,
+        start_minutes: float,
+        duration_minutes: float,
+        symbol: str,
+        direction: str,
+        rows: int,
+        suppressed: int,
+    ) -> list[SignalThrottleLogEvent]:
+        start = base + timedelta(minutes=start_minutes)
+        spacing = duration_minutes * 60.0 / max(rows - 1, 1)
+        return [
+            SignalThrottleLogEvent(
+                timestamp=start + timedelta(seconds=index * spacing),
+                severity="info",
+                message=f"[SignalThrottle] {symbol} allowed - verdict EXECUTE_{direction}",
+                symbol=symbol,
+                event_type="ALLOWED",
+                verdict=f"EXECUTE_{direction}",
+                direction=direction,
+                suppressed=suppressed,
+            )
+            for index in range(rows)
+        ]
+
+    events: list[SignalThrottleLogEvent] = []
+    events.extend(
+        pressure_block(
+            start_minutes=0,
+            duration_minutes=14.8,
+            symbol="GBPAUD",
+            direction="SELL",
+            rows=10,
+            suppressed=11,
+        )
+    )
+    events.extend(
+        pressure_block(
+            start_minutes=75,
+            duration_minutes=44.5,
+            symbol="USDCAD",
+            direction="BUY",
+            rows=20,
+            suppressed=27,
+        )
+    )
+    events.extend(
+        pressure_block(
+            start_minutes=180,
+            duration_minutes=5.8,
+            symbol="GBPNZD",
+            direction="BUY",
+            rows=10,
+            suppressed=6,
+        )
+    )
+    events.extend(
+        pressure_block(
+            start_minutes=201,
+            duration_minutes=15.1,
+            symbol="GBPCAD",
+            direction="BUY",
+            rows=20,
+            suppressed=6,
+        )
+    )
+    events.extend(
+        pressure_block(
+            start_minutes=330,
+            duration_minutes=1.84,
+            symbol="CADCHF",
+            direction="BUY",
+            rows=7,
+            suppressed=3,
+        )
+    )
+
+    report = analyze_signal_throttle_events(events, latest_window_seconds=3600)
+
+    assert report["latest_phase"] == "LOW_ACTIVITY"
+    assert report["final_mode"] == "PAIR_SIGNAL_CANDIDATE_WITH_LATEST_IGNITION"
+    assert report["candidate"]["symbol"] == "GBPCAD"
+    assert report["active_candidate"] == "GBPCAD"
+    assert report["latest_meaningful_candidate"] == "GBPCAD"
+    assert report["latest_ignition_watch"] == "CADCHF"
+    assert report["previous_major_leader"] == "USDCAD"
+    assert report["secondary_candidate"] == "GBPNZD"
+    assert report["counter_rotation"] == "GBPAUD_SELL"
+    assert report["historical_leader"] == "USDCAD"
+    assert report["main_watchlist"][:4] == ["GBPCAD", "CADCHF", "USDCAD", "GBPNZD"]
+    assert report["market_context_validation"]["symbol"] == "GBPCAD"
+    assert report["market_context_validation"]["raw_allowed_direction"] == "BUY"
+    assert report["recommended_action"] == "FETCH_GBPCAD_PRICE_CONTEXT_M15_H1_BEFORE_SIGNAL_OUTPUT"
+    assert report["candidate_lifecycle"]["reason"] == (
+        "latest_isolated_ignition_does_not_replace_latest_meaningful_candidate"
+    )
+
+
 def test_microboost_summary_detects_strong_cluster_near_timing_gate_without_clean_entry():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
     base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
