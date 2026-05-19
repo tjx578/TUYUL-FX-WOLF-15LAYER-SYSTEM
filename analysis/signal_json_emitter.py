@@ -13,7 +13,6 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
-
 EMITTABLE_SIGNAL_STATUSES = {
     "PAIR_SIGNAL_CANDIDATE",
     "MICROBOOST_COUNTER_ENTRY_WATCH",
@@ -93,6 +92,21 @@ class SignalJsonEvent:
     confidence_bucket: str | None
     reason: str
     invalidation: str | None
+    target_mode: str | None = None
+    tp_status: str | None = None
+    tp_missing_reason: str | None = None
+    support_ladder_ready: bool | None = None
+    resistance_ladder_ready: bool | None = None
+    structure_targets_available: bool | None = None
+    tradeplan_context_ready: bool | None = None
+    valid_for_execution: bool = False
+    min_rr_required: float | None = None
+    tp_min_rr: float | None = None
+    tp_min_rr_value: float | None = None
+    tp1_rr: float | None = None
+    tp2_rr: float | None = None
+    tp3_rr: float | None = None
+    tp4_rr: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -213,6 +227,21 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         confidence_bucket=_optional_str(counter_entry.get("confidence_bucket")),
         reason=str(counter_entry.get("reason") or "signal_json_candidate"),
         invalidation=_optional_str(counter_entry.get("invalidation")),
+        target_mode=_optional_str(counter_entry.get("target_mode")),
+        tp_status=_optional_str(counter_entry.get("tp_status")),
+        tp_missing_reason=_optional_str(counter_entry.get("tp_missing_reason")),
+        support_ladder_ready=_optional_bool(counter_entry.get("support_ladder_ready")),
+        resistance_ladder_ready=_optional_bool(counter_entry.get("resistance_ladder_ready")),
+        structure_targets_available=_optional_bool(counter_entry.get("structure_targets_available")),
+        tradeplan_context_ready=_optional_bool(counter_entry.get("tradeplan_context_ready")),
+        valid_for_execution=bool(counter_entry.get("valid_for_execution", False)),
+        min_rr_required=_optional_float(counter_entry.get("min_rr_required")),
+        tp_min_rr=_optional_float(counter_entry.get("tp_min_rr")),
+        tp_min_rr_value=_optional_float(counter_entry.get("tp_min_rr_value")),
+        tp1_rr=_optional_float(counter_entry.get("tp1_rr")),
+        tp2_rr=_optional_float(counter_entry.get("tp2_rr")),
+        tp3_rr=_optional_float(counter_entry.get("tp3_rr")),
+        tp4_rr=_optional_float(counter_entry.get("tp4_rr")),
     )
 
 
@@ -267,6 +296,19 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y"}:
+        return True
+    if text in {"0", "false", "no", "n"}:
+        return False
+    return None
 
 
 def _optional_float(value: Any) -> float | None:
