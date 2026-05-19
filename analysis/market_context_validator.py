@@ -76,6 +76,13 @@ class MarketContext:
     tp2_resistance: float | None = None
     tp3_resistance: float | None = None
     tp4_resistance: float | None = None
+    m15_bar_count: int | None = None
+    h1_bar_count: int | None = None
+    support_ladder_ready: bool | None = None
+    resistance_ladder_ready: bool | None = None
+    tradeplan_context_ready: bool | None = None
+    support_ladder_missing_reason: str | None = None
+    resistance_ladder_missing_reason: str | None = None
 
 
 @dataclass(frozen=True)
