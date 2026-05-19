@@ -745,7 +745,7 @@ class TestL13Governance:
         proceed = result["l12_verdict"].get("proceed_to_L13", False)
 
         if proceed or verdict.startswith("EXECUTE"):
-            assert mocked_pipeline._l13_engine.reflect.call_count == 2  # type: ignore[attr-defined]
+            assert mocked_pipeline._l13_engine.reflect.call_count == 2
             assert result["reflective_pass1"] is not None
             assert result["reflective_pass2"] is not None
 
@@ -770,7 +770,7 @@ class TestSovereignty:
 
     def test_sovereignty_enforcement_called(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         mocked_pipeline.execute("EURUSD")
-        assert mocked_pipeline._l15_engine.enforce_sovereignty.call_count == 1  # type: ignore[attr-defined]
+        assert mocked_pipeline._l15_engine.enforce_sovereignty.call_count == 1
 
 
 # ──────────────────────────────────────────────────────────────────
