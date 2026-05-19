@@ -152,7 +152,7 @@ class TestPipelineWarmupGate:
         assert any("WARMUP_INSUFFICIENT" in e for e in result["errors"])
         assert result["l12_verdict"]["verdict"] == "HOLD"
         # Pipeline should not have attempted any layer analysis
-        pipe._context_bus.check_warmup.assert_called_once()  # pyright: ignore[reportAttributeAccessIssue]
+        pipe._context_bus.check_warmup.assert_called_once()
 
     def test_sufficient_warmup_proceeds_to_analysis(self):
         """When warmup is OK, the pipeline should proceed past the gate."""
@@ -201,7 +201,7 @@ class TestPipelineWarmupGate:
         result = pipe.execute("EURUSD", system_metrics={"safe_mode": True})
 
         # Warmup check should NOT have been called
-        pipe._context_bus.check_warmup.assert_not_called()  # pyright: ignore[reportAttributeAccessIssue]
+        pipe._context_bus.check_warmup.assert_not_called()
         # Should have proceeded past warmup to L1
         assert "WARMUP_INSUFFICIENT" not in result["errors"]
 
