@@ -710,6 +710,13 @@ def _market_context_snapshot(context: MarketContext | None) -> dict[str, Any] | 
         "tp2_resistance": context.tp2_resistance,
         "tp3_resistance": context.tp3_resistance,
         "tp4_resistance": context.tp4_resistance,
+        "m15_bar_count": context.m15_bar_count,
+        "h1_bar_count": context.h1_bar_count,
+        "support_ladder_ready": context.support_ladder_ready,
+        "resistance_ladder_ready": context.resistance_ladder_ready,
+        "tradeplan_context_ready": context.tradeplan_context_ready,
+        "support_ladder_missing_reason": context.support_ladder_missing_reason,
+        "resistance_ladder_missing_reason": context.resistance_ladder_missing_reason,
     }
 
 
@@ -772,6 +779,13 @@ def _market_context_for_symbol(
         tp2_resistance=_optional_float(raw.get("tp2_resistance")),
         tp3_resistance=_optional_float(raw.get("tp3_resistance")),
         tp4_resistance=_optional_float(raw.get("tp4_resistance")),
+        m15_bar_count=_optional_int(raw.get("m15_bar_count")),
+        h1_bar_count=_optional_int(raw.get("h1_bar_count")),
+        support_ladder_ready=_optional_bool(raw.get("support_ladder_ready")),
+        resistance_ladder_ready=_optional_bool(raw.get("resistance_ladder_ready")),
+        tradeplan_context_ready=_optional_bool(raw.get("tradeplan_context_ready")),
+        support_ladder_missing_reason=_optional_str(raw.get("support_ladder_missing_reason")),
+        resistance_ladder_missing_reason=_optional_str(raw.get("resistance_ladder_missing_reason")),
     )
 
 
@@ -943,6 +957,15 @@ def _optional_float(value: Any) -> float | None:
         return None
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return None
 
