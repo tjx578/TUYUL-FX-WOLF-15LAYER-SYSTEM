@@ -30,7 +30,7 @@ async def test_sanitize_keeps_valid_list_keys_when_redis_type_is_bytes() -> None
         key_types={"wolf15:candle_history:EURUSD:H1": b"list"},
     )
 
-    await _sanitize_redis_keys(redis)  # type: ignore[arg-type]
+    await _sanitize_redis_keys(redis)
 
     assert redis.deleted == []
 
@@ -42,6 +42,6 @@ async def test_sanitize_deletes_conflicting_key_types_with_bytes_response() -> N
         key_types={"wolf15:candle_history:EURUSD:H1": b"hash"},
     )
 
-    await _sanitize_redis_keys(redis)  # type: ignore[arg-type]
+    await _sanitize_redis_keys(redis)
 
     assert redis.deleted == ["wolf15:candle_history:EURUSD:H1"]
