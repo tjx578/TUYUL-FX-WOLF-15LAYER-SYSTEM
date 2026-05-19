@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 import threading
 from collections import Counter, deque
@@ -21,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from analysis.market_context_validator import missing_market_context_result
+from analysis.microboost_counter_entry import MicroboostCounterEntryEngine
 from analysis.microboost_detector import build_microboost_summary
 from schemas.direction import normalize_direction
 
@@ -48,6 +50,7 @@ _WINDOW_SIGNAL_RE = re.compile(r"\blast\s+(?P<window>\d+(?:\.\d+)?)s\b", re.IGNO
 
 _CURRENCIES = ("AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD")
 _METAL_BASES = ("XAG", "XAU")
+_DEFAULT_CANDIDATE_LIFECYCLE_WINDOW_SECONDS = 4 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -200,6 +203,7 @@ def analyze_signal_throttle_events(
     fragmented_min_unique_pairs: int = 5,
     fragmented_max_clean_block_minutes: float = 1.0,
     microboost_window_minutes: int = 15,
+    candidate_lifecycle_window_seconds: int = _DEFAULT_CANDIDATE_LIFECYCLE_WINDOW_SECONDS,
     source: str = "live_process",
     source_found: bool = True,
     row_count: int | None = None,
@@ -231,6 +235,15 @@ def analyze_signal_throttle_events(
             "latest_phase": "NO_DATA",
             "main_watchlist": [],
             "watchlist": [],
+            "active_candidate": None,
+            "latest_meaningful_candidate": None,
+            "latest_ignition_watch": None,
+            "previous_major_leader": None,
+            "historical_leader": None,
+            "historical_leaders": [],
+            "secondary_candidate": None,
+            "counter_rotation": None,
+            "candidate_lifecycle": _empty_candidate_lifecycle(candidate_lifecycle_window_seconds),
             "dominant_themes": [],
             "theme_scores": [],
             "event_counts": _event_counts([]),  # noqa: F821
@@ -240,6 +253,7 @@ def analyze_signal_throttle_events(
                 window_minutes=microboost_window_minutes,
                 clean_block_seconds=clean_block_seconds,
             ),
+            "microboost_counter_entry": None,
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "market_context_validation": missing_market_context_result("UNKNOWN").to_dict(),
             "data_quality": _data_quality_block(
@@ -254,6 +268,7 @@ def analyze_signal_throttle_events(
         }
 
     blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
+    lifecycle_blocks = build_pressure_blocks(ordered, max_gap_seconds=None)
     latest_cutoff = ordered[-1].timestamp - timedelta(seconds=latest_window_seconds)
     latest_events = [event for event in ordered if event.timestamp >= latest_cutoff]
     latest_blocks = build_pressure_blocks(latest_events, max_gap_seconds=clean_gap_seconds)
@@ -280,11 +295,34 @@ def analyze_signal_throttle_events(
     if not main_watchlist:
         main_watchlist = [symbol for symbol, _ in pair_counts.most_common(8)]
 
-    pair_timing_candidate = latest_phase == "PAIR_TIMING_BLOCK"
+    candidate_lifecycle = build_candidate_lifecycle(
+        ordered,
+        blocks=lifecycle_blocks,
+        clean_block_seconds=clean_block_seconds,
+        window_seconds=candidate_lifecycle_window_seconds,
+    )
+    lifecycle_candidate = candidate_lifecycle.get("active_candidate")
+    latest_ignition_watch = candidate_lifecycle.get("latest_ignition_watch")
+
+    latest_pair_timing_candidate = latest_phase == "PAIR_TIMING_BLOCK"
+    pair_timing_candidate = latest_pair_timing_candidate or lifecycle_candidate is not None
     clean_entry_signal = False
     requires_market_context = True
-    final_mode = "PAIR_SIGNAL_CANDIDATE" if pair_timing_candidate else "THEME_ALERT_AND_PAIR_SELECTION"
-    candidate = _candidate_from_blocks(latest_blocks, clean_block_seconds) if pair_timing_candidate else None  # noqa: F821
+    candidate = (
+        _candidate_from_blocks(latest_blocks, clean_block_seconds)
+        if latest_pair_timing_candidate
+        else lifecycle_candidate
+    )  # noqa: F821
+    final_mode = _final_mode_from_lifecycle(
+        latest_pair_timing_candidate=latest_pair_timing_candidate,
+        lifecycle_candidate=lifecycle_candidate,
+        latest_ignition_watch=latest_ignition_watch,
+        latest_phase=latest_phase,
+    )
+    main_watchlist = _merge_watchlist(
+        _candidate_lifecycle_symbols(candidate_lifecycle),
+        main_watchlist,
+    )
     validation_symbol = str((candidate or {}).get("symbol") or (main_watchlist[0] if main_watchlist else "UNKNOWN"))
     validation_direction = (candidate or {}).get("direction") or _latest_direction_for_symbol(
         ordered, validation_symbol
@@ -303,6 +341,7 @@ def analyze_signal_throttle_events(
         allowed_quorum=allowed_quorum,
         market_contexts=market_contexts,
     )
+    microboost_counter_entry = _counter_entry_payload(microboost_summary)
 
     return {
         "final_mode": final_mode,
@@ -316,6 +355,15 @@ def analyze_signal_throttle_events(
         "latest_phase": latest_phase,
         "main_watchlist": main_watchlist,
         "watchlist": main_watchlist,
+        "active_candidate": candidate_lifecycle.get("active_candidate_symbol"),
+        "latest_meaningful_candidate": candidate_lifecycle.get("latest_meaningful_candidate_symbol"),
+        "latest_ignition_watch": candidate_lifecycle.get("latest_ignition_watch_symbol"),
+        "previous_major_leader": candidate_lifecycle.get("previous_major_leader_symbol"),
+        "historical_leader": candidate_lifecycle.get("historical_leader_symbol"),
+        "historical_leaders": candidate_lifecycle.get("historical_leaders", []),
+        "secondary_candidate": candidate_lifecycle.get("secondary_candidate_symbol"),
+        "counter_rotation": candidate_lifecycle.get("counter_rotation"),
+        "candidate_lifecycle": candidate_lifecycle,
         "dominant_themes": dominant_themes,
         "theme_scores": theme_scores,
         "candidate": candidate,
@@ -324,6 +372,7 @@ def analyze_signal_throttle_events(
             for block in ranked_microboost_blocks[:10]
         ],
         "microboost_summary": microboost_summary,
+        "microboost_counter_entry": microboost_counter_entry,
         "allowed_quorum": allowed_quorum,
         "event_counts": event_type_counts,
         "time_range": {
@@ -349,6 +398,7 @@ def analyze_signal_throttle_events(
             "latest_window_minutes": latest_window_seconds / 60.0,
             "min_clean_block_minutes": clean_block_seconds / 60.0,
             "microboost_window_minutes": microboost_window_minutes,
+            "candidate_lifecycle_window_seconds": candidate_lifecycle_window_seconds,
             "fragmented_min_unique_pairs": fragmented_min_unique_pairs,
             "fragmented_max_clean_block_minutes": fragmented_max_clean_block_minutes,
         },
@@ -364,7 +414,7 @@ def analyze_signal_throttle_events(
         "currency_pressure": currency_pressure,
         "top_clean_blocks": [block.to_dict() for block in rank_pressure_blocks(blocks)[:10]],
         "market_context_validation": market_context_validation,
-        "recommended_action": _recommended_action(latest_phase),
+        "recommended_action": _recommended_action(latest_phase, candidate_lifecycle),
     }
 
 
@@ -404,19 +454,25 @@ class SignalThrottleLiveAnalyzer:
         *,
         latest_window_minutes: int = 60,
         latest_window_seconds: int | None = None,
-        retention_seconds: int = 7200,
+        retention_seconds: int | None = None,
         max_events: int = 20000,
         active_block_ttl_seconds: int = 300,
         clean_gap_seconds: int = 75,
         min_clean_block_minutes: float = 5.0,
         clean_block_seconds: int | None = None,
         microboost_window_minutes: int = 15,
+        candidate_lifecycle_window_seconds: int = _DEFAULT_CANDIDATE_LIFECYCLE_WINDOW_SECONDS,
         allowed_quorum_window_seconds: int = 120,
         fragmented_min_unique_pairs: int = 5,
         fragmented_max_clean_block_minutes: float = 1.0,
     ) -> None:
         self.latest_window_seconds = int(latest_window_seconds or latest_window_minutes * 60)
-        self.retention_seconds = retention_seconds
+        self.candidate_lifecycle_window_seconds = int(candidate_lifecycle_window_seconds)
+        self.retention_seconds = int(
+            retention_seconds
+            if retention_seconds is not None
+            else max(self.latest_window_seconds, self.candidate_lifecycle_window_seconds)
+        )
         self.max_events = max_events
         self.active_block_ttl_seconds = active_block_ttl_seconds
         self.clean_gap_seconds = clean_gap_seconds
@@ -530,6 +586,7 @@ class SignalThrottleLiveAnalyzer:
             clean_gap_seconds=self.clean_gap_seconds,
             clean_block_seconds=self.clean_block_seconds,
             microboost_window_minutes=self.microboost_window_minutes,
+            candidate_lifecycle_window_seconds=self.candidate_lifecycle_window_seconds,
             fragmented_min_unique_pairs=self.fragmented_min_unique_pairs,
             fragmented_max_clean_block_minutes=self.fragmented_max_clean_block_minutes,
             market_contexts=market_contexts,
@@ -551,7 +608,7 @@ class SignalThrottleLiveAnalyzer:
 def build_pressure_blocks(
     events: Iterable[SignalThrottleLogEvent],
     *,
-    max_gap_seconds: int = 75,
+    max_gap_seconds: int | None = 75,
 ) -> list[PressureBlock]:
     indexed_events = list(enumerate(sorted(events, key=lambda item: item.timestamp)))
     states: dict[str, tuple[list[SignalThrottleLogEvent], int]] = {}
@@ -566,7 +623,8 @@ def build_pressure_blocks(
         current, previous_index = state
         previous = current[-1]
         gap = (event.timestamp - previous.timestamp).total_seconds()
-        if gap <= max_gap_seconds and not _has_hard_rotation_interrupt(
+        gap_is_open = max_gap_seconds is not None and gap > max_gap_seconds
+        if not gap_is_open and not _has_hard_rotation_interrupt(
             indexed_events=indexed_events,
             symbol=event.symbol,
             previous_index=previous_index,
@@ -615,6 +673,113 @@ def rank_pressure_blocks(blocks: Iterable[PressureBlock]) -> list[PressureBlock]
         ),
         reverse=True,
     )
+
+
+def build_candidate_lifecycle(
+    events: list[SignalThrottleLogEvent],
+    *,
+    blocks: list[PressureBlock],
+    clean_block_seconds: int,
+    window_seconds: int = _DEFAULT_CANDIDATE_LIFECYCLE_WINDOW_SECONDS,
+) -> dict[str, Any]:
+    if not events:
+        return _empty_candidate_lifecycle(window_seconds)
+
+    historical_leaders = _historical_leaders(events)
+    cutoff = events[-1].timestamp - timedelta(seconds=window_seconds)
+    lifecycle_blocks = [block for block in blocks if block.end >= cutoff]
+    meaningful_blocks = [
+        block for block in lifecycle_blocks if _is_meaningful_candidate_block(block, clean_block_seconds)
+    ]
+    latest_meaningful_block = max(
+        meaningful_blocks,
+        key=lambda block: (block.end, _block_strength_key(block)),
+        default=None,
+    )
+
+    all_meaningful_blocks = [block for block in blocks if _is_meaningful_candidate_block(block, clean_block_seconds)]
+    active_candidate = (
+        _candidate_payload_from_block(latest_meaningful_block, clean_block_seconds)
+        if latest_meaningful_block is not None
+        else None
+    )
+
+    latest_ignition_block = max(
+        [
+            block
+            for block in lifecycle_blocks
+            if _is_ignition_watch_block(block, clean_block_seconds)
+            and (latest_meaningful_block is None or block.end > latest_meaningful_block.end)
+        ],
+        key=lambda block: (block.end, _block_strength_key(block)),
+        default=None,
+    )
+    latest_ignition_watch = (
+        _candidate_payload_from_block(latest_ignition_block, clean_block_seconds)
+        if latest_ignition_block is not None
+        else None
+    )
+
+    previous_blocks = [
+        block
+        for block in all_meaningful_blocks
+        if latest_meaningful_block is not None
+        and block.end <= latest_meaningful_block.start
+        and block.symbol != latest_meaningful_block.symbol
+    ]
+    previous_major_block = max(
+        [block for block in previous_blocks if _is_major_leader_block(block, clean_block_seconds)],
+        key=_block_strength_key,
+        default=None,
+    )
+    previous_major_leader = (
+        _candidate_payload_from_block(previous_major_block, clean_block_seconds)
+        if previous_major_block is not None
+        else None
+    )
+
+    secondary_block = max(
+        [
+            block
+            for block in previous_blocks
+            if previous_major_block is None or block.symbol != previous_major_block.symbol
+        ],
+        key=lambda block: (block.end, _block_strength_key(block)),
+        default=None,
+    )
+    secondary_candidate = (
+        _candidate_payload_from_block(secondary_block, clean_block_seconds)
+        if secondary_block is not None
+        else None
+    )
+
+    counter_rotation_block = _counter_rotation_block(all_meaningful_blocks, latest_meaningful_block)
+    counter_rotation = None
+    if counter_rotation_block is not None and counter_rotation_block.direction:
+        counter_rotation = f"{counter_rotation_block.symbol}_{counter_rotation_block.direction}"
+
+    status = _candidate_lifecycle_status(active_candidate, latest_ignition_watch)
+    historical_leader_symbol = historical_leaders[0]["symbol"] if historical_leaders else None
+    return {
+        "status": status,
+        "window_seconds": int(window_seconds),
+        "active_candidate": active_candidate,
+        "active_candidate_symbol": None if active_candidate is None else active_candidate["symbol"],
+        "latest_meaningful_candidate": active_candidate,
+        "latest_meaningful_candidate_symbol": None if active_candidate is None else active_candidate["symbol"],
+        "latest_ignition_watch": latest_ignition_watch,
+        "latest_ignition_watch_symbol": None if latest_ignition_watch is None else latest_ignition_watch["symbol"],
+        "previous_major_leader": previous_major_leader,
+        "previous_major_leader_symbol": (
+            None if previous_major_leader is None else previous_major_leader["symbol"]
+        ),
+        "secondary_candidate": secondary_candidate,
+        "secondary_candidate_symbol": None if secondary_candidate is None else secondary_candidate["symbol"],
+        "counter_rotation": counter_rotation,
+        "historical_leader_symbol": historical_leader_symbol,
+        "historical_leaders": historical_leaders,
+        "reason": _candidate_lifecycle_reason(active_candidate, latest_ignition_watch),
+    }
 
 
 def classify_latest_phase(
@@ -687,6 +852,206 @@ def classify_themes(*, pair_counts: Counter[str], currency_pressure: dict[str, i
         key=lambda item: (int(item["score"]), abs(int(item["raw_pressure"])), str(item["theme"])),
         reverse=True,
     )[:8]
+
+
+def _empty_candidate_lifecycle(window_seconds: int) -> dict[str, Any]:
+    return {
+        "status": "WAIT_FOR_MEANINGFUL_PAIR_BLOCK",
+        "window_seconds": int(window_seconds),
+        "active_candidate": None,
+        "active_candidate_symbol": None,
+        "latest_meaningful_candidate": None,
+        "latest_meaningful_candidate_symbol": None,
+        "latest_ignition_watch": None,
+        "latest_ignition_watch_symbol": None,
+        "previous_major_leader": None,
+        "previous_major_leader_symbol": None,
+        "secondary_candidate": None,
+        "secondary_candidate_symbol": None,
+        "counter_rotation": None,
+        "historical_leader_symbol": None,
+        "historical_leaders": [],
+        "reason": "no_signal_throttle_data",
+    }
+
+
+def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int) -> dict[str, Any]:
+    valid_since = block.start + timedelta(seconds=clean_block_seconds)
+    role = "latest_meaningful_candidate" if block.duration_seconds >= clean_block_seconds else "latest_ignition_watch"
+    return {
+        "symbol": block.symbol,
+        "block_start_utc": block.start.isoformat(),
+        "block_end_utc": block.end.isoformat(),
+        "valid_since_utc": valid_since.isoformat() if block.duration_seconds >= clean_block_seconds else None,
+        "duration_minutes": round(block.duration_seconds / 60.0, 2),
+        "density_per_minute": block.density_per_minute,
+        "events": block.events,
+        "effective_ticks": block.effective_ticks,
+        "suppressed_ticks": block.suppressed_ticks,
+        "effective_density_per_minute": block.effective_density_per_minute,
+        "direction": block.direction,
+        "phase": _candidate_phase(block),
+        "role": role,
+    }
+
+
+def _is_meaningful_candidate_block(block: PressureBlock, clean_block_seconds: int) -> bool:
+    return block.duration_seconds >= clean_block_seconds and (block.effective_ticks or block.events) >= 10
+
+
+def _is_ignition_watch_block(block: PressureBlock, clean_block_seconds: int) -> bool:
+    effective_ticks = block.effective_ticks or block.events
+    effective_density = block.effective_density_per_minute or block.density_per_minute
+    return (
+        18.0 <= block.duration_seconds < clean_block_seconds
+        and effective_ticks >= 5
+        and effective_density >= 8.0
+    )
+
+
+def _is_major_leader_block(block: PressureBlock, clean_block_seconds: int) -> bool:
+    return block.duration_seconds >= clean_block_seconds * 2 or (block.effective_ticks or block.events) >= 100
+
+
+def _block_strength_key(block: PressureBlock) -> tuple[float, float, int, int]:
+    return (
+        float(block.effective_ticks or block.events),
+        float(block.effective_density_per_minute or block.density_per_minute),
+        int(block.events),
+        int(block.duration_seconds),
+    )
+
+
+def _historical_leaders(events: list[SignalThrottleLogEvent], limit: int = 3) -> list[dict[str, Any]]:
+    totals: Counter[str] = Counter()
+    rows: Counter[str] = Counter()
+    for event in events:
+        totals[event.symbol] += event.effective_ticks
+        rows[event.symbol] += 1
+    return [
+        {
+            "symbol": symbol,
+            "effective_ticks": int(effective_ticks),
+            "rows": int(rows[symbol]),
+            "direction": _latest_direction_for_symbol(events, symbol),
+        }
+        for symbol, effective_ticks in sorted(
+            totals.items(),
+            key=lambda item: (int(item[1]), int(rows[item[0]]), item[0]),
+            reverse=True,
+        )[:limit]
+    ]
+
+
+def _counter_rotation_block(
+    blocks: list[PressureBlock],
+    active_block: PressureBlock | None,
+) -> PressureBlock | None:
+    if active_block is None or active_block.direction not in {"BUY", "SELL"}:
+        return None
+    return max(
+        [
+            block
+            for block in blocks
+            if block.direction in {"BUY", "SELL"}
+            and block.direction != active_block.direction
+            and block.symbol != active_block.symbol
+            and block.end <= active_block.start
+        ],
+        key=lambda block: (block.end, _block_strength_key(block)),
+        default=None,
+    )
+
+
+def _candidate_lifecycle_status(
+    active_candidate: dict[str, Any] | None,
+    latest_ignition_watch: dict[str, Any] | None,
+) -> str:
+    if active_candidate and latest_ignition_watch:
+        return "PAIR_SIGNAL_CANDIDATE_WITH_LATEST_IGNITION"
+    if active_candidate:
+        return "PAIR_SIGNAL_CANDIDATE_FROM_ROTATION_CONTEXT"
+    if latest_ignition_watch:
+        return "LATEST_IGNITION_WATCH_ONLY"
+    return "WAIT_FOR_MEANINGFUL_PAIR_BLOCK"
+
+
+def _candidate_lifecycle_reason(
+    active_candidate: dict[str, Any] | None,
+    latest_ignition_watch: dict[str, Any] | None,
+) -> str:
+    if active_candidate and latest_ignition_watch:
+        return "latest_isolated_ignition_does_not_replace_latest_meaningful_candidate"
+    if active_candidate:
+        return "latest_meaningful_pair_block_selected_from_rotation_lifecycle"
+    if latest_ignition_watch:
+        return "latest_pressure_is_ignition_watch_only_until_clean_block_forms"
+    return "no_meaningful_pair_block_in_lifecycle_window"
+
+
+def _candidate_lifecycle_symbols(candidate_lifecycle: dict[str, Any]) -> list[str]:
+    symbols = [
+        candidate_lifecycle.get("active_candidate_symbol"),
+        candidate_lifecycle.get("latest_ignition_watch_symbol"),
+        candidate_lifecycle.get("previous_major_leader_symbol"),
+        candidate_lifecycle.get("secondary_candidate_symbol"),
+    ]
+    for leader in candidate_lifecycle.get("historical_leaders", []):
+        if isinstance(leader, dict):
+            symbols.append(leader.get("symbol"))
+    return [str(symbol) for symbol in symbols if symbol]
+
+
+def _merge_watchlist(priority_symbols: list[str], fallback_symbols: list[str]) -> list[str]:
+    merged: list[str] = []
+    for symbol in [*priority_symbols, *fallback_symbols]:
+        normalized = str(symbol or "").upper()
+        if not normalized or normalized in merged:
+            continue
+        merged.append(normalized)
+        if len(merged) >= 8:
+            break
+    return merged
+
+
+def _final_mode_from_lifecycle(
+    *,
+    latest_pair_timing_candidate: bool,
+    lifecycle_candidate: dict[str, Any] | None,
+    latest_ignition_watch: dict[str, Any] | None,
+    latest_phase: str,
+) -> str:
+    if latest_pair_timing_candidate:
+        return "PAIR_SIGNAL_CANDIDATE"
+    if lifecycle_candidate and latest_ignition_watch:
+        return "PAIR_SIGNAL_CANDIDATE_WITH_LATEST_IGNITION"
+    if lifecycle_candidate:
+        return "PAIR_SIGNAL_CANDIDATE_FROM_ROTATION_CONTEXT"
+    if latest_ignition_watch:
+        return "LATEST_IGNITION_WATCH"
+    if latest_phase in {"BROAD_ROTATION_FRAGMENTED", "THEME_PRESSURE"}:
+        return "THEME_ALERT_AND_PAIR_SELECTION"
+    return "THEME_ALERT_AND_PAIR_SELECTION"
+
+
+def _counter_entry_payload(microboost_summary: dict[str, Any]) -> dict[str, Any] | None:
+    latest = microboost_summary.get("latest")
+    if not isinstance(latest, dict):
+        return None
+    result = MicroboostCounterEntryEngine(
+        min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.0),
+    ).evaluate(latest)
+    payload = result.to_dict()
+    latest["counter_entry"] = payload
+    microboost_summary["counter_entry"] = payload
+    return payload
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
 
 
 def _data_quality_block(
@@ -980,7 +1345,10 @@ def _split_symbol(symbol: str) -> tuple[str, str] | None:
     return None
 
 
-def _recommended_action(latest_phase: str) -> str:
+def _recommended_action(latest_phase: str, candidate_lifecycle: dict[str, Any] | None = None) -> str:
+    active_symbol = str((candidate_lifecycle or {}).get("active_candidate_symbol") or "")
+    if active_symbol and latest_phase != "PAIR_TIMING_BLOCK":
+        return f"FETCH_{active_symbol}_PRICE_CONTEXT_M15_H1_BEFORE_SIGNAL_OUTPUT"
     if latest_phase == "PAIR_TIMING_BLOCK":
         return "FETCH_PRICE_PHASE_M15_H1_BEFORE_SIGNAL_OUTPUT"
     if latest_phase in {"BROAD_ROTATION_FRAGMENTED", "THEME_PRESSURE"}:
