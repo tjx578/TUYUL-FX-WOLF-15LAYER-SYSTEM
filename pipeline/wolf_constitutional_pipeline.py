@@ -85,6 +85,7 @@ from analysis.signal_throttle_intelligence import (
     emit_signal_throttle_intel,
 )
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer
+from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.universe_ranking import UniverseRankingEngine
 from config_loader import CONFIG
 
@@ -358,6 +359,16 @@ class WolfConstitutionalPipeline:
         )
         self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
+        self._signal_json_emitter = SignalJsonEmitter(
+            enabled=os.getenv("SIGNAL_JSON_LOG_ENABLED", "true").strip().lower() == "true",
+            prefix=os.getenv("SIGNAL_JSON_LOG_PREFIX", "[SignalJSON]"),
+            dedup_ttl_seconds=int(self._parse_env_float("SIGNAL_JSON_DEDUP_TTL_SECONDS", 300.0)),
+            emit_watch=os.getenv("SIGNAL_JSON_EMIT_WATCH", "true").strip().lower() == "true",
+            emit_valid=os.getenv("SIGNAL_JSON_EMIT_VALID", "true").strip().lower() == "true",
+            require_market_context=(
+                os.getenv("SIGNAL_JSON_EMIT_ONLY_WITH_MARKET_CONTEXT", "true").strip().lower() == "true"
+            ),
+        )
         self._governance_now_ts: float | None = None
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
@@ -3189,18 +3200,32 @@ class WolfConstitutionalPipeline:
             source_verdict=l12_verdict.get("verdict"),
             execution_direction=execution.get("direction"),
         )
-        tick_mid = self._latest_tick_mid(symbol)
+        latest_tick = self._context_bus.get_latest_tick(symbol)
+        latest_tick = latest_tick if isinstance(latest_tick, dict) else {}
+        bid = self._coerce_positive_float(latest_tick.get("bid") or latest_tick.get("price"))
+        ask = self._coerce_positive_float(latest_tick.get("ask") or latest_tick.get("price"))
+        tick_mid = (bid + ask) / 2.0 if bid is not None and ask is not None else bid or ask
         latest_m15_close = self._latest_candle_close(symbol, "M15")
         latest_h1_close = self._latest_candle_close(symbol, "H1")
         entry_price = self._coerce_positive_float(execution.get("entry_price"))
+        pip_value = self._pip_value(symbol)
         structure = self._derive_price_structure(
             symbol=symbol,
             current_price=tick_mid or latest_m15_close or latest_h1_close or entry_price,
+        )
+        counter_structure = self._derive_counter_entry_structure(
+            symbol=symbol,
+            structure=structure,
+            current_price=tick_mid or latest_m15_close or latest_h1_close or entry_price,
+            pip_value=pip_value,
         )
 
         return MarketContext(
             symbol=symbol,
             raw_allowed_direction=direction,
+            bid=bid,
+            ask=ask,
+            pip_value=pip_value,
             price_at_signal_start=entry_price or latest_m15_close or latest_h1_close or tick_mid,
             price_at_5m_confirm=latest_m15_close or tick_mid,
             price_at_signal_end=tick_mid or latest_m15_close or latest_h1_close,
@@ -3214,6 +3239,7 @@ class WolfConstitutionalPipeline:
             main_support=structure.get("main_support"),
             main_resistance=structure.get("main_resistance"),
             range_position=structure.get("range_position"),
+            **counter_structure,
         )
 
     @staticmethod
@@ -3280,6 +3306,88 @@ class WolfConstitutionalPipeline:
             "main_resistance": main_resistance,
             "range_position": round(range_position, 4),
         }
+
+    def _derive_counter_entry_structure(
+        self,
+        *,
+        symbol: str,
+        structure: dict[str, Any],
+        current_price: float | None,
+        pip_value: float,
+    ) -> dict[str, Any]:
+        candles = self._context_bus.get_candle_history(symbol, "M15", count=8)
+        latest = candles[-1] if candles else {}
+        previous = candles[:-1]
+        previous_lows = [price for candle in previous[-4:] if (price := self._candle_price(candle, "low")) is not None]
+        previous_highs = [price for candle in previous[-4:] if (price := self._candle_price(candle, "high")) is not None]
+        latest_open = self._candle_price(latest, "open") if latest else None
+        latest_high = self._candle_price(latest, "high") if latest else None
+        latest_low = self._candle_price(latest, "low") if latest else None
+        latest_close = self._candle_price(latest, "close") if latest else None
+        main_support = self._coerce_positive_float(structure.get("main_support"))
+        main_resistance = self._coerce_positive_float(structure.get("main_resistance"))
+        minor_support = min(previous_lows) if previous_lows else None
+        minor_resistance = max(previous_highs) if previous_highs else None
+        resistance_high = main_resistance
+        resistance_low = main_resistance - (18.0 * pip_value) if main_resistance is not None else None
+        support_low = main_support
+        support_high = main_support + (18.0 * pip_value) if main_support is not None else None
+        sl_buffer = 8.0 * pip_value
+        m15_close_above_resistance = (
+            latest_close is not None and resistance_high is not None and latest_close > resistance_high
+        )
+        m15_rejection_from_resistance = (
+            latest_high is not None
+            and resistance_high is not None
+            and latest_close is not None
+            and latest_open is not None
+            and latest_high >= resistance_high - (2.0 * pip_value)
+            and latest_close < latest_open
+        )
+        m15_close_below_minor_support = (
+            latest_close is not None and minor_support is not None and latest_close < minor_support
+        )
+        m15_close_below_support = latest_close is not None and support_low is not None and latest_close < support_low
+        m15_rejection_from_support = (
+            latest_low is not None
+            and support_low is not None
+            and latest_close is not None
+            and latest_open is not None
+            and latest_low <= support_low + (2.0 * pip_value)
+            and latest_close > latest_open
+        )
+        m15_close_above_minor_resistance = (
+            latest_close is not None and minor_resistance is not None and latest_close > minor_resistance
+        )
+        return {
+            "resistance_low": resistance_low,
+            "resistance_high": resistance_high,
+            "minor_support": minor_support,
+            "major_support": main_support,
+            "m15_close": latest_close or current_price,
+            "m15_close_above_resistance": m15_close_above_resistance,
+            "m15_rejection_from_resistance": m15_rejection_from_resistance,
+            "m15_close_below_minor_support": m15_close_below_minor_support,
+            "support_low": support_low,
+            "support_high": support_high,
+            "minor_resistance": minor_resistance,
+            "m15_close_below_support": m15_close_below_support,
+            "m15_rejection_from_support": m15_rejection_from_support,
+            "m15_close_above_minor_resistance": m15_close_above_minor_resistance,
+            "sl_buffer": sl_buffer,
+            "tp1_support": minor_support,
+            "tp2_support": main_support,
+            "tp3_support": min(previous_lows) if previous_lows else None,
+            "tp4_support": None,
+            "tp1_resistance": minor_resistance,
+            "tp2_resistance": main_resistance,
+            "tp3_resistance": max(previous_highs) if previous_highs else None,
+            "tp4_resistance": None,
+        }
+
+    @staticmethod
+    def _pip_value(symbol: str) -> float:
+        return 0.01 if "JPY" in symbol.upper() else 0.0001
 
     def _derive_market_bias(self, symbol: str) -> str | None:
         candles = self._context_bus.get_candle_history(symbol, "H1", count=8)
@@ -3444,8 +3552,36 @@ class WolfConstitutionalPipeline:
             )
         )
         l12_verdict["signal_throttle_live_report"] = report
+        self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
         self._emit_microboost_intel_if_new(report)
         return report
+
+    def _apply_microboost_counter_entry_report(
+        self,
+        *,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+    ) -> None:
+        counter_entry = report.get("microboost_counter_entry")
+        if not isinstance(counter_entry, dict):
+            return
+        if counter_entry.get("status") == "NONE":
+            return
+
+        l12_verdict["microboost_counter_entry"] = counter_entry
+        status = str(counter_entry.get("status") or "")
+        if status.endswith("_VALID"):
+            l12_verdict["final_direction"] = counter_entry.get("final_direction")
+            l12_verdict["action"] = counter_entry.get("action")
+            l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY"
+        elif status.endswith("_WATCH"):
+            l12_verdict["final_direction"] = "WAIT"
+            l12_verdict["action"] = counter_entry.get("action")
+            l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY_WATCH"
+
+        signal_event = build_signal_json_event(counter_entry)
+        if signal_event is not None:
+            self._signal_json_emitter.emit(signal_event)
 
     def _emit_microboost_intel_if_new(self, report: dict[str, Any]) -> None:
         event = build_microboost_intel_event(report)
