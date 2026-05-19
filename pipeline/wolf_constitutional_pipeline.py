@@ -80,12 +80,12 @@ from analysis.reflex_emc import EMCFilter
 from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
+from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
     emit_signal_throttle_intel,
 )
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer
-from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.universe_ranking import UniverseRankingEngine
 from config_loader import CONFIG
 
@@ -3274,12 +3274,22 @@ class WolfConstitutionalPipeline:
 
     def _derive_price_structure(self, *, symbol: str, current_price: float | None) -> dict[str, Any]:
         candles = self._context_bus.get_candle_history(symbol, "H1", count=24)
+        h1_bar_count = len(candles)
+        m15_structure_bar_count = 0
         if len(candles) < 4:
             candles = self._context_bus.get_candle_history(symbol, "M15", count=32)
+            m15_structure_bar_count = len(candles)
         highs = [price for candle in candles if (price := self._candle_price(candle, "high")) is not None]
         lows = [price for candle in candles if (price := self._candle_price(candle, "low")) is not None]
         if current_price is None or not highs or not lows:
-            return {"price_position": None, "main_support": None, "main_resistance": None, "range_position": None}
+            return {
+                "price_position": None,
+                "main_support": None,
+                "main_resistance": None,
+                "range_position": None,
+                "h1_bar_count": h1_bar_count,
+                "m15_structure_bar_count": m15_structure_bar_count,
+            }
 
         main_support = min(lows)
         main_resistance = max(highs)
@@ -3290,6 +3300,8 @@ class WolfConstitutionalPipeline:
                 "main_support": main_support,
                 "main_resistance": main_resistance,
                 "range_position": None,
+                "h1_bar_count": h1_bar_count,
+                "m15_structure_bar_count": m15_structure_bar_count,
             }
 
         range_position = max(0.0, min(1.0, (current_price - main_support) / price_range))
@@ -3305,6 +3317,8 @@ class WolfConstitutionalPipeline:
             "main_support": main_support,
             "main_resistance": main_resistance,
             "range_position": round(range_position, 4),
+            "h1_bar_count": h1_bar_count,
+            "m15_structure_bar_count": m15_structure_bar_count,
         }
 
     def _derive_counter_entry_structure(
@@ -3316,6 +3330,7 @@ class WolfConstitutionalPipeline:
         pip_value: float,
     ) -> dict[str, Any]:
         candles = self._context_bus.get_candle_history(symbol, "M15", count=8)
+        m15_bar_count = len(candles)
         latest = candles[-1] if candles else {}
         previous = candles[:-1]
         previous_lows = [price for candle in previous[-4:] if (price := self._candle_price(candle, "low")) is not None]
@@ -3359,6 +3374,20 @@ class WolfConstitutionalPipeline:
         m15_close_above_minor_resistance = (
             latest_close is not None and minor_resistance is not None and latest_close > minor_resistance
         )
+        support_ladder_ready = any(level is not None for level in (minor_support, main_support))
+        resistance_ladder_ready = any(level is not None for level in (minor_resistance, main_resistance))
+        support_ladder_missing_reason = None if support_ladder_ready else self._ladder_missing_reason(
+            candle_count=m15_bar_count,
+            previous_levels=previous_lows,
+            main_level=main_support,
+            missing_label="support",
+        )
+        resistance_ladder_missing_reason = None if resistance_ladder_ready else self._ladder_missing_reason(
+            candle_count=m15_bar_count,
+            previous_levels=previous_highs,
+            main_level=main_resistance,
+            missing_label="resistance",
+        )
         return {
             "resistance_low": resistance_low,
             "resistance_high": resistance_high,
@@ -3383,7 +3412,32 @@ class WolfConstitutionalPipeline:
             "tp2_resistance": main_resistance,
             "tp3_resistance": max(previous_highs) if previous_highs else None,
             "tp4_resistance": None,
+            "m15_bar_count": m15_bar_count,
+            "h1_bar_count": int(structure.get("h1_bar_count") or 0),
+            "support_ladder_ready": support_ladder_ready,
+            "resistance_ladder_ready": resistance_ladder_ready,
+            "tradeplan_context_ready": support_ladder_ready and resistance_ladder_ready,
+            "support_ladder_missing_reason": support_ladder_missing_reason,
+            "resistance_ladder_missing_reason": resistance_ladder_missing_reason,
         }
+
+    @staticmethod
+    def _ladder_missing_reason(
+        *,
+        candle_count: int,
+        previous_levels: list[float],
+        main_level: float | None,
+        missing_label: str,
+    ) -> str:
+        if candle_count <= 0:
+            return "NO_M15_CANDLE_HISTORY"
+        if not previous_levels and main_level is None:
+            return f"NO_M15_H1_{missing_label.upper()}_LEVELS"
+        if main_level is None:
+            return f"NO_MAIN_{missing_label.upper()}"
+        if not previous_levels:
+            return f"NO_MINOR_{missing_label.upper()}_PREVIOUS_LEVELS"
+        return f"{missing_label.upper()}_LADDER_MISSING"
 
     @staticmethod
     def _pip_value(symbol: str) -> float:
