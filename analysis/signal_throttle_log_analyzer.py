@@ -1039,7 +1039,8 @@ def _counter_entry_payload(microboost_summary: dict[str, Any]) -> dict[str, Any]
     if not isinstance(latest, dict):
         return None
     result = MicroboostCounterEntryEngine(
-        min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.0),
+        min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+        allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
     ).evaluate(latest)
     payload = result.to_dict()
     latest["counter_entry"] = payload
@@ -1052,6 +1053,13 @@ def _env_float(name: str, default: float) -> float:
         return float(os.getenv(name, str(default)))
     except (TypeError, ValueError):
         return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _data_quality_block(
