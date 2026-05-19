@@ -78,6 +78,21 @@ class MicroboostCounterEntryResult:
     confidence_bucket: str | None = None
     invalidation: str | None = None
     trade_plan: dict[str, Any] | None = None
+    target_mode: str | None = None
+    tp_status: str | None = None
+    tp_missing_reason: str | None = None
+    support_ladder_ready: bool | None = None
+    resistance_ladder_ready: bool | None = None
+    structure_targets_available: bool | None = None
+    tradeplan_context_ready: bool | None = None
+    valid_for_execution: bool = False
+    min_rr_required: float | None = None
+    tp_min_rr: float | None = None
+    tp_min_rr_value: float | None = None
+    tp1_rr: float | None = None
+    tp2_rr: float | None = None
+    tp3_rr: float | None = None
+    tp4_rr: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -98,7 +113,8 @@ class MicroboostCounterEntryEngine:
         nano_max_stall_pips: float = 1.0,
         timing_watch_min_seconds: float = 60.0,
         timing_valid_min_seconds: float = 180.0,
-        min_rr_valid: float = 2.0,
+        min_rr_valid: float = 2.5,
+        allow_rr_fallback: bool = True,
     ) -> None:
         self.min_density_per_minute = min_density_per_minute
         self.max_stall_pips = max_stall_pips
@@ -108,6 +124,7 @@ class MicroboostCounterEntryEngine:
         self.timing_watch_min_seconds = timing_watch_min_seconds
         self.timing_valid_min_seconds = timing_valid_min_seconds
         self.min_rr_valid = min_rr_valid
+        self.allow_rr_fallback = allow_rr_fallback
 
     def evaluate(self, cluster: Any, market: Any | None = None) -> MicroboostCounterEntryResult:
         symbol = str(_field(cluster, "symbol", _field(market, "symbol", ""))).upper()
@@ -269,21 +286,36 @@ class MicroboostCounterEntryEngine:
         direction_status = "MICROBOOST_COUNTER_ENTRY_WATCH"
         action = "WAIT_REJECTION_OR_MINOR_SUPPORT_BREAK"
         levels = _sell_levels(market, entry_reference, pip_value)
-        rr_to_tp1 = _rr("SELL", entry_reference, levels["sl_tight"], levels["tp1"])
-        rr_to_tp2 = _rr("SELL", entry_reference, levels["sl_tight"], levels["tp2"])
-        rr_to_tp3 = _rr("SELL", entry_reference, levels["sl_tight"], levels["tp3"])
+        target_result = _build_target_result(
+            direction="SELL",
+            symbol=str(base.get("symbol") or ""),
+            levels=levels,
+            entry=entry_reference,
+            sl=levels["sl_tight"],
+            min_rr=self.min_rr_valid,
+            missing_reason=_support_ladder_missing_reason(market),
+            allow_rr_fallback=self.allow_rr_fallback,
+        )
+        rr_to_tp1 = target_result["tp1_rr"]
+        rr_to_tp2 = target_result["tp2_rr"]
+        rr_to_tp3 = target_result["tp3_rr"]
         mature_valid = self._mature_timing_valid(
             phase_unpriced=observed_phase_unpriced,
             duration_seconds=observed_duration_seconds,
-            rr_to_tp2=rr_to_tp2,
+            rr_to_tp2=target_result["selected_rr"],
         )
-        if rejection or minor_break or mature_valid:
+        can_promote = bool(target_result["structure_rr_valid"]) and (rejection or minor_break or mature_valid)
+        if can_promote:
             status = CounterEntryStatus.SELL_TIMING_VALID
             final_direction = "SELL"
             direction_status = "MICROBOOST_COUNTER_ENTRY_VALIDATED"
             action = "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
+        elif target_result["target_mode"] == "PROVISIONAL_RR_FALLBACK":
+            action = "WAIT_STRUCTURE_TARGET_OR_REJECTION"
+        elif target_result["rr_status"] == "FAIL_MIN_RR":
+            action = "WAIT_BETTER_PRICE_OR_DEEPER_TARGET"
 
-        trade_plan = _sell_trade_plan(levels, action)
+        trade_plan = _sell_trade_plan(target_result, action)
         return self._result(
             enabled=True,
             status=status,
@@ -293,23 +325,38 @@ class MicroboostCounterEntryEngine:
             direction_status=direction_status,
             action=action,
             reason=_sell_reason(status, density, observed_price_delta_pips),
-            aggressive_trigger=levels["aggressive_trigger"],
-            conservative_trigger=levels["conservative_trigger"],
+            aggressive_trigger=target_result["aggressive_trigger"],
+            conservative_trigger=target_result["conservative_trigger"],
             suggested_sl=levels["sl_tight"],
             sl_tight=levels["sl_tight"],
             sl_safe=levels["sl_safe"],
-            tp1=levels["tp1"],
-            tp2=levels["tp2"],
-            tp3=levels["tp3"],
-            tp4=levels["tp4"],
+            tp1=target_result["tp1"],
+            tp2=target_result["tp2"],
+            tp3=target_result["tp3"],
+            tp4=target_result["tp4"],
             rr_to_tp1_tight=rr_to_tp1,
             rr_to_tp2_tight=rr_to_tp2,
             rr_to_tp3_tight=rr_to_tp3,
-            rr_status=_rr_status(status, rr_to_tp2, self.min_rr_valid),
+            rr_status=_rr_status(status, target_result["rr_status"], target_result["selected_rr"], self.min_rr_valid),
             requires_rejection_or_breakdown=status != CounterEntryStatus.SELL_TIMING_VALID,
-            confidence_bucket=_confidence_bucket(status, rr_to_tp2, self.min_rr_valid),
+            confidence_bucket=_confidence_bucket(status, target_result["selected_rr"], self.min_rr_valid),
             invalidation="M15 close above resistance high or strong reclaim above resistance",
             trade_plan=trade_plan,
+            target_mode=target_result["target_mode"],
+            tp_status=target_result["tp_status"],
+            tp_missing_reason=target_result["tp_missing_reason"],
+            support_ladder_ready=target_result["support_ladder_ready"],
+            resistance_ladder_ready=_optional_bool(_field(market, "resistance_ladder_ready", None)),
+            structure_targets_available=target_result["structure_targets_available"],
+            tradeplan_context_ready=can_promote,
+            valid_for_execution=can_promote,
+            min_rr_required=self.min_rr_valid,
+            tp_min_rr=target_result["tp_min_rr"],
+            tp_min_rr_value=target_result["tp_min_rr_value"],
+            tp1_rr=target_result["tp1_rr"],
+            tp2_rr=target_result["tp2_rr"],
+            tp3_rr=target_result["tp3_rr"],
+            tp4_rr=target_result["tp4_rr"],
             **base,
         )
 
@@ -369,19 +416,34 @@ class MicroboostCounterEntryEngine:
         direction_status = "MICROBOOST_COUNTER_ENTRY_WATCH"
         action = "WAIT_REJECTION_OR_MINOR_RESISTANCE_BREAK"
         levels = _buy_levels(market, entry_reference, pip_value)
-        rr_to_tp1 = _rr("BUY", entry_reference, levels["sl_tight"], levels["tp1"])
-        rr_to_tp2 = _rr("BUY", entry_reference, levels["sl_tight"], levels["tp2"])
-        rr_to_tp3 = _rr("BUY", entry_reference, levels["sl_tight"], levels["tp3"])
+        target_result = _build_target_result(
+            direction="BUY",
+            symbol=str(base.get("symbol") or ""),
+            levels=levels,
+            entry=entry_reference,
+            sl=levels["sl_tight"],
+            min_rr=self.min_rr_valid,
+            missing_reason=_resistance_ladder_missing_reason(market),
+            allow_rr_fallback=self.allow_rr_fallback,
+        )
+        rr_to_tp1 = target_result["tp1_rr"]
+        rr_to_tp2 = target_result["tp2_rr"]
+        rr_to_tp3 = target_result["tp3_rr"]
         mature_valid = self._mature_timing_valid(
             phase_unpriced=observed_phase_unpriced,
             duration_seconds=observed_duration_seconds,
-            rr_to_tp2=rr_to_tp2,
+            rr_to_tp2=target_result["selected_rr"],
         )
-        if rejection or minor_break or mature_valid:
+        can_promote = bool(target_result["structure_rr_valid"]) and (rejection or minor_break or mature_valid)
+        if can_promote:
             status = CounterEntryStatus.BUY_TIMING_VALID
             final_direction = "BUY"
             direction_status = "MICROBOOST_COUNTER_ENTRY_VALIDATED"
             action = "BUY_AT_SIGNAL_VALID_PRICE_OR_RETEST"
+        elif target_result["target_mode"] == "PROVISIONAL_RR_FALLBACK":
+            action = "WAIT_STRUCTURE_TARGET_OR_REJECTION"
+        elif target_result["rr_status"] == "FAIL_MIN_RR":
+            action = "WAIT_BETTER_PRICE_OR_DEEPER_TARGET"
 
         return self._result(
             enabled=True,
@@ -392,23 +454,38 @@ class MicroboostCounterEntryEngine:
             direction_status=direction_status,
             action=action,
             reason=_buy_reason(status, density, observed_price_delta_pips),
-            aggressive_trigger=levels["aggressive_trigger"],
-            conservative_trigger=levels["conservative_trigger"],
+            aggressive_trigger=target_result["aggressive_trigger"],
+            conservative_trigger=target_result["conservative_trigger"],
             suggested_sl=levels["sl_tight"],
             sl_tight=levels["sl_tight"],
             sl_safe=levels["sl_safe"],
-            tp1=levels["tp1"],
-            tp2=levels["tp2"],
-            tp3=levels["tp3"],
-            tp4=levels["tp4"],
+            tp1=target_result["tp1"],
+            tp2=target_result["tp2"],
+            tp3=target_result["tp3"],
+            tp4=target_result["tp4"],
             rr_to_tp1_tight=rr_to_tp1,
             rr_to_tp2_tight=rr_to_tp2,
             rr_to_tp3_tight=rr_to_tp3,
-            rr_status=_rr_status(status, rr_to_tp2, self.min_rr_valid),
+            rr_status=_rr_status(status, target_result["rr_status"], target_result["selected_rr"], self.min_rr_valid),
             requires_rejection_or_breakdown=status != CounterEntryStatus.BUY_TIMING_VALID,
-            confidence_bucket=_confidence_bucket(status, rr_to_tp2, self.min_rr_valid),
+            confidence_bucket=_confidence_bucket(status, target_result["selected_rr"], self.min_rr_valid),
             invalidation="M15 close below support low or strong breakdown below support",
-            trade_plan=_buy_trade_plan(levels, action),
+            trade_plan=_buy_trade_plan(target_result, action),
+            target_mode=target_result["target_mode"],
+            tp_status=target_result["tp_status"],
+            tp_missing_reason=target_result["tp_missing_reason"],
+            support_ladder_ready=_optional_bool(_field(market, "support_ladder_ready", None)),
+            resistance_ladder_ready=target_result["resistance_ladder_ready"],
+            structure_targets_available=target_result["structure_targets_available"],
+            tradeplan_context_ready=can_promote,
+            valid_for_execution=can_promote,
+            min_rr_required=self.min_rr_valid,
+            tp_min_rr=target_result["tp_min_rr"],
+            tp_min_rr_value=target_result["tp_min_rr_value"],
+            tp1_rr=target_result["tp1_rr"],
+            tp2_rr=target_result["tp2_rr"],
+            tp3_rr=target_result["tp3_rr"],
+            tp4_rr=target_result["tp4_rr"],
             **base,
         )
 
@@ -625,7 +702,251 @@ def _buy_levels(market: Any | None, entry_reference: float | None, pip_value: fl
     }
 
 
-def _sell_trade_plan(levels: dict[str, float | None], action: str) -> dict[str, Any]:
+def _build_target_result(
+    *,
+    direction: str,
+    symbol: str,
+    levels: dict[str, float | None],
+    entry: float | None,
+    sl: float | None,
+    min_rr: float,
+    missing_reason: str | None,
+    allow_rr_fallback: bool,
+) -> dict[str, Any]:
+    structure_targets = _structure_targets(direction, entry, levels)
+    if structure_targets:
+        return _structure_target_result(
+            direction=direction,
+            levels=levels,
+            entry=entry,
+            sl=sl,
+            targets=structure_targets,
+            min_rr=min_rr,
+        )
+    if allow_rr_fallback:
+        return _rr_fallback_target_result(
+            direction=direction,
+            symbol=symbol,
+            levels=levels,
+            entry=entry,
+            sl=sl,
+            min_rr=min_rr,
+            missing_reason=missing_reason,
+        )
+    return _missing_target_result(
+        direction=direction,
+        symbol=symbol,
+        levels=levels,
+        entry=entry,
+        sl=sl,
+        min_rr=min_rr,
+        missing_reason=missing_reason,
+    )
+
+
+def _structure_targets(direction: str, entry: float | None, levels: dict[str, float | None]) -> list[float]:
+    if entry is None:
+        return []
+    targets: list[float] = []
+    for key in ("tp1", "tp2", "tp3", "tp4"):
+        target = levels.get(key)
+        if target is None:
+            continue
+        if (direction == "SELL" and target < entry) or (direction == "BUY" and target > entry):
+            targets.append(target)
+    return targets
+
+
+def _structure_target_result(
+    *,
+    direction: str,
+    levels: dict[str, float | None],
+    entry: float | None,
+    sl: float | None,
+    targets: list[float],
+    min_rr: float,
+) -> dict[str, Any]:
+    padded = [*targets[:4], None, None, None, None]
+    tp1, tp2, tp3, tp4 = padded[:4]
+    rr_values = [_rr(direction, entry, sl, target) for target in (tp1, tp2, tp3, tp4)]
+    valid_rrs = [rr for rr in rr_values if rr is not None and rr >= min_rr]
+    selected_rr = valid_rrs[0] if valid_rrs else next((rr for rr in rr_values if rr is not None), None)
+    rr_status = "VALID" if valid_rrs else "FAIL_MIN_RR"
+    return {
+        **_target_common(levels, direction),
+        "target_mode": "FINAL_MARKET_STRUCTURE",
+        "tp_status": "VALID" if valid_rrs else "FAIL_MIN_RR",
+        "tp_missing_reason": None if valid_rrs else f"no_structure_target_reaches_rr_{min_rr:g}",
+        "structure_targets_available": True,
+        "structure_rr_valid": bool(valid_rrs),
+        "support_ladder_ready": direction == "SELL",
+        "resistance_ladder_ready": direction == "BUY",
+        "rr_status": rr_status,
+        "selected_rr": selected_rr,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+        "tp4": tp4,
+        "tp_min_rr": next((target for target, rr in zip((tp1, tp2, tp3, tp4), rr_values, strict=True) if rr is not None and rr >= min_rr), None),
+        "tp_min_rr_value": min_rr if valid_rrs else None,
+        "tp1_rr": rr_values[0],
+        "tp2_rr": rr_values[1],
+        "tp3_rr": rr_values[2],
+        "tp4_rr": rr_values[3],
+    }
+
+
+def _rr_fallback_target_result(
+    *,
+    direction: str,
+    symbol: str,
+    levels: dict[str, float | None],
+    entry: float | None,
+    sl: float | None,
+    min_rr: float,
+    missing_reason: str | None,
+) -> dict[str, Any]:
+    common = _target_common(levels, direction)
+    if entry is None or sl is None:
+        return {
+            **common,
+            "target_mode": "NONE",
+            "tp_status": "INVALID_RISK",
+            "tp_missing_reason": missing_reason or "entry_or_sl_missing",
+            "structure_targets_available": False,
+            "structure_rr_valid": False,
+            "support_ladder_ready": False if direction == "SELL" else None,
+            "resistance_ladder_ready": False if direction == "BUY" else None,
+            "rr_status": "INVALID_RISK",
+            "selected_rr": None,
+            "tp1": None,
+            "tp2": None,
+            "tp3": None,
+            "tp4": None,
+            "tp_min_rr": None,
+            "tp_min_rr_value": min_rr,
+            "tp1_rr": None,
+            "tp2_rr": None,
+            "tp3_rr": None,
+            "tp4_rr": None,
+        }
+
+    risk = abs(sl - entry)
+    if risk <= 0:
+        return {
+            **common,
+            "target_mode": "NONE",
+            "tp_status": "INVALID_RISK",
+            "tp_missing_reason": "invalid_zero_or_negative_risk",
+            "structure_targets_available": False,
+            "structure_rr_valid": False,
+            "support_ladder_ready": False if direction == "SELL" else None,
+            "resistance_ladder_ready": False if direction == "BUY" else None,
+            "rr_status": "INVALID_RISK",
+            "selected_rr": None,
+            "tp1": None,
+            "tp2": None,
+            "tp3": None,
+            "tp4": None,
+            "tp_min_rr": None,
+            "tp_min_rr_value": min_rr,
+            "tp1_rr": None,
+            "tp2_rr": None,
+            "tp3_rr": None,
+            "tp4_rr": None,
+        }
+
+    sign = -1.0 if direction == "SELL" else 1.0
+    tp1 = _round_price(entry + sign * risk)
+    tp2 = _round_price(entry + sign * risk * 2.0)
+    tp_min = _round_price(entry + sign * risk * min_rr)
+    tp4 = _round_price(entry + sign * risk * 3.0)
+    return {
+        **common,
+        "target_mode": "PROVISIONAL_RR_FALLBACK",
+        "tp_status": "WATCH_PROVISIONAL",
+        "tp_missing_reason": missing_reason or (
+            "support_ladder_missing" if direction == "SELL" else "resistance_ladder_missing"
+        ),
+        "structure_targets_available": False,
+        "structure_rr_valid": False,
+        "support_ladder_ready": False if direction == "SELL" else None,
+        "resistance_ladder_ready": False if direction == "BUY" else None,
+        "rr_status": "WATCH_PROVISIONAL",
+        "selected_rr": None,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp_min,
+        "tp4": tp4,
+        "tp_min_rr": tp_min,
+        "tp_min_rr_value": min_rr,
+        "tp1_rr": 1.0,
+        "tp2_rr": 2.0,
+        "tp3_rr": min_rr,
+        "tp4_rr": 3.0,
+    }
+
+
+def _missing_target_result(
+    *,
+    direction: str,
+    symbol: str,
+    levels: dict[str, float | None],
+    entry: float | None,
+    sl: float | None,
+    min_rr: float,
+    missing_reason: str | None,
+) -> dict[str, Any]:
+    _ = (symbol, entry, sl)
+    return {
+        **_target_common(levels, direction),
+        "target_mode": "NONE",
+        "tp_status": "MISSING_STRUCTURE_TARGETS",
+        "tp_missing_reason": missing_reason or (
+            "support_ladder_missing" if direction == "SELL" else "resistance_ladder_missing"
+        ),
+        "structure_targets_available": False,
+        "structure_rr_valid": False,
+        "support_ladder_ready": False if direction == "SELL" else None,
+        "resistance_ladder_ready": False if direction == "BUY" else None,
+        "rr_status": "WAIT_TARGET_STRUCTURE",
+        "selected_rr": None,
+        "tp1": None,
+        "tp2": None,
+        "tp3": None,
+        "tp4": None,
+        "tp_min_rr": None,
+        "tp_min_rr_value": min_rr,
+        "tp1_rr": None,
+        "tp2_rr": None,
+        "tp3_rr": None,
+        "tp4_rr": None,
+    }
+
+
+def _target_common(levels: dict[str, float | None], direction: str) -> dict[str, float | None]:
+    if direction == "SELL":
+        return {
+            "aggressive_trigger": levels.get("aggressive_trigger"),
+            "conservative_trigger": levels.get("conservative_trigger"),
+            "resistance_low": levels.get("resistance_low"),
+        }
+    return {
+        "aggressive_trigger": levels.get("aggressive_trigger"),
+        "conservative_trigger": levels.get("conservative_trigger"),
+        "support_high": levels.get("support_high"),
+    }
+
+
+def _support_ladder_missing_reason(market: Any | None) -> str:
+    return _optional_str(_field(market, "support_ladder_missing_reason", None)) or "support_ladder_missing"
+
+
+def _resistance_ladder_missing_reason(market: Any | None) -> str:
+    return _optional_str(_field(market, "resistance_ladder_missing_reason", None)) or "resistance_ladder_missing"
+
+
+def _sell_trade_plan(levels: dict[str, Any], action: str) -> dict[str, Any]:
     return {
         "direction": "SELL",
         "entry_mode": (
@@ -643,7 +964,7 @@ def _sell_trade_plan(levels: dict[str, float | None], action: str) -> dict[str, 
     }
 
 
-def _buy_trade_plan(levels: dict[str, float | None], action: str) -> dict[str, Any]:
+def _buy_trade_plan(levels: dict[str, Any], action: str) -> dict[str, Any]:
     return {
         "direction": "BUY",
         "entry_mode": (
@@ -699,11 +1020,18 @@ def _rr(direction: str, entry: float | None, stop: float | None, target: float |
     return round(reward / risk, 2)
 
 
-def _rr_status(status: CounterEntryStatus, rr_to_tp2: float | None, min_rr_valid: float) -> str:
+def _rr_status(
+    status: CounterEntryStatus,
+    target_rr_status: str,
+    selected_rr: float | None,
+    min_rr_valid: float,
+) -> str:
+    if target_rr_status in {"WATCH_PROVISIONAL", "FAIL_MIN_RR", "INVALID_RISK", "WAIT_TARGET_STRUCTURE"}:
+        return target_rr_status
     if status in {CounterEntryStatus.SELL_TIMING_VALID, CounterEntryStatus.BUY_TIMING_VALID}:
-        if rr_to_tp2 is not None and rr_to_tp2 >= min_rr_valid:
+        if selected_rr is not None and selected_rr >= min_rr_valid:
             return "VALID"
-        if rr_to_tp2 is not None and rr_to_tp2 > 0:
+        if selected_rr is not None and selected_rr > 0:
             return "ACCEPTABLE"
         return "UNVALIDATED"
     return "WATCH"
