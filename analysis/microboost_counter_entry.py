@@ -20,11 +20,13 @@ class CounterEntryStatus(StrEnum):
     NONE = "NONE"
     NANO_ABSORPTION_SELL_WATCH = "NANO_ABSORPTION_SELL_WATCH"
     EARLY_SELL_WATCH = "EARLY_SELL_WATCH"
+    SELL_ABSORPTION_WATCH = "SELL_ABSORPTION_WATCH"
     SELL_TIMING_WATCH = "SELL_TIMING_WATCH"
     SELL_TIMING_VALID_BY_ABSORPTION = "SELL_TIMING_VALID_BY_ABSORPTION"
     SELL_TIMING_VALID = "SELL_TIMING_VALID"
     NANO_ABSORPTION_BUY_WATCH = "NANO_ABSORPTION_BUY_WATCH"
     EARLY_BUY_WATCH = "EARLY_BUY_WATCH"
+    BUY_ABSORPTION_WATCH = "BUY_ABSORPTION_WATCH"
     BUY_TIMING_WATCH = "BUY_TIMING_WATCH"
     BUY_TIMING_VALID_BY_ABSORPTION = "BUY_TIMING_VALID_BY_ABSORPTION"
     BUY_TIMING_VALID = "BUY_TIMING_VALID"
@@ -285,6 +287,13 @@ class MicroboostCounterEntryEngine:
 
         rejection = bool(_optional_bool(_field(market, "m15_rejection_from_resistance", None)))
         minor_break = bool(_optional_bool(_field(market, "m15_close_below_minor_support", None)))
+        m15_close = _optional_float(_field(market, "m15_close", None))
+        close_below_signal = (
+            m15_close is not None
+            and entry_reference is not None
+            and m15_close < entry_reference
+        )
+        m15_counter_confirmation = rejection or minor_break or close_below_signal
         status = self._sell_watch_status(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -308,26 +317,19 @@ class MicroboostCounterEntryEngine:
         rr_to_tp1 = target_result["tp1_rr"]
         rr_to_tp2 = target_result["tp2_rr"]
         rr_to_tp3 = target_result["tp3_rr"]
-        mature_valid = self._mature_timing_valid(
-            phase_unpriced=observed_phase_unpriced,
-            duration_seconds=observed_duration_seconds,
-            rr_to_tp2=target_result["selected_rr"],
-        )
         absorption_valid = self._absorption_timing_valid(
             phase_unpriced=observed_phase_unpriced,
             density=density,
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        can_promote = bool(target_result["structure_rr_valid"]) and (
-            rejection or minor_break or mature_valid or absorption_valid
-        )
+        can_promote = bool(target_result["structure_rr_valid"]) and m15_counter_confirmation
         if can_promote:
             status = CounterEntryStatus.SELL_TIMING_VALID
             final_direction = "SELL"
             direction_status = "MICROBOOST_COUNTER_ENTRY_VALIDATED"
             action = "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
-        elif absorption_valid:
+        elif absorption_valid and m15_counter_confirmation:
             status = CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
             direction_status = "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
             if target_result["target_mode"] == "PROVISIONAL_RR_FALLBACK":
@@ -336,6 +338,10 @@ class MicroboostCounterEntryEngine:
                 action = "WAIT_BETTER_PRICE_OR_DEEPER_TARGET"
             else:
                 action = "WAIT_FINAL_EXECUTION_CONTEXT"
+        elif absorption_valid:
+            status = CounterEntryStatus.SELL_ABSORPTION_WATCH
+            direction_status = "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
+            action = "WAIT_M15_CLOSE_CONFIRMATION"
         elif target_result["target_mode"] == "PROVISIONAL_RR_FALLBACK":
             action = "WAIT_STRUCTURE_TARGET_OR_REJECTION"
         elif target_result["rr_status"] == "FAIL_MIN_RR":
@@ -436,6 +442,13 @@ class MicroboostCounterEntryEngine:
 
         rejection = bool(_optional_bool(_field(market, "m15_rejection_from_support", None)))
         minor_break = bool(_optional_bool(_field(market, "m15_close_above_minor_resistance", None)))
+        m15_close = _optional_float(_field(market, "m15_close", None))
+        close_above_signal = (
+            m15_close is not None
+            and entry_reference is not None
+            and m15_close > entry_reference
+        )
+        m15_counter_confirmation = rejection or minor_break or close_above_signal
         status = self._buy_watch_status(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -459,26 +472,19 @@ class MicroboostCounterEntryEngine:
         rr_to_tp1 = target_result["tp1_rr"]
         rr_to_tp2 = target_result["tp2_rr"]
         rr_to_tp3 = target_result["tp3_rr"]
-        mature_valid = self._mature_timing_valid(
-            phase_unpriced=observed_phase_unpriced,
-            duration_seconds=observed_duration_seconds,
-            rr_to_tp2=target_result["selected_rr"],
-        )
         absorption_valid = self._absorption_timing_valid(
             phase_unpriced=observed_phase_unpriced,
             density=density,
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        can_promote = bool(target_result["structure_rr_valid"]) and (
-            rejection or minor_break or mature_valid or absorption_valid
-        )
+        can_promote = bool(target_result["structure_rr_valid"]) and m15_counter_confirmation
         if can_promote:
             status = CounterEntryStatus.BUY_TIMING_VALID
             final_direction = "BUY"
             direction_status = "MICROBOOST_COUNTER_ENTRY_VALIDATED"
             action = "BUY_AT_SIGNAL_VALID_PRICE_OR_RETEST"
-        elif absorption_valid:
+        elif absorption_valid and m15_counter_confirmation:
             status = CounterEntryStatus.BUY_TIMING_VALID_BY_ABSORPTION
             direction_status = "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
             if target_result["target_mode"] == "PROVISIONAL_RR_FALLBACK":
@@ -487,6 +493,10 @@ class MicroboostCounterEntryEngine:
                 action = "WAIT_BETTER_PRICE_OR_DEEPER_TARGET"
             else:
                 action = "WAIT_FINAL_EXECUTION_CONTEXT"
+        elif absorption_valid:
+            status = CounterEntryStatus.BUY_ABSORPTION_WATCH
+            direction_status = "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
+            action = "WAIT_M15_CLOSE_CONFIRMATION"
         elif target_result["target_mode"] == "PROVISIONAL_RR_FALLBACK":
             action = "WAIT_STRUCTURE_TARGET_OR_REJECTION"
         elif target_result["rr_status"] == "FAIL_MIN_RR":
@@ -602,19 +612,6 @@ class MicroboostCounterEntryEngine:
         kwargs.setdefault("cluster_id", None)
         kwargs.setdefault("validated_direction", kwargs.get("candidate_direction"))
         return MicroboostCounterEntryResult(signal_type="MICROBOOST_COUNTER_ENTRY", **kwargs)
-
-    def _mature_timing_valid(
-        self,
-        *,
-        phase_unpriced: str,
-        duration_seconds: float | None,
-        rr_to_tp2: float | None,
-    ) -> bool:
-        if duration_seconds is None or duration_seconds < self.timing_valid_min_seconds:
-            return False
-        if phase_unpriced not in {"NEAR_TIMING_GATE_MICROBOOST", "DENSE_MICROBOOST", "REPEATED_MICROBOOST"}:
-            return False
-        return rr_to_tp2 is not None and rr_to_tp2 >= self.min_rr_valid
 
     def _absorption_timing_valid(
         self,
@@ -1060,10 +1057,17 @@ def _sell_reason(status: CounterEntryStatus, density: float | None, price_delta_
         return "BUY microboost at main resistance failed to expand; counter-sell timing validated."
     if status == CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION:
         return (
-            f"BUY microboost density {density:.2f}/m was absorbed at main resistance with "
-            f"{price_delta_pips:.2f} pip expansion; counter-sell timing is valid, execution waits for structure RR."
+            f"BUY microboost density {density:.2f}/m was absorbed at main resistance and M15 close confirmed "
+            f"failure with {price_delta_pips:.2f} pip expansion; execution waits for structure RR."
             if density is not None and price_delta_pips is not None
-            else "BUY microboost was absorbed at main resistance; counter-sell timing is valid conditionally."
+            else "BUY microboost was absorbed at main resistance and M15 close confirmed failure."
+        )
+    if status == CounterEntryStatus.SELL_ABSORPTION_WATCH:
+        return (
+            f"BUY microboost density {density:.2f}/m stalled at main resistance with "
+            f"{price_delta_pips:.2f} pip expansion; M15 close confirmation is required."
+            if density is not None and price_delta_pips is not None
+            else "BUY microboost stalled at main resistance; M15 close confirmation is required."
         )
     if status == CounterEntryStatus.NANO_ABSORPTION_SELL_WATCH:
         return (
@@ -1080,10 +1084,17 @@ def _buy_reason(status: CounterEntryStatus, density: float | None, price_delta_p
         return "SELL microboost at main support failed to expand; counter-buy timing validated."
     if status == CounterEntryStatus.BUY_TIMING_VALID_BY_ABSORPTION:
         return (
-            f"SELL microboost density {density:.2f}/m was absorbed at main support with "
-            f"{price_delta_pips:.2f} pip expansion; counter-buy timing is valid, execution waits for structure RR."
+            f"SELL microboost density {density:.2f}/m was absorbed at main support and M15 close confirmed "
+            f"failure with {price_delta_pips:.2f} pip expansion; execution waits for structure RR."
             if density is not None and price_delta_pips is not None
-            else "SELL microboost was absorbed at main support; counter-buy timing is valid conditionally."
+            else "SELL microboost was absorbed at main support and M15 close confirmed failure."
+        )
+    if status == CounterEntryStatus.BUY_ABSORPTION_WATCH:
+        return (
+            f"SELL microboost density {density:.2f}/m stalled at main support with "
+            f"{price_delta_pips:.2f} pip expansion; M15 close confirmation is required."
+            if density is not None and price_delta_pips is not None
+            else "SELL microboost stalled at main support; M15 close confirmation is required."
         )
     if status == CounterEntryStatus.NANO_ABSORPTION_BUY_WATCH:
         return (
@@ -1134,6 +1145,11 @@ def _confidence_bucket(status: CounterEntryStatus, rr_to_tp2: float | None, min_
         CounterEntryStatus.BUY_TIMING_VALID_BY_ABSORPTION,
     }:
         return "B_TIMING_VALID_CONDITIONAL"
+    if status in {
+        CounterEntryStatus.SELL_ABSORPTION_WATCH,
+        CounterEntryStatus.BUY_ABSORPTION_WATCH,
+    }:
+        return "B_ABSORPTION_WATCH"
     if status in {
         CounterEntryStatus.SELL_TIMING_WATCH,
         CounterEntryStatus.BUY_TIMING_WATCH,
