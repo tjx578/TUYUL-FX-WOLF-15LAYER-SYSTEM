@@ -86,7 +86,7 @@ class MicroboostContinuationEngine:
         self,
         *,
         min_density_per_minute: float = 25.0,
-        min_duration_seconds: float = 15.0,
+        min_duration_seconds: float = 60.0,
         min_rr_valid: float = 2.5,
         allow_rr_fallback: bool = True,
     ) -> None:
