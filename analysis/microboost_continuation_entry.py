@@ -7,7 +7,6 @@ extreme while SignalThrottle allowed quorum and timeframe context agree.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -107,13 +106,17 @@ class MicroboostContinuationEngine:
         raw_direction = _normalize_direction(_field(cluster, "raw_direction", _field(cluster, "direction", None)))
         phase_priced = _optional_str(_field(cluster, "phase_priced", None))
         phase_unpriced = _optional_str(_field(cluster, "phase_unpriced", None))
-        price_position = _normalize_position(_field(cluster, "price_position", _field(snapshot, "price_position", None)))
+        price_position = _normalize_position(
+            _field(cluster, "price_position", _field(snapshot, "price_position", None))
+        )
         h1_phase = _optional_str(_field(cluster, "h1_phase", _field(snapshot, "h1_phase", None)))
         m15_phase = _optional_str(_field(cluster, "m15_phase", _field(snapshot, "m15_phase", None)))
         density = _optional_float(
             _field(cluster, "effective_density", _field(cluster, "effective_density_per_minute", None))
         )
-        duration_seconds = _optional_float(_field(cluster, "duration_seconds", _field(cluster, "cluster_age_seconds", None)))
+        duration_seconds = _optional_float(
+            _field(cluster, "duration_seconds", _field(cluster, "cluster_age_seconds", None))
+        )
         effective_ticks = _optional_int(
             _field(cluster, "effective_ticks", _field(cluster, "effective_tick_count", None))
         )
@@ -306,7 +309,9 @@ def _continuation_levels(
             ],
         )
         reclaim_trigger = targets[0] if targets else None
-        invalidation = f"M15 failure below {_round_price(sl, digits)}" if sl is not None else "M15 failure below signal zone"
+        invalidation = (
+            f"M15 failure below {_round_price(sl, digits)}" if sl is not None else "M15 failure below signal zone"
+        )
     else:
         structure_sl = _optional_float(_field(snapshot, "resistance_high", _field(snapshot, "main_resistance", None)))
         fallback_sl = None if zone_high is None else zone_high + (12.0 * pip_value)
@@ -324,7 +329,9 @@ def _continuation_levels(
             ],
         )
         reclaim_trigger = targets[0] if targets else None
-        invalidation = f"M15 failure above {_round_price(sl, digits)}" if sl is not None else "M15 failure above signal zone"
+        invalidation = (
+            f"M15 failure above {_round_price(sl, digits)}" if sl is not None else "M15 failure above signal zone"
+        )
 
     selected_rr = _first_rr_at_least(direction, entry, sl, targets, min_rr)
     if selected_rr is not None:
@@ -348,7 +355,7 @@ def _continuation_levels(
         )
 
     if allow_rr_fallback and entry is not None and sl is not None:
-        fallback_targets: list[float | None] = _rr_fallback_targets(direction, entry, sl, min_rr)
+        fallback_targets = _rr_fallback_targets(direction, entry, sl, min_rr)
         return _level_payload(
             direction=direction,
             entry=entry,
@@ -391,7 +398,7 @@ def _level_payload(
     direction: str,
     entry: float | None,
     sl: float | None,
-    targets: Sequence[float | None],
+    targets: list[float | None],
     target_mode: str,
     tp_status: str,
     tp_missing_reason: str | None,
@@ -518,13 +525,10 @@ def _price_end(cluster: Any, snapshot: dict[str, Any] | None) -> float | None:
 
 
 def _entry_zone(start: float | None, end: float | None) -> list[float] | None:
-    values: list[float] = []
-    for value in (start, end):
-        if value is not None:
-            values.append(value)
+    values = [value for value in (start, end) if value is not None]
     if not values:
         return None
-    return [round(min(values), 5), round(max(values), 5)]
+    return [_round_price(min(values), 5), _round_price(max(values), 5)]
 
 
 def _pip_value(symbol: str, raw: Any) -> float:
@@ -566,7 +570,9 @@ def _sorted_targets(direction: str, entry: float | None, raw_targets: list[Any])
     return sorted(set(values), reverse=direction == "SELL")
 
 
-def _first_rr_at_least(direction: str, entry: float | None, sl: float | None, targets: list[float], min_rr: float) -> float | None:
+def _first_rr_at_least(
+    direction: str, entry: float | None, sl: float | None, targets: list[float], min_rr: float
+) -> float | None:
     for target in targets:
         rr = _rr(direction, entry, sl, target)
         if rr is not None and rr >= min_rr:
@@ -593,7 +599,7 @@ def _rr_target(direction: str, entry: float | None, sl: float | None, rr: float)
     return entry + (risk * rr) if direction == "BUY" else entry - (risk * rr)
 
 
-def _rr_fallback_targets(direction: str, entry: float, sl: float, min_rr: float) -> list[float | None]:
+def _rr_fallback_targets(direction: str, entry: float, sl: float, min_rr: float) -> list[float]:
     multipliers = [1.0, 2.0, min_rr, 3.0]
     risk = abs(entry - sl)
     if direction == "BUY":
