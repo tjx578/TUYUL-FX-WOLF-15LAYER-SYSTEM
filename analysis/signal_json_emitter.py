@@ -21,16 +21,24 @@ EMITTABLE_SIGNAL_STATUSES = {
     "EARLY_SELL_WATCH",
     "SELL_ABSORPTION_WATCH",
     "SELL_TIMING_WATCH",
+    "SELL_TIMING_VALID_BY_DIRECT_ABSORPTION",
     "SELL_TIMING_VALID_BY_ABSORPTION",
     "SELL_TIMING_VALID",
     "NANO_ABSORPTION_BUY_WATCH",
     "EARLY_BUY_WATCH",
     "BUY_ABSORPTION_WATCH",
     "BUY_TIMING_WATCH",
+    "BUY_TIMING_VALID_BY_DIRECT_ABSORPTION",
     "BUY_TIMING_VALID_BY_ABSORPTION",
     "BUY_TIMING_VALID",
     "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
     "SELL_TIMING_VALID_BY_QUORUM_CONTINUATION",
+    "BUY_REVERSAL_VALID",
+    "SELL_REVERSAL_VALID",
+    "BUY_BREAKOUT_CONTINUATION_VALID",
+    "BUY_BREAKOUT_RETEST_VALID",
+    "SELL_BREAKDOWN_CONTINUATION_VALID",
+    "SELL_BREAKDOWN_RETEST_VALID",
     "LATE_MICROBOOST_EXIT_ALERT",
     "PROTECT_PROFIT_ALERT",
     "THEME_SIGNAL_CANDIDATE",
@@ -46,8 +54,16 @@ VALID_SIGNAL_STATUSES = {
     "PULLBACK_RECLAIM_VALID",
     "LATE_DENSE_EXIT_ALERT",
     "PROTECT_PROFIT_ALERT",
+    "SELL_TIMING_VALID_BY_DIRECT_ABSORPTION",
+    "BUY_TIMING_VALID_BY_DIRECT_ABSORPTION",
     "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
     "SELL_TIMING_VALID_BY_QUORUM_CONTINUATION",
+    "BUY_REVERSAL_VALID",
+    "SELL_REVERSAL_VALID",
+    "BUY_BREAKOUT_CONTINUATION_VALID",
+    "BUY_BREAKOUT_RETEST_VALID",
+    "SELL_BREAKDOWN_CONTINUATION_VALID",
+    "SELL_BREAKDOWN_RETEST_VALID",
 }
 
 CONTINUATION_SIGNAL_STATUSES = {
@@ -136,6 +152,30 @@ class SignalJsonEvent:
     allowed_quorum_streak: int | None = None
     reclaim_trigger: float | None = None
     risk_pips: float | None = None
+    signal_id: str | None = None
+    linked_previous_signal: str | None = None
+    previous_signal_status: str | None = None
+    lifecycle_status: str | None = None
+    active_signal: dict[str, Any] | None = None
+    confirmation_policy: str | None = None
+    requires_m15_close: bool | None = None
+    direct_valid_reason: str | None = None
+    pending_decision_id: str | None = None
+    price_delta_pips: float | None = None
+    theme_alignment: str | None = None
+    structure_ready: bool | None = None
+    rr_to_valid_target: float | None = None
+    m15_confirmation_status: str | None = None
+    breakout_reclaim_level: float | None = None
+    support_reclaim_level: float | None = None
+    decision_watch_type: str | None = None
+    buy_condition: str | None = None
+    sell_condition: str | None = None
+    pullback_buy_zone: list[float] | None = None
+    breakout_buy_zone: list[float] | None = None
+    sell_rejection_zone: list[float] | None = None
+    key_resistance: float | None = None
+    key_support: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -308,6 +348,30 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         allowed_quorum_streak=_optional_int(counter_entry.get("allowed_quorum_streak")),
         reclaim_trigger=_optional_float(counter_entry.get("reclaim_trigger")),
         risk_pips=_optional_float(counter_entry.get("risk_pips")),
+        signal_id=_optional_str(counter_entry.get("signal_id")),
+        linked_previous_signal=_optional_str(counter_entry.get("linked_previous_signal")),
+        previous_signal_status=_optional_str(counter_entry.get("previous_signal_status")),
+        lifecycle_status=_optional_str(counter_entry.get("lifecycle_status")),
+        active_signal=counter_entry.get("active_signal") if isinstance(counter_entry.get("active_signal"), dict) else None,
+        confirmation_policy=_optional_str(counter_entry.get("confirmation_policy")),
+        requires_m15_close=_optional_bool(counter_entry.get("requires_m15_close")),
+        direct_valid_reason=_optional_str(counter_entry.get("direct_valid_reason")),
+        pending_decision_id=_optional_str(counter_entry.get("pending_decision_id")),
+        price_delta_pips=_optional_float(counter_entry.get("price_delta_pips")),
+        theme_alignment=_optional_str(counter_entry.get("theme_alignment")),
+        structure_ready=_optional_bool(counter_entry.get("structure_ready")),
+        rr_to_valid_target=_optional_float(counter_entry.get("rr_to_valid_target")),
+        m15_confirmation_status=_optional_str(counter_entry.get("m15_confirmation_status")),
+        breakout_reclaim_level=_optional_float(counter_entry.get("breakout_reclaim_level")),
+        support_reclaim_level=_optional_float(counter_entry.get("support_reclaim_level")),
+        decision_watch_type=_optional_str(counter_entry.get("decision_watch_type")),
+        buy_condition=_optional_str(counter_entry.get("buy_condition")),
+        sell_condition=_optional_str(counter_entry.get("sell_condition")),
+        pullback_buy_zone=_float_list(counter_entry.get("pullback_buy_zone")) or None,
+        breakout_buy_zone=_float_list(counter_entry.get("breakout_buy_zone")) or None,
+        sell_rejection_zone=_float_list(counter_entry.get("sell_rejection_zone")) or None,
+        key_resistance=_optional_float(counter_entry.get("key_resistance")),
+        key_support=_optional_float(counter_entry.get("key_support")),
     )
 
 
@@ -360,6 +424,8 @@ def _is_watch_status(status: str) -> bool:
 def _emit_reason(status: str) -> str:
     if status in CONTINUATION_SIGNAL_STATUSES:
         return "QUORUM_CONTINUATION_VALID"
+    if status.endswith("_BY_DIRECT_ABSORPTION"):
+        return "DIRECT_ABSORPTION_VALID"
     if status in {"SELL_ABSORPTION_WATCH", "BUY_ABSORPTION_WATCH"}:
         return "ABSORPTION_WATCH"
     if status in CONDITIONAL_SIGNAL_STATUSES:
@@ -388,6 +454,8 @@ def _is_final_payload(payload: dict[str, Any]) -> bool:
 
 def _signal_quality(payload: dict[str, Any]) -> str:
     if _is_final_payload(payload):
+        if str(payload.get("status") or "").endswith("_BY_DIRECT_ABSORPTION"):
+            return "DIRECT_ABSORPTION_VALID"
         if str(payload.get("status") or "") in CONTINUATION_SIGNAL_STATUSES:
             return "TREND_CONTINUATION_VALID"
         return "TRADEPLAN_VALID"
