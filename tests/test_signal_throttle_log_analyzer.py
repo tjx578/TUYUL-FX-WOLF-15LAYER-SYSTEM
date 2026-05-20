@@ -316,6 +316,69 @@ def test_live_analyzer_allowed_quorum_ignores_error_between_info_events():
     }
 
 
+def test_short_allowed_quorum_trend_continuation_does_not_emit_signal_payload():
+    events = [_event(index * 2, "USDCAD", event_type="ALLOWED") for index in range(11)]
+    market = MarketContext(
+        symbol="USDCAD",
+        raw_allowed_direction="BUY",
+        pip_value=0.0001,
+        price_at_signal_start=1.37560,
+        price_at_5m_confirm=1.375675,
+        price_at_signal_end=1.375675,
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        theme_aligned=True,
+        spread_normal=True,
+        price_position="MID_RANGE",
+        main_support=1.3720,
+        main_resistance=1.3850,
+        minor_resistance=1.3785,
+        tp1_resistance=1.3785,
+        tp2_resistance=1.3810,
+        tp3_resistance=1.3850,
+    )
+
+    report = analyze_signal_throttle_events(events, market_contexts={"USDCAD": market})
+    continuation = report["microboost_continuation_entry"]
+
+    assert continuation["status"] == "NONE"
+    assert continuation["final_direction"] == "WAIT"
+    assert continuation["action"] == "NO_CONTINUATION_ENTRY"
+
+
+def test_one_minute_allowed_quorum_trend_continuation_emits_continuation_entry_payload():
+    events = [_event(index * 2, "USDCAD", event_type="ALLOWED") for index in range(32)]
+    market = MarketContext(
+        symbol="USDCAD",
+        raw_allowed_direction="BUY",
+        pip_value=0.0001,
+        price_at_signal_start=1.37560,
+        price_at_5m_confirm=1.375675,
+        price_at_signal_end=1.375675,
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        theme_aligned=True,
+        spread_normal=True,
+        price_position="MID_RANGE",
+        main_support=1.3720,
+        main_resistance=1.3850,
+        minor_resistance=1.3785,
+        tp1_resistance=1.3785,
+        tp2_resistance=1.3810,
+        tp3_resistance=1.3850,
+    )
+
+    report = analyze_signal_throttle_events(events, market_contexts={"USDCAD": market})
+    continuation = report["microboost_continuation_entry"]
+
+    assert continuation["status"] == "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"
+    assert continuation["signal_family"] == "MICROBOOST_TREND_CONTINUATION"
+    assert continuation["final_direction"] == "BUY"
+    assert continuation["allowed_quorum"] is True
+    assert continuation["target_mode"] == "FINAL_MARKET_STRUCTURE"
+    assert continuation["rr_status"] == "VALID"
+
+
 def test_live_analyzer_same_second_batch_not_hard_interrupt():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
     base = datetime(2026, 5, 8, 12, 0, 5, tzinfo=UTC)
