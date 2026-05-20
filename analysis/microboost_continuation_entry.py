@@ -518,7 +518,10 @@ def _price_end(cluster: Any, snapshot: dict[str, Any] | None) -> float | None:
 
 
 def _entry_zone(start: float | None, end: float | None) -> list[float] | None:
-    values = [value for value in (start, end) if value is not None]
+    values: list[float] = []
+    for value in (start, end):
+        if value is not None:
+            values.append(value)
     if not values:
         return None
     return [round(min(values), 5), round(max(values), 5)]
