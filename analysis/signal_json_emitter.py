@@ -19,14 +19,18 @@ EMITTABLE_SIGNAL_STATUSES = {
     "MICROBOOST_COUNTER_ENTRY_VALID",
     "NANO_ABSORPTION_SELL_WATCH",
     "EARLY_SELL_WATCH",
+    "SELL_ABSORPTION_WATCH",
     "SELL_TIMING_WATCH",
     "SELL_TIMING_VALID_BY_ABSORPTION",
     "SELL_TIMING_VALID",
     "NANO_ABSORPTION_BUY_WATCH",
     "EARLY_BUY_WATCH",
+    "BUY_ABSORPTION_WATCH",
     "BUY_TIMING_WATCH",
     "BUY_TIMING_VALID_BY_ABSORPTION",
     "BUY_TIMING_VALID",
+    "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+    "SELL_TIMING_VALID_BY_QUORUM_CONTINUATION",
     "LATE_MICROBOOST_EXIT_ALERT",
     "PROTECT_PROFIT_ALERT",
     "THEME_SIGNAL_CANDIDATE",
@@ -42,10 +46,19 @@ VALID_SIGNAL_STATUSES = {
     "PULLBACK_RECLAIM_VALID",
     "LATE_DENSE_EXIT_ALERT",
     "PROTECT_PROFIT_ALERT",
+    "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+    "SELL_TIMING_VALID_BY_QUORUM_CONTINUATION",
+}
+
+CONTINUATION_SIGNAL_STATUSES = {
+    "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+    "SELL_TIMING_VALID_BY_QUORUM_CONTINUATION",
 }
 
 CONDITIONAL_SIGNAL_STATUSES = {
+    "SELL_ABSORPTION_WATCH",
     "SELL_TIMING_VALID_BY_ABSORPTION",
+    "BUY_ABSORPTION_WATCH",
     "BUY_TIMING_VALID_BY_ABSORPTION",
 }
 
@@ -119,6 +132,10 @@ class SignalJsonEvent:
     tp2_rr: float | None = None
     tp3_rr: float | None = None
     tp4_rr: float | None = None
+    allowed_quorum: bool | None = None
+    allowed_quorum_streak: int | None = None
+    reclaim_trigger: float | None = None
+    risk_pips: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -287,6 +304,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         tp2_rr=_optional_float(counter_entry.get("tp2_rr")),
         tp3_rr=_optional_float(counter_entry.get("tp3_rr")),
         tp4_rr=_optional_float(counter_entry.get("tp4_rr")),
+        allowed_quorum=_optional_bool(counter_entry.get("allowed_quorum")),
+        allowed_quorum_streak=_optional_int(counter_entry.get("allowed_quorum_streak")),
+        reclaim_trigger=_optional_float(counter_entry.get("reclaim_trigger")),
+        risk_pips=_optional_float(counter_entry.get("risk_pips")),
     )
 
 
@@ -321,7 +342,11 @@ def should_emit_signal_json(
             return False
         if str(payload.get("final_direction") or "").upper() not in {"BUY", "SELL"}:
             return False
-        if str(payload.get("target_mode") or "").upper() != "FINAL_MARKET_STRUCTURE":
+        target_mode = str(payload.get("target_mode") or "").upper()
+        if status in CONTINUATION_SIGNAL_STATUSES:
+            if target_mode not in {"FINAL_MARKET_STRUCTURE", "PROVISIONAL_RR_FALLBACK"}:
+                return False
+        elif target_mode != "FINAL_MARKET_STRUCTURE":
             return False
         if not bool(payload.get("valid_for_execution", False)):
             return False
@@ -333,6 +358,10 @@ def _is_watch_status(status: str) -> bool:
 
 
 def _emit_reason(status: str) -> str:
+    if status in CONTINUATION_SIGNAL_STATUSES:
+        return "QUORUM_CONTINUATION_VALID"
+    if status in {"SELL_ABSORPTION_WATCH", "BUY_ABSORPTION_WATCH"}:
+        return "ABSORPTION_WATCH"
     if status in CONDITIONAL_SIGNAL_STATUSES:
         return "TIMING_VALID_CONDITIONAL"
     if status in WATCH_SIGNAL_STATUSES:
@@ -342,19 +371,29 @@ def _emit_reason(status: str) -> str:
 
 def _is_final_payload(payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
+    target_mode = str(payload.get("target_mode") or "").upper()
+    target_ok = (
+        target_mode in {"FINAL_MARKET_STRUCTURE", "PROVISIONAL_RR_FALLBACK"}
+        if status in CONTINUATION_SIGNAL_STATUSES
+        else target_mode == "FINAL_MARKET_STRUCTURE"
+    )
     return (
         (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
         and str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
         and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
-        and str(payload.get("target_mode") or "").upper() == "FINAL_MARKET_STRUCTURE"
+        and target_ok
         and bool(payload.get("valid_for_execution", False))
     )
 
 
 def _signal_quality(payload: dict[str, Any]) -> str:
     if _is_final_payload(payload):
+        if str(payload.get("status") or "") in CONTINUATION_SIGNAL_STATUSES:
+            return "TREND_CONTINUATION_VALID"
         return "TRADEPLAN_VALID"
     status = str(payload.get("status") or "")
+    if status in {"SELL_ABSORPTION_WATCH", "BUY_ABSORPTION_WATCH"}:
+        return "ABSORPTION_WATCH"
     if status.endswith("_BY_ABSORPTION"):
         return "TIMING_VALID_CONDITIONAL"
     if _is_watch_status(status):
