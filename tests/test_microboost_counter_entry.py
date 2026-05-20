@@ -82,16 +82,20 @@ def test_rejection_confirms_sell_timing_valid():
     assert result.rr_status == "VALID"
 
 
-def test_breakout_blocks_counter_sell():
+def test_m15_breakout_confirms_buy_continuation_from_resistance_watch():
     result = MicroboostCounterEntryEngine().evaluate(
         _cluster(),
         _market(m15_close_above_resistance=True),
     )
 
-    assert result.enabled is False
-    assert result.status == CounterEntryStatus.BREAKOUT_CONTINUATION_BUY
+    assert result.enabled is True
+    assert result.status == CounterEntryStatus.BUY_BREAKOUT_CONTINUATION_VALID
     assert result.candidate_direction == "BUY"
-    assert result.action == "WAIT_RETEST_BUY"
+    assert result.final_direction == "BUY"
+    assert result.action == "BUY_BREAKOUT_RETEST"
+    assert result.rr_status == "VALID"
+    assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
+    assert result.valid_for_execution is True
 
 
 def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():
@@ -138,7 +142,7 @@ def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():
     assert result.rr_to_tp3_tight == pytest.approx(4.16)
 
 
-def test_audcad_mature_near_timing_gate_stalled_at_resistance_is_sell_timing_valid():
+def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_close():
     cluster = _cluster(
         symbol="AUDCAD",
         phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
@@ -169,21 +173,107 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_is_sell_timing_val
 
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
-    assert result.status == CounterEntryStatus.SELL_TIMING_VALID
+    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
     assert result.validated_direction == "SELL"
-    assert result.final_direction == "SELL"
-    assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
+    assert result.final_direction == "WAIT"
+    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
+    assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
+    assert result.requires_rejection_or_breakdown is True
     assert result.signal_valid_price == 0.98504
     assert result.sl_tight == 0.9865
     assert result.tp1 == 0.982
     assert result.tp2 == 0.978
     assert result.tp3 == 0.9746
     assert result.rr_to_tp2_tight == pytest.approx(4.82)
-    assert result.rr_status == "VALID"
+    assert result.rr_status == "WATCH"
     assert result.signal_valid_time_wita == "2026-05-19 04:33:08"
 
 
-def test_cadjpy_near_timing_gate_absorption_is_timing_valid_without_final_execution():
+def test_audcad_complete_absorption_with_theme_and_structure_direct_validates_without_m15_close():
+    cluster = _cluster(
+        symbol="AUDCAD",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=28.76,
+        effective_tick_count=87,
+        duration_seconds=181.502,
+        price_at_signal_start=0.98504,
+        price_at_signal_end=0.98504,
+        end_utc="2026-05-18T20:33:08+00:00",
+    )
+    market = _market(
+        symbol="AUDCAD",
+        price_at_signal_start=0.98504,
+        price_at_5m_confirm=0.98504,
+        price_at_signal_end=0.98504,
+        resistance_low=0.9850,
+        resistance_high=0.9859,
+        minor_support=0.9845,
+        major_support=0.9820,
+        theme_alignment="STRONG_SELL",
+        m15_close=None,
+        m15_rejection_from_resistance=False,
+        m15_close_below_minor_support=False,
+        sl_buffer=0.0006,
+        tp1_support=0.9820,
+        tp2_support=0.9780,
+        tp3_support=0.9746,
+        tp4_support=0.9700,
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION
+    assert result.validated_direction == "SELL"
+    assert result.final_direction == "SELL"
+    assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
+    assert result.confirmation_policy == "DIRECT_ABSORPTION_NO_M15_WAIT"
+    assert result.requires_m15_close is False
+    assert result.direct_valid_reason == "mature_absorption_with_theme_structure_and_rr"
+    assert result.pending_decision_id is None
+    assert result.structure_ready is True
+    assert result.rr_status == "VALID"
+    assert result.valid_for_execution is True
+
+
+def test_audcad_m15_close_confirms_absorption_as_sell_timing_valid():
+    cluster = _cluster(
+        symbol="AUDCAD",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=28.76,
+        effective_tick_count=87,
+        duration_seconds=181.502,
+        price_at_signal_start=0.98504,
+        price_at_signal_end=0.98504,
+        end_utc="2026-05-18T20:33:08+00:00",
+    )
+    market = _market(
+        symbol="AUDCAD",
+        price_at_signal_start=0.98504,
+        price_at_5m_confirm=0.9848,
+        price_at_signal_end=0.9848,
+        m15_close=0.9848,
+        resistance_low=0.9850,
+        resistance_high=0.9859,
+        minor_support=0.9845,
+        major_support=0.9820,
+        sl_buffer=0.0006,
+        tp1_support=0.9820,
+        tp2_support=0.9780,
+        tp3_support=0.9746,
+        tp4_support=0.9700,
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_TIMING_VALID
+    assert result.validated_direction == "SELL"
+    assert result.final_direction == "SELL"
+    assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
+    assert result.rr_status == "VALID"
+    assert result.valid_for_execution is True
+
+
+def test_cadjpy_near_timing_gate_absorption_waits_for_m15_close_without_final_execution():
     cluster = _cluster(
         symbol="CADJPY",
         phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
@@ -218,18 +308,21 @@ def test_cadjpy_near_timing_gate_absorption_is_timing_valid_without_final_execut
 
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
-    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
-    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
+    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
+    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
     assert result.validated_direction == "SELL"
     assert result.final_direction == "WAIT"
-    assert result.action == "WAIT_STRUCTURE_TARGET_OR_RETEST"
-    assert result.requires_rejection_or_breakdown is False
+    assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
+    assert result.requires_rejection_or_breakdown is True
     assert result.valid_for_execution is False
     assert result.tradeplan_context_ready is False
     assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
     assert result.tp_status == "WATCH_PROVISIONAL"
     assert result.tp_missing_reason == "NO_M15_H1_SUPPORT_LEVELS"
     assert result.rr_status == "WATCH_PROVISIONAL"
+    assert result.confirmation_policy == "M15_CLOSE_REQUIRED"
+    assert result.requires_m15_close is True
+    assert result.pending_decision_id == "CADJPY_M15_DECISION"
     assert result.signal_valid_price == 115.7055
     assert result.sl_tight == 115.8255
     assert result.tp1 == 115.5855
@@ -238,8 +331,124 @@ def test_cadjpy_near_timing_gate_absorption_is_timing_valid_without_final_execut
     assert result.tp4 == 115.3455
     assert result.tp_min_rr == 115.4055
     assert result.tp3_rr == 2.5
-    assert result.confidence_bucket == "B_TIMING_VALID_CONDITIONAL"
+    assert result.confidence_bucket == "B_ABSORPTION_WATCH"
     assert result.signal_valid_time_wita == "2026-05-19 14:18:21"
+
+
+def test_cadjpy_m15_close_confirms_absorption_but_missing_structure_keeps_execution_wait():
+    cluster = _cluster(
+        symbol="CADJPY",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=24.84,
+        effective_tick_count=75,
+        duration_seconds=181.183,
+        price_at_signal_start=115.7055,
+        price_at_signal_end=115.7055,
+        end_utc="2026-05-19T06:18:21+00:00",
+    )
+    market = _market(
+        symbol="CADJPY",
+        pip_value=0.01,
+        price_at_signal_start=115.7055,
+        price_at_5m_confirm=115.695,
+        price_at_signal_end=115.695,
+        m15_close=115.695,
+        price_position="MAIN_RESISTANCE",
+        resistance_low=None,
+        resistance_high=None,
+        minor_support=None,
+        major_support=None,
+        m15_rejection_from_resistance=False,
+        m15_close_below_minor_support=False,
+        sl_buffer=None,
+        tp1_support=None,
+        tp2_support=None,
+        tp3_support=None,
+        tp4_support=None,
+        support_ladder_ready=False,
+        support_ladder_missing_reason="NO_M15_H1_SUPPORT_LEVELS",
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
+    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
+    assert result.validated_direction == "SELL"
+    assert result.final_direction == "WAIT"
+    assert result.action == "WAIT_STRUCTURE_TARGET_OR_RETEST"
+    assert result.requires_rejection_or_breakdown is False
+    assert result.valid_for_execution is False
+    assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
+    assert result.rr_status == "WATCH_PROVISIONAL"
+    assert result.confirmation_policy == "M15_CLOSE_CONFIRMED"
+    assert result.requires_m15_close is False
+    assert result.pending_decision_id is None
+    assert result.confidence_bucket == "B_TIMING_VALID_CONDITIONAL"
+
+
+def test_nzdjpy_mature_resistance_absorption_watch_waits_for_m15_close():
+    cluster = _cluster(
+        symbol="NZDJPY",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=19.25,
+        effective_tick_count=61,
+        duration_seconds=190.0,
+        price_at_signal_start=92.8825,
+        price_at_signal_end=92.8825,
+        end_utc="2026-05-20T08:48:20+00:00",
+    )
+    market = _market(
+        symbol="NZDJPY",
+        pip_value=0.01,
+        price_at_signal_start=92.8825,
+        price_at_5m_confirm=92.8825,
+        price_at_signal_end=92.8825,
+        price_position="MAIN_RESISTANCE",
+        resistance_low=92.88,
+        resistance_high=93.10,
+        key_resistance=93.10,
+        key_support=92.70,
+        buy_pullback_low=92.65,
+        buy_pullback_high=92.78,
+        breakout_retest_low=92.95,
+        breakout_retest_high=93.10,
+        sell_rejection_low=92.95,
+        sell_rejection_high=93.10,
+        minor_support=None,
+        major_support=None,
+        m15_close=None,
+        m15_rejection_from_resistance=False,
+        m15_close_below_minor_support=False,
+        sl_buffer=None,
+        tp1_support=None,
+        tp2_support=None,
+        tp3_support=None,
+        tp4_support=None,
+        support_ladder_ready=False,
+        support_ladder_missing_reason="NO_M15_H1_SUPPORT_LEVELS",
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
+    assert result.final_direction == "WAIT"
+    assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
+    assert result.valid_for_execution is False
+    assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
+    assert result.rr_status == "WATCH_PROVISIONAL"
+    assert result.confirmation_policy == "M15_CLOSE_REQUIRED"
+    assert result.requires_m15_close is True
+    assert result.pending_decision_id == "NZDJPY_M15_DECISION"
+    assert result.decision_watch_type == "BREAKOUT_OR_REJECTION_WATCH"
+    assert result.key_resistance == 93.1
+    assert result.key_support == 92.7
+    assert result.breakout_reclaim_level == 93.1
+    assert result.support_reclaim_level == 92.7
+    assert result.pullback_buy_zone == [92.65, 92.78]
+    assert result.breakout_buy_zone == [92.95, 93.1]
+    assert result.sell_rejection_zone == [92.95, 93.1]
+    assert "BUY valid only after pullback support hold" in str(result.buy_condition)
+    assert "SELL valid only after failed breakout" in str(result.sell_condition)
 
 
 def test_cadjpy_missing_support_ladder_uses_rr_fallback_without_validating():
