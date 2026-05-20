@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -745,7 +745,10 @@ class TestL13Governance:
         proceed = result["l12_verdict"].get("proceed_to_L13", False)
 
         if proceed or verdict.startswith("EXECUTE"):
-            assert mocked_pipeline._l13_engine.reflect.call_count == 2
+            l13_engine = mocked_pipeline._l13_engine
+            assert l13_engine is not None
+            reflect = cast(MagicMock, l13_engine.reflect)
+            assert reflect.call_count == 2
             assert result["reflective_pass1"] is not None
             assert result["reflective_pass2"] is not None
 
@@ -770,7 +773,10 @@ class TestSovereignty:
 
     def test_sovereignty_enforcement_called(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         mocked_pipeline.execute("EURUSD")
-        assert mocked_pipeline._l15_engine.enforce_sovereignty.call_count == 1
+        l15_engine = mocked_pipeline._l15_engine
+        assert l15_engine is not None
+        enforce_sovereignty = cast(MagicMock, l15_engine.enforce_sovereignty)
+        assert enforce_sovereignty.call_count == 1
 
 
 # ──────────────────────────────────────────────────────────────────
