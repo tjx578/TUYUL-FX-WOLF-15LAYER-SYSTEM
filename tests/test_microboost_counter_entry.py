@@ -183,6 +183,65 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_is_sell_timing_val
     assert result.signal_valid_time_wita == "2026-05-19 04:33:08"
 
 
+def test_cadjpy_near_timing_gate_absorption_is_timing_valid_without_final_execution():
+    cluster = _cluster(
+        symbol="CADJPY",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=24.84,
+        effective_tick_count=75,
+        duration_seconds=181.183,
+        price_at_signal_start=115.7055,
+        price_at_signal_end=115.7055,
+        end_utc="2026-05-19T06:18:21+00:00",
+    )
+    market = _market(
+        symbol="CADJPY",
+        pip_value=0.01,
+        price_at_signal_start=115.7055,
+        price_at_5m_confirm=115.7055,
+        price_at_signal_end=115.7055,
+        price_position="MAIN_RESISTANCE",
+        resistance_low=None,
+        resistance_high=None,
+        minor_support=None,
+        major_support=None,
+        m15_rejection_from_resistance=False,
+        m15_close_below_minor_support=False,
+        sl_buffer=None,
+        tp1_support=None,
+        tp2_support=None,
+        tp3_support=None,
+        tp4_support=None,
+        support_ladder_ready=False,
+        support_ladder_missing_reason="NO_M15_H1_SUPPORT_LEVELS",
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
+    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
+    assert result.validated_direction == "SELL"
+    assert result.final_direction == "WAIT"
+    assert result.action == "WAIT_STRUCTURE_TARGET_OR_RETEST"
+    assert result.requires_rejection_or_breakdown is False
+    assert result.valid_for_execution is False
+    assert result.tradeplan_context_ready is False
+    assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
+    assert result.tp_status == "WATCH_PROVISIONAL"
+    assert result.tp_missing_reason == "NO_M15_H1_SUPPORT_LEVELS"
+    assert result.rr_status == "WATCH_PROVISIONAL"
+    assert result.signal_valid_price == 115.7055
+    assert result.sl_tight == 115.8255
+    assert result.tp1 == 115.5855
+    assert result.tp2 == 115.4655
+    assert result.tp3 == 115.4055
+    assert result.tp4 == 115.3455
+    assert result.tp_min_rr == 115.4055
+    assert result.tp3_rr == 2.5
+    assert result.confidence_bucket == "B_TIMING_VALID_CONDITIONAL"
+    assert result.signal_valid_time_wita == "2026-05-19 14:18:21"
+
+
 def test_cadjpy_missing_support_ladder_uses_rr_fallback_without_validating():
     cluster = _cluster(
         symbol="CADJPY",
