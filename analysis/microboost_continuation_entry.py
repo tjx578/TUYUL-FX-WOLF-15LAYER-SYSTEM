@@ -7,6 +7,7 @@ extreme while SignalThrottle allowed quorum and timeframe context agree.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -355,7 +356,7 @@ def _continuation_levels(
         )
 
     if allow_rr_fallback and entry is not None and sl is not None:
-        fallback_targets = _rr_fallback_targets(direction, entry, sl, min_rr)
+        fallback_targets: list[float | None] = _rr_fallback_targets(direction, entry, sl, min_rr)
         return _level_payload(
             direction=direction,
             entry=entry,
@@ -398,7 +399,7 @@ def _level_payload(
     direction: str,
     entry: float | None,
     sl: float | None,
-    targets: list[float | None],
+    targets: Sequence[float | None],
     target_mode: str,
     tp_status: str,
     tp_missing_reason: str | None,
@@ -525,10 +526,13 @@ def _price_end(cluster: Any, snapshot: dict[str, Any] | None) -> float | None:
 
 
 def _entry_zone(start: float | None, end: float | None) -> list[float] | None:
-    values = [value for value in (start, end) if value is not None]
+    values: list[float] = []
+    for value in (start, end):
+        if value is not None:
+            values.append(value)
     if not values:
         return None
-    return [_round_price(min(values), 5), _round_price(max(values), 5)]
+    return [round(min(values), 5), round(max(values), 5)]
 
 
 def _pip_value(symbol: str, raw: Any) -> float:
@@ -599,7 +603,7 @@ def _rr_target(direction: str, entry: float | None, sl: float | None, rr: float)
     return entry + (risk * rr) if direction == "BUY" else entry - (risk * rr)
 
 
-def _rr_fallback_targets(direction: str, entry: float, sl: float, min_rr: float) -> list[float]:
+def _rr_fallback_targets(direction: str, entry: float, sl: float, min_rr: float) -> list[float | None]:
     multipliers = [1.0, 2.0, min_rr, 3.0]
     risk = abs(entry - sl)
     if direction == "BUY":
