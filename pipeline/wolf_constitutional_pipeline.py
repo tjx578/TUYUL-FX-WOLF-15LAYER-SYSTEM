@@ -81,6 +81,7 @@ from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
 from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
+from analysis.signal_lifecycle_manager import SignalLifecycleManager
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
     emit_signal_throttle_intel,
@@ -359,6 +360,7 @@ class WolfConstitutionalPipeline:
         )
         self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
+        self._signal_lifecycle_manager = SignalLifecycleManager()
         self._signal_json_emitter = SignalJsonEmitter(
             enabled=os.getenv("SIGNAL_JSON_LOG_ENABLED", "true").strip().lower() == "true",
             prefix=os.getenv("SIGNAL_JSON_LOG_PREFIX", "[SignalJSON]"),
@@ -3398,7 +3400,7 @@ class WolfConstitutionalPipeline:
             "resistance_high": resistance_high,
             "minor_support": minor_support,
             "major_support": main_support,
-            "m15_close": latest_close or current_price,
+            "m15_close": latest_close,
             "m15_close_above_resistance": m15_close_above_resistance,
             "m15_rejection_from_resistance": m15_rejection_from_resistance,
             "m15_close_below_minor_support": m15_close_below_minor_support,
@@ -3611,9 +3613,35 @@ class WolfConstitutionalPipeline:
             )
         )
         l12_verdict["signal_throttle_live_report"] = report
+        self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
         self._emit_microboost_intel_if_new(report)
         return report
+
+    def _apply_microboost_continuation_entry_report(
+        self,
+        *,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+    ) -> None:
+        continuation = report.get("microboost_continuation_entry")
+        if not isinstance(continuation, dict):
+            return
+        if continuation.get("status") == "NONE":
+            return
+
+        continuation = self._signal_lifecycle_manager.apply(continuation)
+        report["microboost_continuation_entry"] = continuation
+        l12_verdict["microboost_continuation_entry"] = continuation
+        status = str(continuation.get("status") or "")
+        if status.endswith("_CONTINUATION"):
+            l12_verdict["final_direction"] = continuation.get("final_direction")
+            l12_verdict["action"] = continuation.get("action")
+            l12_verdict["direction_source"] = "MICROBOOST_TREND_CONTINUATION"
+
+        signal_event = build_signal_json_event(continuation)
+        if signal_event is not None:
+            self._signal_json_emitter.emit(signal_event)
 
     def _apply_microboost_counter_entry_report(
         self,
@@ -3627,12 +3655,18 @@ class WolfConstitutionalPipeline:
         if counter_entry.get("status") == "NONE":
             return
 
+        counter_entry = self._signal_lifecycle_manager.apply(counter_entry)
+        report["microboost_counter_entry"] = counter_entry
         l12_verdict["microboost_counter_entry"] = counter_entry
         status = str(counter_entry.get("status") or "")
-        if status.endswith("_VALID"):
+        if status.endswith("_VALID") or status.endswith("_BY_DIRECT_ABSORPTION"):
             l12_verdict["final_direction"] = counter_entry.get("final_direction")
             l12_verdict["action"] = counter_entry.get("action")
             l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY"
+        elif status.endswith("_ABSORPTION_WATCH"):
+            l12_verdict["final_direction"] = "WAIT"
+            l12_verdict["action"] = counter_entry.get("action")
+            l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
         elif status.endswith("_BY_ABSORPTION"):
             l12_verdict["final_direction"] = "WAIT"
             l12_verdict["action"] = counter_entry.get("action")
