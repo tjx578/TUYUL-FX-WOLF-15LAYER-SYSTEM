@@ -1,8 +1,8 @@
 """Standalone final signal JSON emitter.
 
-Raw throttle and microboost logs are telemetry.  ``[SignalJSON]`` is the
-signal product: emitted only when a candidate/watch/valid state has market
-context and an anchored signal-valid price.
+Raw throttle and microboost logs are telemetry. ``[SignalJSON]`` is the
+final signal product; ``[SignalWatchJSON]`` is a rate-limited lifecycle update
+for watch states.
 """
 
 from __future__ import annotations
@@ -92,6 +92,11 @@ class SignalJsonEvent:
     confidence_bucket: str | None
     reason: str
     invalidation: str | None
+    cluster_id: str | None = None
+    is_final_signal: bool = False
+    emit_reason: str | None = None
+    signal_quality: str | None = None
+    lifecycle_version: int = 2
     target_mode: str | None = None
     tp_status: str | None = None
     tp_missing_reason: str | None = None
@@ -118,22 +123,30 @@ class SignalJsonEmitter:
         *,
         enabled: bool = True,
         prefix: str = "[SignalJSON]",
+        watch_prefix: str = "[SignalWatchJSON]",
         dedup_ttl_seconds: int = 300,
-        emit_watch: bool = True,
+        emit_watch: bool = False,
         emit_valid: bool = True,
         require_market_context: bool = True,
+        watch_transition_only: bool = True,
     ) -> None:
         self.enabled = enabled
         self.prefix = prefix
+        self.watch_prefix = watch_prefix
         self.dedup_ttl_seconds = max(1, int(dedup_ttl_seconds))
         self.emit_watch = emit_watch
         self.emit_valid = emit_valid
         self.require_market_context = require_market_context
+        self.watch_transition_only = watch_transition_only
         self._emitted: dict[str, float] = {}
+        self._cluster_state: dict[str, str] = {}
         self.logger = logging.getLogger("signal_json")
 
     def emit(self, event: SignalJsonEvent) -> bool:
         if not self.enabled:
+            return False
+        is_watch = _is_watch_status(event.status)
+        if is_watch and self.watch_transition_only and not self._mark_watch_transition(event):
             return False
         if not should_emit_signal_json(
             event,
@@ -148,15 +161,28 @@ class SignalJsonEmitter:
             return False
 
         payload = event.to_dict()
-        self.logger.warning("%s %s", self.prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
+        prefix = self.watch_prefix if is_watch else self.prefix
+        self.logger.warning("%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
         return True
 
     @staticmethod
     def _event_key(event: SignalJsonEvent) -> str:
+        cluster_key = event.cluster_id or event.signal_valid_time_utc
+        if _is_watch_status(event.status):
+            return f"{event.symbol}|{cluster_key}|{event.signal_family}|{event.status}|{event.target_mode or ''}"
         return (
-            f"{event.symbol}|{event.signal_family}|{event.status}|"
-            f"{event.signal_valid_time_utc}|{event.entry_reference_price}"
+            f"{event.symbol}|{cluster_key}|{event.signal_family}|{event.final_direction}|"
+            f"{event.entry_reference_price}"
         )
+
+    def _mark_watch_transition(self, event: SignalJsonEvent) -> bool:
+        cluster_key = event.cluster_id or f"{event.symbol}|{event.signal_family}|{event.entry_reference_price}"
+        state = f"{event.status}|{event.target_mode or ''}|{event.tp_status or ''}"
+        previous = self._cluster_state.get(cluster_key)
+        if previous == state:
+            return False
+        self._cluster_state[cluster_key] = state
+        return True
 
     def _is_duplicate(self, key: str) -> bool:
         now = time.time()
@@ -183,8 +209,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
     status = str(counter_entry.get("status") or "")
     if not signal_valid_time or signal_valid_price is None or entry_reference_price is None or not entry_zone or not symbol:
         return None
+    is_watch = _is_watch_status(status)
     return SignalJsonEvent(
-        event="signal_json",
+        event="signal_watch_json" if is_watch else "signal_json",
         schema_version="1.0",
         symbol=symbol,
         signal_family=str(
@@ -193,6 +220,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
             or "MICROBOOST_COUNTER_ENTRY"
         ),
         status=status,
+        cluster_id=_optional_str(counter_entry.get("cluster_id")),
+        is_final_signal=_is_final_payload(counter_entry),
+        emit_reason="STATE_TRANSITION" if status in WATCH_SIGNAL_STATUSES else "FINAL_SIGNAL_VALID",
+        signal_quality=_signal_quality(counter_entry),
         raw_direction=_optional_str(counter_entry.get("raw_direction")),
         candidate_direction=_optional_str(counter_entry.get("candidate_direction")),
         validated_direction=_optional_str(
@@ -270,7 +301,37 @@ def should_emit_signal_json(
         rr_status = str(payload.get("rr_status") or "").upper()
         if rr_status not in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}:
             return False
+        if str(payload.get("final_direction") or "").upper() not in {"BUY", "SELL"}:
+            return False
+        if str(payload.get("target_mode") or "").upper() != "FINAL_MARKET_STRUCTURE":
+            return False
+        if not bool(payload.get("valid_for_execution", False)):
+            return False
     return True
+
+
+def _is_watch_status(status: str) -> bool:
+    return status in WATCH_SIGNAL_STATUSES or status.endswith("_WATCH")
+
+
+def _is_final_payload(payload: dict[str, Any]) -> bool:
+    status = str(payload.get("status") or "")
+    return (
+        (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
+        and str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
+        and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
+        and str(payload.get("target_mode") or "").upper() == "FINAL_MARKET_STRUCTURE"
+        and bool(payload.get("valid_for_execution", False))
+    )
+
+
+def _signal_quality(payload: dict[str, Any]) -> str:
+    if _is_final_payload(payload):
+        return "TRADEPLAN_VALID"
+    status = str(payload.get("status") or "")
+    if _is_watch_status(status):
+        return "WATCH_ONLY"
+    return "CANDIDATE"
 
 
 def _float_list(value: Any) -> list[float]:
