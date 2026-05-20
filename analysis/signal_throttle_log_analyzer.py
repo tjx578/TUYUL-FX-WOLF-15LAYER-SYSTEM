@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from analysis.market_context_validator import missing_market_context_result
+from analysis.microboost_continuation_entry import MicroboostContinuationEngine
 from analysis.microboost_counter_entry import MicroboostCounterEntryEngine
 from analysis.microboost_detector import build_microboost_summary
 from schemas.direction import normalize_direction
@@ -253,6 +254,7 @@ def analyze_signal_throttle_events(
                 window_minutes=microboost_window_minutes,
                 clean_block_seconds=clean_block_seconds,
             ),
+            "microboost_continuation_entry": None,
             "microboost_counter_entry": None,
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "market_context_validation": missing_market_context_result("UNKNOWN").to_dict(),
@@ -341,6 +343,7 @@ def analyze_signal_throttle_events(
         allowed_quorum=allowed_quorum,
         market_contexts=market_contexts,
     )
+    microboost_continuation_entry = _continuation_entry_payload(microboost_summary, allowed_quorum)
     microboost_counter_entry = _counter_entry_payload(microboost_summary)
 
     return {
@@ -372,6 +375,7 @@ def analyze_signal_throttle_events(
             for block in ranked_microboost_blocks[:10]
         ],
         "microboost_summary": microboost_summary,
+        "microboost_continuation_entry": microboost_continuation_entry,
         "microboost_counter_entry": microboost_counter_entry,
         "allowed_quorum": allowed_quorum,
         "event_counts": event_type_counts,
@@ -1040,11 +1044,33 @@ def _counter_entry_payload(microboost_summary: dict[str, Any]) -> dict[str, Any]
         return None
     result = MicroboostCounterEntryEngine(
         min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+        direct_absorption_enabled=_env_bool("DIRECT_ABSORPTION_VALID_ENABLED", True),
+        direct_absorption_require_theme_alignment=_env_bool("DIRECT_ABSORPTION_REQUIRE_THEME_ALIGNMENT", True),
+        direct_absorption_require_rr=_env_bool("DIRECT_ABSORPTION_REQUIRE_RR", True),
         allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
     ).evaluate(latest)
     payload = result.to_dict()
     latest["counter_entry"] = payload
     microboost_summary["counter_entry"] = payload
+    return payload
+
+
+def _continuation_entry_payload(
+    microboost_summary: dict[str, Any],
+    allowed_quorum: dict[str, Any],
+) -> dict[str, Any] | None:
+    latest = microboost_summary.get("latest")
+    if not isinstance(latest, dict):
+        return None
+    result = MicroboostContinuationEngine(
+        min_density_per_minute=_env_float("SIGNAL_JSON_CONTINUATION_MIN_DENSITY", 25.0),
+        min_duration_seconds=_env_float("SIGNAL_JSON_CONTINUATION_MIN_DURATION_SECONDS", 60.0),
+        min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+        allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
+    ).evaluate(latest, allowed_quorum=allowed_quorum)
+    payload = result.to_dict()
+    latest["continuation_entry"] = payload
+    microboost_summary["continuation_entry"] = payload
     return payload
 
 
