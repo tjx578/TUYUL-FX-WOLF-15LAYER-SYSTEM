@@ -9,6 +9,8 @@ Validates:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock
 
 from context.live_context_bus import LiveContextBus
@@ -124,6 +126,16 @@ class TestCheckWarmup:
 class TestPipelineWarmupGate:
     """Test that the pipeline rejects analysis when warmup is insufficient."""
 
+    def _mock_governance_allow(self) -> SimpleNamespace:
+        from state.governance_gate import GovernanceAction  # noqa: PLC0415
+
+        return SimpleNamespace(
+            action=GovernanceAction.ALLOW,
+            reasons=(),
+            confidence_penalty=0.0,
+            to_dict=lambda: {"action": GovernanceAction.ALLOW.value},
+        )
+
     def _make_pipeline_with_warmup(self, warmup_result: dict):
         """Create a pipeline with a mocked context bus check_warmup."""
         from pipeline.wolf_constitutional_pipeline import (  # noqa: PLC0415
@@ -152,9 +164,10 @@ class TestPipelineWarmupGate:
         assert any("WARMUP_INSUFFICIENT" in e for e in result["errors"])
         assert result["l12_verdict"]["verdict"] == "HOLD"
         # Pipeline should not have attempted any layer analysis
-        pipe._context_bus.check_warmup.assert_called_once()
+        check_warmup = cast(MagicMock, pipe._context_bus.check_warmup)
+        check_warmup.assert_called_once()
 
-    def test_sufficient_warmup_proceeds_to_analysis(self):
+    def test_sufficient_warmup_proceeds_to_analysis(self, monkeypatch):
         """When warmup is OK, the pipeline should proceed past the gate."""
         from pipeline.wolf_constitutional_pipeline import (  # noqa: PLC0415
             WolfConstitutionalPipeline,
@@ -173,16 +186,28 @@ class TestPipelineWarmupGate:
         # Patch _ensure_analyzers to avoid loading real layer modules
         # and mock L1 to return invalid (so it hits the first early exit after warmup)
         pipe._l1 = MagicMock()
+        pipe._l2 = MagicMock()
+        pipe._l3 = MagicMock()
         pipe._l1.analyze.return_value = {"valid": False}
         pipe._ensure_analyzers = MagicMock()
+        monkeypatch.setattr(
+            pipe,
+            "_assess_data_quality",
+            MagicMock(return_value=(0.0, [])),
+        )
+        monkeypatch.setattr(
+            pipe,
+            "_assess_governance",
+            MagicMock(return_value=self._mock_governance_allow()),
+        )
 
         result = pipe.execute("EURUSD")
 
-        # Should have passed warmup and hit L1_CONTEXT_INVALID instead
+        # Should have passed warmup and reached L1 analysis instead.
         assert "WARMUP_INSUFFICIENT" not in result["errors"]
-        assert "L1_CONTEXT_INVALID" in result["errors"]
+        assert any(error.startswith("L1_FAIL") for error in result["errors"])
 
-    def test_safe_mode_bypasses_warmup(self):
+    def test_safe_mode_bypasses_warmup(self, monkeypatch):
         """safe_mode=True should skip the warmup check entirely."""
         pipe = self._make_pipeline_with_warmup(
             {
@@ -195,13 +220,26 @@ class TestPipelineWarmupGate:
 
         # Patch _ensure_analyzers and mock L1
         pipe._l1 = MagicMock()
+        pipe._l2 = MagicMock()
+        pipe._l3 = MagicMock()
         pipe._l1.analyze.return_value = {"valid": False}
         pipe._ensure_analyzers = MagicMock()
+        monkeypatch.setattr(
+            pipe,
+            "_assess_data_quality",
+            MagicMock(return_value=(0.0, [])),
+        )
+        monkeypatch.setattr(
+            pipe,
+            "_assess_governance",
+            MagicMock(return_value=self._mock_governance_allow()),
+        )
 
         result = pipe.execute("EURUSD", system_metrics={"safe_mode": True})
 
         # Warmup check should NOT have been called
-        pipe._context_bus.check_warmup.assert_not_called()
+        check_warmup = cast(MagicMock, pipe._context_bus.check_warmup)
+        check_warmup.assert_not_called()
         # Should have proceeded past warmup to L1
         assert "WARMUP_INSUFFICIENT" not in result["errors"]
 
