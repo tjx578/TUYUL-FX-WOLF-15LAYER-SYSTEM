@@ -348,7 +348,7 @@ def _continuation_levels(
         )
 
     if allow_rr_fallback and entry is not None and sl is not None:
-        fallback_targets = _rr_fallback_targets(direction, entry, sl, min_rr)
+        fallback_targets: list[float | None] = _rr_fallback_targets(direction, entry, sl, min_rr)
         return _level_payload(
             direction=direction,
             entry=entry,
