@@ -22,16 +22,20 @@ class CounterEntryStatus(StrEnum):
     EARLY_SELL_WATCH = "EARLY_SELL_WATCH"
     SELL_ABSORPTION_WATCH = "SELL_ABSORPTION_WATCH"
     SELL_TIMING_WATCH = "SELL_TIMING_WATCH"
+    SELL_TIMING_VALID_BY_DIRECT_ABSORPTION = "SELL_TIMING_VALID_BY_DIRECT_ABSORPTION"
     SELL_TIMING_VALID_BY_ABSORPTION = "SELL_TIMING_VALID_BY_ABSORPTION"
     SELL_TIMING_VALID = "SELL_TIMING_VALID"
     NANO_ABSORPTION_BUY_WATCH = "NANO_ABSORPTION_BUY_WATCH"
     EARLY_BUY_WATCH = "EARLY_BUY_WATCH"
     BUY_ABSORPTION_WATCH = "BUY_ABSORPTION_WATCH"
     BUY_TIMING_WATCH = "BUY_TIMING_WATCH"
+    BUY_TIMING_VALID_BY_DIRECT_ABSORPTION = "BUY_TIMING_VALID_BY_DIRECT_ABSORPTION"
     BUY_TIMING_VALID_BY_ABSORPTION = "BUY_TIMING_VALID_BY_ABSORPTION"
     BUY_TIMING_VALID = "BUY_TIMING_VALID"
     BREAKOUT_CONTINUATION_BUY = "BREAKOUT_CONTINUATION_BUY"
     BREAKDOWN_CONTINUATION_SELL = "BREAKDOWN_CONTINUATION_SELL"
+    BUY_BREAKOUT_CONTINUATION_VALID = "BUY_BREAKOUT_CONTINUATION_VALID"
+    SELL_BREAKDOWN_CONTINUATION_VALID = "SELL_BREAKDOWN_CONTINUATION_VALID"
 
 
 @dataclass(frozen=True)
@@ -98,6 +102,24 @@ class MicroboostCounterEntryResult:
     tp2_rr: float | None = None
     tp3_rr: float | None = None
     tp4_rr: float | None = None
+    confirmation_policy: str | None = None
+    requires_m15_close: bool | None = None
+    direct_valid_reason: str | None = None
+    pending_decision_id: str | None = None
+    theme_alignment: str | None = None
+    structure_ready: bool | None = None
+    rr_to_valid_target: float | None = None
+    m15_confirmation_status: str | None = None
+    breakout_reclaim_level: float | None = None
+    support_reclaim_level: float | None = None
+    decision_watch_type: str | None = None
+    buy_condition: str | None = None
+    sell_condition: str | None = None
+    pullback_buy_zone: list[float] | None = None
+    breakout_buy_zone: list[float] | None = None
+    sell_rejection_zone: list[float] | None = None
+    key_resistance: float | None = None
+    key_support: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -118,8 +140,11 @@ class MicroboostCounterEntryEngine:
         nano_max_stall_pips: float = 1.0,
         timing_watch_min_seconds: float = 60.0,
         timing_valid_min_seconds: float = 180.0,
-        absorption_valid_density_per_minute: float = 20.0,
+        absorption_valid_density_per_minute: float = 15.0,
         absorption_valid_max_stall_pips: float = 2.0,
+        direct_absorption_enabled: bool = True,
+        direct_absorption_require_theme_alignment: bool = True,
+        direct_absorption_require_rr: bool = True,
         min_rr_valid: float = 2.5,
         allow_rr_fallback: bool = True,
     ) -> None:
@@ -132,6 +157,9 @@ class MicroboostCounterEntryEngine:
         self.timing_valid_min_seconds = timing_valid_min_seconds
         self.absorption_valid_density_per_minute = absorption_valid_density_per_minute
         self.absorption_valid_max_stall_pips = absorption_valid_max_stall_pips
+        self.direct_absorption_enabled = direct_absorption_enabled
+        self.direct_absorption_require_theme_alignment = direct_absorption_require_theme_alignment
+        self.direct_absorption_require_rr = direct_absorption_require_rr
         self.min_rr_valid = min_rr_valid
         self.allow_rr_fallback = allow_rr_fallback
 
@@ -181,6 +209,7 @@ class MicroboostCounterEntryEngine:
             "duration_seconds": duration_seconds,
             "duration_minutes": round(duration_seconds / 60.0, 2) if duration_seconds is not None else None,
             "price_delta_pips": price_delta_pips,
+            "theme_alignment": _theme_alignment_text(market),
         }
 
         if not market_context_applied:
@@ -256,14 +285,47 @@ class MicroboostCounterEntryEngine:
     ) -> MicroboostCounterEntryResult:
         m15_close_above_resistance = _optional_bool(_field(market, "m15_close_above_resistance", None))
         if m15_close_above_resistance is True:
+            breakout_levels = _breakout_continuation_levels(
+                direction="BUY",
+                entry=entry_reference,
+                pip_value=pip_value,
+                min_rr=self.min_rr_valid,
+            )
             return self._result(
-                enabled=False,
-                status=CounterEntryStatus.BREAKOUT_CONTINUATION_BUY,
+                enabled=True,
+                status=CounterEntryStatus.BUY_BREAKOUT_CONTINUATION_VALID,
                 candidate_direction="BUY",
-                final_direction="WAIT",
-                direction_status="BREAKOUT_BLOCKS_COUNTER_SELL",
-                action="WAIT_RETEST_BUY",
-                reason="m15_close_above_resistance_blocks_counter_sell",
+                validated_direction="BUY",
+                final_direction="BUY",
+                direction_status="M15_BREAKOUT_CONFIRMED",
+                action="BUY_BREAKOUT_RETEST",
+                reason="M15 close confirmed a breakout above resistance; counter-sell watch is invalidated.",
+                sl_tight=breakout_levels["sl_tight"],
+                sl_safe=breakout_levels["sl_safe"],
+                tp1=breakout_levels["tp1"],
+                tp2=breakout_levels["tp2"],
+                tp3=breakout_levels["tp3"],
+                tp4=breakout_levels["tp4"],
+                rr_to_tp1_tight=breakout_levels["tp1_rr"],
+                rr_to_tp2_tight=breakout_levels["tp2_rr"],
+                rr_to_tp3_tight=breakout_levels["tp3_rr"],
+                rr_status="VALID",
+                confidence_bucket="A_BREAKOUT_CONTINUATION_VALID",
+                invalidation="M15 close back below breakout zone",
+                trade_plan=breakout_levels["trade_plan"],
+                target_mode="PROVISIONAL_RR_FALLBACK",
+                tp_status="VALID_FROM_TP3",
+                tp_missing_reason="breakout_structure_target_not_required_for_trigger",
+                structure_targets_available=False,
+                tradeplan_context_ready=False,
+                valid_for_execution=True,
+                min_rr_required=self.min_rr_valid,
+                tp_min_rr=breakout_levels["tp_min_rr"],
+                tp_min_rr_value=self.min_rr_valid,
+                tp1_rr=breakout_levels["tp1_rr"],
+                tp2_rr=breakout_levels["tp2_rr"],
+                tp3_rr=breakout_levels["tp3_rr"],
+                tp4_rr=breakout_levels["tp4_rr"],
                 **base,
             )
 
@@ -293,7 +355,8 @@ class MicroboostCounterEntryEngine:
             and entry_reference is not None
             and m15_close < entry_reference
         )
-        m15_counter_confirmation = rejection or minor_break or close_below_signal
+        closed_without_buy_breakout = m15_close is not None
+        m15_counter_confirmation = rejection or minor_break or close_below_signal or closed_without_buy_breakout
         status = self._sell_watch_status(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -304,6 +367,7 @@ class MicroboostCounterEntryEngine:
         direction_status = "MICROBOOST_COUNTER_ENTRY_WATCH"
         action = "WAIT_REJECTION_OR_MINOR_SUPPORT_BREAK"
         levels = _sell_levels(market, entry_reference, pip_value)
+        decision_fields = _resistance_decision_fields(market, levels, entry_reference)
         target_result = _build_target_result(
             direction="SELL",
             symbol=str(base.get("symbol") or ""),
@@ -323,8 +387,19 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
+        direct_absorption = self._direct_absorption_valid(
+            direction="SELL",
+            market=market,
+            target_result=target_result,
+            absorption_valid=absorption_valid,
+        )
         can_promote = bool(target_result["structure_rr_valid"]) and m15_counter_confirmation
-        if can_promote:
+        if direct_absorption:
+            status = CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION
+            final_direction = "SELL"
+            direction_status = "MICROBOOST_DIRECT_ABSORPTION_VALIDATED"
+            action = "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
+        elif can_promote:
             status = CounterEntryStatus.SELL_TIMING_VALID
             final_direction = "SELL"
             direction_status = "MICROBOOST_COUNTER_ENTRY_VALIDATED"
@@ -373,6 +448,7 @@ class MicroboostCounterEntryEngine:
             requires_rejection_or_breakdown=status
             not in {
                 CounterEntryStatus.SELL_TIMING_VALID,
+                CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION,
                 CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION,
             },
             confidence_bucket=_confidence_bucket(status, target_result["selected_rr"], self.min_rr_valid),
@@ -385,7 +461,7 @@ class MicroboostCounterEntryEngine:
             resistance_ladder_ready=_optional_bool(_field(market, "resistance_ladder_ready", None)),
             structure_targets_available=target_result["structure_targets_available"],
             tradeplan_context_ready=bool(target_result["structure_rr_valid"]),
-            valid_for_execution=can_promote,
+            valid_for_execution=direct_absorption or can_promote,
             min_rr_required=self.min_rr_valid,
             tp_min_rr=target_result["tp_min_rr"],
             tp_min_rr_value=target_result["tp_min_rr_value"],
@@ -393,6 +469,39 @@ class MicroboostCounterEntryEngine:
             tp2_rr=target_result["tp2_rr"],
             tp3_rr=target_result["tp3_rr"],
             tp4_rr=target_result["tp4_rr"],
+            confirmation_policy=(
+                "DIRECT_ABSORPTION_NO_M15_WAIT"
+                if direct_absorption
+                else ("M15_CLOSE_CONFIRMED" if m15_counter_confirmation else "M15_CLOSE_REQUIRED")
+            ),
+            requires_m15_close=not (direct_absorption or m15_counter_confirmation),
+            direct_valid_reason=(
+                "mature_absorption_with_theme_structure_and_rr"
+                if direct_absorption
+                else None
+            ),
+            pending_decision_id=None if (direct_absorption or m15_counter_confirmation) else _pending_decision_id(base),
+            structure_ready=bool(target_result["structure_rr_valid"]),
+            rr_to_valid_target=target_result["selected_rr"],
+            m15_confirmation_status=(
+                "DIRECT_ABSORPTION_CONFIRMED"
+                if direct_absorption
+                else (
+                    "BUY_BREAKOUT_CONFIRMED"
+                    if m15_close_above_resistance is True
+                    else ("SELL_CONFIRMED" if m15_counter_confirmation else "PENDING_M15_CLOSE")
+                )
+            ),
+            breakout_reclaim_level=decision_fields["key_resistance"],
+            support_reclaim_level=decision_fields["key_support"],
+            decision_watch_type=decision_fields["decision_watch_type"],
+            buy_condition=decision_fields["buy_condition"],
+            sell_condition=decision_fields["sell_condition"],
+            pullback_buy_zone=decision_fields["pullback_buy_zone"],
+            breakout_buy_zone=decision_fields["breakout_buy_zone"],
+            sell_rejection_zone=decision_fields["sell_rejection_zone"],
+            key_resistance=decision_fields["key_resistance"],
+            key_support=decision_fields["key_support"],
             **base,
         )
 
@@ -411,14 +520,47 @@ class MicroboostCounterEntryEngine:
     ) -> MicroboostCounterEntryResult:
         m15_close_below_support = _optional_bool(_field(market, "m15_close_below_support", None))
         if m15_close_below_support is True:
+            breakdown_levels = _breakout_continuation_levels(
+                direction="SELL",
+                entry=entry_reference,
+                pip_value=pip_value,
+                min_rr=self.min_rr_valid,
+            )
             return self._result(
-                enabled=False,
-                status=CounterEntryStatus.BREAKDOWN_CONTINUATION_SELL,
+                enabled=True,
+                status=CounterEntryStatus.SELL_BREAKDOWN_CONTINUATION_VALID,
                 candidate_direction="SELL",
-                final_direction="WAIT",
-                direction_status="BREAKDOWN_BLOCKS_COUNTER_BUY",
-                action="WAIT_RETEST_SELL",
-                reason="m15_close_below_support_blocks_counter_buy",
+                validated_direction="SELL",
+                final_direction="SELL",
+                direction_status="M15_BREAKDOWN_CONFIRMED",
+                action="SELL_BREAKDOWN_RETEST",
+                reason="M15 close confirmed a breakdown below support; counter-buy watch is invalidated.",
+                sl_tight=breakdown_levels["sl_tight"],
+                sl_safe=breakdown_levels["sl_safe"],
+                tp1=breakdown_levels["tp1"],
+                tp2=breakdown_levels["tp2"],
+                tp3=breakdown_levels["tp3"],
+                tp4=breakdown_levels["tp4"],
+                rr_to_tp1_tight=breakdown_levels["tp1_rr"],
+                rr_to_tp2_tight=breakdown_levels["tp2_rr"],
+                rr_to_tp3_tight=breakdown_levels["tp3_rr"],
+                rr_status="VALID",
+                confidence_bucket="A_BREAKDOWN_CONTINUATION_VALID",
+                invalidation="M15 close back above breakdown zone",
+                trade_plan=breakdown_levels["trade_plan"],
+                target_mode="PROVISIONAL_RR_FALLBACK",
+                tp_status="VALID_FROM_TP3",
+                tp_missing_reason="breakdown_structure_target_not_required_for_trigger",
+                structure_targets_available=False,
+                tradeplan_context_ready=False,
+                valid_for_execution=True,
+                min_rr_required=self.min_rr_valid,
+                tp_min_rr=breakdown_levels["tp_min_rr"],
+                tp_min_rr_value=self.min_rr_valid,
+                tp1_rr=breakdown_levels["tp1_rr"],
+                tp2_rr=breakdown_levels["tp2_rr"],
+                tp3_rr=breakdown_levels["tp3_rr"],
+                tp4_rr=breakdown_levels["tp4_rr"],
                 **base,
             )
 
@@ -448,7 +590,8 @@ class MicroboostCounterEntryEngine:
             and entry_reference is not None
             and m15_close > entry_reference
         )
-        m15_counter_confirmation = rejection or minor_break or close_above_signal
+        closed_without_sell_breakdown = m15_close is not None
+        m15_counter_confirmation = rejection or minor_break or close_above_signal or closed_without_sell_breakdown
         status = self._buy_watch_status(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -459,6 +602,7 @@ class MicroboostCounterEntryEngine:
         direction_status = "MICROBOOST_COUNTER_ENTRY_WATCH"
         action = "WAIT_REJECTION_OR_MINOR_RESISTANCE_BREAK"
         levels = _buy_levels(market, entry_reference, pip_value)
+        decision_fields = _support_decision_fields(market, levels, entry_reference)
         target_result = _build_target_result(
             direction="BUY",
             symbol=str(base.get("symbol") or ""),
@@ -478,8 +622,19 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
+        direct_absorption = self._direct_absorption_valid(
+            direction="BUY",
+            market=market,
+            target_result=target_result,
+            absorption_valid=absorption_valid,
+        )
         can_promote = bool(target_result["structure_rr_valid"]) and m15_counter_confirmation
-        if can_promote:
+        if direct_absorption:
+            status = CounterEntryStatus.BUY_TIMING_VALID_BY_DIRECT_ABSORPTION
+            final_direction = "BUY"
+            direction_status = "MICROBOOST_DIRECT_ABSORPTION_VALIDATED"
+            action = "BUY_AT_SIGNAL_VALID_PRICE_OR_RETEST"
+        elif can_promote:
             status = CounterEntryStatus.BUY_TIMING_VALID
             final_direction = "BUY"
             direction_status = "MICROBOOST_COUNTER_ENTRY_VALIDATED"
@@ -527,6 +682,7 @@ class MicroboostCounterEntryEngine:
             requires_rejection_or_breakdown=status
             not in {
                 CounterEntryStatus.BUY_TIMING_VALID,
+                CounterEntryStatus.BUY_TIMING_VALID_BY_DIRECT_ABSORPTION,
                 CounterEntryStatus.BUY_TIMING_VALID_BY_ABSORPTION,
             },
             confidence_bucket=_confidence_bucket(status, target_result["selected_rr"], self.min_rr_valid),
@@ -539,7 +695,7 @@ class MicroboostCounterEntryEngine:
             resistance_ladder_ready=target_result["resistance_ladder_ready"],
             structure_targets_available=target_result["structure_targets_available"],
             tradeplan_context_ready=bool(target_result["structure_rr_valid"]),
-            valid_for_execution=can_promote,
+            valid_for_execution=direct_absorption or can_promote,
             min_rr_required=self.min_rr_valid,
             tp_min_rr=target_result["tp_min_rr"],
             tp_min_rr_value=target_result["tp_min_rr_value"],
@@ -547,6 +703,39 @@ class MicroboostCounterEntryEngine:
             tp2_rr=target_result["tp2_rr"],
             tp3_rr=target_result["tp3_rr"],
             tp4_rr=target_result["tp4_rr"],
+            confirmation_policy=(
+                "DIRECT_ABSORPTION_NO_M15_WAIT"
+                if direct_absorption
+                else ("M15_CLOSE_CONFIRMED" if m15_counter_confirmation else "M15_CLOSE_REQUIRED")
+            ),
+            requires_m15_close=not (direct_absorption or m15_counter_confirmation),
+            direct_valid_reason=(
+                "mature_absorption_with_theme_structure_and_rr"
+                if direct_absorption
+                else None
+            ),
+            pending_decision_id=None if (direct_absorption or m15_counter_confirmation) else _pending_decision_id(base),
+            structure_ready=bool(target_result["structure_rr_valid"]),
+            rr_to_valid_target=target_result["selected_rr"],
+            m15_confirmation_status=(
+                "DIRECT_ABSORPTION_CONFIRMED"
+                if direct_absorption
+                else (
+                    "SELL_BREAKDOWN_CONFIRMED"
+                    if m15_close_below_support is True
+                    else ("BUY_CONFIRMED" if m15_counter_confirmation else "PENDING_M15_CLOSE")
+                )
+            ),
+            breakout_reclaim_level=decision_fields["key_resistance"],
+            support_reclaim_level=decision_fields["key_support"],
+            decision_watch_type=decision_fields["decision_watch_type"],
+            buy_condition=decision_fields["buy_condition"],
+            sell_condition=decision_fields["sell_condition"],
+            pullback_buy_zone=decision_fields["pullback_buy_zone"],
+            breakout_buy_zone=decision_fields["breakout_buy_zone"],
+            sell_rejection_zone=decision_fields["sell_rejection_zone"],
+            key_resistance=decision_fields["key_resistance"],
+            key_support=decision_fields["key_support"],
             **base,
         )
 
@@ -634,6 +823,22 @@ class MicroboostCounterEntryEngine:
             return False
         return price_delta_pips is not None and price_delta_pips <= self.absorption_valid_max_stall_pips
 
+    def _direct_absorption_valid(
+        self,
+        *,
+        direction: str,
+        market: Any | None,
+        target_result: dict[str, Any],
+        absorption_valid: bool,
+    ) -> bool:
+        if not self.direct_absorption_enabled or not absorption_valid:
+            return False
+        if self.direct_absorption_require_rr and not bool(target_result["structure_rr_valid"]):
+            return False
+        return not (
+            self.direct_absorption_require_theme_alignment and not _theme_supports_direction(market, direction)
+        )
+
 
 def _field(source: Any, name: str, default: Any = None) -> Any:
     if source is None:
@@ -648,6 +853,48 @@ def _field(source: Any, name: str, default: Any = None) -> Any:
             return snapshot.get(name, default)
         return default
     return getattr(source, name, default)
+
+
+def _pending_decision_id(base: dict[str, Any]) -> str | None:
+    symbol = str(base.get("symbol") or "").upper()
+    cluster_id = _optional_str(base.get("cluster_id"))
+    if not symbol:
+        return None
+    return f"{symbol}_{cluster_id}_M15_DECISION" if cluster_id else f"{symbol}_M15_DECISION"
+
+
+def _theme_alignment_text(market: Any | None) -> str | None:
+    for name in ("counter_entry_theme_alignment", "theme_alignment"):
+        text = _optional_str(_field(market, name, None))
+        if text:
+            return text.upper()
+    for name in ("market_bias", "trend_direction"):
+        direction = _normalize_direction(_field(market, name, None))
+        if direction:
+            return f"{direction}_BIAS"
+    aligned = _optional_bool(_field(market, "theme_aligned", None))
+    if aligned is True:
+        return "THEME_ALIGNED"
+    if aligned is False:
+        return "THEME_MISMATCH"
+    return None
+
+
+def _theme_supports_direction(market: Any | None, direction: str) -> bool:
+    direction = direction.upper()
+    for name in ("counter_entry_theme_alignment", "theme_alignment"):
+        text = str(_field(market, name, "") or "").upper()
+        if not text:
+            continue
+        if direction == "SELL" and any(token in text for token in ("SELL", "BEAR", "SHORT", "CAD_WEAKNESS")):
+            return True
+        if direction == "BUY" and any(token in text for token in ("BUY", "BULL", "LONG", "CAD_STRENGTH")):
+            return True
+
+    for name in ("market_bias", "trend_direction"):
+        if _normalize_direction(_field(market, name, None)) == direction:
+            return True
+    return False
 
 
 def _market_context_applied(cluster: Any, market: Any | None) -> bool:
@@ -772,6 +1019,143 @@ def _buy_levels(market: Any | None, entry_reference: float | None, pip_value: fl
     }
 
 
+def _resistance_decision_fields(
+    market: Any | None,
+    levels: dict[str, float | None],
+    entry_reference: float | None,
+) -> dict[str, Any]:
+    key_resistance = _round_price(
+        _optional_float(_field(market, "key_resistance", levels.get("resistance_high") or entry_reference))
+    )
+    key_support = _round_price(
+        _optional_float(
+            _field(
+                market,
+                "key_support",
+                _field(market, "minor_support", _field(market, "major_support", _field(market, "main_support", None))),
+            )
+        )
+    )
+    pullback_buy_zone = _zone_from_fields(
+        market,
+        "buy_pullback_low",
+        "buy_pullback_high",
+        fallback_low=_optional_float(_field(market, "support_high", None)),
+        fallback_high=_optional_float(_field(market, "minor_support", None)),
+    )
+    breakout_buy_zone = _zone_from_fields(
+        market,
+        "breakout_retest_low",
+        "breakout_retest_high",
+        fallback_low=levels.get("resistance_low"),
+        fallback_high=key_resistance,
+    )
+    sell_rejection_zone = _zone_from_fields(
+        market,
+        "sell_rejection_low",
+        "sell_rejection_high",
+        fallback_low=levels.get("resistance_low"),
+        fallback_high=key_resistance,
+    )
+    return {
+        "decision_watch_type": "BREAKOUT_OR_REJECTION_WATCH",
+        "key_resistance": key_resistance,
+        "key_support": key_support,
+        "pullback_buy_zone": pullback_buy_zone,
+        "breakout_buy_zone": breakout_buy_zone,
+        "sell_rejection_zone": sell_rejection_zone,
+        "buy_condition": _condition_text(
+            "BUY valid only after pullback support hold and reclaim, or M15 close above key resistance",
+            pullback_buy_zone,
+            key_resistance,
+        ),
+        "sell_condition": _condition_text(
+            "SELL valid only after failed breakout, bearish rejection, or M15 close below key support",
+            sell_rejection_zone,
+            key_support,
+        ),
+    }
+
+
+def _support_decision_fields(
+    market: Any | None,
+    levels: dict[str, float | None],
+    entry_reference: float | None,
+) -> dict[str, Any]:
+    key_support = _round_price(
+        _optional_float(_field(market, "key_support", levels.get("support_low") or entry_reference))
+    )
+    key_resistance = _round_price(
+        _optional_float(
+            _field(market, "key_resistance", _field(market, "minor_resistance", _field(market, "main_resistance", None)))
+        )
+    )
+    pullback_buy_zone = _zone_from_fields(
+        market,
+        "buy_pullback_low",
+        "buy_pullback_high",
+        fallback_low=levels.get("support_low"),
+        fallback_high=levels.get("support_high"),
+    )
+    breakout_buy_zone = _zone_from_fields(
+        market,
+        "breakout_retest_low",
+        "breakout_retest_high",
+        fallback_low=levels.get("support_high"),
+        fallback_high=key_resistance,
+    )
+    sell_rejection_zone = _zone_from_fields(
+        market,
+        "sell_rejection_low",
+        "sell_rejection_high",
+        fallback_low=key_support,
+        fallback_high=levels.get("support_high"),
+    )
+    return {
+        "decision_watch_type": "BREAKDOWN_OR_RECLAIM_WATCH",
+        "key_resistance": key_resistance,
+        "key_support": key_support,
+        "pullback_buy_zone": pullback_buy_zone,
+        "breakout_buy_zone": breakout_buy_zone,
+        "sell_rejection_zone": sell_rejection_zone,
+        "buy_condition": _condition_text(
+            "BUY valid only after support rejection, reclaim, or M15 close above key resistance",
+            pullback_buy_zone,
+            key_resistance,
+        ),
+        "sell_condition": _condition_text(
+            "SELL valid only after M15 close below key support or breakdown retest hold",
+            sell_rejection_zone,
+            key_support,
+        ),
+    }
+
+
+def _zone_from_fields(
+    market: Any | None,
+    low_name: str,
+    high_name: str,
+    *,
+    fallback_low: float | None = None,
+    fallback_high: float | None = None,
+) -> list[float] | None:
+    low = _optional_float(_field(market, low_name, fallback_low))
+    high = _optional_float(_field(market, high_name, fallback_high))
+    values = [value for value in (low, high) if value is not None]
+    if not values:
+        return None
+    return [_round_price_required(min(values)), _round_price_required(max(values))]
+
+
+def _condition_text(prefix: str, zone: list[float] | None, key_level: float | None) -> str:
+    parts = [prefix]
+    if zone:
+        parts.append(f"zone={zone[0]}-{zone[1]}")
+    if key_level is not None:
+        parts.append(f"key={key_level}")
+    return "; ".join(parts)
+
+
 def _build_target_result(
     *,
     direction: str,
@@ -812,6 +1196,71 @@ def _build_target_result(
         min_rr=min_rr,
         missing_reason=missing_reason,
     )
+
+
+def _breakout_continuation_levels(
+    *,
+    direction: str,
+    entry: float | None,
+    pip_value: float,
+    min_rr: float,
+) -> dict[str, Any]:
+    if entry is None:
+        return {
+            "sl_tight": None,
+            "sl_safe": None,
+            "tp1": None,
+            "tp2": None,
+            "tp3": None,
+            "tp4": None,
+            "tp_min_rr": None,
+            "tp1_rr": None,
+            "tp2_rr": None,
+            "tp3_rr": None,
+            "tp4_rr": None,
+            "trade_plan": {
+                "direction": direction,
+                "entry_mode": f"{direction}_BREAKOUT_RETEST",
+                "target_mode": "PROVISIONAL_RR_FALLBACK",
+                "min_rr_required": min_rr,
+            },
+        }
+
+    risk = pip_value * 12.0
+    safe_risk = pip_value * 20.0
+    sign = 1.0 if direction == "BUY" else -1.0
+    stop_sign = -1.0 if direction == "BUY" else 1.0
+    sl_tight = _round_price(entry + stop_sign * risk)
+    sl_safe = _round_price(entry + stop_sign * safe_risk)
+    tp1 = _round_price(entry + sign * risk)
+    tp2 = _round_price(entry + sign * risk * 2.0)
+    tp3 = _round_price(entry + sign * risk * min_rr)
+    tp4 = _round_price(entry + sign * risk * 3.0)
+    return {
+        "sl_tight": sl_tight,
+        "sl_safe": sl_safe,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+        "tp4": tp4,
+        "tp_min_rr": tp3,
+        "tp1_rr": 1.0,
+        "tp2_rr": 2.0,
+        "tp3_rr": min_rr,
+        "tp4_rr": 3.0,
+        "trade_plan": {
+            "direction": direction,
+            "entry_mode": f"{direction}_BREAKOUT_RETEST",
+            "entry_reference": _round_price(entry),
+            "stop_loss": sl_tight,
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp3": tp3,
+            "tp4": tp4,
+            "target_mode": "PROVISIONAL_RR_FALLBACK",
+            "min_rr_required": min_rr,
+        },
+    }
 
 
 def _structure_targets(direction: str, entry: float | None, levels: dict[str, float | None]) -> list[float]:
@@ -1053,6 +1502,11 @@ def _buy_trade_plan(levels: dict[str, Any], action: str) -> dict[str, Any]:
 
 
 def _sell_reason(status: CounterEntryStatus, density: float | None, price_delta_pips: float | None) -> str:
+    if status == CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION:
+        return (
+            "High-density BUY microboost stalled at main resistance; theme, structure, and RR confirm "
+            "direct counter-sell absorption without waiting for the next M15 close."
+        )
     if status == CounterEntryStatus.SELL_TIMING_VALID:
         return "BUY microboost at main resistance failed to expand; counter-sell timing validated."
     if status == CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION:
@@ -1080,6 +1534,11 @@ def _sell_reason(status: CounterEntryStatus, density: float | None, price_delta_
 
 
 def _buy_reason(status: CounterEntryStatus, density: float | None, price_delta_pips: float | None) -> str:
+    if status == CounterEntryStatus.BUY_TIMING_VALID_BY_DIRECT_ABSORPTION:
+        return (
+            "High-density SELL microboost stalled at main support; theme, structure, and RR confirm "
+            "direct counter-buy absorption without waiting for the next M15 close."
+        )
     if status == CounterEntryStatus.BUY_TIMING_VALID:
         return "SELL microboost at main support failed to expand; counter-buy timing validated."
     if status == CounterEntryStatus.BUY_TIMING_VALID_BY_ABSORPTION:
@@ -1126,7 +1585,12 @@ def _rr_status(
 ) -> str:
     if target_rr_status in {"WATCH_PROVISIONAL", "FAIL_MIN_RR", "INVALID_RISK", "WAIT_TARGET_STRUCTURE"}:
         return target_rr_status
-    if status in {CounterEntryStatus.SELL_TIMING_VALID, CounterEntryStatus.BUY_TIMING_VALID}:
+    if status in {
+        CounterEntryStatus.SELL_TIMING_VALID,
+        CounterEntryStatus.BUY_TIMING_VALID,
+        CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION,
+        CounterEntryStatus.BUY_TIMING_VALID_BY_DIRECT_ABSORPTION,
+    }:
         if selected_rr is not None and selected_rr >= min_rr_valid:
             return "VALID"
         if selected_rr is not None and selected_rr > 0:
@@ -1140,6 +1604,11 @@ def _confidence_bucket(status: CounterEntryStatus, rr_to_tp2: float | None, min_
         if rr_to_tp2 is not None and rr_to_tp2 >= min_rr_valid * 2:
             return "A_COUNTER_ENTRY_VALID"
         return "B_COUNTER_ENTRY_VALID"
+    if status in {
+        CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION,
+        CounterEntryStatus.BUY_TIMING_VALID_BY_DIRECT_ABSORPTION,
+    }:
+        return "A_DIRECT_ABSORPTION_VALID"
     if status in {
         CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION,
         CounterEntryStatus.BUY_TIMING_VALID_BY_ABSORPTION,
