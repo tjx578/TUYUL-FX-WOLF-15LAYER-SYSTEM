@@ -129,6 +129,25 @@ def test_absorption_timing_valid_is_lifecycle_signal_not_final(caplog):
     assert '"emit_reason":"TIMING_VALID_CONDITIONAL"' in caplog.text
 
 
+def test_absorption_watch_emits_without_enabling_generic_watch(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        status="SELL_ABSORPTION_WATCH",
+        action="WAIT_M15_CLOSE_CONFIRMATION",
+        rr_status="WATCH",
+        target_mode="FINAL_MARKET_STRUCTURE",
+    )
+
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"status":"SELL_ABSORPTION_WATCH"' in caplog.text
+    assert '"emit_reason":"ABSORPTION_WATCH"' in caplog.text
+    assert '"signal_quality":"ABSORPTION_WATCH"' in caplog.text
+
+
 def test_absorption_timing_valid_can_be_disabled(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_conditional=False)
     event = _event(
@@ -185,6 +204,22 @@ def test_build_signal_json_event_marks_absorption_as_conditional_quality():
     assert event.signal_quality == "TIMING_VALID_CONDITIONAL"
 
 
+def test_build_signal_json_event_marks_absorption_watch_quality():
+    payload = _event(
+        status="SELL_ABSORPTION_WATCH",
+        action="WAIT_M15_CLOSE_CONFIRMATION",
+        rr_status="WATCH",
+    ).to_dict()
+
+    event = build_signal_json_event(payload)
+
+    assert event is not None
+    assert event.event == "signal_watch_json"
+    assert event.is_final_signal is False
+    assert event.emit_reason == "ABSORPTION_WATCH"
+    assert event.signal_quality == "ABSORPTION_WATCH"
+
+
 def test_final_signal_uses_signal_json_prefix(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
@@ -199,3 +234,59 @@ def test_final_signal_uses_signal_json_prefix(caplog):
     assert emitter.emit(event) is True
     assert "[SignalJSON]" in caplog.text
     assert "[SignalWatchJSON]" not in caplog.text
+
+
+def test_direct_absorption_final_signal_uses_signal_json_prefix(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="AUDCAD_20260518T203308Z",
+        symbol="AUDCAD",
+        status="SELL_TIMING_VALID_BY_DIRECT_ABSORPTION",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+        confirmation_policy="DIRECT_ABSORPTION_NO_M15_WAIT",
+        requires_m15_close=False,
+        direct_valid_reason="mature_absorption_with_theme_structure_and_rr",
+        theme_alignment="STRONG_SELL",
+        structure_ready=True,
+        rr_to_valid_target=4.82,
+    )
+
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalWatchJSON]" not in caplog.text
+    assert '"confirmation_policy":"DIRECT_ABSORPTION_NO_M15_WAIT"' in caplog.text
+    assert '"signal_quality":"DIRECT_ABSORPTION_VALID"' in caplog.text
+
+
+def test_continuation_valid_with_rr_fallback_uses_signal_json_prefix(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260520T024532Z",
+        symbol="USDCAD",
+        signal_family="MICROBOOST_TREND_CONTINUATION",
+        status="BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_SIGNAL_ZONE_OR_RETEST",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=True,
+        allowed_quorum=True,
+        allowed_quorum_streak=3,
+        reclaim_trigger=1.3785,
+        risk_pips=12.0,
+    )
+
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalWatchJSON]" not in caplog.text
+    assert '"signal_family":"MICROBOOST_TREND_CONTINUATION"' in caplog.text
+    assert '"emit_reason":"QUORUM_CONTINUATION_VALID"' in caplog.text
+    assert '"signal_quality":"TREND_CONTINUATION_VALID"' in caplog.text
