@@ -1141,7 +1141,10 @@ def _zone_from_fields(
 ) -> list[float] | None:
     low = _optional_float(_field(market, low_name, fallback_low))
     high = _optional_float(_field(market, high_name, fallback_high))
-    values = [value for value in (low, high) if value is not None]
+    values: list[float] = []
+    for value in (low, high):
+        if value is not None:
+            values.append(value)
     if not values:
         return None
     return [_round_price_required(min(values)), _round_price_required(max(values))]
@@ -1738,4 +1741,8 @@ def _round_price_required(value: float) -> float:
 
 
 def _compact_price_zone(*values: float | None) -> list[float]:
-    return [_round_price_required(value) for value in values if value is not None]
+    compact: list[float] = []
+    for value in values:
+        if value is not None:
+            compact.append(_round_price_required(value))
+    return compact
