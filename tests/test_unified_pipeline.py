@@ -492,7 +492,9 @@ class TestPipelineResult:
             reflective_pass2={"abg_score": 0.85, "pass": 2},
         )
 
-        assert result.reflective["pass"] == 2
+        reflective = result.reflective
+        assert reflective is not None
+        assert reflective["pass"] == 2
 
     def test_reflective_property_fallback_to_pass1(self):
         """When pass2 is None, reflective should return pass1."""
@@ -506,7 +508,9 @@ class TestPipelineResult:
             reflective_pass2=None,
         )
 
-        assert result.reflective["pass"] == 1
+        reflective = result.reflective
+        assert reflective is not None
+        assert reflective["pass"] == 1
 
 
 # ══════════════════════════════════════════════════════════════
