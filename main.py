@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -48,7 +49,6 @@ if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
 
 import uvicorn
 from loguru import logger
-from redis.asyncio import Redis as AsyncRedis
 
 from config.logging_bootstrap import configure_loguru_logging
 from config_loader import get_enabled_symbols
@@ -129,7 +129,7 @@ def _validate_api_key() -> bool:
     return True
 
 
-async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
+async def _sanitize_redis_keys(redis_client: Any) -> None:
     """Delete keys whose Redis type conflicts with what writers/consumers expect.
 
     Delegates to the shared implementation in ``core.redis_consumer_fix``
