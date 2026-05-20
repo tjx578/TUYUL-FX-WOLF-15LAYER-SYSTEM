@@ -53,23 +53,56 @@ def _event(**overrides):
 
 
 def test_signal_json_emits_counter_entry_watch(caplog):
-    emitter = SignalJsonEmitter(enabled=True)
-    event = _event()
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(cluster_id="USDCAD_20260519T145605Z")
 
     assert emitter.emit(event) is True
-    assert "[SignalJSON]" in caplog.text
+    assert "[SignalWatchJSON]" in caplog.text
     assert '"symbol":"USDCAD"' in caplog.text
     assert '"candidate_direction":"SELL"' in caplog.text
     assert '"status":"NANO_ABSORPTION_SELL_WATCH"' in caplog.text
 
 
+def test_signal_json_does_not_emit_watch_by_default(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(cluster_id="USDCAD_20260519T145605Z")
+
+    assert emitter.emit(event) is False
+    assert "[SignalWatchJSON]" not in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+
+
 def test_signal_json_deduplicates_same_event(caplog):
-    emitter = SignalJsonEmitter(enabled=True, dedup_ttl_seconds=300)
-    event = _event()
+    emitter = SignalJsonEmitter(enabled=True, dedup_ttl_seconds=300, emit_watch=True)
+    event = _event(cluster_id="USDCAD_20260519T145605Z")
 
     assert emitter.emit(event) is True
     assert emitter.emit(event) is False
-    assert caplog.text.count("[SignalJSON]") == 1
+    assert caplog.text.count("[SignalWatchJSON]") == 1
+
+
+def test_signal_json_emits_watch_only_on_state_transition(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    first = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        signal_valid_time_utc="2026-05-19T14:56:05Z",
+        effective_ticks=6,
+    )
+    rolling_update = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        signal_valid_time_utc="2026-05-19T14:56:20Z",
+        effective_ticks=10,
+    )
+    promoted = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        status="SELL_TIMING_WATCH",
+        signal_valid_time_utc="2026-05-19T14:56:40Z",
+    )
+
+    assert emitter.emit(first) is True
+    assert emitter.emit(rolling_update) is False
+    assert emitter.emit(promoted) is True
+    assert caplog.text.count("[SignalWatchJSON]") == 2
 
 
 def test_do_not_emit_when_market_context_false():
@@ -81,7 +114,7 @@ def test_do_not_emit_valid_signal_without_rr():
 
 
 def test_build_signal_json_event_from_counter_entry_payload():
-    payload = _event().to_dict()
+    payload = _event(cluster_id="USDCAD_20260519T145605Z").to_dict()
 
     event = build_signal_json_event(payload)
 
@@ -91,3 +124,23 @@ def test_build_signal_json_event_from_counter_entry_payload():
     assert event.entry_reference_price == 1.37696
     assert event.signal_family == "MICROBOOST_COUNTER_ENTRY"
     assert event.validated_direction == "SELL"
+    assert event.cluster_id == "USDCAD_20260519T145605Z"
+    assert event.event == "signal_watch_json"
+    assert event.is_final_signal is False
+    assert event.signal_quality == "WATCH_ONLY"
+
+
+def test_final_signal_uses_signal_json_prefix(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalWatchJSON]" not in caplog.text
