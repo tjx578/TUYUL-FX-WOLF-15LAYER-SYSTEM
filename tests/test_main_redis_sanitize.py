@@ -16,6 +16,16 @@ class _FakeRedis:
     async def keys(self, pattern: str) -> list[str]:
         return self._keys_by_pattern.get(pattern, [])
 
+    async def scan(
+        self,
+        *,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+    ) -> tuple[int, list[str]]:
+        _ = (cursor, count)
+        return 0, self._keys_by_pattern.get(match or "", [])
+
     async def type(self, key: str) -> bytes | str:
         return self._key_types.get(key, "none")
 
