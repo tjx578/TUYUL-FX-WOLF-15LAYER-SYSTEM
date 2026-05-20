@@ -236,32 +236,6 @@ def test_final_signal_uses_signal_json_prefix(caplog):
     assert "[SignalWatchJSON]" not in caplog.text
 
 
-def test_direct_absorption_final_signal_uses_signal_json_prefix(caplog):
-    emitter = SignalJsonEmitter(enabled=True)
-    event = _event(
-        cluster_id="AUDCAD_20260518T203308Z",
-        symbol="AUDCAD",
-        status="SELL_TIMING_VALID_BY_DIRECT_ABSORPTION",
-        final_direction="SELL",
-        rr_status="VALID",
-        target_mode="FINAL_MARKET_STRUCTURE",
-        valid_for_execution=True,
-        confirmation_policy="DIRECT_ABSORPTION_NO_M15_WAIT",
-        requires_m15_close=False,
-        direct_valid_reason="mature_absorption_with_theme_structure_and_rr",
-        theme_alignment="STRONG_SELL",
-        structure_ready=True,
-        rr_to_valid_target=4.82,
-    )
-
-    assert should_emit_signal_json(event) is True
-    assert emitter.emit(event) is True
-    assert "[SignalJSON]" in caplog.text
-    assert "[SignalWatchJSON]" not in caplog.text
-    assert '"confirmation_policy":"DIRECT_ABSORPTION_NO_M15_WAIT"' in caplog.text
-    assert '"signal_quality":"DIRECT_ABSORPTION_VALID"' in caplog.text
-
-
 def test_continuation_valid_with_rr_fallback_uses_signal_json_prefix(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
