@@ -47,28 +47,28 @@ def _env_true(value: str | None) -> bool:
 if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
     load_dotenv(override=False)
 
-import uvicorn
-from loguru import logger
+import uvicorn  # noqa: E402
+from loguru import logger  # noqa: E402
 
-from config.logging_bootstrap import configure_loguru_logging
-from config_loader import get_enabled_symbols
-from core.health_probe import HealthProbe
-from core.startup_validator import validate_engine_startup_async
-from infrastructure.tracing import (
+from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+from config_loader import get_enabled_symbols  # noqa: E402
+from core.health_probe import HealthProbe  # noqa: E402
+from core.startup_validator import validate_engine_startup_async  # noqa: E402
+from infrastructure.tracing import (  # noqa: E402
     instrument_asyncio,
     instrument_httpx,
     instrument_redis,
     instrument_requests,
     setup_tracer,
 )
-from ingest.service_runner import run_ingest_services
-from pipeline import WolfConstitutionalPipeline
-from startup.analysis_loop import analysis_loop
-from startup.candle_seeding import seed_candles_on_startup
-from startup.graceful_shutdown import GracefulShutdown
-from startup.signal_handlers import install_signal_handlers
-from startup.task_supervisor import supervised_task
-from storage.startup import init_persistent_storage, shutdown_persistent_storage
+from ingest.service_runner import run_ingest_services  # noqa: E402
+from pipeline import WolfConstitutionalPipeline  # noqa: E402
+from startup.analysis_loop import analysis_loop  # noqa: E402
+from startup.candle_seeding import seed_candles_on_startup  # noqa: E402
+from startup.graceful_shutdown import GracefulShutdown  # noqa: E402
+from startup.signal_handlers import install_signal_handlers  # noqa: E402
+from startup.task_supervisor import supervised_task  # noqa: E402
+from storage.startup import init_persistent_storage, shutdown_persistent_storage  # noqa: E402
 
 try:
     from engines.v11 import V11PipelineHook
