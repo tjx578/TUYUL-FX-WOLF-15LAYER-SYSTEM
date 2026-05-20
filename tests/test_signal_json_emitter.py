@@ -105,6 +105,29 @@ def test_signal_json_emits_watch_only_on_state_transition(caplog):
     assert caplog.text.count("[SignalWatchJSON]") == 2
 
 
+def test_absorption_timing_valid_is_lifecycle_signal_not_final(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="CADJPY_20260519T061520Z",
+        symbol="CADJPY",
+        status="SELL_TIMING_VALID_BY_ABSORPTION",
+        final_direction="WAIT",
+        action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        signal_valid_price=115.7055,
+        entry_reference_price=115.7055,
+        entry_zone=[115.7055, 115.7055],
+        rr_status="WATCH_PROVISIONAL",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=False,
+    )
+
+    assert should_emit_signal_json(event, emit_watch=True) is True
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"status":"SELL_TIMING_VALID_BY_ABSORPTION"' in caplog.text
+
+
 def test_do_not_emit_when_market_context_false():
     assert should_emit_signal_json(_event(market_context_applied=False)) is False
 
@@ -128,6 +151,22 @@ def test_build_signal_json_event_from_counter_entry_payload():
     assert event.event == "signal_watch_json"
     assert event.is_final_signal is False
     assert event.signal_quality == "WATCH_ONLY"
+
+
+def test_build_signal_json_event_marks_absorption_as_conditional_quality():
+    payload = _event(
+        status="SELL_TIMING_VALID_BY_ABSORPTION",
+        rr_status="WATCH_PROVISIONAL",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=False,
+    ).to_dict()
+
+    event = build_signal_json_event(payload)
+
+    assert event is not None
+    assert event.event == "signal_watch_json"
+    assert event.is_final_signal is False
+    assert event.signal_quality == "TIMING_VALID_CONDITIONAL"
 
 
 def test_final_signal_uses_signal_json_prefix(caplog):
