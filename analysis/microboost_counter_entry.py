@@ -37,6 +37,7 @@ class MicroboostCounterEntryResult:
     symbol: str
     signal_type: str
     signal_family: str
+    cluster_id: str | None
     raw_direction: str | None
     candidate_direction: str | None
     validated_direction: str | None
@@ -131,6 +132,7 @@ class MicroboostCounterEntryEngine:
         raw_direction = _normalize_direction(_field(cluster, "raw_direction", _field(cluster, "direction", None)))
         phase_priced = _optional_str(_field(cluster, "phase_priced", None))
         phase_unpriced = str(_field(cluster, "phase_unpriced", "") or "").upper()
+        cluster_id = _optional_str(_field(cluster, "cluster_id", None))
         density = _optional_float(
             _field(cluster, "effective_density", _field(cluster, "effective_density_per_minute", None))
         )
@@ -152,6 +154,7 @@ class MicroboostCounterEntryEngine:
 
         base = {
             "symbol": symbol,
+            "cluster_id": cluster_id,
             "raw_direction": raw_direction,
             "phase_unpriced": phase_unpriced or None,
             "phase_priced": phase_priced,
@@ -548,6 +551,7 @@ class MicroboostCounterEntryEngine:
     @staticmethod
     def _result(**kwargs: Any) -> MicroboostCounterEntryResult:
         kwargs.setdefault("signal_family", "MICROBOOST_COUNTER_ENTRY")
+        kwargs.setdefault("cluster_id", None)
         kwargs.setdefault("validated_direction", kwargs.get("candidate_direction"))
         return MicroboostCounterEntryResult(signal_type="MICROBOOST_COUNTER_ENTRY", **kwargs)
 
