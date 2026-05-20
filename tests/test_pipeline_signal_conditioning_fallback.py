@@ -252,16 +252,20 @@ def test_pipeline_fallback_uses_candle_conditioned_path(monkeypatch: pytest.Monk
         }
     )
 
-    pipe._ensure_analyzers = lambda: None
-    pipe._ensure_governance_engines = lambda: None
-    pipe._get_l13_engine = lambda: _L13()
-    pipe._get_l15_engine = lambda: _L15()
-    pipe._build_l14_json = lambda **kwargs: {}
-    pipe._compute_vault_sync = lambda synthesis, l12_verdict, reflective: {
-        "execution_rights": "GRANTED",
-        "vault_sync": 1.0,
-        "meta_integrity": 1.0,
-    }
+    monkeypatch.setattr(pipe, "_ensure_analyzers", lambda: None)
+    monkeypatch.setattr(pipe, "_ensure_governance_engines", lambda: None)
+    monkeypatch.setattr(pipe, "_get_l13_engine", lambda: _L13())
+    monkeypatch.setattr(pipe, "_get_l15_engine", lambda: _L15())
+    monkeypatch.setattr(pipe, "_build_l14_json", lambda **kwargs: {})
+    monkeypatch.setattr(
+        pipe,
+        "_compute_vault_sync",
+        lambda synthesis, l12_verdict, reflective: {
+            "execution_rights": "GRANTED",
+            "vault_sync": 1.0,
+            "meta_integrity": 1.0,
+        },
+    )
 
     result = pipe.execute("EURUSD")
 
