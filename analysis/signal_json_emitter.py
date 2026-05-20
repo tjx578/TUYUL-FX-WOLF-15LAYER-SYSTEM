@@ -20,10 +20,12 @@ EMITTABLE_SIGNAL_STATUSES = {
     "NANO_ABSORPTION_SELL_WATCH",
     "EARLY_SELL_WATCH",
     "SELL_TIMING_WATCH",
+    "SELL_TIMING_VALID_BY_ABSORPTION",
     "SELL_TIMING_VALID",
     "NANO_ABSORPTION_BUY_WATCH",
     "EARLY_BUY_WATCH",
     "BUY_TIMING_WATCH",
+    "BUY_TIMING_VALID_BY_ABSORPTION",
     "BUY_TIMING_VALID",
     "LATE_MICROBOOST_EXIT_ALERT",
     "PROTECT_PROFIT_ALERT",
@@ -46,9 +48,11 @@ WATCH_SIGNAL_STATUSES = {
     "NANO_ABSORPTION_SELL_WATCH",
     "EARLY_SELL_WATCH",
     "SELL_TIMING_WATCH",
+    "SELL_TIMING_VALID_BY_ABSORPTION",
     "NANO_ABSORPTION_BUY_WATCH",
     "EARLY_BUY_WATCH",
     "BUY_TIMING_WATCH",
+    "BUY_TIMING_VALID_BY_ABSORPTION",
     "MICROBOOST_COUNTER_ENTRY_WATCH",
 }
 
@@ -329,6 +333,8 @@ def _signal_quality(payload: dict[str, Any]) -> str:
     if _is_final_payload(payload):
         return "TRADEPLAN_VALID"
     status = str(payload.get("status") or "")
+    if status.endswith("_BY_ABSORPTION"):
+        return "TIMING_VALID_CONDITIONAL"
     if _is_watch_status(status):
         return "WATCH_ONLY"
     return "CANDIDATE"
