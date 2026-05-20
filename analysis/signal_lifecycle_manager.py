@@ -233,7 +233,10 @@ def _entry_zone(value: Any) -> list[float] | None:
     if not isinstance(value, list):
         return None
     values = [_optional_float(item) for item in value]
-    compact = [item for item in values if item is not None]
+    compact: list[float] = []
+    for item in values:
+        if item is not None:
+            compact.append(item)
     return compact or None
 
 
