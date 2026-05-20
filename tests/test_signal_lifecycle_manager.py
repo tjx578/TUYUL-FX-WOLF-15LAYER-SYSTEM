@@ -88,7 +88,9 @@ def test_confirmed_opposing_sell_supersedes_active_buy_as_reversal():
     assert follow_up["linked_previous_signal"] == active["signal_id"]
     assert follow_up["previous_signal_status"] == "SUPERSEDED"
     assert follow_up["lifecycle_status"] == "SUPERSEDES_ACTIVE_BUY"
-    assert manager.active_signal("USDCAD")["direction"] == "SELL"
+    current_active = manager.active_signal("USDCAD")
+    assert current_active is not None
+    assert current_active["direction"] == "SELL"
 
 
 def test_absorption_timing_valid_can_supersede_active_buy_when_execution_valid():
