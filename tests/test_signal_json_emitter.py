@@ -106,7 +106,7 @@ def test_signal_json_emits_watch_only_on_state_transition(caplog):
 
 
 def test_absorption_timing_valid_is_lifecycle_signal_not_final(caplog):
-    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    emitter = SignalJsonEmitter(enabled=True)
     event = _event(
         cluster_id="CADJPY_20260519T061520Z",
         symbol="CADJPY",
@@ -121,11 +121,27 @@ def test_absorption_timing_valid_is_lifecycle_signal_not_final(caplog):
         valid_for_execution=False,
     )
 
-    assert should_emit_signal_json(event, emit_watch=True) is True
+    assert should_emit_signal_json(event) is True
     assert emitter.emit(event) is True
     assert "[SignalWatchJSON]" in caplog.text
     assert "[SignalJSON]" not in caplog.text
     assert '"status":"SELL_TIMING_VALID_BY_ABSORPTION"' in caplog.text
+    assert '"emit_reason":"TIMING_VALID_CONDITIONAL"' in caplog.text
+
+
+def test_absorption_timing_valid_can_be_disabled(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_conditional=False)
+    event = _event(
+        cluster_id="CADJPY_20260519T061520Z",
+        symbol="CADJPY",
+        status="SELL_TIMING_VALID_BY_ABSORPTION",
+        rr_status="WATCH_PROVISIONAL",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+    )
+
+    assert should_emit_signal_json(event, emit_conditional=False) is False
+    assert emitter.emit(event) is False
+    assert "[SignalWatchJSON]" not in caplog.text
 
 
 def test_do_not_emit_when_market_context_false():

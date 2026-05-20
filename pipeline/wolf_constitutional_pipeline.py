@@ -365,6 +365,7 @@ class WolfConstitutionalPipeline:
             watch_prefix=os.getenv("SIGNAL_WATCH_JSON_LOG_PREFIX", "[SignalWatchJSON]"),
             dedup_ttl_seconds=int(self._parse_env_float("SIGNAL_JSON_DEDUP_TTL_SECONDS", 300.0)),
             emit_watch=os.getenv("SIGNAL_JSON_EMIT_WATCH", "false").strip().lower() == "true",
+            emit_conditional=os.getenv("SIGNAL_JSON_EMIT_CONDITIONAL", "true").strip().lower() == "true",
             emit_valid=os.getenv("SIGNAL_JSON_EMIT_VALID", "true").strip().lower() == "true",
             require_market_context=(
                 os.getenv("SIGNAL_JSON_EMIT_ONLY_WITH_MARKET_CONTEXT", "true").strip().lower() == "true"
@@ -3632,6 +3633,10 @@ class WolfConstitutionalPipeline:
             l12_verdict["final_direction"] = counter_entry.get("final_direction")
             l12_verdict["action"] = counter_entry.get("action")
             l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY"
+        elif status.endswith("_BY_ABSORPTION"):
+            l12_verdict["final_direction"] = "WAIT"
+            l12_verdict["action"] = counter_entry.get("action")
+            l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY_TIMING_VALID_CONDITIONAL"
         elif status.endswith("_WATCH"):
             l12_verdict["final_direction"] = "WAIT"
             l12_verdict["action"] = counter_entry.get("action")

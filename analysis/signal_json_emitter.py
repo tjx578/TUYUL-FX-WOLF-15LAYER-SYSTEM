@@ -44,17 +44,20 @@ VALID_SIGNAL_STATUSES = {
     "PROTECT_PROFIT_ALERT",
 }
 
+CONDITIONAL_SIGNAL_STATUSES = {
+    "SELL_TIMING_VALID_BY_ABSORPTION",
+    "BUY_TIMING_VALID_BY_ABSORPTION",
+}
+
 WATCH_SIGNAL_STATUSES = {
     "NANO_ABSORPTION_SELL_WATCH",
     "EARLY_SELL_WATCH",
     "SELL_TIMING_WATCH",
-    "SELL_TIMING_VALID_BY_ABSORPTION",
     "NANO_ABSORPTION_BUY_WATCH",
     "EARLY_BUY_WATCH",
     "BUY_TIMING_WATCH",
-    "BUY_TIMING_VALID_BY_ABSORPTION",
     "MICROBOOST_COUNTER_ENTRY_WATCH",
-}
+} | CONDITIONAL_SIGNAL_STATUSES
 
 
 @dataclass(frozen=True)
@@ -130,6 +133,7 @@ class SignalJsonEmitter:
         watch_prefix: str = "[SignalWatchJSON]",
         dedup_ttl_seconds: int = 300,
         emit_watch: bool = False,
+        emit_conditional: bool = True,
         emit_valid: bool = True,
         require_market_context: bool = True,
         watch_transition_only: bool = True,
@@ -139,6 +143,7 @@ class SignalJsonEmitter:
         self.watch_prefix = watch_prefix
         self.dedup_ttl_seconds = max(1, int(dedup_ttl_seconds))
         self.emit_watch = emit_watch
+        self.emit_conditional = emit_conditional
         self.emit_valid = emit_valid
         self.require_market_context = require_market_context
         self.watch_transition_only = watch_transition_only
@@ -155,6 +160,7 @@ class SignalJsonEmitter:
         if not should_emit_signal_json(
             event,
             emit_watch=self.emit_watch,
+            emit_conditional=self.emit_conditional,
             emit_valid=self.emit_valid,
             require_market_context=self.require_market_context,
         ):
@@ -165,6 +171,10 @@ class SignalJsonEmitter:
             return False
 
         payload = event.to_dict()
+        payload["event"] = "signal_watch_json" if is_watch else "signal_json"
+        payload["is_final_signal"] = bool(payload.get("is_final_signal") or _is_final_payload(payload))
+        payload["emit_reason"] = payload.get("emit_reason") or _emit_reason(event.status)
+        payload["signal_quality"] = payload.get("signal_quality") or _signal_quality(payload)
         prefix = self.watch_prefix if is_watch else self.prefix
         self.logger.warning("%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
         return True
@@ -226,7 +236,7 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         status=status,
         cluster_id=_optional_str(counter_entry.get("cluster_id")),
         is_final_signal=_is_final_payload(counter_entry),
-        emit_reason="STATE_TRANSITION" if status in WATCH_SIGNAL_STATUSES else "FINAL_SIGNAL_VALID",
+        emit_reason=_emit_reason(status),
         signal_quality=_signal_quality(counter_entry),
         raw_direction=_optional_str(counter_entry.get("raw_direction")),
         candidate_direction=_optional_str(counter_entry.get("candidate_direction")),
@@ -284,6 +294,7 @@ def should_emit_signal_json(
     event_or_payload: SignalJsonEvent | dict[str, Any],
     *,
     emit_watch: bool = True,
+    emit_conditional: bool = True,
     emit_valid: bool = True,
     require_market_context: bool = True,
 ) -> bool:
@@ -291,7 +302,10 @@ def should_emit_signal_json(
     status = str(payload.get("status") or "")
     if status not in EMITTABLE_SIGNAL_STATUSES:
         return False
-    if status in WATCH_SIGNAL_STATUSES and not emit_watch:
+    is_conditional = status in CONDITIONAL_SIGNAL_STATUSES
+    if is_conditional and not emit_conditional:
+        return False
+    if status in WATCH_SIGNAL_STATUSES and not is_conditional and not emit_watch:
         return False
     if status in VALID_SIGNAL_STATUSES and not emit_valid:
         return False
@@ -316,6 +330,14 @@ def should_emit_signal_json(
 
 def _is_watch_status(status: str) -> bool:
     return status in WATCH_SIGNAL_STATUSES or status.endswith("_WATCH")
+
+
+def _emit_reason(status: str) -> str:
+    if status in CONDITIONAL_SIGNAL_STATUSES:
+        return "TIMING_VALID_CONDITIONAL"
+    if status in WATCH_SIGNAL_STATUSES:
+        return "STATE_TRANSITION"
+    return "FINAL_SIGNAL_VALID"
 
 
 def _is_final_payload(payload: dict[str, Any]) -> bool:
