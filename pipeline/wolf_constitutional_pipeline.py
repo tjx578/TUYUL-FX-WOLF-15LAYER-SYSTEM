@@ -362,11 +362,15 @@ class WolfConstitutionalPipeline:
         self._signal_json_emitter = SignalJsonEmitter(
             enabled=os.getenv("SIGNAL_JSON_LOG_ENABLED", "true").strip().lower() == "true",
             prefix=os.getenv("SIGNAL_JSON_LOG_PREFIX", "[SignalJSON]"),
+            watch_prefix=os.getenv("SIGNAL_WATCH_JSON_LOG_PREFIX", "[SignalWatchJSON]"),
             dedup_ttl_seconds=int(self._parse_env_float("SIGNAL_JSON_DEDUP_TTL_SECONDS", 300.0)),
-            emit_watch=os.getenv("SIGNAL_JSON_EMIT_WATCH", "true").strip().lower() == "true",
+            emit_watch=os.getenv("SIGNAL_JSON_EMIT_WATCH", "false").strip().lower() == "true",
             emit_valid=os.getenv("SIGNAL_JSON_EMIT_VALID", "true").strip().lower() == "true",
             require_market_context=(
                 os.getenv("SIGNAL_JSON_EMIT_ONLY_WITH_MARKET_CONTEXT", "true").strip().lower() == "true"
+            ),
+            watch_transition_only=(
+                os.getenv("SIGNAL_WATCH_EMIT_ON_TRANSITION_ONLY", "true").strip().lower() == "true"
             ),
         )
         self._governance_now_ts: float | None = None
