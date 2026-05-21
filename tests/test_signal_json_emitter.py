@@ -264,3 +264,50 @@ def test_continuation_valid_with_rr_fallback_uses_signal_json_prefix(caplog):
     assert '"signal_family":"MICROBOOST_TREND_CONTINUATION"' in caplog.text
     assert '"emit_reason":"QUORUM_CONTINUATION_VALID"' in caplog.text
     assert '"signal_quality":"TREND_CONTINUATION_VALID"' in caplog.text
+
+
+def test_signal_decision_update_uses_decision_update_prefix(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        event="signal_decision_update_json",
+        cluster_id="USDCAD_20260521T030620Z",
+        status="WAIT_STRUCTURE_OR_NEXT_M15",
+        action="WAIT_STRUCTURE_TARGET_OR_SUPPORT_LADDER",
+        rr_status="WATCH_PROVISIONAL",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        confirmation_policy="M15_CLOSE_REJECTION_CONFIRMED",
+        m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+        block_end_utc="2026-05-21T03:15:04+00:00",
+        block_end_wita="2026-05-21 11:15:04",
+        block_idle_seconds=86.0,
+        valid_for_execution=False,
+    )
+
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalWatchJSON]" not in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"event":"signal_decision_update_json"' in caplog.text
+    assert '"signal_quality":"DECISION_UPDATE"' in caplog.text
+
+
+def test_breakout_continuation_valid_allows_rr_fallback(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260521T030620Z",
+        status="BUY_BREAKOUT_CONTINUATION_VALID",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_BREAKOUT_RETEST",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=True,
+    )
+
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert '"status":"BUY_BREAKOUT_CONTINUATION_VALID"' in caplog.text
