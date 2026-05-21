@@ -607,6 +607,47 @@ class TestPipelineSignalThrottle:
         assert "final_direction=BUY" in microboost_line
         assert "m15_phase=BULLISH_PULLBACK" in microboost_line
 
+    def test_usdcad_reclaim_and_demand_build_support_ladder_for_counter_targets(self):
+        from context.live_context_bus import LiveContextBus
+
+        LiveContextBus.reset_singleton()
+        pipe = self._make_pipeline()
+        pipe._context_bus.update_tick(
+            {
+                "symbol": "USDCAD",
+                "bid": 1.3763,
+                "ask": 1.3764,
+                "price": 1.37635,
+            }
+        )
+        for candle in (
+            {"symbol": "USDCAD", "timeframe": "M15", "open": 1.3742, "high": 1.3754, "low": 1.3739, "close": 1.3751},
+            {"symbol": "USDCAD", "timeframe": "M15", "open": 1.3751, "high": 1.3762, "low": 1.3750, "close": 1.3758},
+            {"symbol": "USDCAD", "timeframe": "M15", "open": 1.3758, "high": 1.3767, "low": 1.3752, "close": 1.3763},
+            {"symbol": "USDCAD", "timeframe": "M15", "open": 1.3763, "high": 1.3766, "low": 1.3754, "close": 1.3763},
+        ):
+            pipe._context_bus.update_candle(candle)
+
+        context = pipe._build_market_context(
+            symbol="USDCAD",
+            synthesis={
+                "execution": {
+                    "direction": "BUY",
+                    "entry_price": 1.37633,
+                }
+            },
+            l12_verdict={"verdict": "EXECUTE_BUY", "direction": "BUY"},
+        )
+
+        assert context.support_ladder_ready is True
+        assert context.tp1_support is not None
+        assert 1.3750 <= context.tp1_support <= 1.3755
+        assert context.tp2_support == pytest.approx(1.3739)
+        assert context.tp3_support is not None and context.tp3_support < context.tp2_support
+        assert context.tp4_support is not None and context.tp4_support < context.tp3_support
+        assert context.support_ladder_missing_reason is None
+        assert context.price_position == "MAIN_RESISTANCE"
+
     def test_sovereignty_downgrade_emits_throttle_skipped_event(self, monkeypatch):
         """When vault sovereignty downgrades EXECUTE before throttle, emit an explicit skip event."""
         WolfConstitutionalPipeline = _pipeline_cls()
