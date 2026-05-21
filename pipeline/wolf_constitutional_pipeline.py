@@ -80,6 +80,7 @@ from analysis.reflex_emc import EMCFilter
 from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
+from analysis.signal_block_finalizer import SignalBlockFinalizer
 from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.signal_lifecycle_manager import SignalLifecycleManager
 from analysis.signal_throttle_intelligence import (
@@ -361,10 +362,24 @@ class WolfConstitutionalPipeline:
         self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
         self._signal_lifecycle_manager = SignalLifecycleManager()
+        self._signal_block_finalizer = SignalBlockFinalizer(
+            enabled=os.getenv("SIGNAL_BLOCK_FINALIZER_ENABLED", "true").strip().lower() == "true",
+            idle_finalize_seconds=self._parse_env_float("SIGNAL_BLOCK_IDLE_FINALIZE_SECONDS", 75.0),
+            hard_finalize_seconds=self._parse_env_float("SIGNAL_BLOCK_HARD_FINALIZE_SECONDS", 300.0),
+            expires_after_m15_bars=int(
+                self._parse_env_float("SIGNAL_BLOCK_PENDING_EXPIRES_AFTER_M15_BARS", 3.0)
+            ),
+            min_rr_valid=self._parse_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+            allow_rr_fallback=os.getenv("SIGNAL_JSON_ALLOW_RR_FALLBACK", "true").strip().lower() == "true",
+        )
         self._signal_json_emitter = SignalJsonEmitter(
             enabled=os.getenv("SIGNAL_JSON_LOG_ENABLED", "true").strip().lower() == "true",
             prefix=os.getenv("SIGNAL_JSON_LOG_PREFIX", "[SignalJSON]"),
             watch_prefix=os.getenv("SIGNAL_WATCH_JSON_LOG_PREFIX", "[SignalWatchJSON]"),
+            decision_update_prefix=os.getenv(
+                "SIGNAL_DECISION_UPDATE_JSON_LOG_PREFIX",
+                "[SignalDecisionUpdateJSON]",
+            ),
             dedup_ttl_seconds=int(self._parse_env_float("SIGNAL_JSON_DEDUP_TTL_SECONDS", 300.0)),
             emit_watch=os.getenv("SIGNAL_JSON_EMIT_WATCH", "false").strip().lower() == "true",
             emit_conditional=os.getenv("SIGNAL_JSON_EMIT_CONDITIONAL", "true").strip().lower() == "true",
@@ -3401,6 +3416,9 @@ class WolfConstitutionalPipeline:
             "minor_support": minor_support,
             "major_support": main_support,
             "m15_close": latest_close,
+            "m15_open": latest_open,
+            "m15_high": latest_high,
+            "m15_low": latest_low,
             "m15_close_above_resistance": m15_close_above_resistance,
             "m15_rejection_from_resistance": m15_rejection_from_resistance,
             "m15_close_below_minor_support": m15_close_below_minor_support,
@@ -3588,13 +3606,49 @@ class WolfConstitutionalPipeline:
         context_verdict = dict(l12_verdict)
         if source_verdict:
             context_verdict["verdict"] = source_verdict
-        return {
+        contexts = {
             symbol.upper(): self._build_market_context(
                 symbol=symbol,
                 synthesis=synthesis,
                 l12_verdict=context_verdict,
             )
         }
+        contexts.update(
+            self._pending_signal_market_contexts(
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+                existing_symbols=set(contexts),
+            )
+        )
+        return contexts
+
+    def _pending_signal_market_contexts(
+        self,
+        *,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        existing_symbols: set[str] | None = None,
+    ) -> dict[str, MarketContext]:
+        existing_symbols = {symbol.upper() for symbol in (existing_symbols or set())}
+        contexts: dict[str, MarketContext] = {}
+        for pending_symbol in self._signal_block_finalizer.pending_symbols():
+            symbol = pending_symbol.upper()
+            if symbol in existing_symbols:
+                continue
+            pending_state = self._signal_block_finalizer.pending_state(symbol) or {}
+            raw_direction = self._direction_hint(
+                pending_state.get("raw_direction") or pending_state.get("candidate_direction")
+            )
+            context_verdict = dict(l12_verdict)
+            if raw_direction in {"BUY", "SELL"}:
+                context_verdict["verdict"] = f"EXECUTE_{raw_direction}"
+                context_verdict["direction"] = raw_direction
+            contexts[symbol] = self._build_market_context(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=context_verdict,
+            )
+        return contexts
 
     def _record_signal_throttle_live_report(
         self,
@@ -3604,17 +3658,23 @@ class WolfConstitutionalPipeline:
         l12_verdict: dict[str, Any],
         source_verdict: Any | None,
     ) -> dict[str, Any]:
+        market_contexts = self._signal_throttle_market_contexts(
+            symbol=symbol,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+            source_verdict=source_verdict,
+        )
         report = self._signal_throttle_live_analyzer.snapshot(
-            market_contexts=self._signal_throttle_market_contexts(
-                symbol=symbol,
-                synthesis=synthesis,
-                l12_verdict=l12_verdict,
-                source_verdict=source_verdict,
-            )
+            market_contexts=market_contexts,
         )
         l12_verdict["signal_throttle_live_report"] = report
         self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
+        self._apply_signal_block_finalizer(
+            l12_verdict=l12_verdict,
+            report=report,
+            market_contexts=market_contexts,
+        )
         self._emit_microboost_intel_if_new(report)
         return report
 
@@ -3658,6 +3718,7 @@ class WolfConstitutionalPipeline:
         counter_entry = self._signal_lifecycle_manager.apply(counter_entry)
         report["microboost_counter_entry"] = counter_entry
         l12_verdict["microboost_counter_entry"] = counter_entry
+        self._signal_block_finalizer.track(counter_entry)
         status = str(counter_entry.get("status") or "")
         if status.endswith("_VALID") or status.endswith("_BY_DIRECT_ABSORPTION"):
             l12_verdict["final_direction"] = counter_entry.get("final_direction")
@@ -3679,6 +3740,65 @@ class WolfConstitutionalPipeline:
         signal_event = build_signal_json_event(counter_entry)
         if signal_event is not None:
             self._signal_json_emitter.emit(signal_event)
+
+    def _apply_signal_block_finalizer(
+        self,
+        *,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+        market_contexts: dict[str, Any],
+    ) -> None:
+        updates = self._signal_block_finalizer.finalize(
+            report=report,
+            market_contexts=market_contexts,
+        )
+        if not updates:
+            return
+
+        applied_updates: list[dict[str, Any]] = []
+        for update in updates:
+            if update.get("event") != "signal_decision_update_json":
+                update = self._signal_lifecycle_manager.apply(update)
+            self._signal_block_finalizer.track(update)
+            applied_updates.append(update)
+            status = str(update.get("status") or "")
+            if status.endswith("_VALID") or status.endswith("_BY_DIRECT_ABSORPTION"):
+                l12_verdict["final_direction"] = update.get("final_direction")
+                l12_verdict["action"] = update.get("action")
+                l12_verdict["direction_source"] = "SIGNAL_BLOCK_FINALIZER"
+            else:
+                l12_verdict["final_direction"] = "WAIT"
+                l12_verdict["action"] = update.get("action")
+                l12_verdict["direction_source"] = "SIGNAL_BLOCK_FINALIZER_DECISION_UPDATE"
+
+            signal_event = build_signal_json_event(update)
+            if signal_event is not None:
+                self._signal_json_emitter.emit(signal_event)
+
+        report["signal_block_finalizer_updates"] = applied_updates
+        l12_verdict["signal_block_finalizer_updates"] = applied_updates
+
+    def _finalize_idle_signal_blocks(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+    ) -> None:
+        if not self._signal_block_finalizer.pending_symbols():
+            return
+        current_contexts = self._signal_throttle_market_contexts(
+            symbol=symbol,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+            source_verdict=l12_verdict.get("verdict"),
+        )
+        report = self._signal_throttle_live_analyzer.snapshot(market_contexts=current_contexts)
+        self._apply_signal_block_finalizer(
+            l12_verdict=l12_verdict,
+            report=report,
+            market_contexts=current_contexts,
+        )
 
     def _emit_microboost_intel_if_new(self, report: dict[str, Any]) -> None:
         event = build_microboost_intel_event(report)
@@ -3784,6 +3904,11 @@ class WolfConstitutionalPipeline:
                     "safe_mode": safe_mode,
                 },
             )
+            self._finalize_idle_signal_blocks(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+            )
         else:
             throttle_skip_reason = "non_execute_verdict"
             if l12_verdict.get("sovereignty_downgrade"):
@@ -3805,6 +3930,11 @@ class WolfConstitutionalPipeline:
                     "sovereignty_downgrade": bool(l12_verdict.get("sovereignty_downgrade")),
                     "throttled_from": l12_verdict.get("throttled_from"),
                 },
+            )
+            self._finalize_idle_signal_blocks(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
             )
 
         try:
