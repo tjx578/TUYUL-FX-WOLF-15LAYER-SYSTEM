@@ -3351,24 +3351,37 @@ class WolfConstitutionalPipeline:
         current_price: float | None,
         pip_value: float,
     ) -> dict[str, Any]:
-        candles = self._context_bus.get_candle_history(symbol, "M15", count=8)
+        candles = self._context_bus.get_candle_history(symbol, "M15", count=32)
+        h1_candles = self._context_bus.get_candle_history(symbol, "H1", count=24)
         m15_bar_count = len(candles)
         latest = candles[-1] if candles else {}
         previous = candles[:-1]
-        previous_lows = [price for candle in previous[-4:] if (price := self._candle_price(candle, "low")) is not None]
-        previous_highs = [price for candle in previous[-4:] if (price := self._candle_price(candle, "high")) is not None]
+        previous_lows = [price for candle in previous[-8:] if (price := self._candle_price(candle, "low")) is not None]
+        previous_highs = [price for candle in previous[-8:] if (price := self._candle_price(candle, "high")) is not None]
         latest_open = self._candle_price(latest, "open") if latest else None
         latest_high = self._candle_price(latest, "high") if latest else None
         latest_low = self._candle_price(latest, "low") if latest else None
         latest_close = self._candle_price(latest, "close") if latest else None
         main_support = self._coerce_positive_float(structure.get("main_support"))
         main_resistance = self._coerce_positive_float(structure.get("main_resistance"))
-        minor_support = min(previous_lows) if previous_lows else None
-        minor_resistance = max(previous_highs) if previous_highs else None
+        ladder = self._derive_price_ladders(
+            current_price=current_price or latest_close,
+            m15_candles=candles,
+            h1_candles=h1_candles,
+            main_support=main_support,
+            main_resistance=main_resistance,
+            pip_value=pip_value,
+        )
+        support_levels = ladder["support_levels"]
+        resistance_levels = ladder["resistance_levels"]
+        minor_support = support_levels[0] if support_levels else None
+        major_support = support_levels[1] if len(support_levels) > 1 else main_support
+        minor_resistance = resistance_levels[0] if resistance_levels else None
+        major_resistance = resistance_levels[1] if len(resistance_levels) > 1 else main_resistance
         resistance_high = main_resistance
         resistance_low = main_resistance - (18.0 * pip_value) if main_resistance is not None else None
-        support_low = main_support
-        support_high = main_support + (18.0 * pip_value) if main_support is not None else None
+        support_high = minor_support
+        support_low = major_support if major_support is not None else main_support
         sl_buffer = 8.0 * pip_value
         m15_close_above_resistance = (
             latest_close is not None and resistance_high is not None and latest_close > resistance_high
@@ -3396,17 +3409,17 @@ class WolfConstitutionalPipeline:
         m15_close_above_minor_resistance = (
             latest_close is not None and minor_resistance is not None and latest_close > minor_resistance
         )
-        support_ladder_ready = any(level is not None for level in (minor_support, main_support))
-        resistance_ladder_ready = any(level is not None for level in (minor_resistance, main_resistance))
+        support_ladder_ready = len(support_levels) >= 2
+        resistance_ladder_ready = len(resistance_levels) >= 2
         support_ladder_missing_reason = None if support_ladder_ready else self._ladder_missing_reason(
             candle_count=m15_bar_count,
-            previous_levels=previous_lows,
+            previous_levels=support_levels or previous_lows,
             main_level=main_support,
             missing_label="support",
         )
         resistance_ladder_missing_reason = None if resistance_ladder_ready else self._ladder_missing_reason(
             candle_count=m15_bar_count,
-            previous_levels=previous_highs,
+            previous_levels=resistance_levels or previous_highs,
             main_level=main_resistance,
             missing_label="resistance",
         )
@@ -3414,7 +3427,7 @@ class WolfConstitutionalPipeline:
             "resistance_low": resistance_low,
             "resistance_high": resistance_high,
             "minor_support": minor_support,
-            "major_support": main_support,
+            "major_support": major_support,
             "m15_close": latest_close,
             "m15_open": latest_open,
             "m15_high": latest_high,
@@ -3429,14 +3442,14 @@ class WolfConstitutionalPipeline:
             "m15_rejection_from_support": m15_rejection_from_support,
             "m15_close_above_minor_resistance": m15_close_above_minor_resistance,
             "sl_buffer": sl_buffer,
-            "tp1_support": minor_support,
-            "tp2_support": main_support,
-            "tp3_support": min(previous_lows) if previous_lows else None,
-            "tp4_support": None,
+            "tp1_support": support_levels[0] if len(support_levels) > 0 else None,
+            "tp2_support": support_levels[1] if len(support_levels) > 1 else None,
+            "tp3_support": support_levels[2] if len(support_levels) > 2 else None,
+            "tp4_support": support_levels[3] if len(support_levels) > 3 else None,
             "tp1_resistance": minor_resistance,
-            "tp2_resistance": main_resistance,
-            "tp3_resistance": max(previous_highs) if previous_highs else None,
-            "tp4_resistance": None,
+            "tp2_resistance": major_resistance,
+            "tp3_resistance": resistance_levels[2] if len(resistance_levels) > 2 else None,
+            "tp4_resistance": resistance_levels[3] if len(resistance_levels) > 3 else None,
             "m15_bar_count": m15_bar_count,
             "h1_bar_count": int(structure.get("h1_bar_count") or 0),
             "support_ladder_ready": support_ladder_ready,
@@ -3445,6 +3458,137 @@ class WolfConstitutionalPipeline:
             "support_ladder_missing_reason": support_ladder_missing_reason,
             "resistance_ladder_missing_reason": resistance_ladder_missing_reason,
         }
+
+    def _derive_price_ladders(
+        self,
+        *,
+        current_price: float | None,
+        m15_candles: list[dict[str, Any]],
+        h1_candles: list[dict[str, Any]],
+        main_support: float | None,
+        main_resistance: float | None,
+        pip_value: float,
+    ) -> dict[str, list[float]]:
+        if current_price is None or current_price <= 0 or pip_value <= 0:
+            return {"support_levels": [], "resistance_levels": []}
+
+        m15_lows = [price for candle in m15_candles if (price := self._candle_price(candle, "low")) is not None]
+        m15_highs = [price for candle in m15_candles if (price := self._candle_price(candle, "high")) is not None]
+        h1_lows = [price for candle in h1_candles if (price := self._candle_price(candle, "low")) is not None]
+        h1_highs = [price for candle in h1_candles if (price := self._candle_price(candle, "high")) is not None]
+
+        min_distance = 2.0 * pip_value
+        support_candidates = [
+            level
+            for level in [*m15_lows, *h1_lows, main_support]
+            if level is not None and level < current_price - min_distance
+        ]
+        resistance_candidates = [
+            level
+            for level in [*m15_highs, *h1_highs, main_resistance]
+            if level is not None and level > current_price + min_distance
+        ]
+        m15_range = (max(m15_highs) - min(m15_lows)) if m15_highs and m15_lows else None
+        h1_range = (max(h1_highs) - min(h1_lows)) if h1_highs and h1_lows else None
+        observed_range = m15_range if m15_range and m15_range > 0 else h1_range
+
+        support_levels = self._cluster_ladder_levels(
+            support_candidates,
+            current_price=current_price,
+            pip_value=pip_value,
+            side="support",
+        )
+        resistance_levels = self._cluster_ladder_levels(
+            resistance_candidates,
+            current_price=current_price,
+            pip_value=pip_value,
+            side="resistance",
+        )
+        return {
+            "support_levels": self._extend_ladder_levels(
+                support_levels,
+                current_price=current_price,
+                observed_range=observed_range,
+                pip_value=pip_value,
+                side="support",
+            ),
+            "resistance_levels": self._extend_ladder_levels(
+                resistance_levels,
+                current_price=current_price,
+                observed_range=observed_range,
+                pip_value=pip_value,
+                side="resistance",
+            ),
+        }
+
+    @staticmethod
+    def _cluster_ladder_levels(
+        levels: list[float],
+        *,
+        current_price: float,
+        pip_value: float,
+        side: str,
+    ) -> list[float]:
+        if not levels:
+            return []
+        cluster_width = max(5.0 * pip_value, current_price * 0.00008)
+        ordered = sorted(levels, reverse=side == "support")
+        clusters: list[list[float]] = []
+        for level in ordered:
+            if side == "support" and level >= current_price:
+                continue
+            if side == "resistance" and level <= current_price:
+                continue
+            if not clusters or abs(level - clusters[-1][-1]) > cluster_width:
+                clusters.append([level])
+            else:
+                clusters[-1].append(level)
+
+        representatives: list[float] = []
+        for cluster in clusters:
+            representative = max(cluster) if side == "support" else min(cluster)
+            rounded = WolfConstitutionalPipeline._round_ladder_level(representative)
+            if rounded is not None and rounded not in representatives:
+                representatives.append(rounded)
+        return representatives[:4]
+
+    @staticmethod
+    def _extend_ladder_levels(
+        levels: list[float],
+        *,
+        current_price: float,
+        observed_range: float | None,
+        pip_value: float,
+        side: str,
+    ) -> list[float]:
+        if not levels:
+            return []
+        extended = list(levels)
+        step_floor_pips = 20.0 if side == "support" else 18.0
+        range_step = (observed_range or 0.0) * (0.75 if side == "support" else 0.65)
+        step = max(step_floor_pips * pip_value, range_step)
+        step = min(step, 35.0 * pip_value)
+        anchor = min(extended) if side == "support" else max(extended)
+        while len(extended) < 4:
+            anchor = anchor - step if side == "support" else anchor + step
+            rounded = WolfConstitutionalPipeline._round_ladder_level(anchor)
+            if rounded is None:
+                break
+            if side == "support" and rounded >= current_price:
+                continue
+            if side == "resistance" and rounded <= current_price:
+                continue
+            if rounded not in extended:
+                extended.append(rounded)
+            else:
+                anchor = anchor - pip_value if side == "support" else anchor + pip_value
+        return extended[:4]
+
+    @staticmethod
+    def _round_ladder_level(value: float | None) -> float | None:
+        if value is None:
+            return None
+        return round(float(value), 3 if abs(float(value)) >= 10 else 5)
 
     @staticmethod
     def _ladder_missing_reason(
