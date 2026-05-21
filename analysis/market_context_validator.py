@@ -66,6 +66,9 @@ class MarketContext:
     minor_support: float | None = None
     major_support: float | None = None
     m15_close: float | None = None
+    m15_open: float | None = None
+    m15_high: float | None = None
+    m15_low: float | None = None
     m15_close_above_resistance: bool | None = None
     m15_rejection_from_resistance: bool | None = None
     m15_close_below_minor_support: bool | None = None
