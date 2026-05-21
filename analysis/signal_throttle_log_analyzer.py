@@ -248,6 +248,7 @@ def analyze_signal_throttle_events(
             "dominant_themes": [],
             "theme_scores": [],
             "event_counts": _event_counts([]),  # noqa: F821
+            "symbol_activity": {},
             "top_microboost": [],
             "microboost_summary": build_microboost_summary(
                 [],
@@ -270,6 +271,11 @@ def analyze_signal_throttle_events(
         }
 
     blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
+    symbol_activity = build_symbol_activity(
+        ordered,
+        max_gap_seconds=clean_gap_seconds,
+        now=ordered[-1].timestamp,
+    )
     lifecycle_blocks = build_pressure_blocks(ordered, max_gap_seconds=None)
     latest_cutoff = ordered[-1].timestamp - timedelta(seconds=latest_window_seconds)
     latest_events = [event for event in ordered if event.timestamp >= latest_cutoff]
@@ -379,6 +385,7 @@ def analyze_signal_throttle_events(
         "microboost_counter_entry": microboost_counter_entry,
         "allowed_quorum": allowed_quorum,
         "event_counts": event_type_counts,
+        "symbol_activity": symbol_activity,
         "time_range": {
             "start_utc": ordered[0].timestamp.isoformat(),
             "end_utc": ordered[-1].timestamp.isoformat(),
@@ -599,6 +606,11 @@ class SignalThrottleLiveAnalyzer:
         report["runtime_config"]["active_block_ttl_seconds"] = self.active_block_ttl_seconds
         report["runtime_config"]["allowed_quorum_window_seconds"] = self.allowed_quorum_window_seconds
         report["runtime_config"]["max_events_in_memory"] = self.max_events
+        report["symbol_activity"] = build_symbol_activity(
+            events,
+            max_gap_seconds=self.clean_gap_seconds,
+            now=datetime.now(UTC),
+        )
         return report
 
     def _purge_locked(self, now: datetime) -> None:
@@ -642,6 +654,47 @@ def build_pressure_blocks(
 
     blocks.extend(_make_block(current) for current, _ in states.values())
     return sorted(blocks, key=lambda block: (block.start, block.symbol))
+
+
+def build_symbol_activity(
+    events: Iterable[SignalThrottleLogEvent],
+    *,
+    max_gap_seconds: int | None = 75,
+    now: datetime | None = None,
+) -> dict[str, dict[str, Any]]:
+    ordered = sorted(events, key=lambda item: item.timestamp)
+    if not ordered:
+        return {}
+    now_utc = _coerce_timestamp(now) if now is not None else ordered[-1].timestamp
+    blocks = build_pressure_blocks(ordered, max_gap_seconds=max_gap_seconds)
+    latest_event_by_symbol: dict[str, SignalThrottleLogEvent] = {}
+    for event in ordered:
+        latest_event_by_symbol[event.symbol.upper()] = event
+
+    latest_block_by_symbol: dict[str, PressureBlock] = {}
+    for block in blocks:
+        latest = latest_block_by_symbol.get(block.symbol.upper())
+        if latest is None or block.end >= latest.end:
+            latest_block_by_symbol[block.symbol.upper()] = block
+
+    activity: dict[str, dict[str, Any]] = {}
+    for symbol, event in latest_event_by_symbol.items():
+        block = latest_block_by_symbol.get(symbol)
+        idle_seconds = max(0.0, (now_utc - event.timestamp).total_seconds())
+        activity[symbol] = {
+            "latest_event_utc": event.timestamp.isoformat(),
+            "latest_event_type": event.event_type,
+            "latest_direction": event.direction,
+            "idle_seconds": round(idle_seconds, 3),
+            "latest_block_start_utc": None if block is None else block.start.isoformat(),
+            "latest_block_end_utc": None if block is None else block.end.isoformat(),
+            "latest_block_duration_seconds": None if block is None else block.duration_seconds,
+            "latest_block_effective_ticks": None if block is None else block.effective_ticks,
+            "latest_block_effective_density_per_minute": (
+                None if block is None else block.effective_density_per_minute
+            ),
+        }
+    return activity
 
 
 def _has_hard_rotation_interrupt(
