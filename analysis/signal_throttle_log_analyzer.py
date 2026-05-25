@@ -1113,7 +1113,6 @@ def _continuation_entry_payload(
         min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
         tp1_rr_required=_env_float("SIGNAL_JSON_TP1_RR_REQUIRED", 2.0),
         allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
-        continuation_expiry_minutes=int(_env_float("SIGNAL_JSON_CONTINUATION_EXPIRY_MINUTES", 45.0)),
     ).evaluate(latest, allowed_quorum=allowed_quorum)
     payload = result.to_dict()
     latest["continuation_entry"] = payload
