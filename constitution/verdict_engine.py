@@ -417,7 +417,7 @@ _REQUIRED_SYNTHESIS_FIELDS: tuple[str, ...] = (
 # config.thresholds.get_thresholds(regime).
 _THRESH_TII: float = 0.60  # gate_1  — L8_tii_sym
 _THRESH_INTEGRITY: float = 0.70  # gate_2  — L8_integrity_index
-_THRESH_RR: float = 1.5  # gate_3  — execution.rr_ratio
+_THRESH_RR: float = 2.0  # gate_3  — execution.rr_ratio
 _THRESH_FTA: float = 0.55  # gate_4  — scores.fta_score (no THRESHOLD_TABLE entry)
 _THRESH_MONTE: float = 0.50  # gate_5  — layers.L7_monte_carlo_win
 _THRESH_LATENCY_MS: int = 500  # gate_8  — system.latency_ms (no THRESHOLD_TABLE entry)
