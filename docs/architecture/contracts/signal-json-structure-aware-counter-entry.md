@@ -4,8 +4,9 @@
 
 This contract applies to `MICROBOOST_COUNTER_ENTRY` results produced from a
 priced microboost warning at key structure. It separates analysis validity from
-immediate execution readiness. Trend-continuation breakout events retain their
-existing provisional RR behavior.
+immediate execution readiness. The `TP1 >= 2.0R` execution invariant applies
+to all final SignalJSON families, including trend-continuation and
+breakout/breakdown continuation events.
 
 ## Repository Assessment
 
@@ -28,7 +29,8 @@ For counter-entry signals:
 - `selected_sl_mode` defaults to `SAFE` when `sl_safe` is available.
 - `risk_pips`, `selected_risk_pips`, and RR validation use `selected_sl`.
 - `TP1` is mandatory and calculated at `SIGNAL_JSON_TP1_RR_REQUIRED`,
-  default `2.0R`.
+  default `2.0R`; configuration cannot reduce this execution floor below
+  `2.0R`.
 - `TP2+` are optional and only exported from observed M15/H1 structure levels
   beyond TP1; no extrapolated ladder levels qualify.
 - A counter-entry final execution still requires an observed structure target
@@ -38,6 +40,11 @@ For counter-entry signals:
 
 This preserves the existing executor configuration `TP1_ONLY` while exporting
 auditable extension targets for management and dashboards.
+
+For `MICROBOOST_TREND_CONTINUATION`, TP1 is also canonicalized to fixed `2.0R`.
+Nearby observed structure remains useful as reclaim context, but is not
+exported as an executable TP1 when its reward is below the floor. Continuation
+RR fallback ladders now begin at `2.0R` rather than `1.0R`.
 
 ## Final Execution Gate
 
@@ -52,8 +59,9 @@ auditable extension targets for management and dashboards.
 - H1 is not explicitly directional against the counter-entry.
 
 The emitter, signal lifecycle manager, and pending-block finalizer enforce the
-same structured contract. A manually formed legacy counter-entry payload can
-no longer become final solely by setting `valid_for_execution=true`.
+same minimum TP1 invariant; the constitutional RR gates are also aligned to
+`2.0R` for every volatility regime. A manually formed legacy payload can no
+longer become final solely by setting `valid_for_execution=true`.
 
 ## Exported Objects
 
