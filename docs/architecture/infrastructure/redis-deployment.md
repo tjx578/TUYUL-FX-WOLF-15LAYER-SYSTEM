@@ -348,6 +348,16 @@ pytest tests/test_redis_bridge.py -v
 4. Monitor `rejected_connections`, `client_recent_max_*_buffer`, `instantaneous_*_kbps`, and pool headroom.
 5. Reduce warmup/read fan-out with `REDIS_WARMUP_MAX_CONCURRENCY` if Redis or network buffers are pressured.
 
+### Vault Redis Latency Classification
+
+`VaultHealthChecker` evaluates a successful Redis `PING` in three bands:
+
+- `<= VAULT_REDIS_DEGRADED_LATENCY_MS` (default `100`): `NOMINAL`; no Redis degradation is emitted.
+- Above `VAULT_REDIS_DEGRADED_LATENCY_MS` through `VAULT_REDIS_BLOCK_LATENCY_MS` (default `500`): `SLOW`; the condition is observable and can restrict sovereignty scoring, but it does not by itself block analysis.
+- Above `VAULT_REDIS_BLOCK_LATENCY_MS`, a failed `PING`, or an exception: `DEGRADED`; analysis is blocked by the Vault Redis health gate.
+
+Before raising either threshold, inspect `/api/v1/redis/health/extended`, confirm that the engine uses the Railway private Redis endpoint, and check pool headroom, rejected connections, buffers, slowlog, and memory pressure. A single successful `69ms` ping is nominal under the default budget and is not evidence of a Redis outage.
+
 ### High Memory Usage
 
 **Symptoms**: Redis memory approaching 512MB limit
