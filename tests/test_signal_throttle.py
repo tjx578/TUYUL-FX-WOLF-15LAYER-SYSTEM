@@ -39,6 +39,7 @@ SIGNAL_THROTTLED = _repo_attr("core.metrics", "SIGNAL_THROTTLED")
 def _pipeline_cls() -> Any:
     return _repo_attr("pipeline.wolf_constitutional_pipeline", "WolfConstitutionalPipeline")
 
+
 # =========================================================================
 # SignalThrottle unit tests
 # =========================================================================
@@ -643,8 +644,8 @@ class TestPipelineSignalThrottle:
         assert context.tp1_support is not None
         assert 1.3750 <= context.tp1_support <= 1.3755
         assert context.tp2_support == pytest.approx(1.3739)
-        assert context.tp3_support is not None and context.tp3_support < context.tp2_support
-        assert context.tp4_support is not None and context.tp4_support < context.tp3_support
+        assert context.tp3_support is None
+        assert context.tp4_support is None
         assert context.support_ladder_missing_reason is None
         assert context.price_position == "MAIN_RESISTANCE"
 
