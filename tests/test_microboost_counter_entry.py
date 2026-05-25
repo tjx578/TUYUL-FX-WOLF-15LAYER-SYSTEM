@@ -46,7 +46,7 @@ def _market(**overrides):
         "sl_buffer": 0.0007,
         "tp1_support": 1.8420,
         "tp2_support": 1.8409,
-        "tp3_support": 1.8378,
+        "tp3_support": 1.8370,
     }
     payload.update(overrides)
     return MarketContext(**payload)
@@ -68,7 +68,7 @@ def test_buy_microboost_at_main_resistance_becomes_sell_watch():
 def test_rejection_confirms_sell_timing_valid():
     result = MicroboostCounterEntryEngine().evaluate(
         _cluster(),
-        _market(m15_rejection_from_resistance=True, m15_close_below_minor_support=True),
+        _market(h1_phase="BEARISH", m15_rejection_from_resistance=True, m15_close_below_minor_support=True),
     )
 
     assert result.enabled is True
@@ -80,6 +80,13 @@ def test_rejection_confirms_sell_timing_valid():
     assert result.trade_plan is not None
     assert result.trade_plan["direction"] == "SELL"
     assert result.rr_status == "VALID"
+    assert result.tradeplan_context_ready is True
+    assert result.key_resistance == 1.8478
+    assert result.key_support == 1.845
+    assert result.selected_sl_mode == "SAFE"
+    assert result.selected_risk_pips is not None
+    assert result.invalidation_rules is not None
+    assert result.invalidation_rules["hard_invalid_level"] == result.selected_sl
 
 
 def test_m15_breakout_confirms_buy_continuation_from_resistance_watch():
@@ -134,12 +141,13 @@ def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():
     assert result.entry_zone == [1.37696, 1.37696]
     assert result.sl_tight == 1.3782
     assert result.sl_safe == 1.379
-    assert result.tp1 == 1.3756
-    assert result.tp2 == 1.3735
-    assert result.tp3 == 1.3718
-    assert result.tp4 == 1.37
-    assert result.rr_to_tp2_tight == pytest.approx(2.79)
-    assert result.rr_to_tp3_tight == pytest.approx(4.16)
+    assert result.tp1 == 1.37288
+    assert result.tp2 == 1.3718
+    assert result.tp3 == 1.37
+    assert result.tp4 is None
+    assert result.tp1_rr == 2.0
+    assert result.rr_to_tp2_tight == pytest.approx(4.16)
+    assert result.rr_to_tp3_tight == pytest.approx(5.61)
 
 
 def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_close():
@@ -151,6 +159,7 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_clos
         duration_seconds=181.502,
         price_at_signal_start=0.98504,
         price_at_signal_end=0.98504,
+        h1_phase="BEARISH",
         end_utc="2026-05-18T20:33:08+00:00",
     )
     market = _market(
@@ -158,6 +167,7 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_clos
         price_at_signal_start=0.98504,
         price_at_5m_confirm=0.98504,
         price_at_signal_end=0.98504,
+        h1_phase="BEARISH",
         resistance_low=0.9850,
         resistance_high=0.9859,
         minor_support=0.9845,
@@ -181,7 +191,7 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_clos
     assert result.requires_rejection_or_breakdown is True
     assert result.signal_valid_price == 0.98504
     assert result.sl_tight == 0.9865
-    assert result.tp1 == 0.982
+    assert result.tp1 == 0.98012
     assert result.tp2 == 0.978
     assert result.tp3 == 0.9746
     assert result.rr_to_tp2_tight == pytest.approx(4.82)
@@ -209,6 +219,7 @@ def test_audcad_complete_absorption_with_theme_and_structure_direct_validates_wi
         resistance_high=0.9859,
         minor_support=0.9845,
         major_support=0.9820,
+        h1_phase="BEARISH",
         theme_alignment="STRONG_SELL",
         m15_close=None,
         m15_rejection_from_resistance=False,
@@ -251,6 +262,7 @@ def test_audcad_m15_close_confirms_absorption_as_sell_timing_valid():
         price_at_signal_start=0.98504,
         price_at_5m_confirm=0.9848,
         price_at_signal_end=0.9848,
+        h1_phase="BEARISH",
         m15_close=0.9848,
         resistance_low=0.9850,
         resistance_high=0.9859,
@@ -325,12 +337,12 @@ def test_cadjpy_near_timing_gate_absorption_waits_for_m15_close_without_final_ex
     assert result.pending_decision_id == "CADJPY_M15_DECISION"
     assert result.signal_valid_price == 115.7055
     assert result.sl_tight == 115.8255
-    assert result.tp1 == 115.5855
-    assert result.tp2 == 115.4655
-    assert result.tp3 == 115.4055
-    assert result.tp4 == 115.3455
-    assert result.tp_min_rr == 115.4055
-    assert result.tp3_rr == 2.5
+    assert result.tp1 == 115.3055
+    assert result.tp2 is None
+    assert result.tp3 is None
+    assert result.tp4 is None
+    assert result.tp_min_rr == 115.2055
+    assert result.tp1_rr == 2.0
     assert result.confidence_bucket == "B_ABSORPTION_WATCH"
     assert result.signal_valid_time_wita == "2026-05-19 14:18:21"
 
@@ -494,12 +506,12 @@ def test_cadjpy_missing_support_ladder_uses_rr_fallback_without_validating():
     assert result.rr_status == "WATCH_PROVISIONAL"
     assert result.support_ladder_ready is False
     assert result.sl_tight == 115.805
-    assert result.tp1 == 115.565
-    assert result.tp2 == 115.445
-    assert result.tp3 == 115.385
-    assert result.tp4 == 115.325
-    assert result.tp_min_rr == 115.385
-    assert result.tp3_rr == 2.5
+    assert result.tp1 == 115.285
+    assert result.tp2 is None
+    assert result.tp3 is None
+    assert result.tp4 is None
+    assert result.tp_min_rr == 115.185
+    assert result.tp1_rr == 2.0
 
 
 def test_structure_targets_below_min_rr_do_not_promote_to_valid():
@@ -538,3 +550,81 @@ def test_structure_targets_below_min_rr_do_not_promote_to_valid():
     assert result.target_mode == "FINAL_MARKET_STRUCTURE"
     assert result.structure_targets_available is True
     assert result.valid_for_execution is False
+
+
+def test_audnzd_counter_sell_exports_structure_and_waits_for_spread_normalization():
+    cluster = _cluster(
+        symbol="AUDNZD",
+        price_at_signal_start=1.22158,
+        price_at_signal_end=1.22158,
+        end_utc="2026-05-25T16:59:36+00:00",
+    )
+    market = _market(
+        symbol="AUDNZD",
+        bid=1.2215,
+        ask=1.2219,
+        pip_value=0.0001,
+        price_at_signal_start=1.22158,
+        price_at_5m_confirm=1.22158,
+        price_at_signal_end=1.22158,
+        m15_phase="BEARISH_PULLBACK",
+        h1_phase="BEARISH",
+        price_position="MAIN_RESISTANCE",
+        spread_normal=False,
+        max_allowed_spread_pips=3.0,
+        main_support=1.2170,
+        main_resistance=1.2222,
+        key_support=1.2170,
+        key_resistance=1.2222,
+        resistance_low=1.2215,
+        resistance_high=1.2222,
+        sell_rejection_low=1.2215,
+        sell_rejection_high=1.2225,
+        minor_support=1.2170,
+        major_support=1.21562,
+        m15_rejection_from_resistance=True,
+        sl_tight=1.22295,
+        sl_safe=1.22375,
+        tp1_support=1.2170,
+        tp2_support=1.21562,
+        tp3_support=1.21492,
+        tp4_support=None,
+        support_ladder_ready=True,
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.analysis_valid is True
+    assert result.tradeplan_valid is True
+    assert result.execution_valid_now is False
+    assert result.final_direction == "WAIT"
+    assert result.execution_status == "WAIT_SPREAD_NORMALIZATION"
+    assert result.action == "WAIT_SPREAD_NORMALIZATION"
+    assert result.selected_sl_mode == "SAFE"
+    assert result.selected_sl == 1.22375
+    assert result.risk_pips_tight == 13.7
+    assert result.risk_pips_safe == 21.7
+    assert result.tp1 == 1.21724
+    assert result.tp2 == 1.21562
+    assert result.tp3 == 1.21492
+    assert result.targets is not None
+    assert [target["id"] for target in result.targets] == ["TP1", "TP2", "TP3"]
+    assert result.structure_zones is not None
+    assert result.structure_zones["key_resistance"] == 1.2222
+    assert result.structure_zones["key_support"] == 1.2170
+    assert result.invalidation_rules is not None
+    assert result.invalidation_rules["hard_invalid_level"] == 1.22375
+
+
+def test_sell_counter_entry_with_bullish_h1_stays_execution_wait():
+    result = MicroboostCounterEntryEngine().evaluate(
+        _cluster(),
+        _market(m15_rejection_from_resistance=True, m15_close_below_minor_support=True),
+    )
+
+    assert result.tradeplan_valid is True
+    assert result.execution_valid_now is False
+    assert result.final_direction == "WAIT"
+    assert result.execution_status == "WAIT_TIMEFRAME_ALIGNMENT"
+    assert result.phase_coherence is not None
+    assert result.phase_coherence["status"] == "H1_DIRECTION_CONFLICT"
