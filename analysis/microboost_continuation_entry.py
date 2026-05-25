@@ -89,11 +89,13 @@ class MicroboostContinuationEngine:
         min_density_per_minute: float = 25.0,
         min_duration_seconds: float = 60.0,
         min_rr_valid: float = 2.5,
+        tp1_rr_required: float = 2.0,
         allow_rr_fallback: bool = True,
     ) -> None:
         self.min_density_per_minute = min_density_per_minute
         self.min_duration_seconds = min_duration_seconds
         self.min_rr_valid = min_rr_valid
+        self.tp1_rr_required = max(2.0, float(tp1_rr_required))
         self.allow_rr_fallback = allow_rr_fallback
 
     def evaluate(
@@ -188,6 +190,7 @@ class MicroboostContinuationEngine:
             snapshot=snapshot,
             pip_value=pip_value,
             min_rr=self.min_rr_valid,
+            tp1_rr=self.tp1_rr_required,
             allow_rr_fallback=self.allow_rr_fallback,
         )
         status = f"{raw_direction}_TIMING_VALID_BY_QUORUM_CONTINUATION"
@@ -287,6 +290,7 @@ def _continuation_levels(
     snapshot: dict[str, Any] | None,
     pip_value: float,
     min_rr: float,
+    tp1_rr: float,
     allow_rr_fallback: bool,
 ) -> dict[str, Any]:
     digits = _digits(pip_value)
@@ -336,7 +340,7 @@ def _continuation_levels(
 
     selected_rr = _first_rr_at_least(direction, entry, sl, targets, min_rr)
     if selected_rr is not None:
-        ladder = _pad_targets(targets)
+        ladder = _target_ladder_with_fixed_tp1(direction, entry, sl, targets, tp1_rr)
         return _level_payload(
             direction=direction,
             entry=entry,
@@ -356,7 +360,7 @@ def _continuation_levels(
         )
 
     if allow_rr_fallback and entry is not None and sl is not None:
-        fallback_targets: list[float | None] = _rr_fallback_targets(direction, entry, sl, min_rr)
+        fallback_targets: list[float | None] = _rr_fallback_targets(direction, entry, sl, min_rr, tp1_rr)
         return _level_payload(
             direction=direction,
             entry=entry,
@@ -603,8 +607,32 @@ def _rr_target(direction: str, entry: float | None, sl: float | None, rr: float)
     return entry + (risk * rr) if direction == "BUY" else entry - (risk * rr)
 
 
-def _rr_fallback_targets(direction: str, entry: float, sl: float, min_rr: float) -> list[float | None]:
-    multipliers = [1.0, 2.0, min_rr, 3.0]
+def _target_ladder_with_fixed_tp1(
+    direction: str,
+    entry: float | None,
+    sl: float | None,
+    structure_targets: list[float],
+    tp1_rr: float,
+) -> list[float | None]:
+    fixed_tp1 = _rr_target(direction, entry, sl, tp1_rr)
+    eligible_extensions = [
+        target
+        for target in structure_targets
+        if (_rr(direction, entry, sl, target) or 0.0) > tp1_rr
+    ]
+    canonical_targets = ([] if fixed_tp1 is None else [fixed_tp1]) + eligible_extensions
+    return _pad_targets(canonical_targets)
+
+
+def _rr_fallback_targets(
+    direction: str,
+    entry: float,
+    sl: float,
+    min_rr: float,
+    tp1_rr: float,
+) -> list[float | None]:
+    final_rr = max(min_rr, tp1_rr)
+    multipliers = [tp1_rr, final_rr, max(3.0, final_rr + 0.5), max(4.0, final_rr + 1.0)]
     risk = abs(entry - sl)
     if direction == "BUY":
         return [entry + risk * multiplier for multiplier in multipliers]
