@@ -167,6 +167,7 @@ def _is_final_active(payload: dict[str, Any]) -> bool:
         status in FINAL_ACTIVE_STATUSES
         and _direction(payload) in {"BUY", "SELL"}
         and bool(payload.get("valid_for_execution", False))
+        and _counter_entry_execution_contract_complete(payload)
     )
 
 
@@ -181,12 +182,8 @@ def _direction(payload: dict[str, Any]) -> str | None:
 def _is_breakout_reinforcement(active: ActiveSignal, payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
     return (
-        (active.direction == "BUY" and status in {"BREAKOUT_CONTINUATION_BUY", "BUY_BREAKOUT_CONTINUATION_VALID"})
-        or (
-            active.direction == "SELL"
-            and status in {"BREAKDOWN_CONTINUATION_SELL", "SELL_BREAKDOWN_CONTINUATION_VALID"}
-        )
-    )
+        active.direction == "BUY" and status in {"BREAKOUT_CONTINUATION_BUY", "BUY_BREAKOUT_CONTINUATION_VALID"}
+    ) or (active.direction == "SELL" and status in {"BREAKDOWN_CONTINUATION_SELL", "SELL_BREAKDOWN_CONTINUATION_VALID"})
 
 
 def _active_from_payload(payload: dict[str, Any], lifecycle_status: str | None = None) -> ActiveSignal:
@@ -252,3 +249,42 @@ def _optional_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
+    family = str(payload.get("signal_family") or "").upper()
+    status = str(payload.get("status") or "").upper()
+    continuation_statuses = {
+        "BUY_BREAKOUT_CONTINUATION_VALID",
+        "SELL_BREAKDOWN_CONTINUATION_VALID",
+        "BUY_BREAKOUT_RETEST_VALID",
+        "SELL_BREAKDOWN_RETEST_VALID",
+    }
+    if family != "MICROBOOST_COUNTER_ENTRY" or status in continuation_statuses:
+        return True
+    zones = payload.get("structure_zones")
+    invalidation = payload.get("invalidation_rules")
+    targets = payload.get("targets")
+    execution_quality = payload.get("execution_quality")
+    phase_coherence = payload.get("phase_coherence")
+    signal_expiry = payload.get("signal_expiry")
+    return bool(
+        payload.get("tradeplan_valid") is True
+        and payload.get("execution_valid_now") is True
+        and _optional_float(payload.get("selected_sl")) is not None
+        and _optional_float(payload.get("selected_risk_pips") or payload.get("risk_pips")) is not None
+        and _optional_float(payload.get("tp_min_rr")) is not None
+        and isinstance(zones, dict)
+        and _optional_float(zones.get("key_resistance")) is not None
+        and _optional_float(zones.get("key_support")) is not None
+        and isinstance(invalidation, dict)
+        and _optional_float(invalidation.get("hard_invalid_level")) is not None
+        and isinstance(targets, list)
+        and bool(targets)
+        and isinstance(execution_quality, dict)
+        and execution_quality.get("spread_normal") is True
+        and isinstance(phase_coherence, dict)
+        and phase_coherence.get("status") == "EXECUTION_COMPATIBLE"
+        and isinstance(signal_expiry, dict)
+        and _optional_str(signal_expiry.get("expires_at_utc")) is not None
+    )
