@@ -200,6 +200,30 @@ class SignalJsonEvent:
     sell_rejection_zone: list[float] | None = None
     key_resistance: float | None = None
     key_support: float | None = None
+    signal_archetype: str | None = None
+    counter_entry: bool | None = None
+    counter_entry_reason: str | None = None
+    trend_following: bool | None = None
+    counter_entry_risk_multiplier: float | None = None
+    theme_transition: str | None = None
+    analysis_valid: bool = False
+    tradeplan_valid: bool = False
+    execution_valid_now: bool = False
+    execution_status: str | None = None
+    execution_reason: str | None = None
+    selected_sl_mode: str | None = None
+    selected_sl: float | None = None
+    risk_pips_tight: float | None = None
+    risk_pips_safe: float | None = None
+    selected_risk_pips: float | None = None
+    target_policy: dict[str, Any] | None = None
+    targets: list[dict[str, Any]] | None = None
+    structure_zones: dict[str, Any] | None = None
+    risk_reward: dict[str, Any] | None = None
+    invalidation_rules: dict[str, Any] | None = None
+    execution_quality: dict[str, Any] | None = None
+    phase_coherence: dict[str, Any] | None = None
+    signal_expiry: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -278,8 +302,7 @@ class SignalJsonEmitter:
         if _is_watch_status(event.status):
             return f"{event.symbol}|{cluster_key}|{event.signal_family}|{event.status}|{event.target_mode or ''}"
         return (
-            f"{event.symbol}|{cluster_key}|{event.signal_family}|{event.final_direction}|"
-            f"{event.entry_reference_price}"
+            f"{event.symbol}|{cluster_key}|{event.signal_family}|{event.final_direction}|{event.entry_reference_price}"
         )
 
     def _mark_watch_transition(self, event: SignalJsonEvent) -> bool:
@@ -314,18 +337,24 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
     entry_zone = _float_list(counter_entry.get("entry_zone"))
     symbol = str(counter_entry.get("symbol") or "").upper()
     status = str(counter_entry.get("status") or "")
-    if not signal_valid_time or signal_valid_price is None or entry_reference_price is None or not entry_zone or not symbol:
+    if (
+        not signal_valid_time
+        or signal_valid_price is None
+        or entry_reference_price is None
+        or not entry_zone
+        or not symbol
+    ):
         return None
     is_decision_update = _is_decision_update_payload(counter_entry)
     is_watch = _is_watch_status(status) and not is_decision_update
     return SignalJsonEvent(
-        event="signal_decision_update_json" if is_decision_update else ("signal_watch_json" if is_watch else "signal_json"),
-        schema_version="1.0",
+        event="signal_decision_update_json"
+        if is_decision_update
+        else ("signal_watch_json" if is_watch else "signal_json"),
+        schema_version="1.1-structure-aware",
         symbol=symbol,
         signal_family=str(
-            counter_entry.get("signal_family")
-            or counter_entry.get("signal_type")
-            or "MICROBOOST_COUNTER_ENTRY"
+            counter_entry.get("signal_family") or counter_entry.get("signal_type") or "MICROBOOST_COUNTER_ENTRY"
         ),
         status=status,
         cluster_id=_optional_str(counter_entry.get("cluster_id")),
@@ -389,7 +418,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         linked_previous_signal=_optional_str(counter_entry.get("linked_previous_signal")),
         previous_signal_status=_optional_str(counter_entry.get("previous_signal_status")),
         lifecycle_status=_optional_str(counter_entry.get("lifecycle_status")),
-        active_signal=counter_entry.get("active_signal") if isinstance(counter_entry.get("active_signal"), dict) else None,
+        active_signal=counter_entry.get("active_signal")
+        if isinstance(counter_entry.get("active_signal"), dict)
+        else None,
         previous_status=_optional_str(counter_entry.get("previous_status")),
         new_status=_optional_str(counter_entry.get("new_status")),
         block_end_utc=_optional_str(counter_entry.get("block_end_utc")),
@@ -415,6 +446,30 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         sell_rejection_zone=_float_list(counter_entry.get("sell_rejection_zone")) or None,
         key_resistance=_optional_float(counter_entry.get("key_resistance")),
         key_support=_optional_float(counter_entry.get("key_support")),
+        signal_archetype=_optional_str(counter_entry.get("signal_archetype")),
+        counter_entry=_optional_bool(counter_entry.get("counter_entry")),
+        counter_entry_reason=_optional_str(counter_entry.get("counter_entry_reason")),
+        trend_following=_optional_bool(counter_entry.get("trend_following")),
+        counter_entry_risk_multiplier=_optional_float(counter_entry.get("counter_entry_risk_multiplier")),
+        theme_transition=_optional_str(counter_entry.get("theme_transition")),
+        analysis_valid=bool(counter_entry.get("analysis_valid", False)),
+        tradeplan_valid=bool(counter_entry.get("tradeplan_valid", False)),
+        execution_valid_now=bool(counter_entry.get("execution_valid_now", False)),
+        execution_status=_optional_str(counter_entry.get("execution_status")),
+        execution_reason=_optional_str(counter_entry.get("execution_reason")),
+        selected_sl_mode=_optional_str(counter_entry.get("selected_sl_mode")),
+        selected_sl=_optional_float(counter_entry.get("selected_sl")),
+        risk_pips_tight=_optional_float(counter_entry.get("risk_pips_tight")),
+        risk_pips_safe=_optional_float(counter_entry.get("risk_pips_safe")),
+        selected_risk_pips=_optional_float(counter_entry.get("selected_risk_pips")),
+        target_policy=_dict_value(counter_entry.get("target_policy")),
+        targets=_dict_list(counter_entry.get("targets")),
+        structure_zones=_dict_value(counter_entry.get("structure_zones")),
+        risk_reward=_dict_value(counter_entry.get("risk_reward")),
+        invalidation_rules=_dict_value(counter_entry.get("invalidation_rules")),
+        execution_quality=_dict_value(counter_entry.get("execution_quality")),
+        phase_coherence=_dict_value(counter_entry.get("phase_coherence")),
+        signal_expiry=_dict_value(counter_entry.get("signal_expiry")),
     )
 
 
@@ -461,6 +516,8 @@ def should_emit_signal_json(
         elif target_mode != "FINAL_MARKET_STRUCTURE":
             return False
         if not bool(payload.get("valid_for_execution", False)):
+            return False
+        if not _counter_entry_execution_contract_complete(payload):
             return False
     return True
 
@@ -513,6 +570,7 @@ def _is_final_payload(payload: dict[str, Any]) -> bool:
         and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
         and target_ok
         and bool(payload.get("valid_for_execution", False))
+        and _counter_entry_execution_contract_complete(payload)
     )
 
 
@@ -544,6 +602,50 @@ def _float_list(value: Any) -> list[float]:
         if number is not None:
             values.append(number)
     return values
+
+
+def _dict_value(value: Any) -> dict[str, Any] | None:
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(value, list):
+        return None
+    values = [dict(item) for item in value if isinstance(item, dict)]
+    return values or None
+
+
+def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
+    family = str(payload.get("signal_family") or "").upper()
+    status = str(payload.get("status") or "").upper()
+    if family != "MICROBOOST_COUNTER_ENTRY" or status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES:
+        return True
+    zones = payload.get("structure_zones")
+    invalidation = payload.get("invalidation_rules")
+    targets = payload.get("targets")
+    execution_quality = payload.get("execution_quality")
+    phase_coherence = payload.get("phase_coherence")
+    signal_expiry = payload.get("signal_expiry")
+    return bool(
+        payload.get("tradeplan_valid") is True
+        and payload.get("execution_valid_now") is True
+        and _optional_float(payload.get("selected_sl")) is not None
+        and _optional_float(payload.get("selected_risk_pips") or payload.get("risk_pips")) is not None
+        and _optional_float(payload.get("tp_min_rr")) is not None
+        and isinstance(zones, dict)
+        and _optional_float(zones.get("key_resistance")) is not None
+        and _optional_float(zones.get("key_support")) is not None
+        and isinstance(invalidation, dict)
+        and _optional_float(invalidation.get("hard_invalid_level")) is not None
+        and isinstance(targets, list)
+        and bool(targets)
+        and isinstance(execution_quality, dict)
+        and execution_quality.get("spread_normal") is True
+        and isinstance(phase_coherence, dict)
+        and phase_coherence.get("status") == "EXECUTION_COMPATIBLE"
+        and isinstance(signal_expiry, dict)
+        and _optional_str(signal_expiry.get("expires_at_utc")) is not None
+    )
 
 
 def _optional_str(value: Any) -> str | None:
