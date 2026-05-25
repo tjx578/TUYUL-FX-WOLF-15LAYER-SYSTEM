@@ -235,6 +235,7 @@ def test_final_signal_uses_signal_json_prefix(caplog):
         selected_sl=1.3790,
         selected_risk_pips=20.4,
         tp_min_rr=1.3718,
+        tp1_rr=2.0,
         targets=[{"id": "TP1", "level": 1.37288, "type": "FIXED_RR", "rr": 2.0}],
         structure_zones={"key_resistance": 1.3774, "key_support": 1.3735},
         invalidation_rules={"hard_invalid_level": 1.3790},
@@ -263,6 +264,7 @@ def test_continuation_valid_with_rr_fallback_uses_signal_json_prefix(caplog):
         rr_status="VALID",
         target_mode="PROVISIONAL_RR_FALLBACK",
         valid_for_execution=True,
+        tp1_rr=2.0,
         allowed_quorum=True,
         allowed_quorum_streak=3,
         reclaim_trigger=1.3785,
@@ -316,6 +318,20 @@ def test_final_counter_entry_rejects_incomplete_execution_contract():
     assert should_emit_signal_json(event) is False
 
 
+def test_final_continuation_rejects_tp1_below_two_r():
+    event = _event(
+        signal_family="MICROBOOST_TREND_CONTINUATION",
+        status="BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+        final_direction="BUY",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=True,
+        tp1_rr=1.99,
+    )
+
+    assert should_emit_signal_json(event) is False
+
+
 def test_breakout_continuation_valid_allows_rr_fallback(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
@@ -329,6 +345,7 @@ def test_breakout_continuation_valid_allows_rr_fallback(caplog):
         rr_status="VALID",
         target_mode="PROVISIONAL_RR_FALLBACK",
         valid_for_execution=True,
+        tp1_rr=2.0,
     )
 
     assert should_emit_signal_json(event) is True

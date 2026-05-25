@@ -21,6 +21,7 @@ def _buy_signal(**overrides):
         "tp1": 1.3785,
         "tp2": 1.3810,
         "tp3": 1.3850,
+        "tp1_rr": 2.0,
         "rr_status": "VALID",
         "target_mode": "FINAL_MARKET_STRUCTURE",
         "valid_for_execution": True,
@@ -51,6 +52,7 @@ def _sell_watch(**overrides):
         "selected_sl": 1.3790,
         "selected_risk_pips": 18.0,
         "tp_min_rr": 1.3718,
+        "tp1_rr": 2.0,
         "targets": [{"id": "TP1", "level": 1.3736, "type": "FIXED_RR", "rr": 2.0}],
         "structure_zones": {"key_resistance": 1.3774, "key_support": 1.3735},
         "invalidation_rules": {"hard_invalid_level": 1.3790},
@@ -141,6 +143,15 @@ def test_incomplete_counter_entry_contract_cannot_supersede_active_buy():
     assert follow_up["final_direction"] == "WAIT"
     assert follow_up["lifecycle_status"] == "CONFLICT_WAIT_M15_CLOSE"
     assert manager.active_signal("USDCAD")["direction"] == "BUY"
+
+
+def test_continuation_below_two_r_does_not_become_active():
+    manager = SignalLifecycleManager()
+
+    signal = manager.apply(_buy_signal(tp1_rr=1.99))
+
+    assert "lifecycle_status" not in signal
+    assert manager.active_signal("USDCAD") is None
 
 
 def test_same_direction_signal_reinforces_active_signal():

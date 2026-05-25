@@ -144,12 +144,19 @@ class TestRegimeAdaptiveThresholds:
         assert verdict["gates"]["gate_1_tii"] == "FAIL"
 
     def test_normal_vol_uses_rr_threshold(self) -> None:
-        """NORMAL_VOL regime uses rr threshold from THRESHOLD_TABLE (1.5)."""
-        # rr=1.4 is below NORMAL_VOL threshold (1.5)
-        synthesis = _make_synthesis(rr=1.4, regime_type="NORMAL_VOL")
+        """NORMAL_VOL cannot execute a plan whose RR is below the 2R floor."""
+        synthesis = _make_synthesis(rr=1.99, regime_type="NORMAL_VOL")
         verdict = generate_l12_verdict(synthesis)
 
         assert verdict["gates"]["gate_3_rr"] == "FAIL"
+
+    def test_rr_floor_is_two_r_in_every_volatility_regime(self) -> None:
+        for regime in ("LOW_VOL", "NORMAL_VOL", "HIGH_VOL"):
+            below_floor = generate_l12_verdict(_make_synthesis(rr=1.99, regime_type=regime))
+            on_floor = generate_l12_verdict(_make_synthesis(rr=2.0, regime_type=regime))
+
+            assert below_floor["gates"]["gate_3_rr"] == "FAIL"
+            assert on_floor["gates"]["gate_3_rr"] == "PASS"
 
     def test_fallback_when_unknown_regime(self) -> None:
         """Unknown regime falls back to hardcoded _THRESH_* constants without error."""

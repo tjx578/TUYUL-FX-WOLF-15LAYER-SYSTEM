@@ -137,6 +137,7 @@ def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_la
     assert signal["final_direction"] == "SELL"
     assert signal["valid_for_execution"] is True
     assert signal["target_mode"] == "FINAL_MARKET_STRUCTURE"
+    assert signal["tp1_rr"] == 2.0
     assert signal["m15_confirmation_status"] == "M15_CLOSE_REJECTION_CONFIRMED"
     assert finalizer.pending_symbols() == []
 
@@ -164,6 +165,7 @@ def test_idle_resistance_watch_promotes_to_buy_breakout_when_m15_closes_above_re
     assert signal["final_direction"] == "BUY"
     assert signal["valid_for_execution"] is True
     assert signal["target_mode"] == "PROVISIONAL_RR_FALLBACK"
+    assert signal["tp1_rr"] == 2.0
     assert signal["m15_confirmation_status"] == "M15_CLOSE_ABOVE_RESISTANCE"
 
 

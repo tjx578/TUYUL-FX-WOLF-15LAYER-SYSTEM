@@ -240,6 +240,15 @@ class TestTP1Generator:
         if result["valid"]:
             assert result["rr"] >= 2.0
 
+    def test_configured_min_rr_cannot_lower_tp1_floor_below_two_r(self):
+        candles = _make_candles(20, base=1.2000, atr=0.0020)
+        generator = TP1Generator(min_rr=1.0)
+
+        result = generator.generate(candles=candles, entry=1.2050, sl=1.2010, direction="BUY", atr=0.0020)
+
+        assert result["valid"]
+        assert result["rr"] >= 2.0
+
     def test_tp1_source_present(self):
         candles = _make_candles(20, base=1.2000, atr=0.0020)
         result = self.gen.generate(candles=candles, entry=1.2050, sl=1.2010, direction="BUY", atr=0.0020)

@@ -103,6 +103,8 @@ def test_m15_breakout_confirms_buy_continuation_from_resistance_watch():
     assert result.rr_status == "VALID"
     assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
     assert result.valid_for_execution is True
+    assert result.tp1_rr == 2.0
+    assert result.tp2_rr == 2.5
 
 
 def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():

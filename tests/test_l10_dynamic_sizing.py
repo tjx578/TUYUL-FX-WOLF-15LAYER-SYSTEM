@@ -342,3 +342,33 @@ class TestSafetyClamps:
         assert low["sizing_source"] == "DYNAMIC_KELLY"
         assert high["adjusted_risk_pct"] > low["adjusted_risk_pct"]
         assert high["lot_size"] >= low["lot_size"]
+
+
+class TestMinimumExecutionRR:
+    """Position sizing must not approve a target below the mandatory TP1 floor."""
+
+    def test_rr_below_two_r_is_not_position_ok(self) -> None:
+        analyzer = L10PositionAnalyzer()
+        result = analyzer.analyze(
+            trade_params={"entry": 1.2650, "stop_loss": 1.2620, "take_profit": 1.2707},
+            account_balance=_BALANCE,
+            pair=_PAIR,
+            confidence=0.80,
+        )
+
+        assert result["rr_ratio"] == 1.9
+        assert result["position_ok"] is False
+        assert result["meta_state"] == "RISK_DEGRADED"
+        assert any("PROP_MIN_RR" in warning for warning in result["warnings"])
+
+    def test_two_r_boundary_remains_position_eligible(self) -> None:
+        analyzer = L10PositionAnalyzer()
+        result = analyzer.analyze(
+            trade_params=_TRADE_PARAMS,
+            account_balance=_BALANCE,
+            pair=_PAIR,
+            confidence=0.80,
+        )
+
+        assert result["rr_ratio"] == 2.0
+        assert result["position_ok"] is True
