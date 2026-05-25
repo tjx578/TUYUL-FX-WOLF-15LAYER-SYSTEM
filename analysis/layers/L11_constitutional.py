@@ -93,7 +93,7 @@ class L11BlockerCode(StrEnum):
 
 HIGH_THRESHOLD = 0.80
 MID_THRESHOLD = 0.65
-MIN_RR_RATIO = 1.5
+MIN_RR_RATIO = 2.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
