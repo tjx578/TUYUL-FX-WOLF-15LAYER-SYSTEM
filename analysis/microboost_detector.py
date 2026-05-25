@@ -167,7 +167,8 @@ def build_microboost_summary(
         enabled=True,
         window_minutes=int(window_minutes),
         market_context_applied=context_applied_to_blocks,
-        requires_market_context=any(block.requires_market_context for block in qualifying_blocks) or not qualifying_blocks,
+        requires_market_context=any(block.requires_market_context for block in qualifying_blocks)
+        or not qualifying_blocks,
         count_total=len(qualifying_blocks),
         count_by_phase=dict(count_by_phase),
         count_by_priced_phase=dict(count_by_priced_phase),
@@ -286,9 +287,7 @@ def _classify_unpriced_phase(
     duration_seconds = _duration_seconds(block)
     raw_events = _coerce_int(_get(block, "events", 0))
     events = max(raw_events, _coerce_int(_get(block, "effective_ticks", raw_events)))
-    density = _coerce_float(
-        _get(block, "effective_density_per_minute", _get(block, "density_per_minute", 0.0))
-    )
+    density = _coerce_float(_get(block, "effective_density_per_minute", _get(block, "density_per_minute", 0.0)))
     if duration_seconds >= clean_block_seconds:
         return None
     if (
@@ -297,7 +296,11 @@ def _classify_unpriced_phase(
         and density >= thresholds.min_density_per_minute
     ):
         return "NEAR_TIMING_GATE_MICROBOOST"
-    if symbol_block_count > 1 and events >= thresholds.small_min_events and density >= thresholds.min_density_per_minute:
+    if (
+        symbol_block_count > 1
+        and events >= thresholds.small_min_events
+        and density >= thresholds.min_density_per_minute
+    ):
         return "REPEATED_MICROBOOST"
     if (
         thresholds.valid_min_seconds <= duration_seconds < thresholds.valid_max_seconds
@@ -370,9 +373,7 @@ def _allowed_quorum_bonus(symbol: str, direction: str | None, allowed_quorum: di
 
 
 def _summary_action(blocks: list[MicroboostBlockIntel], timing_gate_5m: bool) -> str:
-    if any(
-        block.phase_priced in {"EXHAUSTION_AT_RESISTANCE", "EXHAUSTION_AT_SUPPORT"} for block in blocks
-    ):
+    if any(block.phase_priced in {"EXHAUSTION_AT_RESISTANCE", "EXHAUSTION_AT_SUPPORT"} for block in blocks):
         return "NO_NEW_ENTRY_WAIT_REVERSAL_OR_PULLBACK_CONFIRMATION"
     if any(block.phase_priced in {"SUPPORT_BOUNCE_MICROBOOST", "RESISTANCE_REJECTION_MICROBOOST"} for block in blocks):
         return "VALIDATE_STRUCTURE_REACTION"
@@ -676,13 +677,24 @@ def _market_context_snapshot(context: MarketContext | None) -> dict[str, Any] | 
         "price_at_signal_end": context.price_at_signal_end,
         "m15_phase": context.m15_phase,
         "h1_phase": context.h1_phase,
+        "h4_phase": context.h4_phase,
         "theme_aligned": context.theme_aligned,
         "spread_normal": context.spread_normal,
+        "spread_pips": context.spread_pips,
+        "max_allowed_spread_pips": context.max_allowed_spread_pips,
         "market_bias": _normalize_direction(context.market_bias),
         "trend_direction": _normalize_direction(context.trend_direction),
         "price_position": _normalize_structure_label(context.price_position),
         "main_support": context.main_support,
         "main_resistance": context.main_resistance,
+        "key_support": context.key_support,
+        "key_resistance": context.key_resistance,
+        "buy_pullback_low": context.buy_pullback_low,
+        "buy_pullback_high": context.buy_pullback_high,
+        "breakout_retest_low": context.breakout_retest_low,
+        "breakout_retest_high": context.breakout_retest_high,
+        "sell_rejection_low": context.sell_rejection_low,
+        "sell_rejection_high": context.sell_rejection_high,
         "range_position": context.range_position,
         "is_late_pressure": context.is_late_pressure,
         "resistance_low": context.resistance_low,
@@ -748,13 +760,24 @@ def _market_context_for_symbol(
         price_at_signal_end=_optional_float(raw.get("price_at_signal_end")),
         m15_phase=_optional_str(raw.get("m15_phase")),
         h1_phase=_optional_str(raw.get("h1_phase")),
+        h4_phase=_optional_str(raw.get("h4_phase")),
         theme_aligned=_optional_bool(raw.get("theme_aligned")),
         spread_normal=_optional_bool(raw.get("spread_normal")),
+        spread_pips=_optional_float(raw.get("spread_pips")),
+        max_allowed_spread_pips=_optional_float(raw.get("max_allowed_spread_pips")),
         market_bias=_optional_str(raw.get("market_bias")),
         trend_direction=_optional_str(raw.get("trend_direction")),
         price_position=_optional_str(raw.get("price_position")),
         main_support=_optional_float(raw.get("main_support")),
         main_resistance=_optional_float(raw.get("main_resistance")),
+        key_support=_optional_float(raw.get("key_support")),
+        key_resistance=_optional_float(raw.get("key_resistance")),
+        buy_pullback_low=_optional_float(raw.get("buy_pullback_low")),
+        buy_pullback_high=_optional_float(raw.get("buy_pullback_high")),
+        breakout_retest_low=_optional_float(raw.get("breakout_retest_low")),
+        breakout_retest_high=_optional_float(raw.get("breakout_retest_high")),
+        sell_rejection_low=_optional_float(raw.get("sell_rejection_low")),
+        sell_rejection_high=_optional_float(raw.get("sell_rejection_high")),
         range_position=_optional_float(raw.get("range_position")),
         is_late_pressure=bool(raw.get("is_late_pressure", False)),
         resistance_low=_optional_float(raw.get("resistance_low")),
