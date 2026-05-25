@@ -213,6 +213,9 @@ class SignalBlockFinalizer:
         hard_finalize_seconds: float = 300.0,
         expires_after_m15_bars: int = 3,
         min_rr_valid: float = 2.5,
+        tp1_rr_required: float = 2.0,
+        counter_entry_risk_multiplier: float = 0.5,
+        counter_entry_expiry_minutes: int = 30,
         allow_rr_fallback: bool = True,
     ) -> None:
         self.enabled = enabled
@@ -223,6 +226,9 @@ class SignalBlockFinalizer:
         self._gate = M15CloseConfirmationGate()
         self._engine = MicroboostCounterEntryEngine(
             min_rr_valid=min_rr_valid,
+            tp1_rr_required=tp1_rr_required,
+            counter_entry_risk_multiplier=counter_entry_risk_multiplier,
+            counter_entry_expiry_minutes=counter_entry_expiry_minutes,
             allow_rr_fallback=allow_rr_fallback,
         )
 
@@ -386,7 +392,9 @@ class SignalBlockFinalizer:
                 "reason": _decision_update_reason(decision, promoted),
                 "market_context_applied": decision.confirmation != "PENDING_MARKET_CONTEXT",
                 "block_end_utc": None if block_end is None else block_end.isoformat(),
-                "block_end_wita": None if block_end is None else block_end.astimezone(_TZ_WITA).strftime("%Y-%m-%d %H:%M:%S"),
+                "block_end_wita": None
+                if block_end is None
+                else block_end.astimezone(_TZ_WITA).strftime("%Y-%m-%d %H:%M:%S"),
                 "block_idle_seconds": round(idle_seconds, 3),
             }
         )
@@ -410,6 +418,25 @@ class SignalBlockFinalizer:
                 "tp4_rr",
                 "structure_ready",
                 "rr_to_valid_target",
+                "analysis_valid",
+                "tradeplan_valid",
+                "execution_valid_now",
+                "execution_status",
+                "execution_reason",
+                "selected_sl_mode",
+                "selected_sl",
+                "risk_pips",
+                "risk_pips_tight",
+                "risk_pips_safe",
+                "selected_risk_pips",
+                "target_policy",
+                "targets",
+                "structure_zones",
+                "risk_reward",
+                "invalidation_rules",
+                "execution_quality",
+                "phase_coherence",
+                "signal_expiry",
             ):
                 if key in promoted:
                     payload[key] = promoted.get(key)
@@ -438,8 +465,7 @@ class SignalBlockFinalizer:
                 "next_action": "REMOVE_PENDING_DECISION_STATE",
                 "requires_m15_close": False,
                 "reason": (
-                    f"Pending watch expired after {watch.expires_after_m15_bars} M15 bars "
-                    "without confirmation."
+                    f"Pending watch expired after {watch.expires_after_m15_bars} M15 bars without confirmation."
                 ),
             }
         )
@@ -496,7 +522,9 @@ def _pending_from_payload(
 
 def _cluster_from_pending(watch: PendingDecisionState) -> dict[str, Any]:
     payload = deepcopy(watch.payload)
-    entry_start = _zone_high(watch.entry_zone) if _candidate_direction(payload) == "SELL" else _zone_low(watch.entry_zone)
+    entry_start = (
+        _zone_high(watch.entry_zone) if _candidate_direction(payload) == "SELL" else _zone_low(watch.entry_zone)
+    )
     payload.update(
         {
             "symbol": watch.symbol,
@@ -553,7 +581,9 @@ def _with_block_fields(
             "previous_status": watch.status,
             "new_status": payload.get("status"),
             "block_end_utc": None if block_end is None else block_end.isoformat(),
-            "block_end_wita": None if block_end is None else block_end.astimezone(_TZ_WITA).strftime("%Y-%m-%d %H:%M:%S"),
+            "block_end_wita": None
+            if block_end is None
+            else block_end.astimezone(_TZ_WITA).strftime("%Y-%m-%d %H:%M:%S"),
             "block_idle_seconds": round(idle_seconds, 3),
             "pending_decision_id": watch.pending_decision_id,
             "m15_confirmation_status": decision.confirmation,
@@ -605,10 +635,7 @@ def _is_pending_watch(payload: dict[str, Any]) -> bool:
         status in PENDING_WATCH_STATUSES
         and str(payload.get("final_direction") or "WAIT").upper() == "WAIT"
         and not bool(payload.get("valid_for_execution", False))
-    ) or (
-        bool(payload.get("pending_decision_id"))
-        and _optional_bool(payload.get("requires_m15_close")) is True
-    )
+    ) or (bool(payload.get("pending_decision_id")) and _optional_bool(payload.get("requires_m15_close")) is True)
 
 
 def _is_final_execution(payload: dict[str, Any]) -> bool:
@@ -617,11 +644,53 @@ def _is_final_execution(payload: dict[str, Any]) -> bool:
         str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
         and bool(payload.get("valid_for_execution", False))
         and (status in FINAL_EXECUTION_STATUSES or status.endswith("_VALID"))
+        and _counter_entry_execution_contract_complete(payload)
     )
 
 
 def _is_structure_ready_for_execution(payload: dict[str, Any]) -> bool:
-    return bool(payload.get("structure_ready") or payload.get("tradeplan_context_ready"))
+    return bool(payload.get("structure_ready") or payload.get("tradeplan_context_ready")) and (
+        _counter_entry_execution_contract_complete(payload)
+    )
+
+
+def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
+    family = str(payload.get("signal_family") or "").upper()
+    status = str(payload.get("status") or "").upper()
+    continuation_statuses = {
+        "BUY_BREAKOUT_CONTINUATION_VALID",
+        "SELL_BREAKDOWN_CONTINUATION_VALID",
+        "BUY_BREAKOUT_RETEST_VALID",
+        "SELL_BREAKDOWN_RETEST_VALID",
+    }
+    if family != "MICROBOOST_COUNTER_ENTRY" or status in continuation_statuses:
+        return True
+    zones = payload.get("structure_zones")
+    invalidation = payload.get("invalidation_rules")
+    targets = payload.get("targets")
+    execution_quality = payload.get("execution_quality")
+    phase_coherence = payload.get("phase_coherence")
+    signal_expiry = payload.get("signal_expiry")
+    return bool(
+        payload.get("tradeplan_valid") is True
+        and payload.get("execution_valid_now") is True
+        and _optional_float(payload.get("selected_sl")) is not None
+        and _optional_float(payload.get("selected_risk_pips") or payload.get("risk_pips")) is not None
+        and _optional_float(payload.get("tp_min_rr")) is not None
+        and isinstance(zones, dict)
+        and _optional_float(zones.get("key_resistance")) is not None
+        and _optional_float(zones.get("key_support")) is not None
+        and isinstance(invalidation, dict)
+        and _optional_float(invalidation.get("hard_invalid_level")) is not None
+        and isinstance(targets, list)
+        and bool(targets)
+        and isinstance(execution_quality, dict)
+        and execution_quality.get("spread_normal") is True
+        and isinstance(phase_coherence, dict)
+        and phase_coherence.get("status") == "EXECUTION_COMPATIBLE"
+        and isinstance(signal_expiry, dict)
+        and _optional_str(signal_expiry.get("expires_at_utc")) is not None
+    )
 
 
 def _candidate_direction(payload: dict[str, Any]) -> str | None:
