@@ -34,6 +34,8 @@ ABSORPTION_WATCH_STATUSES = {
     "BUY_ABSORPTION_WATCH",
 }
 
+MIN_EXECUTABLE_TP1_RR = 2.0
+
 
 @dataclass(frozen=True)
 class ActiveSignal:
@@ -48,6 +50,7 @@ class ActiveSignal:
     tp1: float | None
     tp2: float | None
     tp3: float | None
+    tp1_rr: float | None
     lifecycle_status: str
 
     def to_payload(self) -> dict[str, Any]:
@@ -63,6 +66,7 @@ class ActiveSignal:
             "tp1": self.tp1,
             "tp2": self.tp2,
             "tp3": self.tp3,
+            "tp1_rr": self.tp1_rr,
             "lifecycle_status": self.lifecycle_status,
         }
 
@@ -146,6 +150,7 @@ class SignalLifecycleManager:
         payload.setdefault("tp1", active.tp1)
         payload.setdefault("tp2", active.tp2)
         payload.setdefault("tp3", active.tp3)
+        payload.setdefault("tp1_rr", active.tp1_rr)
         return payload
 
     def _supersede_with_reversal(self, active: ActiveSignal, payload: dict[str, Any]) -> dict[str, Any]:
@@ -167,6 +172,7 @@ def _is_final_active(payload: dict[str, Any]) -> bool:
         status in FINAL_ACTIVE_STATUSES
         and _direction(payload) in {"BUY", "SELL"}
         and bool(payload.get("valid_for_execution", False))
+        and _tp1_rr_meets_minimum(payload)
         and _counter_entry_execution_contract_complete(payload)
     )
 
@@ -201,6 +207,7 @@ def _active_from_payload(payload: dict[str, Any], lifecycle_status: str | None =
         tp1=_optional_float(payload.get("tp1")),
         tp2=_optional_float(payload.get("tp2")),
         tp3=_optional_float(payload.get("tp3")),
+        tp1_rr=_optional_float(payload.get("tp1_rr")),
         lifecycle_status=lifecycle_status or str(payload.get("lifecycle_status") or f"ACTIVE_{direction}_VALID"),
     )
 
@@ -288,3 +295,8 @@ def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
         and isinstance(signal_expiry, dict)
         and _optional_str(signal_expiry.get("expires_at_utc")) is not None
     )
+
+
+def _tp1_rr_meets_minimum(payload: dict[str, Any]) -> bool:
+    tp1_rr = _optional_float(payload.get("tp1_rr"))
+    return tp1_rr is not None and tp1_rr >= MIN_EXECUTABLE_TP1_RR
