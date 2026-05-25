@@ -394,7 +394,7 @@ class L6RiskAnalyzer:
             adjusted_kelly = 0.0
 
         # RR advisory flag (non-blocking)
-        if rr < 1.5:
+        if rr < 2.0:
             warnings.append(f"LOW_RR_RATIO({rr:.2f})")
 
         logger.info(
