@@ -24,9 +24,10 @@ from loguru import logger
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from config.logging_bootstrap import configure_loguru_logging
+from config.logging_bootstrap import configure_loguru_logging, configure_stdlib_logging
 from services.shared.db_revision_guard import DatabaseSchemaError, assert_required_tables
 
+configure_stdlib_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
 configure_loguru_logging()
 
 REQUIRED_TABLES: tuple[str, ...] = ("trade_outbox",)
