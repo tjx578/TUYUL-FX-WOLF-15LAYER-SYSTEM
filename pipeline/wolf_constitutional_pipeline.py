@@ -366,10 +366,11 @@ class WolfConstitutionalPipeline:
             enabled=os.getenv("SIGNAL_BLOCK_FINALIZER_ENABLED", "true").strip().lower() == "true",
             idle_finalize_seconds=self._parse_env_float("SIGNAL_BLOCK_IDLE_FINALIZE_SECONDS", 75.0),
             hard_finalize_seconds=self._parse_env_float("SIGNAL_BLOCK_HARD_FINALIZE_SECONDS", 300.0),
-            expires_after_m15_bars=int(
-                self._parse_env_float("SIGNAL_BLOCK_PENDING_EXPIRES_AFTER_M15_BARS", 3.0)
-            ),
+            expires_after_m15_bars=int(self._parse_env_float("SIGNAL_BLOCK_PENDING_EXPIRES_AFTER_M15_BARS", 3.0)),
             min_rr_valid=self._parse_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+            tp1_rr_required=self._parse_env_float("SIGNAL_JSON_TP1_RR_REQUIRED", 2.0),
+            counter_entry_risk_multiplier=self._parse_env_float("SIGNAL_JSON_COUNTER_ENTRY_RISK_MULTIPLIER", 0.5),
+            counter_entry_expiry_minutes=int(self._parse_env_float("SIGNAL_JSON_COUNTER_ENTRY_EXPIRY_MINUTES", 30.0)),
             allow_rr_fallback=os.getenv("SIGNAL_JSON_ALLOW_RR_FALLBACK", "true").strip().lower() == "true",
         )
         self._signal_json_emitter = SignalJsonEmitter(
@@ -387,9 +388,7 @@ class WolfConstitutionalPipeline:
             require_market_context=(
                 os.getenv("SIGNAL_JSON_EMIT_ONLY_WITH_MARKET_CONTEXT", "true").strip().lower() == "true"
             ),
-            watch_transition_only=(
-                os.getenv("SIGNAL_WATCH_EMIT_ON_TRANSITION_ONLY", "true").strip().lower() == "true"
-            ),
+            watch_transition_only=(os.getenv("SIGNAL_WATCH_EMIT_ON_TRANSITION_ONLY", "true").strip().lower() == "true"),
         )
         self._governance_now_ts: float | None = None
         _emit_canary_event(
@@ -3241,6 +3240,7 @@ class WolfConstitutionalPipeline:
             current_price=tick_mid or latest_m15_close or latest_h1_close or entry_price,
             pip_value=pip_value,
         )
+        spread_quality = self._spread_quality(symbol)
 
         return MarketContext(
             symbol=symbol,
@@ -3253,8 +3253,11 @@ class WolfConstitutionalPipeline:
             price_at_signal_end=tick_mid or latest_m15_close or latest_h1_close,
             m15_phase=self._derive_timeframe_phase(symbol, "M15"),
             h1_phase=self._derive_timeframe_phase(symbol, "H1"),
+            h4_phase=self._derive_timeframe_phase(symbol, "H4"),
             theme_aligned=self._is_market_theme_aligned(synthesis, direction),
-            spread_normal=self._is_spread_normal(symbol),
+            spread_normal=spread_quality["spread_normal"],
+            spread_pips=spread_quality["spread_pips"],
+            max_allowed_spread_pips=spread_quality["max_allowed_spread_pips"],
             market_bias=self._derive_market_bias(symbol),
             trend_direction=self._derive_market_bias(symbol),
             price_position=structure.get("price_position"),
@@ -3357,7 +3360,9 @@ class WolfConstitutionalPipeline:
         latest = candles[-1] if candles else {}
         previous = candles[:-1]
         previous_lows = [price for candle in previous[-8:] if (price := self._candle_price(candle, "low")) is not None]
-        previous_highs = [price for candle in previous[-8:] if (price := self._candle_price(candle, "high")) is not None]
+        previous_highs = [
+            price for candle in previous[-8:] if (price := self._candle_price(candle, "high")) is not None
+        ]
         latest_open = self._candle_price(latest, "open") if latest else None
         latest_high = self._candle_price(latest, "high") if latest else None
         latest_low = self._candle_price(latest, "low") if latest else None
@@ -3411,19 +3416,35 @@ class WolfConstitutionalPipeline:
         )
         support_ladder_ready = len(support_levels) >= 2
         resistance_ladder_ready = len(resistance_levels) >= 2
-        support_ladder_missing_reason = None if support_ladder_ready else self._ladder_missing_reason(
-            candle_count=m15_bar_count,
-            previous_levels=support_levels or previous_lows,
-            main_level=main_support,
-            missing_label="support",
+        support_ladder_missing_reason = (
+            None
+            if support_ladder_ready
+            else self._ladder_missing_reason(
+                candle_count=m15_bar_count,
+                previous_levels=support_levels or previous_lows,
+                main_level=main_support,
+                missing_label="support",
+            )
         )
-        resistance_ladder_missing_reason = None if resistance_ladder_ready else self._ladder_missing_reason(
-            candle_count=m15_bar_count,
-            previous_levels=resistance_levels or previous_highs,
-            main_level=main_resistance,
-            missing_label="resistance",
+        resistance_ladder_missing_reason = (
+            None
+            if resistance_ladder_ready
+            else self._ladder_missing_reason(
+                candle_count=m15_bar_count,
+                previous_levels=resistance_levels or previous_highs,
+                main_level=main_resistance,
+                missing_label="resistance",
+            )
         )
         return {
+            "key_resistance": main_resistance,
+            "key_support": minor_support or main_support,
+            "sell_rejection_low": resistance_low,
+            "sell_rejection_high": resistance_high,
+            "buy_pullback_low": support_low,
+            "buy_pullback_high": support_high,
+            "breakout_retest_low": resistance_low,
+            "breakout_retest_high": resistance_high,
             "resistance_low": resistance_low,
             "resistance_high": resistance_high,
             "minor_support": minor_support,
@@ -3488,10 +3509,6 @@ class WolfConstitutionalPipeline:
             for level in [*m15_highs, *h1_highs, main_resistance]
             if level is not None and level > current_price + min_distance
         ]
-        m15_range = (max(m15_highs) - min(m15_lows)) if m15_highs and m15_lows else None
-        h1_range = (max(h1_highs) - min(h1_lows)) if h1_highs and h1_lows else None
-        observed_range = m15_range if m15_range and m15_range > 0 else h1_range
-
         support_levels = self._cluster_ladder_levels(
             support_candidates,
             current_price=current_price,
@@ -3505,20 +3522,8 @@ class WolfConstitutionalPipeline:
             side="resistance",
         )
         return {
-            "support_levels": self._extend_ladder_levels(
-                support_levels,
-                current_price=current_price,
-                observed_range=observed_range,
-                pip_value=pip_value,
-                side="support",
-            ),
-            "resistance_levels": self._extend_ladder_levels(
-                resistance_levels,
-                current_price=current_price,
-                observed_range=observed_range,
-                pip_value=pip_value,
-                side="resistance",
-            ),
+            "support_levels": support_levels,
+            "resistance_levels": resistance_levels,
         }
 
     @staticmethod
@@ -3551,38 +3556,6 @@ class WolfConstitutionalPipeline:
             if rounded is not None and rounded not in representatives:
                 representatives.append(rounded)
         return representatives[:4]
-
-    @staticmethod
-    def _extend_ladder_levels(
-        levels: list[float],
-        *,
-        current_price: float,
-        observed_range: float | None,
-        pip_value: float,
-        side: str,
-    ) -> list[float]:
-        if not levels:
-            return []
-        extended = list(levels)
-        step_floor_pips = 20.0 if side == "support" else 18.0
-        range_step = (observed_range or 0.0) * (0.75 if side == "support" else 0.65)
-        step = max(step_floor_pips * pip_value, range_step)
-        step = min(step, 35.0 * pip_value)
-        anchor = min(extended) if side == "support" else max(extended)
-        while len(extended) < 4:
-            anchor = anchor - step if side == "support" else anchor + step
-            rounded = WolfConstitutionalPipeline._round_ladder_level(anchor)
-            if rounded is None:
-                break
-            if side == "support" and rounded >= current_price:
-                continue
-            if side == "resistance" and rounded <= current_price:
-                continue
-            if rounded not in extended:
-                extended.append(rounded)
-            else:
-                anchor = anchor - pip_value if side == "support" else anchor + pip_value
-        return extended[:4]
 
     @staticmethod
     def _round_ladder_level(value: float | None) -> float | None:
@@ -3678,9 +3651,12 @@ class WolfConstitutionalPipeline:
         return True
 
     def _is_spread_normal(self, symbol: str) -> bool | None:
+        return self._spread_quality(symbol)["spread_normal"]
+
+    def _spread_quality(self, symbol: str) -> dict[str, float | bool | None]:
         tick = self._context_bus.get_latest_tick(symbol)
         if not isinstance(tick, dict):
-            return None
+            return {"spread_normal": None, "spread_pips": None, "max_allowed_spread_pips": None}
         bid = self._coerce_positive_float(tick.get("bid"))
         ask = self._coerce_positive_float(tick.get("ask"))
         spread_raw = self._coerce_positive_float(tick.get("spread"))
@@ -3689,7 +3665,7 @@ class WolfConstitutionalPipeline:
         elif spread_raw is not None:
             spread_price = spread_raw
         else:
-            return None
+            return {"spread_normal": None, "spread_pips": None, "max_allowed_spread_pips": None}
 
         try:
             from config.pair_spreads import get_spread_pips  # noqa: PLC0415
@@ -3702,7 +3678,12 @@ class WolfConstitutionalPipeline:
             normal_spread_pips = 2.0
 
         spread_pips = spread_price if spread_price > 0.05 else spread_price * pip_multiplier
-        return spread_pips <= normal_spread_pips * self._market_context_spread_multiplier
+        max_allowed_spread_pips = normal_spread_pips * self._market_context_spread_multiplier
+        return {
+            "spread_normal": spread_pips <= max_allowed_spread_pips,
+            "spread_pips": round(spread_pips, 2),
+            "max_allowed_spread_pips": round(max_allowed_spread_pips, 2),
+        }
 
     @staticmethod
     def _direction_hint(raw: Any) -> str | None:
