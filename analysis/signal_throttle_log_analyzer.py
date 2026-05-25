@@ -1111,6 +1111,7 @@ def _continuation_entry_payload(
         min_density_per_minute=_env_float("SIGNAL_JSON_CONTINUATION_MIN_DENSITY", 25.0),
         min_duration_seconds=_env_float("SIGNAL_JSON_CONTINUATION_MIN_DURATION_SECONDS", 60.0),
         min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+        tp1_rr_required=_env_float("SIGNAL_JSON_TP1_RR_REQUIRED", 2.0),
         allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
     ).evaluate(latest, allowed_quorum=allowed_quorum)
     payload = result.to_dict()
