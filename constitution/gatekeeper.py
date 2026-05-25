@@ -129,7 +129,7 @@ class Gatekeeper:
 
     def _gate_rr(self, c: dict):
         # Use top-level rr_min (reconciled value)
-        min_rr = self.constitution.get("rr_min", 1.5)
+        min_rr = self.constitution.get("rr_min", 2.0)
         rr = c.get("L11", {}).get("rr", 0)
         return rr >= min_rr, f"rr<{min_rr}"
 
