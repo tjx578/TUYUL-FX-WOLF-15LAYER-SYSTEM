@@ -89,22 +89,44 @@ def test_rejection_confirms_sell_timing_valid():
     assert result.invalidation_rules["hard_invalid_level"] == result.selected_sl
 
 
-def test_m15_breakout_confirms_buy_continuation_from_resistance_watch():
+def test_m15_breakout_confirms_buy_direction_but_waits_for_new_structure_tradeplan():
     result = MicroboostCounterEntryEngine().evaluate(
         _cluster(),
         _market(m15_close_above_resistance=True),
     )
 
     assert result.enabled is True
-    assert result.status == CounterEntryStatus.BUY_BREAKOUT_CONTINUATION_VALID
+    assert result.status == CounterEntryStatus.BUY_BREAKOUT_RETEST_WATCH
     assert result.candidate_direction == "BUY"
-    assert result.final_direction == "BUY"
-    assert result.action == "BUY_BREAKOUT_RETEST"
-    assert result.rr_status == "VALID"
+    assert result.final_direction == "WAIT"
+    assert result.action == "WAIT_BREAKOUT_RETEST_AND_STRUCTURE_TARGETS"
+    assert result.rr_status == "WATCH_PROVISIONAL"
     assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
-    assert result.valid_for_execution is True
+    assert result.analysis_valid is True
+    assert result.tradeplan_valid is False
+    assert result.execution_valid_now is False
+    assert result.execution_status == "WAIT_STRUCTURE_TARGETS_AND_BREAKOUT_RETEST"
+    assert result.valid_for_execution is False
     assert result.tp1_rr == 2.0
     assert result.tp2_rr == 2.5
+
+
+def test_m15_breakdown_confirms_sell_direction_but_waits_for_new_structure_tradeplan():
+    result = MicroboostCounterEntryEngine().evaluate(
+        _cluster(direction="SELL", phase_priced="SUPPORT_PRESSURE_WARNING"),
+        _market(raw_allowed_direction="SELL", price_position="MAIN_SUPPORT", m15_close_below_support=True),
+    )
+
+    assert result.enabled is True
+    assert result.status == CounterEntryStatus.SELL_BREAKDOWN_RETEST_WATCH
+    assert result.candidate_direction == "SELL"
+    assert result.final_direction == "WAIT"
+    assert result.action == "WAIT_BREAKDOWN_RETEST_AND_STRUCTURE_TARGETS"
+    assert result.rr_status == "WATCH_PROVISIONAL"
+    assert result.tradeplan_valid is False
+    assert result.execution_valid_now is False
+    assert result.execution_status == "WAIT_STRUCTURE_TARGETS_AND_BREAKDOWN_RETEST"
+    assert result.valid_for_execution is False
 
 
 def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():

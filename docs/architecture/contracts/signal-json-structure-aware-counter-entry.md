@@ -41,10 +41,52 @@ For counter-entry signals:
 This preserves the existing executor configuration `TP1_ONLY` while exporting
 auditable extension targets for management and dashboards.
 
-For `MICROBOOST_TREND_CONTINUATION`, TP1 is also canonicalized to fixed `2.0R`.
-Nearby observed structure remains useful as reclaim context, but is not
-exported as an executable TP1 when its reward is below the floor. Continuation
-RR fallback ladders now begin at `2.0R` rather than `1.0R`.
+For `MICROBOOST_TREND_CONTINUATION` and `MICROBOOST_BREAKOUT_CONTINUATION`,
+TP1 is also canonicalized to fixed `2.0R`. Nearby observed structure remains
+useful as reclaim context, but is not exported as an executable TP1 when its
+reward is below the floor. A provisional RR ladder can be shown on a watch
+event, but it cannot authorize a final continuation signal.
+
+## Breakout Resolution Of A Counter-Entry Watch
+
+A breakout or breakdown that invalidates a `MICROBOOST_COUNTER_ENTRY` watch
+confirms a possible new direction; it does not inherit execution authority
+from the invalidated watch. Until a fresh structure-aware continuation
+tradeplan is built, the output is `BUY_BREAKOUT_RETEST_WATCH` or
+`SELL_BREAKDOWN_RETEST_WATCH` with:
+
+- `analysis_valid=true`
+- `tradeplan_valid=false`
+- `execution_valid_now=false`
+- `valid_for_execution=false`
+- `execution_status=WAIT_STRUCTURE_TARGETS_AND_*_RETEST`
+
+A provisional RR ladder may be shown for orientation, but cannot promote this
+counter-entry-family resolution or a continuation tradeplan into final
+SignalJSON.
+
+## Breakout-Continuation Strategy Handoff
+
+When direction continues through a key boundary, a failed counter-entry watch
+does not become a trade in the opposite direction automatically. The
+continuation engine owns the new setup as
+`MICROBOOST_BREAKOUT_CONTINUATION`.
+
+For a bullish resistance breakout such as the supplied GBPCAD fixture:
+
+1. An M15 close above the observed resistance creates
+   `BUY_BREAKOUT_RETEST_WATCH`, not an executable market entry.
+2. The tradeplan selects the structure-buffered safe stop when available and
+   computes mandatory TP1 from that selected stop at `2.0R`.
+3. TP2 and later targets are exported only from observed ladder levels beyond
+   TP1; no pair-specific price is hardcoded into strategy logic.
+4. Execution can promote to `BUY_BREAKOUT_RETEST_VALID` only after a recorded
+   retest hold, coherent M15/H1 direction, normal spread, a non-expired
+   signal, and the complete structure-aware execution contract.
+
+The SELL breakdown path is symmetrical. This separates a valid directional
+breakout hypothesis from a valid entry now, which prevents a close through
+resistance from becoming a blind chase trade.
 
 ## Final Execution Gate
 

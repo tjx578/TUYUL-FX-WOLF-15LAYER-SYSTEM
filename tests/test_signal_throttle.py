@@ -648,6 +648,9 @@ class TestPipelineSignalThrottle:
         assert context.tp4_support is None
         assert context.support_ladder_missing_reason is None
         assert context.price_position == "MAIN_RESISTANCE"
+        assert context.continuation_sl_tight is not None
+        assert context.continuation_sl_safe is not None
+        assert context.continuation_sl_safe < context.continuation_sl_tight
 
     def test_sovereignty_downgrade_emits_throttle_skipped_event(self, monkeypatch):
         """When vault sovereignty downgrades EXECUTE before throttle, emit an explicit skip event."""

@@ -249,7 +249,7 @@ def test_final_signal_uses_signal_json_prefix(caplog):
     assert "[SignalWatchJSON]" not in caplog.text
 
 
-def test_continuation_valid_with_rr_fallback_uses_signal_json_prefix(caplog):
+def test_continuation_with_rr_fallback_cannot_emit_final_signal(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
         cluster_id="USDCAD_20260520T024532Z",
@@ -271,13 +271,48 @@ def test_continuation_valid_with_rr_fallback_uses_signal_json_prefix(caplog):
         risk_pips=12.0,
     )
 
+    assert should_emit_signal_json(event) is False
+    assert emitter.emit(event) is False
+    assert "[SignalJSON]" not in caplog.text
+
+
+def test_structure_aware_breakout_continuation_can_emit_final_signal(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="GBPCAD_20260525T165847Z",
+        symbol="GBPCAD",
+        signal_family="MICROBOOST_BREAKOUT_CONTINUATION",
+        status="BUY_BREAKOUT_RETEST_VALID",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_BREAKOUT_RETEST_ENTRY",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+        analysis_valid=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
+        selected_sl=1.8616,
+        selected_risk_pips=20.0,
+        tp_min_rr=1.8686,
+        tp1_rr=2.0,
+        targets=[
+            {"id": "TP1", "level": 1.8676, "type": "FIXED_RR", "rr": 2.0},
+            {"id": "TP2", "level": 1.8690, "type": "STRUCTURE_TARGET", "rr": 2.7},
+        ],
+        structure_zones={"key_resistance": 1.8650, "key_support": 1.8616},
+        invalidation_rules={"hard_invalid_level": 1.8616},
+        execution_quality={"spread_normal": True},
+        phase_coherence={"h1": "BULLISH", "status": "EXECUTION_COMPATIBLE"},
+        signal_expiry={"expires_at_utc": "2026-05-25T17:43:47+00:00"},
+    )
+
     assert should_emit_signal_json(event) is True
     assert emitter.emit(event) is True
     assert "[SignalJSON]" in caplog.text
-    assert "[SignalWatchJSON]" not in caplog.text
-    assert '"signal_family":"MICROBOOST_TREND_CONTINUATION"' in caplog.text
-    assert '"emit_reason":"QUORUM_CONTINUATION_VALID"' in caplog.text
-    assert '"signal_quality":"TREND_CONTINUATION_VALID"' in caplog.text
+    assert '"signal_family":"MICROBOOST_BREAKOUT_CONTINUATION"' in caplog.text
 
 
 def test_signal_decision_update_uses_decision_update_prefix(caplog):
@@ -332,7 +367,7 @@ def test_final_continuation_rejects_tp1_below_two_r():
     assert should_emit_signal_json(event) is False
 
 
-def test_breakout_continuation_valid_allows_rr_fallback(caplog):
+def test_counter_entry_breakout_cannot_execute_from_rr_fallback(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
         cluster_id="USDCAD_20260521T030620Z",
@@ -348,7 +383,29 @@ def test_breakout_continuation_valid_allows_rr_fallback(caplog):
         tp1_rr=2.0,
     )
 
+    assert should_emit_signal_json(event) is False
+    assert emitter.emit(event) is False
+    assert "[SignalJSON]" not in caplog.text
+
+
+def test_breakout_direction_watch_emits_blocked_lifecycle_signal(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260521T030620Z",
+        status="BUY_BREAKOUT_RETEST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="WAIT",
+        action="WAIT_BREAKOUT_RETEST_AND_STRUCTURE_TARGETS",
+        rr_status="WATCH_PROVISIONAL",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=False,
+        tp1_rr=2.0,
+    )
+
     assert should_emit_signal_json(event) is True
     assert emitter.emit(event) is True
-    assert "[SignalJSON]" in caplog.text
-    assert '"status":"BUY_BREAKOUT_CONTINUATION_VALID"' in caplog.text
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"status":"BUY_BREAKOUT_RETEST_WATCH"' in caplog.text
+    assert '"signal_quality":"DIRECTION_VALID_EXECUTION_BLOCKED"' in caplog.text

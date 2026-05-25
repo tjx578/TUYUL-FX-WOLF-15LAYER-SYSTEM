@@ -24,6 +24,20 @@ def _buy_signal(**overrides):
         "tp1_rr": 2.0,
         "rr_status": "VALID",
         "target_mode": "FINAL_MARKET_STRUCTURE",
+        "tradeplan_valid": True,
+        "execution_valid_now": True,
+        "selected_sl": 1.3720,
+        "selected_risk_pips": 36.8,
+        "tp_min_rr": 1.3850,
+        "targets": [
+            {"id": "TP1", "level": 1.3785, "type": "FIXED_RR", "rr": 2.0},
+            {"id": "TP2", "level": 1.3850, "type": "STRUCTURE_TARGET", "rr": 2.5},
+        ],
+        "structure_zones": {"key_resistance": 1.3850, "key_support": 1.3720},
+        "invalidation_rules": {"hard_invalid_level": 1.3720},
+        "execution_quality": {"spread_normal": True},
+        "phase_coherence": {"h1": "BULLISH", "status": "EXECUTION_COMPATIBLE"},
+        "signal_expiry": {"expires_at_utc": "2026-05-20T03:30:52+00:00"},
         "valid_for_execution": True,
     }
     payload.update(overrides)
@@ -181,9 +195,13 @@ def test_breakout_after_absorption_watch_reinforces_active_buy():
 
     follow_up = manager.apply(breakout)
 
-    assert follow_up["status"] == "BUY_BREAKOUT_CONTINUATION_VALID"
-    assert follow_up["final_direction"] == "BUY"
-    assert follow_up["action"] == "HOLD_BUY_OR_BUY_RETEST"
+    assert follow_up["status"] == "BUY_BREAKOUT_RETEST_WATCH"
+    assert follow_up["final_direction"] == "WAIT"
+    assert follow_up["action"] == "HOLD_BUY_WAIT_RETEST_TRADEPLAN"
     assert follow_up["previous_signal_status"] == "REINFORCED"
     assert follow_up["linked_previous_signal"] == active["signal_id"]
-    assert follow_up["valid_for_execution"] is True
+    assert follow_up["execution_status"] == "ACTIVE_SIGNAL_REINFORCED_NEW_ENTRY_BLOCKED"
+    assert follow_up["valid_for_execution"] is False
+    current_active = manager.active_signal("USDCAD")
+    assert current_active is not None
+    assert current_active["direction"] == "BUY"

@@ -35,6 +35,10 @@ EMITTABLE_SIGNAL_STATUSES = {
     "SELL_TIMING_VALID_BY_QUORUM_CONTINUATION",
     "BUY_REVERSAL_VALID",
     "SELL_REVERSAL_VALID",
+    "BUY_BREAKOUT_RETEST_WATCH",
+    "SELL_BREAKDOWN_RETEST_WATCH",
+    "BUY_CONTINUATION_TRADEPLAN_WATCH",
+    "SELL_CONTINUATION_TRADEPLAN_WATCH",
     "BUY_BREAKOUT_CONTINUATION_VALID",
     "BUY_BREAKOUT_RETEST_VALID",
     "SELL_BREAKDOWN_CONTINUATION_VALID",
@@ -80,6 +84,10 @@ CONDITIONAL_SIGNAL_STATUSES = {
     "SELL_TIMING_VALID_BY_ABSORPTION",
     "BUY_ABSORPTION_WATCH",
     "BUY_TIMING_VALID_BY_ABSORPTION",
+    "BUY_BREAKOUT_RETEST_WATCH",
+    "SELL_BREAKDOWN_RETEST_WATCH",
+    "BUY_CONTINUATION_TRADEPLAN_WATCH",
+    "SELL_CONTINUATION_TRADEPLAN_WATCH",
 }
 
 WATCH_SIGNAL_STATUSES = {
@@ -99,12 +107,7 @@ DECISION_UPDATE_STATUSES = {
     "PENDING_WATCH_EXPIRED",
 }
 
-PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES = CONTINUATION_SIGNAL_STATUSES | {
-    "BUY_BREAKOUT_CONTINUATION_VALID",
-    "SELL_BREAKDOWN_CONTINUATION_VALID",
-    "BUY_BREAKOUT_RETEST_VALID",
-    "SELL_BREAKDOWN_RETEST_VALID",
-}
+PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES: set[str] = set()
 
 MIN_EXECUTABLE_TP1_RR = 2.0
 
@@ -553,6 +556,13 @@ def _emit_reason(status: str) -> str:
         return "DIRECT_ABSORPTION_VALID"
     if status in {"SELL_ABSORPTION_WATCH", "BUY_ABSORPTION_WATCH"}:
         return "ABSORPTION_WATCH"
+    if status in {
+        "BUY_BREAKOUT_RETEST_WATCH",
+        "SELL_BREAKDOWN_RETEST_WATCH",
+        "BUY_CONTINUATION_TRADEPLAN_WATCH",
+        "SELL_CONTINUATION_TRADEPLAN_WATCH",
+    }:
+        return "DIRECTION_VALID_EXECUTION_BLOCKED"
     if status in CONDITIONAL_SIGNAL_STATUSES:
         return "TIMING_VALID_CONDITIONAL"
     if status in WATCH_SIGNAL_STATUSES:
@@ -593,6 +603,13 @@ def _signal_quality(payload: dict[str, Any]) -> str:
         return "ABSORPTION_WATCH"
     if status.endswith("_BY_ABSORPTION"):
         return "TIMING_VALID_CONDITIONAL"
+    if status in {
+        "BUY_BREAKOUT_RETEST_WATCH",
+        "SELL_BREAKDOWN_RETEST_WATCH",
+        "BUY_CONTINUATION_TRADEPLAN_WATCH",
+        "SELL_CONTINUATION_TRADEPLAN_WATCH",
+    }:
+        return "DIRECTION_VALID_EXECUTION_BLOCKED"
     if _is_watch_status(status):
         return "WATCH_ONLY"
     return "CANDIDATE"
@@ -622,8 +639,11 @@ def _dict_list(value: Any) -> list[dict[str, Any]] | None:
 
 def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
     family = str(payload.get("signal_family") or "").upper()
-    status = str(payload.get("status") or "").upper()
-    if family != "MICROBOOST_COUNTER_ENTRY" or status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES:
+    if family not in {
+        "MICROBOOST_COUNTER_ENTRY",
+        "MICROBOOST_TREND_CONTINUATION",
+        "MICROBOOST_BREAKOUT_CONTINUATION",
+    }:
         return True
     zones = payload.get("structure_zones")
     invalidation = payload.get("invalidation_rules")

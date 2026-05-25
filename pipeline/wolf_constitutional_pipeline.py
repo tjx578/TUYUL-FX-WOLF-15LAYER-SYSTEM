@@ -67,7 +67,7 @@ from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime, timedelta, timezone
 from importlib import import_module
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 from analysis.market_context_validator import MarketContext, validate_market_context
 from analysis.microboost_event_log import (
@@ -116,6 +116,13 @@ from pipeline.phases.synthesis import build_l12_synthesis, resolve_trade_directi
 from pipeline.phases.vault import compute_vault_sync
 from pipeline.result import PipelineResult
 from pipeline.warmup_utils import normalize_warmup  # noqa: E402  # delayed import to avoid circular dependency
+
+
+class _SpreadQuality(TypedDict):
+    spread_normal: bool | None
+    spread_pips: float | None
+    max_allowed_spread_pips: float | None
+
 
 try:
     from loguru import logger
@@ -3358,6 +3365,7 @@ class WolfConstitutionalPipeline:
         h1_candles = self._context_bus.get_candle_history(symbol, "H1", count=24)
         m15_bar_count = len(candles)
         latest = candles[-1] if candles else {}
+        previous_candle = candles[-2] if len(candles) >= 2 else {}
         previous = candles[:-1]
         previous_lows = [price for candle in previous[-8:] if (price := self._candle_price(candle, "low")) is not None]
         previous_highs = [
@@ -3367,6 +3375,7 @@ class WolfConstitutionalPipeline:
         latest_high = self._candle_price(latest, "high") if latest else None
         latest_low = self._candle_price(latest, "low") if latest else None
         latest_close = self._candle_price(latest, "close") if latest else None
+        previous_close = self._candle_price(previous_candle, "close") if previous_candle else None
         main_support = self._coerce_positive_float(structure.get("main_support"))
         main_resistance = self._coerce_positive_float(structure.get("main_resistance"))
         ladder = self._derive_price_ladders(
@@ -3391,6 +3400,15 @@ class WolfConstitutionalPipeline:
         m15_close_above_resistance = (
             latest_close is not None and resistance_high is not None and latest_close > resistance_high
         )
+        m15_breakout_retest_held = (
+            previous_close is not None
+            and latest_low is not None
+            and latest_close is not None
+            and resistance_high is not None
+            and previous_close > resistance_high
+            and latest_low <= resistance_high + (2.0 * pip_value)
+            and latest_close >= resistance_high
+        )
         m15_rejection_from_resistance = (
             latest_high is not None
             and resistance_high is not None
@@ -3403,6 +3421,15 @@ class WolfConstitutionalPipeline:
             latest_close is not None and minor_support is not None and latest_close < minor_support
         )
         m15_close_below_support = latest_close is not None and support_low is not None and latest_close < support_low
+        m15_breakdown_retest_held = (
+            previous_close is not None
+            and latest_high is not None
+            and latest_close is not None
+            and support_low is not None
+            and previous_close < support_low
+            and latest_high >= support_low - (2.0 * pip_value)
+            and latest_close <= support_low
+        )
         m15_rejection_from_support = (
             latest_low is not None
             and support_low is not None
@@ -3436,6 +3463,14 @@ class WolfConstitutionalPipeline:
                 missing_label="resistance",
             )
         )
+        continuation_sl_tight: float | None = None
+        continuation_sl_safe: float | None = None
+        if structure.get("price_position") == "MAIN_RESISTANCE" and resistance_low is not None:
+            continuation_sl_tight = resistance_low - sl_buffer
+            continuation_sl_safe = continuation_sl_tight - sl_buffer
+        elif structure.get("price_position") == "MAIN_SUPPORT" and support_high is not None:
+            continuation_sl_tight = support_high + sl_buffer
+            continuation_sl_safe = continuation_sl_tight + sl_buffer
         return {
             "key_resistance": main_resistance,
             "key_support": minor_support or main_support,
@@ -3454,15 +3489,19 @@ class WolfConstitutionalPipeline:
             "m15_high": latest_high,
             "m15_low": latest_low,
             "m15_close_above_resistance": m15_close_above_resistance,
+            "m15_breakout_retest_held": m15_breakout_retest_held,
             "m15_rejection_from_resistance": m15_rejection_from_resistance,
             "m15_close_below_minor_support": m15_close_below_minor_support,
             "support_low": support_low,
             "support_high": support_high,
             "minor_resistance": minor_resistance,
             "m15_close_below_support": m15_close_below_support,
+            "m15_breakdown_retest_held": m15_breakdown_retest_held,
             "m15_rejection_from_support": m15_rejection_from_support,
             "m15_close_above_minor_resistance": m15_close_above_minor_resistance,
             "sl_buffer": sl_buffer,
+            "continuation_sl_tight": continuation_sl_tight,
+            "continuation_sl_safe": continuation_sl_safe,
             "tp1_support": support_levels[0] if len(support_levels) > 0 else None,
             "tp2_support": support_levels[1] if len(support_levels) > 1 else None,
             "tp3_support": support_levels[2] if len(support_levels) > 2 else None,
@@ -3653,7 +3692,7 @@ class WolfConstitutionalPipeline:
     def _is_spread_normal(self, symbol: str) -> bool | None:
         return self._spread_quality(symbol)["spread_normal"]
 
-    def _spread_quality(self, symbol: str) -> dict[str, float | bool | None]:
+    def _spread_quality(self, symbol: str) -> _SpreadQuality:
         tick = self._context_bus.get_latest_tick(symbol)
         if not isinstance(tick, dict):
             return {"spread_normal": None, "spread_pips": None, "max_allowed_spread_pips": None}
@@ -3819,10 +3858,17 @@ class WolfConstitutionalPipeline:
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
         status = str(continuation.get("status") or "")
-        if status.endswith("_CONTINUATION"):
+        if bool(continuation.get("valid_for_execution", False)) and continuation.get("final_direction") in {
+            "BUY",
+            "SELL",
+        }:
             l12_verdict["final_direction"] = continuation.get("final_direction")
             l12_verdict["action"] = continuation.get("action")
-            l12_verdict["direction_source"] = "MICROBOOST_TREND_CONTINUATION"
+            l12_verdict["direction_source"] = str(continuation.get("signal_family") or "MICROBOOST_TREND_CONTINUATION")
+        elif status.endswith("_WATCH"):
+            l12_verdict["final_direction"] = "WAIT"
+            l12_verdict["action"] = continuation.get("action")
+            l12_verdict["direction_source"] = f"{continuation.get('signal_family')}_WATCH"
 
         signal_event = build_signal_json_event(continuation)
         if signal_event is not None:
@@ -3838,6 +3884,16 @@ class WolfConstitutionalPipeline:
         if not isinstance(counter_entry, dict):
             return
         if counter_entry.get("status") == "NONE":
+            return
+        continuation = report.get("microboost_continuation_entry")
+        if (
+            isinstance(continuation, dict)
+            and continuation.get("signal_family") == "MICROBOOST_BREAKOUT_CONTINUATION"
+            and continuation.get("status") != "NONE"
+        ):
+            report["microboost_counter_entry_suppressed_reason"] = (
+                "breakout_continuation_strategy_owns_direction_resolution"
+            )
             return
 
         counter_entry = self._signal_lifecycle_manager.apply(counter_entry)

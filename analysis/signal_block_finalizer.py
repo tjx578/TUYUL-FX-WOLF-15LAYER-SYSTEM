@@ -338,6 +338,8 @@ class SignalBlockFinalizer:
                 promoted=promoted,
             )
             outputs.extend(self._append_once(watch, update, block_end, decision.confirmation))
+            if decision.confirmation in {"M15_CLOSE_ABOVE_RESISTANCE", "M15_CLOSE_BELOW_SUPPORT"}:
+                self._pending.pop(symbol, None)
         return outputs
 
     def _promote(
@@ -372,6 +374,11 @@ class SignalBlockFinalizer:
         action = "FETCH_M15_CLOSE_AND_SUPPORT_LADDER"
         if decision.confirmation == "PENDING_M15_CLOSE":
             action = "WAIT_NEXT_M15_CLOSE"
+        elif promoted is not None and str(promoted.get("status") or "") in {
+            "BUY_BREAKOUT_RETEST_WATCH",
+            "SELL_BREAKDOWN_RETEST_WATCH",
+        }:
+            action = str(promoted.get("action") or "WAIT_BREAKOUT_RETEST_AND_STRUCTURE_TARGETS")
         elif promoted is not None and not _is_structure_ready_for_execution(promoted):
             action = "WAIT_STRUCTURE_TARGET_OR_SUPPORT_LADDER"
 
@@ -382,7 +389,8 @@ class SignalBlockFinalizer:
                 "previous_status": watch.status,
                 "new_status": status,
                 "final_direction": "WAIT",
-                "validated_direction": _candidate_direction(watch.payload),
+                "candidate_direction": _candidate_direction(promoted) if promoted is not None else _candidate_direction(watch.payload),
+                "validated_direction": _candidate_direction(promoted) if promoted is not None else _candidate_direction(watch.payload),
                 "action": action,
                 "next_action": action,
                 "valid_for_execution": False,
@@ -659,14 +667,7 @@ def _is_structure_ready_for_execution(payload: dict[str, Any]) -> bool:
 
 def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
     family = str(payload.get("signal_family") or "").upper()
-    status = str(payload.get("status") or "").upper()
-    continuation_statuses = {
-        "BUY_BREAKOUT_CONTINUATION_VALID",
-        "SELL_BREAKDOWN_CONTINUATION_VALID",
-        "BUY_BREAKOUT_RETEST_VALID",
-        "SELL_BREAKDOWN_RETEST_VALID",
-    }
-    if family != "MICROBOOST_COUNTER_ENTRY" or status in continuation_statuses:
+    if family != "MICROBOOST_COUNTER_ENTRY":
         return True
     zones = payload.get("structure_zones")
     invalidation = payload.get("invalidation_rules")

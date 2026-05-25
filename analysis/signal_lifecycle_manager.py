@@ -136,16 +136,19 @@ class SignalLifecycleManager:
     def _breakout_reinforces_active_signal(self, active: ActiveSignal, payload: dict[str, Any]) -> dict[str, Any]:
         direction = active.direction
         payload["status"] = (
-            "BUY_BREAKOUT_CONTINUATION_VALID" if direction == "BUY" else "SELL_BREAKDOWN_CONTINUATION_VALID"
+            "BUY_BREAKOUT_RETEST_WATCH" if direction == "BUY" else "SELL_BREAKDOWN_RETEST_WATCH"
         )
-        payload["final_direction"] = direction
+        payload["final_direction"] = "WAIT"
         payload["validated_direction"] = direction
         payload["lifecycle_status"] = "REINFORCES_ACTIVE_SIGNAL"
         payload["previous_signal_status"] = "REINFORCED"
-        payload["action"] = f"HOLD_{direction}_OR_{direction}_RETEST"
-        payload["valid_for_execution"] = True
-        payload.setdefault("rr_status", "VALID")
-        payload.setdefault("target_mode", "FINAL_MARKET_STRUCTURE")
+        payload["action"] = f"HOLD_{direction}_WAIT_RETEST_TRADEPLAN"
+        payload["valid_for_execution"] = False
+        payload["analysis_valid"] = True
+        payload["tradeplan_valid"] = False
+        payload["execution_valid_now"] = False
+        payload["execution_status"] = "ACTIVE_SIGNAL_REINFORCED_NEW_ENTRY_BLOCKED"
+        payload["execution_reason"] = "breakout_reinforces_existing_position_but_requires_new_tradeplan_for_additional_entry"
         payload.setdefault("sl_tight", active.sl_tight)
         payload.setdefault("tp1", active.tp1)
         payload.setdefault("tp2", active.tp2)
@@ -260,14 +263,11 @@ def _optional_float(value: Any) -> float | None:
 
 def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
     family = str(payload.get("signal_family") or "").upper()
-    status = str(payload.get("status") or "").upper()
-    continuation_statuses = {
-        "BUY_BREAKOUT_CONTINUATION_VALID",
-        "SELL_BREAKDOWN_CONTINUATION_VALID",
-        "BUY_BREAKOUT_RETEST_VALID",
-        "SELL_BREAKDOWN_RETEST_VALID",
-    }
-    if family != "MICROBOOST_COUNTER_ENTRY" or status in continuation_statuses:
+    if family not in {
+        "MICROBOOST_COUNTER_ENTRY",
+        "MICROBOOST_TREND_CONTINUATION",
+        "MICROBOOST_BREAKOUT_CONTINUATION",
+    }:
         return True
     zones = payload.get("structure_zones")
     invalidation = payload.get("invalidation_rules")

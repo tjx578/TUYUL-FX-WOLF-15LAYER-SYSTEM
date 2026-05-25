@@ -336,6 +336,7 @@ def test_short_allowed_quorum_trend_continuation_does_not_emit_signal_payload():
         tp1_resistance=1.3785,
         tp2_resistance=1.3810,
         tp3_resistance=1.3850,
+        tp4_resistance=1.3880,
     )
 
     report = analyze_signal_throttle_events(events, market_contexts={"USDCAD": market})

@@ -34,6 +34,8 @@ class CounterEntryStatus(StrEnum):
     BUY_TIMING_VALID = "BUY_TIMING_VALID"
     BREAKOUT_CONTINUATION_BUY = "BREAKOUT_CONTINUATION_BUY"
     BREAKDOWN_CONTINUATION_SELL = "BREAKDOWN_CONTINUATION_SELL"
+    BUY_BREAKOUT_RETEST_WATCH = "BUY_BREAKOUT_RETEST_WATCH"
+    SELL_BREAKDOWN_RETEST_WATCH = "SELL_BREAKDOWN_RETEST_WATCH"
     BUY_BREAKOUT_CONTINUATION_VALID = "BUY_BREAKOUT_CONTINUATION_VALID"
     SELL_BREAKDOWN_CONTINUATION_VALID = "SELL_BREAKDOWN_CONTINUATION_VALID"
 
@@ -327,13 +329,16 @@ class MicroboostCounterEntryEngine:
             )
             return self._result(
                 enabled=True,
-                status=CounterEntryStatus.BUY_BREAKOUT_CONTINUATION_VALID,
+                status=CounterEntryStatus.BUY_BREAKOUT_RETEST_WATCH,
                 candidate_direction="BUY",
                 validated_direction="BUY",
-                final_direction="BUY",
-                direction_status="M15_BREAKOUT_CONFIRMED",
-                action="BUY_BREAKOUT_RETEST",
-                reason="M15 close confirmed a breakout above resistance; counter-sell watch is invalidated.",
+                final_direction="WAIT",
+                direction_status="M15_BREAKOUT_DIRECTION_CONFIRMED_TRADEPLAN_INCOMPLETE",
+                action="WAIT_BREAKOUT_RETEST_AND_STRUCTURE_TARGETS",
+                reason=(
+                    "M15 close invalidated the counter-sell watch and confirmed possible BUY direction; "
+                    "a new structure-aware breakout tradeplan is required before execution."
+                ),
                 sl_tight=breakout_levels["sl_tight"],
                 sl_safe=breakout_levels["sl_safe"],
                 tp1=breakout_levels["tp1"],
@@ -343,16 +348,16 @@ class MicroboostCounterEntryEngine:
                 rr_to_tp1_tight=breakout_levels["tp1_rr"],
                 rr_to_tp2_tight=breakout_levels["tp2_rr"],
                 rr_to_tp3_tight=breakout_levels["tp3_rr"],
-                rr_status="VALID",
-                confidence_bucket="A_BREAKOUT_CONTINUATION_VALID",
+                rr_status="WATCH_PROVISIONAL",
+                confidence_bucket="B_BREAKOUT_DIRECTION_WATCH",
                 invalidation="M15 close back below breakout zone",
                 trade_plan=breakout_levels["trade_plan"],
                 target_mode="PROVISIONAL_RR_FALLBACK",
-                tp_status="VALID_FROM_TP3",
-                tp_missing_reason="breakout_structure_target_not_required_for_trigger",
+                tp_status="WATCH_PROVISIONAL",
+                tp_missing_reason="breakout_structure_tradeplan_not_built",
                 structure_targets_available=False,
                 tradeplan_context_ready=False,
-                valid_for_execution=True,
+                valid_for_execution=False,
                 min_rr_required=self.min_rr_valid,
                 tp_min_rr=breakout_levels["tp_min_rr"],
                 tp_min_rr_value=self.min_rr_valid,
@@ -360,6 +365,14 @@ class MicroboostCounterEntryEngine:
                 tp2_rr=breakout_levels["tp2_rr"],
                 tp3_rr=breakout_levels["tp3_rr"],
                 tp4_rr=breakout_levels["tp4_rr"],
+                confirmation_policy="M15_BREAKOUT_DIRECTION_CONFIRMED_RETEST_REQUIRED",
+                requires_m15_close=False,
+                m15_confirmation_status="M15_CLOSE_ABOVE_RESISTANCE",
+                analysis_valid=True,
+                tradeplan_valid=False,
+                execution_valid_now=False,
+                execution_status="WAIT_STRUCTURE_TARGETS_AND_BREAKOUT_RETEST",
+                execution_reason="breakout_direction_confirmed_without_structure_aware_tradeplan",
                 **base,
             )
 
@@ -591,13 +604,16 @@ class MicroboostCounterEntryEngine:
             )
             return self._result(
                 enabled=True,
-                status=CounterEntryStatus.SELL_BREAKDOWN_CONTINUATION_VALID,
+                status=CounterEntryStatus.SELL_BREAKDOWN_RETEST_WATCH,
                 candidate_direction="SELL",
                 validated_direction="SELL",
-                final_direction="SELL",
-                direction_status="M15_BREAKDOWN_CONFIRMED",
-                action="SELL_BREAKDOWN_RETEST",
-                reason="M15 close confirmed a breakdown below support; counter-buy watch is invalidated.",
+                final_direction="WAIT",
+                direction_status="M15_BREAKDOWN_DIRECTION_CONFIRMED_TRADEPLAN_INCOMPLETE",
+                action="WAIT_BREAKDOWN_RETEST_AND_STRUCTURE_TARGETS",
+                reason=(
+                    "M15 close invalidated the counter-buy watch and confirmed possible SELL direction; "
+                    "a new structure-aware breakdown tradeplan is required before execution."
+                ),
                 sl_tight=breakdown_levels["sl_tight"],
                 sl_safe=breakdown_levels["sl_safe"],
                 tp1=breakdown_levels["tp1"],
@@ -607,16 +623,16 @@ class MicroboostCounterEntryEngine:
                 rr_to_tp1_tight=breakdown_levels["tp1_rr"],
                 rr_to_tp2_tight=breakdown_levels["tp2_rr"],
                 rr_to_tp3_tight=breakdown_levels["tp3_rr"],
-                rr_status="VALID",
-                confidence_bucket="A_BREAKDOWN_CONTINUATION_VALID",
+                rr_status="WATCH_PROVISIONAL",
+                confidence_bucket="B_BREAKDOWN_DIRECTION_WATCH",
                 invalidation="M15 close back above breakdown zone",
                 trade_plan=breakdown_levels["trade_plan"],
                 target_mode="PROVISIONAL_RR_FALLBACK",
-                tp_status="VALID_FROM_TP3",
-                tp_missing_reason="breakdown_structure_target_not_required_for_trigger",
+                tp_status="WATCH_PROVISIONAL",
+                tp_missing_reason="breakdown_structure_tradeplan_not_built",
                 structure_targets_available=False,
                 tradeplan_context_ready=False,
-                valid_for_execution=True,
+                valid_for_execution=False,
                 min_rr_required=self.min_rr_valid,
                 tp_min_rr=breakdown_levels["tp_min_rr"],
                 tp_min_rr_value=self.min_rr_valid,
@@ -624,6 +640,14 @@ class MicroboostCounterEntryEngine:
                 tp2_rr=breakdown_levels["tp2_rr"],
                 tp3_rr=breakdown_levels["tp3_rr"],
                 tp4_rr=breakdown_levels["tp4_rr"],
+                confirmation_policy="M15_BREAKDOWN_DIRECTION_CONFIRMED_RETEST_REQUIRED",
+                requires_m15_close=False,
+                m15_confirmation_status="M15_CLOSE_BELOW_SUPPORT",
+                analysis_valid=True,
+                tradeplan_valid=False,
+                execution_valid_now=False,
+                execution_status="WAIT_STRUCTURE_TARGETS_AND_BREAKDOWN_RETEST",
+                execution_reason="breakdown_direction_confirmed_without_structure_aware_tradeplan",
                 **base,
             )
 
