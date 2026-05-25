@@ -155,7 +155,7 @@ class TestL12VerdictGateFailures:
 
     def test_rr_gate_failure(self) -> None:
         """Test verdict when RR gate fails — single non-critical failure triggers near-pass."""
-        synthesis = _make_synthesis(rr=1.0)  # Below 1.5 threshold
+        synthesis = _make_synthesis(rr=1.0)  # Below the 2R threshold
 
         verdict = generate_l12_verdict(synthesis)
 
