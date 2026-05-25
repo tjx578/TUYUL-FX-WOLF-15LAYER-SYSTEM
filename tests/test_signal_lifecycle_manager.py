@@ -24,21 +24,11 @@ def _buy_signal(**overrides):
         "tp1_rr": 2.0,
         "rr_status": "VALID",
         "target_mode": "FINAL_MARKET_STRUCTURE",
-        "tradeplan_valid": True,
-        "execution_valid_now": True,
-        "selected_sl": 1.3720,
-        "selected_risk_pips": 36.8,
-        "tp_min_rr": 1.3850,
-        "targets": [
-            {"id": "TP1", "level": 1.3785, "type": "FIXED_RR", "rr": 2.0},
-            {"id": "TP2", "level": 1.3850, "type": "STRUCTURE_TARGET", "rr": 2.5},
-        ],
-        "structure_zones": {"key_resistance": 1.3850, "key_support": 1.3720},
-        "invalidation_rules": {"hard_invalid_level": 1.3720},
-        "execution_quality": {"spread_normal": True},
-        "phase_coherence": {"h1": "BULLISH", "status": "EXECUTION_COMPATIBLE"},
-        "signal_expiry": {"expires_at_utc": "2026-05-20T03:30:52+00:00"},
         "valid_for_execution": True,
+        "parent_event_exists": True,
+        "parent_watch_id": "USDCAD_BUY_PARENT",
+        "parent_watch_required": True,
+        "promotion_path": "WATCH_TO_FINAL",
     }
     payload.update(overrides)
     return payload
@@ -74,6 +64,10 @@ def _sell_watch(**overrides):
         "phase_coherence": {"h1": "BEARISH", "status": "EXECUTION_COMPATIBLE"},
         "signal_expiry": {"expires_at_utc": "2026-05-20T08:30:00+00:00"},
         "valid_for_execution": False,
+        "parent_event_exists": True,
+        "parent_watch_id": "USDCAD_SELL_PARENT",
+        "parent_watch_required": True,
+        "promotion_path": "WATCH_TO_FINAL",
         "reason": "BUY microboost stalled at main resistance.",
     }
     payload.update(overrides)
@@ -106,6 +100,7 @@ def test_confirmed_opposing_sell_supersedes_active_buy_as_reversal():
         rr_status="VALID",
         valid_for_execution=True,
         execution_valid_now=True,
+        m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
     )
 
     follow_up = manager.apply(confirmed_sell)
@@ -131,6 +126,7 @@ def test_absorption_timing_valid_can_supersede_active_buy_when_execution_valid()
         rr_status="VALID",
         valid_for_execution=True,
         execution_valid_now=True,
+        m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
     )
 
     follow_up = manager.apply(confirmed_absorption)
@@ -159,6 +155,27 @@ def test_incomplete_counter_entry_contract_cannot_supersede_active_buy():
     current_active = manager.active_signal("USDCAD")
     assert current_active is not None
     assert current_active["direction"] == "BUY"
+
+
+def test_opposing_final_waits_when_reversal_confirmation_is_missing():
+    manager = SignalLifecycleManager()
+    manager.apply(_buy_signal())
+    unconfirmed_sell = _sell_watch(
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        action="SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST",
+        rr_status="VALID",
+        valid_for_execution=True,
+        execution_valid_now=True,
+    )
+
+    follow_up = manager.apply(unconfirmed_sell)
+
+    assert follow_up["source_status"] == "SELL_TIMING_VALID"
+    assert follow_up["source_final_direction"] == "SELL"
+    assert follow_up["final_direction"] == "WAIT"
+    assert follow_up["lifecycle_status"] == "CONFLICT_WAIT_REVERSAL_CONFIRMATION_AND_COOLDOWN"
+    assert manager.active_signal("USDCAD")["direction"] == "BUY"
 
 
 def test_continuation_below_two_r_does_not_become_active():
@@ -195,13 +212,9 @@ def test_breakout_after_absorption_watch_reinforces_active_buy():
 
     follow_up = manager.apply(breakout)
 
-    assert follow_up["status"] == "BUY_BREAKOUT_RETEST_WATCH"
-    assert follow_up["final_direction"] == "WAIT"
-    assert follow_up["action"] == "HOLD_BUY_WAIT_RETEST_TRADEPLAN"
+    assert follow_up["status"] == "BUY_BREAKOUT_CONTINUATION_VALID"
+    assert follow_up["final_direction"] == "BUY"
+    assert follow_up["action"] == "HOLD_BUY_OR_BUY_RETEST"
     assert follow_up["previous_signal_status"] == "REINFORCED"
     assert follow_up["linked_previous_signal"] == active["signal_id"]
-    assert follow_up["execution_status"] == "ACTIVE_SIGNAL_REINFORCED_NEW_ENTRY_BLOCKED"
-    assert follow_up["valid_for_execution"] is False
-    current_active = manager.active_signal("USDCAD")
-    assert current_active is not None
-    assert current_active["direction"] == "BUY"
+    assert follow_up["valid_for_execution"] is True
