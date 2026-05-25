@@ -186,6 +186,7 @@ def test_build_signal_json_event_from_counter_entry_payload():
     assert event.event == "signal_watch_json"
     assert event.is_final_signal is False
     assert event.signal_quality == "WATCH_ONLY"
+    assert event.schema_version == "1.1-structure-aware"
 
 
 def test_build_signal_json_event_marks_absorption_as_conditional_quality():
@@ -229,6 +230,17 @@ def test_final_signal_uses_signal_json_prefix(caplog):
         rr_status="VALID",
         target_mode="FINAL_MARKET_STRUCTURE",
         valid_for_execution=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
+        selected_sl=1.3790,
+        selected_risk_pips=20.4,
+        tp_min_rr=1.3718,
+        targets=[{"id": "TP1", "level": 1.37288, "type": "FIXED_RR", "rr": 2.0}],
+        structure_zones={"key_resistance": 1.3774, "key_support": 1.3735},
+        invalidation_rules={"hard_invalid_level": 1.3790},
+        execution_quality={"spread_normal": True},
+        phase_coherence={"h1": "BEARISH", "status": "EXECUTION_COMPATIBLE"},
+        signal_expiry={"expires_at_utc": "2026-05-19T15:26:05+00:00"},
     )
 
     assert emitter.emit(event) is True
@@ -290,6 +302,18 @@ def test_signal_decision_update_uses_decision_update_prefix(caplog):
     assert "[SignalJSON]" not in caplog.text
     assert '"event":"signal_decision_update_json"' in caplog.text
     assert '"signal_quality":"DECISION_UPDATE"' in caplog.text
+
+
+def test_final_counter_entry_rejects_incomplete_execution_contract():
+    event = _event(
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+    )
+
+    assert should_emit_signal_json(event) is False
 
 
 def test_breakout_continuation_valid_allows_rr_fallback(caplog):
