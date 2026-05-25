@@ -142,7 +142,9 @@ def test_incomplete_counter_entry_contract_cannot_supersede_active_buy():
 
     assert follow_up["final_direction"] == "WAIT"
     assert follow_up["lifecycle_status"] == "CONFLICT_WAIT_M15_CLOSE"
-    assert manager.active_signal("USDCAD")["direction"] == "BUY"
+    current_active = manager.active_signal("USDCAD")
+    assert current_active is not None
+    assert current_active["direction"] == "BUY"
 
 
 def test_continuation_below_two_r_does_not_become_active():
