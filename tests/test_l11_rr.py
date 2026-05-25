@@ -127,7 +127,7 @@ def test_rr_custom_entry(analyzer, context_bus):
 
 
 def test_rr_minimum_ratio_requirement(analyzer, context_bus):
-    """Test RR meets minimum 1.5 ratio requirement."""
+    """Test RR meets minimum 2.0 ratio requirement."""
     # Add 20 candles with good volatility
     for i in range(20):
         candle = {
@@ -145,9 +145,9 @@ def test_rr_minimum_ratio_requirement(analyzer, context_bus):
     result = analyzer.calculate_rr("EURUSD", "BUY")
 
     # Should have valid RR with good volatility
-    # RR should be >= 1.5 or marked as invalid
+    # RR should be >= 2.0 or marked as invalid
     if result.get("valid"):
-        assert result["rr"] >= 1.5
+        assert result["rr"] >= 2.0
         assert result["reason"] == "rr_ok"
     else:
         assert result["reason"] == "rr_too_low"
