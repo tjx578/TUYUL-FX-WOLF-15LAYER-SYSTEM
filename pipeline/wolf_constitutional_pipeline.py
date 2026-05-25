@@ -389,13 +389,31 @@ class WolfConstitutionalPipeline:
                 "[SignalDecisionUpdateJSON]",
             ),
             dedup_ttl_seconds=int(self._parse_env_float("SIGNAL_JSON_DEDUP_TTL_SECONDS", 300.0)),
-            emit_watch=os.getenv("SIGNAL_JSON_EMIT_WATCH", "false").strip().lower() == "true",
+            emit_watch=os.getenv("SIGNAL_JSON_EMIT_WATCH", "true").strip().lower() == "true",
             emit_conditional=os.getenv("SIGNAL_JSON_EMIT_CONDITIONAL", "true").strip().lower() == "true",
             emit_valid=os.getenv("SIGNAL_JSON_EMIT_VALID", "true").strip().lower() == "true",
             require_market_context=(
                 os.getenv("SIGNAL_JSON_EMIT_ONLY_WITH_MARKET_CONTEXT", "true").strip().lower() == "true"
             ),
             watch_transition_only=(os.getenv("SIGNAL_WATCH_EMIT_ON_TRANSITION_ONLY", "true").strip().lower() == "true"),
+            strict_lifecycle=os.getenv("SIGNAL_JSON_STRICT_LIFECYCLE", "true").strip().lower() == "true",
+            require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "true").strip().lower() == "true",
+            allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "false").strip().lower() == "true",
+            require_final_market_structure=(
+                os.getenv("SIGNAL_JSON_REQUIRE_FINAL_MARKET_STRUCTURE", "true").strip().lower() == "true"
+            ),
+            allow_provisional_rr_execution=(
+                os.getenv("SIGNAL_JSON_ALLOW_PROVISIONAL_RR_EXECUTION", "false").strip().lower() == "true"
+            ),
+            require_theme_alignment=os.getenv("SIGNAL_JSON_REQUIRE_THEME_ALIGNMENT", "true").strip().lower() == "true",
+            theme_conflict_downgrade=os.getenv("SIGNAL_JSON_THEME_CONFLICT_DOWNGRADE", "true").strip().lower()
+            == "true",
+            min_rr_valid=self._parse_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+            cooldown_m15_bars_after_active_signal=int(
+                self._parse_env_float("SIGNAL_JSON_COOLDOWN_M15_BARS_AFTER_ACTIVE_SIGNAL", 1.0)
+            ),
+            decision_dedup_enabled=os.getenv("SIGNAL_DECISION_DEDUP_ENABLED", "true").strip().lower() == "true",
+            decision_state_monotonic=os.getenv("SIGNAL_DECISION_STATE_MONOTONIC", "true").strip().lower() == "true",
         )
         self._governance_now_ts: float | None = None
         _emit_canary_event(
@@ -3858,17 +3876,10 @@ class WolfConstitutionalPipeline:
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
         status = str(continuation.get("status") or "")
-        if bool(continuation.get("valid_for_execution", False)) and continuation.get("final_direction") in {
-            "BUY",
-            "SELL",
-        }:
+        if status.endswith("_CONTINUATION"):
             l12_verdict["final_direction"] = continuation.get("final_direction")
             l12_verdict["action"] = continuation.get("action")
-            l12_verdict["direction_source"] = str(continuation.get("signal_family") or "MICROBOOST_TREND_CONTINUATION")
-        elif status.endswith("_WATCH"):
-            l12_verdict["final_direction"] = "WAIT"
-            l12_verdict["action"] = continuation.get("action")
-            l12_verdict["direction_source"] = f"{continuation.get('signal_family')}_WATCH"
+            l12_verdict["direction_source"] = "MICROBOOST_TREND_CONTINUATION"
 
         signal_event = build_signal_json_event(continuation)
         if signal_event is not None:
@@ -3884,16 +3895,6 @@ class WolfConstitutionalPipeline:
         if not isinstance(counter_entry, dict):
             return
         if counter_entry.get("status") == "NONE":
-            return
-        continuation = report.get("microboost_continuation_entry")
-        if (
-            isinstance(continuation, dict)
-            and continuation.get("signal_family") == "MICROBOOST_BREAKOUT_CONTINUATION"
-            and continuation.get("status") != "NONE"
-        ):
-            report["microboost_counter_entry_suppressed_reason"] = (
-                "breakout_continuation_strategy_owns_direction_resolution"
-            )
             return
 
         counter_entry = self._signal_lifecycle_manager.apply(counter_entry)
