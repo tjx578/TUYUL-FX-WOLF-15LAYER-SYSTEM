@@ -13,7 +13,7 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "mc_win": 0.55,
         "mc_pf": 1.3,
         "posterior": 0.58,
-        "rr": 1.5,
+        "rr": 2.0,
         "risk_mult": 0.8,
         "conf12": 0.68,  # Tighter — data quality is higher in low-vol regimes
     },
@@ -24,7 +24,7 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "mc_win": 0.52,
         "mc_pf": 1.2,
         "posterior": 0.55,
-        "rr": 1.5,
+        "rr": 2.0,
         "risk_mult": 1.0,
         "conf12": 0.65,  # Standard — balanced threshold for normal conditions
     },
@@ -35,7 +35,7 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "mc_win": 0.48,
         "mc_pf": 1.1,
         "posterior": 0.50,
-        "rr": 1.5,
+        "rr": 2.0,
         "risk_mult": 1.1,
         "conf12": 0.58,  # Relaxed — natural conf12 drop expected in high-vol regimes
     },
