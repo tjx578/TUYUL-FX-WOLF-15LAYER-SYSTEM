@@ -106,6 +106,8 @@ PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES = CONTINUATION_SIGNAL_STATUSES | {
     "SELL_BREAKDOWN_RETEST_VALID",
 }
 
+MIN_EXECUTABLE_TP1_RR = 2.0
+
 
 @dataclass(frozen=True)
 class SignalJsonEvent:
@@ -509,6 +511,8 @@ def should_emit_signal_json(
             return False
         if str(payload.get("final_direction") or "").upper() not in {"BUY", "SELL"}:
             return False
+        if not _tp1_rr_meets_minimum(payload):
+            return False
         target_mode = str(payload.get("target_mode") or "").upper()
         if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES:
             if target_mode not in {"FINAL_MARKET_STRUCTURE", "PROVISIONAL_RR_FALLBACK"}:
@@ -568,6 +572,7 @@ def _is_final_payload(payload: dict[str, Any]) -> bool:
         (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
         and str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
         and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
+        and _tp1_rr_meets_minimum(payload)
         and target_ok
         and bool(payload.get("valid_for_execution", False))
         and _counter_entry_execution_contract_complete(payload)
@@ -646,6 +651,11 @@ def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
         and isinstance(signal_expiry, dict)
         and _optional_str(signal_expiry.get("expires_at_utc")) is not None
     )
+
+
+def _tp1_rr_meets_minimum(payload: dict[str, Any]) -> bool:
+    tp1_rr = _optional_float(payload.get("tp1_rr"))
+    return tp1_rr is not None and tp1_rr >= MIN_EXECUTABLE_TP1_RR
 
 
 def _optional_str(value: Any) -> str | None:
