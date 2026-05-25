@@ -376,10 +376,7 @@ def analyze_signal_throttle_events(
         "dominant_themes": dominant_themes,
         "theme_scores": theme_scores,
         "candidate": candidate,
-        "top_microboost": [
-            _microboost_payload(block)
-            for block in ranked_microboost_blocks[:10]
-        ],
+        "top_microboost": [_microboost_payload(block) for block in ranked_microboost_blocks[:10]],
         "microboost_summary": microboost_summary,
         "microboost_continuation_entry": microboost_continuation_entry,
         "microboost_counter_entry": microboost_counter_entry,
@@ -805,9 +802,7 @@ def build_candidate_lifecycle(
         default=None,
     )
     secondary_candidate = (
-        _candidate_payload_from_block(secondary_block, clean_block_seconds)
-        if secondary_block is not None
-        else None
+        _candidate_payload_from_block(secondary_block, clean_block_seconds) if secondary_block is not None else None
     )
 
     counter_rotation_block = _counter_rotation_block(all_meaningful_blocks, latest_meaningful_block)
@@ -827,9 +822,7 @@ def build_candidate_lifecycle(
         "latest_ignition_watch": latest_ignition_watch,
         "latest_ignition_watch_symbol": None if latest_ignition_watch is None else latest_ignition_watch["symbol"],
         "previous_major_leader": previous_major_leader,
-        "previous_major_leader_symbol": (
-            None if previous_major_leader is None else previous_major_leader["symbol"]
-        ),
+        "previous_major_leader_symbol": (None if previous_major_leader is None else previous_major_leader["symbol"]),
         "secondary_candidate": secondary_candidate,
         "secondary_candidate_symbol": None if secondary_candidate is None else secondary_candidate["symbol"],
         "counter_rotation": counter_rotation,
@@ -959,11 +952,7 @@ def _is_meaningful_candidate_block(block: PressureBlock, clean_block_seconds: in
 def _is_ignition_watch_block(block: PressureBlock, clean_block_seconds: int) -> bool:
     effective_ticks = block.effective_ticks or block.events
     effective_density = block.effective_density_per_minute or block.density_per_minute
-    return (
-        18.0 <= block.duration_seconds < clean_block_seconds
-        and effective_ticks >= 5
-        and effective_density >= 8.0
-    )
+    return 18.0 <= block.duration_seconds < clean_block_seconds and effective_ticks >= 5 and effective_density >= 8.0
 
 
 def _is_major_leader_block(block: PressureBlock, clean_block_seconds: int) -> bool:
@@ -1097,6 +1086,9 @@ def _counter_entry_payload(microboost_summary: dict[str, Any]) -> dict[str, Any]
         return None
     result = MicroboostCounterEntryEngine(
         min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+        tp1_rr_required=_env_float("SIGNAL_JSON_TP1_RR_REQUIRED", 2.0),
+        counter_entry_risk_multiplier=_env_float("SIGNAL_JSON_COUNTER_ENTRY_RISK_MULTIPLIER", 0.5),
+        counter_entry_expiry_minutes=int(_env_float("SIGNAL_JSON_COUNTER_ENTRY_EXPIRY_MINUTES", 30.0)),
         direct_absorption_enabled=_env_bool("DIRECT_ABSORPTION_VALID_ENABLED", True),
         direct_absorption_require_theme_alignment=_env_bool("DIRECT_ABSORPTION_REQUIRE_THEME_ALIGNMENT", True),
         direct_absorption_require_rr=_env_bool("DIRECT_ABSORPTION_REQUIRE_RR", True),
