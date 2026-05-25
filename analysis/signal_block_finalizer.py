@@ -41,6 +41,8 @@ FINAL_EXECUTION_STATUSES = {
     "SELL_BREAKDOWN_RETEST_VALID",
 }
 
+MIN_EXECUTABLE_TP1_RR = 2.0
+
 
 @dataclass
 class PendingDecisionState:
@@ -644,6 +646,7 @@ def _is_final_execution(payload: dict[str, Any]) -> bool:
         str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
         and bool(payload.get("valid_for_execution", False))
         and (status in FINAL_EXECUTION_STATUSES or status.endswith("_VALID"))
+        and _tp1_rr_meets_minimum(payload)
         and _counter_entry_execution_contract_complete(payload)
     )
 
@@ -691,6 +694,11 @@ def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
         and isinstance(signal_expiry, dict)
         and _optional_str(signal_expiry.get("expires_at_utc")) is not None
     )
+
+
+def _tp1_rr_meets_minimum(payload: dict[str, Any]) -> bool:
+    tp1_rr = _optional_float(payload.get("tp1_rr"))
+    return tp1_rr is not None and tp1_rr >= MIN_EXECUTABLE_TP1_RR
 
 
 def _candidate_direction(payload: dict[str, Any]) -> str | None:
