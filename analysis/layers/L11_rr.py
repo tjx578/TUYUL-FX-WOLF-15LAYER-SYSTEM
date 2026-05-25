@@ -43,7 +43,7 @@ except ImportError as exc:
     core = None
 
 _MIN_CANDLES = 14
-_MIN_RR = 1.5
+_MIN_RR = 2.0
 _VALID_DIRECTIONS = {"BUY", "SELL"}
 
 # Minimum TP distance to prevent 0.0 when ATR is unavailable
