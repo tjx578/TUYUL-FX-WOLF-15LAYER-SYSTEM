@@ -130,13 +130,14 @@ def test_rr_minimum_ratio_requirement(analyzer, context_bus):
     """Test RR meets minimum 2.0 ratio requirement."""
     # Add 20 candles with good volatility
     for i in range(20):
+        drift = i * 0.00001
         candle = {
             "symbol": "EURUSD",
             "timeframe": "H1",
-            "open": 1.1000,
-            "high": 1.1050,
-            "low": 1.0950,
-            "close": 1.1020,
+            "open": 1.1000 + drift,
+            "high": 1.1050 + drift,
+            "low": 1.0950 + drift,
+            "close": 1.1020 + drift,
             "volume": 1000,
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
