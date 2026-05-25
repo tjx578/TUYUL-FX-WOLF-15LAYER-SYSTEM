@@ -329,6 +329,20 @@ class SignalBlockFinalizer:
                 outputs.append(_with_block_fields(promoted, watch, block_end, idle_seconds, decision))
                 self._pending.pop(symbol, None)
                 continue
+            if self._is_expired(watch, age_seconds) and decision.is_confirmed:
+                update = self._expired_update(
+                    watch=watch,
+                    decision=decision,
+                    block_end=block_end,
+                    idle_seconds=idle_seconds,
+                )
+                update["reason"] = (
+                    f"Pending watch expired after {watch.expires_after_m15_bars} M15 bars; "
+                    "direction confirmation existed but structure-aware tradeplan remained incomplete."
+                )
+                outputs.append(update)
+                self._pending.pop(symbol, None)
+                continue
 
             update = self._decision_update(
                 watch=watch,
@@ -338,8 +352,6 @@ class SignalBlockFinalizer:
                 promoted=promoted,
             )
             outputs.extend(self._append_once(watch, update, block_end, decision.confirmation))
-            if decision.confirmation in {"M15_CLOSE_ABOVE_RESISTANCE", "M15_CLOSE_BELOW_SUPPORT"}:
-                self._pending.pop(symbol, None)
         return outputs
 
     def _promote(
@@ -353,9 +365,42 @@ class SignalBlockFinalizer:
         result = self._engine.evaluate(cluster, decision_market).to_dict()
         if result.get("status") == "NONE":
             return None
+        for key, value in (
+            (
+                "key_resistance",
+                _first_float(
+                    watch.payload.get("key_resistance"),
+                    watch.payload.get("breakout_reclaim_level"),
+                    _field(market, "key_resistance"),
+                    _field(market, "main_resistance"),
+                    _field(market, "resistance_high"),
+                ),
+            ),
+            (
+                "key_support",
+                _first_float(
+                    watch.payload.get("key_support"),
+                    watch.payload.get("support_reclaim_level"),
+                    _field(market, "key_support"),
+                    _field(market, "main_support"),
+                    _field(market, "support_low"),
+                ),
+            ),
+        ):
+            if result.get(key) is None and value is not None:
+                result[key] = value
+        for key in ("breakout_buy_zone", "pullback_buy_zone", "sell_rejection_zone"):
+            if result.get(key) is None and watch.payload.get(key) is not None:
+                result[key] = watch.payload.get(key)
         result["previous_status"] = watch.status
         result["new_status"] = result.get("status")
         result["pending_decision_id"] = watch.pending_decision_id
+        result["parent_event_type"] = "signal_watch_json"
+        result["parent_event_exists"] = True
+        result["parent_watch_id"] = watch.pending_decision_id
+        result["parent_watch_required"] = True
+        result["promotion_path"] = "WATCH_TO_FINAL"
+        result["promotion_trigger"] = decision.confirmation
         result["m15_confirmation_status"] = decision.confirmation
         result["reason"] = f"{decision.reason} {result.get('reason') or ''}".strip()
         return result
@@ -374,11 +419,6 @@ class SignalBlockFinalizer:
         action = "FETCH_M15_CLOSE_AND_SUPPORT_LADDER"
         if decision.confirmation == "PENDING_M15_CLOSE":
             action = "WAIT_NEXT_M15_CLOSE"
-        elif promoted is not None and str(promoted.get("status") or "") in {
-            "BUY_BREAKOUT_RETEST_WATCH",
-            "SELL_BREAKDOWN_RETEST_WATCH",
-        }:
-            action = str(promoted.get("action") or "WAIT_BREAKOUT_RETEST_AND_STRUCTURE_TARGETS")
         elif promoted is not None and not _is_structure_ready_for_execution(promoted):
             action = "WAIT_STRUCTURE_TARGET_OR_SUPPORT_LADDER"
 
@@ -389,8 +429,7 @@ class SignalBlockFinalizer:
                 "previous_status": watch.status,
                 "new_status": status,
                 "final_direction": "WAIT",
-                "candidate_direction": _candidate_direction(promoted) if promoted is not None else _candidate_direction(watch.payload),
-                "validated_direction": _candidate_direction(promoted) if promoted is not None else _candidate_direction(watch.payload),
+                "validated_direction": _candidate_direction(watch.payload),
                 "action": action,
                 "next_action": action,
                 "valid_for_execution": False,
@@ -399,6 +438,12 @@ class SignalBlockFinalizer:
                 "requires_m15_close": decision.confirmation == "PENDING_M15_CLOSE",
                 "m15_confirmation_status": decision.confirmation,
                 "pending_decision_id": watch.pending_decision_id,
+                "parent_event_type": "signal_watch_json",
+                "parent_event_exists": True,
+                "parent_watch_id": watch.pending_decision_id,
+                "parent_watch_required": True,
+                "promotion_path": "WATCH_TO_DECISION_UPDATE",
+                "promotion_trigger": decision.confirmation,
                 "reason": _decision_update_reason(decision, promoted),
                 "market_context_applied": decision.confirmation != "PENDING_MARKET_CONTEXT",
                 "block_end_utc": None if block_end is None else block_end.isoformat(),
@@ -409,6 +454,8 @@ class SignalBlockFinalizer:
             }
         )
         if promoted is not None:
+            payload["source_status"] = promoted.get("status")
+            payload["source_final_direction"] = promoted.get("final_direction")
             for key in (
                 "target_mode",
                 "tp_status",
@@ -585,6 +632,20 @@ def _with_block_fields(
     decision: M15CloseDecision,
 ) -> dict[str, Any]:
     payload = dict(payload)
+    for key in (
+        "key_resistance",
+        "key_support",
+        "breakout_reclaim_level",
+        "support_reclaim_level",
+        "breakout_buy_zone",
+        "pullback_buy_zone",
+        "sell_rejection_zone",
+        "decision_watch_type",
+        "buy_condition",
+        "sell_condition",
+    ):
+        if payload.get(key) is None and watch.payload.get(key) is not None:
+            payload[key] = watch.payload.get(key)
     payload.update(
         {
             "event": "signal_json",
@@ -596,6 +657,12 @@ def _with_block_fields(
             else block_end.astimezone(_TZ_WITA).strftime("%Y-%m-%d %H:%M:%S"),
             "block_idle_seconds": round(idle_seconds, 3),
             "pending_decision_id": watch.pending_decision_id,
+            "parent_event_type": "signal_watch_json",
+            "parent_event_exists": True,
+            "parent_watch_id": watch.pending_decision_id,
+            "parent_watch_required": True,
+            "promotion_path": "WATCH_TO_FINAL",
+            "promotion_trigger": decision.confirmation,
             "m15_confirmation_status": decision.confirmation,
         }
     )
@@ -669,6 +736,8 @@ def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
     family = str(payload.get("signal_family") or "").upper()
     if family != "MICROBOOST_COUNTER_ENTRY":
         return True
+    if str(payload.get("target_mode") or "").upper() != "FINAL_MARKET_STRUCTURE":
+        return False
     zones = payload.get("structure_zones")
     invalidation = payload.get("invalidation_rules")
     targets = payload.get("targets")
