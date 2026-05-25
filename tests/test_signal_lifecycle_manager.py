@@ -46,6 +46,17 @@ def _sell_watch(**overrides):
         "entry_zone": [1.3772, 1.3772],
         "rr_status": "WATCH",
         "target_mode": "FINAL_MARKET_STRUCTURE",
+        "tradeplan_valid": True,
+        "execution_valid_now": False,
+        "selected_sl": 1.3790,
+        "selected_risk_pips": 18.0,
+        "tp_min_rr": 1.3718,
+        "targets": [{"id": "TP1", "level": 1.3736, "type": "FIXED_RR", "rr": 2.0}],
+        "structure_zones": {"key_resistance": 1.3774, "key_support": 1.3735},
+        "invalidation_rules": {"hard_invalid_level": 1.3790},
+        "execution_quality": {"spread_normal": True},
+        "phase_coherence": {"h1": "BEARISH", "status": "EXECUTION_COMPATIBLE"},
+        "signal_expiry": {"expires_at_utc": "2026-05-20T08:30:00+00:00"},
         "valid_for_execution": False,
         "reason": "BUY microboost stalled at main resistance.",
     }
@@ -78,6 +89,7 @@ def test_confirmed_opposing_sell_supersedes_active_buy_as_reversal():
         action="SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST",
         rr_status="VALID",
         valid_for_execution=True,
+        execution_valid_now=True,
     )
 
     follow_up = manager.apply(confirmed_sell)
@@ -102,6 +114,7 @@ def test_absorption_timing_valid_can_supersede_active_buy_when_execution_valid()
         action="SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST",
         rr_status="VALID",
         valid_for_execution=True,
+        execution_valid_now=True,
     )
 
     follow_up = manager.apply(confirmed_absorption)
@@ -110,6 +123,24 @@ def test_absorption_timing_valid_can_supersede_active_buy_when_execution_valid()
     assert follow_up["action"] == "EXIT_BUY_AND_SELL_RETEST"
     assert follow_up["linked_previous_signal"] == active["signal_id"]
     assert follow_up["previous_signal_status"] == "SUPERSEDED"
+
+
+def test_incomplete_counter_entry_contract_cannot_supersede_active_buy():
+    manager = SignalLifecycleManager()
+    manager.apply(_buy_signal())
+    incomplete_sell = _sell_watch(
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        valid_for_execution=True,
+        execution_valid_now=False,
+    )
+
+    follow_up = manager.apply(incomplete_sell)
+
+    assert follow_up["final_direction"] == "WAIT"
+    assert follow_up["lifecycle_status"] == "CONFLICT_WAIT_M15_CLOSE"
+    assert manager.active_signal("USDCAD")["direction"] == "BUY"
 
 
 def test_same_direction_signal_reinforces_active_signal():
