@@ -159,7 +159,7 @@ _FTA_BANDS: Final[list[tuple[float, float, float, str]]] = [
 _PROP_MAX_DAILY_DD_PCT: Final = 3.0
 _PROP_MAX_TOTAL_DD_PCT: Final = 5.0
 _PROP_MAX_POSITIONS: Final = 5
-_PROP_MIN_RR: Final = 1.5
+_PROP_MIN_RR: Final = 2.0
 
 
 # ═══════════════════════════════════════════════════════════════════════
