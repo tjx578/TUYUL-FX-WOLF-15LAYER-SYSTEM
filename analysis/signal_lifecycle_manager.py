@@ -110,6 +110,8 @@ class SignalLifecycleManager:
             return self._protect_active_signal(active, payload)
 
         if _is_final_active(payload):
+            if not self._reversal_transition_ready(active, payload):
+                return self._hold_opposing_final_for_confirmation(active, payload)
             return self._supersede_with_reversal(active, payload)
 
         payload["lifecycle_status"] = "CONFLICT_WAIT_M15_CLOSE"
@@ -136,19 +138,16 @@ class SignalLifecycleManager:
     def _breakout_reinforces_active_signal(self, active: ActiveSignal, payload: dict[str, Any]) -> dict[str, Any]:
         direction = active.direction
         payload["status"] = (
-            "BUY_BREAKOUT_RETEST_WATCH" if direction == "BUY" else "SELL_BREAKDOWN_RETEST_WATCH"
+            "BUY_BREAKOUT_CONTINUATION_VALID" if direction == "BUY" else "SELL_BREAKDOWN_CONTINUATION_VALID"
         )
-        payload["final_direction"] = "WAIT"
+        payload["final_direction"] = direction
         payload["validated_direction"] = direction
         payload["lifecycle_status"] = "REINFORCES_ACTIVE_SIGNAL"
         payload["previous_signal_status"] = "REINFORCED"
-        payload["action"] = f"HOLD_{direction}_WAIT_RETEST_TRADEPLAN"
-        payload["valid_for_execution"] = False
-        payload["analysis_valid"] = True
-        payload["tradeplan_valid"] = False
-        payload["execution_valid_now"] = False
-        payload["execution_status"] = "ACTIVE_SIGNAL_REINFORCED_NEW_ENTRY_BLOCKED"
-        payload["execution_reason"] = "breakout_reinforces_existing_position_but_requires_new_tradeplan_for_additional_entry"
+        payload["action"] = f"HOLD_{direction}_OR_{direction}_RETEST"
+        payload["valid_for_execution"] = True
+        payload.setdefault("rr_status", "VALID")
+        payload.setdefault("target_mode", "FINAL_MARKET_STRUCTURE")
         payload.setdefault("sl_tight", active.sl_tight)
         payload.setdefault("tp1", active.tp1)
         payload.setdefault("tp2", active.tp2)
@@ -168,6 +167,33 @@ class SignalLifecycleManager:
         payload["signal_id"] = self._active[active.symbol].signal_id
         return payload
 
+    @staticmethod
+    def _reversal_transition_ready(active: ActiveSignal, payload: dict[str, Any]) -> bool:
+        confirmation = str(payload.get("m15_confirmation_status") or "")
+        confirmed = bool(payload.get("reversal_confirmed")) or confirmation in {
+            "M15_CLOSE_REJECTION_CONFIRMED",
+            "M15_CLOSE_ABOVE_RESISTANCE",
+            "M15_CLOSE_BELOW_SUPPORT",
+        }
+        elapsed = _optional_int(payload.get("cooldown_m15_bars_elapsed"))
+        if elapsed is None:
+            elapsed = _elapsed_m15_bars(active.signal_valid_time_utc, _optional_str(payload.get("signal_valid_time_utc")))
+        payload["reversal_confirmed"] = confirmed
+        payload["cooldown_m15_bars_elapsed"] = elapsed
+        return confirmed and elapsed >= 1
+
+    @staticmethod
+    def _hold_opposing_final_for_confirmation(active: ActiveSignal, payload: dict[str, Any]) -> dict[str, Any]:
+        direction = _direction(payload) or "WAIT"
+        payload["source_status"] = payload.get("status")
+        payload["source_final_direction"] = direction
+        payload["final_direction"] = "WAIT"
+        payload["valid_for_execution"] = False
+        payload["lifecycle_status"] = "CONFLICT_WAIT_REVERSAL_CONFIRMATION_AND_COOLDOWN"
+        payload["previous_signal_status"] = f"ACTIVE_{active.direction}_VALID"
+        payload["action"] = "WAIT_REVERSAL_CONFIRMATION_AND_M15_COOLDOWN"
+        return payload
+
 
 def _is_final_active(payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
@@ -175,7 +201,9 @@ def _is_final_active(payload: dict[str, Any]) -> bool:
         status in FINAL_ACTIVE_STATUSES
         and _direction(payload) in {"BUY", "SELL"}
         and bool(payload.get("valid_for_execution", False))
+        and str(payload.get("target_mode") or "").upper() == "FINAL_MARKET_STRUCTURE"
         and _tp1_rr_meets_minimum(payload)
+        and _has_auditable_promotion(payload)
         and _counter_entry_execution_contract_complete(payload)
     )
 
@@ -261,13 +289,29 @@ def _optional_float(value: Any) -> float | None:
         return None
 
 
+def _optional_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _elapsed_m15_bars(start: str | None, end: str | None) -> int:
+    if not start or not end:
+        return 0
+    try:
+        start_at = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        end_at = datetime.fromisoformat(end.replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    return max(0, int((end_at - start_at).total_seconds() // (15 * 60)))
+
+
 def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
     family = str(payload.get("signal_family") or "").upper()
-    if family not in {
-        "MICROBOOST_COUNTER_ENTRY",
-        "MICROBOOST_TREND_CONTINUATION",
-        "MICROBOOST_BREAKOUT_CONTINUATION",
-    }:
+    if family != "MICROBOOST_COUNTER_ENTRY":
         return True
     zones = payload.get("structure_zones")
     invalidation = payload.get("invalidation_rules")
@@ -295,6 +339,16 @@ def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
         and isinstance(signal_expiry, dict)
         and _optional_str(signal_expiry.get("expires_at_utc")) is not None
     )
+
+
+def _has_auditable_promotion(payload: dict[str, Any]) -> bool:
+    has_parent = bool(payload.get("parent_event_exists") is True and _optional_str(payload.get("parent_watch_id")))
+    has_bypass = bool(
+        str(payload.get("promotion_path") or "").upper() == "DIRECT_BYPASS"
+        and _optional_str(payload.get("bypass_reason"))
+        and payload.get("parent_watch_required") is False
+    )
+    return has_parent or has_bypass
 
 
 def _tp1_rr_meets_minimum(payload: dict[str, Any]) -> bool:
