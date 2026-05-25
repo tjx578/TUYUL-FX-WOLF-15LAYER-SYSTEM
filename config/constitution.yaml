@@ -4,7 +4,7 @@
 # Top-level verdict gates (read directly by verdict_engine.py)
 tii_min: 0.72
 integrity_min: 0.78
-rr_min: 1.5
+rr_min: 2.0
 fta_min: 0.60
 monte_min: 0.48
 conf12_min: 0.62
@@ -87,16 +87,16 @@ wolf_discipline:
 # L11 — Risk/Reward Ratios
 # ===================================================================
 rr:
-  min_rr_ratio: 1.2
-  constitutional_min: 1.5
+  min_rr_ratio: 2.0
+  constitutional_min: 2.0
   by_regime:
     HIGH: 2.0
-    NORMAL: 1.5
-    LOW: 1.2
+    NORMAL: 2.0
+    LOW: 2.0
     EXPANSION: 2.0
-    CONTRACTION: 1.2
-    TRENDING: 1.5
-    RANGING: 1.3
+    CONTRACTION: 2.0
+    TRENDING: 2.0
+    RANGING: 2.0
 
 # ===================================================================
 # L4 — Wolf 30-Point Scoring
