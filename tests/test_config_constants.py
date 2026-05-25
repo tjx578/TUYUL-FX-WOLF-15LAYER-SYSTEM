@@ -14,7 +14,7 @@ def test_get_threshold_top_level():
     assert integrity_min == 0.78
 
     rr_min = get_threshold("rr_min")
-    assert rr_min == 1.5
+    assert rr_min == 2.0
 
 
 def test_get_threshold_nested():
@@ -54,7 +54,7 @@ def test_backward_compatibility():
     # Should be able to access top-level keys
     assert CONSTITUTION_THRESHOLDS["tii_min"] == 0.72
     assert CONSTITUTION_THRESHOLDS["integrity_min"] == 0.78
-    assert CONSTITUTION_THRESHOLDS["rr_min"] == 1.5
+    assert CONSTITUTION_THRESHOLDS["rr_min"] == 2.0
 
     # Should be able to access nested structures
     assert "tii" in CONSTITUTION_THRESHOLDS
@@ -118,7 +118,7 @@ def test_l11_rr_by_regime():
     rr_by_regime = get_threshold("rr.by_regime")
 
     assert rr_by_regime["HIGH"] == 2.0
-    assert rr_by_regime["NORMAL"] == 1.5
-    assert rr_by_regime["LOW"] == 1.2
-    assert rr_by_regime["TRENDING"] == 1.5
-    assert rr_by_regime["RANGING"] == 1.3
+    assert rr_by_regime["NORMAL"] == 2.0
+    assert rr_by_regime["LOW"] == 2.0
+    assert rr_by_regime["TRENDING"] == 2.0
+    assert rr_by_regime["RANGING"] == 2.0
