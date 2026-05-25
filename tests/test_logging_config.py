@@ -6,6 +6,7 @@ Verifies that:
 - ERROR/CRITICAL logs go to stderr
 """
 
+import subprocess
 import sys
 import time
 from io import StringIO
@@ -156,6 +157,24 @@ def test_configure_loguru_routes_warning_stdout_error_stderr(monkeypatch):
         assert "error should use stderr" not in stdout_output
     finally:
         logger.remove()
+
+
+def test_configure_stdlib_routes_warning_stdout_error_stderr():
+    script = (
+        "import logging\n"
+        "from config.logging_bootstrap import configure_stdlib_logging\n"
+        "configure_stdlib_logging(level='INFO')\n"
+        "log = logging.getLogger('vault-routing')\n"
+        "log.warning('vault warning should stay off stderr')\n"
+        "log.error('redis connection failure should use stderr')\n"
+    )
+
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
+
+    assert "vault warning should stay off stderr" in result.stdout
+    assert "vault warning should stay off stderr" not in result.stderr
+    assert "redis connection failure should use stderr" in result.stderr
+    assert "redis connection failure should use stderr" not in result.stdout
 
 
 def test_log_burst_limiter_allows_then_blocks_then_resets():
