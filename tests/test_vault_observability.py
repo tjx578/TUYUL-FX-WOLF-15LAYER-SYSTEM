@@ -63,10 +63,86 @@ def test_vault_health_treats_live_window_as_nominal(monkeypatch: pytest.MonkeyPa
     assert report.should_block_analysis is False
 
 
+def test_vault_health_treats_successful_69ms_redis_ping_as_nominal(monkeypatch: pytest.MonkeyPatch) -> None:
+    now_ts = 100.0
+    last_seen_ts = now_ts - 5.0
+    redis_client = _FakeRedis(f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(), last_seen_ts=last_seen_ts)
+    checker = VaultHealthChecker(redis_client=redis_client, context_bus=_FakeContextBus({"EURUSD": last_seen_ts}))
+
+    monotonic_values = iter([1.0, 1.001, 2.0, 2.069])
+    monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
+    monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
+
+    report = checker.check(symbols=["EURUSD"])
+
+    assert report.redis_latency_ms == pytest.approx(69.0, abs=0.1)
+    assert report.redis_health == 1.0
+    assert report.redis_state == "NOMINAL"
+    assert report.details == "All vault systems nominal"
+    assert report.is_healthy is True
+    assert report.should_block_analysis is False
+
+
+def test_vault_health_marks_slow_connected_redis_without_blocking(monkeypatch: pytest.MonkeyPatch) -> None:
+    now_ts = 100.0
+    last_seen_ts = now_ts - 5.0
+    redis_client = _FakeRedis(f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(), last_seen_ts=last_seen_ts)
+    checker = VaultHealthChecker(redis_client=redis_client, context_bus=_FakeContextBus({"EURUSD": last_seen_ts}))
+
+    monotonic_values = iter([1.0, 1.001, 2.0, 2.250])
+    monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
+    monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
+
+    report = checker.check(symbols=["EURUSD"])
+
+    assert report.redis_health == pytest.approx(0.812, abs=0.001)
+    assert report.redis_state == "SLOW"
+    assert "REDIS SLOW (latency=250ms, nominal_budget=100ms)" in report.details
+    assert report.is_healthy is False
+    assert report.should_block_analysis is False
+
+
+def test_vault_health_blocks_analysis_when_redis_exceeds_block_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    now_ts = 100.0
+    last_seen_ts = now_ts - 5.0
+    redis_client = _FakeRedis(f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(), last_seen_ts=last_seen_ts)
+    checker = VaultHealthChecker(redis_client=redis_client, context_bus=_FakeContextBus({"EURUSD": last_seen_ts}))
+
+    monotonic_values = iter([1.0, 1.001, 2.0, 2.501])
+    monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
+    monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
+
+    report = checker.check(symbols=["EURUSD"])
+
+    assert report.redis_health == 0.0
+    assert report.redis_state == "DEGRADED"
+    assert "REDIS DEGRADED (latency=501ms, block_budget=500ms)" in report.details
+    assert report.is_healthy is False
+    assert report.should_block_analysis is True
+
+
+def test_vault_health_respects_configured_redis_latency_budgets(monkeypatch: pytest.MonkeyPatch) -> None:
+    now_ts = 100.0
+    last_seen_ts = now_ts - 5.0
+    redis_client = _FakeRedis(f'{{"ts": {last_seen_ts}, "producer": "finnhub"}}'.encode(), last_seen_ts=last_seen_ts)
+    monkeypatch.setenv("VAULT_REDIS_DEGRADED_LATENCY_MS", "50")
+    monkeypatch.setenv("VAULT_REDIS_BLOCK_LATENCY_MS", "75")
+    checker = VaultHealthChecker(redis_client=redis_client, context_bus=_FakeContextBus({"EURUSD": last_seen_ts}))
+
+    monotonic_values = iter([1.0, 1.001, 2.0, 2.069])
+    monkeypatch.setattr("core.vault_health.time.time", lambda: now_ts)
+    monkeypatch.setattr("core.vault_health.time.monotonic", lambda: next(monotonic_values))
+
+    report = checker.check(symbols=["EURUSD"])
+
+    assert report.redis_state == "SLOW"
+    assert report.redis_degraded_latency_threshold_ms == 50.0
+    assert report.redis_block_latency_threshold_ms == 75.0
+    assert report.should_block_analysis is False
+
+
 @pytest.mark.parametrize("symbol", ["EURUSD"])
-def test_vault_health_keeps_degraded_refreshing_nonblocking(
-    monkeypatch: pytest.MonkeyPatch, symbol: str
-) -> None:
+def test_vault_health_keeps_degraded_refreshing_nonblocking(monkeypatch: pytest.MonkeyPatch, symbol: str) -> None:
     now_ts = 200.0
     last_seen_ts = now_ts - 60.0
     context_bus = _FakeContextBus({symbol: last_seen_ts})
@@ -173,6 +249,9 @@ def test_vault_health_report_exposes_freshness_and_provider_breakdown(
     assert "age 334.96s > stale threshold 300.0s" in report.freshness_formula
     assert report.redis_latency_ms == pytest.approx(1003.0, abs=0.1)
     assert report.redis_roundtrip_ms == pytest.approx(1003.0, abs=0.1)
+    assert report.redis_state == "DEGRADED"
+    assert report.redis_degraded_latency_threshold_ms == 100.0
+    assert report.redis_block_latency_threshold_ms == 500.0
     assert report.context_hydration_ms >= 0.0
     assert report.bus_read_age_ms == pytest.approx(334960.0, abs=20.0)
     assert report.should_block_analysis is True
