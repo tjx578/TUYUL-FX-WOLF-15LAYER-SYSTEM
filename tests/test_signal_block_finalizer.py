@@ -118,6 +118,7 @@ def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_la
         market_contexts={
             "USDCAD": _resistance_context(
                 main_support=1.3730,
+                h1_phase="BEARISH",
                 minor_support=1.3738,
                 major_support=1.3730,
                 tp1_support=1.3738,
