@@ -6,6 +6,7 @@ Queries actual feed freshness and Redis connectivity.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -52,6 +53,9 @@ class VaultHealthReport:
     freshness_threshold_seconds: float | None = None
     feed_last_seen_ts: float | None = None
     details: str = ""
+    redis_state: str = "UNKNOWN"
+    redis_degraded_latency_threshold_ms: float | None = None
+    redis_block_latency_threshold_ms: float | None = None
 
     @property
     def should_block_analysis(self) -> bool:
@@ -63,11 +67,30 @@ class VaultHealthChecker:
     """Replaces hardcoded placeholder health values."""
 
     MAX_TICK_AGE_SECONDS = FRESHNESS_LIVE_MAX_AGE_SEC
+    # Successful round trips up to this budget are nominal.  Previously this
+    # value was used as the end of a linear score, making 50 ms the accidental
+    # degraded threshold.
     MAX_REDIS_LATENCY_MS = 100.0
+    REDIS_BLOCK_LATENCY_MS = 500.0
 
     def __init__(self, redis_client=None, context_bus=None) -> None:
         self._redis = redis_client
         self._context_bus = context_bus
+        self._redis_degraded_latency_ms = self._read_positive_float_env(
+            "VAULT_REDIS_DEGRADED_LATENCY_MS",
+            self.MAX_REDIS_LATENCY_MS,
+        )
+        self._redis_block_latency_ms = self._read_positive_float_env(
+            "VAULT_REDIS_BLOCK_LATENCY_MS",
+            max(self.REDIS_BLOCK_LATENCY_MS, self._redis_degraded_latency_ms * 2),
+        )
+        if self._redis_block_latency_ms <= self._redis_degraded_latency_ms:
+            replacement = max(self.REDIS_BLOCK_LATENCY_MS, self._redis_degraded_latency_ms * 2)
+            logger.warning(
+                "VAULT_REDIS_BLOCK_LATENCY_MS must exceed VAULT_REDIS_DEGRADED_LATENCY_MS; using %.0fms",
+                replacement,
+            )
+            self._redis_block_latency_ms = replacement
 
     def check(self, symbols: list[str] | None = None) -> VaultHealthReport:
         """Run health checks. Returns actual metrics."""
@@ -91,7 +114,14 @@ class VaultHealthChecker:
         tick_age = self._get_last_tick_age(resolved_symbols)
         bus_read_age_ms = float("inf") if tick_age == float("inf") else tick_age * 1000.0
 
-        is_healthy = feed_freshness >= 0.5 and redis_health >= 0.5
+        if redis_health < 0.5:
+            redis_state = "DEGRADED"
+        elif redis_latency > self._redis_degraded_latency_ms:
+            redis_state = "SLOW"
+        else:
+            redis_state = "NOMINAL"
+
+        is_healthy = feed_freshness >= 0.5 and redis_state == "NOMINAL"
 
         details_parts: list[str] = []
         if freshness_class == "STALE_PRESERVED":
@@ -103,8 +133,14 @@ class VaultHealthChecker:
             details_parts.append(f"FEED DEGRADED_BUT_REFRESHING (freshness={feed_freshness:.2f})")
         elif freshness_class in ("NO_PRODUCER", "NO_TRANSPORT", "CONFIG_ERROR"):
             details_parts.append(f"FEED {freshness_class} (freshness={feed_freshness:.2f})")
-        if redis_health < 0.5:
-            details_parts.append(f"REDIS DEGRADED (latency={redis_latency:.0f}ms)")
+        if redis_state == "DEGRADED":
+            details_parts.append(
+                f"REDIS DEGRADED (latency={redis_latency:.0f}ms, block_budget={self._redis_block_latency_ms:.0f}ms)"
+            )
+        elif redis_state == "SLOW":
+            details_parts.append(
+                f"REDIS SLOW (latency={redis_latency:.0f}ms, nominal_budget={self._redis_degraded_latency_ms:.0f}ms)"
+            )
         if not details_parts:
             details_parts.append("All vault systems nominal")
 
@@ -133,12 +169,30 @@ class VaultHealthChecker:
             freshness_threshold_seconds=round(freshness_threshold, 2) if freshness_threshold is not None else None,
             feed_last_seen_ts=feed_last_seen_ts,
             details="; ".join(details_parts),
+            redis_state=redis_state,
+            redis_degraded_latency_threshold_ms=round(self._redis_degraded_latency_ms, 2),
+            redis_block_latency_threshold_ms=round(self._redis_block_latency_ms, 2),
         )
 
         if not report.is_healthy:
             logger.warning("Vault health degraded: %s", report.details)
 
         return report
+
+    @staticmethod
+    def _read_positive_float_env(name: str, default: float) -> float:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            logger.warning("Invalid %s=%r; using %.0fms", name, raw, default)
+            return default
+        if value <= 0:
+            logger.warning("Invalid %s=%r; using %.0fms", name, raw, default)
+            return default
+        return value
 
     def _resolve_symbols(self, symbols: list[str]) -> list[str]:
         resolved: list[str] = []
@@ -221,7 +275,9 @@ class VaultHealthChecker:
             state: str | None,
             freshness_class: str | None,
             last_seen_ts: float | None = None,
-        ) -> tuple[float, float, int, int, str, float | None, float, str | None, str | None, float | None, float | None]:
+        ) -> tuple[
+            float, float, int, int, str, float | None, float, str | None, str | None, float | None, float | None
+        ]:
             return (
                 freshness,
                 worst_age,
@@ -360,10 +416,7 @@ class VaultHealthChecker:
                             degraded_snapshot.freshness_class.value,
                             worst_last_seen_ts,
                         )
-                formula = (
-                    f"age {worst_age:.2f}s > stale threshold {stale_threshold:.1f}s "
-                    "-> freshness=0.0000"
-                )
+                formula = f"age {worst_age:.2f}s > stale threshold {stale_threshold:.1f}s -> freshness=0.0000"
                 return _empty_result(
                     0.0,
                     worst_age,
@@ -431,8 +484,13 @@ class VaultHealthChecker:
             latency_ms = (time.monotonic() - start) * 1000
             if not pong:
                 return 0.0, latency_ms
-            health = max(0.0, 1.0 - (latency_ms / self.MAX_REDIS_LATENCY_MS))
-            return health, latency_ms
+            if latency_ms <= self._redis_degraded_latency_ms:
+                return 1.0, latency_ms
+            if latency_ms <= self._redis_block_latency_ms:
+                span_ms = self._redis_block_latency_ms - self._redis_degraded_latency_ms
+                slow_ratio = (latency_ms - self._redis_degraded_latency_ms) / span_ms
+                return max(0.5, 1.0 - (slow_ratio * 0.5)), latency_ms
+            return 0.0, latency_ms
         except Exception as e:
             logger.error("Redis health check failed: %s", e)
             return 0.0, float("inf")
