@@ -82,7 +82,7 @@ class TP1Generator:
     """Algorithmic TP1 generator — pure analysis, no side-effects."""
 
     def __init__(self, *, min_rr: float = _DEFAULT_MIN_RR) -> None:
-        self.min_rr = min_rr
+        self.min_rr = max(_DEFAULT_MIN_RR, float(min_rr))
         self._structural_zones: dict[str, Any] | None = None
 
     def set_structural_zones(self, zones: dict[str, Any] | None) -> None:
