@@ -6,6 +6,7 @@ so repeated or collectively noisy log lines do not flood platform logs.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -120,6 +121,38 @@ def resolve_stdlib_log_level(level: str | None = None) -> int:
     return 20
 
 
+class _StdlibMaxLevelFilter(logging.Filter):
+    """Keep non-errors on stdout so platforms do not promote warnings."""
+
+    def __init__(self, maximum: int) -> None:
+        super().__init__()
+        self._maximum = maximum
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno <= self._maximum
+
+
+def configure_stdlib_logging(level: str | None = None) -> None:
+    """Route stdlib INFO/WARNING to stdout and ERROR/CRITICAL to stderr."""
+    resolved_level = resolve_stdlib_log_level(level)
+    log_format = logging.Formatter("%(asctime)s  %(levelname)-8s  %(name)s  %(message)s")
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(resolved_level)
+    stdout_handler.addFilter(_StdlibMaxLevelFilter(logging.WARNING))
+    stdout_handler.setFormatter(log_format)
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.ERROR)
+    stderr_handler.setFormatter(log_format)
+
+    logging.basicConfig(
+        level=resolved_level,
+        handlers=[stdout_handler, stderr_handler],
+        force=True,
+    )
+
+
 def configure_loguru_logging(level: str | None = None) -> None:
     """Configure Loguru handlers with stdout/stderr split and burst limiting.
 
@@ -153,9 +186,7 @@ def configure_loguru_logging(level: str | None = None) -> None:
             message=str(record.get("message", "")),
         ):
             return False
-        if rate_enabled and not rate_limiter.allow():
-            return False
-        return True
+        return not (rate_enabled and not rate_limiter.allow())
 
     loguru_logger.remove()
     log_format = (
