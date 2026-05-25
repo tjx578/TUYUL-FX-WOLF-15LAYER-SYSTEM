@@ -569,7 +569,7 @@ class L10PositionAnalyzer:
 
         valid = sl_pips > 0 and direction is not None
         geometry_ok = valid and len(geom_warnings) == 0
-        risk_ok = adjusted_risk_pct <= _MAX_RISK_PCT and rr_ratio >= _RR_ACCEPTABLE
+        risk_ok = adjusted_risk_pct <= _MAX_RISK_PCT and rr_ratio >= _PROP_MIN_RR
         prop_ok = len(prop_violations) == 0
         position_ok = geometry_ok and risk_ok and prop_ok and account_balance > 0
 
