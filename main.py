@@ -50,7 +50,7 @@ if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
 import uvicorn  # noqa: E402
 from loguru import logger  # noqa: E402
 
-from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+from config.logging_bootstrap import configure_loguru_logging, configure_stdlib_logging  # noqa: E402
 from config_loader import get_enabled_symbols  # noqa: E402
 from core.health_probe import HealthProbe  # noqa: E402
 from core.startup_validator import validate_engine_startup_async  # noqa: E402
@@ -181,6 +181,7 @@ async def main() -> None:
     _shutdown_event = asyncio.Event()
 
     # Shared Railway-safe routing and rate limiting.
+    configure_stdlib_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
     configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
 
     install_signal_handlers(_shutdown_event)
