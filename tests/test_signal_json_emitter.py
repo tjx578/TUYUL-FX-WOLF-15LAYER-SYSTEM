@@ -61,6 +61,8 @@ def test_signal_json_emits_counter_entry_watch(caplog):
     assert '"symbol":"USDCAD"' in caplog.text
     assert '"candidate_direction":"SELL"' in caplog.text
     assert '"status":"NANO_ABSORPTION_SELL_WATCH"' in caplog.text
+    assert '"targets":[]' in caplog.text
+    assert '"structure_zones":{}' in caplog.text
 
 
 def test_signal_json_does_not_emit_watch_by_default(caplog):
