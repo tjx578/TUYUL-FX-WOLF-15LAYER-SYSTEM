@@ -194,7 +194,13 @@ class MicroboostCounterEntryEngine:
         self.counter_entry_expiry_minutes = max(1, int(counter_entry_expiry_minutes))
         self.allow_rr_fallback = allow_rr_fallback
 
-    def evaluate(self, cluster: Any, market: Any | None = None) -> MicroboostCounterEntryResult:
+    def evaluate(
+        self,
+        cluster: Any,
+        market: Any | None = None,
+        *,
+        watch_only: bool = False,
+    ) -> MicroboostCounterEntryResult:
         symbol = str(_field(cluster, "symbol", _field(market, "symbol", ""))).upper()
         raw_direction = _normalize_direction(_field(cluster, "raw_direction", _field(cluster, "direction", None)))
         phase_priced = _optional_str(_field(cluster, "phase_priced", None))
@@ -267,6 +273,7 @@ class MicroboostCounterEntryEngine:
                 density=density,
                 observed_duration_seconds=duration_seconds,
                 entry_reference=entry_reference,
+                watch_only=watch_only,
                 **base,
             )
 
@@ -280,6 +287,7 @@ class MicroboostCounterEntryEngine:
                 density=density,
                 observed_duration_seconds=duration_seconds,
                 entry_reference=entry_reference,
+                watch_only=watch_only,
                 **base,
             )
 
@@ -314,10 +322,11 @@ class MicroboostCounterEntryEngine:
         density: float | None,
         observed_duration_seconds: float | None,
         entry_reference: float | None,
+        watch_only: bool,
         **base: Any,
     ) -> MicroboostCounterEntryResult:
         m15_close_above_resistance = _optional_bool(_field(market, "m15_close_above_resistance", None))
-        if m15_close_above_resistance is True:
+        if not watch_only and m15_close_above_resistance is True:
             breakout_levels = _breakout_continuation_levels(
                 direction="BUY",
                 entry=entry_reference,
@@ -386,7 +395,9 @@ class MicroboostCounterEntryEngine:
         m15_close = _optional_float(_field(market, "m15_close", None))
         close_below_signal = m15_close is not None and entry_reference is not None and m15_close < entry_reference
         closed_without_buy_breakout = m15_close is not None
-        m15_counter_confirmation = rejection or minor_break or close_below_signal or closed_without_buy_breakout
+        m15_counter_confirmation = False if watch_only else (
+            rejection or minor_break or close_below_signal or closed_without_buy_breakout
+        )
         status = self._sell_watch_status(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -418,7 +429,7 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        direct_absorption = self._direct_absorption_valid(
+        direct_absorption = False if watch_only else self._direct_absorption_valid(
             direction="SELL",
             market=market,
             target_result=target_result,
@@ -578,10 +589,11 @@ class MicroboostCounterEntryEngine:
         density: float | None,
         observed_duration_seconds: float | None,
         entry_reference: float | None,
+        watch_only: bool,
         **base: Any,
     ) -> MicroboostCounterEntryResult:
         m15_close_below_support = _optional_bool(_field(market, "m15_close_below_support", None))
-        if m15_close_below_support is True:
+        if not watch_only and m15_close_below_support is True:
             breakdown_levels = _breakout_continuation_levels(
                 direction="SELL",
                 entry=entry_reference,
@@ -650,7 +662,9 @@ class MicroboostCounterEntryEngine:
         m15_close = _optional_float(_field(market, "m15_close", None))
         close_above_signal = m15_close is not None and entry_reference is not None and m15_close > entry_reference
         closed_without_sell_breakdown = m15_close is not None
-        m15_counter_confirmation = rejection or minor_break or close_above_signal or closed_without_sell_breakdown
+        m15_counter_confirmation = False if watch_only else (
+            rejection or minor_break or close_above_signal or closed_without_sell_breakdown
+        )
         status = self._buy_watch_status(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -682,7 +696,7 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        direct_absorption = self._direct_absorption_valid(
+        direct_absorption = False if watch_only else self._direct_absorption_valid(
             direction="BUY",
             market=market,
             target_result=target_result,
