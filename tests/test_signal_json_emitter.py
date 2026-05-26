@@ -552,3 +552,93 @@ def test_final_emission_makes_pending_decision_terminal(caplog):
     assert emitter.emit(late_wait) is False
     assert caplog.text.count("[SignalJSON]") == 1
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
+
+
+def test_nzdjpy_provisional_breakout_with_theme_conflict_stays_conditional(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    pending_id = "NZDJPY_NZDJPY_20260525T141410Z_M15_DECISION"
+    assert emitter.emit(
+        _event(
+            cluster_id="NZDJPY_20260525T141410Z",
+            symbol="NZDJPY",
+            status="SELL_ABSORPTION_WATCH",
+            pending_decision_id=pending_id,
+            signal_valid_price=93.319,
+            entry_reference_price=93.319,
+        )
+    ) is True
+    caplog.clear()
+
+    event = _event(
+        cluster_id="NZDJPY_20260525T141410Z",
+        symbol="NZDJPY",
+        status="BUY_BREAKOUT_CONTINUATION_VALID",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_BREAKOUT_RETEST_ENTRY",
+        signal_valid_time_utc="2026-05-25T14:14:40.720098+00:00",
+        signal_valid_price=93.319,
+        entry_reference_price=93.319,
+        entry_zone=[93.319, 93.319],
+        sl_tight=93.199,
+        sl_safe=93.119,
+        price_position="MAIN_RESISTANCE",
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        m15_confirmation_status="M15_CLOSE_ABOVE_RESISTANCE",
+        theme_alignment="SELL_BIAS",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=True,
+        pending_decision_id=pending_id,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"source_final_direction":"BUY"' in caplog.text
+    assert '"risk_pips_safe":20.0' in caplog.text
+    assert '"tp1":93.719' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+    assert '"PROVISIONAL_RR_NOT_EXECUTION_GRADE"' in caplog.text
+    assert '"THEME_CONFLICT_REQUIRES_SECOND_M15_CONFIRMATION"' in caplog.text
+
+
+def test_nzdjpy_direct_quorum_provisional_signal_requires_parent_or_bypass(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="NZDJPY_20260525T200004Z",
+        symbol="NZDJPY",
+        signal_family="MICROBOOST_TREND_CONTINUATION",
+        status="BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_SIGNAL_ZONE_OR_RETEST",
+        signal_valid_time_utc="2026-05-25T20:01:07.993918+00:00",
+        signal_valid_price=93.321,
+        entry_reference_price=93.321,
+        entry_zone=[93.321, 93.3285],
+        price_position="MID_RANGE",
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        sl_tight=93.149,
+        sl_safe=93.069,
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=True,
+        allowed_quorum=True,
+        allowed_quorum_streak=3,
+        pending_decision_id=None,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"source_status":"BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"' in caplog.text
+    assert '"risk_pips_safe":25.2' in caplog.text
+    assert '"tp1":93.825' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+    assert '"MISSING_PARENT_WATCH_OR_APPROVED_BYPASS"' in caplog.text
+    assert '"PROVISIONAL_RR_NOT_EXECUTION_GRADE"' in caplog.text
