@@ -343,10 +343,10 @@ def test_short_allowed_quorum_trend_continuation_does_not_emit_signal_payload():
 
     assert continuation["status"] == "NONE"
     assert continuation["final_direction"] == "WAIT"
-    assert continuation["action"] == "NO_CONTINUATION_ENTRY"
+    assert continuation["action"] == "WAIT_SIGNAL_THROTTLE_CLEAN_BLOCK"
 
 
-def test_one_minute_allowed_quorum_trend_continuation_emits_continuation_entry_payload():
+def test_one_minute_allowed_quorum_trend_continuation_waits_for_clean_throttle_block():
     events = [_event(index * 2, "USDCAD", event_type="ALLOWED") for index in range(32)]
     market = MarketContext(
         symbol="USDCAD",
@@ -371,12 +371,84 @@ def test_one_minute_allowed_quorum_trend_continuation_emits_continuation_entry_p
     report = analyze_signal_throttle_events(events, market_contexts={"USDCAD": market})
     continuation = report["microboost_continuation_entry"]
 
+    assert continuation["status"] == "NONE"
+    assert continuation["final_direction"] == "WAIT"
+    assert continuation["action"] == "WAIT_SIGNAL_THROTTLE_CLEAN_BLOCK"
+    assert continuation["reason"] == "SIGNAL_THROTTLE_CLEAN_BLOCK_REQUIRED"
+    assert report["signal_watch_gate"]["eligible"] is False
+
+
+def test_clean_throttle_block_allows_later_microboost_validation_for_same_pair():
+    events = [_event(index * 30, "USDCAD", event_type="ALLOWED") for index in range(11)]
+    events.extend(_event(390 + index * 2, "USDCAD", event_type="ALLOWED") for index in range(32))
+    market = MarketContext(
+        symbol="USDCAD",
+        raw_allowed_direction="BUY",
+        pip_value=0.0001,
+        price_at_signal_start=1.37560,
+        price_at_5m_confirm=1.375675,
+        price_at_signal_end=1.375675,
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        theme_aligned=True,
+        spread_normal=True,
+        price_position="MID_RANGE",
+        main_support=1.3720,
+        main_resistance=1.3850,
+        minor_resistance=1.3785,
+        tp1_resistance=1.3785,
+        tp2_resistance=1.3810,
+        tp3_resistance=1.3850,
+    )
+
+    report = analyze_signal_throttle_events(events, market_contexts={"USDCAD": market})
+    continuation = report["microboost_continuation_entry"]
+
+    assert report["signal_watch_gate"]["eligible"] is True
+    assert report["signal_watch_gate"]["source"] == "SIGNAL_THROTTLE_CLEAN_BLOCK"
     assert continuation["status"] == "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"
-    assert continuation["signal_family"] == "MICROBOOST_TREND_CONTINUATION"
-    assert continuation["final_direction"] == "BUY"
-    assert continuation["allowed_quorum"] is True
+    assert continuation["source_clean_block_confirmed"] is True
+    assert continuation["microboost_validation_status"] == "PASSED"
     assert continuation["target_mode"] == "FINAL_MARKET_STRUCTURE"
-    assert continuation["rr_status"] == "VALID"
+
+
+def test_clean_throttle_block_then_resistance_microboost_creates_watch_before_any_final():
+    events = [_event(index * 30, "GBPCAD", event_type="ALLOWED") for index in range(11)]
+    events.extend(_event(390 + index * 4, "GBPCAD", event_type="ALLOWED") for index in range(46))
+    market = MarketContext(
+        symbol="GBPCAD",
+        raw_allowed_direction="BUY",
+        pip_value=0.0001,
+        price_at_signal_start=1.8636,
+        price_at_5m_confirm=1.8636,
+        price_at_signal_end=1.8636,
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        theme_aligned=True,
+        spread_normal=True,
+        price_position="MAIN_RESISTANCE",
+        main_resistance=1.8650,
+        resistance_low=1.8636,
+        resistance_high=1.8650,
+        minor_support=1.8624,
+        major_support=1.8616,
+        m15_close_above_resistance=True,
+        tp1_support=1.8600,
+        tp2_support=1.8580,
+        tp3_support=1.8560,
+        support_ladder_ready=True,
+    )
+
+    report = analyze_signal_throttle_events(events, market_contexts={"GBPCAD": market})
+    watch = report["microboost_counter_entry"]
+
+    assert report["signal_watch_gate"]["eligible"] is True
+    assert watch["status"] == "SELL_ABSORPTION_WATCH"
+    assert watch["final_direction"] == "WAIT"
+    assert watch["valid_for_execution"] is False
+    assert watch["requires_m15_close"] is True
+    assert watch["source_clean_block_confirmed"] is True
+    assert watch["microboost_validation_status"] == "PASSED"
 
 
 def test_live_analyzer_same_second_batch_not_hard_interrupt():
