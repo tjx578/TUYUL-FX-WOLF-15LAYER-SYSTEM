@@ -229,6 +229,10 @@ class SignalJsonEvent:
     execution_quality: dict[str, Any] | None = None
     phase_coherence: dict[str, Any] | None = None
     signal_expiry: dict[str, Any] | None = None
+    signal_watch_source: str | None = None
+    source_clean_block_confirmed: bool | None = None
+    source_clean_block_valid_since_utc: str | None = None
+    microboost_validation_status: str | None = None
     source_target_mode: str | None = None
     parent_event_type: str | None = None
     parent_event_exists: bool | None = None
@@ -403,20 +407,15 @@ class SignalJsonEmitter:
         parent_watch_id = _matched_watch_reference(payload, self._emitted_watch_refs)
         has_parent = parent_watch_id is not None
         has_bypass = self._valid_direct_bypass(payload)
-        has_direct_decision = self._valid_direct_decision_path(payload)
         reasons: list[str] = []
         pending_id = _optional_str(payload.get("pending_decision_id"))
-        if has_direct_decision and pending_id is None:
-            pending_id = _direct_decision_id(payload)
-            payload["pending_decision_id"] = pending_id
         source_target_mode = str(payload.get("source_target_mode") or payload.get("target_mode") or "").upper()
 
-        if self.require_parent_watch and not has_parent and not has_bypass and not has_direct_decision:
+        if self.require_parent_watch and not has_parent and not has_bypass:
             reasons.append("MISSING_PARENT_WATCH_OR_APPROVED_BYPASS")
         if (
             self.require_terminal_decision_update
             and not has_bypass
-            and not has_direct_decision
             and (pending_id is None or f"pending:{pending_id}" not in self._emitted_watch_refs)
         ):
             reasons.append("MISSING_PARENT_WATCH_DECISION_ID_MATCH")
@@ -451,11 +450,9 @@ class SignalJsonEmitter:
         payload["parent_event_type"] = "signal_watch_json" if has_parent else None
         payload["parent_event_exists"] = has_parent
         payload["parent_watch_id"] = parent_watch_id
-        payload["parent_watch_required"] = False if has_bypass or has_direct_decision else self.require_parent_watch
+        payload["parent_watch_required"] = False if has_bypass else self.require_parent_watch
         if has_parent:
             payload["promotion_path"] = "WATCH_TO_FINAL"
-        elif has_direct_decision:
-            payload["promotion_path"] = "DIRECT_DECISION_TO_FINAL"
         elif has_bypass:
             payload["promotion_path"] = "DIRECT_BYPASS"
         if not reasons:
@@ -470,15 +467,6 @@ class SignalJsonEmitter:
             self.allow_direct_bypass
             and str(payload.get("promotion_path") or "").upper() == "DIRECT_BYPASS"
             and _optional_str(payload.get("bypass_reason"))
-            and _optional_bool(payload.get("parent_watch_required")) is False
-        )
-
-    @staticmethod
-    def _valid_direct_decision_path(payload: dict[str, Any]) -> bool:
-        return bool(
-            str(payload.get("signal_family") or "").upper() == "MICROBOOST_TREND_CONTINUATION"
-            and str(payload.get("promotion_path") or "").upper() == "DIRECT_DECISION_TO_FINAL"
-            and _optional_str(payload.get("direct_valid_reason"))
             and _optional_bool(payload.get("parent_watch_required")) is False
         )
 
@@ -699,6 +687,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         execution_quality=_dict_value(counter_entry.get("execution_quality")),
         phase_coherence=_dict_value(counter_entry.get("phase_coherence")),
         signal_expiry=_dict_value(counter_entry.get("signal_expiry")),
+        signal_watch_source=_optional_str(counter_entry.get("signal_watch_source")),
+        source_clean_block_confirmed=_optional_bool(counter_entry.get("source_clean_block_confirmed")),
+        source_clean_block_valid_since_utc=_optional_str(counter_entry.get("source_clean_block_valid_since_utc")),
+        microboost_validation_status=_optional_str(counter_entry.get("microboost_validation_status")),
         source_target_mode=_optional_str(counter_entry.get("source_target_mode")),
         parent_event_type=_optional_str(counter_entry.get("parent_event_type")),
         parent_event_exists=_optional_bool(counter_entry.get("parent_event_exists")),
@@ -901,16 +893,6 @@ def _matched_watch_reference(payload: dict[str, Any], emitted_refs: set[str]) ->
     pending_matches = sorted(reference for reference in matches if reference.startswith("pending:"))
     selected = pending_matches[0] if pending_matches else sorted(matches)[0]
     return selected.split(":", 1)[1]
-
-
-def _direct_decision_id(payload: dict[str, Any]) -> str:
-    symbol = str(payload.get("symbol") or "UNKNOWN").upper()
-    reference = (
-        _optional_str(payload.get("cluster_id"))
-        or _optional_str(payload.get("signal_valid_time_utc"))
-        or "ACTIVE"
-    )
-    return f"{symbol}_{reference}_DIRECT_DECISION"
 
 
 def _theme_conflicts(payload: dict[str, Any]) -> bool:
