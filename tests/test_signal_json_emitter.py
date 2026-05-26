@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from analysis.signal_json_emitter import (
     SignalJsonEmitter,
     SignalJsonEvent,
@@ -258,6 +260,10 @@ def test_final_signal_uses_signal_json_prefix(caplog):
 
     assert emitter.emit(event) is True
     assert "[SignalJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert '"status":"EXECUTION_READY"' in caplog.text
+    assert '"terminal_decision_confirmed":true' in caplog.text
+    assert '"terminal_decision_event_type":"signal_decision_update_json"' in caplog.text
     assert "[SignalWatchJSON]" not in caplog.text
     assert '"valid_for_execution":true' in caplog.text
 
@@ -345,6 +351,8 @@ def test_structure_aware_breakout_continuation_can_emit_final_signal(caplog):
     assert should_emit_signal_json(event) is True
     assert emitter.emit(event) is True
     assert "[SignalJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert '"status":"EXECUTION_READY"' in caplog.text
     assert '"status":"BUY_BREAKOUT_CONTINUATION_VALID"' in caplog.text
     assert '"final_direction":"BUY"' in caplog.text
     assert '"valid_for_execution":true' in caplog.text
@@ -374,6 +382,7 @@ def test_signal_decision_update_uses_decision_update_prefix(caplog):
     assert "[SignalJSON]" not in caplog.text
     assert '"event":"signal_decision_update_json"' in caplog.text
     assert '"signal_quality":"DECISION_UPDATE"' in caplog.text
+    assert '"decision_state":"WAITING"' in caplog.text
 
 
 def test_signal_decision_update_deduplicates_by_default_and_can_be_disabled(caplog):
@@ -486,6 +495,7 @@ def test_direct_bypass_requires_explicit_policy_and_complete_structure(caplog):
 
     assert emitter.emit(event) is True
     assert "[SignalJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
     assert '"promotion_path":"DIRECT_BYPASS"' in caplog.text
     assert '"audit_valid":true' in caplog.text
 
@@ -551,7 +561,289 @@ def test_final_emission_makes_pending_decision_terminal(caplog):
     assert emitter.emit(final) is True
     assert emitter.emit(late_wait) is False
     assert caplog.text.count("[SignalJSON]") == 1
-    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert caplog.text.count("[SignalDecisionUpdateJSON]") == 1
+    assert '"status":"EXECUTION_READY"' in caplog.text
+    assert '"terminal_decision_confirmed":true' in caplog.text
+    assert '"terminal_decision_id":"USDCAD_FINAL_DECISION"' in caplog.text
+
+
+def test_pending_decision_cannot_emit_second_final_payload(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    pending_id = "USDCAD_SINGLE_FINAL_DECISION"
+    cluster_id = "USDCAD_SINGLE_FINAL"
+    assert emitter.emit(
+        _event(
+            cluster_id=cluster_id,
+            status="SELL_ABSORPTION_WATCH",
+            pending_decision_id=pending_id,
+        )
+    ) is True
+    final = _event(
+        cluster_id=cluster_id,
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        h1_phase="BEARISH",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+        selected_sl=1.3790,
+        targets=[{"id": "TP2", "level": 1.3700, "type": "STRUCTURE_TARGET", "rr": 3.41}],
+        structure_zones={"key_resistance": 1.3774, "key_support": 1.3735},
+        execution_quality={"spread_normal": True},
+        pending_decision_id=pending_id,
+    )
+
+    assert emitter.emit(final) is True
+    assert emitter.emit(_event(**{**final.to_dict(), "entry_reference_price": 1.37690})) is False
+    assert caplog.text.count("[SignalJSON]") == 1
+
+
+@pytest.mark.parametrize(
+    (
+        "symbol",
+        "signal_family",
+        "status",
+        "direction",
+        "entry",
+        "sl_tight",
+        "sl_safe",
+        "structure_target",
+        "key_resistance",
+        "key_support",
+        "m15_phase",
+        "h1_phase",
+    ),
+    [
+        (
+            "EURCAD",
+            "MICROBOOST_COUNTER_ENTRY",
+            "BUY_BREAKOUT_CONTINUATION_VALID",
+            "BUY",
+            1.5000,
+            1.4988,
+            1.4980,
+            1.5060,
+            1.5020,
+            1.4980,
+            "BULLISH_PULLBACK",
+            "BULLISH",
+        ),
+        (
+            "USDJPY",
+            "MICROBOOST_COUNTER_ENTRY",
+            "SELL_TIMING_VALID",
+            "SELL",
+            156.20,
+            156.32,
+            156.40,
+            155.50,
+            156.32,
+            155.80,
+            "BEARISH_PULLBACK",
+            "BEARISH",
+        ),
+        (
+            "AUDUSD",
+            "MICROBOOST_TREND_CONTINUATION",
+            "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+            "BUY",
+            0.6500,
+            0.6488,
+            0.6480,
+            0.6560,
+            0.6520,
+            0.6480,
+            "BULLISH_PULLBACK",
+            "BULLISH",
+        ),
+    ],
+)
+def test_terminal_decision_gate_applies_to_all_pairs_and_final_families(
+    caplog,
+    symbol,
+    signal_family,
+    status,
+    direction,
+    entry,
+    sl_tight,
+    sl_safe,
+    structure_target,
+    key_resistance,
+    key_support,
+    m15_phase,
+    h1_phase,
+):
+    emitter = SignalJsonEmitter(enabled=True)
+    pending_id = f"{symbol}_{symbol}_GENERIC_M15_DECISION"
+    assert emitter.emit(
+        _event(
+            symbol=symbol,
+            cluster_id=f"{symbol}_GENERIC",
+            status="SELL_ABSORPTION_WATCH",
+            pending_decision_id=pending_id,
+            signal_valid_price=entry,
+            entry_reference_price=entry,
+            entry_zone=[entry, entry],
+        )
+    ) is True
+    caplog.clear()
+
+    final = _event(
+        symbol=symbol,
+        cluster_id=f"{symbol}_GENERIC",
+        signal_family=signal_family,
+        status=status,
+        validated_direction=direction,
+        final_direction=direction,
+        signal_valid_price=entry,
+        entry_reference_price=entry,
+        entry_zone=[entry, entry],
+        sl_tight=sl_tight,
+        sl_safe=sl_safe,
+        m15_phase=m15_phase,
+        h1_phase=h1_phase,
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+        targets=[{"id": "TP2", "level": structure_target, "type": "STRUCTURE_TARGET"}],
+        structure_zones={"key_resistance": key_resistance, "key_support": key_support},
+        execution_quality={"spread_normal": True},
+        pending_decision_id=pending_id,
+    )
+
+    assert emitter.emit(final) is True
+    assert caplog.text.index("[SignalDecisionUpdateJSON]") < caplog.text.index("[SignalJSON]")
+    assert f'"symbol":"{symbol}"' in caplog.text
+    assert '"status":"EXECUTION_READY"' in caplog.text
+    assert f'"terminal_decision_id":"{pending_id}"' in caplog.text
+    assert f'"status":"{status}"' in caplog.text
+    assert f'"final_direction":"{direction}"' in caplog.text
+
+
+def test_gbpcad_structure_final_without_formal_parent_remains_decision_update(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="GBPCAD_20260525T094454Z",
+        symbol="GBPCAD",
+        status="SELL_REVERSAL_VALID",
+        final_direction="SELL",
+        h1_phase="BEARISH",
+        signal_valid_price=1.8640,
+        entry_reference_price=1.8640,
+        entry_zone=[1.8638, 1.8642],
+        sl_tight=1.8652,
+        sl_safe=1.8660,
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+        targets=[{"id": "TP2", "level": 1.8580, "type": "STRUCTURE_TARGET", "rr": 3.0}],
+        structure_zones={"key_resistance": 1.8650, "key_support": 1.8600},
+        execution_quality={"spread_normal": True},
+        pending_decision_id="GBPCAD_GBPCAD_20260525T094454Z_M15_DECISION",
+        m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"MISSING_PARENT_WATCH_OR_APPROVED_BYPASS"' in caplog.text
+    assert '"MISSING_PARENT_WATCH_DECISION_ID_MATCH"' in caplog.text
+
+
+def test_gbpcad_wait_must_be_superseded_by_terminal_decision_before_final(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    pending_id = "GBPCAD_GBPCAD_20260525T083944Z_M15_DECISION"
+    cluster_id = "GBPCAD_20260525T083944Z"
+    assert emitter.emit(
+        _event(
+            cluster_id=cluster_id,
+            symbol="GBPCAD",
+            status="SELL_ABSORPTION_WATCH",
+            pending_decision_id=pending_id,
+        )
+    ) is True
+    assert emitter.emit(
+        _event(
+            event="signal_decision_update_json",
+            cluster_id=cluster_id,
+            symbol="GBPCAD",
+            status="WAIT_STRUCTURE_OR_NEXT_M15",
+            final_direction="WAIT",
+            pending_decision_id=pending_id,
+        )
+    ) is True
+    caplog.clear()
+
+    final = _event(
+        cluster_id=cluster_id,
+        symbol="GBPCAD",
+        status="SELL_REVERSAL_VALID",
+        final_direction="SELL",
+        h1_phase="BEARISH",
+        signal_valid_price=1.8640,
+        entry_reference_price=1.8640,
+        entry_zone=[1.8638, 1.8642],
+        sl_tight=1.8652,
+        sl_safe=1.8660,
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+        targets=[{"id": "TP2", "level": 1.8580, "type": "STRUCTURE_TARGET", "rr": 3.0}],
+        structure_zones={"key_resistance": 1.8650, "key_support": 1.8600},
+        execution_quality={"spread_normal": True},
+        pending_decision_id=pending_id,
+        m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+    )
+
+    assert emitter.emit(final) is True
+    terminal_offset = caplog.text.index("[SignalDecisionUpdateJSON]")
+    final_offset = caplog.text.index("[SignalJSON]")
+    assert terminal_offset < final_offset
+    assert '"status":"EXECUTION_READY"' in caplog.text
+    assert '"status":"SELL_REVERSAL_VALID"' in caplog.text
+    assert f'"terminal_decision_id":"{pending_id}"' in caplog.text
+
+
+def test_gbpcad_wait_then_provisional_breakout_cannot_emit_terminal_or_final(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    pending_id = "GBPCAD_GBPCAD_20260525T142135Z_M15_DECISION"
+    cluster_id = "GBPCAD_20260525T142135Z"
+    assert emitter.emit(
+        _event(
+            cluster_id=cluster_id,
+            symbol="GBPCAD",
+            status="SELL_ABSORPTION_WATCH",
+            pending_decision_id=pending_id,
+        )
+    ) is True
+    assert emitter.emit(
+        _event(
+            event="signal_decision_update_json",
+            cluster_id=cluster_id,
+            symbol="GBPCAD",
+            status="WAIT_STRUCTURE_OR_NEXT_M15",
+            final_direction="WAIT",
+            pending_decision_id=pending_id,
+        )
+    ) is True
+    caplog.clear()
+
+    provisional_buy = _event(
+        cluster_id=cluster_id,
+        symbol="GBPCAD",
+        status="BUY_BREAKOUT_CONTINUATION_VALID",
+        final_direction="BUY",
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        theme_alignment="SELL_BIAS",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=True,
+        pending_decision_id=pending_id,
+        m15_confirmation_status="M15_CLOSE_ABOVE_RESISTANCE",
+    )
+
+    assert emitter.emit(provisional_buy) is True
+    assert "[SignalJSON]" not in caplog.text
+    assert '"status":"EXECUTION_READY"' not in caplog.text
+    assert '"decision_state":"WAITING"' in caplog.text
+    assert '"PROVISIONAL_RR_NOT_EXECUTION_GRADE"' in caplog.text
+    assert '"THEME_CONFLICT_REQUIRES_SECOND_M15_CONFIRMATION"' in caplog.text
 
 
 def test_nzdjpy_provisional_breakout_with_theme_conflict_stays_conditional(caplog):
@@ -642,3 +934,4 @@ def test_nzdjpy_direct_quorum_provisional_signal_requires_parent_or_bypass(caplo
     assert '"valid_for_execution":false' in caplog.text
     assert '"MISSING_PARENT_WATCH_OR_APPROVED_BYPASS"' in caplog.text
     assert '"PROVISIONAL_RR_NOT_EXECUTION_GRADE"' in caplog.text
+    assert '"decision_state":"WAITING"' in caplog.text
