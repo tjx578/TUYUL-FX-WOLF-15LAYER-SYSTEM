@@ -257,6 +257,7 @@ def analyze_signal_throttle_events(
             ),
             "microboost_continuation_entry": None,
             "microboost_counter_entry": None,
+            "signal_watch_gate": _empty_signal_watch_gate("NO_SIGNAL_THROTTLE_DATA"),
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "market_context_validation": missing_market_context_result("UNKNOWN").to_dict(),
             "data_quality": _data_quality_block(
@@ -349,8 +350,13 @@ def analyze_signal_throttle_events(
         allowed_quorum=allowed_quorum,
         market_contexts=market_contexts,
     )
-    microboost_continuation_entry = _continuation_entry_payload(microboost_summary, allowed_quorum)
-    microboost_counter_entry = _counter_entry_payload(microboost_summary)
+    signal_watch_gate = _signal_watch_gate(candidate, microboost_summary)
+    microboost_continuation_entry = _continuation_entry_payload(
+        microboost_summary,
+        allowed_quorum,
+        signal_watch_gate,
+    )
+    microboost_counter_entry = _counter_entry_payload(microboost_summary, signal_watch_gate)
 
     return {
         "final_mode": final_mode,
@@ -380,6 +386,7 @@ def analyze_signal_throttle_events(
         "microboost_summary": microboost_summary,
         "microboost_continuation_entry": microboost_continuation_entry,
         "microboost_counter_entry": microboost_counter_entry,
+        "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
         "event_counts": event_type_counts,
         "symbol_activity": symbol_activity,
@@ -1080,10 +1087,22 @@ def _final_mode_from_lifecycle(
     return "THEME_ALERT_AND_PAIR_SELECTION"
 
 
-def _counter_entry_payload(microboost_summary: dict[str, Any]) -> dict[str, Any] | None:
+def _counter_entry_payload(
+    microboost_summary: dict[str, Any],
+    signal_watch_gate: dict[str, Any],
+) -> dict[str, Any] | None:
     latest = microboost_summary.get("latest")
     if not isinstance(latest, dict):
         return None
+    if not signal_watch_gate["eligible"]:
+        payload = _blocked_microboost_payload(
+            latest,
+            signal_family="MICROBOOST_COUNTER_ENTRY",
+            signal_watch_gate=signal_watch_gate,
+        )
+        latest["counter_entry"] = payload
+        microboost_summary["counter_entry"] = payload
+        return payload
     result = MicroboostCounterEntryEngine(
         min_rr_valid=_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
         tp1_rr_required=_env_float("SIGNAL_JSON_TP1_RR_REQUIRED", 2.0),
@@ -1093,8 +1112,9 @@ def _counter_entry_payload(microboost_summary: dict[str, Any]) -> dict[str, Any]
         direct_absorption_require_theme_alignment=_env_bool("DIRECT_ABSORPTION_REQUIRE_THEME_ALIGNMENT", True),
         direct_absorption_require_rr=_env_bool("DIRECT_ABSORPTION_REQUIRE_RR", True),
         allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
-    ).evaluate(latest)
+    ).evaluate(latest, watch_only=True)
     payload = result.to_dict()
+    payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
     latest["counter_entry"] = payload
     microboost_summary["counter_entry"] = payload
     return payload
@@ -1103,10 +1123,20 @@ def _counter_entry_payload(microboost_summary: dict[str, Any]) -> dict[str, Any]
 def _continuation_entry_payload(
     microboost_summary: dict[str, Any],
     allowed_quorum: dict[str, Any],
+    signal_watch_gate: dict[str, Any],
 ) -> dict[str, Any] | None:
     latest = microboost_summary.get("latest")
     if not isinstance(latest, dict):
         return None
+    if not signal_watch_gate["eligible"]:
+        payload = _blocked_microboost_payload(
+            latest,
+            signal_family="MICROBOOST_TREND_CONTINUATION",
+            signal_watch_gate=signal_watch_gate,
+        )
+        latest["continuation_entry"] = payload
+        microboost_summary["continuation_entry"] = payload
+        return payload
     result = MicroboostContinuationEngine(
         min_density_per_minute=_env_float("SIGNAL_JSON_CONTINUATION_MIN_DENSITY", 25.0),
         min_duration_seconds=_env_float("SIGNAL_JSON_CONTINUATION_MIN_DURATION_SECONDS", 60.0),
@@ -1115,9 +1145,92 @@ def _continuation_entry_payload(
         allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
     ).evaluate(latest, allowed_quorum=allowed_quorum)
     payload = result.to_dict()
+    payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
     latest["continuation_entry"] = payload
     microboost_summary["continuation_entry"] = payload
     return payload
+
+
+def _signal_watch_gate(
+    candidate: dict[str, Any] | None,
+    microboost_summary: dict[str, Any],
+) -> dict[str, Any]:
+    latest = microboost_summary.get("latest")
+    if not isinstance(candidate, dict):
+        return _empty_signal_watch_gate("SIGNAL_THROTTLE_CLEAN_BLOCK_REQUIRED")
+    if not isinstance(latest, dict):
+        return _empty_signal_watch_gate("MICROBOOST_VALIDATION_NOT_AVAILABLE", candidate)
+
+    candidate_symbol = str(candidate.get("symbol") or "").upper()
+    candidate_direction = str(candidate.get("direction") or "").upper()
+    latest_symbol = str(latest.get("symbol") or "").upper()
+    latest_direction = str(latest.get("direction") or "").upper()
+    if latest_symbol != candidate_symbol:
+        return _empty_signal_watch_gate("MICROBOOST_PAIR_NOT_CLEAN_BLOCK_CANDIDATE", candidate)
+    if latest_direction not in {"BUY", "SELL"} or latest_direction != candidate_direction:
+        return _empty_signal_watch_gate("MICROBOOST_DIRECTION_NOT_CLEAN_BLOCK_DIRECTION", candidate)
+
+    return {
+        "eligible": True,
+        "source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+        "reason": "clean_signal_throttle_block_confirmed_for_microboost_validation",
+        "symbol": candidate_symbol,
+        "direction": candidate_direction,
+        "valid_since_utc": candidate.get("valid_since_utc"),
+        "block_start_utc": candidate.get("block_start_utc"),
+        "block_end_utc": candidate.get("block_end_utc"),
+    }
+
+
+def _empty_signal_watch_gate(
+    reason: str,
+    candidate: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    candidate = candidate or {}
+    return {
+        "eligible": False,
+        "source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+        "reason": reason,
+        "symbol": candidate.get("symbol"),
+        "direction": candidate.get("direction"),
+        "valid_since_utc": candidate.get("valid_since_utc"),
+        "block_start_utc": candidate.get("block_start_utc"),
+        "block_end_utc": candidate.get("block_end_utc"),
+    }
+
+
+def _signal_watch_source_fields(
+    signal_watch_gate: dict[str, Any],
+    microboost_validated: bool,
+) -> dict[str, Any]:
+    return {
+        "signal_watch_source": signal_watch_gate["source"],
+        "source_clean_block_confirmed": bool(signal_watch_gate["eligible"]),
+        "source_clean_block_valid_since_utc": signal_watch_gate.get("valid_since_utc"),
+        "microboost_validation_status": "PASSED" if microboost_validated else "NO_SIGNAL_PATTERN",
+    }
+
+
+def _blocked_microboost_payload(
+    latest: dict[str, Any],
+    *,
+    signal_family: str,
+    signal_watch_gate: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "status": "NONE",
+        "signal_family": signal_family,
+        "symbol": str(latest.get("symbol") or "").upper(),
+        "raw_direction": latest.get("direction"),
+        "candidate_direction": None,
+        "validated_direction": None,
+        "final_direction": "WAIT",
+        "direction_status": "SIGNAL_THROTTLE_CLEAN_BLOCK_REQUIRED",
+        "action": "WAIT_SIGNAL_THROTTLE_CLEAN_BLOCK",
+        "reason": signal_watch_gate["reason"],
+        **_signal_watch_source_fields(signal_watch_gate, False),
+    }
 
 
 def _env_float(name: str, default: float) -> float:
