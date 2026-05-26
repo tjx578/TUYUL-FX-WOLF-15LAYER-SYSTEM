@@ -91,6 +91,24 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
     assert result.valid_for_execution is True
     assert result.rr_to_tp2_tight is not None
     assert result.rr_to_tp2_tight >= 2.5
+    assert result.key_support == 1.3720
+    assert result.key_resistance == 1.3850
+    assert result.structure_zones == {
+        "price_position": "MID_RANGE",
+        "entry_zone": [1.3756, 1.37567],
+        "key_support": 1.3720,
+        "key_resistance": 1.3850,
+        "range_low": 1.3720,
+        "range_high": 1.3850,
+    }
+    assert result.execution_quality == {
+        "spread_normal": True,
+        "spread_pips": None,
+        "max_allowed_spread_pips": None,
+    }
+    assert result.promotion_path == "DIRECT_DECISION_TO_FINAL"
+    assert result.direct_valid_reason == "QUORUM_CONTINUATION_WITH_STRUCTURE_CONTRACT"
+    assert result.parent_watch_required is False
 
 
 def test_continuation_ignores_unready_or_opposite_quorum():
@@ -133,6 +151,8 @@ def test_continuation_fallback_targets_can_validate_fast_trend_setup():
     assert result.tp1_rr == 2.0
     assert result.tp2_rr == 2.5
     assert result.tp3_rr == 3.0
+    assert result.promotion_path is None
+    assert result.direct_valid_reason is None
 
 
 def test_continuation_tp1_rr_floor_cannot_be_configured_below_two_r():
