@@ -111,7 +111,14 @@ def test_idle_resistance_watch_emits_decision_update_when_support_ladder_missing
 
 def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_ladder_ready():
     finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
-    finalizer.track(_watch())
+    finalizer.track(
+        _watch(
+            signal_watch_source="SIGNAL_THROTTLE_CLEAN_BLOCK",
+            source_clean_block_confirmed=True,
+            source_clean_block_valid_since_utc="2026-05-21T03:05:00+00:00",
+            microboost_validation_status="PASSED",
+        )
+    )
 
     outputs = finalizer.finalize(
         report=_report(),
@@ -139,6 +146,9 @@ def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_la
     assert signal["target_mode"] == "FINAL_MARKET_STRUCTURE"
     assert signal["tp1_rr"] == 2.0
     assert signal["m15_confirmation_status"] == "M15_CLOSE_REJECTION_CONFIRMED"
+    assert signal["signal_watch_source"] == "SIGNAL_THROTTLE_CLEAN_BLOCK"
+    assert signal["source_clean_block_confirmed"] is True
+    assert signal["microboost_validation_status"] == "PASSED"
     assert finalizer.pending_symbols() == []
 
 
