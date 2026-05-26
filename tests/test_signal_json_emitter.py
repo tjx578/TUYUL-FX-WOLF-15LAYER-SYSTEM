@@ -770,6 +770,47 @@ def test_structured_direct_continuation_emits_terminal_decision_then_signal_json
     assert '"valid_for_execution":true' in caplog.text
 
 
+def test_direct_continuation_with_rr_fallback_remains_blocked_decision_update(caplog):
+    continuation = MicroboostContinuationEngine().evaluate(
+        {
+            "cluster_id": "NZDJPY_20260526T040107Z",
+            "symbol": "NZDJPY",
+            "direction": "BUY",
+            "phase_priced": "TREND_CONTINUATION_MICROBOOST",
+            "effective_density_per_minute": 27.45,
+            "effective_tick_count": 30,
+            "duration_seconds": 62.0,
+            "end_utc": "2026-05-25T20:01:07+00:00",
+            "price_position": "MID_RANGE",
+            "market_context_snapshot": {
+                "symbol": "NZDJPY",
+                "pip_value": 0.01,
+                "price_at_signal_start": 93.318,
+                "price_at_signal_end": 93.321,
+                "m15_phase": "BULLISH_PULLBACK",
+                "h1_phase": "BULLISH",
+                "spread_normal": True,
+                "price_position": "MID_RANGE",
+            },
+        },
+        allowed_quorum={
+            "symbol": "NZDJPY",
+            "direction": "BUY",
+            "streak": 3,
+            "quorum_reached": True,
+        },
+    )
+    event = build_signal_json_event(continuation.to_dict())
+    assert event is not None
+
+    emitter = SignalJsonEmitter(enabled=True)
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"PROVISIONAL_RR_NOT_EXECUTION_GRADE"' in caplog.text
+    assert '"status":"WAIT_STRUCTURE_OR_NEXT_M15"' in caplog.text
+
+
 def test_gbpcad_structure_final_without_formal_parent_remains_decision_update(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
