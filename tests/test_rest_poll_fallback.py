@@ -534,6 +534,33 @@ class TestPushCandlesToRedis:
         assert redis_mock.publish.call_count == 4
 
     @pytest.mark.asyncio
+    async def test_suspended_finnhub_key_uses_configured_substitute_provider(self):
+        """Finnhub cooldown must not suppress Twelve Data polling during an outage."""
+        fallback_candles = [_make_candle("EURUSD", "M15", 1.09)]
+
+        with (
+            patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as mock_finnhub,
+            patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
+            patch("ingest.finnhub_key_manager.finnhub_keys") as mock_keys,
+            patch("ingest.fallback_provider.FallbackCandleProvider") as mock_fallback,
+        ):
+            mock_keys.status.return_value = [{"suspended": True, "cooldown_remaining_sec": 120.0}]
+            mock_fallback.return_value.available_providers = ["twelve_data"]
+            mock_fallback.return_value.fetch = AsyncMock(return_value=fallback_candles)
+
+            from ingest.rest_poll_fallback import RestPollFallback
+
+            poller = RestPollFallback(ws_connected_fn=lambda: False, symbols=["EURUSD"])
+            poller._refresh_h1 = False
+            poller._silent_refresh_htf = False
+            poller._push_candles_to_redis = AsyncMock()
+            await poller._poll_symbol("EURUSD")
+
+        mock_finnhub.return_value.fetch.assert_not_called()
+        mock_fallback.return_value.fetch.assert_awaited_once_with("EURUSD", "M15", poller._bars)
+        poller._push_candles_to_redis.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_logs_skip_reason_summary_for_duplicate_batch(self):
         """All-skipped warning should surface duplicate-open-time as the skip reason."""
         redis_mock = AsyncMock()
