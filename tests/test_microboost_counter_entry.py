@@ -107,6 +107,25 @@ def test_m15_breakout_confirms_buy_continuation_from_resistance_watch():
     assert result.tp2_rr == 2.5
 
 
+def test_initial_microboost_pass_stays_watch_only_even_when_m15_breakout_is_present():
+    result = MicroboostCounterEntryEngine().evaluate(
+        _cluster(
+            phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+            duration_seconds=181.0,
+            effective_density_per_minute=20.0,
+            price_at_signal_start=1.846005,
+            price_at_signal_end=1.846005,
+        ),
+        _market(m15_close_above_resistance=True),
+        watch_only=True,
+    )
+
+    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
+    assert result.final_direction == "WAIT"
+    assert result.valid_for_execution is False
+    assert result.requires_m15_close is True
+
+
 def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():
     cluster = _cluster(
         symbol="USDCAD",
