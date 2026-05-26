@@ -43,7 +43,10 @@ import contextlib
 import json
 import logging
 import os
+import threading
+import time
 from abc import ABC, abstractmethod
+from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
@@ -60,6 +63,10 @@ class FallbackProviderError(Exception):
 
 class ProviderResponseError(FallbackProviderError):
     """Raised when an upstream provider returns an invalid payload."""
+
+
+class ProviderQuotaDeferredError(FallbackProviderError):
+    """Raised before or after a request when a provider quota window is exhausted."""
 
 
 # Redis cache TTL for persisted candles (default 7 days).
@@ -94,6 +101,72 @@ _EXPECTED_CANDLE_KEYS: frozenset[str] = frozenset(
         "source",
     }
 )
+
+# Process-shared Twelve Data budget. Warmup spawns many provider instances in
+# parallel, so an instance-local limiter would still burst beyond free-tier
+# quotas. A single ingest service owns these requests in normal deployment.
+_TWELVE_DATA_RATE_LOCK = threading.Lock()
+_TWELVE_DATA_REQUEST_TIMES: deque[float] = deque()
+_TWELVE_DATA_BLOCKED_UNTIL: float = 0.0
+
+
+def _env_positive_float(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _reserve_twelve_data_credit() -> None:
+    """Reserve one process-local API credit or defer the request without sending it."""
+    global _TWELVE_DATA_BLOCKED_UNTIL
+
+    now = time.monotonic()
+    limit = _env_positive_int("TWELVE_DATA_CREDITS_PER_MINUTE", 8)
+    window_sec = _env_positive_float("TWELVE_DATA_QUOTA_WINDOW_SEC", 60.0)
+    with _TWELVE_DATA_RATE_LOCK:
+        if now < _TWELVE_DATA_BLOCKED_UNTIL:
+            retry_in = _TWELVE_DATA_BLOCKED_UNTIL - now
+            raise ProviderQuotaDeferredError(f"TwelveData quota cooldown active; retry in {retry_in:.1f}s")
+
+        while _TWELVE_DATA_REQUEST_TIMES and now - _TWELVE_DATA_REQUEST_TIMES[0] >= window_sec:
+            _TWELVE_DATA_REQUEST_TIMES.popleft()
+
+        if len(_TWELVE_DATA_REQUEST_TIMES) >= limit:
+            retry_in = window_sec - (now - _TWELVE_DATA_REQUEST_TIMES[0])
+            raise ProviderQuotaDeferredError(
+                f"TwelveData local credit budget exhausted ({limit}/{window_sec:.0f}s); retry in {retry_in:.1f}s"
+            )
+
+        _TWELVE_DATA_REQUEST_TIMES.append(now)
+
+
+def _pause_twelve_data_for_quota() -> None:
+    """Stop additional calls after the upstream confirms that quota is exhausted."""
+    global _TWELVE_DATA_BLOCKED_UNTIL
+
+    cooldown_sec = _env_positive_float("TWELVE_DATA_QUOTA_COOLDOWN_SEC", 65.0)
+    with _TWELVE_DATA_RATE_LOCK:
+        _TWELVE_DATA_BLOCKED_UNTIL = max(_TWELVE_DATA_BLOCKED_UNTIL, time.monotonic() + cooldown_sec)
+    logger.warning("[TwelveData] Upstream credit quota exhausted; pausing new requests for %.0fs", cooldown_sec)
+
+
+def _reset_twelve_data_rate_state() -> None:
+    """Reset process-local quota accounting for deterministic tests."""
+    global _TWELVE_DATA_BLOCKED_UNTIL
+
+    with _TWELVE_DATA_RATE_LOCK:
+        _TWELVE_DATA_REQUEST_TIMES.clear()
+        _TWELVE_DATA_BLOCKED_UNTIL = 0.0
 
 
 # ══════════════════════════════════════════════════════════
@@ -286,6 +359,8 @@ class TwelveDataProvider(CandleProviderBase):
         if interval is None:
             raise ValueError(f"Unsupported timeframe for TwelveData: {timeframe}")
 
+        _reserve_twelve_data_credit()
+
         td_symbol = self._convert_symbol(symbol)
         params: dict[str, Any] = {
             "symbol": td_symbol,
@@ -300,11 +375,18 @@ class TwelveDataProvider(CandleProviderBase):
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(f"{self.base_url}/time_series", params=params)
+            if resp.status_code == 429:
+                _pause_twelve_data_for_quota()
+                raise ProviderQuotaDeferredError("TwelveData returned HTTP 429; quota cooldown activated")
             resp.raise_for_status()
             data = resp.json()
 
         if data.get("status") == "error":
-            raise RuntimeError(f"TwelveData error: {data.get('message', 'unknown')}")
+            message = str(data.get("message", "unknown"))
+            if "credit" in message.lower() or "rate limit" in message.lower():
+                _pause_twelve_data_for_quota()
+                raise ProviderQuotaDeferredError("TwelveData credit limit reached; quota cooldown activated")
+            raise RuntimeError(f"TwelveData error: {message}")
 
         values = data.get("values", [])
         if not isinstance(values, list):
@@ -664,7 +746,17 @@ class FallbackCandleProvider:
                         )
                         await self._write_cache(symbol, timeframe, candles)
                         return candles
-                except (httpx.HTTPError, RuntimeError, ValueError, ProviderResponseError) as exc:
+                except ProviderQuotaDeferredError as exc:
+                    last_error = exc
+                    logger.debug(
+                        "[Fallback] %s deferred for %s %s: %s",
+                        provider.name,
+                        symbol,
+                        timeframe,
+                        exc,
+                    )
+                    break
+                except (httpx.HTTPError, RuntimeError, ValueError, FallbackProviderError) as exc:
                     last_error = exc
                     logger.warning(
                         "[Fallback] %s attempt %d/%d failed for %s %s: %s: %s",
@@ -689,14 +781,21 @@ class FallbackCandleProvider:
                     )
                     break
 
-        logger.warning(
-            "[Fallback] All providers exhausted for %s %s (last_error=%s) — attempting stale cache",
-            symbol,
-            timeframe,
-            last_error,
-        )
+        if isinstance(last_error, ProviderQuotaDeferredError):
+            logger.debug(
+                "[Fallback] Provider quota deferred for %s %s — attempting stale cache",
+                symbol,
+                timeframe,
+            )
+        else:
+            logger.warning(
+                "[Fallback] All providers exhausted for %s %s (last_error=%s) — attempting stale cache",
+                symbol,
+                timeframe,
+                last_error,
+            )
         cached = await self._read_cache(symbol, timeframe)
-        if not cached:
+        if not cached and not isinstance(last_error, ProviderQuotaDeferredError):
             logger.warning(
                 "[Fallback] No stale cache for %s %s — returning empty list",
                 symbol,
