@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ingest.fallback_provider import _CANDLE_CACHE_KEY_PREFIX, FallbackCandleProvider
+from ingest.fallback_provider import _CANDLE_CACHE_KEY_PREFIX, FallbackCandleProvider, TwelveDataProvider
 
 
 def _cached_candle(
@@ -30,6 +31,61 @@ def _cached_candle(
         "timestamp": timestamp,
         "source": source,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Twelve Data canonical candle compatibility
+# ══════════════════════════════════════════════════════════════════════
+
+
+class TestTwelveDataProviderCompatibility:
+    @pytest.mark.asyncio
+    async def test_m15_payload_is_normalized_in_utc_for_analysis(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "test-key")
+        provider = TwelveDataProvider()
+
+        class _Response:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, Any]:
+                return {
+                    "values": [
+                        {
+                            "datetime": "2026-05-26 03:45:00",
+                            "open": "1.86247",
+                            "high": "1.86259",
+                            "low": "1.86229",
+                            "close": "1.86244",
+                        }
+                    ]
+                }
+
+        class _Client:
+            params: dict[str, Any] = {}
+
+            async def __aenter__(self) -> _Client:
+                return self
+
+            async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+                return None
+
+            async def get(self, _url: str, params: dict[str, Any]) -> _Response:
+                self.params = params
+                return _Response()
+
+        client = _Client()
+        with patch("ingest.fallback_provider.httpx.AsyncClient", return_value=client):
+            candles = await provider.fetch("GBPCAD", "M15", bars=1)
+
+        assert client.params["symbol"] == "GBP/CAD"
+        assert client.params["interval"] == "15min"
+        assert client.params["timezone"] == "UTC"
+        assert len(candles) == 1
+        assert candles[0]["symbol"] == "GBPCAD"
+        assert candles[0]["timeframe"] == "M15"
+        assert candles[0]["source"] == "twelve_data"
+        assert candles[0]["timestamp"].tzinfo is UTC
 
 
 # ══════════════════════════════════════════════════════════════════════
