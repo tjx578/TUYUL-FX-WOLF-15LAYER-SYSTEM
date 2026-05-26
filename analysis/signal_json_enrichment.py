@@ -145,7 +145,7 @@ def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
             },
             "execution_quality": execution_quality,
             "phase_coherence": phase_coherence,
-            "signal_expiry": expiry,
+            "signal_expiry": expiry or {},
         }
     )
     return enriched
@@ -153,9 +153,11 @@ def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_nested_output(payload: dict[str, Any]) -> None:
     """Guarantee safe nested containers for watch, update, and final logs."""
-    payload["targets"] = [
-        dict(item) for item in payload.get("targets", []) if isinstance(item, dict)
-    ] if isinstance(payload.get("targets"), list) else []
+    payload["targets"] = (
+        [dict(item) for item in payload["targets"] if isinstance(item, dict)]
+        if isinstance(payload.get("targets"), list)
+        else []
+    )
     payload["target_policy"] = (
         dict(payload["target_policy"])
         if isinstance(payload.get("target_policy"), dict)
@@ -214,7 +216,7 @@ def _targets(
 
     candidates: list[float] = []
     raw_targets = payload.get("targets")
-    if isinstance(raw_targets, list):
+    if isinstance(raw_targets, list) and raw_targets:
         for item in raw_targets:
             if isinstance(item, dict) and str(item.get("type") or "").upper() != "FIXED_RR":
                 level = _optional_float(item.get("level"))
