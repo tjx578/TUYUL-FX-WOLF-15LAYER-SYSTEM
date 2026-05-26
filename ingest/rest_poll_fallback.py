@@ -295,20 +295,36 @@ class RestPollFallback:
         """Fetch M15 + optional H1 for a single symbol and seed the context bus."""
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
 
-        # ── GUARD: skip REST poll while Finnhub key is in cooldown ────
+        fetch_candles: Any = self._fetcher.fetch
+
+        # Use configured REST substitutes while all Finnhub keys are suspended.
+        # This keeps candle analysis alive in degraded mode without retrying
+        # a rejected Finnhub credential on every silent-symbol poll.
         key_statuses = finnhub_keys.status()
         if key_statuses and all(k["suspended"] for k in key_statuses):
             remaining = max(k["cooldown_remaining_sec"] for k in key_statuses)
+            from ingest.fallback_provider import FallbackCandleProvider  # noqa: PLC0415
+
+            fallback_provider = FallbackCandleProvider()
+            if not fallback_provider.available_providers:
+                logger.warning(
+                    "[RestPoll] Finnhub key suspended (%.0fs cooldown) — "
+                    "skipping REST poll for %s, no substitute provider configured",
+                    remaining,
+                    symbol,
+                )
+                return
             logger.warning(
                 "[RestPoll] Finnhub key suspended (%.0fs cooldown) — "
-                "skipping REST poll for %s, WS candle builder akan catchup",
+                "using %s REST substitute for %s",
                 remaining,
+                fallback_provider.available_providers,
                 symbol,
             )
-            return
+            fetch_candles = fallback_provider.fetch
 
         try:
-            m15_candles = await self._fetcher.fetch(symbol, "M15", self._bars)
+            m15_candles = await fetch_candles(symbol, "M15", self._bars)
             # ── FIX: normalize before context bus + redis push ──
             m15_candles = self._normalize_candles(m15_candles, symbol, "M15")
 
@@ -330,7 +346,7 @@ class RestPollFallback:
 
         if self._refresh_h1:
             try:
-                h1_candles = await self._fetcher.fetch(symbol, "H1", self._h1_bars)
+                h1_candles = await fetch_candles(symbol, "H1", self._h1_bars)
                 # ── FIX: normalize H1 candles ──
                 h1_candles = self._normalize_candles(h1_candles, symbol, "H1")
 
