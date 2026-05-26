@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from analysis.microboost_continuation_entry import MicroboostContinuationEngine
 from analysis.signal_json_emitter import (
     SignalJsonEmitter,
     SignalJsonEvent,
@@ -716,6 +717,57 @@ def test_terminal_decision_gate_applies_to_all_pairs_and_final_families(
     assert f'"terminal_decision_id":"{pending_id}"' in caplog.text
     assert f'"status":"{status}"' in caplog.text
     assert f'"final_direction":"{direction}"' in caplog.text
+
+
+def test_structured_direct_continuation_emits_terminal_decision_then_signal_json(caplog):
+    continuation = MicroboostContinuationEngine().evaluate(
+        {
+            "cluster_id": "USDCAD_20260520T024532Z",
+            "symbol": "USDCAD",
+            "direction": "BUY",
+            "phase_unpriced": "IGNITION_MICROBOOST",
+            "phase_priced": "TREND_CONTINUATION_MICROBOOST",
+            "effective_density_per_minute": 31.68,
+            "effective_tick_count": 32,
+            "duration_seconds": 62.0,
+            "end_utc": "2026-05-20T02:46:34+00:00",
+            "price_position": "MID_RANGE",
+            "market_context_snapshot": {
+                "symbol": "USDCAD",
+                "pip_value": 0.0001,
+                "price_at_signal_start": 1.37560,
+                "price_at_signal_end": 1.375675,
+                "m15_phase": "BULLISH_PULLBACK",
+                "h1_phase": "BULLISH",
+                "spread_normal": True,
+                "price_position": "MID_RANGE",
+                "main_support": 1.3720,
+                "main_resistance": 1.3850,
+                "minor_resistance": 1.3785,
+                "tp1_resistance": 1.3785,
+                "tp2_resistance": 1.3810,
+                "tp3_resistance": 1.3850,
+                "tp4_resistance": 1.3900,
+            },
+        },
+        allowed_quorum={
+            "symbol": "USDCAD",
+            "direction": "BUY",
+            "streak": 3,
+            "quorum_reached": True,
+        },
+    )
+    event = build_signal_json_event(continuation.to_dict())
+    assert event is not None
+
+    emitter = SignalJsonEmitter(enabled=True)
+    assert emitter.emit(event) is True
+    assert caplog.text.index("[SignalDecisionUpdateJSON]") < caplog.text.index("[SignalJSON]")
+    assert '"status":"EXECUTION_READY"' in caplog.text
+    assert '"promotion_path":"DIRECT_DECISION_TO_FINAL"' in caplog.text
+    assert '"parent_event_exists":false' in caplog.text
+    assert '"status":"BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"' in caplog.text
+    assert '"valid_for_execution":true' in caplog.text
 
 
 def test_gbpcad_structure_final_without_formal_parent_remains_decision_update(caplog):
