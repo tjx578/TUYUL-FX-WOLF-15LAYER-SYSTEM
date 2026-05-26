@@ -3,13 +3,30 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ingest.fallback_provider import _CANDLE_CACHE_KEY_PREFIX, FallbackCandleProvider, TwelveDataProvider
+from ingest.fallback_provider import (
+    _CANDLE_CACHE_KEY_PREFIX,
+    FallbackCandleProvider,
+    ProviderQuotaDeferredError,
+    TwelveDataProvider,
+    _reset_twelve_data_rate_state,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_twelve_data_budget(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("TWELVE_DATA_CREDITS_PER_MINUTE", "8")
+    monkeypatch.setenv("TWELVE_DATA_QUOTA_WINDOW_SEC", "60")
+    monkeypatch.setenv("TWELVE_DATA_QUOTA_COOLDOWN_SEC", "65")
+    _reset_twelve_data_rate_state()
+    yield
+    _reset_twelve_data_rate_state()
 
 
 def _cached_candle(
@@ -45,6 +62,8 @@ class TestTwelveDataProviderCompatibility:
         provider = TwelveDataProvider()
 
         class _Response:
+            status_code = 200
+
             def raise_for_status(self) -> None:
                 return None
 
@@ -86,6 +105,75 @@ class TestTwelveDataProviderCompatibility:
         assert candles[0]["timeframe"] == "M15"
         assert candles[0]["source"] == "twelve_data"
         assert candles[0]["timestamp"].tzinfo is UTC
+
+    @pytest.mark.asyncio
+    async def test_local_budget_defers_request_before_api_overrun(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "test-key")
+        monkeypatch.setenv("TWELVE_DATA_CREDITS_PER_MINUTE", "1")
+        provider = TwelveDataProvider()
+
+        class _Response:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, Any]:
+                return {
+                    "values": [
+                        {
+                            "datetime": "2026-05-26 03:00:00",
+                            "open": "1.1",
+                            "high": "1.2",
+                            "low": "1.0",
+                            "close": "1.1",
+                        }
+                    ]
+                }
+
+        client = MagicMock()
+        client.get = AsyncMock(return_value=_Response())
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("ingest.fallback_provider.httpx.AsyncClient", return_value=client):
+            assert await provider.fetch("EURUSD", "H1", bars=1)
+            with pytest.raises(ProviderQuotaDeferredError, match="local credit budget exhausted"):
+                await provider.fetch("EURCAD", "D1", bars=1)
+
+        client.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_remote_credit_error_activates_cooldown_without_second_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "test-key")
+        provider = TwelveDataProvider()
+
+        class _Response:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, str]:
+                return {
+                    "status": "error",
+                    "message": "You have run out of API credits for the current minute.",
+                }
+
+        client = MagicMock()
+        client.get = AsyncMock(return_value=_Response())
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("ingest.fallback_provider.httpx.AsyncClient", return_value=client):
+            with pytest.raises(ProviderQuotaDeferredError, match="credit limit reached"):
+                await provider.fetch("EURUSD", "H1", bars=1)
+            with pytest.raises(ProviderQuotaDeferredError, match="quota cooldown active"):
+                await provider.fetch("EURCAD", "D1", bars=1)
+
+        client.get.assert_awaited_once()
 
 
 # ══════════════════════════════════════════════════════════════════════
