@@ -204,10 +204,6 @@ class MicroboostContinuationEngine:
             entry_zone=base["entry_zone"],
             snapshot=snapshot,
         )
-        direct_structure_ready = (
-            levels["target_mode"] == "FINAL_MARKET_STRUCTURE"
-            and levels["valid_for_execution"]
-        )
         status = f"{raw_direction}_TIMING_VALID_BY_QUORUM_CONTINUATION"
         action = "BUY_SIGNAL_ZONE_OR_RETEST" if raw_direction == "BUY" else "SELL_SIGNAL_ZONE_OR_RETEST"
         return self._result(
@@ -254,13 +250,9 @@ class MicroboostContinuationEngine:
             key_support=structure_metadata["key_support"],
             structure_zones=structure_metadata["structure_zones"],
             execution_quality=structure_metadata["execution_quality"],
-            promotion_path="DIRECT_DECISION_TO_FINAL" if direct_structure_ready else None,
-            direct_valid_reason=(
-                "QUORUM_CONTINUATION_WITH_STRUCTURE_CONTRACT"
-                if direct_structure_ready
-                else None
-            ),
-            parent_watch_required=False if direct_structure_ready else None,
+            promotion_path=None,
+            direct_valid_reason=None,
+            parent_watch_required=True,
             **base,
         )
 
