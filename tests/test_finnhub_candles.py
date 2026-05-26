@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, tzinfo
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -518,6 +518,55 @@ class TestPremiumFallback:
             result = await fetcher.try_fallback("XAGUSD", "D1", 10)
 
         assert result == []
+
+    @pytest.mark.asyncio
+    async def test_auth_failure_uses_configured_rest_fallback(self) -> None:
+        """A rejected Finnhub credential must allow a normalized secondary provider candle."""
+
+        class _AuthResponse:
+            status_code = 401
+
+            def raise_for_status(self) -> None:
+                request = httpx.Request("GET", "https://finnhub.io/api/v1/forex/candle")
+                response = httpx.Response(401, request=request)
+                raise httpx.HTTPStatusError("HTTP 401", request=request, response=response)
+
+        class _Client:
+            async def __aenter__(self) -> _Client:
+                return self
+
+            async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+                return None
+
+            async def get(self, _url: str, params: dict[str, Any]) -> _AuthResponse:
+                return _AuthResponse()
+
+        fallback_candles = [
+            {
+                "symbol": "GBPCAD",
+                "timeframe": "H1",
+                "open": 1.86244,
+                "high": 1.86289,
+                "low": 1.86229,
+                "close": 1.86244,
+                "volume": 0.0,
+                "timestamp": datetime(2026, 5, 26, 3, 0, tzinfo=UTC),
+                "source": "twelve_data",
+            }
+        ]
+        fetcher = FinnhubCandleFetcher()
+        fetcher.request_delay = 0
+        fetcher._key_manager = MagicMock()
+        fetcher._key_manager.current_key.return_value = "rejected-primary"
+        mock_fallback = AsyncMock(return_value=fallback_candles)
+        fetcher.try_fallback = mock_fallback
+
+        with patch("ingest.finnhub_candles.httpx.AsyncClient", return_value=_Client()):
+            result = await fetcher.fetch("GBPCAD", "H1", bars=1)
+
+        assert result == fallback_candles
+        mock_fallback.assert_awaited_once_with("GBPCAD", "H1", 1)
+        fetcher._key_manager.report_failure.assert_called_once_with("rejected-primary", 401)
 
 
 class TestRateLimitRetries:
