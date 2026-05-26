@@ -643,6 +643,10 @@ def _with_block_fields(
         "decision_watch_type",
         "buy_condition",
         "sell_condition",
+        "signal_watch_source",
+        "source_clean_block_confirmed",
+        "source_clean_block_valid_since_utc",
+        "microboost_validation_status",
     ):
         if payload.get(key) is None and watch.payload.get(key) is not None:
             payload[key] = watch.payload.get(key)
