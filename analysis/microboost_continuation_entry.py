@@ -75,6 +75,13 @@ class MicroboostContinuationResult:
     tp3_rr: float | None = None
     tp4_rr: float | None = None
     risk_pips: float | None = None
+    key_resistance: float | None = None
+    key_support: float | None = None
+    structure_zones: dict[str, Any] | None = None
+    execution_quality: dict[str, Any] | None = None
+    promotion_path: str | None = None
+    direct_valid_reason: str | None = None
+    parent_watch_required: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -193,6 +200,14 @@ class MicroboostContinuationEngine:
             tp1_rr=self.tp1_rr_required,
             allow_rr_fallback=self.allow_rr_fallback,
         )
+        structure_metadata = _continuation_structure_metadata(
+            entry_zone=base["entry_zone"],
+            snapshot=snapshot,
+        )
+        direct_structure_ready = (
+            levels["target_mode"] == "FINAL_MARKET_STRUCTURE"
+            and levels["valid_for_execution"]
+        )
         status = f"{raw_direction}_TIMING_VALID_BY_QUORUM_CONTINUATION"
         action = "BUY_SIGNAL_ZONE_OR_RETEST" if raw_direction == "BUY" else "SELL_SIGNAL_ZONE_OR_RETEST"
         return self._result(
@@ -235,6 +250,17 @@ class MicroboostContinuationEngine:
             tp3_rr=levels["tp3_rr"],
             tp4_rr=levels["tp4_rr"],
             risk_pips=levels["risk_pips"],
+            key_resistance=structure_metadata["key_resistance"],
+            key_support=structure_metadata["key_support"],
+            structure_zones=structure_metadata["structure_zones"],
+            execution_quality=structure_metadata["execution_quality"],
+            promotion_path="DIRECT_DECISION_TO_FINAL" if direct_structure_ready else None,
+            direct_valid_reason=(
+                "QUORUM_CONTINUATION_WITH_STRUCTURE_CONTRACT"
+                if direct_structure_ready
+                else None
+            ),
+            parent_watch_required=False if direct_structure_ready else None,
             **base,
         )
 
@@ -459,6 +485,40 @@ def _level_payload(
 def _snapshot(cluster: Any) -> dict[str, Any] | None:
     raw = _field(cluster, "market_context_snapshot", None)
     return raw if isinstance(raw, dict) else None
+
+
+def _continuation_structure_metadata(
+    *,
+    entry_zone: list[float] | None,
+    snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    key_support = _optional_float(
+        _field(snapshot, "key_support", _field(snapshot, "main_support", _field(snapshot, "support_low", None)))
+    )
+    key_resistance = _optional_float(
+        _field(
+            snapshot,
+            "key_resistance",
+            _field(snapshot, "main_resistance", _field(snapshot, "resistance_high", None)),
+        )
+    )
+    return {
+        "key_support": key_support,
+        "key_resistance": key_resistance,
+        "structure_zones": {
+            "price_position": _normalize_position(_field(snapshot, "price_position", None)),
+            "entry_zone": entry_zone,
+            "key_support": key_support,
+            "key_resistance": key_resistance,
+            "range_low": key_support,
+            "range_high": key_resistance,
+        },
+        "execution_quality": {
+            "spread_normal": _field(snapshot, "spread_normal", None),
+            "spread_pips": _optional_float(_field(snapshot, "spread_pips", None)),
+            "max_allowed_spread_pips": _optional_float(_field(snapshot, "max_allowed_spread_pips", None)),
+        },
+    }
 
 
 def _field(obj: Any, name: str, default: Any = None) -> Any:
