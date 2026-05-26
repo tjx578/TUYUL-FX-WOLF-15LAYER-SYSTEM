@@ -1,8 +1,10 @@
-"""Standalone final signal JSON emitter.
+"""Standalone, symbol-agnostic SignalJSON output orchestrator.
 
-Raw throttle and microboost logs are telemetry. ``[SignalJSON]`` is the
-final signal product; ``[SignalWatchJSON]`` is a rate-limited lifecycle update
-for watch states.
+Raw throttle and microboost results remain analysis telemetry. For every pair,
+an execution-grade ``[SignalJSON]`` must pass the same structure/risk contract
+and, unless an explicit direct bypass is enabled, be preceded by a terminal
+``[SignalDecisionUpdateJSON]`` event. ``[SignalWatchJSON]`` remains the
+rate-limited lifecycle output for watch states.
 """
 
 from __future__ import annotations
@@ -47,6 +49,7 @@ EMITTABLE_SIGNAL_STATUSES = {
     "WAIT_STRUCTURE_OR_NEXT_M15",
     "WAIT_M15_CLOSE_OR_STRUCTURE_TARGET",
     "WAIT_M15_CLOSE_CONFIRMATION",
+    "EXECUTION_READY",
     "PENDING_WATCH_EXPIRED",
 }
 
@@ -98,6 +101,7 @@ DECISION_UPDATE_STATUSES = {
     "WAIT_STRUCTURE_OR_NEXT_M15",
     "WAIT_M15_CLOSE_OR_STRUCTURE_TARGET",
     "WAIT_M15_CLOSE_CONFIRMATION",
+    "EXECUTION_READY",
     "PENDING_WATCH_EXPIRED",
 }
 
@@ -241,6 +245,10 @@ class SignalJsonEvent:
     audit_block_reasons: list[str] | None = None
     source_status: str | None = None
     source_final_direction: str | None = None
+    decision_state: str | None = None
+    terminal_decision_confirmed: bool | None = None
+    terminal_decision_id: str | None = None
+    terminal_decision_event_type: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -271,6 +279,7 @@ class SignalJsonEmitter:
         cooldown_m15_bars_after_active_signal: int = 1,
         decision_dedup_enabled: bool = True,
         decision_state_monotonic: bool = True,
+        require_terminal_decision_update: bool = True,
     ) -> None:
         self.enabled = enabled
         self.prefix = prefix
@@ -293,10 +302,13 @@ class SignalJsonEmitter:
         self.cooldown_m15_bars_after_active_signal = max(0, int(cooldown_m15_bars_after_active_signal))
         self.decision_dedup_enabled = decision_dedup_enabled
         self.decision_state_monotonic = decision_state_monotonic
+        self.require_terminal_decision_update = require_terminal_decision_update
         self._emitted: dict[str, float] = {}
         self._cluster_state: dict[str, str] = {}
         self._emitted_watch_refs: set[str] = set()
         self._terminal_decisions: set[str] = set()
+        self._decision_states: dict[str, str] = {}
+        self._finalized_decisions: set[str] = set()
         self.logger = logging.getLogger("signal_json")
 
     def emit(self, event: SignalJsonEvent) -> bool:
@@ -308,6 +320,9 @@ class SignalJsonEmitter:
             return False
         payload = enrich_signal_json_payload(event.to_dict())
         if self.strict_lifecycle and _is_final_payload(payload):
+            pending_id = _optional_str(payload.get("pending_decision_id"))
+            if pending_id is not None and pending_id in self._finalized_decisions:
+                return False
             payload = self._strict_final_payload(payload)
         is_decision_update = _is_decision_update_payload(payload)
         is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
@@ -326,11 +341,24 @@ class SignalJsonEmitter:
         if (not is_decision_update or self.decision_dedup_enabled) and self._is_duplicate(key):
             return False
 
+        if (
+            self.strict_lifecycle
+            and _is_final_payload(payload)
+            and payload.get("audit_valid") is True
+            and not self._ensure_terminal_decision_update(payload)
+        ):
+            return False
+
         payload["event"] = (
             "signal_decision_update_json"
             if is_decision_update
             else ("signal_watch_json" if is_watch else "signal_json")
         )
+        if is_decision_update and not _optional_str(payload.get("decision_state")):
+            payload["decision_state"] = (
+                "EXPIRED" if str(payload.get("status") or "") == "PENDING_WATCH_EXPIRED" else "WAITING"
+            )
+            payload["terminal_decision_confirmed"] = False
         payload["is_final_signal"] = bool(payload.get("is_final_signal") or _is_final_payload(payload))
         payload["emit_reason"] = payload.get("emit_reason") or _emit_reason(event.status)
         payload["signal_quality"] = payload.get("signal_quality") or _signal_quality(payload)
@@ -338,10 +366,14 @@ class SignalJsonEmitter:
         self.logger.warning("%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
         if is_watch:
             self._emitted_watch_refs.update(_watch_references(payload))
+        if is_decision_update:
+            self._record_decision_state(payload)
         if payload.get("audit_valid") is True:
             pending_id = _optional_str(payload.get("pending_decision_id"))
             if pending_id:
                 self._terminal_decisions.add(pending_id)
+                if _is_final_payload(payload):
+                    self._finalized_decisions.add(pending_id)
         if is_decision_update and str(payload.get("status") or "") == "PENDING_WATCH_EXPIRED":
             pending_id = _optional_str(payload.get("pending_decision_id"))
             if pending_id:
@@ -372,10 +404,19 @@ class SignalJsonEmitter:
         has_parent = parent_watch_id is not None
         has_bypass = self._valid_direct_bypass(payload)
         reasons: list[str] = []
+        pending_id = _optional_str(payload.get("pending_decision_id"))
         source_target_mode = str(payload.get("source_target_mode") or payload.get("target_mode") or "").upper()
 
         if self.require_parent_watch and not has_parent and not has_bypass:
             reasons.append("MISSING_PARENT_WATCH_OR_APPROVED_BYPASS")
+        if (
+            self.require_terminal_decision_update
+            and not has_bypass
+            and (pending_id is None or f"pending:{pending_id}" not in self._emitted_watch_refs)
+        ):
+            reasons.append("MISSING_PARENT_WATCH_DECISION_ID_MATCH")
+        if pending_id is not None and self._decision_states.get(pending_id) == "EXPIRED":
+            reasons.append("PENDING_DECISION_ALREADY_EXPIRED")
         if (
             source_target_mode == "PROVISIONAL_RR_FALLBACK"
             and not self.allow_provisional_rr_execution
@@ -424,6 +465,47 @@ class SignalJsonEmitter:
             and _optional_str(payload.get("bypass_reason"))
             and _optional_bool(payload.get("parent_watch_required")) is False
         )
+
+    def _ensure_terminal_decision_update(self, payload: dict[str, Any]) -> bool:
+        if not self.require_terminal_decision_update or str(payload.get("promotion_path") or "").upper() == "DIRECT_BYPASS":
+            return True
+        pending_id = _optional_str(payload.get("pending_decision_id"))
+        if pending_id is None:
+            return False
+        if self._decision_states.get(pending_id) == "EXECUTION_READY":
+            payload["decision_state"] = "EXECUTION_READY"
+            payload["terminal_decision_confirmed"] = True
+            payload["terminal_decision_id"] = pending_id
+            payload["terminal_decision_event_type"] = "signal_decision_update_json"
+            return True
+
+        update = _execution_ready_decision_update(payload)
+        self.logger.warning(
+            "%s %s",
+            self.decision_update_prefix,
+            json.dumps(update, separators=(",", ":"), ensure_ascii=False),
+        )
+        self._record_decision_state(update)
+        payload["decision_state"] = "EXECUTION_READY"
+        payload["terminal_decision_confirmed"] = True
+        payload["terminal_decision_id"] = pending_id
+        payload["terminal_decision_event_type"] = "signal_decision_update_json"
+        return True
+
+    def _record_decision_state(self, payload: dict[str, Any]) -> None:
+        pending_id = _optional_str(payload.get("pending_decision_id"))
+        if pending_id is None:
+            return
+        status = str(payload.get("status") or "").upper()
+        state = str(payload.get("decision_state") or "").upper()
+        if status == "EXECUTION_READY" or state == "EXECUTION_READY":
+            self._decision_states[pending_id] = "EXECUTION_READY"
+            self._terminal_decisions.add(pending_id)
+        elif status == "PENDING_WATCH_EXPIRED":
+            self._decision_states[pending_id] = "EXPIRED"
+            self._terminal_decisions.add(pending_id)
+        elif pending_id not in self._terminal_decisions:
+            self._decision_states[pending_id] = "WAITING"
 
     def _decision_transition_allowed(self, payload: dict[str, Any]) -> bool:
         if not self.decision_dedup_enabled and not self.decision_state_monotonic:
@@ -617,6 +699,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         audit_block_reasons=_string_list(counter_entry.get("audit_block_reasons")),
         source_status=_optional_str(counter_entry.get("source_status")),
         source_final_direction=_optional_str(counter_entry.get("source_final_direction")),
+        decision_state=_optional_str(counter_entry.get("decision_state")),
+        terminal_decision_confirmed=_optional_bool(counter_entry.get("terminal_decision_confirmed")),
+        terminal_decision_id=_optional_str(counter_entry.get("terminal_decision_id")),
+        terminal_decision_event_type=_optional_str(counter_entry.get("terminal_decision_event_type")),
     )
 
 
@@ -747,6 +833,39 @@ def _blocked_final_as_decision_update(payload: dict[str, Any], reasons: list[str
     return blocked
 
 
+def _execution_ready_decision_update(payload: dict[str, Any]) -> dict[str, Any]:
+    update = dict(payload)
+    source_status = str(payload.get("status") or "")
+    source_direction = str(payload.get("final_direction") or "WAIT")
+    update.update(
+        {
+            "event": "signal_decision_update_json",
+            "source_status": source_status,
+            "source_final_direction": source_direction,
+            "status": "EXECUTION_READY",
+            "new_status": "EXECUTION_READY",
+            "decision_state": "EXECUTION_READY",
+            "terminal_decision_confirmed": True,
+            "terminal_decision_id": payload.get("pending_decision_id"),
+            "terminal_decision_event_type": "signal_decision_update_json",
+            "action": "EMIT_SIGNAL_JSON",
+            "next_action": "EMIT_SIGNAL_JSON",
+            "is_final_signal": False,
+            "emit_reason": "TERMINAL_EXECUTION_DECISION",
+            "signal_quality": "DECISION_UPDATE_EXECUTION_READY",
+            "execution_status": "EXECUTION_READY",
+            "execution_grade": "FINAL_STRUCTURE",
+            "audit_valid": True,
+            "audit_block_reasons": [],
+            "reason": (
+                f"{payload.get('reason') or 'signal_candidate'} "
+                "Terminal DecisionUpdate confirmed the execution contract before SignalJSON emission."
+            ),
+        }
+    )
+    return update
+
+
 def _watch_references(payload: dict[str, Any]) -> set[str]:
     references: set[str] = set()
     pending_id = _optional_str(payload.get("pending_decision_id"))
@@ -763,7 +882,8 @@ def _matched_watch_reference(payload: dict[str, Any], emitted_refs: set[str]) ->
     matches = _watch_references(payload) & emitted_refs
     if not matches:
         return None
-    selected = sorted(matches)[0]
+    pending_matches = sorted(reference for reference in matches if reference.startswith("pending:"))
+    selected = pending_matches[0] if pending_matches else sorted(matches)[0]
     return selected.split(":", 1)[1]
 
 
