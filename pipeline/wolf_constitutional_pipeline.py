@@ -414,6 +414,9 @@ class WolfConstitutionalPipeline:
             ),
             decision_dedup_enabled=os.getenv("SIGNAL_DECISION_DEDUP_ENABLED", "true").strip().lower() == "true",
             decision_state_monotonic=os.getenv("SIGNAL_DECISION_STATE_MONOTONIC", "true").strip().lower() == "true",
+            require_terminal_decision_update=(
+                os.getenv("SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "true").strip().lower() == "true"
+            ),
         )
         self._governance_now_ts: float | None = None
         _emit_canary_event(
