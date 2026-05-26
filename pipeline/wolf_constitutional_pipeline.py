@@ -3875,18 +3875,10 @@ class WolfConstitutionalPipeline:
         if continuation.get("status") == "NONE":
             return
 
-        continuation = self._signal_lifecycle_manager.apply(continuation)
+        continuation = dict(continuation)
+        continuation["orchestration_status"] = "VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH"
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
-        status = str(continuation.get("status") or "")
-        if status.endswith("_CONTINUATION"):
-            l12_verdict["final_direction"] = continuation.get("final_direction")
-            l12_verdict["action"] = continuation.get("action")
-            l12_verdict["direction_source"] = "MICROBOOST_TREND_CONTINUATION"
-
-        signal_event = build_signal_json_event(continuation)
-        if signal_event is not None:
-            self._signal_json_emitter.emit(signal_event)
 
     def _apply_microboost_counter_entry_report(
         self,
