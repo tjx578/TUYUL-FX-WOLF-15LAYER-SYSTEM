@@ -805,14 +805,14 @@ def _dict_list(value: Any) -> list[dict[str, Any]] | None:
     if not isinstance(value, list):
         return None
     values = [dict(item) for item in value if isinstance(item, dict)]
-    return values or None
+    return values
 
 
 def _string_list(value: Any) -> list[str] | None:
     if not isinstance(value, list):
         return None
     values = [str(item) for item in value if str(item or "").strip()]
-    return values or None
+    return values
 
 
 def _execution_contract_complete(payload: dict[str, Any]) -> bool:
