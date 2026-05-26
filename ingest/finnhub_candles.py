@@ -91,6 +91,26 @@ class FinnhubCandleFetcher:
                 await asyncio.sleep(wait_for)
             self._next_request_at = max(self._next_request_at, time.monotonic()) + self.request_delay
 
+    async def _fallback_or_raise(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: int,
+        primary_error: FinnhubCandleError,
+    ) -> list[dict[str, Any]]:
+        """Try configured REST substitute providers without changing candle consumers."""
+        candles = await self.try_fallback(symbol, timeframe, bars)
+        if candles:
+            logger.warning(
+                "[ProviderFailover] Finnhub unavailable for {} {} ({}); using {} fallback candles",
+                symbol,
+                timeframe,
+                primary_error,
+                len(candles),
+            )
+            return candles
+        raise primary_error
+
     @staticmethod
     def _retry_after_seconds(value: str | None) -> float:
         """Parse Retry-After header value into seconds."""
@@ -338,31 +358,62 @@ class FinnhubCandleFetcher:
 
                     if response.status_code == 429:
                         self._key_manager.report_failure(active_key, 429)
-                        raise FinnhubCandleError(
-                            f"[429] Rate limited for {symbol} {timeframe} — "
-                            "warmup akan skip, WS akan feed data secara live"
+                        return await self._fallback_or_raise(
+                            symbol,
+                            timeframe,
+                            bars,
+                            FinnhubCandleError(
+                                f"[429] Rate limited for {symbol} {timeframe} — "
+                                "warmup akan skip, WS akan feed data secara live"
+                            ),
                         )
 
                     if response.status_code == 403:
                         self._key_manager.report_failure(active_key, 403)
-                        raise FinnhubCandlePremiumError(f"Premium access required for {symbol} {timeframe}")
+                        return await self._fallback_or_raise(
+                            symbol,
+                            timeframe,
+                            bars,
+                            FinnhubCandlePremiumError(f"Premium access required for {symbol} {timeframe}"),
+                        )
 
                     response.raise_for_status()
                     data = response.json()
 
                     self._key_manager.report_success(active_key)
                     candles = self.normalize_response(data, symbol, timeframe)
+                    if not candles:
+                        fallback = await self.try_fallback(symbol, timeframe, bars)
+                        if fallback:
+                            logger.warning(
+                                "[ProviderFailover] Finnhub returned no candles for {} {}; using {} fallback candles",
+                                symbol,
+                                timeframe,
+                                len(fallback),
+                            )
+                            return fallback
                     logger.info("Fetched {} {} bars for {}", len(candles), timeframe, symbol)
                     return candles
 
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 403:
-                    raise FinnhubCandlePremiumError(str(exc)) from exc
-                raise FinnhubCandleError(f"HTTP error {symbol} {timeframe}: {exc}") from exc
+                status_code = exc.response.status_code
+                self._key_manager.report_failure(active_key, status_code)
+                if status_code == 403:
+                    primary_error: FinnhubCandleError = FinnhubCandlePremiumError(
+                        f"Premium access required for {symbol} {timeframe}"
+                    )
+                else:
+                    primary_error = FinnhubCandleError(f"HTTP {status_code} for {symbol} {timeframe}")
+                return await self._fallback_or_raise(symbol, timeframe, bars, primary_error)
             except (FinnhubCandleError, FinnhubCandlePremiumError):
                 raise
             except Exception as exc:
-                raise FinnhubCandleError(f"Error fetching {symbol} {timeframe}: {exc}") from exc
+                return await self._fallback_or_raise(
+                    symbol,
+                    timeframe,
+                    bars,
+                    FinnhubCandleError(f"Error fetching {symbol} {timeframe}: {exc}"),
+                )
 
     def aggregate_h4(self, h1_candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
