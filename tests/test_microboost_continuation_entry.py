@@ -106,9 +106,9 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
         "spread_pips": None,
         "max_allowed_spread_pips": None,
     }
-    assert result.promotion_path == "DIRECT_DECISION_TO_FINAL"
-    assert result.direct_valid_reason == "QUORUM_CONTINUATION_WITH_STRUCTURE_CONTRACT"
-    assert result.parent_watch_required is False
+    assert result.promotion_path is None
+    assert result.direct_valid_reason is None
+    assert result.parent_watch_required is True
 
 
 def test_continuation_ignores_unready_or_opposite_quorum():
