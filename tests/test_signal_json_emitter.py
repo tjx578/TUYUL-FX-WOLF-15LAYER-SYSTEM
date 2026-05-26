@@ -719,7 +719,7 @@ def test_terminal_decision_gate_applies_to_all_pairs_and_final_families(
     assert f'"final_direction":"{direction}"' in caplog.text
 
 
-def test_structured_direct_continuation_emits_terminal_decision_then_signal_json(caplog):
+def test_structured_continuation_without_signal_watch_is_blocked_from_final_json(caplog):
     continuation = MicroboostContinuationEngine().evaluate(
         {
             "cluster_id": "USDCAD_20260520T024532Z",
@@ -762,12 +762,13 @@ def test_structured_direct_continuation_emits_terminal_decision_then_signal_json
 
     emitter = SignalJsonEmitter(enabled=True)
     assert emitter.emit(event) is True
-    assert caplog.text.index("[SignalDecisionUpdateJSON]") < caplog.text.index("[SignalJSON]")
-    assert '"status":"EXECUTION_READY"' in caplog.text
-    assert '"promotion_path":"DIRECT_DECISION_TO_FINAL"' in caplog.text
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"status":"WAIT_STRUCTURE_OR_NEXT_M15"' in caplog.text
+    assert '"MISSING_PARENT_WATCH_OR_APPROVED_BYPASS"' in caplog.text
     assert '"parent_event_exists":false' in caplog.text
-    assert '"status":"BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"' in caplog.text
-    assert '"valid_for_execution":true' in caplog.text
+    assert '"source_status":"BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
 
 
 def test_direct_continuation_with_rr_fallback_remains_blocked_decision_update(caplog):
