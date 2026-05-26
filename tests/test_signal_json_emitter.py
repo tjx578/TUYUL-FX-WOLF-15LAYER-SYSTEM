@@ -939,6 +939,63 @@ def test_gbpcad_wait_then_provisional_breakout_cannot_emit_terminal_or_final(cap
     assert '"THEME_CONFLICT_REQUIRES_SECOND_M15_CONFIRMATION"' in caplog.text
 
 
+def test_audnzd_reinforced_provisional_breakout_from_legacy_log_is_not_final(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    pending_id = "AUDNZD_AUDNZD_20260525T195916Z_M15_DECISION"
+    cluster_id = "AUDNZD_20260525T195916Z"
+    assert emitter.emit(
+        _event(
+            cluster_id=cluster_id,
+            symbol="AUDNZD",
+            status="SELL_ABSORPTION_WATCH",
+            pending_decision_id=pending_id,
+            signal_valid_time_utc="2026-05-25T19:59:24.314274+00:00",
+            signal_valid_price=1.221875,
+            entry_reference_price=1.221875,
+            entry_zone=[1.22188, 1.22188],
+        )
+    ) is True
+    caplog.clear()
+
+    event = _event(
+        cluster_id=cluster_id,
+        symbol="AUDNZD",
+        status="BUY_BREAKOUT_CONTINUATION_VALID",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="HOLD_BUY_OR_BUY_RETEST",
+        signal_valid_time_utc="2026-05-25T19:59:24.314274+00:00",
+        signal_valid_price=1.221875,
+        entry_reference_price=1.221875,
+        entry_zone=[1.22188, 1.22188],
+        sl_tight=1.22067,
+        sl_safe=1.21988,
+        price_position="MAIN_RESISTANCE",
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        theme_alignment="SELL_BIAS",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        structure_targets_available=False,
+        tradeplan_context_ready=False,
+        valid_for_execution=True,
+        pending_decision_id=pending_id,
+        m15_confirmation_status="M15_CLOSE_ABOVE_RESISTANCE",
+        lifecycle_status="REINFORCES_ACTIVE_SIGNAL",
+        previous_signal_status="REINFORCED",
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"source_status":"BUY_BREAKOUT_CONTINUATION_VALID"' in caplog.text
+    assert '"source_final_direction":"BUY"' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+    assert '"PROVISIONAL_RR_NOT_EXECUTION_GRADE"' in caplog.text
+    assert '"THEME_CONFLICT_REQUIRES_SECOND_M15_CONFIRMATION"' in caplog.text
+
+
 def test_nzdjpy_provisional_breakout_with_theme_conflict_stays_conditional(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     pending_id = "NZDJPY_NZDJPY_20260525T141410Z_M15_DECISION"
