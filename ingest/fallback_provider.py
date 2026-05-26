@@ -253,6 +253,7 @@ class TwelveDataProvider(CandleProviderBase):
 
     # Twelve Data uses different interval tokens
     _INTERVAL_MAP: dict[str, str] = {
+        "M15": "15min",
         "H1": "1h",
         "H4": "4h",
         "D1": "1day",
@@ -293,6 +294,8 @@ class TwelveDataProvider(CandleProviderBase):
             "apikey": self.api_key,
             "dp": 5,
             "type": "forex",
+            # Internal candle timestamps and freshness gates use UTC.
+            "timezone": "UTC",
         }
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
