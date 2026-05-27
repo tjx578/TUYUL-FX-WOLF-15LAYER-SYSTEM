@@ -137,7 +137,7 @@ def test_absorption_timing_valid_can_supersede_active_buy_when_execution_valid()
     assert follow_up["previous_signal_status"] == "SUPERSEDED"
 
 
-def test_incomplete_counter_entry_contract_cannot_supersede_active_buy():
+def test_schema_v1_valid_counter_entry_supersedes_active_buy_without_export_audit_contract():
     manager = SignalLifecycleManager()
     manager.apply(_buy_signal())
     incomplete_sell = _sell_watch(
@@ -150,14 +150,15 @@ def test_incomplete_counter_entry_contract_cannot_supersede_active_buy():
 
     follow_up = manager.apply(incomplete_sell)
 
-    assert follow_up["final_direction"] == "WAIT"
-    assert follow_up["lifecycle_status"] == "CONFLICT_WAIT_M15_CLOSE"
+    assert follow_up["final_direction"] == "SELL"
+    assert follow_up["status"] == "SELL_REVERSAL_VALID"
+    assert follow_up["lifecycle_status"] == "SUPERSEDES_ACTIVE_BUY"
     current_active = manager.active_signal("USDCAD")
     assert current_active is not None
-    assert current_active["direction"] == "BUY"
+    assert current_active["direction"] == "SELL"
 
 
-def test_opposing_final_waits_when_reversal_confirmation_is_missing():
+def test_schema_v1_opposing_final_reverses_without_terminal_export_gate():
     manager = SignalLifecycleManager()
     manager.apply(_buy_signal())
     unconfirmed_sell = _sell_watch(
@@ -171,20 +172,19 @@ def test_opposing_final_waits_when_reversal_confirmation_is_missing():
 
     follow_up = manager.apply(unconfirmed_sell)
 
-    assert follow_up["source_status"] == "SELL_TIMING_VALID"
-    assert follow_up["source_final_direction"] == "SELL"
-    assert follow_up["final_direction"] == "WAIT"
-    assert follow_up["lifecycle_status"] == "CONFLICT_WAIT_REVERSAL_CONFIRMATION_AND_COOLDOWN"
-    assert manager.active_signal("USDCAD")["direction"] == "BUY"
+    assert follow_up["status"] == "SELL_REVERSAL_VALID"
+    assert follow_up["final_direction"] == "SELL"
+    assert follow_up["lifecycle_status"] == "SUPERSEDES_ACTIVE_BUY"
+    assert manager.active_signal("USDCAD")["direction"] == "SELL"
 
 
-def test_continuation_below_two_r_does_not_become_active():
+def test_schema_v1_valid_continuation_does_not_require_fixed_two_r_tp1():
     manager = SignalLifecycleManager()
 
     signal = manager.apply(_buy_signal(tp1_rr=1.99))
 
-    assert "lifecycle_status" not in signal
-    assert manager.active_signal("USDCAD") is None
+    assert signal["lifecycle_status"] == "ACTIVE_BUY_VALID"
+    assert manager.active_signal("USDCAD") is not None
 
 
 def test_same_direction_signal_reinforces_active_signal():
