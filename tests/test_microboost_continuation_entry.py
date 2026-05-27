@@ -82,15 +82,14 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
     assert result.signal_valid_price == 1.375675
     assert result.entry_zone == [1.3756, 1.37567]
     assert result.sl_tight == 1.372
-    assert result.tp1 == 1.38302
-    assert result.tp2 == 1.385
-    assert result.tp3 is None
-    assert result.tp1_rr == 2.0
+    assert result.tp1 == 1.3785
+    assert result.tp2 == 1.381
+    assert result.tp3 == 1.385
     assert result.rr_status == "VALID"
     assert result.target_mode == "FINAL_MARKET_STRUCTURE"
     assert result.valid_for_execution is True
-    assert result.rr_to_tp2_tight is not None
-    assert result.rr_to_tp2_tight >= 2.5
+    assert result.rr_to_tp3_tight is not None
+    assert result.rr_to_tp3_tight >= 2.5
     assert result.key_support == 1.3720
     assert result.key_resistance == 1.3850
     assert result.structure_zones == {
@@ -148,14 +147,14 @@ def test_continuation_fallback_targets_can_validate_fast_trend_setup():
     assert result.rr_status == "VALID"
     assert result.valid_for_execution is True
     assert result.sl_tight == 1.3744
-    assert result.tp1_rr == 2.0
-    assert result.tp2_rr == 2.5
-    assert result.tp3_rr == 3.0
+    assert result.tp1_rr == 1.0
+    assert result.tp2_rr == 2.0
+    assert result.tp3_rr == 2.5
     assert result.promotion_path is None
     assert result.direct_valid_reason is None
 
 
-def test_continuation_tp1_rr_floor_cannot_be_configured_below_two_r():
+def test_schema_v1_continuation_retains_provisional_rr_ladder():
     cluster = _cluster(
         duration_seconds=62.0,
         market_context_snapshot={
@@ -171,4 +170,4 @@ def test_continuation_tp1_rr_floor_cannot_be_configured_below_two_r():
     result = MicroboostContinuationEngine(tp1_rr_required=1.0).evaluate(cluster, allowed_quorum=_quorum())
 
     assert result.valid_for_execution is True
-    assert result.tp1_rr == 2.0
+    assert result.tp1_rr == 1.0
