@@ -725,15 +725,11 @@ def _is_final_execution(payload: dict[str, Any]) -> bool:
         str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
         and bool(payload.get("valid_for_execution", False))
         and (status in FINAL_EXECUTION_STATUSES or status.endswith("_VALID"))
-        and _tp1_rr_meets_minimum(payload)
-        and _counter_entry_execution_contract_complete(payload)
     )
 
 
 def _is_structure_ready_for_execution(payload: dict[str, Any]) -> bool:
-    return bool(payload.get("structure_ready") or payload.get("tradeplan_context_ready")) and (
-        _counter_entry_execution_contract_complete(payload)
-    )
+    return bool(payload.get("structure_ready") or payload.get("tradeplan_context_ready"))
 
 
 def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
