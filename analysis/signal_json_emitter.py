@@ -1,10 +1,8 @@
-"""Standalone, symbol-agnostic SignalJSON output orchestrator.
+"""Standalone final signal JSON emitter.
 
-Raw throttle and microboost results remain analysis telemetry. For every pair,
-an execution-grade ``[SignalJSON]`` must pass the same structure/risk contract
-and, unless an explicit direct bypass is enabled, be preceded by a terminal
-``[SignalDecisionUpdateJSON]`` event. ``[SignalWatchJSON]`` remains the
-rate-limited lifecycle output for watch states.
+Raw throttle and microboost logs are telemetry. ``[SignalJSON]`` is the
+final signal product; ``[SignalWatchJSON]`` is a rate-limited lifecycle update
+for watch states.
 """
 
 from __future__ import annotations
@@ -14,8 +12,6 @@ import logging
 import time
 from dataclasses import asdict, dataclass
 from typing import Any
-
-from analysis.signal_json_enrichment import enrich_signal_json_payload
 
 EMITTABLE_SIGNAL_STATUSES = {
     "PAIR_SIGNAL_CANDIDATE",
@@ -105,9 +101,67 @@ DECISION_UPDATE_STATUSES = {
     "PENDING_WATCH_EXPIRED",
 }
 
-PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES: set[str] = set()
+PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES = CONTINUATION_SIGNAL_STATUSES | {
+    "BUY_BREAKOUT_CONTINUATION_VALID",
+    "SELL_BREAKDOWN_CONTINUATION_VALID",
+    "BUY_BREAKOUT_RETEST_VALID",
+    "SELL_BREAKDOWN_RETEST_VALID",
+}
 
 MIN_EXECUTABLE_TP1_RR = 2.0
+
+V11_OUTPUT_ONLY_FIELDS = {
+    "signal_archetype",
+    "counter_entry",
+    "counter_entry_reason",
+    "trend_following",
+    "counter_entry_risk_multiplier",
+    "theme_transition",
+    "direction_valid",
+    "source_valid_for_execution",
+    "analysis_valid",
+    "tradeplan_valid",
+    "execution_valid_now",
+    "execution_status",
+    "execution_reason",
+    "selected_sl_mode",
+    "selected_sl",
+    "risk_pips_tight",
+    "risk_pips_safe",
+    "selected_risk_pips",
+    "target_policy",
+    "targets",
+    "structure_zones",
+    "risk_reward",
+    "invalidation_rules",
+    "execution_quality",
+    "phase_coherence",
+    "signal_expiry",
+    "signal_watch_source",
+    "source_clean_block_confirmed",
+    "source_clean_block_valid_since_utc",
+    "microboost_validation_status",
+    "source_target_mode",
+    "parent_event_type",
+    "parent_event_exists",
+    "parent_watch_id",
+    "parent_watch_required",
+    "promotion_path",
+    "promotion_trigger",
+    "bypass_reason",
+    "second_m15_confirmation",
+    "reversal_confirmed",
+    "cooldown_m15_bars_elapsed",
+    "execution_grade",
+    "audit_valid",
+    "audit_block_reasons",
+    "source_status",
+    "source_final_direction",
+    "decision_state",
+    "terminal_decision_confirmed",
+    "terminal_decision_id",
+    "terminal_decision_event_type",
+}
 
 
 @dataclass(frozen=True)
@@ -272,7 +326,7 @@ class SignalJsonEmitter:
         emit_valid: bool = True,
         require_market_context: bool = True,
         watch_transition_only: bool = True,
-        strict_lifecycle: bool = True,
+        strict_lifecycle: bool = False,
         require_parent_watch: bool = True,
         allow_direct_bypass: bool = False,
         require_final_market_structure: bool = True,
@@ -318,18 +372,11 @@ class SignalJsonEmitter:
     def emit(self, event: SignalJsonEvent) -> bool:
         if not self.enabled:
             return False
-        source_is_decision_update = _is_decision_update_event(event)
-        source_is_watch = _is_watch_status(event.status) and not source_is_decision_update
-        if source_is_watch and self.watch_transition_only and not self._mark_watch_transition(event):
+        is_decision_update = _is_decision_update_event(event)
+        is_watch = _is_watch_status(event.status) and not is_decision_update
+        if is_watch and self.watch_transition_only and not self._mark_watch_transition(event):
             return False
-        payload = enrich_signal_json_payload(event.to_dict())
-        if self.strict_lifecycle and _is_final_payload(payload):
-            pending_id = _optional_str(payload.get("pending_decision_id"))
-            if pending_id is not None and pending_id in self._finalized_decisions:
-                return False
-            payload = self._strict_final_payload(payload)
-        is_decision_update = _is_decision_update_payload(payload)
-        is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
+        payload = event.to_dict()
         if not should_emit_signal_json(
             payload,
             emit_watch=self.emit_watch,
@@ -339,18 +386,8 @@ class SignalJsonEmitter:
         ):
             return False
 
-        if is_decision_update and not self._decision_transition_allowed(payload):
-            return False
         key = self._payload_key(payload)
-        if (not is_decision_update or self.decision_dedup_enabled) and self._is_duplicate(key):
-            return False
-
-        if (
-            self.strict_lifecycle
-            and _is_final_payload(payload)
-            and payload.get("audit_valid") is True
-            and not self._ensure_terminal_decision_update(payload)
-        ):
+        if self._is_duplicate(key):
             return False
 
         payload["event"] = (
@@ -358,30 +395,12 @@ class SignalJsonEmitter:
             if is_decision_update
             else ("signal_watch_json" if is_watch else "signal_json")
         )
-        if is_decision_update and not _optional_str(payload.get("decision_state")):
-            payload["decision_state"] = (
-                "EXPIRED" if str(payload.get("status") or "") == "PENDING_WATCH_EXPIRED" else "WAITING"
-            )
-            payload["terminal_decision_confirmed"] = False
         payload["is_final_signal"] = bool(payload.get("is_final_signal") or _is_final_payload(payload))
         payload["emit_reason"] = payload.get("emit_reason") or _emit_reason(event.status)
         payload["signal_quality"] = payload.get("signal_quality") or _signal_quality(payload)
+        payload = _schema_v1_payload(payload)
         prefix = self.decision_update_prefix if is_decision_update else (self.watch_prefix if is_watch else self.prefix)
         self.logger.warning("%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
-        if is_watch:
-            self._emitted_watch_refs.update(_watch_references(payload))
-        if is_decision_update:
-            self._record_decision_state(payload)
-        if payload.get("audit_valid") is True:
-            pending_id = _optional_str(payload.get("pending_decision_id"))
-            if pending_id:
-                self._terminal_decisions.add(pending_id)
-                if _is_final_payload(payload):
-                    self._finalized_decisions.add(pending_id)
-        if is_decision_update and str(payload.get("status") or "") == "PENDING_WATCH_EXPIRED":
-            pending_id = _optional_str(payload.get("pending_decision_id"))
-            if pending_id:
-                self._terminal_decisions.add(pending_id)
         return True
 
     @staticmethod
@@ -543,7 +562,6 @@ class SignalJsonEmitter:
 def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonEvent | None:
     if not isinstance(counter_entry, dict):
         return None
-    counter_entry = enrich_signal_json_payload(counter_entry)
     signal_valid_time = _optional_str(
         counter_entry.get("signal_valid_time_utc") or counter_entry.get("signal_valid_time")
     )
@@ -566,7 +584,7 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         event="signal_decision_update_json"
         if is_decision_update
         else ("signal_watch_json" if is_watch else "signal_json"),
-        schema_version="1.1-structure-aware",
+        schema_version="1.0",
         symbol=symbol,
         signal_family=str(
             counter_entry.get("signal_family") or counter_entry.get("signal_type") or "MICROBOOST_COUNTER_ENTRY"
@@ -744,8 +762,21 @@ def should_emit_signal_json(
         return False
     if _optional_float(payload.get("entry_reference_price")) is None:
         return False
-    is_final_direction = status in VALID_SIGNAL_STATUSES or str(status).endswith("_VALID")
-    return not is_final_direction or str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
+    if status in VALID_SIGNAL_STATUSES or str(status).endswith("_VALID"):
+        rr_status = str(payload.get("rr_status") or "").upper()
+        if rr_status not in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}:
+            return False
+        if str(payload.get("final_direction") or "").upper() not in {"BUY", "SELL"}:
+            return False
+        target_mode = str(payload.get("target_mode") or "").upper()
+        if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES:
+            if target_mode not in {"FINAL_MARKET_STRUCTURE", "PROVISIONAL_RR_FALLBACK"}:
+                return False
+        elif target_mode != "FINAL_MARKET_STRUCTURE":
+            return False
+        if not bool(payload.get("valid_for_execution", False)):
+            return False
+    return True
 
 
 def _is_watch_status(status: str) -> bool:
@@ -784,9 +815,18 @@ def _emit_reason(status: str) -> str:
 
 def _is_final_payload(payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
+    target_mode = str(payload.get("target_mode") or "").upper()
+    target_ok = (
+        target_mode in {"FINAL_MARKET_STRUCTURE", "PROVISIONAL_RR_FALLBACK"}
+        if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES
+        else target_mode == "FINAL_MARKET_STRUCTURE"
+    )
     return (
         (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
         and str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
+        and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
+        and target_ok
+        and bool(payload.get("valid_for_execution", False))
     )
 
 
@@ -794,8 +834,6 @@ def _signal_quality(payload: dict[str, Any]) -> str:
     if _is_decision_update_payload(payload):
         return "DECISION_UPDATE"
     if _is_final_payload(payload):
-        if not _execution_contract_complete(payload):
-            return "DIRECTION_VALID_TRADEPLAN_INCOMPLETE"
         if str(payload.get("status") or "").endswith("_BY_DIRECT_ABSORPTION"):
             return "DIRECT_ABSORPTION_VALID"
         if str(payload.get("status") or "") in CONTINUATION_SIGNAL_STATUSES:
@@ -923,6 +961,10 @@ def _float_list(value: Any) -> list[float]:
         if number is not None:
             values.append(number)
     return values
+
+
+def _schema_v1_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key not in V11_OUTPUT_ONLY_FIELDS}
 
 
 def _dict_value(value: Any) -> dict[str, Any] | None:
