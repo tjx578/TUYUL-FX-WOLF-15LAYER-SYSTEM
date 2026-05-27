@@ -102,7 +102,7 @@ class MicroboostContinuationEngine:
         self.min_density_per_minute = min_density_per_minute
         self.min_duration_seconds = min_duration_seconds
         self.min_rr_valid = min_rr_valid
-        self.tp1_rr_required = max(2.0, float(tp1_rr_required))
+        self.tp1_rr_required = float(tp1_rr_required)
         self.allow_rr_fallback = allow_rr_fallback
 
     def evaluate(
@@ -358,7 +358,7 @@ def _continuation_levels(
 
     selected_rr = _first_rr_at_least(direction, entry, sl, targets, min_rr)
     if selected_rr is not None:
-        ladder = _target_ladder_with_fixed_tp1(direction, entry, sl, targets, tp1_rr)
+        ladder = _pad_targets(targets)
         return _level_payload(
             direction=direction,
             entry=entry,
@@ -378,7 +378,7 @@ def _continuation_levels(
         )
 
     if allow_rr_fallback and entry is not None and sl is not None:
-        fallback_targets: list[float | None] = _rr_fallback_targets(direction, entry, sl, min_rr, tp1_rr)
+        fallback_targets: list[float | None] = _rr_fallback_targets(direction, entry, sl, min_rr)
         return _level_payload(
             direction=direction,
             entry=entry,
@@ -676,15 +676,8 @@ def _target_ladder_with_fixed_tp1(
     return _pad_targets(canonical_targets)
 
 
-def _rr_fallback_targets(
-    direction: str,
-    entry: float,
-    sl: float,
-    min_rr: float,
-    tp1_rr: float,
-) -> list[float | None]:
-    final_rr = max(min_rr, tp1_rr)
-    multipliers = [tp1_rr, final_rr, max(3.0, final_rr + 0.5), max(4.0, final_rr + 1.0)]
+def _rr_fallback_targets(direction: str, entry: float, sl: float, min_rr: float) -> list[float | None]:
+    multipliers = [1.0, 2.0, min_rr, 3.0]
     risk = abs(entry - sl)
     if direction == "BUY":
         return [entry + risk * multiplier for multiplier in multipliers]
