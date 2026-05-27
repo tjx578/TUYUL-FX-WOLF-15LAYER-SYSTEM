@@ -103,8 +103,9 @@ def test_m15_breakout_confirms_buy_continuation_from_resistance_watch():
     assert result.rr_status == "VALID"
     assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
     assert result.valid_for_execution is True
-    assert result.tp1_rr == 2.0
-    assert result.tp2_rr == 2.5
+    assert result.tp1_rr == 1.0
+    assert result.tp2_rr == 2.0
+    assert result.tp3_rr == 2.5
 
 
 def test_initial_microboost_pass_stays_watch_only_even_when_m15_breakout_is_present():
@@ -162,13 +163,12 @@ def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():
     assert result.entry_zone == [1.37696, 1.37696]
     assert result.sl_tight == 1.3782
     assert result.sl_safe == 1.379
-    assert result.tp1 == 1.37288
-    assert result.tp2 == 1.3718
-    assert result.tp3 == 1.37
-    assert result.tp4 is None
-    assert result.tp1_rr == 2.0
-    assert result.rr_to_tp2_tight == pytest.approx(4.16)
-    assert result.rr_to_tp3_tight == pytest.approx(5.61)
+    assert result.tp1 == 1.3756
+    assert result.tp2 == 1.3735
+    assert result.tp3 == 1.3718
+    assert result.tp4 == 1.37
+    assert result.rr_to_tp2_tight == pytest.approx(2.79)
+    assert result.rr_to_tp3_tight == pytest.approx(4.16)
 
 
 def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_close():
@@ -212,7 +212,7 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_clos
     assert result.requires_rejection_or_breakdown is True
     assert result.signal_valid_price == 0.98504
     assert result.sl_tight == 0.9865
-    assert result.tp1 == 0.98012
+    assert result.tp1 == 0.982
     assert result.tp2 == 0.978
     assert result.tp3 == 0.9746
     assert result.rr_to_tp2_tight == pytest.approx(4.82)
@@ -358,12 +358,12 @@ def test_cadjpy_near_timing_gate_absorption_waits_for_m15_close_without_final_ex
     assert result.pending_decision_id == "CADJPY_M15_DECISION"
     assert result.signal_valid_price == 115.7055
     assert result.sl_tight == 115.8255
-    assert result.tp1 == 115.3055
-    assert result.tp2 is None
-    assert result.tp3 is None
-    assert result.tp4 is None
-    assert result.tp_min_rr == 115.2055
-    assert result.tp1_rr == 2.0
+    assert result.tp1 == 115.5855
+    assert result.tp2 == 115.4655
+    assert result.tp3 == 115.4055
+    assert result.tp4 == 115.3455
+    assert result.tp_min_rr == 115.4055
+    assert result.tp3_rr == 2.5
     assert result.confidence_bucket == "B_ABSORPTION_WATCH"
     assert result.signal_valid_time_wita == "2026-05-19 14:18:21"
 
@@ -527,12 +527,12 @@ def test_cadjpy_missing_support_ladder_uses_rr_fallback_without_validating():
     assert result.rr_status == "WATCH_PROVISIONAL"
     assert result.support_ladder_ready is False
     assert result.sl_tight == 115.805
-    assert result.tp1 == 115.285
-    assert result.tp2 is None
-    assert result.tp3 is None
-    assert result.tp4 is None
-    assert result.tp_min_rr == 115.185
-    assert result.tp1_rr == 2.0
+    assert result.tp1 == 115.565
+    assert result.tp2 == 115.445
+    assert result.tp3 == 115.385
+    assert result.tp4 == 115.325
+    assert result.tp_min_rr == 115.385
+    assert result.tp3_rr == 2.5
 
 
 def test_structure_targets_below_min_rr_do_not_promote_to_valid():
@@ -573,7 +573,7 @@ def test_structure_targets_below_min_rr_do_not_promote_to_valid():
     assert result.valid_for_execution is False
 
 
-def test_audnzd_counter_sell_exports_structure_and_waits_for_spread_normalization():
+def test_schema_v1_audnzd_counter_sell_exports_observed_structure_even_when_spread_metadata_warns():
     cluster = _cluster(
         symbol="AUDNZD",
         price_at_signal_start=1.22158,
@@ -617,15 +617,15 @@ def test_audnzd_counter_sell_exports_structure_and_waits_for_spread_normalizatio
 
     assert result.analysis_valid is True
     assert result.tradeplan_valid is True
-    assert result.execution_valid_now is False
-    assert result.final_direction == "WAIT"
-    assert result.execution_status == "WAIT_SPREAD_NORMALIZATION"
-    assert result.action == "WAIT_SPREAD_NORMALIZATION"
+    assert result.execution_valid_now is True
+    assert result.final_direction == "SELL"
+    assert result.execution_status == "VALID_COUNTER_ENTRY"
+    assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
     assert result.selected_sl_mode == "SAFE"
     assert result.selected_sl == 1.22375
     assert result.risk_pips_tight == 13.7
     assert result.risk_pips_safe == 21.7
-    assert result.tp1 == 1.21724
+    assert result.tp1 == 1.217
     assert result.tp2 == 1.21562
     assert result.tp3 == 1.21492
     assert result.targets is not None
@@ -637,15 +637,15 @@ def test_audnzd_counter_sell_exports_structure_and_waits_for_spread_normalizatio
     assert result.invalidation_rules["hard_invalid_level"] == 1.22375
 
 
-def test_sell_counter_entry_with_bullish_h1_stays_execution_wait():
+def test_schema_v1_m15_rejection_can_validate_counter_sell_against_bullish_h1():
     result = MicroboostCounterEntryEngine().evaluate(
         _cluster(),
         _market(m15_rejection_from_resistance=True, m15_close_below_minor_support=True),
     )
 
     assert result.tradeplan_valid is True
-    assert result.execution_valid_now is False
-    assert result.final_direction == "WAIT"
-    assert result.execution_status == "WAIT_TIMEFRAME_ALIGNMENT"
+    assert result.execution_valid_now is True
+    assert result.final_direction == "SELL"
+    assert result.execution_status == "VALID_COUNTER_ENTRY"
     assert result.phase_coherence is not None
     assert result.phase_coherence["status"] == "H1_DIRECTION_CONFLICT"

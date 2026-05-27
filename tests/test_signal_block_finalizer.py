@@ -144,7 +144,7 @@ def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_la
     assert signal["final_direction"] == "SELL"
     assert signal["valid_for_execution"] is True
     assert signal["target_mode"] == "FINAL_MARKET_STRUCTURE"
-    assert signal["tp1_rr"] == 2.0
+    assert signal["tp1_rr"] == 2.69
     assert signal["m15_confirmation_status"] == "M15_CLOSE_REJECTION_CONFIRMED"
     assert signal["signal_watch_source"] == "SIGNAL_THROTTLE_CLEAN_BLOCK"
     assert signal["source_clean_block_confirmed"] is True
@@ -152,7 +152,7 @@ def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_la
     assert finalizer.pending_symbols() == []
 
 
-def test_idle_resistance_watch_holds_buy_breakout_until_structure_target_exists():
+def test_schema_v1_idle_resistance_watch_promotes_confirmed_buy_breakout_with_rr_fallback():
     finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
     finalizer.track(_watch())
 
@@ -171,18 +171,15 @@ def test_idle_resistance_watch_holds_buy_breakout_until_structure_target_exists(
 
     assert len(outputs) == 1
     signal = outputs[0]
-    assert signal["event"] == "signal_decision_update_json"
-    assert signal["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
-    assert signal["final_direction"] == "WAIT"
-    assert signal["validated_direction"] == "SELL"
-    assert signal["source_status"] == "BUY_BREAKOUT_CONTINUATION_VALID"
-    assert signal["source_final_direction"] == "BUY"
-    assert signal["valid_for_execution"] is False
+    assert signal["event"] == "signal_json"
+    assert signal["status"] == "BUY_BREAKOUT_CONTINUATION_VALID"
+    assert signal["final_direction"] == "BUY"
+    assert signal["validated_direction"] == "BUY"
+    assert signal["valid_for_execution"] is True
     assert signal["target_mode"] == "PROVISIONAL_RR_FALLBACK"
-    assert signal["tp1_rr"] == 2.0
+    assert signal["tp1_rr"] == 1.0
     assert signal["m15_confirmation_status"] == "M15_CLOSE_ABOVE_RESISTANCE"
-    assert signal["parent_watch_id"] == "USDCAD_USDCAD_20260521T030620Z_M15_DECISION"
-    assert finalizer.pending_symbols() == ["USDCAD"]
+    assert finalizer.pending_symbols() == []
 
 
 def test_pending_watch_expires_after_three_m15_bars_without_confirmation():
@@ -211,7 +208,7 @@ def test_pending_watch_expires_after_three_m15_bars_without_confirmation():
     assert finalizer.pending_symbols() == []
 
 
-def test_confirmed_breakout_expires_when_structure_tradeplan_never_completes():
+def test_schema_v1_confirmed_breakout_does_not_expire_while_rr_fallback_is_valid():
     finalizer = SignalBlockFinalizer(idle_finalize_seconds=75, expires_after_m15_bars=3)
     finalizer.track(_watch())
 
@@ -230,7 +227,8 @@ def test_confirmed_breakout_expires_when_structure_tradeplan_never_completes():
 
     assert len(outputs) == 1
     update = outputs[0]
-    assert update["status"] == "PENDING_WATCH_EXPIRED"
-    assert "tradeplan remained incomplete" in update["reason"]
-    assert update["final_direction"] == "WAIT"
+    assert update["status"] == "BUY_BREAKOUT_CONTINUATION_VALID"
+    assert update["target_mode"] == "PROVISIONAL_RR_FALLBACK"
+    assert update["valid_for_execution"] is True
+    assert update["final_direction"] == "BUY"
     assert finalizer.pending_symbols() == []
