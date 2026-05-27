@@ -1,5 +1,7 @@
 # SignalJSON Structure-Aware Counter-Entry Contract
 
+> Status: archived compatibility reference. Runtime `SignalJSON` output has been restored to schema version `1.0`; market-structure analysis still supplies flat SL, TP, support, and resistance ladder fields, while the strict nested `1.1-structure-aware` execution contract below is no longer the active emission format.
+
 ## Scope
 
 This contract applies to `MICROBOOST_COUNTER_ENTRY` results produced from a
