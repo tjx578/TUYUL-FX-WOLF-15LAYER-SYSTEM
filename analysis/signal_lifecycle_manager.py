@@ -110,8 +110,6 @@ class SignalLifecycleManager:
             return self._protect_active_signal(active, payload)
 
         if _is_final_active(payload):
-            if not self._reversal_transition_ready(active, payload):
-                return self._hold_opposing_final_for_confirmation(active, payload)
             return self._supersede_with_reversal(active, payload)
 
         payload["lifecycle_status"] = "CONFLICT_WAIT_M15_CLOSE"
@@ -201,10 +199,6 @@ def _is_final_active(payload: dict[str, Any]) -> bool:
         status in FINAL_ACTIVE_STATUSES
         and _direction(payload) in {"BUY", "SELL"}
         and bool(payload.get("valid_for_execution", False))
-        and str(payload.get("target_mode") or "").upper() == "FINAL_MARKET_STRUCTURE"
-        and _tp1_rr_meets_minimum(payload)
-        and _has_auditable_promotion(payload)
-        and _counter_entry_execution_contract_complete(payload)
     )
 
 
