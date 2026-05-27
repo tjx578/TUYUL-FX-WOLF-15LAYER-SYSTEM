@@ -189,7 +189,7 @@ class MicroboostCounterEntryEngine:
         self.direct_absorption_require_theme_alignment = direct_absorption_require_theme_alignment
         self.direct_absorption_require_rr = direct_absorption_require_rr
         self.min_rr_valid = min_rr_valid
-        self.tp1_rr_required = max(2.0, float(tp1_rr_required))
+        self.tp1_rr_required = float(tp1_rr_required)
         self.counter_entry_risk_multiplier = max(0.0, min(1.0, float(counter_entry_risk_multiplier)))
         self.counter_entry_expiry_minutes = max(1, int(counter_entry_expiry_minutes))
         self.allow_rr_fallback = allow_rr_fallback
@@ -414,7 +414,7 @@ class MicroboostCounterEntryEngine:
             symbol=str(base.get("symbol") or ""),
             levels=levels,
             entry=entry_reference,
-            sl=levels["sl_safe"] or levels["sl_tight"],
+            sl=levels["sl_tight"],
             min_rr=self.min_rr_valid,
             tp1_rr=self.tp1_rr_required,
             missing_reason=_support_ladder_missing_reason(market),
@@ -435,18 +435,9 @@ class MicroboostCounterEntryEngine:
             target_result=target_result,
             absorption_valid=absorption_valid,
         )
-        tradeplan_valid = _counter_entry_tradeplan_valid(
-            direction="SELL",
-            decision_fields=decision_fields,
-            levels=levels,
-            target_result=target_result,
-            entry_zone=base.get("entry_zone"),
-        )
-        spread_ready = _optional_bool(_field(market, "spread_normal", None)) is True
+        tradeplan_valid = bool(target_result["structure_rr_valid"])
         phase_ready = _counter_entry_phase_allows_execution("SELL", market)
-        execution_ready = tradeplan_valid and spread_ready and phase_ready
-        direct_absorption = direct_absorption and execution_ready
-        can_promote = execution_ready and m15_counter_confirmation
+        can_promote = tradeplan_valid and m15_counter_confirmation
         if direct_absorption:
             status = CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION
             final_direction = "SELL"
@@ -457,10 +448,6 @@ class MicroboostCounterEntryEngine:
             final_direction = "SELL"
             direction_status = "MICROBOOST_COUNTER_ENTRY_VALIDATED"
             action = "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
-        elif m15_counter_confirmation and tradeplan_valid and not spread_ready:
-            status = CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
-            direction_status = "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
-            action = "WAIT_SPREAD_NORMALIZATION"
         elif absorption_valid and m15_counter_confirmation:
             status = CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
             direction_status = "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
@@ -681,7 +668,7 @@ class MicroboostCounterEntryEngine:
             symbol=str(base.get("symbol") or ""),
             levels=levels,
             entry=entry_reference,
-            sl=levels["sl_safe"] or levels["sl_tight"],
+            sl=levels["sl_tight"],
             min_rr=self.min_rr_valid,
             tp1_rr=self.tp1_rr_required,
             missing_reason=_resistance_ladder_missing_reason(market),
@@ -702,18 +689,9 @@ class MicroboostCounterEntryEngine:
             target_result=target_result,
             absorption_valid=absorption_valid,
         )
-        tradeplan_valid = _counter_entry_tradeplan_valid(
-            direction="BUY",
-            decision_fields=decision_fields,
-            levels=levels,
-            target_result=target_result,
-            entry_zone=base.get("entry_zone"),
-        )
-        spread_ready = _optional_bool(_field(market, "spread_normal", None)) is True
+        tradeplan_valid = bool(target_result["structure_rr_valid"])
         phase_ready = _counter_entry_phase_allows_execution("BUY", market)
-        execution_ready = tradeplan_valid and spread_ready and phase_ready
-        direct_absorption = direct_absorption and execution_ready
-        can_promote = execution_ready and m15_counter_confirmation
+        can_promote = tradeplan_valid and m15_counter_confirmation
         if direct_absorption:
             status = CounterEntryStatus.BUY_TIMING_VALID_BY_DIRECT_ABSORPTION
             final_direction = "BUY"
@@ -724,10 +702,6 @@ class MicroboostCounterEntryEngine:
             final_direction = "BUY"
             direction_status = "MICROBOOST_COUNTER_ENTRY_VALIDATED"
             action = "BUY_AT_SIGNAL_VALID_PRICE_OR_RETEST"
-        elif m15_counter_confirmation and tradeplan_valid and not spread_ready:
-            status = CounterEntryStatus.BUY_TIMING_VALID_BY_ABSORPTION
-            direction_status = "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
-            action = "WAIT_SPREAD_NORMALIZATION"
         elif absorption_valid and m15_counter_confirmation:
             status = CounterEntryStatus.BUY_TIMING_VALID_BY_ABSORPTION
             direction_status = "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
@@ -1629,11 +1603,10 @@ def _breakout_continuation_levels(
     stop_sign = -1.0 if direction == "BUY" else 1.0
     sl_tight = _round_price(entry + stop_sign * risk)
     sl_safe = _round_price(entry + stop_sign * safe_risk)
-    min_final_rr = max(min_rr, tp1_rr)
-    tp1 = _round_price(entry + sign * risk * tp1_rr)
-    tp2 = _round_price(entry + sign * risk * min_final_rr)
-    tp3 = _round_price(entry + sign * risk * max(3.0, min_final_rr + 0.5))
-    tp4 = _round_price(entry + sign * risk * max(4.0, min_final_rr + 1.0))
+    tp1 = _round_price(entry + sign * risk)
+    tp2 = _round_price(entry + sign * risk * 2.0)
+    tp3 = _round_price(entry + sign * risk * min_rr)
+    tp4 = _round_price(entry + sign * risk * 3.0)
     return {
         "sl_tight": sl_tight,
         "sl_safe": sl_safe,
@@ -1641,11 +1614,11 @@ def _breakout_continuation_levels(
         "tp2": tp2,
         "tp3": tp3,
         "tp4": tp4,
-        "tp_min_rr": tp1 if tp1_rr >= min_rr else tp2,
-        "tp1_rr": tp1_rr,
-        "tp2_rr": min_final_rr,
-        "tp3_rr": max(3.0, min_final_rr + 0.5),
-        "tp4_rr": max(4.0, min_final_rr + 1.0),
+        "tp_min_rr": tp3,
+        "tp1_rr": 1.0,
+        "tp2_rr": 2.0,
+        "tp3_rr": min_rr,
+        "tp4_rr": 3.0,
         "trade_plan": {
             "direction": direction,
             "entry_mode": f"{direction}_BREAKOUT_RETEST",
@@ -1684,33 +1657,19 @@ def _structure_target_result(
     min_rr: float,
     tp1_rr: float,
 ) -> dict[str, Any]:
-    fixed_tp1 = _fixed_rr_target(direction, entry, sl, tp1_rr)
-    valid_structure_targets = [
-        target
-        for target in targets
-        if (rr := _rr(direction, entry, sl, target)) is not None
-        and rr >= tp1_rr
-        and _is_separated_from_tp1(target, fixed_tp1, entry, sl)
-    ]
-    display_targets = ([fixed_tp1] if fixed_tp1 is not None else []) + valid_structure_targets
-    padded = [*display_targets[:4], None, None, None, None]
+    padded = [*targets[:4], None, None, None, None]
     tp1, tp2, tp3, tp4 = padded[:4]
     rr_values = [_rr(direction, entry, sl, target) for target in (tp1, tp2, tp3, tp4)]
-    structured_rrs = [(target, _rr(direction, entry, sl, target)) for target in valid_structure_targets]
-    valid_structure_rrs = [(target, rr) for target, rr in structured_rrs if rr is not None and rr >= min_rr]
-    selected_rr = (
-        valid_structure_rrs[0][1]
-        if valid_structure_rrs
-        else next((rr for _, rr in structured_rrs if rr is not None), None)
-    )
-    rr_status = "VALID" if valid_structure_rrs else "FAIL_MIN_RR"
+    valid_rrs = [rr for rr in rr_values if rr is not None and rr >= min_rr]
+    selected_rr = valid_rrs[0] if valid_rrs else next((rr for rr in rr_values if rr is not None), None)
+    rr_status = "VALID" if valid_rrs else "FAIL_MIN_RR"
     return {
         **_target_common(levels, direction),
         "target_mode": "FINAL_MARKET_STRUCTURE",
-        "tp_status": "VALID" if valid_structure_rrs else "FAIL_MIN_RR",
-        "tp_missing_reason": None if valid_structure_rrs else f"no_structure_target_reaches_rr_{min_rr:g}",
+        "tp_status": "VALID" if valid_rrs else "FAIL_MIN_RR",
+        "tp_missing_reason": None if valid_rrs else f"no_structure_target_reaches_rr_{min_rr:g}",
         "structure_targets_available": True,
-        "structure_rr_valid": bool(valid_structure_rrs),
+        "structure_rr_valid": bool(valid_rrs),
         "support_ladder_ready": direction == "SELL",
         "resistance_ladder_ready": direction == "BUY",
         "rr_status": rr_status,
@@ -1719,8 +1678,15 @@ def _structure_target_result(
         "tp2": tp2,
         "tp3": tp3,
         "tp4": tp4,
-        "tp_min_rr": valid_structure_rrs[0][0] if valid_structure_rrs else None,
-        "tp_min_rr_value": min_rr if valid_structure_rrs else None,
+        "tp_min_rr": next(
+            (
+                target
+                for target, rr in zip((tp1, tp2, tp3, tp4), rr_values, strict=True)
+                if rr is not None and rr >= min_rr
+            ),
+            None,
+        ),
+        "tp_min_rr_value": min_rr if valid_rrs else None,
         "tp1_rr": rr_values[0],
         "tp2_rr": rr_values[1],
         "tp3_rr": rr_values[2],
@@ -1729,12 +1695,18 @@ def _structure_target_result(
             direction=direction,
             entry=entry,
             sl=sl,
-            fixed_tp1=fixed_tp1,
-            structure_targets=valid_structure_targets,
+            fixed_tp1=None,
+            structure_targets=targets,
             tp1_rr=tp1_rr,
         ),
         "observed_structure_targets": targets,
-        "target_policy": _target_policy(tp1_rr, min_rr),
+        "target_policy": {
+            "mode": "OBSERVED_MARKET_STRUCTURE_LADDER",
+            "tp_source": "OBSERVED_KEY_STRUCTURE_LEVELS_ONLY",
+            "allow_variable_tp_count": True,
+            "max_tp_count": 4,
+            "min_structure_rr_required": min_rr,
+        },
     }
 
 
@@ -1805,9 +1777,11 @@ def _rr_fallback_target_result(
             "target_policy": _target_policy(tp1_rr, min_rr),
         }
 
-    tp1 = _fixed_rr_target(direction, entry, sl, tp1_rr)
     sign = -1.0 if direction == "SELL" else 1.0
+    tp1 = _round_price(entry + sign * risk)
+    tp2 = _round_price(entry + sign * risk * 2.0)
     tp_min = _round_price(entry + sign * risk * min_rr)
+    tp4 = _round_price(entry + sign * risk * 3.0)
     return {
         **common,
         "target_mode": "PROVISIONAL_RR_FALLBACK",
@@ -1821,23 +1795,16 @@ def _rr_fallback_target_result(
         "rr_status": "WATCH_PROVISIONAL",
         "selected_rr": None,
         "tp1": tp1,
-        "tp2": None,
-        "tp3": None,
-        "tp4": None,
+        "tp2": tp2,
+        "tp3": tp_min,
+        "tp4": tp4,
         "tp_min_rr": tp_min,
         "tp_min_rr_value": min_rr,
-        "tp1_rr": tp1_rr,
-        "tp2_rr": None,
-        "tp3_rr": None,
-        "tp4_rr": None,
-        "targets": _target_objects(
-            direction=direction,
-            entry=entry,
-            sl=sl,
-            fixed_tp1=tp1,
-            structure_targets=[],
-            tp1_rr=tp1_rr,
-        ),
+        "tp1_rr": 1.0,
+        "tp2_rr": 2.0,
+        "tp3_rr": min_rr,
+        "tp4_rr": 3.0,
+        "targets": [],
         "observed_structure_targets": [],
         "target_policy": _target_policy(tp1_rr, min_rr),
     }
