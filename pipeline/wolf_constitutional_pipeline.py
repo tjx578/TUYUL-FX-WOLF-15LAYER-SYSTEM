@@ -396,17 +396,17 @@ class WolfConstitutionalPipeline:
                 os.getenv("SIGNAL_JSON_EMIT_ONLY_WITH_MARKET_CONTEXT", "true").strip().lower() == "true"
             ),
             watch_transition_only=(os.getenv("SIGNAL_WATCH_EMIT_ON_TRANSITION_ONLY", "true").strip().lower() == "true"),
-            strict_lifecycle=os.getenv("SIGNAL_JSON_STRICT_LIFECYCLE", "true").strip().lower() == "true",
-            require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "true").strip().lower() == "true",
+            strict_lifecycle=os.getenv("SIGNAL_JSON_STRICT_LIFECYCLE", "false").strip().lower() == "true",
+            require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "false").strip().lower() == "true",
             allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "false").strip().lower() == "true",
             require_final_market_structure=(
-                os.getenv("SIGNAL_JSON_REQUIRE_FINAL_MARKET_STRUCTURE", "true").strip().lower() == "true"
+                os.getenv("SIGNAL_JSON_REQUIRE_FINAL_MARKET_STRUCTURE", "false").strip().lower() == "true"
             ),
             allow_provisional_rr_execution=(
-                os.getenv("SIGNAL_JSON_ALLOW_PROVISIONAL_RR_EXECUTION", "false").strip().lower() == "true"
+                os.getenv("SIGNAL_JSON_ALLOW_PROVISIONAL_RR_EXECUTION", "true").strip().lower() == "true"
             ),
-            require_theme_alignment=os.getenv("SIGNAL_JSON_REQUIRE_THEME_ALIGNMENT", "true").strip().lower() == "true",
-            theme_conflict_downgrade=os.getenv("SIGNAL_JSON_THEME_CONFLICT_DOWNGRADE", "true").strip().lower()
+            require_theme_alignment=os.getenv("SIGNAL_JSON_REQUIRE_THEME_ALIGNMENT", "false").strip().lower() == "true",
+            theme_conflict_downgrade=os.getenv("SIGNAL_JSON_THEME_CONFLICT_DOWNGRADE", "false").strip().lower()
             == "true",
             min_rr_valid=self._parse_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
             cooldown_m15_bars_after_active_signal=int(
@@ -415,7 +415,7 @@ class WolfConstitutionalPipeline:
             decision_dedup_enabled=os.getenv("SIGNAL_DECISION_DEDUP_ENABLED", "true").strip().lower() == "true",
             decision_state_monotonic=os.getenv("SIGNAL_DECISION_STATE_MONOTONIC", "true").strip().lower() == "true",
             require_terminal_decision_update=(
-                os.getenv("SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "true").strip().lower() == "true"
+                os.getenv("SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "false").strip().lower() == "true"
             ),
         )
         self._governance_now_ts: float | None = None
