@@ -82,6 +82,7 @@ from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
 from analysis.signal_block_finalizer import SignalBlockFinalizer
 from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
+from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
 from analysis.signal_lifecycle_manager import SignalLifecycleManager
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
@@ -418,6 +419,7 @@ class WolfConstitutionalPipeline:
                 os.getenv("SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "false").strip().lower() == "true"
             ),
         )
+        self._signal_json_gate_adapter = SignalJsonGateAdapter.from_env()
         self._governance_now_ts: float | None = None
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
@@ -3879,6 +3881,8 @@ class WolfConstitutionalPipeline:
         continuation["orchestration_status"] = "VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH"
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
+        if self._signal_json_gate_adapter.emit_continuation:
+            self._emit_signal_json_payload(continuation)
 
     def _apply_microboost_counter_entry_report(
         self,
@@ -3914,9 +3918,7 @@ class WolfConstitutionalPipeline:
             l12_verdict["action"] = counter_entry.get("action")
             l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY_WATCH"
 
-        signal_event = build_signal_json_event(counter_entry)
-        if signal_event is not None:
-            self._signal_json_emitter.emit(signal_event)
+        self._emit_signal_json_payload(counter_entry)
 
     def _apply_signal_block_finalizer(
         self,
@@ -3948,12 +3950,17 @@ class WolfConstitutionalPipeline:
                 l12_verdict["action"] = update.get("action")
                 l12_verdict["direction_source"] = "SIGNAL_BLOCK_FINALIZER_DECISION_UPDATE"
 
-            signal_event = build_signal_json_event(update)
-            if signal_event is not None:
-                self._signal_json_emitter.emit(signal_event)
+            self._emit_signal_json_payload(update)
 
         report["signal_block_finalizer_updates"] = applied_updates
         l12_verdict["signal_block_finalizer_updates"] = applied_updates
+
+    def _emit_signal_json_payload(self, payload: dict[str, Any]) -> bool:
+        gated_payload = self._signal_json_gate_adapter.apply(payload)
+        signal_event = build_signal_json_event(gated_payload)
+        if signal_event is None:
+            return False
+        return self._signal_json_emitter.emit(signal_event)
 
     def _finalize_idle_signal_blocks(
         self,
