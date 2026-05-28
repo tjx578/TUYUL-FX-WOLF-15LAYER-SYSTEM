@@ -1,0 +1,349 @@
+"""Structure-aware execution gates for final SignalJSON candidates.
+
+The gates are deliberately output-facing. They do not change Layer-12,
+microboost classification, or lifecycle state; they only decide whether a
+final SignalJSON is execution-ready enough to publish as a final log.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from analysis.signal_execution_gate_models import ExecutionGateDecision
+from analysis.signal_json_emitter import VALID_SIGNAL_STATUSES
+from analysis.signal_json_enrichment import enrich_signal_json_payload
+
+_FINAL_MARKET_STRUCTURE = "FINAL_MARKET_STRUCTURE"
+
+
+def evaluate_signal_execution_gates(
+    payload: dict[str, Any],
+    *,
+    min_rr_required: float = 2.5,
+    max_chase_r: float = 0.35,
+) -> ExecutionGateDecision:
+    """Evaluate a final SignalJSON payload against execution-readiness gates."""
+    if not _is_directional_final(payload):
+        return ExecutionGateDecision(
+            applies=False,
+            decision="ALLOW",
+            execution_status="NOT_APPLICABLE",
+        )
+
+    enriched = enrich_signal_json_payload(payload)
+    block_reasons: list[str] = []
+    block_gates: list[str] = []
+    defer_reasons: list[str] = []
+    defer_gates: list[str] = []
+
+    _tradeplan_gate(payload, enriched, min_rr_required, defer_gates, defer_reasons)
+    _spread_news_gate(payload, block_gates, block_reasons)
+    _session_volatility_gate(payload, defer_gates, defer_reasons)
+    _basket_theme_gate(payload, defer_gates, defer_reasons)
+    live_rr = _live_rr_gate(payload, enriched, min_rr_required, defer_gates, defer_reasons, block_gates, block_reasons)
+    _no_chase_gate(payload, enriched, max_chase_r, live_rr, block_gates, block_reasons)
+    _structure_retest_gate(payload, defer_gates, defer_reasons, block_gates, block_reasons)
+
+    if block_reasons:
+        return ExecutionGateDecision(
+            applies=True,
+            decision="BLOCK",
+            execution_status="EXECUTION_GATE_BLOCKED",
+            blocked_by=tuple(dict.fromkeys(block_gates)),
+            reasons=tuple(dict.fromkeys(block_reasons)),
+            live_rr=live_rr,
+        )
+    if defer_reasons:
+        return ExecutionGateDecision(
+            applies=True,
+            decision="DEFER",
+            execution_status="EXECUTION_GATE_DEFERRED",
+            blocked_by=tuple(dict.fromkeys(defer_gates)),
+            reasons=tuple(dict.fromkeys(defer_reasons)),
+            live_rr=live_rr,
+        )
+    return ExecutionGateDecision(
+        applies=True,
+        decision="ALLOW",
+        execution_status="EXECUTION_GATE_ALLOWED",
+        live_rr=live_rr,
+    )
+
+
+def _tradeplan_gate(
+    payload: dict[str, Any],
+    enriched: dict[str, Any],
+    min_rr_required: float,
+    gates: list[str],
+    reasons: list[str],
+) -> None:
+    target_mode = str(payload.get("target_mode") or "").upper()
+    if target_mode != _FINAL_MARKET_STRUCTURE:
+        _add(gates, reasons, "TradePlanCompletenessGate", "FINAL_MARKET_STRUCTURE_REQUIRED")
+        return
+
+    direction = _direction(payload)
+    entry = _first_float(payload.get("entry_reference_price"), payload.get("signal_valid_price"))
+    selected_sl = _first_float(
+        payload.get("selected_sl"),
+        _nested(payload, "risk_reward", "selected_sl"),
+        enriched.get("selected_sl"),
+        payload.get("sl_safe"),
+        payload.get("sl_tight"),
+    )
+    if entry is None or selected_sl is None:
+        _add(gates, reasons, "TradePlanCompletenessGate", "ENTRY_OR_SELECTED_SL_MISSING")
+    elif direction == "BUY" and selected_sl >= entry:
+        _add(gates, reasons, "TradePlanCompletenessGate", "BUY_STOP_NOT_BELOW_ENTRY")
+    elif direction == "SELL" and selected_sl <= entry:
+        _add(gates, reasons, "TradePlanCompletenessGate", "SELL_STOP_NOT_ABOVE_ENTRY")
+
+    support = _first_float(
+        payload.get("key_support"),
+        _nested(payload, "structure_zones", "key_support"),
+        payload.get("main_support"),
+        _nested(enriched, "structure_zones", "key_support"),
+    )
+    resistance = _first_float(
+        payload.get("key_resistance"),
+        _nested(payload, "structure_zones", "key_resistance"),
+        payload.get("main_resistance"),
+        _nested(enriched, "structure_zones", "key_resistance"),
+    )
+    if support is None or resistance is None:
+        _add(gates, reasons, "TradePlanCompletenessGate", "SUPPORT_RESISTANCE_LADDER_INCOMPLETE")
+
+    if not _has_structure_target(payload, enriched, min_rr_required):
+        _add(gates, reasons, "TradePlanCompletenessGate", "STRUCTURE_TARGET_AT_MIN_RR_MISSING")
+
+
+def _spread_news_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
+    spread_normal = _optional_bool(
+        payload.get("spread_normal")
+        if payload.get("spread_normal") is not None
+        else _nested(payload, "execution_quality", "spread_normal")
+    )
+    if spread_normal is False:
+        _add(gates, reasons, "SpreadNewsExecutionGate", "SPREAD_NOT_NORMAL")
+
+    news_lock = payload.get("news_lock")
+    news_active = (
+        bool(news_lock.get("active"))
+        if isinstance(news_lock, dict)
+        else _optional_bool(news_lock)
+    )
+    if news_active is True or _optional_bool(payload.get("news_lock_active")) is True:
+        _add(gates, reasons, "SpreadNewsExecutionGate", "NEWS_LOCK_ACTIVE")
+    if _optional_bool(payload.get("news_blocked")) is True or _optional_bool(payload.get("is_news_locked")) is True:
+        _add(gates, reasons, "SpreadNewsExecutionGate", "NEWS_LOCK_ACTIVE")
+
+
+def _session_volatility_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
+    if _optional_bool(payload.get("session_trade_allowed")) is False:
+        _add(gates, reasons, "SessionVolatilityGate", "SESSION_NOT_TRADEABLE")
+    if _optional_bool(payload.get("volatility_trade_allowed")) is False:
+        _add(gates, reasons, "SessionVolatilityGate", "VOLATILITY_NOT_TRADEABLE")
+
+
+def _basket_theme_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
+    status = str(payload.get("status") or "").upper()
+    if "CONTINUATION" not in status and "BREAKOUT" not in status and "BREAKDOWN" not in status:
+        return
+    direction = _direction(payload)
+    alignment = str(payload.get("theme_alignment") or "").upper()
+    if direction == "BUY" and "SELL" in alignment:
+        _add(gates, reasons, "BasketThemeGate", "THEME_CONFLICT_FOR_CONTINUATION")
+    if direction == "SELL" and "BUY" in alignment:
+        _add(gates, reasons, "BasketThemeGate", "THEME_CONFLICT_FOR_CONTINUATION")
+
+
+def _live_rr_gate(
+    payload: dict[str, Any],
+    enriched: dict[str, Any],
+    min_rr_required: float,
+    defer_gates: list[str],
+    defer_reasons: list[str],
+    block_gates: list[str],
+    block_reasons: list[str],
+) -> dict[str, Any] | None:
+    direction = _direction(payload)
+    live_price = _live_price(payload)
+    entry = _first_float(payload.get("entry_reference_price"), payload.get("signal_valid_price"))
+    selected_sl = _first_float(
+        payload.get("selected_sl"),
+        _nested(payload, "risk_reward", "selected_sl"),
+        enriched.get("selected_sl"),
+        payload.get("sl_safe"),
+        payload.get("sl_tight"),
+    )
+    target = _first_float(
+        payload.get("tp_min_rr"),
+        _nested(payload, "risk_reward", "tp_min_rr"),
+        payload.get("tp3"),
+        enriched.get("tp_min_rr"),
+    )
+    if live_price is None:
+        _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_PRICE_MISSING")
+        return None
+    if direction is None or selected_sl is None or target is None:
+        _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_RR_INPUT_INCOMPLETE")
+        return {"price": live_price, "rr": None}
+    risk = abs(live_price - selected_sl)
+    reward = abs(target - live_price)
+    live_rr = round(reward / risk, 2) if risk > 0 else None
+    result = {
+        "price": live_price,
+        "entry": entry,
+        "selected_sl": selected_sl,
+        "target": target,
+        "rr": live_rr,
+        "min_rr_required": min_rr_required,
+    }
+    if live_rr is None:
+        _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_RR_INPUT_INCOMPLETE")
+    elif live_rr < min_rr_required:
+        _add(block_gates, block_reasons, "LiveRRRecalculationGate", "LIVE_RR_BELOW_MINIMUM")
+    return result
+
+
+def _no_chase_gate(
+    payload: dict[str, Any],
+    enriched: dict[str, Any],
+    max_chase_r: float,
+    live_rr: dict[str, Any] | None,
+    gates: list[str],
+    reasons: list[str],
+) -> None:
+    direction = _direction(payload)
+    live_price = _first_float(live_rr.get("price") if isinstance(live_rr, dict) else None, _live_price(payload))
+    entry = _first_float(payload.get("entry_reference_price"), payload.get("signal_valid_price"))
+    selected_sl = _first_float(
+        payload.get("selected_sl"),
+        _nested(payload, "risk_reward", "selected_sl"),
+        enriched.get("selected_sl"),
+        payload.get("sl_safe"),
+        payload.get("sl_tight"),
+    )
+    if direction is None or live_price is None or entry is None or selected_sl is None:
+        return
+    risk = abs(entry - selected_sl)
+    if risk <= 0:
+        return
+    favorable_move = (live_price - entry) if direction == "BUY" else (entry - live_price)
+    if favorable_move > risk * max(0.0, max_chase_r):
+        _add(gates, reasons, "PricePositionGate", "PRICE_CHASE_TOO_FAR_FROM_ENTRY_REFERENCE")
+
+
+def _structure_retest_gate(
+    payload: dict[str, Any],
+    defer_gates: list[str],
+    defer_reasons: list[str],
+    block_gates: list[str],
+    block_reasons: list[str],
+) -> None:
+    status = str(payload.get("status") or "").upper()
+    if "BUY_BREAKOUT" in status:
+        held = _optional_bool(payload.get("m15_breakout_retest_held"))
+        if held is False:
+            _add(block_gates, block_reasons, "StructureRetestGate", "BREAKOUT_RETEST_FAILED")
+        elif held is None and "RETEST" in status:
+            _add(defer_gates, defer_reasons, "StructureRetestGate", "BREAKOUT_RETEST_NOT_CONFIRMED")
+    if "SELL_BREAKDOWN" in status:
+        held = _optional_bool(payload.get("m15_breakdown_retest_held"))
+        if held is False:
+            _add(block_gates, block_reasons, "StructureRetestGate", "BREAKDOWN_RETEST_FAILED")
+        elif held is None and "RETEST" in status:
+            _add(defer_gates, defer_reasons, "StructureRetestGate", "BREAKDOWN_RETEST_NOT_CONFIRMED")
+
+
+def _is_directional_final(payload: dict[str, Any]) -> bool:
+    status = str(payload.get("status") or "")
+    return (
+        (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
+        and _direction(payload) in {"BUY", "SELL"}
+        and _optional_bool(payload.get("valid_for_execution")) is True
+    )
+
+
+def _has_structure_target(payload: dict[str, Any], enriched: dict[str, Any], min_rr_required: float) -> bool:
+    for source in (payload, enriched):
+        targets = source.get("targets")
+        if isinstance(targets, list):
+            for item in targets:
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("type") or "").upper() != "STRUCTURE_TARGET":
+                    continue
+                rr = _optional_float(item.get("rr"))
+                if rr is None or rr >= min_rr_required:
+                    return True
+    for source in (payload, enriched):
+        rr = _first_float(source.get("rr_to_valid_target"), source.get("tp_min_rr_value"))
+        if rr is not None and rr >= min_rr_required and _first_float(source.get("tp_min_rr")) is not None:
+            return True
+    return False
+
+
+def _live_price(payload: dict[str, Any]) -> float | None:
+    bid = _first_float(payload.get("bid"), _nested(payload, "market_context_snapshot", "bid"))
+    ask = _first_float(payload.get("ask"), _nested(payload, "market_context_snapshot", "ask"))
+    if bid is not None and ask is not None:
+        return round((bid + ask) / 2.0, _price_digits(payload))
+    return _first_float(
+        payload.get("current_price"),
+        payload.get("mid_price"),
+        payload.get("last_price"),
+        payload.get("price_at_signal_end"),
+        _nested(payload, "market_context_snapshot", "current_price"),
+        _nested(payload, "market_context_snapshot", "price_at_signal_end"),
+    )
+
+
+def _direction(payload: dict[str, Any]) -> str | None:
+    direction = str(payload.get("final_direction") or "").upper()
+    return direction if direction in {"BUY", "SELL"} else None
+
+
+def _nested(payload: dict[str, Any], container: str, key: str) -> Any:
+    value = payload.get(container)
+    return value.get(key) if isinstance(value, dict) else None
+
+
+def _first_float(*values: Any) -> float | None:
+    for value in values:
+        number = _optional_float(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
+
+
+def _price_digits(payload: dict[str, Any]) -> int:
+    symbol = str(payload.get("symbol") or "").upper()
+    return 3 if symbol.endswith("JPY") else 5
+
+
+def _add(gates: list[str], reasons: list[str], gate: str, reason: str) -> None:
+    gates.append(gate)
+    reasons.append(reason)
