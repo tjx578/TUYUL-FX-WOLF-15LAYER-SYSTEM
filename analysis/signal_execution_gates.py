@@ -14,6 +14,35 @@ from analysis.signal_json_emitter import VALID_SIGNAL_STATUSES
 from analysis.signal_json_enrichment import enrich_signal_json_payload
 
 _FINAL_MARKET_STRUCTURE = "FINAL_MARKET_STRUCTURE"
+_MICROBOOST_LATE_OR_EXHAUSTION_PHASES = {
+    "EXHAUSTION_AT_RESISTANCE",
+    "EXHAUSTION_AT_SUPPORT",
+    "LATE_DENSE_PRESSURE",
+}
+_MICROBOOST_PULLBACK_PHASES = {
+    "BULLISH_PULLBACK_MICROBOOST",
+    "BEARISH_PULLBACK_MICROBOOST",
+    "MINOR_PULLBACK_MICROBOOST",
+}
+_MICROBOOST_CONTINUATION_PHASES = {
+    "TREND_CONTINUATION_MICROBOOST",
+    "CONTINUATION_MICROBOOST",
+    "CONFIRMATION_MICROBOOST",
+}
+_MICROBOOST_STRUCTURE_REACTION_PHASES = {
+    "SUPPORT_BOUNCE_MICROBOOST",
+    "RESISTANCE_REJECTION_MICROBOOST",
+}
+_MICROBOOST_PRESSURE_WARNING_PHASES = {
+    "RESISTANCE_PRESSURE_WARNING",
+    "SUPPORT_PRESSURE_WARNING",
+}
+_MICROBOOST_UNPRICED_PHASES = {
+    "IGNITION_MICROBOOST",
+    "DENSE_MICROBOOST",
+    "REPEATED_MICROBOOST",
+    "NEAR_TIMING_GATE_MICROBOOST",
+}
 
 
 def evaluate_signal_execution_gates(
@@ -41,6 +70,7 @@ def evaluate_signal_execution_gates(
     _spread_news_gate(payload, block_gates, block_reasons)
     _session_volatility_gate(payload, defer_gates, defer_reasons)
     _basket_theme_gate(payload, defer_gates, defer_reasons)
+    _microboost_timing_gate(payload, defer_gates, defer_reasons, block_gates, block_reasons)
     live_rr = _live_rr_gate(payload, enriched, min_rr_required, defer_gates, defer_reasons, block_gates, block_reasons)
     _no_chase_gate(payload, enriched, max_chase_r, live_rr, block_gates, block_reasons)
     _structure_retest_gate(payload, defer_gates, defer_reasons, block_gates, block_reasons)
@@ -166,6 +196,60 @@ def _basket_theme_gate(payload: dict[str, Any], gates: list[str], reasons: list[
         _add(gates, reasons, "BasketThemeGate", "THEME_CONFLICT_FOR_CONTINUATION")
     if direction == "SELL" and "BUY" in alignment:
         _add(gates, reasons, "BasketThemeGate", "THEME_CONFLICT_FOR_CONTINUATION")
+
+
+def _microboost_timing_gate(
+    payload: dict[str, Any],
+    defer_gates: list[str],
+    defer_reasons: list[str],
+    block_gates: list[str],
+    block_reasons: list[str],
+) -> None:
+    if not _is_microboost_payload(payload):
+        return
+
+    phase_priced = _phase_value(payload, "phase_priced")
+    phase_unpriced = _phase_value(payload, "phase_unpriced")
+    action = str(payload.get("action") or _nested(payload, "microboost", "action") or "").upper()
+    requires_market_context = _optional_bool(
+        payload.get("requires_market_context")
+        if payload.get("requires_market_context") is not None
+        else _nested(payload, "microboost", "requires_market_context")
+    )
+    if requires_market_context is True or (
+        phase_priced is None
+        and phase_unpriced in _MICROBOOST_UNPRICED_PHASES
+        and _optional_bool(payload.get("market_context_applied")) is not True
+    ):
+        _add(defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_MARKET_CONTEXT_REQUIRED")
+        return
+
+    if phase_priced in _MICROBOOST_LATE_OR_EXHAUSTION_PHASES or action == "PROTECT_PROFIT":
+        _add(block_gates, block_reasons, "MicroBoostTimingGate", "MICROBOOST_NO_NEW_ENTRY_PROTECT_PROFIT")
+        return
+
+    if phase_priced in _MICROBOOST_PULLBACK_PHASES or action == "WAIT_PULLBACK_COMPLETION":
+        if not _microboost_pullback_confirmed(payload):
+            _add(defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION")
+        return
+
+    if phase_priced in _MICROBOOST_STRUCTURE_REACTION_PHASES:
+        if not _microboost_structure_reaction_confirmed(payload):
+            _add(defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_STRUCTURE_REACTION_CONFIRMATION_REQUIRED")
+        return
+
+    if phase_priced in _MICROBOOST_PRESSURE_WARNING_PHASES:
+        if not _microboost_pressure_warning_confirmed(payload):
+            _add(defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_PRESSURE_WARNING_CONFIRMATION_REQUIRED")
+        return
+
+    if phase_priced in _MICROBOOST_CONTINUATION_PHASES:
+        return
+
+    if phase_priced in {"COUNTER_BIAS_MICROBOOST", "ABSORPTION_WARNING", "REVERSAL_WARNING"} and not (
+        _microboost_structure_reaction_confirmed(payload)
+    ):
+        _add(defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_STRUCTURE_CONFIRMATION_REQUIRED")
 
 
 def _live_rr_gate(
@@ -315,6 +399,77 @@ def _direction(payload: dict[str, Any]) -> str | None:
     return direction if direction in {"BUY", "SELL"} else None
 
 
+def _is_microboost_payload(payload: dict[str, Any]) -> bool:
+    family = str(payload.get("signal_family") or payload.get("signal_type") or "").upper()
+    status = str(payload.get("status") or "").upper()
+    return (
+        "MICROBOOST" in family
+        or "MICROBOOST" in status
+        or _phase_value(payload, "phase_priced") is not None
+        or _phase_value(payload, "phase_unpriced") is not None
+    )
+
+
+def _phase_value(payload: dict[str, Any], key: str) -> str | None:
+    value = _optional_str(payload.get(key))
+    if value is None:
+        value = _optional_str(_nested(payload, "microboost", key))
+    if value is None:
+        value = _optional_str(_nested(payload, "microboost_summary", f"latest_{key}"))
+    return None if value is None else value.upper()
+
+
+def _microboost_pullback_confirmed(payload: dict[str, Any]) -> bool:
+    if _optional_bool(payload.get("microboost_timing_confirmed")) is True:
+        return True
+    for key in (
+        "m15_reclaim_confirmed",
+        "reclaim_confirmed",
+        "pullback_completion_confirmed",
+        "m15_pullback_complete",
+        "support_reclaim_confirmed",
+        "breakout_retest_held",
+        "m15_breakout_retest_held",
+        "m15_breakdown_retest_held",
+    ):
+        if _optional_bool(payload.get(key)) is True:
+            return True
+    confirmation = str(payload.get("m15_confirmation_status") or "").upper()
+    return any(token in confirmation for token in ("RECLAIM", "PULLBACK_COMPLETION", "RETEST_HELD", "SUPPORT_HOLD"))
+
+
+def _microboost_structure_reaction_confirmed(payload: dict[str, Any]) -> bool:
+    if _optional_bool(payload.get("microboost_timing_confirmed")) is True:
+        return True
+    for key in (
+        "structure_reaction_confirmed",
+        "m15_rejection_from_resistance",
+        "m15_rejection_from_support",
+        "m15_close_above_minor_resistance",
+        "m15_close_below_minor_support",
+        "m15_close_above_resistance",
+        "m15_close_below_support",
+    ):
+        if _optional_bool(payload.get(key)) is True:
+            return True
+    confirmation = str(payload.get("m15_confirmation_status") or "").upper()
+    return any(token in confirmation for token in ("REJECTION_CONFIRMED", "BOUNCE_CONFIRMED", "CLOSE_ABOVE", "CLOSE_BELOW"))
+
+
+def _microboost_pressure_warning_confirmed(payload: dict[str, Any]) -> bool:
+    direction = _direction(payload)
+    phase_priced = _phase_value(payload, "phase_priced")
+    if direction == "BUY" and phase_priced == "RESISTANCE_PRESSURE_WARNING":
+        return _optional_bool(payload.get("m15_close_above_resistance")) is True or (
+            str(payload.get("m15_confirmation_status") or "").upper() == "M15_CLOSE_ABOVE_RESISTANCE"
+        )
+    if direction == "SELL" and phase_priced == "SUPPORT_PRESSURE_WARNING":
+        return _optional_bool(payload.get("m15_close_below_support")) is True or (
+            str(payload.get("m15_confirmation_status") or "").upper() == "M15_CLOSE_BELOW_SUPPORT"
+        )
+    return _microboost_structure_reaction_confirmed(payload)
+
+
 def _nested(payload: dict[str, Any], container: str, key: str) -> Any:
     value = payload.get(container)
     return value.get(key) if isinstance(value, dict) else None
@@ -348,6 +503,11 @@ def _optional_bool(value: Any) -> bool | None:
     if text in {"0", "false", "no", "n", "off"}:
         return False
     return None
+
+
+def _optional_str(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
 
 
 def _price_digits(payload: dict[str, Any]) -> int:
