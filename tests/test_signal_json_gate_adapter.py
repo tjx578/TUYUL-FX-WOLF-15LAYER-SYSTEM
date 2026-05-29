@@ -74,6 +74,41 @@ def test_gate_adapter_disabled_is_strict_noop(caplog):
     assert "[SignalExecutionGateJSON]" not in caplog.text
 
 
+def test_gate_adapter_from_env_defaults_to_official_enforce_barrier():
+    adapter = SignalJsonGateAdapter.from_env({})
+
+    assert adapter.config.final_barrier is True
+    assert adapter.config.enabled is True
+    assert adapter.config.enforce is True
+
+
+def test_official_final_barrier_overrides_legacy_shadow_flags():
+    adapter = SignalJsonGateAdapter.from_env(
+        {
+            "SIGNAL_JSON_EXEC_GATES_ENABLED": "false",
+            "SIGNAL_JSON_EXEC_GATES_ENFORCE": "false",
+        }
+    )
+
+    assert adapter.config.final_barrier is True
+    assert adapter.config.enabled is True
+    assert adapter.config.enforce is True
+
+
+def test_final_barrier_can_be_disabled_for_explicit_shadow_mode():
+    adapter = SignalJsonGateAdapter.from_env(
+        {
+            "SIGNAL_JSON_FINAL_BARRIER_ENABLED": "false",
+            "SIGNAL_JSON_EXEC_GATES_ENABLED": "true",
+            "SIGNAL_JSON_EXEC_GATES_ENFORCE": "false",
+        }
+    )
+
+    assert adapter.config.final_barrier is False
+    assert adapter.config.enabled is True
+    assert adapter.config.enforce is False
+
+
 def test_gate_adapter_shadow_logs_sidecar_without_changing_signal(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     payload = _final_payload(target_mode="PROVISIONAL_RR_FALLBACK", targets=[], tp_min_rr=1.2070)
