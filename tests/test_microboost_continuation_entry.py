@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from analysis.microboost_continuation_entry import MicroboostContinuationEngine
+from analysis.signal_json_emitter import build_signal_json_event, should_emit_signal_json
 
 
 def _cluster(**overrides):
@@ -121,7 +122,7 @@ def test_continuation_ignores_unready_or_opposite_quorum():
     assert result.final_direction == "WAIT"
 
 
-def test_continuation_fallback_targets_can_validate_fast_trend_setup():
+def test_continuation_fallback_targets_wait_for_structure_or_retest():
     cluster = _cluster(
         duration_seconds=62.0,
         effective_tick_count=32,
@@ -142,16 +143,27 @@ def test_continuation_fallback_targets_can_validate_fast_trend_setup():
     result = MicroboostContinuationEngine().evaluate(cluster, allowed_quorum=_quorum())
 
     assert result.enabled is True
-    assert result.status == "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"
+    assert result.status == "WAIT_M15_CLOSE_OR_STRUCTURE_TARGET"
+    assert result.final_direction == "WAIT"
+    assert result.action == "WAIT_STRUCTURE_TARGET_OR_RETEST"
+    assert result.direction_status == "MICROBOOST_QUORUM_CONTINUATION_AWAITS_STRUCTURE_TARGET"
     assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
-    assert result.rr_status == "VALID"
-    assert result.valid_for_execution is True
+    assert result.rr_status == "WAIT_TARGET_STRUCTURE"
+    assert result.valid_for_execution is False
+    assert result.tradeplan_context_ready is False
     assert result.sl_tight == 1.3744
     assert result.tp1_rr == 1.0
     assert result.tp2_rr == 2.0
     assert result.tp3_rr == 2.5
     assert result.promotion_path is None
     assert result.direct_valid_reason is None
+    assert result.parent_watch_required is False
+
+    event = build_signal_json_event(result.to_dict())
+    assert event is not None
+    assert event.event == "signal_decision_update_json"
+    assert event.is_final_signal is False
+    assert should_emit_signal_json(event) is True
 
 
 def test_schema_v1_continuation_retains_provisional_rr_ladder():
@@ -169,5 +181,7 @@ def test_schema_v1_continuation_retains_provisional_rr_ladder():
 
     result = MicroboostContinuationEngine(tp1_rr_required=1.0).evaluate(cluster, allowed_quorum=_quorum())
 
-    assert result.valid_for_execution is True
+    assert result.status == "WAIT_M15_CLOSE_OR_STRUCTURE_TARGET"
+    assert result.valid_for_execution is False
+    assert result.rr_status == "WAIT_TARGET_STRUCTURE"
     assert result.tp1_rr == 1.0
