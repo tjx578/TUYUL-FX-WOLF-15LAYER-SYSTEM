@@ -269,6 +269,43 @@ def test_continuation_valid_with_rr_fallback_uses_signal_json_prefix(caplog):
     assert '"signal_quality":"TREND_CONTINUATION_VALID"' in caplog.text
 
 
+def test_strict_lifecycle_blocks_unready_final_as_decision_update(caplog):
+    emitter = SignalJsonEmitter(
+        enabled=True,
+        strict_lifecycle=True,
+        require_parent_watch=False,
+        require_final_market_structure=True,
+        allow_provisional_rr_execution=False,
+        require_theme_alignment=False,
+        require_terminal_decision_update=False,
+    )
+    event = _event(
+        cluster_id="USDCAD_20260520T024532Z",
+        symbol="USDCAD",
+        signal_family="MICROBOOST_TREND_CONTINUATION",
+        status="BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_SIGNAL_ZONE_OR_RETEST",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=True,
+        allowed_quorum=True,
+        allowed_quorum_streak=3,
+        reclaim_trigger=1.3785,
+        risk_pips=12.0,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"status":"WAIT_STRUCTURE_OR_NEXT_M15"' in caplog.text
+    assert '"final_direction":"WAIT"' in caplog.text
+    assert "PROVISIONAL_RR_NOT_EXECUTION_GRADE" in caplog.text
+
+
 def test_schema_v1_log_omits_structure_aware_export_fields(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
