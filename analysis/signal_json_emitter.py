@@ -372,11 +372,19 @@ class SignalJsonEmitter:
     def emit(self, event: SignalJsonEvent) -> bool:
         if not self.enabled:
             return False
-        is_decision_update = _is_decision_update_event(event)
-        is_watch = _is_watch_status(event.status) and not is_decision_update
+        payload = event.to_dict()
+        is_decision_update = _is_decision_update_payload(payload) or _is_decision_update_event(event)
+        is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
         if is_watch and self.watch_transition_only and not self._mark_watch_transition(event):
             return False
-        payload = event.to_dict()
+        if self.strict_lifecycle and _is_final_payload(payload):
+            if self._ensure_terminal_decision_update(payload):
+                payload = self._strict_final_payload(payload)
+            else:
+                payload = _blocked_final_as_decision_update(payload, ["MISSING_TERMINAL_DECISION_UPDATE"])
+
+        is_decision_update = _is_decision_update_payload(payload)
+        is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
         if not should_emit_signal_json(
             payload,
             emit_watch=self.emit_watch,
@@ -401,6 +409,10 @@ class SignalJsonEmitter:
         payload = _schema_v1_payload(payload)
         prefix = self.decision_update_prefix if is_decision_update else (self.watch_prefix if is_watch else self.prefix)
         self.logger.warning("%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
+        if is_watch:
+            self._emitted_watch_refs.update(_watch_references(payload))
+        if is_decision_update:
+            self._record_decision_state(payload)
         return True
 
     @staticmethod
