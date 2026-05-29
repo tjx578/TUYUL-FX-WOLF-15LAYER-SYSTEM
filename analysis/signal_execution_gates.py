@@ -36,6 +36,7 @@ def evaluate_signal_execution_gates(
     defer_reasons: list[str] = []
     defer_gates: list[str] = []
 
+    _reinforcement_management_gate(payload, defer_gates, defer_reasons)
     _tradeplan_gate(payload, enriched, min_rr_required, defer_gates, defer_reasons)
     _spread_news_gate(payload, block_gates, block_reasons)
     _session_volatility_gate(payload, defer_gates, defer_reasons)
@@ -68,6 +69,16 @@ def evaluate_signal_execution_gates(
         execution_status="EXECUTION_GATE_ALLOWED",
         live_rr=live_rr,
     )
+
+
+def _reinforcement_management_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
+    if str(payload.get("lifecycle_status") or "").upper() != "REINFORCES_ACTIVE_SIGNAL":
+        return
+    add_position_allowed = _optional_bool(payload.get("add_position_allowed"))
+    add_on_retest_ready = _optional_bool(payload.get("add_on_retest_ready"))
+    if add_position_allowed is True and add_on_retest_ready is True:
+        return
+    _add(gates, reasons, "ReinforcementManagementGate", "REINFORCEMENT_MANAGEMENT_ONLY")
 
 
 def _tradeplan_gate(
