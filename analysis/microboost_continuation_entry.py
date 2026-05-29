@@ -204,20 +204,40 @@ class MicroboostContinuationEngine:
             entry_zone=base["entry_zone"],
             snapshot=snapshot,
         )
-        status = f"{raw_direction}_TIMING_VALID_BY_QUORUM_CONTINUATION"
-        action = "BUY_SIGNAL_ZONE_OR_RETEST" if raw_direction == "BUY" else "SELL_SIGNAL_ZONE_OR_RETEST"
+        execution_ready = bool(levels["valid_for_execution"])
+        status = (
+            f"{raw_direction}_TIMING_VALID_BY_QUORUM_CONTINUATION"
+            if execution_ready
+            else "WAIT_M15_CLOSE_OR_STRUCTURE_TARGET"
+        )
+        action = (
+            ("BUY_SIGNAL_ZONE_OR_RETEST" if raw_direction == "BUY" else "SELL_SIGNAL_ZONE_OR_RETEST")
+            if execution_ready
+            else "WAIT_STRUCTURE_TARGET_OR_RETEST"
+        )
+        direction_status = (
+            "MICROBOOST_QUORUM_CONTINUATION_VALIDATED"
+            if execution_ready
+            else "MICROBOOST_QUORUM_CONTINUATION_AWAITS_STRUCTURE_TARGET"
+        )
+        reason = (
+            f"{symbol} {raw_direction} continuation: allowed quorum, high-density microboost, "
+            f"{price_position} price position, H1 {h1_phase}, and M15 {m15_phase} are aligned."
+            if execution_ready
+            else (
+                f"{symbol} {raw_direction} continuation timing observed, but final execution waits for "
+                f"market-structure target or retest because {levels['tp_missing_reason']}."
+            )
+        )
         return self._result(
             enabled=True,
             status=status,
             candidate_direction=raw_direction,
             validated_direction=raw_direction,
-            final_direction=raw_direction or "WAIT",
-            direction_status="MICROBOOST_QUORUM_CONTINUATION_VALIDATED",
+            final_direction=raw_direction if execution_ready else "WAIT",
+            direction_status=direction_status,
             action=action,
-            reason=(
-                f"{symbol} {raw_direction} continuation: allowed quorum, high-density microboost, "
-                f"{price_position} price position, H1 {h1_phase}, and M15 {m15_phase} are aligned."
-            ),
+            reason=reason,
             reclaim_trigger=levels["reclaim_trigger"],
             sl_tight=levels["sl_tight"],
             sl_safe=levels["sl_safe"],
@@ -252,7 +272,7 @@ class MicroboostContinuationEngine:
             execution_quality=structure_metadata["execution_quality"],
             promotion_path=None,
             direct_valid_reason=None,
-            parent_watch_required=True,
+            parent_watch_required=execution_ready,
             **base,
         )
 
@@ -389,7 +409,7 @@ def _continuation_levels(
             tp_missing_reason="STRUCTURE_TARGET_MISSING_OR_BELOW_MIN_RR",
             structure_targets_available=bool(targets),
             structure_rr_valid=False,
-            valid_for_execution=True,
+            valid_for_execution=False,
             min_rr=min_rr,
             reclaim_trigger=reclaim_trigger,
             invalidation=invalidation,
