@@ -27,6 +27,8 @@ def _final_payload(**overrides):
         "price_position": "MAIN_RESISTANCE",
         "m15_phase": "BULLISH_PULLBACK",
         "h1_phase": "BULLISH",
+        "phase_unpriced": "DENSE_MICROBOOST",
+        "phase_priced": "TREND_CONTINUATION_MICROBOOST",
         "sl_tight": 1.1988,
         "sl_safe": 1.1980,
         "selected_sl": 1.1980,
@@ -147,6 +149,66 @@ def test_gate_adapter_enforce_downgrades_unready_final_to_decision_update(caplog
     assert '"enforcement_mode":"ENFORCE"' in caplog.text
     assert "[SignalDecisionUpdateJSON]" in caplog.text
     assert "[SignalJSON]" not in caplog.text
+
+
+def test_microboost_timing_gate_blocks_late_pressure_entry():
+    payload = _final_payload(
+        phase_unpriced="REPEATED_MICROBOOST",
+        phase_priced="LATE_DENSE_PRESSURE",
+        action="PROTECT_PROFIT",
+    )
+
+    decision = evaluate_signal_execution_gates(payload)
+
+    assert decision.decision == "BLOCK"
+    assert "MicroBoostTimingGate" in decision.blocked_by
+    assert "MICROBOOST_NO_NEW_ENTRY_PROTECT_PROFIT" in decision.reasons
+
+
+def test_microboost_timing_gate_defers_pullback_until_reclaim():
+    payload = _final_payload(
+        phase_unpriced="REPEATED_MICROBOOST",
+        phase_priced="BULLISH_PULLBACK_MICROBOOST",
+        action="WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+    )
+
+    decision = evaluate_signal_execution_gates(payload)
+
+    assert decision.decision == "DEFER"
+    assert "MicroBoostTimingGate" in decision.blocked_by
+    assert "MICROBOOST_WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION" in decision.reasons
+
+    confirmed = evaluate_signal_execution_gates(
+        _final_payload(
+            phase_unpriced="REPEATED_MICROBOOST",
+            phase_priced="BULLISH_PULLBACK_MICROBOOST",
+            action="BUY_SIGNAL_ZONE_OR_RETEST",
+            m15_reclaim_confirmed=True,
+        )
+    )
+    assert confirmed.decision == "ALLOW"
+
+
+def test_microboost_timing_gate_requires_breakout_confirmation_for_pressure_warning():
+    payload = _final_payload(
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        phase_priced="RESISTANCE_PRESSURE_WARNING",
+    )
+
+    decision = evaluate_signal_execution_gates(payload)
+
+    assert decision.decision == "DEFER"
+    assert "MicroBoostTimingGate" in decision.blocked_by
+    assert "MICROBOOST_PRESSURE_WARNING_CONFIRMATION_REQUIRED" in decision.reasons
+
+    confirmed = evaluate_signal_execution_gates(
+        _final_payload(
+            phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+            phase_priced="RESISTANCE_PRESSURE_WARNING",
+            m15_confirmation_status="M15_CLOSE_ABOVE_RESISTANCE",
+        )
+    )
+    assert confirmed.decision == "ALLOW"
 
 
 def test_reinforcement_shadow_logs_management_only_without_changing_signal(caplog):
