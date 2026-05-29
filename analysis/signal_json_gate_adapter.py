@@ -17,6 +17,7 @@ from analysis.signal_execution_gates import evaluate_signal_execution_gates
 class SignalJsonGateConfig:
     enabled: bool = False
     enforce: bool = False
+    final_barrier: bool = False
     emit_continuation: bool = False
     emit_sidecar: bool = True
     prefix: str = "[SignalExecutionGateJSON]"
@@ -26,9 +27,20 @@ class SignalJsonGateConfig:
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> SignalJsonGateConfig:
         env = os.environ if environ is None else environ
+        # Official production path: every final SignalJSON candidate should
+        # pass through the execution gate adapter in ENFORCE mode.  The legacy
+        # shadow flags remain useful only after this explicit kill switch is
+        # set false for diagnostics.
+        final_barrier = _env_bool(env, "SIGNAL_JSON_FINAL_BARRIER_ENABLED", True)
+        enabled = _env_bool(env, "SIGNAL_JSON_EXEC_GATES_ENABLED", final_barrier)
+        enforce = _env_bool(env, "SIGNAL_JSON_EXEC_GATES_ENFORCE", final_barrier)
+        if final_barrier:
+            enabled = True
+            enforce = True
         return cls(
-            enabled=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_ENABLED", False),
-            enforce=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_ENFORCE", False),
+            enabled=enabled,
+            enforce=enforce,
+            final_barrier=final_barrier,
             emit_continuation=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_CONTINUATION", False),
             emit_sidecar=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_SIDECAR", True),
             prefix=str(env.get("SIGNAL_EXECUTION_GATE_JSON_LOG_PREFIX") or "[SignalExecutionGateJSON]"),
@@ -50,8 +62,8 @@ class SignalJsonGateAdapter:
         self.logger = logger or logging.getLogger("signal_json")
 
     @classmethod
-    def from_env(cls) -> SignalJsonGateAdapter:
-        return cls(SignalJsonGateConfig.from_env())
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> SignalJsonGateAdapter:
+        return cls(SignalJsonGateConfig.from_env(environ))
 
     @property
     def emit_continuation(self) -> bool:
@@ -93,6 +105,7 @@ class SignalJsonGateAdapter:
             "target_mode": payload.get("target_mode"),
             "valid_for_execution": payload.get("valid_for_execution"),
             "enforcement_mode": "ENFORCE" if self.config.enforce else "SHADOW",
+            "final_barrier": self.config.final_barrier,
             "exec_gate": decision.to_dict(),
         }
         self.logger.warning(
