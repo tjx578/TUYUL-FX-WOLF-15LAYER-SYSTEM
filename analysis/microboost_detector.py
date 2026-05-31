@@ -54,6 +54,12 @@ class MicroboostBlockIntel:
     effective_density_per_minute: float
     phase_unpriced: str
     phase_priced: str | None
+    strategy_pattern: str | None
+    phase_grade: str | None
+    execution_side: str | None
+    strategy_priority: str | None
+    waiting_for: str | None
+    requires_confirmation: bool | None
     action: str
     requires_market_context: bool
     late_pressure_candidate: bool
@@ -258,6 +264,12 @@ def _build_block_intel(
         effective_density_per_minute=effective_density,
         phase_unpriced=phase,
         phase_priced=phase_priced,
+        strategy_pattern=priced["strategy_pattern"],
+        phase_grade=priced["phase_grade"],
+        execution_side=priced["execution_side"],
+        strategy_priority=priced["strategy_priority"],
+        waiting_for=priced["waiting_for"],
+        requires_confirmation=priced["requires_confirmation"],
         action=action,
         requires_market_context=priced["requires_market_context"],
         late_pressure_candidate=late_candidate,
@@ -379,6 +391,10 @@ def _summary_action(blocks: list[MicroboostBlockIntel], timing_gate_5m: bool) ->
         return "VALIDATE_STRUCTURE_REACTION"
     if any(block.phase_priced == "LATE_DENSE_PRESSURE" for block in blocks):
         return "PROTECT_PROFIT"
+    if any(block.strategy_priority == "WATCH_HIGH_SELL" for block in blocks):
+        return "WAIT_SELL_TRIGGER_OR_RETEST"
+    if any(block.strategy_priority == "WATCH_HIGH_BUY" for block in blocks):
+        return "WAIT_BUY_TRIGGER_OR_RETEST"
     if any(block.phase_priced in {"BULLISH_PULLBACK_MICROBOOST", "BEARISH_PULLBACK_MICROBOOST"} for block in blocks):
         return "WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION"
     if any(block.phase_priced in {"CONFIRMATION_MICROBOOST", "CONTINUATION_MICROBOOST"} for block in blocks):
@@ -647,6 +663,14 @@ def _priced_state_payload(
 ) -> dict[str, Any]:
     return {
         "phase_priced": phase_priced,
+        "strategy_pattern": None if market_context_validation is None else market_context_validation.get("strategy_pattern"),
+        "phase_grade": None if market_context_validation is None else market_context_validation.get("phase_grade"),
+        "execution_side": None if market_context_validation is None else market_context_validation.get("execution_side"),
+        "strategy_priority": None if market_context_validation is None else market_context_validation.get("priority"),
+        "waiting_for": None if market_context_validation is None else market_context_validation.get("waiting_for"),
+        "requires_confirmation": (
+            None if market_context_validation is None else market_context_validation.get("requires_confirmation")
+        ),
         "action": action,
         "requires_market_context": requires_market_context,
         "market_context_validation": market_context_validation,
@@ -705,6 +729,8 @@ def _market_context_snapshot(context: MarketContext | None) -> dict[str, Any] | 
         "m15_open": context.m15_open,
         "m15_high": context.m15_high,
         "m15_low": context.m15_low,
+        "m15_range_atr_ratio": context.m15_range_atr_ratio,
+        "m15_body_atr_ratio": context.m15_body_atr_ratio,
         "m15_close_above_resistance": context.m15_close_above_resistance,
         "m15_breakout_retest_held": context.m15_breakout_retest_held,
         "m15_rejection_from_resistance": context.m15_rejection_from_resistance,
@@ -792,6 +818,8 @@ def _market_context_for_symbol(
         m15_open=_optional_float(raw.get("m15_open")),
         m15_high=_optional_float(raw.get("m15_high")),
         m15_low=_optional_float(raw.get("m15_low")),
+        m15_range_atr_ratio=_optional_float(raw.get("m15_range_atr_ratio")),
+        m15_body_atr_ratio=_optional_float(raw.get("m15_body_atr_ratio")),
         m15_close_above_resistance=_optional_bool(raw.get("m15_close_above_resistance")),
         m15_breakout_retest_held=_optional_bool(raw.get("m15_breakout_retest_held")),
         m15_rejection_from_resistance=_optional_bool(raw.get("m15_rejection_from_resistance")),
