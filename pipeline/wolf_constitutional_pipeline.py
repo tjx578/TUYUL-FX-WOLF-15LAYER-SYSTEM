@@ -3399,6 +3399,7 @@ class WolfConstitutionalPipeline:
         latest_low = self._candle_price(latest, "low") if latest else None
         latest_close = self._candle_price(latest, "close") if latest else None
         previous_close = self._candle_price(previous_candle, "close") if previous_candle else None
+        m15_range_atr_ratio, m15_body_atr_ratio = self._m15_expansion_ratios(candles)
         main_support = self._coerce_positive_float(structure.get("main_support"))
         main_resistance = self._coerce_positive_float(structure.get("main_resistance"))
         ladder = self._derive_price_ladders(
@@ -3511,6 +3512,8 @@ class WolfConstitutionalPipeline:
             "m15_open": latest_open,
             "m15_high": latest_high,
             "m15_low": latest_low,
+            "m15_range_atr_ratio": m15_range_atr_ratio,
+            "m15_body_atr_ratio": m15_body_atr_ratio,
             "m15_close_above_resistance": m15_close_above_resistance,
             "m15_breakout_retest_held": m15_breakout_retest_held,
             "m15_rejection_from_resistance": m15_rejection_from_resistance,
@@ -3642,6 +3645,38 @@ class WolfConstitutionalPipeline:
         if not previous_levels:
             return f"NO_MINOR_{missing_label.upper()}_PREVIOUS_LEVELS"
         return f"{missing_label.upper()}_LADDER_MISSING"
+
+    def _m15_expansion_ratios(self, candles: list[dict[str, Any]], period: int = 14) -> tuple[float | None, float | None]:
+        if len(candles) < 3:
+            return None, None
+        latest = candles[-1]
+        latest_open = self._candle_price(latest, "open")
+        latest_high = self._candle_price(latest, "high")
+        latest_low = self._candle_price(latest, "low")
+        latest_close = self._candle_price(latest, "close")
+        if latest_open is None or latest_high is None or latest_low is None or latest_close is None:
+            return None, None
+
+        end = len(candles) - 1
+        start = max(1, end - period)
+        true_ranges: list[float] = []
+        for index in range(start, end):
+            candle = candles[index]
+            previous_close = self._candle_price(candles[index - 1], "close")
+            high = self._candle_price(candle, "high")
+            low = self._candle_price(candle, "low")
+            if previous_close is None or high is None or low is None:
+                continue
+            true_ranges.append(max(high - low, abs(high - previous_close), abs(low - previous_close)))
+        if not true_ranges:
+            return None, None
+
+        atr = sum(true_ranges) / len(true_ranges)
+        if atr <= 0.0:
+            return None, None
+        range_ratio = (latest_high - latest_low) / atr
+        body_ratio = abs(latest_close - latest_open) / atr
+        return round(range_ratio, 3), round(body_ratio, 3)
 
     @staticmethod
     def _pip_value(symbol: str) -> float:
