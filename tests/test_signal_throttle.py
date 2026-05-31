@@ -648,6 +648,8 @@ class TestPipelineSignalThrottle:
         assert context.tp4_support is None
         assert context.support_ladder_missing_reason is None
         assert context.price_position == "MAIN_RESISTANCE"
+        assert context.m15_range_atr_ratio == pytest.approx(0.889)
+        assert context.m15_body_atr_ratio == pytest.approx(0.0)
         assert context.continuation_sl_tight is not None
         assert context.continuation_sl_safe is not None
         assert context.continuation_sl_safe < context.continuation_sl_tight
