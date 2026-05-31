@@ -243,6 +243,13 @@ def test_analyzer_classifies_clean_same_pair_block_as_pair_candidate():
         "effective_density_per_minute": 2.18,
         "direction": None,
         "phase": "LOW_DENSITY_OPEN_LANE",
+        "pressure_grade": "C",
+        "pressure_temperature": "CONTEXTUAL_RADAR",
+        "priority": "WATCH_LOW",
+        "signal_status": "VALID_CONTEXTUAL_RADAR",
+        "max_gap_health": "VERY_HEALTHY",
+        "execution_status": "NO_DIRECT_ENTRY",
+        "reason": "duration_or_events_present_but_density_is_contextual",
     }
     assert report["market_context_validation"]["direction_validated"] is False
     assert report["market_context_validation"]["requires_market_context"] is True
