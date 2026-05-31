@@ -18,6 +18,12 @@ def test_missing_market_context_never_validates_direction():
             "missing_market_context=price_at_signal_start,price_at_5m_confirm,"
             "price_at_signal_end,m15_phase,h1_phase,theme_aligned,spread_normal"
         ),
+        "strategy_pattern": "PRICE_PHASE_UNRESOLVED",
+        "phase_grade": "UNRESOLVED",
+        "execution_side": "WAIT",
+        "priority": "WATCH_NEUTRAL",
+        "waiting_for": "M15_H1_PHASE_AND_STRUCTURE_CONFIRMATION",
+        "requires_confirmation": True,
     }
 
 
@@ -101,3 +107,77 @@ def test_theme_mismatch_blocks_candidate():
     assert result.direction_validated is False
     assert result.final_direction == "BLOCK_DIRECTION"
     assert result.action == "BLOCK_ENTRY"
+
+
+def test_buy_pressure_at_upper_resistance_becomes_protect_not_entry():
+    result = validate_market_context(
+        MarketContext(
+            symbol="USDJPY",
+            raw_allowed_direction="BUY",
+            price_at_signal_start=159.775,
+            price_at_5m_confirm=159.770,
+            price_at_signal_end=159.769,
+            m15_phase="PIVOT_RECLAIM",
+            h1_phase="BULLISH",
+            theme_aligned=True,
+            spread_normal=True,
+            price_position="MAIN_RESISTANCE",
+            m15_rejection_from_resistance=True,
+        )
+    )
+
+    assert result.direction_validated is False
+    assert result.final_direction == "NO_NEW_ENTRY"
+    assert result.strategy_pattern == "UPPER_RANGE_EXHAUSTION"
+    assert result.execution_side == "PROTECT_LONG_OR_SELL_REJECTION"
+    assert result.action == "NO_NEW_BUY_WAIT_SELL_OR_PULLBACK_CONFIRMATION"
+
+
+def test_bearish_breakdown_cascade_validates_sell_context():
+    result = validate_market_context(
+        MarketContext(
+            symbol="USDJPY",
+            raw_allowed_direction="SELL",
+            price_at_signal_start=160.683,
+            price_at_5m_confirm=160.474,
+            price_at_signal_end=159.999,
+            m15_phase="SUPPORT_BREAK",
+            h1_phase="DOWNTREND",
+            h4_phase="DISTRIBUTION_BREAKDOWN",
+            theme_aligned=True,
+            spread_normal=True,
+            price_position="LOWER_RANGE",
+            m15_close_below_support=True,
+        )
+    )
+
+    assert result.direction_validated is True
+    assert result.final_direction == "SELL"
+    assert result.strategy_pattern == "BEARISH_BREAKDOWN_CASCADE"
+    assert result.priority == "WATCH_HIGH_SELL"
+    assert result.action == "SELL_RETEST_OR_BREAKDOWN_CONTINUATION"
+
+
+def test_liquidation_expansion_sells_after_pullback_not_chase():
+    result = validate_market_context(
+        MarketContext(
+            symbol="USDJPY",
+            raw_allowed_direction="SELL",
+            price_at_signal_start=159.205,
+            price_at_5m_confirm=159.052,
+            price_at_signal_end=159.052,
+            m15_phase="SUPPORT_BREAK",
+            h1_phase="DOWNTREND",
+            h4_phase="DISTRIBUTION_BREAKDOWN",
+            theme_aligned=True,
+            spread_normal=True,
+            price_position="LOWER_RANGE",
+            m15_close_below_support=True,
+            m15_range_atr_ratio=3.49,
+        )
+    )
+
+    assert result.direction_validated is True
+    assert result.final_direction == "SELL"
+    assert result.strategy_pattern == "BEARISH_LIQUIDATION_EXPANSION"
+    assert result.action == "SELL_AFTER_PULLBACK_NO_MARKET_CHASE"
