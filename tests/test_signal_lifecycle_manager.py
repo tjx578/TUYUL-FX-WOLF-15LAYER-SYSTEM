@@ -175,7 +175,9 @@ def test_schema_v1_opposing_final_reverses_without_terminal_export_gate():
     assert follow_up["status"] == "SELL_REVERSAL_VALID"
     assert follow_up["final_direction"] == "SELL"
     assert follow_up["lifecycle_status"] == "SUPERSEDES_ACTIVE_BUY"
-    assert manager.active_signal("USDCAD")["direction"] == "SELL"
+    current_active = manager.active_signal("USDCAD")
+    assert current_active is not None
+    assert current_active["direction"] == "SELL"
 
 
 def test_schema_v1_valid_continuation_does_not_require_fixed_two_r_tp1():
