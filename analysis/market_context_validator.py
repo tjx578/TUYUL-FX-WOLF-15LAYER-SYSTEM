@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from analysis.signal_throttle_pattern_detector import MarketPatternDecision, classify_market_pattern
 from schemas.direction import normalize_direction
 
 _BULLISH_M15_PHASES = {
@@ -18,6 +19,9 @@ _BULLISH_M15_PHASES = {
     "BREAKOUT_RETEST",
     "SUPPORT_HOLD",
     "HIGH_BASE_CONTINUATION",
+    "BULLISH_TREND",
+    "BULLISH_UPPER_RANGE_CONTINUATION",
+    "UPPER_BREAKOUT_CONTINUATION",
 }
 _BEARISH_M15_PHASES = {
     "BREAKDOWN_RETEST",
@@ -25,9 +29,23 @@ _BEARISH_M15_PHASES = {
     "RESISTANCE_REJECTION",
     "LOWER_HIGH",
     "SUPPORT_BREAK",
+    "BEARISH_TREND",
+    "BEARISH_BREAKDOWN",
+    "BEARISH_BREAKDOWN_CASCADE",
+    "BEARISH_LIQUIDATION_EXPANSION",
+    "CLEAN_BEARISH_CONTINUATION_PRESSURE",
+    "BEARISH_PULLBACK_OR_BREAKDOWN",
+    "LOWER_RANGE_BREAKDOWN",
 }
-_BULLISH_H1_PHASES = {"BULLISH", "BULLISH_PULLBACK", "UPTREND", "ACCUMULATION_RECLAIM"}
-_BEARISH_H1_PHASES = {"BEARISH", "BEARISH_PULLBACK", "DOWNTREND", "DISTRIBUTION_BREAKDOWN"}
+_BULLISH_H1_PHASES = {"BULLISH", "BULLISH_PULLBACK", "UPTREND", "ACCUMULATION_RECLAIM", "BULLISH_TREND"}
+_BEARISH_H1_PHASES = {
+    "BEARISH",
+    "BEARISH_PULLBACK",
+    "DOWNTREND",
+    "DISTRIBUTION_BREAKDOWN",
+    "BEARISH_TREND",
+    "BEARISH_PULLBACK_OR_BREAKDOWN",
+}
 
 
 @dataclass(frozen=True)
@@ -72,6 +90,8 @@ class MarketContext:
     m15_open: float | None = None
     m15_high: float | None = None
     m15_low: float | None = None
+    m15_range_atr_ratio: float | None = None
+    m15_body_atr_ratio: float | None = None
     m15_close_above_resistance: bool | None = None
     m15_breakout_retest_held: bool | None = None
     m15_rejection_from_resistance: bool | None = None
@@ -115,6 +135,12 @@ class MarketContextValidation:
     action: str
     requires_market_context: bool
     reason: str
+    strategy_pattern: str = "PRICE_PHASE_UNRESOLVED"
+    phase_grade: str = "UNRESOLVED"
+    execution_side: str = "WAIT"
+    priority: str = "WATCH_NEUTRAL"
+    waiting_for: str | None = "M15_H1_PHASE_AND_STRUCTURE_CONFIRMATION"
+    requires_confirmation: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -170,11 +196,66 @@ def validate_market_context(context: MarketContext) -> MarketContextValidation:
             "spread_not_normal",
         )
 
+    pattern = classify_market_pattern(context, direction=direction)
+    if pattern.final_direction == "NO_NEW_ENTRY":
+        return _result(
+            context,
+            "NO_NEW_ENTRY",
+            False,
+            pattern.execution_grade,
+            pattern.action,
+            False,
+            pattern.reason,
+            pattern=pattern,
+        )
+
     if direction == "BUY" and _buy_context_valid(context):
-        return _result(context, "BUY", True, "A-", "BUY_ON_PULLBACK", False, "price_theme_phase_aligned")
+        action, reason = _validated_action_reason(
+            context,
+            pattern,
+            default_action="BUY_ON_PULLBACK",
+            default_reason="price_theme_phase_aligned",
+        )
+        return _result(
+            context,
+            "BUY",
+            True,
+            pattern.execution_grade if pattern.final_direction == "BUY" else "A-",
+            action,
+            False,
+            reason,
+            pattern=pattern,
+        )
 
     if direction == "SELL" and _sell_context_valid(context):
-        return _result(context, "SELL", True, "A-", "SELL_ON_PULLBACK", False, "price_theme_phase_aligned")
+        action, reason = _validated_action_reason(
+            context,
+            pattern,
+            default_action="SELL_ON_PULLBACK",
+            default_reason="price_theme_phase_aligned",
+        )
+        return _result(
+            context,
+            "SELL",
+            True,
+            pattern.execution_grade if pattern.final_direction == "SELL" else "A-",
+            action,
+            False,
+            reason,
+            pattern=pattern,
+        )
+
+    if pattern.strategy_pattern != "PRICE_PHASE_UNRESOLVED":
+        return _result(
+            context,
+            "WAIT",
+            False,
+            pattern.execution_grade,
+            pattern.action,
+            False,
+            pattern.reason,
+            pattern=pattern,
+        )
 
     return _result(
         context,
@@ -237,7 +318,10 @@ def _result(
     action: str,
     requires_market_context: bool,
     reason: str,
+    *,
+    pattern: MarketPatternDecision | None = None,
 ) -> MarketContextValidation:
+    pattern = pattern or classify_market_pattern(context, direction=context.raw_allowed_direction)
     return MarketContextValidation(
         symbol=context.symbol,
         raw_allowed_direction=normalize_direction(context.raw_allowed_direction),
@@ -247,4 +331,31 @@ def _result(
         action=action,
         requires_market_context=requires_market_context,
         reason=reason,
+        strategy_pattern=pattern.strategy_pattern,
+        phase_grade=pattern.phase_grade,
+        execution_side=pattern.execution_side,
+        priority=pattern.strategy_priority,
+        waiting_for=pattern.waiting_for,
+        requires_confirmation=pattern.requires_confirmation,
     )
+
+
+def _validated_action_reason(
+    context: MarketContext,
+    pattern: MarketPatternDecision,
+    *,
+    default_action: str,
+    default_reason: str,
+) -> tuple[str, str]:
+    specific_patterns = {
+        "BULLISH_UPPER_RANGE_CONTINUATION",
+        "BEARISH_BREAKDOWN_CASCADE",
+        "BEARISH_LIQUIDATION_EXPANSION",
+        "CLEAN_BEARISH_CONTINUATION_PRESSURE",
+        "LOWER_RANGE_SELL_EXHAUSTION",
+        "UPPER_RANGE_EXHAUSTION",
+        "UPPER_ABSORPTION_WARNING",
+    }
+    if pattern.strategy_pattern in specific_patterns or context.price_position is not None:
+        return pattern.action, pattern.reason
+    return default_action, default_reason
