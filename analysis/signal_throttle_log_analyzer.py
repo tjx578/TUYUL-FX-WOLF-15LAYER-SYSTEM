@@ -25,6 +25,7 @@ from analysis.market_context_validator import missing_market_context_result
 from analysis.microboost_continuation_entry import MicroboostContinuationEngine
 from analysis.microboost_counter_entry import MicroboostCounterEntryEngine
 from analysis.microboost_detector import build_microboost_summary
+from analysis.signal_throttle_pattern_detector import classify_pressure_block
 from schemas.direction import normalize_direction
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
@@ -102,6 +103,7 @@ class PressureBlock:
         payload = asdict(self)
         payload["start"] = self.start.isoformat()
         payload["end"] = self.end.isoformat()
+        payload.update(_pressure_profile_payload(self))
         return payload
 
 
@@ -935,7 +937,7 @@ def _empty_candidate_lifecycle(window_seconds: int) -> dict[str, Any]:
 def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int) -> dict[str, Any]:
     valid_since = block.start + timedelta(seconds=clean_block_seconds)
     role = "latest_meaningful_candidate" if block.duration_seconds >= clean_block_seconds else "latest_ignition_watch"
-    return {
+    payload = {
         "symbol": block.symbol,
         "block_start_utc": block.start.isoformat(),
         "block_end_utc": block.end.isoformat(),
@@ -950,6 +952,8 @@ def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int
         "phase": _candidate_phase(block),
         "role": role,
     }
+    payload.update(_pressure_profile_payload(block))
+    return payload
 
 
 def _is_meaningful_candidate_block(block: PressureBlock, clean_block_seconds: int) -> bool:
@@ -1570,7 +1574,7 @@ def _candidate_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int
 
     best_block = max(clean_blocks, key=lambda b: b.duration_seconds)
     valid_since = best_block.start + timedelta(seconds=clean_block_seconds)
-    return {
+    payload = {
         "symbol": best_block.symbol,
         "block_start_utc": best_block.start.isoformat(),
         "block_end_utc": best_block.end.isoformat(),
@@ -1584,11 +1588,13 @@ def _candidate_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int
         "direction": best_block.direction,
         "phase": _candidate_phase(best_block),
     }
+    payload.update(_pressure_profile_payload(best_block))
+    return payload
 
 
 def _microboost_payload(block: PressureBlock) -> dict[str, Any]:
     """Create payload for microboost block."""
-    return {
+    payload = {
         "symbol": block.symbol,
         "duration_seconds": block.duration_seconds,
         "events": block.events,
@@ -1600,6 +1606,8 @@ def _microboost_payload(block: PressureBlock) -> dict[str, Any]:
         "start_utc": block.start.isoformat(),
         "end_utc": block.end.isoformat(),
     }
+    payload.update(_pressure_profile_payload(block))
+    return payload
 
 
 def rank_microboost_blocks(blocks: list[PressureBlock], *, clean_block_seconds: int) -> list[PressureBlock]:
@@ -1674,3 +1682,13 @@ def _candidate_phase(block: PressureBlock) -> str:
     if density < 8.0:
         return "CLEAN_PRESSURE_LANE"
     return "HIGH_DENSITY_PRESSURE_LANE"
+
+
+def _pressure_profile_payload(block: PressureBlock) -> dict[str, Any]:
+    profile = classify_pressure_block(
+        duration_seconds=block.duration_seconds,
+        event_count=block.effective_ticks or block.events,
+        density_per_minute=block.effective_density_per_minute or block.density_per_minute,
+        max_gap_seconds=block.max_gap_seconds,
+    )
+    return profile.to_dict()
