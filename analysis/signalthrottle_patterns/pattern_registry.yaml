@@ -194,6 +194,54 @@ patterns:
     management_action: PROTECT_OR_WAIT_RETEST
     block_reason: HIGH_DENSITY_CONTEXT_NO_CHASE
     function: high density near exhaustion, bearish context, or upper range blocks blind chase
+  - pattern_id: LIQUIDATION_RECLAIM_REQUIRED
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [EURJPY]
+    tier: S
+    family: LIQUIDATION_RECLAIM
+    golden_source: EURJPY
+    entry_permission: WATCH_ONLY_UNTIL_RECLAIM
+    management_action: WAIT_RECLAIM_OR_BREAKDOWN_CONFIRMATION
+    block_reason: LIQUIDATION_RECLAIM_REQUIRED
+    pair_specific_calibration:
+      - JPY_CROSS_CHECK_JPY_BASKET
+      - CHF_CROSS_CHECK_CHF_THEME
+      - CAD_CROSS_CHECK_CAD_THEME
+      - METAL_CHECK_SESSION_VOLATILITY_SPREAD
+    function: extreme liquidation candle requires reclaim or breakdown confirmation before execution
+  - pattern_id: THEME_CONTEXT_ONLY_NOT_STANDALONE
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [EURJPY]
+    tier: S
+    family: THEME_CONTEXT
+    golden_source: EURJPY
+    entry_permission: PAIR_SELECTION_BOOST_ONLY
+    management_action: WAIT_PRICE_CONTEXT
+    block_reason: THEME_CONTEXT_ONLY
+    pair_specific_calibration:
+      - JPY_BASKET_FOR_JPY_PAIRS
+      - CHF_BASKET_FOR_CHF_PAIRS
+      - CAD_BASKET_FOR_CAD_PAIRS
+      - LOCAL_VOLATILITY_AND_SPREAD
+    function: theme or basket dominance boosts selection but is not standalone execution proof
+  - pattern_id: MID_RANGE_CONTINUATION_PULLBACK_REQUIRED
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [EURJPY]
+    tier: A
+    family: CONTINUATION_PULLBACK_REQUIRED
+    golden_source: EURJPY
+    entry_permission: PULLBACK_OR_RECLAIM_ONLY
+    management_action: NO_CHASE
+    block_reason: MID_RANGE_PULLBACK_REQUIRED
+    pair_specific_calibration:
+      - ATR_BASED_PULLBACK_DISTANCE
+      - RECENT_HIGH_LOW_DISTANCE
+      - SESSION_VOLATILITY
+      - THEME_BASKET_CONFIRMATION
+    function: strong structure close near an extreme needs pullback or reclaim because chase RR is poor
   - pattern_id: PHASE_SENSITIVE_BREAKDOWN
     tier: S
     family: BREAKDOWN_CONTINUATION
