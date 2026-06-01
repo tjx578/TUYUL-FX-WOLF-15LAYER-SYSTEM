@@ -416,3 +416,101 @@ patterns:
     management_action: WAIT_PULLBACK_OR_RECLAIM
     hold_policy: SHORT_INTRADAY
     function: no buy chase after upper spike
+
+  # --- Universal Pattern Family (Schema v2 — migrated from pair-specific golden logic) ---
+
+  - pattern_id: LOW_DENSITY_OPEN_LANE_TIMING_BLOCK
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPCAD, AUDNZD]
+    tier: S
+    family: CONTINUATION_TIMING
+    golden_source: GBPCAD/AUDNZD
+    entry_permission: ENTRY_WATCH_OR_BUY_WATCH
+    function: low density sustained pressure block (5-10min) signals open lane continuation before expansion
+
+  - pattern_id: ALLOWED_CANARY_QUORUM
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [AUDCAD, GBPCAD, USDJPY, GBPJPY]
+    tier: A
+    family: CANARY_CONFIDENCE
+    golden_source: AUDCAD/GBPCAD
+    entry_permission: WATCH_BOOST_ONLY
+    function: engine repeated permission burst (3+ allowed same pair) is confidence signal not final direction
+
+  - pattern_id: FALSE_COUNTERFLOW_CANARY
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPCAD]
+    tier: S
+    family: DIRECTION_VALIDATION
+    golden_source: GBPCAD
+    entry_permission: BLOCK_RAW_DIRECTION_WAIT
+    block_reason: FALSE_COUNTERFLOW_CANARY
+    function: allowed direction opposite to confirmed price phase is false canary that must be blocked
+
+  - pattern_id: HIGH_DENSITY_ACCELERATION_CONTINUATION
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPCAD, GBPJPY, EURCAD, CADJPY]
+    tier: A
+    family: CONTINUATION_MANAGEMENT
+    golden_source: GBPCAD/GBPJPY
+    entry_permission: REINFORCE_OR_RETEST_ONLY
+    management_action: HOLD_OR_TRAIL
+    function: high density block with price followthrough confirms continuation when structure has room
+
+  - pattern_id: LATE_DENSE_PRESSURE_MANAGEMENT_ALERT
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPCAD, EURCAD, USDJPY]
+    tier: S
+    family: TRADE_MANAGEMENT
+    golden_source: GBPCAD/EURCAD
+    entry_permission: NO_NEW_ENTRY
+    management_action: PROTECT_PROFIT_OR_PARTIAL_CLOSE
+    function: short high-density burst near key level after move is protect-no-chase management alert
+
+  - pattern_id: CLEAN_SAME_PAIR_TAKEOVER
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [EURAUD, GBPNZD]
+    tier: A
+    family: PAIR_PRIORITY_SELECTION
+    golden_source: EURAUD/GBPNZD
+    entry_permission: PRIORITY_SIGNAL_WATCH
+    function: same pair dominates run sequence without interruption and with phase alignment
+
+  - pattern_id: BASKET_THEME_CONFIRMATION_CONTEXT
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [NZDCAD, CADJPY, CADCHF]
+    tier: A
+    family: OPTIONAL_CONTEXT
+    golden_source: NZDCAD/CADJPY/CADCHF
+    entry_permission: BOOST_SCORE_ONLY
+    function: multiple related pairs active with consistent basket direction boosts pair selection score only
+
+  - pattern_id: TIMING_VALID_NOT_FINAL
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPJPY, EURCAD, CADJPY, GBPCAD]
+    tier: S
+    family: SAFETY_GATE
+    golden_source: GBPJPY/EURCAD
+    entry_permission: WAIT_PRICE_PHASE_CONFIRMATION
+    management_action: WAIT_DIRECTION_VALIDATION
+    function: duration valid block but price phase unconfirmed means timing-only watch not final signal
+
+  - pattern_id: SIGNAL_LIFECYCLE_CONFLICT_WATCH
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [USDJPY, USDCAD]
+    tier: S
+    family: LIFECYCLE_MANAGEMENT
+    golden_source: USDJPY/USDCAD
+    entry_permission: KEEP_ACTIVE_OR_WAIT_RESOLUTION
+    management_action: WAIT_LIFECYCLE_RESOLUTION
+    block_reason: LIFECYCLE_CONFLICT_UNRESOLVED
+    function: active signal exists and new opposing candidate requires lifecycle conflict resolution before action

@@ -50,7 +50,9 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
     pressure_temperature = _text(data.get("pressure_temperature")).upper()
     price_position = _normalize_position(data.get("price_position"))
     final_direction = _normalize_direction(data.get("final_direction"))
-    raw_direction = _normalize_direction(data.get("raw_allowed_direction") or data.get("raw_direction") or data.get("direction"))
+    raw_direction = _normalize_direction(
+        data.get("raw_allowed_direction") or data.get("raw_direction") or data.get("direction")
+    )
     theme_aligned = _optional_bool(data.get("theme_aligned"))
     jpy_alignment = _text(data.get("jpy_alignment") or data.get("jpy_alignment_status")).upper()
     dual_theme_status = _text(data.get("dual_theme_status")).upper()
@@ -65,6 +67,7 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
     _add_pair_role_candidate(candidates, evidence, symbol, pair_patterns, raw_direction, final_direction, data)
     _add_universal_reference_candidate(candidates, evidence, symbol, raw_direction, final_direction, data)
     _add_structural_universal_candidate(candidates, evidence, symbol, raw_direction, final_direction, data)
+    _add_new_universal_pattern_candidates(candidates, evidence, data, symbol, raw_direction, final_direction)
     _add_theme_candidate(candidates, evidence, symbol, theme_aligned, jpy_alignment, dual_theme_status, pair_patterns)
     _add_metal_candidate(candidates, evidence, symbol, price_position, data)
     _add_major_context_candidate(candidates, evidence, symbol, data)
@@ -73,7 +76,9 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
     selected_id = _select_candidate(candidates)
     selected = get_pattern(selected_id)
     selected_payload = selected.to_dict() if selected else {}
-    matched = [pattern_id for pattern_id, _ in sorted(candidates.items(), key=lambda item: (item[1], item[0]), reverse=True)]
+    matched = [
+        pattern_id for pattern_id, _ in sorted(candidates.items(), key=lambda item: (item[1], item[0]), reverse=True)
+    ]
     pattern_match_score = _pattern_match_score(data, selected, candidates.get(selected_id or "", 0))
     execution_readiness_score = _execution_readiness_score(data, selected, pattern_match_score, evidence)
     block_reason = _block_reason_from_features(data)
@@ -329,9 +334,7 @@ def _add_universal_reference_candidate(
     bearish_context = _is_bearish_or_mixed_bearish(h1_phase) or _is_bearish_or_mixed_bearish(h4_phase)
     jpy_not_conflicting = not _is_jpy_cross(symbol) or jpy_alignment not in {"CONFLICT", "MIXED", "BLOCKED"}
     supportive_higher_tf = (
-        _is_bullish_or_reclaim(h1_phase)
-        or _is_bullish_or_reclaim(h4_phase)
-        or _is_bullish_or_reclaim(d1_phase)
+        _is_bullish_or_reclaim(h1_phase) or _is_bullish_or_reclaim(h4_phase) or _is_bullish_or_reclaim(d1_phase)
     )
     m15_pullback = m15_phase in {"PULLBACK", "BEARISH_PULLBACK", "MIXED", "BEARISH"} or (
         close_pos_raw is not None and close_pos <= 0.25
@@ -384,13 +387,7 @@ def _add_universal_reference_candidate(
         _bump(candidates, "MICROBURST_FOLLOWTHROUGH_RECLAIM", 72)
         evidence.append("universal_microburst_followthrough_reclaim")
 
-    if (
-        direction == "BUY"
-        and duration >= 600.0
-        and supportive_higher_tf
-        and jpy_not_conflicting
-        and not late_upper
-    ):
+    if direction == "BUY" and duration >= 600.0 and supportive_higher_tf and jpy_not_conflicting and not late_upper:
         _bump(candidates, "OPEN_LANE_TIMING_VALID", 54)
         evidence.append("universal_open_lane_continuation")
 
@@ -454,7 +451,9 @@ def _add_universal_reference_candidate(
         evidence.append("mature_microboost_reclaim_required")
 
     delayed_higher_tf = _is_bullish_or_reclaim(h4_phase) or _is_bullish_or_reclaim(d1_phase)
-    weak_lower_tf = first_60m_failed or _is_bearish_or_mixed_bearish(m15_phase) or _is_bearish_or_mixed_bearish(h1_phase)
+    weak_lower_tf = (
+        first_60m_failed or _is_bearish_or_mixed_bearish(m15_phase) or _is_bearish_or_mixed_bearish(h1_phase)
+    )
     if direction == "BUY" and duration >= 600.0 and delayed_higher_tf and weak_lower_tf:
         _bump(candidates, "DELAYED_FOLLOWTHROUGH_WATCH", 72)
         evidence.append("delayed_followthrough_watch")
@@ -508,7 +507,9 @@ def _add_structural_universal_candidate(
 
     theme_context_only = _optional_bool(data.get("theme_context_only")) is True
     lower_tf_missing = _optional_bool(data.get("lower_timeframe_confirmation")) is False
-    fragmented_run = _optional_bool(data.get("fragmented_run")) is True or _optional_bool(data.get("weak_individual_run")) is True
+    fragmented_run = (
+        _optional_bool(data.get("fragmented_run")) is True or _optional_bool(data.get("weak_individual_run")) is True
+    )
     missing_price_context = (
         _optional_bool(data.get("price_context_complete")) is False
         or _optional_bool(data.get("price_confirmation")) is False
@@ -522,15 +523,168 @@ def _add_structural_universal_candidate(
     symmetry_risk = _optional_bool(data.get("mfe_mae_symmetry_risk")) is True or (
         mfe > 0.0 and mae > 0.0 and min(mfe, mae) / max(mfe, mae) >= 0.75
     )
-    chase_rr_poor = _optional_bool(data.get("chase_rr_poor")) is True or _optional_bool(data.get("near_recent_high_low_without_breakout_close")) is True
-    structure_strong = (
-        _optional_bool(data.get("structure_candle_strong_close")) is True
-        or (close_pos_raw is not None and (close_pos >= 0.85 or close_pos <= 0.15))
+    chase_rr_poor = (
+        _optional_bool(data.get("chase_rr_poor")) is True
+        or _optional_bool(data.get("near_recent_high_low_without_breakout_close")) is True
+    )
+    structure_strong = _optional_bool(data.get("structure_candle_strong_close")) is True or (
+        close_pos_raw is not None and (close_pos >= 0.85 or close_pos <= 0.15)
     )
     mid_range_or_continuation = direction in {"BUY", "SELL"} or _optional_bool(data.get("continuation_context")) is True
     if structure_strong and near_extreme and mid_range_or_continuation and (symmetry_risk or chase_rr_poor):
         _bump(candidates, "MID_RANGE_CONTINUATION_PULLBACK_REQUIRED", 82)
         evidence.append("mid_range_continuation_pullback_required")
+
+
+def _add_new_universal_pattern_candidates(
+    candidates: dict[str, int],
+    evidence: list[str],
+    data: Mapping[str, Any],
+    symbol: str,
+    raw_direction: str | None,
+    final_direction: str | None,
+) -> None:
+    """Detect the 9 new universal patterns (schema v2)."""
+    del symbol
+    direction = final_direction or raw_direction
+    density = _num(data.get("density_per_minute") or data.get("effective_density_per_minute"))
+    duration = _duration_seconds(data)
+    events = _num(data.get("event_count") or data.get("events") or data.get("effective_ticks"))
+    m15_phase = _phase(data.get("m15_phase") or data.get("phase_m15"))
+    h1_phase = _phase(data.get("h1_phase") or data.get("phase_h1") or data.get("h60_phase"))
+    h4_phase = _phase(data.get("h4_phase") or data.get("phase_h4") or data.get("h240_phase"))
+    price_position = _normalize_position(data.get("price_position"))
+    phase_priced_raw = _text(data.get("phase_priced")).upper()
+    pressure_temp = _text(data.get("pressure_temperature")).upper()
+    block_delta_pips = _num(data.get("block_delta_pips"))
+    range_position = _num(data.get("range_position"))
+
+    bullish_phase = _is_bullish_or_reclaim(m15_phase) or _is_bullish_or_reclaim(h1_phase)
+    bearish_phase = _is_bearish_or_mixed_bearish(m15_phase) or _is_bearish_or_mixed_bearish(h1_phase)
+    bullish_higher_tf = _is_bullish_or_reclaim(h4_phase)
+    near_resistance = price_position == "MAIN_RESISTANCE" or range_position >= 0.85
+    near_support = price_position == "MAIN_SUPPORT" or range_position <= 0.15
+    near_extreme = near_resistance or near_support
+    price_extended = block_delta_pips >= 8.0 or range_position >= 0.85
+
+    # 1. LOW_DENSITY_OPEN_LANE_TIMING_BLOCK
+    # Low-density block (0.5-4 dpm), 5-10 min, continuation phase, not at resistance.
+    # Complements OPEN_LANE_TIMING_VALID (which fires at 600+s).
+    if (
+        300.0 <= duration < 600.0
+        and 0.5 <= density < 4.0
+        and events >= 15
+        and not near_resistance
+        and (
+            (direction == "BUY" and bullish_phase)
+            or (direction == "SELL" and bearish_phase)
+        )
+    ):
+        _bump(candidates, "LOW_DENSITY_OPEN_LANE_TIMING_BLOCK", 62)
+        evidence.append("low_density_open_lane_continuation_block_5_10min")
+
+    # 2. ALLOWED_CANARY_QUORUM
+    # 3+ allowed events for the same symbol/direction = confidence burst, not final direction.
+    allowed_count = _num(data.get("allowed_count") or data.get("allowed_total"))
+    allowed_quorum = _optional_bool(data.get("allowed_quorum")) is True
+    if allowed_count >= 3 or allowed_quorum:
+        _bump(candidates, "ALLOWED_CANARY_QUORUM", 44)
+        evidence.append("allowed_canary_quorum_3_or_more_burst")
+
+    # 3. FALSE_COUNTERFLOW_CANARY
+    # Raw allowed direction opposite to strongly confirmed price phase = block false canary.
+    m15_is_bullish = m15_phase in {"BULLISH", "PIVOT_RECLAIM", "RECLAIM", "BULLISH_RECLAIM"}
+    h1_is_bullish = h1_phase in {"BULLISH", "UPTREND", "PIVOT_RECLAIM", "RECLAIM", "BULLISH_RECLAIM"}
+    m15_is_bearish = _is_bearish_or_mixed_bearish(m15_phase)
+    h1_is_bearish = _is_bearish_or_mixed_bearish(h1_phase)
+    reclaim_confirmed = (
+        _optional_bool(data.get("reclaim_confirmed")) is True
+        or _optional_bool(data.get("m15_close_above_resistance")) is True
+    )
+    breakdown_confirmed = (
+        _optional_bool(data.get("breakdown_confirmed")) is True
+        or _optional_bool(data.get("m15_close_below_support")) is True
+    )
+    bullish_phase_confirmed = (m15_is_bullish and h1_is_bullish) or reclaim_confirmed
+    bearish_phase_confirmed = (m15_is_bearish and h1_is_bearish) or breakdown_confirmed
+    if raw_direction == "SELL" and bullish_phase_confirmed:
+        _bump(candidates, "FALSE_COUNTERFLOW_CANARY", 78)
+        evidence.append("false_sell_canary_price_confirms_bullish")
+    elif raw_direction == "BUY" and bearish_phase_confirmed and not bullish_higher_tf:
+        _bump(candidates, "FALSE_COUNTERFLOW_CANARY", 78)
+        evidence.append("false_buy_canary_price_confirms_bearish")
+
+    # 4. HIGH_DENSITY_ACCELERATION_CONTINUATION
+    # High density (8+), price following through, structure not near exhaustion.
+    exhaustion_phase = phase_priced_raw in {"RESISTANCE_PRESSURE_WARNING", "EXHAUSTION_AT_RESISTANCE", "LATE_DENSE_PRESSURE"}
+    price_followthrough = _optional_bool(data.get("price_followthrough")) is True
+    if (
+        density >= 8.0
+        and duration >= 300.0
+        and not exhaustion_phase
+        and not near_extreme
+        and (
+            (direction == "BUY" and bullish_phase)
+            or (direction == "SELL" and bearish_phase)
+            or price_followthrough
+        )
+    ):
+        _bump(candidates, "HIGH_DENSITY_ACCELERATION_CONTINUATION", 44)
+        evidence.append("high_density_acceleration_continuation_room_available")
+
+    # 5. LATE_DENSE_PRESSURE_MANAGEMENT_ALERT
+    # Short high-density burst (<=5min) near key level after move = protect/no-chase.
+    if density >= 8.0 and duration <= 300.0 and (near_extreme or price_extended):
+        _bump(candidates, "LATE_DENSE_PRESSURE_MANAGEMENT_ALERT", 58)
+        evidence.append("late_dense_burst_near_key_level_protect_no_chase")
+
+    # 6. CLEAN_SAME_PAIR_TAKEOVER
+    # Same pair dominates run sequence without interruption and phase is aligned.
+    same_pair_sequence = _optional_bool(data.get("same_pair_sequence")) is True
+    pair_interruption = _optional_bool(data.get("pair_interruption")) is True
+    if same_pair_sequence and not pair_interruption and duration >= 300.0 and events >= 30:
+        _bump(candidates, "CLEAN_SAME_PAIR_TAKEOVER", 58)
+        evidence.append("clean_same_pair_takeover_no_interruption_phase_aligned")
+
+    # 7. BASKET_THEME_CONFIRMATION_CONTEXT
+    # Multiple related pairs active with consistent basket = selection boost only, not execution gate.
+    multiple_pairs_active = _optional_bool(data.get("multiple_pairs_active") or data.get("basket_active")) is True
+    basket_consistent = _optional_bool(data.get("basket_direction_consistent")) is True
+    dual_theme_status = _text(data.get("dual_theme_status")).upper()
+    theme_aligned_local = _optional_bool(data.get("theme_aligned"))
+    basket_boost = (multiple_pairs_active and basket_consistent) or (
+        theme_aligned_local is True and dual_theme_status in {"ALIGNED", "FULL_ALIGNED"}
+    )
+    if basket_boost:
+        _bump(candidates, "BASKET_THEME_CONFIRMATION_CONTEXT", 34)
+        evidence.append("basket_theme_multiple_pairs_consistent_direction")
+
+    # 8. TIMING_VALID_NOT_FINAL
+    # Valid timing block (5+ min) but price phase not classified = watch only, not final signal.
+    price_phase_missing = not phase_priced_raw or phase_priced_raw in {
+        "",
+        "UNKNOWN",
+        "UNRESOLVED",
+        "PRICE_PHASE_UNRESOLVED",
+        "TIMING_VALID",
+    }
+    timing_valid_flag = pressure_temp == "TIMING_VALID" or phase_priced_raw == "TIMING_VALID"
+    price_confirmed = (direction == "BUY" and bullish_phase and not near_resistance) or (
+        direction == "SELL" and bearish_phase and not near_support
+    )
+    if duration >= 300.0 and (price_phase_missing or timing_valid_flag) and not price_confirmed:
+        _bump(candidates, "TIMING_VALID_NOT_FINAL", 46)
+        evidence.append("timing_valid_but_price_phase_unconfirmed_watch_only")
+
+    # 9. SIGNAL_LIFECYCLE_CONFLICT_WATCH
+    # Active signal + new opposing candidate = lifecycle conflict must be resolved first.
+    active_signal_conflict = (
+        _optional_bool(data.get("active_signal_conflict")) is True
+        or _optional_bool(data.get("lifecycle_conflict")) is True
+    )
+    if active_signal_conflict:
+        _bump(candidates, "SIGNAL_LIFECYCLE_CONFLICT_WATCH", 80)
+        evidence.append("lifecycle_conflict_active_signal_vs_new_candidate")
 
 
 def _add_metal_candidate(
@@ -599,7 +753,13 @@ def _execution_readiness_score(
         score += _scoring_penalty("theme_conflict_penalty", -35)
     if selected.entry_permission in {"NO_TRADE", "NO_SELL"}:
         score = min(score, 39)
-    if selected.entry_permission in {"NO_NEW_ENTRY", "NO_MARKET_CHASE", "NO_NEW_BUY", "NO_BUY_CHASE", "BLOCK_NEW_ENTRY"}:
+    if selected.entry_permission in {
+        "NO_NEW_ENTRY",
+        "NO_MARKET_CHASE",
+        "NO_NEW_BUY",
+        "NO_BUY_CHASE",
+        "BLOCK_NEW_ENTRY",
+    }:
         score += _scoring_penalty("late_chase_penalty", -25)
         score = min(score, 69)
     if selected.entry_permission in {
@@ -642,10 +802,7 @@ def _alignment_metadata(
     if not theme_text and status_text and status_text != "ALIGNED":
         theme_text = status_text
     if not theme_text:
-        if theme_aligned is False:
-            theme_text = "MISMATCH"
-        else:
-            theme_text = "NOT_AVAILABLE"
+        theme_text = "MISMATCH" if theme_aligned is False else "NOT_AVAILABLE"
 
     jpy_pair = symbol.endswith("JPY") or symbol.startswith("JPY")
     jpy_status = jpy_alignment or ("UNKNOWN" if jpy_pair else None)
@@ -779,7 +936,10 @@ def _m15_confirmation_bottleneck(data: Mapping[str, Any], selected: GoldenPatter
         or "BREAKDOWN" in action
     ):
         return "COUNTER_ENTRY_NEEDS_CONFIRMATION"
-    if _optional_bool(data.get("active_signal_conflict")) is True or _optional_bool(data.get("lifecycle_conflict")) is True:
+    if (
+        _optional_bool(data.get("active_signal_conflict")) is True
+        or _optional_bool(data.get("lifecycle_conflict")) is True
+    ):
         return "LIFECYCLE_CONFLICT_NEEDS_DECISION"
     return "PRICE_PHASE_AMBIGUOUS"
 
@@ -800,10 +960,7 @@ def _pattern_ids_from_value(value: Any) -> list[str]:
 def _pattern_text_index() -> dict[str, frozenset[str]]:
     global _PATTERN_TEXT_INDEX
     if not _PATTERN_TEXT_INDEX:
-        _PATTERN_TEXT_INDEX = {
-            pattern.pattern_id: frozenset(_pattern_tokens(pattern))
-            for pattern in GOLDEN_PATTERNS
-        }
+        _PATTERN_TEXT_INDEX = {pattern.pattern_id: frozenset(_pattern_tokens(pattern)) for pattern in GOLDEN_PATTERNS}
     return _PATTERN_TEXT_INDEX
 
 
@@ -865,9 +1022,15 @@ def _feature_tokens(data: Mapping[str, Any], *, symbol: str) -> set[str]:
         tokens.update({"LONG", "SUSTAINED", "DELAYED"})
     elif duration >= 300.0:
         tokens.update({"CLEAN", "TIMING", "GATE"})
-    if _optional_bool(data.get("reclaim_confirmed")) is True or _optional_bool(data.get("m15_close_above_resistance")) is True:
+    if (
+        _optional_bool(data.get("reclaim_confirmed")) is True
+        or _optional_bool(data.get("m15_close_above_resistance")) is True
+    ):
         tokens.add("RECLAIM")
-    if _optional_bool(data.get("breakdown_confirmed")) is True or _optional_bool(data.get("m15_close_below_support")) is True:
+    if (
+        _optional_bool(data.get("breakdown_confirmed")) is True
+        or _optional_bool(data.get("m15_close_below_support")) is True
+    ):
         tokens.add("BREAKDOWN")
     return tokens
 
