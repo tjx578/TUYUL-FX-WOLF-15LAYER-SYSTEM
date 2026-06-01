@@ -292,15 +292,12 @@ def _add_theme_candidate(
     dual_theme_status: str,
     pair_patterns: set[str],
 ) -> None:
+    _ = theme_aligned
     if symbol.endswith("JPY") or symbol.startswith("JPY"):
         _bump(candidates, "JPY_ALIGNMENT_REQUIRED", 20)
-        evidence.append("jpy_cross_requires_alignment")
+        evidence.append("jpy_cross_alignment_metadata")
         if jpy_alignment in {"CONFLICT", "MIXED", "BLOCKED"} or dual_theme_status == "CONFLICT":
-            _bump(candidates, "CLEAN_BLOCK_BUT_THEME_CONFLICT", 60)
-            evidence.append("jpy_or_dual_theme_conflict")
-    if theme_aligned is False:
-        _bump(candidates, "CLEAN_BLOCK_BUT_THEME_CONFLICT", 50)
-        evidence.append("theme_mismatch")
+            evidence.append("jpy_or_dual_theme_conflict_metadata_only")
     if "MIRROR_BASKET_CONFIRMATION" in pair_patterns or symbol in {"NZDCAD", "CADCHF", "CADJPY"}:
         _bump(candidates, "MIRROR_BASKET_CONFIRMATION", 10)
         evidence.append("mirror_basket_role_available")
@@ -580,8 +577,6 @@ def _pattern_match_score(
     score += _tier_weight(selected.tier)
     score += min(20, int(_num(data.get("density_per_minute") or data.get("effective_density_per_minute")) * 2))
     score += min(15, int((_num(data.get("duration_seconds")) or _num(data.get("duration_minutes")) * 60.0) / 60.0))
-    if _optional_bool(data.get("theme_aligned")) is True:
-        score += 10
     return max(0, min(100, int(score)))
 
 
@@ -683,8 +678,6 @@ def _default_entry_permission(data: Mapping[str, Any]) -> str:
 
 
 def _block_reason_from_features(data: Mapping[str, Any]) -> str | None:
-    if _optional_bool(data.get("theme_aligned")) is False:
-        return "THEME_MISMATCH"
     if _optional_bool(data.get("spread_normal")) is False:
         return "SPREAD_NOT_NORMAL"
     return None
@@ -751,10 +744,6 @@ def _pattern_bottlenecks(
         bottlenecks.append("NO_PATTERN_CANDIDATE_FROM_DATABASE")
     if pattern_match_score >= 75 and execution_readiness_score <= 69:
         bottlenecks.append("PATTERN_MATCHED_BUT_EXECUTION_READINESS_BLOCKED")
-    if alignment.get("theme_alignment_status") == "NOT_AVAILABLE":
-        bottlenecks.append("THEME_SNAPSHOT_NOT_AVAILABLE")
-    if alignment.get("jpy_alignment_status") == "UNKNOWN":
-        bottlenecks.append("JPY_ALIGNMENT_MISSING")
     if _optional_bool(data.get("support_ladder_ready")) is False:
         bottlenecks.append("SUPPORT_LADDER_MISSING")
     if _optional_bool(data.get("resistance_ladder_ready")) is False:
@@ -768,10 +757,31 @@ def _pattern_bottlenecks(
     if _optional_bool(data.get("valid_for_execution")) is False:
         bottlenecks.append("VALID_FOR_EXECUTION_FALSE")
     if _optional_bool(data.get("requires_m15_close")) is True:
-        bottlenecks.append("M15_CLOSE_CONFIRMATION_REQUIRED")
+        bottlenecks.append(_m15_confirmation_bottleneck(data, selected))
     if str(data.get("final_direction") or "").upper() == "WAIT":
         bottlenecks.append("FINAL_DIRECTION_WAIT")
     return bottlenecks or None
+
+
+def _m15_confirmation_bottleneck(data: Mapping[str, Any], selected: GoldenPattern | None) -> str:
+    status = str(data.get("status") or data.get("signalwatch_status") or "").upper()
+    family = str(data.get("signal_family") or "").upper()
+    phase_priced = str(data.get("phase_priced") or "").upper()
+    action = str(data.get("action") or "").upper()
+    pattern_family = str(selected.family if selected else "").upper()
+    if "REVERSAL" in status or "REVERSAL" in family or "REVERSAL" in pattern_family:
+        return "REVERSAL_WATCH_NEEDS_REJECTION"
+    if (
+        "ABSORPTION" in status
+        or "COUNTER" in family
+        or phase_priced in {"RESISTANCE_PRESSURE_WARNING", "SUPPORT_PRESSURE_WARNING"}
+        or "REJECTION" in action
+        or "BREAKDOWN" in action
+    ):
+        return "COUNTER_ENTRY_NEEDS_CONFIRMATION"
+    if _optional_bool(data.get("active_signal_conflict")) is True or _optional_bool(data.get("lifecycle_conflict")) is True:
+        return "LIFECYCLE_CONFLICT_NEEDS_DECISION"
+    return "PRICE_PHASE_AMBIGUOUS"
 
 
 def _pattern_ids_from_value(value: Any) -> list[str]:
@@ -859,8 +869,6 @@ def _feature_tokens(data: Mapping[str, Any], *, symbol: str) -> set[str]:
         tokens.add("RECLAIM")
     if _optional_bool(data.get("breakdown_confirmed")) is True or _optional_bool(data.get("m15_close_below_support")) is True:
         tokens.add("BREAKDOWN")
-    if _optional_bool(data.get("theme_aligned")) is False:
-        tokens.update({"THEME", "CONFLICT", "MISMATCH"})
     return tokens
 
 
