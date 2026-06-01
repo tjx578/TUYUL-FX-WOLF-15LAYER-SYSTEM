@@ -109,6 +109,14 @@ PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES = CONTINUATION_SIGNAL_STATUSES | {
 }
 
 MIN_EXECUTABLE_TP1_RR = 2.0
+UNIVERSAL_PATTERN_SCHEMA_VERSION = "2.0-universal-pattern"
+
+PAIR_REFERENCE_COMPAT_FIELDS = {
+    "golden_reference",
+    "golden_references",
+    "pair_specific_calibration",
+    "pair_role",
+}
 
 V11_OUTPUT_ONLY_FIELDS = {
     "signal_archetype",
@@ -338,6 +346,13 @@ class SignalJsonEvent:
     chase_allowed: bool | None = None
     block_reason: str | None = None
     pattern_evidence: list[str] | None = None
+    reference_cases: list[dict[str, Any]] | None = None
+    pair_calibration: dict[str, Any] | None = None
+    pattern_context: dict[str, Any] | None = None
+    theme_context: dict[str, Any] | None = None
+    tradeplan_preview: dict[str, Any] | None = None
+    execution_gate: dict[str, Any] | None = None
+    lifecycle: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -437,7 +452,7 @@ class SignalJsonEmitter:
         payload["is_final_signal"] = bool(payload.get("is_final_signal") or _is_final_payload(payload))
         payload["emit_reason"] = payload.get("emit_reason") or _emit_reason(event.status)
         payload["signal_quality"] = payload.get("signal_quality") or _signal_quality(payload)
-        payload = _schema_v1_payload(payload)
+        payload = _universal_pattern_payload(payload)
         prefix = self.decision_update_prefix if is_decision_update else (self.watch_prefix if is_watch else self.prefix)
         self.logger.warning("%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
         if is_watch:
@@ -629,7 +644,7 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         event="signal_decision_update_json"
         if is_decision_update
         else ("signal_watch_json" if is_watch else "signal_json"),
-        schema_version="1.0",
+        schema_version=UNIVERSAL_PATTERN_SCHEMA_VERSION,
         symbol=symbol,
         signal_family=str(
             counter_entry.get("signal_family") or counter_entry.get("signal_type") or "MICROBOOST_COUNTER_ENTRY"
@@ -727,9 +742,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         price_delta_pips=_optional_float(counter_entry.get("price_delta_pips")),
         theme_alignment=_optional_str(counter_entry.get("theme_alignment")),
         jpy_alignment_status=_optional_str(counter_entry.get("jpy_alignment_status")),
-        theme_alignment_status=_optional_str(counter_entry.get("theme_alignment_status")),
+        theme_alignment_status=_theme_alignment_status(counter_entry),
         dual_theme_status=_optional_str(counter_entry.get("dual_theme_status")),
-        alignment_missing_reason=_optional_str(counter_entry.get("alignment_missing_reason")),
+        alignment_missing_reason=_alignment_missing_reason(counter_entry),
         structure_ready=_optional_bool(counter_entry.get("structure_ready")),
         rr_to_valid_target=_optional_float(counter_entry.get("rr_to_valid_target")),
         m15_confirmation_status=_optional_str(counter_entry.get("m15_confirmation_status")),
@@ -812,6 +827,13 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         chase_allowed=_optional_bool(counter_entry.get("chase_allowed")),
         block_reason=_optional_str(counter_entry.get("block_reason")),
         pattern_evidence=_string_list(counter_entry.get("pattern_evidence")),
+        reference_cases=_reference_cases(counter_entry),
+        pair_calibration=_pair_calibration(counter_entry, symbol=symbol),
+        pattern_context=_pattern_context(counter_entry),
+        theme_context=_theme_context(counter_entry),
+        tradeplan_preview=_tradeplan_preview(counter_entry),
+        execution_gate=_execution_gate_context(counter_entry),
+        lifecycle=_lifecycle_context(counter_entry),
     )
 
 
@@ -1048,8 +1070,332 @@ def _float_list(value: Any) -> list[float]:
     return values
 
 
+def _universal_pattern_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    universal = dict(payload)
+    universal["schema_version"] = UNIVERSAL_PATTERN_SCHEMA_VERSION
+    universal["theme_alignment_status"] = _theme_alignment_status(universal)
+    universal["alignment_missing_reason"] = _alignment_missing_reason(universal)
+    universal["reference_cases"] = _reference_cases(universal)
+    universal["pair_calibration"] = _pair_calibration(universal)
+    universal["pattern_context"] = _dict_value(universal.get("pattern_context")) or _pattern_context(universal)
+    universal["theme_context"] = _dict_value(universal.get("theme_context")) or _theme_context(universal)
+    universal["tradeplan_preview"] = _dict_value(universal.get("tradeplan_preview")) or _tradeplan_preview(universal)
+    universal["execution_gate"] = _dict_value(universal.get("execution_gate")) or _execution_gate_context(universal)
+    universal["lifecycle"] = _dict_value(universal.get("lifecycle")) or _lifecycle_context(universal)
+    return _schema_v2_payload(universal)
+
+
 def _schema_v1_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key not in V11_OUTPUT_ONLY_FIELDS}
+
+
+def _schema_v2_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    hidden = V11_OUTPUT_ONLY_FIELDS | PAIR_REFERENCE_COMPAT_FIELDS
+    return {key: value for key, value in payload.items() if key not in hidden}
+
+
+def _pattern_context(payload: dict[str, Any]) -> dict[str, Any] | None:
+    selected_pattern_id = _optional_str(payload.get("selected_pattern_id"))
+    matched_patterns = _string_list_any(payload.get("matched_patterns"))
+    reference_cases = _reference_cases(payload)
+    pattern_evidence = _string_list_any(payload.get("pattern_evidence"))
+    if not any(
+        (
+            selected_pattern_id,
+            matched_patterns,
+            _optional_str(payload.get("pattern_family")),
+            _optional_str(payload.get("pattern_tier")),
+            _optional_int(payload.get("pattern_score")),
+            _optional_int(payload.get("pattern_match_score")),
+            _optional_int(payload.get("execution_readiness_score")),
+            reference_cases,
+            pattern_evidence,
+        )
+    ):
+        return None
+    context = {
+        "selected_pattern_id": selected_pattern_id,
+        "matched_patterns": matched_patterns,
+        "pattern_family": _optional_str(payload.get("pattern_family")),
+        "pattern_scope": _optional_str(payload.get("pattern_scope")) or "UNIVERSAL",
+        "applies_to": _optional_str(payload.get("applies_to")) or "ALL_PAIRS_IF_CONDITIONS_MATCH",
+        "pattern_tier": _optional_str(payload.get("pattern_tier")),
+        "pattern_score": _optional_int(payload.get("pattern_score")),
+        "pattern_match_score": _optional_int(payload.get("pattern_match_score")),
+        "execution_readiness_score": _optional_int(payload.get("execution_readiness_score")),
+        "reference_cases": reference_cases,
+        "pattern_evidence": pattern_evidence,
+    }
+    return _clean_context(context)
+
+
+def _reference_cases(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
+    raw_cases = payload.get("reference_cases")
+    if isinstance(raw_cases, list):
+        cases = []
+        for item in raw_cases:
+            case = _reference_case_from_item(item, payload)
+            if case is not None:
+                cases.append(case)
+        if cases:
+            return _dedup_reference_cases(cases)
+
+    refs = _string_list_any(payload.get("golden_references")) or _string_list_any(payload.get("golden_reference"))
+    cases = []
+    for ref in refs or []:
+        for symbol in _split_reference_symbols(ref):
+            case = _reference_case_from_item({"symbol": symbol}, payload)
+            if case is not None:
+                cases.append(case)
+    return _dedup_reference_cases(cases) or None
+
+
+def _reference_case_from_item(item: Any, payload: dict[str, Any]) -> dict[str, Any] | None:
+    if isinstance(item, dict):
+        symbol = _optional_str(item.get("symbol") or item.get("pair"))
+        if symbol is None:
+            return None
+        case = dict(item)
+    else:
+        symbol = _optional_str(item)
+        if symbol is None:
+            return None
+        case = {"symbol": symbol}
+    pattern_id = _optional_str(payload.get("selected_pattern_id"))
+    case["symbol"] = str(symbol).upper()
+    case.setdefault("role", "GOLDEN_REFERENCE_CASE")
+    case.setdefault("note", "Reference only; pattern is universal, not pair-locked.")
+    if pattern_id:
+        case.setdefault("reason", f"historical validation source for {pattern_id}")
+    return _clean_context(case)
+
+
+def _dedup_reference_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for case in cases:
+        symbol = _optional_str(case.get("symbol"))
+        if symbol is None or symbol in seen:
+            continue
+        seen.add(symbol)
+        deduped.append(case)
+    return deduped
+
+
+def _pair_calibration(payload: dict[str, Any], *, symbol: str | None = None) -> dict[str, Any] | None:
+    existing = _dict_value(payload.get("pair_calibration")) or {}
+    pair_symbol = str(symbol or payload.get("symbol") or existing.get("symbol") or "").upper()
+    if not pair_symbol and not existing:
+        return None
+
+    theme_groups = _theme_groups_for_symbol(pair_symbol)
+    calibration = {
+        "symbol": pair_symbol or None,
+        "asset_class": _asset_class_for_symbol(pair_symbol),
+        "calibration_role": "CURRENT_PAIR_CONTEXT_ONLY",
+        "pip_size": _optional_float(payload.get("pip_size")) or _pip_size_for_symbol(pair_symbol),
+        "theme_groups": theme_groups,
+        "basket_alignment_required": bool(theme_groups) or None,
+        "pair_specific_logic_locked": False,
+    }
+    calibration.update(existing)
+
+    pair_role = _optional_str(payload.get("pair_role"))
+    if pair_role is not None:
+        calibration.setdefault("role_hint", pair_role)
+    pair_specific = _string_list_any(payload.get("pair_specific_calibration"))
+    if pair_specific:
+        calibration.setdefault("pair_specific_calibration", pair_specific)
+    return _clean_context(calibration)
+
+
+def _theme_context(payload: dict[str, Any]) -> dict[str, Any] | None:
+    context = {
+        "theme_alignment": _optional_str(payload.get("theme_alignment")),
+        "theme_alignment_status": _theme_alignment_status(payload),
+        "alignment_missing_reason": _alignment_missing_reason(payload),
+        "jpy_alignment_status": _optional_str(payload.get("jpy_alignment_status")),
+        "dual_theme_status": _optional_str(payload.get("dual_theme_status")),
+    }
+    return _clean_context(context)
+
+
+def _tradeplan_preview(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if not any(
+        payload.get(key) is not None
+        for key in (
+            "target_mode",
+            "tp_status",
+            "support_ladder_ready",
+            "structure_targets_available",
+            "tradeplan_context_ready",
+            "targets_execution_usable",
+            "risk_pips",
+        )
+    ):
+        return None
+
+    levels = {
+        "entry_zone": _float_list(payload.get("entry_zone")) or None,
+        "sl_tight": _optional_float(payload.get("sl_tight")),
+        "sl_safe": _optional_float(payload.get("sl_safe")),
+        "tp1": _optional_float(payload.get("tp1")),
+        "tp2": _optional_float(payload.get("tp2")),
+        "tp3": _optional_float(payload.get("tp3")),
+        "tp4": _optional_float(payload.get("tp4")),
+    }
+    target_mode = _optional_str(payload.get("target_mode"))
+    context = {
+        "target_mode": target_mode,
+        "tp_status": _optional_str(payload.get("tp_status")),
+        "support_ladder_ready": _optional_bool(payload.get("support_ladder_ready")),
+        "resistance_ladder_ready": _optional_bool(payload.get("resistance_ladder_ready")),
+        "structure_targets_available": _optional_bool(payload.get("structure_targets_available")),
+        "tradeplan_context_ready": _optional_bool(payload.get("tradeplan_context_ready")),
+        "targets_execution_usable": _optional_bool(payload.get("targets_execution_usable")),
+        "target_block_reason": _optional_str(payload.get("target_block_reason")),
+        "risk_pips": _optional_float(payload.get("risk_pips")),
+        "min_rr_required": _optional_float(payload.get("min_rr_required")),
+        "tp_min_rr": _optional_float(payload.get("tp_min_rr")),
+        "provisional_levels": _clean_context(levels)
+        if str(target_mode or "").upper() == "PROVISIONAL_RR_FALLBACK"
+        else None,
+        "structure_levels": _clean_context(levels)
+        if str(target_mode or "").upper() == "FINAL_MARKET_STRUCTURE"
+        else None,
+    }
+    return _clean_context(context)
+
+
+def _execution_gate_context(payload: dict[str, Any]) -> dict[str, Any] | None:
+    target_mode = str(payload.get("target_mode") or "").upper()
+    target_usable = _optional_bool(payload.get("targets_execution_usable"))
+    block_reason = _optional_str(payload.get("block_reason") or payload.get("target_block_reason"))
+    if block_reason is None and target_mode == "PROVISIONAL_RR_FALLBACK" and target_usable is False:
+        block_reason = "WATCH_ONLY_PENDING_M15_OR_STRUCTURE_TARGET_MISSING"
+    context = {
+        "entry_permission": _optional_str(payload.get("entry_permission")),
+        "chase_allowed": _optional_bool(payload.get("chase_allowed")),
+        "management_action": _optional_str(payload.get("management_action")),
+        "hold_policy": _optional_str(payload.get("hold_policy")),
+        "block_reason": block_reason,
+        "valid_for_execution": _optional_bool(payload.get("valid_for_execution")),
+        "execution_valid_now": _optional_bool(payload.get("execution_valid_now")),
+        "execution_status": _optional_str(payload.get("execution_status")),
+        "execution_reason": _optional_str(payload.get("execution_reason")),
+    }
+    return _clean_context(context)
+
+
+def _lifecycle_context(payload: dict[str, Any]) -> dict[str, Any] | None:
+    context = {
+        "cluster_id": _optional_str(payload.get("cluster_id")),
+        "signal_id": _optional_str(payload.get("signal_id")),
+        "pending_decision_id": _optional_str(payload.get("pending_decision_id")),
+        "is_final_signal": _optional_bool(payload.get("is_final_signal")),
+        "linked_previous_signal": _optional_str(payload.get("linked_previous_signal")),
+        "previous_signal_status": _optional_str(payload.get("previous_signal_status")),
+        "lifecycle_status": _optional_str(payload.get("lifecycle_status")),
+        "decision_watch_type": _optional_str(payload.get("decision_watch_type")),
+        "decision_update_trigger": _optional_str(payload.get("decision_update_trigger")),
+        "next_action": _optional_str(payload.get("next_action")),
+        "pending_age_seconds": _optional_float(payload.get("pending_age_seconds")),
+    }
+    return _clean_context(context)
+
+
+def _theme_alignment_status(payload: dict[str, Any]) -> str | None:
+    theme_alignment = _optional_str(payload.get("theme_alignment"))
+    status = _optional_str(payload.get("theme_alignment_status"))
+    if theme_alignment is None and (status is None or status.upper() in {"ALIGNED", "UNKNOWN"}):
+        return "NOT_AVAILABLE"
+    return status
+
+
+def _alignment_missing_reason(payload: dict[str, Any]) -> str | None:
+    raw = _optional_str(payload.get("alignment_missing_reason"))
+    parts = [part.strip() for part in str(raw or "").split(",") if part.strip()]
+    theme_alignment = _optional_str(payload.get("theme_alignment"))
+    status = _theme_alignment_status(payload)
+    if theme_alignment is None and status == "NOT_AVAILABLE":
+        basket_reason = "basket_snapshot_missing_or_not_computed"
+        if basket_reason not in parts and "theme_alignment" not in parts:
+            parts.insert(0, basket_reason)
+    return ",".join(parts) if parts else None
+
+
+def _string_list_any(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple, set)):
+        items = []
+        for item in value:
+            items.extend(_split_reference_symbols(str(item)))
+        return items or None
+    return _split_reference_symbols(str(value)) or None
+
+
+def _split_reference_symbols(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    symbols: list[str] = []
+    for chunk in text.replace(",", "/").split("/"):
+        symbol = chunk.strip().upper()
+        if symbol:
+            symbols.append(symbol)
+    return symbols
+
+
+def _theme_groups_for_symbol(symbol: str) -> list[str] | None:
+    if len(symbol) < 6:
+        return None
+    base = symbol[:3]
+    quote = symbol[3:6]
+    if base in {"XAU", "XAG"}:
+        return ["USD_BASKET", "METAL_SESSION"]
+    if base.isalpha() and quote.isalpha():
+        return [f"{base}_BASKET", f"{quote}_BASKET"]
+    return None
+
+
+def _asset_class_for_symbol(symbol: str) -> str | None:
+    if not symbol:
+        return None
+    if symbol.startswith(("XAU", "XAG")):
+        return "METAL"
+    if len(symbol) >= 6 and symbol[:6].isalpha():
+        return "FX"
+    return None
+
+
+def _pip_size_for_symbol(symbol: str) -> float | None:
+    if not symbol:
+        return None
+    if symbol.startswith(("XAU", "XAG")):
+        return 0.01
+    quote = symbol[3:6] if len(symbol) >= 6 else ""
+    return 0.01 if quote == "JPY" else 0.0001
+
+
+def _clean_context(value: Any) -> Any:
+    if isinstance(value, dict):
+        cleaned = {}
+        for key, item in value.items():
+            cleaned_item = _clean_context(item)
+            if cleaned_item is None or cleaned_item == [] or cleaned_item == {}:
+                continue
+            cleaned[key] = cleaned_item
+        return cleaned or None
+    if isinstance(value, list):
+        cleaned_list = []
+        for item in value:
+            cleaned_item = _clean_context(item)
+            if cleaned_item is None or cleaned_item == [] or cleaned_item == {}:
+                continue
+            cleaned_list.append(cleaned_item)
+        return cleaned_list or None
+    return value
 
 
 def _dict_value(value: Any) -> dict[str, Any] | None:
