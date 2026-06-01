@@ -51,6 +51,19 @@ class MicroboostContinuationResult:
     price_position: str | None = None
     m15_phase: str | None = None
     h1_phase: str | None = None
+    matched_patterns: list[str] | None = None
+    selected_pattern_id: str | None = None
+    pattern_tier: str | None = None
+    pattern_family: str | None = None
+    pattern_score: int | None = None
+    golden_reference: str | None = None
+    pair_role: str | None = None
+    entry_permission: str | None = None
+    management_action: str | None = None
+    hold_policy: str | None = None
+    chase_allowed: bool | None = None
+    block_reason: str | None = None
+    pattern_evidence: list[str] | None = None
     effective_density: float | None = None
     effective_ticks: int | None = None
     duration_seconds: float | None = None
@@ -166,6 +179,7 @@ class MicroboostContinuationEngine:
             "price_delta_pips": _price_delta_pips(price_start, price_end, pip_value),
             "allowed_quorum": quorum_ok,
             "allowed_quorum_streak": _optional_int(quorum.get("streak")),
+            **_pattern_base_fields(cluster),
         }
 
         if not self._is_valid_continuation_context(
@@ -541,6 +555,24 @@ def _field(obj: Any, name: str, default: Any = None) -> Any:
     return getattr(obj, name, default)
 
 
+def _pattern_base_fields(source: Any) -> dict[str, Any]:
+    return {
+        "matched_patterns": _string_list(_field(source, "matched_patterns", None)),
+        "selected_pattern_id": _optional_str(_field(source, "selected_pattern_id", None)),
+        "pattern_tier": _optional_str(_field(source, "pattern_tier", None)),
+        "pattern_family": _optional_str(_field(source, "pattern_family", None)),
+        "pattern_score": _optional_int(_field(source, "pattern_score", None)),
+        "golden_reference": _optional_str(_field(source, "golden_reference", None)),
+        "pair_role": _optional_str(_field(source, "pair_role", None)),
+        "entry_permission": _optional_str(_field(source, "entry_permission", None)),
+        "management_action": _optional_str(_field(source, "management_action", None)),
+        "hold_policy": _optional_str(_field(source, "hold_policy", None)),
+        "chase_allowed": _optional_bool(_field(source, "chase_allowed", None)),
+        "block_reason": _optional_str(_field(source, "block_reason", None)),
+        "pattern_evidence": _string_list(_field(source, "pattern_evidence", None)),
+    }
+
+
 def _normalize_direction(value: Any) -> str | None:
     text = str(value or "").strip().upper()
     if text in {"BUY", "SELL"}:
@@ -579,6 +611,26 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y"}:
+        return True
+    if text in {"0", "false", "no", "n"}:
+        return False
+    return None
+
+
+def _string_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    values = [str(item) for item in value if str(item or "").strip()]
+    return values or None
 
 
 def _price_start(cluster: Any, snapshot: dict[str, Any] | None) -> float | None:
