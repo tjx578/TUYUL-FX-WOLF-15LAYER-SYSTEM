@@ -3,6 +3,7 @@ from __future__ import annotations
 from analysis.signal_json_emitter import (
     SignalJsonEmitter,
     SignalJsonEvent,
+    UNIVERSAL_PATTERN_SCHEMA_VERSION,
     build_signal_json_event,
     should_emit_signal_json,
 )
@@ -11,7 +12,7 @@ from analysis.signal_json_emitter import (
 def _event(**overrides):
     payload = {
         "event": "signal_json",
-        "schema_version": "1.0",
+        "schema_version": UNIVERSAL_PATTERN_SCHEMA_VERSION,
         "symbol": "USDCAD",
         "signal_family": "MICROBOOST_COUNTER_ENTRY",
         "status": "NANO_ABSORPTION_SELL_WATCH",
@@ -58,7 +59,7 @@ def test_signal_json_emits_counter_entry_watch(caplog):
 
     assert emitter.emit(event) is True
     assert "[SignalWatchJSON]" in caplog.text
-    assert '"schema_version":"1.0"' in caplog.text
+    assert f'"schema_version":"{UNIVERSAL_PATTERN_SCHEMA_VERSION}"' in caplog.text
     assert '"symbol":"USDCAD"' in caplog.text
     assert '"candidate_direction":"SELL"' in caplog.text
     assert '"status":"NANO_ABSORPTION_SELL_WATCH"' in caplog.text
@@ -189,7 +190,7 @@ def test_build_signal_json_event_from_counter_entry_payload():
     assert event.event == "signal_watch_json"
     assert event.is_final_signal is False
     assert event.signal_quality == "WATCH_ONLY"
-    assert event.schema_version == "1.0"
+    assert event.schema_version == UNIVERSAL_PATTERN_SCHEMA_VERSION
 
 
 def test_build_signal_json_event_retains_golden_pattern_contract_fields():
@@ -224,8 +225,51 @@ def test_build_signal_json_event_retains_golden_pattern_contract_fields():
     assert event.pattern_match_score == 92
     assert event.execution_readiness_score == 58
     assert event.jpy_alignment_status == "UNKNOWN"
-    assert event.alignment_missing_reason == "jpy_alignment,dual_theme_status"
+    assert event.theme_alignment_status == "NOT_AVAILABLE"
+    assert event.alignment_missing_reason == "basket_snapshot_missing_or_not_computed,jpy_alignment,dual_theme_status"
+    assert event.reference_cases == [
+        {
+            "symbol": "USDJPY",
+            "role": "GOLDEN_REFERENCE_CASE",
+            "note": "Reference only; pattern is universal, not pair-locked.",
+            "reason": "historical validation source for UPPER_ABSORPTION_WARNING",
+        }
+    ]
+    assert event.pair_calibration is not None
+    assert event.pair_calibration["symbol"] == "USDJPY"
+    assert event.pair_calibration["pair_specific_logic_locked"] is False
+    assert event.pattern_context is not None
+    assert event.pattern_context["pattern_scope"] == "UNIVERSAL"
     assert event.signal_id == "USDJPY_SELL_WATCH_20260519_145605"
+
+
+def test_emitted_payload_uses_universal_pattern_context_not_pair_owned_fields(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="USDCAD_20260601T084153Z",
+        symbol="USDCAD",
+        selected_pattern_id="UPPER_ABSORPTION_WARNING",
+        pattern_family="EXHAUSTION_MANAGEMENT",
+        pattern_scope="UNIVERSAL",
+        golden_reference="USDJPY",
+        pair_role="MACRO_ANCHOR_AND_SIGNALWATCH_LIFECYCLE",
+        theme_alignment=None,
+        theme_alignment_status="ALIGNED",
+        support_ladder_ready=False,
+        structure_targets_available=False,
+        tradeplan_context_ready=False,
+        targets_execution_usable=False,
+        target_mode="PROVISIONAL_RR_FALLBACK",
+    )
+
+    assert emitter.emit(event) is True
+    assert '"reference_cases":[{"symbol":"USDJPY"' in caplog.text
+    assert '"pair_calibration":{"symbol":"USDCAD"' in caplog.text
+    assert '"pattern_context":{"selected_pattern_id":"UPPER_ABSORPTION_WARNING"' in caplog.text
+    assert '"theme_alignment_status":"NOT_AVAILABLE"' in caplog.text
+    assert '"tradeplan_preview":{"target_mode":"PROVISIONAL_RR_FALLBACK"' in caplog.text
+    assert '"golden_reference"' not in caplog.text
+    assert '"pair_role"' not in caplog.text
 
 
 def test_build_signal_json_event_marks_absorption_as_conditional_quality():
@@ -344,7 +388,7 @@ def test_strict_lifecycle_blocks_unready_final_as_decision_update(caplog):
     assert "PROVISIONAL_RR_NOT_EXECUTION_GRADE" in caplog.text
 
 
-def test_schema_v1_log_omits_structure_aware_export_fields(caplog):
+def test_universal_pattern_log_omits_raw_structure_aware_export_fields(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
         status="SELL_TIMING_VALID",
@@ -358,7 +402,7 @@ def test_schema_v1_log_omits_structure_aware_export_fields(caplog):
     )
 
     assert emitter.emit(event) is True
-    assert '"schema_version":"1.0"' in caplog.text
+    assert f'"schema_version":"{UNIVERSAL_PATTERN_SCHEMA_VERSION}"' in caplog.text
     assert '"targets"' not in caplog.text
     assert '"structure_zones"' not in caplog.text
     assert '"audit_valid"' not in caplog.text
