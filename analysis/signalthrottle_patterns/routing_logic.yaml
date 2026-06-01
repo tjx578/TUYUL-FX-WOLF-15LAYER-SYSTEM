@@ -1,22 +1,24 @@
 pattern_router:
   step_1_build_pressure: [SignalThrottle events, allowed events, microboost events]
   step_2_read_context: [M15, H1, H4, D1, bid_ask_spread, support_resistance_ladder]
-  step_3_theme_engine: [basket_moves, inverse_pair_moves, pair_role]
-  step_4_pattern_match: [pressure_block, microboost_stage, allowed_status, mtf_phase, theme_score, price_location, lifecycle_state]
+  step_3_theme_engine: [optional_basket_moves, optional_inverse_pair_moves, pair_role_calibration]
+  step_4_pattern_match: [pressure_block, microboost_stage, allowed_status, mtf_phase, price_location, lifecycle_state]
   step_5_decision_router:
     - "NO_NEW_ENTRY never emits executable SignalJSON"
     - "WAIT emits SignalWatchJSON or SignalDecisionUpdateJSON"
     - "SignalWatchJSON uses watch_direction; validated_direction stays null until execution is valid"
-    - "Clean >=5m pressure blocks are timing-valid only; M15/H1 context and reclaim are still required before final execution"
+    - "M15 close confirmation is required only for ambiguous, counter, reversal, or lifecycle-conflict states"
+    - "Direct absorption can emit final execution without M15 close when structure target, RR, phase, lifecycle, and spread gates are complete"
     - "tradeplan_valid=false forces execution_valid_now=false"
     - "PROVISIONAL_RR_FALLBACK targets are not executable unless targets_execution_usable=true"
+    - "KEY_LEVEL_STRUCTURE_TARGET uses key support/resistance as final target source"
+    - "STRUCTURE_LADDER_TARGET uses support/resistance ladder as final target source"
     - "finalizer_required=true and block_inactive_seconds>=60 runs SignalBlockFinalizer"
     - "DecisionUpdate includes decision_update_trigger and pending_age_seconds"
     - "METAL enforces fast protect and short hold policy"
-    - "JPY crosses enforce JPY_ALIGNMENT_REQUIRED"
+    - "JPY_ALIGNMENT_REQUIRED is calibration metadata for JPY crosses, not a production blocker"
     - "Pattern IDs are universal; pairs are golden references and calibration sources only"
-    - "JPY-cross calibration requires JPY basket alignment before execution"
-    - "CHF-cross calibration requires CHF strength/weakness theme before execution"
+    - "JPY-cross and CHF-cross basket context may enrich debug/calibration but must not block final execution by itself"
     - "Open-lane, clean-5m, microburst-reclaim, hot-block continuation, delayed-followthrough, and no-chase filters can match any pair if conditions match"
     - "Liquidation-reclaim, theme-context-only, and mid-range continuation pullback filters are universal; EURJPY is only a golden reference"
     - "Theme rotation can raise AUDJPY/EURCHF watch priority, but final direction remains WAIT_PRICE_CONTEXT until gates pass"
