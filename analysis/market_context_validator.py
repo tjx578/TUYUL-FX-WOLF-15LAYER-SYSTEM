@@ -153,6 +153,10 @@ class MarketContextValidation:
     pattern_match_score: int = 0
     execution_readiness_score: int = 0
     golden_reference: str | None = None
+    pattern_scope: str | None = None
+    applies_to: str | None = None
+    golden_references: list[str] | None = None
+    pair_specific_calibration: list[str] | None = None
     pair_role: str | None = None
     entry_permission: str | None = None
     management_action: str | None = None
@@ -380,6 +384,10 @@ def _result(
         pattern_match_score=int(golden.get("pattern_match_score") or 0),
         execution_readiness_score=int(golden.get("execution_readiness_score") or 0),
         golden_reference=_optional_text(golden.get("golden_reference")),
+        pattern_scope=_optional_text(golden.get("pattern_scope")),
+        applies_to=_optional_text(golden.get("applies_to")),
+        golden_references=_string_list(golden.get("golden_references")),
+        pair_specific_calibration=_string_list(golden.get("pair_specific_calibration")),
         pair_role=_optional_text(golden.get("pair_role")),
         entry_permission=_optional_text(golden.get("entry_permission")),
         management_action=_optional_text(golden.get("management_action")),
