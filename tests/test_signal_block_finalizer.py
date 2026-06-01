@@ -152,7 +152,8 @@ def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_la
     assert signal["status"] == "SELL_TIMING_VALID"
     assert signal["final_direction"] == "SELL"
     assert signal["valid_for_execution"] is True
-    assert signal["target_mode"] == "FINAL_MARKET_STRUCTURE"
+    assert signal["target_mode"] == "STRUCTURE_LADDER_TARGET"
+    assert signal["target_source"] == "support_resistance_ladder"
     assert signal["tp1_rr"] == 2.69
     assert signal["m15_confirmation_status"] == "M15_CLOSE_REJECTION_CONFIRMED"
     assert signal["signal_watch_source"] == "SIGNAL_THROTTLE_CLEAN_BLOCK"
