@@ -452,8 +452,13 @@ def test_clean_throttle_block_then_resistance_microboost_creates_watch_before_an
     assert report["signal_watch_gate"]["eligible"] is True
     assert watch["status"] == "SELL_ABSORPTION_WATCH"
     assert watch["final_direction"] == "WAIT"
+    assert watch["validated_direction"] is None
+    assert watch["watch_direction"] == "SELL"
+    assert watch["direction_validation_status"] == "WATCH_ONLY_PENDING_M15"
     assert watch["valid_for_execution"] is False
     assert watch["requires_m15_close"] is True
+    assert watch["targets_execution_usable"] is False
+    assert watch["pattern_match_score"] >= watch["pattern_score"]
     assert watch["source_clean_block_confirmed"] is True
     assert watch["microboost_validation_status"] == "PASSED"
 
