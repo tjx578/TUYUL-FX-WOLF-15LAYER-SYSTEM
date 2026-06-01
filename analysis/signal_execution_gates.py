@@ -13,7 +13,11 @@ from analysis.signal_execution_gate_models import ExecutionGateDecision
 from analysis.signal_json_emitter import VALID_SIGNAL_STATUSES
 from analysis.signal_json_enrichment import enrich_signal_json_payload
 
-_FINAL_MARKET_STRUCTURE = "FINAL_MARKET_STRUCTURE"
+_STRUCTURE_TARGET_MODES = {
+    "FINAL_MARKET_STRUCTURE",
+    "STRUCTURE_LADDER_TARGET",
+    "KEY_LEVEL_STRUCTURE_TARGET",
+}
 _MICROBOOST_LATE_OR_EXHAUSTION_PHASES = {
     "EXHAUSTION_AT_RESISTANCE",
     "EXHAUSTION_AT_SUPPORT",
@@ -119,8 +123,8 @@ def _tradeplan_gate(
     reasons: list[str],
 ) -> None:
     target_mode = str(payload.get("target_mode") or "").upper()
-    if target_mode != _FINAL_MARKET_STRUCTURE:
-        _add(gates, reasons, "TradePlanCompletenessGate", "FINAL_MARKET_STRUCTURE_REQUIRED")
+    if target_mode not in _STRUCTURE_TARGET_MODES:
+        _add(gates, reasons, "TradePlanCompletenessGate", "STRUCTURE_TARGET_MODE_REQUIRED")
         return
 
     direction = _direction(payload)
@@ -187,15 +191,8 @@ def _session_volatility_gate(payload: dict[str, Any], gates: list[str], reasons:
 
 
 def _basket_theme_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
-    status = str(payload.get("status") or "").upper()
-    if "CONTINUATION" not in status and "BREAKOUT" not in status and "BREAKDOWN" not in status:
-        return
-    direction = _direction(payload)
-    alignment = str(payload.get("theme_alignment") or "").upper()
-    if direction == "BUY" and "SELL" in alignment:
-        _add(gates, reasons, "BasketThemeGate", "THEME_CONFLICT_FOR_CONTINUATION")
-    if direction == "SELL" and "BUY" in alignment:
-        _add(gates, reasons, "BasketThemeGate", "THEME_CONFLICT_FOR_CONTINUATION")
+    _ = (payload, gates, reasons)
+    return
 
 
 def _microboost_timing_gate(
@@ -457,6 +454,10 @@ def _microboost_structure_reaction_confirmed(payload: dict[str, Any]) -> bool:
 
 
 def _microboost_pressure_warning_confirmed(payload: dict[str, Any]) -> bool:
+    if str(payload.get("confirmation_policy") or "").upper() == "DIRECT_ABSORPTION_NO_M15_WAIT":
+        return True
+    if str(payload.get("m15_confirmation_status") or "").upper() == "DIRECT_ABSORPTION_CONFIRMED":
+        return True
     direction = _direction(payload)
     phase_priced = _phase_value(payload, "phase_priced")
     if direction == "BUY" and phase_priced == "RESISTANCE_PRESSURE_WARNING":
