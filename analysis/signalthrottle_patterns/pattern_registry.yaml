@@ -6,12 +6,20 @@ core_principle: >
   SignalThrottle is pressure radar, Microboost is lifecycle priority,
   Allowed is provisional direction, and final direction still requires phase,
   theme, price context, risk, and tradeplan readiness.
+storage_model:
+  pattern_scope: UNIVERSAL
+  golden_reference_semantics: historical evidence source only, not pair ownership
+  pair_role_map_semantics: calibration and prioritization only, not exclusivity
+  applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
 
 patterns:
   - pattern_id: OPEN_LANE_TIMING_VALID
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPCAD, AUDJPY]
     tier: S
     family: TREND_LIFECYCLE
-    golden_source: GBPCAD
+    golden_source: GBPCAD/AUDJPY
     entry_permission: ENTRY_WATCH
     function: early entry-watch before expansion
   - pattern_id: ZERO_DRAWDOWN_FOLLOWTHROUGH
