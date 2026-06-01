@@ -76,5 +76,7 @@ Watch events must expose `watch_direction` while keeping
 `validated_direction=None` until structure, M15 confirmation, and execution
 readiness are all satisfied.
 
-The canonical Python registry is `registry.py`; YAML files mirror the same
-operational contract for review and external tooling.
+`pattern_registry.yaml` and `pair_role_map.yaml` are the operational database.
+`registry.py` loads them at runtime and falls back to the static Python copy
+only if YAML loading is unavailable, so matcher behavior and reviewed database
+content stay aligned.
