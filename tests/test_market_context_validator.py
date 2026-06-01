@@ -5,8 +5,9 @@ from analysis.market_context_validator import MarketContext, missing_market_cont
 
 def test_missing_market_context_never_validates_direction():
     result = missing_market_context_result("GBPCAD", "BUY")
+    payload = result.to_dict()
 
-    assert result.to_dict() == {
+    expected = {
         "symbol": "GBPCAD",
         "raw_allowed_direction": "BUY",
         "final_direction": "WAIT",
@@ -25,6 +26,9 @@ def test_missing_market_context_never_validates_direction():
         "waiting_for": "M15_H1_PHASE_AND_STRUCTURE_CONFIRMATION",
         "requires_confirmation": True,
     }
+    assert {key: payload[key] for key in expected} == expected
+    assert payload["selected_pattern_id"] is None
+    assert payload["pattern_score"] == 0
 
 
 def test_buy_validates_only_when_price_theme_phase_align():
