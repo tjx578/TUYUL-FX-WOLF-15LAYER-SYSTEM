@@ -272,6 +272,71 @@ def test_emitted_payload_uses_universal_pattern_context_not_pair_owned_fields(ca
     assert '"pair_role"' not in caplog.text
 
 
+def test_production_signal_json_omits_null_duplicates_and_heavy_pattern_debug(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="USDJPY_20260601T125149Z",
+        symbol="USDJPY",
+        selected_pattern_id="UPPER_ABSORPTION_WARNING",
+        matched_patterns=["UPPER_ABSORPTION_WARNING", "JPY_ALIGNMENT_REQUIRED", "LATE_UPPER_MICROBOOST"],
+        pattern_family="EXHAUSTION_MANAGEMENT",
+        pattern_scope="UNIVERSAL",
+        pattern_tier="S",
+        pattern_match_score=100,
+        execution_readiness_score=69,
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        support_ladder_ready=False,
+        structure_targets_available=False,
+        targets_execution_usable=False,
+        pattern_db_fuzzy_matches=["LATE_UPPER_MICROBOOST"],
+        pattern_match_diagnostics={
+            "search_mode": "DATABASE_WIDE",
+            "patterns_scanned": 52,
+            "semantic_hits": {"LATE_UPPER_MICROBOOST": ["microboost"]},
+            "candidate_scores_top": {"UPPER_ABSORPTION_WARNING": 223},
+        },
+        linked_previous_signal=None,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"linked_previous_signal":null' not in caplog.text
+    assert '"selected_pattern_id":"UPPER_ABSORPTION_WARNING"' in caplog.text
+    assert caplog.text.count('"selected_pattern_id":"UPPER_ABSORPTION_WARNING"') == 1
+    assert '"pattern_db_fuzzy_matches"' not in caplog.text
+    assert '"pattern_match_diagnostics"' not in caplog.text
+    assert '"semantic_hits"' not in caplog.text
+    assert '"top_supporting_patterns":["JPY_ALIGNMENT_REQUIRED","LATE_UPPER_MICROBOOST"]' in caplog.text
+    assert '"tradeplan_preview":{"target_mode":"PROVISIONAL_RR_FALLBACK"' in caplog.text
+    assert '"support_ladder_ready":false' in caplog.text
+
+
+def test_pattern_match_debug_sidecar_is_opt_in(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True, emit_pattern_debug=True)
+    event = _event(
+        cluster_id="USDJPY_20260601T125149Z",
+        symbol="USDJPY",
+        selected_pattern_id="UPPER_ABSORPTION_WARNING",
+        matched_patterns=["UPPER_ABSORPTION_WARNING", "JPY_ALIGNMENT_REQUIRED"],
+        pattern_db_exact_matches=["UPPER_ABSORPTION_WARNING"],
+        pattern_db_fuzzy_matches=["LATE_UPPER_MICROBOOST"],
+        pattern_match_diagnostics={
+            "search_mode": "DATABASE_WIDE",
+            "patterns_scanned": 52,
+            "semantic_hits": {"LATE_UPPER_MICROBOOST": ["microboost"]},
+            "candidate_scores_top": {"UPPER_ABSORPTION_WARNING": 223},
+        },
+    )
+
+    assert emitter.emit(event) is True
+    assert "[PatternMatchDebugJSON]" in caplog.text
+    assert '"event":"pattern_match_debug_json"' in caplog.text
+    assert '"patterns_scanned":52' in caplog.text
+    assert '"exact_matches":["UPPER_ABSORPTION_WARNING"]' in caplog.text
+    assert '"fuzzy_matches":["LATE_UPPER_MICROBOOST"]' in caplog.text
+    assert '"semantic_hits":{"LATE_UPPER_MICROBOOST":["microboost"]}' in caplog.text
+
+
 def test_build_signal_json_event_marks_absorption_as_conditional_quality():
     payload = _event(
         status="SELL_TIMING_VALID_BY_ABSORPTION",
