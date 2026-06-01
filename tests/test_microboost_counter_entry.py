@@ -205,7 +205,9 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_clos
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
     assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
-    assert result.validated_direction == "SELL"
+    assert result.validated_direction is None
+    assert result.watch_direction == "SELL"
+    assert result.direction_validation_status == "WATCH_ONLY_PENDING_M15"
     assert result.final_direction == "WAIT"
     assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
     assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
@@ -343,7 +345,9 @@ def test_cadjpy_near_timing_gate_absorption_waits_for_m15_close_without_final_ex
 
     assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
     assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
-    assert result.validated_direction == "SELL"
+    assert result.validated_direction is None
+    assert result.watch_direction == "SELL"
+    assert result.direction_validation_status == "WATCH_ONLY_PENDING_M15"
     assert result.final_direction == "WAIT"
     assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
     assert result.requires_rejection_or_breakdown is True
@@ -352,6 +356,8 @@ def test_cadjpy_near_timing_gate_absorption_waits_for_m15_close_without_final_ex
     assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
     assert result.tp_status == "WATCH_PROVISIONAL"
     assert result.tp_missing_reason == "NO_M15_H1_SUPPORT_LEVELS"
+    assert result.targets_execution_usable is False
+    assert result.target_block_reason == "NO_M15_H1_SUPPORT_LEVELS"
     assert result.rr_status == "WATCH_PROVISIONAL"
     assert result.confirmation_policy == "M15_CLOSE_REQUIRED"
     assert result.requires_m15_close is True
@@ -366,6 +372,46 @@ def test_cadjpy_near_timing_gate_absorption_waits_for_m15_close_without_final_ex
     assert result.tp3_rr == 2.5
     assert result.confidence_bucket == "B_ABSORPTION_WATCH"
     assert result.signal_valid_time_wita == "2026-05-19 14:18:21"
+
+
+def test_pending_decision_id_does_not_duplicate_symbol_when_cluster_id_already_contains_symbol():
+    cluster = _cluster(
+        symbol="USDJPY",
+        cluster_id="USDJPY_20260601T014451Z",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=24.84,
+        effective_tick_count=75,
+        duration_seconds=181.183,
+        price_at_signal_start=157.10,
+        price_at_signal_end=157.10,
+        end_utc="2026-06-01T01:44:51+00:00",
+    )
+    market = _market(
+        symbol="USDJPY",
+        pip_value=0.01,
+        price_at_signal_start=157.10,
+        price_at_5m_confirm=157.10,
+        price_at_signal_end=157.10,
+        price_position="MAIN_RESISTANCE",
+        resistance_low=None,
+        resistance_high=None,
+        minor_support=None,
+        major_support=None,
+        m15_rejection_from_resistance=False,
+        m15_close_below_minor_support=False,
+        sl_buffer=None,
+        tp1_support=None,
+        tp2_support=None,
+        tp3_support=None,
+        tp4_support=None,
+        support_ladder_ready=False,
+        support_ladder_missing_reason="NO_M15_H1_SUPPORT_LEVELS",
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.pending_decision_id == "USDJPY_20260601T014451Z_M15_DECISION"
+    assert "USDJPY_USDJPY" not in str(result.pending_decision_id)
 
 
 def test_cadjpy_m15_close_confirms_absorption_but_missing_structure_keeps_execution_wait():
@@ -406,7 +452,9 @@ def test_cadjpy_m15_close_confirms_absorption_but_missing_structure_keeps_execut
 
     assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
     assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
-    assert result.validated_direction == "SELL"
+    assert result.validated_direction is None
+    assert result.watch_direction == "SELL"
+    assert result.direction_validation_status == "TIMING_VALID_STRUCTURE_PENDING"
     assert result.final_direction == "WAIT"
     assert result.action == "WAIT_STRUCTURE_TARGET_OR_RETEST"
     assert result.requires_rejection_or_breakdown is False
