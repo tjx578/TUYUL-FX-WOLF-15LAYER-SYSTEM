@@ -1,0 +1,13 @@
+pattern_router:
+  step_1_build_pressure: [SignalThrottle events, allowed events, microboost events]
+  step_2_read_context: [M15, H1, H4, D1, bid_ask_spread, support_resistance_ladder]
+  step_3_theme_engine: [basket_moves, inverse_pair_moves, pair_role]
+  step_4_pattern_match: [pressure_block, microboost_stage, allowed_status, mtf_phase, theme_score, price_location, lifecycle_state]
+  step_5_decision_router:
+    - "NO_NEW_ENTRY never emits executable SignalJSON"
+    - "WAIT emits SignalWatchJSON or SignalDecisionUpdateJSON"
+    - "tradeplan_valid=false forces execution_valid_now=false"
+    - "finalizer_required=true and block_inactive_seconds>=60 runs SignalBlockFinalizer"
+    - "METAL enforces fast protect and short hold policy"
+    - "JPY crosses enforce JPY_ALIGNMENT_REQUIRED"
+    - "CONFIRMATION_PAIR requires own trigger before execution"
