@@ -148,9 +148,9 @@ class SignalJsonGateAdapter:
                 "status": "WAIT_STRUCTURE_OR_NEXT_M15",
                 "new_status": "WAIT_STRUCTURE_OR_NEXT_M15",
                 "final_direction": "WAIT",
-                "validated_direction": source_direction
-                if source_direction in {"BUY", "SELL"}
-                else payload.get("validated_direction"),
+                "validated_direction": None,
+                "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("watch_direction"),
+                "direction_validation_status": "FINAL_CANDIDATE_BLOCKED_BY_EXECUTION_GATE",
                 "action": action,
                 "next_action": next_action,
                 "is_final_signal": False,
