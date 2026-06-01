@@ -171,7 +171,7 @@ def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():
     assert result.rr_to_tp3_tight == pytest.approx(4.16)
 
 
-def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_close():
+def test_audcad_mature_near_timing_gate_stalled_at_resistance_can_direct_validate():
     cluster = _cluster(
         symbol="AUDCAD",
         phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
@@ -204,21 +204,24 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_waits_for_m15_clos
 
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
-    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
-    assert result.validated_direction is None
-    assert result.watch_direction == "SELL"
-    assert result.direction_validation_status == "WATCH_ONLY_PENDING_M15"
-    assert result.final_direction == "WAIT"
-    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
-    assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
-    assert result.requires_rejection_or_breakdown is True
+    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION
+    assert result.validated_direction == "SELL"
+    assert result.watch_direction is None
+    assert result.direction_validation_status == "VALIDATED_EXECUTION"
+    assert result.final_direction == "SELL"
+    assert result.direction_status == "MICROBOOST_DIRECT_ABSORPTION_VALIDATED"
+    assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
+    assert result.requires_rejection_or_breakdown is False
     assert result.signal_valid_price == 0.98504
     assert result.sl_tight == 0.9865
     assert result.tp1 == 0.982
     assert result.tp2 == 0.978
     assert result.tp3 == 0.9746
     assert result.rr_to_tp2_tight == pytest.approx(4.82)
-    assert result.rr_status == "WATCH"
+    assert result.rr_status == "VALID"
+    assert result.confirmation_policy == "DIRECT_ABSORPTION_NO_M15_WAIT"
+    assert result.requires_m15_close is False
+    assert result.valid_for_execution is True
     assert result.signal_valid_time_wita == "2026-05-19 04:33:08"
 
 
@@ -262,7 +265,7 @@ def test_audcad_complete_absorption_with_theme_and_structure_direct_validates_wi
     assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
     assert result.confirmation_policy == "DIRECT_ABSORPTION_NO_M15_WAIT"
     assert result.requires_m15_close is False
-    assert result.direct_valid_reason == "mature_absorption_with_theme_structure_and_rr"
+    assert result.direct_valid_reason == "mature_absorption_with_structure_and_rr"
     assert result.pending_decision_id is None
     assert result.structure_ready is True
     assert result.rr_status == "VALID"
@@ -515,7 +518,8 @@ def test_nzdjpy_mature_resistance_absorption_watch_waits_for_m15_close():
     assert result.final_direction == "WAIT"
     assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
     assert result.valid_for_execution is False
-    assert result.target_mode == "FINAL_MARKET_STRUCTURE"
+    assert result.target_mode == "KEY_LEVEL_STRUCTURE_TARGET"
+    assert result.target_source == "key_support_or_key_resistance"
     assert result.rr_status == "FAIL_MIN_RR"
     assert result.structure_targets_available is True
     assert result.targets_execution_usable is False
@@ -625,7 +629,8 @@ def test_explicit_key_support_can_supply_final_structure_target_without_full_lad
     assert result.status == CounterEntryStatus.SELL_TIMING_VALID
     assert result.final_direction == "SELL"
     assert result.valid_for_execution is True
-    assert result.target_mode == "FINAL_MARKET_STRUCTURE"
+    assert result.target_mode == "KEY_LEVEL_STRUCTURE_TARGET"
+    assert result.target_source == "key_support_or_key_resistance"
     assert result.structure_targets_available is True
     assert result.targets_execution_usable is True
     assert result.tp1 == 115.2
@@ -667,7 +672,8 @@ def test_structure_targets_below_min_rr_do_not_promote_to_valid():
     assert result.status == CounterEntryStatus.SELL_TIMING_WATCH
     assert result.final_direction == "WAIT"
     assert result.rr_status == "FAIL_MIN_RR"
-    assert result.target_mode == "FINAL_MARKET_STRUCTURE"
+    assert result.target_mode == "STRUCTURE_LADDER_TARGET"
+    assert result.target_source == "support_resistance_ladder"
     assert result.structure_targets_available is True
     assert result.valid_for_execution is False
 
