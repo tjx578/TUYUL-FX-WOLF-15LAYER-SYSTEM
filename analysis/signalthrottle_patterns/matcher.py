@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from numbers import Real
 from typing import Any
 
-from .registry import GoldenPattern, get_pattern, pair_role_for_symbol
+from .registry import GOLDEN_PATTERNS, GoldenPattern, get_pattern, pair_role_for_symbol
 
 _STRATEGY_TO_PATTERN = {
     "UPPER_RANGE_EXHAUSTION": "UPPER_ABSORPTION_WARNING",
@@ -21,6 +22,21 @@ _STRATEGY_TO_PATTERN = {
     "BUY_PRESSURE_COUNTER_TO_BEARISH_PHASE": "PRE_IGNITION_COUNTERFLOW_TRAP",
     "SELL_PRESSURE_COUNTER_TO_BULLISH_PHASE": "PRE_IGNITION_COUNTERFLOW_TRAP",
 }
+
+_PATTERN_ID_SET = {pattern.pattern_id for pattern in GOLDEN_PATTERNS}
+_PATTERN_TEXT_INDEX: dict[str, frozenset[str]] = {}
+_EXACT_PATTERN_FIELDS = (
+    "selected_pattern_id",
+    "pattern_id",
+    "strategy_pattern",
+    "signal_archetype",
+    "source_selected_pattern_id",
+)
+_PATTERN_LIST_FIELDS = (
+    "matched_patterns",
+    "pattern_candidates",
+    "candidate_patterns",
+)
 
 
 def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
@@ -40,7 +56,9 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
     dual_theme_status = _text(data.get("dual_theme_status")).upper()
     candidates: dict[str, int] = {}
     evidence: list[str] = []
+    diagnostics: dict[str, Any] = _new_pattern_diagnostics(symbol, pair_patterns)
 
+    _add_exact_pattern_candidate(candidates, evidence, data, diagnostics)
     _add_strategy_candidate(candidates, evidence, strategy_pattern)
     _add_pressure_candidate(candidates, evidence, data, pressure_temperature)
     _add_microboost_candidate(candidates, evidence, phase_unpriced, phase_priced, price_position, data)
@@ -50,6 +68,7 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
     _add_theme_candidate(candidates, evidence, symbol, theme_aligned, jpy_alignment, dual_theme_status, pair_patterns)
     _add_metal_candidate(candidates, evidence, symbol, price_position, data)
     _add_major_context_candidate(candidates, evidence, symbol, data)
+    _add_database_semantic_candidates(candidates, evidence, data, symbol, pair_patterns, diagnostics)
 
     selected_id = _select_candidate(candidates)
     selected = get_pattern(selected_id)
@@ -67,6 +86,11 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
         jpy_alignment=jpy_alignment,
         dual_theme_status=dual_theme_status,
     )
+    diagnostics["candidates_scored"] = len(candidates)
+    diagnostics["candidate_scores_top"] = dict(
+        sorted(candidates.items(), key=lambda item: (item[1], item[0]), reverse=True)[:12]
+    )
+    bottlenecks = _pattern_bottlenecks(data, selected, pattern_match_score, execution_readiness_score, alignment)
     return {
         "matched_patterns": matched,
         "selected_pattern_id": selected.pattern_id if selected else None,
@@ -88,6 +112,12 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
         "chase_allowed": bool(selected.chase_allowed) if selected else False,
         "block_reason": block_reason,
         "pattern_evidence": evidence[:8],
+        "pattern_search_space": _pattern_search_space(symbol, pair_patterns, matched),
+        "pattern_db_candidates_scanned": len(GOLDEN_PATTERNS),
+        "pattern_db_exact_matches": _string_list(diagnostics.get("exact_matches")),
+        "pattern_db_fuzzy_matches": _string_list(diagnostics.get("fuzzy_matches")),
+        "pattern_bottlenecks": bottlenecks,
+        "pattern_match_diagnostics": diagnostics,
         **alignment,
     }
 
@@ -97,6 +127,87 @@ def _add_strategy_candidate(candidates: dict[str, int], evidence: list[str], str
     if pattern_id:
         _bump(candidates, pattern_id, 35)
         evidence.append(f"strategy_pattern={strategy_pattern}")
+
+
+def _new_pattern_diagnostics(symbol: str, pair_patterns: set[str]) -> dict[str, Any]:
+    return {
+        "search_mode": "DATABASE_WIDE",
+        "patterns_scanned": len(GOLDEN_PATTERNS),
+        "symbol": symbol or None,
+        "pair_role_patterns": sorted(pair_patterns),
+        "exact_matches": [],
+        "fuzzy_matches": [],
+        "semantic_hits": {},
+        "candidate_scores_top": {},
+        "candidates_scored": 0,
+    }
+
+
+def _add_exact_pattern_candidate(
+    candidates: dict[str, int],
+    evidence: list[str],
+    data: Mapping[str, Any],
+    diagnostics: dict[str, Any],
+) -> None:
+    nested_context = _as_mapping(data.get("pattern_context"))
+    exact_sources: list[tuple[str, Any, int]] = []
+    for field in _EXACT_PATTERN_FIELDS:
+        exact_sources.append((field, data.get(field), 96 if field in {"selected_pattern_id", "pattern_id"} else 84))
+        if nested_context:
+            exact_sources.append((f"pattern_context.{field}", nested_context.get(field), 96))
+    for field in _PATTERN_LIST_FIELDS:
+        exact_sources.append((field, data.get(field), 42))
+        if nested_context:
+            exact_sources.append((f"pattern_context.{field}", nested_context.get(field), 42))
+
+    for source_name, value, score in exact_sources:
+        for pattern_id in _pattern_ids_from_value(value):
+            _bump(candidates, pattern_id, score)
+            _append_unique(diagnostics["exact_matches"], pattern_id)
+            evidence.append(f"exact_pattern_match={source_name}:{pattern_id}")
+
+    searchable_text = " ".join(_iter_text_values(data))
+    normalized_text = _normalize_token(searchable_text)
+    for pattern_id in _PATTERN_ID_SET:
+        if pattern_id in normalized_text:
+            _bump(candidates, pattern_id, 72)
+            _append_unique(diagnostics["exact_matches"], pattern_id)
+            evidence.append(f"exact_pattern_text={pattern_id}")
+
+
+def _add_database_semantic_candidates(
+    candidates: dict[str, int],
+    evidence: list[str],
+    data: Mapping[str, Any],
+    symbol: str,
+    pair_patterns: set[str],
+    diagnostics: dict[str, Any],
+) -> None:
+    if not _has_pattern_context(data):
+        diagnostics.setdefault("bypassed_passes", []).append("semantic_db_scan_missing_market_context")
+        return
+    feature_tokens = _feature_tokens(data, symbol=symbol)
+    if not feature_tokens:
+        return
+    for pattern in GOLDEN_PATTERNS:
+        pattern_tokens = _pattern_text_index().get(pattern.pattern_id, frozenset())
+        overlap = sorted(feature_tokens & pattern_tokens)
+        if not overlap:
+            continue
+        score = min(24, len(overlap) * 4)
+        if pattern.pattern_id in pair_patterns:
+            score += 8
+        if _normalize_token(pattern.family) in feature_tokens:
+            score += 10
+        if _normalize_token(pattern.entry_permission) in feature_tokens:
+            score += 6
+        if score < 12:
+            continue
+        _bump(candidates, pattern.pattern_id, score)
+        _append_unique(diagnostics["fuzzy_matches"], pattern.pattern_id)
+        diagnostics["semantic_hits"][pattern.pattern_id] = overlap[:8]
+        if len(evidence) < 16:
+            evidence.append(f"db_semantic_match={pattern.pattern_id}:{','.join(overlap[:4])}")
 
 
 def _add_pressure_candidate(
@@ -578,6 +689,224 @@ def _bump(candidates: dict[str, int], pattern_id: str, amount: int) -> None:
     if get_pattern(pattern_id) is None:
         return
     candidates[pattern_id] = candidates.get(pattern_id, 0) + amount
+
+
+def _pattern_search_space(symbol: str, pair_patterns: set[str], matched: list[str]) -> list[str] | None:
+    search_space = set(pair_patterns)
+    search_space.update(matched[:12])
+    if symbol.startswith(("XAU", "XAG")):
+        search_space.update(pattern.pattern_id for pattern in GOLDEN_PATTERNS if pattern.family.startswith("METAL"))
+    if symbol.endswith("JPY") or symbol.startswith("JPY"):
+        search_space.add("JPY_ALIGNMENT_REQUIRED")
+    return sorted(search_space) or None
+
+
+def _has_pattern_context(data: Mapping[str, Any]) -> bool:
+    for field in _EXACT_PATTERN_FIELDS + _PATTERN_LIST_FIELDS:
+        if _pattern_ids_from_value(data.get(field)):
+            return True
+    strategy_pattern = _normalize_token(data.get("strategy_pattern"))
+    if strategy_pattern and strategy_pattern not in {"PRICE_PHASE_UNRESOLVED", "UNRESOLVED"}:
+        return True
+    for field in (
+        "phase_priced",
+        "phase_unpriced",
+        "pressure_temperature",
+        "price_position",
+        "signal_archetype",
+        "target_mode",
+        "tp_status",
+        "status",
+    ):
+        if _text(data.get(field)):
+            return True
+    return any(
+        _num(data.get(field)) > 0.0
+        for field in (
+            "density_per_minute",
+            "effective_density_per_minute",
+            "duration_seconds",
+            "duration_minutes",
+            "event_count",
+            "events",
+            "effective_ticks",
+        )
+    )
+
+
+def _pattern_bottlenecks(
+    data: Mapping[str, Any],
+    selected: GoldenPattern | None,
+    pattern_match_score: int,
+    execution_readiness_score: int,
+    alignment: Mapping[str, Any],
+) -> list[str] | None:
+    bottlenecks: list[str] = []
+    if selected is None:
+        bottlenecks.append("NO_PATTERN_CANDIDATE_FROM_DATABASE")
+    if pattern_match_score >= 75 and execution_readiness_score <= 69:
+        bottlenecks.append("PATTERN_MATCHED_BUT_EXECUTION_READINESS_BLOCKED")
+    if alignment.get("theme_alignment_status") == "NOT_AVAILABLE":
+        bottlenecks.append("THEME_SNAPSHOT_NOT_AVAILABLE")
+    if alignment.get("jpy_alignment_status") == "UNKNOWN":
+        bottlenecks.append("JPY_ALIGNMENT_MISSING")
+    if _optional_bool(data.get("support_ladder_ready")) is False:
+        bottlenecks.append("SUPPORT_LADDER_MISSING")
+    if _optional_bool(data.get("resistance_ladder_ready")) is False:
+        bottlenecks.append("RESISTANCE_LADDER_MISSING")
+    if _optional_bool(data.get("structure_targets_available")) is False:
+        bottlenecks.append("STRUCTURE_TARGETS_MISSING")
+    if _optional_bool(data.get("targets_execution_usable")) is False:
+        bottlenecks.append("TARGETS_NOT_EXECUTION_USABLE")
+    if str(data.get("target_mode") or "").upper() == "PROVISIONAL_RR_FALLBACK":
+        bottlenecks.append("PROVISIONAL_RR_FALLBACK_NOT_FINAL_TARGET")
+    if _optional_bool(data.get("valid_for_execution")) is False:
+        bottlenecks.append("VALID_FOR_EXECUTION_FALSE")
+    if _optional_bool(data.get("requires_m15_close")) is True:
+        bottlenecks.append("M15_CLOSE_CONFIRMATION_REQUIRED")
+    if str(data.get("final_direction") or "").upper() == "WAIT":
+        bottlenecks.append("FINAL_DIRECTION_WAIT")
+    return bottlenecks or None
+
+
+def _pattern_ids_from_value(value: Any) -> list[str]:
+    ids: list[str] = []
+    for text in _iter_text_values(value):
+        normalized = _normalize_token(text)
+        if normalized in _PATTERN_ID_SET:
+            _append_unique(ids, normalized)
+            continue
+        for token in re.split(r"[^A-Z0-9_]+", normalized):
+            if token in _PATTERN_ID_SET:
+                _append_unique(ids, token)
+    return ids
+
+
+def _pattern_text_index() -> dict[str, frozenset[str]]:
+    global _PATTERN_TEXT_INDEX
+    if not _PATTERN_TEXT_INDEX:
+        _PATTERN_TEXT_INDEX = {
+            pattern.pattern_id: frozenset(_pattern_tokens(pattern))
+            for pattern in GOLDEN_PATTERNS
+        }
+    return _PATTERN_TEXT_INDEX
+
+
+def _pattern_tokens(pattern: GoldenPattern) -> set[str]:
+    token_text = " ".join(
+        str(value or "")
+        for value in (
+            pattern.pattern_id,
+            pattern.family,
+            pattern.function,
+            pattern.entry_permission,
+            pattern.management_action,
+            pattern.hold_policy,
+            pattern.block_reason,
+            pattern.golden_source,
+        )
+    )
+    tokens = _tokens_from_text(token_text)
+    tokens.add(_normalize_token(pattern.pattern_id))
+    tokens.add(_normalize_token(pattern.family))
+    tokens.add(_normalize_token(pattern.entry_permission))
+    return tokens
+
+
+def _feature_tokens(data: Mapping[str, Any], *, symbol: str) -> set[str]:
+    text = " ".join(_iter_text_values(data))
+    tokens = _tokens_from_text(text)
+    normalized_symbol = _normalize_token(symbol)
+    if normalized_symbol:
+        tokens.add(normalized_symbol)
+    price_position = _normalize_position(data.get("price_position"))
+    if price_position:
+        tokens.add(_normalize_token(price_position))
+    for field in (
+        "phase_unpriced",
+        "phase_priced",
+        "m15_phase",
+        "h1_phase",
+        "h4_phase",
+        "d1_phase",
+        "pressure_temperature",
+        "target_mode",
+        "tp_status",
+        "entry_permission",
+        "management_action",
+        "block_reason",
+    ):
+        value = _text(data.get(field))
+        if value:
+            tokens.add(_normalize_token(value))
+            tokens.update(_tokens_from_text(value))
+    density = _num(data.get("density_per_minute") or data.get("effective_density_per_minute"))
+    duration = _duration_seconds(data)
+    if density >= 10.0:
+        tokens.update({"HIGH", "DENSITY", "HIGH_DENSITY", "MICROBURST"})
+    elif density >= 8.0:
+        tokens.update({"DENSE", "DENSITY"})
+    if duration >= 600.0:
+        tokens.update({"LONG", "SUSTAINED", "DELAYED"})
+    elif duration >= 300.0:
+        tokens.update({"CLEAN", "TIMING", "GATE"})
+    if _optional_bool(data.get("reclaim_confirmed")) is True or _optional_bool(data.get("m15_close_above_resistance")) is True:
+        tokens.add("RECLAIM")
+    if _optional_bool(data.get("breakdown_confirmed")) is True or _optional_bool(data.get("m15_close_below_support")) is True:
+        tokens.add("BREAKDOWN")
+    if _optional_bool(data.get("theme_aligned")) is False:
+        tokens.update({"THEME", "CONFLICT", "MISMATCH"})
+    return tokens
+
+
+def _tokens_from_text(value: Any) -> set[str]:
+    normalized = _normalize_token(value)
+    if not normalized:
+        return set()
+    raw_tokens = [token for token in re.split(r"[^A-Z0-9]+", normalized) if len(token) >= 3]
+    tokens = {
+        token
+        for token in raw_tokens
+        if token not in {"AND", "THE", "FOR", "WITH", "NOT", "ONLY", "AFTER", "BEFORE", "THEN"}
+    }
+    tokens.add(normalized)
+    for idx in range(len(raw_tokens) - 1):
+        tokens.add(f"{raw_tokens[idx]}_{raw_tokens[idx + 1]}")
+    for idx in range(len(raw_tokens) - 2):
+        tokens.add(f"{raw_tokens[idx]}_{raw_tokens[idx + 1]}_{raw_tokens[idx + 2]}")
+    return tokens
+
+
+def _normalize_token(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    text = text.replace("-", "_").replace("/", "_").replace("+", "_")
+    text = re.sub(r"[^A-Z0-9]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    return text
+
+
+def _iter_text_values(value: Any, *, _depth: int = 0) -> list[str]:
+    if value is None or _depth > 4:
+        return []
+    if isinstance(value, Mapping):
+        texts: list[str] = []
+        for item in value.values():
+            texts.extend(_iter_text_values(item, _depth=_depth + 1))
+        return texts
+    if isinstance(value, (list, tuple, set)):
+        texts = []
+        for item in value:
+            texts.extend(_iter_text_values(item, _depth=_depth + 1))
+        return texts
+    if isinstance(value, (str, int, float, bool)):
+        text = str(value).strip()
+        return [text] if text else []
+    return []
+
+
+def _append_unique(items: list[str], value: str) -> None:
+    if value and value not in items:
+        items.append(value)
 
 
 def _as_mapping(value: Mapping[str, Any] | Any) -> Mapping[str, Any]:
