@@ -204,9 +204,11 @@ def _add_universal_reference_candidate(
     h4_phase = _phase(data.get("h4_phase") or data.get("phase_h4") or data.get("h240_phase"))
     d1_phase = _phase(data.get("d1_phase") or data.get("phase_d1") or data.get("h1440_phase"))
     phase_unpriced = _phase(data.get("phase_unpriced"))
+    phase_priced = _phase(data.get("phase_priced"))
     price_position = _normalize_position(data.get("price_position"))
     jpy_alignment = _text(data.get("jpy_alignment") or data.get("jpy_alignment_status")).upper()
-    close_pos = _num(data.get("m15_close_pos") or data.get("close_pos"))
+    close_pos_raw = data.get("m15_close_pos") if data.get("m15_close_pos") is not None else data.get("close_pos")
+    close_pos = _num(close_pos_raw)
     block_delta_pips = _num(data.get("block_delta_pips"))
     bullish_reclaim_context = _is_bullish_or_reclaim(m15_phase) and _is_bullish_or_reclaim(h1_phase)
     bearish_context = _is_bearish_or_mixed_bearish(h1_phase) or _is_bearish_or_mixed_bearish(h4_phase)
@@ -243,7 +245,14 @@ def _add_universal_reference_candidate(
         or block_delta_pips >= 8.0
         or _optional_bool(data.get("near_upper_resistance_without_reclaim")) is True
     )
-    upper_weak_close = late_upper and (close_pos <= 0.35 or _is_bearish_or_mixed_bearish(m15_phase))
+    late_upper_extended = (
+        _num(data.get("range_position")) >= 0.85
+        or block_delta_pips >= 8.0
+        or _optional_bool(data.get("near_upper_resistance_without_reclaim")) is True
+    )
+    upper_weak_close = late_upper and (
+        (close_pos_raw is not None and close_pos <= 0.35) or _is_bearish_or_mixed_bearish(m15_phase)
+    )
 
     if (
         direction == "BUY"
@@ -282,7 +291,12 @@ def _add_universal_reference_candidate(
         _bump(candidates, "CLEAN_5M_TIMING_GATE_NOT_FINAL", 64)
         evidence.append("clean_5m_timing_gate_requires_reclaim")
 
-    if direction == "BUY" and late_upper and (upper_weak_close or h4_phase == "MIXED" or _is_bearish_or_mixed_bearish(d1_phase)):
+    if (
+        direction == "BUY"
+        and (upper_weak_close or late_upper_extended)
+        and (phase_priced not in {"RESISTANCE_PRESSURE_WARNING", "EXHAUSTION_AT_RESISTANCE"})
+        and (h4_phase == "MIXED" or _is_bearish_or_mixed_bearish(d1_phase) or upper_weak_close)
+    ):
         _bump(candidates, "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE", 88)
         evidence.append("late_upper_density_no_chase")
 
@@ -305,6 +319,8 @@ def _add_universal_reference_candidate(
         and m15_pullback
         and supportive_higher_tf
         and jpy_not_conflicting
+        and not bearish_intraday
+        and not failed_reclaim
     ):
         _bump(candidates, "MICROBURST_FOLLOWTHROUGH_RECLAIM", 78)
         evidence.append("high_density_pullback_then_expand")
