@@ -103,6 +103,7 @@ class SignalJsonGateAdapter:
             "source_status": payload.get("status"),
             "source_final_direction": payload.get("final_direction"),
             "target_mode": payload.get("target_mode"),
+            "target_source": payload.get("target_source"),
             "valid_for_execution": payload.get("valid_for_execution"),
             "enforcement_mode": "ENFORCE" if self.config.enforce else "SHADOW",
             "final_barrier": self.config.final_barrier,
