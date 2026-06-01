@@ -526,24 +526,21 @@ def _alignment_metadata(
     jpy_alignment: str,
     dual_theme_status: str,
 ) -> dict[str, str | None]:
-    theme_text = _text(
-        data.get("theme_alignment")
-        or data.get("theme_alignment_status")
-        or data.get("counter_entry_theme_alignment")
-    ).upper()
+    theme_text = _text(data.get("theme_alignment") or data.get("counter_entry_theme_alignment")).upper()
+    status_text = _text(data.get("theme_alignment_status")).upper()
+    if not theme_text and status_text and status_text != "ALIGNED":
+        theme_text = status_text
     if not theme_text:
-        if theme_aligned is True:
-            theme_text = "ALIGNED"
-        elif theme_aligned is False:
+        if theme_aligned is False:
             theme_text = "MISMATCH"
         else:
-            theme_text = "UNKNOWN"
+            theme_text = "NOT_AVAILABLE"
 
     jpy_pair = symbol.endswith("JPY") or symbol.startswith("JPY")
     jpy_status = jpy_alignment or ("UNKNOWN" if jpy_pair else None)
     missing: list[str] = []
-    if theme_text == "UNKNOWN":
-        missing.append("theme_alignment")
+    if theme_text in {"UNKNOWN", "NOT_AVAILABLE"}:
+        missing.append("basket_snapshot_missing_or_not_computed")
     if jpy_pair and jpy_status == "UNKNOWN":
         missing.append("jpy_alignment")
     if jpy_pair and not dual_theme_status:
