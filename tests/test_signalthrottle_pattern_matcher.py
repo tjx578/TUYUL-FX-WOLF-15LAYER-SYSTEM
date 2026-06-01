@@ -30,7 +30,9 @@ def test_usdjpy_upper_absorption_blocks_buy_chase():
     assert result.pattern_match_score >= 80
     assert result.execution_readiness_score <= 69
     assert result.jpy_alignment_status == "UNKNOWN"
-    assert result.alignment_missing_reason == "jpy_alignment,dual_theme_status"
+    assert result.alignment_missing_reason == (
+        "basket_snapshot_missing_or_not_computed,jpy_alignment,dual_theme_status"
+    )
 
 
 def test_usdjpy_liquidation_expansion_keeps_sell_retest_only():
@@ -108,6 +110,7 @@ def test_gbpjpy_bullish_microburst_requires_jpy_alignment_metadata():
             "h1_phase": "BULLISH",
             "h4_phase": "MIXED",
             "theme_aligned": True,
+            "theme_alignment": "ALIGNED",
             "jpy_alignment": "ALIGNED",
             "dual_theme_status": "ALIGNED",
             "spread_normal": True,
@@ -252,7 +255,9 @@ def test_gbpjpy_clean_five_minute_block_stays_watch_only():
     assert result["entry_permission"] == "ENTRY_WATCH_ONLY_WAIT_RECLAIM"
     assert result["pattern_score"] <= 69
     assert result["jpy_alignment_status"] == "UNKNOWN"
-    assert result["alignment_missing_reason"] == "jpy_alignment,dual_theme_status"
+    assert result["alignment_missing_reason"] == (
+        "basket_snapshot_missing_or_not_computed,jpy_alignment,dual_theme_status"
+    )
 
 
 def test_gbpjpy_high_density_bearish_context_blocks_buy_chase():
@@ -349,6 +354,7 @@ def test_audjpy_jpy_weakness_open_lane_requires_alignment_and_reclaim_context():
             "d1_phase": "BULLISH",
             "price_position": "MID_RANGE",
             "theme_aligned": True,
+            "theme_alignment": "ALIGNED",
             "jpy_alignment": "ALIGNED",
             "dual_theme_status": "ALIGNED",
             "spread_normal": True,
