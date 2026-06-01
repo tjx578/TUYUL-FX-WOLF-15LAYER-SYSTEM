@@ -65,6 +65,9 @@ class MarketContext:
     theme_aligned: bool | None = None
     theme_alignment: str | None = None
     counter_entry_theme_alignment: str | None = None
+    jpy_alignment_status: str | None = None
+    jpy_alignment: str | None = None
+    dual_theme_status: str | None = None
     spread_normal: bool | None = None
     spread_pips: float | None = None
     max_allowed_spread_pips: float | None = None
@@ -147,6 +150,8 @@ class MarketContextValidation:
     pattern_tier: str | None = None
     pattern_family: str | None = None
     pattern_score: int = 0
+    pattern_match_score: int = 0
+    execution_readiness_score: int = 0
     golden_reference: str | None = None
     pair_role: str | None = None
     entry_permission: str | None = None
@@ -155,6 +160,10 @@ class MarketContextValidation:
     chase_allowed: bool = False
     block_reason: str | None = None
     pattern_evidence: list[str] | None = None
+    jpy_alignment_status: str | None = None
+    theme_alignment_status: str | None = None
+    dual_theme_status: str | None = None
+    alignment_missing_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -368,6 +377,8 @@ def _result(
         pattern_tier=_optional_text(golden.get("pattern_tier")),
         pattern_family=_optional_text(golden.get("pattern_family")),
         pattern_score=int(golden.get("pattern_score") or 0),
+        pattern_match_score=int(golden.get("pattern_match_score") or 0),
+        execution_readiness_score=int(golden.get("execution_readiness_score") or 0),
         golden_reference=_optional_text(golden.get("golden_reference")),
         pair_role=_optional_text(golden.get("pair_role")),
         entry_permission=_optional_text(golden.get("entry_permission")),
@@ -376,6 +387,10 @@ def _result(
         chase_allowed=bool(golden.get("chase_allowed", False)),
         block_reason=_optional_text(golden.get("block_reason")),
         pattern_evidence=_string_list(golden.get("pattern_evidence")),
+        jpy_alignment_status=_optional_text(golden.get("jpy_alignment_status")),
+        theme_alignment_status=_optional_text(golden.get("theme_alignment_status")),
+        dual_theme_status=_optional_text(golden.get("dual_theme_status")),
+        alignment_missing_reason=_optional_text(golden.get("alignment_missing_reason")),
     )
 
 
