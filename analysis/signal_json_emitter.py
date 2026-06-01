@@ -203,6 +203,8 @@ class SignalJsonEvent:
     confidence_bucket: str | None
     reason: str
     invalidation: str | None
+    watch_direction: str | None = None
+    direction_validation_status: str | None = None
     cluster_id: str | None = None
     is_final_signal: bool = False
     emit_reason: str | None = None
@@ -215,6 +217,8 @@ class SignalJsonEvent:
     resistance_ladder_ready: bool | None = None
     structure_targets_available: bool | None = None
     tradeplan_context_ready: bool | None = None
+    targets_execution_usable: bool | None = None
+    target_block_reason: str | None = None
     valid_for_execution: bool = False
     min_rr_required: float | None = None
     tp_min_rr: float | None = None
@@ -232,11 +236,15 @@ class SignalJsonEvent:
     previous_signal_status: str | None = None
     lifecycle_status: str | None = None
     active_signal: dict[str, Any] | None = None
+    active_position_policy: str | None = None
+    active_signal_management: dict[str, Any] | None = None
     previous_status: str | None = None
     new_status: str | None = None
     block_end_utc: str | None = None
     block_end_wita: str | None = None
     block_idle_seconds: float | None = None
+    pending_age_seconds: float | None = None
+    decision_update_trigger: str | None = None
     next_action: str | None = None
     confirmation_policy: str | None = None
     requires_m15_close: bool | None = None
@@ -244,6 +252,10 @@ class SignalJsonEvent:
     pending_decision_id: str | None = None
     price_delta_pips: float | None = None
     theme_alignment: str | None = None
+    jpy_alignment_status: str | None = None
+    theme_alignment_status: str | None = None
+    dual_theme_status: str | None = None
+    alignment_missing_reason: str | None = None
     structure_ready: bool | None = None
     rr_to_valid_target: float | None = None
     m15_confirmation_status: str | None = None
@@ -312,6 +324,8 @@ class SignalJsonEvent:
     pattern_tier: str | None = None
     pattern_family: str | None = None
     pattern_score: int | None = None
+    pattern_match_score: int | None = None
+    execution_readiness_score: int | None = None
     golden_reference: str | None = None
     pair_role: str | None = None
     entry_permission: str | None = None
@@ -605,6 +619,8 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         return None
     is_decision_update = _is_decision_update_payload(counter_entry)
     is_watch = _is_watch_status(status) and not is_decision_update
+    validated_direction = _validated_direction(counter_entry)
+    watch_direction = _watch_direction(counter_entry, status=status, validated_direction=validated_direction)
     return SignalJsonEvent(
         event="signal_decision_update_json"
         if is_decision_update
@@ -621,9 +637,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         signal_quality=_signal_quality(counter_entry),
         raw_direction=_optional_str(counter_entry.get("raw_direction")),
         candidate_direction=_optional_str(counter_entry.get("candidate_direction")),
-        validated_direction=_optional_str(
-            counter_entry.get("validated_direction") or counter_entry.get("candidate_direction")
-        ),
+        validated_direction=validated_direction,
+        watch_direction=watch_direction,
+        direction_validation_status=_optional_str(counter_entry.get("direction_validation_status"))
+        or _direction_validation_status(counter_entry, status=status, validated_direction=validated_direction),
         final_direction=str(counter_entry.get("final_direction") or "WAIT"),
         action=str(counter_entry.get("action") or "WAIT"),
         signal_valid_time_utc=signal_valid_time,
@@ -660,6 +677,8 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         resistance_ladder_ready=_optional_bool(counter_entry.get("resistance_ladder_ready")),
         structure_targets_available=_optional_bool(counter_entry.get("structure_targets_available")),
         tradeplan_context_ready=_optional_bool(counter_entry.get("tradeplan_context_ready")),
+        targets_execution_usable=_optional_bool(counter_entry.get("targets_execution_usable")),
+        target_block_reason=_optional_str(counter_entry.get("target_block_reason")),
         valid_for_execution=bool(counter_entry.get("valid_for_execution", False)),
         min_rr_required=_optional_float(counter_entry.get("min_rr_required")),
         tp_min_rr=_optional_float(counter_entry.get("tp_min_rr")),
@@ -672,18 +691,30 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         allowed_quorum_streak=_optional_int(counter_entry.get("allowed_quorum_streak")),
         reclaim_trigger=_optional_float(counter_entry.get("reclaim_trigger")),
         risk_pips=_optional_float(counter_entry.get("risk_pips")),
-        signal_id=_optional_str(counter_entry.get("signal_id")),
+        signal_id=_optional_str(counter_entry.get("signal_id"))
+        or _generated_signal_id(
+            symbol=symbol,
+            direction=validated_direction or watch_direction or _optional_str(counter_entry.get("candidate_direction")),
+            status=status,
+            signal_time=signal_valid_time,
+            is_watch=is_watch,
+            is_decision_update=is_decision_update,
+        ),
         linked_previous_signal=_optional_str(counter_entry.get("linked_previous_signal")),
         previous_signal_status=_optional_str(counter_entry.get("previous_signal_status")),
         lifecycle_status=_optional_str(counter_entry.get("lifecycle_status")),
         active_signal=counter_entry.get("active_signal")
         if isinstance(counter_entry.get("active_signal"), dict)
         else None,
+        active_position_policy=_optional_str(counter_entry.get("active_position_policy")),
+        active_signal_management=_dict_value(counter_entry.get("active_signal_management")),
         previous_status=_optional_str(counter_entry.get("previous_status")),
         new_status=_optional_str(counter_entry.get("new_status")),
         block_end_utc=_optional_str(counter_entry.get("block_end_utc")),
         block_end_wita=_optional_str(counter_entry.get("block_end_wita")),
         block_idle_seconds=_optional_float(counter_entry.get("block_idle_seconds")),
+        pending_age_seconds=_optional_float(counter_entry.get("pending_age_seconds")),
+        decision_update_trigger=_optional_str(counter_entry.get("decision_update_trigger")),
         next_action=_optional_str(counter_entry.get("next_action")),
         confirmation_policy=_optional_str(counter_entry.get("confirmation_policy")),
         requires_m15_close=_optional_bool(counter_entry.get("requires_m15_close")),
@@ -691,6 +722,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         pending_decision_id=_optional_str(counter_entry.get("pending_decision_id")),
         price_delta_pips=_optional_float(counter_entry.get("price_delta_pips")),
         theme_alignment=_optional_str(counter_entry.get("theme_alignment")),
+        jpy_alignment_status=_optional_str(counter_entry.get("jpy_alignment_status")),
+        theme_alignment_status=_optional_str(counter_entry.get("theme_alignment_status")),
+        dual_theme_status=_optional_str(counter_entry.get("dual_theme_status")),
+        alignment_missing_reason=_optional_str(counter_entry.get("alignment_missing_reason")),
         structure_ready=_optional_bool(counter_entry.get("structure_ready")),
         rr_to_valid_target=_optional_float(counter_entry.get("rr_to_valid_target")),
         m15_confirmation_status=_optional_str(counter_entry.get("m15_confirmation_status")),
@@ -759,6 +794,8 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         pattern_tier=_optional_str(counter_entry.get("pattern_tier")),
         pattern_family=_optional_str(counter_entry.get("pattern_family")),
         pattern_score=_optional_int(counter_entry.get("pattern_score")),
+        pattern_match_score=_optional_int(counter_entry.get("pattern_match_score")),
+        execution_readiness_score=_optional_int(counter_entry.get("execution_readiness_score")),
         golden_reference=_optional_str(counter_entry.get("golden_reference")),
         pair_role=_optional_str(counter_entry.get("pair_role")),
         entry_permission=_optional_str(counter_entry.get("entry_permission")),
@@ -899,7 +936,9 @@ def _blocked_final_as_decision_update(payload: dict[str, Any], reasons: list[str
             "status": "WAIT_STRUCTURE_OR_NEXT_M15",
             "new_status": "WAIT_STRUCTURE_OR_NEXT_M15",
             "final_direction": "WAIT",
-            "validated_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("validated_direction"),
+            "validated_direction": None,
+            "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("watch_direction"),
+            "direction_validation_status": "FINAL_CANDIDATE_BLOCKED_BY_STRICT_GATE",
             "action": "WAIT_LIFECYCLE_AUDIT_AND_STRUCTURE",
             "next_action": "WAIT_LIFECYCLE_AUDIT_AND_STRUCTURE",
             "is_final_signal": False,
@@ -1057,6 +1096,86 @@ def _execution_contract_complete(payload: dict[str, Any]) -> bool:
 def _tp1_rr_meets_minimum(payload: dict[str, Any]) -> bool:
     tp1_rr = _optional_float(payload.get("tp1_rr"))
     return tp1_rr is not None and tp1_rr >= MIN_EXECUTABLE_TP1_RR
+
+
+def _validated_direction(payload: dict[str, Any]) -> str | None:
+    explicit = _optional_str(payload.get("validated_direction"))
+    final_direction = str(payload.get("final_direction") or "").upper()
+    if (
+        explicit
+        and explicit.upper() in {"BUY", "SELL"}
+        and final_direction in {"BUY", "SELL"}
+        and bool(payload.get("valid_for_execution", False))
+    ):
+        return explicit.upper()
+    if final_direction in {"BUY", "SELL"} and bool(payload.get("valid_for_execution", False)):
+        return final_direction
+    return None
+
+
+def _watch_direction(
+    payload: dict[str, Any],
+    *,
+    status: str,
+    validated_direction: str | None,
+) -> str | None:
+    explicit = _optional_str(payload.get("watch_direction"))
+    if explicit and explicit.upper() in {"BUY", "SELL"}:
+        return explicit.upper()
+    if validated_direction in {"BUY", "SELL"}:
+        return None
+    candidate = str(payload.get("candidate_direction") or "").upper()
+    if candidate in {"BUY", "SELL"} and (
+        _is_watch_status(status)
+        or _is_decision_update_status(status)
+        or str(payload.get("final_direction") or "").upper() == "WAIT"
+    ):
+        return candidate
+    return None
+
+
+def _direction_validation_status(
+    payload: dict[str, Any],
+    *,
+    status: str,
+    validated_direction: str | None,
+) -> str:
+    if validated_direction in {"BUY", "SELL"} and bool(payload.get("valid_for_execution", False)):
+        return "VALIDATED_EXECUTION"
+    if status.endswith("_BY_ABSORPTION"):
+        return "TIMING_VALID_STRUCTURE_PENDING"
+    if _is_watch_status(status) or _is_decision_update_status(status):
+        return "WATCH_ONLY_PENDING_CONFIRMATION"
+    return "UNVALIDATED_WAIT"
+
+
+def _generated_signal_id(
+    *,
+    symbol: str,
+    direction: str | None,
+    status: str,
+    signal_time: str,
+    is_watch: bool,
+    is_decision_update: bool,
+) -> str | None:
+    compact_time = _compact_signal_time(signal_time)
+    if not symbol or not compact_time:
+        return None
+    label = str(direction or "WAIT").upper()
+    if is_decision_update:
+        label = f"{label}_DECISION"
+    elif is_watch:
+        label = f"{label}_WATCH"
+    elif label not in {"BUY", "SELL"}:
+        label = str(status or "SIGNAL").upper()
+    return f"{symbol}_{label}_{compact_time}"
+
+
+def _compact_signal_time(value: str) -> str | None:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if len(digits) < 14:
+        return None
+    return f"{digits[:8]}_{digits[8:14]}"
 
 
 def _optional_str(value: Any) -> str | None:
