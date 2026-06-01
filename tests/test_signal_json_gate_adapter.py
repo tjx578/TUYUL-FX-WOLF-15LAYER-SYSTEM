@@ -142,7 +142,7 @@ def test_gate_adapter_enforce_downgrades_unready_final_to_decision_update(caplog
     assert gated["event"] == "signal_decision_update_json"
     assert gated["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
     assert gated["final_direction"] == "WAIT"
-    assert "FINAL_MARKET_STRUCTURE_REQUIRED" in gated["reason"]
+    assert "STRUCTURE_TARGET_MODE_REQUIRED" in gated["reason"]
     assert event is not None
     assert emitter.emit(event) is True
     assert "[SignalExecutionGateJSON]" in caplog.text
