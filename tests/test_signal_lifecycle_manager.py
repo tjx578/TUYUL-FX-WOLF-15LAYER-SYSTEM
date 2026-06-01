@@ -88,6 +88,10 @@ def test_opposing_absorption_watch_protects_active_buy_without_reversal():
     assert follow_up["previous_signal_status"] == "ACTIVE_BUY_VALID"
     assert follow_up["lifecycle_status"] == "CONFLICT_PROTECT_ACTIVE_BUY"
     assert follow_up["valid_for_execution"] is False
+    assert follow_up["validated_direction"] is None
+    assert follow_up["watch_direction"] == "SELL"
+    assert follow_up["active_position_policy"] == "PROTECT_ACTIVE_BUY_NO_AUTO_REVERSAL"
+    assert follow_up["active_signal_management"]["policy"] == "PROTECT_PROFIT_ONLY_WAIT_M15_CLOSE"
 
 
 def test_confirmed_opposing_sell_supersedes_active_buy_as_reversal():
