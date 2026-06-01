@@ -3271,6 +3271,7 @@ class WolfConstitutionalPipeline:
             pip_value=pip_value,
         )
         spread_quality = self._spread_quality(symbol)
+        theme_alignment = self._market_theme_alignment_snapshot(synthesis, direction)
 
         return MarketContext(
             symbol=symbol,
@@ -3285,6 +3286,8 @@ class WolfConstitutionalPipeline:
             h1_phase=self._derive_timeframe_phase(symbol, "H1"),
             h4_phase=self._derive_timeframe_phase(symbol, "H4"),
             theme_aligned=self._is_market_theme_aligned(synthesis, direction),
+            theme_alignment=theme_alignment,
+            counter_entry_theme_alignment=theme_alignment,
             spread_normal=spread_quality["spread_normal"],
             spread_pips=spread_quality["spread_pips"],
             max_allowed_spread_pips=spread_quality["max_allowed_spread_pips"],
@@ -3746,6 +3749,39 @@ class WolfConstitutionalPipeline:
                 return False
 
         return True
+
+    def _market_theme_alignment_snapshot(self, synthesis: dict[str, Any], direction: str | None) -> str | None:
+        if direction not in {"BUY", "SELL"}:
+            return None
+        execution = synthesis.get("execution", {}) if isinstance(synthesis.get("execution"), dict) else {}
+        diagnostics = execution.get("direction_diagnostics", {})
+        if isinstance(diagnostics, dict):
+            conflicts = diagnostics.get("conflicts")
+            if isinstance(conflicts, list) and conflicts:
+                return "DIRECTION_DIAGNOSTICS_CONFLICT"
+            sources = diagnostics.get("sources")
+            if isinstance(sources, dict):
+                aligned_sources: list[str] = []
+                conflicting_sources: list[str] = []
+                for name, raw in sources.items():
+                    source_direction = self._direction_hint(raw)
+                    if source_direction == direction:
+                        aligned_sources.append(str(name or "source").upper())
+                    elif source_direction in {"BUY", "SELL"}:
+                        conflicting_sources.append(str(name or "source").upper())
+                if conflicting_sources:
+                    return f"DIRECTION_DIAGNOSTICS_{'+'.join(conflicting_sources[:3])}_CONFLICT"
+                if aligned_sources:
+                    return f"{direction}_ALIGNED_BY_{'+'.join(aligned_sources[:3])}"
+
+        legacy_fta = synthesis.get("legacy_fta", {})
+        if isinstance(legacy_fta, dict) and legacy_fta.get("legacy_fta_present"):
+            legacy_direction = self._direction_hint(legacy_fta.get("direction"))
+            if legacy_direction == direction:
+                return f"{direction}_ALIGNED_BY_LEGACY_FTA"
+            if legacy_direction in {"BUY", "SELL"}:
+                return "LEGACY_FTA_DIRECTION_CONFLICT"
+        return None
 
     def _is_spread_normal(self, symbol: str) -> bool | None:
         return self._spread_quality(symbol)["spread_normal"]
