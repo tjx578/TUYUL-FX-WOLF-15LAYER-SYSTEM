@@ -1245,6 +1245,8 @@ def _golden_pattern_fields(source: dict[str, Any]) -> dict[str, Any]:
         "pattern_tier",
         "pattern_family",
         "pattern_score",
+        "pattern_match_score",
+        "execution_readiness_score",
         "golden_reference",
         "pair_role",
         "entry_permission",
@@ -1253,6 +1255,16 @@ def _golden_pattern_fields(source: dict[str, Any]) -> dict[str, Any]:
         "chase_allowed",
         "block_reason",
         "pattern_evidence",
+        "jpy_alignment_status",
+        "theme_alignment_status",
+        "dual_theme_status",
+        "alignment_missing_reason",
+        "watch_direction",
+        "direction_validation_status",
+        "targets_execution_usable",
+        "target_block_reason",
+        "decision_update_trigger",
+        "pending_age_seconds",
     )
     return {key: source.get(key) for key in keys if key in source}
 
