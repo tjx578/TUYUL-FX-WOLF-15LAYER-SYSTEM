@@ -46,6 +46,7 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
     _add_microboost_candidate(candidates, evidence, phase_unpriced, phase_priced, price_position, data)
     _add_pair_role_candidate(candidates, evidence, symbol, pair_patterns, raw_direction, final_direction, data)
     _add_universal_reference_candidate(candidates, evidence, symbol, raw_direction, final_direction, data)
+    _add_structural_universal_candidate(candidates, evidence, symbol, raw_direction, final_direction, data)
     _add_theme_candidate(candidates, evidence, symbol, theme_aligned, jpy_alignment, dual_theme_status, pair_patterns)
     _add_metal_candidate(candidates, evidence, symbol, price_position, data)
     _add_major_context_candidate(candidates, evidence, symbol, data)
@@ -350,6 +351,79 @@ def _add_universal_reference_candidate(
         evidence.append("delayed_followthrough_watch")
 
 
+def _add_structural_universal_candidate(
+    candidates: dict[str, int],
+    evidence: list[str],
+    symbol: str,
+    raw_direction: str | None,
+    final_direction: str | None,
+    data: Mapping[str, Any],
+) -> None:
+    del symbol
+    direction = final_direction or raw_direction
+    density = _num(data.get("density_per_minute") or data.get("effective_density_per_minute"))
+    events = _num(data.get("event_count") or data.get("events") or data.get("effective_ticks"))
+    atr_ratio = _num(
+        data.get("structure_atr_ratio")
+        or data.get("h4_atr_ratio")
+        or data.get("d1_atr_ratio")
+        or data.get("m15_range_atr_ratio")
+    )
+    close_pos_raw = (
+        data.get("structure_close_pos")
+        if data.get("structure_close_pos") is not None
+        else data.get("h4_close_pos")
+        if data.get("h4_close_pos") is not None
+        else data.get("d1_close_pos")
+        if data.get("d1_close_pos") is not None
+        else data.get("m15_close_pos")
+        if data.get("m15_close_pos") is not None
+        else data.get("close_pos")
+    )
+    close_pos = _num(close_pos_raw)
+    near_extreme = close_pos_raw is not None and (close_pos <= 0.25 or close_pos >= 0.75)
+    reclaim_confirmed = _optional_bool(data.get("reclaim_confirmed")) is True
+    breakdown_confirmed = _optional_bool(data.get("breakdown_confirmed")) is True
+    price_confirmed = (
+        reclaim_confirmed
+        or breakdown_confirmed
+        or _optional_bool(data.get("price_confirmation")) is True
+        or _optional_bool(data.get("m15_close_above_resistance")) is True
+        or _optional_bool(data.get("m15_close_below_support")) is True
+    )
+    pressure_present = density > 0.0 or events > 0.0 or bool(_text(data.get("pressure_temperature")))
+
+    if atr_ratio >= 3.0 and near_extreme and pressure_present and not price_confirmed:
+        _bump(candidates, "LIQUIDATION_RECLAIM_REQUIRED", 92)
+        evidence.append("extreme_liquidation_requires_reclaim")
+
+    theme_context_only = _optional_bool(data.get("theme_context_only")) is True
+    lower_tf_missing = _optional_bool(data.get("lower_timeframe_confirmation")) is False
+    fragmented_run = _optional_bool(data.get("fragmented_run")) is True or _optional_bool(data.get("weak_individual_run")) is True
+    missing_price_context = (
+        _optional_bool(data.get("price_context_complete")) is False
+        or _optional_bool(data.get("price_confirmation")) is False
+    )
+    if theme_context_only or ((lower_tf_missing or fragmented_run) and missing_price_context):
+        _bump(candidates, "THEME_CONTEXT_ONLY_NOT_STANDALONE", 84)
+        evidence.append("theme_context_only_not_standalone")
+
+    mfe = abs(_num(data.get("forward_mfe_pips") or data.get("mfe_pips")))
+    mae = abs(_num(data.get("forward_mae_pips") or data.get("mae_pips")))
+    symmetry_risk = _optional_bool(data.get("mfe_mae_symmetry_risk")) is True or (
+        mfe > 0.0 and mae > 0.0 and min(mfe, mae) / max(mfe, mae) >= 0.75
+    )
+    chase_rr_poor = _optional_bool(data.get("chase_rr_poor")) is True or _optional_bool(data.get("near_recent_high_low_without_breakout_close")) is True
+    structure_strong = (
+        _optional_bool(data.get("structure_candle_strong_close")) is True
+        or (close_pos_raw is not None and (close_pos >= 0.85 or close_pos <= 0.15))
+    )
+    mid_range_or_continuation = direction in {"BUY", "SELL"} or _optional_bool(data.get("continuation_context")) is True
+    if structure_strong and near_extreme and mid_range_or_continuation and (symmetry_risk or chase_rr_poor):
+        _bump(candidates, "MID_RANGE_CONTINUATION_PULLBACK_REQUIRED", 82)
+        evidence.append("mid_range_continuation_pullback_required")
+
+
 def _add_metal_candidate(
     candidates: dict[str, int],
     evidence: list[str],
@@ -427,6 +501,9 @@ def _execution_readiness_score(
         "WAIT_BREAK_OR_RECLAIM",
         "WAIT_RECLAIM_OR_PULLBACK_HOLD",
         "RECLAIM_WATCH_OR_PARTIAL_EXIT",
+        "WATCH_ONLY_UNTIL_RECLAIM",
+        "PAIR_SELECTION_BOOST_ONLY",
+        "PULLBACK_OR_RECLAIM_ONLY",
         "DELAYED_BUY_WATCH",
         "DELAYED_WATCH",
     }:
