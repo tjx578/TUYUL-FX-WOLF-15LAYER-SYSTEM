@@ -1,5 +1,18 @@
 scoring_model:
   max_score: 100
+  fields:
+    pattern_match_score:
+      purpose: historical_pattern_recognition_strength
+      includes: [pair_role, strategy_pattern, pressure_block, microboost_stage, price_location, density, duration]
+      note: Tier-S patterns may score high here even when execution is blocked.
+    execution_readiness_score:
+      purpose: current_execution_context_readiness
+      starts_from: pattern_match_score
+      subtracts: [spread_penalty, theme_conflict_penalty, no_trade_permission, no_chase_permission, sparse_archive_penalty]
+      note: This is the backward-compatible `pattern_score`.
+    pattern_score:
+      purpose: backward_compatible_readiness_score
+      alias_of: execution_readiness_score
   weights:
     pressure_block: 20
     microboost: 10
