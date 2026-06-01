@@ -7,8 +7,8 @@ Golden references are evidence sources, not pair locks. A pattern ID describes
 a universal market condition; public SignalJSON emits these as
 `reference_cases[]` while older internal objects may still expose
 `golden_reference` / `golden_references` for compatibility. Pair names add
-calibration such as pip size, basket/theme alignment, spread, session behavior,
-and volatility.
+calibration such as pip size, spread, session behavior, volatility, and
+optional basket metadata.
 
 Core rule:
 
@@ -16,7 +16,8 @@ Core rule:
 SignalThrottle = pressure radar.
 Microboost = priority/lifecycle booster.
 Allowed = provisional direction.
-Final direction requires phase, theme, price context, risk, and tradeplan readiness.
+Final direction requires phase, price context, risk, lifecycle, spread, and tradeplan readiness.
+Basket/theme context is optional calibration and debug metadata, not a production gate.
 ```
 
 Use `analysis.signalthrottle_patterns.match_golden_patterns()` to enrich live
@@ -34,7 +35,6 @@ features with:
 - `reference_cases`
 - `pair_calibration`
 - `pattern_context`
-- `theme_context`
 - `tradeplan_preview`
 - `execution_gate`
 - `lifecycle`
@@ -49,9 +49,7 @@ features with:
 - `hold_policy`
 - `chase_allowed`
 - `block_reason`
-- `jpy_alignment_status`
-- `theme_alignment_status`
-- `alignment_missing_reason`
+- `target_source`
 
 Compatibility fields such as `golden_reference`, `golden_references`,
 `pair_specific_calibration`, and `pair_role` may still exist inside internal
@@ -69,20 +67,23 @@ The matcher now runs a database-wide retrieval pass across every
 `GOLDEN_PATTERNS` entry. Exact IDs from prior logs or nested
 `pattern_context` win first; semantic/fuzzy matches are lower-weight support
 signals. `pattern_bottlenecks` explains why a recognized watch pattern did not
-become a final SignalJSON, for example missing theme snapshots, provisional RR
-fallback targets, missing support/resistance ladders, or M15 confirmation gates.
+become a final SignalJSON, for example provisional RR fallback targets,
+missing support/resistance ladders, RR below minimum, ambiguous price phase,
+lifecycle conflict, or specific counter/reversal confirmation gates.
 
 Production SignalJSON uses `SIGNAL_JSON_COMPACT_PRODUCTION=true` by default.
 That keeps the public log focused on core identity, direction state, nested
-`pattern_context`, `theme_context`, `tradeplan_preview`, `execution_gate`, and
+`pattern_context`, `tradeplan_preview`, `execution_gate`, and
 `lifecycle`, while dropping null placeholders and duplicated flat pattern/theme
 fields. Heavy matcher internals such as fuzzy matches, semantic hits, and
 candidate score maps are debug-only; enable `SIGNAL_JSON_PATTERN_DEBUG_ENABLED`
 to emit a separate `PatternMatchDebugJSON` sidecar.
 
 Watch events must expose `watch_direction` while keeping
-`validated_direction=None` until structure, M15 confirmation, and execution
-readiness are all satisfied.
+`validated_direction=None` until structure, confirmation mode, and execution
+readiness are all satisfied. M15 close is only mandatory for ambiguous,
+counter, reversal, or lifecycle-conflict paths; direct absorption can bypass it
+when structure target, RR, phase, lifecycle, and spread gates are complete.
 
 `pattern_registry.yaml` and `pair_role_map.yaml` are the operational database.
 `registry.py` loads them at runtime and falls back to the static Python copy
