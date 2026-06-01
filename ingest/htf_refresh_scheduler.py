@@ -128,28 +128,26 @@ class HTFRefreshScheduler:
 
     async def _refresh_symbol(self, symbol: str) -> None:
         async with self.semaphore:
-            try:
-                # ── D1 ──
-                d1 = await self.fetcher.fetch(symbol, "D1", self.d1_bars)
-                if d1:
-                    for c in d1:
-                        self.context_bus.update_candle(c)
-                    await self._push_candles_to_redis(d1)
-                else:
-                    logger.warning("No D1 bars fetched for {} during HTF refresh", symbol)
+            d1 = await self._refresh_timeframe(symbol, "D1", self.d1_bars)
+            w1 = await self._refresh_timeframe(symbol, "W1", self.w1_bars)
+            logger.debug("HTF refreshed {}: D1={}, W1={}", symbol, len(d1 or []), len(w1 or []))
 
-                # ── W1 ──
-                w1 = await self.fetcher.fetch(symbol, "W1", self.w1_bars)
-                if w1:
-                    for c in w1:
-                        self.context_bus.update_candle(c)
-                    await self._push_candles_to_redis(w1)
-                else:
-                    logger.warning("No W1 bars fetched for {} during HTF refresh", symbol)
+    async def _refresh_timeframe(self, symbol: str, timeframe: str, bars: int) -> list[dict[str, Any]]:
+        """Refresh one HTF timeframe through Finnhub plus configured fallback providers."""
+        try:
+            candles = await self.fetcher.fetch(symbol, timeframe, bars)
+        except Exception as exc:
+            logger.error("HTF refresh error for {} {}: {}", symbol, timeframe, exc)
+            return []
 
-                logger.debug("HTF refreshed {}: D1={}, W1={}", symbol, len(d1 or []), len(w1 or []))
-            except Exception as exc:
-                logger.error("HTF refresh error for {}: {}", symbol, exc)
+        if candles:
+            for candle in candles:
+                self.context_bus.update_candle(candle)
+            await self._push_candles_to_redis(candles)
+        else:
+            logger.warning("No {} bars fetched for {} during HTF refresh", timeframe, symbol)
+
+        return candles
 
     @staticmethod
     def _parse_candle_timestamp(value: Any) -> datetime | None:

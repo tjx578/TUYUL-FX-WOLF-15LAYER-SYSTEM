@@ -179,6 +179,26 @@ class TestHTFRefreshScheduler:
         assert bus.update_candle.call_count >= 2
 
     @pytest.mark.asyncio
+    async def test_d1_premium_error_does_not_skip_w1_for_same_symbol(self, _patch_deps: dict) -> None:
+        """A D1 provider failure must not prevent W1 repair for the same symbol."""
+        fetcher = _patch_deps["fetcher"]
+
+        async def _fetch(sym: str, tf: str, bars: int) -> list:
+            if sym == "EURUSD" and tf == "D1":
+                raise RuntimeError("Premium access required for EURUSD D1")
+            return [_w1_candle(sym)] if tf == "W1" else [_d1_candle(sym)]
+
+        fetcher.fetch = AsyncMock(side_effect=_fetch)
+
+        scheduler = HTFRefreshScheduler()
+        await scheduler._refresh_symbol("EURUSD")
+
+        call_timeframes = [call.args[1] for call in fetcher.fetch.call_args_list]
+        assert call_timeframes == ["D1", "W1"]
+        _patch_deps["bus"].update_candle.assert_called_once()
+        assert _patch_deps["bus"].update_candle.call_args.args[0]["timeframe"] == "W1"
+
+    @pytest.mark.asyncio
     async def test_config_defaults_applied(self, _patch_deps: dict) -> None:
         """Verify default config values are sane."""
         scheduler = HTFRefreshScheduler()
