@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from numbers import Real
 from typing import Any
 
-from .registry import GOLDEN_PATTERNS, GoldenPattern, get_pattern, pair_role_for_symbol
+from .registry import GOLDEN_PATTERNS, SCORING_MODEL, GoldenPattern, get_pattern, pair_role_for_symbol
 
 _STRATEGY_TO_PATTERN = {
     "UPPER_RANGE_EXHAUSTION": "UPPER_ABSORPTION_WARNING",
@@ -87,6 +87,7 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
         dual_theme_status=dual_theme_status,
     )
     diagnostics["candidates_scored"] = len(candidates)
+    diagnostics["scoring_model"] = "analysis/signalthrottle_patterns/scoring_model.yaml"
     diagnostics["candidate_scores_top"] = dict(
         sorted(candidates.items(), key=lambda item: (item[1], item[0]), reverse=True)[:12]
     )
@@ -597,14 +598,14 @@ def _execution_readiness_score(
         score -= 20
         evidence.append("spread_penalty")
     if selected.pattern_id == "SPARSE_ARCHIVE":
-        score -= 50
+        score += _scoring_penalty("sparse_archive_penalty", -50)
         score = min(score, 39)
     if selected.family in {"THEME_CONFLICT_FILTER", "DAILY_CONFLICT_FILTER", "TRAP_FILTER"}:
-        score -= 35
+        score += _scoring_penalty("theme_conflict_penalty", -35)
     if selected.entry_permission in {"NO_TRADE", "NO_SELL"}:
         score = min(score, 39)
     if selected.entry_permission in {"NO_NEW_ENTRY", "NO_MARKET_CHASE", "NO_NEW_BUY", "NO_BUY_CHASE", "BLOCK_NEW_ENTRY"}:
-        score -= 25
+        score += _scoring_penalty("late_chase_penalty", -25)
         score = min(score, 69)
     if selected.entry_permission in {
         "ENTRY_WATCH_ONLY_WAIT_RECLAIM",
@@ -624,7 +625,11 @@ def _execution_readiness_score(
         score -= 15
         score = min(score, 79)
     if selected.entry_permission in {"NO_CHASE_PROTECT_OR_WAIT_RETEST", "NO_CHASE_NEAR_RESISTANCE"}:
-        score -= 25
+        score += _scoring_penalty("late_chase_penalty", -25)
+        score = min(score, 69)
+    if _tradeplan_incomplete(data):
+        score += _scoring_penalty("incomplete_tradeplan_penalty", -40)
+        evidence.append("incomplete_tradeplan_penalty")
         score = min(score, 69)
     return max(0, min(100, int(score)))
 
@@ -964,19 +969,37 @@ def _is_jpy_cross(symbol: str) -> bool:
     return symbol.endswith("JPY") or symbol.startswith("JPY")
 
 
+def _tradeplan_incomplete(data: Mapping[str, Any]) -> bool:
+    target_mode = str(data.get("target_mode") or "").upper()
+    if target_mode == "PROVISIONAL_RR_FALLBACK":
+        return True
+    return any(
+        _optional_bool(data.get(field)) is False
+        for field in (
+            "tradeplan_context_ready",
+            "structure_targets_available",
+            "targets_execution_usable",
+        )
+    )
+
+
+def _scoring_penalty(name: str, default: int) -> int:
+    penalties = SCORING_MODEL.get("penalties") if isinstance(SCORING_MODEL, dict) else None
+    if isinstance(penalties, dict):
+        value = penalties.get(name)
+        if isinstance(value, int | float):
+            return int(value)
+    return default
+
+
 def _tier_weight(tier: str) -> int:
     text = _text(tier).upper()
-    return {
-        "S+": 55,
-        "S": 50,
-        "S-": 45,
-        "A+": 40,
-        "A": 35,
-        "A-": 30,
-        "B+": 25,
-        "B": 20,
-        "B-": 15,
-    }.get(text, {"S": 50, "A": 35, "B": 20}.get(text[:1], 0))
+    weights = SCORING_MODEL.get("tier_weights") if isinstance(SCORING_MODEL, dict) else None
+    if isinstance(weights, dict):
+        value = weights.get(text)
+        if isinstance(value, int | float):
+            return int(value)
+    return {"S": 50, "A": 35, "B": 20}.get(text[:1], 0)
 
 
 def _optional_bool(value: Any) -> bool | None:
