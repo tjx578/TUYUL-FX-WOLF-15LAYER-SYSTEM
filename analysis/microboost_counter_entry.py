@@ -1074,8 +1074,6 @@ def _theme_alignment_text(market: Any | None) -> str | None:
         if direction:
             return f"{direction}_BIAS"
     aligned = _optional_bool(_field(market, "theme_aligned", None))
-    if aligned is True:
-        return "THEME_ALIGNED"
     if aligned is False:
         return "THEME_MISMATCH"
     return None
@@ -1157,6 +1155,10 @@ def _entry_zone(start: float | None, end: float | None) -> list[float] | None:
 def _sell_levels(market: Any | None, entry_reference: float | None, pip_value: float) -> dict[str, float | None]:
     resistance_high = _optional_float(_field(market, "resistance_high", _field(market, "main_resistance", None)))
     resistance_low = _optional_float(_field(market, "resistance_low", resistance_high))
+    key_support = _optional_float(_field(market, "key_support", None))
+    minor_support = _optional_float(_field(market, "minor_support", None))
+    major_support = _optional_float(_field(market, "major_support", None))
+    main_support = _optional_float(_field(market, "main_support", None))
     sl_buffer = _optional_float(_field(market, "sl_buffer", None)) or pip_value * 8.0
     sl_tight = _optional_float(_field(market, "sl_tight", None))
     sl_safe = _optional_float(_field(market, "sl_safe", None))
@@ -1170,17 +1172,15 @@ def _sell_levels(market: Any | None, entry_reference: float | None, pip_value: f
         sl_safe = entry_reference + pip_value * 20.0
 
     return {
-        "aggressive_trigger": _round_price(_optional_float(_field(market, "minor_support", None))),
-        "conservative_trigger": _round_price(
-            _optional_float(_field(market, "major_support", _field(market, "main_support", None)))
-        ),
+        "aggressive_trigger": _round_price(_first_optional_float(minor_support, key_support, main_support)),
+        "conservative_trigger": _round_price(_first_optional_float(major_support, main_support, key_support)),
         "sl_tight": _round_price(sl_tight),
         "sl_safe": _round_price(sl_safe),
-        "tp1": _round_price(_optional_float(_field(market, "tp1_support", _field(market, "minor_support", None)))),
+        "tp1": _round_price(
+            _first_optional_float(_field(market, "tp1_support", None), minor_support, key_support, main_support)
+        ),
         "tp2": _round_price(
-            _optional_float(
-                _field(market, "tp2_support", _field(market, "major_support", _field(market, "main_support", None)))
-            )
+            _first_optional_float(_field(market, "tp2_support", None), major_support, main_support, key_support)
         ),
         "tp3": _round_price(_optional_float(_field(market, "tp3_support", None))),
         "tp4": _round_price(_optional_float(_field(market, "tp4_support", None))),
@@ -1192,6 +1192,10 @@ def _sell_levels(market: Any | None, entry_reference: float | None, pip_value: f
 def _buy_levels(market: Any | None, entry_reference: float | None, pip_value: float) -> dict[str, float | None]:
     support_low = _optional_float(_field(market, "support_low", _field(market, "main_support", None)))
     support_high = _optional_float(_field(market, "support_high", support_low))
+    key_resistance = _optional_float(_field(market, "key_resistance", None))
+    minor_resistance = _optional_float(_field(market, "minor_resistance", None))
+    major_resistance = _optional_float(_field(market, "resistance_high", None))
+    main_resistance = _optional_float(_field(market, "main_resistance", None))
     sl_buffer = _optional_float(_field(market, "sl_buffer", None)) or pip_value * 8.0
     sl_tight = _optional_float(_field(market, "sl_tight", None))
     sl_safe = _optional_float(_field(market, "sl_safe", None))
@@ -1205,20 +1209,18 @@ def _buy_levels(market: Any | None, entry_reference: float | None, pip_value: fl
         sl_safe = entry_reference - pip_value * 20.0
 
     return {
-        "aggressive_trigger": _round_price(_optional_float(_field(market, "minor_resistance", None))),
-        "conservative_trigger": _round_price(
-            _optional_float(_field(market, "resistance_high", _field(market, "main_resistance", None)))
-        ),
+        "aggressive_trigger": _round_price(_first_optional_float(minor_resistance, key_resistance, main_resistance)),
+        "conservative_trigger": _round_price(_first_optional_float(major_resistance, main_resistance, key_resistance)),
         "sl_tight": _round_price(sl_tight),
         "sl_safe": _round_price(sl_safe),
         "tp1": _round_price(
-            _optional_float(_field(market, "tp1_resistance", _field(market, "minor_resistance", None)))
+            _first_optional_float(
+                _field(market, "tp1_resistance", None), minor_resistance, key_resistance, main_resistance
+            )
         ),
         "tp2": _round_price(
-            _optional_float(
-                _field(
-                    market, "tp2_resistance", _field(market, "resistance_high", _field(market, "main_resistance", None))
-                )
+            _first_optional_float(
+                _field(market, "tp2_resistance", None), major_resistance, main_resistance, key_resistance
             )
         ),
         "tp3": _round_price(_optional_float(_field(market, "tp3_resistance", None))),
