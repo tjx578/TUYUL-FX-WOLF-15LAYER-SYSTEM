@@ -38,6 +38,12 @@ features with:
 - `tradeplan_preview`
 - `execution_gate`
 - `lifecycle`
+- `pattern_search_space`
+- `pattern_db_candidates_scanned`
+- `pattern_db_exact_matches`
+- `pattern_db_fuzzy_matches`
+- `pattern_bottlenecks`
+- `pattern_match_diagnostics`
 - `entry_permission`
 - `management_action`
 - `hold_policy`
@@ -58,6 +64,13 @@ from current pair context.
 recognized. `execution_readiness_score` describes whether the current market
 context is ready for execution. `pattern_score` remains as a backward-compatible
 readiness score and should not be used alone to downgrade a Tier-S pattern.
+
+The matcher now runs a database-wide retrieval pass across every
+`GOLDEN_PATTERNS` entry. Exact IDs from prior logs or nested
+`pattern_context` win first; semantic/fuzzy matches are lower-weight support
+signals. `pattern_bottlenecks` explains why a recognized watch pattern did not
+become a final SignalJSON, for example missing theme snapshots, provisional RR
+fallback targets, missing support/resistance ladders, or M15 confirmation gates.
 
 Watch events must expose `watch_direction` while keeping
 `validated_direction=None` until structure, M15 confirmation, and execution
