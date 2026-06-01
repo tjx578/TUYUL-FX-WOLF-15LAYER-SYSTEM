@@ -176,6 +176,7 @@ def build_microboost_summary(
                     market_contexts,
                     str(_get(block, "symbol", "")).upper(),
                     _normalize_direction(_get(block, "direction", None)),
+                    theme_scores=theme_scores or [],
                 ),
             )
         )
@@ -412,14 +413,9 @@ def _score_components(
 
 
 def _theme_alignment_score(symbol: str, direction: str | None, theme_scores: list[dict[str, Any]]) -> tuple[int, bool]:
-    base_quote = _split_symbol(symbol)
-    if base_quote is None or direction not in {"BUY", "SELL"}:
+    supportive = _supportive_theme_names(symbol, direction)
+    if not supportive:
         return 0, False
-    base, quote = base_quote
-    if direction == "BUY":
-        supportive = {f"{base}_STRENGTH", f"{quote}_WEAKNESS"}
-    else:
-        supportive = {f"{base}_WEAKNESS", f"{quote}_STRENGTH"}
 
     best = 0
     for theme in theme_scores:
@@ -428,6 +424,32 @@ def _theme_alignment_score(symbol: str, direction: str | None, theme_scores: lis
             continue
         best = max(best, min(20, _coerce_int(theme.get("score", 0)) // 2))
     return best, best > 0
+
+
+def _theme_alignment_label(symbol: str, direction: str | None, theme_scores: list[dict[str, Any]]) -> str | None:
+    supportive = _supportive_theme_names(symbol, direction)
+    if not supportive:
+        return None
+    hits: list[tuple[int, str]] = []
+    for theme in theme_scores:
+        theme_name = str(theme.get("theme", "")).upper()
+        score = _coerce_int(theme.get("score", 0))
+        if theme_name in supportive and score > 0:
+            hits.append((score, theme_name))
+    if not hits:
+        return None
+    hit_names = [theme_name for _, theme_name in sorted(hits, key=lambda item: (-item[0], item[1]))]
+    return f"{'+'.join(hit_names[:2])}_SUPPORTS_{direction}"
+
+
+def _supportive_theme_names(symbol: str, direction: str | None) -> set[str] | None:
+    base_quote = _split_symbol(symbol)
+    if base_quote is None or direction not in {"BUY", "SELL"}:
+        return None
+    base, quote = base_quote
+    if direction == "BUY":
+        return {f"{base}_STRENGTH", f"{quote}_WEAKNESS"}
+    return {f"{base}_WEAKNESS", f"{quote}_STRENGTH"}
 
 
 def _allowed_quorum_bonus(symbol: str, direction: str | None, allowed_quorum: dict[str, Any]) -> int:
@@ -861,16 +883,40 @@ def _market_context_for_symbol(
     market_contexts: dict[str, Any],
     symbol: str,
     direction: str | None,
+    *,
+    theme_scores: list[dict[str, Any]] | None = None,
 ) -> MarketContext | None:
     raw = market_contexts.get(symbol) or market_contexts.get(symbol.upper()) or market_contexts.get(symbol.lower())
     if raw is None:
         return None
+    theme_label = _theme_alignment_label(symbol, direction, theme_scores or [])
     if isinstance(raw, MarketContext):
-        if raw.raw_allowed_direction:
+        updates: dict[str, Any] = {}
+        if not raw.raw_allowed_direction:
+            updates["raw_allowed_direction"] = direction
+        if (
+            theme_label
+            and raw.theme_aligned is not False
+            and not raw.theme_alignment
+            and not raw.counter_entry_theme_alignment
+        ):
+            updates["theme_alignment"] = theme_label
+            updates["counter_entry_theme_alignment"] = theme_label
+            if raw.theme_aligned is None:
+                updates["theme_aligned"] = True
+        if not updates:
             return raw
-        return replace(raw, raw_allowed_direction=direction)
+        return replace(raw, **updates)
     if not isinstance(raw, dict):
         return None
+    theme_aligned = _optional_bool(raw.get("theme_aligned"))
+    theme_alignment = _optional_str(raw.get("theme_alignment"))
+    counter_entry_theme_alignment = _optional_str(raw.get("counter_entry_theme_alignment"))
+    if theme_label and theme_aligned is not False and not theme_alignment and not counter_entry_theme_alignment:
+        theme_alignment = theme_label
+        counter_entry_theme_alignment = theme_label
+        if theme_aligned is None:
+            theme_aligned = True
     return MarketContext(
         symbol=str(raw.get("symbol") or symbol),
         raw_allowed_direction=str(raw.get("raw_allowed_direction") or direction or ""),
@@ -883,9 +929,9 @@ def _market_context_for_symbol(
         m15_phase=_optional_str(raw.get("m15_phase")),
         h1_phase=_optional_str(raw.get("h1_phase")),
         h4_phase=_optional_str(raw.get("h4_phase")),
-        theme_aligned=_optional_bool(raw.get("theme_aligned")),
-        theme_alignment=_optional_str(raw.get("theme_alignment")),
-        counter_entry_theme_alignment=_optional_str(raw.get("counter_entry_theme_alignment")),
+        theme_aligned=theme_aligned,
+        theme_alignment=theme_alignment,
+        counter_entry_theme_alignment=counter_entry_theme_alignment,
         jpy_alignment_status=_optional_str(raw.get("jpy_alignment_status")),
         jpy_alignment=_optional_str(raw.get("jpy_alignment")),
         dual_theme_status=_optional_str(raw.get("dual_theme_status")),
