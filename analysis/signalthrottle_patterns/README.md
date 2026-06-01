@@ -3,6 +3,12 @@
 This folder stores analysis-layer pattern metadata for SignalThrottle pressure.
 The registry never executes trades and never overrides Constitution/L12.
 
+Golden references are evidence sources, not pair locks. A pattern ID describes
+a universal market condition; `golden_reference` / `golden_references` only
+record where that condition was historically validated. Pair names add
+calibration such as pip size, basket/theme alignment, spread, session behavior,
+and volatility.
+
 Core rule:
 
 ```text
@@ -22,6 +28,11 @@ features with:
 - `pattern_score`
 - `pattern_match_score`
 - `execution_readiness_score`
+- `golden_reference`
+- `pattern_scope`
+- `applies_to`
+- `golden_references`
+- `pair_specific_calibration`
 - `pair_role`
 - `entry_permission`
 - `management_action`
