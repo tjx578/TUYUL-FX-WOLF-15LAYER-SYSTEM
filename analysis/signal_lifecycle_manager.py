@@ -90,17 +90,32 @@ class SignalLifecycleManager:
                 self._active[symbol] = _active_from_payload(payload)
                 payload.setdefault("lifecycle_status", f"ACTIVE_{direction}_VALID")
                 payload.setdefault("signal_id", self._active[symbol].signal_id)
+                payload.setdefault("active_position_policy", f"TRACK_ACTIVE_{direction}")
+                payload.setdefault(
+                    "active_signal_management",
+                    _management_payload(self._active[symbol], policy="NEW_ACTIVE_SIGNAL_TRACKING"),
+                )
             return payload
 
         payload["linked_previous_signal"] = active.signal_id
         payload["previous_signal_status"] = active.lifecycle_status
         payload["active_signal"] = active.to_payload()
+        payload.setdefault("active_position_policy", "ACTIVE_SIGNAL_AWARE")
+        payload.setdefault(
+            "active_signal_management",
+            _management_payload(active, policy="COMPARE_WITH_EXISTING_ACTIVE_SIGNAL"),
+        )
 
         if active.direction == direction:
             if _is_breakout_reinforcement(active, payload):
                 return self._breakout_reinforces_active_signal(active, payload)
             payload["lifecycle_status"] = "REINFORCES_ACTIVE_SIGNAL"
             payload["previous_signal_status"] = "REINFORCED"
+            payload["active_position_policy"] = f"REINFORCE_ACTIVE_{direction}"
+            payload["active_signal_management"] = _management_payload(
+                active,
+                policy="REINFORCEMENT_ONLY_WAIT_RETEST_OR_HOLD",
+            )
             if _is_final_active(payload):
                 self._active[symbol] = _active_from_payload(payload, lifecycle_status=f"ACTIVE_{direction}_VALID")
                 payload["signal_id"] = self._active[symbol].signal_id
@@ -115,6 +130,14 @@ class SignalLifecycleManager:
         payload["lifecycle_status"] = "CONFLICT_WAIT_M15_CLOSE"
         payload["action"] = "WAIT_M15_CLOSE"
         payload["final_direction"] = "WAIT"
+        payload["validated_direction"] = None
+        payload["watch_direction"] = direction
+        payload["direction_validation_status"] = "CONFLICT_WATCH_ONLY_PENDING_M15_CLOSE"
+        payload["active_position_policy"] = f"PROTECT_ACTIVE_{active.direction}_WAIT_OPPOSING_CONFIRMATION"
+        payload["active_signal_management"] = _management_payload(
+            active,
+            policy="NO_REVERSAL_UNTIL_M15_CLOSE_AND_STRUCTURE_CONFIRM",
+        )
         return payload
 
     def active_signal(self, symbol: str) -> dict[str, Any] | None:
@@ -127,6 +150,14 @@ class SignalLifecycleManager:
         payload["previous_signal_status"] = f"ACTIVE_{active.direction}_VALID"
         payload["action"] = f"PROTECT_{active.direction}_PROFIT_WAIT_M15_CLOSE"
         payload["valid_for_execution"] = False
+        payload["validated_direction"] = None
+        payload["watch_direction"] = _direction(payload)
+        payload["direction_validation_status"] = "ACTIVE_SIGNAL_PROTECTION_WATCH"
+        payload["active_position_policy"] = f"PROTECT_ACTIVE_{active.direction}_NO_AUTO_REVERSAL"
+        payload["active_signal_management"] = _management_payload(
+            active,
+            policy="PROTECT_PROFIT_ONLY_WAIT_M15_CLOSE",
+        )
         payload["reason"] = (
             f"{active.direction} plan is active; opposing absorption pressure is a profit-protection "
             f"and M15-close decision event, not an automatic reversal. {payload.get('reason') or ''}"
@@ -144,6 +175,11 @@ class SignalLifecycleManager:
         payload["previous_signal_status"] = "REINFORCED"
         payload["action"] = f"HOLD_{direction}_OR_{direction}_RETEST"
         payload["valid_for_execution"] = True
+        payload["active_position_policy"] = f"REINFORCE_ACTIVE_{direction}"
+        payload["active_signal_management"] = _management_payload(
+            active,
+            policy="HOLD_OR_ADD_ONLY_ON_RETEST",
+        )
         payload.setdefault("rr_status", "VALID")
         payload.setdefault("target_mode", "FINAL_MARKET_STRUCTURE")
         payload.setdefault("sl_tight", active.sl_tight)
@@ -161,6 +197,11 @@ class SignalLifecycleManager:
         payload["lifecycle_status"] = f"SUPERSEDES_ACTIVE_{active.direction}"
         payload["previous_signal_status"] = "SUPERSEDED"
         payload["action"] = f"EXIT_{active.direction}_AND_{direction}_RETEST"
+        payload["active_position_policy"] = f"SUPERSEDE_ACTIVE_{active.direction}_WITH_{direction}"
+        payload["active_signal_management"] = _management_payload(
+            active,
+            policy="EXIT_ACTIVE_ONLY_AFTER_REVERSAL_VALID",
+        )
         self._active[active.symbol] = _active_from_payload(payload, lifecycle_status=f"ACTIVE_{direction}_VALID")
         payload["signal_id"] = self._active[active.symbol].signal_id
         return payload
@@ -190,6 +231,14 @@ class SignalLifecycleManager:
         payload["lifecycle_status"] = "CONFLICT_WAIT_REVERSAL_CONFIRMATION_AND_COOLDOWN"
         payload["previous_signal_status"] = f"ACTIVE_{active.direction}_VALID"
         payload["action"] = "WAIT_REVERSAL_CONFIRMATION_AND_M15_COOLDOWN"
+        payload["validated_direction"] = None
+        payload["watch_direction"] = direction if direction in {"BUY", "SELL"} else None
+        payload["direction_validation_status"] = "REVERSAL_WATCH_PENDING_COOLDOWN"
+        payload["active_position_policy"] = f"PROTECT_ACTIVE_{active.direction}_WAIT_REVERSAL_COOLDOWN"
+        payload["active_signal_management"] = _management_payload(
+            active,
+            policy="NO_REVERSAL_UNTIL_COOLDOWN_CONFIRMS",
+        )
         return payload
 
 
@@ -200,6 +249,17 @@ def _is_final_active(payload: dict[str, Any]) -> bool:
         and _direction(payload) in {"BUY", "SELL"}
         and bool(payload.get("valid_for_execution", False))
     )
+
+
+def _management_payload(active: ActiveSignal, *, policy: str) -> dict[str, Any]:
+    return {
+        "policy": policy,
+        "active_signal_id": active.signal_id,
+        "active_direction": active.direction,
+        "active_status": active.status,
+        "active_lifecycle_status": active.lifecycle_status,
+        "automatic_reversal_allowed": False,
+    }
 
 
 def _direction(payload: dict[str, Any]) -> str | None:
