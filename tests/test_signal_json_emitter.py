@@ -182,7 +182,9 @@ def test_build_signal_json_event_from_counter_entry_payload():
     assert event.status == "NANO_ABSORPTION_SELL_WATCH"
     assert event.entry_reference_price == 1.37696
     assert event.signal_family == "MICROBOOST_COUNTER_ENTRY"
-    assert event.validated_direction == "SELL"
+    assert event.validated_direction is None
+    assert event.watch_direction == "SELL"
+    assert event.direction_validation_status == "WATCH_ONLY_PENDING_CONFIRMATION"
     assert event.cluster_id == "USDCAD_20260519T145605Z"
     assert event.event == "signal_watch_json"
     assert event.is_final_signal is False
@@ -199,11 +201,16 @@ def test_build_signal_json_event_retains_golden_pattern_contract_fields():
         pattern_tier="S",
         pattern_family="EXHAUSTION_MANAGEMENT",
         pattern_score=58,
+        pattern_match_score=92,
+        execution_readiness_score=58,
         golden_reference="USDJPY",
         pair_role="PHASE_SENSITIVE_JPY_MAJOR",
         entry_permission="NO_NEW_BUY",
         management_action="PROTECT_LONG_OR_SELL_WATCH",
         chase_allowed=False,
+        jpy_alignment_status="UNKNOWN",
+        theme_alignment_status="ALIGNED",
+        alignment_missing_reason="jpy_alignment,dual_theme_status",
         pattern_evidence=["strategy_pattern=UPPER_RANGE_EXHAUSTION"],
     ).to_dict()
 
@@ -214,6 +221,11 @@ def test_build_signal_json_event_retains_golden_pattern_contract_fields():
     assert event.matched_patterns == ["UPPER_ABSORPTION_WARNING", "JPY_ALIGNMENT_REQUIRED"]
     assert event.entry_permission == "NO_NEW_BUY"
     assert event.pattern_score == 58
+    assert event.pattern_match_score == 92
+    assert event.execution_readiness_score == 58
+    assert event.jpy_alignment_status == "UNKNOWN"
+    assert event.alignment_missing_reason == "jpy_alignment,dual_theme_status"
+    assert event.signal_id == "USDJPY_SELL_WATCH_20260519_145605"
 
 
 def test_build_signal_json_event_marks_absorption_as_conditional_quality():
