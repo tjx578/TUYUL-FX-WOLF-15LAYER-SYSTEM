@@ -7,7 +7,13 @@ archetypes and pair roles, but it never executes trades and never bypasses L12.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - production fallback when PyYAML is absent.
+    yaml = None
 
 
 @dataclass(frozen=True)
@@ -38,7 +44,7 @@ class GoldenPattern:
         return payload
 
 
-GOLDEN_PATTERNS: tuple[GoldenPattern, ...] = (
+_STATIC_GOLDEN_PATTERNS: tuple[GoldenPattern, ...] = (
     GoldenPattern("OPEN_LANE_TIMING_VALID", "S", "TREND_LIFECYCLE", "GBPCAD/AUDJPY", "early entry-watch before expansion", "ENTRY_WATCH", chase_allowed=False, golden_references=("GBPCAD", "AUDJPY")),
     GoldenPattern("ZERO_DRAWDOWN_FOLLOWTHROUGH", "S", "OUTCOME_VALIDATION", "GBPCAD", "outcome quality upgrade", "TRACK_ONLY"),
     GoldenPattern("PRE_IGNITION_COUNTERFLOW_TRAP", "S", "DIRECTION_VALIDATION", "GBPCAD", "block provisional counterflow", "NO_TRADE", block_reason="COUNTERFLOW_FALSE_SIGNAL"),
@@ -94,7 +100,7 @@ GOLDEN_PATTERNS: tuple[GoldenPattern, ...] = (
 )
 
 
-PAIR_ROLE_MAP: dict[str, dict[str, Any]] = {
+_STATIC_PAIR_ROLE_MAP: dict[str, dict[str, Any]] = {
     "GBPCAD": {"default_role": "PRIMARY_TIMING_CAD_WEAKNESS", "golden_patterns": ["OPEN_LANE_TIMING_VALID", "ZERO_DRAWDOWN_FOLLOWTHROUGH", "PRE_IGNITION_COUNTERFLOW_TRAP", "HIGH_DENSITY_ACCELERATION", "LATE_DENSE_CONGESTION", "LATE_MICROBOOST_DECISION_POINT"]},
     "EURCAD": {"default_role": "DELAYED_IGNITION_CAD_WEAKNESS", "golden_patterns": ["DELAYED_IGNITION_MICROBOOST", "LATE_UPPER_MICROBOOST"]},
     "AUDCAD": {"default_role": "LATE_SATURATION_CAD_WEAKNESS", "golden_patterns": ["LATE_UPPER_MICROBOOST", "SATURATION_MICROBOOST_WARNING"]},
@@ -113,6 +119,140 @@ PAIR_ROLE_MAP: dict[str, dict[str, Any]] = {
     "XAUUSD": {"default_role": "METAL_VOLATILITY_LIFECYCLE", "golden_patterns": ["METAL_SUSTAINED_PRESSURE_CONTEXT", "METAL_SHORT_WINDOW_CONTINUATION_THEN_WHIPSAW", "METAL_EXTENDED_MFE_THEN_REVERSAL", "METAL_NO_CHASE_AFTER_UPPER_SPIKE"]},
     "XAGUSD": {"default_role": "METAL_VOLATILITY_LIFECYCLE", "golden_patterns": ["METAL_SUSTAINED_PRESSURE_CONTEXT", "METAL_SHORT_WINDOW_CONTINUATION_THEN_WHIPSAW", "METAL_EXTENDED_MFE_THEN_REVERSAL", "METAL_NO_CHASE_AFTER_UPPER_SPIKE"]},
     "EURAUD": {"default_role": "MULTI_WAVE_PRIORITY_PAIR", "golden_patterns": ["MULTI_WAVE_PRIORITY"]},
+}
+
+_STATIC_SCORING_MODEL: dict[str, Any] = {
+    "max_score": 100,
+    "tier_weights": {
+        "S+": 55,
+        "S": 50,
+        "S-": 45,
+        "A+": 40,
+        "A": 35,
+        "A-": 30,
+        "B+": 25,
+        "B": 20,
+        "B-": 15,
+    },
+    "penalties": {
+        "theme_conflict_penalty": -35,
+        "incomplete_tradeplan_penalty": -40,
+        "sparse_archive_penalty": -50,
+        "late_chase_penalty": -25,
+    },
+}
+
+
+def _load_yaml_file(path: Path) -> dict[str, Any] | None:
+    if yaml is None or not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+    except (OSError, TypeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _load_patterns_from_yaml() -> tuple[GoldenPattern, ...] | None:
+    payload = _load_yaml_file(Path(__file__).with_name("pattern_registry.yaml"))
+    raw_patterns = None if payload is None else payload.get("patterns")
+    if not isinstance(raw_patterns, list):
+        return None
+    patterns: list[GoldenPattern] = []
+    seen: set[str] = set()
+    for item in raw_patterns:
+        if not isinstance(item, dict):
+            return None
+        pattern = _pattern_from_yaml(item)
+        if pattern is None or pattern.pattern_id in seen:
+            return None
+        seen.add(pattern.pattern_id)
+        patterns.append(pattern)
+    return tuple(patterns) if patterns else None
+
+
+def _pattern_from_yaml(item: dict[str, Any]) -> GoldenPattern | None:
+    required = ("pattern_id", "tier", "family", "golden_source", "function", "entry_permission")
+    if any(not str(item.get(key) or "").strip() for key in required):
+        return None
+    return GoldenPattern(
+        pattern_id=str(item["pattern_id"]).strip().upper(),
+        tier=str(item["tier"]).strip(),
+        family=str(item["family"]).strip().upper(),
+        golden_source=str(item["golden_source"]).strip().upper(),
+        function=str(item["function"]).strip(),
+        entry_permission=str(item["entry_permission"]).strip().upper(),
+        management_action=_optional_text(item.get("management_action")),
+        hold_policy=_optional_text(item.get("hold_policy")),
+        chase_allowed=bool(item.get("chase_allowed", False)),
+        block_reason=_optional_text(item.get("block_reason")),
+        scope=str(item.get("scope") or "UNIVERSAL").strip().upper(),
+        applies_to=str(item.get("applies_to") or "ALL_PAIRS_IF_CONDITIONS_MATCH").strip().upper(),
+        golden_references=tuple(_string_list(item.get("golden_references")) or ()),
+        pair_specific_calibration=tuple(_string_list(item.get("pair_specific_calibration")) or ()),
+    )
+
+
+def _load_pair_role_map_from_yaml() -> dict[str, dict[str, Any]] | None:
+    payload = _load_yaml_file(Path(__file__).with_name("pair_role_map.yaml"))
+    raw_map = None if payload is None else payload.get("pair_role_map")
+    if not isinstance(raw_map, dict):
+        return None
+    role_map: dict[str, dict[str, Any]] = {}
+    for symbol, config in raw_map.items():
+        if not isinstance(config, dict):
+            return None
+        default_role = _optional_text(config.get("default_role"))
+        golden_patterns = _string_list(config.get("golden_patterns"))
+        if default_role is None or golden_patterns is None:
+            return None
+        role_map[str(symbol).strip().upper()] = {
+            "default_role": default_role,
+            "golden_patterns": golden_patterns,
+        }
+    return role_map or None
+
+
+def _load_scoring_model_from_yaml() -> dict[str, Any] | None:
+    payload = _load_yaml_file(Path(__file__).with_name("scoring_model.yaml"))
+    model = None if payload is None else payload.get("scoring_model")
+    return dict(model) if isinstance(model, dict) else None
+
+
+def _load_routing_logic_from_yaml() -> dict[str, Any] | None:
+    payload = _load_yaml_file(Path(__file__).with_name("routing_logic.yaml"))
+    router = None if payload is None else payload.get("pattern_router")
+    return dict(router) if isinstance(router, dict) else None
+
+
+def _optional_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text.upper() if text else None
+
+
+def _string_list(value: Any) -> list[str] | None:
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip().upper() for item in value if str(item or "").strip()]
+        return items or None
+    text = str(value or "").strip()
+    return [text.upper()] if text else None
+
+
+_YAML_GOLDEN_PATTERNS = _load_patterns_from_yaml()
+_YAML_PAIR_ROLE_MAP = _load_pair_role_map_from_yaml()
+_YAML_SCORING_MODEL = _load_scoring_model_from_yaml()
+_YAML_ROUTING_LOGIC = _load_routing_logic_from_yaml()
+
+GOLDEN_PATTERNS: tuple[GoldenPattern, ...] = _YAML_GOLDEN_PATTERNS or _STATIC_GOLDEN_PATTERNS
+PAIR_ROLE_MAP: dict[str, dict[str, Any]] = _YAML_PAIR_ROLE_MAP or _STATIC_PAIR_ROLE_MAP
+SCORING_MODEL: dict[str, Any] = _YAML_SCORING_MODEL or _STATIC_SCORING_MODEL
+ROUTING_LOGIC: dict[str, Any] = _YAML_ROUTING_LOGIC or {}
+REGISTRY_SOURCE: dict[str, str] = {
+    "patterns": "yaml" if _YAML_GOLDEN_PATTERNS is not None else "static",
+    "pair_roles": "yaml" if _YAML_PAIR_ROLE_MAP is not None else "static",
+    "scoring_model": "yaml" if _YAML_SCORING_MODEL is not None else "static",
+    "routing_logic": "yaml" if _YAML_ROUTING_LOGIC is not None else "missing",
 }
 
 _PATTERN_BY_ID = {pattern.pattern_id: pattern for pattern in GOLDEN_PATTERNS}
