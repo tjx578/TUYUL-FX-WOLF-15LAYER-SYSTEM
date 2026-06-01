@@ -266,7 +266,8 @@ def test_emitted_payload_uses_universal_pattern_context_not_pair_owned_fields(ca
     assert '"reference_cases":[{"symbol":"USDJPY"' in caplog.text
     assert '"pair_calibration":{"symbol":"USDCAD"' in caplog.text
     assert '"pattern_context":{"selected_pattern_id":"UPPER_ABSORPTION_WARNING"' in caplog.text
-    assert '"theme_alignment_status":"NOT_AVAILABLE"' in caplog.text
+    assert '"theme_context"' not in caplog.text
+    assert '"theme_alignment_status"' not in caplog.text
     assert '"tradeplan_preview":{"target_mode":"PROVISIONAL_RR_FALLBACK"' in caplog.text
     assert '"golden_reference"' not in caplog.text
     assert '"pair_role"' not in caplog.text
