@@ -141,6 +141,9 @@ def test_universal_microburst_followthrough_can_match_another_jpy_cross():
 
     assert result["selected_pattern_id"] == "MICROBURST_FOLLOWTHROUGH_RECLAIM"
     assert result["golden_reference"] == "GBPJPY/AUDJPY"
+    assert result["pattern_scope"] == "UNIVERSAL"
+    assert result["applies_to"] == "ALL_PAIRS_IF_CONDITIONS_MATCH"
+    assert result["golden_references"] == ["GBPJPY", "AUDJPY"]
     assert result["pair_role"] == "GENERAL_SIGNALTHROTTLE_PAIR"
     assert "JPY_ALIGNMENT_REQUIRED" in result["matched_patterns"]
 
