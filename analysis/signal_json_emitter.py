@@ -327,6 +327,10 @@ class SignalJsonEvent:
     pattern_match_score: int | None = None
     execution_readiness_score: int | None = None
     golden_reference: str | None = None
+    pattern_scope: str | None = None
+    applies_to: str | None = None
+    golden_references: list[str] | None = None
+    pair_specific_calibration: list[str] | None = None
     pair_role: str | None = None
     entry_permission: str | None = None
     management_action: str | None = None
@@ -797,6 +801,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         pattern_match_score=_optional_int(counter_entry.get("pattern_match_score")),
         execution_readiness_score=_optional_int(counter_entry.get("execution_readiness_score")),
         golden_reference=_optional_str(counter_entry.get("golden_reference")),
+        pattern_scope=_optional_str(counter_entry.get("pattern_scope")),
+        applies_to=_optional_str(counter_entry.get("applies_to")),
+        golden_references=_string_list(counter_entry.get("golden_references")),
+        pair_specific_calibration=_string_list(counter_entry.get("pair_specific_calibration")),
         pair_role=_optional_str(counter_entry.get("pair_role")),
         entry_permission=_optional_str(counter_entry.get("entry_permission")),
         management_action=_optional_str(counter_entry.get("management_action")),
