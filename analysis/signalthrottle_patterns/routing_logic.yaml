@@ -6,8 +6,11 @@ pattern_router:
   step_5_decision_router:
     - "NO_NEW_ENTRY never emits executable SignalJSON"
     - "WAIT emits SignalWatchJSON or SignalDecisionUpdateJSON"
+    - "SignalWatchJSON uses watch_direction; validated_direction stays null until execution is valid"
     - "tradeplan_valid=false forces execution_valid_now=false"
+    - "PROVISIONAL_RR_FALLBACK targets are not executable unless targets_execution_usable=true"
     - "finalizer_required=true and block_inactive_seconds>=60 runs SignalBlockFinalizer"
+    - "DecisionUpdate includes decision_update_trigger and pending_age_seconds"
     - "METAL enforces fast protect and short hold policy"
     - "JPY crosses enforce JPY_ALIGNMENT_REQUIRED"
     - "CONFIRMATION_PAIR requires own trigger before execution"
