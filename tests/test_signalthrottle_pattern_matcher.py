@@ -114,13 +114,35 @@ def test_gbpjpy_bullish_microburst_requires_jpy_alignment_metadata():
         }
     )
 
-    assert result["selected_pattern_id"] == "GBPJPY_BUY_MICROBURST_FOLLOWTHROUGH"
+    assert result["selected_pattern_id"] == "MICROBURST_FOLLOWTHROUGH_RECLAIM"
     assert result["pattern_tier"] == "S-"
     assert result["pair_role"] == "PHASE_SENSITIVE_JPY_CROSS"
-    assert result["entry_permission"] == "BUY_RETEST_OR_HOLD_REINFORCEMENT"
-    assert result["management_action"] == "NO_MARKET_CHASE_AT_UPPER_EXTREME"
+    assert result["entry_permission"] == "BUY_RECLAIM_OR_PULLBACK_HOLD"
+    assert result["management_action"] == "NO_MARKET_CHASE_CONFIRM_THEME"
     assert "JPY_ALIGNMENT_REQUIRED" in result["matched_patterns"]
     assert result["alignment_missing_reason"] is None
+
+
+def test_universal_microburst_followthrough_can_match_another_jpy_cross():
+    result = match_golden_patterns(
+        {
+            "symbol": "EURJPY",
+            "raw_direction": "BUY",
+            "duration_seconds": 286,
+            "density_per_minute": 10.68,
+            "m15_phase": "BULLISH",
+            "h1_phase": "BULLISH",
+            "theme_aligned": True,
+            "jpy_alignment": "ALIGNED",
+            "dual_theme_status": "ALIGNED",
+            "spread_normal": True,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "MICROBURST_FOLLOWTHROUGH_RECLAIM"
+    assert result["golden_reference"] == "GBPJPY/AUDJPY"
+    assert result["pair_role"] == "GENERAL_SIGNALTHROTTLE_PAIR"
+    assert "JPY_ALIGNMENT_REQUIRED" in result["matched_patterns"]
 
 
 def test_gbpjpy_clean_five_minute_block_stays_watch_only():
@@ -139,7 +161,7 @@ def test_gbpjpy_clean_five_minute_block_stays_watch_only():
         }
     )
 
-    assert result["selected_pattern_id"] == "GBPJPY_CLEAN_5M_WAIT_RECLAIM_NOT_FINAL"
+    assert result["selected_pattern_id"] == "CLEAN_5M_TIMING_GATE_NOT_FINAL"
     assert result["entry_permission"] == "ENTRY_WATCH_ONLY_WAIT_RECLAIM"
     assert result["pattern_score"] <= 69
     assert result["jpy_alignment_status"] == "UNKNOWN"
@@ -160,9 +182,9 @@ def test_gbpjpy_high_density_bearish_context_blocks_buy_chase():
         }
     )
 
-    assert result["selected_pattern_id"] == "GBPJPY_HIGH_DENSITY_IN_BEARISH_CONTEXT_NO_CHASE"
-    assert result["entry_permission"] == "NO_BUY_CHASE"
-    assert result["block_reason"] == "BEARISH_CONTEXT_NO_BUY_CHASE"
+    assert result["selected_pattern_id"] == "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE"
+    assert result["entry_permission"] == "NO_CHASE_PROTECT_OR_WAIT_RETEST"
+    assert result["block_reason"] == "HIGH_DENSITY_CONTEXT_NO_CHASE"
     assert result["pattern_score"] <= 69
 
 
@@ -181,10 +203,10 @@ def test_nzdchf_hot_block_in_bearish_context_prefers_sell_management():
         }
     )
 
-    assert result["selected_pattern_id"] == "NZDCHF_HOT_BLOCK_BEARISH_CONTINUATION"
+    assert result["selected_pattern_id"] == "BEARISH_OR_BULLISH_CONTINUATION_AFTER_HOT_BLOCK"
     assert result["pair_role"] == "CHF_CROSS_PHASE_SENSITIVE"
-    assert result["entry_permission"] == "SELL_RALLY_OR_PROTECT_LONG"
-    assert result["management_action"] == "SELL_RALLY_RETEST_OR_PROTECT_LONG"
+    assert result["entry_permission"] == "PHASE_CONTINUATION_RETEST_OR_PROTECT"
+    assert result["management_action"] == "FOLLOW_PHASE_RETEST_OR_PROTECT"
 
 
 def test_nzdchf_repeated_microburst_is_reclaim_watch_not_final_reversal():
@@ -201,8 +223,8 @@ def test_nzdchf_repeated_microburst_is_reclaim_watch_not_final_reversal():
         }
     )
 
-    assert result["selected_pattern_id"] == "NZDCHF_REPEATED_MICROBURST_COUNTER_RECLAIM"
-    assert result["entry_permission"] == "BUY_RECLAIM_WATCH_OR_EXIT_SHORT_PARTIAL"
+    assert result["selected_pattern_id"] == "COUNTER_RECLAIM_WATCH_NOT_REVERSAL_FINAL"
+    assert result["entry_permission"] == "RECLAIM_WATCH_OR_PARTIAL_EXIT"
     assert result["pattern_score"] <= 79
 
 
@@ -221,7 +243,7 @@ def test_nzdchf_repeated_pressure_with_daily_conflict_is_management_alert():
         }
     )
 
-    assert result["selected_pattern_id"] == "NZDCHF_REPEATED_PRESSURE_AMBIGUOUS_MANAGEMENT"
+    assert result["selected_pattern_id"] == "REPEATED_PRESSURE_MANAGEMENT_ALERT"
     assert result["entry_permission"] == "WAIT_BREAK_OR_RECLAIM"
     assert result["management_action"] == "MANAGEMENT_ALERT"
     assert result["pattern_score"] <= 69
@@ -246,10 +268,10 @@ def test_audjpy_jpy_weakness_open_lane_requires_alignment_and_reclaim_context():
         }
     )
 
-    assert result["selected_pattern_id"] == "AUDJPY_JPY_WEAKNESS_OPEN_LANE_CONTINUATION"
-    assert result["pattern_tier"] == "S-"
+    assert result["selected_pattern_id"] == "OPEN_LANE_TIMING_VALID"
+    assert result["pattern_tier"] == "S"
     assert result["pair_role"] == "JPY_WEAKNESS_CONFIRMATION_CROSS"
-    assert result["entry_permission"] == "BUY_RECLAIM_OR_BUY_PULLBACK_HOLD"
+    assert result["entry_permission"] == "ENTRY_WATCH"
     assert "JPY_ALIGNMENT_REQUIRED" in result["matched_patterns"]
     assert result["alignment_missing_reason"] is None
 
@@ -272,10 +294,9 @@ def test_audjpy_high_density_pullback_then_expand_is_entry_watch():
         }
     )
 
-    assert result["selected_pattern_id"] == "AUDJPY_HIGH_DENSITY_PULLBACK_THEN_EXPAND"
-    assert result["pattern_tier"] == "A+"
-    assert result["entry_permission"] == "ENTRY_WATCH_WAIT_M15_CLOSE"
-    assert result["pattern_score"] <= 69
+    assert result["selected_pattern_id"] == "MICROBURST_FOLLOWTHROUGH_RECLAIM"
+    assert result["pattern_tier"] == "S-"
+    assert result["entry_permission"] == "BUY_RECLAIM_OR_PULLBACK_HOLD"
 
 
 def test_audjpy_late_upper_density_blocks_chase():
@@ -298,9 +319,9 @@ def test_audjpy_late_upper_density_blocks_chase():
         }
     )
 
-    assert result["selected_pattern_id"] == "AUDJPY_LATE_UPPER_DENSITY_NO_CHASE"
+    assert result["selected_pattern_id"] == "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE"
     assert result["entry_permission"] == "NO_CHASE_PROTECT_OR_WAIT_RETEST"
-    assert result["block_reason"] == "LATE_UPPER_DENSITY_NO_CHASE"
+    assert result["block_reason"] == "HIGH_DENSITY_CONTEXT_NO_CHASE"
     assert result["pattern_score"] <= 69
 
 
@@ -319,9 +340,9 @@ def test_eurchf_mature_microboost_requires_reclaim():
         }
     )
 
-    assert result["selected_pattern_id"] == "EURCHF_MATURE_MICROBOOST_RECLAIM_REQUIRED"
+    assert result["selected_pattern_id"] == "COUNTER_RECLAIM_WATCH_NOT_REVERSAL_FINAL"
     assert result["pair_role"] == "CHF_WEAKNESS_MICROBOOST_CROSS"
-    assert result["entry_permission"] == "WAIT_RECLAIM_OR_PULLBACK_HOLD"
+    assert result["entry_permission"] == "RECLAIM_WATCH_OR_PARTIAL_EXIT"
     assert result["pattern_score"] <= 69
 
 
@@ -341,9 +362,9 @@ def test_eurchf_chf_weakness_is_delayed_watch_after_early_failure():
         }
     )
 
-    assert result["selected_pattern_id"] == "EURCHF_CHF_WEAKNESS_DELAYED_FOLLOWTHROUGH"
+    assert result["selected_pattern_id"] == "DELAYED_FOLLOWTHROUGH_WATCH"
     assert result["pattern_tier"] == "A-"
-    assert result["entry_permission"] == "DELAYED_BUY_WATCH"
+    assert result["entry_permission"] == "DELAYED_WATCH"
     assert result["management_action"] == "WAIT_SUPPORT_HOLD_OR_RECLAIM"
 
 
@@ -362,9 +383,9 @@ def test_eurchf_upper_microboost_exhaustion_blocks_buy_chase():
         }
     )
 
-    assert result["selected_pattern_id"] == "EURCHF_UPPER_MICROBOOST_EXHAUSTION_FILTER"
-    assert result["entry_permission"] == "NO_CHASE_NEAR_RESISTANCE"
-    assert result["block_reason"] == "UPPER_MICROBOOST_EXHAUSTION"
+    assert result["selected_pattern_id"] == "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE"
+    assert result["entry_permission"] == "NO_CHASE_PROTECT_OR_WAIT_RETEST"
+    assert result["block_reason"] == "HIGH_DENSITY_CONTEXT_NO_CHASE"
     assert result["pattern_score"] <= 69
 
 
