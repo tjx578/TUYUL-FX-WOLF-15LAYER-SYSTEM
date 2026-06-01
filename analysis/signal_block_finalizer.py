@@ -42,6 +42,11 @@ FINAL_EXECUTION_STATUSES = {
 }
 
 MIN_EXECUTABLE_TP1_RR = 2.0
+STRUCTURE_TARGET_MODES = {
+    "FINAL_MARKET_STRUCTURE",
+    "STRUCTURE_LADDER_TARGET",
+    "KEY_LEVEL_STRUCTURE_TARGET",
+}
 
 
 @dataclass
@@ -484,6 +489,7 @@ class SignalBlockFinalizer:
             payload["source_final_direction"] = promoted.get("final_direction")
             for key in (
                 "target_mode",
+                "target_source",
                 "tp_status",
                 "tp_missing_reason",
                 "support_ladder_ready",
@@ -802,7 +808,7 @@ def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
     family = str(payload.get("signal_family") or "").upper()
     if family != "MICROBOOST_COUNTER_ENTRY":
         return True
-    if str(payload.get("target_mode") or "").upper() != "FINAL_MARKET_STRUCTURE":
+    if str(payload.get("target_mode") or "").upper() not in STRUCTURE_TARGET_MODES:
         return False
     zones = payload.get("structure_zones")
     invalidation = payload.get("invalidation_rules")
