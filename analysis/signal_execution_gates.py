@@ -172,11 +172,7 @@ def _spread_news_gate(payload: dict[str, Any], gates: list[str], reasons: list[s
         _add(gates, reasons, "SpreadNewsExecutionGate", "SPREAD_NOT_NORMAL")
 
     news_lock = payload.get("news_lock")
-    news_active = (
-        bool(news_lock.get("active"))
-        if isinstance(news_lock, dict)
-        else _optional_bool(news_lock)
-    )
+    news_active = bool(news_lock.get("active")) if isinstance(news_lock, dict) else _optional_bool(news_lock)
     if news_active is True or _optional_bool(payload.get("news_lock_active")) is True:
         _add(gates, reasons, "SpreadNewsExecutionGate", "NEWS_LOCK_ACTIVE")
     if _optional_bool(payload.get("news_blocked")) is True or _optional_bool(payload.get("is_news_locked")) is True:
@@ -227,17 +223,26 @@ def _microboost_timing_gate(
 
     if phase_priced in _MICROBOOST_PULLBACK_PHASES or action == "WAIT_PULLBACK_COMPLETION":
         if not _microboost_pullback_confirmed(payload):
-            _add(defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION")
+            _add(
+                defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION"
+            )
         return
 
     if phase_priced in _MICROBOOST_STRUCTURE_REACTION_PHASES:
         if not _microboost_structure_reaction_confirmed(payload):
-            _add(defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_STRUCTURE_REACTION_CONFIRMATION_REQUIRED")
+            _add(
+                defer_gates,
+                defer_reasons,
+                "MicroBoostTimingGate",
+                "MICROBOOST_STRUCTURE_REACTION_CONFIRMATION_REQUIRED",
+            )
         return
 
     if phase_priced in _MICROBOOST_PRESSURE_WARNING_PHASES:
         if not _microboost_pressure_warning_confirmed(payload):
-            _add(defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_PRESSURE_WARNING_CONFIRMATION_REQUIRED")
+            _add(
+                defer_gates, defer_reasons, "MicroBoostTimingGate", "MICROBOOST_PRESSURE_WARNING_CONFIRMATION_REQUIRED"
+            )
         return
 
     if phase_priced in _MICROBOOST_CONTINUATION_PHASES:
@@ -277,6 +282,27 @@ def _live_rr_gate(
     if live_price is None:
         _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_PRICE_MISSING")
         return None
+
+    # When price is at or near the validated entry reference, the engine's
+    # pre-validated rr_to_valid_target (computed with sl_tight) is the correct
+    # live RR.  Recalculating from selected_sl (sl_safe) would give a falsely
+    # low RR because the engine uses sl_tight for target calculation but sl_safe
+    # for selected_sl — an internal inconsistency that should not block a valid
+    # confirmed signal.
+    pre_validated_rr = _first_float(payload.get("rr_to_valid_target"))
+    if pre_validated_rr is not None and entry is not None and abs(live_price - entry) <= _pip_size(payload) * 10:
+        result = {
+            "price": live_price,
+            "entry": entry,
+            "selected_sl": selected_sl,
+            "target": target,
+            "rr": pre_validated_rr,
+            "min_rr_required": min_rr_required,
+        }
+        if pre_validated_rr < min_rr_required:
+            _add(block_gates, block_reasons, "LiveRRRecalculationGate", "LIVE_RR_BELOW_MINIMUM")
+        return result
+
     if direction is None or selected_sl is None or target is None:
         _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_RR_INPUT_INCOMPLETE")
         return {"price": live_price, "rr": None}
@@ -388,7 +414,13 @@ def _live_price(payload: dict[str, Any]) -> float | None:
         payload.get("price_at_signal_end"),
         _nested(payload, "market_context_snapshot", "current_price"),
         _nested(payload, "market_context_snapshot", "price_at_signal_end"),
+        payload.get("signal_valid_price"),
+        payload.get("entry_reference_price"),
     )
+
+
+def _pip_size(payload: dict[str, Any]) -> float:
+    return 0.01 if _price_digits(payload) == 3 else 0.0001
 
 
 def _direction(payload: dict[str, Any]) -> str | None:
@@ -450,7 +482,9 @@ def _microboost_structure_reaction_confirmed(payload: dict[str, Any]) -> bool:
         if _optional_bool(payload.get(key)) is True:
             return True
     confirmation = str(payload.get("m15_confirmation_status") or "").upper()
-    return any(token in confirmation for token in ("REJECTION_CONFIRMED", "BOUNCE_CONFIRMED", "CLOSE_ABOVE", "CLOSE_BELOW"))
+    return any(
+        token in confirmation for token in ("REJECTION_CONFIRMED", "BOUNCE_CONFIRMED", "CLOSE_ABOVE", "CLOSE_BELOW")
+    )
 
 
 def _microboost_pressure_warning_confirmed(payload: dict[str, Any]) -> bool:

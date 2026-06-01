@@ -8,7 +8,7 @@ priority order and returns on the first success.
 
 Supported backends (env-key gated; disabled when key is absent):
   1. Twelve Data   — TWELVE_DATA_API_KEY
-  2. Alpha Vantage — ALPHA_VANTAGE_API_KEY
+  2. Alpha Vantage — ALPHA_VANTAGE_API_KEY or ALPHA_VANTAGE_RAPIDAPI_KEY
 
 All providers normalise candles to the same dict format used by
 ``FinnhubCandleFetcher.normalize_response()``, so downstream code
@@ -42,6 +42,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -109,6 +110,12 @@ _TWELVE_DATA_RATE_LOCK = threading.Lock()
 _TWELVE_DATA_REQUEST_TIMES: deque[float] = deque()
 _TWELVE_DATA_BLOCKED_UNTIL: float = 0.0
 
+# Process-shared Alpha Vantage budget. This covers both direct API and RapidAPI
+# transport so a warmup burst cannot burn through the fallback quota at once.
+_ALPHA_VANTAGE_RATE_LOCK = threading.Lock()
+_ALPHA_VANTAGE_REQUEST_TIMES: deque[float] = deque()
+_ALPHA_VANTAGE_BLOCKED_UNTIL: float = 0.0
+
 
 def _env_positive_float(name: str, default: float) -> float:
     try:
@@ -160,6 +167,40 @@ def _pause_twelve_data_for_quota() -> None:
     logger.warning("[TwelveData] Upstream credit quota exhausted; pausing new requests for %.0fs", cooldown_sec)
 
 
+def _reserve_alpha_vantage_credit() -> None:
+    """Reserve one process-local Alpha Vantage credit or defer without sending."""
+    global _ALPHA_VANTAGE_BLOCKED_UNTIL
+
+    now = time.monotonic()
+    limit = _env_positive_int("ALPHA_VANTAGE_CREDITS_PER_MINUTE", 5)
+    window_sec = _env_positive_float("ALPHA_VANTAGE_QUOTA_WINDOW_SEC", 60.0)
+    with _ALPHA_VANTAGE_RATE_LOCK:
+        if now < _ALPHA_VANTAGE_BLOCKED_UNTIL:
+            retry_in = _ALPHA_VANTAGE_BLOCKED_UNTIL - now
+            raise ProviderQuotaDeferredError(f"AlphaVantage quota cooldown active; retry in {retry_in:.1f}s")
+
+        while _ALPHA_VANTAGE_REQUEST_TIMES and now - _ALPHA_VANTAGE_REQUEST_TIMES[0] >= window_sec:
+            _ALPHA_VANTAGE_REQUEST_TIMES.popleft()
+
+        if len(_ALPHA_VANTAGE_REQUEST_TIMES) >= limit:
+            retry_in = window_sec - (now - _ALPHA_VANTAGE_REQUEST_TIMES[0])
+            raise ProviderQuotaDeferredError(
+                f"AlphaVantage local credit budget exhausted ({limit}/{window_sec:.0f}s); retry in {retry_in:.1f}s"
+            )
+
+        _ALPHA_VANTAGE_REQUEST_TIMES.append(now)
+
+
+def _pause_alpha_vantage_for_quota() -> None:
+    """Stop additional Alpha Vantage calls after quota exhaustion is detected."""
+    global _ALPHA_VANTAGE_BLOCKED_UNTIL
+
+    cooldown_sec = _env_positive_float("ALPHA_VANTAGE_QUOTA_COOLDOWN_SEC", 65.0)
+    with _ALPHA_VANTAGE_RATE_LOCK:
+        _ALPHA_VANTAGE_BLOCKED_UNTIL = max(_ALPHA_VANTAGE_BLOCKED_UNTIL, time.monotonic() + cooldown_sec)
+    logger.warning("[AlphaVantage] Upstream quota exhausted; pausing new requests for %.0fs", cooldown_sec)
+
+
 def _reset_twelve_data_rate_state() -> None:
     """Reset process-local quota accounting for deterministic tests."""
     global _TWELVE_DATA_BLOCKED_UNTIL
@@ -167,6 +208,15 @@ def _reset_twelve_data_rate_state() -> None:
     with _TWELVE_DATA_RATE_LOCK:
         _TWELVE_DATA_REQUEST_TIMES.clear()
         _TWELVE_DATA_BLOCKED_UNTIL = 0.0
+
+
+def _reset_alpha_vantage_rate_state() -> None:
+    """Reset process-local Alpha Vantage quota accounting for deterministic tests."""
+    global _ALPHA_VANTAGE_BLOCKED_UNTIL
+
+    with _ALPHA_VANTAGE_RATE_LOCK:
+        _ALPHA_VANTAGE_REQUEST_TIMES.clear()
+        _ALPHA_VANTAGE_BLOCKED_UNTIL = 0.0
 
 
 # ══════════════════════════════════════════════════════════
@@ -223,6 +273,68 @@ def _normalize_candle(
         "source": source,
     }
     return candle
+
+
+def _candle_quality_error(candle: dict[str, Any]) -> str | None:
+    """Return a short reason when a candle is unsafe for analysis."""
+    timestamp = candle.get("timestamp")
+    if not isinstance(timestamp, datetime):
+        return "bad_timestamp"
+
+    try:
+        open_price = float(candle["open"])
+        high_price = float(candle["high"])
+        low_price = float(candle["low"])
+        close_price = float(candle["close"])
+    except (KeyError, TypeError, ValueError):
+        return "bad_ohlc"
+
+    ohlc = (open_price, high_price, low_price, close_price)
+    if any(not math.isfinite(value) or value <= 0 for value in ohlc):
+        return "non_positive_ohlc"
+    if high_price < max(open_price, close_price, low_price):
+        return "high_below_ohlc"
+    if low_price > min(open_price, close_price, high_price):
+        return "low_above_ohlc"
+    return None
+
+
+def _finalize_provider_candles(
+    candles: list[dict[str, Any]],
+    *,
+    symbol: str,
+    timeframe: str,
+    bars: int,
+    provider: str,
+) -> list[dict[str, Any]]:
+    """Sort, deduplicate, quality-filter, and trim provider candles."""
+    if bars <= 0 or not candles:
+        return []
+
+    ordered = sorted(candles, key=lambda candle: candle.get("timestamp") or datetime.min.replace(tzinfo=UTC))
+    by_timestamp: dict[datetime, dict[str, Any]] = {}
+    skipped_reasons: dict[str, int] = {}
+
+    for candle in ordered:
+        reason = _candle_quality_error(candle)
+        if reason is not None:
+            skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
+            continue
+        by_timestamp[candle["timestamp"]] = candle
+
+    finalized = list(by_timestamp.values())[-bars:]
+    skipped = len(candles) - len(by_timestamp)
+    if skipped:
+        logger.warning(
+            "[%s] %s %s: skipped %d/%d low-quality candles reasons=%s",
+            provider,
+            symbol,
+            timeframe,
+            skipped,
+            len(candles),
+            skipped_reasons,
+        )
+    return finalized
 
 
 def _serialize_candles(candles: list[dict[str, Any]]) -> str:
@@ -420,13 +532,20 @@ class TwelveDataProvider(CandleProviderBase):
                     exc,
                 )
 
+        finalized = _finalize_provider_candles(
+            candles,
+            symbol=symbol,
+            timeframe=timeframe,
+            bars=bars,
+            provider="TwelveData",
+        )
         logger.info(
             "[TwelveData] Fetched %d %s bars for %s",
-            len(candles),
+            len(finalized),
             timeframe,
             symbol,
         )
-        return candles[-bars:] if bars > 0 else []
+        return finalized
 
 
 # ══════════════════════════════════════════════════════════
@@ -440,6 +559,7 @@ class AlphaVantageProvider(CandleProviderBase):
     name = "alpha_vantage"
 
     _FUNCTION_MAP: dict[str, str] = {
+        "M15": "FX_INTRADAY",
         "H1": "FX_INTRADAY",
         "D1": "FX_DAILY",
         "W1": "FX_WEEKLY",
@@ -447,12 +567,22 @@ class AlphaVantageProvider(CandleProviderBase):
     }
 
     _INTERVAL_MAP: dict[str, str] = {
+        "M15": "15min",
         "H1": "60min",
     }
 
     def __init__(self) -> None:
-        self.api_key: str = os.getenv("ALPHA_VANTAGE_API_KEY", "")
-        self.base_url: str = "https://www.alphavantage.co/query"
+        self.direct_api_key: str = os.getenv("ALPHA_VANTAGE_API_KEY", "")
+        self.rapidapi_key: str = os.getenv("ALPHA_VANTAGE_RAPIDAPI_KEY", "")
+        self.rapidapi_host: str = os.getenv("ALPHA_VANTAGE_RAPIDAPI_HOST", "alpha-vantage.p.rapidapi.com")
+        self.uses_rapidapi: bool = bool(self.rapidapi_key)
+        self.api_key: str = self.rapidapi_key or self.direct_api_key
+        if self.uses_rapidapi:
+            self.base_url = os.getenv("ALPHA_VANTAGE_RAPIDAPI_URL", f"https://{self.rapidapi_host}/query")
+            self.transport = "rapidapi"
+        else:
+            self.base_url = os.getenv("ALPHA_VANTAGE_BASE_URL", "https://www.alphavantage.co/query")
+            self.transport = "direct"
         self.timeout: int = 30
 
     @staticmethod
@@ -468,7 +598,7 @@ class AlphaVantageProvider(CandleProviderBase):
         bars: int = 100,
     ) -> list[dict[str, Any]]:
         if not self.api_key:
-            raise RuntimeError("ALPHA_VANTAGE_API_KEY not configured")
+            raise RuntimeError("ALPHA_VANTAGE_API_KEY or ALPHA_VANTAGE_RAPIDAPI_KEY not configured")
 
         effective_timeframe = "H1" if timeframe == "H4" else timeframe
         function = self._FUNCTION_MAP.get(effective_timeframe)
@@ -481,21 +611,44 @@ class AlphaVantageProvider(CandleProviderBase):
             "function": function,
             "from_symbol": from_currency,
             "to_symbol": to_currency,
-            "apikey": self.api_key,
             "datatype": "json",
-            "outputsize": "full" if bars > 100 else "compact",
+            "outputsize": "full" if bars > 100 or (timeframe == "H4" and bars > 25) else "compact",
         }
+        if not self.uses_rapidapi:
+            params["apikey"] = self.api_key
         if function == "FX_INTRADAY":
             params["interval"] = self._INTERVAL_MAP[effective_timeframe]
 
+        headers: dict[str, str] | None = None
+        if self.uses_rapidapi:
+            headers = {
+                "x-rapidapi-key": self.rapidapi_key,
+                "x-rapidapi-host": self.rapidapi_host,
+                "Content-Type": "application/json",
+            }
+
+        _reserve_alpha_vantage_credit()
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(self.base_url, params=params)
+            resp = await client.get(self.base_url, params=params, headers=headers)
+            if resp.status_code == 429:
+                _pause_alpha_vantage_for_quota()
+                raise ProviderQuotaDeferredError("AlphaVantage returned HTTP 429; quota cooldown activated")
+            if resp.status_code in {401, 403}:
+                raise RuntimeError(f"AlphaVantage auth error via {self.transport}: HTTP {resp.status_code}")
             resp.raise_for_status()
             data = resp.json()
 
-        if "Error Message" in data or "Note" in data:
-            msg = data.get("Error Message") or data.get("Note", "rate-limited")
-            raise RuntimeError(f"AlphaVantage error: {msg}")
+        if "Error Message" in data:
+            raise RuntimeError(f"AlphaVantage error: {data['Error Message']}")
+        quota_or_info = data.get("Note") or data.get("Information")
+        if quota_or_info:
+            message = str(quota_or_info)
+            lowered = message.lower()
+            if "rate limit" in lowered or "call frequency" in lowered or "standard api rate" in lowered:
+                _pause_alpha_vantage_for_quota()
+                raise ProviderQuotaDeferredError("AlphaVantage quota limit reached; quota cooldown activated")
+            raise RuntimeError(f"AlphaVantage information response: {message}")
 
         ts_key = next((key for key in data if "Time Series" in key), None)
         if ts_key is None:
@@ -524,7 +677,7 @@ class AlphaVantageProvider(CandleProviderBase):
                         high_price=float(vals["2. high"]),
                         low_price=float(vals["3. low"]),
                         close_price=float(vals["4. close"]),
-                        volume=0.0,
+                        volume=float(vals.get("5. volume", 0.0) or 0.0),
                         timestamp=ts,
                         source=self.name,
                     )
@@ -539,16 +692,23 @@ class AlphaVantageProvider(CandleProviderBase):
 
         if timeframe == "H4":
             candles = _aggregate_h4_from_h1(symbol, candles, self.name)
-            if bars > 0:
-                candles = candles[-bars:]
+
+        finalized = _finalize_provider_candles(
+            candles,
+            symbol=symbol,
+            timeframe=timeframe,
+            bars=bars,
+            provider="AlphaVantage",
+        )
 
         logger.info(
-            "[AlphaVantage] Fetched %d %s bars for %s",
-            len(candles),
+            "[AlphaVantage] Fetched %d %s bars for %s via %s",
+            len(finalized),
             timeframe,
             symbol,
+            self.transport,
         )
-        return candles
+        return finalized
 
 
 # ══════════════════════════════════════════════════════════
@@ -598,7 +758,7 @@ class FallbackCandleProvider:
         chain: list[CandleProviderBase] = []
         if os.getenv("TWELVE_DATA_API_KEY"):
             chain.append(TwelveDataProvider())
-        if os.getenv("ALPHA_VANTAGE_API_KEY"):
+        if os.getenv("ALPHA_VANTAGE_API_KEY") or os.getenv("ALPHA_VANTAGE_RAPIDAPI_KEY"):
             chain.append(AlphaVantageProvider())
         return chain
 
@@ -724,7 +884,7 @@ class FallbackCandleProvider:
         if not self._providers:
             logger.warning(
                 "[Fallback] No fallback data providers configured "
-                "(set TWELVE_DATA_API_KEY or ALPHA_VANTAGE_API_KEY) — "
+                "(set TWELVE_DATA_API_KEY, ALPHA_VANTAGE_API_KEY, or ALPHA_VANTAGE_RAPIDAPI_KEY) — "
                 "attempting stale cache for %s %s",
                 symbol,
                 timeframe,

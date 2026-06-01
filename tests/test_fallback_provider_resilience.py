@@ -12,9 +12,12 @@ import pytest
 
 from ingest.fallback_provider import (
     _CANDLE_CACHE_KEY_PREFIX,
+    _EXPECTED_CANDLE_KEYS,
+    AlphaVantageProvider,
     FallbackCandleProvider,
     ProviderQuotaDeferredError,
     TwelveDataProvider,
+    _reset_alpha_vantage_rate_state,
     _reset_twelve_data_rate_state,
 )
 
@@ -24,9 +27,14 @@ def _reset_twelve_data_budget(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]
     monkeypatch.setenv("TWELVE_DATA_CREDITS_PER_MINUTE", "8")
     monkeypatch.setenv("TWELVE_DATA_QUOTA_WINDOW_SEC", "60")
     monkeypatch.setenv("TWELVE_DATA_QUOTA_COOLDOWN_SEC", "65")
+    monkeypatch.setenv("ALPHA_VANTAGE_CREDITS_PER_MINUTE", "5")
+    monkeypatch.setenv("ALPHA_VANTAGE_QUOTA_WINDOW_SEC", "60")
+    monkeypatch.setenv("ALPHA_VANTAGE_QUOTA_COOLDOWN_SEC", "65")
     _reset_twelve_data_rate_state()
+    _reset_alpha_vantage_rate_state()
     yield
     _reset_twelve_data_rate_state()
+    _reset_alpha_vantage_rate_state()
 
 
 def _cached_candle(
@@ -177,6 +185,197 @@ class TestTwelveDataProviderCompatibility:
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  Alpha Vantage canonical candle compatibility
+# ══════════════════════════════════════════════════════════════════════
+
+
+class TestAlphaVantageProviderCompatibility:
+    @pytest.mark.asyncio
+    async def test_rapidapi_m15_payload_is_normalized_like_finnhub(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
+        monkeypatch.setenv("ALPHA_VANTAGE_RAPIDAPI_KEY", "rapid-key")
+        provider = AlphaVantageProvider()
+
+        class _Response:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, Any]:
+                return {
+                    "Time Series FX (15min)": {
+                        "2026-05-26 03:45:00": {
+                            "1. open": "1.08600",
+                            "2. high": "1.08700",
+                            "3. low": "1.08500",
+                            "4. close": "1.08650",
+                        }
+                    }
+                }
+
+        class _Client:
+            url = ""
+            params: dict[str, Any] = {}
+            headers: dict[str, Any] | None = None
+
+            async def __aenter__(self) -> _Client:
+                return self
+
+            async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+                return None
+
+            async def get(
+                self,
+                url: str,
+                params: dict[str, Any],
+                headers: dict[str, Any] | None = None,
+            ) -> _Response:
+                self.url = url
+                self.params = params
+                self.headers = headers
+                return _Response()
+
+        client = _Client()
+        with patch("ingest.fallback_provider.httpx.AsyncClient", return_value=client):
+            candles = await provider.fetch("EURUSD", "M15", bars=1)
+
+        assert client.url == "https://alpha-vantage.p.rapidapi.com/query"
+        assert client.params["function"] == "FX_INTRADAY"
+        assert client.params["from_symbol"] == "EUR"
+        assert client.params["to_symbol"] == "USD"
+        assert client.params["interval"] == "15min"
+        assert "apikey" not in client.params
+        assert client.headers is not None
+        assert client.headers["x-rapidapi-host"] == "alpha-vantage.p.rapidapi.com"
+
+        assert len(candles) == 1
+        candle = candles[0]
+        assert set(candle) == _EXPECTED_CANDLE_KEYS
+        assert candle["symbol"] == "EURUSD"
+        assert candle["timeframe"] == "M15"
+        assert candle["source"] == "alpha_vantage"
+        assert isinstance(candle["timestamp"], datetime)
+        assert candle["timestamp"].tzinfo is UTC
+        for key in ("open", "high", "low", "close", "volume"):
+            assert isinstance(candle[key], float)
+
+    @pytest.mark.asyncio
+    async def test_direct_api_uses_query_key_and_daily_payload(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "direct-key")
+        monkeypatch.delenv("ALPHA_VANTAGE_RAPIDAPI_KEY", raising=False)
+        provider = AlphaVantageProvider()
+
+        class _Response:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, Any]:
+                return {
+                    "Time Series FX (Daily)": {
+                        "2026-05-25": {
+                            "1. open": "1.08000",
+                            "2. high": "1.09000",
+                            "3. low": "1.07000",
+                            "4. close": "1.08500",
+                        }
+                    }
+                }
+
+        client = MagicMock()
+        client.get = AsyncMock(return_value=_Response())
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("ingest.fallback_provider.httpx.AsyncClient", return_value=client):
+            candles = await provider.fetch("EURUSD", "D1", bars=1)
+
+        request_kwargs = client.get.await_args.kwargs
+        assert request_kwargs["headers"] is None
+        assert request_kwargs["params"]["apikey"] == "direct-key"
+        assert candles[0]["timeframe"] == "D1"
+        assert set(candles[0]) == _EXPECTED_CANDLE_KEYS
+
+    @pytest.mark.asyncio
+    async def test_quota_note_activates_cooldown_without_second_call(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ALPHA_VANTAGE_RAPIDAPI_KEY", "rapid-key")
+        provider = AlphaVantageProvider()
+
+        class _Response:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, str]:
+                return {"Note": "Thank you for using Alpha Vantage! Our standard API rate limit is 5 calls per minute."}
+
+        client = MagicMock()
+        client.get = AsyncMock(return_value=_Response())
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("ingest.fallback_provider.httpx.AsyncClient", return_value=client):
+            with pytest.raises(ProviderQuotaDeferredError, match="quota limit reached"):
+                await provider.fetch("EURUSD", "H1", bars=1)
+            with pytest.raises(ProviderQuotaDeferredError, match="quota cooldown active"):
+                await provider.fetch("GBPUSD", "H1", bars=1)
+
+        client.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_invalid_ohlc_rows_are_filtered_before_analysis(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ALPHA_VANTAGE_RAPIDAPI_KEY", "rapid-key")
+        provider = AlphaVantageProvider()
+
+        class _Response:
+            status_code = 200
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, Any]:
+                return {
+                    "Time Series FX (60min)": {
+                        "2026-05-26 02:00:00": {
+                            "1. open": "1.1000",
+                            "2. high": "1.0990",
+                            "3. low": "1.0900",
+                            "4. close": "1.0980",
+                        },
+                        "2026-05-26 03:00:00": {
+                            "1. open": "1.1000",
+                            "2. high": "1.1050",
+                            "3. low": "1.0950",
+                            "4. close": "1.1010",
+                        },
+                    }
+                }
+
+        client = MagicMock()
+        client.get = AsyncMock(return_value=_Response())
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("ingest.fallback_provider.httpx.AsyncClient", return_value=client):
+            candles = await provider.fetch("EURUSD", "H1", bars=10)
+
+        assert len(candles) == 1
+        assert candles[0]["timestamp"] == datetime(2026, 5, 26, 3, 0, tzinfo=UTC)
+
+    def test_fallback_chain_enables_alpha_vantage_from_rapidapi_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+        monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
+        monkeypatch.setenv("ALPHA_VANTAGE_RAPIDAPI_KEY", "rapid-key")
+
+        provider = FallbackCandleProvider()
+
+        assert provider.available_providers == ["alpha_vantage"]
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  No providers configured
 # ══════════════════════════════════════════════════════════════════════
 
@@ -188,6 +387,7 @@ class TestNoProvidersConfigured:
     async def test_returns_empty_list_without_redis(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
         monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
+        monkeypatch.delenv("ALPHA_VANTAGE_RAPIDAPI_KEY", raising=False)
 
         provider = FallbackCandleProvider()
         result = await provider.fetch("EURUSD", "H1")
@@ -197,6 +397,7 @@ class TestNoProvidersConfigured:
     async def test_attempts_cache_read_when_redis_provided(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
         monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
+        monkeypatch.delenv("ALPHA_VANTAGE_RAPIDAPI_KEY", raising=False)
 
         cached_candles = [_cached_candle()]
         mock_redis = AsyncMock()
@@ -214,6 +415,7 @@ class TestNoProvidersConfigured:
     async def test_returns_empty_when_redis_cache_miss(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
         monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
+        monkeypatch.delenv("ALPHA_VANTAGE_RAPIDAPI_KEY", raising=False)
 
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
