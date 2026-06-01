@@ -17,7 +17,7 @@ def test_missing_market_context_never_validates_direction():
         "requires_market_context": True,
         "reason": (
             "missing_market_context=price_at_signal_start,price_at_5m_confirm,"
-            "price_at_signal_end,m15_phase,h1_phase,theme_aligned,spread_normal"
+            "price_at_signal_end,m15_phase,h1_phase,spread_normal"
         ),
         "strategy_pattern": "PRICE_PHASE_UNRESOLVED",
         "phase_grade": "UNRESOLVED",
@@ -93,7 +93,7 @@ def test_late_pressure_becomes_protect_not_entry():
     assert result.action == "PROTECT_PROFIT"
 
 
-def test_theme_mismatch_blocks_candidate():
+def test_theme_mismatch_does_not_block_price_phase_candidate():
     result = validate_market_context(
         MarketContext(
             symbol="GBPCAD",
@@ -108,9 +108,9 @@ def test_theme_mismatch_blocks_candidate():
         )
     )
 
-    assert result.direction_validated is False
-    assert result.final_direction == "BLOCK_DIRECTION"
-    assert result.action == "BLOCK_ENTRY"
+    assert result.direction_validated is True
+    assert result.final_direction == "BUY"
+    assert result.action == "BUY_ON_PULLBACK"
 
 
 def test_buy_pressure_at_upper_resistance_becomes_protect_not_entry():
