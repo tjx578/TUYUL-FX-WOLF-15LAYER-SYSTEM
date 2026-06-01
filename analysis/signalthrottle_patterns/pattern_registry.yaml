@@ -492,6 +492,69 @@ patterns:
     entry_permission: BOOST_SCORE_ONLY
     function: multiple related pairs active with consistent basket direction boosts pair selection score only
 
+  - pattern_id: JPY_BASKET_THEME_FOLLOWTHROUGH
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [CHFJPY]
+    tier: A
+    family: BASKET_THEME_CONFIRMATION
+    golden_source: CHFJPY
+    entry_permission: VALIDATED_THEME_FOLLOWTHROUGH
+    management_action: WATCH_PRICE_PHASE_AND_OWN_TRIGGER
+    block_reason: THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER
+    pair_specific_calibration:
+      - JPY_BASKET_MEMBER_REFERENCE
+      - MFE_MAE_VALIDATION_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: JPY basket member with OHLC follow-through validates theme pressure but still requires own price-phase trigger
+
+  - pattern_id: FRAGMENTED_BASKET_ROTATION_NOT_ENTRY
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [CHFJPY]
+    tier: S
+    family: BASKET_ROTATION_FILTER
+    golden_source: CHFJPY
+    entry_permission: WATCHLIST_ONLY
+    management_action: NO_FINAL_SIGNAL_UNTIL_CLEAN_BLOCK_OR_RECLAIM
+    block_reason: FRAGMENTED_ROTATION_NOT_ENTRY
+    pair_specific_calibration:
+      - BROAD_ROTATION_FRAGMENTED
+      - SAME_PAIR_BLOCK_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: large fragmented basket rotation is watchlist-only until a clean same-pair block or reclaim appears
+
+  - pattern_id: MTF_BULLISH_PULLBACK_DECISION
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [CHFJPY]
+    tier: A
+    family: PRICE_PHASE_DECISION
+    golden_source: CHFJPY
+    entry_permission: BUY_RECLAIM_OR_SUPPORT_HOLD
+    management_action: WAIT_SUPPORT_HOLD_OR_H1_BREAKDOWN
+    block_reason: PULLBACK_DECISION_NEEDS_RECLAIM_OR_BREAKDOWN
+    pair_specific_calibration:
+      - D1_H4_TREND_H1_M15_PULLBACK
+      - SUPPORT_RECLAIM_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: D1/H4 bullish trend with H1/M15 pullback is a decision state, not a market chase
+
+  - pattern_id: LATE_SESSION_EXPANSION_FAIL
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [CHFJPY]
+    tier: A
+    family: SESSION_CLOSE_MANAGEMENT
+    golden_source: CHFJPY
+    entry_permission: NO_NEW_ENTRY
+    management_action: PROTECT_OR_REVALIDATE_NEXT_SESSION
+    block_reason: LATE_SESSION_EXPANSION_FAIL
+    pair_specific_calibration:
+      - SESSION_CLOSE_REVALIDATION
+      - NOT_PAIR_LOCKED
+    function: late-session failed expansion is management context and should not create a fresh entry
+
   - pattern_id: TIMING_VALID_NOT_FINAL
     scope: UNIVERSAL
     applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
