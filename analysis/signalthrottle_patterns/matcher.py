@@ -45,6 +45,10 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
     _add_pressure_candidate(candidates, evidence, data, pressure_temperature)
     _add_microboost_candidate(candidates, evidence, phase_unpriced, phase_priced, price_position, data)
     _add_pair_role_candidate(candidates, evidence, symbol, pair_patterns, raw_direction, final_direction, data)
+    _add_gbpjpy_candidate(candidates, evidence, symbol, raw_direction, final_direction, data)
+    _add_audjpy_candidate(candidates, evidence, symbol, raw_direction, final_direction, data)
+    _add_nzdchf_candidate(candidates, evidence, symbol, raw_direction, final_direction, data)
+    _add_eurchf_candidate(candidates, evidence, symbol, raw_direction, final_direction, data)
     _add_theme_candidate(candidates, evidence, symbol, theme_aligned, jpy_alignment, dual_theme_status, pair_patterns)
     _add_metal_candidate(candidates, evidence, symbol, price_position, data)
     _add_major_context_candidate(candidates, evidence, symbol, data)
@@ -187,6 +191,216 @@ def _add_theme_candidate(
         evidence.append("mirror_basket_role_available")
 
 
+def _add_gbpjpy_candidate(
+    candidates: dict[str, int],
+    evidence: list[str],
+    symbol: str,
+    raw_direction: str | None,
+    final_direction: str | None,
+    data: Mapping[str, Any],
+) -> None:
+    if symbol != "GBPJPY":
+        return
+    direction = final_direction or raw_direction
+    density = _num(data.get("density_per_minute") or data.get("effective_density_per_minute"))
+    duration = _duration_seconds(data)
+    m15_phase = _phase(data.get("m15_phase") or data.get("phase_m15"))
+    h1_phase = _phase(data.get("h1_phase") or data.get("phase_h1") or data.get("h60_phase"))
+    h4_phase = _phase(data.get("h4_phase") or data.get("phase_h4") or data.get("h240_phase"))
+    price_position = _normalize_position(data.get("price_position"))
+    jpy_alignment = _text(data.get("jpy_alignment") or data.get("jpy_alignment_status")).upper()
+
+    bullish_reclaim_context = _is_bullish_or_reclaim(m15_phase) and _is_bullish_or_reclaim(h1_phase)
+    bearish_context = _is_bearish_or_mixed_bearish(h1_phase) or _is_bearish_or_mixed_bearish(h4_phase)
+    jpy_not_conflicting = jpy_alignment not in {"CONFLICT", "MIXED", "BLOCKED"}
+
+    if (
+        direction == "BUY"
+        and density >= 10.0
+        and 150.0 <= duration <= 300.0
+        and bullish_reclaim_context
+        and jpy_not_conflicting
+    ):
+        _bump(candidates, "GBPJPY_BUY_MICROBURST_FOLLOWTHROUGH", 72)
+        evidence.append("gbpjpy_bullish_microburst_followthrough")
+
+    if direction == "BUY" and density >= 10.0 and bearish_context:
+        _bump(candidates, "GBPJPY_HIGH_DENSITY_IN_BEARISH_CONTEXT_NO_CHASE", 86)
+        evidence.append("gbpjpy_high_density_bearish_context_no_chase")
+
+    if (
+        direction == "BUY"
+        and duration >= 300.0
+        and density >= 8.0
+        and (
+            h4_phase in {"MIXED", "MIXED_BEARISH", "BEARISH", "DOWNTREND"}
+            or price_position == "MAIN_RESISTANCE"
+            or _optional_bool(data.get("near_upper_resistance_without_reclaim")) is True
+        )
+    ):
+        _bump(candidates, "GBPJPY_CLEAN_5M_WAIT_RECLAIM_NOT_FINAL", 64)
+        evidence.append("gbpjpy_clean_5m_requires_reclaim")
+
+
+def _add_nzdchf_candidate(
+    candidates: dict[str, int],
+    evidence: list[str],
+    symbol: str,
+    raw_direction: str | None,
+    final_direction: str | None,
+    data: Mapping[str, Any],
+) -> None:
+    if symbol != "NZDCHF":
+        return
+    direction = final_direction or raw_direction
+    density = _num(data.get("density_per_minute") or data.get("effective_density_per_minute"))
+    duration = _duration_seconds(data)
+    m15_phase = _phase(data.get("m15_phase") or data.get("phase_m15"))
+    h1_phase = _phase(data.get("h1_phase") or data.get("phase_h1") or data.get("h60_phase"))
+    d1_phase = _phase(data.get("d1_phase") or data.get("phase_d1") or data.get("h1440_phase"))
+    phase_unpriced = _phase(data.get("phase_unpriced"))
+    repeated_microburst = (
+        phase_unpriced in {"REPEATED_MICROBOOST", "DENSE_MICROBOOST"}
+        or _num(data.get("microburst_count") or data.get("repeated_microburst_count")) >= 2
+        or _optional_bool(data.get("repeated_microburst")) is True
+    )
+    repeated_pressure = repeated_microburst or _optional_bool(data.get("repeated_pressure")) is True
+    bearish_intraday = _is_bearish_or_mixed_bearish(m15_phase) or _is_bearish_or_mixed_bearish(h1_phase)
+    failed_reclaim = (
+        _optional_bool(data.get("price_fails_reclaim") or data.get("fails_reclaim")) is True
+        or _optional_bool(data.get("m15_close_above_resistance")) is False
+    )
+    daily_conflict = _is_bullish_or_reclaim(d1_phase) and bearish_intraday
+
+    if repeated_pressure and daily_conflict and duration >= 480.0:
+        _bump(candidates, "NZDCHF_REPEATED_PRESSURE_AMBIGUOUS_MANAGEMENT", 78)
+        evidence.append("nzdchf_repeated_pressure_m15_d1_conflict")
+        return
+
+    if direction == "BUY" and repeated_microburst and bearish_intraday:
+        _bump(candidates, "NZDCHF_REPEATED_MICROBURST_COUNTER_RECLAIM", 76)
+        evidence.append("nzdchf_repeated_microburst_counter_reclaim_watch")
+        return
+
+    if density >= 10.5 and duration >= 300.0 and bearish_intraday and (failed_reclaim or direction == "BUY"):
+        _bump(candidates, "NZDCHF_HOT_BLOCK_BEARISH_CONTINUATION", 74)
+        evidence.append("nzdchf_hot_block_bearish_continuation")
+
+
+def _add_audjpy_candidate(
+    candidates: dict[str, int],
+    evidence: list[str],
+    symbol: str,
+    raw_direction: str | None,
+    final_direction: str | None,
+    data: Mapping[str, Any],
+) -> None:
+    if symbol != "AUDJPY":
+        return
+    direction = final_direction or raw_direction
+    density = _num(data.get("density_per_minute") or data.get("effective_density_per_minute"))
+    duration = _duration_seconds(data)
+    m15_phase = _phase(data.get("m15_phase") or data.get("phase_m15"))
+    h1_phase = _phase(data.get("h1_phase") or data.get("phase_h1") or data.get("h60_phase"))
+    h4_phase = _phase(data.get("h4_phase") or data.get("phase_h4") or data.get("h240_phase"))
+    d1_phase = _phase(data.get("d1_phase") or data.get("phase_d1") or data.get("h1440_phase"))
+    price_position = _normalize_position(data.get("price_position"))
+    jpy_alignment = _text(data.get("jpy_alignment") or data.get("jpy_alignment_status")).upper()
+    close_pos = _num(data.get("m15_close_pos") or data.get("close_pos"))
+    block_delta_pips = _num(data.get("block_delta_pips"))
+
+    jpy_not_conflicting = jpy_alignment not in {"CONFLICT", "MIXED", "BLOCKED"}
+    supportive_higher_tf = (
+        _is_bullish_or_reclaim(h1_phase)
+        or _is_bullish_or_reclaim(h4_phase)
+        or _is_bullish_or_reclaim(d1_phase)
+    )
+    m15_pullback = m15_phase in {"PULLBACK", "BEARISH_PULLBACK", "MIXED", "BEARISH"} or close_pos <= 0.25
+    late_upper = (
+        price_position == "MAIN_RESISTANCE"
+        or _num(data.get("range_position")) >= 0.85
+        or block_delta_pips >= 8.0
+        or _optional_bool(data.get("near_upper_resistance_without_reclaim")) is True
+    )
+
+    if direction == "BUY" and late_upper and (h4_phase == "MIXED" or _is_bearish_or_mixed_bearish(d1_phase)):
+        _bump(candidates, "AUDJPY_LATE_UPPER_DENSITY_NO_CHASE", 88)
+        evidence.append("audjpy_late_upper_density_no_chase")
+        return
+
+    if (
+        direction == "BUY"
+        and density >= 8.0
+        and 240.0 <= duration <= 600.0
+        and m15_pullback
+        and supportive_higher_tf
+        and jpy_not_conflicting
+    ):
+        _bump(candidates, "AUDJPY_HIGH_DENSITY_PULLBACK_THEN_EXPAND", 78)
+        evidence.append("audjpy_high_density_pullback_then_expand")
+        return
+
+    if (
+        direction == "BUY"
+        and duration >= 600.0
+        and supportive_higher_tf
+        and jpy_not_conflicting
+        and not late_upper
+    ):
+        _bump(candidates, "AUDJPY_JPY_WEAKNESS_OPEN_LANE_CONTINUATION", 74)
+        evidence.append("audjpy_jpy_weakness_open_lane_continuation")
+
+
+def _add_eurchf_candidate(
+    candidates: dict[str, int],
+    evidence: list[str],
+    symbol: str,
+    raw_direction: str | None,
+    final_direction: str | None,
+    data: Mapping[str, Any],
+) -> None:
+    if symbol != "EURCHF":
+        return
+    direction = final_direction or raw_direction
+    density = _num(data.get("density_per_minute") or data.get("effective_density_per_minute"))
+    duration = _duration_seconds(data)
+    m15_phase = _phase(data.get("m15_phase") or data.get("phase_m15"))
+    h1_phase = _phase(data.get("h1_phase") or data.get("phase_h1") or data.get("h60_phase"))
+    h4_phase = _phase(data.get("h4_phase") or data.get("phase_h4") or data.get("h240_phase"))
+    d1_phase = _phase(data.get("d1_phase") or data.get("phase_d1") or data.get("h1440_phase"))
+    phase_unpriced = _phase(data.get("phase_unpriced"))
+    price_position = _normalize_position(data.get("price_position"))
+    close_pos = _num(data.get("m15_close_pos") or data.get("close_pos"))
+    first_60m_failed = (
+        _optional_bool(data.get("first_60m_failed")) is True
+        or _num(data.get("close_60m_pips") or data.get("close_60m")) < 0.0
+    )
+    upper_weak_close = (
+        price_position == "MAIN_RESISTANCE"
+        or _num(data.get("range_position")) >= 0.85
+    ) and (close_pos <= 0.35 or _is_bearish_or_mixed_bearish(m15_phase))
+    microboost_like = (
+        phase_unpriced in {"IGNITION_MICROBOOST", "DENSE_MICROBOOST", "MATURE_MICROBOOST", "REPEATED_MICROBOOST"}
+        or density >= 10.0
+    )
+
+    if direction == "BUY" and microboost_like and upper_weak_close:
+        _bump(candidates, "EURCHF_UPPER_MICROBOOST_EXHAUSTION_FILTER", 82)
+        evidence.append("eurchf_upper_microboost_exhaustion_filter")
+        return
+
+    if direction == "BUY" and microboost_like and duration <= 300.0 and first_60m_failed:
+        _bump(candidates, "EURCHF_MATURE_MICROBOOST_RECLAIM_REQUIRED", 76)
+        evidence.append("eurchf_mature_microboost_reclaim_required")
+        return
+
+    delayed_higher_tf = _is_bullish_or_reclaim(h4_phase) or _is_bullish_or_reclaim(d1_phase)
+    weak_lower_tf = first_60m_failed or _is_bearish_or_mixed_bearish(m15_phase) or _is_bearish_or_mixed_bearish(h1_phase)
+    if direction == "BUY" and duration >= 600.0 and delayed_higher_tf and weak_lower_tf:
+        _bump(candidates, "EURCHF_CHF_WEAKNESS_DELAYED_FOLLOWTHROUGH", 72)
+        evidence.append("eurchf_chf_weakness_delayed_followthrough")
+
+
 def _add_metal_candidate(
     candidates: dict[str, int],
     evidence: list[str],
@@ -228,7 +442,7 @@ def _pattern_match_score(
     if selected is None:
         return 0
     score = candidate_score
-    score += {"S": 50, "A": 35, "B": 20}.get(selected.tier, 0)
+    score += _tier_weight(selected.tier)
     score += min(20, int(_num(data.get("density_per_minute") or data.get("effective_density_per_minute")) * 2))
     score += min(15, int((_num(data.get("duration_seconds")) or _num(data.get("duration_minutes")) * 60.0) / 60.0))
     if _optional_bool(data.get("theme_aligned")) is True:
@@ -255,7 +469,22 @@ def _execution_readiness_score(
         score -= 35
     if selected.entry_permission in {"NO_TRADE", "NO_SELL"}:
         score = min(score, 39)
-    if selected.entry_permission in {"NO_NEW_ENTRY", "NO_MARKET_CHASE", "NO_NEW_BUY", "BLOCK_NEW_ENTRY"}:
+    if selected.entry_permission in {"NO_NEW_ENTRY", "NO_MARKET_CHASE", "NO_NEW_BUY", "NO_BUY_CHASE", "BLOCK_NEW_ENTRY"}:
+        score -= 25
+        score = min(score, 69)
+    if selected.entry_permission in {
+        "ENTRY_WATCH_ONLY_WAIT_RECLAIM",
+        "ENTRY_WATCH_WAIT_M15_CLOSE",
+        "WAIT_BREAK_OR_RECLAIM",
+        "WAIT_RECLAIM_OR_PULLBACK_HOLD",
+        "DELAYED_BUY_WATCH",
+    }:
+        score -= 20
+        score = min(score, 69)
+    if selected.entry_permission == "BUY_RECLAIM_WATCH_OR_EXIT_SHORT_PARTIAL":
+        score -= 15
+        score = min(score, 79)
+    if selected.entry_permission in {"NO_CHASE_PROTECT_OR_WAIT_RETEST", "NO_CHASE_NEAR_RESISTANCE"}:
         score -= 25
         score = min(score, 69)
     return max(0, min(100, int(score)))
@@ -347,6 +576,39 @@ def _num(value: Any) -> float:
         return float(str(value).strip())
     except (TypeError, ValueError):
         return 0.0
+
+
+def _duration_seconds(data: Mapping[str, Any]) -> float:
+    return _num(data.get("duration_seconds")) or _num(data.get("duration_minutes")) * 60.0
+
+
+def _phase(value: Any) -> str:
+    return _text(value).upper().replace(" ", "_").replace("-", "_")
+
+
+def _is_bullish_or_reclaim(value: str) -> bool:
+    return value in {"BULLISH", "UPTREND", "PIVOT_RECLAIM", "RECLAIM", "BULLISH_RECLAIM"} or "RECLAIM" in value
+
+
+def _is_bearish_or_mixed_bearish(value: str) -> bool:
+    return value in {"BEARISH", "DOWNTREND", "MIXED_BEARISH", "DISTRIBUTION_BREAKDOWN", "SUPPORT_BREAK"} or (
+        "BEAR" in value or "BREAKDOWN" in value
+    )
+
+
+def _tier_weight(tier: str) -> int:
+    text = _text(tier).upper()
+    return {
+        "S+": 55,
+        "S": 50,
+        "S-": 45,
+        "A+": 40,
+        "A": 35,
+        "A-": 30,
+        "B+": 25,
+        "B": 20,
+        "B-": 15,
+    }.get(text, {"S": 50, "A": 35, "B": 20}.get(text[:1], 0))
 
 
 def _optional_bool(value: Any) -> bool | None:

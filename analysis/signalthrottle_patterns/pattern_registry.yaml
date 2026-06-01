@@ -151,6 +151,50 @@ patterns:
     golden_source: CADJPY/USDJPY
     entry_permission: REQUIRE_EXTRA_FILTER
     function: JPY-cross requires JPY basket validation
+  - pattern_id: GBPJPY_BUY_MICROBURST_FOLLOWTHROUGH
+    tier: S-
+    family: JPY_CROSS_MOMENTUM
+    golden_source: GBPJPY
+    entry_permission: BUY_RETEST_OR_HOLD_REINFORCEMENT
+    management_action: NO_MARKET_CHASE_AT_UPPER_EXTREME
+    function: compact bullish microburst can reinforce continuation when M15/H1 and JPY basket do not conflict
+  - pattern_id: GBPJPY_CLEAN_5M_WAIT_RECLAIM_NOT_FINAL
+    tier: A
+    family: PHASE_SENSITIVE_JPY_CROSS
+    golden_source: GBPJPY
+    entry_permission: ENTRY_WATCH_ONLY_WAIT_RECLAIM
+    management_action: WAIT_M15_H1_RECLAIM
+    function: clean five-minute timing block remains watch-only until reclaim/context confirms
+  - pattern_id: GBPJPY_HIGH_DENSITY_IN_BEARISH_CONTEXT_NO_CHASE
+    tier: A-
+    family: JPY_CROSS_CONTEXT_FILTER
+    golden_source: GBPJPY
+    entry_permission: NO_BUY_CHASE
+    management_action: SELL_OR_PROTECT_CONTEXT
+    block_reason: BEARISH_CONTEXT_NO_BUY_CHASE
+    function: high density in bearish H1/H4 context blocks blind buy chase
+  - pattern_id: AUDJPY_JPY_WEAKNESS_OPEN_LANE_CONTINUATION
+    tier: S-
+    family: JPY_WEAKNESS_CONFIRMATION_CROSS
+    golden_source: AUDJPY
+    entry_permission: BUY_RECLAIM_OR_BUY_PULLBACK_HOLD
+    management_action: NO_MARKET_CHASE_CONFIRM_JPY_WEAKNESS
+    function: JPY-weakness pressure can become open-lane continuation after M15/H1 reclaim
+  - pattern_id: AUDJPY_HIGH_DENSITY_PULLBACK_THEN_EXPAND
+    tier: A+
+    family: JPY_CROSS_PULLBACK_EXPANSION
+    golden_source: AUDJPY
+    entry_permission: ENTRY_WATCH_WAIT_M15_CLOSE
+    management_action: WAIT_RECLAIM_THEN_PULLBACK_HOLD
+    function: high-density BUY pressure inside pullback becomes entry-watch after reclaim
+  - pattern_id: AUDJPY_LATE_UPPER_DENSITY_NO_CHASE
+    tier: B+
+    family: JPY_CROSS_LATE_STAGE_MANAGEMENT
+    golden_source: AUDJPY
+    entry_permission: NO_CHASE_PROTECT_OR_WAIT_RETEST
+    management_action: PROTECT_OR_WAIT_RETEST
+    block_reason: LATE_UPPER_DENSITY_NO_CHASE
+    function: late upper-density AUDJPY pressure is protect/retest logic, not fresh chase
   - pattern_id: PHASE_SENSITIVE_BREAKDOWN
     tier: S
     family: BREAKDOWN_CONTINUATION
@@ -179,6 +223,49 @@ patterns:
     entry_permission: NO_TRADE
     block_reason: SPARSE_PRESSURE
     function: long duration with tiny event count
+  - pattern_id: NZDCHF_HOT_BLOCK_BEARISH_CONTINUATION
+    tier: S
+    family: CHF_CROSS_PHASE_SENSITIVE
+    golden_source: NZDCHF
+    entry_permission: SELL_RALLY_OR_PROTECT_LONG
+    management_action: SELL_RALLY_RETEST_OR_PROTECT_LONG
+    function: hot intraday bearish block should not be forced into raw BUY
+  - pattern_id: NZDCHF_REPEATED_MICROBURST_COUNTER_RECLAIM
+    tier: A-
+    family: CHF_CROSS_RECLAIM_COUNTERPULSE
+    golden_source: NZDCHF
+    entry_permission: BUY_RECLAIM_WATCH_OR_EXIT_SHORT_PARTIAL
+    management_action: WAIT_RECLAIM_CONFIRMATION
+    function: repeated microburst after sell-off is reclaim watch or short-management event
+  - pattern_id: NZDCHF_REPEATED_PRESSURE_AMBIGUOUS_MANAGEMENT
+    tier: B+
+    family: CHF_CROSS_MANAGEMENT_ALERT
+    golden_source: NZDCHF
+    entry_permission: WAIT_BREAK_OR_RECLAIM
+    management_action: MANAGEMENT_ALERT
+    function: repeated pressure in M15/D1 conflict is management alert, not execution-grade
+  - pattern_id: EURCHF_MATURE_MICROBOOST_RECLAIM_REQUIRED
+    tier: A
+    family: CHF_WEAKNESS_MICROBOOST_CROSS
+    golden_source: EURCHF
+    entry_permission: WAIT_RECLAIM_OR_PULLBACK_HOLD
+    management_action: RADAR_UNTIL_RECLAIM
+    function: mature EURCHF microboost is radar until reclaim or pullback hold confirms
+  - pattern_id: EURCHF_CHF_WEAKNESS_DELAYED_FOLLOWTHROUGH
+    tier: A-
+    family: CHF_WEAKNESS_DELAYED_FOLLOWTHROUGH
+    golden_source: EURCHF
+    entry_permission: DELAYED_BUY_WATCH
+    management_action: WAIT_SUPPORT_HOLD_OR_RECLAIM
+    function: CHF-weakness pressure can recover later but is not instant BUY proof
+  - pattern_id: EURCHF_UPPER_MICROBOOST_EXHAUSTION_FILTER
+    tier: B+
+    family: CHF_CROSS_EXHAUSTION_FILTER
+    golden_source: EURCHF
+    entry_permission: NO_CHASE_NEAR_RESISTANCE
+    management_action: PROTECT_OR_WAIT_RECLAIM
+    block_reason: UPPER_MICROBOOST_EXHAUSTION
+    function: upper-range EURCHF microboost with weak close becomes no-chase filter
   - pattern_id: MULTI_WAVE_PRIORITY
     tier: A
     family: MULTI_WAVE

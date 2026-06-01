@@ -22,13 +22,24 @@ class GoldenPattern:
     hold_policy: str | None = None
     chase_allowed: bool = False
     block_reason: str | None = None
+    scope: str = "UNIVERSAL"
+    applies_to: str = "ALL_PAIRS_IF_CONDITIONS_MATCH"
+    golden_references: tuple[str, ...] = ()
+    pair_specific_calibration: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        if not self.golden_references and self.golden_source:
+            payload["golden_references"] = tuple(
+                item.strip()
+                for item in self.golden_source.replace("+", "/").split("/")
+                if item.strip()
+            )
+        return payload
 
 
 GOLDEN_PATTERNS: tuple[GoldenPattern, ...] = (
-    GoldenPattern("OPEN_LANE_TIMING_VALID", "S", "TREND_LIFECYCLE", "GBPCAD", "early entry-watch before expansion", "ENTRY_WATCH", chase_allowed=False),
+    GoldenPattern("OPEN_LANE_TIMING_VALID", "S", "TREND_LIFECYCLE", "GBPCAD/AUDJPY", "early entry-watch before expansion", "ENTRY_WATCH", chase_allowed=False, golden_references=("GBPCAD", "AUDJPY")),
     GoldenPattern("ZERO_DRAWDOWN_FOLLOWTHROUGH", "S", "OUTCOME_VALIDATION", "GBPCAD", "outcome quality upgrade", "TRACK_ONLY"),
     GoldenPattern("PRE_IGNITION_COUNTERFLOW_TRAP", "S", "DIRECTION_VALIDATION", "GBPCAD", "block provisional counterflow", "NO_TRADE", block_reason="COUNTERFLOW_FALSE_SIGNAL"),
     GoldenPattern("HIGH_DENSITY_ACCELERATION", "A", "TREND_LIFECYCLE", "GBPCAD", "continuation confirmation while price expands", "RETEST_ONLY", "HOLD_OR_ADD_SMALL_ON_RETEST"),
@@ -50,10 +61,17 @@ GOLDEN_PATTERNS: tuple[GoldenPattern, ...] = (
     GoldenPattern("INVERSE_LATE_SELL_TRAP", "S", "TRAP_FILTER", "CADJPY", "late sell trap after breakdown", "NO_TRADE", block_reason="LATE_SELL_TRAP"),
     GoldenPattern("CLEAN_BLOCK_BUT_THEME_CONFLICT", "S", "THEME_CONFLICT_FILTER", "CADJPY", "clean pressure blocked by H4/D1/theme conflict", "NO_TRADE", block_reason="THEME_CONFLICT"),
     GoldenPattern("JPY_ALIGNMENT_REQUIRED", "S", "JPY_BASKET_FILTER", "CADJPY/USDJPY", "JPY-cross requires JPY basket validation", "REQUIRE_EXTRA_FILTER"),
+    GoldenPattern("MICROBURST_FOLLOWTHROUGH_RECLAIM", "S-", "MICROBURST_FOLLOWTHROUGH", "GBPJPY/AUDJPY", "compact high-density microburst can reinforce continuation only after reclaim or pullback hold", "BUY_RECLAIM_OR_PULLBACK_HOLD", "NO_MARKET_CHASE_CONFIRM_THEME", golden_references=("GBPJPY", "AUDJPY"), pair_specific_calibration=("JPY_CROSS_CHECK_JPY_BASKET", "CHF_CROSS_CHECK_CHF_THEME", "METAL_CHECK_SESSION_VOLATILITY_SPREAD")),
+    GoldenPattern("CLEAN_5M_TIMING_GATE_NOT_FINAL", "A", "TIMING_GATE", "GBPJPY", "clean five-minute timing block is watch-only until phase/context confirms", "ENTRY_WATCH_ONLY_WAIT_RECLAIM", "WAIT_M15_H1_RECLAIM", golden_references=("GBPJPY",)),
+    GoldenPattern("HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE", "A-", "CONTEXT_FILTER", "GBPJPY/AUDJPY/EURCHF", "high density near exhaustion, bearish context, or upper range blocks blind chase", "NO_CHASE_PROTECT_OR_WAIT_RETEST", "PROTECT_OR_WAIT_RETEST", block_reason="HIGH_DENSITY_CONTEXT_NO_CHASE", golden_references=("GBPJPY", "AUDJPY", "EURCHF")),
     GoldenPattern("PHASE_SENSITIVE_BREAKDOWN", "S", "BREAKDOWN_CONTINUATION", "USDJPY", "breakdown cascade/liquidation sell", "SELL_RETEST_ONLY", "NO_MARKET_CHASE"),
     GoldenPattern("UPPER_ABSORPTION_WARNING", "S", "EXHAUSTION_MANAGEMENT", "USDJPY", "pressure at resistance is protect/sell watch", "NO_NEW_BUY", "PROTECT_LONG_OR_SELL_WATCH"),
     GoldenPattern("LIQUIDATION_EXPANSION", "S", "VOLATILITY_EXPANSION", "USDJPY", "large expansion candle continuation via retest", "RETEST_ONLY", "SELL_AFTER_PULLBACK_NO_MARKET_CHASE"),
     GoldenPattern("SPARSE_ARCHIVE", "B", "ARCHIVE_FILTER", "USDJPY", "long duration with tiny event count", "NO_TRADE", block_reason="SPARSE_PRESSURE"),
+    GoldenPattern("BEARISH_OR_BULLISH_CONTINUATION_AFTER_HOT_BLOCK", "S", "PHASE_SENSITIVE_CONTINUATION", "NZDCHF", "hot block follows current intraday phase and must not be forced into opposite raw direction", "PHASE_CONTINUATION_RETEST_OR_PROTECT", "FOLLOW_PHASE_RETEST_OR_PROTECT", golden_references=("NZDCHF",)),
+    GoldenPattern("COUNTER_RECLAIM_WATCH_NOT_REVERSAL_FINAL", "A-", "COUNTER_RECLAIM_WATCH", "NZDCHF/EURCHF", "counter microburst after sell-off or failed first hour is reclaim watch, not final reversal", "RECLAIM_WATCH_OR_PARTIAL_EXIT", "WAIT_RECLAIM_CONFIRMATION", golden_references=("NZDCHF", "EURCHF")),
+    GoldenPattern("REPEATED_PRESSURE_MANAGEMENT_ALERT", "B+", "MANAGEMENT_ALERT", "NZDCHF", "repeated pressure in conflicting phase is management alert, not execution-grade", "WAIT_BREAK_OR_RECLAIM", "MANAGEMENT_ALERT", golden_references=("NZDCHF",)),
+    GoldenPattern("DELAYED_FOLLOWTHROUGH_WATCH", "A-", "DELAYED_FOLLOWTHROUGH", "EURCHF", "theme pressure can recover later but is not instant execution proof", "DELAYED_WATCH", "WAIT_SUPPORT_HOLD_OR_RECLAIM", golden_references=("EURCHF",)),
     GoldenPattern("MULTI_WAVE_PRIORITY", "A", "MULTI_WAVE", "EURAUD", "burst to continuation to sustained pressure", "WATCH_HIGH"),
     GoldenPattern("SAME_PAIR_TAKEOVER", "A", "TAKEOVER", "GBPNZD", "pair takeover without intervention", "WATCH_HIGH"),
     GoldenPattern("SAME_PAIR_TAKEOVER_GRIND", "S", "TAKEOVER", "GBPNZD", "long medium-density follow-through", "RETEST_ONLY"),
@@ -81,6 +99,10 @@ PAIR_ROLE_MAP: dict[str, dict[str, Any]] = {
     "CADCHF": {"default_role": "CLEAN_INVERSE_CONFIRMATION_CAD_WEAKNESS", "golden_patterns": ["INVERSE_MIRROR_BREAKDOWN", "INVERSE_COOLING_PAUSE", "CONFIRMATION_PAIR_NOT_PRIMARY_ENTRY"]},
     "CADJPY": {"default_role": "JPY_SENSITIVE_INVERSE_CONFIRMATION", "golden_patterns": ["EARLY_INVERSE_OPEN_LANE_CONFIRMATION", "DELAYED_INVERSE_IGNITION", "INVERSE_MIRROR_BREAKDOWN_CONFIRMATION", "LOWER_RANGE_NO_CHASE_FILTER", "INVERSE_LATE_SELL_TRAP", "CLEAN_BLOCK_BUT_THEME_CONFLICT", "JPY_ALIGNMENT_REQUIRED"]},
     "USDJPY": {"default_role": "PHASE_SENSITIVE_JPY_MAJOR", "golden_patterns": ["PHASE_SENSITIVE_BREAKDOWN", "UPPER_ABSORPTION_WARNING", "LIQUIDATION_EXPANSION", "SPARSE_ARCHIVE", "LOWER_RANGE_NO_CHASE_FILTER", "JPY_ALIGNMENT_REQUIRED"]},
+    "GBPJPY": {"default_role": "PHASE_SENSITIVE_JPY_CROSS", "golden_patterns": ["MICROBURST_FOLLOWTHROUGH_RECLAIM", "CLEAN_5M_TIMING_GATE_NOT_FINAL", "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE", "JPY_ALIGNMENT_REQUIRED"]},
+    "AUDJPY": {"default_role": "JPY_WEAKNESS_CONFIRMATION_CROSS", "golden_patterns": ["OPEN_LANE_TIMING_VALID", "MICROBURST_FOLLOWTHROUGH_RECLAIM", "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE", "JPY_ALIGNMENT_REQUIRED"]},
+    "NZDCHF": {"default_role": "CHF_CROSS_PHASE_SENSITIVE", "golden_patterns": ["BEARISH_OR_BULLISH_CONTINUATION_AFTER_HOT_BLOCK", "COUNTER_RECLAIM_WATCH_NOT_REVERSAL_FINAL", "REPEATED_PRESSURE_MANAGEMENT_ALERT"]},
+    "EURCHF": {"default_role": "CHF_WEAKNESS_MICROBOOST_CROSS", "golden_patterns": ["COUNTER_RECLAIM_WATCH_NOT_REVERSAL_FINAL", "DELAYED_FOLLOWTHROUGH_WATCH", "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE"]},
     "EURUSD": {"default_role": "MAJOR_CONTEXT_PAIR", "golden_patterns": ["MAJOR_PAIR_DELAYED_CONTINUATION", "PULLBACK_WITHIN_H4_EXPANSION"]},
     "GBPNZD": {"default_role": "TAKEOVER_CONTEXTUAL_CROSS", "golden_patterns": ["SAME_PAIR_TAKEOVER", "SAME_PAIR_TAKEOVER_GRIND", "TAKEOVER_TO_LATE_REVERSAL", "CHOPPY_TAKEOVER_CONTINUATION", "DAILY_CONFLICT_AFTER_INTRADAY_TAKEOVER"]},
     "USDCAD": {"default_role": "MACRO_ANCHOR_AND_SIGNALWATCH_LIFECYCLE", "golden_patterns": ["SLOW_ACTIVE_SIGNAL_SEED", "SIGNALWATCH_LIFECYCLE_FINALIZER", "ABSORPTION_WATCH_FAILED", "HIGH_DENSITY_ABSORPTION_WITH_RECLAIM"]},

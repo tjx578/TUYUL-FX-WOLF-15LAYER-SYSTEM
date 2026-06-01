@@ -13,6 +13,16 @@ scoring_model:
     pattern_score:
       purpose: backward_compatible_readiness_score
       alias_of: execution_readiness_score
+  tier_weights:
+    S+: 55
+    S: 50
+    S-: 45
+    A+: 40
+    A: 35
+    A-: 30
+    B+: 25
+    B: 20
+    B-: 15
   weights:
     pressure_block: 20
     microboost: 10
