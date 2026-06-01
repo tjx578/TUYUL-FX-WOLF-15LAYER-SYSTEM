@@ -158,6 +158,70 @@ def test_gate_adapter_enforce_downgrades_unready_final_to_decision_update(caplog
     assert "[SignalJSON]" not in caplog.text
 
 
+def test_nzdusd_counter_entry_final_uses_signal_price_when_live_quote_missing(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    payload = _final_payload(
+        symbol="NZDUSD",
+        signal_family="MICROBOOST_COUNTER_ENTRY",
+        status="BUY_TIMING_VALID",
+        raw_direction="SELL",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_AT_SIGNAL_VALID_PRICE_OR_RETEST",
+        signal_valid_time_utc="2026-06-01T14:50:56.938106+00:00",
+        signal_valid_time_wita="2026-06-01 22:50:56",
+        signal_valid_price=0.591595,
+        entry_reference_price=0.591595,
+        entry_zone=[0.59159, 0.59159],
+        price_position="MAIN_SUPPORT",
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BEARISH",
+        phase_unpriced="REPEATED_MICROBOOST",
+        phase_priced="SUPPORT_PRESSURE_WARNING",
+        sl_tight=0.59066,
+        sl_safe=0.58986,
+        selected_sl=0.58986,
+        tp1=0.5921,
+        tp2=0.59561,
+        tp3=0.59693,
+        tp4=0.59818,
+        tp_min_rr=0.59561,
+        tp_min_rr_value=2.5,
+        rr_to_valid_target=4.29,
+        rr_status="VALID",
+        target_mode="STRUCTURE_LADDER_TARGET",
+        target_source="support_resistance_ladder",
+        tp_status="VALID",
+        key_support=0.59162,
+        key_resistance=0.59889,
+        structure_zones={"key_support": 0.59162, "key_resistance": 0.59889},
+        targets=[],
+        execution_quality={"spread_normal": True},
+        m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+        market_context_applied=True,
+        valid_for_execution=True,
+        bid=None,
+        ask=None,
+        current_price=None,
+        last_price=None,
+    )
+    adapter = SignalJsonGateAdapter.from_env({})
+    emitter = SignalJsonEmitter(enabled=True)
+
+    gated = adapter.apply(payload)
+    event = build_signal_json_event(gated)
+
+    assert gated["status"] == "BUY_TIMING_VALID"
+    assert event is not None
+    assert emitter.emit(event) is True
+    assert "[SignalExecutionGateJSON]" in caplog.text
+    assert '"decision":"ALLOW"' in caplog.text
+    assert '"rr":4.29' in caplog.text
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+
+
 def test_microboost_timing_gate_blocks_late_pressure_entry():
     payload = _final_payload(
         phase_unpriced="REPEATED_MICROBOOST",
