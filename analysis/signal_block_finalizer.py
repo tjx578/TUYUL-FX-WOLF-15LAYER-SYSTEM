@@ -61,8 +61,9 @@ class PendingDecisionState:
     def pending_decision_id(self) -> str:
         raw = self.payload.get("pending_decision_id")
         if raw:
-            return str(raw)
-        return f"{self.symbol}_{self.cluster_id or 'ACTIVE'}_M15_DECISION"
+            return _normalized_pending_decision_id(self.symbol, str(raw), self.cluster_id)
+        base = self.cluster_id or "ACTIVE"
+        return _normalized_pending_decision_id(self.symbol, f"{self.symbol}_{base}_M15_DECISION", self.cluster_id)
 
 
 @dataclass(frozen=True)
@@ -296,6 +297,7 @@ class SignalBlockFinalizer:
             age_seconds = _elapsed_seconds(now_utc, watch.created_utc)
             if idle_seconds < self.idle_finalize_seconds and age_seconds < self.hard_finalize_seconds:
                 continue
+            trigger = self._finalize_trigger(idle_seconds=idle_seconds, age_seconds=age_seconds)
 
             market = _context_for_symbol(market_contexts, symbol)
             if market is None:
@@ -308,6 +310,8 @@ class SignalBlockFinalizer:
                     ),
                     block_end=block_end,
                     idle_seconds=idle_seconds,
+                    age_seconds=age_seconds,
+                    decision_update_trigger=trigger,
                     promoted=None,
                 )
                 outputs.extend(self._append_once(watch, update, block_end, "PENDING_MARKET_CONTEXT"))
@@ -320,13 +324,25 @@ class SignalBlockFinalizer:
                     decision=decision,
                     block_end=block_end,
                     idle_seconds=idle_seconds,
+                    age_seconds=age_seconds,
+                    decision_update_trigger="WATCH_EXPIRY",
                 )
                 outputs.append(update)
                 self._pending.pop(symbol, None)
                 continue
             promoted = self._promote(watch, market, decision) if decision.is_confirmed else None
             if promoted is not None and _is_final_execution(promoted):
-                outputs.append(_with_block_fields(promoted, watch, block_end, idle_seconds, decision))
+                outputs.append(
+                    _with_block_fields(
+                        promoted,
+                        watch,
+                        block_end,
+                        idle_seconds,
+                        decision,
+                        age_seconds=age_seconds,
+                        decision_update_trigger=trigger,
+                    )
+                )
                 self._pending.pop(symbol, None)
                 continue
             if self._is_expired(watch, age_seconds) and decision.is_confirmed:
@@ -335,6 +351,8 @@ class SignalBlockFinalizer:
                     decision=decision,
                     block_end=block_end,
                     idle_seconds=idle_seconds,
+                    age_seconds=age_seconds,
+                    decision_update_trigger="WATCH_EXPIRY",
                 )
                 update["reason"] = (
                     f"Pending watch expired after {watch.expires_after_m15_bars} M15 bars; "
@@ -349,6 +367,8 @@ class SignalBlockFinalizer:
                 decision=decision,
                 block_end=block_end,
                 idle_seconds=idle_seconds,
+                age_seconds=age_seconds,
+                decision_update_trigger=trigger,
                 promoted=promoted,
             )
             outputs.extend(self._append_once(watch, update, block_end, decision.confirmation))
@@ -412,6 +432,8 @@ class SignalBlockFinalizer:
         decision: M15CloseDecision,
         block_end: datetime | None,
         idle_seconds: float,
+        age_seconds: float,
+        decision_update_trigger: str,
         promoted: dict[str, Any] | None,
     ) -> dict[str, Any]:
         payload = deepcopy(watch.payload)
@@ -429,7 +451,9 @@ class SignalBlockFinalizer:
                 "previous_status": watch.status,
                 "new_status": status,
                 "final_direction": "WAIT",
-                "validated_direction": _candidate_direction(watch.payload),
+                "validated_direction": None,
+                "watch_direction": _candidate_direction(watch.payload),
+                "direction_validation_status": "WATCH_ONLY_PENDING_CONFIRMATION",
                 "action": action,
                 "next_action": action,
                 "valid_for_execution": False,
@@ -451,6 +475,8 @@ class SignalBlockFinalizer:
                 if block_end is None
                 else block_end.astimezone(_TZ_WITA).strftime("%Y-%m-%d %H:%M:%S"),
                 "block_idle_seconds": round(idle_seconds, 3),
+                "pending_age_seconds": round(age_seconds, 3),
+                "decision_update_trigger": decision_update_trigger,
             }
         )
         if promoted is not None:
@@ -464,6 +490,8 @@ class SignalBlockFinalizer:
                 "resistance_ladder_ready",
                 "structure_targets_available",
                 "tradeplan_context_ready",
+                "targets_execution_usable",
+                "target_block_reason",
                 "rr_status",
                 "tp1",
                 "tp2",
@@ -506,12 +534,16 @@ class SignalBlockFinalizer:
         decision: M15CloseDecision,
         block_end: datetime | None,
         idle_seconds: float,
+        age_seconds: float,
+        decision_update_trigger: str,
     ) -> dict[str, Any]:
         payload = self._decision_update(
             watch=watch,
             decision=decision,
             block_end=block_end,
             idle_seconds=idle_seconds,
+            age_seconds=age_seconds,
+            decision_update_trigger=decision_update_trigger,
             promoted=None,
         )
         payload.update(
@@ -531,6 +563,17 @@ class SignalBlockFinalizer:
     @staticmethod
     def _is_expired(watch: PendingDecisionState, age_seconds: float) -> bool:
         return age_seconds >= watch.expires_after_m15_bars * 15.0 * 60.0
+
+    def _finalize_trigger(self, *, idle_seconds: float, age_seconds: float) -> str:
+        idle_ready = idle_seconds >= self.idle_finalize_seconds
+        hard_ready = age_seconds >= self.hard_finalize_seconds
+        if idle_ready and hard_ready:
+            return "IDLE_AND_HARD_AGE_FINALIZER"
+        if idle_ready:
+            return "IDLE_FINALIZER"
+        if hard_ready:
+            return "HARD_AGE_FINALIZER"
+        return "FINALIZER_REFRESH"
 
     def _append_once(
         self,
@@ -630,6 +673,9 @@ def _with_block_fields(
     block_end: datetime | None,
     idle_seconds: float,
     decision: M15CloseDecision,
+    *,
+    age_seconds: float,
+    decision_update_trigger: str,
 ) -> dict[str, Any]:
     payload = dict(payload)
     for key in (
@@ -660,6 +706,8 @@ def _with_block_fields(
             if block_end is None
             else block_end.astimezone(_TZ_WITA).strftime("%Y-%m-%d %H:%M:%S"),
             "block_idle_seconds": round(idle_seconds, 3),
+            "pending_age_seconds": round(age_seconds, 3),
+            "decision_update_trigger": decision_update_trigger,
             "pending_decision_id": watch.pending_decision_id,
             "parent_event_type": "signal_watch_json",
             "parent_event_exists": True,
@@ -701,6 +749,24 @@ def _activity_for_symbol(report: dict[str, Any], symbol: str) -> dict[str, Any] 
 def _context_for_symbol(market_contexts: dict[str, Any], symbol: str) -> Any | None:
     normalized = symbol.upper()
     return market_contexts.get(normalized) or market_contexts.get(symbol) or market_contexts.get(symbol.lower())
+
+
+def _normalized_pending_decision_id(symbol: str, raw: str, cluster_id: str | None) -> str:
+    normalized_symbol = str(symbol or "").upper()
+    text = str(raw or "").upper()
+    duplicate_prefix = f"{normalized_symbol}_{normalized_symbol}_"
+    if normalized_symbol and text.startswith(duplicate_prefix):
+        text = f"{normalized_symbol}_{text[len(duplicate_prefix):]}"
+    if text.endswith("_M15_DECISION"):
+        return text
+    if normalized_symbol and text.startswith(f"{normalized_symbol}_"):
+        return f"{text}_M15_DECISION"
+    if cluster_id:
+        cluster_text = str(cluster_id).upper()
+        if cluster_text.startswith(f"{normalized_symbol}_"):
+            return f"{cluster_text}_M15_DECISION"
+        return f"{normalized_symbol}_{cluster_text}_M15_DECISION"
+    return f"{normalized_symbol}_{text or 'ACTIVE'}_M15_DECISION"
 
 
 def _decision_update_reason(decision: M15CloseDecision, promoted: dict[str, Any] | None) -> str:
