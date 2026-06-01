@@ -1,7 +1,7 @@
 """Market-context validation for SignalThrottle candidates.
 
 This module is intentionally conservative.  It validates a candidate only when
-the caller supplies price snapshots, theme alignment, phase, and spread context.
+the caller supplies price snapshots, phase, and spread context.
 It never fetches market data and never fabricates missing prices.
 """
 
@@ -230,17 +230,6 @@ def validate_market_context(context: MarketContext) -> MarketContextValidation:
             "late_pressure_no_chase",
         )
 
-    if context.theme_aligned is False:
-        return _result(
-            context,
-            "BLOCK_DIRECTION",
-            False,
-            "BLOCKED",
-            "BLOCK_ENTRY",
-            False,
-            "theme_mismatch",
-        )
-
     if context.spread_normal is False:
         return _result(
             context,
@@ -270,7 +259,7 @@ def validate_market_context(context: MarketContext) -> MarketContextValidation:
             context,
             pattern,
             default_action="BUY_ON_PULLBACK",
-            default_reason="price_theme_phase_aligned",
+            default_reason="price_phase_aligned",
         )
         return _result(
             context,
@@ -288,7 +277,7 @@ def validate_market_context(context: MarketContext) -> MarketContextValidation:
             context,
             pattern,
             default_action="SELL_ON_PULLBACK",
-            default_reason="price_theme_phase_aligned",
+            default_reason="price_phase_aligned",
         )
         return _result(
             context,
@@ -354,7 +343,6 @@ def _missing_fields(context: MarketContext) -> list[str]:
         "price_at_signal_end",
         "m15_phase",
         "h1_phase",
-        "theme_aligned",
         "spread_normal",
     ):
         if getattr(context, name) is None:
