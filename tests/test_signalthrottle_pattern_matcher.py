@@ -119,12 +119,13 @@ def test_signal_watch_bottlenecks_show_why_final_signal_is_blocked():
 
     assert result["selected_pattern_id"] == "UPPER_ABSORPTION_WARNING"
     assert result["theme_alignment_status"] == "NOT_AVAILABLE"
-    assert "THEME_SNAPSHOT_NOT_AVAILABLE" in result["pattern_bottlenecks"]
+    assert "THEME_SNAPSHOT_NOT_AVAILABLE" not in result["pattern_bottlenecks"]
     assert "SUPPORT_LADDER_MISSING" in result["pattern_bottlenecks"]
     assert "PROVISIONAL_RR_FALLBACK_NOT_FINAL_TARGET" in result["pattern_bottlenecks"]
+    assert "COUNTER_ENTRY_NEEDS_CONFIRMATION" in result["pattern_bottlenecks"]
 
 
-def test_jpy_theme_conflict_overrides_clean_block():
+def test_jpy_theme_conflict_is_metadata_not_execution_override():
     result = match_golden_patterns(
         {
             "symbol": "CADJPY",
@@ -138,9 +139,9 @@ def test_jpy_theme_conflict_overrides_clean_block():
         }
     )
 
-    assert result["selected_pattern_id"] == "CLEAN_BLOCK_BUT_THEME_CONFLICT"
-    assert result["entry_permission"] == "NO_TRADE"
-    assert result["block_reason"] == "THEME_CONFLICT"
+    assert result["selected_pattern_id"] == "LOWER_RANGE_NO_CHASE_FILTER"
+    assert result["entry_permission"] != "NO_TRADE"
+    assert result["block_reason"] != "THEME_CONFLICT"
     assert "JPY_ALIGNMENT_REQUIRED" in result["matched_patterns"]
 
 
