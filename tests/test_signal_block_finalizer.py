@@ -102,11 +102,20 @@ def test_idle_resistance_watch_emits_decision_update_when_support_ladder_missing
     assert update["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
     assert update["previous_status"] == "SELL_ABSORPTION_WATCH"
     assert update["final_direction"] == "WAIT"
+    assert update["validated_direction"] is None
+    assert update["watch_direction"] == "SELL"
+    assert update["direction_validation_status"] == "WATCH_ONLY_PENDING_CONFIRMATION"
     assert update["valid_for_execution"] is False
     assert update["confirmation_policy"] == "M15_CLOSE_REJECTION_CONFIRMED"
     assert update["support_ladder_ready"] is False
+    assert update["targets_execution_usable"] is False
+    assert update["target_block_reason"] == "NO_M15_H1_SUPPORT_LEVELS"
     assert update["target_mode"] == "PROVISIONAL_RR_FALLBACK"
     assert update["block_end_wita"] == "2026-05-21 11:15:04"
+    assert update["pending_decision_id"] == "USDCAD_20260521T030620Z_M15_DECISION"
+    assert "USDCAD_USDCAD" not in update["pending_decision_id"]
+    assert update["decision_update_trigger"] == "IDLE_AND_HARD_AGE_FINALIZER"
+    assert update["pending_age_seconds"] == 428.0
 
 
 def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_ladder_ready():
@@ -206,6 +215,38 @@ def test_pending_watch_expires_after_three_m15_bars_without_confirmation():
     assert update["action"] == "EXPIRE_PENDING_WATCH"
     assert update["final_direction"] == "WAIT"
     assert finalizer.pending_symbols() == []
+
+
+def test_hard_age_finalizer_explains_low_block_idle_seconds():
+    finalizer = SignalBlockFinalizer(idle_finalize_seconds=75, hard_finalize_seconds=300, expires_after_m15_bars=3)
+    finalizer.track(_watch())
+
+    outputs = finalizer.finalize(
+        report={
+            "symbol_activity": {
+                "USDCAD": {
+                    "latest_event_utc": "2026-05-21T03:14:21.901000+00:00",
+                    "latest_block_end_utc": "2026-05-21T03:14:21.901000+00:00",
+                }
+            }
+        },
+        market_contexts={
+            "USDCAD": _resistance_context(
+                m15_open=1.37630,
+                m15_high=1.37642,
+                m15_close=1.37634,
+                support_ladder_ready=True,
+            )
+        },
+        now=datetime(2026, 5, 21, 3, 14, 22, tzinfo=UTC),
+    )
+
+    assert len(outputs) == 1
+    update = outputs[0]
+    assert update["event"] == "signal_decision_update_json"
+    assert update["decision_update_trigger"] == "HARD_AGE_FINALIZER"
+    assert update["block_idle_seconds"] == 0.099
+    assert update["pending_age_seconds"] == 300.0
 
 
 def test_schema_v1_confirmed_breakout_does_not_expire_while_rr_fallback_is_valid():
