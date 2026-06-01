@@ -52,16 +52,27 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
     selected_id = _select_candidate(candidates)
     selected = get_pattern(selected_id)
     matched = [pattern_id for pattern_id, _ in sorted(candidates.items(), key=lambda item: (item[1], item[0]), reverse=True)]
-    score = _pattern_score(data, selected, candidates.get(selected_id or "", 0), evidence)
+    pattern_match_score = _pattern_match_score(data, selected, candidates.get(selected_id or "", 0))
+    execution_readiness_score = _execution_readiness_score(data, selected, pattern_match_score, evidence)
     block_reason = _block_reason_from_features(data)
     if selected and selected.block_reason:
         block_reason = selected.block_reason
+    alignment = _alignment_metadata(
+        data,
+        symbol=symbol,
+        theme_aligned=theme_aligned,
+        jpy_alignment=jpy_alignment,
+        dual_theme_status=dual_theme_status,
+    )
     return {
         "matched_patterns": matched,
         "selected_pattern_id": selected.pattern_id if selected else None,
         "pattern_tier": selected.tier if selected else None,
         "pattern_family": selected.family if selected else None,
-        "pattern_score": score,
+        # Backward-compatible score: execution/readiness aware.
+        "pattern_score": execution_readiness_score,
+        "pattern_match_score": pattern_match_score,
+        "execution_readiness_score": execution_readiness_score,
         "golden_reference": selected.golden_source if selected else None,
         "pair_role": pair_role.get("default_role"),
         "entry_permission": selected.entry_permission if selected else _default_entry_permission(data),
@@ -70,6 +81,7 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
         "chase_allowed": bool(selected.chase_allowed) if selected else False,
         "block_reason": block_reason,
         "pattern_evidence": evidence[:8],
+        **alignment,
     }
 
 
@@ -208,20 +220,31 @@ def _add_major_context_candidate(
         evidence.append("euraud_multi_wave_role")
 
 
-def _pattern_score(
+def _pattern_match_score(
     data: Mapping[str, Any],
     selected: GoldenPattern | None,
     candidate_score: int,
-    evidence: list[str],
 ) -> int:
     if selected is None:
         return 0
     score = candidate_score
-    score += {"S": 16, "A": 10, "B": 4}.get(selected.tier, 0)
+    score += {"S": 50, "A": 35, "B": 20}.get(selected.tier, 0)
     score += min(20, int(_num(data.get("density_per_minute") or data.get("effective_density_per_minute")) * 2))
     score += min(15, int((_num(data.get("duration_seconds")) or _num(data.get("duration_minutes")) * 60.0) / 60.0))
     if _optional_bool(data.get("theme_aligned")) is True:
         score += 10
+    return max(0, min(100, int(score)))
+
+
+def _execution_readiness_score(
+    data: Mapping[str, Any],
+    selected: GoldenPattern | None,
+    pattern_match_score: int,
+    evidence: list[str],
+) -> int:
+    if selected is None:
+        return 0
+    score = pattern_match_score
     if _optional_bool(data.get("spread_normal")) is False:
         score -= 20
         evidence.append("spread_penalty")
@@ -236,6 +259,44 @@ def _pattern_score(
         score -= 25
         score = min(score, 69)
     return max(0, min(100, int(score)))
+
+
+def _alignment_metadata(
+    data: Mapping[str, Any],
+    *,
+    symbol: str,
+    theme_aligned: bool | None,
+    jpy_alignment: str,
+    dual_theme_status: str,
+) -> dict[str, str | None]:
+    theme_text = _text(
+        data.get("theme_alignment")
+        or data.get("theme_alignment_status")
+        or data.get("counter_entry_theme_alignment")
+    ).upper()
+    if not theme_text:
+        if theme_aligned is True:
+            theme_text = "ALIGNED"
+        elif theme_aligned is False:
+            theme_text = "MISMATCH"
+        else:
+            theme_text = "UNKNOWN"
+
+    jpy_pair = symbol.endswith("JPY") or symbol.startswith("JPY")
+    jpy_status = jpy_alignment or ("UNKNOWN" if jpy_pair else None)
+    missing: list[str] = []
+    if theme_text == "UNKNOWN":
+        missing.append("theme_alignment")
+    if jpy_pair and jpy_status == "UNKNOWN":
+        missing.append("jpy_alignment")
+    if jpy_pair and not dual_theme_status:
+        missing.append("dual_theme_status")
+    return {
+        "theme_alignment_status": theme_text,
+        "jpy_alignment_status": jpy_status,
+        "dual_theme_status": dual_theme_status or None,
+        "alignment_missing_reason": ",".join(missing) if missing else None,
+    }
 
 
 def _select_candidate(candidates: dict[str, int]) -> str | None:
