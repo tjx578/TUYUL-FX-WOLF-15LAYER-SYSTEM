@@ -20,6 +20,13 @@ Final direction requires phase, price context, risk, lifecycle, spread, and trad
 Basket/theme context is optional calibration and debug metadata, not a production gate.
 ```
 
+Historical audits such as CHFJPY are stored as universal reference cases. A
+validated JPY basket follow-through can upgrade a theme alert into recognized
+pattern context, but fragmented basket rotation, MTF pullback decision states,
+late-session expansion failure, and zero-drawdown follow-through remain
+watch/validation context until the live pair has its own phase, trigger, risk,
+and execution contract.
+
 Use `analysis.signalthrottle_patterns.match_golden_patterns()` to enrich live
 features with:
 
