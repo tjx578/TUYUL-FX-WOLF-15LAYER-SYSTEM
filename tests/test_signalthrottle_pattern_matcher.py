@@ -144,8 +144,92 @@ def test_universal_microburst_followthrough_can_match_another_jpy_cross():
     assert result["pattern_scope"] == "UNIVERSAL"
     assert result["applies_to"] == "ALL_PAIRS_IF_CONDITIONS_MATCH"
     assert result["golden_references"] == ["GBPJPY", "AUDJPY"]
-    assert result["pair_role"] == "GENERAL_SIGNALTHROTTLE_PAIR"
+    assert result["pair_role"] == "JPY_BASKET_GOLDEN_REFERENCE"
     assert "JPY_ALIGNMENT_REQUIRED" in result["matched_patterns"]
+
+
+def test_liquidation_reclaim_required_is_universal_eurjpy_reference():
+    result = match_golden_patterns(
+        {
+            "symbol": "EURJPY",
+            "raw_direction": "BUY",
+            "event_count": 42,
+            "density_per_minute": 6.0,
+            "h4_atr_ratio": 7.22,
+            "h4_close_pos": 0.155,
+            "reclaim_confirmed": False,
+            "price_confirmation": False,
+            "theme_aligned": True,
+            "jpy_alignment": "ALIGNED",
+            "dual_theme_status": "ALIGNED",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "LIQUIDATION_RECLAIM_REQUIRED"
+    assert result["pattern_scope"] == "UNIVERSAL"
+    assert result["golden_references"] == ["EURJPY"]
+    assert result["entry_permission"] == "WATCH_ONLY_UNTIL_RECLAIM"
+    assert result["block_reason"] == "LIQUIDATION_RECLAIM_REQUIRED"
+
+
+def test_liquidation_reclaim_required_can_match_non_eurjpy_pair():
+    result = match_golden_patterns(
+        {
+            "symbol": "XAUUSD",
+            "raw_direction": "BUY",
+            "event_count": 70,
+            "density_per_minute": 9.0,
+            "structure_atr_ratio": 4.2,
+            "structure_close_pos": 0.12,
+            "reclaim_confirmed": False,
+            "price_confirmation": False,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "LIQUIDATION_RECLAIM_REQUIRED"
+    assert result["golden_reference"] == "EURJPY"
+    assert result["pair_role"] == "METAL_VOLATILITY_LIFECYCLE"
+
+
+def test_theme_context_only_is_selection_boost_not_execution_signal():
+    result = match_golden_patterns(
+        {
+            "symbol": "CADCHF",
+            "raw_direction": "SELL",
+            "theme_context_only": True,
+            "lower_timeframe_confirmation": False,
+            "price_confirmation": False,
+            "theme_aligned": True,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "THEME_CONTEXT_ONLY_NOT_STANDALONE"
+    assert result["entry_permission"] == "PAIR_SELECTION_BOOST_ONLY"
+    assert result["management_action"] == "WAIT_PRICE_CONTEXT"
+    assert result["pattern_score"] <= 69
+
+
+def test_mid_range_continuation_requires_pullback_when_chase_rr_is_poor():
+    result = match_golden_patterns(
+        {
+            "symbol": "EURJPY",
+            "raw_direction": "BUY",
+            "h4_atr_ratio": 1.2,
+            "h4_close_pos": 0.989,
+            "forward_mfe_pips": 49.2,
+            "forward_mae_pips": -54.7,
+            "structure_candle_strong_close": True,
+            "chase_rr_poor": True,
+            "theme_aligned": True,
+            "jpy_alignment": "ALIGNED",
+            "dual_theme_status": "ALIGNED",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "MID_RANGE_CONTINUATION_PULLBACK_REQUIRED"
+    assert result["entry_permission"] == "PULLBACK_OR_RECLAIM_ONLY"
+    assert result["management_action"] == "NO_CHASE"
+    assert result["block_reason"] == "MID_RANGE_PULLBACK_REQUIRED"
 
 
 def test_gbpjpy_clean_five_minute_block_stays_watch_only():
