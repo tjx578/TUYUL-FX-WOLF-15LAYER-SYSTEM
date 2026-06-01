@@ -543,3 +543,134 @@ def test_metal_upper_spike_applies_short_hold_no_chase_policy():
     assert result["entry_permission"] == "NO_MARKET_CHASE"
     assert result["hold_policy"] == "SHORT_INTRADAY"
     assert result["management_action"] == "WAIT_PULLBACK_OR_RECLAIM"
+
+
+def test_chfjpy_jpy_basket_followthrough_is_validated_context_not_auto_entry():
+    result = match_golden_patterns(
+        {
+            "symbol": "CHFJPY",
+            "latest_phase": "VALIDATED_THEME_FOLLOWTHROUGH",
+            "theme_followthrough_confirmed": True,
+            "price_followthrough": True,
+            "forward_mfe_pips": 36.0,
+            "forward_mae_pips": -0.4,
+            "duration_seconds": 720,
+            "density_per_minute": 4.2,
+            "event_count": 28,
+            "theme_aligned": True,
+            "jpy_alignment": "ALIGNED",
+            "dual_theme_status": "ALIGNED",
+            "spread_normal": True,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "JPY_BASKET_THEME_FOLLOWTHROUGH"
+    assert result["golden_references"] == ["CHFJPY"]
+    assert result["entry_permission"] == "VALIDATED_THEME_FOLLOWTHROUGH"
+    assert result["block_reason"] == "THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER"
+    assert "PATTERN_CONTEXT_ONLY_NOT_FINAL_SIGNAL" in result["pattern_bottlenecks"]
+    assert "THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER" in result["pattern_bottlenecks"]
+    assert result["pattern_score"] <= 69
+
+
+def test_chfjpy_fragmented_basket_rotation_stays_watchlist_only():
+    result = match_golden_patterns(
+        {
+            "symbol": "CHFJPY",
+            "latest_phase": "BROAD_ROTATION_FRAGMENTED",
+            "fragmented_basket_rotation": True,
+            "multiple_pairs_active": True,
+            "same_pair_clean_block": False,
+            "own_clean_block": False,
+            "duration_seconds": 900,
+            "density_per_minute": 6.4,
+            "event_count": 64,
+            "theme_aligned": True,
+            "jpy_alignment": "MIXED",
+            "dual_theme_status": "MIXED",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "FRAGMENTED_BASKET_ROTATION_NOT_ENTRY"
+    assert result["entry_permission"] == "WATCHLIST_ONLY"
+    assert result["management_action"] == "NO_FINAL_SIGNAL_UNTIL_CLEAN_BLOCK_OR_RECLAIM"
+    assert result["block_reason"] == "FRAGMENTED_ROTATION_NOT_ENTRY"
+    assert "FRAGMENTED_ROTATION_WATCHLIST_ONLY" in result["pattern_bottlenecks"]
+    assert result["pattern_score"] <= 69
+
+
+def test_chfjpy_mtf_bullish_pullback_is_decision_state():
+    result = match_golden_patterns(
+        {
+            "symbol": "CHFJPY",
+            "raw_direction": "BUY",
+            "duration_seconds": 480,
+            "density_per_minute": 5.2,
+            "event_count": 30,
+            "d1_phase": "BULLISH",
+            "h4_phase": "UPTREND",
+            "h1_phase": "PULLBACK",
+            "m15_phase": "SUPPORT_RETEST",
+            "h1_m15_pullback": True,
+            "theme_aligned": True,
+            "jpy_alignment": "ALIGNED",
+            "dual_theme_status": "ALIGNED",
+            "spread_normal": True,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "MTF_BULLISH_PULLBACK_DECISION"
+    assert result["entry_permission"] == "BUY_RECLAIM_OR_SUPPORT_HOLD"
+    assert result["management_action"] == "WAIT_SUPPORT_HOLD_OR_H1_BREAKDOWN"
+    assert result["block_reason"] == "PULLBACK_DECISION_NEEDS_RECLAIM_OR_BREAKDOWN"
+    assert "PULLBACK_DECISION_NEEDS_RECLAIM_OR_BREAKDOWN" in result["pattern_bottlenecks"]
+
+
+def test_chfjpy_late_session_expansion_fail_blocks_new_entry():
+    result = match_golden_patterns(
+        {
+            "symbol": "CHFJPY",
+            "raw_direction": "BUY",
+            "session_phase": "LATE_SESSION",
+            "phase_priced": "EXPANSION_ATTEMPT",
+            "expansion_attempt": True,
+            "price_followthrough": False,
+            "m15_close_pos": 0.22,
+            "price_position": "MAIN_RESISTANCE",
+            "duration_seconds": 240,
+            "density_per_minute": 9.0,
+            "event_count": 36,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "LATE_SESSION_EXPANSION_FAIL"
+    assert result["entry_permission"] == "NO_NEW_ENTRY"
+    assert result["management_action"] == "PROTECT_OR_REVALIDATE_NEXT_SESSION"
+    assert result["block_reason"] == "LATE_SESSION_EXPANSION_FAIL"
+    assert "REVALIDATE_NEXT_SESSION_BEFORE_NEW_ENTRY" in result["pattern_bottlenecks"]
+    assert result["pattern_score"] <= 69
+
+
+def test_zero_drawdown_followthrough_surfaces_as_historical_quality_confluence():
+    result = match_golden_patterns(
+        {
+            "symbol": "GBPCAD",
+            "raw_direction": "BUY",
+            "duration_seconds": 420,
+            "density_per_minute": 2.2,
+            "event_count": 18,
+            "m15_phase": "BULLISH",
+            "h1_phase": "BULLISH",
+            "timing_valid": True,
+            "open_lane": True,
+            "block_delta_pips": 1.2,
+            "price_followthrough": True,
+            "forward_mfe_pips": 28.0,
+            "forward_mae_pips": 0.0,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "LOW_DENSITY_OPEN_LANE_TIMING_BLOCK"
+    assert "ZERO_DRAWDOWN_FOLLOWTHROUGH" in result["matched_patterns"]
+    assert result["entry_permission"] == "ENTRY_WATCH_OR_BUY_WATCH"
+    assert "historical_zero_drawdown_followthrough_quality" in result["pattern_evidence"]
