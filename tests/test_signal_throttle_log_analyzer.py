@@ -540,6 +540,33 @@ def test_microboost_counts_suppressed_logs_as_effective_ticks():
     assert summary["latest"]["direction"] == "BUY"
 
 
+def test_theme_scores_fill_real_alignment_snapshot_for_microboost_context():
+    events = [_event(index * 5, "USDCAD", event_type="ALLOWED") for index in range(30)]
+    market = MarketContext(
+        symbol="USDCAD",
+        raw_allowed_direction="BUY",
+        pip_value=0.0001,
+        price_at_signal_start=1.37560,
+        price_at_5m_confirm=1.37570,
+        price_at_signal_end=1.37580,
+        m15_phase="PIVOT_RECLAIM",
+        h1_phase="BULLISH",
+        theme_aligned=True,
+        spread_normal=True,
+        price_position="MID_RANGE",
+        main_support=1.3720,
+        main_resistance=1.3850,
+        range_position=0.35,
+    )
+
+    report = analyze_signal_throttle_events(events, market_contexts={"USDCAD": market})
+    latest = report["microboost_summary"]["latest"]
+
+    assert latest["market_context_snapshot"]["theme_alignment"].endswith("_SUPPORTS_BUY")
+    assert latest["theme_alignment_status"] != "NOT_AVAILABLE"
+    assert "THEME_SNAPSHOT_NOT_AVAILABLE" not in (latest["pattern_bottlenecks"] or [])
+
+
 def test_candidate_lifecycle_keeps_mature_pair_when_latest_isolated_ignition_arrives():
     base = datetime(2026, 5, 19, 8, 0, tzinfo=UTC)
 
