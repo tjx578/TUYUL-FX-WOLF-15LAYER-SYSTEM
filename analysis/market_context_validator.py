@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from analysis.signal_throttle_pattern_detector import MarketPatternDecision, classify_market_pattern
+from analysis.signalthrottle_patterns import match_golden_patterns
 from schemas.direction import normalize_direction
 
 _BULLISH_M15_PHASES = {
@@ -141,6 +142,19 @@ class MarketContextValidation:
     priority: str = "WATCH_NEUTRAL"
     waiting_for: str | None = "M15_H1_PHASE_AND_STRUCTURE_CONFIRMATION"
     requires_confirmation: bool = True
+    matched_patterns: list[str] | None = None
+    selected_pattern_id: str | None = None
+    pattern_tier: str | None = None
+    pattern_family: str | None = None
+    pattern_score: int = 0
+    golden_reference: str | None = None
+    pair_role: str | None = None
+    entry_permission: str | None = None
+    management_action: str | None = None
+    hold_policy: str | None = None
+    chase_allowed: bool = False
+    block_reason: str | None = None
+    pattern_evidence: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -322,6 +336,18 @@ def _result(
     pattern: MarketPatternDecision | None = None,
 ) -> MarketContextValidation:
     pattern = pattern or classify_market_pattern(context, direction=context.raw_allowed_direction)
+    golden = match_golden_patterns(
+        _golden_pattern_features(
+            context,
+            pattern,
+            final_direction=final_direction,
+            direction_validated=direction_validated,
+            execution_grade=execution_grade,
+            action=action,
+            requires_market_context=requires_market_context,
+            reason=reason,
+        )
+    )
     return MarketContextValidation(
         symbol=context.symbol,
         raw_allowed_direction=normalize_direction(context.raw_allowed_direction),
@@ -337,7 +363,58 @@ def _result(
         priority=pattern.strategy_priority,
         waiting_for=pattern.waiting_for,
         requires_confirmation=pattern.requires_confirmation,
+        matched_patterns=_string_list(golden.get("matched_patterns")),
+        selected_pattern_id=_optional_text(golden.get("selected_pattern_id")),
+        pattern_tier=_optional_text(golden.get("pattern_tier")),
+        pattern_family=_optional_text(golden.get("pattern_family")),
+        pattern_score=int(golden.get("pattern_score") or 0),
+        golden_reference=_optional_text(golden.get("golden_reference")),
+        pair_role=_optional_text(golden.get("pair_role")),
+        entry_permission=_optional_text(golden.get("entry_permission")),
+        management_action=_optional_text(golden.get("management_action")),
+        hold_policy=_optional_text(golden.get("hold_policy")),
+        chase_allowed=bool(golden.get("chase_allowed", False)),
+        block_reason=_optional_text(golden.get("block_reason")),
+        pattern_evidence=_string_list(golden.get("pattern_evidence")),
     )
+
+
+def _golden_pattern_features(
+    context: MarketContext,
+    pattern: MarketPatternDecision,
+    *,
+    final_direction: str,
+    direction_validated: bool,
+    execution_grade: str,
+    action: str,
+    requires_market_context: bool,
+    reason: str,
+) -> dict[str, Any]:
+    features = asdict(context)
+    features.update(pattern.to_dict())
+    features.update(
+        {
+            "final_direction": final_direction,
+            "direction_validated": direction_validated,
+            "execution_grade": execution_grade,
+            "action": action,
+            "requires_market_context": requires_market_context,
+            "reason": reason,
+        }
+    )
+    return features
+
+
+def _optional_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _string_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    values = [str(item) for item in value if str(item or "").strip()]
+    return values or None
 
 
 def _validated_action_reason(
