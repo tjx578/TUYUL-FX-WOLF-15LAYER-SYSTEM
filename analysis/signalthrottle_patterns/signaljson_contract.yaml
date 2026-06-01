@@ -11,7 +11,6 @@ signaljson_pattern_fields:
   - reference_cases
   - pair_calibration
   - pattern_context
-  - theme_context
   - tradeplan_preview
   - execution_gate
   - lifecycle
@@ -27,13 +26,10 @@ signaljson_pattern_fields:
   - chase_allowed
   - block_reason
   - pattern_evidence
-  - jpy_alignment_status
-  - theme_alignment_status
-  - dual_theme_status
-  - alignment_missing_reason
   - watch_direction
   - direction_validation_status
   - targets_execution_usable
+  - target_source
   - target_block_reason
   - decision_update_trigger
   - pending_age_seconds
