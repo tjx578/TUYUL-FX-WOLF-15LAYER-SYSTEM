@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from analysis.signal_json_emitter import (
+    UNIVERSAL_PATTERN_SCHEMA_VERSION,
     SignalJsonEmitter,
     SignalJsonEvent,
-    UNIVERSAL_PATTERN_SCHEMA_VERSION,
     build_signal_json_event,
     should_emit_signal_json,
 )
@@ -270,6 +270,48 @@ def test_emitted_payload_uses_universal_pattern_context_not_pair_owned_fields(ca
     assert '"theme_alignment_status"' not in caplog.text
     assert '"tradeplan_preview":{"target_mode":"PROVISIONAL_RR_FALLBACK"' in caplog.text
     assert '"golden_reference"' not in caplog.text
+    assert '"pair_role"' not in caplog.text
+
+
+def test_chfjpy_reference_pattern_emits_as_universal_context_not_pair_lock(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="EURJPY_20260602T081500Z",
+        symbol="EURJPY",
+        selected_pattern_id="JPY_BASKET_THEME_FOLLOWTHROUGH",
+        matched_patterns=["JPY_BASKET_THEME_FOLLOWTHROUGH", "BASKET_THEME_CONFIRMATION_CONTEXT"],
+        pattern_tier="A",
+        pattern_family="BASKET_THEME_CONFIRMATION",
+        pattern_scope="UNIVERSAL",
+        applies_to="ALL_PAIRS_IF_CONDITIONS_MATCH",
+        pattern_score=64,
+        pattern_match_score=100,
+        execution_readiness_score=64,
+        golden_references=["CHFJPY"],
+        pair_specific_calibration=[
+            "JPY_BASKET_MEMBER_REFERENCE",
+            "MFE_MAE_VALIDATION_REQUIRED",
+            "NOT_PAIR_LOCKED",
+        ],
+        pair_role="JPY_BASKET_GOLDEN_REFERENCE",
+        entry_permission="VALIDATED_THEME_FOLLOWTHROUGH",
+        management_action="WATCH_PRICE_PHASE_AND_OWN_TRIGGER",
+        block_reason="THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER",
+        pattern_bottlenecks=[
+            "PATTERN_CONTEXT_ONLY_NOT_FINAL_SIGNAL",
+            "THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER",
+        ],
+        pattern_evidence=["jpy_basket_theme_followthrough_validated_not_auto_entry"],
+    )
+
+    assert emitter.emit(event) is True
+    assert '"reference_cases":[{"symbol":"CHFJPY"' in caplog.text
+    assert '"pair_calibration":{"symbol":"EURJPY"' in caplog.text
+    assert '"pair_specific_logic_locked":false' in caplog.text
+    assert '"pair_specific_calibration":["JPY_BASKET_MEMBER_REFERENCE","MFE_MAE_VALIDATION_REQUIRED","NOT_PAIR_LOCKED"]' in caplog.text
+    assert '"pattern_context":{"selected_pattern_id":"JPY_BASKET_THEME_FOLLOWTHROUGH"' in caplog.text
+    assert '"pattern_bottlenecks":["PATTERN_CONTEXT_ONLY_NOT_FINAL_SIGNAL","THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER"]' in caplog.text
+    assert '"golden_references"' not in caplog.text
     assert '"pair_role"' not in caplog.text
 
 
