@@ -24,6 +24,8 @@ class MicroboostContinuationResult:
     raw_direction: str | None
     candidate_direction: str | None
     validated_direction: str | None
+    watch_direction: str | None
+    direction_validation_status: str | None
     final_direction: str
     direction_status: str
     phase_unpriced: str | None
@@ -56,6 +58,8 @@ class MicroboostContinuationResult:
     pattern_tier: str | None = None
     pattern_family: str | None = None
     pattern_score: int | None = None
+    pattern_match_score: int | None = None
+    execution_readiness_score: int | None = None
     golden_reference: str | None = None
     pair_role: str | None = None
     entry_permission: str | None = None
@@ -64,6 +68,10 @@ class MicroboostContinuationResult:
     chase_allowed: bool | None = None
     block_reason: str | None = None
     pattern_evidence: list[str] | None = None
+    jpy_alignment_status: str | None = None
+    theme_alignment_status: str | None = None
+    dual_theme_status: str | None = None
+    alignment_missing_reason: str | None = None
     effective_density: float | None = None
     effective_ticks: int | None = None
     duration_seconds: float | None = None
@@ -79,6 +87,8 @@ class MicroboostContinuationResult:
     tp_missing_reason: str | None = None
     structure_targets_available: bool | None = None
     tradeplan_context_ready: bool | None = None
+    targets_execution_usable: bool | None = None
+    target_block_reason: str | None = None
     valid_for_execution: bool = False
     min_rr_required: float | None = None
     tp_min_rr: float | None = None
@@ -271,6 +281,8 @@ class MicroboostContinuationEngine:
             tp_missing_reason=levels["tp_missing_reason"],
             structure_targets_available=levels["structure_targets_available"],
             tradeplan_context_ready=levels["structure_rr_valid"],
+            targets_execution_usable=levels["targets_execution_usable"],
+            target_block_reason=levels["target_block_reason"],
             valid_for_execution=levels["valid_for_execution"],
             min_rr_required=self.min_rr_valid,
             tp_min_rr=levels["tp_min_rr"],
@@ -330,7 +342,21 @@ class MicroboostContinuationEngine:
     def _result(**kwargs: Any) -> MicroboostContinuationResult:
         kwargs.setdefault("signal_family", "MICROBOOST_TREND_CONTINUATION")
         kwargs.setdefault("cluster_id", None)
-        kwargs.setdefault("validated_direction", kwargs.get("candidate_direction"))
+        candidate = _normalize_direction(kwargs.get("candidate_direction"))
+        final_direction = _normalize_direction(kwargs.get("final_direction"))
+        execution_valid = bool(kwargs.get("valid_for_execution", False))
+        waiting = final_direction not in {"BUY", "SELL"} or not execution_valid
+        kwargs.setdefault("watch_direction", candidate if candidate in {"BUY", "SELL"} and waiting else None)
+        kwargs.setdefault(
+            "direction_validation_status",
+            "VALIDATED_EXECUTION"
+            if final_direction in {"BUY", "SELL"} and execution_valid
+            else ("CONTINUATION_TIMING_STRUCTURE_PENDING" if candidate in {"BUY", "SELL"} else "NO_DIRECTION_CANDIDATE"),
+        )
+        if final_direction in {"BUY", "SELL"} and execution_valid:
+            kwargs["validated_direction"] = kwargs.get("validated_direction") or final_direction
+        else:
+            kwargs["validated_direction"] = None
         return MicroboostContinuationResult(signal_type="MICROBOOST_TREND_CONTINUATION", **kwargs)
 
 
@@ -487,6 +513,8 @@ def _level_payload(
         "tp_missing_reason": tp_missing_reason,
         "structure_targets_available": structure_targets_available,
         "structure_rr_valid": structure_rr_valid,
+        "targets_execution_usable": bool(valid_for_execution),
+        "target_block_reason": None if valid_for_execution else tp_missing_reason or target_mode,
         "valid_for_execution": valid_for_execution,
         "tp_min_rr": _round_price(_rr_target(direction, entry, sl, min_rr), digits),
         "tp_min_rr_value": min_rr,
@@ -562,6 +590,8 @@ def _pattern_base_fields(source: Any) -> dict[str, Any]:
         "pattern_tier": _optional_str(_field(source, "pattern_tier", None)),
         "pattern_family": _optional_str(_field(source, "pattern_family", None)),
         "pattern_score": _optional_int(_field(source, "pattern_score", None)),
+        "pattern_match_score": _optional_int(_field(source, "pattern_match_score", None)),
+        "execution_readiness_score": _optional_int(_field(source, "execution_readiness_score", None)),
         "golden_reference": _optional_str(_field(source, "golden_reference", None)),
         "pair_role": _optional_str(_field(source, "pair_role", None)),
         "entry_permission": _optional_str(_field(source, "entry_permission", None)),
@@ -570,6 +600,10 @@ def _pattern_base_fields(source: Any) -> dict[str, Any]:
         "chase_allowed": _optional_bool(_field(source, "chase_allowed", None)),
         "block_reason": _optional_str(_field(source, "block_reason", None)),
         "pattern_evidence": _string_list(_field(source, "pattern_evidence", None)),
+        "jpy_alignment_status": _optional_str(_field(source, "jpy_alignment_status", None)),
+        "theme_alignment_status": _optional_str(_field(source, "theme_alignment_status", None)),
+        "dual_theme_status": _optional_str(_field(source, "dual_theme_status", None)),
+        "alignment_missing_reason": _optional_str(_field(source, "alignment_missing_reason", None)),
     }
 
 
