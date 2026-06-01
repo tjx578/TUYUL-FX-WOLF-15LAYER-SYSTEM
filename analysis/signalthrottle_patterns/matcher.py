@@ -544,8 +544,7 @@ def _add_new_universal_pattern_candidates(
     raw_direction: str | None,
     final_direction: str | None,
 ) -> None:
-    """Detect the 9 new universal patterns (schema v2)."""
-    del symbol
+    """Detect universal pattern families migrated from historical audits."""
     direction = final_direction or raw_direction
     density = _num(data.get("density_per_minute") or data.get("effective_density_per_minute"))
     duration = _duration_seconds(data)
@@ -553,19 +552,49 @@ def _add_new_universal_pattern_candidates(
     m15_phase = _phase(data.get("m15_phase") or data.get("phase_m15"))
     h1_phase = _phase(data.get("h1_phase") or data.get("phase_h1") or data.get("h60_phase"))
     h4_phase = _phase(data.get("h4_phase") or data.get("phase_h4") or data.get("h240_phase"))
+    d1_phase = _phase(data.get("d1_phase") or data.get("phase_d1") or data.get("h1440_phase"))
     price_position = _normalize_position(data.get("price_position"))
     phase_priced_raw = _text(data.get("phase_priced")).upper()
     pressure_temp = _text(data.get("pressure_temperature")).upper()
     block_delta_pips = _num(data.get("block_delta_pips"))
     range_position = _num(data.get("range_position"))
+    close_pos_raw = (
+        data.get("m15_close_pos")
+        if data.get("m15_close_pos") is not None
+        else data.get("close_pos")
+    )
+    close_pos = _num(close_pos_raw)
+    jpy_alignment = _text(data.get("jpy_alignment") or data.get("jpy_alignment_status")).upper()
+    dual_theme_status = _text(data.get("dual_theme_status")).upper()
+    latest_phase = _phase(
+        data.get("latest_phase")
+        or data.get("signal_throttle_phase")
+        or data.get("theme_phase")
+        or data.get("sequence_state")
+    )
+    session_phase = _phase(data.get("session_phase") or data.get("session_state") or data.get("session_window"))
 
     bullish_phase = _is_bullish_or_reclaim(m15_phase) or _is_bullish_or_reclaim(h1_phase)
     bearish_phase = _is_bearish_or_mixed_bearish(m15_phase) or _is_bearish_or_mixed_bearish(h1_phase)
     bullish_higher_tf = _is_bullish_or_reclaim(h4_phase)
+    bullish_major_tf = _is_bullish_or_reclaim(h4_phase) and _is_bullish_or_reclaim(d1_phase)
     near_resistance = price_position == "MAIN_RESISTANCE" or range_position >= 0.85
     near_support = price_position == "MAIN_SUPPORT" or range_position <= 0.15
     near_extreme = near_resistance or near_support
     price_extended = block_delta_pips >= 8.0 or range_position >= 0.85
+    price_followthrough = _optional_bool(data.get("price_followthrough")) is True
+    block_delta_raw = data.get("block_delta_pips")
+    timing_valid = (
+        pressure_temp in {"TIMING_VALID", "TIMING_GATE_VALID", "LOW_DENSITY_OPEN_LANE"}
+        or phase_priced_raw in {"TIMING_VALID", "OPEN_LANE_TIMING", "OPEN_LANE_TIMING_VALID"}
+        or _optional_bool(data.get("timing_valid")) is True
+    )
+    open_lane_context = (
+        _optional_bool(data.get("open_lane")) is True
+        or _optional_bool(data.get("price_unexpanded")) is True
+        or phase_priced_raw in {"OPEN_LANE", "OPEN_LANE_TIMING", "OPEN_LANE_TIMING_VALID"}
+        or (block_delta_raw is not None and abs(block_delta_pips) <= 3.0)
+    )
 
     # 1. LOW_DENSITY_OPEN_LANE_TIMING_BLOCK
     # Low-density block (0.5-4 dpm), 5-10 min, continuation phase, not at resistance.
@@ -573,8 +602,9 @@ def _add_new_universal_pattern_candidates(
     if (
         300.0 <= duration < 600.0
         and 0.5 <= density < 4.0
-        and events >= 15
+        and (events >= 15 or timing_valid)
         and not near_resistance
+        and (open_lane_context or timing_valid)
         and (
             (direction == "BUY" and bullish_phase)
             or (direction == "SELL" and bearish_phase)
@@ -582,6 +612,16 @@ def _add_new_universal_pattern_candidates(
     ):
         _bump(candidates, "LOW_DENSITY_OPEN_LANE_TIMING_BLOCK", 62)
         evidence.append("low_density_open_lane_continuation_block_5_10min")
+
+    mfe = abs(_num(data.get("forward_mfe_pips") or data.get("mfe_pips") or data.get("max_favorable_excursion_pips")))
+    mae = abs(_num(data.get("forward_mae_pips") or data.get("mae_pips") or data.get("max_adverse_excursion_pips")))
+    zero_drawdown = (
+        _optional_bool(data.get("zero_drawdown_followthrough")) is True
+        or (mfe >= 10.0 and mae <= 1.0 and price_followthrough)
+    )
+    if zero_drawdown:
+        _bump(candidates, "ZERO_DRAWDOWN_FOLLOWTHROUGH", 64)
+        evidence.append("historical_zero_drawdown_followthrough_quality")
 
     # 2. ALLOWED_CANARY_QUORUM
     # 3+ allowed events for the same symbol/direction = confidence burst, not final direction.
@@ -617,7 +657,6 @@ def _add_new_universal_pattern_candidates(
     # 4. HIGH_DENSITY_ACCELERATION_CONTINUATION
     # High density (8+), price following through, structure not near exhaustion.
     exhaustion_phase = phase_priced_raw in {"RESISTANCE_PRESSURE_WARNING", "EXHAUSTION_AT_RESISTANCE", "LATE_DENSE_PRESSURE"}
-    price_followthrough = _optional_bool(data.get("price_followthrough")) is True
     if (
         density >= 8.0
         and duration >= 300.0
@@ -658,6 +697,93 @@ def _add_new_universal_pattern_candidates(
     if basket_boost:
         _bump(candidates, "BASKET_THEME_CONFIRMATION_CONTEXT", 34)
         evidence.append("basket_theme_multiple_pairs_consistent_direction")
+
+    basket_member = (
+        _is_jpy_cross(symbol)
+        or _optional_bool(data.get("jpy_basket_member")) is True
+        or "JPY" in _text(data.get("basket_family") or data.get("basket_name")).upper()
+    )
+    same_pair_clean_block = (
+        _optional_bool(data.get("same_pair_clean_block")) is True
+        or _optional_bool(data.get("own_clean_block")) is True
+        or _optional_bool(data.get("clean_same_pair_block")) is True
+    )
+    fragmented_rotation = (
+        latest_phase in {"BROAD_ROTATION_FRAGMENTED", "FRAGMENTED_BASKET_ROTATION", "BROAD_ROTATION"}
+        or ("FRAGMENTED" in latest_phase and "ROTATION" in latest_phase)
+        or _optional_bool(data.get("fragmented_basket_rotation")) is True
+        or _optional_bool(data.get("broad_rotation_fragmented")) is True
+    )
+    broad_rotation_active = (
+        events >= 20.0
+        or _num(data.get("basket_event_count") or data.get("theme_event_count")) >= 20.0
+        or multiple_pairs_active
+    )
+    followthrough_status = _phase(
+        data.get("theme_followthrough_status")
+        or data.get("basket_followthrough_status")
+        or data.get("followthrough_status")
+    )
+    basket_followthrough_confirmed = (
+        followthrough_status in {"VALIDATED_THEME_FOLLOWTHROUGH", "VALIDATED_FOLLOWTHROUGH", "FOLLOWTHROUGH_VALIDATED"}
+        or latest_phase == "VALIDATED_THEME_FOLLOWTHROUGH"
+        or _optional_bool(data.get("theme_followthrough_confirmed")) is True
+        or _optional_bool(data.get("basket_followthrough_confirmed")) is True
+        or _optional_bool(data.get("ohlc_followthrough_confirmed")) is True
+    )
+    mfe_mae_validated = mfe >= 10.0 and (mae <= 1.0 or (mae > 0.0 and mfe / mae >= 2.0))
+
+    if fragmented_rotation and broad_rotation_active and not same_pair_clean_block and not basket_followthrough_confirmed:
+        _bump(candidates, "FRAGMENTED_BASKET_ROTATION_NOT_ENTRY", 96)
+        evidence.append("fragmented_basket_rotation_watchlist_only")
+
+    if (
+        basket_member
+        and not fragmented_rotation
+        and (
+            basket_followthrough_confirmed
+            or (
+                jpy_alignment in {"ALIGNED", "VALIDATED", "WEAK_JPY", "JPY_WEAKNESS", "JPY_STRENGTH"}
+                and price_followthrough
+                and mfe_mae_validated
+            )
+        )
+    ):
+        _bump(candidates, "JPY_BASKET_THEME_FOLLOWTHROUGH", 84)
+        evidence.append("jpy_basket_theme_followthrough_validated_not_auto_entry")
+
+    lower_tf_pullback = (
+        m15_phase in {"PULLBACK", "BEARISH_PULLBACK", "MIXED_PULLBACK", "SUPPORT_RETEST"}
+        or h1_phase in {"PULLBACK", "BEARISH_PULLBACK", "MIXED_PULLBACK", "SUPPORT_RETEST"}
+        or _optional_bool(data.get("h1_m15_pullback")) is True
+        or _optional_bool(data.get("lower_tf_pullback")) is True
+    )
+    if bullish_major_tf and lower_tf_pullback and _optional_bool(data.get("h1_h4_breakdown")) is not True:
+        _bump(candidates, "MTF_BULLISH_PULLBACK_DECISION", 88)
+        evidence.append("mtf_bullish_higher_tf_lower_tf_pullback_decision")
+
+    late_session = (
+        _optional_bool(data.get("late_session")) is True
+        or "LATE" in session_phase
+        or session_phase in {"NY_CLOSE", "SESSION_CLOSE", "END_SESSION", "ASIA_CLOSE"}
+    )
+    expansion_attempt = (
+        _optional_bool(data.get("expansion_attempt")) is True
+        or phase_priced_raw in {"EXPANSION_ATTEMPT", "LATE_EXPANSION", "FAILED_EXPANSION"}
+    )
+    expansion_failed = (
+        _optional_bool(data.get("expansion_failed")) is True
+        or phase_priced_raw in {"FAILED_EXPANSION", "EXPANSION_FAIL"}
+        or (expansion_attempt and _optional_bool(data.get("price_followthrough")) is False)
+    )
+    weak_expansion_close = (
+        _optional_bool(data.get("weak_expansion_close")) is True
+        or (direction == "BUY" and close_pos_raw is not None and close_pos <= 0.35)
+        or (direction == "SELL" and close_pos_raw is not None and close_pos >= 0.65)
+    )
+    if late_session and expansion_failed and (weak_expansion_close or near_extreme or price_extended):
+        _bump(candidates, "LATE_SESSION_EXPANSION_FAIL", 92)
+        evidence.append("late_session_failed_expansion_no_new_entry")
 
     # 8. TIMING_VALID_NOT_FINAL
     # Valid timing block (5+ min) but price phase not classified = watch only, not final signal.
@@ -770,13 +896,22 @@ def _execution_readiness_score(
         "RECLAIM_WATCH_OR_PARTIAL_EXIT",
         "WATCH_ONLY_UNTIL_RECLAIM",
         "PAIR_SELECTION_BOOST_ONLY",
+        "BOOST_SCORE_ONLY",
+        "WATCH_BOOST_ONLY",
+        "WATCHLIST_ONLY",
+        "VALIDATED_THEME_FOLLOWTHROUGH",
+        "TRACK_ONLY",
         "PULLBACK_OR_RECLAIM_ONLY",
         "DELAYED_BUY_WATCH",
         "DELAYED_WATCH",
     }:
         score -= 20
         score = min(score, 69)
-    if selected.entry_permission in {"BUY_RECLAIM_WATCH_OR_EXIT_SHORT_PARTIAL", "PHASE_CONTINUATION_RETEST_OR_PROTECT"}:
+    if selected.entry_permission in {
+        "BUY_RECLAIM_WATCH_OR_EXIT_SHORT_PARTIAL",
+        "PHASE_CONTINUATION_RETEST_OR_PROTECT",
+        "BUY_RECLAIM_OR_SUPPORT_HOLD",
+    }:
         score -= 15
         score = min(score, 79)
     if selected.entry_permission in {"NO_CHASE_PROTECT_OR_WAIT_RETEST", "NO_CHASE_NEAR_RESISTANCE"}:
@@ -901,6 +1036,25 @@ def _pattern_bottlenecks(
         bottlenecks.append("NO_PATTERN_CANDIDATE_FROM_DATABASE")
     if pattern_match_score >= 75 and execution_readiness_score <= 69:
         bottlenecks.append("PATTERN_MATCHED_BUT_EXECUTION_READINESS_BLOCKED")
+    if selected and selected.entry_permission in {
+        "BOOST_SCORE_ONLY",
+        "PAIR_SELECTION_BOOST_ONLY",
+        "WATCH_BOOST_ONLY",
+        "WATCHLIST_ONLY",
+        "VALIDATED_THEME_FOLLOWTHROUGH",
+        "TRACK_ONLY",
+    }:
+        bottlenecks.append("PATTERN_CONTEXT_ONLY_NOT_FINAL_SIGNAL")
+    if selected and selected.pattern_id == "JPY_BASKET_THEME_FOLLOWTHROUGH":
+        bottlenecks.append("THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER")
+    if selected and selected.pattern_id == "FRAGMENTED_BASKET_ROTATION_NOT_ENTRY":
+        bottlenecks.append("FRAGMENTED_ROTATION_WATCHLIST_ONLY")
+    if selected and selected.pattern_id == "MTF_BULLISH_PULLBACK_DECISION":
+        bottlenecks.append("PULLBACK_DECISION_NEEDS_RECLAIM_OR_BREAKDOWN")
+    if selected and selected.pattern_id == "ZERO_DRAWDOWN_FOLLOWTHROUGH":
+        bottlenecks.append("HISTORICAL_OUTCOME_VALIDATION_TRACK_ONLY")
+    if selected and selected.pattern_id == "LATE_SESSION_EXPANSION_FAIL":
+        bottlenecks.append("REVALIDATE_NEXT_SESSION_BEFORE_NEW_ENTRY")
     if _optional_bool(data.get("support_ladder_ready")) is False:
         bottlenecks.append("SUPPORT_LADDER_MISSING")
     if _optional_bool(data.get("resistance_ladder_ready")) is False:
