@@ -3953,6 +3953,8 @@ class WolfConstitutionalPipeline:
 
         continuation = dict(continuation)
         continuation["orchestration_status"] = "VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH"
+        if self._signal_json_gate_adapter.emit_continuation:
+            continuation = self._signal_lifecycle_manager.apply(continuation)
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
         if self._signal_json_gate_adapter.emit_continuation:
