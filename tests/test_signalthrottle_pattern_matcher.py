@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from analysis.market_context_validator import MarketContext, validate_market_context
-from analysis.signalthrottle_patterns import match_golden_patterns
+from analysis.signalthrottle_patterns import GOLDEN_PATTERNS, match_golden_patterns
 
 
 def test_usdjpy_upper_absorption_blocks_buy_chase():
@@ -77,6 +77,51 @@ def test_sparse_archive_gets_low_score_and_no_trade_permission():
     assert result["entry_permission"] == "NO_TRADE"
     assert result["pattern_score"] <= 39
     assert result["block_reason"] == "SPARSE_PRESSURE"
+
+
+def test_database_wide_exact_match_from_previous_signal_watch_log():
+    result = match_golden_patterns(
+        {
+            "symbol": "USDCAD",
+            "status": "SELL_TIMING_WATCH",
+            "selected_pattern_id": "HIGH_DENSITY_ABSORPTION_WITH_RECLAIM",
+            "pattern_context": {
+                "matched_patterns": ["UPPER_ABSORPTION_WARNING", "HIGH_DENSITY_ABSORPTION_WITH_RECLAIM"]
+            },
+            "price_position": "MAIN_RESISTANCE",
+            "phase_priced": "RESISTANCE_PRESSURE_WARNING",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "HIGH_DENSITY_ABSORPTION_WITH_RECLAIM"
+    assert result["pattern_db_candidates_scanned"] == len(GOLDEN_PATTERNS)
+    assert result["pattern_db_exact_matches"] == ["HIGH_DENSITY_ABSORPTION_WITH_RECLAIM", "UPPER_ABSORPTION_WARNING"]
+    assert "HIGH_DENSITY_ABSORPTION_WITH_RECLAIM" in result["pattern_search_space"]
+
+
+def test_signal_watch_bottlenecks_show_why_final_signal_is_blocked():
+    result = match_golden_patterns(
+        {
+            "symbol": "USDCAD",
+            "raw_direction": "BUY",
+            "final_direction": "WAIT",
+            "phase_priced": "RESISTANCE_PRESSURE_WARNING",
+            "price_position": "MAIN_RESISTANCE",
+            "theme_aligned": True,
+            "target_mode": "PROVISIONAL_RR_FALLBACK",
+            "support_ladder_ready": False,
+            "structure_targets_available": False,
+            "targets_execution_usable": False,
+            "valid_for_execution": False,
+            "requires_m15_close": True,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "UPPER_ABSORPTION_WARNING"
+    assert result["theme_alignment_status"] == "NOT_AVAILABLE"
+    assert "THEME_SNAPSHOT_NOT_AVAILABLE" in result["pattern_bottlenecks"]
+    assert "SUPPORT_LADDER_MISSING" in result["pattern_bottlenecks"]
+    assert "PROVISIONAL_RR_FALLBACK_NOT_FINAL_TARGET" in result["pattern_bottlenecks"]
 
 
 def test_jpy_theme_conflict_overrides_clean_block():
