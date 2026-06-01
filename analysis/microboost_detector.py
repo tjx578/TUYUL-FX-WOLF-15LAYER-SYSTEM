@@ -65,6 +65,8 @@ class MicroboostBlockIntel:
     pattern_tier: str | None
     pattern_family: str | None
     pattern_score: int | None
+    pattern_match_score: int | None
+    execution_readiness_score: int | None
     golden_reference: str | None
     pair_role: str | None
     entry_permission: str | None
@@ -73,6 +75,10 @@ class MicroboostBlockIntel:
     chase_allowed: bool | None
     block_reason: str | None
     pattern_evidence: list[str] | None
+    jpy_alignment_status: str | None
+    theme_alignment_status: str | None
+    dual_theme_status: str | None
+    alignment_missing_reason: str | None
     action: str
     requires_market_context: bool
     late_pressure_candidate: bool
@@ -288,6 +294,8 @@ def _build_block_intel(
         pattern_tier=priced["pattern_tier"],
         pattern_family=priced["pattern_family"],
         pattern_score=priced["pattern_score"],
+        pattern_match_score=priced["pattern_match_score"],
+        execution_readiness_score=priced["execution_readiness_score"],
         golden_reference=priced["golden_reference"],
         pair_role=priced["pair_role"],
         entry_permission=priced["entry_permission"],
@@ -296,6 +304,10 @@ def _build_block_intel(
         chase_allowed=priced["chase_allowed"],
         block_reason=priced["block_reason"],
         pattern_evidence=priced["pattern_evidence"],
+        jpy_alignment_status=priced["jpy_alignment_status"],
+        theme_alignment_status=priced["theme_alignment_status"],
+        dual_theme_status=priced["dual_theme_status"],
+        alignment_missing_reason=priced["alignment_missing_reason"],
         action=action,
         requires_market_context=priced["requires_market_context"],
         late_pressure_candidate=late_candidate,
