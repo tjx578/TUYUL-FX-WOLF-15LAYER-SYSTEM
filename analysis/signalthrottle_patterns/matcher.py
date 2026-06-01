@@ -52,6 +52,7 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
 
     selected_id = _select_candidate(candidates)
     selected = get_pattern(selected_id)
+    selected_payload = selected.to_dict() if selected else {}
     matched = [pattern_id for pattern_id, _ in sorted(candidates.items(), key=lambda item: (item[1], item[0]), reverse=True)]
     pattern_match_score = _pattern_match_score(data, selected, candidates.get(selected_id or "", 0))
     execution_readiness_score = _execution_readiness_score(data, selected, pattern_match_score, evidence)
@@ -75,6 +76,10 @@ def match_golden_patterns(features: Mapping[str, Any] | Any) -> dict[str, Any]:
         "pattern_match_score": pattern_match_score,
         "execution_readiness_score": execution_readiness_score,
         "golden_reference": selected.golden_source if selected else None,
+        "pattern_scope": selected.scope if selected else None,
+        "applies_to": selected.applies_to if selected else None,
+        "golden_references": _string_list(selected_payload.get("golden_references")),
+        "pair_specific_calibration": _string_list(selected_payload.get("pair_specific_calibration")),
         "pair_role": pair_role.get("default_role"),
         "entry_permission": selected.entry_permission if selected else _default_entry_permission(data),
         "management_action": selected.management_action if selected else None,
@@ -218,7 +223,9 @@ def _add_universal_reference_candidate(
         or _is_bullish_or_reclaim(h4_phase)
         or _is_bullish_or_reclaim(d1_phase)
     )
-    m15_pullback = m15_phase in {"PULLBACK", "BEARISH_PULLBACK", "MIXED", "BEARISH"} or close_pos <= 0.25
+    m15_pullback = m15_phase in {"PULLBACK", "BEARISH_PULLBACK", "MIXED", "BEARISH"} or (
+        close_pos_raw is not None and close_pos <= 0.25
+    )
     repeated_microburst = (
         phase_unpriced in {"REPEATED_MICROBOOST", "DENSE_MICROBOOST"}
         or _num(data.get("microburst_count") or data.get("repeated_microburst_count")) >= 2
@@ -257,7 +264,10 @@ def _add_universal_reference_candidate(
     if (
         direction == "BUY"
         and density >= 10.0
-        and 150.0 <= duration <= 600.0
+        and (
+            150.0 <= duration <= 300.0
+            or (300.0 < duration <= 600.0 and supportive_higher_tf and price_position != "MAIN_RESISTANCE")
+        )
         and bullish_reclaim_context
         and jpy_not_conflicting
     ):
@@ -517,6 +527,16 @@ def _num(value: Any) -> float:
         return float(str(value).strip())
     except (TypeError, ValueError):
         return 0.0
+
+
+def _string_list(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item) for item in value if item is not None and str(item)]
+        return items or None
+    text = str(value)
+    return [text] if text else None
 
 
 def _duration_seconds(data: Mapping[str, Any]) -> float:
