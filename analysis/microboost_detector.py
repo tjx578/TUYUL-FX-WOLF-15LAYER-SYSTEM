@@ -68,6 +68,10 @@ class MicroboostBlockIntel:
     pattern_match_score: int | None
     execution_readiness_score: int | None
     golden_reference: str | None
+    pattern_scope: str | None
+    applies_to: str | None
+    golden_references: list[str] | None
+    pair_specific_calibration: list[str] | None
     pair_role: str | None
     entry_permission: str | None
     management_action: str | None
@@ -297,6 +301,10 @@ def _build_block_intel(
         pattern_match_score=priced["pattern_match_score"],
         execution_readiness_score=priced["execution_readiness_score"],
         golden_reference=priced["golden_reference"],
+        pattern_scope=priced["pattern_scope"],
+        applies_to=priced["applies_to"],
+        golden_references=priced["golden_references"],
+        pair_specific_calibration=priced["pair_specific_calibration"],
         pair_role=priced["pair_role"],
         entry_permission=priced["entry_permission"],
         management_action=priced["management_action"],
@@ -717,6 +725,10 @@ def _priced_state_payload(
         "pattern_match_score": None if market_context_validation is None else _optional_int(market_context_validation.get("pattern_match_score")),
         "execution_readiness_score": None if market_context_validation is None else _optional_int(market_context_validation.get("execution_readiness_score")),
         "golden_reference": None if market_context_validation is None else _optional_str(market_context_validation.get("golden_reference")),
+        "pattern_scope": None if market_context_validation is None else _optional_str(market_context_validation.get("pattern_scope")),
+        "applies_to": None if market_context_validation is None else _optional_str(market_context_validation.get("applies_to")),
+        "golden_references": None if market_context_validation is None else _string_list(market_context_validation.get("golden_references")),
+        "pair_specific_calibration": None if market_context_validation is None else _string_list(market_context_validation.get("pair_specific_calibration")),
         "pair_role": None if market_context_validation is None else _optional_str(market_context_validation.get("pair_role")),
         "entry_permission": None if market_context_validation is None else _optional_str(market_context_validation.get("entry_permission")),
         "management_action": None if market_context_validation is None else _optional_str(market_context_validation.get("management_action")),
