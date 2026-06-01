@@ -1233,8 +1233,28 @@ def _blocked_microboost_payload(
         "direction_status": "SIGNAL_THROTTLE_CLEAN_BLOCK_REQUIRED",
         "action": "WAIT_SIGNAL_THROTTLE_CLEAN_BLOCK",
         "reason": signal_watch_gate["reason"],
+        **_golden_pattern_fields(latest),
         **_signal_watch_source_fields(signal_watch_gate, False),
     }
+
+
+def _golden_pattern_fields(source: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "matched_patterns",
+        "selected_pattern_id",
+        "pattern_tier",
+        "pattern_family",
+        "pattern_score",
+        "golden_reference",
+        "pair_role",
+        "entry_permission",
+        "management_action",
+        "hold_policy",
+        "chase_allowed",
+        "block_reason",
+        "pattern_evidence",
+    )
+    return {key: source.get(key) for key in keys if key in source}
 
 
 def _env_float(name: str, default: float) -> float:
