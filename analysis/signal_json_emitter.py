@@ -307,6 +307,19 @@ class SignalJsonEvent:
     terminal_decision_confirmed: bool | None = None
     terminal_decision_id: str | None = None
     terminal_decision_event_type: str | None = None
+    matched_patterns: list[str] | None = None
+    selected_pattern_id: str | None = None
+    pattern_tier: str | None = None
+    pattern_family: str | None = None
+    pattern_score: int | None = None
+    golden_reference: str | None = None
+    pair_role: str | None = None
+    entry_permission: str | None = None
+    management_action: str | None = None
+    hold_policy: str | None = None
+    chase_allowed: bool | None = None
+    block_reason: str | None = None
+    pattern_evidence: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -741,6 +754,19 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         terminal_decision_confirmed=_optional_bool(counter_entry.get("terminal_decision_confirmed")),
         terminal_decision_id=_optional_str(counter_entry.get("terminal_decision_id")),
         terminal_decision_event_type=_optional_str(counter_entry.get("terminal_decision_event_type")),
+        matched_patterns=_string_list(counter_entry.get("matched_patterns")),
+        selected_pattern_id=_optional_str(counter_entry.get("selected_pattern_id")),
+        pattern_tier=_optional_str(counter_entry.get("pattern_tier")),
+        pattern_family=_optional_str(counter_entry.get("pattern_family")),
+        pattern_score=_optional_int(counter_entry.get("pattern_score")),
+        golden_reference=_optional_str(counter_entry.get("golden_reference")),
+        pair_role=_optional_str(counter_entry.get("pair_role")),
+        entry_permission=_optional_str(counter_entry.get("entry_permission")),
+        management_action=_optional_str(counter_entry.get("management_action")),
+        hold_policy=_optional_str(counter_entry.get("hold_policy")),
+        chase_allowed=_optional_bool(counter_entry.get("chase_allowed")),
+        block_reason=_optional_str(counter_entry.get("block_reason")),
+        pattern_evidence=_string_list(counter_entry.get("pattern_evidence")),
     )
 
 
