@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -169,6 +170,59 @@ V11_OUTPUT_ONLY_FIELDS = {
     "terminal_decision_confirmed",
     "terminal_decision_id",
     "terminal_decision_event_type",
+}
+
+PATTERN_DEBUG_FIELDS = {
+    "pattern_search_space",
+    "pattern_db_candidates_scanned",
+    "pattern_db_exact_matches",
+    "pattern_db_fuzzy_matches",
+    "pattern_match_diagnostics",
+}
+
+NESTED_SCHEMA_DUPLICATE_FIELDS = {
+    "matched_patterns",
+    "selected_pattern_id",
+    "pattern_tier",
+    "pattern_family",
+    "pattern_score",
+    "pattern_match_score",
+    "execution_readiness_score",
+    "pattern_scope",
+    "applies_to",
+    "entry_permission",
+    "management_action",
+    "hold_policy",
+    "chase_allowed",
+    "block_reason",
+    "pattern_evidence",
+    "pattern_bottlenecks",
+    "theme_alignment",
+    "jpy_alignment_status",
+    "theme_alignment_status",
+    "dual_theme_status",
+    "alignment_missing_reason",
+    "target_mode",
+    "tp_status",
+    "tp_missing_reason",
+    "support_ladder_ready",
+    "resistance_ladder_ready",
+    "structure_targets_available",
+    "tradeplan_context_ready",
+    "targets_execution_usable",
+    "target_block_reason",
+    "min_rr_required",
+    "tp_min_rr",
+    "tp_min_rr_value",
+    "tp1_rr",
+    "tp2_rr",
+    "tp3_rr",
+    "tp4_rr",
+    "risk_pips",
+    "pending_age_seconds",
+    "decision_update_trigger",
+    "next_action",
+    "decision_watch_type",
 }
 
 
@@ -390,11 +444,15 @@ class SignalJsonEmitter:
         decision_dedup_enabled: bool = True,
         decision_state_monotonic: bool = True,
         require_terminal_decision_update: bool = True,
+        compact_production: bool = True,
+        emit_pattern_debug: bool | None = None,
+        pattern_debug_prefix: str = "[PatternMatchDebugJSON]",
     ) -> None:
         self.enabled = enabled
         self.prefix = prefix
         self.watch_prefix = watch_prefix
         self.decision_update_prefix = decision_update_prefix
+        self.pattern_debug_prefix = pattern_debug_prefix
         self.dedup_ttl_seconds = max(1, int(dedup_ttl_seconds))
         self.emit_watch = emit_watch
         self.emit_conditional = emit_conditional
@@ -413,6 +471,12 @@ class SignalJsonEmitter:
         self.decision_dedup_enabled = decision_dedup_enabled
         self.decision_state_monotonic = decision_state_monotonic
         self.require_terminal_decision_update = require_terminal_decision_update
+        self.compact_production = compact_production
+        self.emit_pattern_debug = (
+            emit_pattern_debug
+            if emit_pattern_debug is not None
+            else os.getenv("SIGNAL_JSON_PATTERN_DEBUG_ENABLED", "false").strip().lower() == "true"
+        )
         self._emitted: dict[str, float] = {}
         self._cluster_state: dict[str, str] = {}
         self._emitted_watch_refs: set[str] = set()
@@ -458,7 +522,10 @@ class SignalJsonEmitter:
         payload["is_final_signal"] = bool(payload.get("is_final_signal") or _is_final_payload(payload))
         payload["emit_reason"] = payload.get("emit_reason") or _emit_reason(event.status)
         payload["signal_quality"] = payload.get("signal_quality") or _signal_quality(payload)
-        payload = _universal_pattern_payload(payload)
+        debug_source_payload = dict(payload)
+        payload = _universal_pattern_payload(payload, compact=self.compact_production)
+        if self.emit_pattern_debug:
+            self._emit_pattern_debug(debug_source_payload, payload)
         prefix = self.decision_update_prefix if is_decision_update else (self.watch_prefix if is_watch else self.prefix)
         self.logger.warning("%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
         if is_watch:
@@ -466,6 +533,16 @@ class SignalJsonEmitter:
         if is_decision_update:
             self._record_decision_state(payload)
         return True
+
+    def _emit_pattern_debug(self, source_payload: dict[str, Any], production_payload: dict[str, Any]) -> None:
+        sidecar = _pattern_debug_payload(source_payload, production_payload)
+        if sidecar is None:
+            return
+        self.logger.warning(
+            "%s %s",
+            self.pattern_debug_prefix,
+            json.dumps(sidecar, separators=(",", ":"), ensure_ascii=False),
+        )
 
     @staticmethod
     def _payload_key(payload: dict[str, Any]) -> str:
@@ -1082,70 +1159,102 @@ def _float_list(value: Any) -> list[float]:
     return values
 
 
-def _universal_pattern_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _universal_pattern_payload(payload: dict[str, Any], *, compact: bool = True) -> dict[str, Any]:
     universal = dict(payload)
     universal["schema_version"] = UNIVERSAL_PATTERN_SCHEMA_VERSION
     universal["theme_alignment_status"] = _theme_alignment_status(universal)
     universal["alignment_missing_reason"] = _alignment_missing_reason(universal)
     universal["reference_cases"] = _reference_cases(universal)
     universal["pair_calibration"] = _pair_calibration(universal)
-    universal["pattern_context"] = _dict_value(universal.get("pattern_context")) or _pattern_context(universal)
-    universal["theme_context"] = _dict_value(universal.get("theme_context")) or _theme_context(universal)
-    universal["tradeplan_preview"] = _dict_value(universal.get("tradeplan_preview")) or _tradeplan_preview(universal)
-    universal["execution_gate"] = _dict_value(universal.get("execution_gate")) or _execution_gate_context(universal)
-    universal["lifecycle"] = _dict_value(universal.get("lifecycle")) or _lifecycle_context(universal)
-    return _schema_v2_payload(universal)
+    universal["pattern_context"] = _pattern_context(universal, include_debug=not compact)
+    universal["theme_context"] = _clean_context(_dict_value(universal.get("theme_context")) or _theme_context(universal))
+    universal["tradeplan_preview"] = _clean_context(
+        _dict_value(universal.get("tradeplan_preview")) or _tradeplan_preview(universal)
+    )
+    universal["execution_gate"] = _clean_context(
+        _dict_value(universal.get("execution_gate")) or _execution_gate_context(universal)
+    )
+    universal["lifecycle"] = _clean_context(_dict_value(universal.get("lifecycle")) or _lifecycle_context(universal))
+    return _schema_v2_payload(universal, compact=compact)
 
 
 def _schema_v1_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key not in V11_OUTPUT_ONLY_FIELDS}
 
 
-def _schema_v2_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _schema_v2_payload(payload: dict[str, Any], *, compact: bool = True) -> dict[str, Any]:
     hidden = V11_OUTPUT_ONLY_FIELDS | PAIR_REFERENCE_COMPAT_FIELDS
-    return {key: value for key, value in payload.items() if key not in hidden}
+    if compact:
+        hidden |= PATTERN_DEBUG_FIELDS | NESTED_SCHEMA_DUPLICATE_FIELDS
+    cleaned = {key: value for key, value in payload.items() if key not in hidden}
+    return (_clean_context(cleaned) if compact else cleaned) or {}
 
 
-def _pattern_context(payload: dict[str, Any]) -> dict[str, Any] | None:
-    selected_pattern_id = _optional_str(payload.get("selected_pattern_id"))
-    matched_patterns = _string_list_any(payload.get("matched_patterns"))
+def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) -> dict[str, Any] | None:
+    existing = _dict_value(payload.get("pattern_context")) or {}
+    selected_pattern_id = _optional_str(payload.get("selected_pattern_id") or existing.get("selected_pattern_id"))
+    matched_patterns = _string_list_any(payload.get("matched_patterns")) or _string_list_any(
+        existing.get("matched_patterns")
+    )
     reference_cases = _reference_cases(payload)
-    pattern_evidence = _string_list_any(payload.get("pattern_evidence"))
-    diagnostics = _dict_value(payload.get("pattern_match_diagnostics"))
+    pattern_evidence = _string_list_any(payload.get("pattern_evidence")) or _string_list_any(
+        existing.get("pattern_evidence")
+    )
+    diagnostics = _dict_value(payload.get("pattern_match_diagnostics")) or _dict_value(
+        existing.get("pattern_match_diagnostics")
+    )
+    top_supporting_patterns = [
+        pattern for pattern in matched_patterns or [] if pattern != selected_pattern_id
+    ][:3]
     if not any(
         (
             selected_pattern_id,
             matched_patterns,
-            _optional_str(payload.get("pattern_family")),
-            _optional_str(payload.get("pattern_tier")),
-            _optional_int(payload.get("pattern_score")),
-            _optional_int(payload.get("pattern_match_score")),
-            _optional_int(payload.get("execution_readiness_score")),
+            _optional_str(payload.get("pattern_family") or existing.get("pattern_family")),
+            _optional_str(payload.get("pattern_tier") or existing.get("pattern_tier")),
+            _optional_int(payload.get("pattern_score") or existing.get("pattern_score")),
+            _optional_int(payload.get("pattern_match_score") or existing.get("pattern_match_score")),
+            _optional_int(payload.get("execution_readiness_score") or existing.get("execution_readiness_score")),
             reference_cases,
             pattern_evidence,
-            diagnostics,
+            diagnostics if include_debug else None,
         )
     ):
         return None
     context = {
         "selected_pattern_id": selected_pattern_id,
         "matched_patterns": matched_patterns,
-        "pattern_family": _optional_str(payload.get("pattern_family")),
-        "pattern_scope": _optional_str(payload.get("pattern_scope")) or "UNIVERSAL",
-        "applies_to": _optional_str(payload.get("applies_to")) or "ALL_PAIRS_IF_CONDITIONS_MATCH",
-        "pattern_tier": _optional_str(payload.get("pattern_tier")),
-        "pattern_score": _optional_int(payload.get("pattern_score")),
-        "pattern_match_score": _optional_int(payload.get("pattern_match_score")),
-        "execution_readiness_score": _optional_int(payload.get("execution_readiness_score")),
+        "top_supporting_patterns": top_supporting_patterns,
+        "pattern_family": _optional_str(payload.get("pattern_family") or existing.get("pattern_family")),
+        "pattern_scope": _optional_str(payload.get("pattern_scope") or existing.get("pattern_scope")) or "UNIVERSAL",
+        "applies_to": _optional_str(payload.get("applies_to") or existing.get("applies_to"))
+        or "ALL_PAIRS_IF_CONDITIONS_MATCH",
+        "pattern_tier": _optional_str(payload.get("pattern_tier") or existing.get("pattern_tier")),
+        "pattern_score": _optional_int(payload.get("pattern_score") or existing.get("pattern_score")),
+        "pattern_match_score": _optional_int(payload.get("pattern_match_score") or existing.get("pattern_match_score")),
+        "execution_readiness_score": _optional_int(
+            payload.get("execution_readiness_score") or existing.get("execution_readiness_score")
+        ),
         "reference_cases": reference_cases,
-        "pattern_evidence": pattern_evidence,
-        "pattern_search_space": _string_list(payload.get("pattern_search_space")),
-        "pattern_db_candidates_scanned": _optional_int(payload.get("pattern_db_candidates_scanned")),
-        "pattern_db_exact_matches": _string_list(payload.get("pattern_db_exact_matches")),
-        "pattern_db_fuzzy_matches": _string_list(payload.get("pattern_db_fuzzy_matches")),
-        "pattern_bottlenecks": _string_list(payload.get("pattern_bottlenecks")),
-        "pattern_match_diagnostics": diagnostics,
+        "pattern_evidence": pattern_evidence[:5] if pattern_evidence else None,
+        "pattern_bottlenecks": _string_list(payload.get("pattern_bottlenecks"))
+        or _string_list(existing.get("pattern_bottlenecks")),
     }
+    if include_debug:
+        context.update(
+            {
+                "pattern_search_space": _string_list(payload.get("pattern_search_space"))
+                or _string_list(existing.get("pattern_search_space")),
+                "pattern_db_candidates_scanned": _optional_int(
+                    payload.get("pattern_db_candidates_scanned") or existing.get("pattern_db_candidates_scanned")
+                ),
+                "pattern_db_exact_matches": _string_list(payload.get("pattern_db_exact_matches"))
+                or _string_list(existing.get("pattern_db_exact_matches")),
+                "pattern_db_fuzzy_matches": _string_list(payload.get("pattern_db_fuzzy_matches"))
+                or _string_list(existing.get("pattern_db_fuzzy_matches")),
+                "pattern_match_diagnostics": diagnostics,
+            }
+        )
     return _clean_context(context)
 
 
@@ -1322,6 +1431,54 @@ def _lifecycle_context(payload: dict[str, Any]) -> dict[str, Any] | None:
         "pending_age_seconds": _optional_float(payload.get("pending_age_seconds")),
     }
     return _clean_context(context)
+
+
+def _pattern_debug_payload(
+    source_payload: dict[str, Any],
+    production_payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    pattern_context = _dict_value(source_payload.get("pattern_context")) or {}
+    diagnostics = _dict_value(source_payload.get("pattern_match_diagnostics")) or _dict_value(
+        pattern_context.get("pattern_match_diagnostics")
+    )
+    exact_matches = _string_list(source_payload.get("pattern_db_exact_matches")) or _string_list(
+        pattern_context.get("pattern_db_exact_matches")
+    )
+    fuzzy_matches = _string_list(source_payload.get("pattern_db_fuzzy_matches")) or _string_list(
+        pattern_context.get("pattern_db_fuzzy_matches")
+    )
+    patterns_scanned = _optional_int(source_payload.get("pattern_db_candidates_scanned")) or _optional_int(
+        pattern_context.get("pattern_db_candidates_scanned")
+    )
+    semantic_hits = None
+    candidate_scores_top = None
+    search_mode = None
+    if diagnostics:
+        exact_matches = exact_matches or _string_list(diagnostics.get("exact_matches"))
+        fuzzy_matches = fuzzy_matches or _string_list(diagnostics.get("fuzzy_matches"))
+        patterns_scanned = patterns_scanned or _optional_int(diagnostics.get("patterns_scanned"))
+        semantic_hits = _dict_value(diagnostics.get("semantic_hits"))
+        candidate_scores_top = _dict_value(diagnostics.get("candidate_scores_top"))
+        search_mode = _optional_str(diagnostics.get("search_mode"))
+    if not any((diagnostics, exact_matches, fuzzy_matches, patterns_scanned, semantic_hits, candidate_scores_top)):
+        return None
+
+    sidecar = {
+        "event": "pattern_match_debug_json",
+        "schema_version": "1.0",
+        "symbol": source_payload.get("symbol"),
+        "signal_id": production_payload.get("signal_id") or source_payload.get("signal_id"),
+        "cluster_id": source_payload.get("cluster_id"),
+        "pending_decision_id": source_payload.get("pending_decision_id"),
+        "selected_pattern_id": source_payload.get("selected_pattern_id") or pattern_context.get("selected_pattern_id"),
+        "search_mode": search_mode,
+        "patterns_scanned": patterns_scanned,
+        "exact_matches": exact_matches,
+        "fuzzy_matches": fuzzy_matches,
+        "candidate_scores_top": candidate_scores_top,
+        "semantic_hits": semantic_hits,
+    }
+    return _clean_context(sidecar)
 
 
 def _theme_alignment_status(payload: dict[str, Any]) -> str | None:
