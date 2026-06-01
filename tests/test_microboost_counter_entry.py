@@ -515,8 +515,12 @@ def test_nzdjpy_mature_resistance_absorption_watch_waits_for_m15_close():
     assert result.final_direction == "WAIT"
     assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
     assert result.valid_for_execution is False
-    assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
-    assert result.rr_status == "WATCH_PROVISIONAL"
+    assert result.target_mode == "FINAL_MARKET_STRUCTURE"
+    assert result.rr_status == "FAIL_MIN_RR"
+    assert result.structure_targets_available is True
+    assert result.targets_execution_usable is False
+    assert result.tp1 == 92.7
+    assert result.tp_missing_reason == "no_structure_target_reaches_rr_2.5"
     assert result.confirmation_policy == "M15_CLOSE_REQUIRED"
     assert result.requires_m15_close is True
     assert result.pending_decision_id == "NZDJPY_M15_DECISION"
@@ -581,6 +585,53 @@ def test_cadjpy_missing_support_ladder_uses_rr_fallback_without_validating():
     assert result.tp4 == 115.325
     assert result.tp_min_rr == 115.385
     assert result.tp3_rr == 2.5
+
+
+def test_explicit_key_support_can_supply_final_structure_target_without_full_ladder():
+    cluster = _cluster(
+        symbol="CADJPY",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=18.0,
+        effective_tick_count=55,
+        duration_seconds=220.0,
+        price_at_signal_start=115.685,
+        price_at_signal_end=115.685,
+        end_utc="2026-05-19T20:05:57.041112+00:00",
+    )
+    market = _market(
+        symbol="CADJPY",
+        pip_value=0.01,
+        price_at_signal_start=115.685,
+        price_at_5m_confirm=115.60,
+        price_at_signal_end=115.60,
+        m15_close=115.60,
+        price_position="MAIN_RESISTANCE",
+        resistance_high=115.75,
+        key_support=115.20,
+        minor_support=None,
+        major_support=None,
+        m15_rejection_from_resistance=True,
+        m15_close_below_minor_support=False,
+        tp1_support=None,
+        tp2_support=None,
+        tp3_support=None,
+        tp4_support=None,
+        support_ladder_ready=False,
+        support_ladder_missing_reason="NO_M15_H1_SUPPORT_LEVELS",
+    )
+
+    result = MicroboostCounterEntryEngine().evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_TIMING_VALID
+    assert result.final_direction == "SELL"
+    assert result.valid_for_execution is True
+    assert result.target_mode == "FINAL_MARKET_STRUCTURE"
+    assert result.structure_targets_available is True
+    assert result.targets_execution_usable is True
+    assert result.tp1 == 115.2
+    assert result.tp1_rr is not None
+    assert result.tp1_rr >= 2.5
+    assert result.tp_missing_reason is None
 
 
 def test_structure_targets_below_min_rr_do_not_promote_to_valid():
