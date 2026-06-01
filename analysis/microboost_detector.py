@@ -83,6 +83,12 @@ class MicroboostBlockIntel:
     theme_alignment_status: str | None
     dual_theme_status: str | None
     alignment_missing_reason: str | None
+    pattern_search_space: list[str] | None
+    pattern_db_candidates_scanned: int | None
+    pattern_db_exact_matches: list[str] | None
+    pattern_db_fuzzy_matches: list[str] | None
+    pattern_bottlenecks: list[str] | None
+    pattern_match_diagnostics: dict[str, Any] | None
     action: str
     requires_market_context: bool
     late_pressure_candidate: bool
@@ -316,6 +322,12 @@ def _build_block_intel(
         theme_alignment_status=priced["theme_alignment_status"],
         dual_theme_status=priced["dual_theme_status"],
         alignment_missing_reason=priced["alignment_missing_reason"],
+        pattern_search_space=priced["pattern_search_space"],
+        pattern_db_candidates_scanned=priced["pattern_db_candidates_scanned"],
+        pattern_db_exact_matches=priced["pattern_db_exact_matches"],
+        pattern_db_fuzzy_matches=priced["pattern_db_fuzzy_matches"],
+        pattern_bottlenecks=priced["pattern_bottlenecks"],
+        pattern_match_diagnostics=priced["pattern_match_diagnostics"],
         action=action,
         requires_market_context=priced["requires_market_context"],
         late_pressure_candidate=late_candidate,
@@ -740,6 +752,12 @@ def _priced_state_payload(
         "theme_alignment_status": None if market_context_validation is None else _optional_str(market_context_validation.get("theme_alignment_status")),
         "dual_theme_status": None if market_context_validation is None else _optional_str(market_context_validation.get("dual_theme_status")),
         "alignment_missing_reason": None if market_context_validation is None else _optional_str(market_context_validation.get("alignment_missing_reason")),
+        "pattern_search_space": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_search_space")),
+        "pattern_db_candidates_scanned": None if market_context_validation is None else _optional_int(market_context_validation.get("pattern_db_candidates_scanned")),
+        "pattern_db_exact_matches": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_db_exact_matches")),
+        "pattern_db_fuzzy_matches": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_db_fuzzy_matches")),
+        "pattern_bottlenecks": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_bottlenecks")),
+        "pattern_match_diagnostics": None if market_context_validation is None else _dict_value(market_context_validation.get("pattern_match_diagnostics")),
         "action": action,
         "requires_market_context": requires_market_context,
         "market_context_validation": market_context_validation,
@@ -1137,6 +1155,10 @@ def _string_list(value: Any) -> list[str] | None:
         return None
     values = [str(item) for item in value if str(item or "").strip()]
     return values or None
+
+
+def _dict_value(value: Any) -> dict[str, Any] | None:
+    return dict(value) if isinstance(value, dict) else None
 
 
 def _normalize_direction(value: Any) -> str | None:
