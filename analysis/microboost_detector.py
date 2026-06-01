@@ -60,6 +60,19 @@ class MicroboostBlockIntel:
     strategy_priority: str | None
     waiting_for: str | None
     requires_confirmation: bool | None
+    matched_patterns: list[str] | None
+    selected_pattern_id: str | None
+    pattern_tier: str | None
+    pattern_family: str | None
+    pattern_score: int | None
+    golden_reference: str | None
+    pair_role: str | None
+    entry_permission: str | None
+    management_action: str | None
+    hold_policy: str | None
+    chase_allowed: bool | None
+    block_reason: str | None
+    pattern_evidence: list[str] | None
     action: str
     requires_market_context: bool
     late_pressure_candidate: bool
@@ -270,6 +283,19 @@ def _build_block_intel(
         strategy_priority=priced["strategy_priority"],
         waiting_for=priced["waiting_for"],
         requires_confirmation=priced["requires_confirmation"],
+        matched_patterns=priced["matched_patterns"],
+        selected_pattern_id=priced["selected_pattern_id"],
+        pattern_tier=priced["pattern_tier"],
+        pattern_family=priced["pattern_family"],
+        pattern_score=priced["pattern_score"],
+        golden_reference=priced["golden_reference"],
+        pair_role=priced["pair_role"],
+        entry_permission=priced["entry_permission"],
+        management_action=priced["management_action"],
+        hold_policy=priced["hold_policy"],
+        chase_allowed=priced["chase_allowed"],
+        block_reason=priced["block_reason"],
+        pattern_evidence=priced["pattern_evidence"],
         action=action,
         requires_market_context=priced["requires_market_context"],
         late_pressure_candidate=late_candidate,
@@ -671,6 +697,19 @@ def _priced_state_payload(
         "requires_confirmation": (
             None if market_context_validation is None else market_context_validation.get("requires_confirmation")
         ),
+        "matched_patterns": None if market_context_validation is None else _string_list(market_context_validation.get("matched_patterns")),
+        "selected_pattern_id": None if market_context_validation is None else _optional_str(market_context_validation.get("selected_pattern_id")),
+        "pattern_tier": None if market_context_validation is None else _optional_str(market_context_validation.get("pattern_tier")),
+        "pattern_family": None if market_context_validation is None else _optional_str(market_context_validation.get("pattern_family")),
+        "pattern_score": None if market_context_validation is None else _optional_int(market_context_validation.get("pattern_score")),
+        "golden_reference": None if market_context_validation is None else _optional_str(market_context_validation.get("golden_reference")),
+        "pair_role": None if market_context_validation is None else _optional_str(market_context_validation.get("pair_role")),
+        "entry_permission": None if market_context_validation is None else _optional_str(market_context_validation.get("entry_permission")),
+        "management_action": None if market_context_validation is None else _optional_str(market_context_validation.get("management_action")),
+        "hold_policy": None if market_context_validation is None else _optional_str(market_context_validation.get("hold_policy")),
+        "chase_allowed": None if market_context_validation is None else _optional_bool(market_context_validation.get("chase_allowed")),
+        "block_reason": None if market_context_validation is None else _optional_str(market_context_validation.get("block_reason")),
+        "pattern_evidence": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_evidence")),
         "action": action,
         "requires_market_context": requires_market_context,
         "market_context_validation": market_context_validation,
@@ -1051,6 +1090,13 @@ def _optional_bool(value: Any) -> bool | None:
 def _optional_str(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _string_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    values = [str(item) for item in value if str(item or "").strip()]
+    return values or None
 
 
 def _normalize_direction(value: Any) -> str | None:
