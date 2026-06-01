@@ -82,6 +82,7 @@ def test_gate_adapter_from_env_defaults_to_official_enforce_barrier():
     assert adapter.config.final_barrier is True
     assert adapter.config.enabled is True
     assert adapter.config.enforce is True
+    assert adapter.config.emit_continuation is True
 
 
 def test_official_final_barrier_overrides_legacy_shadow_flags():
@@ -109,6 +110,12 @@ def test_final_barrier_can_be_disabled_for_explicit_shadow_mode():
     assert adapter.config.final_barrier is False
     assert adapter.config.enabled is True
     assert adapter.config.enforce is False
+
+
+def test_continuation_emission_can_be_disabled_explicitly():
+    adapter = SignalJsonGateAdapter.from_env({"SIGNAL_JSON_EXEC_GATES_EMIT_CONTINUATION": "false"})
+
+    assert adapter.config.emit_continuation is False
 
 
 def test_gate_adapter_shadow_logs_sidecar_without_changing_signal(caplog):
