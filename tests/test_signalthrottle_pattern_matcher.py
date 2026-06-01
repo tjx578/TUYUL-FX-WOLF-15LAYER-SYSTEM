@@ -27,6 +27,10 @@ def test_usdjpy_upper_absorption_blocks_buy_chase():
     assert result.entry_permission == "NO_NEW_BUY"
     assert result.chase_allowed is False
     assert result.final_direction == "NO_NEW_ENTRY"
+    assert result.pattern_match_score >= 80
+    assert result.execution_readiness_score <= 69
+    assert result.jpy_alignment_status == "UNKNOWN"
+    assert result.alignment_missing_reason == "jpy_alignment,dual_theme_status"
 
 
 def test_usdjpy_liquidation_expansion_keeps_sell_retest_only():
