@@ -8,7 +8,7 @@ scoring_model:
     execution_readiness_score:
       purpose: current_execution_context_readiness
       starts_from: pattern_match_score
-      subtracts: [spread_penalty, theme_conflict_penalty, no_trade_permission, no_chase_permission, sparse_archive_penalty]
+      subtracts: [spread_penalty, no_trade_permission, no_chase_permission, sparse_archive_penalty, incomplete_tradeplan_penalty]
       note: This is the backward-compatible `pattern_score`.
     pattern_score:
       purpose: backward_compatible_readiness_score
@@ -27,7 +27,7 @@ scoring_model:
     pressure_block: 20
     microboost: 10
     allowed_quorum: 10
-    theme_basket: 20
+    basket_calibration: 0
     mtf_phase: 20
     price_location: 15
     lifecycle_stage: 15
@@ -35,7 +35,6 @@ scoring_model:
     exhaustion_penalty: -30
     counterflow_penalty: -30
     late_chase_penalty: -25
-    theme_conflict_penalty: -35
     incomplete_tradeplan_penalty: -40
     sparse_archive_penalty: -50
   interpretation:
