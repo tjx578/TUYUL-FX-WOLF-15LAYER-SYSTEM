@@ -108,6 +108,7 @@ class MicroboostContinuationResult:
     tp3_rr: float | None = None
     tp4_rr: float | None = None
     risk_pips: float | None = None
+    rr_to_valid_target: float | None = None
     key_resistance: float | None = None
     key_support: float | None = None
     structure_zones: dict[str, Any] | None = None
@@ -302,6 +303,7 @@ class MicroboostContinuationEngine:
             tp3_rr=levels["tp3_rr"],
             tp4_rr=levels["tp4_rr"],
             risk_pips=levels["risk_pips"],
+            rr_to_valid_target=levels["rr_to_valid_target"],
             key_resistance=structure_metadata["key_resistance"],
             key_support=structure_metadata["key_support"],
             structure_zones=structure_metadata["structure_zones"],
@@ -506,6 +508,15 @@ def _level_payload(
 ) -> dict[str, Any]:
     tp1, tp2, tp3, tp4 = targets[:4]
     risk = abs(sl - entry) if sl is not None and entry is not None else None
+    tp1_rr = _rr(direction, entry, sl, tp1)
+    tp2_rr = _rr(direction, entry, sl, tp2)
+    tp3_rr = _rr(direction, entry, sl, tp3)
+    tp4_rr = _rr(direction, entry, sl, tp4)
+    rr_to_valid_target = (
+        next((rr for rr in (tp1_rr, tp2_rr, tp3_rr, tp4_rr) if rr is not None and rr >= min_rr), None)
+        if structure_rr_valid
+        else None
+    )
     return {
         "sl_tight": _round_price(sl, digits),
         "sl_safe": _round_price(_safe_stop(direction, sl, pip_value), digits),
@@ -513,10 +524,11 @@ def _level_payload(
         "tp2": _round_price(tp2, digits),
         "tp3": _round_price(tp3, digits),
         "tp4": _round_price(tp4, digits),
-        "tp1_rr": _rr(direction, entry, sl, tp1),
-        "tp2_rr": _rr(direction, entry, sl, tp2),
-        "tp3_rr": _rr(direction, entry, sl, tp3),
-        "tp4_rr": _rr(direction, entry, sl, tp4),
+        "tp1_rr": tp1_rr,
+        "tp2_rr": tp2_rr,
+        "tp3_rr": tp3_rr,
+        "tp4_rr": tp4_rr,
+        "rr_to_valid_target": rr_to_valid_target,
         "rr_status": "VALID" if valid_for_execution else "WAIT_TARGET_STRUCTURE",
         "target_mode": target_mode,
         "tp_status": tp_status,
