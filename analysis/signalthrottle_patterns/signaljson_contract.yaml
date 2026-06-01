@@ -1,0 +1,14 @@
+signaljson_pattern_fields:
+  - matched_patterns
+  - selected_pattern_id
+  - pattern_tier
+  - pattern_family
+  - pattern_score
+  - golden_reference
+  - pair_role
+  - entry_permission
+  - management_action
+  - hold_policy
+  - chase_allowed
+  - block_reason
+  - pattern_evidence
