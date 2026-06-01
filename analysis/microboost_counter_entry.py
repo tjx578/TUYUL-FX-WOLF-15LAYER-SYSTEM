@@ -104,6 +104,12 @@ class MicroboostCounterEntryResult:
     theme_alignment_status: str | None = None
     dual_theme_status: str | None = None
     alignment_missing_reason: str | None = None
+    pattern_search_space: list[str] | None = None
+    pattern_db_candidates_scanned: int | None = None
+    pattern_db_exact_matches: list[str] | None = None
+    pattern_db_fuzzy_matches: list[str] | None = None
+    pattern_bottlenecks: list[str] | None = None
+    pattern_match_diagnostics: dict[str, Any] | None = None
     effective_density: float | None = None
     effective_ticks: int | None = None
     duration_seconds: float | None = None
@@ -1016,6 +1022,12 @@ def _pattern_base_fields(source: Any) -> dict[str, Any]:
         "theme_alignment_status": _optional_str(_field(source, "theme_alignment_status", None)),
         "dual_theme_status": _optional_str(_field(source, "dual_theme_status", None)),
         "alignment_missing_reason": _optional_str(_field(source, "alignment_missing_reason", None)),
+        "pattern_search_space": _string_list(_field(source, "pattern_search_space", None)),
+        "pattern_db_candidates_scanned": _optional_int(_field(source, "pattern_db_candidates_scanned", None)),
+        "pattern_db_exact_matches": _string_list(_field(source, "pattern_db_exact_matches", None)),
+        "pattern_db_fuzzy_matches": _string_list(_field(source, "pattern_db_fuzzy_matches", None)),
+        "pattern_bottlenecks": _string_list(_field(source, "pattern_bottlenecks", None)),
+        "pattern_match_diagnostics": _dict_value(_field(source, "pattern_match_diagnostics", None)),
     }
 
 
@@ -2254,6 +2266,10 @@ def _optional_int(value: Any) -> int | None:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return None
+
+
+def _dict_value(value: Any) -> dict[str, Any] | None:
+    return dict(value) if isinstance(value, dict) else None
 
 
 def _optional_float(value: Any) -> float | None:
