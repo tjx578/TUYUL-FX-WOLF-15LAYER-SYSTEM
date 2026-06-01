@@ -202,7 +202,9 @@ NESTED_SCHEMA_DUPLICATE_FIELDS = {
     "theme_alignment_status",
     "dual_theme_status",
     "alignment_missing_reason",
+    "theme_context",
     "target_mode",
+    "target_source",
     "tp_status",
     "tp_missing_reason",
     "support_ladder_ready",
@@ -223,6 +225,12 @@ NESTED_SCHEMA_DUPLICATE_FIELDS = {
     "decision_update_trigger",
     "next_action",
     "decision_watch_type",
+}
+
+STRUCTURE_TARGET_MODES = {
+    "FINAL_MARKET_STRUCTURE",
+    "STRUCTURE_LADDER_TARGET",
+    "KEY_LEVEL_STRUCTURE_TARGET",
 }
 
 
@@ -273,6 +281,7 @@ class SignalJsonEvent:
     signal_quality: str | None = None
     lifecycle_version: int = 2
     target_mode: str | None = None
+    target_source: str | None = None
     tp_status: str | None = None
     tp_missing_reason: str | None = None
     support_ladder_ready: bool | None = None
@@ -586,15 +595,8 @@ class SignalJsonEmitter:
             and not self.allow_provisional_rr_execution
         ):
             reasons.append("PROVISIONAL_RR_NOT_EXECUTION_GRADE")
-        if self.require_final_market_structure and str(payload.get("target_mode") or "").upper() != "FINAL_MARKET_STRUCTURE":
-            reasons.append("FINAL_MARKET_STRUCTURE_REQUIRED")
-        if (
-            self.require_theme_alignment
-            and self.theme_conflict_downgrade
-            and _theme_conflicts(payload)
-            and _optional_bool(payload.get("second_m15_confirmation")) is not True
-        ):
-            reasons.append("THEME_CONFLICT_REQUIRES_SECOND_M15_CONFIRMATION")
+        if self.require_final_market_structure and not _is_structure_target_mode(payload.get("target_mode")):
+            reasons.append("STRUCTURE_TARGET_MODE_REQUIRED")
         if _active_signal_conflicts(payload):
             if _optional_bool(payload.get("reversal_confirmed")) is not True:
                 reasons.append("ACTIVE_SIGNAL_CONFLICT_REQUIRES_REVERSAL_CONFIRMATION")
@@ -773,6 +775,7 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         reason=str(counter_entry.get("reason") or "signal_json_candidate"),
         invalidation=_optional_str(counter_entry.get("invalidation")),
         target_mode=_optional_str(counter_entry.get("target_mode")),
+        target_source=_optional_str(counter_entry.get("target_source")),
         tp_status=_optional_str(counter_entry.get("tp_status")),
         tp_missing_reason=_optional_str(counter_entry.get("tp_missing_reason")),
         support_ladder_ready=_optional_bool(counter_entry.get("support_ladder_ready")),
@@ -964,9 +967,9 @@ def should_emit_signal_json(
             return False
         target_mode = str(payload.get("target_mode") or "").upper()
         if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES:
-            if target_mode not in {"FINAL_MARKET_STRUCTURE", "PROVISIONAL_RR_FALLBACK"}:
+            if target_mode not in STRUCTURE_TARGET_MODES | {"PROVISIONAL_RR_FALLBACK"}:
                 return False
-        elif target_mode != "FINAL_MARKET_STRUCTURE":
+        elif target_mode not in STRUCTURE_TARGET_MODES:
             return False
         if not bool(payload.get("valid_for_execution", False)):
             return False
@@ -991,6 +994,10 @@ def _is_decision_update_payload(payload: dict[str, Any]) -> bool:
     )
 
 
+def _is_structure_target_mode(value: Any) -> bool:
+    return str(value or "").upper() in STRUCTURE_TARGET_MODES
+
+
 def _emit_reason(status: str) -> str:
     if _is_decision_update_status(status):
         return "BLOCK_FINALIZER_DECISION_UPDATE"
@@ -1011,9 +1018,9 @@ def _is_final_payload(payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
     target_mode = str(payload.get("target_mode") or "").upper()
     target_ok = (
-        target_mode in {"FINAL_MARKET_STRUCTURE", "PROVISIONAL_RR_FALLBACK"}
+        target_mode in STRUCTURE_TARGET_MODES | {"PROVISIONAL_RR_FALLBACK"}
         if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES
-        else target_mode == "FINAL_MARKET_STRUCTURE"
+        else target_mode in STRUCTURE_TARGET_MODES
     )
     return (
         (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
@@ -1167,7 +1174,9 @@ def _universal_pattern_payload(payload: dict[str, Any], *, compact: bool = True)
     universal["reference_cases"] = _reference_cases(universal)
     universal["pair_calibration"] = _pair_calibration(universal)
     universal["pattern_context"] = _pattern_context(universal, include_debug=not compact)
-    universal["theme_context"] = _clean_context(_dict_value(universal.get("theme_context")) or _theme_context(universal))
+    universal["theme_context"] = (
+        None if compact else _clean_context(_dict_value(universal.get("theme_context")) or _theme_context(universal))
+    )
     universal["tradeplan_preview"] = _clean_context(
         _dict_value(universal.get("tradeplan_preview")) or _tradeplan_preview(universal)
     )
@@ -1376,6 +1385,7 @@ def _tradeplan_preview(payload: dict[str, Any]) -> dict[str, Any] | None:
     target_mode = _optional_str(payload.get("target_mode"))
     context = {
         "target_mode": target_mode,
+        "target_source": _optional_str(payload.get("target_source")),
         "tp_status": _optional_str(payload.get("tp_status")),
         "support_ladder_ready": _optional_bool(payload.get("support_ladder_ready")),
         "resistance_ladder_ready": _optional_bool(payload.get("resistance_ladder_ready")),
@@ -1390,7 +1400,7 @@ def _tradeplan_preview(payload: dict[str, Any]) -> dict[str, Any] | None:
         if str(target_mode or "").upper() == "PROVISIONAL_RR_FALLBACK"
         else None,
         "structure_levels": _clean_context(levels)
-        if str(target_mode or "").upper() == "FINAL_MARKET_STRUCTURE"
+        if str(target_mode or "").upper() in STRUCTURE_TARGET_MODES
         else None,
     }
     return _clean_context(context)
