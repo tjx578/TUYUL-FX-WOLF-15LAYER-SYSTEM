@@ -4,8 +4,9 @@ This folder stores analysis-layer pattern metadata for SignalThrottle pressure.
 The registry never executes trades and never overrides Constitution/L12.
 
 Golden references are evidence sources, not pair locks. A pattern ID describes
-a universal market condition; `golden_reference` / `golden_references` only
-record where that condition was historically validated. Pair names add
+a universal market condition; public SignalJSON emits these as
+`reference_cases[]` while older internal objects may still expose
+`golden_reference` / `golden_references` for compatibility. Pair names add
 calibration such as pip size, basket/theme alignment, spread, session behavior,
 and volatility.
 
@@ -28,12 +29,15 @@ features with:
 - `pattern_score`
 - `pattern_match_score`
 - `execution_readiness_score`
-- `golden_reference`
 - `pattern_scope`
 - `applies_to`
-- `golden_references`
-- `pair_specific_calibration`
-- `pair_role`
+- `reference_cases`
+- `pair_calibration`
+- `pattern_context`
+- `theme_context`
+- `tradeplan_preview`
+- `execution_gate`
+- `lifecycle`
 - `entry_permission`
 - `management_action`
 - `hold_policy`
@@ -42,6 +46,13 @@ features with:
 - `jpy_alignment_status`
 - `theme_alignment_status`
 - `alignment_missing_reason`
+
+Compatibility fields such as `golden_reference`, `golden_references`,
+`pair_specific_calibration`, and `pair_role` may still exist inside internal
+Python objects for older callers. Emitted SignalJSON payloads should treat
+`reference_cases[]` and `pair_calibration{}` as the public identity contract:
+reference cases are historical proof only, while the live symbol is calibrated
+from current pair context.
 
 `pattern_match_score` describes how strongly the historical/golden pattern is
 recognized. `execution_readiness_score` describes whether the current market
