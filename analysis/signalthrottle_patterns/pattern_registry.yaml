@@ -148,17 +148,16 @@ patterns:
     function: late sell trap after breakdown
   - pattern_id: CLEAN_BLOCK_BUT_THEME_CONFLICT
     tier: S
-    family: THEME_CONFLICT_FILTER
+    family: THEME_CALIBRATION_CONTEXT
     golden_source: CADJPY
-    entry_permission: NO_TRADE
-    block_reason: THEME_CONFLICT
-    function: clean pressure blocked by H4/D1/theme conflict
+    entry_permission: WATCH_PRICE_STRUCTURE
+    function: legacy theme conflict reference; price/structure/lifecycle must decide execution
   - pattern_id: JPY_ALIGNMENT_REQUIRED
     tier: S
     family: JPY_BASKET_FILTER
     golden_source: CADJPY/USDJPY
-    entry_permission: REQUIRE_EXTRA_FILTER
-    function: JPY-cross requires JPY basket validation
+    entry_permission: CALIBRATION_METADATA
+    function: JPY-cross records JPY basket calibration metadata
   - pattern_id: MICROBURST_FOLLOWTHROUGH_RECLAIM
     scope: UNIVERSAL
     applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
