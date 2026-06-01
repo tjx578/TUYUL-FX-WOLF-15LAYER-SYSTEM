@@ -191,6 +191,12 @@ class MarketContextValidation:
     theme_alignment_status: str | None = None
     dual_theme_status: str | None = None
     alignment_missing_reason: str | None = None
+    pattern_search_space: list[str] | None = None
+    pattern_db_candidates_scanned: int | None = None
+    pattern_db_exact_matches: list[str] | None = None
+    pattern_db_fuzzy_matches: list[str] | None = None
+    pattern_bottlenecks: list[str] | None = None
+    pattern_match_diagnostics: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -422,6 +428,12 @@ def _result(
         theme_alignment_status=_optional_text(golden.get("theme_alignment_status")),
         dual_theme_status=_optional_text(golden.get("dual_theme_status")),
         alignment_missing_reason=_optional_text(golden.get("alignment_missing_reason")),
+        pattern_search_space=_string_list(golden.get("pattern_search_space")),
+        pattern_db_candidates_scanned=_optional_int(golden.get("pattern_db_candidates_scanned")),
+        pattern_db_exact_matches=_string_list(golden.get("pattern_db_exact_matches")),
+        pattern_db_fuzzy_matches=_string_list(golden.get("pattern_db_fuzzy_matches")),
+        pattern_bottlenecks=_string_list(golden.get("pattern_bottlenecks")),
+        pattern_match_diagnostics=_dict_value(golden.get("pattern_match_diagnostics")),
     )
 
 
@@ -461,6 +473,19 @@ def _string_list(value: Any) -> list[str] | None:
         return None
     values = [str(item) for item in value if str(item or "").strip()]
     return values or None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dict_value(value: Any) -> dict[str, Any] | None:
+    return dict(value) if isinstance(value, dict) else None
 
 
 def _validated_action_reason(
