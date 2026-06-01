@@ -346,6 +346,12 @@ class SignalJsonEvent:
     chase_allowed: bool | None = None
     block_reason: str | None = None
     pattern_evidence: list[str] | None = None
+    pattern_search_space: list[str] | None = None
+    pattern_db_candidates_scanned: int | None = None
+    pattern_db_exact_matches: list[str] | None = None
+    pattern_db_fuzzy_matches: list[str] | None = None
+    pattern_bottlenecks: list[str] | None = None
+    pattern_match_diagnostics: dict[str, Any] | None = None
     reference_cases: list[dict[str, Any]] | None = None
     pair_calibration: dict[str, Any] | None = None
     pattern_context: dict[str, Any] | None = None
@@ -827,6 +833,12 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         chase_allowed=_optional_bool(counter_entry.get("chase_allowed")),
         block_reason=_optional_str(counter_entry.get("block_reason")),
         pattern_evidence=_string_list(counter_entry.get("pattern_evidence")),
+        pattern_search_space=_string_list(counter_entry.get("pattern_search_space")),
+        pattern_db_candidates_scanned=_optional_int(counter_entry.get("pattern_db_candidates_scanned")),
+        pattern_db_exact_matches=_string_list(counter_entry.get("pattern_db_exact_matches")),
+        pattern_db_fuzzy_matches=_string_list(counter_entry.get("pattern_db_fuzzy_matches")),
+        pattern_bottlenecks=_string_list(counter_entry.get("pattern_bottlenecks")),
+        pattern_match_diagnostics=_dict_value(counter_entry.get("pattern_match_diagnostics")),
         reference_cases=_reference_cases(counter_entry),
         pair_calibration=_pair_calibration(counter_entry, symbol=symbol),
         pattern_context=_pattern_context(counter_entry),
@@ -1099,6 +1111,7 @@ def _pattern_context(payload: dict[str, Any]) -> dict[str, Any] | None:
     matched_patterns = _string_list_any(payload.get("matched_patterns"))
     reference_cases = _reference_cases(payload)
     pattern_evidence = _string_list_any(payload.get("pattern_evidence"))
+    diagnostics = _dict_value(payload.get("pattern_match_diagnostics"))
     if not any(
         (
             selected_pattern_id,
@@ -1110,6 +1123,7 @@ def _pattern_context(payload: dict[str, Any]) -> dict[str, Any] | None:
             _optional_int(payload.get("execution_readiness_score")),
             reference_cases,
             pattern_evidence,
+            diagnostics,
         )
     ):
         return None
@@ -1125,6 +1139,12 @@ def _pattern_context(payload: dict[str, Any]) -> dict[str, Any] | None:
         "execution_readiness_score": _optional_int(payload.get("execution_readiness_score")),
         "reference_cases": reference_cases,
         "pattern_evidence": pattern_evidence,
+        "pattern_search_space": _string_list(payload.get("pattern_search_space")),
+        "pattern_db_candidates_scanned": _optional_int(payload.get("pattern_db_candidates_scanned")),
+        "pattern_db_exact_matches": _string_list(payload.get("pattern_db_exact_matches")),
+        "pattern_db_fuzzy_matches": _string_list(payload.get("pattern_db_fuzzy_matches")),
+        "pattern_bottlenecks": _string_list(payload.get("pattern_bottlenecks")),
+        "pattern_match_diagnostics": diagnostics,
     }
     return _clean_context(context)
 
