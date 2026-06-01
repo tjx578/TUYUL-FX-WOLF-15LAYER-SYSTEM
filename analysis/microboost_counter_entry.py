@@ -89,6 +89,10 @@ class MicroboostCounterEntryResult:
     pattern_match_score: int | None = None
     execution_readiness_score: int | None = None
     golden_reference: str | None = None
+    pattern_scope: str | None = None
+    applies_to: str | None = None
+    golden_references: list[str] | None = None
+    pair_specific_calibration: list[str] | None = None
     pair_role: str | None = None
     entry_permission: str | None = None
     management_action: str | None = None
@@ -997,6 +1001,10 @@ def _pattern_base_fields(source: Any) -> dict[str, Any]:
         "pattern_match_score": _optional_int(_field(source, "pattern_match_score", None)),
         "execution_readiness_score": _optional_int(_field(source, "execution_readiness_score", None)),
         "golden_reference": _optional_str(_field(source, "golden_reference", None)),
+        "pattern_scope": _optional_str(_field(source, "pattern_scope", None)),
+        "applies_to": _optional_str(_field(source, "applies_to", None)),
+        "golden_references": _string_list(_field(source, "golden_references", None)),
+        "pair_specific_calibration": _string_list(_field(source, "pair_specific_calibration", None)),
         "pair_role": _optional_str(_field(source, "pair_role", None)),
         "entry_permission": _optional_str(_field(source, "entry_permission", None)),
         "management_action": _optional_str(_field(source, "management_action", None)),
