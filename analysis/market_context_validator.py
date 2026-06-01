@@ -127,6 +127,29 @@ class MarketContext:
     tradeplan_context_ready: bool | None = None
     support_ladder_missing_reason: str | None = None
     resistance_ladder_missing_reason: str | None = None
+    structure_atr_ratio: float | None = None
+    h4_atr_ratio: float | None = None
+    d1_atr_ratio: float | None = None
+    structure_close_pos: float | None = None
+    h4_close_pos: float | None = None
+    d1_close_pos: float | None = None
+    reclaim_confirmed: bool | None = None
+    breakdown_confirmed: bool | None = None
+    price_confirmation: bool | None = None
+    price_context_complete: bool | None = None
+    theme_context_only: bool | None = None
+    lower_timeframe_confirmation: bool | None = None
+    fragmented_run: bool | None = None
+    weak_individual_run: bool | None = None
+    forward_mfe_pips: float | None = None
+    forward_mae_pips: float | None = None
+    mfe_pips: float | None = None
+    mae_pips: float | None = None
+    mfe_mae_symmetry_risk: bool | None = None
+    chase_rr_poor: bool | None = None
+    near_recent_high_low_without_breakout_close: bool | None = None
+    structure_candle_strong_close: bool | None = None
+    continuation_context: bool | None = None
 
 
 @dataclass(frozen=True)
