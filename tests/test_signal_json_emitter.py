@@ -190,6 +190,32 @@ def test_build_signal_json_event_from_counter_entry_payload():
     assert event.schema_version == "1.0"
 
 
+def test_build_signal_json_event_retains_golden_pattern_contract_fields():
+    payload = _event(
+        cluster_id="USDJPY_20260519T145605Z",
+        symbol="USDJPY",
+        matched_patterns=["UPPER_ABSORPTION_WARNING", "JPY_ALIGNMENT_REQUIRED"],
+        selected_pattern_id="UPPER_ABSORPTION_WARNING",
+        pattern_tier="S",
+        pattern_family="EXHAUSTION_MANAGEMENT",
+        pattern_score=58,
+        golden_reference="USDJPY",
+        pair_role="PHASE_SENSITIVE_JPY_MAJOR",
+        entry_permission="NO_NEW_BUY",
+        management_action="PROTECT_LONG_OR_SELL_WATCH",
+        chase_allowed=False,
+        pattern_evidence=["strategy_pattern=UPPER_RANGE_EXHAUSTION"],
+    ).to_dict()
+
+    event = build_signal_json_event(payload)
+
+    assert event is not None
+    assert event.selected_pattern_id == "UPPER_ABSORPTION_WARNING"
+    assert event.matched_patterns == ["UPPER_ABSORPTION_WARNING", "JPY_ALIGNMENT_REQUIRED"]
+    assert event.entry_permission == "NO_NEW_BUY"
+    assert event.pattern_score == 58
+
+
 def test_build_signal_json_event_marks_absorption_as_conditional_quality():
     payload = _event(
         status="SELL_TIMING_VALID_BY_ABSORPTION",
