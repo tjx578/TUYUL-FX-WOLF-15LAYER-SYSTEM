@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from analysis.microboost_continuation_entry import MicroboostContinuationEngine
+from analysis.signal_execution_gates import evaluate_signal_execution_gates
 from analysis.signal_json_emitter import build_signal_json_event, should_emit_signal_json
 
 
@@ -106,9 +107,14 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
         "spread_pips": None,
         "max_allowed_spread_pips": None,
     }
+    assert result.rr_to_valid_target is not None
+    assert result.rr_to_valid_target >= 2.5
     assert result.promotion_path is None
     assert result.direct_valid_reason is None
     assert result.parent_watch_required is True
+
+    gate_decision = evaluate_signal_execution_gates(result.to_dict())
+    assert gate_decision.decision == "ALLOW"
 
 
 def test_continuation_ignores_unready_or_opposite_quorum():
@@ -155,6 +161,7 @@ def test_continuation_fallback_targets_wait_for_structure_or_retest():
     assert result.tp1_rr == 1.0
     assert result.tp2_rr == 2.0
     assert result.tp3_rr == 2.5
+    assert result.rr_to_valid_target is None
     assert result.promotion_path is None
     assert result.direct_valid_reason is None
     assert result.parent_watch_required is False
