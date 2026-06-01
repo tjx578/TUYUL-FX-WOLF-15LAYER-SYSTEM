@@ -41,7 +41,7 @@ class SignalJsonGateConfig:
             enabled=enabled,
             enforce=enforce,
             final_barrier=final_barrier,
-            emit_continuation=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_CONTINUATION", False),
+            emit_continuation=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_CONTINUATION", final_barrier),
             emit_sidecar=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_SIDECAR", True),
             prefix=str(env.get("SIGNAL_EXECUTION_GATE_JSON_LOG_PREFIX") or "[SignalExecutionGateJSON]"),
             min_rr_required=_env_float(env, "SIGNAL_JSON_MIN_RR_VALID", 2.5),
