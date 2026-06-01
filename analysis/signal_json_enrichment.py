@@ -15,6 +15,11 @@ from zoneinfo import ZoneInfo
 TP1_RR_FLOOR = 2.0
 STRUCTURE_RR_FLOOR = 2.5
 _WITA = ZoneInfo("Asia/Makassar")
+STRUCTURE_TARGET_MODES = {
+    "FINAL_MARKET_STRUCTURE",
+    "STRUCTURE_LADDER_TARGET",
+    "KEY_LEVEL_STRUCTURE_TARGET",
+}
 
 
 def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -32,6 +37,7 @@ def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
         else enriched.get("valid_for_execution", False)
     )
     source_target_mode = str(enriched.get("source_target_mode") or enriched.get("target_mode") or "") or None
+    normalized_target_mode = str(enriched.get("target_mode") or "").upper()
     entry = _optional_float(enriched.get("entry_reference_price") or enriched.get("signal_valid_price"))
     pip_value = _pip_value(str(enriched.get("symbol") or ""))
     sl_tight = _valid_stop(direction, entry, _optional_float(enriched.get("sl_tight")))
@@ -110,7 +116,11 @@ def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "risk_pips_tight": _risk_pips(entry, sl_tight, pip_value),
             "risk_pips_safe": _risk_pips(entry, sl_safe, pip_value),
             "selected_risk_pips": selected_risk,
-            "target_mode": "FINAL_MARKET_STRUCTURE" if tradeplan_valid else "STRUCTURE_ENRICHMENT_PENDING",
+            "target_mode": (
+                normalized_target_mode
+                if tradeplan_valid and normalized_target_mode in STRUCTURE_TARGET_MODES
+                else ("STRUCTURE_LADDER_TARGET" if tradeplan_valid else "STRUCTURE_ENRICHMENT_PENDING")
+            ),
             "target_policy": target_policy,
             "targets": targets,
             "structure_zones": zones,
@@ -211,7 +221,7 @@ def _targets(
                 "required": True,
             }
         )
-    if str(payload.get("target_mode") or "").upper() != "FINAL_MARKET_STRUCTURE":
+    if str(payload.get("target_mode") or "").upper() not in STRUCTURE_TARGET_MODES:
         return targets
 
     candidates: list[float] = []
