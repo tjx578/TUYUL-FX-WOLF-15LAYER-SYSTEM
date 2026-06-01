@@ -1,0 +1,24 @@
+scoring_model:
+  max_score: 100
+  weights:
+    pressure_block: 20
+    microboost: 10
+    allowed_quorum: 10
+    theme_basket: 20
+    mtf_phase: 20
+    price_location: 15
+    lifecycle_stage: 15
+  penalties:
+    exhaustion_penalty: -30
+    counterflow_penalty: -30
+    late_chase_penalty: -25
+    theme_conflict_penalty: -35
+    incomplete_tradeplan_penalty: -40
+    sparse_archive_penalty: -50
+  interpretation:
+    "90-100": GOLDEN_A_PLUS
+    "80-89": A_VALID
+    "70-79": B_PLUS_WATCH
+    "60-69": CONTEXTUAL_WATCH
+    "40-59": LOW_PRIORITY
+    "0-39": ARCHIVE_OR_BLOCK
