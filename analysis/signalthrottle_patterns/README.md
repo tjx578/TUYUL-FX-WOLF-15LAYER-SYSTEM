@@ -20,12 +20,26 @@ features with:
 - `pattern_tier`
 - `pattern_family`
 - `pattern_score`
+- `pattern_match_score`
+- `execution_readiness_score`
 - `pair_role`
 - `entry_permission`
 - `management_action`
 - `hold_policy`
 - `chase_allowed`
 - `block_reason`
+- `jpy_alignment_status`
+- `theme_alignment_status`
+- `alignment_missing_reason`
+
+`pattern_match_score` describes how strongly the historical/golden pattern is
+recognized. `execution_readiness_score` describes whether the current market
+context is ready for execution. `pattern_score` remains as a backward-compatible
+readiness score and should not be used alone to downgrade a Tier-S pattern.
+
+Watch events must expose `watch_direction` while keeping
+`validated_direction=None` until structure, M15 confirmation, and execution
+readiness are all satisfied.
 
 The canonical Python registry is `registry.py`; YAML files mirror the same
 operational contract for review and external tooling.
