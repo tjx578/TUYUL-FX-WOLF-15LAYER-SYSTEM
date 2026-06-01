@@ -15,6 +15,12 @@ signaljson_pattern_fields:
   - tradeplan_preview
   - execution_gate
   - lifecycle
+  - pattern_search_space
+  - pattern_db_candidates_scanned
+  - pattern_db_exact_matches
+  - pattern_db_fuzzy_matches
+  - pattern_bottlenecks
+  - pattern_match_diagnostics
   - entry_permission
   - management_action
   - hold_policy
