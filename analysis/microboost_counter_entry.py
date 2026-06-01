@@ -127,6 +127,7 @@ class MicroboostCounterEntryResult:
     tradeplan_context_ready: bool | None = None
     targets_execution_usable: bool | None = None
     target_block_reason: str | None = None
+    target_source: str | None = None
     valid_for_execution: bool = False
     min_rr_required: float | None = None
     tp_min_rr: float | None = None
@@ -201,7 +202,7 @@ class MicroboostCounterEntryEngine:
         absorption_valid_density_per_minute: float = 15.0,
         absorption_valid_max_stall_pips: float = 2.0,
         direct_absorption_enabled: bool = True,
-        direct_absorption_require_theme_alignment: bool = True,
+        direct_absorption_require_theme_alignment: bool = False,
         direct_absorption_require_rr: bool = True,
         min_rr_valid: float = 2.5,
         tp1_rr_required: float = 2.0,
@@ -391,6 +392,7 @@ class MicroboostCounterEntryEngine:
                 invalidation="M15 close back below breakout zone",
                 trade_plan=breakout_levels["trade_plan"],
                 target_mode="PROVISIONAL_RR_FALLBACK",
+                target_source="rr_projection_only",
                 tp_status="VALID_FROM_TP3",
                 tp_missing_reason="breakout_structure_target_not_required_for_trigger",
                 structure_targets_available=False,
@@ -465,7 +467,7 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        direct_absorption = False if watch_only else self._direct_absorption_valid(
+        direct_absorption = False if (watch_only or m15_counter_confirmation) else self._direct_absorption_valid(
             direction="SELL",
             market=market,
             target_result=target_result,
@@ -562,6 +564,7 @@ class MicroboostCounterEntryEngine:
             tradeplan_context_ready=tradeplan_valid,
             targets_execution_usable=target_result["targets_execution_usable"],
             target_block_reason=target_result["target_block_reason"],
+            target_source=target_result["target_source"],
             valid_for_execution=execution_valid_now,
             min_rr_required=self.min_rr_valid,
             tp_min_rr=target_result["tp_min_rr"],
@@ -576,7 +579,7 @@ class MicroboostCounterEntryEngine:
                 else ("M15_CLOSE_CONFIRMED" if m15_counter_confirmation else "M15_CLOSE_REQUIRED")
             ),
             requires_m15_close=not (direct_absorption or m15_counter_confirmation),
-            direct_valid_reason=("mature_absorption_with_theme_structure_and_rr" if direct_absorption else None),
+            direct_valid_reason=("mature_absorption_with_structure_and_rr" if direct_absorption else None),
             pending_decision_id=None if (direct_absorption or m15_counter_confirmation) else _pending_decision_id(base),
             structure_ready=tradeplan_valid,
             rr_to_valid_target=target_result["selected_rr"],
@@ -649,6 +652,7 @@ class MicroboostCounterEntryEngine:
                 invalidation="M15 close back above breakdown zone",
                 trade_plan=breakdown_levels["trade_plan"],
                 target_mode="PROVISIONAL_RR_FALLBACK",
+                target_source="rr_projection_only",
                 tp_status="VALID_FROM_TP3",
                 tp_missing_reason="breakdown_structure_target_not_required_for_trigger",
                 structure_targets_available=False,
@@ -723,7 +727,7 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        direct_absorption = False if watch_only else self._direct_absorption_valid(
+        direct_absorption = False if (watch_only or m15_counter_confirmation) else self._direct_absorption_valid(
             direction="BUY",
             market=market,
             target_result=target_result,
@@ -819,6 +823,7 @@ class MicroboostCounterEntryEngine:
             tradeplan_context_ready=tradeplan_valid,
             targets_execution_usable=target_result["targets_execution_usable"],
             target_block_reason=target_result["target_block_reason"],
+            target_source=target_result["target_source"],
             valid_for_execution=execution_valid_now,
             min_rr_required=self.min_rr_valid,
             tp_min_rr=target_result["tp_min_rr"],
@@ -833,7 +838,7 @@ class MicroboostCounterEntryEngine:
                 else ("M15_CLOSE_CONFIRMED" if m15_counter_confirmation else "M15_CLOSE_REQUIRED")
             ),
             requires_m15_close=not (direct_absorption or m15_counter_confirmation),
-            direct_valid_reason=("mature_absorption_with_theme_structure_and_rr" if direct_absorption else None),
+            direct_valid_reason=("mature_absorption_with_structure_and_rr" if direct_absorption else None),
             pending_decision_id=None if (direct_absorption or m15_counter_confirmation) else _pending_decision_id(base),
             structure_ready=tradeplan_valid,
             rr_to_valid_target=target_result["selected_rr"],
@@ -1152,13 +1157,18 @@ def _entry_zone(start: float | None, end: float | None) -> list[float] | None:
     return [low, high]
 
 
-def _sell_levels(market: Any | None, entry_reference: float | None, pip_value: float) -> dict[str, float | None]:
+def _sell_levels(market: Any | None, entry_reference: float | None, pip_value: float) -> dict[str, Any]:
     resistance_high = _optional_float(_field(market, "resistance_high", _field(market, "main_resistance", None)))
     resistance_low = _optional_float(_field(market, "resistance_low", resistance_high))
     key_support = _optional_float(_field(market, "key_support", None))
     minor_support = _optional_float(_field(market, "minor_support", None))
     major_support = _optional_float(_field(market, "major_support", None))
     main_support = _optional_float(_field(market, "main_support", None))
+    target_source = _target_source_for_fields(
+        market,
+        ladder_fields=("tp1_support", "tp2_support", "tp3_support", "tp4_support", "minor_support", "major_support"),
+        key_fields=("key_support", "main_support"),
+    )
     sl_buffer = _optional_float(_field(market, "sl_buffer", None)) or pip_value * 8.0
     sl_tight = _optional_float(_field(market, "sl_tight", None))
     sl_safe = _optional_float(_field(market, "sl_safe", None))
@@ -1186,16 +1196,30 @@ def _sell_levels(market: Any | None, entry_reference: float | None, pip_value: f
         "tp4": _round_price(_optional_float(_field(market, "tp4_support", None))),
         "resistance_low": _round_price(resistance_low),
         "resistance_high": _round_price(resistance_high),
+        "target_source": target_source,
     }
 
 
-def _buy_levels(market: Any | None, entry_reference: float | None, pip_value: float) -> dict[str, float | None]:
+def _buy_levels(market: Any | None, entry_reference: float | None, pip_value: float) -> dict[str, Any]:
     support_low = _optional_float(_field(market, "support_low", _field(market, "main_support", None)))
     support_high = _optional_float(_field(market, "support_high", support_low))
     key_resistance = _optional_float(_field(market, "key_resistance", None))
     minor_resistance = _optional_float(_field(market, "minor_resistance", None))
     major_resistance = _optional_float(_field(market, "resistance_high", None))
     main_resistance = _optional_float(_field(market, "main_resistance", None))
+    target_source = _target_source_for_fields(
+        market,
+        ladder_fields=(
+            "tp1_resistance",
+            "tp2_resistance",
+            "tp3_resistance",
+            "tp4_resistance",
+            "minor_resistance",
+            "major_resistance",
+            "resistance_high",
+        ),
+        key_fields=("key_resistance", "main_resistance"),
+    )
     sl_buffer = _optional_float(_field(market, "sl_buffer", None)) or pip_value * 8.0
     sl_tight = _optional_float(_field(market, "sl_tight", None))
     sl_safe = _optional_float(_field(market, "sl_safe", None))
@@ -1227,7 +1251,21 @@ def _buy_levels(market: Any | None, entry_reference: float | None, pip_value: fl
         "tp4": _round_price(_optional_float(_field(market, "tp4_resistance", None))),
         "support_low": _round_price(support_low),
         "support_high": _round_price(support_high),
+        "target_source": target_source,
     }
+
+
+def _target_source_for_fields(
+    market: Any | None,
+    *,
+    ladder_fields: tuple[str, ...],
+    key_fields: tuple[str, ...],
+) -> str | None:
+    if any(_optional_float(_field(market, field, None)) is not None for field in ladder_fields):
+        return "support_resistance_ladder"
+    if any(_optional_float(_field(market, field, None)) is not None for field in key_fields):
+        return "key_support_or_key_resistance"
+    return None
 
 
 def _resistance_decision_fields(
@@ -1631,6 +1669,7 @@ def _target_objects(
     fixed_tp1: float | None,
     structure_targets: list[float],
     tp1_rr: float,
+    target_source: str | None = None,
 ) -> list[dict[str, Any]]:
     targets: list[dict[str, Any]] = []
     if fixed_tp1 is not None:
@@ -1645,12 +1684,17 @@ def _target_objects(
             }
         )
     for level in structure_targets:
+        source = (
+            "OBSERVED_KEY_SUPPORT_OR_RESISTANCE"
+            if target_source == "key_support_or_key_resistance"
+            else ("OBSERVED_SUPPORT_LADDER" if direction == "SELL" else "OBSERVED_RESISTANCE_LADDER")
+        )
         targets.append(
             {
                 "id": f"TP{len(targets) + 1}",
                 "level": level,
                 "type": "STRUCTURE_TARGET",
-                "source": "OBSERVED_SUPPORT_LADDER" if direction == "SELL" else "OBSERVED_RESISTANCE_LADDER",
+                "source": source,
                 "rr": _rr(direction, entry, sl, level),
                 "required": False,
                 "status": "VALID_STRUCTURE_TARGET",
@@ -1715,6 +1759,7 @@ def _breakout_continuation_levels(
                 "direction": direction,
                 "entry_mode": f"{direction}_BREAKOUT_RETEST",
                 "target_mode": "PROVISIONAL_RR_FALLBACK",
+                "target_source": "rr_projection_only",
                 "min_rr_required": min_rr,
             },
         }
@@ -1751,6 +1796,7 @@ def _breakout_continuation_levels(
             "tp3": tp3,
             "tp4": tp4,
             "target_mode": "PROVISIONAL_RR_FALLBACK",
+            "target_source": "rr_projection_only",
             "min_rr_required": min_rr,
         },
     }
@@ -1779,6 +1825,12 @@ def _structure_target_result(
     min_rr: float,
     tp1_rr: float,
 ) -> dict[str, Any]:
+    target_source = str(levels.get("target_source") or "support_resistance_ladder")
+    target_mode = (
+        "KEY_LEVEL_STRUCTURE_TARGET"
+        if target_source == "key_support_or_key_resistance"
+        else "STRUCTURE_LADDER_TARGET"
+    )
     padded = [*targets[:4], None, None, None, None]
     tp1, tp2, tp3, tp4 = padded[:4]
     rr_values = [_rr(direction, entry, sl, target) for target in (tp1, tp2, tp3, tp4)]
@@ -1787,7 +1839,8 @@ def _structure_target_result(
     rr_status = "VALID" if valid_rrs else "FAIL_MIN_RR"
     return {
         **_target_common(levels, direction),
-        "target_mode": "FINAL_MARKET_STRUCTURE",
+        "target_mode": target_mode,
+        "target_source": target_source,
         "tp_status": "VALID" if valid_rrs else "FAIL_MIN_RR",
         "tp_missing_reason": None if valid_rrs else f"no_structure_target_reaches_rr_{min_rr:g}",
         "structure_targets_available": True,
@@ -1822,11 +1875,13 @@ def _structure_target_result(
             fixed_tp1=None,
             structure_targets=targets,
             tp1_rr=tp1_rr,
+            target_source=target_source,
         ),
         "observed_structure_targets": targets,
         "target_policy": {
             "mode": "OBSERVED_MARKET_STRUCTURE_LADDER",
             "tp_source": "OBSERVED_KEY_STRUCTURE_LEVELS_ONLY",
+            "target_source": target_source,
             "allow_variable_tp_count": True,
             "max_tp_count": 4,
             "min_structure_rr_required": min_rr,
@@ -1850,6 +1905,7 @@ def _rr_fallback_target_result(
         return {
             **common,
             "target_mode": "NONE",
+            "target_source": None,
             "tp_status": "INVALID_RISK",
             "tp_missing_reason": missing_reason or "entry_or_sl_missing",
             "structure_targets_available": False,
@@ -1880,6 +1936,7 @@ def _rr_fallback_target_result(
         return {
             **common,
             "target_mode": "NONE",
+            "target_source": None,
             "tp_status": "INVALID_RISK",
             "tp_missing_reason": "invalid_zero_or_negative_risk",
             "structure_targets_available": False,
@@ -1913,6 +1970,7 @@ def _rr_fallback_target_result(
     return {
         **common,
         "target_mode": "PROVISIONAL_RR_FALLBACK",
+        "target_source": "rr_projection_only",
         "tp_status": "WATCH_PROVISIONAL",
         "tp_missing_reason": missing_reason
         or ("support_ladder_missing" if direction == "SELL" else "resistance_ladder_missing"),
@@ -1956,6 +2014,7 @@ def _missing_target_result(
     return {
         **_target_common(levels, direction),
         "target_mode": "NONE",
+        "target_source": None,
         "tp_status": "MISSING_STRUCTURE_TARGETS",
         "tp_missing_reason": missing_reason
         or ("support_ladder_missing" if direction == "SELL" else "resistance_ladder_missing"),
@@ -1984,17 +2043,19 @@ def _missing_target_result(
     }
 
 
-def _target_common(levels: dict[str, float | None], direction: str) -> dict[str, float | None]:
+def _target_common(levels: dict[str, Any], direction: str) -> dict[str, Any]:
     if direction == "SELL":
         return {
             "aggressive_trigger": levels.get("aggressive_trigger"),
             "conservative_trigger": levels.get("conservative_trigger"),
             "resistance_low": levels.get("resistance_low"),
+            "target_source": levels.get("target_source"),
         }
     return {
         "aggressive_trigger": levels.get("aggressive_trigger"),
         "conservative_trigger": levels.get("conservative_trigger"),
         "support_high": levels.get("support_high"),
+        "target_source": levels.get("target_source"),
     }
 
 
@@ -2022,6 +2083,8 @@ def _sell_trade_plan(levels: dict[str, Any], action: str, model: dict[str, Any])
         "tp2": levels.get("tp2"),
         "tp3": levels.get("tp3"),
         "tp4": levels.get("tp4"),
+        "target_mode": levels.get("target_mode"),
+        "target_source": levels.get("target_source"),
         "target_policy": model.get("target_policy"),
         "targets": model.get("targets"),
         "invalidation": "M15 close back above resistance high",
@@ -2044,6 +2107,8 @@ def _buy_trade_plan(levels: dict[str, Any], action: str, model: dict[str, Any]) 
         "tp2": levels.get("tp2"),
         "tp3": levels.get("tp3"),
         "tp4": levels.get("tp4"),
+        "target_mode": levels.get("target_mode"),
+        "target_source": levels.get("target_source"),
         "target_policy": model.get("target_policy"),
         "targets": model.get("targets"),
         "invalidation": "M15 close back below support low",
