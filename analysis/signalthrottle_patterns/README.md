@@ -72,6 +72,14 @@ signals. `pattern_bottlenecks` explains why a recognized watch pattern did not
 become a final SignalJSON, for example missing theme snapshots, provisional RR
 fallback targets, missing support/resistance ladders, or M15 confirmation gates.
 
+Production SignalJSON uses `SIGNAL_JSON_COMPACT_PRODUCTION=true` by default.
+That keeps the public log focused on core identity, direction state, nested
+`pattern_context`, `theme_context`, `tradeplan_preview`, `execution_gate`, and
+`lifecycle`, while dropping null placeholders and duplicated flat pattern/theme
+fields. Heavy matcher internals such as fuzzy matches, semantic hits, and
+candidate score maps are debug-only; enable `SIGNAL_JSON_PATTERN_DEBUG_ENABLED`
+to emit a separate `PatternMatchDebugJSON` sidecar.
+
 Watch events must expose `watch_direction` while keeping
 `validated_direction=None` until structure, M15 confirmation, and execution
 readiness are all satisfied.
