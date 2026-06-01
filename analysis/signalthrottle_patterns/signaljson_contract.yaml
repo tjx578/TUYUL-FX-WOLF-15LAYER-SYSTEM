@@ -6,12 +6,15 @@ signaljson_pattern_fields:
   - pattern_score
   - pattern_match_score
   - execution_readiness_score
-  - golden_reference
   - pattern_scope
   - applies_to
-  - golden_references
-  - pair_specific_calibration
-  - pair_role
+  - reference_cases
+  - pair_calibration
+  - pattern_context
+  - theme_context
+  - tradeplan_preview
+  - execution_gate
+  - lifecycle
   - entry_permission
   - management_action
   - hold_policy
