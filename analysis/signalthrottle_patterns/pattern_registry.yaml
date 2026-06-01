@@ -1,0 +1,288 @@
+version: "1.0.0"
+name: "Wolf15 SignalThrottle Golden Pattern Database"
+scope: "analysis_layer_only"
+authority_note: "Pattern metadata enriches analysis only; final verdict remains Constitution/L12."
+core_principle: >
+  SignalThrottle is pressure radar, Microboost is lifecycle priority,
+  Allowed is provisional direction, and final direction still requires phase,
+  theme, price context, risk, and tradeplan readiness.
+
+patterns:
+  - pattern_id: OPEN_LANE_TIMING_VALID
+    tier: S
+    family: TREND_LIFECYCLE
+    golden_source: GBPCAD
+    entry_permission: ENTRY_WATCH
+    function: early entry-watch before expansion
+  - pattern_id: ZERO_DRAWDOWN_FOLLOWTHROUGH
+    tier: S
+    family: OUTCOME_VALIDATION
+    golden_source: GBPCAD
+    entry_permission: TRACK_ONLY
+    function: outcome quality upgrade
+  - pattern_id: PRE_IGNITION_COUNTERFLOW_TRAP
+    tier: S
+    family: DIRECTION_VALIDATION
+    golden_source: GBPCAD
+    entry_permission: NO_TRADE
+    block_reason: COUNTERFLOW_FALSE_SIGNAL
+    function: block provisional counterflow
+  - pattern_id: HIGH_DENSITY_ACCELERATION
+    tier: A
+    family: TREND_LIFECYCLE
+    golden_source: GBPCAD
+    entry_permission: RETEST_ONLY
+    management_action: HOLD_OR_ADD_SMALL_ON_RETEST
+    function: continuation confirmation while price expands
+  - pattern_id: LATE_DENSE_CONGESTION
+    tier: A
+    family: LATE_STAGE_MANAGEMENT
+    golden_source: GBPCAD
+    entry_permission: NO_NEW_ENTRY
+    management_action: PROTECT_PROFIT_TRAIL_TIGHT
+    function: late density means protect/no chase
+  - pattern_id: LATE_MICROBOOST_DECISION_POINT
+    tier: A
+    family: LATE_STAGE_MANAGEMENT
+    golden_source: GBPCAD
+    entry_permission: NO_NEW_CHASE
+    management_action: WAIT_NEXT_M15_CLOSE
+    function: late microboost branch point
+  - pattern_id: DELAYED_IGNITION_MICROBOOST
+    tier: A
+    family: MICROBOOST_TO_EXPANSION
+    golden_source: EURCAD
+    entry_permission: NOT_YET
+    function: hot microboost before delayed expansion
+  - pattern_id: LATE_UPPER_MICROBOOST
+    tier: A
+    family: LATE_STAGE_MANAGEMENT
+    golden_source: AUDCAD
+    entry_permission: NO_NEW_CHASE
+    management_action: TRAIL_OR_WAIT_PULLBACK
+    function: upper-range microboost after expansion
+  - pattern_id: SATURATION_MICROBOOST_WARNING
+    tier: A
+    family: EXHAUSTION_MANAGEMENT
+    golden_source: AUDCAD
+    entry_permission: BLOCK_NEW_ENTRY
+    management_action: PROTECT_OR_WAIT_NEXT_M15
+    function: late follow-through failure warning
+  - pattern_id: MIRROR_BASKET_CONFIRMATION
+    tier: S
+    family: THEME_BASKET
+    golden_source: NZDCAD+CADCHF+CADJPY
+    entry_permission: BOOST_THEME_NOT_AUTO_ENTRY
+    function: theme confirmation via mirror pairs
+  - pattern_id: SECONDARY_OPEN_LANE_CONFIRMATION
+    tier: A
+    family: THEME_CONFIRMATION
+    golden_source: NZDCAD
+    entry_permission: CONDITIONAL_ONLY
+    function: secondary timing support for primary pair
+  - pattern_id: INVERSE_MIRROR_BREAKDOWN
+    tier: S
+    family: INVERSE_CONFIRMATION
+    golden_source: CADCHF
+    entry_permission: OWN_SIGNAL_REQUIRED
+    function: CAD-base breakdown confirms CAD weakness
+  - pattern_id: CONFIRMATION_PAIR_NOT_PRIMARY_ENTRY
+    tier: A
+    family: EXECUTION_FILTER
+    golden_source: NZDCAD/CADCHF
+    entry_permission: WAIT_OWN_TRIGGER
+    function: confirmation pair requires own trigger
+  - pattern_id: LATE_SECONDARY_SATURATION
+    tier: A
+    family: LATE_STAGE_MANAGEMENT
+    golden_source: NZDCAD
+    entry_permission: NO_NEW_CHASE
+    management_action: PROTECT_OR_WAIT_PULLBACK
+    function: secondary pair late no-chase
+  - pattern_id: INVERSE_COOLING_PAUSE
+    tier: B
+    family: POST_BREAKDOWN_MANAGEMENT
+    golden_source: CADCHF
+    entry_permission: TRAIL_OR_WAIT
+    management_action: TRAIL_SHORT_OR_WAIT
+    function: inverse lower-range pause not reversal
+  - pattern_id: EARLY_INVERSE_OPEN_LANE_CONFIRMATION
+    tier: A
+    family: INVERSE_THEME_CONFIRMATION
+    golden_source: CADJPY
+    entry_permission: OWN_TRIGGER_REQUIRED
+    function: early CAD-base inverse confirmation
+  - pattern_id: DELAYED_INVERSE_IGNITION
+    tier: A
+    family: DELAYED_INVERSE_CONFIRMATION
+    golden_source: CADJPY
+    entry_permission: WAIT_SELL_CONFIRMATION
+    function: weak inverse signal before H4 breakdown
+  - pattern_id: INVERSE_MIRROR_BREAKDOWN_CONFIRMATION
+    tier: S
+    family: MIRROR_BASKET_CONFIRMATION
+    golden_source: CADJPY/CADCHF
+    entry_permission: SELL_RETEST_OR_OWN_TRIGGER
+    function: inverse breakdown sell candidate if trigger exists
+  - pattern_id: LOWER_RANGE_NO_CHASE_FILTER
+    tier: S
+    family: EXHAUSTION_FILTER
+    golden_source: CADJPY
+    entry_permission: NO_MARKET_CHASE
+    management_action: WAIT_PULLBACK_OR_BREAKDOWN_RETEST
+    function: avoid late sell after lower-range extension
+  - pattern_id: INVERSE_LATE_SELL_TRAP
+    tier: S
+    family: TRAP_FILTER
+    golden_source: CADJPY
+    entry_permission: NO_TRADE
+    block_reason: LATE_SELL_TRAP
+    function: late sell trap after breakdown
+  - pattern_id: CLEAN_BLOCK_BUT_THEME_CONFLICT
+    tier: S
+    family: THEME_CONFLICT_FILTER
+    golden_source: CADJPY
+    entry_permission: NO_TRADE
+    block_reason: THEME_CONFLICT
+    function: clean pressure blocked by H4/D1/theme conflict
+  - pattern_id: JPY_ALIGNMENT_REQUIRED
+    tier: S
+    family: JPY_BASKET_FILTER
+    golden_source: CADJPY/USDJPY
+    entry_permission: REQUIRE_EXTRA_FILTER
+    function: JPY-cross requires JPY basket validation
+  - pattern_id: PHASE_SENSITIVE_BREAKDOWN
+    tier: S
+    family: BREAKDOWN_CONTINUATION
+    golden_source: USDJPY
+    entry_permission: SELL_RETEST_ONLY
+    management_action: NO_MARKET_CHASE
+    function: breakdown cascade/liquidation sell
+  - pattern_id: UPPER_ABSORPTION_WARNING
+    tier: S
+    family: EXHAUSTION_MANAGEMENT
+    golden_source: USDJPY
+    entry_permission: NO_NEW_BUY
+    management_action: PROTECT_LONG_OR_SELL_WATCH
+    function: pressure at resistance is protect/sell watch
+  - pattern_id: LIQUIDATION_EXPANSION
+    tier: S
+    family: VOLATILITY_EXPANSION
+    golden_source: USDJPY
+    entry_permission: RETEST_ONLY
+    management_action: SELL_AFTER_PULLBACK_NO_MARKET_CHASE
+    function: large expansion candle continuation via retest
+  - pattern_id: SPARSE_ARCHIVE
+    tier: B
+    family: ARCHIVE_FILTER
+    golden_source: USDJPY_R6
+    entry_permission: NO_TRADE
+    block_reason: SPARSE_PRESSURE
+    function: long duration with tiny event count
+  - pattern_id: MULTI_WAVE_PRIORITY
+    tier: A
+    family: MULTI_WAVE
+    golden_source: EURAUD
+    entry_permission: WATCH_HIGH
+    function: burst to continuation to sustained pressure
+  - pattern_id: SAME_PAIR_TAKEOVER
+    tier: A
+    family: TAKEOVER
+    golden_source: GBPNZD
+    entry_permission: WATCH_HIGH
+    function: pair takeover without intervention
+  - pattern_id: SAME_PAIR_TAKEOVER_GRIND
+    tier: S
+    family: TAKEOVER
+    golden_source: GBPNZD
+    entry_permission: RETEST_ONLY
+    function: long medium-density follow-through
+  - pattern_id: TAKEOVER_TO_LATE_REVERSAL
+    tier: S
+    family: TAKEOVER_EXPIRY
+    golden_source: GBPNZD
+    entry_permission: EXPIRE_OR_PROTECT
+    function: valid takeover expired by H4/D1 reversal
+  - pattern_id: CHOPPY_TAKEOVER_CONTINUATION
+    tier: A
+    family: TAKEOVER
+    golden_source: GBPNZD
+    entry_permission: REDUCED_RISK_RETEST_ONLY
+    function: follow-through with whipsaw risk
+  - pattern_id: DAILY_CONFLICT_AFTER_INTRADAY_TAKEOVER
+    tier: S
+    family: DAILY_CONFLICT_FILTER
+    golden_source: GBPNZD
+    entry_permission: NO_NEW_ENTRY
+    block_reason: DAILY_CONFLICT
+    function: daily close against intraday direction
+  - pattern_id: MAJOR_PAIR_DELAYED_CONTINUATION
+    tier: A
+    family: MAJOR_PAIR_CONTEXT
+    golden_source: EURUSD
+    entry_permission: WAIT_RECLAIM
+    function: major pair delayed follow-through
+  - pattern_id: PULLBACK_WITHIN_H4_EXPANSION
+    tier: A
+    family: CONTINUATION_FILTER
+    golden_source: EURUSD
+    entry_permission: WAIT_PULLBACK_END
+    function: M15 pullback inside H4 expansion
+  - pattern_id: SIGNALWATCH_LIFECYCLE_FINALIZER
+    tier: S
+    family: SIGNAL_LIFECYCLE
+    golden_source: USDCAD
+    entry_permission: FINALIZER_REQUIRED
+    function: watch must finalize or expire
+  - pattern_id: ABSORPTION_WATCH_FAILED
+    tier: S
+    family: SIGNALWATCH_LIFECYCLE
+    golden_source: USDCAD
+    entry_permission: NO_SELL
+    management_action: WAIT_RECLAIM_OR_BREAKDOWN
+    function: sell watch failed at resistance
+  - pattern_id: HIGH_DENSITY_ABSORPTION_WITH_RECLAIM
+    tier: S
+    family: ABSORPTION_REVERSAL
+    golden_source: USDCAD
+    entry_permission: RETEST_ONLY
+    management_action: BLOCK_SELL_WAIT_BUY_RETEST
+    function: high-density resistance absorption reclaimed
+  - pattern_id: SLOW_ACTIVE_SIGNAL_SEED
+    tier: A
+    family: SIGNAL_LIFECYCLE
+    golden_source: USDCAD
+    entry_permission: RETEST_ONLY
+    function: slow but valid active seed
+  - pattern_id: METAL_SUSTAINED_PRESSURE_CONTEXT
+    tier: S
+    family: METAL_PRESSURE
+    golden_source: XAUUSD
+    entry_permission: RETEST_OR_SCALP_ONLY
+    management_action: FAST_PROTECT
+    hold_policy: SHORT_WINDOW_UNLESS_H4_CONFIRMS
+    function: metal pressure requires special hold policy
+  - pattern_id: METAL_SHORT_WINDOW_CONTINUATION_THEN_WHIPSAW
+    tier: S
+    family: METAL_LIFECYCLE
+    golden_source: XAUUSD
+    entry_permission: SCALP_OR_SHORT_INTRADAY
+    management_action: MOVE_BE_OR_PARTIAL_AFTER_FAST_MFE
+    hold_policy: SHORT_INTRADAY
+    function: fast MFE then whipsaw
+  - pattern_id: METAL_EXTENDED_MFE_THEN_REVERSAL
+    tier: S
+    family: METAL_REVERSAL_RISK
+    golden_source: XAUUSD
+    entry_permission: INTRADAY_ONLY
+    management_action: PARTIAL_TP_AND_TRAIL
+    hold_policy: INTRADAY_ONLY
+    function: large MFE then larger reversal
+  - pattern_id: METAL_NO_CHASE_AFTER_UPPER_SPIKE
+    tier: S
+    family: METAL_RISK_FILTER
+    golden_source: XAUUSD
+    entry_permission: NO_MARKET_CHASE
+    management_action: WAIT_PULLBACK_OR_RECLAIM
+    hold_policy: SHORT_INTRADAY
+    function: no buy chase after upper spike
