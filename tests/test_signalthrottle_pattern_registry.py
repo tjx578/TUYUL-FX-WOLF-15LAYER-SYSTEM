@@ -32,6 +32,22 @@ def test_runtime_pair_role_map_loads_yaml_database():
 
     assert sorted(PAIR_ROLE_MAP) == yaml_symbols
     assert "HIGH_DENSITY_ABSORPTION_WITH_RECLAIM" in PAIR_ROLE_MAP["USDCAD"]["golden_patterns"]
+    assert "JPY_BASKET_THEME_FOLLOWTHROUGH" in PAIR_ROLE_MAP["CHFJPY"]["golden_patterns"]
+
+
+def test_chfjpy_reference_patterns_are_universal_not_pair_locked():
+    for pattern_id in (
+        "JPY_BASKET_THEME_FOLLOWTHROUGH",
+        "FRAGMENTED_BASKET_ROTATION_NOT_ENTRY",
+        "MTF_BULLISH_PULLBACK_DECISION",
+        "LATE_SESSION_EXPANSION_FAIL",
+    ):
+        pattern = get_pattern(pattern_id)
+
+        assert pattern is not None
+        assert pattern.scope == "UNIVERSAL"
+        assert pattern.applies_to == "ALL_PAIRS_IF_CONDITIONS_MATCH"
+        assert pattern.golden_references == ("CHFJPY",)
 
 
 def test_runtime_scoring_and_routing_load_yaml_database():
