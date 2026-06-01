@@ -7,6 +7,10 @@ signaljson_pattern_fields:
   - pattern_match_score
   - execution_readiness_score
   - golden_reference
+  - pattern_scope
+  - applies_to
+  - golden_references
+  - pair_specific_calibration
   - pair_role
   - entry_permission
   - management_action
