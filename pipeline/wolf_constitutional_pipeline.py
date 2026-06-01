@@ -418,6 +418,9 @@ class WolfConstitutionalPipeline:
             require_terminal_decision_update=(
                 os.getenv("SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "false").strip().lower() == "true"
             ),
+            compact_production=os.getenv("SIGNAL_JSON_COMPACT_PRODUCTION", "true").strip().lower() == "true",
+            emit_pattern_debug=os.getenv("SIGNAL_JSON_PATTERN_DEBUG_ENABLED", "false").strip().lower() == "true",
+            pattern_debug_prefix=os.getenv("SIGNAL_PATTERN_DEBUG_JSON_LOG_PREFIX", "[PatternMatchDebugJSON]"),
         )
         self._signal_json_gate_adapter = SignalJsonGateAdapter.from_env()
         self._governance_now_ts: float | None = None
