@@ -111,6 +111,10 @@ class PropFirmRuleResolver:
             raise ValueError("firm_code must be a non-empty string")
 
         config = self._load_raw(firm_code)
+        if plan_code not in config.get("plans", {}):
+            nested_config = self._load_nested_raw_for_plan(firm_code, plan_code)
+            if nested_config is not None:
+                config = nested_config
         firm_name: str = config.get("name", firm_code)
         features: dict[str, Any] = config.get("features", {})
 
@@ -143,12 +147,12 @@ class PropFirmRuleResolver:
             phase=phase,
             initial_balance=initial_balance,
             currency=currency,
-            max_daily_dd_percent=float(merged.get("max_daily_dd_percent", 5.0)),
-            max_total_dd_percent=float(merged.get("max_total_dd_percent", 10.0)),
-            drawdown_mode=str(merged.get("drawdown_mode", "FIXED")),
+            max_daily_dd_percent=_optional_float(merged, "max_daily_dd_percent", 5.0),
+            max_total_dd_percent=_optional_float(merged, "max_total_dd_percent", 10.0),
+            drawdown_mode=str(merged.get("drawdown_mode", merged.get("drawdown_mode_total", "FIXED"))),
             profit_target_percent=float(merged.get("profit_target_percent", 10.0)),
             consistency_rule_percent=float(merged.get("consistency_rule_percent", 0.0)),
-            min_trading_days=int(merged.get("min_trading_days", 0)),
+            min_trading_days=int(merged.get("min_trading_days", merged.get("min_trading_days_for_payout", 0))),
             max_risk_per_trade_percent=float(merged.get("max_risk_per_trade_percent", 1.0)),
             max_open_trades=int(merged.get("max_open_trades", 1)),
             min_rr_required=float(merged.get("min_rr_required", 2.0)),
@@ -236,3 +240,38 @@ class PropFirmRuleResolver:
         self._cache[firm_code] = config
         logger.debug(f"PropFirmRuleResolver: loaded profile for '{firm_code}'")
         return config
+
+    def _load_nested_raw_for_plan(self, firm_code: str, plan_code: str) -> dict[str, Any] | None:
+        """Return a nested profile config that contains *plan_code*, if any."""
+        firm_dir = self._PROFILES_DIR / firm_code
+        if not firm_dir.is_dir():
+            return None
+
+        for profile_path in sorted(firm_dir.glob("*/profile.yaml")):
+            cache_key = f"{firm_code}/{profile_path.parent.name}"
+            if cache_key in self._cache:
+                config = self._cache[cache_key]
+            else:
+                with open(profile_path) as fh:
+                    config = yaml.safe_load(fh) or {}
+                self._cache[cache_key] = config
+
+            plans = config.get("plans", {})
+            if isinstance(plans, dict) and plan_code in plans:
+                logger.debug(
+                    "PropFirmRuleResolver: resolved nested profile firm={} plan={} path={}",
+                    firm_code,
+                    plan_code,
+                    profile_path,
+                )
+                return config
+        return None
+
+
+def _optional_float(source: dict[str, Any], key: str, default: float) -> float | None:
+    if key not in source:
+        return default
+    value = source.get(key)
+    if value is None:
+        return None
+    return float(value)

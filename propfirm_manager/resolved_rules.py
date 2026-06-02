@@ -28,8 +28,8 @@ class ResolvedPropRules:
     currency: str
 
     # Drawdown rules
-    max_daily_dd_percent: float
-    max_total_dd_percent: float
+    max_daily_dd_percent: float | None
+    max_total_dd_percent: float | None
     drawdown_mode: str  # "FIXED" | "TRAILING" | "SEMI_TRAILING"
 
     # Profit & consistency
