@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import analysis.signal_json_emitter as signal_json_emitter
 from analysis.signal_json_emitter import (
     UNIVERSAL_PATTERN_SCHEMA_VERSION,
     SignalJsonEmitter,
@@ -91,8 +92,13 @@ def test_signal_json_emits_watch_only_on_state_transition(caplog):
     )
     rolling_update = _event(
         cluster_id="USDCAD_20260519T145605Z",
-        signal_valid_time_utc="2026-05-19T14:56:20Z",
+        signal_valid_time_utc="2026-05-19T14:56:10Z",
         effective_ticks=10,
+    )
+    heartbeat_update = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        signal_valid_time_utc="2026-05-19T14:56:20Z",
+        effective_ticks=16,
     )
     promoted = _event(
         cluster_id="USDCAD_20260519T145605Z",
@@ -102,7 +108,24 @@ def test_signal_json_emits_watch_only_on_state_transition(caplog):
 
     assert emitter.emit(first) is True
     assert emitter.emit(rolling_update) is False
+    assert emitter.emit(heartbeat_update) is True
     assert emitter.emit(promoted) is True
+    assert caplog.text.count("[SignalWatchJSON]") == 3
+
+
+def test_signal_watch_heartbeat_updates_even_when_source_timestamp_stalls(caplog, monkeypatch):
+    current_time = [1_000.0]
+    monkeypatch.setattr(signal_json_emitter.time, "time", lambda: current_time[0])
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True, watch_update_interval_seconds=15)
+    first = _event(cluster_id="USDCAD_20260519T145605Z", effective_ticks=6)
+    stalled_short = _event(cluster_id="USDCAD_20260519T145605Z", effective_ticks=10)
+    stalled_heartbeat = _event(cluster_id="USDCAD_20260519T145605Z", effective_ticks=18)
+
+    assert emitter.emit(first) is True
+    current_time[0] = 1_010.0
+    assert emitter.emit(stalled_short) is False
+    current_time[0] = 1_016.0
+    assert emitter.emit(stalled_heartbeat) is True
     assert caplog.text.count("[SignalWatchJSON]") == 2
 
 
