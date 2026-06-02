@@ -123,7 +123,17 @@ def _tradeplan_gate(
     reasons: list[str],
 ) -> None:
     target_mode = str(payload.get("target_mode") or "").upper()
-    if target_mode not in _STRUCTURE_TARGET_MODES:
+    # A confirmed breakout/continuation can run on RR-projected provisional
+    # targets when the structure ladder is not yet built.  If the engine already
+    # marked those targets execution-usable, the RR status is valid, and the
+    # provisional RR clears the minimum, treat the plan as complete instead of
+    # forcing a structure-only target mode that the engine cannot produce here.
+    provisional_usable = (
+        _optional_bool(payload.get("targets_execution_usable")) is True
+        and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE"}
+        and _provisional_rr_meets_min(payload, min_rr_required)
+    )
+    if target_mode not in _STRUCTURE_TARGET_MODES and not provisional_usable:
         _add(gates, reasons, "TradePlanCompletenessGate", "STRUCTURE_TARGET_MODE_REQUIRED")
         return
 
@@ -158,7 +168,7 @@ def _tradeplan_gate(
     if support is None or resistance is None:
         _add(gates, reasons, "TradePlanCompletenessGate", "SUPPORT_RESISTANCE_LADDER_INCOMPLETE")
 
-    if not _has_structure_target(payload, enriched, min_rr_required):
+    if not provisional_usable and not _has_structure_target(payload, enriched, min_rr_required):
         _add(gates, reasons, "TradePlanCompletenessGate", "STRUCTURE_TARGET_AT_MIN_RR_MISSING")
 
 
@@ -289,8 +299,22 @@ def _live_rr_gate(
     # low RR because the engine uses sl_tight for target calculation but sl_safe
     # for selected_sl — an internal inconsistency that should not block a valid
     # confirmed signal.
-    pre_validated_rr = _first_float(payload.get("rr_to_valid_target"))
-    if pre_validated_rr is not None and entry is not None and abs(live_price - entry) <= _pip_size(payload) * 10:
+    near_entry = entry is not None and abs(live_price - entry) <= _pip_size(payload) * 10
+    pre_validated_rr = _first_float(payload.get("rr_to_valid_target"), payload.get("tp_min_rr_value"))
+    # PROVISIONAL_RR_FALLBACK leaves rr_to_valid_target unset (no structure target
+    # is selected), which previously disabled the reconciliation guard above and
+    # let the gate recompute RR from sl_safe — deflating a valid 2.5R into ~1.5R
+    # and emitting a false LIVE_RR_BELOW_MINIMUM block.  When the pre-validated RR
+    # is absent but price is near entry, reconstruct it on the SAME basis the
+    # engine used to project the target ladder (sl_tight) so the two halves of
+    # the RR calculation stay consistent.
+    if pre_validated_rr is None and near_entry and target is not None:
+        sl_tight = _first_float(payload.get("sl_tight"), _nested(payload, "risk_reward", "sl_tight"))
+        if sl_tight is not None:
+            tight_risk = abs(entry - sl_tight)
+            if tight_risk > 0:
+                pre_validated_rr = round(abs(target - entry) / tight_risk, 2)
+    if pre_validated_rr is not None and near_entry:
         result = {
             "price": live_price,
             "entry": entry,
@@ -298,6 +322,7 @@ def _live_rr_gate(
             "target": target,
             "rr": pre_validated_rr,
             "min_rr_required": min_rr_required,
+            "rr_basis": "PRE_VALIDATED_TIGHT",
         }
         if pre_validated_rr < min_rr_required:
             _add(block_gates, block_reasons, "LiveRRRecalculationGate", "LIVE_RR_BELOW_MINIMUM")
@@ -398,6 +423,27 @@ def _has_structure_target(payload: dict[str, Any], enriched: dict[str, Any], min
     for source in (payload, enriched):
         rr = _first_float(source.get("rr_to_valid_target"), source.get("tp_min_rr_value"))
         if rr is not None and rr >= min_rr_required and _first_float(source.get("tp_min_rr")) is not None:
+            return True
+    return False
+
+
+def _provisional_rr_meets_min(payload: dict[str, Any], min_rr_required: float) -> bool:
+    """True when the engine's own RR fields show the (provisional) plan clears min RR.
+
+    Used to accept RR-projected fallback targets for confirmed breakout/continuation
+    signals when no structure target is available. Reads only RR values the engine
+    pre-computed against sl_tight, so it stays consistent with the live-RR gate.
+    """
+    for key in (
+        "rr_to_valid_target",
+        "tp_min_rr_value",
+        "rr_to_tp3_tight",
+        "tp3_rr",
+        "rr_to_tp2_tight",
+        "tp2_rr",
+    ):
+        rr = _optional_float(payload.get(key))
+        if rr is not None and rr >= min_rr_required:
             return True
     return False
 
