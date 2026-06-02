@@ -397,6 +397,7 @@ class WolfConstitutionalPipeline:
                 os.getenv("SIGNAL_JSON_EMIT_ONLY_WITH_MARKET_CONTEXT", "true").strip().lower() == "true"
             ),
             watch_transition_only=(os.getenv("SIGNAL_WATCH_EMIT_ON_TRANSITION_ONLY", "true").strip().lower() == "true"),
+            watch_update_interval_seconds=self._parse_env_float("SIGNAL_WATCH_UPDATE_INTERVAL_SECONDS", 15.0),
             strict_lifecycle=os.getenv("SIGNAL_JSON_STRICT_LIFECYCLE", "false").strip().lower() == "true",
             require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "false").strip().lower() == "true",
             allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "false").strip().lower() == "true",
