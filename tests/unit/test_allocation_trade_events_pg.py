@@ -28,7 +28,7 @@ async def test_record_trade_event_updates_status_and_persists(monkeypatch: pytes
     }
 
     monkeypatch.setattr(ar, "_redis_set", AsyncMock(return_value=True))
-    persist_mock = AsyncMock(return_value=None)
+    persist_mock = AsyncMock(return_value=True)
     monkeypatch.setattr(ar, "_persist_trade_write_through", persist_mock)
     monkeypatch.setattr(ar, "_journal_service", Mock(on_trade_closed=Mock()))
 
@@ -68,7 +68,7 @@ async def test_record_trade_event_expired_marks_cancelled(monkeypatch: pytest.Mo
     }
 
     monkeypatch.setattr(ar, "_redis_set", AsyncMock(return_value=True))
-    monkeypatch.setattr(ar, "_persist_trade_write_through", AsyncMock(return_value=None))
+    monkeypatch.setattr(ar, "_persist_trade_write_through", AsyncMock(return_value=True))
 
     closed_hook = Mock()
     monkeypatch.setattr(ar, "_journal_service", Mock(on_trade_closed=closed_hook))  # noqa: F821
