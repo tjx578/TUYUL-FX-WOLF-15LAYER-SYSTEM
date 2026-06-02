@@ -12,8 +12,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-TP1_RR_FLOOR = 2.0
-STRUCTURE_RR_FLOOR = 2.5
+TP1_RR_FLOOR = 1.5
+STRUCTURE_RR_FLOOR = 1.5
 _WITA = ZoneInfo("Asia/Makassar")
 STRUCTURE_TARGET_MODES = {
     "FINAL_MARKET_STRUCTURE",
