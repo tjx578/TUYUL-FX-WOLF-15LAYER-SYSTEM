@@ -88,7 +88,7 @@ def test_engine_defaults_single_stop_min_rr_15():
     assert engine.tp1_rr_required == 1.5
 
 
-def test_tp1_is_1p5R_against_sl_safe():
+def test_tp1_is_1p5r_against_sl_safe():
     """TP1 sits exactly 1.5R away measured against the single sl_safe stop."""
     risk = abs(ENTRY - SL_SAFE)
     reward = abs(TP1 - ENTRY)
