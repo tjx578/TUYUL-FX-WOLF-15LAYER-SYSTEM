@@ -12,6 +12,9 @@ Authority boundaries:
 
 from __future__ import annotations
 
+import json
+import os
+import time
 from typing import Any
 
 from loguru import logger
@@ -33,6 +36,16 @@ from infrastructure.tracing import inject_trace_context
 
 EXECUTION_STREAM = "execution:queue"
 TRADE_UPDATES_CHANNEL = "trade:updates"
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
 
 
 class AllocationService:
@@ -192,65 +205,116 @@ class AllocationService:
 
     _IDEM_PREFIX = "allocation:idem:"
     _IDEM_TTL = 60 * 60 * 24  # 24 hours
+    _IDEM_MEMORY: dict[str, tuple[float, str]] = {}
+    _IDEM_REDIS_UNAVAILABLE_UNTIL = 0.0
 
     def _check_idempotency(self, request_id: str) -> AllocationResult | None:
         """Return cached AllocationResult if request_id was already processed."""
+        key = f"{self._IDEM_PREFIX}{request_id}"
+        raw = self._get_memory_idempotency(key)
+        if raw:
+            return self._allocation_result_from_json(raw)
+
+        if self._idem_redis_unavailable():
+            return None
+
         try:
-            import json  # noqa: PLC0415
-
-            from storage.redis_client import RedisClient  # noqa: PLC0415
-
-            raw = RedisClient().get(f"{self._IDEM_PREFIX}{request_id}")
+            raw = self._idem_redis_get(key)
             if raw:
-                data = json.loads(raw)
-                return AllocationResult(
-                    request_id=data["request_id"],
-                    signal_id=data["signal_id"],
-                    status=AllocationStatus(data["status"]),
-                    account_results=[AccountAllocationResult(**ar) for ar in data.get("account_results", [])],
-                    approved_count=data.get("approved_count", 0),
-                    rejected_count=data.get("rejected_count", 0),
-                )
+                self._set_memory_idempotency(key, raw)
+                return self._allocation_result_from_json(raw)
         except Exception:
-            pass
+            self._mark_idem_redis_unavailable()
         return None
 
     def _record_idempotency(self, request_id: str, result: AllocationResult) -> None:
         """Cache allocation result keyed by request_id for dedup."""
+        key = f"{self._IDEM_PREFIX}{request_id}"
+        data = {
+            "request_id": result.request_id,
+            "signal_id": result.signal_id,
+            "status": result.status.value,
+            "account_results": [
+                {
+                    "account_id": ar.account_id,
+                    "approved": ar.approved,
+                    "allowed": ar.allowed,
+                    "lot_size": ar.lot_size,
+                    "risk_percent": ar.risk_percent,
+                    "daily_buffer_percent": ar.daily_buffer_percent,
+                    "total_buffer_percent": ar.total_buffer_percent,
+                    "status": ar.status,
+                    "reason": ar.reason,
+                    "severity": ar.severity,
+                }
+                for ar in result.account_results
+            ],
+            "approved_count": result.approved_count,
+            "rejected_count": result.rejected_count,
+        }
+        raw = json.dumps(data)
+        self._set_memory_idempotency(key, raw)
+
+        if self._idem_redis_unavailable():
+            return
+
         try:
-            import json  # noqa: PLC0415
-
-            from storage.redis_client import RedisClient  # noqa: PLC0415
-
-            data = {
-                "request_id": result.request_id,
-                "signal_id": result.signal_id,
-                "status": result.status.value,
-                "account_results": [
-                    {
-                        "account_id": ar.account_id,
-                        "approved": ar.approved,
-                        "allowed": ar.allowed,
-                        "lot_size": ar.lot_size,
-                        "risk_percent": ar.risk_percent,
-                        "daily_buffer_percent": ar.daily_buffer_percent,
-                        "total_buffer_percent": ar.total_buffer_percent,
-                        "status": ar.status,
-                        "reason": ar.reason,
-                        "severity": ar.severity,
-                    }
-                    for ar in result.account_results
-                ],
-                "approved_count": result.approved_count,
-                "rejected_count": result.rejected_count,
-            }
-            RedisClient().set(
-                f"{self._IDEM_PREFIX}{request_id}",
-                json.dumps(data),
-                ex=self._IDEM_TTL,
-            )
+            self._idem_redis_set(key, raw, ex=self._IDEM_TTL)
         except Exception:
+            self._mark_idem_redis_unavailable()
             logger.debug("AllocationService: idem cache write failed", exc_info=True)
+
+    def _allocation_result_from_json(self, raw: str) -> AllocationResult:
+        data = json.loads(raw)
+        return AllocationResult(
+            request_id=data["request_id"],
+            signal_id=data["signal_id"],
+            status=AllocationStatus(data["status"]),
+            account_results=[AccountAllocationResult(**ar) for ar in data.get("account_results", [])],
+            approved_count=data.get("approved_count", 0),
+            rejected_count=data.get("rejected_count", 0),
+        )
+
+    def _get_memory_idempotency(self, key: str) -> str | None:
+        cached = self._IDEM_MEMORY.get(key)
+        if cached is None:
+            return None
+        expires_at, raw = cached
+        if expires_at < time.time():
+            self._IDEM_MEMORY.pop(key, None)
+            return None
+        return raw
+
+    def _set_memory_idempotency(self, key: str, raw: str) -> None:
+        self._IDEM_MEMORY[key] = (time.time() + self._IDEM_TTL, raw)
+
+    def _idem_redis_unavailable(self) -> bool:
+        return time.monotonic() < self._IDEM_REDIS_UNAVAILABLE_UNTIL
+
+    def _mark_idem_redis_unavailable(self) -> None:
+        cooldown = _env_float("ALLOCATION_IDEM_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+        self.__class__._IDEM_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+    def _idem_redis_get(self, key: str) -> str | None:
+        return self._idem_redis_client().get(key)
+
+    def _idem_redis_set(self, key: str, raw: str, *, ex: int) -> None:
+        self._idem_redis_client().set(key, raw, ex=ex)
+
+    def _idem_redis_client(self):
+        import redis  # noqa: PLC0415
+
+        from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
+
+        timeout = _env_float("ALLOCATION_IDEM_REDIS_TIMEOUT_SEC", 0.2)
+        return redis.Redis.from_url(
+            get_redis_url(),
+            decode_responses=True,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
 
     def _calculate_account_plan(
         self,
