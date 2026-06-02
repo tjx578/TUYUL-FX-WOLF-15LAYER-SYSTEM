@@ -403,6 +403,29 @@ async def run_ingest_services(
         market_news = FinnhubMarketNews()
         h1_refresh = H1RefreshScheduler(redis_client=redis)
 
+        # ── Alpha Vantage fallback initialisation ──────────────────────────
+        # Log configuration status so operators can confirm the fallback is
+        # active before H1/H4/D1/W1 premium errors start appearing in logs.
+        from ingest.alphavantage_candles import AlphaVantageCandleFetcher, _av_enabled  # noqa: PLC0415
+
+        _av_probe = AlphaVantageCandleFetcher(redis_client=redis)
+        if not _av_enabled():
+            logger.warning(
+                "[AlphaVantage] Fallback disabled via ALPHAVANTAGE_ENABLED=false — "
+                "Finnhub premium errors will not be recovered"
+            )
+        elif not _av_probe.is_configured:
+            logger.warning(
+                "[AlphaVantage] No API key configured "
+                "(set ALPHAVANTAGE_API_KEY or ALPHA_VANTAGE_API_KEY) — "
+                "H1/H4/D1/W1 candles will fail on Finnhub free tier"
+            )
+        else:
+            logger.info(
+                "[AlphaVantage] Fallback provider initialised — "
+                "H1/H4/D1/W1 candles will use Alpha Vantage when Finnhub returns premium errors"
+            )
+
         health_probe.set_detail("redis", "connected")
         health_probe.set_detail("system_state", system_state.get_state().value)
         logger.info(

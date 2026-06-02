@@ -21,7 +21,8 @@ from loguru import logger
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
 from core.redis_keys import candle_history, channel_candle, latest_candle
-from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
+from ingest.alphavantage_candles import AlphaVantageCandleFetcher
+from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher, FinnhubCandlePremiumError
 from ingest.finnhub_ws import is_forex_market_open
 
 
@@ -84,6 +85,7 @@ class RestPollFallback:
         self._silence_check_interval: float = float(rest_poll_cfg.get("silence_check_interval_sec", 60))
 
         self._fetcher = FinnhubCandleFetcher()
+        self._av_fetcher = AlphaVantageCandleFetcher(redis_client=redis_client)
         self._context_bus = LiveContextBus()
         self._running = False
 
@@ -212,7 +214,13 @@ class RestPollFallback:
                 logger.error("[RestFallback] Error polling {}: {}", symbol, e)
 
     async def _fetch_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
-        """Fetch candles for one symbol/timeframe using the shared fetcher."""
+        """Fetch candles for one symbol/timeframe using the shared fetcher.
+
+        Tries Finnhub first.  On a ``FinnhubCandlePremiumError`` (HTTP 403)
+        the method falls back to Alpha Vantage so that H1/H4/D1/W1 candles
+        remain fresh even on the Finnhub free tier.  If both providers fail,
+        the cached result from a previous successful fetch is returned.
+        """
         bars_by_tf = {
             "M15": self._bars,
             "H1": self._h1_bars,
@@ -222,7 +230,46 @@ class RestPollFallback:
         }
         bars = bars_by_tf.get(timeframe, 1)
         try:
-            return await self._fetcher.fetch(symbol, timeframe, bars)
+            candles = await self._fetcher.fetch(symbol, timeframe, bars)
+            if candles:
+                return candles
+            # Finnhub returned empty — try Alpha Vantage before giving up
+            logger.debug(
+                "[RestFallback] Finnhub returned 0 {} bars for {} — trying Alpha Vantage",
+                timeframe,
+                symbol,
+            )
+            av_candles = await self._av_fetcher.fetch(symbol, timeframe, bars)
+            if av_candles:
+                logger.info(
+                    "[RestFallback] Successfully fetched {} {} from Alpha Vantage ({} bars)",
+                    symbol,
+                    timeframe,
+                    len(av_candles),
+                )
+            return av_candles
+        except FinnhubCandlePremiumError as exc:
+            logger.warning(
+                "[RestFallback] Fetch failed {} {}: {}, trying Alpha Vantage",
+                symbol,
+                timeframe,
+                exc,
+            )
+            av_candles = await self._av_fetcher.fetch(symbol, timeframe, bars)
+            if av_candles:
+                logger.info(
+                    "[RestFallback] Successfully fetched {} {} from Alpha Vantage ({} bars)",
+                    symbol,
+                    timeframe,
+                    len(av_candles),
+                )
+            else:
+                logger.warning(
+                    "[RestFallback] Alpha Vantage also returned 0 {} bars for {}",
+                    timeframe,
+                    symbol,
+                )
+            return av_candles
         except FinnhubCandleError as exc:
             logger.warning("[RestFallback] Fetch failed {} {}: {}", symbol, timeframe, exc)
             return []
