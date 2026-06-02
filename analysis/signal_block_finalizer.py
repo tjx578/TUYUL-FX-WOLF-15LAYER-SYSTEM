@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from analysis.market_context_validator import MarketContext
 from analysis.microboost_counter_entry import MicroboostCounterEntryEngine
+from analysis.signal_thresholds import SIGNAL_MIN_RR, TP1_TARGET_RR
 
 _TZ_WITA = ZoneInfo("Asia/Makassar")
 
@@ -41,7 +42,7 @@ FINAL_EXECUTION_STATUSES = {
     "SELL_BREAKDOWN_RETEST_VALID",
 }
 
-MIN_EXECUTABLE_TP1_RR = 1.5
+MIN_EXECUTABLE_TP1_RR = SIGNAL_MIN_RR
 STRUCTURE_TARGET_MODES = {
     "FINAL_MARKET_STRUCTURE",
     "STRUCTURE_LADDER_TARGET",
@@ -220,8 +221,8 @@ class SignalBlockFinalizer:
         idle_finalize_seconds: float = 75.0,
         hard_finalize_seconds: float = 300.0,
         expires_after_m15_bars: int = 3,
-        min_rr_valid: float = 1.5,
-        tp1_rr_required: float = 1.5,
+        min_rr_valid: float = SIGNAL_MIN_RR,
+        tp1_rr_required: float = TP1_TARGET_RR,
         counter_entry_risk_multiplier: float = 0.5,
         counter_entry_expiry_minutes: int = 30,
         allow_rr_fallback: bool = True,
@@ -801,45 +802,6 @@ def _is_final_execution(payload: dict[str, Any]) -> bool:
 
 def _is_structure_ready_for_execution(payload: dict[str, Any]) -> bool:
     return bool(payload.get("structure_ready") or payload.get("tradeplan_context_ready"))
-
-
-def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
-    family = str(payload.get("signal_family") or "").upper()
-    if family != "MICROBOOST_COUNTER_ENTRY":
-        return True
-    if str(payload.get("target_mode") or "").upper() not in STRUCTURE_TARGET_MODES:
-        return False
-    zones = payload.get("structure_zones")
-    invalidation = payload.get("invalidation_rules")
-    targets = payload.get("targets")
-    execution_quality = payload.get("execution_quality")
-    phase_coherence = payload.get("phase_coherence")
-    signal_expiry = payload.get("signal_expiry")
-    return bool(
-        payload.get("tradeplan_valid") is True
-        and payload.get("execution_valid_now") is True
-        and _optional_float(payload.get("selected_sl")) is not None
-        and _optional_float(payload.get("selected_risk_pips") or payload.get("risk_pips")) is not None
-        and _optional_float(payload.get("tp_min_rr")) is not None
-        and isinstance(zones, dict)
-        and _optional_float(zones.get("key_resistance")) is not None
-        and _optional_float(zones.get("key_support")) is not None
-        and isinstance(invalidation, dict)
-        and _optional_float(invalidation.get("hard_invalid_level")) is not None
-        and isinstance(targets, list)
-        and bool(targets)
-        and isinstance(execution_quality, dict)
-        and execution_quality.get("spread_normal") is True
-        and isinstance(phase_coherence, dict)
-        and phase_coherence.get("status") == "EXECUTION_COMPATIBLE"
-        and isinstance(signal_expiry, dict)
-        and _optional_str(signal_expiry.get("expires_at_utc")) is not None
-    )
-
-
-def _tp1_rr_meets_minimum(payload: dict[str, Any]) -> bool:
-    tp1_rr = _optional_float(payload.get("tp1_rr"))
-    return tp1_rr is not None and tp1_rr >= MIN_EXECUTABLE_TP1_RR
 
 
 def _candidate_direction(payload: dict[str, Any]) -> str | None:
