@@ -34,7 +34,6 @@ def _event(**overrides):
         "effective_ticks": 6,
         "effective_density": 43.61,
         "duration_minutes": 0.14,
-        "sl_tight": 1.3782,
         "sl_safe": 1.3790,
         "tp1": 1.3756,
         "tp2": 1.3735,
