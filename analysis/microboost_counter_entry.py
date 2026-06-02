@@ -167,7 +167,6 @@ class MicroboostCounterEntryResult:
     selected_sl_mode: str | None = None
     selected_sl: float | None = None
     risk_pips: float | None = None
-    risk_pips_tight: float | None = None
     risk_pips_safe: float | None = None
     selected_risk_pips: float | None = None
     target_policy: dict[str, Any] | None = None
