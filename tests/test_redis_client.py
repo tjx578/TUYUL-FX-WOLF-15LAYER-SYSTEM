@@ -28,7 +28,7 @@ class TestRedisConfig:
             "REDIS_PASSWORD": "s3cret",
             "REDIS_DB": "2",
         }
-        with patch.dict(os.environ, env):
+        with patch.dict(os.environ, env, clear=True):
             cfg = RedisConfig.from_env()
             assert cfg.host == "redis.prod.internal"
             assert cfg.port == 6380
@@ -84,13 +84,14 @@ class TestRedisConfig:
                 "REDIS_HOST": "override-host",
                 "REDIS_PORT": "6001",
             },
+            clear=True,
         ):
             cfg = RedisConfig.from_env()
             assert cfg.host == "override-host"
             assert cfg.port == 6001
 
     def test_empty_password_becomes_none(self) -> None:
-        with patch.dict(os.environ, {"REDIS_PASSWORD": ""}):
+        with patch.dict(os.environ, {"REDIS_PASSWORD": ""}, clear=True):
             cfg = RedisConfig.from_env()
             assert cfg.password is None
 
