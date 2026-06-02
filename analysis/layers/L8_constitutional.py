@@ -824,6 +824,22 @@ class L8ConstitutionalGovernor:
                 integrity_score,
             )
 
+        terminal_rescue_blockers = {
+            L8BlockerCode.UPSTREAM_NOT_CONTINUABLE,
+            L8BlockerCode.UPSTREAM_L2_HARD_STOP,
+            L8BlockerCode.CONTRACT_PAYLOAD_MALFORMED,
+            L8BlockerCode.REQUIRED_INTEGRITY_SOURCE_MISSING,
+            L8BlockerCode.FRESHNESS_GOVERNANCE_HARD_FAIL,
+            L8BlockerCode.WARMUP_INSUFFICIENT,
+            L8BlockerCode.FALLBACK_DECLARED_BUT_NOT_ALLOWED,
+            L8BlockerCode.INVALID_INTEGRITY_STATE,
+        }
+        if _ENABLE_L8_LFS_RESCUE and status == L8Status.FAIL and any(
+            blocker in terminal_rescue_blockers for blocker in blockers
+        ):
+            continuation_allowed = False
+            next_targets = []
+
         # ── Step 12: assemble features ───────────────────────────────
         features = {
             "integrity_score": round(integrity_score, 4),
