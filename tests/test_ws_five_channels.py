@@ -100,28 +100,68 @@ def _trade_model_stub(trade_id: str = "T001", status: str = "PENDING") -> MagicM
     return t
 
 
+class _FakeAsyncPubSub:
+    """Tiny async pubsub fake matching redis.asyncio's get_message/aclose API."""
+
+    def __init__(self, data: str) -> None:
+        super().__init__()
+        self._data = data
+        self._sent = False
+
+    async def get_message(self, **_kwargs: Any) -> dict[str, str] | None:
+        if self._sent:
+            return None
+        self._sent = True
+        return {"type": "message", "data": self._data}
+
+    async def aclose(self) -> None:
+        return None
+
+
+def _mock_create_task(coro: Any) -> MagicMock:
+    """Close background loop coroutines when task creation is mocked out."""
+    close = getattr(coro, "close", None)
+    if callable(close):
+        close()
+    task = MagicMock()
+    task.done.return_value = True
+    task.cancel.return_value = None
+    return task
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CandleAggregator unit tests (no WS overhead)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 class TestCandleAggregator:
-    """Test CandleAggregator standalone — not through WebSocket."""
+    """Test HybridCandleAggregator standalone, without WebSocket overhead."""
 
     @pytest.fixture
-    def agg(self) -> Any:
+    def agg(self, monkeypatch: pytest.MonkeyPatch) -> Any:
+        from api import hybrid_candle_agg as candle_mod  # noqa: PLC0415
+
+        monkeypatch.setattr(candle_mod, "_USE_REDIS_FORMING", False)
+        agg = candle_mod.HybridCandleAggregator()
+        agg._symbols = ["EURUSD", "GBPUSD"]  # noqa: SLF001
+        agg._init_local_builders()  # noqa: SLF001
+        return agg
+
+    def test_redis_first_default_does_not_build_local_bars(self):
+        """Default Redis-first mode must not synthesize display candles locally."""
         from api.hybrid_candle_agg import HybridCandleAggregator  # noqa: PLC0415
 
-        return HybridCandleAggregator()
+        agg = HybridCandleAggregator()
+        agg.ingest_tick("EURUSD", bid=1.085, ask=1.0851, ts=1_700_000_000.0)
 
-    def test_first_tick_opens_bars(self, agg: Any):
-        """First tick for a symbol must create bars in all 4 timeframes."""
+        assert agg.get_forming_bars("EURUSD") == {"EURUSD": {}}
+
+    def test_first_tick_opens_local_fallback_bars(self, agg: Any):
+        """First tick must create local fallback bars for the dashboard TFs."""
         ts = 1_700_000_000.0
         agg.ingest_tick("EURUSD", bid=1.085, ask=1.0851, ts=ts)
-        bars = agg.get_current_bars("EURUSD")
+        bars = agg.get_forming_bars("EURUSD")
         assert "EURUSD" in bars
-        assert "M1" in bars["EURUSD"]
-        assert "M5" in bars["EURUSD"]
         assert "M15" in bars["EURUSD"]
         assert "H1" in bars["EURUSD"]
 
@@ -132,21 +172,24 @@ class TestCandleAggregator:
         agg.ingest_tick("EURUSD", bid=1.0900, ask=1.0901, ts=ts + 10)
         agg.ingest_tick("EURUSD", bid=1.0750, ask=1.0751, ts=ts + 20)
 
-        bars = agg.get_current_bars("EURUSD")
-        m1 = bars["EURUSD"]["M1"]
-        assert m1["high"] == _approx(1.09005, rel=1e-3)
-        assert m1["low"] == _approx(1.07505, rel=1e-3)
-        assert m1["open"] == _approx(1.08005, rel=1e-3)
+        bars = agg.get_forming_bars("EURUSD")
+        m15 = bars["EURUSD"]["M15"]
+        assert m15["high"] == _approx(1.09005, rel=1e-3)
+        assert m15["low"] == _approx(1.07505, rel=1e-3)
+        assert m15["open"] == _approx(1.08005, rel=1e-3)
 
     def test_bar_rolls_over_on_timeframe_boundary(self, agg: Any):
-        """Tick crossing M1 boundary must close old bar and open a new one."""
+        """Tick crossing M15 boundary must open a fresh fallback bar."""
         ts_bar1 = 1_700_000_000.0  # start of some minute
-        ts_bar2 = ts_bar1 + 61  # next minute
+        ts_bar2 = ts_bar1 + 901  # next M15 bucket
 
         agg.ingest_tick("EURUSD", bid=1.085, ask=1.0851, ts=ts_bar1)
-        completed = agg.ingest_tick("EURUSD", bid=1.086, ask=1.0861, ts=ts_bar2)
+        agg.ingest_tick("EURUSD", bid=1.086, ask=1.0861, ts=ts_bar2)
 
-        assert any(c["timeframe"] == "M1" for c in completed), "Expected a closed M1 bar on timeframe rollover"
+        bars = agg.get_forming_bars("EURUSD")
+        m15 = bars["EURUSD"]["M15"]
+        assert m15["open"] == _approx(1.08605, rel=1e-3)
+        assert m15["volume"] == 1
 
     def test_multi_symbol_no_cross_contamination(self, agg: Any):
         """Ticks for different symbols must not pollute each other's bars."""
@@ -154,21 +197,21 @@ class TestCandleAggregator:
         agg.ingest_tick("EURUSD", bid=1.085, ask=1.0851, ts=ts)
         agg.ingest_tick("GBPUSD", bid=1.260, ask=1.2601, ts=ts)
 
-        bars_eu = agg.get_current_bars("EURUSD")
-        bars_gb = agg.get_current_bars("GBPUSD")
+        bars_eu = agg.get_forming_bars("EURUSD")
+        bars_gb = agg.get_forming_bars("GBPUSD")
 
-        eu_close = bars_eu["EURUSD"]["M1"]["close"]
-        gb_close = bars_gb["GBPUSD"]["M1"]["close"]
+        eu_close = bars_eu["EURUSD"]["M15"]["close"]
+        gb_close = bars_gb["GBPUSD"]["M15"]["close"]
 
         assert eu_close != gb_close, "Different symbols should have different prices"
 
-    def test_get_current_bars_no_symbol_filter(self, agg: Any):
-        """get_current_bars() without filter returns all symbols."""
+    def test_get_forming_bars_no_symbol_filter(self, agg: Any):
+        """get_forming_bars() without filter returns all configured symbols."""
         ts = 1_700_000_000.0
         agg.ingest_tick("EURUSD", bid=1.085, ask=1.0851, ts=ts)
         agg.ingest_tick("GBPUSD", bid=1.260, ask=1.2601, ts=ts)
 
-        all_bars = agg.get_current_bars()
+        all_bars = agg.get_forming_bars()
         assert "EURUSD" in all_bars
         assert "GBPUSD" in all_bars
 
@@ -178,8 +221,8 @@ class TestCandleAggregator:
         for i in range(5):
             agg.ingest_tick("EURUSD", bid=1.085 + i * 0.0001, ask=1.0851, ts=ts + i)
 
-        bars = agg.get_current_bars("EURUSD")
-        assert bars["EURUSD"]["M1"]["volume"] == 5
+        bars = agg.get_forming_bars("EURUSD")
+        assert bars["EURUSD"]["M15"]["volume"] == 5
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -215,7 +258,7 @@ class TestConnectionManager:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
+            patch("asyncio.create_task", side_effect=_mock_create_task),
         ):
             connected = await manager.connect(ws)
 
@@ -417,8 +460,7 @@ class TestWsCandlesChannel:
         from api.hybrid_candle_agg import HybridCandleAggregator  # noqa: PLC0415
 
         agg = HybridCandleAggregator()
-        ts = 1_700_000_000.0
-        agg.ingest_tick("EURUSD", bid=1.085, ask=1.0851, ts=ts)
+        agg._symbols = ["EURUSD"]  # noqa: SLF001
 
         app = _make_app()
         with (
@@ -602,26 +644,7 @@ class TestWsVerdictChannel:
         if not has_fastapi:
             pytest.skip("fastapi not installed")
         app = _make_app()
-
-        class _FakePubSub:
-            def __init__(self) -> None:
-                super().__init__()
-                self._sent = False
-
-            def subscribe(self, *_args: Any, **_kwargs: Any) -> None:
-                return None
-
-            def get_message(self, **_kwargs: Any) -> dict[str, str] | None:
-                if self._sent:
-                    return None
-                self._sent = True
-                return {
-                    "type": "message",
-                    "data": '{"event":"VERDICT_READY","pair":"EURUSD"}',
-                }
-
-            def close(self):
-                return None
+        fake_pubsub = _FakeAsyncPubSub('{"event":"VERDICT_READY","pair":"EURUSD"}')
 
         verdict_store: dict[str, dict[str, Any]] = {
             "EURUSD": {
@@ -637,7 +660,7 @@ class TestWsVerdictChannel:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("api.ws_routes.redis_client", new=MagicMock(pubsub=MagicMock(return_value=_FakePubSub()))),
+            patch("api.ws_routes._make_async_pubsub", new=AsyncMock(return_value=fake_pubsub)),
             patch("api.ws_routes.get_verdict_async", new=AsyncMock(side_effect=_fake_get_verdict)),
             patch("api.ws_routes.load_pairs", return_value=[{"symbol": "EURUSD", "enabled": True}]),
         ):
@@ -680,26 +703,7 @@ class TestWsSignalsChannel:
         if not has_fastapi:
             pytest.skip("fastapi not installed")
         app = _make_app()
-
-        class _FakePubSub:
-            def __init__(self) -> None:
-                super().__init__()
-                self._sent = False
-
-            def subscribe(self, *_args: Any, **_kwargs: Any) -> None:
-                return None
-
-            def get_message(self, **_kwargs: Any) -> dict[str, str] | None:
-                if self._sent:
-                    return None
-                self._sent = True
-                return {
-                    "type": "message",
-                    "data": '{"event":"SIGNAL_READY","symbol":"EURUSD"}',
-                }
-
-            def close(self):
-                return None
+        fake_pubsub = _FakeAsyncPubSub('{"event":"SIGNAL_READY","symbol":"EURUSD"}')
 
         signal_payload = {
             "signal_id": "SIG-001",
@@ -711,10 +715,12 @@ class TestWsSignalsChannel:
         mock_signal_service = MagicMock()
         mock_signal_service.list_all = MagicMock(return_value=[signal_payload])
         mock_signal_service.list_by_symbol = MagicMock(return_value=[signal_payload])
+        mock_signal_service.list_all_async = AsyncMock(return_value=[signal_payload])
+        mock_signal_service.list_by_symbol_async = AsyncMock(return_value=[signal_payload])
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("api.ws_routes.redis_client", new=MagicMock(pubsub=MagicMock(return_value=_FakePubSub()))),
+            patch("api.ws_routes._make_async_pubsub", new=AsyncMock(return_value=fake_pubsub)),
             patch("api.ws_routes._signal_service", new=mock_signal_service),
         ):
             yield TestClient(app)  # pyright: ignore[reportOptionalCall]
@@ -752,26 +758,7 @@ class TestWsPipelineChannel:
         if not has_fastapi:
             pytest.skip("fastapi not installed")
         app = _make_app()
-
-        class _FakePubSub:
-            def __init__(self) -> None:
-                super().__init__()
-                self._sent = False
-
-            def subscribe(self, *_args: Any, **_kwargs: Any) -> None:
-                return None
-
-            def get_message(self, **_kwargs: Any) -> dict[str, str] | None:
-                if self._sent:
-                    return None
-                self._sent = True
-                return {
-                    "type": "message",
-                    "data": '{"event":"VERDICT_READY","pair":"EURUSD"}',
-                }
-
-            def close(self):
-                return None
+        fake_pubsub = _FakeAsyncPubSub('{"event":"VERDICT_READY","pair":"EURUSD"}')
 
         verdict_payload = {
             "symbol": "EURUSD",
@@ -799,7 +786,7 @@ class TestWsPipelineChannel:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("api.ws_routes.redis_client", new=MagicMock(pubsub=MagicMock(return_value=_FakePubSub()))),
+            patch("api.ws_routes._make_async_pubsub", new=AsyncMock(return_value=fake_pubsub)),
             patch("api.ws_routes.get_verdict_async", new=AsyncMock(side_effect=_fake_get_verdict)),
             patch("api.ws_routes.load_pairs", return_value=[{"symbol": "EURUSD", "enabled": True}]),
         ):
@@ -902,7 +889,7 @@ class TestWsAuthRejection:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "user"})),
-            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
+            patch("asyncio.create_task", side_effect=_mock_create_task),
         ):
             result = await mgr.connect(ws)
 
