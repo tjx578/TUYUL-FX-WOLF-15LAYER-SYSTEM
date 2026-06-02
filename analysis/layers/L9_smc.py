@@ -575,8 +575,6 @@ class L9SMCAnalyzer:
             )
 
             status = envelope.get("status", "PASS")
-            if status == "FAIL":
-                raw_result["valid"] = False
 
             logger.info(
                 "[L9] {} constitutional: status={} continuation={} band={}",
