@@ -732,10 +732,57 @@ def _add_new_universal_pattern_candidates(
         or _optional_bool(data.get("ohlc_followthrough_confirmed")) is True
     )
     mfe_mae_validated = mfe >= 10.0 and (mae <= 1.0 or (mae > 0.0 and mfe / mae >= 2.0))
+    own_pair_events = _num(
+        data.get("own_pair_event_count")
+        or data.get("own_event_count")
+        or data.get("pair_event_count")
+        or events
+    )
+    moderate_own_pair_events = (
+        _optional_bool(data.get("own_pair_event_count_moderate")) is True
+        or 20.0 <= own_pair_events <= 120.0
+    )
+    mae_controlled = _optional_bool(data.get("mae_controlled")) is True or (mae > 0.0 and mae <= 10.0)
+    post_window_mfe_positive = _optional_bool(data.get("post_window_mfe_positive")) is True or mfe >= 10.0
+    immediate_followthrough = _phase(
+        data.get("immediate_followthrough")
+        or data.get("during_window_followthrough")
+        or data.get("window_followthrough")
+    )
+    immediate_followthrough_weak = (
+        immediate_followthrough in {"WEAK", "NEGATIVE", "WEAK_OR_NEGATIVE", "DELAYED", "NOT_IMMEDIATE"}
+        or _optional_bool(data.get("immediate_followthrough_weak")) is True
+        or _optional_bool(data.get("during_window_negative")) is True
+    )
+    later_reclaim_or_recovery = (
+        _optional_bool(data.get("later_reclaim_or_recovery")) is True
+        or _optional_bool(data.get("later_recovery")) is True
+        or _optional_bool(data.get("delayed_reclaim")) is True
+        or _optional_bool(data.get("support_hold_or_reclaim")) is True
+        or (post_window_mfe_positive and mae_controlled and immediate_followthrough_weak)
+    )
 
     if fragmented_rotation and broad_rotation_active and not same_pair_clean_block and not basket_followthrough_confirmed:
         _bump(candidates, "FRAGMENTED_BASKET_ROTATION_NOT_ENTRY", 96)
         evidence.append("fragmented_basket_rotation_watchlist_only")
+
+    if fragmented_rotation and broad_rotation_active and not same_pair_clean_block and later_reclaim_or_recovery:
+        _bump(candidates, "FRAGMENTED_THEME_FOLLOWTHROUGH", 90)
+        evidence.append("fragmented_theme_followthrough_delayed_reclaim_required")
+
+    if (
+        basket_member
+        and moderate_own_pair_events
+        and not same_pair_clean_block
+        and post_window_mfe_positive
+        and mae_controlled
+    ):
+        _bump(candidates, "JPY_BASKET_SECONDARY_CONFIRMATION", 76)
+        evidence.append("jpy_basket_secondary_member_validated_by_mfe_mae")
+
+    if basket_member and immediate_followthrough_weak and later_reclaim_or_recovery:
+        _bump(candidates, "DELAYED_JPY_CROSS_CONTINUATION", 92)
+        evidence.append("delayed_jpy_cross_continuation_requires_reclaim")
 
     if (
         basket_member
@@ -761,6 +808,19 @@ def _add_new_universal_pattern_candidates(
     if bullish_major_tf and lower_tf_pullback and _optional_bool(data.get("h1_h4_breakdown")) is not True:
         _bump(candidates, "MTF_BULLISH_PULLBACK_DECISION", 88)
         evidence.append("mtf_bullish_higher_tf_lower_tf_pullback_decision")
+    macro_bullish_intraday_pullback = (
+        _optional_bool(data.get("macro_bullish_intraday_pullback")) is True
+        or latest_phase == "MACRO_BULLISH_INTRADAY_PULLBACK_DECISION"
+        or (
+            symbol == "NZDJPY"
+            and bullish_major_tf
+            and lower_tf_pullback
+            and _optional_bool(data.get("h1_h4_breakdown")) is not True
+        )
+    )
+    if macro_bullish_intraday_pullback:
+        _bump(candidates, "MACRO_BULLISH_INTRADAY_PULLBACK_DECISION", 94)
+        evidence.append("macro_bullish_intraday_pullback_wait_reclaim_or_support_hold")
 
     late_session = (
         _optional_bool(data.get("late_session")) is True
@@ -784,6 +844,20 @@ def _add_new_universal_pattern_candidates(
     if late_session and expansion_failed and (weak_expansion_close or near_extreme or price_extended):
         _bump(candidates, "LATE_SESSION_EXPANSION_FAIL", 92)
         evidence.append("late_session_failed_expansion_no_new_entry")
+    prior_expansion = (
+        _optional_bool(data.get("prior_expansion")) is True
+        or _optional_bool(data.get("post_expansion")) is True
+        or latest_phase == "POST_EXPANSION_NO_CHASE_FILTER"
+    )
+    intraday_repair_incomplete = (
+        _optional_bool(data.get("intraday_repair_complete")) is False
+        or _optional_bool(data.get("h1_or_m15_repair_not_complete")) is True
+        or lower_tf_pullback
+    )
+    upper_range_pullback = near_resistance or range_position >= 0.65 or price_extended
+    if prior_expansion and upper_range_pullback and intraday_repair_incomplete:
+        _bump(candidates, "POST_EXPANSION_NO_CHASE_FILTER", 98)
+        evidence.append("post_expansion_upper_range_pullback_no_chase")
 
     # 8. TIMING_VALID_NOT_FINAL
     # Valid timing block (5+ min) but price phase not classified = watch only, not final signal.
@@ -1047,14 +1121,24 @@ def _pattern_bottlenecks(
         bottlenecks.append("PATTERN_CONTEXT_ONLY_NOT_FINAL_SIGNAL")
     if selected and selected.pattern_id == "JPY_BASKET_THEME_FOLLOWTHROUGH":
         bottlenecks.append("THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER")
+    if selected and selected.pattern_id == "JPY_BASKET_SECONDARY_CONFIRMATION":
+        bottlenecks.append("JPY_SECONDARY_REQUIRES_OWN_TRIGGER")
     if selected and selected.pattern_id == "FRAGMENTED_BASKET_ROTATION_NOT_ENTRY":
         bottlenecks.append("FRAGMENTED_ROTATION_WATCHLIST_ONLY")
+    if selected and selected.pattern_id == "FRAGMENTED_THEME_FOLLOWTHROUGH":
+        bottlenecks.append("FRAGMENTED_THEME_REQUIRES_RECLAIM")
+    if selected and selected.pattern_id == "DELAYED_JPY_CROSS_CONTINUATION":
+        bottlenecks.append("DELAYED_CONTINUATION_REQUIRES_RECLAIM")
     if selected and selected.pattern_id == "MTF_BULLISH_PULLBACK_DECISION":
         bottlenecks.append("PULLBACK_DECISION_NEEDS_RECLAIM_OR_BREAKDOWN")
+    if selected and selected.pattern_id == "MACRO_BULLISH_INTRADAY_PULLBACK_DECISION":
+        bottlenecks.append("MACRO_PULLBACK_NEEDS_RECLAIM_OR_SUPPORT_HOLD")
     if selected and selected.pattern_id == "ZERO_DRAWDOWN_FOLLOWTHROUGH":
         bottlenecks.append("HISTORICAL_OUTCOME_VALIDATION_TRACK_ONLY")
     if selected and selected.pattern_id == "LATE_SESSION_EXPANSION_FAIL":
         bottlenecks.append("REVALIDATE_NEXT_SESSION_BEFORE_NEW_ENTRY")
+    if selected and selected.pattern_id == "POST_EXPANSION_NO_CHASE_FILTER":
+        bottlenecks.append("POST_EXPANSION_NO_CHASE")
     if _optional_bool(data.get("support_ladder_ready")) is False:
         bottlenecks.append("SUPPORT_LADDER_MISSING")
     if _optional_bool(data.get("resistance_ladder_ready")) is False:
