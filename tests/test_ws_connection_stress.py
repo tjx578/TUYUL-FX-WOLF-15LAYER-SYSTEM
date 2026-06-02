@@ -329,6 +329,7 @@ class TestMessageBuffer:
             mgr.buffer_message({"seq": i, "ts": float(i)})
 
         ws = _make_ws("replay-client")
+        mgr._per_conn_seq[ws] = itertools.count(1)  # noqa: SLF001
         await mgr.replay_buffer(ws)
 
         assert ws.send_json.call_count == cap
@@ -342,6 +343,7 @@ class TestMessageBuffer:
             mgr.buffer_message({"seq": i, "ts": float(i)})
 
         ws = _make_ws("replay-client")
+        mgr._per_conn_seq[ws] = itertools.count(1)  # noqa: SLF001
         await mgr.replay_buffer(ws, since_ts=cutoff_ts)
 
         # Messages with ts > 50.0 are seq 51..99 → 49 messages
@@ -357,6 +359,7 @@ class TestMessageBuffer:
 
         ws = _make_ws("disconnect-replay")
         ws.send_json.side_effect = ConnectionError("disconnected")
+        mgr._per_conn_seq[ws] = itertools.count(1)  # noqa: SLF001
 
         # Must not raise
         await mgr.replay_buffer(ws)
@@ -457,7 +460,7 @@ class TestConcurrentConnectStress:
             ws = _make_ws()
             with (
                 patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "churn"})),
-                patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
+                patch("asyncio.create_task", side_effect=_mock_create_task),
             ):
                 connected = await mgr.connect(ws)
             if connected:
@@ -484,7 +487,7 @@ class TestConcurrentConnectStress:
                 ws = _make_ws(f"ws-{i}")
                 with (
                     patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": f"u{i}"})),
-                    patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
+                    patch("asyncio.create_task", side_effect=_mock_create_task),
                 ):
                     connected = await mgr.connect(ws)
                 if connected:
