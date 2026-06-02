@@ -12,6 +12,7 @@ from typing import Any
 from analysis.signal_execution_gate_models import ExecutionGateDecision
 from analysis.signal_json_emitter import VALID_SIGNAL_STATUSES
 from analysis.signal_json_enrichment import enrich_signal_json_payload
+from analysis.signal_thresholds import SIGNAL_MIN_RR
 
 _STRUCTURE_TARGET_MODES = {
     "FINAL_MARKET_STRUCTURE",
@@ -52,7 +53,7 @@ _MICROBOOST_UNPRICED_PHASES = {
 def evaluate_signal_execution_gates(
     payload: dict[str, Any],
     *,
-    min_rr_required: float = 1.5,
+    min_rr_required: float = SIGNAL_MIN_RR,
     max_chase_r: float = 0.35,
 ) -> ExecutionGateDecision:
     """Evaluate a final SignalJSON payload against execution-readiness gates."""
