@@ -1,0 +1,76 @@
+version: "1.0.0"
+name: "Wolf15 SignalThrottle Reference Cases"
+scope_note: "Reference cases are historical evidence only; they do not pair-lock pattern logic."
+
+reference_cases:
+  - reference_case_id: NZDJPY_20260501_JPY_BASKET_30_EVENTS
+    symbol: NZDJPY
+    pattern_id: JPY_BASKET_SECONDARY_CONFIRMATION
+    reference_tier: A
+    window_wita: "2026-05-01 15:57-17:41"
+    window_chart: "2026-05-01 10:57-12:41"
+    role: secondary_jpy_basket_confirmation
+    validated_by:
+      - signal_throttle_basket_activity
+      - historical_ohlc
+      - post_window_mfe_mae
+    evidence:
+      event_count: 30
+      price_delta_during_window_pips: 12.6
+      mfe_buy_1h_pips: 9.9
+      mae_buy_1h_pips: -0.1
+      mfe_buy_4h_pips: 42.6
+      mae_buy_4h_pips: -9.7
+    conclusion: validated secondary JPY-basket follow-through, not primary timing leader
+
+  - reference_case_id: NZDJPY_20260511_0356_0545_CHART
+    symbol: NZDJPY
+    pattern_id: DELAYED_JPY_CROSS_CONTINUATION
+    reference_tier: A
+    window_wita: "2026-05-11 08:56-10:45"
+    window_chart: "2026-05-11 03:56-05:45"
+    role: delayed_jpy_cross_continuation
+    validated_by:
+      - signal_throttle_basket_activity
+      - historical_ohlc
+      - mfe_mae_outcome
+    evidence:
+      event_count: 29
+      price_delta_during_window_pips: -8.4
+      mfe_buy_4h_pips: 16.5
+      mfe_buy_8h_pips: 24.0
+      mae_buy_8h_pips: -4.2
+    conclusion: watch valid during pressure window; continuation needs reclaim or H1 recovery
+
+  - reference_case_id: NZDJPY_20260601_20260602_PULLBACK
+    symbol: NZDJPY
+    pattern_id: MACRO_BULLISH_INTRADAY_PULLBACK_DECISION
+    reference_tier: A
+    window_wita: "2026-06-01 to 2026-06-02"
+    role: macro_bullish_intraday_pullback_decision
+    validated_by:
+      - d1_h4_ema_bias
+      - h1_m15_pullback_state
+    evidence:
+      d1_above_ema50: true
+      d1_above_ema200: true
+      h4_above_ema50: true
+      h4_above_ema200: true
+      h1_m15_pullback: true
+    conclusion: buy bias remains alive, but execution must wait for reclaim or support hold
+
+  - reference_case_id: NZDJPY_20260601_PULLBACK_AFTER_HIGH_95_345
+    symbol: NZDJPY
+    pattern_id: POST_EXPANSION_NO_CHASE_FILTER
+    reference_tier: A
+    window_wita: "2026-06-01 to 2026-06-02"
+    role: post_expansion_no_chase_filter
+    validated_by:
+      - d1_h4_price_location
+      - intraday_pullback
+    evidence:
+      prior_high: 95.345
+      d1_20260601_close_position: 0.361
+      d1_20260602_close_position: 0.37
+      intraday_repair_complete: false
+    conclusion: block fresh buy chase after upper expansion until reclaim and retest
