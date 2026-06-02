@@ -555,6 +555,89 @@ patterns:
       - NOT_PAIR_LOCKED
     function: late-session failed expansion is management context and should not create a fresh entry
 
+  - pattern_id: JPY_BASKET_SECONDARY_CONFIRMATION
+    scope: UNIVERSAL
+    applies_to: ALL_JPY_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [NZDJPY]
+    tier: A
+    family: BASKET_CONFIRMATION
+    golden_source: NZDJPY
+    entry_permission: BOOST_SCORE_ONLY
+    management_action: WATCH_OWN_PRICE_PHASE_AND_RECLAIM
+    block_reason: JPY_SECONDARY_REQUIRES_OWN_TRIGGER
+    pair_specific_calibration:
+      - JPY_BASKET_SECONDARY_MEMBER
+      - MODERATE_OWN_EVENT_COUNT
+      - POST_WINDOW_MFE_MAE_VALIDATED
+      - NOT_PAIR_LOCKED
+    function: JPY basket member confirms theme pressure as Tier A reference but is not a primary clean timing leader
+
+  - pattern_id: FRAGMENTED_THEME_FOLLOWTHROUGH
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [NZDJPY]
+    tier: A
+    family: DELAYED_THEME_FOLLOWTHROUGH
+    golden_source: NZDJPY
+    entry_permission: DELAYED_WATCH
+    management_action: WAIT_RECLAIM_OR_SUPPORT_HOLD
+    block_reason: FRAGMENTED_THEME_REQUIRES_RECLAIM
+    pair_specific_calibration:
+      - FRAGMENTED_BASKET_MEMBER
+      - DELAYED_MFE_AFTER_WINDOW
+      - NOT_PAIR_LOCKED
+    function: fragmented basket member can follow through after the window but must stay watch-only until reclaim
+
+  - pattern_id: DELAYED_JPY_CROSS_CONTINUATION
+    scope: UNIVERSAL
+    applies_to: ALL_JPY_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [NZDJPY]
+    tier: A
+    family: DELAYED_CONTINUATION
+    golden_source: NZDJPY
+    entry_permission: DELAYED_WATCH
+    management_action: WAIT_RECLAIM_OR_STRUCTURE_TARGET
+    block_reason: DELAYED_CONTINUATION_REQUIRES_RECLAIM
+    pair_specific_calibration:
+      - IMMEDIATE_FOLLOWTHROUGH_WEAK_OR_NEGATIVE
+      - LATER_RECLAIM_VALIDATED
+      - MFE_MAE_VALIDATION_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: JPY cross pressure can become continuation only after delayed reclaim or recovery confirms
+
+  - pattern_id: MACRO_BULLISH_INTRADAY_PULLBACK_DECISION
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [NZDJPY]
+    tier: A
+    family: MULTITIMEFRAME_DECISION
+    golden_source: NZDJPY
+    entry_permission: BUY_RECLAIM_OR_SUPPORT_HOLD
+    management_action: WAIT_SUPPORT_HOLD_OR_H1_BREAKDOWN
+    block_reason: MACRO_PULLBACK_NEEDS_RECLAIM_OR_SUPPORT_HOLD
+    pair_specific_calibration:
+      - D1_H4_BULLISH_BIAS
+      - H1_M15_PULLBACK_STATE
+      - NO_BUY_CHASE
+      - NOT_PAIR_LOCKED
+    function: macro bullish pair with intraday pullback is a decision state requiring reclaim or support hold
+
+  - pattern_id: POST_EXPANSION_NO_CHASE_FILTER
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [NZDJPY]
+    tier: S
+    family: RISK_MANAGEMENT
+    golden_source: NZDJPY
+    entry_permission: NO_MARKET_CHASE
+    management_action: PROTECT_OR_WAIT_RETEST
+    block_reason: POST_EXPANSION_NO_CHASE
+    pair_specific_calibration:
+      - PRIOR_EXPANSION_UPPER_RANGE_PULLBACK
+      - INTRADAY_REPAIR_NOT_COMPLETE
+      - NOT_PAIR_LOCKED
+    function: post-expansion pullback from upper range blocks fresh chase until reclaim and retest
+
   - pattern_id: TIMING_VALID_NOT_FINAL
     scope: UNIVERSAL
     applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
