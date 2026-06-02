@@ -26,7 +26,7 @@ class SignalJsonGateConfig:
     # execution semantics do not change until downstream honors WAIT_RETEST.
     emit_deferred_as_conditional_final: bool = False
     prefix: str = "[SignalExecutionGateJSON]"
-    min_rr_required: float = 2.5
+    min_rr_required: float = 1.5
     max_chase_r: float = 0.35
 
     @classmethod
@@ -52,7 +52,7 @@ class SignalJsonGateConfig:
                 env, "SIGNAL_JSON_EXEC_GATES_EMIT_DEFERRED_FINAL", False
             ),
             prefix=str(env.get("SIGNAL_EXECUTION_GATE_JSON_LOG_PREFIX") or "[SignalExecutionGateJSON]"),
-            min_rr_required=_env_float(env, "SIGNAL_JSON_MIN_RR_VALID", 2.5),
+            min_rr_required=_env_float(env, "SIGNAL_JSON_MIN_RR_VALID", 1.5),
             max_chase_r=_env_float(env, "SIGNAL_JSON_EXEC_GATES_MAX_CHASE_R", 0.35),
         )
 
