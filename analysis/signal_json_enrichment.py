@@ -124,10 +124,8 @@ def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "structure_zones": zones,
             "risk_reward": {
                 "entry": entry,
-                "sl_tight": sl_tight,
                 "sl_safe": sl_safe,
                 "selected_sl": selected_sl,
-                "risk_pips_tight": _risk_pips(entry, sl_tight, pip_value),
                 "risk_pips_safe": _risk_pips(entry, sl_safe, pip_value),
                 "selected_risk_pips": selected_risk,
                 "tp1_rr": TP1_RR_FLOOR,
