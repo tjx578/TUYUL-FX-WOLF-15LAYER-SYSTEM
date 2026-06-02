@@ -9,6 +9,7 @@ from api.config_profile_router import router as config_profile_router
 from api.ea_router import router as ea_router
 from api.middleware import auth as auth_mod
 from api.middleware import governance
+from config.profile_engine import ConfigProfileEngine
 from risk.risk_router import router as risk_router
 
 
@@ -34,8 +35,10 @@ def _headers(pin: str | None = None) -> dict[str, str]:
 @pytest.fixture(autouse=True)
 def _clean_global_kill_switch() -> None:
     risk_router_mod._kill_switch.disable("TEST_RESET")
+    ConfigProfileEngine().set_lock(False, actor="test-admin", reason="TEST_RESET")
     yield
     risk_router_mod._kill_switch.disable("TEST_RESET")
+    ConfigProfileEngine().set_lock(False, actor="test-admin", reason="TEST_RESET")
 
 
 def test_rbac_rejects_missing_role_claim(monkeypatch) -> None:
