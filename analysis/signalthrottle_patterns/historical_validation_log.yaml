@@ -94,3 +94,37 @@ validations:
       - active_profit_trade_can_hold_or_trail
       - new_market_chase_should_be_blocked
       - wait_pullback_reclaim_before_fresh_entry
+
+  - validation_id: AUDNZD_20260429_20260501_FALSE_CONTINUATION_REFERENCE
+    symbol: AUDNZD
+    checked_logic: low_density_audnzd_block_and_supporting_cross_role
+    source_window_wita: "2026-04-29 to 2026-05-01"
+    raw_interpretation: AUDNZD pressure implies AUD/NZD strength and possible BUY continuation
+    actual_outcome: weak immediate BUY follow-through, delayed fade/range pressure, and supporting-cross behavior
+    validated_patterns:
+      - LOW_DENSITY_BLOCK_FALSE_CONTINUATION
+      - AUDNZD_RELATIVE_STRENGTH_DECISION_PAIR
+      - SUPPORTING_CROSS_NOT_PRIMARY_LEADER
+      - BULLISH_REPAIR_UPPER_DECISION_NO_CHASE
+    correction:
+      - do_not_treat_audnzd_low_density_block_as_golden_open_lane
+      - require_own_price_phase_before_buy_continuation
+      - downgrade_upper_or_flat_audnzd_pressure_to_watch_or_fade_context
+      - block_buy_chase_near_upper_repair_zone_until_pullback_or_reclaim
+
+  - validation_id: EURNZD_20260501_SUPPORTING_EUR_CROSS_FALSE_CONTINUATION
+    symbol: EURNZD
+    checked_logic: supporting_eur_cross_pressure_and_leader_divergence
+    source_window_wita: "2026-05-01 EUR-cross rotation"
+    raw_interpretation: EUR-cross pressure can copy EURAUD strength into EURNZD BUY
+    actual_outcome: EURNZD acted as supporting radar with failed BUY continuation and clean upper-fade evidence
+    validated_patterns:
+      - SUPPORTING_EUR_CROSS_NOT_LEADER
+      - EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE
+      - CROSS_THEME_LEADER_DIVERGENCE
+      - MACRO_BEARISH_INTRADAY_REPAIR_DECISION
+    correction:
+      - do_not_copy_leader_eur_cross_direction_into_supporting_pairs
+      - require_eurnzd_own_price_phase_and_nzd_weakness_confirmation
+      - treat_upper_recovery_after_eur_cross_pressure_as_fade_watch_when_buy_followthrough_fails
+      - macro_bearish_intraday_repair_is_no_buy_chase_until_reclaim
