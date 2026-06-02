@@ -135,7 +135,6 @@ V11_OUTPUT_ONLY_FIELDS = {
     "execution_reason",
     "selected_sl_mode",
     "selected_sl",
-    "risk_pips_tight",
     "risk_pips_safe",
     "selected_risk_pips",
     "target_policy",
@@ -354,7 +353,6 @@ class SignalJsonEvent:
     execution_reason: str | None = None
     selected_sl_mode: str | None = None
     selected_sl: float | None = None
-    risk_pips_tight: float | None = None
     risk_pips_safe: float | None = None
     selected_risk_pips: float | None = None
     target_policy: dict[str, Any] | None = None
@@ -857,7 +855,6 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         execution_reason=_optional_str(counter_entry.get("execution_reason")),
         selected_sl_mode=_optional_str(counter_entry.get("selected_sl_mode")),
         selected_sl=_optional_float(counter_entry.get("selected_sl")),
-        risk_pips_tight=_optional_float(counter_entry.get("risk_pips_tight")),
         risk_pips_safe=_optional_float(counter_entry.get("risk_pips_safe")),
         selected_risk_pips=_optional_float(counter_entry.get("selected_risk_pips")),
         target_policy=_dict_value(counter_entry.get("target_policy")),
