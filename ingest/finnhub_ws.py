@@ -10,7 +10,7 @@ import os
 import random
 import time
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any, cast
+from typing import Any
 
 import websockets
 import websockets.asyncio.client
@@ -126,7 +126,10 @@ def _calculate_backoff(
     Returns:
         Backoff duration in seconds with jitter applied.
     """
-    exp_backoff = base * (multiplier**attempt)
+    try:
+        exp_backoff = base * (multiplier**attempt)
+    except OverflowError:
+        exp_backoff = maximum
     clamped = min(exp_backoff, maximum)
     jitter = clamped * random.uniform(-JITTER_RANGE, JITTER_RANGE)
     return max(0.1, clamped + jitter)
@@ -297,7 +300,7 @@ class FinnhubWebSocket:
                 "Subscribed to symbol",
                 extra={"symbol": symbol},
             )
-        logger.info("[WS] Subscribed {} symbols", len(self._symbols))
+        logger.info("[WS] Subscribed %d symbols", len(self._symbols))
 
     async def _connect(self) -> websockets.asyncio.client.ClientConnection:
         """Establish WebSocket connection to Finnhub.
@@ -318,9 +321,11 @@ class FinnhubWebSocket:
                     ping_interval=PING_INTERVAL_S,
                     ping_timeout=PING_TIMEOUT_S,
                     close_timeout=10,
+                    max_size=10_000_000,
                 ),
                 timeout=30.0,
             )
+            self._ws = ws
             logger.info(
                 "Finnhub WS connected",
                 extra={
@@ -405,7 +410,6 @@ class FinnhubWebSocket:
         network blips don't accumulate toward a permanent shutdown.
         """
         self._running = True
-        attempt = 0
         # Observability: before first successful connect, surface that the loop
         # has started but not yet connected. This removes the "last_ws_reason=None
         # while WS=False" blind spot that masked not-leader / pre-connect states.
@@ -432,123 +436,81 @@ class FinnhubWebSocket:
                         current_leader = None
                     self._last_disconnect_reason = f"not_leader:held_by={current_leader or 'unknown'}"
                     logger.info(
-                        "[WS] Not leader — waiting 10 s before retry (held_by=%s)",
+                        "[WS] Not leader — waiting %.1f s before retry (held_by=%s)",
+                        LEADER_LOCK_TTL_S / 2,
                         current_leader or "unknown",
                     )
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(LEADER_LOCK_TTL_S / 2)
                     continue
-
-                # Refresh token in case key was rotated
-                refreshed = self._key_manager.current_key()
-                if refreshed:
-                    self._token = refreshed
 
                 logger.info(
                     "[WS] Connection attempt %d (backoff resets on success)",
-                    attempt + 1,
+                    self._attempt + 1,
                 )
 
-                # Build URL correctly
-                url = FINNHUB_WS_URL.format(token=self._token)
+                ws = await self._connect()
+                self._last_disconnect_reason = None
 
-                # Connect
-                async with websockets.connect(
-                    url,
-                    ping_interval=PING_INTERVAL_S,
-                    ping_timeout=PING_TIMEOUT_S,
-                    close_timeout=10,
-                    max_size=10_000_000,
-                ) as ws_raw:
-                    ws = cast(websockets.asyncio.client.ClientConnection, ws_raw)
-                    self._ws = ws
-                    self._connected = True
-                    self._last_disconnect_reason = None
-                    attempt = 0  # Reset on success
+                logger.info(
+                    "[WS] Connected successfully | subscribed_symbols=%d replica_id=%s",
+                    len(self._symbols),
+                    self._replica_id,
+                )
 
-                    # Record WS connect timestamp for pipeline warmup grace
-                    with contextlib.suppress(Exception):
-                        await self._redis.set(
-                            WS_CONNECTED_AT,
-                            str(time.time()),
-                            ex=3600,
-                        )
+                # Subscribe to symbols
+                await self._subscribe(ws)
 
-                    # Start background lock renewal
-                    self._lock_renewal_task = asyncio.create_task(
-                        self._lock_renewal_loop(),
-                        name="LeaderLockRenewal",
-                    )
-
-                    # Update Prometheus metrics
-                    finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(0)
-                    finnhub_ws_connections_total.labels(replica_id=self._replica_id).inc()
-                    finnhub_ws_connected.labels(replica_id=self._replica_id).set(1)
-
-                    # Fire on_connect callback (e.g. HTF refresh) — best effort
-                    if self._on_connect is not None:
-                        with contextlib.suppress(Exception):
-                            asyncio.create_task(self._on_connect(), name="WsOnConnectCallback")
-
-                    logger.info(
-                        "[WS] Connected successfully | subscribed_symbols={} replica_id={}",
-                        len(self._symbols),
-                        self._replica_id,
-                    )
-
-                    # Subscribe to symbols
-                    await self._subscribe(ws)
-
-                    # Listen (blocks until disconnect)
-                    await self._listen(ws)
+                # Listen (blocks until disconnect)
+                await self._listen(ws)
 
             except asyncio.CancelledError:
                 logger.info("[WS] Task cancelled — exiting run loop")
                 break
 
             except FinnhubRateLimitError as exc:
-                attempt += 1
+                self._attempt += 1
                 delay = exc.retry_after
                 self._last_disconnect_reason = f"rate_limit:{type(exc).__name__}"
                 finnhub_ws_reconnect_attempts.labels(replica_id=self._replica_id, error_type="rate_limit").inc()
-                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 logger.warning(
                     "[WS] Rate limited (429). Retry in %.1f s (attempt %d)",
                     delay,
-                    attempt,
+                    self._attempt,
                 )
                 self._connected = False
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 await asyncio.sleep(delay)
 
             except websockets.exceptions.ConnectionClosedError as exc:
-                attempt += 1
-                delay = _calculate_backoff(attempt)
+                self._attempt += 1
+                delay = _calculate_backoff(self._attempt)
                 self._last_disconnect_reason = f"connection_closed:{exc}"
                 finnhub_ws_reconnect_attempts.labels(replica_id=self._replica_id, error_type="connection_closed").inc()
-                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 logger.warning(
                     "[WS] Connection closed: %s. Retry in %.1f s (attempt %d)",
                     exc,
                     delay,
-                    attempt,
+                    self._attempt,
                 )
                 self._connected = False
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 await asyncio.sleep(delay)
 
             except Exception as exc:
-                attempt += 1
-                delay = _calculate_backoff(attempt)
+                self._attempt += 1
+                delay = _calculate_backoff(self._attempt)
                 error_type = type(exc).__name__
                 self._last_disconnect_reason = f"{error_type}:{exc}"
                 finnhub_ws_reconnect_attempts.labels(replica_id=self._replica_id, error_type=error_type).inc()
-                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(attempt)
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 logger.error(
                     "[WS] Error: %s (%s). Retry in %.1f s (attempt %d)",
                     exc,
                     error_type,
                     delay,
-                    attempt,
+                    self._attempt,
                 )
                 self._connected = False
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
