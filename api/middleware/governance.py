@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
+import redis
 from fastapi import Header, HTTPException, Request
 
+from infrastructure.redis_url import get_redis_url
 from storage.redis_client import redis_client
 
 from .auth import decode_token, validate_api_key
@@ -24,6 +27,62 @@ SAFE_MODE_CLOSE_ALLOWLIST = (
     "/operator/close",
 )
 ALLOWED_ROLES = {"viewer", "trader", "admin"}
+_SAFE_MODE_REDIS_CLIENT: redis.Redis | None = None
+_SAFE_MODE_REDIS_CLIENT_URL: str | None = None
+_SAFE_MODE_REDIS_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_mode_redis_temporarily_unavailable() -> bool:
+    return time.monotonic() < _SAFE_MODE_REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_safe_mode_redis_unavailable() -> None:
+    global _SAFE_MODE_REDIS_UNAVAILABLE_UNTIL
+    cooldown = _env_float("GOVERNANCE_SAFE_MODE_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _SAFE_MODE_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _safe_mode_redis_client() -> redis.Redis:
+    """Return a fast-fail read client for the EA safe-mode flag."""
+    global _SAFE_MODE_REDIS_CLIENT, _SAFE_MODE_REDIS_CLIENT_URL
+
+    url = get_redis_url()
+    if _SAFE_MODE_REDIS_CLIENT is None or url != _SAFE_MODE_REDIS_CLIENT_URL:
+        timeout = _env_float("GOVERNANCE_SAFE_MODE_REDIS_TIMEOUT_SEC", 0.25)
+        _SAFE_MODE_REDIS_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=False,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _SAFE_MODE_REDIS_CLIENT_URL = url
+    return _SAFE_MODE_REDIS_CLIENT
+
+
+def _read_safe_mode_flag() -> Any:
+    if redis_client.__class__.__name__ != "_LazyRedisClient":
+        return redis_client.client.get("EA:SAFE_MODE")
+
+    if _safe_mode_redis_temporarily_unavailable():
+        return None
+
+    try:
+        return _safe_mode_redis_client().get("EA:SAFE_MODE")
+    except Exception:
+        _mark_safe_mode_redis_unavailable()
+        return None
 
 
 @dataclass(frozen=True)
@@ -51,7 +110,7 @@ def _is_critical_path(path: str) -> bool:
 
 def _safe_mode_enabled() -> bool:
     try:
-        raw = redis_client.client.get("EA:SAFE_MODE")
+        raw = _read_safe_mode_flag()
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8", errors="ignore")
         return str(raw or "0").strip().lower() in {"1", "true", "on", "enabled"}
