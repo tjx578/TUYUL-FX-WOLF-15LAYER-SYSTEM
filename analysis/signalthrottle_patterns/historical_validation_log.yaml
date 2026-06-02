@@ -1,0 +1,44 @@
+version: "1.0.0"
+name: "Wolf15 SignalThrottle Historical Validation Log"
+scope_note: "Historical OHLC validates logic and lifecycle behavior; it is not a pair-specific execution rule."
+
+validations:
+  - validation_id: NZDJPY_20260501_SECONDARY_BASKET_FOLLOWTHROUGH
+    symbol: NZDJPY
+    checked_logic: jpy_basket_member_as_secondary_confirmation
+    source_window_wita: "2026-05-01 15:57-17:41"
+    raw_interpretation: JPY basket pressure active
+    actual_outcome: positive post-window BUY follow-through with controlled early MAE
+    validated_patterns:
+      - JPY_BASKET_SECONDARY_CONFIRMATION
+      - FRAGMENTED_THEME_FOLLOWTHROUGH
+    correction:
+      - do_not_promote_secondary_basket_member_to_primary_leader
+      - require_own_price_phase_before_final_signal
+      - use_basket_pressure_as_score_boost_or_watch_context
+
+  - validation_id: NZDJPY_20260511_DELAYED_CONTINUATION
+    symbol: NZDJPY
+    checked_logic: delayed_jpy_cross_continuation_after_pressure_window
+    source_window_wita: "2026-05-11 08:56-10:45"
+    raw_interpretation: JPY basket member active but not dominant
+    actual_outcome: weak immediate window, later recovery up to 24 pips within 8h
+    validated_patterns:
+      - DELAYED_JPY_CROSS_CONTINUATION
+    correction:
+      - treat_during_window_as_watch_only_when_immediate_followthrough_is_negative
+      - require_reclaim_or_h1_recovery_before_continuation_candidate
+
+  - validation_id: NZDJPY_20260601_20260602_PULLBACK_DECISION
+    symbol: NZDJPY
+    checked_logic: macro_bullish_bias_with_intraday_pullback
+    source_window_wita: "2026-06-01 to 2026-06-02"
+    raw_interpretation: macro BUY bias remains alive
+    actual_outcome: H1/M15 pullback and repair state, no clean buy-chase setup
+    validated_patterns:
+      - MACRO_BULLISH_INTRADAY_PULLBACK_DECISION
+      - POST_EXPANSION_NO_CHASE_FILTER
+    correction:
+      - no_buy_chase_after_upper_range_pullback
+      - wait_for_reclaim_or_support_hold
+      - sell_requires_h1_breakdown_confirmation
