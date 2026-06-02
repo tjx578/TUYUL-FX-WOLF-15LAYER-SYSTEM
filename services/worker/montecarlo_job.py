@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from numbers import Real
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from engines.portfolio_monte_carlo_engine import PortfolioMonteCarloEngine
 
 from core.redis_keys import WORKER_MC_INPUT, WORKER_MC_RESULT
+from pipeline.constants import get_monte_min
 from services.worker._job_utils import (
     load_json_payload,
     normalize_return_matrix,
@@ -28,7 +30,6 @@ from services.worker._job_utils import (
 
 def _build_engine() -> PortfolioMonteCarloEngine:
     from engines.portfolio_monte_carlo_engine import PortfolioMonteCarloEngine
-    from pipeline.constants import get_monte_min
 
     simulations = int(os.getenv("WOLF15_MC_SIMULATIONS", "1000"))
     seed_raw = os.getenv("WOLF15_MC_SEED", "42")
@@ -104,7 +105,9 @@ def run() -> None:
             return
 
         engine = _build_engine()
-        monte_min = engine.win_threshold
+        configured_monte_min = get_monte_min()
+        engine_threshold = getattr(engine, "win_threshold", configured_monte_min)
+        monte_min = float(engine_threshold) if isinstance(engine_threshold, Real) else configured_monte_min
         result = engine.run(return_matrix)
 
         payload: dict[str, Any] = {
