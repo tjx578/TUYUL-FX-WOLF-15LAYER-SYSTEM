@@ -20,7 +20,11 @@ from core.metrics import (
     INGEST_TICKS_PER_PAIR,
     INGEST_WS_CONNECTED,
 )
-from ingest.dependencies import _pair_last_tick_ts as pair_last_tick_ts
+
+try:
+    from ingest.dependencies import _pair_last_tick_ts as pair_last_tick_ts
+except ImportError:
+    pair_last_tick_ts: dict[str, float] = {}
 
 # ── Health probe for container orchestration ──────────────────────
 _INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
