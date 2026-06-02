@@ -936,6 +936,115 @@ def _add_new_universal_pattern_candidates(
         _bump(candidates, "MAJOR_PAIR_POST_EXPANSION_NO_CHASE", 100)
         evidence.append("major_pair_post_expansion_no_chase_hold_or_trail")
 
+    buy_mfe = abs(_num(data.get("mfe_buy_15m_pips") or data.get("mfe_buy_1h_pips") or data.get("mfe_buy_4h_pips") or data.get("buy_mfe_pips")))
+    buy_mae = abs(_num(data.get("mae_buy_15m_pips") or data.get("mae_buy_1h_pips") or data.get("mae_buy_4h_pips") or data.get("buy_mae_pips")))
+    sell_mfe = abs(_num(data.get("mfe_sell_15m_pips") or data.get("mfe_sell_1h_pips") or data.get("mfe_sell_4h_pips") or data.get("sell_mfe_pips")))
+    sell_mae = abs(_num(data.get("mae_sell_15m_pips") or data.get("mae_sell_1h_pips") or data.get("mae_sell_4h_pips") or data.get("sell_mae_pips")))
+    buy_followthrough_failed = (
+        _optional_bool(data.get("buy_followthrough_failed")) is True
+        or _phase(data.get("buy_followthrough_status")) in {"FAILED", "WEAK", "FALSE_CONTINUATION"}
+        or (buy_mfe > 0.0 and buy_mae >= buy_mfe)
+    )
+    sell_fade_cleaner = (
+        _optional_bool(data.get("sell_fade_cleaner")) is True
+        or _optional_bool(data.get("fade_validated")) is True
+        or (sell_mfe > 0.0 and (sell_mae == 0.0 or sell_mfe >= sell_mae))
+    )
+    leader_pair = _text(data.get("leader_pair") or data.get("theme_leader_pair")).upper()
+    supporting_cross = (
+        _optional_bool(data.get("supporting_cross")) is True
+        or _optional_bool(data.get("supporting_pair")) is True
+        or _num(data.get("supporting_event_count")) > 0.0
+        or (bool(leader_pair) and leader_pair != symbol)
+    )
+    eur_cross_pressure = (
+        symbol.startswith("EUR")
+        and (
+            _optional_bool(data.get("eur_cross_pressure")) is True
+            or leader_pair.startswith("EUR")
+            or _phase(data.get("theme_family") or data.get("theme_name")) in {"EUR", "EUR_CROSS", "EUR_CROSS_ROTATION"}
+        )
+    )
+    upper_fade_context = (
+        _optional_bool(data.get("upper_fade_candidate")) is True
+        or _optional_bool(data.get("upper_rejection")) is True
+        or near_resistance
+        or range_position >= 0.75
+    )
+    own_phase_confirmed = (
+        _optional_bool(data.get("own_price_phase_confirmed")) is True
+        or _optional_bool(data.get("own_trigger_confirmed")) is True
+        or reclaim_confirmed
+        or breakdown_confirmed
+    )
+
+    if (
+        symbol == "AUDNZD"
+        and duration >= 300.0
+        and 0.5 <= density <= 4.0
+        and (buy_followthrough_failed or sell_fade_cleaner)
+        and not own_phase_confirmed
+    ):
+        _bump(candidates, "LOW_DENSITY_BLOCK_FALSE_CONTINUATION", 110)
+        evidence.append("audnzd_low_density_block_false_continuation_validated")
+
+    if symbol == "AUDNZD" and (supporting_cross or _optional_bool(data.get("aud_nzd_relative_strength_decision")) is True):
+        _bump(candidates, "AUDNZD_RELATIVE_STRENGTH_DECISION_PAIR", 92)
+        evidence.append("audnzd_relative_strength_decision_requires_own_phase")
+
+    if supporting_cross and not same_pair_clean_block and not own_phase_confirmed:
+        _bump(candidates, "SUPPORTING_CROSS_NOT_PRIMARY_LEADER", 94)
+        evidence.append("supporting_cross_not_primary_leader_requires_own_trigger")
+
+    bullish_repair_upper = (
+        symbol == "AUDNZD"
+        and (
+            _optional_bool(data.get("bullish_repair_upper_decision")) is True
+            or _optional_bool(data.get("bullish_repair")) is True
+            or latest_phase == "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE"
+        )
+        and upper_fade_context
+    )
+    if bullish_repair_upper:
+        _bump(candidates, "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE", 112)
+        evidence.append("audnzd_bullish_repair_upper_decision_no_chase")
+
+    if symbol == "EURNZD" and eur_cross_pressure and supporting_cross and not same_pair_clean_block:
+        _bump(candidates, "SUPPORTING_EUR_CROSS_NOT_LEADER", 104)
+        evidence.append("eurnzd_supporting_eur_cross_not_leader")
+
+    if symbol == "EURNZD" and upper_fade_context and buy_followthrough_failed and sell_fade_cleaner:
+        _bump(candidates, "EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE", 116)
+        evidence.append("eurnzd_upper_fade_after_eur_cross_pressure")
+
+    if (
+        symbol == "EURNZD"
+        and leader_pair
+        and leader_pair != symbol
+        and supporting_cross
+        and not own_phase_confirmed
+    ):
+        _bump(candidates, "CROSS_THEME_LEADER_DIVERGENCE", 100)
+        evidence.append("cross_theme_leader_divergence_do_not_copy_leader_direction")
+
+    macro_bearish_context = (
+        _optional_bool(data.get("macro_bearish_context")) is True
+        or (
+            _optional_bool(data.get("d1_below_ema50")) is True
+            and _optional_bool(data.get("d1_below_ema200")) is True
+            and _optional_bool(data.get("h4_below_ema50")) is True
+        )
+        or (_is_bearish_or_mixed_bearish(d1_phase) and _is_bearish_or_mixed_bearish(h4_phase))
+    )
+    intraday_repair = (
+        _optional_bool(data.get("intraday_repair")) is True
+        or _optional_bool(data.get("h1_m15_intraday_repair")) is True
+        or latest_phase == "MACRO_BEARISH_INTRADAY_REPAIR_DECISION"
+    )
+    if symbol == "EURNZD" and macro_bearish_context and intraday_repair and upper_fade_context:
+        _bump(candidates, "MACRO_BEARISH_INTRADAY_REPAIR_DECISION", 114)
+        evidence.append("eurnzd_macro_bearish_intraday_repair_no_buy_chase")
+
     # 8. TIMING_VALID_NOT_FINAL
     # Valid timing block (5+ min) but price phase not classified = watch only, not final signal.
     price_phase_missing = not phase_priced_raw or phase_priced_raw in {
@@ -1224,6 +1333,22 @@ def _pattern_bottlenecks(
         bottlenecks.append("DELAYED_GBP_CONTINUATION_REQUIRES_RECLAIM")
     if selected and selected.pattern_id == "MAJOR_PAIR_POST_EXPANSION_NO_CHASE":
         bottlenecks.append("MAJOR_PAIR_POST_EXPANSION_NO_CHASE")
+    if selected and selected.pattern_id == "LOW_DENSITY_BLOCK_FALSE_CONTINUATION":
+        bottlenecks.append("LOW_DENSITY_BLOCK_FALSE_CONTINUATION_RISK")
+    if selected and selected.pattern_id == "AUDNZD_RELATIVE_STRENGTH_DECISION_PAIR":
+        bottlenecks.append("RELATIVE_STRENGTH_DECISION_NOT_AUTO_ENTRY")
+    if selected and selected.pattern_id == "SUPPORTING_CROSS_NOT_PRIMARY_LEADER":
+        bottlenecks.append("SUPPORTING_CROSS_NOT_PRIMARY_LEADER")
+    if selected and selected.pattern_id == "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE":
+        bottlenecks.append("BULLISH_REPAIR_UPPER_DECISION_NO_CHASE")
+    if selected and selected.pattern_id == "SUPPORTING_EUR_CROSS_NOT_LEADER":
+        bottlenecks.append("SUPPORTING_EUR_CROSS_NOT_LEADER")
+    if selected and selected.pattern_id == "EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE":
+        bottlenecks.append("EUR_CROSS_UPPER_FADE_RISK")
+    if selected and selected.pattern_id == "CROSS_THEME_LEADER_DIVERGENCE":
+        bottlenecks.append("CROSS_THEME_LEADER_DIVERGENCE")
+    if selected and selected.pattern_id == "MACRO_BEARISH_INTRADAY_REPAIR_DECISION":
+        bottlenecks.append("MACRO_BEARISH_INTRADAY_REPAIR_DECISION")
     if _optional_bool(data.get("support_ladder_ready")) is False:
         bottlenecks.append("SUPPORT_LADDER_MISSING")
     if _optional_bool(data.get("resistance_ladder_ready")) is False:
