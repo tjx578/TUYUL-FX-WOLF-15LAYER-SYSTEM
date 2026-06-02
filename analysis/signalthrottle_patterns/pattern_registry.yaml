@@ -638,6 +638,74 @@ patterns:
       - NOT_PAIR_LOCKED
     function: post-expansion pullback from upper range blocks fresh chase until reclaim and retest
 
+  - pattern_id: LOW_DENSITY_MAJOR_PAIR_CONTINUATION
+    scope: UNIVERSAL
+    applies_to: ALL_MAJOR_OR_HIGH_LIQUIDITY_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPUSD]
+    tier: A
+    family: CONTINUATION_TIMING
+    golden_source: GBPUSD
+    entry_permission: ENTRY_WATCH_OR_DIRECT_IF_STRUCTURE_READY
+    management_action: WAIT_STRUCTURE_TARGET_AND_RR
+    block_reason: STRUCTURE_PHASE_REQUIRED
+    pair_specific_calibration:
+      - MAJOR_PAIR_LOW_DENSITY_BLOCK
+      - SMALL_BLOCK_DELTA
+      - POST_WINDOW_MFE_MAE_VALIDATED
+      - NOT_PAIR_LOCKED
+    function: low-density major pair continuation can be valid when phase, structure target, and RR confirm
+
+  - pattern_id: BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPUSD]
+    tier: S
+    family: PAIR_SELECTION_SAFETY
+    golden_source: GBPUSD
+    entry_permission: WATCHLIST_ONLY
+    management_action: FETCH_M15_H1_PRICE_PHASE
+    block_reason: BROAD_ROTATION_NOT_SINGLE_PAIR_ENTRY
+    pair_specific_calibration:
+      - HIGH_EVENT_COUNT_NOT_AUTO_ENTRY
+      - NET_DELTA_SMALL_RANGE_LARGE
+      - THEME_ALERT_ONLY
+      - NOT_PAIR_LOCKED
+    function: high event count in broad rotation is a watchlist/theme alert until clean pair phase confirms
+
+  - pattern_id: DELAYED_GBP_CONTINUATION_AFTER_WAIT
+    scope: UNIVERSAL
+    applies_to: ALL_GBP_OR_MAJOR_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPUSD]
+    tier: A
+    family: DELAYED_CONTINUATION
+    golden_source: GBPUSD
+    entry_permission: DELAYED_WATCH
+    management_action: WAIT_RECLAIM_OR_SUPPORT_HOLD
+    block_reason: DELAYED_GBP_CONTINUATION_REQUIRES_RECLAIM
+    pair_specific_calibration:
+      - SIGNALTHROTTLE_INTEL_WAIT_VALIDATED
+      - NEGATIVE_OR_FLAT_WINDOW_DELTA
+      - LATER_RECLAIM_MFE_MAE_VALIDATED
+      - NOT_PAIR_LOCKED
+    function: WAIT-stage major/GBP pressure can become continuation only after reclaim or support hold
+
+  - pattern_id: MAJOR_PAIR_POST_EXPANSION_NO_CHASE
+    scope: UNIVERSAL
+    applies_to: ALL_MAJOR_OR_HIGH_LIQUIDITY_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [GBPUSD]
+    tier: S
+    family: RISK_MANAGEMENT
+    golden_source: GBPUSD
+    entry_permission: NO_MARKET_CHASE
+    management_action: HOLD_TRAIL_OR_WAIT_PULLBACK
+    block_reason: MAJOR_PAIR_POST_EXPANSION_NO_CHASE
+    pair_specific_calibration:
+      - PRIOR_D1_EXPANSION
+      - LATE_CONTINUATION_BLOCK
+      - NEXT_DAY_REJECTION_OR_COOLING_RISK
+      - NOT_PAIR_LOCKED
+    function: major pair late continuation after D1 expansion is hold/trail context, not fresh market chase
+
   - pattern_id: TIMING_VALID_NOT_FINAL
     scope: UNIVERSAL
     applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
