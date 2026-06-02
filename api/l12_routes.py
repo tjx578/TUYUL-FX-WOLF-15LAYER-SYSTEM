@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
+import os
 import time
 from typing import Any, Protocol, cast
 
@@ -48,6 +50,16 @@ _WARMUP_MIN_BARS: dict[str, int] = {
     "W1": 5,
     "MN": 2,
 }
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
 
 
 def _build_meta(data: dict[str, Any]) -> dict[str, Any]:
@@ -398,7 +410,10 @@ async def fetch_context() -> dict[str, Any]:
         return _empty_context()
 
     try:
-        feed_snapshot = await _feed_freshness_snapshot()
+        feed_snapshot = await asyncio.wait_for(
+            _feed_freshness_snapshot(),
+            timeout=_env_float("API_CONTEXT_FEED_FRESHNESS_TIMEOUT_SEC", 1.0),
+        )
     except Exception as exc:
         # Context data available but feed freshness failed — still return context
         logger.warning("/api/v1/context feed fallback: {}", exc)
