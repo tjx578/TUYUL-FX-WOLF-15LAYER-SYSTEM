@@ -109,7 +109,7 @@ PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES = CONTINUATION_SIGNAL_STATUSES | {
     "SELL_BREAKDOWN_RETEST_VALID",
 }
 
-MIN_EXECUTABLE_TP1_RR = 2.0
+MIN_EXECUTABLE_TP1_RR = 1.5
 UNIVERSAL_PATTERN_SCHEMA_VERSION = "2.0-universal-pattern"
 
 PAIR_REFERENCE_COMPAT_FIELDS = {
@@ -259,7 +259,6 @@ class SignalJsonEvent:
     effective_ticks: int | None
     effective_density: float | None
     duration_minutes: float | None
-    sl_tight: float | None
     sl_safe: float | None
     tp1: float | None
     tp2: float | None
@@ -760,7 +759,6 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         effective_ticks=_optional_int(counter_entry.get("effective_ticks")),
         effective_density=_optional_float(counter_entry.get("effective_density")),
         duration_minutes=_optional_float(counter_entry.get("duration_minutes")),
-        sl_tight=_optional_float(counter_entry.get("sl_tight")),
         sl_safe=_optional_float(counter_entry.get("sl_safe")),
         tp1=_optional_float(counter_entry.get("tp1")),
         tp2=_optional_float(counter_entry.get("tp2")),
@@ -1375,7 +1373,6 @@ def _tradeplan_preview(payload: dict[str, Any]) -> dict[str, Any] | None:
 
     levels = {
         "entry_zone": _float_list(payload.get("entry_zone")) or None,
-        "sl_tight": _optional_float(payload.get("sl_tight")),
         "sl_safe": _optional_float(payload.get("sl_safe")),
         "tp1": _optional_float(payload.get("tp1")),
         "tp2": _optional_float(payload.get("tp2")),
