@@ -15,14 +15,18 @@ import collections
 import contextlib
 import json as _json
 import logging
+import os
+import time
 from datetime import UTC, datetime
 from typing import Any, cast
 
+import redis
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from execution.ea_manager import EAManager
 from execution.state_machine import ExecutionStateMachine
+from infrastructure.redis_url import get_redis_url
 from journal.audit_trail import AuditAction, AuditTrail
 from storage.redis_client import redis_client
 
@@ -63,6 +67,63 @@ _AGENT_STATUS_TO_LEGACY: dict[str, str] = {
 # enforcement is required, replace with a Redis-backed sliding-window counter.
 _PING_RATE_LIMIT: dict[str, collections.deque[float]] = {}
 _PING_MAX_PER_MINUTE = 10
+
+_EA_REDIS_CLIENT: redis.Redis | None = None
+_EA_REDIS_CLIENT_URL: str | None = None
+_EA_REDIS_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _ea_redis_client() -> redis.Redis:
+    global _EA_REDIS_CLIENT, _EA_REDIS_CLIENT_URL
+
+    url = get_redis_url()
+    if _EA_REDIS_CLIENT is None or url != _EA_REDIS_CLIENT_URL:
+        timeout = _env_float("EA_ROUTER_REDIS_TIMEOUT_SEC", 0.25)
+        _EA_REDIS_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=False,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _EA_REDIS_CLIENT_URL = url
+    return _EA_REDIS_CLIENT
+
+
+def _ea_redis_unavailable() -> bool:
+    return time.monotonic() < _EA_REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_ea_redis_unavailable() -> None:
+    global _EA_REDIS_UNAVAILABLE_UNTIL
+    cooldown = _env_float("EA_ROUTER_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _EA_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _ea_redis_call(command: str, *args: Any, default: Any = None, **kwargs: Any) -> Any:
+    if redis_client.__class__.__name__ != "_LazyRedisClient":
+        with contextlib.suppress(Exception):
+            return getattr(redis_client.client, command)(*args, **kwargs)
+        return default
+
+    if _ea_redis_unavailable():
+        return default
+    try:
+        return getattr(_ea_redis_client(), command)(*args, **kwargs)
+    except Exception:
+        _mark_ea_redis_unavailable()
+        return default
 
 
 def _deprecation_response(response: Response) -> None:
@@ -116,20 +177,19 @@ def _append_log(level: str, message: str, agent_id: str | None = None) -> None:
     }
     if agent_id:
         row["agent_id"] = agent_id
-    with contextlib.suppress(Exception):
-        redis_client.client.lpush(EA_LOGS_KEY, _json.dumps(row))
-        redis_client.client.ltrim(EA_LOGS_KEY, 0, EA_LOG_LIMIT - 1)
+    _ea_redis_call("lpush", EA_LOGS_KEY, _json.dumps(row))
+    _ea_redis_call("ltrim", EA_LOGS_KEY, 0, EA_LOG_LIMIT - 1)
 
 
 def _get_agents() -> list[dict]:
     """Collect per-agent status from Redis EA:AGENT:* hashes."""
     agents: list[dict] = []
     try:
-        keys = cast(list[Any], redis_client.client.keys(f"{EA_AGENT_PREFIX}*"))
+        keys = cast(list[Any], _ea_redis_call("keys", f"{EA_AGENT_PREFIX}*", default=[]))
         for key in keys:
             raw_key = key.decode("utf-8") if isinstance(key, bytes) else str(key)
             agent_id = raw_key.replace(EA_AGENT_PREFIX, "")
-            data = cast(dict[Any, Any], redis_client.client.hgetall(raw_key))
+            data = cast(dict[Any, Any], _ea_redis_call("hgetall", raw_key, default={}))
             decoded: dict[str, str] = {}
             for k, v in data.items():
                 dk = k.decode("utf-8") if isinstance(k, bytes) else str(k)
@@ -228,7 +288,7 @@ async def ea_status(request: Request, response: Response) -> dict:
     # Graceful degradation: fall back to Redis-based implementation
     safe_mode = False
     with contextlib.suppress(Exception):
-        raw = redis_client.client.get(EA_SAFE_MODE_KEY)
+        raw = _ea_redis_call("get", EA_SAFE_MODE_KEY)
         safe_mode = str(raw or "0").strip().lower() in {"1", "true", "on", "enabled"}
 
     state = _state_machine.snapshot()
@@ -246,7 +306,7 @@ async def ea_status(request: Request, response: Response) -> dict:
     # Cooldown: check if restart marker is still active
     cooldown_active = False
     with contextlib.suppress(Exception):
-        restart_ttl = cast(int | None, redis_client.client.ttl(EA_RESTART_MARKER_KEY))
+        restart_ttl = cast(int | None, _ea_redis_call("ttl", EA_RESTART_MARKER_KEY))
         if restart_ttl and restart_ttl > 0:
             cooldown_active = True
 
@@ -374,7 +434,7 @@ async def ea_logs(request: Request, response: Response, limit: int = 100, agent_
     # Graceful degradation: fall back to Redis-based implementation
     limit = max(1, min(limit, EA_LOG_LIMIT))
     try:
-        rows = cast(list[Any], redis_client.client.lrange(EA_LOGS_KEY, 0, limit - 1))
+        rows = cast(list[Any], _ea_redis_call("lrange", EA_LOGS_KEY, 0, limit - 1, default=[]))
         out: list[dict] = []
         for raw in rows:
             if isinstance(raw, bytes):
@@ -423,8 +483,7 @@ async def restart_ea(req: RestartRequest, request: Request, response: Response) 
         pass
 
     # Always also write the Redis restart marker for legacy consumers
-    with contextlib.suppress(Exception):
-        redis_client.client.set(EA_RESTART_MARKER_KEY, now, ex=60 * 10)
+    _ea_redis_call("set", EA_RESTART_MARKER_KEY, now, ex=60 * 10)
 
     _append_log("WARNING", f"EA restart requested: {req.reason}")
     _audit.log(
@@ -467,8 +526,7 @@ async def set_safe_mode(req: SafeModeRequest, request: Request, response: Respon
 
     # Always also write the Redis safe-mode key for legacy consumers
     marker = "1" if req.enabled else "0"
-    with contextlib.suppress(Exception):
-        redis_client.client.set(EA_SAFE_MODE_KEY, marker)
+    _ea_redis_call("set", EA_SAFE_MODE_KEY, marker)
 
     _append_log("INFO", f"EA safe mode {'enabled' if req.enabled else 'disabled'}: {req.reason}")
     _audit.log(
