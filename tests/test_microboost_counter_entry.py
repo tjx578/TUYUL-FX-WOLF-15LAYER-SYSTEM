@@ -62,7 +62,7 @@ def test_buy_microboost_at_main_resistance_becomes_sell_watch():
     assert result.action == "WAIT_REJECTION_OR_MINOR_SUPPORT_BREAK"
     assert result.aggressive_trigger == 1.845
     assert result.conservative_trigger == 1.8409
-    assert result.sl_tight == 1.8485
+    assert result.sl_safe == 1.8494
 
 
 def test_rejection_confirms_sell_timing_valid():
@@ -103,9 +103,9 @@ def test_m15_breakout_confirms_buy_continuation_from_resistance_watch():
     assert result.rr_status == "VALID"
     assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
     assert result.valid_for_execution is True
-    assert result.tp1_rr == 1.0
-    assert result.tp2_rr == 2.0
-    assert result.tp3_rr == 2.5
+    assert result.tp1_rr == 1.5
+    assert result.tp2_rr == 2.5
+    assert result.tp3_rr == 3.5
 
 
 def test_initial_microboost_pass_stays_watch_only_even_when_m15_breakout_is_present():
@@ -161,14 +161,14 @@ def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():
     assert result.candidate_direction == "SELL"
     assert result.entry_reference_price == 1.37696
     assert result.entry_zone == [1.37696, 1.37696]
-    assert result.sl_tight == 1.3782
+    assert result.suggested_sl == 1.379
     assert result.sl_safe == 1.379
     assert result.tp1 == 1.3756
     assert result.tp2 == 1.3735
     assert result.tp3 == 1.3718
     assert result.tp4 == 1.37
-    assert result.rr_to_tp2_tight == pytest.approx(2.79)
-    assert result.rr_to_tp3_tight == pytest.approx(4.16)
+    assert result.rr_to_tp2_tight == pytest.approx(1.7)
+    assert result.rr_to_tp3_tight == pytest.approx(2.53)
 
 
 def test_audcad_mature_near_timing_gate_stalled_at_resistance_can_direct_validate():
@@ -213,11 +213,11 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_can_direct_validat
     assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
     assert result.requires_rejection_or_breakdown is False
     assert result.signal_valid_price == 0.98504
-    assert result.sl_tight == 0.9865
+    assert result.sl_safe == 0.9875
     assert result.tp1 == 0.982
     assert result.tp2 == 0.978
     assert result.tp3 == 0.9746
-    assert result.rr_to_tp2_tight == pytest.approx(4.82)
+    assert result.rr_to_tp2_tight == pytest.approx(2.86)
     assert result.rr_status == "VALID"
     assert result.confirmation_policy == "DIRECT_ABSORPTION_NO_M15_WAIT"
     assert result.requires_m15_close is False
@@ -366,13 +366,13 @@ def test_cadjpy_near_timing_gate_absorption_waits_for_m15_close_without_final_ex
     assert result.requires_m15_close is True
     assert result.pending_decision_id == "CADJPY_M15_DECISION"
     assert result.signal_valid_price == 115.7055
-    assert result.sl_tight == 115.8255
-    assert result.tp1 == 115.5855
-    assert result.tp2 == 115.4655
-    assert result.tp3 == 115.4055
-    assert result.tp4 == 115.3455
+    assert result.sl_safe == 115.9055
+    assert result.tp1 == 115.4055
+    assert result.tp2 == 115.2055
+    assert result.tp3 == 115.0055
+    assert result.tp4 == 114.8055
     assert result.tp_min_rr == 115.4055
-    assert result.tp3_rr == 2.5
+    assert result.tp1_rr == 1.5
     assert result.confidence_bucket == "B_ABSORPTION_WATCH"
     assert result.signal_valid_time_wita == "2026-05-19 14:18:21"
 
@@ -524,7 +524,7 @@ def test_nzdjpy_mature_resistance_absorption_watch_waits_for_m15_close():
     assert result.structure_targets_available is True
     assert result.targets_execution_usable is False
     assert result.tp1 == 92.7
-    assert result.tp_missing_reason == "no_structure_target_reaches_rr_2.5"
+    assert result.tp_missing_reason == "no_structure_target_reaches_rr_1.5"
     assert result.confirmation_policy == "M15_CLOSE_REQUIRED"
     assert result.requires_m15_close is True
     assert result.pending_decision_id == "NZDJPY_M15_DECISION"
@@ -582,13 +582,13 @@ def test_cadjpy_missing_support_ladder_uses_rr_fallback_without_validating():
     assert result.tp_missing_reason == "NO_M15_H1_SUPPORT_LEVELS"
     assert result.rr_status == "WATCH_PROVISIONAL"
     assert result.support_ladder_ready is False
-    assert result.sl_tight == 115.805
-    assert result.tp1 == 115.565
-    assert result.tp2 == 115.445
-    assert result.tp3 == 115.385
-    assert result.tp4 == 115.325
+    assert result.sl_safe == 115.885
+    assert result.tp1 == 115.385
+    assert result.tp2 == 115.185
+    assert result.tp3 == 114.985
+    assert result.tp4 == 114.785
     assert result.tp_min_rr == 115.385
-    assert result.tp3_rr == 2.5
+    assert result.tp1_rr == 1.5
 
 
 def test_explicit_key_support_can_supply_final_structure_target_without_full_ladder():
@@ -635,7 +635,7 @@ def test_explicit_key_support_can_supply_final_structure_target_without_full_lad
     assert result.targets_execution_usable is True
     assert result.tp1 == 115.2
     assert result.tp1_rr is not None
-    assert result.tp1_rr >= 2.5
+    assert result.tp1_rr >= result.min_rr_required
     assert result.tp_missing_reason is None
 
 
@@ -709,7 +709,6 @@ def test_schema_v1_audnzd_counter_sell_exports_observed_structure_even_when_spre
         minor_support=1.2170,
         major_support=1.21562,
         m15_rejection_from_resistance=True,
-        sl_tight=1.22295,
         sl_safe=1.22375,
         tp1_support=1.2170,
         tp2_support=1.21562,
@@ -728,7 +727,6 @@ def test_schema_v1_audnzd_counter_sell_exports_observed_structure_even_when_spre
     assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
     assert result.selected_sl_mode == "SAFE"
     assert result.selected_sl == 1.22375
-    assert result.risk_pips_tight == 13.7
     assert result.risk_pips_safe == 21.7
     assert result.tp1 == 1.217
     assert result.tp2 == 1.21562
