@@ -634,11 +634,16 @@ def _compute_f_score(
       • confidence    (0-3): Fundamental analysis confidence
       • event_clear   (0-2): No high-impact event in buffer zone
     """
-    _, bias_strength = _normalize_bias(l1.get("bias", "NEUTRAL"))
-    confidence = _safe(l1, "confidence", 0.5)
+    bias_value = l1.get("bias", l1.get("dominant_force", "NEUTRAL"))
+    _, bias_strength = _normalize_bias(bias_value)
+    confidence = _safe(l1, "confidence", _safe(l1, "regime_confidence", _safe(l1, "regime_probability", 0.5)))
 
     if "strength" in l1:
         bias_strength = _safe(l1, "strength", bias_strength)
+    elif "context_coherence" in l1:
+        bias_strength = _safe(l1, "context_coherence", bias_strength)
+    elif "csi" in l1:
+        bias_strength = _safe(l1, "csi", bias_strength)
 
     event_clear = 0.0 if near_event else 1.0
 
@@ -669,14 +674,21 @@ def _compute_t_score(l2: dict[str, Any]) -> tuple[float, dict[str, Any]]:
     if momentum == 0.0:
         momentum = _safe(l2, "momentum_score", 0.0)
 
+    indicators = l2.get("indicators", {}) if isinstance(l2.get("indicators"), dict) else {}
+
     rsi_score = _safe(l2, "rsi_score", 0.0)
-    if rsi_score == 0.0 and "rsi" in l2:
-        raw_rsi = _safe_raw(l2, "rsi", 50.0)
+    raw_rsi_value = l2.get("rsi", indicators.get("rsi"))
+    if rsi_score == 0.0 and raw_rsi_value is not None:
+        raw_rsi = _safe_raw({"rsi": raw_rsi_value}, "rsi", 50.0)
         rsi_score = min(1.0, abs(raw_rsi - 50.0) / 30.0)
 
     structure = _safe(l2, "structure_score", 0.0)
     if structure == 0.0:
         structure = _safe(l2, "ema_alignment", 0.0)
+    if structure == 0.0:
+        structure = _safe(indicators, "ema_alignment", 0.0)
+    if structure == 0.0 and str(l2.get("structure", "")).upper() in {"CONTINUATION", "HH_HL", "LL_LH"}:
+        structure = 0.8
 
     volume = _safe(l2, "volume_score", 0.0)
     if volume == 0.0:
@@ -713,13 +725,17 @@ def _compute_fta_score(
     l2: dict[str, Any],
 ) -> tuple[float, dict[str, Any]]:
     """Compute Fundamental-Technical Alignment score (0-5 points)."""
-    l1_dir, l1_str = _normalize_bias(l1.get("bias", "NEUTRAL"))
+    l1_dir, l1_str = _normalize_bias(l1.get("bias", l1.get("dominant_force", "NEUTRAL")))
 
-    l2_bias = l2.get("bias", l2.get("trend_bias", "NEUTRAL"))
+    l2_bias = l2.get("bias", l2.get("trend_bias", l2.get("trend", "NEUTRAL")))
     l2_dir, l2_str = _normalize_bias(l2_bias)
 
     if "trend_strength" in l2:
         l2_str = _safe(l2, "trend_strength", l2_str)
+    if "context_coherence" in l1:
+        l1_str = _safe(l1, "context_coherence", l1_str)
+    elif "csi" in l1:
+        l1_str = _safe(l1, "csi", l1_str)
 
     if l1_dir == l2_dir and l1_dir != "NEUTRAL":
         dir_match = 1.0
@@ -762,6 +778,8 @@ def _compute_exec_score(
         struct = _safe(l3, "structure_score", 0.0)
     if struct == 0.0:
         struct = _safe(l3, "quality", 0.0)
+    if struct == 0.0:
+        struct = _safe(l3, "structure_quality", 0.0)
 
     sq = _clamp01(session_quality)
 
@@ -1302,7 +1320,7 @@ class L4SessionScoring:
             "valid": valid,
             "timestamp": now.isoformat(),
         }
-        return self._apply_constitutional(raw_result, pair)
+        return self._apply_constitutional(raw_result, pair, l3)
 
     # ── Macro Narrative Context ───────────────────────────────────
     def _compute_macro_narrative_context(self, pair: str) -> dict[str, Any]:
@@ -1371,7 +1389,12 @@ class L4SessionScoring:
         }
 
     # ── Constitutional Governance Wrapper ────────────────────────────
-    def _apply_constitutional(self, raw_result: dict[str, Any], symbol: str) -> dict[str, Any]:
+    def _apply_constitutional(
+        self,
+        raw_result: dict[str, Any],
+        symbol: str,
+        l3_input: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Wrap raw L4 output with constitutional governance envelope.
 
         Follows the same pattern as L2 / L3 constitutional wrappers:
@@ -1382,7 +1405,7 @@ class L4SessionScoring:
 
             gov = L4ConstitutionalGovernor()
 
-            l3_output = self._l3_output or {}
+            l3_output = self._l3_output if self._l3_output is not None else (l3_input or {})
 
             envelope = gov.evaluate(
                 l3_output=l3_output,
@@ -1393,13 +1416,10 @@ class L4SessionScoring:
             raw_result["constitutional"] = envelope
             raw_result["continuation_allowed"] = envelope.get("continuation_allowed", True)
 
-            # Map constitutional status → valid flag
+            # Keep backward-compatible payload validity separate from
+            # constitutional routing status.  Consumers can read the envelope
+            # and continuation_allowed for governance decisions.
             status = envelope.get("status", "PASS")
-            if status == "FAIL":
-                raw_result["valid"] = False
-            elif status == "WARN":
-                # WARN degrades but does not block
-                pass
 
             logger.debug(
                 "L4 constitutional: symbol=%s status=%s continuation=%s",
