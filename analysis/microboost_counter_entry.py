@@ -14,6 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from analysis.market_context_validator import MarketContext
+from analysis.signal_thresholds import SIGNAL_MIN_RR, TP1_TARGET_RR
 
 
 class CounterEntryStatus(StrEnum):
@@ -202,8 +203,8 @@ class MicroboostCounterEntryEngine:
         direct_absorption_enabled: bool = True,
         direct_absorption_require_theme_alignment: bool = False,
         direct_absorption_require_rr: bool = True,
-        min_rr_valid: float = 1.5,
-        tp1_rr_required: float = 1.5,
+        min_rr_valid: float = SIGNAL_MIN_RR,
+        tp1_rr_required: float = TP1_TARGET_RR,
         counter_entry_risk_multiplier: float = 0.5,
         counter_entry_expiry_minutes: int = 30,
         allow_rr_fallback: bool = True,
