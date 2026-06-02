@@ -3493,14 +3493,11 @@ class WolfConstitutionalPipeline:
                 missing_label="resistance",
             )
         )
-        continuation_sl_tight: float | None = None
         continuation_sl_safe: float | None = None
         if structure.get("price_position") == "MAIN_RESISTANCE" and resistance_low is not None:
-            continuation_sl_tight = resistance_low - sl_buffer
-            continuation_sl_safe = continuation_sl_tight - sl_buffer
+            continuation_sl_safe = resistance_low - (2.0 * sl_buffer)
         elif structure.get("price_position") == "MAIN_SUPPORT" and support_high is not None:
-            continuation_sl_tight = support_high + sl_buffer
-            continuation_sl_safe = continuation_sl_tight + sl_buffer
+            continuation_sl_safe = support_high + (2.0 * sl_buffer)
         return {
             "key_resistance": main_resistance,
             "key_support": minor_support or main_support,
@@ -3532,7 +3529,6 @@ class WolfConstitutionalPipeline:
             "m15_rejection_from_support": m15_rejection_from_support,
             "m15_close_above_minor_resistance": m15_close_above_minor_resistance,
             "sl_buffer": sl_buffer,
-            "continuation_sl_tight": continuation_sl_tight,
             "continuation_sl_safe": continuation_sl_safe,
             "tp1_support": support_levels[0] if len(support_levels) > 0 else None,
             "tp2_support": support_levels[1] if len(support_levels) > 1 else None,
