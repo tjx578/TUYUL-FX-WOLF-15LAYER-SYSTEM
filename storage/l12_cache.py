@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
+import os
 import time
 from typing import Any
 
+import redis
 from loguru import logger
 
 from core.metrics import VERDICT_PATH_EVENT_TOTAL
 from core.redis_keys import l12_verdict_meta
 from infrastructure.redis_client import get_client
+from infrastructure.redis_url import get_redis_url
 from storage.redis_client import redis_client
 
 KEY_PREFIX = "L12:VERDICT:"
@@ -26,6 +30,68 @@ VERDICT_STREAM_MAXLEN = 1000
 VERDICT_TTL_SEC = 3600
 # Maximum entries retained in the verdict stream (ring-buffer behaviour)
 VERDICT_STREAM_MAXLEN = 1000
+
+_READ_REDIS_CLIENT: redis.Redis | None = None
+_READ_REDIS_CLIENT_URL: str | None = None
+_READ_REDIS_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_redis_client() -> redis.Redis:
+    global _READ_REDIS_CLIENT, _READ_REDIS_CLIENT_URL
+
+    url = get_redis_url()
+    if _READ_REDIS_CLIENT is None or url != _READ_REDIS_CLIENT_URL:
+        timeout = _env_float("L12_CACHE_READ_REDIS_TIMEOUT_SEC", 0.25)
+        _READ_REDIS_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=False,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _READ_REDIS_CLIENT_URL = url
+    return _READ_REDIS_CLIENT
+
+
+def _read_redis_temporarily_unavailable() -> bool:
+    return time.monotonic() < _READ_REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_read_redis_unavailable() -> None:
+    global _READ_REDIS_UNAVAILABLE_UNTIL
+    cooldown = _env_float("L12_CACHE_READ_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _READ_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _decode_redis_text(raw: Any) -> str:
+    return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+
+
+def _read_cache_value(key: str) -> str | bytes | None:
+    # Preserve existing tests and call sites that patch storage.l12_cache.redis_client.
+    if redis_client.__class__.__name__ != "_LazyRedisClient":
+        with contextlib.suppress(Exception):
+            return redis_client.get(key)
+        return None
+
+    if _read_redis_temporarily_unavailable():
+        return None
+    try:
+        return _read_redis_client().get(key)
+    except Exception:
+        _mark_read_redis_unavailable()
+        return None
 
 
 def _append_replay_artifact(
@@ -176,14 +242,20 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
 
 
 def get_verdict(pair: str) -> dict[str, Any] | None:
-    raw = redis_client.get(KEY_PREFIX + pair)
-    return json.loads(raw) if raw else None
+    raw = _read_cache_value(KEY_PREFIX + pair)
+    return json.loads(_decode_redis_text(raw)) if raw else None
 
 
 async def get_verdict_async(pair: str) -> dict[str, Any] | None:
-    client = await get_client()
-    raw = await client.get(KEY_PREFIX + pair)
-    return json.loads(raw) if raw else None
+    try:
+        client = await get_client()
+        raw = await asyncio.wait_for(
+            client.get(KEY_PREFIX + pair),
+            timeout=_env_float("L12_CACHE_ASYNC_READ_TIMEOUT_SEC", 1.0),
+        )
+    except Exception:
+        return None
+    return json.loads(_decode_redis_text(raw)) if raw else None
 
 
 def is_verdict_stale(verdict: dict[str, Any] | None, max_age_sec: float = 300.0) -> bool:
@@ -201,14 +273,20 @@ def is_verdict_stale(verdict: dict[str, Any] | None, max_age_sec: float = 300.0)
 
 
 def get_all_verdicts() -> list[dict[str, Any]]:
-    all_verdicts = redis_client.get(KEY_PREFIX + "ALL")
-    return json.loads(all_verdicts) if all_verdicts else []
+    all_verdicts = _read_cache_value(KEY_PREFIX + "ALL")
+    return json.loads(_decode_redis_text(all_verdicts)) if all_verdicts else []
 
 
 async def get_all_verdicts_async() -> list[dict[str, Any]]:
-    client = await get_client()
-    all_verdicts = await client.get(KEY_PREFIX + "ALL")
-    return json.loads(all_verdicts) if all_verdicts else []
+    try:
+        client = await get_client()
+        all_verdicts = await asyncio.wait_for(
+            client.get(KEY_PREFIX + "ALL"),
+            timeout=_env_float("L12_CACHE_ASYNC_READ_TIMEOUT_SEC", 1.0),
+        )
+    except Exception:
+        return []
+    return json.loads(_decode_redis_text(all_verdicts)) if all_verdicts else []
 
 
 def filter_verdicts(
