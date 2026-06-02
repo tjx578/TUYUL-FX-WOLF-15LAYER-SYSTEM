@@ -41,6 +41,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import fastapi
+import redis
 from loguru import logger
 from redis.asyncio.client import PubSub as _AsyncPubSub
 
@@ -48,6 +49,7 @@ from accounts.account_manager import AccountManager
 from allocation.signal_service import SIGNAL_READY_CHANNEL, SignalService
 from config_loader import load_pairs
 from infrastructure.redis_client import get_client as _get_async_redis_client
+from infrastructure.redis_url import get_redis_url
 from state.pubsub_channels import RISK_EVENTS
 from storage.l12_cache import VERDICT_READY_CHANNEL, get_verdict_async
 from storage.price_feed import PriceFeed
@@ -275,6 +277,74 @@ WS_PING_INTERVAL = float(os.getenv("WS_PING_INTERVAL", "15"))
 WS_HEARTBEAT_TIMEOUT = float(os.getenv("WS_HEARTBEAT_TIMEOUT", "30"))
 WS_PONG_TIMEOUT = float(os.getenv("WS_PONG_TIMEOUT", "10"))  # send timeout
 
+_WS_SESSION_REDIS_CLIENT: redis.Redis | None = None
+_WS_SESSION_REDIS_CLIENT_URL: str | None = None
+_WS_SESSION_REDIS_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _ws_session_redis_client() -> redis.Redis:
+    global _WS_SESSION_REDIS_CLIENT, _WS_SESSION_REDIS_CLIENT_URL
+
+    url = get_redis_url()
+    if _WS_SESSION_REDIS_CLIENT is None or url != _WS_SESSION_REDIS_CLIENT_URL:
+        timeout = _env_float("WS_SESSION_REDIS_TIMEOUT_SEC", 0.25)
+        _WS_SESSION_REDIS_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=False,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _WS_SESSION_REDIS_CLIENT_URL = url
+    return _WS_SESSION_REDIS_CLIENT
+
+
+def _ws_session_redis_unavailable() -> bool:
+    return time.monotonic() < _WS_SESSION_REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_ws_session_redis_unavailable() -> None:
+    global _WS_SESSION_REDIS_UNAVAILABLE_UNTIL
+    cooldown = _env_float("WS_SESSION_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _WS_SESSION_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _ws_session_set(key: str, value: int, *, ex: int) -> None:
+    if redis_client.__class__.__name__ != "_LazyRedisClient":
+        with contextlib.suppress(Exception):
+            redis_client.client.set(key, value, ex=ex)
+        return
+    if _ws_session_redis_unavailable():
+        return
+    try:
+        _ws_session_redis_client().set(key, value, ex=ex)
+    except Exception:
+        _mark_ws_session_redis_unavailable()
+
+
+def _ws_session_delete(key: str) -> None:
+    if redis_client.__class__.__name__ != "_LazyRedisClient":
+        with contextlib.suppress(Exception):
+            redis_client.client.delete(key)
+        return
+    if _ws_session_redis_unavailable():
+        return
+    try:
+        _ws_session_redis_client().delete(key)
+    except Exception:
+        _mark_ws_session_redis_unavailable()
+
 # Message replay buffer size per manager
 MESSAGE_BUFFER_SIZE = 100  # last N messages kept for replay on reconnect
 
@@ -436,22 +506,19 @@ class ConnectionManager:
         user_id = str((user or {}).get("sub") or getattr(websocket.state, "user", "anonymous"))
         key = f"ws:sessions:user_{user_id}:{id(websocket)}"
         self._session_keys[websocket] = key
-        with contextlib.suppress(Exception):
-            redis_client.client.set(key, int(time.time()), ex=max(int(WS_HEARTBEAT_TIMEOUT * 2), 30))
+        _ws_session_set(key, int(time.time()), ex=max(int(WS_HEARTBEAT_TIMEOUT * 2), 30))
 
     def _touch_session(self, websocket: fastapi.WebSocket) -> None:
         key = self._session_keys.get(websocket)
         if not key:
             return
-        with contextlib.suppress(Exception):
-            redis_client.client.set(key, int(time.time()), ex=max(int(WS_HEARTBEAT_TIMEOUT * 2), 30))
+        _ws_session_set(key, int(time.time()), ex=max(int(WS_HEARTBEAT_TIMEOUT * 2), 30))
 
     def _unregister_session(self, websocket: fastapi.WebSocket) -> None:
         key = self._session_keys.pop(websocket, None)
         if not key:
             return
-        with contextlib.suppress(Exception):
-            redis_client.client.delete(key)
+        _ws_session_delete(key)
 
     def buffer_message(self, message: dict[str, Any]) -> None:
         """Store message in replay buffer."""
