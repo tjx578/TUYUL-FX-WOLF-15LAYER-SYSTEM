@@ -422,12 +422,12 @@ patterns:
   - pattern_id: LOW_DENSITY_OPEN_LANE_TIMING_BLOCK
     scope: UNIVERSAL
     applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
-    golden_references: [GBPCAD, AUDNZD]
+    golden_references: [GBPCAD]
     tier: S
     family: CONTINUATION_TIMING
-    golden_source: GBPCAD/AUDNZD
+    golden_source: GBPCAD
     entry_permission: ENTRY_WATCH_OR_BUY_WATCH
-    function: low density sustained pressure block (5-10min) signals open lane continuation before expansion
+    function: low density sustained pressure block signals open lane continuation before expansion when own price phase confirms
 
   - pattern_id: ALLOWED_CANARY_QUORUM
     scope: UNIVERSAL
@@ -705,6 +705,138 @@ patterns:
       - NEXT_DAY_REJECTION_OR_COOLING_RISK
       - NOT_PAIR_LOCKED
     function: major pair late continuation after D1 expansion is hold/trail context, not fresh market chase
+
+  - pattern_id: LOW_DENSITY_BLOCK_FALSE_CONTINUATION
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [AUDNZD]
+    tier: A
+    family: PRESSURE_BLOCK_VALIDATION
+    golden_source: AUDNZD
+    entry_permission: WATCH_ONLY_UNTIL_OWN_PHASE_CONFIRMS
+    management_action: WAIT_RECLAIM_OR_FADE_CONFIRMATION
+    block_reason: LOW_DENSITY_BLOCK_FALSE_CONTINUATION_RISK
+    pair_specific_calibration:
+      - LOW_DENSITY_PRESSURE_BLOCK
+      - WEAK_BUY_FOLLOWTHROUGH
+      - POST_WINDOW_FADE_VALIDATED
+      - NOT_PAIR_LOCKED
+    function: low-density cross pressure block can be a false-continuation reference and must not become auto-entry without own phase confirmation
+
+  - pattern_id: AUDNZD_RELATIVE_STRENGTH_DECISION_PAIR
+    scope: UNIVERSAL
+    applies_to: ALL_AUD_NZD_OR_SUPPORTING_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [AUDNZD]
+    tier: A
+    family: CROSS_RELATIVE_STRENGTH
+    golden_source: AUDNZD
+    entry_permission: WAIT_AUD_NZD_DECISION_CONFIRMATION
+    management_action: CHECK_OWN_PRICE_PHASE_AND_STRUCTURE
+    block_reason: RELATIVE_STRENGTH_DECISION_NOT_AUTO_ENTRY
+    pair_specific_calibration:
+      - AUD_NZD_RELATIVE_STRENGTH_DECISION
+      - SUPPORTING_CROSS_CONTEXT
+      - NOT_PAIR_LOCKED
+    function: AUDNZD pressure is a relative-strength decision reference; do not copy AUD or NZD theme direction into execution without own trigger
+
+  - pattern_id: SUPPORTING_CROSS_NOT_PRIMARY_LEADER
+    scope: UNIVERSAL
+    applies_to: ALL_SUPPORTING_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [AUDNZD, EURNZD]
+    tier: S
+    family: PAIR_SELECTION_SAFETY
+    golden_source: AUDNZD/EURNZD
+    entry_permission: WATCHLIST_OR_SCORE_CONTEXT_ONLY
+    management_action: REQUIRE_OWN_TRIGGER_AND_PRICE_PHASE
+    block_reason: SUPPORTING_CROSS_NOT_PRIMARY_LEADER
+    pair_specific_calibration:
+      - LEADER_PAIR_SEPARATION_REQUIRED
+      - SUPPORTING_EVENT_COUNT_NOT_AUTO_ENTRY
+      - NOT_PAIR_LOCKED
+    function: supporting cross activity validates theme context but must not inherit the leader pair signal without its own clean phase and trigger
+
+  - pattern_id: BULLISH_REPAIR_UPPER_DECISION_NO_CHASE
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [AUDNZD]
+    tier: A
+    family: MTF_REPAIR_MANAGEMENT
+    golden_source: AUDNZD
+    entry_permission: PULLBACK_RETEST_RECLAIM_ONLY
+    management_action: WAIT_PULLBACK_HOLD_OR_RECLAIM
+    block_reason: BULLISH_REPAIR_UPPER_DECISION_NO_CHASE
+    pair_specific_calibration:
+      - BULLISH_REPAIR_AT_UPPER_DECISION_ZONE
+      - BUY_CHASE_BLOCKED
+      - STRUCTURE_TARGET_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: bullish repair near upper decision zone is no-chase until pullback, retest, reclaim, and structure target validate
+
+  - pattern_id: SUPPORTING_EUR_CROSS_NOT_LEADER
+    scope: UNIVERSAL
+    applies_to: ALL_EUR_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [EURNZD]
+    tier: A
+    family: CROSS_THEME_FILTER
+    golden_source: EURNZD
+    entry_permission: WAIT_OWN_PRICE_PHASE_CONFIRMATION
+    management_action: VALIDATE_NZD_WEAKNESS_AND_LOCAL_STRUCTURE
+    block_reason: SUPPORTING_EUR_CROSS_NOT_LEADER
+    pair_specific_calibration:
+      - SUPPORTING_EUR_CROSS_RADAR
+      - EURAUD_LEADER_DIVERGENCE
+      - NOT_PAIR_LOCKED
+    function: supporting EUR-cross pressure is reference context only until the pair validates its own price phase and NZD weakness
+
+  - pattern_id: EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE
+    scope: UNIVERSAL
+    applies_to: ALL_EUR_OR_NZD_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [EURNZD]
+    tier: A
+    family: FALSE_CONTINUATION_FADE
+    golden_source: EURNZD
+    entry_permission: FADE_WATCH_ONLY_UNTIL_REJECTION_CONFIRMS
+    management_action: WAIT_REJECTION_OR_BREAKDOWN
+    block_reason: EUR_CROSS_UPPER_FADE_RISK
+    pair_specific_calibration:
+      - UPPER_REJECTION_AFTER_EUR_CROSS_PRESSURE
+      - BUY_FOLLOWTHROUGH_FAILED
+      - POST_WINDOW_SELL_MFE_VALIDATED
+      - NOT_PAIR_LOCKED
+    function: EURNZD supporting EUR-cross pressure can mark upper-fade risk when buy continuation fails after recovery into resistance
+
+  - pattern_id: CROSS_THEME_LEADER_DIVERGENCE
+    scope: UNIVERSAL
+    applies_to: ALL_THEME_BASKETS_IF_CONDITIONS_MATCH
+    golden_references: [EURNZD]
+    tier: S
+    family: PAIR_SELECTION_SAFETY
+    golden_source: EURNZD
+    entry_permission: LEADER_ONLY_UNLESS_SUPPORTING_PAIR_CONFIRMS
+    management_action: SEPARATE_LEADER_FROM_SUPPORTING_CROSS
+    block_reason: CROSS_THEME_LEADER_DIVERGENCE
+    pair_specific_calibration:
+      - LEADER_CROSS_NOT_TRANSFERABLE
+      - SUPPORTING_PAIR_REQUIRES_OWN_PHASE
+      - NOT_PAIR_LOCKED
+    function: theme leader strength must not be copied to every same-base cross when supporting pairs diverge or sit near exhaustion
+
+  - pattern_id: MACRO_BEARISH_INTRADAY_REPAIR_DECISION
+    scope: UNIVERSAL
+    applies_to: ALL_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [EURNZD]
+    tier: A
+    family: MULTITIMEFRAME_DECISION
+    golden_source: EURNZD
+    entry_permission: NO_BUY_CHASE_WAIT_REPAIR_CONFIRMATION
+    management_action: WAIT_REJECTION_OR_RECLAIM
+    block_reason: MACRO_BEARISH_INTRADAY_REPAIR_DECISION
+    pair_specific_calibration:
+      - D1_H4_BEARISH_CONTEXT
+      - H1_M15_INTRADAY_REPAIR
+      - UPPER_RESISTANCE_DECISION_ZONE
+      - NOT_PAIR_LOCKED
+    function: macro bearish pair with intraday repair is a decision state; no buy chase until reclaim, and fade needs rejection or breakdown confirmation
 
   - pattern_id: TIMING_VALID_NOT_FINAL
     scope: UNIVERSAL
