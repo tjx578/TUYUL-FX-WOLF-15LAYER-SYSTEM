@@ -19,7 +19,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Any
+
+import redis
+
+from infrastructure.redis_url import get_redis_url
 
 logger = logging.getLogger("tuyul.trade_archive")
 
@@ -27,6 +32,48 @@ logger = logging.getLogger("tuyul.trade_archive")
 # Default Redis key prefix (matches TradeLedger convention)
 # ---------------------------------------------------------------------------
 _REDIS_PREFIX: str = os.getenv("REDIS_PREFIX", "wolf15")
+_READ_REDIS_CLIENT: redis.Redis | None = None
+_READ_REDIS_CLIENT_URL: str | None = None
+_READ_REDIS_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_redis_temporarily_unavailable() -> bool:
+    return time.monotonic() < _READ_REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_read_redis_unavailable() -> None:
+    global _READ_REDIS_UNAVAILABLE_UNTIL
+    cooldown = _env_float("TRADE_ARCHIVE_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _READ_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _read_redis_client() -> redis.Redis:
+    """Return a read-only Redis client tuned to fail fast on archive lookup."""
+    global _READ_REDIS_CLIENT, _READ_REDIS_CLIENT_URL
+
+    url = get_redis_url()
+    if _READ_REDIS_CLIENT is None or url != _READ_REDIS_CLIENT_URL:
+        timeout = _env_float("TRADE_ARCHIVE_REDIS_TIMEOUT_SEC", 0.25)
+        _READ_REDIS_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=False,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _READ_REDIS_CLIENT_URL = url
+    return _READ_REDIS_CLIENT
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -109,11 +156,11 @@ def get_win_loss_counts(
 
 def _from_redis(symbol: str | None, lookback: int) -> list[float]:
     """Scan Redis for CLOSED trades and extract P&L values."""
-    try:
-        from storage.redis_client import RedisClient  # noqa: PLC0415
+    if _read_redis_temporarily_unavailable():
+        return []
 
-        redis = RedisClient()
-        client = redis.client
+    try:
+        client = _read_redis_client()
 
         closed_trades: list[dict[str, Any]] = []
         cursor = 0
@@ -125,7 +172,7 @@ def _from_redis(symbol: str | None, lookback: int) -> list[float]:
                 count=100,
             )
             for key in keys:
-                raw = redis.get(key)
+                raw = client.get(key)
                 if not raw:
                     continue
                 try:
@@ -157,6 +204,7 @@ def _from_redis(symbol: str | None, lookback: int) -> list[float]:
         return [float(t["pnl"]) for t in closed_trades[:lookback]]
 
     except Exception as exc:
+        _mark_read_redis_unavailable()
         logger.warning("[TradeArchive] Redis read failed: %s", exc)
         return []
 
