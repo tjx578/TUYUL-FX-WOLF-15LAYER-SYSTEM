@@ -93,6 +93,8 @@ counter, reversal, or lifecycle-conflict paths; direct absorption can bypass it
 when structure target, RR, phase, lifecycle, and spread gates are complete.
 
 `pattern_registry.yaml` and `pair_role_map.yaml` are the operational database.
-`registry.py` loads them at runtime and falls back to the static Python copy
-only if YAML loading is unavailable, so matcher behavior and reviewed database
-content stay aligned.
+`reference_cases.yaml` stores historical pair windows as evidence sources, and
+`historical_validation_log.yaml` records what each upload proved or corrected.
+`registry.py` loads the operational YAML at runtime and falls back to the static
+Python copy only if YAML loading is unavailable, so matcher behavior and
+reviewed database content stay aligned.
