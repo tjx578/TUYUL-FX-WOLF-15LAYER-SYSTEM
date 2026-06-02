@@ -16,6 +16,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.middleware.auth import verify_token
+from api.middleware.governance import enforce_write_policy
 from risk.risk_router import router as risk_router
 
 # ========== Fixtures ==========
@@ -37,6 +39,8 @@ def app():
     """Create test FastAPI app with risk router."""
     test_app = FastAPI()
     test_app.include_router(risk_router)
+    test_app.dependency_overrides[verify_token] = lambda: {"sub": "risk-router-test", "role": "admin"}
+    test_app.dependency_overrides[enforce_write_policy] = lambda: None
     return test_app
 
 
