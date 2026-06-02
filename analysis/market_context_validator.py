@@ -108,9 +108,7 @@ class MarketContext:
     m15_rejection_from_support: bool | None = None
     m15_close_above_minor_resistance: bool | None = None
     sl_buffer: float | None = None
-    sl_tight: float | None = None
     sl_safe: float | None = None
-    continuation_sl_tight: float | None = None
     continuation_sl_safe: float | None = None
     tp1_support: float | None = None
     tp2_support: float | None = None
