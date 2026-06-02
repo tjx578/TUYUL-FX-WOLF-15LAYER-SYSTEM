@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 import warnings
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
@@ -420,7 +422,7 @@ _THRESH_INTEGRITY: float = 0.70  # gate_2  — L8_integrity_index
 _THRESH_RR: float = 2.0  # gate_3  — execution.rr_ratio
 _THRESH_FTA: float = 0.55  # gate_4  — scores.fta_score (no THRESHOLD_TABLE entry)
 _THRESH_MONTE: float = 0.50  # gate_5  — layers.L7_monte_carlo_win
-_THRESH_LATENCY_MS: int = 500  # gate_8  — system.latency_ms (no THRESHOLD_TABLE entry)
+_THRESH_LATENCY_MS: int = 250  # gate_8  — system.latency_ms (no THRESHOLD_TABLE entry)
 _THRESH_CONF12: float = 0.62  # gate_9  — layers.conf12
 # Gate 10: Reflex Quality — LOCK is critical fail, CAUTION passes with lot_scale
 
@@ -478,10 +480,21 @@ def _downgrade_confidence(conf: str) -> str:
 
 def _get_active_constitution_profile() -> str:
     """Return the active constitution profile name (telemetry only)."""
-    try:
-        from config.profile_engine import ConfigProfileEngine  # noqa: PLC0415
+    env_profile = (
+        os.getenv("WOLF15_CONSTITUTION_PROFILE")
+        or os.getenv("CONSTITUTION_PROFILE")
+        or os.getenv("CONFIG_PROFILE")
+        or ""
+    ).strip()
+    if env_profile:
+        return env_profile
 
-        return ConfigProfileEngine().get_active_profile()
+    profile_module = sys.modules.get("config.profile_engine")
+    if profile_module is None:
+        return "default"
+
+    try:
+        return profile_module.ConfigProfileEngine().get_active_profile()
     except Exception:  # noqa: BLE001
         return "default"
 
@@ -525,13 +538,13 @@ def generate_l12_verdict(
     symbol: str = synthesis.get("pair", synthesis.get("symbol", "UNKNOWN"))
     regime: str = _resolve_regime(synthesis)
 
-    from state.ingest_state_consumer import (  # noqa: PLC0415
-        get_ingest_state_consumer,
-        ingest_gate_enabled_by_default,
-    )
+    ingest_gate_enabled = (os.getenv("WOLF15_ENABLE_INGEST_GATE") or "").strip().lower() in {"1", "true", "yes", "on"}
+    if ingest_state_consumer is not None or ingest_gate_enabled:
+        if ingest_state_consumer is None:
+            from state.ingest_state_consumer import get_ingest_state_consumer  # noqa: PLC0415
 
-    if ingest_state_consumer is not None or ingest_gate_enabled_by_default():
-        consumer = ingest_state_consumer or get_ingest_state_consumer()
+            ingest_state_consumer = get_ingest_state_consumer()
+        consumer = ingest_state_consumer
         ingest_decision = consumer.is_blocking()
         if ingest_decision.blocking:
             return {
