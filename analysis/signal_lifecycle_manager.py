@@ -46,7 +46,7 @@ class ActiveSignal:
     signal_valid_time_utc: str | None
     signal_valid_price: float | None
     entry_zone: list[float] | None
-    sl_tight: float | None
+    sl_safe: float | None
     tp1: float | None
     tp2: float | None
     tp3: float | None
@@ -62,7 +62,7 @@ class ActiveSignal:
             "signal_valid_time_utc": self.signal_valid_time_utc,
             "signal_valid_price": self.signal_valid_price,
             "entry_zone": self.entry_zone,
-            "sl_tight": self.sl_tight,
+            "sl_safe": self.sl_safe,
             "tp1": self.tp1,
             "tp2": self.tp2,
             "tp3": self.tp3,
@@ -182,7 +182,7 @@ class SignalLifecycleManager:
         )
         payload.setdefault("rr_status", "VALID")
         payload.setdefault("target_mode", "FINAL_MARKET_STRUCTURE")
-        payload.setdefault("sl_tight", active.sl_tight)
+        payload.setdefault("sl_safe", active.sl_safe)
         payload.setdefault("tp1", active.tp1)
         payload.setdefault("tp2", active.tp2)
         payload.setdefault("tp3", active.tp3)
@@ -288,7 +288,7 @@ def _active_from_payload(payload: dict[str, Any], lifecycle_status: str | None =
         signal_valid_time_utc=_optional_str(payload.get("signal_valid_time_utc")),
         signal_valid_price=_optional_float(payload.get("signal_valid_price")),
         entry_zone=_entry_zone(payload.get("entry_zone")),
-        sl_tight=_optional_float(payload.get("sl_tight")),
+        sl_safe=_optional_float(payload.get("sl_safe")),
         tp1=_optional_float(payload.get("tp1")),
         tp2=_optional_float(payload.get("tp2")),
         tp3=_optional_float(payload.get("tp3")),
