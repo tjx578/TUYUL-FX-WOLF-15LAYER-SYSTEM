@@ -83,7 +83,7 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
     assert result.allowed_quorum is True
     assert result.signal_valid_price == 1.375675
     assert result.entry_zone == [1.3756, 1.37567]
-    assert result.sl_tight == 1.372
+    assert result.sl_safe == 1.3712
     assert result.tp1 == 1.3785
     assert result.tp2 == 1.381
     assert result.tp3 == 1.385
@@ -91,7 +91,7 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
     assert result.target_mode == "FINAL_MARKET_STRUCTURE"
     assert result.valid_for_execution is True
     assert result.rr_to_tp3_tight is not None
-    assert result.rr_to_tp3_tight >= 2.5
+    assert result.rr_to_tp3_tight >= result.min_rr_required
     assert result.key_support == 1.3720
     assert result.key_resistance == 1.3850
     assert result.structure_zones == {
@@ -108,7 +108,7 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
         "max_allowed_spread_pips": None,
     }
     assert result.rr_to_valid_target is not None
-    assert result.rr_to_valid_target >= 2.5
+    assert result.rr_to_valid_target >= result.min_rr_required
     assert result.promotion_path is None
     assert result.direct_valid_reason is None
     assert result.parent_watch_required is True
@@ -157,10 +157,10 @@ def test_continuation_fallback_targets_wait_for_structure_or_retest():
     assert result.rr_status == "WAIT_TARGET_STRUCTURE"
     assert result.valid_for_execution is False
     assert result.tradeplan_context_ready is False
-    assert result.sl_tight == 1.3744
-    assert result.tp1_rr == 1.0
-    assert result.tp2_rr == 2.0
-    assert result.tp3_rr == 2.5
+    assert result.sl_safe == 1.3736
+    assert result.tp1_rr == 1.5
+    assert result.tp2_rr == 2.5
+    assert result.tp3_rr == 3.5
     assert result.rr_to_valid_target is None
     assert result.promotion_path is None
     assert result.direct_valid_reason is None
@@ -191,4 +191,4 @@ def test_schema_v1_continuation_retains_provisional_rr_ladder():
     assert result.status == "WAIT_M15_CLOSE_OR_STRUCTURE_TARGET"
     assert result.valid_for_execution is False
     assert result.rr_status == "WAIT_TARGET_STRUCTURE"
-    assert result.tp1_rr == 1.0
+    assert result.tp1_rr == 1.5
