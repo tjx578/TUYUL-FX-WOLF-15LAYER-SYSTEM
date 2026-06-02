@@ -583,6 +583,18 @@ def _add_new_universal_pattern_candidates(
     near_extreme = near_resistance or near_support
     price_extended = block_delta_pips >= 8.0 or range_position >= 0.85
     price_followthrough = _optional_bool(data.get("price_followthrough")) is True
+    net_delta_pips = abs(
+        _num(
+            data.get("net_delta_pips")
+            or data.get("price_delta_during_window_pips")
+            or data.get("window_delta_pips")
+            or data.get("net_price_delta_pips")
+            or data.get("net_price_delta")
+        )
+    )
+    intrawindow_range_pips = abs(
+        _num(data.get("intrawindow_range_pips") or data.get("window_range_pips") or data.get("during_range_pips"))
+    )
     block_delta_raw = data.get("block_delta_pips")
     timing_valid = (
         pressure_temp in {"TIMING_VALID", "TIMING_GATE_VALID", "LOW_DENSITY_OPEN_LANE"}
@@ -858,6 +870,71 @@ def _add_new_universal_pattern_candidates(
     if prior_expansion and upper_range_pullback and intraday_repair_incomplete:
         _bump(candidates, "POST_EXPANSION_NO_CHASE_FILTER", 98)
         evidence.append("post_expansion_upper_range_pullback_no_chase")
+
+    major_or_high_liquidity = (
+        _is_major_pair(symbol)
+        or _phase(data.get("pair_type")) in {"MAJOR", "MAJOR_PAIR", "HIGH_LIQUIDITY_PAIR"}
+        or _optional_bool(data.get("major_pair")) is True
+    )
+    higher_tf_continuation = (
+        bullish_major_tf
+        or _is_bearish_or_mixed_bearish(h4_phase)
+        or _is_bearish_or_mixed_bearish(d1_phase)
+        or _phase(data.get("higher_tf_phase")) in {"BULLISH_CONTINUATION", "BEARISH_CONTINUATION", "CONTINUATION"}
+    )
+    low_density_major_block = (
+        major_or_high_liquidity
+        and duration >= 300.0
+        and 0.1 <= density <= 2.0
+        and (block_delta_raw is not None or net_delta_pips > 0.0)
+        and abs(block_delta_pips if block_delta_raw is not None else net_delta_pips) <= 3.5
+        and higher_tf_continuation
+        and post_window_mfe_positive
+        and mae_controlled
+    )
+    if low_density_major_block:
+        _bump(candidates, "LOW_DENSITY_MAJOR_PAIR_CONTINUATION", 88)
+        evidence.append("low_density_major_pair_continuation_validated_by_mfe_mae")
+
+    broad_rotation_phase = (
+        latest_phase in {"BROAD_ROTATION", "BROAD_ROTATION_OR_THEME_PRESSURE", "THEME_PRESSURE"}
+        or _phase(data.get("market_phase")) in {"BROAD_ROTATION", "BROAD_ROTATION_OR_THEME_PRESSURE", "THEME_PRESSURE"}
+        or _optional_bool(data.get("broad_rotation")) is True
+    )
+    high_event_count = events >= 200.0 or _num(data.get("total_event_count") or data.get("source_event_count")) >= 500.0
+    many_pairs_active = multiple_pairs_active or _num(data.get("active_pair_count")) >= 4.0
+    net_flat_range_large = (
+        (net_delta_pips <= 5.0 and intrawindow_range_pips >= 30.0)
+        or _optional_bool(data.get("net_delta_small_range_large")) is True
+    )
+    if high_event_count and many_pairs_active and broad_rotation_phase and net_flat_range_large:
+        _bump(candidates, "BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY", 99)
+        evidence.append("broad_rotation_high_event_count_not_single_pair_entry")
+
+    final_direction_text = _text(data.get("final_direction")).upper()
+    delayed_gbp_context = (
+        symbol.startswith("GBP")
+        or symbol.endswith("GBP")
+        or _phase(data.get("theme_family") or data.get("theme_name")) in {"GBP", "GBP_THEME", "GBP_STRENGTH"}
+    )
+    if delayed_gbp_context and final_direction_text == "WAIT" and immediate_followthrough_weak and later_reclaim_or_recovery:
+        _bump(candidates, "DELAYED_GBP_CONTINUATION_AFTER_WAIT", 93)
+        evidence.append("delayed_gbp_continuation_after_wait_requires_reclaim")
+
+    prior_d1_expansion = (
+        _optional_bool(data.get("prior_d1_expansion")) is True
+        or _num(data.get("prior_d1_range_atr_ratio") or data.get("d1_range_atr_ratio")) >= 1.5
+    )
+    late_signal_block = _optional_bool(data.get("late_signal_block")) is True or _optional_bool(data.get("late_block")) is True
+    expanded_major_location = _optional_bool(data.get("price_already_expanded")) is True or price_extended or near_resistance
+    cooling_risk = (
+        _optional_bool(data.get("next_day_rejection_or_cooling_risk")) is True
+        or _optional_bool(data.get("next_day_rejection")) is True
+        or _optional_bool(data.get("cooling_risk")) is True
+    )
+    if major_or_high_liquidity and prior_d1_expansion and (late_signal_block or expanded_major_location) and cooling_risk:
+        _bump(candidates, "MAJOR_PAIR_POST_EXPANSION_NO_CHASE", 100)
+        evidence.append("major_pair_post_expansion_no_chase_hold_or_trail")
 
     # 8. TIMING_VALID_NOT_FINAL
     # Valid timing block (5+ min) but price phase not classified = watch only, not final signal.
@@ -1139,6 +1216,14 @@ def _pattern_bottlenecks(
         bottlenecks.append("REVALIDATE_NEXT_SESSION_BEFORE_NEW_ENTRY")
     if selected and selected.pattern_id == "POST_EXPANSION_NO_CHASE_FILTER":
         bottlenecks.append("POST_EXPANSION_NO_CHASE")
+    if selected and selected.pattern_id == "LOW_DENSITY_MAJOR_PAIR_CONTINUATION":
+        bottlenecks.append("MAJOR_PAIR_CONTINUATION_NEEDS_STRUCTURE_AND_RR")
+    if selected and selected.pattern_id == "BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY":
+        bottlenecks.append("BROAD_ROTATION_NOT_SINGLE_PAIR_ENTRY")
+    if selected and selected.pattern_id == "DELAYED_GBP_CONTINUATION_AFTER_WAIT":
+        bottlenecks.append("DELAYED_GBP_CONTINUATION_REQUIRES_RECLAIM")
+    if selected and selected.pattern_id == "MAJOR_PAIR_POST_EXPANSION_NO_CHASE":
+        bottlenecks.append("MAJOR_PAIR_POST_EXPANSION_NO_CHASE")
     if _optional_bool(data.get("support_ladder_ready")) is False:
         bottlenecks.append("SUPPORT_LADDER_MISSING")
     if _optional_bool(data.get("resistance_ladder_ready")) is False:
@@ -1376,6 +1461,10 @@ def _is_bearish_or_mixed_bearish(value: str) -> bool:
 
 def _is_jpy_cross(symbol: str) -> bool:
     return symbol.endswith("JPY") or symbol.startswith("JPY")
+
+
+def _is_major_pair(symbol: str) -> bool:
+    return symbol in {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD"}
 
 
 def _tradeplan_incomplete(data: Mapping[str, Any]) -> bool:
