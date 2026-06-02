@@ -74,3 +74,89 @@ reference_cases:
       d1_20260602_close_position: 0.37
       intraday_repair_complete: false
     conclusion: block fresh buy chase after upper expansion until reclaim and retest
+
+  - reference_case_id: GBPUSD_20260430_1809_1841_WITA
+    symbol: GBPUSD
+    pattern_id: LOW_DENSITY_MAJOR_PAIR_CONTINUATION
+    reference_tier: A
+    window_wita: "2026-04-30 18:09-18:41"
+    window_chart: "2026-04-30 13:09-13:41"
+    role: low_density_major_pair_continuation
+    validated_by:
+      - signal_throttle_clean_run
+      - historical_ohlc
+      - mfe_mae_outcome
+    evidence:
+      event_count: 11
+      duration_minutes: 32.07
+      density_per_minute: 0.34
+      max_gap_seconds: 1644.2
+      price_delta_during_block_pips: -2.5
+      mfe_buy_1h_pips: 47.8
+      mae_buy_1h_pips: -3.6
+      mfe_buy_4h_pips: 80.5
+      mae_buy_4h_pips: -3.6
+      mfe_buy_8h_pips: 98.8
+      mae_buy_8h_pips: -3.6
+    conclusion: validated low-density continuation reference, but not Tier S because event count is low and internal gap is large
+
+  - reference_case_id: GBPUSD_20260507_20260508_1298_EVENTS
+    symbol: GBPUSD
+    pattern_id: BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY
+    reference_tier: A
+    window_wita: "2026-05-07 to 2026-05-08"
+    window_chart: "2026-05-07 10:12 to 2026-05-08 23:30"
+    role: broad_rotation_high_event_safety_filter
+    validated_by:
+      - signal_throttle_total_event_distribution
+      - historical_ohlc
+      - net_delta_vs_range
+    evidence:
+      event_count: 1298
+      raw_buy_count: 62
+      raw_sell_count: 0
+      net_delta_pips: 1.0
+      intrawindow_range_pips: 91.6
+    conclusion: high event count is a theme/watchlist alert, not a single-pair final entry
+
+  - reference_case_id: GBPUSD_20260511_0856_1045_WITA
+    symbol: GBPUSD
+    pattern_id: DELAYED_GBP_CONTINUATION_AFTER_WAIT
+    reference_tier: A
+    window_wita: "2026-05-11 08:56-10:45"
+    window_chart: "2026-05-11 03:56-05:45"
+    role: delayed_gbp_continuation_after_wait
+    validated_by:
+      - signal_throttle_intel_wait
+      - historical_ohlc
+      - post_window_mfe_mae
+    evidence:
+      event_count: 107
+      signal_throttle_intel_count: 8
+      final_direction: WAIT
+      price_delta_during_window_pips: -7.2
+      mfe_buy_4h_pips: 30.8
+      mae_buy_4h_pips: -3.6
+      mfe_buy_8h_pips: 46.0
+      mae_buy_8h_pips: -3.6
+    conclusion: WAIT was correct during the window; BUY continuation needs reclaim or support hold
+
+  - reference_case_id: GBPUSD_20260430_2241_2253_WITA
+    symbol: GBPUSD
+    pattern_id: MAJOR_PAIR_POST_EXPANSION_NO_CHASE
+    reference_tier: A
+    window_wita: "2026-04-30 22:41-22:53"
+    window_chart: "2026-04-30 17:41-17:53"
+    role: late_continuation_reinforcement_no_chase
+    validated_by:
+      - d1_expansion
+      - late_continuation_block
+      - next_day_rejection
+    evidence:
+      price_delta_during_block_pips: 0.6
+      window_range_pips: 4.4
+      mfe_buy_4h_pips: 30.4
+      mae_buy_4h_pips: -1.1
+      d1_20260430_atr_ratio: 2.26
+      d1_20260501_close_position: 0.008
+    conclusion: good reinforcement for active BUY, but fresh market chase should be blocked
