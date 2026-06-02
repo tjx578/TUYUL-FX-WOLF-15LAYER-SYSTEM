@@ -12,8 +12,10 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-TP1_RR_FLOOR = 1.5
-STRUCTURE_RR_FLOOR = 1.5
+from analysis.signal_thresholds import SIGNAL_MIN_RR, TP1_TARGET_RR
+
+TP1_RR_FLOOR = TP1_TARGET_RR
+STRUCTURE_RR_FLOOR = SIGNAL_MIN_RR
 _WITA = ZoneInfo("Asia/Makassar")
 STRUCTURE_TARGET_MODES = {
     "FINAL_MARKET_STRUCTURE",
