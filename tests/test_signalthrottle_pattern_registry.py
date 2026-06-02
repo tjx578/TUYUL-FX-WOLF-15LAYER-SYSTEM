@@ -89,6 +89,37 @@ def test_gbpusd_reference_patterns_are_tier_a_major_context():
     assert "BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY" in PAIR_ROLE_MAP["GBPUSD"]["golden_patterns"]
 
 
+def test_audnzd_eurnzd_reference_patterns_are_filters_not_primary_leaders():
+    open_lane = get_pattern("LOW_DENSITY_OPEN_LANE_TIMING_BLOCK")
+    assert open_lane is not None
+    assert open_lane.golden_references == ("GBPCAD",)
+    assert "AUDNZD" not in open_lane.golden_references
+
+    expected = {
+        "LOW_DENSITY_BLOCK_FALSE_CONTINUATION": ("AUDNZD",),
+        "AUDNZD_RELATIVE_STRENGTH_DECISION_PAIR": ("AUDNZD",),
+        "SUPPORTING_CROSS_NOT_PRIMARY_LEADER": ("AUDNZD", "EURNZD"),
+        "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE": ("AUDNZD",),
+        "SUPPORTING_EUR_CROSS_NOT_LEADER": ("EURNZD",),
+        "EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE": ("EURNZD",),
+        "CROSS_THEME_LEADER_DIVERGENCE": ("EURNZD",),
+        "MACRO_BEARISH_INTRADAY_REPAIR_DECISION": ("EURNZD",),
+    }
+    for pattern_id, references in expected.items():
+        pattern = get_pattern(pattern_id)
+
+        assert pattern is not None
+        assert pattern.scope == "UNIVERSAL"
+        assert pattern.golden_references == references
+        assert "NOT_PAIR_LOCKED" in pattern.pair_specific_calibration
+
+    assert PAIR_ROLE_MAP["AUDNZD"]["default_role"] == "LOW_DENSITY_BLOCK_FALSE_CONTINUATION_REFERENCE"
+    assert PAIR_ROLE_MAP["EURNZD"]["default_role"] == "SUPPORTING_EUR_CROSS_FALSE_CONTINUATION_REFERENCE"
+    assert "LOW_DENSITY_OPEN_LANE_TIMING_BLOCK" not in PAIR_ROLE_MAP["AUDNZD"]["golden_patterns"]
+    assert "LOW_DENSITY_OPEN_LANE_TIMING_BLOCK" not in PAIR_ROLE_MAP["EURNZD"]["golden_patterns"]
+    assert "SUPPORTING_EUR_CROSS_NOT_LEADER" in PAIR_ROLE_MAP["EURNZD"]["golden_patterns"]
+
+
 def test_runtime_scoring_and_routing_load_yaml_database():
     assert REGISTRY_SOURCE["patterns"] == "yaml"
     assert REGISTRY_SOURCE["pair_roles"] == "yaml"
