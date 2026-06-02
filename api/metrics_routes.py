@@ -15,8 +15,9 @@ import json
 import logging
 import os
 import time
+import asyncio
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Awaitable, Callable, cast
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -56,6 +57,38 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["observability"], dependencies=[Depends(verify_observability_machine_auth)])
 
 _CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+_REDIS_REFRESH_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _redis_refresh_temporarily_unavailable() -> bool:
+    return time.monotonic() < _REDIS_REFRESH_UNAVAILABLE_UNTIL
+
+
+def _mark_redis_refresh_unavailable() -> None:
+    global _REDIS_REFRESH_UNAVAILABLE_UNTIL
+    cooldown = _env_float("METRICS_REDIS_REFRESH_FAILURE_COOLDOWN_SEC", 1.0)
+    _REDIS_REFRESH_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+async def _run_redis_refresh(refresh: Callable[[], Awaitable[None]]) -> None:
+    if _redis_refresh_temporarily_unavailable():
+        return
+    try:
+        timeout = _env_float("METRICS_REDIS_REFRESH_TIMEOUT_SEC", 0.25)
+        await asyncio.wait_for(refresh(), timeout=timeout)
+    except Exception:
+        _mark_redis_refresh_unavailable()
+        logger.debug("Redis-backed metrics refresh skipped", exc_info=True)
 
 
 def _refresh_runtime_gauges() -> None:
@@ -197,9 +230,9 @@ async def prometheus_metrics() -> PlainTextResponse:
             media_type="application/json",
         )
     _refresh_runtime_gauges()
-    await _refresh_redis_gauges()
-    await _refresh_orchestrator_gauges()
-    await _refresh_heartbeat_gauges()
+    await _run_redis_refresh(_refresh_redis_gauges)
+    await _run_redis_refresh(_refresh_orchestrator_gauges)
+    await _run_redis_refresh(_refresh_heartbeat_gauges)
     payload = get_registry().exposition()
     return PlainTextResponse(content=payload, media_type=_CONTENT_TYPE)
 
@@ -220,9 +253,9 @@ async def metrics_slo(
     if not _HAS_ENGINE_CONTEXT:
         return {"status": "metrics_not_available", "reason": "engine_only"}
     _refresh_runtime_gauges()
-    await _refresh_redis_gauges()
-    await _refresh_orchestrator_gauges()
-    await _refresh_heartbeat_gauges()
+    await _run_redis_refresh(_refresh_redis_gauges)
+    await _run_redis_refresh(_refresh_orchestrator_gauges)
+    await _run_redis_refresh(_refresh_heartbeat_gauges)
     from monitoring.pipeline_metrics import evaluate_latency_slo  # noqa: PLC0415
 
     status = evaluate_latency_slo(
