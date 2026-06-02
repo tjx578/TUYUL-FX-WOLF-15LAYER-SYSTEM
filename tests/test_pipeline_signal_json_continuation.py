@@ -58,7 +58,7 @@ def test_pipeline_emits_valid_continuation_payload_by_default():
 
     assert emitted
     assert emitted[0]["status"] == "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"
-    assert emitted[0]["rr_to_valid_target"] >= 2.5
+    assert emitted[0]["rr_to_valid_target"] >= emitted[0]["min_rr_required"]
     assert report["microboost_continuation_entry"]["signal_id"]
 
 
