@@ -12,6 +12,8 @@ from dataclasses import asdict, dataclass
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from analysis.signal_thresholds import SIGNAL_MIN_RR, TP1_TARGET_RR
+
 
 @dataclass(frozen=True)
 class MicroboostContinuationResult:
@@ -128,8 +130,8 @@ class MicroboostContinuationEngine:
         *,
         min_density_per_minute: float = 25.0,
         min_duration_seconds: float = 60.0,
-        min_rr_valid: float = 1.5,
-        tp1_rr_required: float = 1.5,
+        min_rr_valid: float = SIGNAL_MIN_RR,
+        tp1_rr_required: float = TP1_TARGET_RR,
         allow_rr_fallback: bool = True,
     ) -> None:
         self.min_density_per_minute = min_density_per_minute
