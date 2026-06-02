@@ -12,6 +12,7 @@ import logging
 import os
 import time
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from analysis.signal_thresholds import SIGNAL_MIN_RR
@@ -440,6 +441,7 @@ class SignalJsonEmitter:
         emit_valid: bool = True,
         require_market_context: bool = True,
         watch_transition_only: bool = True,
+        watch_update_interval_seconds: float = 15.0,
         strict_lifecycle: bool = False,
         require_parent_watch: bool = True,
         allow_direct_bypass: bool = False,
@@ -467,6 +469,7 @@ class SignalJsonEmitter:
         self.emit_valid = emit_valid
         self.require_market_context = require_market_context
         self.watch_transition_only = watch_transition_only
+        self.watch_update_interval_seconds = max(0.0, float(watch_update_interval_seconds))
         self.strict_lifecycle = strict_lifecycle
         self.require_parent_watch = require_parent_watch
         self.allow_direct_bypass = allow_direct_bypass
@@ -487,6 +490,9 @@ class SignalJsonEmitter:
         )
         self._emitted: dict[str, float] = {}
         self._cluster_state: dict[str, str] = {}
+        self._cluster_watch_event_seconds: dict[str, float] = {}
+        self._cluster_watch_wall_seconds: dict[str, float] = {}
+        self._cluster_watch_revisions: dict[str, int] = {}
         self._emitted_watch_refs: set[str] = set()
         self._terminal_decisions: set[str] = set()
         self._decision_states: dict[str, str] = {}
@@ -499,8 +505,11 @@ class SignalJsonEmitter:
         payload = event.to_dict()
         is_decision_update = _is_decision_update_payload(payload) or _is_decision_update_event(event)
         is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
-        if is_watch and self.watch_transition_only and not self._mark_watch_transition(event):
-            return False
+        watch_revision: str | None = None
+        if is_watch and self.watch_transition_only:
+            watch_revision = self._mark_watch_transition(event)
+            if watch_revision is None:
+                return False
         if self.strict_lifecycle and _is_final_payload(payload):
             if self._ensure_terminal_decision_update(payload):
                 payload = self._strict_final_payload(payload)
@@ -518,7 +527,7 @@ class SignalJsonEmitter:
         ):
             return False
 
-        key = self._payload_key(payload)
+        key = self._payload_key(payload, watch_revision=watch_revision)
         if self._is_duplicate(key):
             return False
 
@@ -553,7 +562,7 @@ class SignalJsonEmitter:
         )
 
     @staticmethod
-    def _payload_key(payload: dict[str, Any]) -> str:
+    def _payload_key(payload: dict[str, Any], *, watch_revision: str | None = None) -> str:
         cluster_key = payload.get("cluster_id") or payload.get("signal_valid_time_utc")
         if _is_decision_update_payload(payload):
             return (
@@ -562,9 +571,10 @@ class SignalJsonEmitter:
                 f"{payload.get('source_status') or ''}|{payload.get('target_mode') or ''}"
             )
         if _is_watch_status(str(payload.get("status") or "")):
+            revision_key = watch_revision or _watch_payload_revision(payload)
             return (
                 f"{payload.get('symbol')}|{cluster_key}|{payload.get('signal_family')}|"
-                f"{payload.get('status')}|{payload.get('target_mode') or ''}"
+                f"{payload.get('status')}|{payload.get('target_mode') or ''}|{revision_key}"
             )
         return (
             f"{payload.get('symbol')}|{cluster_key}|{payload.get('signal_family')}|"
@@ -680,14 +690,31 @@ class SignalJsonEmitter:
             return True
         return not (self.decision_state_monotonic and pending_id in self._terminal_decisions)
 
-    def _mark_watch_transition(self, event: SignalJsonEvent) -> bool:
+    def _mark_watch_transition(self, event: SignalJsonEvent) -> str | None:
         cluster_key = event.cluster_id or f"{event.symbol}|{event.signal_family}|{event.entry_reference_price}"
         state = f"{event.status}|{event.target_mode or ''}|{event.tp_status or ''}"
+        now = time.time()
+        event_seconds = _signal_time_epoch_seconds(event.signal_valid_time_utc)
         previous = self._cluster_state.get(cluster_key)
         if previous == state:
-            return False
+            previous_event_seconds = self._cluster_watch_event_seconds.get(cluster_key)
+            previous_wall_seconds = self._cluster_watch_wall_seconds.get(cluster_key)
+            event_elapsed = (
+                event_seconds - previous_event_seconds
+                if event_seconds is not None and previous_event_seconds is not None
+                else 0.0
+            )
+            wall_elapsed = now - previous_wall_seconds if previous_wall_seconds is not None else 0.0
+            if max(event_elapsed, wall_elapsed) < self.watch_update_interval_seconds:
+                return None
+
+        revision = self._cluster_watch_revisions.get(cluster_key, 0) + 1
         self._cluster_state[cluster_key] = state
-        return True
+        if event_seconds is not None:
+            self._cluster_watch_event_seconds[cluster_key] = event_seconds
+        self._cluster_watch_wall_seconds[cluster_key] = now
+        self._cluster_watch_revisions[cluster_key] = revision
+        return f"{revision}|{state}"
 
     def _is_duplicate(self, key: str) -> bool:
         now = time.time()
@@ -1122,6 +1149,36 @@ def _watch_references(payload: dict[str, Any]) -> set[str]:
     if cluster_id and symbol:
         references.add(f"cluster:{symbol.upper()}:{cluster_id}")
     return references
+
+
+def _watch_payload_revision(payload: dict[str, Any]) -> str:
+    fields = (
+        "signal_valid_time_utc",
+        "signal_valid_price",
+        "effective_ticks",
+        "effective_density",
+        "duration_minutes",
+        "rr_status",
+        "tp_status",
+        "target_mode",
+        "direction_validation_status",
+        "execution_status",
+        "action",
+    )
+    return "|".join(str(payload.get(field) or "") for field in fields)
+
+
+def _signal_time_epoch_seconds(value: str | None) -> float | None:
+    raw = _optional_str(value)
+    if raw is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.timestamp()
 
 
 def _matched_watch_reference(payload: dict[str, Any], emitted_refs: set[str]) -> str | None:
