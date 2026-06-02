@@ -15,9 +15,13 @@ from context.live_context_bus import LiveContextBus
 class TestVerdictEngineEnrichmentInjection:
     """Verify enrichment scores modulate confidence in the class-based path."""
 
+    @pytest.fixture(autouse=True)
+    def _fresh_authoritative_feed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("state.data_freshness.read_authoritative_last_seen_ts", lambda symbol: time.time())
+
     def setup_method(self) -> None:
         # Reset singleton and inject a fresh tick so the stale-feed
-        # circuit breaker does not fire during these unit tests.
+        # circuit breaker does not fire during legacy bus reads.
         LiveContextBus.reset_singleton()
         bus = LiveContextBus()
         bus.update_tick({"symbol": "EURUSD", "bid": 1.085, "ask": 1.086, "timestamp": time.time()})
