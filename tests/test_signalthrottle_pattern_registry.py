@@ -70,6 +70,25 @@ def test_nzdjpy_reference_patterns_are_tier_a_universal_context():
     assert "DELAYED_JPY_CROSS_CONTINUATION" in PAIR_ROLE_MAP["NZDJPY"]["golden_patterns"]
 
 
+def test_gbpusd_reference_patterns_are_tier_a_major_context():
+    expected = {
+        "LOW_DENSITY_MAJOR_PAIR_CONTINUATION": "ALL_MAJOR_OR_HIGH_LIQUIDITY_PAIRS_IF_CONDITIONS_MATCH",
+        "BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY": "ALL_PAIRS_IF_CONDITIONS_MATCH",
+        "DELAYED_GBP_CONTINUATION_AFTER_WAIT": "ALL_GBP_OR_MAJOR_PAIRS_IF_CONDITIONS_MATCH",
+        "MAJOR_PAIR_POST_EXPANSION_NO_CHASE": "ALL_MAJOR_OR_HIGH_LIQUIDITY_PAIRS_IF_CONDITIONS_MATCH",
+    }
+    for pattern_id, applies_to in expected.items():
+        pattern = get_pattern(pattern_id)
+
+        assert pattern is not None
+        assert pattern.scope == "UNIVERSAL"
+        assert pattern.applies_to == applies_to
+        assert pattern.golden_references == ("GBPUSD",)
+
+    assert PAIR_ROLE_MAP["GBPUSD"]["default_role"] == "GBP_THEME_MAJOR_CONFIRMATION"
+    assert "BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY" in PAIR_ROLE_MAP["GBPUSD"]["golden_patterns"]
+
+
 def test_runtime_scoring_and_routing_load_yaml_database():
     assert REGISTRY_SOURCE["patterns"] == "yaml"
     assert REGISTRY_SOURCE["pair_roles"] == "yaml"
