@@ -66,7 +66,6 @@ class MicroboostCounterEntryResult:
     aggressive_trigger: float | None = None
     conservative_trigger: float | None = None
     suggested_sl: float | None = None
-    sl_tight: float | None = None
     sl_safe: float | None = None
     tp1: float | None = None
     tp2: float | None = None
@@ -204,8 +203,8 @@ class MicroboostCounterEntryEngine:
         direct_absorption_enabled: bool = True,
         direct_absorption_require_theme_alignment: bool = False,
         direct_absorption_require_rr: bool = True,
-        min_rr_valid: float = 2.5,
-        tp1_rr_required: float = 2.0,
+        min_rr_valid: float = 1.5,
+        tp1_rr_required: float = 1.5,
         counter_entry_risk_multiplier: float = 0.5,
         counter_entry_expiry_minutes: int = 30,
         allow_rr_fallback: bool = True,
@@ -378,7 +377,6 @@ class MicroboostCounterEntryEngine:
                 direction_status="M15_BREAKOUT_CONFIRMED",
                 action="BUY_BREAKOUT_RETEST",
                 reason="M15 close confirmed a breakout above resistance; counter-sell watch is invalidated.",
-                sl_tight=breakout_levels["sl_tight"],
                 sl_safe=breakout_levels["sl_safe"],
                 tp1=breakout_levels["tp1"],
                 tp2=breakout_levels["tp2"],
@@ -393,7 +391,7 @@ class MicroboostCounterEntryEngine:
                 trade_plan=breakout_levels["trade_plan"],
                 target_mode="PROVISIONAL_RR_FALLBACK",
                 target_source="rr_projection_only",
-                tp_status="VALID_FROM_TP3",
+                tp_status="VALID_FROM_TP1",
                 tp_missing_reason="breakout_structure_target_not_required_for_trigger",
                 structure_targets_available=False,
                 tradeplan_context_ready=False,
@@ -452,15 +450,15 @@ class MicroboostCounterEntryEngine:
             symbol=str(base.get("symbol") or ""),
             levels=levels,
             entry=entry_reference,
-            sl=levels["sl_tight"],
+            sl=levels["sl_safe"],
             min_rr=self.min_rr_valid,
             tp1_rr=self.tp1_rr_required,
             missing_reason=_support_ladder_missing_reason(market),
             allow_rr_fallback=self.allow_rr_fallback,
         )
-        rr_to_tp1 = _rr("SELL", entry_reference, levels["sl_tight"], target_result["tp1"])
-        rr_to_tp2 = _rr("SELL", entry_reference, levels["sl_tight"], target_result["tp2"])
-        rr_to_tp3 = _rr("SELL", entry_reference, levels["sl_tight"], target_result["tp3"])
+        rr_to_tp1 = _rr("SELL", entry_reference, levels["sl_safe"], target_result["tp1"])
+        rr_to_tp2 = _rr("SELL", entry_reference, levels["sl_safe"], target_result["tp2"])
+        rr_to_tp3 = _rr("SELL", entry_reference, levels["sl_safe"], target_result["tp3"])
         absorption_valid = self._absorption_timing_valid(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -535,8 +533,7 @@ class MicroboostCounterEntryEngine:
             reason=_sell_reason(status, density, observed_price_delta_pips),
             aggressive_trigger=target_result["aggressive_trigger"],
             conservative_trigger=target_result["conservative_trigger"],
-            suggested_sl=levels["sl_tight"],
-            sl_tight=levels["sl_tight"],
+            suggested_sl=levels["sl_safe"],
             sl_safe=levels["sl_safe"],
             tp1=target_result["tp1"],
             tp2=target_result["tp2"],
@@ -638,7 +635,6 @@ class MicroboostCounterEntryEngine:
                 direction_status="M15_BREAKDOWN_CONFIRMED",
                 action="SELL_BREAKDOWN_RETEST",
                 reason="M15 close confirmed a breakdown below support; counter-buy watch is invalidated.",
-                sl_tight=breakdown_levels["sl_tight"],
                 sl_safe=breakdown_levels["sl_safe"],
                 tp1=breakdown_levels["tp1"],
                 tp2=breakdown_levels["tp2"],
@@ -653,7 +649,7 @@ class MicroboostCounterEntryEngine:
                 trade_plan=breakdown_levels["trade_plan"],
                 target_mode="PROVISIONAL_RR_FALLBACK",
                 target_source="rr_projection_only",
-                tp_status="VALID_FROM_TP3",
+                tp_status="VALID_FROM_TP1",
                 tp_missing_reason="breakdown_structure_target_not_required_for_trigger",
                 structure_targets_available=False,
                 tradeplan_context_ready=False,
@@ -712,15 +708,15 @@ class MicroboostCounterEntryEngine:
             symbol=str(base.get("symbol") or ""),
             levels=levels,
             entry=entry_reference,
-            sl=levels["sl_tight"],
+            sl=levels["sl_safe"],
             min_rr=self.min_rr_valid,
             tp1_rr=self.tp1_rr_required,
             missing_reason=_resistance_ladder_missing_reason(market),
             allow_rr_fallback=self.allow_rr_fallback,
         )
-        rr_to_tp1 = _rr("BUY", entry_reference, levels["sl_tight"], target_result["tp1"])
-        rr_to_tp2 = _rr("BUY", entry_reference, levels["sl_tight"], target_result["tp2"])
-        rr_to_tp3 = _rr("BUY", entry_reference, levels["sl_tight"], target_result["tp3"])
+        rr_to_tp1 = _rr("BUY", entry_reference, levels["sl_safe"], target_result["tp1"])
+        rr_to_tp2 = _rr("BUY", entry_reference, levels["sl_safe"], target_result["tp2"])
+        rr_to_tp3 = _rr("BUY", entry_reference, levels["sl_safe"], target_result["tp3"])
         absorption_valid = self._absorption_timing_valid(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -794,8 +790,7 @@ class MicroboostCounterEntryEngine:
             reason=_buy_reason(status, density, observed_price_delta_pips),
             aggressive_trigger=target_result["aggressive_trigger"],
             conservative_trigger=target_result["conservative_trigger"],
-            suggested_sl=levels["sl_tight"],
-            sl_tight=levels["sl_tight"],
+            suggested_sl=levels["sl_safe"],
             sl_safe=levels["sl_safe"],
             tp1=target_result["tp1"],
             tp2=target_result["tp2"],
@@ -1170,21 +1165,15 @@ def _sell_levels(market: Any | None, entry_reference: float | None, pip_value: f
         key_fields=("key_support", "main_support"),
     )
     sl_buffer = _optional_float(_field(market, "sl_buffer", None)) or pip_value * 8.0
-    sl_tight = _optional_float(_field(market, "sl_tight", None))
     sl_safe = _optional_float(_field(market, "sl_safe", None))
-    if sl_tight is None and resistance_high is not None:
-        sl_tight = resistance_high + sl_buffer
     if sl_safe is None and resistance_high is not None:
         sl_safe = resistance_high + max(sl_buffer * 2.0, pip_value * 16.0)
-    if sl_tight is None and entry_reference is not None:
-        sl_tight = entry_reference + pip_value * 12.0
     if sl_safe is None and entry_reference is not None:
         sl_safe = entry_reference + pip_value * 20.0
 
     return {
         "aggressive_trigger": _round_price(_first_optional_float(minor_support, key_support, main_support)),
         "conservative_trigger": _round_price(_first_optional_float(major_support, main_support, key_support)),
-        "sl_tight": _round_price(sl_tight),
         "sl_safe": _round_price(sl_safe),
         "tp1": _round_price(
             _first_optional_float(_field(market, "tp1_support", None), minor_support, key_support, main_support)
@@ -1221,21 +1210,15 @@ def _buy_levels(market: Any | None, entry_reference: float | None, pip_value: fl
         key_fields=("key_resistance", "main_resistance"),
     )
     sl_buffer = _optional_float(_field(market, "sl_buffer", None)) or pip_value * 8.0
-    sl_tight = _optional_float(_field(market, "sl_tight", None))
     sl_safe = _optional_float(_field(market, "sl_safe", None))
-    if sl_tight is None and support_low is not None:
-        sl_tight = support_low - sl_buffer
     if sl_safe is None and support_low is not None:
         sl_safe = support_low - max(sl_buffer * 2.0, pip_value * 16.0)
-    if sl_tight is None and entry_reference is not None:
-        sl_tight = entry_reference - pip_value * 12.0
     if sl_safe is None and entry_reference is not None:
         sl_safe = entry_reference - pip_value * 20.0
 
     return {
         "aggressive_trigger": _round_price(_first_optional_float(minor_resistance, key_resistance, main_resistance)),
         "conservative_trigger": _round_price(_first_optional_float(major_resistance, main_resistance, key_resistance)),
-        "sl_tight": _round_price(sl_tight),
         "sl_safe": _round_price(sl_safe),
         "tp1": _round_price(
             _first_optional_float(
@@ -1436,7 +1419,7 @@ def _counter_entry_tradeplan_valid(
     signal_zone = (
         decision_fields.get("sell_rejection_zone") if direction == "SELL" else decision_fields.get("pullback_buy_zone")
     )
-    selected_sl = levels.get("sl_safe") or levels.get("sl_tight")
+    selected_sl = levels.get("sl_safe")
     return bool(
         isinstance(entry_zone, list)
         and entry_zone
@@ -1477,9 +1460,8 @@ def _counter_entry_model_fields(
     risk_multiplier: float,
     expiry_minutes: int,
 ) -> dict[str, Any]:
-    selected_sl = levels.get("sl_safe") or levels.get("sl_tight")
-    selected_mode = "SAFE" if levels.get("sl_safe") is not None else ("TIGHT" if selected_sl is not None else None)
-    tight_risk = _risk_pips(entry, levels.get("sl_tight"), pip_value)
+    selected_sl = levels.get("sl_safe")
+    selected_mode = "SAFE" if selected_sl is not None else None
     safe_risk = _risk_pips(entry, levels.get("sl_safe"), pip_value)
     selected_risk = _risk_pips(entry, selected_sl, pip_value)
     spread_pips = _spread_pips(market, pip_value)
@@ -1515,7 +1497,7 @@ def _counter_entry_model_fields(
         "range_low": _round_price(_optional_float(_field(market, "main_support", None))),
     }
     hard_invalid = selected_sl
-    soft_invalid = levels.get("sl_tight")
+    soft_invalid = selected_sl
     invalidation_rules = {
         "soft_invalid_level": soft_invalid,
         "hard_invalid_level": hard_invalid,
@@ -1546,18 +1528,15 @@ def _counter_entry_model_fields(
         "selected_sl": selected_sl,
         "risk_pips": selected_risk,
         "selected_risk_pips": selected_risk,
-        "risk_pips_tight": tight_risk,
         "risk_pips_safe": safe_risk,
         "target_policy": target_result.get("target_policy"),
         "targets": target_result.get("targets"),
         "structure_zones": structure_zones,
         "risk_reward": {
             "entry": entry,
-            "sl_tight": levels.get("sl_tight"),
             "sl_safe": levels.get("sl_safe"),
             "selected_sl_mode": selected_mode,
             "selected_sl": selected_sl,
-            "risk_pips_tight": tight_risk,
             "risk_pips_safe": safe_risk,
             "selected_risk_pips": selected_risk,
             "tp_min_rr": target_result.get("tp_min_rr"),
