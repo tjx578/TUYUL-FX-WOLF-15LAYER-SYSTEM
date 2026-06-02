@@ -893,3 +893,95 @@ def test_zero_drawdown_followthrough_surfaces_as_historical_quality_confluence()
     assert "ZERO_DRAWDOWN_FOLLOWTHROUGH" in result["matched_patterns"]
     assert result["entry_permission"] == "ENTRY_WATCH_OR_BUY_WATCH"
     assert "historical_zero_drawdown_followthrough_quality" in result["pattern_evidence"]
+
+
+def test_audnzd_low_density_block_false_continuation_blocks_auto_buy():
+    result = match_golden_patterns(
+        {
+            "symbol": "AUDNZD",
+            "raw_direction": "BUY",
+            "duration_minutes": 30.69,
+            "density_per_minute": 1.82,
+            "event_count": 56,
+            "mfe_buy_15m_pips": 2.5,
+            "mae_buy_15m_pips": -6.2,
+            "price_delta_during_window_pips": -4.9,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "LOW_DENSITY_BLOCK_FALSE_CONTINUATION"
+    assert result["pattern_tier"] == "A"
+    assert result["entry_permission"] == "WATCH_ONLY_UNTIL_OWN_PHASE_CONFIRMS"
+    assert result["block_reason"] == "LOW_DENSITY_BLOCK_FALSE_CONTINUATION_RISK"
+    assert "LOW_DENSITY_BLOCK_FALSE_CONTINUATION_RISK" in result["pattern_bottlenecks"]
+
+
+def test_audnzd_supporting_cross_is_not_primary_leader():
+    result = match_golden_patterns(
+        {
+            "symbol": "AUDNZD",
+            "leader_pair": "EURAUD",
+            "supporting_event_count": 18,
+            "supporting_cross": True,
+            "own_price_phase_confirmed": False,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "SUPPORTING_CROSS_NOT_PRIMARY_LEADER"
+    assert result["entry_permission"] == "WATCHLIST_OR_SCORE_CONTEXT_ONLY"
+    assert result["block_reason"] == "SUPPORTING_CROSS_NOT_PRIMARY_LEADER"
+
+
+def test_audnzd_bullish_repair_upper_decision_blocks_chase():
+    result = match_golden_patterns(
+        {
+            "symbol": "AUDNZD",
+            "raw_direction": "BUY",
+            "bullish_repair_upper_decision": True,
+            "range_position": 0.96,
+            "price_position": "MAIN_RESISTANCE",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE"
+    assert result["entry_permission"] == "PULLBACK_RETEST_RECLAIM_ONLY"
+    assert result["block_reason"] == "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE"
+
+
+def test_eurnzd_upper_fade_after_eur_cross_pressure_is_not_buy_leader():
+    result = match_golden_patterns(
+        {
+            "symbol": "EURNZD",
+            "raw_direction": "BUY",
+            "leader_pair": "EURAUD",
+            "eur_cross_pressure": True,
+            "supporting_event_count": 59,
+            "range_position": 0.93,
+            "mfe_buy_15m_pips": 2.6,
+            "mae_buy_15m_pips": -6.7,
+            "mfe_sell_15m_pips": 6.7,
+            "mae_sell_15m_pips": -2.6,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE"
+    assert result["entry_permission"] == "FADE_WATCH_ONLY_UNTIL_REJECTION_CONFIRMS"
+    assert result["block_reason"] == "EUR_CROSS_UPPER_FADE_RISK"
+    assert "CROSS_THEME_LEADER_DIVERGENCE" in result["matched_patterns"]
+
+
+def test_eurnzd_macro_bearish_intraday_repair_decision_blocks_buy_chase():
+    result = match_golden_patterns(
+        {
+            "symbol": "EURNZD",
+            "raw_direction": "BUY",
+            "macro_bearish_context": True,
+            "intraday_repair": True,
+            "range_position": 0.94,
+            "price_position": "MAIN_RESISTANCE",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "MACRO_BEARISH_INTRADAY_REPAIR_DECISION"
+    assert result["entry_permission"] == "NO_BUY_CHASE_WAIT_REPAIR_CONFIRMATION"
+    assert result["block_reason"] == "MACRO_BEARISH_INTRADAY_REPAIR_DECISION"
