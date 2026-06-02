@@ -52,7 +52,7 @@ _MICROBOOST_UNPRICED_PHASES = {
 def evaluate_signal_execution_gates(
     payload: dict[str, Any],
     *,
-    min_rr_required: float = 2.5,
+    min_rr_required: float = 1.5,
     max_chase_r: float = 0.35,
 ) -> ExecutionGateDecision:
     """Evaluate a final SignalJSON payload against execution-readiness gates."""
@@ -144,7 +144,6 @@ def _tradeplan_gate(
         _nested(payload, "risk_reward", "selected_sl"),
         enriched.get("selected_sl"),
         payload.get("sl_safe"),
-        payload.get("sl_tight"),
     )
     if entry is None or selected_sl is None:
         _add(gates, reasons, "TradePlanCompletenessGate", "ENTRY_OR_SELECTED_SL_MISSING")
@@ -281,7 +280,6 @@ def _live_rr_gate(
         _nested(payload, "risk_reward", "selected_sl"),
         enriched.get("selected_sl"),
         payload.get("sl_safe"),
-        payload.get("sl_tight"),
     )
     target = _first_float(
         payload.get("tp_min_rr"),
@@ -293,27 +291,12 @@ def _live_rr_gate(
         _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_PRICE_MISSING")
         return None
 
-    # When price is at or near the validated entry reference, the engine's
-    # pre-validated rr_to_valid_target (computed with sl_tight) is the correct
-    # live RR.  Recalculating from selected_sl (sl_safe) would give a falsely
-    # low RR because the engine uses sl_tight for target calculation but sl_safe
-    # for selected_sl — an internal inconsistency that should not block a valid
-    # confirmed signal.
+    # Single-stop model: the target ladder and the live stop are both derived from
+    # sl_safe, so the engine's pre-validated RR (rr_to_valid_target / tp_min_rr_value)
+    # is the authoritative live RR when price is at or near the validated entry.
+    # Prefer it so micro-noise in the recalculated value cannot trip a false block.
     near_entry = entry is not None and abs(live_price - entry) <= _pip_size(payload) * 10
     pre_validated_rr = _first_float(payload.get("rr_to_valid_target"), payload.get("tp_min_rr_value"))
-    # PROVISIONAL_RR_FALLBACK leaves rr_to_valid_target unset (no structure target
-    # is selected), which previously disabled the reconciliation guard above and
-    # let the gate recompute RR from sl_safe — deflating a valid 2.5R into ~1.5R
-    # and emitting a false LIVE_RR_BELOW_MINIMUM block.  When the pre-validated RR
-    # is absent but price is near entry, reconstruct it on the SAME basis the
-    # engine used to project the target ladder (sl_tight) so the two halves of
-    # the RR calculation stay consistent.
-    if pre_validated_rr is None and near_entry and target is not None:
-        sl_tight = _first_float(payload.get("sl_tight"), _nested(payload, "risk_reward", "sl_tight"))
-        if sl_tight is not None:
-            tight_risk = abs(entry - sl_tight)
-            if tight_risk > 0:
-                pre_validated_rr = round(abs(target - entry) / tight_risk, 2)
     if pre_validated_rr is not None and near_entry:
         result = {
             "price": live_price,
@@ -322,7 +305,7 @@ def _live_rr_gate(
             "target": target,
             "rr": pre_validated_rr,
             "min_rr_required": min_rr_required,
-            "rr_basis": "PRE_VALIDATED_TIGHT",
+            "rr_basis": "PRE_VALIDATED",
         }
         if pre_validated_rr < min_rr_required:
             _add(block_gates, block_reasons, "LiveRRRecalculationGate", "LIVE_RR_BELOW_MINIMUM")
@@ -365,7 +348,6 @@ def _no_chase_gate(
         _nested(payload, "risk_reward", "selected_sl"),
         enriched.get("selected_sl"),
         payload.get("sl_safe"),
-        payload.get("sl_tight"),
     )
     if direction is None or live_price is None or entry is None or selected_sl is None:
         return
@@ -432,15 +414,18 @@ def _provisional_rr_meets_min(payload: dict[str, Any], min_rr_required: float) -
 
     Used to accept RR-projected fallback targets for confirmed breakout/continuation
     signals when no structure target is available. Reads only RR values the engine
-    pre-computed against sl_tight, so it stays consistent with the live-RR gate.
+    pre-computed against the single sl_safe stop, so it stays consistent with the
+    live-RR gate. TP1 is the validation anchor (min RR is measured at TP1).
     """
     for key in (
         "rr_to_valid_target",
         "tp_min_rr_value",
-        "rr_to_tp3_tight",
-        "tp3_rr",
+        "rr_to_tp1_tight",
+        "tp1_rr",
         "rr_to_tp2_tight",
         "tp2_rr",
+        "rr_to_tp3_tight",
+        "tp3_rr",
     ):
         rr = _optional_float(payload.get(key))
         if rr is not None and rr >= min_rr_required:
