@@ -39,7 +39,6 @@ class MicroboostContinuationResult:
     entry_reference_price: float | None = None
     entry_zone: list[float] | None = None
     reclaim_trigger: float | None = None
-    sl_tight: float | None = None
     sl_safe: float | None = None
     tp1: float | None = None
     tp2: float | None = None
@@ -129,8 +128,8 @@ class MicroboostContinuationEngine:
         *,
         min_density_per_minute: float = 25.0,
         min_duration_seconds: float = 60.0,
-        min_rr_valid: float = 2.5,
-        tp1_rr_required: float = 2.0,
+        min_rr_valid: float = 1.5,
+        tp1_rr_required: float = 1.5,
         allow_rr_fallback: bool = True,
     ) -> None:
         self.min_density_per_minute = min_density_per_minute
@@ -274,7 +273,6 @@ class MicroboostContinuationEngine:
             action=action,
             reason=reason,
             reclaim_trigger=levels["reclaim_trigger"],
-            sl_tight=levels["sl_tight"],
             sl_safe=levels["sl_safe"],
             tp1=levels["tp1"],
             tp2=levels["tp2"],
@@ -428,6 +426,7 @@ def _continuation_levels(
             f"M15 failure above {_round_price(sl, digits)}" if sl is not None else "M15 failure above signal zone"
         )
 
+    sl = _safe_stop(direction, sl, pip_value)
     selected_rr = _first_rr_at_least(direction, entry, sl, targets, min_rr)
     if selected_rr is not None:
         ladder = _pad_targets(targets)
@@ -457,7 +456,7 @@ def _continuation_levels(
             sl=sl,
             targets=fallback_targets,
             target_mode="PROVISIONAL_RR_FALLBACK",
-            tp_status="VALID_FROM_TP3",
+            tp_status="VALID_FROM_TP1",
             tp_missing_reason="STRUCTURE_TARGET_MISSING_OR_BELOW_MIN_RR",
             structure_targets_available=bool(targets),
             structure_rr_valid=False,
@@ -518,8 +517,7 @@ def _level_payload(
         else None
     )
     return {
-        "sl_tight": _round_price(sl, digits),
-        "sl_safe": _round_price(_safe_stop(direction, sl, pip_value), digits),
+        "sl_safe": _round_price(sl, digits),
         "tp1": _round_price(tp1, digits),
         "tp2": _round_price(tp2, digits),
         "tp3": _round_price(tp3, digits),
@@ -819,7 +817,7 @@ def _target_ladder_with_fixed_tp1(
 
 
 def _rr_fallback_targets(direction: str, entry: float, sl: float, min_rr: float) -> list[float | None]:
-    multipliers = [1.0, 2.0, min_rr, 3.0]
+    multipliers = [min_rr, min_rr + 1.0, min_rr + 2.0, min_rr + 3.0]
     risk = abs(entry - sl)
     if direction == "BUY":
         return [entry + risk * multiplier for multiplier in multipliers]
