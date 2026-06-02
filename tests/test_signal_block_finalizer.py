@@ -154,7 +154,13 @@ def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_la
     assert signal["valid_for_execution"] is True
     assert signal["target_mode"] == "STRUCTURE_LADDER_TARGET"
     assert signal["target_source"] == "support_resistance_ladder"
-    assert signal["tp1_rr"] == 2.69
+    assert signal["selected_sl_mode"] == "SAFE"
+    assert signal["selected_sl"] == 1.37807
+    assert signal["risk_pips_safe"] == 17.4
+    assert signal["tp1_rr"] == 1.45
+    assert signal["tp2_rr"] == 1.91
+    assert signal["tp_min_rr"] == 1.373
+    assert signal["rr_to_valid_target"] == 1.91
     assert signal["m15_confirmation_status"] == "M15_CLOSE_REJECTION_CONFIRMED"
     assert signal["signal_watch_source"] == "SIGNAL_THROTTLE_CLEAN_BLOCK"
     assert signal["source_clean_block_confirmed"] is True
@@ -187,7 +193,10 @@ def test_schema_v1_idle_resistance_watch_promotes_confirmed_buy_breakout_with_rr
     assert signal["validated_direction"] == "BUY"
     assert signal["valid_for_execution"] is True
     assert signal["target_mode"] == "PROVISIONAL_RR_FALLBACK"
-    assert signal["tp1_rr"] == 1.0
+    assert signal["sl_safe"] == 1.37433
+    assert signal["tp1"] == 1.37933
+    assert signal["tp1_rr"] == 1.5
+    assert signal["tp_min_rr"] == 1.37933
     assert signal["m15_confirmation_status"] == "M15_CLOSE_ABOVE_RESISTANCE"
     assert finalizer.pending_symbols() == []
 
