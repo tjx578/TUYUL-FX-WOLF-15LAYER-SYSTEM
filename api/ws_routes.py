@@ -645,6 +645,25 @@ _signal_service = SignalService()
 _price_event = asyncio.Event()
 
 
+async def _list_accounts_for_ws(manager: AccountManager) -> list[Any]:
+    """Read accounts without letting Redis outage stall WebSocket streams."""
+    raw_memory_accounts = getattr(manager, "_memory_accounts", {})
+    memory_accounts = dict(raw_memory_accounts) if isinstance(raw_memory_accounts, dict) else {}
+    fallback_accounts = sorted(memory_accounts.values(), key=lambda account: getattr(account, "account_id", ""))
+    timeout = _env_float("WS_ACCOUNT_LIST_TIMEOUT_SEC", 0.25)
+
+    try:
+        list_accounts_async = getattr(manager, "list_accounts_async", None)
+        if callable(list_accounts_async):
+            return await asyncio.wait_for(list_accounts_async(), timeout=timeout)
+        list_accounts = getattr(manager, "list_accounts", None)
+        if callable(list_accounts):
+            return await asyncio.wait_for(asyncio.to_thread(list_accounts), timeout=timeout)
+    except Exception:
+        return fallback_accounts
+    return fallback_accounts
+
+
 async def notify_price_update():
     """Signal all waiting WS loops that new prices are available.
 
@@ -1030,14 +1049,11 @@ async def websocket_risk(websocket: fastapi.WebSocket):
     try:
         while websocket in risk_manager.active_connections:
             # Get all accounts
-            try:
-                accounts = _account_manager.list_accounts()
-            except Exception:
-                accounts = []
+            accounts = await _list_accounts_for_ws(_account_manager)
 
             # Get circuit breaker state (global)
             cb = _get_circuit_breaker()
-            cb_state = "CLOSED"
+            cb_state: str | None = None
             if cb is not None:
                 try:
                     if hasattr(cb, "state"):
@@ -1067,8 +1083,9 @@ async def websocket_risk(websocket: fastapi.WebSocket):
                 pass
 
             # For each account, build and send the RiskUpdatedSchema payload
-            for account in accounts:
-                account_id = account.account_id if hasattr(account, "account_id") else str(account)
+            risk_accounts: list[Any | None] = list(accounts) if accounts else [None]
+            for account in risk_accounts:
+                account_id = getattr(account, "account_id", None) if account is not None else None
 
                 # Determine severity based on drawdown
                 severity = "SAFE"
@@ -1092,6 +1109,7 @@ async def websocket_risk(websocket: fastapi.WebSocket):
                     block_reason = "Drawdown limit critical"
 
                 # Build the RiskUpdatedSchema payload
+                now = time.time()
                 risk_payload: dict[str, Any] = {
                     "can_trade": can_trade,
                     "block_reason": block_reason,
@@ -1104,7 +1122,8 @@ async def websocket_risk(websocket: fastapi.WebSocket):
                     "open_trades": getattr(account, "open_trades", 0),
                     "circuit_breaker": cb_state,
                     "severity": severity,
-                    "timestamp": time.time(),
+                    "timestamp": now,
+                    "ts": now,
                 }
 
                 # Also include legacy risk_snapshot for backward compatibility
