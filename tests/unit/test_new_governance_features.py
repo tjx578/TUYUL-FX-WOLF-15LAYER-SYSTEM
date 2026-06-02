@@ -45,7 +45,7 @@ def test_signal_contract_frozen_version_rejects_mismatch() -> None:
     assert any("Frozen SignalContract mismatch" in e for e in errors2)
 
 
-def test_read_only_apis_expose_get_only() -> None:
+def test_read_only_and_governed_write_apis_expose_expected_methods() -> None:
     app = _build_app()
     client = TestClient(app)
 
@@ -54,7 +54,7 @@ def test_read_only_apis_expose_get_only() -> None:
     assert client.get("/api/v1/signals").status_code == 200
     assert client.get("/api/v1/accounts").status_code == 200
     assert client.post("/api/v1/signals", json={}).status_code == 405
-    assert client.post("/api/v1/accounts", json={}).status_code == 405
+    assert client.post("/api/v1/accounts", json={}).status_code == 401
 
 
 def test_config_profile_engine_activation() -> None:
