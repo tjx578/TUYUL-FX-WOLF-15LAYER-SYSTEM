@@ -17,6 +17,7 @@ run fast and are suitable for CI with no external dependencies.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -40,6 +41,23 @@ def _make_ws(client_id: str = "ws") -> MagicMock:
     return ws
 
 
+def _mock_create_task(coro):
+    """Close background loop coroutines when task creation is mocked out."""
+    close = getattr(coro, "close", None)
+    if callable(close):
+        close()
+    task = MagicMock()
+    task.done.return_value = True
+    task.cancel.return_value = None
+    return task
+
+
+def _register_connected_ws(manager, ws: MagicMock) -> None:
+    """Register a mock client with the state connect() normally creates."""
+    manager.active_connections.add(ws)
+    manager._per_conn_seq[ws] = itertools.count(1)  # noqa: SLF001
+
+
 async def _connect_n(manager, n: int, auth_user: dict | None = None) -> list[MagicMock]:
     """
     Attempt to connect N mock WebSockets to manager.
@@ -53,7 +71,7 @@ async def _connect_n(manager, n: int, auth_user: dict | None = None) -> list[Mag
         # Suppress heartbeat task creation so it doesn't interfere
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=user)),
-            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
+            patch("asyncio.create_task", side_effect=_mock_create_task),
         ):
             connected = await manager.connect(ws)
         if connected:
