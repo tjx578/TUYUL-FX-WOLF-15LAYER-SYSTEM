@@ -42,3 +42,55 @@ validations:
       - no_buy_chase_after_upper_range_pullback
       - wait_for_reclaim_or_support_hold
       - sell_requires_h1_breakdown_confirmation
+
+  - validation_id: GBPUSD_20260430_LOW_DENSITY_MAJOR_CONTINUATION
+    symbol: GBPUSD
+    checked_logic: low_density_major_pair_continuation
+    source_window_wita: "2026-04-30 18:09-18:41"
+    raw_interpretation: low-density GBPUSD pressure in bullish D1 expansion context
+    actual_outcome: strong post-window BUY follow-through with small MAE
+    validated_patterns:
+      - LOW_DENSITY_MAJOR_PAIR_CONTINUATION
+      - LOW_DENSITY_OPEN_LANE_TIMING_BLOCK
+    correction:
+      - low_density_on_major_pair_can_be_valid_when_phase_and_followthrough_confirm
+      - large_internal_gap_prevents_tier_s_primary_timing_classification
+      - require_structure_target_and_rr_before_direct_signaljson
+
+  - validation_id: GBPUSD_20260507_20260508_BROAD_ROTATION_HIGH_EVENT
+    symbol: GBPUSD
+    checked_logic: high_event_count_not_auto_entry
+    source_window_wita: "2026-05-07 to 2026-05-08"
+    raw_interpretation: GBPUSD event count leader
+    actual_outcome: net movement nearly flat while intrawindow range was large
+    validated_patterns:
+      - BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY
+    correction:
+      - do_not_convert_total_event_leader_into_final_signal
+      - require_m15_h1_price_phase_after_broad_rotation
+      - treat_high_event_broad_rotation_as_theme_alert_and_watchlist
+
+  - validation_id: GBPUSD_20260511_WAIT_THEN_RECOVERY
+    symbol: GBPUSD
+    checked_logic: signalthrottle_intel_wait_then_delayed_continuation
+    source_window_wita: "2026-05-11 08:56-10:45"
+    raw_interpretation: SignalThrottleIntel final_direction WAIT
+    actual_outcome: window delta negative, later BUY recovery with controlled MAE
+    validated_patterns:
+      - DELAYED_GBP_CONTINUATION_AFTER_WAIT
+    correction:
+      - wait_state_was_correct_without_price_context
+      - continuation_candidate_requires_reclaim_or_support_hold
+
+  - validation_id: GBPUSD_20260430_LATE_CONTINUATION_NO_CHASE
+    symbol: GBPUSD
+    checked_logic: late_continuation_after_d1_expansion
+    source_window_wita: "2026-04-30 22:41-22:53"
+    raw_interpretation: late GBPUSD continuation block after strong D1 expansion
+    actual_outcome: short-term follow-through positive but next-day rejection risk increased
+    validated_patterns:
+      - MAJOR_PAIR_POST_EXPANSION_NO_CHASE
+    correction:
+      - active_profit_trade_can_hold_or_trail
+      - new_market_chase_should_be_blocked
+      - wait_pullback_reclaim_before_fresh_entry
