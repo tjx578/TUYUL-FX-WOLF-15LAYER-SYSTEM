@@ -20,6 +20,11 @@ class SignalJsonGateConfig:
     final_barrier: bool = False
     emit_continuation: bool = False
     emit_sidecar: bool = True
+    # When True, a DEFER (not BLOCK) on a directionally-confirmed candidate is
+    # emitted as a CONDITIONAL final signal (execution_mode=WAIT_RETEST) instead
+    # of being demoted to a non-final decision update. Off by default so live
+    # execution semantics do not change until downstream honors WAIT_RETEST.
+    emit_deferred_as_conditional_final: bool = False
     prefix: str = "[SignalExecutionGateJSON]"
     min_rr_required: float = 2.5
     max_chase_r: float = 0.35
@@ -43,6 +48,9 @@ class SignalJsonGateConfig:
             final_barrier=final_barrier,
             emit_continuation=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_CONTINUATION", final_barrier),
             emit_sidecar=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_SIDECAR", True),
+            emit_deferred_as_conditional_final=_env_bool(
+                env, "SIGNAL_JSON_EXEC_GATES_EMIT_DEFERRED_FINAL", False
+            ),
             prefix=str(env.get("SIGNAL_EXECUTION_GATE_JSON_LOG_PREFIX") or "[SignalExecutionGateJSON]"),
             min_rr_required=_env_float(env, "SIGNAL_JSON_MIN_RR_VALID", 2.5),
             max_chase_r=_env_float(env, "SIGNAL_JSON_EXEC_GATES_MAX_CHASE_R", 0.35),
@@ -87,6 +95,12 @@ class SignalJsonGateAdapter:
         if self.config.emit_sidecar and decision.applies:
             self._emit_sidecar(payload, decision)
         if self.config.enforce and decision.applies and not decision.allows_execution:
+            if (
+                self.config.emit_deferred_as_conditional_final
+                and decision.decision == "DEFER"
+                and _is_retest_eligible(payload, decision)
+            ):
+                return self._deferred_as_conditional_final(payload, decision)
             return self._blocked_as_decision_update(payload, decision)
         return payload
 
@@ -170,6 +184,77 @@ class SignalJsonGateAdapter:
             }
         )
         return blocked
+
+    @staticmethod
+    def _deferred_as_conditional_final(
+        payload: dict[str, Any],
+        decision: ExecutionGateDecision,
+    ) -> dict[str, Any]:
+        """Emit a DEFER on a confirmed candidate as a CONDITIONAL final signal.
+
+        The directional plan is valid; only immediate market execution is
+        deferred (e.g. waiting a retest or structure confirmation). Rather than
+        burying it as a non-final WAIT, keep it final and instruct a pending
+        limit at the entry zone with no chasing.
+        """
+        final = dict(payload)
+        reasons = ", ".join(decision.reasons) or decision.execution_status
+        final.update(
+            {
+                "is_final_signal": True,
+                "valid_for_execution": True,
+                "execution_valid_now": False,
+                "execution_mode": "WAIT_RETEST",
+                "entry_type": "PENDING_LIMIT",
+                "pending_entry_zone": payload.get("entry_zone"),
+                "execution_grade": "CONDITIONAL",
+                "execution_status": decision.execution_status,
+                "direction_validation_status": "FINAL_VALID_PENDING_RETEST",
+                "action": "PLACE_PENDING_LIMIT_AT_ENTRY_ZONE_NO_CHASE",
+                "next_action": "WAIT_RETEST_FILL_OR_INVALIDATION",
+                "emit_reason": "CONDITIONAL_FINAL_WAIT_RETEST",
+                "signal_quality": "CONDITIONAL_FINAL",
+                "exec_gate_decision": decision.decision,
+                "exec_gate_defer_reasons": list(decision.reasons),
+                "reason": (
+                    f"{payload.get('reason') or 'signal_candidate'} "
+                    "Final signal valid; enter on retest of the entry zone (no chase). "
+                    f"Execution deferred now because: {reasons}."
+                ),
+            }
+        )
+        return final
+
+
+_RETEST_ELIGIBLE_DEFER_REASONS = frozenset(
+    {
+        "STRUCTURE_TARGET_MODE_REQUIRED",
+        "STRUCTURE_TARGET_AT_MIN_RR_MISSING",
+        "SUPPORT_RESISTANCE_LADDER_INCOMPLETE",
+        "BREAKOUT_RETEST_NOT_CONFIRMED",
+        "BREAKDOWN_RETEST_NOT_CONFIRMED",
+        "MICROBOOST_WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+        "MICROBOOST_STRUCTURE_REACTION_CONFIRMATION_REQUIRED",
+        "MICROBOOST_PRESSURE_WARNING_CONFIRMATION_REQUIRED",
+    }
+)
+
+
+def _is_retest_eligible(payload: dict[str, Any], decision: ExecutionGateDecision) -> bool:
+    """True when a DEFER can safely become a WAIT_RETEST conditional final signal."""
+    status = str(payload.get("status") or "")
+    direction = str(payload.get("final_direction") or "").upper()
+    rr_status = str(payload.get("rr_status") or "").upper()
+    directionally_valid = (
+        status.endswith("_VALID")
+        and direction in {"BUY", "SELL"}
+        and rr_status in {"VALID", "ACCEPTABLE"}
+        and bool(payload.get("valid_for_execution", False))
+    )
+    if not directionally_valid:
+        return False
+    reasons = set(decision.reasons)
+    return bool(reasons) and reasons.issubset(_RETEST_ELIGIBLE_DEFER_REASONS)
 
 
 def _env_bool(env: Mapping[str, str], key: str, default: bool) -> bool:
