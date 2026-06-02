@@ -1157,6 +1157,7 @@ class TestInsufficientData:
         }
         v62_keys = {
             "data_quality",
+            "candle_age_by_tf",
         }
         expected_keys = v5_keys | v6_keys | v7_keys | v62_keys
         assert set(result.keys()) == expected_keys
