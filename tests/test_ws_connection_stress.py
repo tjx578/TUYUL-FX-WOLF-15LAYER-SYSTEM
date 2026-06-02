@@ -112,7 +112,7 @@ class TestConnectionCap:
         extra_ws = _make_ws("ws-overflow")
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "overflow"})),
-            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
+            patch("asyncio.create_task", side_effect=_mock_create_task),
         ):
             connected = await mgr.connect(extra_ws)
 
@@ -139,7 +139,7 @@ class TestConnectionCap:
         new_ws = _make_ws("ws-replacement")
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "new"})),
-            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
+            patch("asyncio.create_task", side_effect=_mock_create_task),
         ):
             connected = await mgr.connect(new_ws)
 
@@ -202,13 +202,17 @@ class TestBroadcastThroughput:
         mgr = ConnectionManager(name="broadcast-test")
         clients = [_make_ws(f"ws-{i}") for i in range(50)]
         for c in clients:
-            mgr.active_connections.add(c)
+            _register_connected_ws(mgr, c)
 
         msg = {"type": "tick", "data": {"EURUSD": {"bid": 1.085, "ask": 1.0851}}}
         await mgr.broadcast(msg)
 
         for c in clients:
-            c.send_json.assert_called_once_with(msg)
+            c.send_json.assert_called_once()
+            sent = c.send_json.call_args.args[0]
+            assert sent["type"] == msg["type"]
+            assert sent["data"] == msg["data"]
+            assert "seq" in sent
 
     @pytest.mark.asyncio
     async def test_broadcast_50_clients_under_100ms(self):
@@ -218,7 +222,7 @@ class TestBroadcastThroughput:
         mgr = ConnectionManager(name="latency-test")
         clients = [_make_ws(f"ws-{i}") for i in range(50)]
         for c in clients:
-            mgr.active_connections.add(c)
+            _register_connected_ws(mgr, c)
 
         msg = {"type": "risk_state", "data": {"ts": time.time()}}
         start = time.perf_counter()
@@ -235,7 +239,7 @@ class TestBroadcastThroughput:
         mgr = ConnectionManager(name="sustained-test")
         clients = [_make_ws(f"ws-{i}") for i in range(10)]
         for c in clients:
-            mgr.active_connections.add(c)
+            _register_connected_ws(mgr, c)
 
         start = time.perf_counter()
         for i in range(1000):
@@ -260,7 +264,7 @@ class TestBroadcastThroughput:
             bc.send_json.side_effect = ConnectionError("closed")
 
         for c in good_clients + bad_clients:
-            mgr.active_connections.add(c)
+            _register_connected_ws(mgr, c)
 
         # Should not raise
         await mgr.broadcast({"type": "test"})
