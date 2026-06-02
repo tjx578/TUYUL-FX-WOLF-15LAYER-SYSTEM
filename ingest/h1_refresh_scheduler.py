@@ -26,7 +26,9 @@ _redis_keys_mod = import_module("core.redis_keys")
 candle_history = cast(Callable[[str, str], str], _redis_keys_mod.candle_history)
 channel_candle = cast(Callable[[str, str], str], _redis_keys_mod.channel_candle)
 latest_candle = cast(Callable[[str, str], str], _redis_keys_mod.latest_candle)
-FinnhubCandleFetcher = import_module("ingest.finnhub_candles").FinnhubCandleFetcher
+_finnhub_candles_mod = import_module("ingest.finnhub_candles")
+FinnhubCandleFetcher = _finnhub_candles_mod.FinnhubCandleFetcher
+FinnhubCandlePremiumError = _finnhub_candles_mod.FinnhubCandlePremiumError
 
 
 def enqueue_candle_dict(candle: dict[str, Any]) -> None:
@@ -64,6 +66,10 @@ class H1RefreshScheduler:
         self.system_state = SystemStateManager()
         self._redis = redis_client
         self._redis_maxlen = 300
+
+        # Alpha Vantage fallback — used when Finnhub returns premium errors
+        from ingest.alphavantage_candles import AlphaVantageCandleFetcher  # noqa: PLC0415
+        self._av_fetcher = AlphaVantageCandleFetcher(redis_client=redis_client)
 
         # Semaphore for concurrent refresh
         self.semaphore = asyncio.Semaphore(3)
@@ -131,17 +137,49 @@ class H1RefreshScheduler:
         """
         Refresh H1/H4 for a single symbol.
 
+        Tries Finnhub first.  On a ``FinnhubCandlePremiumError`` (HTTP 403)
+        the method falls back to Alpha Vantage so that H1/H4 candles remain
+        fresh even on the Finnhub free tier.
+
         Args:
             symbol: Trading symbol
         """
         async with self.semaphore:
             try:
-                # Fetch latest H1 bars
-                h1_candles = await self.fetcher.fetch(symbol, "H1", self.h1_bars)
+                # Fetch latest H1 bars — try Finnhub, fall back to Alpha Vantage
+                h1_candles: list[dict[str, Any]] = []
+                provider_used = "finnhub"
+                try:
+                    h1_candles = await self.fetcher.fetch(symbol, "H1", self.h1_bars)
+                except FinnhubCandlePremiumError:
+                    logger.warning(
+                        "[H1Refresh] Finnhub premium required for {} H1 — trying Alpha Vantage",
+                        symbol,
+                    )
+                    h1_candles = await self._av_fetcher.fetch(symbol, "H1", self.h1_bars)
+                    provider_used = "alpha_vantage"
+                    if h1_candles:
+                        logger.info(
+                            "[H1Refresh] Alpha Vantage fallback succeeded for {} H1 ({} bars)",
+                            symbol,
+                            len(h1_candles),
+                        )
+                    else:
+                        logger.warning(
+                            "[H1Refresh] Alpha Vantage also returned 0 H1 bars for {}",
+                            symbol,
+                        )
 
                 if not h1_candles:
                     logger.warning(f"No H1 bars fetched for {symbol} during refresh")
                     return
+
+                logger.debug(
+                    "[H1Refresh] {} H1 bars fetched for {} via {}",
+                    len(h1_candles),
+                    symbol,
+                    provider_used,
+                )
 
                 # Seed LiveContextBus
                 for candle in h1_candles:
