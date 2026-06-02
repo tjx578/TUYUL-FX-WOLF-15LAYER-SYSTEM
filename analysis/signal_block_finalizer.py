@@ -41,7 +41,7 @@ FINAL_EXECUTION_STATUSES = {
     "SELL_BREAKDOWN_RETEST_VALID",
 }
 
-MIN_EXECUTABLE_TP1_RR = 2.0
+MIN_EXECUTABLE_TP1_RR = 1.5
 STRUCTURE_TARGET_MODES = {
     "FINAL_MARKET_STRUCTURE",
     "STRUCTURE_LADDER_TARGET",
@@ -220,8 +220,8 @@ class SignalBlockFinalizer:
         idle_finalize_seconds: float = 75.0,
         hard_finalize_seconds: float = 300.0,
         expires_after_m15_bars: int = 3,
-        min_rr_valid: float = 2.5,
-        tp1_rr_required: float = 2.0,
+        min_rr_valid: float = 1.5,
+        tp1_rr_required: float = 1.5,
         counter_entry_risk_multiplier: float = 0.5,
         counter_entry_expiry_minutes: int = 30,
         allow_rr_fallback: bool = True,
