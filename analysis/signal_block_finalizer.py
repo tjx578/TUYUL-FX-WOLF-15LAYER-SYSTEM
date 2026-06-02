@@ -517,7 +517,6 @@ class SignalBlockFinalizer:
                 "selected_sl_mode",
                 "selected_sl",
                 "risk_pips",
-                "risk_pips_tight",
                 "risk_pips_safe",
                 "selected_risk_pips",
                 "target_policy",
