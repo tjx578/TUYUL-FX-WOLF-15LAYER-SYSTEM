@@ -651,6 +651,129 @@ def test_chfjpy_late_session_expansion_fail_blocks_new_entry():
     assert result["pattern_score"] <= 69
 
 
+def test_nzdjpy_secondary_jpy_basket_confirmation_is_reference_context():
+    result = match_golden_patterns(
+        {
+            "symbol": "NZDJPY",
+            "jpy_basket_member": True,
+            "basket_active": True,
+            "basket_direction_consistent": True,
+            "own_pair_event_count": 30,
+            "own_clean_block": False,
+            "post_window_mfe_positive": True,
+            "mae_controlled": True,
+            "forward_mfe_pips": 42.6,
+            "forward_mae_pips": -9.7,
+            "theme_aligned": True,
+            "jpy_alignment": "ALIGNED",
+            "dual_theme_status": "ALIGNED",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "JPY_BASKET_SECONDARY_CONFIRMATION"
+    assert result["golden_references"] == ["NZDJPY"]
+    assert result["pair_role"] == "JPY_BASKET_SECONDARY_CONFIRMATION"
+    assert result["entry_permission"] == "BOOST_SCORE_ONLY"
+    assert result["block_reason"] == "JPY_SECONDARY_REQUIRES_OWN_TRIGGER"
+    assert "JPY_SECONDARY_REQUIRES_OWN_TRIGGER" in result["pattern_bottlenecks"]
+    assert result["pattern_score"] <= 69
+
+
+def test_nzdjpy_fragmented_theme_followthrough_waits_for_reclaim():
+    result = match_golden_patterns(
+        {
+            "symbol": "NZDJPY",
+            "latest_phase": "FRAGMENTED_BASKET_ROTATION",
+            "fragmented_basket_rotation": True,
+            "multiple_pairs_active": True,
+            "same_pair_clean_block": False,
+            "own_pair_event_count": 103,
+            "theme_followthrough_confirmed": True,
+            "later_reclaim_or_recovery": True,
+            "forward_mfe_pips": 42.6,
+            "forward_mae_pips": -9.7,
+            "jpy_alignment": "MIXED",
+            "dual_theme_status": "MIXED",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "FRAGMENTED_THEME_FOLLOWTHROUGH"
+    assert result["entry_permission"] == "DELAYED_WATCH"
+    assert result["management_action"] == "WAIT_RECLAIM_OR_SUPPORT_HOLD"
+    assert result["block_reason"] == "FRAGMENTED_THEME_REQUIRES_RECLAIM"
+    assert "FRAGMENTED_THEME_REQUIRES_RECLAIM" in result["pattern_bottlenecks"]
+
+
+def test_nzdjpy_delayed_jpy_cross_continuation_requires_reclaim():
+    result = match_golden_patterns(
+        {
+            "symbol": "NZDJPY",
+            "jpy_basket_member": True,
+            "basket_active": True,
+            "own_pair_event_count": 29,
+            "own_clean_block": False,
+            "immediate_followthrough": "WEAK_OR_NEGATIVE",
+            "later_reclaim_or_recovery": True,
+            "forward_mfe_pips": 24.0,
+            "forward_mae_pips": -4.2,
+            "jpy_alignment": "ALIGNED",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "DELAYED_JPY_CROSS_CONTINUATION"
+    assert result["entry_permission"] == "DELAYED_WATCH"
+    assert result["management_action"] == "WAIT_RECLAIM_OR_STRUCTURE_TARGET"
+    assert result["block_reason"] == "DELAYED_CONTINUATION_REQUIRES_RECLAIM"
+    assert "DELAYED_CONTINUATION_REQUIRES_RECLAIM" in result["pattern_bottlenecks"]
+
+
+def test_nzdjpy_macro_bullish_intraday_pullback_is_decision_state():
+    result = match_golden_patterns(
+        {
+            "symbol": "NZDJPY",
+            "raw_direction": "BUY",
+            "macro_bullish_intraday_pullback": True,
+            "d1_phase": "BULLISH",
+            "h4_phase": "UPTREND",
+            "h1_phase": "PULLBACK",
+            "m15_phase": "SUPPORT_RETEST",
+            "h1_m15_pullback": True,
+            "jpy_alignment": "ALIGNED",
+            "dual_theme_status": "ALIGNED",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "MACRO_BULLISH_INTRADAY_PULLBACK_DECISION"
+    assert result["entry_permission"] == "BUY_RECLAIM_OR_SUPPORT_HOLD"
+    assert result["management_action"] == "WAIT_SUPPORT_HOLD_OR_H1_BREAKDOWN"
+    assert result["block_reason"] == "MACRO_PULLBACK_NEEDS_RECLAIM_OR_SUPPORT_HOLD"
+    assert "MACRO_PULLBACK_NEEDS_RECLAIM_OR_SUPPORT_HOLD" in result["pattern_bottlenecks"]
+
+
+def test_nzdjpy_post_expansion_no_chase_filter_blocks_fresh_entry():
+    result = match_golden_patterns(
+        {
+            "symbol": "NZDJPY",
+            "raw_direction": "BUY",
+            "post_expansion": True,
+            "price_position": "MAIN_RESISTANCE",
+            "h1_phase": "PULLBACK",
+            "m15_phase": "PULLBACK",
+            "h1_or_m15_repair_not_complete": True,
+            "range_position": 0.78,
+            "jpy_alignment": "ALIGNED",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "POST_EXPANSION_NO_CHASE_FILTER"
+    assert result["pattern_tier"] == "S"
+    assert result["entry_permission"] == "NO_MARKET_CHASE"
+    assert result["management_action"] == "PROTECT_OR_WAIT_RETEST"
+    assert result["block_reason"] == "POST_EXPANSION_NO_CHASE"
+    assert "POST_EXPANSION_NO_CHASE" in result["pattern_bottlenecks"]
+    assert result["pattern_score"] <= 69
+
+
 def test_zero_drawdown_followthrough_surfaces_as_historical_quality_confluence():
     result = match_golden_patterns(
         {
