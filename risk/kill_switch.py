@@ -4,17 +4,81 @@ import contextlib
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
+import redis
+
+from infrastructure.redis_url import get_redis_url
 from state.data_freshness import stale_threshold_seconds
-from storage.redis_client import redis_client
 
 _KILL_SWITCH_KEY = "RISK:KILL_SWITCH:GLOBAL"
 
 logger = logging.getLogger(__name__)
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+class _FailFastKillSwitchRedis:
+    """Small Redis adapter for startup-safe kill-switch persistence."""
+
+    def __init__(self) -> None:
+        self._client: redis.Redis | None = None
+        self._client_url: str | None = None
+        self._unavailable_until = 0.0
+
+    def _redis(self) -> redis.Redis:
+        url = get_redis_url()
+        if self._client is None or url != self._client_url:
+            timeout = _env_float("KILL_SWITCH_REDIS_TIMEOUT_SEC", 0.25)
+            self._client = redis.Redis.from_url(
+                url,
+                decode_responses=False,
+                socket_timeout=timeout,
+                socket_connect_timeout=timeout,
+                retry_on_timeout=False,
+                health_check_interval=0,
+            )
+            self._client_url = url
+        return self._client
+
+    def _is_unavailable(self) -> bool:
+        return time.monotonic() < self._unavailable_until
+
+    def _mark_unavailable(self) -> None:
+        self._unavailable_until = time.monotonic() + _env_float("KILL_SWITCH_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+
+    def get(self, key: str) -> str | bytes | None:
+        if self._is_unavailable():
+            return None
+        try:
+            return self._redis().get(key)
+        except Exception:
+            self._mark_unavailable()
+            return None
+
+    def set(self, key: str, value: str) -> bool:
+        if self._is_unavailable():
+            return False
+        try:
+            return bool(self._redis().set(key, value))
+        except Exception:
+            self._mark_unavailable()
+            return False
+
+
+redis_client = _FailFastKillSwitchRedis()
 
 
 @dataclass(frozen=True)
