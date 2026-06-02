@@ -11,9 +11,11 @@ Provides REST API for:
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from datetime import UTC, datetime
 
+import redis
 from fastapi import APIRouter, Depends, Header, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
@@ -36,6 +38,7 @@ from allocation.signal_service import SignalService
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 from core.redis_keys import ACCOUNT_STATE, compliance_state
+from infrastructure.redis_url import get_redis_url
 from journal.audit_trail import AuditAction, AuditTrail
 from risk.exceptions import RiskException
 from risk.kill_switch import GlobalKillSwitch
@@ -46,6 +49,95 @@ from storage.redis_client import redis_client
 
 router = APIRouter(prefix="/api/v1/risk", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 _kill_switch = GlobalKillSwitch()
+_ROUTER_REDIS_CLIENT: redis.Redis | None = None
+_ROUTER_REDIS_CLIENT_URL: str | None = None
+_ROUTER_REDIS_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _router_redis_is_patched() -> bool:
+    return redis_client.__class__.__name__ != "_LazyRedisClient"
+
+
+def _router_redis_temporarily_unavailable() -> bool:
+    return time.monotonic() < _ROUTER_REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_router_redis_unavailable() -> None:
+    global _ROUTER_REDIS_UNAVAILABLE_UNTIL
+    cooldown = _env_float("RISK_ROUTER_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _ROUTER_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _router_redis_client() -> redis.Redis:
+    """Return a fast-fail client for best-effort risk-router Redis I/O."""
+    global _ROUTER_REDIS_CLIENT, _ROUTER_REDIS_CLIENT_URL
+
+    url = get_redis_url()
+    if _ROUTER_REDIS_CLIENT is None or url != _ROUTER_REDIS_CLIENT_URL:
+        timeout = _env_float("RISK_ROUTER_REDIS_TIMEOUT_SEC", 0.25)
+        _ROUTER_REDIS_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=True,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _ROUTER_REDIS_CLIENT_URL = url
+    return _ROUTER_REDIS_CLIENT
+
+
+def _router_redis_set(key: str, value: str) -> None:
+    if _router_redis_is_patched():
+        redis_client.set(key, value)
+        return
+
+    if _router_redis_temporarily_unavailable():
+        return
+
+    try:
+        _router_redis_client().set(key, value)
+    except Exception:
+        _mark_router_redis_unavailable()
+        logger.warning("Failed to publish account state to Redis")
+
+
+def _router_redis_get(key: str) -> str | None:
+    if _router_redis_is_patched():
+        return redis_client.get(key)
+
+    if _router_redis_temporarily_unavailable():
+        return None
+
+    try:
+        return _router_redis_client().get(key)
+    except Exception:
+        _mark_router_redis_unavailable()
+        return None
+
+
+def _router_redis_hgetall(key: str) -> dict[str, str]:
+    if _router_redis_is_patched():
+        return redis_client.hgetall(key) or {}
+
+    if _router_redis_temporarily_unavailable():
+        return {}
+
+    try:
+        return _router_redis_client().hgetall(key) or {}
+    except Exception:
+        _mark_router_redis_unavailable()
+        return {}
 
 
 def _publish_account_state_to_redis(state: AccountRiskState) -> None:
@@ -79,7 +171,7 @@ def _publish_account_state_to_redis(state: AccountRiskState) -> None:
         }
     )
     try:
-        redis_client.set(ACCOUNT_STATE, payload)
+        _router_redis_set(ACCOUNT_STATE, payload)
     except Exception:
         logger.warning("Failed to publish account state to Redis")
 _account_repo = AccountRepository.get_default()
@@ -317,7 +409,7 @@ def _build_risk_signal(payload: dict, signal_id: str) -> Layer12Signal:
 
 
 def _build_account_state(account_id: str) -> DashAccountState:
-    payload = redis_client.hgetall(f"ACCOUNT:{account_id}") or {}
+    payload = _router_redis_hgetall(f"ACCOUNT:{account_id}") or {}
     return DashAccountState(
         account_id=account_id,
         balance=float(payload.get("balance", 10000) or 10000),
@@ -883,7 +975,7 @@ async def evaluate_compliance(account_id: str) -> dict:
     try:
         import json as _json  # noqa: PLC0415
 
-        raw = redis_client.get(compliance_state(account_id))
+        raw = _router_redis_get(compliance_state(account_id))
         if raw:
             cached = _json.loads(raw)
             current_mode = ComplianceMode(cached.get("mode", "NORMAL"))
