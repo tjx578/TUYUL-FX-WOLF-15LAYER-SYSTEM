@@ -7,19 +7,102 @@ Signals are global and account-agnostic.
 from __future__ import annotations
 
 import json
+import os
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from threading import Lock
 from typing import Any, cast
 from uuid import uuid4
 
+import redis
 from loguru import logger
 
-from storage.redis_client import RedisClient
+from infrastructure.redis_url import get_redis_url
 
 _REGISTRY_KEY_PREFIX = "signal:registry:id:"
 _REGISTRY_INDEX_KEY = "signal:registry:index"
 _SYMBOL_INDEX_KEY = "signal:registry:symbol:index"
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+class _SignalRegistryRedis:
+    """Fail-fast Redis adapter for read-heavy signal registry endpoints."""
+
+    def __init__(self) -> None:
+        self._client: redis.Redis | None = None
+        self._client_url: str | None = None
+        self._unavailable_until = 0.0
+
+    def _redis(self) -> redis.Redis:
+        url = get_redis_url()
+        if self._client is None or url != self._client_url:
+            timeout = _env_float("SIGNAL_REGISTRY_REDIS_TIMEOUT_SEC", 0.25)
+            self._client = redis.Redis.from_url(
+                url,
+                decode_responses=False,
+                socket_timeout=timeout,
+                socket_connect_timeout=timeout,
+                retry_on_timeout=False,
+                health_check_interval=0,
+            )
+            self._client_url = url
+        return self._client
+
+    def _is_unavailable(self) -> bool:
+        return time.monotonic() < self._unavailable_until
+
+    def _mark_unavailable(self) -> None:
+        self._unavailable_until = time.monotonic() + _env_float("SIGNAL_REGISTRY_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+
+    def get(self, key: str) -> str | bytes | None:
+        if self._is_unavailable():
+            return None
+        try:
+            return self._redis().get(key)
+        except Exception:
+            self._mark_unavailable()
+            return None
+
+    def set(self, key: str, value: str, *, ex: int | None = None) -> None:
+        if self._is_unavailable():
+            raise ConnectionError("Signal registry Redis temporarily unavailable")
+        try:
+            self._redis().set(key, value, ex=ex)
+        except Exception:
+            self._mark_unavailable()
+            raise
+
+    def sadd(self, key: str, value: str) -> None:
+        if self._is_unavailable():
+            raise ConnectionError("Signal registry Redis temporarily unavailable")
+        try:
+            self._redis().sadd(key, value)
+        except Exception:
+            self._mark_unavailable()
+            raise
+
+    def smembers(self, key: str) -> set[Any]:
+        if self._is_unavailable():
+            return set()
+        try:
+            return cast(set[Any], self._redis().smembers(key))
+        except Exception:
+            self._mark_unavailable()
+            return set()
+
+
+def _decode_redis_text(raw: Any) -> str:
+    return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
 
 
 @dataclass(frozen=True)
@@ -63,14 +146,14 @@ class SignalRegistry:
 
     _instance: SignalRegistry | None = None
     _lock = Lock()
-    _redis: RedisClient
+    _redis: _SignalRegistryRedis
 
     def __new__(cls) -> SignalRegistry:
         if not cls._instance:
             with cls._lock:
                 if not cls._instance:
                     cls._instance = super().__new__(cls)
-                    cls._instance._redis = RedisClient()
+                    cls._instance._redis = _SignalRegistryRedis()
         return cls._instance
 
     def publish(self, signal: dict[str, Any]) -> dict[str, Any]:
@@ -82,8 +165,8 @@ class SignalRegistry:
 
         key = f"{_REGISTRY_KEY_PREFIX}{record.signal_id}"
         self._redis.set(key, json.dumps(payload), ex=3600 * 24)
-        self._redis.client.sadd(_REGISTRY_INDEX_KEY, record.signal_id)
-        self._redis.client.sadd(_SYMBOL_INDEX_KEY, record.pair)
+        self._redis.sadd(_REGISTRY_INDEX_KEY, record.signal_id)
+        self._redis.sadd(_SYMBOL_INDEX_KEY, record.pair)
         logger.debug(f"SignalRegistry: published signal_id={record.signal_id} pair={record.pair}")
         return payload
 
@@ -98,7 +181,7 @@ class SignalRegistry:
     def get_by_id(self, signal_id: str) -> dict[str, Any] | None:
         """Retrieve signal by global signal_id."""
         raw = self._redis.get(f"{_REGISTRY_KEY_PREFIX}{signal_id}")
-        return json.loads(raw) if raw else None
+        return json.loads(_decode_redis_text(raw)) if raw else None
 
     def expire(self, signal_id: str) -> bool:
         """Mark signal as EXPIRED without deleting audit footprint."""
@@ -111,12 +194,12 @@ class SignalRegistry:
 
     def list_symbols(self) -> list[str]:
         """Return all symbols with registered signals."""
-        members = cast(set[str], self._redis.client.smembers(_SYMBOL_INDEX_KEY))
-        return sorted(members) if members else []
+        members = self._redis.smembers(_SYMBOL_INDEX_KEY)
+        return sorted(_decode_redis_text(member) for member in members) if members else []
 
     def list_signal_ids(self) -> list[str]:
-        members = cast(set[str], self._redis.client.smembers(_REGISTRY_INDEX_KEY))
-        return sorted(members) if members else []
+        members = self._redis.smembers(_REGISTRY_INDEX_KEY)
+        return sorted(_decode_redis_text(member) for member in members) if members else []
 
     def get_latest(self, n: int = 10) -> list[dict[str, Any]]:
         """Return latest signals sorted by created_at desc."""
