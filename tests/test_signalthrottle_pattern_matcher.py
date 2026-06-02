@@ -774,6 +774,102 @@ def test_nzdjpy_post_expansion_no_chase_filter_blocks_fresh_entry():
     assert result["pattern_score"] <= 69
 
 
+def test_gbpusd_low_density_major_pair_continuation_is_validated_reference():
+    result = match_golden_patterns(
+        {
+            "symbol": "GBPUSD",
+            "pair_type": "MAJOR",
+            "raw_direction": "BUY",
+            "duration_seconds": 1924.2,
+            "density_per_minute": 0.34,
+            "event_count": 11,
+            "block_delta_pips": -2.5,
+            "d1_phase": "BULLISH",
+            "h4_phase": "UPTREND",
+            "higher_tf_phase": "BULLISH_CONTINUATION",
+            "post_window_mfe_positive": True,
+            "mae_controlled": True,
+            "forward_mfe_pips": 80.5,
+            "forward_mae_pips": -3.6,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "LOW_DENSITY_MAJOR_PAIR_CONTINUATION"
+    assert result["golden_references"] == ["GBPUSD"]
+    assert result["pair_role"] == "GBP_THEME_MAJOR_CONFIRMATION"
+    assert result["entry_permission"] == "ENTRY_WATCH_OR_DIRECT_IF_STRUCTURE_READY"
+    assert result["block_reason"] == "STRUCTURE_PHASE_REQUIRED"
+    assert "MAJOR_PAIR_CONTINUATION_NEEDS_STRUCTURE_AND_RR" in result["pattern_bottlenecks"]
+
+
+def test_gbpusd_broad_rotation_high_event_is_not_single_pair_entry():
+    result = match_golden_patterns(
+        {
+            "symbol": "GBPUSD",
+            "latest_phase": "BROAD_ROTATION_OR_THEME_PRESSURE",
+            "broad_rotation": True,
+            "multiple_pairs_active": True,
+            "active_pair_count": 8,
+            "event_count": 1298,
+            "net_delta_pips": 1.0,
+            "intrawindow_range_pips": 91.6,
+            "raw_direction": "BUY",
+        }
+    )
+
+    assert result["selected_pattern_id"] == "BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY"
+    assert result["pattern_tier"] == "S"
+    assert result["entry_permission"] == "WATCHLIST_ONLY"
+    assert result["management_action"] == "FETCH_M15_H1_PRICE_PHASE"
+    assert result["block_reason"] == "BROAD_ROTATION_NOT_SINGLE_PAIR_ENTRY"
+    assert "BROAD_ROTATION_NOT_SINGLE_PAIR_ENTRY" in result["pattern_bottlenecks"]
+    assert result["pattern_score"] <= 69
+
+
+def test_gbpusd_delayed_continuation_after_wait_requires_reclaim():
+    result = match_golden_patterns(
+        {
+            "symbol": "GBPUSD",
+            "theme_family": "GBP_THEME",
+            "final_direction": "WAIT",
+            "immediate_followthrough": "NEGATIVE",
+            "later_reclaim_or_recovery": True,
+            "price_delta_during_window_pips": -7.2,
+            "forward_mfe_pips": 46.0,
+            "forward_mae_pips": -3.6,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "DELAYED_GBP_CONTINUATION_AFTER_WAIT"
+    assert result["entry_permission"] == "DELAYED_WATCH"
+    assert result["management_action"] == "WAIT_RECLAIM_OR_SUPPORT_HOLD"
+    assert result["block_reason"] == "DELAYED_GBP_CONTINUATION_REQUIRES_RECLAIM"
+    assert "DELAYED_GBP_CONTINUATION_REQUIRES_RECLAIM" in result["pattern_bottlenecks"]
+
+
+def test_gbpusd_major_pair_post_expansion_no_chase_blocks_fresh_entry():
+    result = match_golden_patterns(
+        {
+            "symbol": "GBPUSD",
+            "raw_direction": "BUY",
+            "prior_d1_expansion": True,
+            "prior_d1_range_atr_ratio": 2.26,
+            "late_signal_block": True,
+            "price_already_expanded": True,
+            "next_day_rejection_or_cooling_risk": True,
+            "range_position": 0.91,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "MAJOR_PAIR_POST_EXPANSION_NO_CHASE"
+    assert result["pattern_tier"] == "S"
+    assert result["entry_permission"] == "NO_MARKET_CHASE"
+    assert result["management_action"] == "HOLD_TRAIL_OR_WAIT_PULLBACK"
+    assert result["block_reason"] == "MAJOR_PAIR_POST_EXPANSION_NO_CHASE"
+    assert "MAJOR_PAIR_POST_EXPANSION_NO_CHASE" in result["pattern_bottlenecks"]
+    assert result["pattern_score"] <= 69
+
+
 def test_zero_drawdown_followthrough_surfaces_as_historical_quality_confluence():
     result = match_golden_patterns(
         {
