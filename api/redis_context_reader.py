@@ -30,10 +30,13 @@ Zone: api/ — presentation layer. Read-only, no execution authority.
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, cast
 
-from storage.redis_client import redis_client
+import redis
+
+from infrastructure.redis_url import get_redis_url
 
 # Key prefixes (must match what engine/ingest write)
 _CANDLE_HISTORY = "wolf15:candle_history"
@@ -50,22 +53,70 @@ _WARMUP_MIN_BARS = {"H1": 20, "H4": 10, "D1": 5, "W1": 5, "MN": 2}
 # Timeframes to check
 _ALL_TIMEFRAMES = ("M1", "M5", "M15", "H1", "H4", "D1", "W1", "MN")
 
+_CONTEXT_REDIS_CLIENT: redis.Redis | None = None
+_CONTEXT_REDIS_CLIENT_URL: str | None = None
+_REDIS_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _context_redis_client() -> redis.Redis:
+    """Return a fast-fail Redis client for read-only dashboard context calls."""
+    global _CONTEXT_REDIS_CLIENT, _CONTEXT_REDIS_CLIENT_URL
+
+    url = get_redis_url()
+    if _CONTEXT_REDIS_CLIENT is None or url != _CONTEXT_REDIS_CLIENT_URL:
+        timeout = _env_float("API_CONTEXT_REDIS_TIMEOUT_SEC", 0.25)
+        _CONTEXT_REDIS_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=False,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _CONTEXT_REDIS_CLIENT_URL = url
+    return _CONTEXT_REDIS_CLIENT
+
+
+def _redis_temporarily_unavailable() -> bool:
+    return time.monotonic() < _REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_redis_unavailable() -> None:
+    global _REDIS_UNAVAILABLE_UNTIL
+    cooldown = _env_float("API_CONTEXT_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
 
 def _redis_lrange(key: str, start: int, end: int) -> list[str]:
     """Safe Redis LRANGE returning decoded strings."""
+    if _redis_temporarily_unavailable():
+        return []
     try:
-        raw = cast(list[Any], redis_client.client.lrange(key, start, end))
+        raw = cast(list[Any], _context_redis_client().lrange(key, start, end))
         if not raw:
             return []
         return [item.decode("utf-8") if isinstance(item, bytes) else str(item) for item in raw]
     except Exception:
+        _mark_redis_unavailable()
         return []
 
 
 def _redis_hgetall(key: str) -> dict[str, str]:
     """Safe Redis HGETALL returning decoded dict."""
+    if _redis_temporarily_unavailable():
+        return {}
     try:
-        raw = cast(dict[Any, Any], redis_client.client.hgetall(key))
+        raw = cast(dict[Any, Any], _context_redis_client().hgetall(key))
         if not raw:
             return {}
         return {
@@ -73,17 +124,21 @@ def _redis_hgetall(key: str) -> dict[str, str]:
             for k, v in raw.items()
         }
     except Exception:
+        _mark_redis_unavailable()
         return {}
 
 
 def _redis_get(key: str) -> str | None:
     """Safe Redis GET returning decoded string."""
+    if _redis_temporarily_unavailable():
+        return None
     try:
-        raw = redis_client.client.get(key)
+        raw = _context_redis_client().get(key)
         if raw is None:
             return None
         return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
     except Exception:
+        _mark_redis_unavailable()
         return None
 
 
@@ -309,9 +364,12 @@ class RedisContextReader:
     ) -> int:
         """Return bar count for symbol/timeframe from Redis."""
         key = f"{_CANDLE_HISTORY}:{symbol}:{timeframe}"
+        if _redis_temporarily_unavailable():
+            return 0
         try:
-            return cast(int, redis_client.client.llen(key)) or 0
+            return cast(int, _context_redis_client().llen(key)) or 0
         except Exception:
+            _mark_redis_unavailable()
             return 0
 
     def check_warmup(
@@ -363,9 +421,12 @@ class RedisContextReader:
         symbols: dict[str, dict[str, Any]] = {}
 
         # Scan Redis for known candle_history keys
+        if _redis_temporarily_unavailable():
+            return {"symbols": symbols}
         try:
-            keys = cast(list[Any], redis_client.client.keys(f"{_CANDLE_HISTORY}:*"))
+            keys = cast(list[Any], _context_redis_client().keys(f"{_CANDLE_HISTORY}:*"))
         except Exception:
+            _mark_redis_unavailable()
             keys = []
 
         seen: set[str] = set()
@@ -469,9 +530,12 @@ class RedisContextReader:
     def _read_all_candles(self) -> dict[str, list[dict[str, Any]]]:
         """Read all candle history keys from Redis."""
         result: dict[str, list[dict[str, Any]]] = {}
+        if _redis_temporarily_unavailable():
+            return result
         try:
-            keys = cast(list[Any], redis_client.client.keys(f"{_CANDLE_HISTORY}:*"))
+            keys = cast(list[Any], _context_redis_client().keys(f"{_CANDLE_HISTORY}:*"))
         except Exception:
+            _mark_redis_unavailable()
             return result
 
         for k in keys:
@@ -486,9 +550,12 @@ class RedisContextReader:
     def _read_all_ticks(self) -> dict[str, dict[str, Any]]:
         """Read all latest ticks from Redis."""
         result: dict[str, dict[str, Any]] = {}
+        if _redis_temporarily_unavailable():
+            return result
         try:
-            keys = cast(list[Any], redis_client.client.keys(f"{_LATEST_TICK}:*"))
+            keys = cast(list[Any], _context_redis_client().keys(f"{_LATEST_TICK}:*"))
         except Exception:
+            _mark_redis_unavailable()
             return result
 
         for k in keys:
