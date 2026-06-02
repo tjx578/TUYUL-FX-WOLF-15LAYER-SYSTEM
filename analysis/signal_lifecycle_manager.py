@@ -34,8 +34,6 @@ ABSORPTION_WATCH_STATUSES = {
     "BUY_ABSORPTION_WATCH",
 }
 
-MIN_EXECUTABLE_TP1_RR = 2.0
-
 
 @dataclass(frozen=True)
 class ActiveSignal:
@@ -363,38 +361,6 @@ def _elapsed_m15_bars(start: str | None, end: str | None) -> int:
     return max(0, int((end_at - start_at).total_seconds() // (15 * 60)))
 
 
-def _counter_entry_execution_contract_complete(payload: dict[str, Any]) -> bool:
-    family = str(payload.get("signal_family") or "").upper()
-    if family != "MICROBOOST_COUNTER_ENTRY":
-        return True
-    zones = payload.get("structure_zones")
-    invalidation = payload.get("invalidation_rules")
-    targets = payload.get("targets")
-    execution_quality = payload.get("execution_quality")
-    phase_coherence = payload.get("phase_coherence")
-    signal_expiry = payload.get("signal_expiry")
-    return bool(
-        payload.get("tradeplan_valid") is True
-        and payload.get("execution_valid_now") is True
-        and _optional_float(payload.get("selected_sl")) is not None
-        and _optional_float(payload.get("selected_risk_pips") or payload.get("risk_pips")) is not None
-        and _optional_float(payload.get("tp_min_rr")) is not None
-        and isinstance(zones, dict)
-        and _optional_float(zones.get("key_resistance")) is not None
-        and _optional_float(zones.get("key_support")) is not None
-        and isinstance(invalidation, dict)
-        and _optional_float(invalidation.get("hard_invalid_level")) is not None
-        and isinstance(targets, list)
-        and bool(targets)
-        and isinstance(execution_quality, dict)
-        and execution_quality.get("spread_normal") is True
-        and isinstance(phase_coherence, dict)
-        and phase_coherence.get("status") == "EXECUTION_COMPATIBLE"
-        and isinstance(signal_expiry, dict)
-        and _optional_str(signal_expiry.get("expires_at_utc")) is not None
-    )
-
-
 def _has_auditable_promotion(payload: dict[str, Any]) -> bool:
     has_parent = bool(payload.get("parent_event_exists") is True and _optional_str(payload.get("parent_watch_id")))
     has_bypass = bool(
@@ -403,8 +369,3 @@ def _has_auditable_promotion(payload: dict[str, Any]) -> bool:
         and payload.get("parent_watch_required") is False
     )
     return has_parent or has_bypass
-
-
-def _tp1_rr_meets_minimum(payload: dict[str, Any]) -> bool:
-    tp1_rr = _optional_float(payload.get("tp1_rr"))
-    return tp1_rr is not None and tp1_rr >= MIN_EXECUTABLE_TP1_RR
