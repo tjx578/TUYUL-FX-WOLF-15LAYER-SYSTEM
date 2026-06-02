@@ -101,10 +101,13 @@ class _NoopTradeJournalAutomationService:
 
 
 trade_journal_automation_service: _TradeJournalAutomationServiceProtocol | None = None
+_journal_service: _TradeJournalAutomationServiceProtocol | None = None
 
 
 def _get_journal_service() -> _TradeJournalAutomationServiceProtocol:
-    global trade_journal_automation_service
+    global trade_journal_automation_service, _journal_service
+    if _journal_service is not None:
+        return _journal_service
     if trade_journal_automation_service is not None:
         return trade_journal_automation_service
     try:
@@ -114,6 +117,7 @@ def _get_journal_service() -> _TradeJournalAutomationServiceProtocol:
     except Exception:
         logger.debug("Trade journal automation service unavailable", exc_info=True)
         trade_journal_automation_service = _NoopTradeJournalAutomationService()
+    _journal_service = trade_journal_automation_service
     return trade_journal_automation_service
 
 ALLOC_REQUEST_STREAM = "allocation:request"
