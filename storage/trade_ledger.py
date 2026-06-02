@@ -10,7 +10,7 @@ import datetime
 import json
 
 from infrastructure.redis_client import get_client
-from schemas.trade_models import RiskMode, Trade, TradeLeg, TradeStatus
+from schemas.trade_models import CloseReason, RiskMode, Trade, TradeLeg, TradeStatus, is_valid_transition
 from storage.postgres_client import pg_client
 from storage.redis_client import redis_client
 
@@ -19,6 +19,77 @@ class TradeLedger:
     """Read-oriented trade ledger for API and WS consumers."""
 
     _memory_trades: dict[str, Trade] = {}
+
+    def create_trade(
+        self,
+        *,
+        signal_id: str,
+        account_id: str,
+        pair: str,
+        direction: str,
+        risk_mode: str | RiskMode,
+        total_risk_percent: float,
+        total_risk_amount: float,
+        legs: list[dict[str, object]],
+    ) -> Trade:
+        now = datetime.datetime.now(datetime.UTC)
+        trade_id = self._new_trade_id(now)
+        parsed_risk_mode = risk_mode if isinstance(risk_mode, RiskMode) else RiskMode(str(risk_mode))
+        parsed_legs = [
+            TradeLeg(
+                leg=int(leg.get("leg", index)),
+                entry=float(str(leg.get("entry"))),
+                sl=float(str(leg.get("sl"))),
+                tp=float(str(leg.get("tp"))),
+                lot=float(str(leg.get("lot"))),
+                status=TradeStatus(str(leg.get("status", TradeStatus.INTENDED.value))),
+            )
+            for index, leg in enumerate(legs, start=1)
+        ]
+        trade = Trade(
+            trade_id=trade_id,
+            signal_id=signal_id,
+            account_id=account_id,
+            pair=pair,
+            direction=direction,
+            status=TradeStatus.INTENDED,
+            risk_mode=parsed_risk_mode,
+            total_risk_percent=total_risk_percent,
+            total_risk_amount=total_risk_amount,
+            legs=parsed_legs,
+            created_at=now,
+            updated_at=now,
+        )
+        self._memory_trades[trade.trade_id] = trade
+        self._persist_trade(trade)
+        return trade
+
+    def update_status(
+        self,
+        trade_id: str,
+        new_status: TradeStatus,
+        *,
+        close_reason: CloseReason | None = None,
+        pnl: float | None = None,
+    ) -> bool:
+        trade = self.get_trade(trade_id)
+        if trade is None or not is_valid_transition(trade.status, new_status):
+            return False
+
+        updated_legs = [leg.model_copy(update={"status": new_status}) for leg in trade.legs]
+        updates: dict[str, object] = {
+            "status": new_status,
+            "legs": updated_legs,
+            "updated_at": datetime.datetime.now(datetime.UTC),
+        }
+        if new_status == TradeStatus.CLOSED:
+            updates["close_reason"] = close_reason
+            updates["pnl"] = pnl
+
+        updated = trade.model_copy(update=updates)
+        self._memory_trades[trade_id] = updated
+        self._persist_trade(updated)
+        return True
 
     def get_trade(self, trade_id: str) -> Trade | None:
         if trade_id in self._memory_trades:
@@ -79,6 +150,22 @@ class TradeLedger:
             t
             for t in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
             if t.status not in {TradeStatus.CANCELLED, TradeStatus.CLOSED, TradeStatus.SKIPPED}
+        ]
+
+    def get_trades_by_account(self, account_id: str) -> list[Trade]:
+        trades: dict[str, Trade] = dict(self._memory_trades)
+        with contextlib.suppress(Exception):
+            for key in redis_client.client.scan_iter(match="TRADE:*"):
+                key_str: str = key if isinstance(key, str) else str(key)
+                trade_id = key_str.split(":", 1)[1]
+                raw = redis_client.client.get(key_str)
+                if isinstance(raw, str):
+                    trades[trade_id] = self._from_dict(json.loads(raw))
+
+        return [
+            trade
+            for trade in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
+            if trade.account_id == account_id
         ]
 
     async def get_active_trades_async(self) -> list[Trade]:
@@ -262,6 +349,19 @@ class TradeLedger:
             close_reason=close_reason,
             pnl=float(str(data["pnl"])) if data.get("pnl") is not None else None,
         )
+
+    def _new_trade_id(self, now: datetime.datetime) -> str:
+        base = int(now.timestamp() * 1000)
+        trade_id = f"T-{base}"
+        suffix = 1
+        while trade_id in self._memory_trades:
+            suffix += 1
+            trade_id = f"T-{base}-{suffix}"
+        return trade_id
+
+    def _persist_trade(self, trade: Trade) -> None:
+        with contextlib.suppress(Exception):
+            redis_client.client.set(f"TRADE:{trade.trade_id}", trade.model_dump_json())
 
 
 def _parse_dt(value: object | None) -> datetime.datetime:
