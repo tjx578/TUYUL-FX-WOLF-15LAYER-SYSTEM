@@ -1,17 +1,79 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
+import redis
 from loguru import logger
 
+from infrastructure.redis_url import get_redis_url
 from storage.redis_client import redis_client
 
 _LEDGER_PREFIX = "IDEMPOTENCY:EXECUTION:"
 _DEFAULT_TTL_SEC = 60 * 60 * 24
+
+_IDEMPOTENCY_REDIS_CLIENT: redis.Redis | None = None
+_IDEMPOTENCY_REDIS_CLIENT_URL: str | None = None
+_IDEMPOTENCY_REDIS_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _idempotency_redis_client() -> redis.Redis:
+    global _IDEMPOTENCY_REDIS_CLIENT, _IDEMPOTENCY_REDIS_CLIENT_URL
+
+    url = get_redis_url()
+    if _IDEMPOTENCY_REDIS_CLIENT is None or url != _IDEMPOTENCY_REDIS_CLIENT_URL:
+        timeout = _env_float("EXECUTION_IDEMPOTENCY_REDIS_TIMEOUT_SEC", 0.25)
+        _IDEMPOTENCY_REDIS_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=False,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _IDEMPOTENCY_REDIS_CLIENT_URL = url
+    return _IDEMPOTENCY_REDIS_CLIENT
+
+
+def _idempotency_redis_unavailable() -> bool:
+    return time.monotonic() < _IDEMPOTENCY_REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_idempotency_redis_unavailable() -> None:
+    global _IDEMPOTENCY_REDIS_UNAVAILABLE_UNTIL
+    cooldown = _env_float("EXECUTION_IDEMPOTENCY_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _IDEMPOTENCY_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _idempotency_redis_call(command: str, *args: Any, default: Any = None, **kwargs: Any) -> Any:
+    if redis_client.__class__.__name__ != "_LazyRedisClient":
+        try:
+            return getattr(redis_client.client, command)(*args, **kwargs)
+        except Exception:
+            return default
+
+    if _idempotency_redis_unavailable():
+        return default
+    try:
+        return getattr(_idempotency_redis_client(), command)(*args, **kwargs)
+    except Exception:
+        _mark_idempotency_redis_unavailable()
+        return default
 
 
 @dataclass(frozen=True)
@@ -59,10 +121,10 @@ class ExecutionIdempotencyLedger:
 
         try:
             redis_key = f"{_LEDGER_PREFIX}{key}"
-            ok = redis_client.client.set(redis_key, json.dumps(initial), nx=True, ex=self._ttl_sec)
+            ok = _idempotency_redis_call("set", redis_key, json.dumps(initial), nx=True, ex=self._ttl_sec)
             if ok:
                 return True, self._to_record(initial)
-            raw = redis_client.client.get(redis_key)
+            raw = _idempotency_redis_call("get", redis_key)
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8", errors="ignore")
             if isinstance(raw, str) and raw:
@@ -110,7 +172,7 @@ class ExecutionIdempotencyLedger:
     def get(self, *, signal_id: str, execution_intent_id: str) -> LedgerRecord | None:
         key = self.compose_key(signal_id, execution_intent_id)
         try:
-            raw = redis_client.client.get(f"{_LEDGER_PREFIX}{key}")
+            raw = _idempotency_redis_call("get", f"{_LEDGER_PREFIX}{key}")
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8", errors="ignore")
             if isinstance(raw, str) and raw:
@@ -151,7 +213,8 @@ class ExecutionIdempotencyLedger:
         }
 
         try:
-            redis_client.client.set(
+            _idempotency_redis_call(
+                "set",
                 f"{_LEDGER_PREFIX}{key}",
                 json.dumps(updated),
                 ex=self._ttl_sec,
