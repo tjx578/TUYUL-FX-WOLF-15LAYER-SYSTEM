@@ -60,6 +60,9 @@ FEED_ADAPTER_STALE_SEC: float = _env_threshold("WOLF_FEED_ADAPTER_STALE_SEC", 30
 
 _DEFAULT_STALE_THRESHOLD_SECONDS = 300.0
 _DEFAULT_LAST_SEEN_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1", "MN")
+_FRESHNESS_REDIS_CLIENT: Any | None = None
+_FRESHNESS_REDIS_CLIENT_URL: str | None = None
+_FRESHNESS_REDIS_UNAVAILABLE_UNTIL = 0.0
 
 
 def stale_threshold_config() -> tuple[float, bool]:
@@ -90,6 +93,54 @@ def _coerce_last_seen_ts(raw_value: object) -> float | None:
     return ts if ts > 0 else None
 
 
+def _freshness_redis_temporarily_unavailable() -> bool:
+    return time.monotonic() < _FRESHNESS_REDIS_UNAVAILABLE_UNTIL
+
+
+def _mark_freshness_redis_unavailable() -> None:
+    global _FRESHNESS_REDIS_UNAVAILABLE_UNTIL
+    cooldown = max(0.05, _env_threshold("DATA_FRESHNESS_REDIS_FAILURE_COOLDOWN_SEC", 1.0))
+    _FRESHNESS_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _default_freshness_redis_client() -> Any | None:
+    global _FRESHNESS_REDIS_CLIENT, _FRESHNESS_REDIS_CLIENT_URL
+
+    if _freshness_redis_temporarily_unavailable():
+        return None
+
+    try:
+        import redis  # noqa: PLC0415
+
+        from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
+
+        url = get_redis_url()
+        if _FRESHNESS_REDIS_CLIENT is None or url != _FRESHNESS_REDIS_CLIENT_URL:
+            timeout = max(0.05, _env_threshold("DATA_FRESHNESS_REDIS_TIMEOUT_SEC", 0.25))
+            _FRESHNESS_REDIS_CLIENT = redis.Redis.from_url(
+                url,
+                decode_responses=True,
+                socket_timeout=timeout,
+                socket_connect_timeout=timeout,
+                retry_on_timeout=False,
+                health_check_interval=0,
+            )
+            _FRESHNESS_REDIS_CLIENT_URL = url
+        return _FRESHNESS_REDIS_CLIENT
+    except Exception:
+        _mark_freshness_redis_unavailable()
+        return None
+
+
+def _safe_hget(client: Any, name: str, key: str, *, mark_unavailable: bool) -> object | None:
+    try:
+        return client.hget(name, key)
+    except Exception:
+        if mark_unavailable:
+            _mark_freshness_redis_unavailable()
+        return None
+
+
 def read_authoritative_last_seen_ts(
     symbol: str,
     redis_client: object | None = None,
@@ -100,12 +151,8 @@ def read_authoritative_last_seen_ts(
     if not symbol:
         return None
 
-    client: Any = redis_client
-    if client is None:
-        with contextlib.suppress(Exception):
-            from storage.redis_client import RedisClient  # noqa: PLC0415
-
-            client = RedisClient()
+    explicit_client = redis_client is not None
+    client: Any = redis_client if explicit_client else _default_freshness_redis_client()
 
     if client is None:
         return None
@@ -115,12 +162,22 @@ def read_authoritative_last_seen_ts(
     best_last_seen: float | None = None
 
     with contextlib.suppress(Exception):
-        raw_tick_ts = client.hget(latest_tick(symbol), "last_seen_ts")
+        raw_tick_ts = _safe_hget(
+            client,
+            latest_tick(symbol),
+            "last_seen_ts",
+            mark_unavailable=not explicit_client,
+        )
         best_last_seen = _coerce_last_seen_ts(raw_tick_ts)
 
     for timeframe in candle_timeframes:
         with contextlib.suppress(Exception):
-            raw_candle_ts = client.hget(latest_candle(symbol, timeframe), "last_seen_ts")
+            raw_candle_ts = _safe_hget(
+                client,
+                latest_candle(symbol, timeframe),
+                "last_seen_ts",
+                mark_unavailable=not explicit_client,
+            )
             ts = _coerce_last_seen_ts(raw_candle_ts)
             if ts is not None and (best_last_seen is None or ts > best_last_seen):
                 best_last_seen = ts
