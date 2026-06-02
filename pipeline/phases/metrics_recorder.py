@@ -43,6 +43,7 @@ from core.metrics import (
     TWMS_SCORE,
     VAULT_SYNC,
     VERDICT_TOTAL,
+    WARMUP_BLOCKED,
     WOLF_30PT_SCORE,
 )
 from services.shared.type_coerce import to_float as _to_float
@@ -91,7 +92,13 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
         direction = verdict.replace("EXECUTE_", "")
         SIGNAL_TOTAL.labels(symbol=symbol, direction=direction).inc()
 
-    for err in result.get("errors", []):
+    errors = result.get("errors", [])
+    warmup = result.get("warmup")
+    warmup_blocked = isinstance(warmup, dict) and warmup.get("ready") is False
+    if warmup_blocked or any(str(err).startswith("WARMUP_INSUFFICIENT") for err in errors):
+        WARMUP_BLOCKED.labels(symbol=symbol).inc()
+
+    for err in errors:
         code = "FATAL_ERROR" if err.startswith("FATAL_ERROR") else err
         PIPELINE_ERROR.labels(error_code=code).inc()
 
@@ -208,7 +215,6 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
         LFS_CONFIDENCE_ADJ.labels(symbol=symbol).set(_to_float(_lfs_enrich["confidence_adj"]))
 
     # L8 rescue counter
-    l8_const = result.get("synthesis", {}).get("enrichment", {})
     _l8_warnings = result.get("l8", {}).get("constitutional", {}).get("warning_codes", [])
     if "LFS_BORDERLINE_RESCUE" in _l8_warnings:
         LFS_RESCUE_TOTAL.labels(symbol=symbol).inc()
