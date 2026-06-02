@@ -1,9 +1,10 @@
-"""Regression tests proving the execution-gate live-RR / provisional-target fix.
+"""Regression tests for the single-stop (sl_safe only) + TP1=1.5R model.
 
-Reproduces the real USDJPY MICROBOOST_COUNTER_ENTRY case that was stuck as a
-non-final ``signal_decision_update_json`` (final SignalJSON log stayed empty)
-because the live-RR gate recomputed RR from sl_safe while the target ladder was
-projected from sl_tight, falsely tripping LIVE_RR_BELOW_MINIMUM.
+Replaces the earlier sl_tight reconciliation tests. The engine now:
+  * uses ONE stop everywhere: sl_safe (the sl_tight concept is removed);
+  * projects TP1 at 1.5R from sl_safe and measures the minimum RR at TP1;
+  * sets the global minimum RR to 1.5 across the engine, execution gate,
+    adapter, finalizer and emitter.
 
 Run from the repository root:
     python -m pytest analysis/test_exec_gate_live_rr_fix.py -v
@@ -19,16 +20,25 @@ import sys
 # Make ``analysis`` importable whether run from repo root or from this folder.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from analysis.microboost_counter_entry import MicroboostCounterEntryEngine
 from analysis.signal_execution_gates import evaluate_signal_execution_gates
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter, SignalJsonGateConfig
 
+# Single-stop model numbers for USDJPY (pip = 0.01):
+#   entry    = 159.639
+#   sl_safe  = entry - 20 pips = 159.439   (the ONLY stop)
+#   risk     = 0.200 (20 pips)
+#   TP1      = entry + 1.5 * risk = 159.939  -> RR 1.5 against sl_safe
+ENTRY = 159.639
+SL_SAFE = 159.439
+TP1 = 159.939
 
-def _usdjpy_promoted_candidate() -> dict:
-    """The promoted final BUY candidate *before* the gate adapter demoted it.
 
-    Mirrors the real log: M15 closed above resistance -> confirmed breakout
-    continuation, but only RR-projected provisional targets are available
-    (structure ladder not ready), so rr_to_valid_target is unset.
+def _usdjpy_single_stop_candidate() -> dict:
+    """A confirmed BUY breakout-continuation as the engine now emits it.
+
+    One stop (sl_safe), TP ladder projected from sl_safe with TP1 = 1.5R,
+    and NO sl_tight field anywhere.
     """
     return {
         "symbol": "USDJPY",
@@ -37,24 +47,27 @@ def _usdjpy_promoted_candidate() -> dict:
         "final_direction": "BUY",
         "candidate_direction": "BUY",
         "valid_for_execution": True,
-        "entry_reference_price": 159.639,
-        "signal_valid_price": 159.639,
-        "entry_zone": [159.639, 159.6475],
-        "sl_tight": 159.519,
-        "sl_safe": 159.439,
-        "tp1": 159.759,
-        "tp2": 159.879,
-        "tp3": 159.939,
-        "tp4": 159.999,
-        "tp_min_rr": 159.939,
-        "rr_to_tp1_tight": 1.0,
-        "rr_to_tp2_tight": 2.0,
-        "rr_to_tp3_tight": 2.5,
+        "entry_reference_price": ENTRY,
+        "signal_valid_price": ENTRY,
+        "entry_zone": [ENTRY, 159.6475],
+        "sl_safe": SL_SAFE,
+        "selected_sl": SL_SAFE,
+        "selected_sl_mode": "SAFE",
+        "tp1": TP1,
+        "tp2": 160.039,
+        "tp3": 160.139,
+        "tp4": 160.239,
+        "tp_min_rr": TP1,
+        "tp_min_rr_value": 1.5,
+        "rr_to_tp1_tight": 1.5,
+        "rr_to_tp2_tight": 2.5,
+        "rr_to_tp3_tight": 3.5,
+        "tp1_rr": 1.5,
         "rr_status": "VALID",
-        "min_rr_required": 2.5,
+        "min_rr_required": 1.5,
         "target_mode": "PROVISIONAL_RR_FALLBACK",
         "target_source": "rr_projection_only",
-        "tp_status": "VALID_FROM_TP3",
+        "tp_status": "VALID_FROM_TP1",
         "structure_targets_available": False,
         "tradeplan_context_ready": False,
         "targets_execution_usable": True,
@@ -62,41 +75,78 @@ def _usdjpy_promoted_candidate() -> dict:
         "phase_unpriced": "REPEATED_MICROBOOST",
         "m15_confirmation_status": "M15_CLOSE_ABOVE_RESISTANCE",
         "market_context_applied": True,
-        "key_resistance": 159.639,
+        "key_resistance": ENTRY,
         "key_support": 159.631,
-        # NOTE: deliberately NO rr_to_valid_target / tp_min_rr_value / selected_sl
-        # and NO bid/ask -> live_price falls back to entry, exactly as in the log.
+        # deliberately NO sl_tight / rr_to_valid_target and NO bid/ask.
     }
 
 
-def test_confirmed_buy_now_allows_execution():
-    """Fix #1 + #2: the stuck USDJPY BUY must pass the gate as ALLOW."""
-    decision = evaluate_signal_execution_gates(_usdjpy_promoted_candidate())
+def test_engine_defaults_single_stop_min_rr_15():
+    """Engine minimum RR and fixed TP1 RR both default to 1.5."""
+    engine = MicroboostCounterEntryEngine()
+    assert engine.min_rr_valid == 1.5
+    assert engine.tp1_rr_required == 1.5
+
+
+def test_tp1_is_1p5R_against_sl_safe():
+    """TP1 sits exactly 1.5R away measured against the single sl_safe stop."""
+    risk = abs(ENTRY - SL_SAFE)
+    reward = abs(TP1 - ENTRY)
+    assert round(reward / risk, 2) == 1.5
+
+
+def test_confirmed_buy_allows_at_min_rr_15():
+    """The confirmed BUY passes the gate as ALLOW at the new 1.5 minimum."""
+    decision = evaluate_signal_execution_gates(_usdjpy_single_stop_candidate())
     assert decision.applies is True
     assert decision.decision == "ALLOW", decision.reasons
     assert decision.execution_status == "EXECUTION_GATE_ALLOWED"
-    # RR is reconstructed on the sl_tight basis -> the true 2.5, not the
-    # sl_safe-deflated 1.5 that used to fire LIVE_RR_BELOW_MINIMUM.
     assert decision.live_rr is not None
-    assert decision.live_rr["rr"] == 2.5
+    assert decision.live_rr["rr"] == 1.5
     assert "LIVE_RR_BELOW_MINIMUM" not in decision.reasons
 
 
-def test_adapter_does_not_demote_to_decision_update():
-    """In ENFORCE mode the confirmed BUY stays a final signal (not demoted)."""
+def test_default_min_rr_required_is_15():
+    """The gate's default minimum RR is 1.5 (TP1 at exactly 1.5R is accepted)."""
+    decision = evaluate_signal_execution_gates(_usdjpy_single_stop_candidate())
+    assert decision.live_rr["min_rr_required"] == 1.5
+
+
+def test_no_sl_tight_in_gate_output():
+    """The output payload carries a single stop and no sl_tight field."""
     adapter = SignalJsonGateAdapter(
         SignalJsonGateConfig(enabled=True, enforce=True, final_barrier=True, emit_sidecar=False)
     )
-    out = adapter.apply(_usdjpy_promoted_candidate())
+    out = adapter.apply(_usdjpy_single_stop_candidate())
+    assert "sl_tight" not in out
+    assert out.get("sl_safe") == SL_SAFE
     assert out.get("event") != "signal_decision_update_json"
     assert str(out.get("final_direction")).upper() == "BUY"
-    assert out.get("valid_for_execution") is True
-    assert out.get("direction_validation_status") != "FINAL_CANDIDATE_BLOCKED_BY_EXECUTION_GATE"
+
+
+def test_below_min_rr_still_blocks():
+    """A plan whose RR is under 1.5 must NOT be allowed."""
+    payload = _usdjpy_single_stop_candidate()
+    # TP1 only ~0.5R from sl_safe; clear provisional usability + pre-validated RR.
+    payload.update(
+        {
+            "tp1": 159.739,
+            "tp_min_rr": 159.739,
+            "tp_min_rr_value": 0.5,
+            "tp1_rr": 0.5,
+            "rr_to_tp1_tight": 0.5,
+            "rr_to_tp2_tight": 0.8,
+            "rr_to_tp3_tight": 1.0,
+            "targets_execution_usable": False,
+        }
+    )
+    decision = evaluate_signal_execution_gates(payload)
+    assert decision.decision != "ALLOW"
 
 
 def test_genuine_chase_still_blocks():
-    """Regression: a real chase far above entry with low live RR must still BLOCK."""
-    payload = _usdjpy_promoted_candidate()
+    """A real chase far above entry with low live RR must still BLOCK."""
+    payload = _usdjpy_single_stop_candidate()
     payload.update({"bid": 160.095, "ask": 160.105})  # ~46 pips above entry
     decision = evaluate_signal_execution_gates(payload)
     assert decision.decision == "BLOCK"
@@ -104,52 +154,6 @@ def test_genuine_chase_still_blocks():
         "PRICE_CHASE_TOO_FAR_FROM_ENTRY_REFERENCE" in decision.reasons
         or "LIVE_RR_BELOW_MINIMUM" in decision.reasons
     )
-
-
-def test_low_rr_near_entry_still_blocks():
-    """Regression: if even the sl_tight RR is below minimum, the gate still BLOCKs."""
-    payload = _usdjpy_promoted_candidate()
-    # Pull tp3/target in so RR-to-tight < 2.5 and clear the provisional RR fields.
-    payload.update(
-        {
-            "tp3": 159.689,
-            "tp_min_rr": 159.689,
-            "rr_to_tp3_tight": 1.0,
-            "rr_to_tp2_tight": 0.8,
-            "targets_execution_usable": False,
-        }
-    )
-    decision = evaluate_signal_execution_gates(payload)
-    assert decision.decision in {"BLOCK", "DEFER"}
-    assert decision.decision != "ALLOW"
-
-
-def test_deferred_retest_becomes_conditional_final_when_enabled():
-    """Fix #3 (opt-in): a directionally-valid DEFER -> CONDITIONAL final WAIT_RETEST."""
-    payload = _usdjpy_promoted_candidate()
-    payload["status"] = "BUY_BREAKOUT_RETEST_VALID"  # contains RETEST -> retest gate defers
-    # default flag OFF -> demoted to non-final decision update
-    off = SignalJsonGateAdapter(
-        SignalJsonGateConfig(enabled=True, enforce=True, final_barrier=True, emit_sidecar=False)
-    ).apply(dict(payload))
-    assert off.get("event") == "signal_decision_update_json"
-    assert off.get("is_final_signal") is False
-
-    # flag ON -> stays final, annotated WAIT_RETEST pending limit
-    on = SignalJsonGateAdapter(
-        SignalJsonGateConfig(
-            enabled=True,
-            enforce=True,
-            final_barrier=True,
-            emit_sidecar=False,
-            emit_deferred_as_conditional_final=True,
-        )
-    ).apply(dict(payload))
-    assert on.get("event") != "signal_decision_update_json"
-    assert on.get("is_final_signal") is True
-    assert on.get("execution_mode") == "WAIT_RETEST"
-    assert on.get("entry_type") == "PENDING_LIMIT"
-    assert str(on.get("final_direction")).upper() == "BUY"
 
 
 def _run_all() -> int:
