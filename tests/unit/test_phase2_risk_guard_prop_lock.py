@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.middleware import auth as auth_mod
 from api.middleware import governance
 from risk.risk_router import router as risk_router
+
+
+class _KillSwitchOff:
+    def is_enabled(self) -> bool:
+        return False
+
+    def snapshot(self) -> dict[str, bool | str]:
+        return {"enabled": False, "reason": "", "updated_at": ""}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_kill_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("risk.risk_router._kill_switch", _KillSwitchOff())
 
 
 def _app() -> FastAPI:
@@ -54,11 +69,10 @@ def test_context_rejects_compliance_off_without_pin(monkeypatch) -> None:
     app = _app()
     client = TestClient(app)
 
-    monkeypatch.setattr(
-        governance,
-        "decode_token",
-        lambda _t: {"sub": "admin-1", "role": "admin", "iss": "issuer-A"},
-    )
+    token_payload = {"sub": "admin-1", "role": "admin", "iss": "issuer-A", "scopes": ["*"]}
+    monkeypatch.setattr(auth_mod, "decode_token", lambda _t: token_payload)
+    monkeypatch.setattr(auth_mod, "validate_api_key", lambda _t: False)
+    monkeypatch.setattr(governance, "decode_token", lambda _t: token_payload)
     monkeypatch.setattr(governance, "validate_api_key", lambda _t: False)
     monkeypatch.setenv("DASHBOARD_ACTION_PIN", "2468")
 
@@ -78,11 +92,10 @@ def test_context_rejects_prop_sovereignty_violation(monkeypatch) -> None:
     app = _app()
     client = TestClient(app)
 
-    monkeypatch.setattr(
-        governance,
-        "decode_token",
-        lambda _t: {"sub": "admin-2", "role": "admin", "iss": "issuer-A"},
-    )
+    token_payload = {"sub": "admin-2", "role": "admin", "iss": "issuer-A", "scopes": ["*"]}
+    monkeypatch.setattr(auth_mod, "decode_token", lambda _t: token_payload)
+    monkeypatch.setattr(auth_mod, "validate_api_key", lambda _t: False)
+    monkeypatch.setattr(governance, "decode_token", lambda _t: token_payload)
     monkeypatch.setattr(governance, "validate_api_key", lambda _t: False)
 
     payload = _base_context()
@@ -101,11 +114,10 @@ def test_lockdown_mode_blocks_take(monkeypatch) -> None:
     app = _app()
     client = TestClient(app)
 
-    monkeypatch.setattr(
-        governance,
-        "decode_token",
-        lambda _t: {"sub": "admin-3", "role": "admin", "iss": "issuer-A"},
-    )
+    token_payload = {"sub": "admin-3", "role": "admin", "iss": "issuer-A", "scopes": ["*"]}
+    monkeypatch.setattr(auth_mod, "decode_token", lambda _t: token_payload)
+    monkeypatch.setattr(auth_mod, "validate_api_key", lambda _t: False)
+    monkeypatch.setattr(governance, "decode_token", lambda _t: token_payload)
     monkeypatch.setattr(governance, "validate_api_key", lambda _t: False)
 
     payload = _base_context()
