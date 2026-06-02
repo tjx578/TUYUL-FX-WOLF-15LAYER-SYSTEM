@@ -21,7 +21,15 @@ already built into the profile engine.
 
 from __future__ import annotations
 
+import sys
 from typing import Any
+
+try:
+    from config.profile_engine import ConfigProfileEngine
+except Exception:  # noqa: BLE001
+    ConfigProfileEngine = None  # type: ignore[assignment]
+
+_ORIGINAL_CONFIG_PROFILE_ENGINE = ConfigProfileEngine
 
 
 def get_effective_constitution() -> dict[str, Any]:
@@ -31,9 +39,13 @@ def get_effective_constitution() -> dict[str, Any]:
     engine is unavailable (e.g. import error, early startup).
     """
     try:
-        from config.profile_engine import ConfigProfileEngine  # noqa: PLC0415
-
-        effective = ConfigProfileEngine().get_effective_config()
+        engine_cls = ConfigProfileEngine
+        profile_module = sys.modules.get("config.profile_engine")
+        if engine_cls is _ORIGINAL_CONFIG_PROFILE_ENGINE and profile_module is not None:
+            engine_cls = getattr(profile_module, "ConfigProfileEngine", engine_cls)
+        if engine_cls is None:
+            raise ImportError("ConfigProfileEngine unavailable")
+        effective = engine_cls().get_effective_config()
         return dict(effective.get("constitution", {}))
     except Exception:  # noqa: BLE001
         from config_loader import CONFIG  # noqa: PLC0415
