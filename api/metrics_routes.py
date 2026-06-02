@@ -11,13 +11,14 @@ Content-Type: text/plain; version=0.0.4; charset=utf-8
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import time
-import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable, cast
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -76,7 +77,7 @@ def _redis_refresh_temporarily_unavailable() -> bool:
 
 def _mark_redis_refresh_unavailable() -> None:
     global _REDIS_REFRESH_UNAVAILABLE_UNTIL
-    cooldown = _env_float("METRICS_REDIS_REFRESH_FAILURE_COOLDOWN_SEC", 1.0)
+    cooldown = _env_float("METRICS_REDIS_REFRESH_FAILURE_COOLDOWN_SEC", 0.0, minimum=0.0)
     _REDIS_REFRESH_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
 
 
