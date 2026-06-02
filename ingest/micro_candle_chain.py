@@ -23,12 +23,17 @@ can register them for the 500ms forming-bar preview writes.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from core.candle_bridge_fix import publish_candle_sync
-from ingest.candle_builder import Candle, CandleBuilder, Timeframe
+from ingest.candle_builder import CandleBuilder, Timeframe
+
+if TYPE_CHECKING:
+    from ingest.candle_builder import Candle
+else:
+    Candle = Any
 
 
 class MicroCandleChain:
