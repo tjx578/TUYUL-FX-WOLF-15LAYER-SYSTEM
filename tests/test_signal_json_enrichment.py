@@ -16,7 +16,6 @@ def test_log_enrichment_does_not_mutate_core_breakout_decision():
         "price_position": "MAIN_RESISTANCE",
         "m15_phase": "BULLISH_PULLBACK",
         "h1_phase": "BULLISH",
-        "sl_tight": 1.8624,
         "sl_safe": 1.8616,
         "tp1": 1.8648,
         "tp1_rr": 0.6,
@@ -34,8 +33,8 @@ def test_log_enrichment_does_not_mutate_core_breakout_decision():
     assert enriched["source_valid_for_execution"] is True
     assert enriched["selected_sl"] == 1.8616
     assert enriched["selected_risk_pips"] == 20.0
-    assert enriched["tp1"] == 1.8676
-    assert enriched["tp1_rr"] == 2.0
+    assert enriched["tp1"] == 1.8666
+    assert enriched["tp1_rr"] == 1.5
     assert enriched["valid_for_execution"] is False
     assert enriched["execution_status"] == "WAIT_STRUCTURE_COMPLETION"
 
@@ -53,7 +52,6 @@ def test_structure_complete_output_can_remain_executable_without_changing_signal
         "price_position": "MAIN_RESISTANCE",
         "m15_phase": "BULLISH_PULLBACK",
         "h1_phase": "BULLISH",
-        "sl_tight": 1.8624,
         "sl_safe": 1.8616,
         "key_support": 1.8616,
         "key_resistance": 1.8650,
@@ -67,7 +65,7 @@ def test_structure_complete_output_can_remain_executable_without_changing_signal
 
     assert enriched["status"] == "BUY_BREAKOUT_CONTINUATION_VALID"
     assert enriched["final_direction"] == "BUY"
-    assert enriched["targets"][0]["level"] == 1.8676
+    assert enriched["targets"][0]["level"] == 1.8666
     assert enriched["targets"][1]["level"] == 1.869
     assert enriched["tradeplan_valid"] is True
     assert enriched["valid_for_execution"] is True
