@@ -13,9 +13,12 @@ Zone: execution + journal — write-only journal authority, no decision power.
 
 from __future__ import annotations
 
+import os
+import time
 from datetime import UTC, datetime
 from typing import Any
 
+import redis
 from loguru import logger
 
 from core.redis_keys import EXECUTION_TRUTH
@@ -23,6 +26,58 @@ from execution.execution_intent import (
     ExecutionIntentRecord,
     ExecutionLifecycleState,
 )
+from infrastructure.redis_url import get_redis_url
+
+_REDIS_CACHE_CLIENT: redis.Redis | None = None
+_REDIS_CACHE_CLIENT_URL: str | None = None
+_REDIS_CACHE_UNAVAILABLE_UNTIL = 0.0
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _redis_cache_client() -> redis.Redis:
+    global _REDIS_CACHE_CLIENT, _REDIS_CACHE_CLIENT_URL
+
+    url = get_redis_url()
+    if _REDIS_CACHE_CLIENT is None or url != _REDIS_CACHE_CLIENT_URL:
+        timeout = _env_float("EXECUTION_TRUTH_REDIS_TIMEOUT_SEC", 0.25)
+        _REDIS_CACHE_CLIENT = redis.Redis.from_url(
+            url,
+            decode_responses=False,
+            socket_timeout=timeout,
+            socket_connect_timeout=timeout,
+            retry_on_timeout=False,
+            health_check_interval=0,
+        )
+        _REDIS_CACHE_CLIENT_URL = url
+    return _REDIS_CACHE_CLIENT
+
+
+def _redis_cache_unavailable() -> bool:
+    return time.monotonic() < _REDIS_CACHE_UNAVAILABLE_UNTIL
+
+
+def _mark_redis_cache_unavailable() -> None:
+    global _REDIS_CACHE_UNAVAILABLE_UNTIL
+    cooldown = _env_float("EXECUTION_TRUTH_REDIS_FAILURE_COOLDOWN_SEC", 1.0)
+    _REDIS_CACHE_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
+
+
+def _redis_cache_set(key: str, value: str, *, ex: int) -> None:
+    if _redis_cache_unavailable():
+        return
+    try:
+        _redis_cache_client().set(key, value, ex=ex)
+    except Exception:
+        _mark_redis_cache_unavailable()
 
 
 class ExecutionTruthFeed:
@@ -205,9 +260,7 @@ class ExecutionTruthFeed:
         try:
             import json  # noqa: PLC0415
 
-            from storage.redis_client import redis_client  # noqa: PLC0415
-
-            redis_client.client.set(
+            _redis_cache_set(
                 f"trade_detail:{intent.execution_intent_id}",
                 json.dumps(trade_detail),
                 ex=60 * 60 * 24 * 7,
