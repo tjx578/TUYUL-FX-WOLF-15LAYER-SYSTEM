@@ -22,11 +22,9 @@ try:
 
     _reset_dlq = cast(Callable[[], None], _reset_dlq_import)
 except ImportError:
+    from ingest.tick_dlq import _reset_dlq as _reset_dlq_import
 
-    def _reset_dlq_fallback() -> None:
-        """Fallback no-op if reset_dlq is not yet exported by tick_dlq."""
-
-    _reset_dlq = _reset_dlq_fallback
+    _reset_dlq = cast(Callable[[], None], _reset_dlq_import)
 
 reset_dlq: Callable[[], None] = _reset_dlq
 
