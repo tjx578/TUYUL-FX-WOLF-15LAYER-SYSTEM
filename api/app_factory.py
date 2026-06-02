@@ -56,6 +56,16 @@ def _env_bool(key: str, default: bool) -> bool:
     return os.getenv(key, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(key: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
 def _assert_no_duplicate_routes(application: FastAPI) -> None:
     """Raise RuntimeError at startup if any (method, path) pair is registered more than once."""
     seen: dict[tuple[str, str], str] = {}
@@ -89,7 +99,9 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
-    from infrastructure.redis_client import close_pool, get_client
+    from dataclasses import replace
+
+    from infrastructure.redis_client import RedisConfig, close_pool, get_client
     from infrastructure.redis_url import get_safe_redis_url
     from storage.trade_outbox_worker import TradeOutboxWorker
 
@@ -101,7 +113,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Guard Redis connection — app must start even if Redis is temporarily
     # unreachable so the /healthz probe can pass while infra catches up.
     try:
-        app.state.redis = await get_client()
+        redis_timeout = _env_float("API_STARTUP_REDIS_TIMEOUT_SEC", 0.5)
+        redis_config = replace(
+            RedisConfig.from_env(),
+            socket_timeout=redis_timeout,
+            socket_connect_timeout=redis_timeout,
+            retry_on_timeout=False,
+            retry_attempts=0,
+            blocking_pool_timeout=redis_timeout,
+            health_check_interval=1,
+        )
+        app.state.redis = await asyncio.wait_for(get_client(redis_config), timeout=redis_timeout)
+        await asyncio.wait_for(app.state.redis.ping(), timeout=redis_timeout)
     except Exception:
         logger.warning("Redis unavailable at startup — will retry on first use")
         app.state.redis = None
@@ -470,7 +493,10 @@ def _register_health_routes(app: FastAPI) -> None:
             r = request.app.state.redis
             if r is None:
                 return None, False
-            raw = await r.get(hb_key)
+            raw = await asyncio.wait_for(
+                r.get(hb_key),
+                timeout=_env_float("API_STATUS_REDIS_READ_TIMEOUT_SEC", 0.25),
+            )
             if not raw:
                 return None, False
             payload = _orjson.loads(raw)
@@ -645,8 +671,12 @@ def _register_health_routes(app: FastAPI) -> None:
         redis_ok = False
         with suppress(Exception):
             r: aioredis.Redis = request.app.state.redis
-            ping_result: bool = await r.ping()  # type: ignore[assignment]
-            redis_ok = ping_result is True
+            if r is not None:
+                ping_result: bool = await asyncio.wait_for(
+                    r.ping(),
+                    timeout=_env_float("API_STATUS_REDIS_READ_TIMEOUT_SEC", 0.25),
+                )  # type: ignore[assignment]
+                redis_ok = ping_result is True
 
         postgres_health = await pg_client.health_check()
         config_loaded = bool(CONFIG.get("constitution"))
@@ -659,8 +689,12 @@ def _register_health_routes(app: FastAPI) -> None:
         lockdown_state = "unknown"
         with suppress(Exception):
             r = request.app.state.redis
-            locked = await r.get("system:lockdown")
-            lockdown_state = "locked" if str(locked).lower() in {"1", "true", "locked", "on"} else "normal"
+            if r is not None:
+                locked = await asyncio.wait_for(
+                    r.get("system:lockdown"),
+                    timeout=_env_float("API_STATUS_REDIS_READ_TIMEOUT_SEC", 0.25),
+                )
+                lockdown_state = "locked" if str(locked).lower() in {"1", "true", "locked", "on"} else "normal"
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
         from state.redis_keys import HEARTBEAT_ENGINE  # noqa: PLC0415
