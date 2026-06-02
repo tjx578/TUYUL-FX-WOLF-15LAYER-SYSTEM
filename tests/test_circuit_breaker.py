@@ -67,10 +67,12 @@ class TestCircuitBreakerTripping:
 
 class TestCircuitBreakerRecovery:
     def test_transitions_to_half_open_after_timeout(self) -> None:
-        cb = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=0.01)
+        cb = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=9999)
         cb.record_failure()
         assert cb.state is CircuitState.OPEN
-        time.sleep(0.05)
+        with cb._lock:
+            cb._recovery_timeout = 0.01
+            cb._last_failure_time = time.monotonic() - 0.05
         assert cb.state is CircuitState.HALF_OPEN
 
     def test_stays_open_before_timeout(self) -> None:
