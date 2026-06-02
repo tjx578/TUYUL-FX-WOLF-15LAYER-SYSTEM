@@ -40,10 +40,9 @@ def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
     normalized_target_mode = str(enriched.get("target_mode") or "").upper()
     entry = _optional_float(enriched.get("entry_reference_price") or enriched.get("signal_valid_price"))
     pip_value = _pip_value(str(enriched.get("symbol") or ""))
-    sl_tight = _valid_stop(direction, entry, _optional_float(enriched.get("sl_tight")))
     sl_safe = _valid_stop(direction, entry, _optional_float(enriched.get("sl_safe")))
-    selected_sl = _valid_stop(direction, entry, _optional_float(enriched.get("selected_sl"))) or sl_safe or sl_tight
-    selected_mode = "SAFE" if selected_sl is not None and selected_sl == sl_safe else "TIGHT"
+    selected_sl = _valid_stop(direction, entry, _optional_float(enriched.get("selected_sl"))) or sl_safe
+    selected_mode = "SAFE" if selected_sl is not None else None
     selected_risk = _risk_pips(entry, selected_sl, pip_value)
     tp1 = _rr_target(direction, entry, selected_sl, TP1_RR_FLOOR)
 
@@ -113,7 +112,6 @@ def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "selected_sl_mode": selected_mode if selected_sl is not None else None,
             "selected_sl": selected_sl,
             "risk_pips": selected_risk,
-            "risk_pips_tight": _risk_pips(entry, sl_tight, pip_value),
             "risk_pips_safe": _risk_pips(entry, sl_safe, pip_value),
             "selected_risk_pips": selected_risk,
             "target_mode": (
