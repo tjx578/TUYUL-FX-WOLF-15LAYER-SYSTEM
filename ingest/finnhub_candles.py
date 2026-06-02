@@ -358,14 +358,9 @@ class FinnhubCandleFetcher:
 
                     if response.status_code == 429:
                         self._key_manager.report_failure(active_key, 429)
-                        return await self._fallback_or_raise(
-                            symbol,
-                            timeframe,
-                            bars,
-                            FinnhubCandleError(
-                                f"[429] Rate limited for {symbol} {timeframe} — "
-                                "warmup akan skip, WS akan feed data secara live"
-                            ),
+                        raise FinnhubCandleError(
+                            f"[429] Rate limited for {symbol} {timeframe} — "
+                            "warmup akan skip, WS akan feed data secara live"
                         )
 
                     if response.status_code == 403:
@@ -402,6 +397,11 @@ class FinnhubCandleFetcher:
                     primary_error: FinnhubCandleError = FinnhubCandlePremiumError(
                         f"Premium access required for {symbol} {timeframe}"
                     )
+                elif status_code == 429:
+                    raise FinnhubCandleError(
+                        f"[429] Rate limited for {symbol} {timeframe} — "
+                        "warmup akan skip, WS akan feed data secara live"
+                    ) from exc
                 else:
                     primary_error = FinnhubCandleError(f"HTTP {status_code} for {symbol} {timeframe}")
                 return await self._fallback_or_raise(symbol, timeframe, bars, primary_error)
