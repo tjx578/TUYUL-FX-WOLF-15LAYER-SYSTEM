@@ -936,6 +936,7 @@ class FallbackCandleProvider:
                         "[Fallback] Unexpected %s failure for %s %s on attempt %d/%d",
                         provider.name,
                         symbol,
+                        timeframe,
                         attempt,
                         self._max_retries,
                     )
