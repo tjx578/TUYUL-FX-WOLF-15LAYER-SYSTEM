@@ -2,11 +2,13 @@
 WebSocket Load Test — 50 concurrent connections across all 5 channels.
 
 Usage:
+    $env:WS_LOAD_TEST_URL="ws://localhost:8000"
     pytest tests/test_ws_load.py -v --timeout=60
     # Or standalone:
+    $env:WS_LOAD_TEST_URL="ws://localhost:8000"
     python tests/test_ws_load.py
 
-Requires the API server to be running (or uses the FastAPI TestClient).
+Requires the API server to be running.
 Channels tested: /ws/prices, /ws/trades, /ws/candles, /ws/risk, /ws/equity
 """
 
@@ -31,6 +33,8 @@ CONNECT_TIMEOUT = 10.0  # seconds per connection
 HOLD_DURATION = 5.0  # seconds to hold all connections open
 RECEIVE_TIMEOUT = 3.0  # seconds to wait for at least one message
 
+pytestmark = pytest.mark.slow
+
 
 def _str_list_factory() -> list[str]:
     return []
@@ -38,6 +42,13 @@ def _str_list_factory() -> list[str]:
 
 def _float_list_factory() -> list[float]:
     return []
+
+
+def _load_test_base_url() -> str:
+    base_url = os.getenv("WS_LOAD_TEST_URL")
+    if not base_url:
+        pytest.skip("Set WS_LOAD_TEST_URL to run external WebSocket load tests")
+    return base_url.rstrip("/")
 
 
 @dataclass
@@ -145,7 +156,7 @@ async def test_ws_load_50_connections() -> None:
     except ImportError:
         pytest.skip("websockets not installed")
 
-    base_url = os.getenv("WS_LOAD_TEST_URL", "ws://localhost:8000")
+    base_url = _load_test_base_url()
     token = _get_test_token()
     stats = LoadTestStats()
 
@@ -196,7 +207,7 @@ async def test_ws_channel_isolation() -> None:
     except ImportError:
         pytest.skip("websockets not installed")
 
-    base_url = os.getenv("WS_LOAD_TEST_URL", "ws://localhost:8000")
+    base_url = _load_test_base_url()
     token = _get_test_token()
     results: dict[str, bool] = {}
 
@@ -221,7 +232,7 @@ async def test_ws_rapid_connect_disconnect() -> None:
     except ImportError:
         pytest.skip("websockets not installed")
 
-    base_url = os.getenv("WS_LOAD_TEST_URL", "ws://localhost:8000")
+    base_url = _load_test_base_url()
     token = _get_test_token()
     cycles = 20
     success = 0
