@@ -14,6 +14,8 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from analysis.signal_thresholds import SIGNAL_MIN_RR
+
 EMITTABLE_SIGNAL_STATUSES = {
     "PAIR_SIGNAL_CANDIDATE",
     "MICROBOOST_COUNTER_ENTRY_WATCH",
@@ -109,7 +111,7 @@ PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES = CONTINUATION_SIGNAL_STATUSES | {
     "SELL_BREAKDOWN_RETEST_VALID",
 }
 
-MIN_EXECUTABLE_TP1_RR = 1.5
+MIN_EXECUTABLE_TP1_RR = SIGNAL_MIN_RR
 UNIVERSAL_PATTERN_SCHEMA_VERSION = "2.0-universal-pattern"
 
 PAIR_REFERENCE_COMPAT_FIELDS = {
@@ -441,11 +443,11 @@ class SignalJsonEmitter:
         strict_lifecycle: bool = False,
         require_parent_watch: bool = True,
         allow_direct_bypass: bool = False,
-        require_final_market_structure: bool = True,
-        allow_provisional_rr_execution: bool = False,
+        require_final_market_structure: bool = False,
+        allow_provisional_rr_execution: bool = True,
         require_theme_alignment: bool = True,
         theme_conflict_downgrade: bool = True,
-        min_rr_valid: float = 2.5,
+        min_rr_valid: float = SIGNAL_MIN_RR,
         cooldown_m15_bars_after_active_signal: int = 1,
         decision_dedup_enabled: bool = True,
         decision_state_monotonic: bool = True,
