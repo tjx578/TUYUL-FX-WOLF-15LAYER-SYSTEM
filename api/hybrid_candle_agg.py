@@ -50,6 +50,20 @@ FORMING_STALE_SEC = 15.0  # raised from 5s — 5s was too aggressive
 _TRQ_POLL_INTERVAL_SEC = 2.0
 
 
+def _env_float(name: str, default: float, *, minimum: float = 0.05) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _redis_read_timeout() -> float:
+    return _env_float("CANDLE_WS_REDIS_READ_TIMEOUT_SEC", 0.25)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  Public types
 # ══════════════════════════════════════════════════════════════════════════════
@@ -284,7 +298,7 @@ class HybridCandleAggregator:
 
                 key = candle_forming(sym, tf)
                 try:
-                    raw: dict[Any, Any] = await redis.hgetall(key)
+                    raw: dict[Any, Any] = await asyncio.wait_for(redis.hgetall(key), timeout=_redis_read_timeout())
                     self._redis_reads += 1
                     if raw:
                         # Redis returns bytes or str depending on decode_responses
@@ -337,7 +351,7 @@ class HybridCandleAggregator:
         try:
             from state.heartbeat_classifier import read_ingest_health
 
-            ingest_health = await read_ingest_health(redis)
+            ingest_health = await asyncio.wait_for(read_ingest_health(redis), timeout=_redis_read_timeout())
             meta["ingest_status"] = ingest_health.state.value
             meta["provider_connected"] = ingest_health.provider.state.value == "ALIVE"
         except Exception as exc:
@@ -351,7 +365,7 @@ class HybridCandleAggregator:
             try:
                 from core.redis_keys import latest_tick as _latest_tick_key
 
-                raw = await redis.hgetall(_latest_tick_key(sym))
+                raw = await asyncio.wait_for(redis.hgetall(_latest_tick_key(sym)), timeout=_redis_read_timeout())
                 if raw:
                     decoded = {
                         (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
@@ -447,7 +461,7 @@ class HybridCandleAggregator:
         for sym in self._symbols:
             key = _trq_premove(sym)
             try:
-                raw = await redis.hgetall(key)
+                raw = await asyncio.wait_for(redis.hgetall(key), timeout=_redis_read_timeout())
                 if raw:
                     decoded = {
                         (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
