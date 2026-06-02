@@ -160,3 +160,180 @@ reference_cases:
       d1_20260430_atr_ratio: 2.26
       d1_20260501_close_position: 0.008
     conclusion: good reinforcement for active BUY, but fresh market chase should be blocked
+
+  - reference_case_id: AUDNZD_20260429_0528_0558_CHART
+    symbol: AUDNZD
+    pattern_id: LOW_DENSITY_BLOCK_FALSE_CONTINUATION
+    reference_tier: A-
+    window_wita: "2026-04-29 10:28-10:58"
+    window_chart: "2026-04-29 05:28-05:58"
+    role: low_density_block_false_continuation_reference
+    validated_by:
+      - signal_throttle_single_pair_block
+      - historical_ohlc
+      - post_window_mfe_mae
+    evidence:
+      event_count: 56
+      duration_minutes: 30.69
+      density_per_minute: 1.82
+      price_delta_during_block_pips: -4.9
+      window_range_pips: 10.5
+      mfe_buy_15m_pips: 2.5
+      mae_buy_15m_pips: -6.2
+    conclusion: low-density AUDNZD pressure block did not validate automatic BUY continuation and is better treated as watch or fade context
+
+  - reference_case_id: AUDNZD_20260429_1218_1227_CHART
+    symbol: AUDNZD
+    pattern_id: LOW_DENSITY_BLOCK_FALSE_CONTINUATION
+    reference_tier: A-
+    window_wita: "2026-04-29 17:18-17:27"
+    window_chart: "2026-04-29 12:18-12:27"
+    role: delayed_fade_range_pressure_reference
+    validated_by:
+      - signal_throttle_clean_run
+      - historical_ohlc
+      - post_window_mfe_mae
+    evidence:
+      event_count: 22
+      duration_minutes: 8.73
+      density_per_minute: 2.52
+      price_delta_during_block_pips: -1.0
+      window_range_pips: 2.8
+      mfe_buy_15m_pips: 1.1
+      mae_buy_15m_pips: -2.5
+    conclusion: valid timing block but weak BUY follow-through; delayed fade or range-pressure watch is safer than immediate execution
+
+  - reference_case_id: AUDNZD_20260501_SUPPORTING_ROTATION
+    symbol: AUDNZD
+    pattern_id: AUDNZD_RELATIVE_STRENGTH_DECISION_PAIR
+    reference_tier: A-
+    window_wita: "2026-05-01 EUR-cross rotation"
+    role: aud_nzd_relative_strength_decision_pair
+    validated_by:
+      - signal_throttle_rotation_distribution
+      - leader_supporting_pair_separation
+      - historical_ohlc
+    evidence:
+      supporting_event_count: 18
+      leader_pair: EURAUD
+      role: supporting_cross
+    conclusion: AUDNZD is useful for AUD/NZD relative-strength decision context but must not inherit leader-pair direction
+
+  - reference_case_id: AUDNZD_20260602_CURRENT_STRUCTURE
+    symbol: AUDNZD
+    pattern_id: BULLISH_REPAIR_UPPER_DECISION_NO_CHASE
+    reference_tier: A-
+    window_wita: "2026-06-02 current structure"
+    role: bullish_repair_upper_decision_no_chase
+    validated_by:
+      - d1_h4_repair_state
+      - intraday_upper_range_location
+      - resistance_zone_mapping
+    evidence:
+      d1_close_position: 0.996
+      h4_close_position: 0.98
+      h1_close_position: 0.98
+      resistance_zone: "1.2108-1.2120"
+      support_retest_zone: "1.2072-1.2063"
+    conclusion: bullish repair is active but price is near upper decision zone, so fresh BUY chase is blocked until pullback hold or reclaim
+
+  - reference_case_id: EURAUD_LEADER_AUDNZD_SUPPORTING_20260501
+    symbol: AUDNZD
+    pattern_id: SUPPORTING_CROSS_NOT_PRIMARY_LEADER
+    reference_tier: A
+    window_wita: "2026-05-01 EUR-cross rotation"
+    role: supporting_cross_not_primary_leader
+    validated_by:
+      - signal_throttle_leader_distribution
+      - supporting_cross_followthrough_check
+    evidence:
+      leader_pair: EURAUD
+      supporting_pair: AUDNZD
+      supporting_event_count: 18
+    conclusion: supporting cross activity is theme context only and requires own price-phase validation before any SignalJSON promotion
+
+  - reference_case_id: EURNZD_20260501_EUR_CROSS_SUPPORTING_59_EVENTS
+    symbol: EURNZD
+    pattern_id: SUPPORTING_EUR_CROSS_NOT_LEADER
+    reference_tier: A-/B+
+    window_wita: "2026-05-01 EUR-cross rotation"
+    role: supporting_eur_cross_not_leader
+    validated_by:
+      - signal_throttle_eur_cross_rotation
+      - leader_supporting_pair_separation
+      - historical_ohlc
+    evidence:
+      event_count: 59
+      leader_pair: EURAUD
+      leader_event_count: 294
+    conclusion: EURNZD is supporting EUR-cross radar, not a clean primary leader or auto-entry from EUR activity
+
+  - reference_case_id: EURNZD_20260501_1057_1241_CHART
+    symbol: EURNZD
+    pattern_id: EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE
+    reference_tier: A-/B+
+    window_wita: "2026-05-01 15:57-17:41"
+    window_chart: "2026-05-01 10:57-12:41"
+    role: upper_fade_after_eur_cross_pressure
+    validated_by:
+      - historical_ohlc
+      - post_window_mfe_mae
+      - price_phase_rejection
+    evidence:
+      price_delta_during_window_pips: -5.8
+      window_range_pips: 19.8
+      mfe_buy_15m_pips: 2.6
+      mae_buy_15m_pips: -6.7
+      mfe_sell_15m_pips: 6.7
+      mae_sell_15m_pips: -2.6
+    conclusion: BUY continuation failed while SELL/fade was cleaner, so supporting EUR-cross pressure should become fade watch unless own reclaim confirms
+
+  - reference_case_id: EURNZD_20260501_1130_1215_CHART
+    symbol: EURNZD
+    pattern_id: EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE
+    reference_tier: A-/B+
+    window_wita: "2026-05-01 16:30-17:15"
+    window_chart: "2026-05-01 11:30-12:15"
+    role: core_eur_cross_rotation_false_continuation
+    validated_by:
+      - historical_ohlc
+      - mfe_mae_outcome
+    evidence:
+      price_delta_during_window_pips: -6.8
+      window_range_pips: 19.0
+      mfe_buy_4h_pips: 3.3
+      mae_buy_4h_pips: -68.2
+    conclusion: core EUR-cross rotation did not justify EURNZD BUY chase and instead validated upper-fade risk
+
+  - reference_case_id: EURAUD_LEADER_EURNZD_SUPPORTING_20260501
+    symbol: EURNZD
+    pattern_id: CROSS_THEME_LEADER_DIVERGENCE
+    reference_tier: A-/B+
+    window_wita: "2026-05-01 EUR-cross rotation"
+    role: cross_theme_leader_divergence
+    validated_by:
+      - leader_supporting_pair_separation
+      - historical_followthrough_divergence
+    evidence:
+      leader_pair: EURAUD
+      supporting_pair: EURNZD
+      supporting_event_count: 59
+    conclusion: EURAUD strength must not be copied into EURNZD without EURNZD own phase, NZD weakness, and structure validation
+
+  - reference_case_id: EURNZD_20260602_CURRENT_STRUCTURE
+    symbol: EURNZD
+    pattern_id: MACRO_BEARISH_INTRADAY_REPAIR_DECISION
+    reference_tier: A-/B+
+    window_wita: "2026-06-02 current structure"
+    role: macro_bearish_intraday_repair_decision
+    validated_by:
+      - d1_h4_bearish_context
+      - h1_m15_intraday_repair
+      - resistance_zone_mapping
+    evidence:
+      d1_below_ema50: true
+      d1_below_ema200: true
+      h4_below_ema50: true
+      h4_below_ema200: true
+      resistance_zone: "1.9652-1.9681"
+    conclusion: macro bearish context with intraday repair is a decision state, not a buy-chase setup
