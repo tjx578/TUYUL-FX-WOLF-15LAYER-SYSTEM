@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import risk.risk_router as risk_router_mod
 from api.config_profile_router import router as config_profile_router
 from api.ea_router import router as ea_router
 from api.middleware import auth as auth_mod
@@ -27,6 +29,13 @@ def _headers(pin: str | None = None) -> dict[str, str]:
     if pin is not None:
         base["X-Action-Pin"] = pin
     return base
+
+
+@pytest.fixture(autouse=True)
+def _clean_global_kill_switch() -> None:
+    risk_router_mod._kill_switch.disable("TEST_RESET")
+    yield
+    risk_router_mod._kill_switch.disable("TEST_RESET")
 
 
 def test_rbac_rejects_missing_role_claim(monkeypatch) -> None:
