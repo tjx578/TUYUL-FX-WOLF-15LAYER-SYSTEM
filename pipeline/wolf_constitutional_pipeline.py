@@ -375,8 +375,8 @@ class WolfConstitutionalPipeline:
             idle_finalize_seconds=self._parse_env_float("SIGNAL_BLOCK_IDLE_FINALIZE_SECONDS", 75.0),
             hard_finalize_seconds=self._parse_env_float("SIGNAL_BLOCK_HARD_FINALIZE_SECONDS", 300.0),
             expires_after_m15_bars=int(self._parse_env_float("SIGNAL_BLOCK_PENDING_EXPIRES_AFTER_M15_BARS", 3.0)),
-            min_rr_valid=self._parse_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
-            tp1_rr_required=self._parse_env_float("SIGNAL_JSON_TP1_RR_REQUIRED", 2.0),
+            min_rr_valid=self._parse_env_float("SIGNAL_JSON_MIN_RR_VALID", 1.5),
+            tp1_rr_required=self._parse_env_float("SIGNAL_JSON_TP1_RR_REQUIRED", 1.5),
             counter_entry_risk_multiplier=self._parse_env_float("SIGNAL_JSON_COUNTER_ENTRY_RISK_MULTIPLIER", 0.5),
             counter_entry_expiry_minutes=int(self._parse_env_float("SIGNAL_JSON_COUNTER_ENTRY_EXPIRY_MINUTES", 30.0)),
             allow_rr_fallback=os.getenv("SIGNAL_JSON_ALLOW_RR_FALLBACK", "true").strip().lower() == "true",
@@ -410,7 +410,7 @@ class WolfConstitutionalPipeline:
             require_theme_alignment=os.getenv("SIGNAL_JSON_REQUIRE_THEME_ALIGNMENT", "false").strip().lower() == "true",
             theme_conflict_downgrade=os.getenv("SIGNAL_JSON_THEME_CONFLICT_DOWNGRADE", "false").strip().lower()
             == "true",
-            min_rr_valid=self._parse_env_float("SIGNAL_JSON_MIN_RR_VALID", 2.5),
+            min_rr_valid=self._parse_env_float("SIGNAL_JSON_MIN_RR_VALID", 1.5),
             cooldown_m15_bars_after_active_signal=int(
                 self._parse_env_float("SIGNAL_JSON_COOLDOWN_M15_BARS_AFTER_ACTIVE_SIGNAL", 1.0)
             ),
@@ -4035,6 +4035,45 @@ class WolfConstitutionalPipeline:
             return False
         return self._signal_json_emitter.emit(signal_event)
 
+    def _emit_microboost_watch_shadow(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        source_verdict: Any | None,
+    ) -> None:
+        """Emit microboost WATCH logs for observability when verdict is not EXECUTE.
+
+        Side-effect-only logging that decouples ``signal_watch_json`` visibility
+        from the execution verdict. It deliberately:
+          * works on a throwaway copy of ``l12_verdict`` (never mutates the live
+            execution verdict);
+          * never touches the signal-block finalizer / lifecycle state;
+          * emits ONLY pure ``*_WATCH`` candidates, never execution-grade finals,
+        so watch visibility is restored without opening any execution path.
+
+        Disable with ``SIGNAL_WATCH_SHADOW_ENABLED=false``.
+        """
+        if os.getenv("SIGNAL_WATCH_SHADOW_ENABLED", "true").strip().lower() != "true":
+            return
+        shadow_verdict = dict(l12_verdict)
+        market_contexts = self._signal_throttle_market_contexts(
+            symbol=symbol,
+            synthesis=synthesis,
+            l12_verdict=shadow_verdict,
+            source_verdict=source_verdict,
+        )
+        report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        for key in ("microboost_continuation_entry", "microboost_counter_entry"):
+            candidate = report.get(key)
+            if not isinstance(candidate, dict):
+                continue
+            status = str(candidate.get("status") or "")
+            if status == "NONE" or not status.endswith("_WATCH"):
+                continue
+            self._emit_signal_json_payload(dict(candidate))
+
     def _finalize_idle_signal_blocks(
         self,
         *,
@@ -4166,6 +4205,12 @@ class WolfConstitutionalPipeline:
                 synthesis=synthesis,
                 l12_verdict=l12_verdict,
             )
+            self._emit_microboost_watch_shadow(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+                source_verdict=final_verdict,
+            )
         else:
             throttle_skip_reason = "non_execute_verdict"
             if l12_verdict.get("sovereignty_downgrade"):
@@ -4192,6 +4237,12 @@ class WolfConstitutionalPipeline:
                 symbol=symbol,
                 synthesis=synthesis,
                 l12_verdict=l12_verdict,
+            )
+            self._emit_microboost_watch_shadow(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+                source_verdict=final_verdict,
             )
 
         try:
