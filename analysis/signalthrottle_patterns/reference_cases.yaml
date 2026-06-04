@@ -337,3 +337,135 @@ reference_cases:
       h4_below_ema200: true
       resistance_zone: "1.9652-1.9681"
     conclusion: macro bearish context with intraday repair is a decision state, not a buy-chase setup
+
+  - reference_case_id: XAGUSD_20260430_1658_1734_WITA
+    symbol: XAGUSD
+    pattern_id: METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW
+    reference_tier: A-
+    window_wita: "2026-04-30 16:58-17:34"
+    window_chart: "2026-04-30 11:58-12:34"
+    role: high_volatility_metal_pressure_reference
+    validated_by:
+      - signal_throttle_pressure_block
+      - historical_ohlc
+      - mfe_mae_outcome
+    evidence:
+      event_count: 77
+      duration_minutes: 36.71
+      density_per_minute: 2.10
+      buy_delta_during_block: -0.014
+      buy_mfe_1h: 0.182
+      buy_mae_1h: -0.219
+      buy_mae_4h: -0.760
+      sell_mfe_4h: 0.760
+    conclusion: sustained XAGUSD pressure was a valid metal decision zone, but the individual block was not clean BUY continuation and requires reclaim or rejection confirmation
+
+  - reference_case_id: XAGUSD_20260430_20260501_BROAD_WINDOW
+    symbol: XAGUSD
+    pattern_id: METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW
+    reference_tier: A-
+    window_wita: "2026-04-30 to 2026-05-01 broad window"
+    role: broad_metal_followthrough_reference
+    validated_by:
+      - historical_ohlc
+      - mfe_mae_outcome
+      - daily_expansion_context
+    evidence:
+      broad_window_buy_delta: 0.829
+      buy_mfe_1h_after_window: 1.933
+      buy_mfe_4h_after_window: 3.306
+      d1_20260430_close_position: 0.945
+    conclusion: broad XAGUSD pressure follow-through was bullish, but intraday block timing still requires metal-specific whipsaw protection
+
+  - reference_case_id: XAGUSD_20260511_INTRADAY_SELL_THEN_BULLISH_EXPANSION
+    symbol: XAGUSD
+    pattern_id: METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW
+    reference_tier: A-
+    window_chart: "2026-05-11 03:56-05:45"
+    role: metal_intraday_whipsaw_then_expansion_reference
+    validated_by:
+      - historical_ohlc
+      - mfe_mae_outcome
+      - metal_asset_class_calibration
+    evidence:
+      buy_delta_during_window: -0.685
+      buy_mae_1h: -0.876
+      buy_mfe_8h: 5.236
+      sell_mfe_1h: 0.876
+      d1_body: 7.166
+      d1_close_position: 0.992
+    conclusion: XAGUSD can validate the opposite intraday fade first and still reverse into explosive bullish expansion, so single pressure blocks must not auto-promote to final direction
+
+  - reference_case_id: XAGUSD_20260602_CURRENT_STRUCTURE
+    symbol: XAGUSD
+    pattern_id: XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM
+    reference_tier: A-
+    window_wita: "2026-06-02 current structure"
+    role: metal_repair_below_ema_no_chase
+    validated_by:
+      - d1_h4_h1_ema_structure
+      - current_price_phase
+      - key_level_mapping
+    evidence:
+      d1_above_ema200: true
+      d1_below_ema50: true
+      h4_below_ema50: true
+      h1_below_ema50: true
+      reclaim_zone: "75.35-75.50"
+      breakdown_level: "74.27"
+    conclusion: XAGUSD is a repair or rejection decision state; fresh BUY chase is blocked until reclaim and hold, while SELL needs rejection plus breakdown
+
+  - reference_case_id: AUDCHF_20260602_BROAD_CHF_WEAKNESS
+    symbol: AUDCHF
+    pattern_id: CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH
+    reference_tier: A
+    window_chart: "2026-06-01 19:05 to 2026-06-02 07:07"
+    role: chf_weakness_confirmation_pair
+    validated_by:
+      - SignalThrottleIntel
+      - historical_ohlc
+      - mfe_mae_outcome
+    evidence:
+      raw_direction: BUY
+      buy_delta_window_pips: 0.3
+      buy_mfe_1h_pips: 7.8
+      buy_mae_1h_pips: 0.0
+      buy_mfe_4h_pips: 13.1
+      buy_mae_4h_pips: 0.0
+    conclusion: AUDCHF BUY was clean CHF-weakness confirmation with near-zero drawdown, but remains secondary confirmation rather than primary leader
+
+  - reference_case_id: AUDCHF_20260602_20260603_LATEST_FOLLOWTHROUGH
+    symbol: AUDCHF
+    pattern_id: CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH
+    reference_tier: A
+    window_chart: "2026-06-02 16:05 to 2026-06-03 00:59"
+    role: chf_weakness_latest_followthrough
+    validated_by:
+      - historical_ohlc
+      - current_chf_basket_context
+    evidence:
+      entry_approx: 0.56471
+      end_price: 0.56561
+      delta_pips: 9.0
+      window_range_pips: 16.5
+    conclusion: latest AUDCHF window supports BUY continuation context, but fresh entries should wait for retest rather than chase the high
+
+  - reference_case_id: AUDCHF_20260603_CURRENT_STRUCTURE
+    symbol: AUDCHF
+    pattern_id: AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE
+    reference_tier: A
+    window_wita: "2026-06-03 current structure"
+    role: bullish_alignment_upper_no_chase
+    validated_by:
+      - d1_h4_h1_ema_alignment
+      - upper_range_location
+      - key_level_mapping
+    evidence:
+      d1_above_ema50: true
+      d1_above_ema200: true
+      h4_above_ema50: true
+      h1_above_ema50: true
+      recent_high_zone: "0.56568-0.56600"
+      retest_zone: "0.56525-0.56490"
+      invalidation: "H1/H4 close below 0.56270"
+    conclusion: AUDCHF bullish alignment is valid, but price near recent high requires retest or breakout retest before execution-grade entry
