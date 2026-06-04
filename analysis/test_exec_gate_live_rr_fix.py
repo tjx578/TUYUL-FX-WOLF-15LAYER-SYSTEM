@@ -81,6 +81,21 @@ def _usdjpy_single_stop_candidate() -> dict:
     }
 
 
+def _usdjpy_structure_ready_candidate() -> dict:
+    payload = _usdjpy_single_stop_candidate()
+    payload.update(
+        {
+            "target_mode": "FINAL_MARKET_STRUCTURE",
+            "target_source": "support_resistance_ladder",
+            "structure_targets_available": True,
+            "tradeplan_context_ready": True,
+            "targets_execution_usable": True,
+            "targets": [{"id": "TP1", "type": "STRUCTURE_TARGET", "level": TP1, "rr": 1.5}],
+        }
+    )
+    return payload
+
+
 def test_engine_defaults_single_stop_min_rr_15():
     """Engine minimum RR and fixed TP1 RR both default to 1.5."""
     engine = MicroboostCounterEntryEngine()
@@ -95,15 +110,28 @@ def test_tp1_is_1p5r_against_sl_safe():
     assert round(reward / risk, 2) == 1.5
 
 
-def test_confirmed_buy_allows_at_min_rr_15():
-    """The confirmed BUY passes the gate as ALLOW at the new 1.5 minimum."""
+def test_confirmed_buy_defers_without_structure_contract_by_default():
+    """The direction/RR is valid, but provisional fallback is not execution-grade by default."""
     decision = evaluate_signal_execution_gates(_usdjpy_single_stop_candidate())
+    assert decision.applies is True
+    assert decision.decision == "DEFER", decision.reasons
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in decision.reasons
+    assert decision.live_rr is not None
+    assert decision.live_rr["rr"] == 1.5
+    assert "LIVE_RR_BELOW_MINIMUM" not in decision.reasons
+
+
+def test_confirmed_buy_allows_at_min_rr_15_with_explicit_fallback_policy():
+    """Legacy RR-fallback execution requires explicit policy opt-in."""
+    decision = evaluate_signal_execution_gates(
+        _usdjpy_single_stop_candidate(),
+        rr_fallback_validates_signal=True,
+    )
     assert decision.applies is True
     assert decision.decision == "ALLOW", decision.reasons
     assert decision.execution_status == "EXECUTION_GATE_ALLOWED"
     assert decision.live_rr is not None
     assert decision.live_rr["rr"] == 1.5
-    assert "LIVE_RR_BELOW_MINIMUM" not in decision.reasons
 
 
 def test_default_min_rr_required_is_15():
@@ -117,7 +145,7 @@ def test_no_sl_tight_in_gate_output():
     adapter = SignalJsonGateAdapter(
         SignalJsonGateConfig(enabled=True, enforce=True, final_barrier=True, emit_sidecar=False)
     )
-    out = adapter.apply(_usdjpy_single_stop_candidate())
+    out = adapter.apply(_usdjpy_structure_ready_candidate())
     assert "sl_tight" not in out
     assert out.get("sl_safe") == SL_SAFE
     assert out.get("event") != "signal_decision_update_json"
@@ -208,7 +236,7 @@ def test_no_market_chase_sell_still_allowed():
     """NO_MARKET_CHASE is chase-only; a valid SELL retest must still ALLOW (NZDJPY kept)."""
     payload = _nzdjpy_single_stop_sell()
     payload["entry_permission"] = "NO_MARKET_CHASE"
-    decision = evaluate_signal_execution_gates(payload)
+    decision = evaluate_signal_execution_gates(payload, rr_fallback_validates_signal=True)
     assert decision.decision == "ALLOW", decision.reasons
 
 
@@ -217,7 +245,7 @@ def test_allow_stamps_execution_valid_now_true():
     adapter = SignalJsonGateAdapter(
         SignalJsonGateConfig(enabled=True, enforce=True, final_barrier=True, emit_sidecar=False)
     )
-    out = adapter.apply(_usdjpy_single_stop_candidate())
+    out = adapter.apply(_usdjpy_structure_ready_candidate())
     assert out.get("valid_for_execution") is True
     assert out.get("execution_valid_now") is True
 
