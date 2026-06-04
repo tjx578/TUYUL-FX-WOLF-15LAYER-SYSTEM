@@ -479,6 +479,44 @@ def test_final_signal_uses_signal_json_prefix(caplog):
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
+def test_terminal_valid_wait_structure_emits_signal_json_without_execution(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="NZDJPY_20260603T132500Z",
+        symbol="NZDJPY",
+        status="FINAL_VALID_WAIT_STRUCTURE_TARGET",
+        terminal_status="FINAL_VALID_WAIT_STRUCTURE_TARGET",
+        raw_direction="SELL",
+        candidate_direction="SELL",
+        validated_direction="SELL",
+        final_direction="SELL",
+        action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        next_action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        signal_valid=True,
+        direction_valid=True,
+        analysis_valid=True,
+        tradeplan_valid=False,
+        valid_for_execution=False,
+        execution_valid_now=False,
+        terminal_decision_confirmed=True,
+        is_final_signal=True,
+    )
+
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalWatchJSON]" not in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert '"status":"FINAL_VALID_WAIT_STRUCTURE_TARGET"' in caplog.text
+    assert '"signal_valid":true' in caplog.text
+    assert '"direction_valid":true' in caplog.text
+    assert '"tradeplan_valid":false' in caplog.text
+    assert '"execution_valid_now":false' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
 def test_continuation_valid_with_rr_fallback_defaults_to_decision_update(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
