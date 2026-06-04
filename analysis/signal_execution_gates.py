@@ -73,6 +73,7 @@ def evaluate_signal_execution_gates(
     _reinforcement_management_gate(payload, defer_gates, defer_reasons)
     _tradeplan_gate(payload, enriched, min_rr_required, defer_gates, defer_reasons)
     _spread_news_gate(payload, block_gates, block_reasons)
+    _pattern_permission_gate(payload, block_gates, block_reasons)
     _session_volatility_gate(payload, defer_gates, defer_reasons)
     _basket_theme_gate(payload, defer_gates, defer_reasons)
     _microboost_timing_gate(payload, defer_gates, defer_reasons, block_gates, block_reasons)
@@ -187,6 +188,32 @@ def _spread_news_gate(payload: dict[str, Any], gates: list[str], reasons: list[s
         _add(gates, reasons, "SpreadNewsExecutionGate", "NEWS_LOCK_ACTIVE")
     if _optional_bool(payload.get("news_blocked")) is True or _optional_bool(payload.get("is_news_locked")) is True:
         _add(gates, reasons, "SpreadNewsExecutionGate", "NEWS_LOCK_ACTIVE")
+
+
+def _pattern_permission_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
+    """Block a final whose pattern entry-permission contradicts the direction.
+
+    The pattern/throttle layer can mark a price location as "no new entry"
+    (exhaustion, absorption, late stage). A directional final must not claim
+    execution while the selected pattern forbids opening that side here.
+    Chase-only permissions (NO_MARKET_CHASE / *_CHASE) are deliberately left to
+    the no-chase gate so a valid retest entry is not over-blocked.
+    """
+    direction = _direction(payload)
+    permission = str(
+        payload.get("entry_permission")
+        or _nested(payload, "execution_gate", "entry_permission")
+        or _nested(payload, "pattern_context", "entry_permission")
+        or ""
+    ).upper()
+    if not permission:
+        return
+    if permission == "NO_TRADE":
+        _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_TRADE")
+    elif direction == "BUY" and permission in {"NO_NEW_BUY", "NO_BUY", "BLOCK_NEW_ENTRY"}:
+        _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_NEW_BUY")
+    elif direction == "SELL" and permission in {"NO_NEW_SELL", "NO_SELL", "BLOCK_NEW_ENTRY"}:
+        _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_NEW_SELL")
 
 
 def _session_volatility_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
