@@ -120,6 +120,26 @@ def test_audnzd_eurnzd_reference_patterns_are_filters_not_primary_leaders():
     assert "SUPPORTING_EUR_CROSS_NOT_LEADER" in PAIR_ROLE_MAP["EURNZD"]["golden_patterns"]
 
 
+def test_xagusd_audchf_reference_patterns_are_calibration_not_primary_leaders():
+    expected = {
+        "METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW": ("XAGUSD",),
+        "XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM": ("XAGUSD",),
+        "CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH": ("AUDCHF",),
+        "AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE": ("AUDCHF",),
+    }
+    for pattern_id, references in expected.items():
+        pattern = get_pattern(pattern_id)
+
+        assert pattern is not None
+        assert pattern.golden_references == references
+        assert "NOT_PAIR_LOCKED" in pattern.pair_specific_calibration
+
+    assert PAIR_ROLE_MAP["XAGUSD"]["default_role"] == "HIGH_VOLATILITY_METAL_PRESSURE_REFERENCE"
+    assert PAIR_ROLE_MAP["AUDCHF"]["default_role"] == "CHF_WEAKNESS_CONFIRMATION_PAIR"
+    assert "XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM" in PAIR_ROLE_MAP["XAGUSD"]["golden_patterns"]
+    assert "CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH" in PAIR_ROLE_MAP["AUDCHF"]["golden_patterns"]
+
+
 def test_runtime_scoring_and_routing_load_yaml_database():
     assert REGISTRY_SOURCE["patterns"] == "yaml"
     assert REGISTRY_SOURCE["pair_roles"] == "yaml"
