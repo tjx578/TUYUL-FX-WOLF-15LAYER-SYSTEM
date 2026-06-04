@@ -83,6 +83,34 @@ def test_signal_json_deduplicates_same_event(caplog):
     assert caplog.text.count("[SignalWatchJSON]") == 1
 
 
+def test_final_signal_dedup_prefers_signal_id_across_stream_extracts(caplog):
+    emitter = SignalJsonEmitter(enabled=True, dedup_ttl_seconds=300)
+    first = _event(
+        cluster_id="NZDJPY_20260603T132500Z_A",
+        symbol="NZDJPY",
+        status="SELL_BREAKDOWN_CONTINUATION_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+        signal_id="NZDJPY_SELL_20260603_132500",
+    )
+    duplicate_extract = _event(
+        cluster_id="NZDJPY_20260603T132500Z_B",
+        symbol="NZDJPY",
+        status="SELL_BREAKDOWN_CONTINUATION_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        valid_for_execution=True,
+        signal_id="NZDJPY_SELL_20260603_132500",
+    )
+
+    assert emitter.emit(first) is True
+    assert emitter.emit(duplicate_extract) is False
+    assert caplog.text.count("[SignalJSON]") == 1
+
+
 def test_signal_json_emits_watch_only_on_state_transition(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     first = _event(
@@ -451,8 +479,36 @@ def test_final_signal_uses_signal_json_prefix(caplog):
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
-def test_continuation_valid_with_rr_fallback_uses_signal_json_prefix(caplog):
+def test_continuation_valid_with_rr_fallback_defaults_to_decision_update(caplog):
     emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260520T024532Z",
+        symbol="USDCAD",
+        signal_family="MICROBOOST_TREND_CONTINUATION",
+        status="BUY_TIMING_VALID_BY_QUORUM_CONTINUATION",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_SIGNAL_ZONE_OR_RETEST",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        valid_for_execution=True,
+        allowed_quorum=True,
+        allowed_quorum_streak=3,
+        reclaim_trigger=1.3785,
+        risk_pips=12.0,
+    )
+
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert "PROVISIONAL_RR_NOT_EXECUTION_GRADE" in caplog.text
+
+
+def test_continuation_valid_with_rr_fallback_can_be_explicitly_enabled(caplog):
+    emitter = SignalJsonEmitter(enabled=True, allow_provisional_rr_execution=True)
     event = _event(
         cluster_id="USDCAD_20260520T024532Z",
         symbol="USDCAD",
