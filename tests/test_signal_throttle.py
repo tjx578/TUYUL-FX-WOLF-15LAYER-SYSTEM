@@ -292,6 +292,45 @@ class TestPipelineSignalThrottle:
         should_check = final_verdict.startswith("EXECUTE")
         assert should_check is False
 
+    def test_hold_directional_verdict_records_live_watch_observation(self, monkeypatch):
+        """Directional HOLD cycles should refresh SignalWatch observability."""
+        WolfConstitutionalPipeline = _pipeline_cls()
+        pipe = self._make_pipeline()
+
+        class _FakeV11Hook:
+            def evaluate(self, *_args: Any, **_kwargs: Any) -> Any:
+                class _Overlay:
+                    should_trade = False
+
+                    @staticmethod
+                    def to_dict() -> dict[str, Any]:
+                        return {"enabled": True, "should_trade": False, "skipped_reason": "test"}
+
+                return _Overlay()
+
+        monkeypatch.setattr("engines.v11.V11PipelineHook", _FakeV11Hook)
+        monkeypatch.setattr(
+            WolfConstitutionalPipeline,
+            "_emit_verdict_stream_event",
+            staticmethod(lambda **_kwargs: None),
+        )
+
+        errors: list[str] = []
+        l12_verdict = {"verdict": "HOLD", "direction": "BUY", "market_context_from": "EXECUTE_BUY"}
+        pipe._apply_effective_verdict_controls(
+            symbol="GBPCAD",
+            synthesis={},
+            l12_verdict=l12_verdict,
+            legacy_verdict="EXECUTE_BUY",
+            safe_mode=False,
+            errors=errors,
+        )
+
+        report = pipe._signal_throttle_live_analyzer.snapshot()
+        assert report["event_counts"]["downgraded_to_hold"] == 1
+        assert report["counts"]["verdicts"] == {"EXECUTE_BUY": 1}
+        assert report["symbol_activity"]["GBPCAD"]["latest_event_type"] == "DOWNGRADED_TO_HOLD"
+
     def test_throttle_preserves_original_verdict(self):
         """When throttled, the original verdict should be stored in throttled_from."""
         pipe = self._make_pipeline()
