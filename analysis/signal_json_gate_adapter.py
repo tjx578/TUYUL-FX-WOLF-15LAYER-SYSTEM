@@ -29,6 +29,7 @@ class SignalJsonGateConfig:
     prefix: str = "[SignalExecutionGateJSON]"
     min_rr_required: float = SIGNAL_MIN_RR
     max_chase_r: float = 0.35
+    rr_fallback_validates_signal: bool = False
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> SignalJsonGateConfig:
@@ -55,6 +56,7 @@ class SignalJsonGateConfig:
             prefix=str(env.get("SIGNAL_EXECUTION_GATE_JSON_LOG_PREFIX") or "[SignalExecutionGateJSON]"),
             min_rr_required=_env_float(env, "SIGNAL_JSON_MIN_RR_VALID", SIGNAL_MIN_RR),
             max_chase_r=_env_float(env, "SIGNAL_JSON_EXEC_GATES_MAX_CHASE_R", 0.35),
+            rr_fallback_validates_signal=_env_bool(env, "SIGNAL_JSON_RR_FALLBACK_VALIDATES_SIGNAL", False),
         )
 
 
@@ -92,6 +94,7 @@ class SignalJsonGateAdapter:
             payload,
             min_rr_required=self.config.min_rr_required,
             max_chase_r=self.config.max_chase_r,
+            rr_fallback_validates_signal=self.config.rr_fallback_validates_signal,
         )
         if self.config.emit_sidecar and decision.applies:
             self._emit_sidecar(payload, decision)
