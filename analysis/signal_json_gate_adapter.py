@@ -11,7 +11,14 @@ from typing import Any
 
 from analysis.signal_execution_gate_models import ExecutionGateDecision
 from analysis.signal_execution_gates import evaluate_signal_execution_gates
+from analysis.signal_json_enrichment import enrich_signal_json_payload
 from analysis.signal_thresholds import SIGNAL_MIN_RR
+
+_STRUCTURE_TARGET_MODES = {
+    "FINAL_MARKET_STRUCTURE",
+    "STRUCTURE_LADDER_TARGET",
+    "KEY_LEVEL_STRUCTURE_TARGET",
+}
 
 
 @dataclass(frozen=True)
@@ -111,11 +118,9 @@ class SignalJsonGateAdapter:
                 return self._deferred_as_terminal_valid_signal(payload, decision)
             return self._blocked_as_decision_update(payload, decision)
         if self.config.enforce and decision.applies and decision.allows_execution:
-            # Contract consistency: when the gate ALLOWS execution, the nested
-            # execution_gate.execution_valid_now (built downstream from this flat
-            # field) must agree with the top-level valid_for_execution=True so the
-            # final never claims execution-ready while its own gate says "not now".
-            return {**payload, "execution_valid_now": True}
+            return self._allowed_as_terminal_execution_ready(payload)
+        if self.config.enforce and not decision.applies and _is_direction_valid_waiting(payload):
+            return self._direction_valid_wait_as_terminal_signal(payload)
         return payload
 
     def _emit_sidecar(self, payload: dict[str, Any], decision: ExecutionGateDecision) -> None:
@@ -255,6 +260,127 @@ class SignalJsonGateAdapter:
                 "reason": (
                     f"{payload.get('reason') or 'signal_candidate'} "
                     f"Direction valid; execution deferred: {reasons}."
+                ),
+            }
+        )
+        return terminal
+
+    @staticmethod
+    def _allowed_as_terminal_execution_ready(payload: dict[str, Any]) -> dict[str, Any]:
+        """Normalize an ALLOW decision into the terminal execution contract."""
+        source_target_mode = str(payload.get("target_mode") or "").upper()
+        direction = str(
+            payload.get("final_direction")
+            or payload.get("validated_direction")
+            or payload.get("candidate_direction")
+            or "WAIT"
+        ).upper()
+        if direction not in {"BUY", "SELL"}:
+            return {**payload, "execution_valid_now": True}
+
+        if source_target_mode not in _STRUCTURE_TARGET_MODES:
+            return {
+                **payload,
+                "signal_valid": True,
+                "direction_valid": True,
+                "analysis_valid": True,
+                "tradeplan_valid": bool(payload.get("tradeplan_valid", True)),
+                "valid_for_execution": True,
+                "execution_valid_now": True,
+                "execution_status": "EXECUTION_READY",
+            }
+
+        enriched = enrich_signal_json_payload({**payload, "execution_valid_now": True})
+        terminal = dict(enriched)
+        source_status = str(payload.get("status") or "")
+        terminal.update(
+            {
+                "event": "signal_json",
+                "source_status": source_status,
+                "source_final_direction": payload.get("final_direction") or direction,
+                "previous_status": payload.get("previous_status") or source_status,
+                "status": "FINAL_EXECUTION_READY",
+                "new_status": "FINAL_EXECUTION_READY",
+                "terminal_status": "FINAL_EXECUTION_READY",
+                "final_direction": direction,
+                "validated_direction": direction,
+                "direction_validation_status": "VALIDATED_EXECUTION",
+                "signal_valid": True,
+                "direction_valid": True,
+                "analysis_valid": True,
+                "tradeplan_valid": True,
+                "valid_for_execution": True,
+                "execution_valid_now": True,
+                "execution_status": "EXECUTION_READY",
+                "execution_grade": "FINAL_STRUCTURE",
+                "audit_valid": True,
+                "audit_block_reasons": [],
+                "emit_reason": "TERMINAL_EXECUTION_READY",
+                "signal_quality": "FINAL_EXECUTION_READY",
+                "next_action": "EXECUTE_OR_SEND_TRADE_PLAN",
+                "exec_gate_decision": "ALLOW",
+                "reason": (
+                    f"{payload.get('reason') or 'signal_candidate'} "
+                    "Direction, tradeplan, RR, and execution gate are ready."
+                ),
+            }
+        )
+        if not _has_parent_or_pending_decision(terminal):
+            terminal.update(
+                {
+                    "parent_event_type": None,
+                    "parent_event_exists": False,
+                    "parent_watch_id": None,
+                    "parent_watch_required": False,
+                    "promotion_path": "DIRECT_BYPASS",
+                    "bypass_reason": "EXECUTION_GATE_ALLOWED_DIRECT_SIGNAL",
+                    "terminal_decision_confirmed": True,
+                    "terminal_decision_event_type": "signal_json",
+                }
+            )
+        return terminal
+
+    @staticmethod
+    def _direction_valid_wait_as_terminal_signal(payload: dict[str, Any]) -> dict[str, Any]:
+        terminal = dict(payload)
+        direction = _direction_from_payload(payload)
+        status = _terminal_status_for_direction_valid_wait(payload)
+        terminal.update(
+            {
+                "event": "signal_json",
+                "source_status": payload.get("status"),
+                "source_final_direction": payload.get("final_direction") or direction,
+                "previous_status": payload.get("previous_status") or payload.get("status"),
+                "status": status,
+                "new_status": status,
+                "terminal_status": status,
+                "final_direction": direction,
+                "validated_direction": direction,
+                "direction_validation_status": "FINAL_DIRECTION_VALID_EXECUTION_DEFERRED",
+                "action": _terminal_action(status),
+                "next_action": _terminal_next_action(status),
+                "is_final_signal": True,
+                "signal_valid": True,
+                "direction_valid": True,
+                "analysis_valid": True,
+                "source_valid_for_execution": bool(payload.get("valid_for_execution", False)),
+                "tradeplan_valid": _terminal_tradeplan_valid(payload, status),
+                "valid_for_execution": False,
+                "execution_valid_now": False,
+                "execution_status": _terminal_execution_status(status),
+                "execution_reason": payload.get("target_block_reason")
+                or payload.get("tp_missing_reason")
+                or "execution_contract_not_ready",
+                "execution_grade": "TERMINAL_VALID_NON_EXECUTION",
+                "terminal_decision_confirmed": True,
+                "terminal_decision_event_type": "signal_json",
+                "audit_valid": False,
+                "audit_block_reasons": _direction_valid_wait_reasons(payload),
+                "emit_reason": "TERMINAL_VALID_SIGNAL",
+                "signal_quality": _terminal_signal_quality(status),
+                "reason": (
+                    f"{payload.get('reason') or 'signal_candidate'} "
+                    "Direction valid; final SignalJSON emitted with execution deferred."
                 ),
             }
         )
@@ -411,6 +537,72 @@ def _truthy(value: Any) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _is_direction_valid_waiting(payload: dict[str, Any]) -> bool:
+    if str(payload.get("event") or "") == "signal_decision_update_json":
+        return False
+    if _truthy(payload.get("valid_for_execution")):
+        return False
+    direction = _direction_from_payload(payload)
+    if direction not in {"BUY", "SELL"}:
+        return False
+    if _truthy(payload.get("requires_m15_close")):
+        return False
+    status = str(payload.get("status") or "").upper()
+    direction_status = str(payload.get("direction_status") or payload.get("direction_validation_status") or "").upper()
+    target_mode = str(payload.get("target_mode") or "").upper()
+    has_structure_wait = (
+        status in {"WAIT_M15_CLOSE_OR_STRUCTURE_TARGET", "WAIT_STRUCTURE_OR_NEXT_M15"}
+        or target_mode in {"PROVISIONAL_RR_FALLBACK", "NONE"}
+        or _truthy(payload.get("tradeplan_context_ready")) is False
+        or _truthy(payload.get("targets_execution_usable")) is False
+    )
+    has_direction_contract = (
+        _truthy(payload.get("direction_valid"))
+        or _truthy(payload.get("signal_valid"))
+        or "VALID" in direction_status
+        or "AWAIT" in direction_status
+    )
+    return has_structure_wait and has_direction_contract
+
+
+def _direction_from_payload(payload: dict[str, Any]) -> str:
+    for key in ("final_direction", "validated_direction", "candidate_direction"):
+        direction = str(payload.get(key) or "").upper()
+        if direction in {"BUY", "SELL"}:
+            return direction
+    return "WAIT"
+
+
+def _terminal_status_for_direction_valid_wait(payload: dict[str, Any]) -> str:
+    if str(payload.get("lifecycle_status") or "").upper() == "REINFORCES_ACTIVE_SIGNAL":
+        return "FINAL_VALID_MANAGEMENT_ONLY"
+    action = str(payload.get("action") or "").upper()
+    if "RETEST" in action and str(payload.get("target_mode") or "").upper() not in {"PROVISIONAL_RR_FALLBACK", "NONE"}:
+        return "FINAL_VALID_WAIT_RETEST"
+    return "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+
+
+def _direction_valid_wait_reasons(payload: dict[str, Any]) -> list[str]:
+    reasons = []
+    for key in ("target_block_reason", "tp_missing_reason", "execution_reason", "block_reason"):
+        value = payload.get(key)
+        if value:
+            reasons.append(str(value))
+    if not _truthy(payload.get("tradeplan_context_ready")):
+        reasons.append("TRADEPLAN_CONTRACT_NOT_READY")
+    if not _truthy(payload.get("targets_execution_usable")):
+        reasons.append("TARGETS_EXECUTION_NOT_USABLE")
+    return list(dict.fromkeys(reasons)) or ["EXECUTION_CONTRACT_NOT_READY"]
+
+
+def _has_parent_or_pending_decision(payload: dict[str, Any]) -> bool:
+    return bool(
+        payload.get("pending_decision_id")
+        or payload.get("parent_watch_id")
+        or _truthy(payload.get("parent_event_exists"))
+    )
 
 
 def _is_retest_eligible(payload: dict[str, Any], decision: ExecutionGateDecision) -> bool:
