@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from analysis.microboost_continuation_entry import MicroboostContinuationEngine
 from analysis.signal_execution_gates import evaluate_signal_execution_gates
-from analysis.signal_json_emitter import build_signal_json_event, should_emit_signal_json
+from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event, should_emit_signal_json
+from analysis.signal_json_gate_adapter import SignalJsonGateAdapter, SignalJsonGateConfig
 
 
 def _cluster(**overrides):
@@ -171,6 +172,47 @@ def test_continuation_fallback_targets_wait_for_structure_or_retest():
     assert event.event == "signal_decision_update_json"
     assert event.is_final_signal is False
     assert should_emit_signal_json(event) is True
+
+
+def test_continuation_fallback_terminalizes_as_valid_wait_structure(caplog):
+    cluster = _cluster(
+        duration_seconds=62.0,
+        effective_tick_count=32,
+        end_utc="2026-05-20T02:46:34+00:00",
+        market_context_snapshot={
+            "symbol": "USDCAD",
+            "raw_allowed_direction": "BUY",
+            "pip_value": 0.0001,
+            "price_at_signal_start": 1.37560,
+            "price_at_5m_confirm": 1.375675,
+            "price_at_signal_end": 1.375675,
+            "m15_phase": "BULLISH_PULLBACK",
+            "h1_phase": "BULLISH",
+            "price_position": "MID_RANGE",
+        },
+    )
+    result = MicroboostContinuationEngine().evaluate(cluster, allowed_quorum=_quorum())
+    adapter = SignalJsonGateAdapter(SignalJsonGateConfig(enabled=True, enforce=True, emit_sidecar=False))
+    emitter = SignalJsonEmitter(enabled=True)
+
+    gated = adapter.apply(result.to_dict())
+    event = build_signal_json_event(gated)
+
+    assert gated["status"] == "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+    assert gated["source_status"] == "WAIT_M15_CLOSE_OR_STRUCTURE_TARGET"
+    assert gated["final_direction"] == "BUY"
+    assert gated["signal_valid"] is True
+    assert gated["direction_valid"] is True
+    assert gated["tradeplan_valid"] is False
+    assert gated["valid_for_execution"] is False
+    assert gated["execution_valid_now"] is False
+    assert event is not None
+    assert event.event == "signal_json"
+    assert event.is_final_signal is True
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
 def test_schema_v1_continuation_retains_provisional_rr_ladder():
