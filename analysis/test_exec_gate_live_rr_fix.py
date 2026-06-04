@@ -156,6 +156,85 @@ def test_genuine_chase_still_blocks():
     )
 
 
+def _nzdjpy_single_stop_sell() -> dict:
+    """A confirmed SELL breakdown-continuation (NZDJPY), single stop, TP1=1.5R."""
+    entry = 94.0785
+    sl_safe = 94.2785  # 20 pips above entry for a SELL
+    tp1 = 93.7785      # 30 pips below entry -> 1.5R
+    return {
+        "symbol": "NZDJPY",
+        "signal_family": "MICROBOOST_COUNTER_ENTRY",
+        "status": "SELL_BREAKDOWN_CONTINUATION_VALID",
+        "final_direction": "SELL",
+        "candidate_direction": "SELL",
+        "valid_for_execution": True,
+        "entry_reference_price": entry,
+        "signal_valid_price": entry,
+        "entry_zone": [entry, entry],
+        "sl_safe": sl_safe,
+        "selected_sl": sl_safe,
+        "selected_sl_mode": "SAFE",
+        "tp1": tp1,
+        "tp2": 93.5785,
+        "tp3": 93.3785,
+        "tp4": 93.1785,
+        "tp_min_rr": tp1,
+        "tp_min_rr_value": 1.5,
+        "rr_to_tp1_tight": 1.5,
+        "rr_status": "VALID",
+        "min_rr_required": 1.5,
+        "target_mode": "PROVISIONAL_RR_FALLBACK",
+        "tp_status": "VALID_FROM_TP1",
+        "structure_targets_available": False,
+        "targets_execution_usable": True,
+        "phase_priced": "SUPPORT_PRESSURE_WARNING",
+        "m15_confirmation_status": "M15_CLOSE_BELOW_SUPPORT",
+        "market_context_applied": True,
+        "key_resistance": 94.3385,
+        "key_support": entry,
+    }
+
+
+def test_pattern_permission_no_new_buy_blocks_final():
+    """A BUY whose pattern entry_permission is NO_NEW_BUY must NOT be ALLOW (USDJPY bug)."""
+    payload = _usdjpy_single_stop_candidate()
+    payload["entry_permission"] = "NO_NEW_BUY"
+    decision = evaluate_signal_execution_gates(payload)
+    assert decision.decision == "BLOCK"
+    assert "PATTERN_PERMISSION_NO_NEW_BUY" in decision.reasons
+
+
+def test_no_market_chase_sell_still_allowed():
+    """NO_MARKET_CHASE is chase-only; a valid SELL retest must still ALLOW (NZDJPY kept)."""
+    payload = _nzdjpy_single_stop_sell()
+    payload["entry_permission"] = "NO_MARKET_CHASE"
+    decision = evaluate_signal_execution_gates(payload)
+    assert decision.decision == "ALLOW", decision.reasons
+
+
+def test_allow_stamps_execution_valid_now_true():
+    """On ALLOW the adapter stamps execution_valid_now=True (flag consistency)."""
+    adapter = SignalJsonGateAdapter(
+        SignalJsonGateConfig(enabled=True, enforce=True, final_barrier=True, emit_sidecar=False)
+    )
+    out = adapter.apply(_usdjpy_single_stop_candidate())
+    assert out.get("valid_for_execution") is True
+    assert out.get("execution_valid_now") is True
+
+
+def test_no_new_buy_adapter_demotes_with_consistent_flags():
+    """The contradictory USDJPY BUY (NO_NEW_BUY) is demoted with consistent false flags."""
+    payload = _usdjpy_single_stop_candidate()
+    payload["entry_permission"] = "NO_NEW_BUY"
+    adapter = SignalJsonGateAdapter(
+        SignalJsonGateConfig(enabled=True, enforce=True, final_barrier=True, emit_sidecar=False)
+    )
+    out = adapter.apply(payload)
+    assert out.get("event") == "signal_decision_update_json"
+    assert out.get("valid_for_execution") is False
+    assert out.get("execution_valid_now") is False
+
+
 def _run_all() -> int:
     tests = [obj for name, obj in sorted(globals().items()) if name.startswith("test_") and callable(obj)]
     failures = 0
