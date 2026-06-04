@@ -594,6 +594,44 @@ class SignalThrottleLiveAnalyzer:
                 )
             )
 
+    def record_downgraded(
+        self,
+        *,
+        symbol: str,
+        verdict: str | None = None,
+        direction: str | None = None,
+        reason: str | None = None,
+        timestamp: datetime | None = None,
+    ) -> None:
+        """Record a directional candidate that was downgraded before throttling."""
+        now = _coerce_timestamp(timestamp)
+        source_verdict = str(verdict or "").strip().upper() or None
+        normalized_direction = normalize_direction(direction, None) or normalize_direction(
+            None,
+            source_verdict,
+        )
+        reason_text = f" reason={reason}" if reason else ""
+        if source_verdict:
+            verdict_text = source_verdict
+        elif normalized_direction:
+            verdict_text = f"EXECUTE_{normalized_direction}"
+        else:
+            verdict_text = "UNKNOWN"
+        self.record(
+            SignalThrottleLogEvent(
+                timestamp=now,
+                severity="info",
+                message=f"[SignalThrottle] {symbol} verdict {verdict_text} downgraded to HOLD{reason_text}",
+                symbol=symbol.upper(),
+                event_type="DOWNGRADED_TO_HOLD",
+                verdict=verdict_text if verdict_text != "UNKNOWN" else None,
+                direction=normalized_direction,
+                raw_verdict=verdict_text if verdict_text != "UNKNOWN" else None,
+                effective_action="HOLD",
+                is_downgraded=True,
+            )
+        )
+
     def snapshot(self, *, market_contexts: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
             events = list(self._events)
