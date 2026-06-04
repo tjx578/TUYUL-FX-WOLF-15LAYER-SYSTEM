@@ -417,6 +417,43 @@ patterns:
     hold_policy: SHORT_INTRADAY
     function: no buy chase after upper spike
 
+  - pattern_id: METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW
+    scope: UNIVERSAL_WITH_ASSET_CLASS_CALIBRATION
+    applies_to: ALL_METALS_IF_CONDITIONS_MATCH
+    golden_references: [XAGUSD]
+    tier: A
+    family: METAL_VOLATILITY_MANAGEMENT
+    golden_source: XAGUSD
+    entry_permission: RECLAIM_OR_REJECTION_CONFIRMATION
+    management_action: FAST_PROTECT_OR_PARTIAL_AFTER_MFE
+    hold_policy: SHORT_INTRADAY_UNLESS_H4_CONFIRMS
+    block_reason: METAL_BLOCK_WHIPSAW_RISK
+    pair_specific_calibration:
+      - METAL_PRESSURE_BLOCK_NOT_AUTO_DIRECTION
+      - BROAD_BIAS_CAN_BE_VALID_WHILE_INTRADAY_BLOCK_WHIPSAWS
+      - FAST_PROTECT_AND_RECLAIM_FILTER_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: XAGUSD validates that broad metal pressure can follow through while the individual intraday block whipsaws, so execution requires reclaim or rejection confirmation
+
+  - pattern_id: XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM
+    scope: UNIVERSAL_WITH_METAL_CALIBRATION
+    applies_to: ALL_METALS_IF_CONDITIONS_MATCH
+    golden_references: [XAGUSD]
+    tier: A-
+    family: NO_CHASE_FILTER
+    golden_source: XAGUSD
+    entry_permission: NO_MARKET_CHASE
+    management_action: WAIT_RECLAIM_75_35_75_50_OR_REJECTION_BREAKDOWN_74_27
+    hold_policy: WAIT_RECLAIM_OR_REJECTION
+    block_reason: XAGUSD_REPAIR_BELOW_EMA_NO_CHASE
+    pair_specific_calibration:
+      - D1_ABOVE_EMA200_BELOW_EMA50
+      - H4_H1_BELOW_EMA50
+      - M15_RECOVERY_BELOW_KEY_EMA
+      - STRUCTURE_TARGET_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: silver recovery below key EMA zone is no-chase until reclaim and hold, or rejection plus support breakdown confirms the opposite side
+
   # --- Universal Pattern Family (Schema v2 — migrated from pair-specific golden logic) ---
 
   - pattern_id: LOW_DENSITY_OPEN_LANE_TIMING_BLOCK
@@ -772,6 +809,24 @@ patterns:
       - NOT_PAIR_LOCKED
     function: bullish repair near upper decision zone is no-chase until pullback, retest, reclaim, and structure target validate
 
+  - pattern_id: CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH
+    scope: UNIVERSAL
+    applies_to: ALL_CHF_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [AUDCHF]
+    tier: A
+    family: BASKET_CONFIRMATION
+    golden_source: AUDCHF
+    entry_permission: BUY_RETEST_OR_CONFIRMATION
+    management_action: USE_AS_CHF_WEAKNESS_CONFIRMATION
+    block_reason: SUPPORTING_CONFIRMATION_REQUIRES_OWN_TRIGGER
+    pair_specific_calibration:
+      - CHF_WEAKNESS_CONTEXT
+      - SUPPORTING_CONFIRMATION_PAIR
+      - SMALL_MAE_POSITIVE_MODERATE_MFE
+      - SECONDARY_SIZE_THAN_PRIMARY_CHF_PAIR
+      - NOT_PAIR_LOCKED
+    function: AUDCHF validates CHF-weakness confirmation with clean but moderate BUY follow-through; use as secondary confirmation, not primary leader
+
   - pattern_id: SUPPORTING_EUR_CROSS_NOT_LEADER
     scope: UNIVERSAL
     applies_to: ALL_EUR_CROSSES_IF_CONDITIONS_MATCH
@@ -837,6 +892,24 @@ patterns:
       - UPPER_RESISTANCE_DECISION_ZONE
       - NOT_PAIR_LOCKED
     function: macro bearish pair with intraday repair is a decision state; no buy chase until reclaim, and fade needs rejection or breakdown confirmation
+
+  - pattern_id: AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE
+    scope: UNIVERSAL
+    applies_to: ALL_CHF_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [AUDCHF]
+    tier: A
+    family: NO_CHASE_FILTER
+    golden_source: AUDCHF
+    entry_permission: BUY_RETEST_OR_BREAKOUT_RETEST_ONLY
+    management_action: WAIT_PULLBACK_0_56525_0_56490_OR_BREAKOUT_RETEST_0_56600
+    block_reason: AUDCHF_UPPER_ALIGNMENT_NO_CHASE
+    pair_specific_calibration:
+      - D1_H4_H1_ABOVE_EMA50
+      - PRICE_NEAR_RECENT_HIGH
+      - M1_MICRO_COOLING
+      - RETEST_OR_BREAKOUT_CONFIRMATION_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: AUDCHF bullish MTF alignment near recent high is valid CHF weakness context but fresh BUY entry waits for retest or breakout retest
 
   - pattern_id: TIMING_VALID_NOT_FINAL
     scope: UNIVERSAL
