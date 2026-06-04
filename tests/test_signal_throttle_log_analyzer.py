@@ -809,6 +809,56 @@ def test_microboost_buy_at_main_resistance_becomes_exhaustion_warning():
     assert latest["score_components"]["late_risk_penalty"] == -24
 
 
+def test_downgraded_live_events_can_refresh_signal_watch_candidate():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 9, 9, 36, tzinfo=UTC)
+    for index in range(80):
+        analyzer.record_downgraded(
+            symbol="GBPCAD",
+            verdict="EXECUTE_BUY",
+            direction="BUY",
+            reason="market_context_unvalidated",
+            timestamp=base + timedelta(seconds=index * 4.0),
+        )
+
+    report = analyzer.snapshot(
+        market_contexts={
+            "GBPCAD": MarketContext(
+                symbol="GBPCAD",
+                raw_allowed_direction="BUY",
+                price_at_signal_start=1.8636,
+                price_at_5m_confirm=1.8636,
+                price_at_signal_end=1.8636,
+                m15_phase="PIVOT_RECLAIM",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+                market_bias="BUY",
+                trend_direction="BUY",
+                price_position="MAIN_RESISTANCE",
+                main_support=1.8320,
+                main_resistance=1.8650,
+                resistance_low=1.8636,
+                resistance_high=1.8650,
+                minor_support=1.8624,
+                major_support=1.8616,
+                tp1_support=1.8600,
+                tp2_support=1.8580,
+                tp3_support=1.8560,
+                support_ladder_ready=True,
+                range_position=0.98,
+            )
+        }
+    )
+    watch = report["microboost_counter_entry"]
+
+    assert report["event_counts"]["downgraded_to_hold"] == 80
+    assert report["signal_watch_gate"]["eligible"] is True
+    assert watch["market_context_applied"] is True
+    assert watch["status"].endswith("_WATCH")
+    assert watch["final_direction"] == "WAIT"
+
+
 def test_microboost_buy_at_main_support_becomes_bounce_candidate():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
     base = datetime(2026, 5, 8, 9, 9, 36, tzinfo=UTC)
