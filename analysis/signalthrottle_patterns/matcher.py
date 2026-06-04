@@ -1060,9 +1060,33 @@ def _add_new_universal_pattern_candidates(
         _bump(candidates, "AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE", 118)
         evidence.append("audchf_bullish_alignment_near_high_wait_retest")
 
-    if symbol == "EURNZD" and eur_cross_pressure and supporting_cross and not same_pair_clean_block:
+    eurgbp_weak_compression = (
+        symbol == "EURGBP"
+        and (
+            _optional_bool(data.get("eurgbp_range_compression_filter")) is True
+            or _optional_bool(data.get("range_compression")) is True
+            or _optional_bool(data.get("low_atr")) is True
+            or _optional_bool(data.get("mfe_mae_not_decisive")) is True
+            or (
+                0.0 < events <= 20.0
+                and intrawindow_range_pips <= 10.0
+                and net_delta_pips <= 6.0
+            )
+            or (
+                _optional_bool(data.get("d1_below_ema50")) is True
+                and _optional_bool(data.get("h4_below_ema50")) is True
+                and _optional_bool(data.get("h1_below_ema50")) is True
+            )
+        )
+        and not own_phase_confirmed
+    )
+    if eurgbp_weak_compression:
+        _bump(candidates, "EURGBP_RANGE_COMPRESSION_FILTER", 112)
+        evidence.append("eurgbp_low_range_compression_wait_clean_break_or_reclaim")
+
+    if symbol in {"EURNZD", "EURGBP"} and eur_cross_pressure and supporting_cross and not same_pair_clean_block:
         _bump(candidates, "SUPPORTING_EUR_CROSS_NOT_LEADER", 104)
-        evidence.append("eurnzd_supporting_eur_cross_not_leader")
+        evidence.append("supporting_eur_cross_not_leader_requires_own_phase")
 
     if symbol == "EURNZD" and upper_fade_context and buy_followthrough_failed and sell_fade_cleaner:
         _bump(candidates, "EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE", 116)
@@ -1095,6 +1119,54 @@ def _add_new_universal_pattern_candidates(
     if symbol == "EURNZD" and macro_bearish_context and intraday_repair and upper_fade_context:
         _bump(candidates, "MACRO_BEARISH_INTRADAY_REPAIR_DECISION", 114)
         evidence.append("eurnzd_macro_bearish_intraday_repair_no_buy_chase")
+
+    audusd_daily_close = _num(data.get("d1_close_position") or data.get("d1_close_pos"))
+    audusd_bullish_expansion = (
+        symbol == "AUDUSD"
+        and (
+            _optional_bool(data.get("audusd_low_drawdown_bullish_followthrough")) is True
+            or _optional_bool(data.get("d1_bullish_expansion")) is True
+            or _optional_bool(data.get("bullish_expansion")) is True
+            or _num(data.get("d1_body_pips")) >= 50.0
+            or audusd_daily_close >= 0.90
+        )
+    )
+    audusd_low_drawdown_followthrough = (
+        _optional_bool(data.get("low_drawdown_followthrough")) is True
+        or _optional_bool(data.get("zero_drawdown_followthrough")) is True
+        or (buy_mfe >= 7.0 and buy_mae <= 2.0)
+    )
+    audusd_pullback_or_reclaim = (
+        _optional_bool(data.get("pullback_or_reclaim_available")) is True
+        or _optional_bool(data.get("pullback_hold")) is True
+        or reclaim_confirmed
+        or _phase(data.get("m1_phase")) in {"PULLBACK", "MICRO_PULLBACK", "COOLING"}
+    )
+    if (
+        audusd_bullish_expansion
+        and (direction == "BUY" or _optional_bool(data.get("raw_direction_buy")) is True)
+        and audusd_low_drawdown_followthrough
+    ):
+        _bump(candidates, "AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH", 108)
+        evidence.append("audusd_low_drawdown_bullish_followthrough_reference")
+        if not audusd_pullback_or_reclaim or near_resistance:
+            evidence.append("audusd_buy_requires_pullback_or_reclaim_no_chase")
+
+    audusd_post_rejection_recovery = (
+        symbol == "AUDUSD"
+        and (
+            _optional_bool(data.get("audusd_post_rejection_recovery")) is True
+            or _optional_bool(data.get("post_rejection_recovery")) is True
+            or (
+                _num(data.get("d1_20260507_close_position")) > 0.0
+                and _num(data.get("d1_20260507_close_position")) <= 0.15
+                and _num(data.get("d1_20260508_close_position")) >= 0.85
+            )
+        )
+    )
+    if audusd_post_rejection_recovery:
+        _bump(candidates, "AUDUSD_POST_REJECTION_RECOVERY_FILTER", 106)
+        evidence.append("audusd_post_rejection_recovery_requires_reclaim")
 
     # 8. TIMING_VALID_NOT_FINAL
     # Valid timing block (5+ min) but price phase not classified = watch only, not final signal.
@@ -1250,6 +1322,9 @@ def _execution_readiness_score(
         "TRACK_ONLY",
         "PULLBACK_OR_RECLAIM_ONLY",
         "RECLAIM_OR_REJECTION_CONFIRMATION",
+        "CLEAN_BREAK_OR_RECLAIM_REQUIRED",
+        "BUY_PULLBACK_OR_RECLAIM_ONLY",
+        "RECLAIM_OR_PULLBACK_HOLD_ONLY",
         "BUY_RETEST_OR_CONFIRMATION",
         "BUY_RETEST_OR_BREAKOUT_RETEST_ONLY",
         "DELAYED_BUY_WATCH",
@@ -1433,6 +1508,8 @@ def _pattern_bottlenecks(
         bottlenecks.append("BULLISH_REPAIR_UPPER_DECISION_NO_CHASE")
     if selected and selected.pattern_id == "SUPPORTING_EUR_CROSS_NOT_LEADER":
         bottlenecks.append("SUPPORTING_EUR_CROSS_NOT_LEADER")
+    if selected and selected.pattern_id == "EURGBP_RANGE_COMPRESSION_FILTER":
+        bottlenecks.append("EURGBP_RANGE_COMPRESSION_NO_ENTRY")
     if selected and selected.pattern_id == "EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE":
         bottlenecks.append("EUR_CROSS_UPPER_FADE_RISK")
     if selected and selected.pattern_id == "CROSS_THEME_LEADER_DIVERGENCE":
@@ -1447,6 +1524,10 @@ def _pattern_bottlenecks(
         bottlenecks.append("SUPPORTING_CONFIRMATION_REQUIRES_OWN_TRIGGER")
     if selected and selected.pattern_id == "AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE":
         bottlenecks.append("AUDCHF_UPPER_ALIGNMENT_NO_CHASE")
+    if selected and selected.pattern_id == "AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH":
+        bottlenecks.append("AUDUSD_PULLBACK_OR_RECLAIM_REQUIRED")
+    if selected and selected.pattern_id == "AUDUSD_POST_REJECTION_RECOVERY_FILTER":
+        bottlenecks.append("AUDUSD_POST_REJECTION_RECOVERY_NO_CHASE")
     if _optional_bool(data.get("support_ladder_ready")) is False:
         bottlenecks.append("SUPPORT_LADDER_MISSING")
     if _optional_bool(data.get("resistance_ladder_ready")) is False:
