@@ -830,18 +830,37 @@ patterns:
   - pattern_id: SUPPORTING_EUR_CROSS_NOT_LEADER
     scope: UNIVERSAL
     applies_to: ALL_EUR_CROSSES_IF_CONDITIONS_MATCH
-    golden_references: [EURNZD]
+    golden_references: [EURNZD, EURGBP]
     tier: A
-    family: CROSS_THEME_FILTER
-    golden_source: EURNZD
+    family: PAIR_SELECTION_SAFETY
+    golden_source: EURNZD/EURGBP
     entry_permission: WAIT_OWN_PRICE_PHASE_CONFIRMATION
-    management_action: VALIDATE_NZD_WEAKNESS_AND_LOCAL_STRUCTURE
+    management_action: VALIDATE_OWN_EUR_CROSS_PRICE_PHASE
     block_reason: SUPPORTING_EUR_CROSS_NOT_LEADER
     pair_specific_calibration:
       - SUPPORTING_EUR_CROSS_RADAR
       - EURAUD_LEADER_DIVERGENCE
+      - EURGBP_GBP_STRENGTH_VS_EUR_FILTER
       - NOT_PAIR_LOCKED
-    function: supporting EUR-cross pressure is reference context only until the pair validates its own price phase and NZD weakness
+    function: supporting EUR-cross pressure is reference context only; EUR theme activity must not be copied into EURGBP or EURNZD without own reclaim, breakdown, or price-phase proof
+
+  - pattern_id: EURGBP_RANGE_COMPRESSION_FILTER
+    scope: UNIVERSAL
+    applies_to: ALL_LOW_MOMENTUM_OR_EUR_CROSSES_IF_CONDITIONS_MATCH
+    golden_references: [EURGBP]
+    tier: B+
+    family: LOW_MOMENTUM_FILTER
+    golden_source: EURGBP
+    entry_permission: CLEAN_BREAK_OR_RECLAIM_REQUIRED
+    management_action: WAIT_RECLAIM_ABOVE_RESISTANCE_OR_BREAKDOWN_BELOW_SUPPORT
+    block_reason: EURGBP_RANGE_COMPRESSION_NO_ENTRY
+    pair_specific_calibration:
+      - LOW_ATR_RANGE_COMPRESSION
+      - SMALL_EVENT_COUNT
+      - MFE_MAE_NOT_DECISIVE
+      - EUR_THEME_NOT_AUTO_BUY
+      - NOT_PAIR_LOCKED
+    function: EURGBP low-range compression and weak follow-through should filter out mid-range entries until clean reclaim or breakdown appears
 
   - pattern_id: EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE
     scope: UNIVERSAL
@@ -910,6 +929,42 @@ patterns:
       - RETEST_OR_BREAKOUT_CONFIRMATION_REQUIRED
       - NOT_PAIR_LOCKED
     function: AUDCHF bullish MTF alignment near recent high is valid CHF weakness context but fresh BUY entry waits for retest or breakout retest
+
+  - pattern_id: AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH
+    scope: UNIVERSAL
+    applies_to: ALL_AUD_OR_MAJOR_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [AUDUSD]
+    tier: A
+    family: CONTINUATION_FOLLOWTHROUGH
+    golden_source: AUDUSD
+    entry_permission: BUY_PULLBACK_OR_RECLAIM_ONLY
+    management_action: WAIT_PULLBACK_HOLD_OR_RECLAIM_BEFORE_BUY
+    block_reason: AUDUSD_NO_BUY_CHASE_AT_UPPER_RANGE
+    pair_specific_calibration:
+      - D1_BULLISH_EXPANSION
+      - LOW_DRAWDOWN_BUY_FOLLOWTHROUGH
+      - AUD_STRENGTH_USD_WEAKNESS_REFERENCE
+      - OWN_PRICE_PHASE_REQUIRED
+      - NOT_PAIR_LOCKED
+    function: AUDUSD validates low-drawdown bullish follow-through after expansion, but entry still requires own pullback or reclaim rather than event-count auto-entry
+
+  - pattern_id: AUDUSD_POST_REJECTION_RECOVERY_FILTER
+    scope: UNIVERSAL
+    applies_to: ALL_AUD_OR_MAJOR_PAIRS_IF_CONDITIONS_MATCH
+    golden_references: [AUDUSD]
+    tier: A-
+    family: RECOVERY_AFTER_REJECTION
+    golden_source: AUDUSD
+    entry_permission: RECLAIM_OR_PULLBACK_HOLD_ONLY
+    management_action: WAIT_RECLAIM_OR_NO_CHASE_AFTER_RECOVERY
+    block_reason: AUDUSD_POST_REJECTION_RECOVERY_NO_CHASE
+    pair_specific_calibration:
+      - PRIOR_BEARISH_REJECTION
+      - BULLISH_RECOVERY_CANDLE
+      - RECLAIM_REQUIRED_AFTER_REJECTION
+      - STRONG_DAILY_CLOSE_DOES_NOT_BYPASS_EXECUTION_GATE
+      - NOT_PAIR_LOCKED
+    function: AUDUSD recovery after rejection can improve candidate quality, but one recovery candle is not enough for blind continuation without reclaim or pullback hold
 
   - pattern_id: TIMING_VALID_NOT_FINAL
     scope: UNIVERSAL
