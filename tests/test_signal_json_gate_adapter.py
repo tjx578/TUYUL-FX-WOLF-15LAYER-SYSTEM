@@ -220,6 +220,30 @@ def test_provisional_rr_fallback_can_pass_only_with_explicit_policy():
     assert gated["execution_valid_now"] is True
 
 
+def test_execution_ready_terminal_survives_strict_lifecycle_direct_bypass(caplog):
+    payload = _final_payload()
+    adapter = SignalJsonGateAdapter(SignalJsonGateConfig(enabled=True, enforce=True, emit_sidecar=False))
+    emitter = SignalJsonEmitter(
+        enabled=True,
+        strict_lifecycle=True,
+        require_parent_watch=False,
+        allow_direct_bypass=True,
+        require_final_market_structure=True,
+        require_terminal_decision_update=True,
+    )
+
+    gated = adapter.apply(payload)
+    event = build_signal_json_event(gated)
+
+    assert gated["status"] == "FINAL_EXECUTION_READY"
+    assert gated["promotion_path"] == "DIRECT_BYPASS"
+    assert gated["parent_watch_required"] is False
+    assert event is not None
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+
+
 def test_nested_execution_gate_false_overrides_top_level_valid():
     payload = _final_payload(
         tradeplan_valid=True,
@@ -293,7 +317,14 @@ def test_nzdusd_counter_entry_final_uses_signal_price_when_live_quote_missing(ca
     gated = adapter.apply(payload)
     event = build_signal_json_event(gated)
 
-    assert gated["status"] == "BUY_TIMING_VALID"
+    assert gated["status"] == "FINAL_EXECUTION_READY"
+    assert gated["source_status"] == "BUY_TIMING_VALID"
+    assert gated["terminal_status"] == "FINAL_EXECUTION_READY"
+    assert gated["signal_valid"] is True
+    assert gated["direction_valid"] is True
+    assert gated["tradeplan_valid"] is True
+    assert gated["valid_for_execution"] is True
+    assert gated["execution_valid_now"] is True
     assert event is not None
     assert emitter.emit(event) is True
     assert "[SignalExecutionGateJSON]" in caplog.text
