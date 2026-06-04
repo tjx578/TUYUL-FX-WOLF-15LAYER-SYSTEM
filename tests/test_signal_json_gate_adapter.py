@@ -144,7 +144,7 @@ def test_gate_adapter_shadow_logs_sidecar_without_changing_signal(caplog):
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
-def test_gate_adapter_enforce_downgrades_unready_final_to_decision_update(caplog):
+def test_gate_adapter_enforce_emits_terminal_valid_signal_for_unready_final(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     payload = _final_payload(target_mode="PROVISIONAL_RR_FALLBACK", targets=[], bid=None, ask=None)
     adapter = SignalJsonGateAdapter(SignalJsonGateConfig(enabled=True, enforce=True))
@@ -153,17 +153,24 @@ def test_gate_adapter_enforce_downgrades_unready_final_to_decision_update(caplog
     gated = adapter.apply(payload)
     event = build_signal_json_event(gated)
 
-    assert gated["event"] == "signal_decision_update_json"
-    assert gated["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
-    assert gated["final_direction"] == "WAIT"
+    assert gated["event"] == "signal_json"
+    assert gated["status"] == "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+    assert gated["terminal_status"] == "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+    assert gated["final_direction"] == "BUY"
+    assert gated["signal_valid"] is True
+    assert gated["direction_valid"] is True
+    assert gated["tradeplan_valid"] is False
+    assert gated["valid_for_execution"] is False
+    assert gated["execution_valid_now"] is False
     assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in gated["reason"]
     assert "STRUCTURE_TARGET_MODE_REQUIRED" in gated["reason"]
     assert event is not None
+    assert event.is_final_signal is True
     assert emitter.emit(event) is True
     assert "[SignalExecutionGateJSON]" in caplog.text
     assert '"enforcement_mode":"ENFORCE"' in caplog.text
-    assert "[SignalDecisionUpdateJSON]" in caplog.text
-    assert "[SignalJSON]" not in caplog.text
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
 def test_provisional_rr_fallback_is_not_execution_final_by_default():
@@ -179,8 +186,10 @@ def test_provisional_rr_fallback_is_not_execution_final_by_default():
 
     gated = adapter.apply(payload)
 
-    assert gated["event"] == "signal_decision_update_json"
-    assert gated["final_direction"] == "WAIT"
+    assert gated["event"] == "signal_json"
+    assert gated["status"] == "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+    assert gated["final_direction"] == "BUY"
+    assert gated["signal_valid"] is True
     assert gated["valid_for_execution"] is False
     assert gated["execution_valid_now"] is False
     assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in gated["audit_block_reasons"]
@@ -221,7 +230,10 @@ def test_nested_execution_gate_false_overrides_top_level_valid():
 
     gated = adapter.apply(payload)
 
-    assert gated["event"] == "signal_decision_update_json"
+    assert gated["event"] == "signal_json"
+    assert gated["status"] == "FINAL_VALID_EXECUTION_DEFERRED"
+    assert gated["final_direction"] == "BUY"
+    assert gated["signal_valid"] is True
     assert gated["valid_for_execution"] is False
     assert gated["execution_valid_now"] is False
     assert "EXECUTION_VALID_NOW_FALSE" in gated["audit_block_reasons"]
@@ -379,7 +391,7 @@ def test_reinforcement_shadow_logs_management_only_without_changing_signal(caplo
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
-def test_reinforcement_enforce_downgrades_to_management_decision_update(caplog):
+def test_reinforcement_enforce_emits_management_only_terminal_signal(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     payload = _final_payload(
         lifecycle_status="REINFORCES_ACTIVE_SIGNAL",
@@ -393,21 +405,24 @@ def test_reinforcement_enforce_downgrades_to_management_decision_update(caplog):
     gated = adapter.apply(payload)
     event = build_signal_json_event(gated)
 
-    assert gated["event"] == "signal_decision_update_json"
-    assert gated["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
-    assert gated["final_direction"] == "WAIT"
+    assert gated["event"] == "signal_json"
+    assert gated["status"] == "FINAL_VALID_MANAGEMENT_ONLY"
+    assert gated["terminal_status"] == "FINAL_VALID_MANAGEMENT_ONLY"
+    assert gated["final_direction"] == "BUY"
+    assert gated["signal_valid"] is True
+    assert gated["direction_valid"] is True
     assert gated["valid_for_execution"] is False
     assert gated["execution_valid_now"] is False
     assert gated["execution_status"] == "REINFORCEMENT_MANAGEMENT_ONLY"
     assert gated["action"] == "HOLD_TRAIL_OR_ADD_ONLY_ON_RETEST"
-    assert gated["next_action"] == "MANAGE_ACTIVE_SIGNAL_WAIT_ADD_ON_RETEST"
+    assert gated["next_action"] == "MANAGE_ACTIVE_SIGNAL_OR_WAIT_RETEST"
     assert "REINFORCEMENT_MANAGEMENT_ONLY" in gated["audit_block_reasons"]
     assert event is not None
     assert emitter.emit(event) is True
     assert "[SignalExecutionGateJSON]" in caplog.text
     assert '"enforcement_mode":"ENFORCE"' in caplog.text
-    assert "[SignalDecisionUpdateJSON]" in caplog.text
-    assert "[SignalJSON]" not in caplog.text
+    assert "[SignalJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
 def test_reinforcement_add_on_retest_ready_can_pass_gate():
