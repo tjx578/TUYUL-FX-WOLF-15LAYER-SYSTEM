@@ -128,3 +128,33 @@ validations:
       - require_eurnzd_own_price_phase_and_nzd_weakness_confirmation
       - treat_upper_recovery_after_eur_cross_pressure_as_fade_watch_when_buy_followthrough_fails
       - macro_bearish_intraday_repair_is_no_buy_chase_until_reclaim
+
+  - validation_id: XAGUSD_20260430_20260602_METAL_PRESSURE_CALIBRATION
+    symbol: XAGUSD
+    checked_logic: metal_pressure_block_vs_broad_followthrough
+    source_window_wita: "2026-04-30 to 2026-06-02"
+    raw_interpretation: XAGUSD pressure blocks imply metal BUY continuation
+    actual_outcome: broad bullish follow-through can be valid, but individual intraday blocks whipsaw and current structure is repair below key EMA
+    validated_patterns:
+      - METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW
+      - XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM
+    correction:
+      - do_not_auto_promote_xagusd_pressure_block_to_final_direction
+      - require_reclaim_or_rejection_confirmation_for_metal_execution
+      - use_fast_protect_or_partial_after_fast_mfe_on_metal_pairs
+      - block_buy_chase_below_75_35_75_50_reclaim_zone
+
+  - validation_id: AUDCHF_20260602_20260603_CHF_WEAKNESS_CONFIRMATION
+    symbol: AUDCHF
+    checked_logic: audchf_as_chf_weakness_supporting_confirmation_pair
+    source_window_wita: "2026-06-02 to 2026-06-03"
+    raw_interpretation: AUDCHF BUY supports CHF weakness
+    actual_outcome: BUY follow-through was clean with small or zero MAE, but MFE was moderate and price finished near upper recent high
+    validated_patterns:
+      - CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH
+      - AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE
+    correction:
+      - use_audchf_as_secondary_chf_weakness_confirmation_not_primary_leader
+      - require_own_price_phase_and_retest_before_signaljson_promotion
+      - block_fresh_buy_chase_near_0_56568_0_56600
+      - prefer_smaller_size_than_primary_chf_leader_pair
