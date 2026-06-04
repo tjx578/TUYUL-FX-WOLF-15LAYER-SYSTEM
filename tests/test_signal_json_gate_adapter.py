@@ -83,6 +83,13 @@ def test_gate_adapter_from_env_defaults_to_official_enforce_barrier():
     assert adapter.config.enabled is True
     assert adapter.config.enforce is True
     assert adapter.config.emit_continuation is True
+    assert adapter.config.rr_fallback_validates_signal is False
+
+
+def test_rr_fallback_validation_requires_explicit_env_opt_in():
+    adapter = SignalJsonGateAdapter.from_env({"SIGNAL_JSON_RR_FALLBACK_VALIDATES_SIGNAL": "true"})
+
+    assert adapter.config.rr_fallback_validates_signal is True
 
 
 def test_official_final_barrier_overrides_legacy_shadow_flags():
@@ -122,7 +129,7 @@ def test_gate_adapter_shadow_logs_sidecar_without_changing_signal(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     payload = _final_payload(target_mode="PROVISIONAL_RR_FALLBACK", targets=[], tp_min_rr=1.2070)
     adapter = SignalJsonGateAdapter(SignalJsonGateConfig(enabled=True, enforce=False))
-    emitter = SignalJsonEmitter(enabled=True)
+    emitter = SignalJsonEmitter(enabled=True, allow_provisional_rr_execution=True)
 
     gated = adapter.apply(payload)
     event = build_signal_json_event(gated)
@@ -149,6 +156,7 @@ def test_gate_adapter_enforce_downgrades_unready_final_to_decision_update(caplog
     assert gated["event"] == "signal_decision_update_json"
     assert gated["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
     assert gated["final_direction"] == "WAIT"
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in gated["reason"]
     assert "STRUCTURE_TARGET_MODE_REQUIRED" in gated["reason"]
     assert event is not None
     assert emitter.emit(event) is True
@@ -156,6 +164,67 @@ def test_gate_adapter_enforce_downgrades_unready_final_to_decision_update(caplog
     assert '"enforcement_mode":"ENFORCE"' in caplog.text
     assert "[SignalDecisionUpdateJSON]" in caplog.text
     assert "[SignalJSON]" not in caplog.text
+
+
+def test_provisional_rr_fallback_is_not_execution_final_by_default():
+    payload = _final_payload(
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        target_source="rr_projection_only",
+        targets=[],
+        targets_execution_usable=True,
+        tradeplan_context_ready=False,
+        structure_targets_available=False,
+    )
+    adapter = SignalJsonGateAdapter(SignalJsonGateConfig(enabled=True, enforce=True, emit_sidecar=False))
+
+    gated = adapter.apply(payload)
+
+    assert gated["event"] == "signal_decision_update_json"
+    assert gated["final_direction"] == "WAIT"
+    assert gated["valid_for_execution"] is False
+    assert gated["execution_valid_now"] is False
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in gated["audit_block_reasons"]
+
+
+def test_provisional_rr_fallback_can_pass_only_with_explicit_policy():
+    payload = _final_payload(
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        target_source="rr_projection_only",
+        targets=[],
+        targets_execution_usable=True,
+        structure_targets_available=False,
+    )
+    adapter = SignalJsonGateAdapter(
+        SignalJsonGateConfig(
+            enabled=True,
+            enforce=True,
+            emit_sidecar=False,
+            rr_fallback_validates_signal=True,
+        )
+    )
+
+    gated = adapter.apply(payload)
+
+    assert gated["event"] != "signal_decision_update_json"
+    assert gated["final_direction"] == "BUY"
+    assert gated["valid_for_execution"] is True
+    assert gated["execution_valid_now"] is True
+
+
+def test_nested_execution_gate_false_overrides_top_level_valid():
+    payload = _final_payload(
+        tradeplan_valid=True,
+        execution_valid_now=False,
+        execution_gate={"execution_valid_now": False},
+    )
+    adapter = SignalJsonGateAdapter(SignalJsonGateConfig(enabled=True, enforce=True, emit_sidecar=False))
+
+    gated = adapter.apply(payload)
+
+    assert gated["event"] == "signal_decision_update_json"
+    assert gated["valid_for_execution"] is False
+    assert gated["execution_valid_now"] is False
+    assert "EXECUTION_VALID_NOW_FALSE" in gated["audit_block_reasons"]
 
 
 def test_nzdusd_counter_entry_final_uses_signal_price_when_live_quote_missing(caplog):
