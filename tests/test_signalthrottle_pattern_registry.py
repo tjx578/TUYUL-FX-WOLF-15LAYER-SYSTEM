@@ -100,7 +100,7 @@ def test_audnzd_eurnzd_reference_patterns_are_filters_not_primary_leaders():
         "AUDNZD_RELATIVE_STRENGTH_DECISION_PAIR": ("AUDNZD",),
         "SUPPORTING_CROSS_NOT_PRIMARY_LEADER": ("AUDNZD", "EURNZD"),
         "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE": ("AUDNZD",),
-        "SUPPORTING_EUR_CROSS_NOT_LEADER": ("EURNZD",),
+        "SUPPORTING_EUR_CROSS_NOT_LEADER": ("EURNZD", "EURGBP"),
         "EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE": ("EURNZD",),
         "CROSS_THEME_LEADER_DIVERGENCE": ("EURNZD",),
         "MACRO_BEARISH_INTRADAY_REPAIR_DECISION": ("EURNZD",),
@@ -118,6 +118,27 @@ def test_audnzd_eurnzd_reference_patterns_are_filters_not_primary_leaders():
     assert "LOW_DENSITY_OPEN_LANE_TIMING_BLOCK" not in PAIR_ROLE_MAP["AUDNZD"]["golden_patterns"]
     assert "LOW_DENSITY_OPEN_LANE_TIMING_BLOCK" not in PAIR_ROLE_MAP["EURNZD"]["golden_patterns"]
     assert "SUPPORTING_EUR_CROSS_NOT_LEADER" in PAIR_ROLE_MAP["EURNZD"]["golden_patterns"]
+
+
+def test_eurgbp_audusd_reference_patterns_are_filters_not_auto_entry():
+    expected = {
+        "EURGBP_RANGE_COMPRESSION_FILTER": ("EURGBP",),
+        "AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH": ("AUDUSD",),
+        "AUDUSD_POST_REJECTION_RECOVERY_FILTER": ("AUDUSD",),
+    }
+    for pattern_id, references in expected.items():
+        pattern = get_pattern(pattern_id)
+
+        assert pattern is not None
+        assert pattern.scope == "UNIVERSAL"
+        assert pattern.golden_references == references
+        assert "NOT_PAIR_LOCKED" in pattern.pair_specific_calibration
+
+    assert PAIR_ROLE_MAP["EURGBP"]["default_role"] == "SUPPORTING_EUR_CROSS_FILTER"
+    assert PAIR_ROLE_MAP["AUDUSD"]["default_role"] == "AUD_STRENGTH_USD_WEAKNESS_FOLLOWTHROUGH_REFERENCE"
+    assert "SUPPORTING_EUR_CROSS_NOT_LEADER" in PAIR_ROLE_MAP["EURGBP"]["golden_patterns"]
+    assert "EURGBP_RANGE_COMPRESSION_FILTER" in PAIR_ROLE_MAP["EURGBP"]["golden_patterns"]
+    assert "AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH" in PAIR_ROLE_MAP["AUDUSD"]["golden_patterns"]
 
 
 def test_xagusd_audchf_reference_patterns_are_calibration_not_primary_leaders():
