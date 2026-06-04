@@ -469,3 +469,143 @@ reference_cases:
       retest_zone: "0.56525-0.56490"
       invalidation: "H1/H4 close below 0.56270"
     conclusion: AUDCHF bullish alignment is valid, but price near recent high requires retest or breakout retest before execution-grade entry
+
+  - reference_case_id: EURGBP_20260501_SUPPORTING_EUR_CROSS
+    symbol: EURGBP
+    pattern_id: SUPPORTING_EUR_CROSS_NOT_LEADER
+    reference_tier: B+
+    window_wita: "2026-05-01 15:57-17:41"
+    window_chart: "2026-05-01 10:57-12:41"
+    role: supporting_eur_cross_filter
+    validated_by:
+      - signal_throttle_sequence
+      - historical_ohlc
+      - mfe_mae_outcome
+    evidence:
+      event_count: 14
+      leader_pair: EURAUD
+      leader_event_count: 294
+      price_delta_during_window_pips: -4.8
+      window_range_pips: 8.3
+      buy_mfe_1h_pips: 1.2
+      buy_mae_1h_pips: -2.1
+      sell_mfe_1h_pips: 2.1
+      sell_mae_1h_pips: -1.2
+    conclusion: EURGBP was supporting EUR-cross rotation only; EUR theme activity must not be copied into EURGBP BUY without own reclaim or breakdown proof
+
+  - reference_case_id: EURGBP_20260501_LOW_RANGE
+    symbol: EURGBP
+    pattern_id: EURGBP_RANGE_COMPRESSION_FILTER
+    reference_tier: B+
+    window_wita: "2026-05-01 16:30-17:15"
+    window_chart: "2026-05-01 11:30-12:15"
+    role: range_compression_no_entry_filter
+    validated_by:
+      - historical_ohlc
+      - low_range_window
+      - weak_mfe_mae_outcome
+    evidence:
+      price_delta_during_window_pips: -5.8
+      window_range_pips: 6.6
+      buy_mfe_1h_pips: 1.9
+      buy_mae_1h_pips: -1.2
+      sell_mfe_1h_pips: 1.2
+      sell_mae_1h_pips: -1.9
+    conclusion: EURGBP low-range action was mixed and weak; avoid mid-range entry until clean reclaim or breakdown confirms
+
+  - reference_case_id: EURGBP_20260603_WEAK_COMPRESSION
+    symbol: EURGBP
+    pattern_id: EURGBP_RANGE_COMPRESSION_FILTER
+    reference_tier: B+
+    window_wita: "2026-06-03 current structure"
+    role: macro_bearish_low_range_weak_filter
+    validated_by:
+      - d1_h4_h1_ema_structure
+      - low_atr_compression
+      - current_price_phase
+    evidence:
+      d1_below_ema50: true
+      d1_below_ema200: true
+      h4_below_ema50: true
+      h1_below_ema50: true
+      d1_close_position: 0.088
+      m15_close_position: 0.214
+      reclaim_zone: "0.8649-0.8662"
+      breakdown_level: "0.8628"
+    conclusion: EURGBP remains weak and compressed; BUY needs strong reclaim, while SELL needs rejection or support breakdown
+
+  - reference_case_id: AUDUSD_20260430_BULLISH_EXPANSION
+    symbol: AUDUSD
+    pattern_id: AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH
+    reference_tier: A-
+    window_chart: "2026-04-30 10:00-18:00"
+    role: aud_strength_usd_weakness_followthrough_reference
+    validated_by:
+      - historical_ohlc
+      - mfe_mae_outcome
+      - mtf_phase
+    evidence:
+      d1_body_pips: 72.3
+      d1_range_atr_ratio: 1.74
+      d1_close_position: 0.955
+      window_delta_pips: 41.9
+      buy_mfe_1h_pips: 13.8
+      buy_mae_1h_pips: -0.4
+      buy_mfe_4h_pips: 16.5
+      buy_mae_4h_pips: -0.4
+    conclusion: AUDUSD bullish expansion produced clean low-drawdown follow-through, but remains a reference case requiring pullback or reclaim before execution
+
+  - reference_case_id: AUDUSD_20260430_20260501_BROAD_FOLLOWTHROUGH
+    symbol: AUDUSD
+    pattern_id: AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH
+    reference_tier: A-
+    window_chart: "2026-04-30 10:33 to 2026-05-01 12:41"
+    role: broad_audusd_bullish_followthrough_reference
+    validated_by:
+      - historical_ohlc
+      - mfe_mae_outcome
+    evidence:
+      window_delta_pips: 45.1
+      window_range_pips: 63.9
+      buy_mfe_1h_pips: 7.0
+      buy_mae_1h_pips: -0.1
+      buy_mfe_4h_pips: 26.0
+      buy_mae_4h_pips: -1.7
+    conclusion: AUDUSD followed bullish continuation with very small drawdown, validating low-drawdown follow-through context but not event-count auto-entry
+
+  - reference_case_id: AUDUSD_20260507_20260508_REJECTION_RECOVERY
+    symbol: AUDUSD
+    pattern_id: AUDUSD_POST_REJECTION_RECOVERY_FILTER
+    reference_tier: A-
+    window_chart: "2026-05-07 to 2026-05-08"
+    role: post_rejection_recovery_filter
+    validated_by:
+      - d1_sequence
+      - historical_ohlc
+    evidence:
+      d1_20260507_close_position: 0.118
+      d1_20260508_close_position: 0.906
+      sequence: rejection_then_recovery
+      broad_window_delta_pips: -17.2
+      broad_window_range_pips: 63.7
+    conclusion: AUDUSD recovery after rejection improves candidate quality, but one recovery candle does not justify blind continuation without reclaim or pullback hold
+
+  - reference_case_id: AUDUSD_20260603_CURRENT_STRUCTURE
+    symbol: AUDUSD
+    pattern_id: AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH
+    reference_tier: A-
+    window_wita: "2026-06-03 current structure"
+    role: bullish_mtf_alignment_no_chase_requirement
+    validated_by:
+      - d1_h4_h1_ema_alignment
+      - current_price_phase
+      - key_level_mapping
+    evidence:
+      d1_above_ema50: true
+      d1_above_ema200: true
+      h4_above_ema50: true
+      h1_above_ema50: true
+      resistance_zone: "0.7187-0.7204"
+      support_zone: "0.7172-0.7163"
+      m1_micro_pullback: true
+    conclusion: AUDUSD MTF alignment is bullish, but BUY continuation is valid only on pullback or reclaim rather than blind chase near intraday upper range
