@@ -360,6 +360,8 @@ def _classify_unpriced_phase(
     events = max(raw_events, _coerce_int(_get(block, "effective_ticks", raw_events)))
     density = _coerce_float(_get(block, "effective_density_per_minute", _get(block, "density_per_minute", 0.0)))
     if duration_seconds >= clean_block_seconds:
+        if events >= thresholds.strong_min_events and density >= thresholds.min_density_per_minute:
+            return "NEAR_TIMING_GATE_MICROBOOST"
         return None
     if (
         duration_seconds >= thresholds.strong_min_seconds
