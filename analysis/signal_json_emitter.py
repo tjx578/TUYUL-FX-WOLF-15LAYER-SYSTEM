@@ -17,7 +17,43 @@ from typing import Any
 
 from analysis.signal_thresholds import SIGNAL_MIN_RR
 
-EMITTABLE_SIGNAL_STATUSES = {
+TERMINAL_EXECUTION_READY_STATUSES = {
+    "FINAL_EXECUTION_READY",
+}
+
+TERMINAL_VALID_SIGNAL_STATUSES = {
+    "FINAL_VALID_WAIT_RETEST",
+    "FINAL_VALID_WAIT_STRUCTURE_TARGET",
+    "FINAL_VALID_MANAGEMENT_ONLY",
+    "FINAL_VALID_EXECUTION_DEFERRED",
+}
+
+TERMINAL_INACTIVE_SIGNAL_STATUSES = {
+    "FINAL_INVALIDATED",
+    "FINAL_EXPIRED",
+}
+
+TERMINAL_SIGNAL_STATUSES = (
+    TERMINAL_EXECUTION_READY_STATUSES
+    | TERMINAL_VALID_SIGNAL_STATUSES
+    | TERMINAL_INACTIVE_SIGNAL_STATUSES
+)
+
+TERMINAL_SIGNAL_PUBLIC_FIELDS = {
+    "signal_valid",
+    "direction_valid",
+    "analysis_valid",
+    "tradeplan_valid",
+    "execution_valid_now",
+    "execution_status",
+    "execution_grade",
+    "terminal_decision_confirmed",
+    "terminal_decision_event_type",
+    "terminal_status",
+    "next_action",
+}
+
+EMITTABLE_SIGNAL_STATUSES = TERMINAL_SIGNAL_STATUSES | {
     "PAIR_SIGNAL_CANDIDATE",
     "MICROBOOST_COUNTER_ENTRY_WATCH",
     "MICROBOOST_COUNTER_ENTRY_VALID",
@@ -347,6 +383,8 @@ class SignalJsonEvent:
     trend_following: bool | None = None
     counter_entry_risk_multiplier: float | None = None
     theme_transition: str | None = None
+    signal_valid: bool = False
+    terminal_status: str | None = None
     direction_valid: bool = False
     source_valid_for_execution: bool | None = None
     analysis_valid: bool = False
@@ -443,8 +481,8 @@ class SignalJsonEmitter:
         watch_transition_only: bool = True,
         watch_update_interval_seconds: float = 15.0,
         strict_lifecycle: bool = False,
-        require_parent_watch: bool = True,
-        allow_direct_bypass: bool = False,
+        require_parent_watch: bool = False,
+        allow_direct_bypass: bool = True,
         require_final_market_structure: bool = False,
         allow_provisional_rr_execution: bool = False,
         require_theme_alignment: bool = True,
@@ -770,9 +808,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         ),
         status=status,
         cluster_id=_optional_str(counter_entry.get("cluster_id")),
-        is_final_signal=_is_final_payload(counter_entry),
-        emit_reason=_emit_reason(status),
-        signal_quality=_signal_quality(counter_entry),
+        is_final_signal=bool(counter_entry.get("is_final_signal", False)) or _is_final_payload(counter_entry),
+        emit_reason=_optional_str(counter_entry.get("emit_reason")) or _emit_reason(status),
+        signal_quality=_optional_str(counter_entry.get("signal_quality")) or _signal_quality(counter_entry),
         raw_direction=_optional_str(counter_entry.get("raw_direction")),
         candidate_direction=_optional_str(counter_entry.get("candidate_direction")),
         validated_direction=validated_direction,
@@ -883,6 +921,8 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         trend_following=_optional_bool(counter_entry.get("trend_following")),
         counter_entry_risk_multiplier=_optional_float(counter_entry.get("counter_entry_risk_multiplier")),
         theme_transition=_optional_str(counter_entry.get("theme_transition")),
+        signal_valid=bool(counter_entry.get("signal_valid", False)),
+        terminal_status=_optional_str(counter_entry.get("terminal_status")),
         direction_valid=bool(counter_entry.get("direction_valid", False)),
         source_valid_for_execution=_optional_bool(counter_entry.get("source_valid_for_execution")),
         analysis_valid=bool(counter_entry.get("analysis_valid", False)),
@@ -991,6 +1031,23 @@ def should_emit_signal_json(
         return False
     if _optional_float(payload.get("entry_reference_price")) is None:
         return False
+    if status in TERMINAL_VALID_SIGNAL_STATUSES:
+        terminal_direction = str(payload.get("final_direction") or payload.get("validated_direction") or "").upper()
+        if terminal_direction not in {"BUY", "SELL"}:
+            return False
+        if not bool(payload.get("signal_valid") or payload.get("direction_valid")):
+            return False
+        if bool(payload.get("valid_for_execution", False)):
+            return False
+        return True
+    if status in TERMINAL_EXECUTION_READY_STATUSES:
+        if not _is_final_payload(payload):
+            return False
+        if _optional_bool(payload.get("execution_valid_now")) is not True:
+            return False
+        return True
+    if status in TERMINAL_INACTIVE_SIGNAL_STATUSES:
+        return True
     if status in VALID_SIGNAL_STATUSES or str(status).endswith("_VALID"):
         rr_status = str(payload.get("rr_status") or "").upper()
         if rr_status not in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}:
@@ -1026,11 +1083,23 @@ def _is_decision_update_payload(payload: dict[str, Any]) -> bool:
     )
 
 
+def _is_terminal_signal_status(status: str) -> bool:
+    return status in TERMINAL_SIGNAL_STATUSES
+
+
 def _is_structure_target_mode(value: Any) -> bool:
     return str(value or "").upper() in STRUCTURE_TARGET_MODES
 
 
 def _emit_reason(status: str) -> str:
+    if status in TERMINAL_EXECUTION_READY_STATUSES:
+        return "TERMINAL_EXECUTION_READY"
+    if status in TERMINAL_VALID_SIGNAL_STATUSES:
+        return "TERMINAL_VALID_SIGNAL"
+    if status == "FINAL_INVALIDATED":
+        return "TERMINAL_SIGNAL_INVALIDATED"
+    if status == "FINAL_EXPIRED":
+        return "TERMINAL_SIGNAL_EXPIRED"
     if _is_decision_update_status(status):
         return "BLOCK_FINALIZER_DECISION_UPDATE"
     if status in CONTINUATION_SIGNAL_STATUSES:
@@ -1054,6 +1123,14 @@ def _is_final_payload(payload: dict[str, Any]) -> bool:
         if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES
         else target_mode in STRUCTURE_TARGET_MODES
     )
+    if status in TERMINAL_EXECUTION_READY_STATUSES:
+        return (
+            str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
+            and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
+            and target_mode in STRUCTURE_TARGET_MODES
+            and bool(payload.get("valid_for_execution", False))
+            and _optional_bool(payload.get("execution_valid_now")) is True
+        )
     return (
         (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
         and str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
@@ -1071,13 +1148,23 @@ def _uses_provisional_rr_fallback(payload: dict[str, Any]) -> bool:
 def _signal_quality(payload: dict[str, Any]) -> str:
     if _is_decision_update_payload(payload):
         return "DECISION_UPDATE"
+    status = str(payload.get("status") or "")
+    if status in TERMINAL_EXECUTION_READY_STATUSES:
+        return "FINAL_EXECUTION_READY"
+    if status == "FINAL_VALID_MANAGEMENT_ONLY":
+        return "TERMINAL_VALID_MANAGEMENT_ONLY"
+    if status == "FINAL_VALID_WAIT_RETEST":
+        return "TERMINAL_VALID_WAIT_RETEST"
+    if status in TERMINAL_VALID_SIGNAL_STATUSES:
+        return "TERMINAL_VALID_EXECUTION_DEFERRED"
+    if status in TERMINAL_INACTIVE_SIGNAL_STATUSES:
+        return status
     if _is_final_payload(payload):
         if str(payload.get("status") or "").endswith("_BY_DIRECT_ABSORPTION"):
             return "DIRECT_ABSORPTION_VALID"
         if str(payload.get("status") or "") in CONTINUATION_SIGNAL_STATUSES:
             return "TREND_CONTINUATION_VALID"
         return "TRADEPLAN_VALID"
-    status = str(payload.get("status") or "")
     if status in {"SELL_ABSORPTION_WATCH", "BUY_ABSORPTION_WATCH"}:
         return "ABSORPTION_WATCH"
     if status.endswith("_BY_ABSORPTION"):
@@ -1262,6 +1349,8 @@ def _schema_v2_payload(payload: dict[str, Any], *, compact: bool = True) -> dict
     hidden = V11_OUTPUT_ONLY_FIELDS | PAIR_REFERENCE_COMPAT_FIELDS
     if compact:
         hidden |= PATTERN_DEBUG_FIELDS | NESTED_SCHEMA_DUPLICATE_FIELDS
+    if _is_terminal_signal_status(str(payload.get("status") or "")):
+        hidden -= TERMINAL_SIGNAL_PUBLIC_FIELDS
     cleaned = {key: value for key, value in payload.items() if key not in hidden}
     return (_clean_context(cleaned) if compact else cleaned) or {}
 
@@ -1708,14 +1797,24 @@ def _tp1_rr_meets_minimum(payload: dict[str, Any]) -> bool:
 def _validated_direction(payload: dict[str, Any]) -> str | None:
     explicit = _optional_str(payload.get("validated_direction"))
     final_direction = str(payload.get("final_direction") or "").upper()
+    status = str(payload.get("status") or "")
+    direction_contract_valid = bool(
+        payload.get("valid_for_execution", False)
+        or payload.get("signal_valid", False)
+        or payload.get("direction_valid", False)
+        or (
+            status in TERMINAL_VALID_SIGNAL_STATUSES
+            and bool(payload.get("signal_valid") or payload.get("direction_valid"))
+        )
+    )
     if (
         explicit
         and explicit.upper() in {"BUY", "SELL"}
         and final_direction in {"BUY", "SELL"}
-        and bool(payload.get("valid_for_execution", False))
+        and direction_contract_valid
     ):
         return explicit.upper()
-    if final_direction in {"BUY", "SELL"} and bool(payload.get("valid_for_execution", False)):
+    if final_direction in {"BUY", "SELL"} and direction_contract_valid:
         return final_direction
     return None
 
@@ -1749,6 +1848,8 @@ def _direction_validation_status(
 ) -> str:
     if validated_direction in {"BUY", "SELL"} and bool(payload.get("valid_for_execution", False)):
         return "VALIDATED_EXECUTION"
+    if validated_direction in {"BUY", "SELL"} and status in TERMINAL_VALID_SIGNAL_STATUSES:
+        return "VALIDATED_DIRECTION_EXECUTION_DEFERRED"
     if status.endswith("_BY_ABSORPTION"):
         return "TIMING_VALID_STRUCTURE_PENDING"
     if _is_watch_status(status) or _is_decision_update_status(status):
