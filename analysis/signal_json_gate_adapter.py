@@ -103,6 +103,12 @@ class SignalJsonGateAdapter:
             ):
                 return self._deferred_as_conditional_final(payload, decision)
             return self._blocked_as_decision_update(payload, decision)
+        if self.config.enforce and decision.applies and decision.allows_execution:
+            # Contract consistency: when the gate ALLOWS execution, the nested
+            # execution_gate.execution_valid_now (built downstream from this flat
+            # field) must agree with the top-level valid_for_execution=True so the
+            # final never claims execution-ready while its own gate says "not now".
+            return {**payload, "execution_valid_now": True}
         return payload
 
     def _emit_sidecar(self, payload: dict[str, Any], decision: ExecutionGateDecision) -> None:
