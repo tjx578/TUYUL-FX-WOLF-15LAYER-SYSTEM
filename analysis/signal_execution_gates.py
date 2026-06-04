@@ -55,6 +55,7 @@ def evaluate_signal_execution_gates(
     *,
     min_rr_required: float = SIGNAL_MIN_RR,
     max_chase_r: float = 0.35,
+    rr_fallback_validates_signal: bool = False,
 ) -> ExecutionGateDecision:
     """Evaluate a final SignalJSON payload against execution-readiness gates."""
     if not _is_directional_final(payload):
@@ -71,7 +72,15 @@ def evaluate_signal_execution_gates(
     defer_gates: list[str] = []
 
     _reinforcement_management_gate(payload, defer_gates, defer_reasons)
-    _tradeplan_gate(payload, enriched, min_rr_required, defer_gates, defer_reasons)
+    _tradeplan_gate(
+        payload,
+        enriched,
+        min_rr_required,
+        rr_fallback_validates_signal,
+        defer_gates,
+        defer_reasons,
+    )
+    _execution_contract_flag_gate(payload, rr_fallback_validates_signal, defer_gates, defer_reasons)
     _spread_news_gate(payload, block_gates, block_reasons)
     _pattern_permission_gate(payload, block_gates, block_reasons)
     _session_volatility_gate(payload, defer_gates, defer_reasons)
@@ -121,20 +130,22 @@ def _tradeplan_gate(
     payload: dict[str, Any],
     enriched: dict[str, Any],
     min_rr_required: float,
+    rr_fallback_validates_signal: bool,
     gates: list[str],
     reasons: list[str],
 ) -> None:
     target_mode = str(payload.get("target_mode") or "").upper()
-    # A confirmed breakout/continuation can run on RR-projected provisional
-    # targets when the structure ladder is not yet built.  If the engine already
-    # marked those targets execution-usable, the RR status is valid, and the
-    # provisional RR clears the minimum, treat the plan as complete instead of
-    # forcing a structure-only target mode that the engine cannot produce here.
+    # Provisional RR fallback is watch/decision-grade by default.  It can become
+    # execution-grade only under an explicit opt-in policy and when the engine's
+    # own RR contract marks the projected targets usable.
     provisional_usable = (
-        _optional_bool(payload.get("targets_execution_usable")) is True
+        rr_fallback_validates_signal
+        and _optional_bool(payload.get("targets_execution_usable")) is True
         and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE"}
         and _provisional_rr_meets_min(payload, min_rr_required)
     )
+    if target_mode == "PROVISIONAL_RR_FALLBACK" and not rr_fallback_validates_signal:
+        _add(gates, reasons, "TradePlanCompletenessGate", "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE")
     if target_mode not in _STRUCTURE_TARGET_MODES and not provisional_usable:
         _add(gates, reasons, "TradePlanCompletenessGate", "STRUCTURE_TARGET_MODE_REQUIRED")
         return
@@ -171,6 +182,37 @@ def _tradeplan_gate(
 
     if not provisional_usable and not _has_structure_target(payload, enriched, min_rr_required):
         _add(gates, reasons, "TradePlanCompletenessGate", "STRUCTURE_TARGET_AT_MIN_RR_MISSING")
+
+
+def _execution_contract_flag_gate(
+    payload: dict[str, Any],
+    rr_fallback_validates_signal: bool,
+    gates: list[str],
+    reasons: list[str],
+) -> None:
+    """Honor explicit contract flags already computed upstream."""
+    explicit_execution_now = _first_bool(
+        payload.get("execution_valid_now"),
+        _nested(payload, "execution_gate", "execution_valid_now"),
+    )
+    if explicit_execution_now is False:
+        _add(gates, reasons, "ExecutionContractGate", "EXECUTION_VALID_NOW_FALSE")
+
+    explicit_tradeplan_valid = _first_bool(payload.get("tradeplan_valid"))
+    tradeplan_ready = _first_bool(
+        payload.get("tradeplan_context_ready"),
+        _nested(payload, "tradeplan_preview", "tradeplan_context_ready"),
+    )
+    targets_usable = _first_bool(
+        payload.get("targets_execution_usable"),
+        _nested(payload, "tradeplan_preview", "targets_execution_usable"),
+    )
+    target_mode = str(payload.get("target_mode") or "").upper()
+    provisional_policy_active = rr_fallback_validates_signal and target_mode == "PROVISIONAL_RR_FALLBACK"
+    if targets_usable is False:
+        _add(gates, reasons, "ExecutionContractGate", "TRADEPLAN_CONTRACT_NOT_READY")
+    elif (explicit_tradeplan_valid is False or tradeplan_ready is False) and not provisional_policy_active:
+        _add(gates, reasons, "ExecutionContractGate", "TRADEPLAN_CONTRACT_NOT_READY")
 
 
 def _spread_news_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
@@ -210,9 +252,19 @@ def _pattern_permission_gate(payload: dict[str, Any], gates: list[str], reasons:
         return
     if permission == "NO_TRADE":
         _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_TRADE")
-    elif direction == "BUY" and permission in {"NO_NEW_BUY", "NO_BUY", "BLOCK_NEW_ENTRY"}:
+    elif permission in {"NO_NEW_ENTRY", "BLOCK_NEW_ENTRY"}:
+        _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_NEW_ENTRY")
+    elif direction == "BUY" and (
+        permission in {"NO_NEW_BUY", "NO_BUY"}
+        or permission.startswith("NO_NEW_BUY")
+        or permission.startswith("NO_BUY")
+    ):
         _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_NEW_BUY")
-    elif direction == "SELL" and permission in {"NO_NEW_SELL", "NO_SELL", "BLOCK_NEW_ENTRY"}:
+    elif direction == "SELL" and (
+        permission in {"NO_NEW_SELL", "NO_SELL"}
+        or permission.startswith("NO_NEW_SELL")
+        or permission.startswith("NO_SELL")
+    ):
         _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_NEW_SELL")
 
 
@@ -574,6 +626,14 @@ def _first_float(*values: Any) -> float | None:
         number = _optional_float(value)
         if number is not None:
             return number
+    return None
+
+
+def _first_bool(*values: Any) -> bool | None:
+    for value in values:
+        parsed = _optional_bool(value)
+        if parsed is not None:
+            return parsed
     return None
 
 
