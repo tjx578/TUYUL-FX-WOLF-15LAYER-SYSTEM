@@ -85,7 +85,9 @@ class SignalJsonGateAdapter:
 
         With gates disabled this is a strict no-op. In shadow mode it logs a
         sidecar gate decision and returns the original payload. In enforce mode
-        blocked/deferred final signals are converted to decision updates.
+        BLOCK final signals are converted to decision updates, while DEFER
+        signals keep their direction and become terminal valid SignalJSON
+        payloads with ``valid_for_execution=False``.
         """
         if not isinstance(payload, dict) or not self.config.enabled:
             return payload
@@ -105,6 +107,8 @@ class SignalJsonGateAdapter:
                 and _is_retest_eligible(payload, decision)
             ):
                 return self._deferred_as_conditional_final(payload, decision)
+            if decision.decision == "DEFER":
+                return self._deferred_as_terminal_valid_signal(payload, decision)
             return self._blocked_as_decision_update(payload, decision)
         if self.config.enforce and decision.applies and decision.allows_execution:
             # Contract consistency: when the gate ALLOWS execution, the nested
@@ -196,6 +200,67 @@ class SignalJsonGateAdapter:
         return blocked
 
     @staticmethod
+    def _deferred_as_terminal_valid_signal(
+        payload: dict[str, Any],
+        decision: ExecutionGateDecision,
+    ) -> dict[str, Any]:
+        terminal = dict(payload)
+        source_status = str(payload.get("status") or "")
+        source_direction = str(
+            payload.get("final_direction")
+            or payload.get("validated_direction")
+            or payload.get("candidate_direction")
+            or "WAIT"
+        ).upper()
+        if source_direction not in {"BUY", "SELL"}:
+            source_direction = "WAIT"
+        terminal_status = _terminal_status_for_defer(decision)
+        reasons = ", ".join(decision.reasons) or decision.execution_status
+        action = _terminal_action(terminal_status)
+        next_action = _terminal_next_action(terminal_status)
+        terminal.update(
+            {
+                "event": "signal_json",
+                "source_status": source_status,
+                "source_final_direction": payload.get("final_direction") or source_direction,
+                "previous_status": payload.get("previous_status") or source_status,
+                "status": terminal_status,
+                "new_status": terminal_status,
+                "terminal_status": terminal_status,
+                "final_direction": source_direction,
+                "validated_direction": source_direction,
+                "watch_direction": payload.get("watch_direction"),
+                "direction_validation_status": "FINAL_DIRECTION_VALID_EXECUTION_DEFERRED",
+                "action": action,
+                "next_action": next_action,
+                "is_final_signal": True,
+                "signal_valid": True,
+                "direction_valid": True,
+                "analysis_valid": True,
+                "source_valid_for_execution": bool(payload.get("valid_for_execution", False)),
+                "tradeplan_valid": _terminal_tradeplan_valid(payload, terminal_status),
+                "valid_for_execution": False,
+                "execution_valid_now": False,
+                "execution_status": _terminal_execution_status(terminal_status),
+                "execution_reason": reasons,
+                "execution_grade": "TERMINAL_VALID_NON_EXECUTION",
+                "terminal_decision_confirmed": True,
+                "terminal_decision_event_type": "signal_json",
+                "audit_valid": False,
+                "audit_block_reasons": list(decision.reasons),
+                "emit_reason": "TERMINAL_VALID_SIGNAL",
+                "signal_quality": _terminal_signal_quality(terminal_status),
+                "exec_gate_decision": decision.decision,
+                "exec_gate_defer_reasons": list(decision.reasons),
+                "reason": (
+                    f"{payload.get('reason') or 'signal_candidate'} "
+                    f"Direction valid; execution deferred: {reasons}."
+                ),
+            }
+        )
+        return terminal
+
+    @staticmethod
     def _deferred_as_conditional_final(
         payload: dict[str, Any],
         decision: ExecutionGateDecision,
@@ -248,6 +313,104 @@ _RETEST_ELIGIBLE_DEFER_REASONS = frozenset(
         "MICROBOOST_PRESSURE_WARNING_CONFIRMATION_REQUIRED",
     }
 )
+
+_MANAGEMENT_DEFER_REASONS = frozenset(
+    {
+        "REINFORCEMENT_MANAGEMENT_ONLY",
+    }
+)
+
+_STRUCTURE_TARGET_DEFER_REASONS = frozenset(
+    {
+        "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE",
+        "STRUCTURE_TARGET_MODE_REQUIRED",
+        "STRUCTURE_TARGET_AT_MIN_RR_MISSING",
+        "SUPPORT_RESISTANCE_LADDER_INCOMPLETE",
+        "TRADEPLAN_CONTRACT_NOT_READY",
+        "ENTRY_OR_SELECTED_SL_MISSING",
+        "LIVE_RR_INPUT_INCOMPLETE",
+    }
+)
+
+_RETEST_DEFER_REASONS = frozenset(
+    {
+        "BREAKOUT_RETEST_NOT_CONFIRMED",
+        "BREAKDOWN_RETEST_NOT_CONFIRMED",
+        "MICROBOOST_WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+        "MICROBOOST_STRUCTURE_REACTION_CONFIRMATION_REQUIRED",
+        "MICROBOOST_PRESSURE_WARNING_CONFIRMATION_REQUIRED",
+        "MICROBOOST_STRUCTURE_CONFIRMATION_REQUIRED",
+    }
+)
+
+
+def _terminal_status_for_defer(decision: ExecutionGateDecision) -> str:
+    reasons = set(decision.reasons)
+    if reasons & _MANAGEMENT_DEFER_REASONS:
+        return "FINAL_VALID_MANAGEMENT_ONLY"
+    if reasons & _STRUCTURE_TARGET_DEFER_REASONS:
+        return "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+    if reasons & _RETEST_DEFER_REASONS:
+        return "FINAL_VALID_WAIT_RETEST"
+    return "FINAL_VALID_EXECUTION_DEFERRED"
+
+
+def _terminal_action(status: str) -> str:
+    if status == "FINAL_VALID_MANAGEMENT_ONLY":
+        return "HOLD_TRAIL_OR_ADD_ONLY_ON_RETEST"
+    if status == "FINAL_VALID_WAIT_RETEST":
+        return "WAIT_RETEST_OR_CONFIRMATION"
+    if status == "FINAL_VALID_WAIT_STRUCTURE_TARGET":
+        return "WAIT_STRUCTURE_TARGET_OR_RETEST"
+    return "WAIT_EXECUTION_CONTRACT"
+
+
+def _terminal_next_action(status: str) -> str:
+    if status == "FINAL_VALID_MANAGEMENT_ONLY":
+        return "MANAGE_ACTIVE_SIGNAL_OR_WAIT_RETEST"
+    if status == "FINAL_VALID_WAIT_RETEST":
+        return "WAIT_RETEST_OR_CONFIRMATION"
+    if status == "FINAL_VALID_WAIT_STRUCTURE_TARGET":
+        return "WAIT_STRUCTURE_TARGET_OR_RETEST"
+    return "WAIT_EXECUTION_CONTRACT"
+
+
+def _terminal_execution_status(status: str) -> str:
+    if status == "FINAL_VALID_MANAGEMENT_ONLY":
+        return "REINFORCEMENT_MANAGEMENT_ONLY"
+    if status == "FINAL_VALID_WAIT_RETEST":
+        return "WAIT_RETEST_CONFIRMATION"
+    if status == "FINAL_VALID_WAIT_STRUCTURE_TARGET":
+        return "WAIT_STRUCTURE_TARGET"
+    return "WAIT_EXECUTION_CONTRACT"
+
+
+def _terminal_signal_quality(status: str) -> str:
+    if status == "FINAL_VALID_MANAGEMENT_ONLY":
+        return "TERMINAL_VALID_MANAGEMENT_ONLY"
+    if status == "FINAL_VALID_WAIT_RETEST":
+        return "TERMINAL_VALID_WAIT_RETEST"
+    return "TERMINAL_VALID_EXECUTION_DEFERRED"
+
+
+def _terminal_tradeplan_valid(payload: dict[str, Any], status: str) -> bool:
+    if status == "FINAL_VALID_WAIT_STRUCTURE_TARGET":
+        return False
+    if _truthy(payload.get("tradeplan_valid")):
+        return True
+    return (
+        _truthy(payload.get("tradeplan_context_ready"))
+        and _truthy(payload.get("targets_execution_usable"))
+        and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
+    )
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _is_retest_eligible(payload: dict[str, Any], decision: ExecutionGateDecision) -> bool:
