@@ -158,3 +158,33 @@ validations:
       - require_own_price_phase_and_retest_before_signaljson_promotion
       - block_fresh_buy_chase_near_0_56568_0_56600
       - prefer_smaller_size_than_primary_chf_leader_pair
+
+  - validation_id: EURGBP_20260501_20260603_SUPPORTING_EUR_CROSS_FILTER
+    symbol: EURGBP
+    checked_logic: supporting_eur_cross_rotation_and_range_compression
+    source_window_wita: "2026-05-01 to 2026-06-03"
+    raw_interpretation: EUR-cross theme can imply EURGBP BUY continuation
+    actual_outcome: EURGBP had small event count, weak mixed follow-through, and current bearish low-range compression
+    validated_patterns:
+      - SUPPORTING_EUR_CROSS_NOT_LEADER
+      - EURGBP_RANGE_COMPRESSION_FILTER
+    correction:
+      - do_not_copy_euraud_or_eur_cross_leader_direction_into_eurgbp
+      - require_eurgbp_own_reclaim_or_breakdown_before_signaljson_promotion
+      - treat_small_event_count_and_weak_mfe_mae_as_no_clean_entry
+      - use_eurgbp_as_gbp_strength_vs_eur_filter_when_eur_theme_is_active
+
+  - validation_id: AUDUSD_20260430_20260603_LOW_DRAWDOWN_FOLLOWTHROUGH
+    symbol: AUDUSD
+    checked_logic: aud_strength_usd_weakness_followthrough_and_no_chase
+    source_window_wita: "2026-04-30 to 2026-06-03"
+    raw_interpretation: AUDUSD pressure or bullish phase can become BUY continuation
+    actual_outcome: AUDUSD had clean low-drawdown bullish follow-through after 2026-04-30 expansion, but post-rejection recovery and current upper alignment still require pullback or reclaim
+    validated_patterns:
+      - AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH
+      - AUDUSD_POST_REJECTION_RECOVERY_FILTER
+    correction:
+      - use_audusd_as_aud_strength_usd_weakness_reference_not_primary_signal_leader
+      - require_own_price_phase_and_pullback_or_reclaim_before_buy_execution
+      - block_buy_chase_near_upper_intraday_range
+      - strong_daily_recovery_does_not_bypass_execution_gate
