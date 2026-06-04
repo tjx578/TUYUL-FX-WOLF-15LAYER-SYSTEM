@@ -399,10 +399,10 @@ class WolfConstitutionalPipeline:
             watch_transition_only=(os.getenv("SIGNAL_WATCH_EMIT_ON_TRANSITION_ONLY", "true").strip().lower() == "true"),
             watch_update_interval_seconds=self._parse_env_float("SIGNAL_WATCH_UPDATE_INTERVAL_SECONDS", 15.0),
             strict_lifecycle=os.getenv("SIGNAL_JSON_STRICT_LIFECYCLE", "true").strip().lower() == "true",
-            require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "true").strip().lower() == "true",
-            allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "false").strip().lower() == "true",
+            require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "false").strip().lower() == "true",
+            allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "true").strip().lower() == "true",
             require_final_market_structure=(
-                os.getenv("SIGNAL_JSON_REQUIRE_FINAL_MARKET_STRUCTURE", "true").strip().lower() == "true"
+                os.getenv("SIGNAL_JSON_REQUIRE_FINAL_MARKET_STRUCTURE", "false").strip().lower() == "true"
             ),
             allow_provisional_rr_execution=(
                 os.getenv("SIGNAL_JSON_ALLOW_PROVISIONAL_RR_EXECUTION", "false").strip().lower() == "true"
