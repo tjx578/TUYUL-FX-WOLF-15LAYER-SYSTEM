@@ -149,6 +149,7 @@ def test_no_sl_tight_in_gate_output():
     assert "sl_tight" not in out
     assert out.get("sl_safe") == SL_SAFE
     assert out.get("event") != "signal_decision_update_json"
+    assert out.get("status") == "FINAL_EXECUTION_READY"
     assert str(out.get("final_direction")).upper() == "BUY"
 
 
@@ -246,6 +247,8 @@ def test_allow_stamps_execution_valid_now_true():
         SignalJsonGateConfig(enabled=True, enforce=True, final_barrier=True, emit_sidecar=False)
     )
     out = adapter.apply(_usdjpy_structure_ready_candidate())
+    assert out.get("status") == "FINAL_EXECUTION_READY"
+    assert out.get("signal_valid") is True
     assert out.get("valid_for_execution") is True
     assert out.get("execution_valid_now") is True
 
