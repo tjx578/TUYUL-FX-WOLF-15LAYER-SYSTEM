@@ -75,5 +75,8 @@ def test_pipeline_logs_valid_continuation_as_signal_json(caplog):
     pipeline._apply_microboost_continuation_entry_report(l12_verdict=verdict, report=report)
 
     assert "[SignalJSON]" in caplog.text
-    assert '"status":"BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"' in caplog.text
+    assert '"status":"FINAL_EXECUTION_READY"' in caplog.text
+    assert '"source_status":"BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"' in caplog.text
+    assert '"signal_valid":true' in caplog.text
+    assert '"execution_valid_now":true' in caplog.text
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
