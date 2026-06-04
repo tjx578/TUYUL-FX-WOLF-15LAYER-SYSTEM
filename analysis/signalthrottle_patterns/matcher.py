@@ -1009,6 +1009,57 @@ def _add_new_universal_pattern_candidates(
         _bump(candidates, "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE", 112)
         evidence.append("audnzd_bullish_repair_upper_decision_no_chase")
 
+    chf_weakness_context = (
+        symbol.endswith("CHF")
+        and (
+            _optional_bool(data.get("chf_weakness_context")) is True
+            or _optional_bool(data.get("chf_weakness")) is True
+            or _phase(data.get("basket_context") or data.get("theme_family") or data.get("theme_name"))
+            in {"CHF_WEAKNESS", "WEAK_CHF", "CHF_SELL_THEME"}
+            or leader_pair in {"USDCHF", "CADCHF", "GBPCHF", "NZDCHF"}
+        )
+    )
+    clean_chf_confirmation = (
+        symbol == "AUDCHF"
+        and (direction == "BUY" or _optional_bool(data.get("raw_direction_buy")) is True)
+        and chf_weakness_context
+        and (
+            _optional_bool(data.get("clean_followthrough")) is True
+            or _optional_bool(data.get("small_mae_positive_mfe")) is True
+            or (buy_mfe > 0.0 and buy_mae <= 2.0)
+        )
+    )
+    if clean_chf_confirmation:
+        _bump(candidates, "CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH", 110)
+        evidence.append("audchf_clean_chf_weakness_confirmation_followthrough")
+
+    audchf_bullish_alignment = (
+        symbol == "AUDCHF"
+        and (
+            _optional_bool(data.get("audchf_bullish_alignment_upper_no_chase")) is True
+            or _optional_bool(data.get("bullish_alignment_upper_no_chase")) is True
+            or (
+                _optional_bool(data.get("d1_above_ema50")) is True
+                and _optional_bool(data.get("h4_above_ema50")) is True
+                and _optional_bool(data.get("h1_above_ema50")) is True
+            )
+        )
+    )
+    audchf_near_high = (
+        _optional_bool(data.get("price_near_recent_high")) is True
+        or _optional_bool(data.get("near_recent_high")) is True
+        or near_resistance
+        or range_position >= 0.75
+    )
+    audchf_micro_cooling = (
+        _optional_bool(data.get("m1_micro_cooling")) is True
+        or _optional_bool(data.get("micro_cooling")) is True
+        or _phase(data.get("m1_phase")) in {"MIXED", "COOLING", "PULLBACK"}
+    )
+    if audchf_bullish_alignment and audchf_near_high and audchf_micro_cooling:
+        _bump(candidates, "AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE", 118)
+        evidence.append("audchf_bullish_alignment_near_high_wait_retest")
+
     if symbol == "EURNZD" and eur_cross_pressure and supporting_cross and not same_pair_clean_block:
         _bump(candidates, "SUPPORTING_EUR_CROSS_NOT_LEADER", 104)
         evidence.append("eurnzd_supporting_eur_cross_not_leader")
@@ -1084,6 +1135,42 @@ def _add_metal_candidate(
         return
     _bump(candidates, "METAL_SUSTAINED_PRESSURE_CONTEXT", 30)
     evidence.append("metal_pressure_hold_policy")
+    buy_mfe_1h = abs(_num(data.get("buy_mfe_1h") or data.get("mfe_buy_1h_pips") or data.get("mfe_1h_pips")))
+    buy_mfe_4h = abs(_num(data.get("buy_mfe_4h") or data.get("mfe_buy_4h_pips") or data.get("mfe_4h_pips")))
+    buy_mae_4h = abs(_num(data.get("buy_mae_4h") or data.get("mae_buy_4h_pips") or data.get("mae_4h_pips")))
+    metal_whipsaw = (
+        _optional_bool(data.get("metal_pressure_block_not_auto_direction")) is True
+        or _optional_bool(data.get("broad_bias_intraday_block_whipsaw")) is True
+        or _optional_bool(data.get("metal_block_whipsaw")) is True
+        or (buy_mfe_1h > 0.0 and buy_mae_4h >= buy_mfe_1h)
+    )
+    if symbol == "XAGUSD" and (
+        metal_whipsaw
+        or _optional_bool(data.get("broad_metal_followthrough")) is True
+        or buy_mfe_4h >= max(1.0, buy_mfe_1h)
+    ):
+        _bump(candidates, "METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW", 108)
+        evidence.append("xagusd_broad_followthrough_intraday_block_whipsaw")
+    xag_repair_below_ema = (
+        symbol == "XAGUSD"
+        and (
+            _optional_bool(data.get("xagusd_no_chase_below_ema_reclaim")) is True
+            or _optional_bool(data.get("m15_recovery_below_key_ema")) is True
+            or _optional_bool(data.get("reclaim_required")) is True
+            or _phase(data.get("latest_phase")) == "XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM"
+            or (
+                _optional_bool(data.get("d1_above_ema200")) is True
+                and _optional_bool(data.get("d1_below_ema50")) is True
+                and (
+                    _optional_bool(data.get("h4_below_ema50")) is True
+                    or _optional_bool(data.get("h1_below_ema50")) is True
+                )
+            )
+        )
+    )
+    if xag_repair_below_ema:
+        _bump(candidates, "XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM", 116)
+        evidence.append("xagusd_repair_below_key_ema_no_chase")
     if price_position == "MAIN_RESISTANCE" or _num(data.get("range_position")) >= 0.88:
         _bump(candidates, "METAL_NO_CHASE_AFTER_UPPER_SPIKE", 55)
         evidence.append("metal_upper_spike_no_chase")
@@ -1162,6 +1249,9 @@ def _execution_readiness_score(
         "VALIDATED_THEME_FOLLOWTHROUGH",
         "TRACK_ONLY",
         "PULLBACK_OR_RECLAIM_ONLY",
+        "RECLAIM_OR_REJECTION_CONFIRMATION",
+        "BUY_RETEST_OR_CONFIRMATION",
+        "BUY_RETEST_OR_BREAKOUT_RETEST_ONLY",
         "DELAYED_BUY_WATCH",
         "DELAYED_WATCH",
     }:
@@ -1349,6 +1439,14 @@ def _pattern_bottlenecks(
         bottlenecks.append("CROSS_THEME_LEADER_DIVERGENCE")
     if selected and selected.pattern_id == "MACRO_BEARISH_INTRADAY_REPAIR_DECISION":
         bottlenecks.append("MACRO_BEARISH_INTRADAY_REPAIR_DECISION")
+    if selected and selected.pattern_id == "METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW":
+        bottlenecks.append("METAL_RECLAIM_OR_REJECTION_CONFIRMATION_REQUIRED")
+    if selected and selected.pattern_id == "XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM":
+        bottlenecks.append("XAGUSD_REPAIR_BELOW_EMA_NO_CHASE")
+    if selected and selected.pattern_id == "CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH":
+        bottlenecks.append("SUPPORTING_CONFIRMATION_REQUIRES_OWN_TRIGGER")
+    if selected and selected.pattern_id == "AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE":
+        bottlenecks.append("AUDCHF_UPPER_ALIGNMENT_NO_CHASE")
     if _optional_bool(data.get("support_ladder_ready")) is False:
         bottlenecks.append("SUPPORT_LADDER_MISSING")
     if _optional_bool(data.get("resistance_ladder_ready")) is False:
