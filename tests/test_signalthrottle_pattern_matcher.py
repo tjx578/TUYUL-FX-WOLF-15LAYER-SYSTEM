@@ -1068,3 +1068,77 @@ def test_audchf_bullish_alignment_near_high_blocks_chase_until_retest():
     assert result["entry_permission"] == "BUY_RETEST_OR_BREAKOUT_RETEST_ONLY"
     assert result["block_reason"] == "AUDCHF_UPPER_ALIGNMENT_NO_CHASE"
     assert "AUDCHF_UPPER_ALIGNMENT_NO_CHASE" in result["pattern_bottlenecks"]
+
+
+def test_eurgbp_supporting_eur_cross_is_not_leader():
+    result = match_golden_patterns(
+        {
+            "symbol": "EURGBP",
+            "raw_direction": "BUY",
+            "leader_pair": "EURAUD",
+            "eur_cross_pressure": True,
+            "supporting_event_count": 14,
+            "own_price_phase_confirmed": False,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "SUPPORTING_EUR_CROSS_NOT_LEADER"
+    assert result["pair_role"] == "SUPPORTING_EUR_CROSS_FILTER"
+    assert result["entry_permission"] == "WAIT_OWN_PRICE_PHASE_CONFIRMATION"
+    assert result["block_reason"] == "SUPPORTING_EUR_CROSS_NOT_LEADER"
+
+
+def test_eurgbp_range_compression_filter_waits_clean_break_or_reclaim():
+    result = match_golden_patterns(
+        {
+            "symbol": "EURGBP",
+            "raw_direction": "BUY",
+            "event_count": 14,
+            "window_range_pips": 8.3,
+            "price_delta_during_window_pips": -4.8,
+            "mfe_mae_not_decisive": True,
+            "own_price_phase_confirmed": False,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "EURGBP_RANGE_COMPRESSION_FILTER"
+    assert result["entry_permission"] == "CLEAN_BREAK_OR_RECLAIM_REQUIRED"
+    assert result["block_reason"] == "EURGBP_RANGE_COMPRESSION_NO_ENTRY"
+    assert "EURGBP_RANGE_COMPRESSION_NO_ENTRY" in result["pattern_bottlenecks"]
+
+
+def test_audusd_low_drawdown_bullish_followthrough_requires_pullback_or_reclaim():
+    result = match_golden_patterns(
+        {
+            "symbol": "AUDUSD",
+            "raw_direction": "BUY",
+            "d1_bullish_expansion": True,
+            "d1_body_pips": 72.3,
+            "d1_close_position": 0.955,
+            "mfe_buy_1h_pips": 13.8,
+            "mae_buy_1h_pips": -0.4,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "AUDUSD_LOW_DRAWDOWN_BULLISH_FOLLOWTHROUGH"
+    assert result["pair_role"] == "AUD_STRENGTH_USD_WEAKNESS_FOLLOWTHROUGH_REFERENCE"
+    assert result["entry_permission"] == "BUY_PULLBACK_OR_RECLAIM_ONLY"
+    assert result["block_reason"] == "AUDUSD_NO_BUY_CHASE_AT_UPPER_RANGE"
+    assert "AUDUSD_PULLBACK_OR_RECLAIM_REQUIRED" in result["pattern_bottlenecks"]
+
+
+def test_audusd_post_rejection_recovery_filter_blocks_blind_continuation():
+    result = match_golden_patterns(
+        {
+            "symbol": "AUDUSD",
+            "raw_direction": "BUY",
+            "post_rejection_recovery": True,
+            "d1_20260507_close_position": 0.118,
+            "d1_20260508_close_position": 0.906,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "AUDUSD_POST_REJECTION_RECOVERY_FILTER"
+    assert result["entry_permission"] == "RECLAIM_OR_PULLBACK_HOLD_ONLY"
+    assert result["block_reason"] == "AUDUSD_POST_REJECTION_RECOVERY_NO_CHASE"
+    assert "AUDUSD_POST_REJECTION_RECOVERY_NO_CHASE" in result["pattern_bottlenecks"]
