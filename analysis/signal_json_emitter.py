@@ -446,7 +446,7 @@ class SignalJsonEmitter:
         require_parent_watch: bool = True,
         allow_direct_bypass: bool = False,
         require_final_market_structure: bool = False,
-        allow_provisional_rr_execution: bool = True,
+        allow_provisional_rr_execution: bool = False,
         require_theme_alignment: bool = True,
         theme_conflict_downgrade: bool = True,
         min_rr_valid: float = SIGNAL_MIN_RR,
@@ -510,7 +510,9 @@ class SignalJsonEmitter:
             watch_revision = self._mark_watch_transition(event)
             if watch_revision is None:
                 return False
-        if self.strict_lifecycle and _is_final_payload(payload):
+        if _is_final_payload(payload) and _uses_provisional_rr_fallback(payload) and not self.allow_provisional_rr_execution:
+            payload = _blocked_final_as_decision_update(payload, ["PROVISIONAL_RR_NOT_EXECUTION_GRADE"])
+        elif self.strict_lifecycle and _is_final_payload(payload):
             if self._ensure_terminal_decision_update(payload):
                 payload = self._strict_final_payload(payload)
             else:
@@ -575,6 +577,12 @@ class SignalJsonEmitter:
             return (
                 f"{payload.get('symbol')}|{cluster_key}|{payload.get('signal_family')}|"
                 f"{payload.get('status')}|{payload.get('target_mode') or ''}|{revision_key}"
+            )
+        signal_id = _optional_str(payload.get("signal_id"))
+        if signal_id is not None:
+            return (
+                f"{signal_id}|{payload.get('event') or 'signal_json'}|{payload.get('status')}|"
+                f"{payload.get('pending_decision_id') or ''}"
             )
         return (
             f"{payload.get('symbol')}|{cluster_key}|{payload.get('signal_family')}|"
@@ -1053,6 +1061,11 @@ def _is_final_payload(payload: dict[str, Any]) -> bool:
         and target_ok
         and bool(payload.get("valid_for_execution", False))
     )
+
+
+def _uses_provisional_rr_fallback(payload: dict[str, Any]) -> bool:
+    target_mode = str(payload.get("source_target_mode") or payload.get("target_mode") or "").upper()
+    return target_mode == "PROVISIONAL_RR_FALLBACK"
 
 
 def _signal_quality(payload: dict[str, Any]) -> str:
