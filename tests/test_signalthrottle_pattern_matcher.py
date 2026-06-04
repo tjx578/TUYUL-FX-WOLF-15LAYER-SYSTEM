@@ -985,3 +985,86 @@ def test_eurnzd_macro_bearish_intraday_repair_decision_blocks_buy_chase():
     assert result["selected_pattern_id"] == "MACRO_BEARISH_INTRADAY_REPAIR_DECISION"
     assert result["entry_permission"] == "NO_BUY_CHASE_WAIT_REPAIR_CONFIRMATION"
     assert result["block_reason"] == "MACRO_BEARISH_INTRADAY_REPAIR_DECISION"
+
+
+def test_xagusd_broad_metal_pressure_block_requires_reclaim_or_rejection():
+    result = match_golden_patterns(
+        {
+            "symbol": "XAGUSD",
+            "raw_direction": "BUY",
+            "broad_metal_followthrough": True,
+            "metal_pressure_block_not_auto_direction": True,
+            "mfe_buy_1h_pips": 0.182,
+            "mae_buy_4h_pips": -0.760,
+            "density_per_minute": 2.10,
+            "duration_minutes": 36.71,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW"
+    assert result["pair_role"] == "HIGH_VOLATILITY_METAL_PRESSURE_REFERENCE"
+    assert result["entry_permission"] == "RECLAIM_OR_REJECTION_CONFIRMATION"
+    assert result["block_reason"] == "METAL_BLOCK_WHIPSAW_RISK"
+    assert "METAL_RECLAIM_OR_REJECTION_CONFIRMATION_REQUIRED" in result["pattern_bottlenecks"]
+
+
+def test_xagusd_repair_below_ema_blocks_buy_chase():
+    result = match_golden_patterns(
+        {
+            "symbol": "XAGUSD",
+            "raw_direction": "BUY",
+            "d1_above_ema200": True,
+            "d1_below_ema50": True,
+            "h4_below_ema50": True,
+            "h1_below_ema50": True,
+            "m15_recovery_below_key_ema": True,
+            "reclaim_required": True,
+            "range_position": 0.72,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM"
+    assert result["entry_permission"] == "NO_MARKET_CHASE"
+    assert result["block_reason"] == "XAGUSD_REPAIR_BELOW_EMA_NO_CHASE"
+    assert "XAGUSD_REPAIR_BELOW_EMA_NO_CHASE" in result["pattern_bottlenecks"]
+
+
+def test_audchf_chf_weakness_confirmation_is_secondary_not_leader():
+    result = match_golden_patterns(
+        {
+            "symbol": "AUDCHF",
+            "raw_direction": "BUY",
+            "chf_weakness_context": True,
+            "clean_followthrough": True,
+            "mfe_buy_1h_pips": 7.8,
+            "mae_buy_1h_pips": 0.0,
+            "supporting_cross": True,
+            "own_price_phase_confirmed": False,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH"
+    assert result["pair_role"] == "CHF_WEAKNESS_CONFIRMATION_PAIR"
+    assert result["entry_permission"] == "BUY_RETEST_OR_CONFIRMATION"
+    assert result["block_reason"] == "SUPPORTING_CONFIRMATION_REQUIRES_OWN_TRIGGER"
+    assert "SUPPORTING_CONFIRMATION_REQUIRES_OWN_TRIGGER" in result["pattern_bottlenecks"]
+
+
+def test_audchf_bullish_alignment_near_high_blocks_chase_until_retest():
+    result = match_golden_patterns(
+        {
+            "symbol": "AUDCHF",
+            "raw_direction": "BUY",
+            "d1_above_ema50": True,
+            "h4_above_ema50": True,
+            "h1_above_ema50": True,
+            "price_near_recent_high": True,
+            "m1_micro_cooling": True,
+            "range_position": 0.82,
+        }
+    )
+
+    assert result["selected_pattern_id"] == "AUDCHF_BULLISH_ALIGNMENT_UPPER_NO_CHASE"
+    assert result["entry_permission"] == "BUY_RETEST_OR_BREAKOUT_RETEST_ONLY"
+    assert result["block_reason"] == "AUDCHF_UPPER_ALIGNMENT_NO_CHASE"
+    assert "AUDCHF_UPPER_ALIGNMENT_NO_CHASE" in result["pattern_bottlenecks"]
