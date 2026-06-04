@@ -3936,6 +3936,35 @@ class WolfConstitutionalPipeline:
         self._emit_microboost_intel_if_new(report)
         return report
 
+    def _record_signal_throttle_downgrade_observation(
+        self,
+        *,
+        symbol: str,
+        l12_verdict: dict[str, Any],
+        legacy_verdict: Any,
+        reason: str,
+    ) -> None:
+        direction = self._direction_hint(l12_verdict.get("direction"))
+        source_verdict = (
+            l12_verdict.get("market_context_from")
+            or l12_verdict.get("sovereignty_from")
+            or l12_verdict.get("throttled_from")
+            or legacy_verdict
+            or l12_verdict.get("verdict")
+        )
+        source_text = str(source_verdict or "").strip().upper()
+        direction = direction or self._direction_hint(source_text)
+        if direction not in {"BUY", "SELL"}:
+            return
+        if not source_text.startswith("EXECUTE"):
+            source_text = f"EXECUTE_{direction}"
+        self._signal_throttle_live_analyzer.record_downgraded(
+            symbol=symbol,
+            verdict=source_text,
+            direction=direction,
+            reason=reason,
+        )
+
     def _apply_microboost_continuation_entry_report(
         self,
         *,
@@ -4217,6 +4246,12 @@ class WolfConstitutionalPipeline:
                 throttle_skip_reason = "sovereignty_downgraded_to_hold"
             elif l12_verdict.get("market_context_downgrade"):
                 throttle_skip_reason = "market_context_unvalidated"
+            self._record_signal_throttle_downgrade_observation(
+                symbol=symbol,
+                l12_verdict=l12_verdict,
+                legacy_verdict=legacy_verdict,
+                reason=throttle_skip_reason,
+            )
             self._emit_verdict_stream_event(
                 event="signal_throttle_check",
                 symbol=symbol,
