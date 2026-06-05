@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 
@@ -296,7 +296,7 @@ class AllocationService:
         self.__class__._IDEM_REDIS_UNAVAILABLE_UNTIL = time.monotonic() + cooldown
 
     def _idem_redis_get(self, key: str) -> str | None:
-        return self._idem_redis_client().get(key)
+        return cast(str | None, self._idem_redis_client().get(key))
 
     def _idem_redis_set(self, key: str, raw: str, *, ex: int) -> None:
         self._idem_redis_client().set(key, raw, ex=ex)
