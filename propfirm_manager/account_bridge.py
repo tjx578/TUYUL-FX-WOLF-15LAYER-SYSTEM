@@ -63,8 +63,12 @@ def populate_account_risk_state(
         balance=balance,
         equity=equity,
         base_risk_percent=effective_base_risk,
-        max_daily_loss_percent=resolved_rules.max_daily_dd_percent,
-        max_total_loss_percent=resolved_rules.max_total_dd_percent,
+        max_daily_loss_percent=resolved_rules.max_daily_dd_percent
+        if resolved_rules.max_daily_dd_percent is not None
+        else 100.0,
+        max_total_loss_percent=resolved_rules.max_total_dd_percent
+        if resolved_rules.max_total_dd_percent is not None
+        else 100.0,
         daily_loss_used_percent=daily_loss_used_percent,
         total_loss_used_percent=total_loss_used_percent,
         consistency_limit_percent=resolved_rules.consistency_rule_percent,
