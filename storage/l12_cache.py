@@ -5,7 +5,7 @@ import contextlib
 import json
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 import redis
 from loguru import logger
@@ -82,13 +82,13 @@ def _read_cache_value(key: str) -> str | bytes | None:
     # Preserve existing tests and call sites that patch storage.l12_cache.redis_client.
     if redis_client.__class__.__name__ != "_LazyRedisClient":
         with contextlib.suppress(Exception):
-            return redis_client.get(key)
+            return cast(str | bytes | None, redis_client.get(key))
         return None
 
     if _read_redis_temporarily_unavailable():
         return None
     try:
-        return _read_redis_client().get(key)
+        return cast(str | bytes | None, _read_redis_client().get(key))
     except Exception:
         _mark_read_redis_unavailable()
         return None

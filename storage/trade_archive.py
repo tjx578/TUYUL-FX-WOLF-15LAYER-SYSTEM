@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 import redis
 
@@ -176,7 +176,7 @@ def _from_redis(symbol: str | None, lookback: int) -> list[float]:
                 if not raw:
                     continue
                 try:
-                    trade = json.loads(raw)
+                    trade = json.loads(cast(str | bytes, raw))
                 except (json.JSONDecodeError, TypeError):
                     continue
 

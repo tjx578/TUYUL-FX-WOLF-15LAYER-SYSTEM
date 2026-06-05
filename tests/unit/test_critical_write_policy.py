@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Generator
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -33,7 +35,7 @@ def _headers(pin: str | None = None) -> dict[str, str]:
 
 
 @pytest.fixture(autouse=True)
-def _clean_global_kill_switch() -> None:
+def _clean_global_kill_switch() -> Generator[None, None, None]:
     risk_router_mod._kill_switch.disable("TEST_RESET")
     ConfigProfileEngine().set_lock(False, actor="test-admin", reason="TEST_RESET")
     yield

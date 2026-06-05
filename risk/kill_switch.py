@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
-from typing import Any
+from typing import Any, cast
 
 import redis
 
@@ -63,7 +63,7 @@ class _FailFastKillSwitchRedis:
         if self._is_unavailable():
             return None
         try:
-            return self._redis().get(key)
+            return cast(str | bytes | None, self._redis().get(key))
         except Exception:
             self._mark_unavailable()
             return None

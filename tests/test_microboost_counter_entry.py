@@ -635,6 +635,7 @@ def test_explicit_key_support_can_supply_final_structure_target_without_full_lad
     assert result.targets_execution_usable is True
     assert result.tp1 == 115.2
     assert result.tp1_rr is not None
+    assert result.min_rr_required is not None
     assert result.tp1_rr >= result.min_rr_required
     assert result.tp_missing_reason is None
 

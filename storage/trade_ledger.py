@@ -37,11 +37,11 @@ class TradeLedger:
         parsed_risk_mode = risk_mode if isinstance(risk_mode, RiskMode) else RiskMode(str(risk_mode))
         parsed_legs = [
             TradeLeg(
-                leg=int(leg.get("leg", index)),
-                entry=float(str(leg.get("entry"))),
-                sl=float(str(leg.get("sl"))),
-                tp=float(str(leg.get("tp"))),
-                lot=float(str(leg.get("lot"))),
+                leg=int(float(str(leg.get("leg", index)))),
+                entry=float(str(leg.get("entry", 0.0))),
+                sl=float(str(leg.get("sl", 0.0))),
+                tp=float(str(leg.get("tp", 0.0))),
+                lot=float(str(leg.get("lot", 0.0))),
                 status=TradeStatus(str(leg.get("status", TradeStatus.INTENDED.value))),
             )
             for index, leg in enumerate(legs, start=1)

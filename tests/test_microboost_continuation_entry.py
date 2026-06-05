@@ -92,6 +92,7 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
     assert result.target_mode == "FINAL_MARKET_STRUCTURE"
     assert result.valid_for_execution is True
     assert result.rr_to_tp3_tight is not None
+    assert result.min_rr_required is not None
     assert result.rr_to_tp3_tight >= result.min_rr_required
     assert result.key_support == 1.3720
     assert result.key_resistance == 1.3850
@@ -109,6 +110,7 @@ def test_usdcad_mid_range_quorum_microboost_after_one_minute_becomes_buy_continu
         "max_allowed_spread_pips": None,
     }
     assert result.rr_to_valid_target is not None
+    assert result.min_rr_required is not None
     assert result.rr_to_valid_target >= result.min_rr_required
     assert result.promotion_path is None
     assert result.direct_valid_reason is None

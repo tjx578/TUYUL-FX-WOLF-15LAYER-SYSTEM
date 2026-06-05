@@ -137,6 +137,7 @@ def test_confirmed_buy_allows_at_min_rr_15_with_explicit_fallback_policy():
 def test_default_min_rr_required_is_15():
     """The gate's default minimum RR is 1.5 (TP1 at exactly 1.5R is accepted)."""
     decision = evaluate_signal_execution_gates(_usdjpy_single_stop_candidate())
+    assert decision.live_rr is not None
     assert decision.live_rr["min_rr_required"] == 1.5
 
 
