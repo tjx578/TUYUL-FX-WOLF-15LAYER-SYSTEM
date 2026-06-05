@@ -4094,6 +4094,7 @@ class WolfConstitutionalPipeline:
             source_verdict=source_verdict,
         )
         report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        self._emit_microboost_intel_if_new(report)
         for key in ("microboost_continuation_entry", "microboost_counter_entry"):
             candidate = report.get(key)
             if not isinstance(candidate, dict):
