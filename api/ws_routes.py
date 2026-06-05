@@ -37,7 +37,7 @@ import os
 import time
 import uuid as _uuid
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Awaitable, Mapping
 from typing import Any, cast
 
 import fastapi
@@ -344,6 +344,7 @@ def _ws_session_delete(key: str) -> None:
         _ws_session_redis_client().delete(key)
     except Exception:
         _mark_ws_session_redis_unavailable()
+
 
 # Message replay buffer size per manager
 MESSAGE_BUFFER_SIZE = 100  # last N messages kept for replay on reconnect
@@ -655,10 +656,14 @@ async def _list_accounts_for_ws(manager: AccountManager) -> list[Any]:
     try:
         list_accounts_async = getattr(manager, "list_accounts_async", None)
         if callable(list_accounts_async):
-            return await asyncio.wait_for(list_accounts_async(), timeout=timeout)
+            result = await asyncio.wait_for(cast(Awaitable[list[Any]], list_accounts_async()), timeout=timeout)
+            return cast(list[Any], result)
         list_accounts = getattr(manager, "list_accounts", None)
         if callable(list_accounts):
-            return await asyncio.wait_for(asyncio.to_thread(list_accounts), timeout=timeout)
+            result = await asyncio.wait_for(
+                cast(Awaitable[list[Any]], asyncio.to_thread(list_accounts)), timeout=timeout
+            )
+            return cast(list[Any], result)
     except Exception:
         return fallback_accounts
     return fallback_accounts
