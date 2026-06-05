@@ -19,7 +19,7 @@ import asyncio
 import logging
 import os
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
@@ -64,6 +64,12 @@ def _env_float(key: str, default: float, *, minimum: float = 0.05) -> float:
         return max(minimum, float(raw))
     except (TypeError, ValueError):
         return default
+
+
+async def _await_bool(value: Awaitable[bool] | bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return await value
 
 
 def _assert_no_duplicate_routes(application: FastAPI) -> None:
@@ -124,7 +130,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             health_check_interval=1,
         )
         app.state.redis = await asyncio.wait_for(get_client(redis_config), timeout=redis_timeout)
-        await asyncio.wait_for(app.state.redis.ping(), timeout=redis_timeout)
+        await asyncio.wait_for(_await_bool(app.state.redis.ping()), timeout=redis_timeout)
     except Exception:
         logger.warning("Redis unavailable at startup — will retry on first use")
         app.state.redis = None
@@ -672,10 +678,10 @@ def _register_health_routes(app: FastAPI) -> None:
         with suppress(Exception):
             r: aioredis.Redis = request.app.state.redis
             if r is not None:
-                ping_result: bool = await asyncio.wait_for(
-                    r.ping(),
+                ping_result = await asyncio.wait_for(
+                    _await_bool(r.ping()),
                     timeout=_env_float("API_STATUS_REDIS_READ_TIMEOUT_SEC", 0.25),
-                )  # type: ignore[assignment]
+                )
                 redis_ok = ping_result is True
 
         postgres_health = await pg_client.health_check()
