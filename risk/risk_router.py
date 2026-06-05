@@ -14,6 +14,7 @@ import os
 import time
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 import redis
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -120,7 +121,7 @@ def _router_redis_get(key: str) -> str | None:
         return None
 
     try:
-        return _router_redis_client().get(key)
+        return cast(str | None, _router_redis_client().get(key))
     except Exception:
         _mark_router_redis_unavailable()
         return None
@@ -134,7 +135,7 @@ def _router_redis_hgetall(key: str) -> dict[str, str]:
         return {}
 
     try:
-        return _router_redis_client().hgetall(key) or {}
+        return cast(dict[str, str], _router_redis_client().hgetall(key) or {})
     except Exception:
         _mark_router_redis_unavailable()
         return {}
