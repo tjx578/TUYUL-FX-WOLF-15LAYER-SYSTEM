@@ -647,6 +647,30 @@ class TestPipelineSignalThrottle:
         assert "final_direction=BUY" in microboost_line
         assert "m15_phase=BULLISH_PULLBACK" in microboost_line
 
+    def test_non_execute_shadow_path_emits_microboost_intel(self, capsys):
+        """NO_TRADE/HOLD observations still need MicroboostIntel visibility."""
+        pipe = self._make_pipeline()
+        base = datetime.now(UTC) - timedelta(minutes=3)
+        for index in range(25):
+            pipe._signal_throttle_live_analyzer.record_downgraded(
+                symbol="GBPCAD",
+                verdict="EXECUTE_BUY",
+                direction="BUY",
+                reason="non_execute_verdict",
+                timestamp=base + timedelta(seconds=index * 5),
+            )
+
+        capsys.readouterr()
+        pipe._emit_microboost_watch_shadow(
+            symbol="GBPCAD",
+            synthesis={"execution": {"direction": "BUY", "entry_price": 1.8500}},
+            l12_verdict={"verdict": "NO_TRADE", "direction": "BUY"},
+            source_verdict="NO_TRADE",
+        )
+
+        output_lines = capsys.readouterr().out.splitlines()
+        assert any(line.startswith("[MicroboostIntel]") and "symbol=GBPCAD" in line for line in output_lines)
+
     def test_usdcad_reclaim_and_demand_build_support_ladder_for_counter_targets(self):
         from context.live_context_bus import LiveContextBus
 
