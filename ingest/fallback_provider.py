@@ -867,6 +867,8 @@ class FallbackCandleProvider:
         symbol: str,
         timeframe: str,
         bars: int = 100,
+        *,
+        allow_stale_cache: bool = True,
     ) -> list[dict[str, Any]]:
         """Attempt each provider in order; fall back to Redis cache; return [] on total miss.
 
@@ -882,6 +884,15 @@ class FallbackCandleProvider:
         Callers should treat an empty return as a degradation signal.
         """
         if not self._providers:
+            if not allow_stale_cache:
+                logger.warning(
+                    "[Fallback] No live fallback data providers configured "
+                    "(set TWELVE_DATA_API_KEY, ALPHA_VANTAGE_API_KEY, or ALPHA_VANTAGE_RAPIDAPI_KEY) "
+                    "for %s %s",
+                    symbol,
+                    timeframe,
+                )
+                return []
             logger.warning(
                 "[Fallback] No fallback data providers configured "
                 "(set TWELVE_DATA_API_KEY, ALPHA_VANTAGE_API_KEY, or ALPHA_VANTAGE_RAPIDAPI_KEY) — "
@@ -955,6 +966,14 @@ class FallbackCandleProvider:
                 timeframe,
                 last_error,
             )
+        if not allow_stale_cache:
+            logger.warning(
+                "[Fallback] Live providers exhausted for %s %s and stale cache is disabled",
+                symbol,
+                timeframe,
+            )
+            return []
+
         cached = await self._read_cache(symbol, timeframe)
         if not cached and not isinstance(last_error, ProviderQuotaDeferredError):
             logger.warning(

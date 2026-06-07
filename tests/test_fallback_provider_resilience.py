@@ -482,6 +482,23 @@ class TestAllProvidersFail:
         assert result == []
 
     @pytest.mark.asyncio
+    async def test_live_only_mode_does_not_read_stale_cache(self) -> None:
+        cached_candles = [_cached_candle(close=1.09)]
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached_candles))
+
+        provider = FallbackCandleProvider(redis_client=mock_redis)
+
+        failing = MagicMock()
+        failing.name = "fake_provider"
+        failing.fetch = AsyncMock(side_effect=RuntimeError("403 Forbidden"))
+        provider._providers = [failing]
+
+        result = await provider.fetch("EURUSD", "H1", allow_stale_cache=False)
+        assert result == []
+        mock_redis.get.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_does_not_raise_on_redis_error(self) -> None:
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(side_effect=ConnectionError("redis timeout"))

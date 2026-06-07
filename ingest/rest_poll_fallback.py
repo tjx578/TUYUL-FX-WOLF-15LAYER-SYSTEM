@@ -21,9 +21,9 @@ from loguru import logger
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
 from core.redis_keys import candle_history, channel_candle, latest_candle
-from ingest.alphavantage_candles import AlphaVantageCandleFetcher
-from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher, FinnhubCandlePremiumError
+from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 from ingest.finnhub_ws import is_forex_market_open
+from ingest.hybrid_candle_provider import HybridCandleProvider
 
 
 def enqueue_candle_dict(candle: dict[str, Any]) -> None:
@@ -85,7 +85,10 @@ class RestPollFallback:
         self._silence_check_interval: float = float(rest_poll_cfg.get("silence_check_interval_sec", 60))
 
         self._fetcher = FinnhubCandleFetcher()
-        self._av_fetcher = AlphaVantageCandleFetcher(redis_client=redis_client)
+        self._repair_provider = HybridCandleProvider(
+            finnhub_fetcher=self._fetcher,
+            redis_client=redis_client,
+        )
         self._context_bus = LiveContextBus()
         self._running = False
 
@@ -213,14 +216,35 @@ class RestPollFallback:
             except Exception as e:
                 logger.error("[RestFallback] Error polling {}: {}", symbol, e)
 
-    async def _fetch_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
-        """Fetch candles for one symbol/timeframe using the shared fetcher.
+    async def _fetch_from_repair_provider(
+        self,
+        symbol: str,
+        timeframe: str,
+        bars: int,
+    ) -> list[dict[str, Any]]:
+        """Fetch candles through the hybrid live repair provider."""
+        result = await self._repair_provider.fetch(symbol, timeframe, bars)
+        if result.candles:
+            logger.info(
+                "[RestFallback] fetched {} {} bars for {} via {} ({})",
+                len(result.candles),
+                timeframe,
+                symbol,
+                result.provider,
+                result.reason,
+            )
+        else:
+            logger.warning(
+                "[RestFallback] no live candles for {} {} via hybrid repair (reason={} attempts={})",
+                symbol,
+                timeframe,
+                result.reason,
+                result.attempts,
+            )
+        return result.candles
 
-        Tries Finnhub first.  On a ``FinnhubCandlePremiumError`` (HTTP 403)
-        the method falls back to Alpha Vantage so that H1/H4/D1/W1 candles
-        remain fresh even on the Finnhub free tier.  If both providers fail,
-        the cached result from a previous successful fetch is returned.
-        """
+    async def _fetch_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
+        """Fetch candles for one symbol/timeframe using hybrid live repair."""
         bars_by_tf = {
             "M15": self._bars,
             "H1": self._h1_bars,
@@ -229,50 +253,7 @@ class RestPollFallback:
             "W1": 1,
         }
         bars = bars_by_tf.get(timeframe, 1)
-        try:
-            candles = await self._fetcher.fetch(symbol, timeframe, bars)
-            if candles:
-                return candles
-            # Finnhub returned empty — try Alpha Vantage before giving up
-            logger.debug(
-                "[RestFallback] Finnhub returned 0 {} bars for {} — trying Alpha Vantage",
-                timeframe,
-                symbol,
-            )
-            av_candles = await self._av_fetcher.fetch(symbol, timeframe, bars)
-            if av_candles:
-                logger.info(
-                    "[RestFallback] Successfully fetched {} {} from Alpha Vantage ({} bars)",
-                    symbol,
-                    timeframe,
-                    len(av_candles),
-                )
-            return av_candles
-        except FinnhubCandlePremiumError as exc:
-            logger.warning(
-                "[RestFallback] Fetch failed {} {}: {}, trying Alpha Vantage",
-                symbol,
-                timeframe,
-                exc,
-            )
-            av_candles = await self._av_fetcher.fetch(symbol, timeframe, bars)
-            if av_candles:
-                logger.info(
-                    "[RestFallback] Successfully fetched {} {} from Alpha Vantage ({} bars)",
-                    symbol,
-                    timeframe,
-                    len(av_candles),
-                )
-            else:
-                logger.warning(
-                    "[RestFallback] Alpha Vantage also returned 0 {} bars for {}",
-                    timeframe,
-                    symbol,
-                )
-            return av_candles
-        except FinnhubCandleError as exc:
-            logger.warning("[RestFallback] Fetch failed {} {}: {}", symbol, timeframe, exc)
-            return []
+        return await self._fetch_from_repair_provider(symbol, timeframe, bars)
 
     async def _save_to_redis(self, symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> None:
         """Normalize and persist candles to context bus and Redis."""
@@ -342,7 +323,7 @@ class RestPollFallback:
         """Fetch M15 + optional H1 for a single symbol and seed the context bus."""
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
 
-        fetch_candles: Any = self._fetcher.fetch
+        fetch_candles: Any = self._fetch_from_repair_provider
 
         # Use configured REST substitutes while all Finnhub keys are suspended.
         # This keeps candle analysis alive in degraded mode without retrying

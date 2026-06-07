@@ -23,8 +23,8 @@ from config_loader import get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
 from context.system_state import SystemState, SystemStateManager
 from core.redis_keys import candle_history, channel_candle, latest_candle
-from ingest.alphavantage_candles import AlphaVantageCandleFetcher
-from ingest.finnhub_candles import FinnhubCandleFetcher, FinnhubCandlePremiumError
+from ingest.finnhub_candles import FinnhubCandleFetcher
+from ingest.hybrid_candle_provider import HybridCandleProvider
 
 
 def enqueue_candle_dict(candle: dict[str, Any]) -> None:
@@ -57,7 +57,10 @@ class HTFRefreshScheduler:
         self.w1_bars: int = refresh_cfg.get("w1_bars", 8)
 
         self.fetcher = FinnhubCandleFetcher()
-        self._av_fetcher = AlphaVantageCandleFetcher(redis_client=redis_client)
+        self._repair_provider = HybridCandleProvider(
+            finnhub_fetcher=self.fetcher,
+            redis_client=redis_client,
+        )
         self.context_bus = LiveContextBus()
         self.system_state = SystemStateManager()
         self._redis = redis_client
@@ -135,53 +138,35 @@ class HTFRefreshScheduler:
             logger.debug("HTF refreshed {}: D1={}, W1={}", symbol, len(d1 or []), len(w1 or []))
 
     async def _refresh_timeframe(self, symbol: str, timeframe: str, bars: int) -> list[dict[str, Any]]:
-        """Refresh one HTF timeframe through Finnhub plus configured fallback providers.
-
-        On a ``FinnhubCandlePremiumError`` (HTTP 403) the method falls back to
-        Alpha Vantage so that D1/W1 candles remain fresh on the free tier.
-        """
-        candles: list[dict[str, Any]] = []
-        provider_used = "finnhub"
+        """Refresh one HTF timeframe through the hybrid live repair chain."""
         try:
-            candles = await self.fetcher.fetch(symbol, timeframe, bars)
-        except FinnhubCandlePremiumError:
-            logger.warning(
-                "[HTFRefresh] Finnhub premium required for {} {} — trying Alpha Vantage",
-                symbol,
-                timeframe,
-            )
-            candles = await self._av_fetcher.fetch(symbol, timeframe, bars)
-            provider_used = "alpha_vantage"
-            if candles:
-                logger.info(
-                    "[HTFRefresh] Alpha Vantage fallback succeeded for {} {} ({} bars)",
-                    symbol,
-                    timeframe,
-                    len(candles),
-                )
-            else:
-                logger.warning(
-                    "[HTFRefresh] Alpha Vantage also returned 0 {} bars for {}",
-                    timeframe,
-                    symbol,
-                )
+            repair_result = await self._repair_provider.fetch(symbol, timeframe, bars)
         except Exception as exc:
             logger.error("HTF refresh error for {} {}: {}", symbol, timeframe, exc)
             return []
 
+        candles = repair_result.candles
+        provider_used = repair_result.provider
         if candles:
             logger.debug(
-                "[HTFRefresh] {} {} bars fetched for {} via {}",
+                "[HTFRefresh] {} {} bars fetched for {} via {} ({})",
                 len(candles),
                 timeframe,
                 symbol,
                 provider_used,
+                repair_result.reason,
             )
             for candle in candles:
                 self.context_bus.update_candle(candle)
             await self._push_candles_to_redis(candles)
         else:
-            logger.warning("No {} bars fetched for {} during HTF refresh", timeframe, symbol)
+            logger.warning(
+                "No {} bars fetched for {} during HTF refresh (reason={} attempts={})",
+                timeframe,
+                symbol,
+                repair_result.reason,
+                repair_result.attempts,
+            )
 
         return candles
 
