@@ -33,7 +33,7 @@ Zone: analysis/ — Perception & Context (read-only, no execution).
 from __future__ import annotations
 
 import math
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from analysis.candle_freshness import candle_age_seconds
 
@@ -46,19 +46,19 @@ except ImportError:  # pragma: no cover
 
 
 # ── Engine imports (correct paths, verified from repo) ────────────
-try:
-    from core.core_cognitive_unified import (
-        ReflexEmotionCore,
-    )
-except ImportError:
-    ReflexEmotionCore = None
+if TYPE_CHECKING:
+    from core.core_cognitive_unified import ReflexEmotionCore
+    from core.core_fusion.integrator import FusionIntegrator
+else:
+    try:
+        from core.core_cognitive_unified import ReflexEmotionCore
+    except ImportError:
+        ReflexEmotionCore = None  # type: ignore[assignment]
 
-try:
-    from core.core_fusion.integrator import (
-        FusionIntegrator,
-    )
-except ImportError:
-    FusionIntegrator = None
+    try:
+        from core.core_fusion.integrator import FusionIntegrator
+    except ImportError:
+        FusionIntegrator = None  # type: ignore[assignment]
 
 __all__ = ["L2MTA", "L2MTAAnalyzer"]
 
@@ -346,8 +346,8 @@ class L2MTAAnalyzer:
         self.bus: Any = None  # Candle bus (mock-able in integration)
 
         # Lazy-loaded engines
-        self._reflex: ReflexEmotionCore | None = None  # type: ignore[type-arg]
-        self._fusion: FusionIntegrator | None = None  # type: ignore[type-arg]
+        self._reflex: ReflexEmotionCore | None = None
+        self._fusion: FusionIntegrator | None = None
         self._engines_loaded: bool = False
 
     # ──────────────────────────────────────────────────────────
