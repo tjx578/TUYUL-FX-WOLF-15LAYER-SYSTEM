@@ -249,7 +249,7 @@ class SignalBlockFinalizer:
         if not symbol:
             return
         if _is_final_execution(payload):
-            self._pending.pop(symbol, None)
+            self._drop_symbol_pending(symbol)
             return
         if not _is_pending_watch(payload):
             return
@@ -260,15 +260,17 @@ class SignalBlockFinalizer:
         )
         if pending is None:
             return
-        current = self._pending.get(symbol)
+        self._annotate_conflict_state(pending)
+        pending_key = pending.pending_decision_id
+        current = self._pending.get(pending_key)
         if current is None or pending.created_utc >= current.created_utc:
-            self._pending[symbol] = pending
+            self._pending[pending_key] = pending
 
     def pending_symbols(self) -> list[str]:
-        return sorted(self._pending)
+        return sorted({state.symbol for state in self._pending.values()})
 
     def pending_state(self, symbol: str) -> dict[str, Any] | None:
-        state = self._pending.get(symbol.upper())
+        state = self._latest_pending_for_symbol(symbol)
         if state is None:
             return None
         return {
@@ -282,7 +284,42 @@ class SignalBlockFinalizer:
             "pending_decision_id": state.pending_decision_id,
             "raw_direction": state.payload.get("raw_direction"),
             "candidate_direction": state.payload.get("candidate_direction"),
+            "lifecycle_status": state.payload.get("lifecycle_status"),
         }
+
+    def _latest_pending_for_symbol(self, symbol: str) -> PendingDecisionState | None:
+        normalized = symbol.upper()
+        candidates = [state for state in self._pending.values() if state.symbol == normalized]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda item: item.created_utc)
+
+    def _drop_symbol_pending(self, symbol: str) -> None:
+        normalized = symbol.upper()
+        for pending_key, state in list(self._pending.items()):
+            if state.symbol == normalized:
+                self._pending.pop(pending_key, None)
+
+    def _annotate_conflict_state(self, pending: PendingDecisionState) -> None:
+        pending_direction = _candidate_direction(pending.payload)
+        if pending_direction not in {"BUY", "SELL"}:
+            return
+        for current in self._pending.values():
+            if current.symbol != pending.symbol:
+                continue
+            current_direction = _candidate_direction(current.payload)
+            if current_direction not in {"BUY", "SELL"} or current_direction == pending_direction:
+                continue
+            pending.payload.update(
+                {
+                    "lifecycle_status": "CONFLICT_PENDING_CONFIRMATION",
+                    "conflict_pending_confirmation": True,
+                    "conflict_with_pending_decision_id": current.pending_decision_id,
+                    "conflict_with_direction": current_direction,
+                    "conflict_resolution_policy": "RESOLVE_ON_NEXT_M15_OR_TTL",
+                }
+            )
+            return
 
     def finalize(
         self,
@@ -295,7 +332,8 @@ class SignalBlockFinalizer:
             return []
         now_utc = _coerce_datetime(now) or datetime.now(UTC)
         outputs: list[dict[str, Any]] = []
-        for symbol, watch in list(self._pending.items()):
+        for pending_key, watch in list(self._pending.items()):
+            symbol = watch.symbol
             activity = _activity_for_symbol(report, symbol)
             block_end = _coerce_datetime((activity or {}).get("latest_event_utc"))
             block_end = block_end or _coerce_datetime((activity or {}).get("latest_block_end_utc"))
@@ -335,7 +373,7 @@ class SignalBlockFinalizer:
                     decision_update_trigger="WATCH_EXPIRY",
                 )
                 outputs.append(update)
-                self._pending.pop(symbol, None)
+                self._pending.pop(pending_key, None)
                 continue
             promoted = self._promote(watch, market, decision) if decision.is_confirmed else None
             if promoted is not None and _is_final_execution(promoted):
@@ -350,7 +388,7 @@ class SignalBlockFinalizer:
                         decision_update_trigger=trigger,
                     )
                 )
-                self._pending.pop(symbol, None)
+                self._pending.pop(pending_key, None)
                 continue
             if self._is_expired(watch, age_seconds) and decision.is_confirmed:
                 update = self._expired_update(
@@ -366,7 +404,7 @@ class SignalBlockFinalizer:
                     "direction confirmation existed but structure-aware tradeplan remained incomplete."
                 )
                 outputs.append(update)
-                self._pending.pop(symbol, None)
+                self._pending.pop(pending_key, None)
                 continue
 
             update = self._decision_update(
