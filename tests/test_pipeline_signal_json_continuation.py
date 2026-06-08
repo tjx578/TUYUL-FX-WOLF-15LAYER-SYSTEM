@@ -191,6 +191,92 @@ def test_pipeline_logs_generic_microboost_watch_as_signal_watch_json(caplog):
     assert '"signal_family":"MICROBOOST_WATCH"' in caplog.text
     assert verdict["microboost_watch_entry"]["status"] == "MICROBOOST_WATCH"
     assert verdict["microboost_watch_entry"]["signal_json_emit_result"] is True
+    assert verdict["microboost_watch_entry"]["lifecycle_track"] is True
+    assert verdict["microboost_watch_entry"]["terminal_required"] is True
+    assert verdict["microboost_watch_entry"]["pending_decision_id"]
+
+
+def test_pipeline_tracks_official_watch_only_after_successful_emit():
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    emitted: list[dict] = []
+    pipeline._emit_signal_json_payload = lambda payload: emitted.append(payload) or True
+
+    class _Tracker:
+        def __init__(self) -> None:
+            self.tracked: list[dict] = []
+
+        def track(self, payload: dict) -> None:
+            self.tracked.append(payload)
+
+    tracker = _Tracker()
+    cast(Any, pipeline)._signal_block_finalizer = tracker
+    report = {
+        "microboost_watch_entry": {
+            "symbol": "CADJPY",
+            "cluster_id": "CADJPY_20260518T133000Z",
+            "signal_family": "MICROBOOST_WATCH",
+            "status": "MICROBOOST_WATCH",
+            "candidate_direction": "BUY",
+            "watch_direction": "BUY",
+            "final_direction": "WAIT",
+            "signal_valid_time_utc": "2026-05-18T13:32:29+00:00",
+            "signal_valid_price": 115.5235,
+            "entry_reference_price": 115.5235,
+            "entry_zone": [115.5, 115.5235],
+            "signal_quality": "WATCH_ONLY",
+            "source_clean_block_confirmed": True,
+            "valid_for_execution": False,
+        }
+    }
+    verdict: dict = {}
+
+    pipeline._apply_microboost_watch_entry_report(l12_verdict=verdict, report=report)
+
+    assert emitted
+    assert emitted[0]["lifecycle_track"] is True
+    assert tracker.tracked == [verdict["microboost_watch_entry"]]
+
+
+def test_pipeline_does_not_track_watch_when_emit_fails():
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._emit_signal_json_payload = lambda payload: False
+
+    class _Tracker:
+        def __init__(self) -> None:
+            self.tracked: list[dict] = []
+
+        def track(self, payload: dict) -> None:
+            self.tracked.append(payload)
+
+    tracker = _Tracker()
+    cast(Any, pipeline)._signal_block_finalizer = tracker
+    report = {
+        "microboost_watch_entry": {
+            "symbol": "CADJPY",
+            "cluster_id": "CADJPY_20260518T133000Z",
+            "signal_family": "MICROBOOST_WATCH",
+            "status": "MICROBOOST_WATCH",
+            "candidate_direction": "BUY",
+            "watch_direction": "BUY",
+            "final_direction": "WAIT",
+            "signal_valid_time_utc": "2026-05-18T13:32:29+00:00",
+            "signal_valid_price": 115.5235,
+            "entry_reference_price": 115.5235,
+            "entry_zone": [115.5, 115.5235],
+            "signal_quality": "WATCH_ONLY",
+            "source_clean_block_confirmed": True,
+            "valid_for_execution": False,
+        }
+    }
+    verdict: dict = {}
+
+    pipeline._apply_microboost_watch_entry_report(l12_verdict=verdict, report=report)
+
+    assert verdict["microboost_watch_entry"]["signal_json_emit_result"] is False
+    assert verdict["microboost_watch_entry"]["lifecycle_track"] is True
+    assert tracker.tracked == []
 
 
 def test_pipeline_records_counter_entry_emit_result():
