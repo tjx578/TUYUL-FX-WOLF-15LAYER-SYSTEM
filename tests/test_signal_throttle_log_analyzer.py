@@ -59,6 +59,29 @@ def test_parse_signal_throttle_rows_extracts_allowed_and_throttled():
     assert events[0].effective_ticks == 3
 
 
+def test_parse_signal_throttle_check_as_pressure_canary():
+    event = parse_engine_log_event(
+        {
+            "timestamp": "2026-06-08T08:49:17Z",
+            "severity": "info",
+            "message": (
+                "2026-06-08 08:43:32 | WARNING | pipeline - "
+                "event=signal_throttle_check symbol=AUDUSD authority=SIGNAL_THROTTLE "
+                "verdict_stream=post_l12_pre_v11 verdict=NO_TRADE direction=BUY "
+                "status=skipped reason=non_execute_verdict source_verdict=NO_TRADE"
+            ),
+        }
+    )
+
+    assert event is not None
+    assert event.symbol == "AUDUSD"
+    assert event.event_type == "PRESSURE_CANARY"
+    assert event.verdict == "NO_TRADE"
+    assert event.direction == "BUY"
+    assert event.effective_action == "OBSERVE"
+    assert event.is_downgraded is False
+
+
 def test_parse_downgraded_hold_preserves_raw_verdict_and_effective_action():
     event = parse_engine_log_event(
         {
