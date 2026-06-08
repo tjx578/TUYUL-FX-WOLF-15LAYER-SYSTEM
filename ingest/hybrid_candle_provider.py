@@ -5,8 +5,9 @@ only as backups when Finnhub fails, is rate-limited, or returns no usable live
 data.  The order can still be overridden with
 ``WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS`` for emergency provider isolation.
 
-Repair calls deliberately use live provider calls only so an old Redis cache is
-not rewritten as fresh data.
+Repair calls prefer live provider data, then stale cache in degraded mode so
+analysis can keep its last-known context when all upstream providers are
+temporarily exhausted.
 """
 
 from __future__ import annotations
@@ -18,8 +19,8 @@ from typing import Any
 
 from loguru import logger
 
-from ingest.fallback_provider import FallbackCandleProvider
-from ingest.finnhub_candles import FinnhubCandleFetcher
+from .fallback_provider import FallbackCandleProvider
+from .finnhub_candles import FinnhubCandleFetcher
 
 _DEFAULT_SUBSTITUTE_FIRST_SYMBOLS = frozenset()
 _REPAIR_SUBSTITUTE_FIRST_ENV = "WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS"
@@ -169,7 +170,7 @@ class HybridCandleProvider:
         reason: str,
     ) -> HybridCandleFetchResult:
         try:
-            candles = await self._fallback.fetch(symbol, timeframe, bars, allow_stale_cache=False)
+            candles = await self._fallback.fetch(symbol, timeframe, bars, allow_stale_cache=True)
             if candles:
                 return HybridCandleFetchResult(
                     candles=candles,
