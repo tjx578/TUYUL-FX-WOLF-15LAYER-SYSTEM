@@ -81,6 +81,41 @@ def _resistance_context(**overrides):
     return MarketContext(**payload)
 
 
+def test_generic_microboost_watch_is_not_tracked_for_finalization():
+    finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
+
+    finalizer.track(
+        {
+            "symbol": "CADJPY",
+            "cluster_id": "CADJPY_20260608T033000Z",
+            "status": "MICROBOOST_WATCH",
+            "signal_family": "MICROBOOST_WATCH",
+            "raw_direction": "BUY",
+            "candidate_direction": "BUY",
+            "watch_direction": "BUY",
+            "validated_direction": None,
+            "final_direction": "WAIT",
+            "action": "WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+            "signal_valid_time_utc": "2026-06-08T03:32:29+00:00",
+            "signal_valid_price": 115.5235,
+            "entry_reference_price": 115.5235,
+            "entry_zone": [115.5, 115.5235],
+            "market_context_applied": True,
+            "valid_for_execution": False,
+        }
+    )
+
+    assert finalizer.pending_symbols() == []
+    assert (
+        finalizer.finalize(
+            report=_report(),
+            market_contexts={},
+            now=datetime(2026, 6, 8, 3, 35, 0, tzinfo=UTC),
+        )
+        == []
+    )
+
+
 def test_idle_resistance_watch_emits_decision_update_when_support_ladder_missing():
     finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
     finalizer.track(_watch())
