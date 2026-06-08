@@ -5,24 +5,27 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC, datetime
+from importlib import import_module
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 
+def _repo_attr(module_name: str, attr_name: str) -> Any:
+    return getattr(import_module(module_name), attr_name)
+
+
 @pytest.fixture(autouse=True)
 def _reset_singletons():
     """Reset singletons and per-symbol tick tracking before each test."""
-    from context.live_context_bus import LiveContextBus
-
+    LiveContextBus = _repo_attr("context.live_context_bus", "LiveContextBus")
     LiveContextBus.reset_singleton()
 
     # Seed _pair_last_tick_ts so that silence detector treats symbols as
     # recently active.  Tests that need specific silence behaviour can
     # override this via an explicit patch.
-    from ingest.dependencies import _pair_last_tick_ts
-
+    _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
     _pair_last_tick_ts.clear()
     yield
     _pair_last_tick_ts.clear()
@@ -49,7 +52,7 @@ class TestRestPollFallback:
     async def test_does_not_poll_when_ws_connected(self):
         """When WS is connected and all pairs recently ticked, RestPollFallback should idle."""
         # Mark EURUSD as recently active so silence detector does not trigger
-        from ingest.dependencies import _pair_last_tick_ts
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         _pair_last_tick_ts["EURUSD"] = time.time()
 
@@ -60,7 +63,7 @@ class TestRestPollFallback:
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=[])
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             ws_connected = True
             poller = RestPollFallback(
@@ -101,7 +104,7 @@ class TestRestPollFallback:
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=m15_candles)
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=lambda: False,  # WS always disconnected
@@ -127,7 +130,7 @@ class TestRestPollFallback:
         ws_connected = False
 
         # Seed so silence detection does not re-trigger after reconnect
-        from ingest.dependencies import _pair_last_tick_ts
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         _pair_last_tick_ts["EURUSD"] = time.time()
 
@@ -148,7 +151,7 @@ class TestRestPollFallback:
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=[])
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=lambda: ws_connected,
@@ -184,7 +187,7 @@ class TestRestPollFallback:
             return asyncio.get_event_loop().time() >= reconnect_at
 
         # Mark EURUSD as recently active so post-reconnect silence check is inert
-        from ingest.dependencies import _pair_last_tick_ts
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         _pair_last_tick_ts["EURUSD"] = time.time()
 
@@ -205,7 +208,7 @@ class TestRestPollFallback:
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=[])
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=_ws_connected,
@@ -255,7 +258,7 @@ class TestRestPollFallback:
             mock_fetcher.fetch = AsyncMock(side_effect=_fetch_side_effect)
             mock_fetcher.aggregate_h4 = MagicMock(return_value=[])
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=lambda: False,
@@ -277,7 +280,7 @@ class TestRestPollFallback:
     @pytest.mark.asyncio
     async def test_fetch_error_does_not_crash_loop(self):
         """Fetch errors should be logged but not kill the polling loop."""
-        from ingest.finnhub_candles import FinnhubCandleError
+        FinnhubCandleError = _repo_attr("ingest.finnhub_candles", "FinnhubCandleError")
 
         call_count = 0
 
@@ -306,7 +309,7 @@ class TestRestPollFallback:
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(side_effect=_failing_fetch)
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=lambda: False,
@@ -345,7 +348,7 @@ class TestNormalizeCandles:
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"),
             patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
         ):
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             return RestPollFallback(ws_connected_fn=lambda: True, symbols=["EURUSD"])
 
@@ -407,7 +410,7 @@ class TestPushCandlesToRedis:
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"),
             patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
         ):
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             return RestPollFallback(
                 ws_connected_fn=lambda: True,
@@ -482,7 +485,7 @@ class TestPushCandlesToRedis:
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"),
             patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
         ):
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=lambda: True,
@@ -514,7 +517,7 @@ class TestPushCandlesToRedis:
             mock_fetcher.fetch = AsyncMock(return_value=raw_candles)
             mock_fetcher.aggregate_h4 = MagicMock(return_value=[])
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=lambda: True,
@@ -548,7 +551,7 @@ class TestPushCandlesToRedis:
             mock_fallback.return_value.available_providers = ["twelve_data"]
             mock_fallback.return_value.fetch = AsyncMock(return_value=fallback_candles)
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(ws_connected_fn=lambda: False, symbols=["EURUSD"])
             poller._refresh_h1 = False
@@ -561,8 +564,37 @@ class TestPushCandlesToRedis:
         poller._push_candles_to_redis.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_logs_skip_reason_summary_for_duplicate_batch(self):
-        """All-skipped warning should surface duplicate-open-time as the skip reason."""
+    async def test_suspended_finnhub_key_without_substitute_enters_cooldown_skip(self):
+        """Single-key cooldown without substitutes should not warn/poll every symbol."""
+        with (
+            patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as mock_finnhub,
+            patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
+            patch("ingest.finnhub_key_manager.finnhub_keys") as mock_keys,
+            patch("ingest.fallback_provider.FallbackCandleProvider") as mock_fallback,
+            patch("ingest.rest_poll_fallback.logger") as mock_logger,
+        ):
+            mock_keys.status.return_value = [{"suspended": True, "cooldown_remaining_sec": 120.0}]
+            mock_fallback.return_value.available_providers = []
+
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
+
+            poller = RestPollFallback(ws_connected_fn=lambda: False, symbols=["EURUSD", "GBPUSD"])
+            poller._refresh_h1 = False
+            poller._silent_refresh_htf = False
+            poller._push_candles_to_redis = AsyncMock()
+
+            await poller._poll_symbol("EURUSD")
+            await poller._poll_symbol("GBPUSD")
+
+        mock_finnhub.return_value.fetch.assert_not_called()
+        poller._push_candles_to_redis.assert_not_awaited()
+        assert mock_logger.warning.call_count == 1
+        assert "entering degraded cooldown skip" in mock_logger.warning.call_args.args[0]
+        mock_logger.debug.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_duplicate_batch_refreshes_latest_candle_heartbeat_without_warning(self):
+        """All-duplicate batches are heartbeat-success, not ingest stuck failures."""
         redis_mock = AsyncMock()
         poller = self._make_poller_with_redis(redis_mock)
         candles = [
@@ -578,14 +610,19 @@ class TestPushCandlesToRedis:
             await poller._push_candles_to_redis(candles)
 
         redis_mock.rpush.assert_not_called()
-        message_args = mock_logger.warning.call_args.args
+        redis_mock.hset.assert_awaited_once()
+        hset_call = redis_mock.hset.await_args
+        assert hset_call.args[0] == "wolf15:candle:EURUSD:M15"
+        assert hset_call.kwargs["mapping"]["heartbeat_reason"] == "duplicate_open_time"
+        mock_logger.warning.assert_not_called()
+        message_args = mock_logger.info.call_args.args
         assert message_args[0] == (
-            "[RestPoll] 0/{} candles written — all skipped! symbol={} timeframe={} reasons={} sample={} first_keys={}"
+            "[RestPoll] 0/{} new candles — duplicate_open_time heartbeat refreshed={} symbol={} timeframe={} sample={}"
         )
         assert message_args[1] == 2
-        assert message_args[2] == "EURUSD"
-        assert message_args[3] == "M15"
-        assert message_args[4] == {"duplicate_open_time": 2}
+        assert message_args[2] == 1
+        assert message_args[3] == "EURUSD"
+        assert message_args[4] == "M15"
         assert message_args[5][0]["reason"] == "duplicate_open_time"
 
     @pytest.mark.asyncio
@@ -619,7 +656,7 @@ class TestGetSilentPairs:
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"),
             patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
         ):
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             return RestPollFallback(
                 ws_connected_fn=lambda: True,
@@ -628,7 +665,7 @@ class TestGetSilentPairs:
 
     def test_all_symbols_silent_when_never_ticked(self):
         """All symbols should be silent if they have never received a WS tick."""
-        from ingest.dependencies import _pair_last_tick_ts
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         _pair_last_tick_ts.clear()
         poller = self._make_poller()
@@ -637,7 +674,7 @@ class TestGetSilentPairs:
 
     def test_recently_ticked_symbol_not_silent(self):
         """A symbol that ticked recently should not appear in silent list."""
-        from ingest.dependencies import _pair_last_tick_ts
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         _pair_last_tick_ts.clear()
         _pair_last_tick_ts["EURUSD"] = time.time()  # just ticked
@@ -650,7 +687,8 @@ class TestGetSilentPairs:
 
     def test_stale_tick_symbol_is_silent(self):
         """A symbol whose last tick is older than the threshold should be silent."""
-        from ingest.dependencies import PAIR_WS_SILENCE_THRESHOLD_S, _pair_last_tick_ts
+        PAIR_WS_SILENCE_THRESHOLD_S = _repo_attr("ingest.dependencies", "PAIR_WS_SILENCE_THRESHOLD_S")
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         _pair_last_tick_ts.clear()
         # Simulate a tick that happened beyond the threshold
@@ -662,7 +700,7 @@ class TestGetSilentPairs:
 
     def test_no_silent_pairs_when_all_recently_ticked(self):
         """No pairs should be silent when all have received recent ticks."""
-        from ingest.dependencies import _pair_last_tick_ts
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         now = time.time()
         _pair_last_tick_ts["EURUSD"] = now
@@ -679,7 +717,8 @@ class TestHybridSilenceMode:
     @pytest.mark.asyncio
     async def test_polls_silent_pairs_when_ws_connected(self):
         """When WS is up but specific pairs are silent, only those pairs should be polled."""
-        from ingest.dependencies import PAIR_WS_SILENCE_THRESHOLD_S, _pair_last_tick_ts
+        PAIR_WS_SILENCE_THRESHOLD_S = _repo_attr("ingest.dependencies", "PAIR_WS_SILENCE_THRESHOLD_S")
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         # EURUSD recently ticked, GBPUSD never ticked (silent — timestamp far in the past)
         _pair_last_tick_ts["EURUSD"] = time.time()
@@ -705,7 +744,7 @@ class TestHybridSilenceMode:
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=[])
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             original_poll_symbol = RestPollFallback._poll_symbol
 
@@ -733,7 +772,7 @@ class TestHybridSilenceMode:
     @pytest.mark.asyncio
     async def test_does_not_poll_when_forex_market_closed(self):
         """Silent pairs should not be polled when forex market is closed."""
-        from ingest.dependencies import _pair_last_tick_ts
+        _pair_last_tick_ts = _repo_attr("ingest.dependencies", "_pair_last_tick_ts")
 
         _pair_last_tick_ts.clear()  # all symbols silent
 
@@ -755,7 +794,7 @@ class TestHybridSilenceMode:
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=[])
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=lambda: True,
@@ -792,7 +831,7 @@ class TestHybridSilenceMode:
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=raw_candles)
 
-            from ingest.rest_poll_fallback import RestPollFallback
+            RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
             poller = RestPollFallback(
                 ws_connected_fn=lambda: True,
@@ -813,7 +852,7 @@ class TestFinnhubWebSocketIsConnected:
 
     def _make_ws(self):
         """Helper: create a FinnhubWebSocket with key manager mocked."""
-        from ingest.finnhub_ws import FinnhubWebSocket
+        FinnhubWebSocket = _repo_attr("ingest.finnhub_ws", "FinnhubWebSocket")
 
         mock_keys = MagicMock()
         mock_keys.current_key.return_value = "test_key"
@@ -871,7 +910,7 @@ class TestIsForexMarketOpen:
     def test_market_hours(self, dow: int, hour: int, expected: bool):
         from datetime import datetime
 
-        from ingest.finnhub_ws import is_forex_market_open
+        is_forex_market_open = _repo_attr("ingest.finnhub_ws", "is_forex_market_open")
 
         # Build a datetime for the given weekday/hour.
         # 2026-01-05 is a Monday (weekday=0).
@@ -879,3 +918,4 @@ class TestIsForexMarketOpen:
         dt = base_monday.replace(day=5 + dow, hour=hour, minute=0, second=0)
         assert dt.weekday() == dow
         assert is_forex_market_open(dt) is expected
+
