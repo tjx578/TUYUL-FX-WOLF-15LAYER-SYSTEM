@@ -22,7 +22,7 @@ import logging
 import time
 from typing import Any
 
-from redis.asyncio import Redis
+from ingest.redis_setup import RedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ DLQ_MAX_LEN = 50_000  # approx cap — Redis MAXLEN is approximate by default
 class TickDeadLetterQueue:
     """Async dead-letter queue backed by a Redis Stream."""
 
-    def __init__(self, redis: Redis, *, stream_key: str = DLQ_STREAM_KEY, maxlen: int = DLQ_MAX_LEN) -> None:
+    def __init__(self, redis: RedisClient, *, stream_key: str = DLQ_STREAM_KEY, maxlen: int = DLQ_MAX_LEN) -> None:
         super().__init__()
         self._redis = redis
         self._stream_key = stream_key
@@ -73,7 +73,7 @@ class TickDeadLetterQueue:
         try:
             msg_id: bytes | str = await self._redis.xadd(
                 self._stream_key,
-                payload,  # type: ignore[arg-type]
+                payload,
                 maxlen=self._maxlen,
                 approximate=True,
             )
@@ -126,7 +126,7 @@ class TickDeadLetterQueue:
 _dlq_instance: TickDeadLetterQueue | None = None
 
 
-def init_dlq(redis: Redis) -> TickDeadLetterQueue:
+def init_dlq(redis: RedisClient) -> TickDeadLetterQueue:
     """Initialise and return the global DLQ singleton."""
     global _dlq_instance
     _dlq_instance = TickDeadLetterQueue(redis)
