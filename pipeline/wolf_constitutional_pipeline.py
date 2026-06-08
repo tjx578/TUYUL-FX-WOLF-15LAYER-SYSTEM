@@ -3958,6 +3958,21 @@ class WolfConstitutionalPipeline:
         source_text = str(source_verdict or "").strip().upper()
         direction = direction or self._direction_hint(source_text)
         if direction not in {"BUY", "SELL"}:
+            if reason == "non_execute_verdict":
+                self._signal_throttle_live_analyzer.record_pressure_canary(
+                    symbol=symbol,
+                    verdict=l12_verdict.get("verdict"),
+                    direction=None,
+                    reason=reason,
+                )
+            return
+        if reason == "non_execute_verdict" and not source_text.startswith("EXECUTE"):
+            self._signal_throttle_live_analyzer.record_pressure_canary(
+                symbol=symbol,
+                verdict=l12_verdict.get("verdict"),
+                direction=direction,
+                reason=reason,
+            )
             return
         if not source_text.startswith("EXECUTE"):
             source_text = f"EXECUTE_{direction}"
@@ -4078,6 +4093,104 @@ class WolfConstitutionalPipeline:
         report["signal_block_finalizer_updates"] = applied_updates
         l12_verdict["signal_block_finalizer_updates"] = applied_updates
 
+    def _apply_no_trade_pressure_decision_update(
+        self,
+        *,
+        symbol: str,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+        market_contexts: dict[str, MarketContext],
+    ) -> None:
+        if os.getenv("SIGNAL_THROTTLE_NO_TRADE_DECISION_UPDATE_ENABLED", "true").strip().lower() != "true":
+            return
+        verdict = str(l12_verdict.get("verdict") or "").strip().upper()
+        if verdict.startswith("EXECUTE"):
+            return
+        pressure_seen = bool((report.get("counts") or {}).get("total_events"))
+        if not pressure_seen:
+            return
+        payload = self._no_trade_pressure_decision_update_payload(
+            symbol=symbol,
+            l12_verdict=l12_verdict,
+            report=report,
+            market_contexts=market_contexts,
+        )
+        if payload is None:
+            return
+        payload["signal_json_emit_result"] = self._emit_signal_json_payload(payload)
+        report["no_trade_pressure_decision_update"] = payload
+        l12_verdict["no_trade_pressure_decision_update"] = payload
+
+    def _no_trade_pressure_decision_update_payload(
+        self,
+        *,
+        symbol: str,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+        market_contexts: dict[str, MarketContext],
+    ) -> dict[str, Any] | None:
+        context = market_contexts.get(symbol.upper())
+        price = None
+        if context is not None:
+            price = (
+                context.price_at_signal_end
+                or context.price_at_signal_start
+                or context.price_at_5m_confirm
+                or context.bid
+                or context.ask
+            )
+        price = self._coerce_positive_float(price)
+        if price is None:
+            return None
+        direction = self._direction_hint(l12_verdict.get("direction"))
+        symbol_activity = report.get("symbol_activity") if isinstance(report.get("symbol_activity"), dict) else {}
+        activity = symbol_activity.get(symbol.upper()) if isinstance(symbol_activity, dict) else None
+        activity = activity if isinstance(activity, dict) else {}
+        event_time = str(activity.get("latest_event_utc") or datetime.now(UTC).isoformat())
+        cluster_stamp = event_time.replace(":", "").replace("-", "").replace("+", "Z")
+        cluster_id = f"{symbol.upper()}_{cluster_stamp}_NO_TRADE"
+        microboost_summary = report.get("microboost_summary") if isinstance(report.get("microboost_summary"), dict) else {}
+        microboost_detected = bool((microboost_summary or {}).get("count_total"))
+        return {
+            "event": "signal_decision_update_json",
+            "symbol": symbol.upper(),
+            "cluster_id": cluster_id,
+            "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+            "status": "NO_TRADE_REASONED",
+            "previous_status": "PRESSURE_SEEN",
+            "new_status": "NO_TRADE_REASONED",
+            "raw_direction": direction,
+            "candidate_direction": direction,
+            "validated_direction": None,
+            "watch_direction": direction,
+            "final_direction": "WAIT",
+            "direction_validation_status": "NO_TRADE_PRESSURE_TELEMETRY_ONLY",
+            "action": "WAIT_FOR_EXECUTION_QUALITY",
+            "next_action": "WAIT_FOR_EXECUTION_QUALITY",
+            "signal_valid_time_utc": event_time,
+            "signal_valid_price": price,
+            "entry_reference_price": price,
+            "entry_zone": [price, price],
+            "rr_status": "UNVALIDATED",
+            "market_context_applied": context is not None,
+            "valid_for_execution": False,
+            "signal_valid": False,
+            "analysis_valid": True,
+            "direction_valid": False,
+            "tradeplan_valid": False,
+            "execution_valid_now": False,
+            "execution_status": "NO_TRADE_REASONED",
+            "terminal_status": "NO_TRADE_REASONED",
+            "decision_update_trigger": "NON_EXECUTE_PRESSURE_CANARY",
+            "pending_decision_id": f"{cluster_id}_DECISION",
+            "pressure_seen": True,
+            "microboost_detected": microboost_detected,
+            "reason": (
+                "Pressure seen but execution verdict remains NO_TRADE; "
+                "no order is authorized from pressure telemetry alone."
+            ),
+        }
+
     def _emit_signal_json_payload(self, payload: dict[str, Any]) -> bool:
         gated_payload = self._signal_json_gate_adapter.apply(payload)
         signal_event = build_signal_json_event(gated_payload)
@@ -4116,6 +4229,14 @@ class WolfConstitutionalPipeline:
         )
         report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
         self._emit_microboost_intel_if_new(report)
+        self._apply_no_trade_pressure_decision_update(
+            symbol=symbol,
+            l12_verdict=shadow_verdict,
+            report=report,
+            market_contexts=market_contexts,
+        )
+        if "no_trade_pressure_decision_update" in shadow_verdict:
+            l12_verdict["no_trade_pressure_decision_update"] = shadow_verdict["no_trade_pressure_decision_update"]
         for key in ("microboost_continuation_entry", "microboost_counter_entry", "microboost_watch_entry"):
             candidate = report.get(key)
             if not isinstance(candidate, dict):
