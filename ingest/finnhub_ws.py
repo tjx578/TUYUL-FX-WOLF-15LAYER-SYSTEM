@@ -15,10 +15,10 @@ from typing import Any
 import websockets
 import websockets.asyncio.client
 from prometheus_client import Counter, Gauge
-from redis.asyncio import Redis
 from websockets.asyncio.client import connect as _ws_connect
 
 from core.redis_keys import WS_CONNECTED_AT
+from ingest.redis_setup import RedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ class FinnhubWebSocket:
 
     def __init__(
         self,
-        redis: Redis,
+        redis: RedisClient,
         on_message: Callable[[dict[str, Any]], Awaitable[None]],
         symbols: list[str],
         *,
