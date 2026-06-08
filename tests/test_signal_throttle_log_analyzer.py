@@ -476,6 +476,7 @@ def test_clean_throttle_block_then_resistance_microboost_creates_watch_before_an
     assert watch["pattern_match_score"] >= watch["pattern_score"]
     assert watch["source_clean_block_confirmed"] is True
     assert watch["microboost_validation_status"] == "PASSED"
+    assert report["microboost_watch_entry"] is None
 
 
 def test_live_analyzer_same_second_batch_not_hard_interrupt():
@@ -510,7 +511,8 @@ def test_microboost_summary_classifies_dense_unpriced_cluster():
     for index in range(30):
         analyzer.record_allowed(symbol="NZDJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5))
 
-    summary = analyzer.snapshot()["microboost_summary"]
+    report = analyzer.snapshot()
+    summary = report["microboost_summary"]
 
     assert summary["enabled"] is True
     assert summary["count_total"] == 1
@@ -522,6 +524,7 @@ def test_microboost_summary_classifies_dense_unpriced_cluster():
     assert summary["latest"]["requires_market_context"] is True
     assert summary["latest"]["action"] == "VALIDATE_PRICE_THEME_STRUCTURE"
     assert summary["reason"] == "dense_pressure_seen_but_late_pressure_requires_price_context"
+    assert report["microboost_watch_entry"] is None
 
 
 def test_microboost_counts_suppressed_logs_as_effective_ticks():
