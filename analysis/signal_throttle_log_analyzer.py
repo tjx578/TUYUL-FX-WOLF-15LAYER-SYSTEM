@@ -21,12 +21,12 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
-from analysis.market_context_validator import missing_market_context_result
-from analysis.microboost_continuation_entry import MicroboostContinuationEngine
-from analysis.microboost_counter_entry import MicroboostCounterEntryEngine
-from analysis.microboost_detector import build_microboost_summary
-from analysis.signal_throttle_pattern_detector import classify_pressure_block
-from schemas.direction import normalize_direction
+from ..schemas.direction import normalize_direction
+from .market_context_validator import missing_market_context_result
+from .microboost_continuation_entry import MicroboostContinuationEngine
+from .microboost_counter_entry import MicroboostCounterEntryEngine
+from .microboost_detector import build_microboost_summary
+from .signal_throttle_pattern_detector import classify_pressure_block
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -74,6 +74,11 @@ class SignalThrottleLogEvent:
     allowed_streak: int | None = None
     max_signals: int | None = None
     window_seconds: float | None = None
+    pressure_strength: str | None = None
+    pressure_source: str | None = None
+    eligible_for_pressure_block: bool | None = None
+    eligible_for_execution: bool | None = None
+    execution_block_reason: str | None = None
 
     @property
     def effective_ticks(self) -> int:
@@ -147,6 +152,12 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
     symbol = ""
     event_type = "UNKNOWN"
     verdict: str | None = None
+    direction: str | None = None
+    pressure_strength: str | None = None
+    pressure_source: str | None = "SignalThrottle"
+    eligible_for_pressure_block: bool | None = True
+    eligible_for_execution: bool | None = None
+    execution_block_reason: str | None = None
 
     throttled = _THROTTLED_RE.search(message)
     allowed = _ALLOWED_RE.search(message)
@@ -161,23 +172,32 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         effective_action = "OBSERVE"
         is_downgraded = False
         direction = normalize_direction(_extract_kv_text(message, "direction"), None)
+        pressure_strength = "CANARY"
+        pressure_source = "signal_throttle_check"
+        eligible_for_execution = False
+        execution_block_reason = _extract_kv_text(message, "reason") or "non_execute_verdict"
     elif downgraded:
         symbol = downgraded.group("symbol").upper()
         verdict = downgraded.group("verdict").upper()
         event_type = "DOWNGRADED_TO_HOLD"
         effective_action = "HOLD"
         is_downgraded = True
+        eligible_for_execution = False
+        execution_block_reason = "downgraded_to_hold"
     elif allowed:
         symbol = allowed.group("symbol").upper()
         verdict = allowed.group("verdict").upper()
         event_type = "ALLOWED"
         effective_action = "ALLOWED"
         is_downgraded = False
+        eligible_for_execution = bool(verdict and verdict.startswith("EXECUTE"))
     elif throttled:
         symbol = throttled.group("symbol").upper()
         event_type = "THROTTLED"
         effective_action = "HOLD"
         is_downgraded = False
+        eligible_for_execution = False
+        execution_block_reason = "signal_throttled"
     else:
         return None
 
@@ -203,6 +223,11 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         allowed_streak=state_fields.get("allowed_streak"),
         max_signals=state_fields.get("max_signals"),
         window_seconds=state_fields.get("window_seconds"),
+        pressure_strength=pressure_strength,
+        pressure_source=pressure_source,
+        eligible_for_pressure_block=eligible_for_pressure_block,
+        eligible_for_execution=eligible_for_execution,
+        execution_block_reason=execution_block_reason,
     )
 
 
@@ -584,6 +609,9 @@ class SignalThrottleLiveAnalyzer:
                 count=1,
                 remaining=None,
                 allowed_streak=1,
+                pressure_source="SignalThrottle",
+                eligible_for_pressure_block=True,
+                eligible_for_execution=True,
             )
         )
 
@@ -617,6 +645,10 @@ class SignalThrottleLiveAnalyzer:
                 remaining=remaining,
                 max_signals=max_signals,
                 window_seconds=window_seconds,
+                pressure_source="SignalThrottle",
+                eligible_for_pressure_block=True,
+                eligible_for_execution=False,
+                execution_block_reason="signal_throttled",
             )
         )
         if verdict:
@@ -640,6 +672,10 @@ class SignalThrottleLiveAnalyzer:
                     remaining=remaining,
                     max_signals=max_signals,
                     window_seconds=window_seconds,
+                    pressure_source="SignalThrottle",
+                    eligible_for_pressure_block=True,
+                    eligible_for_execution=False,
+                    execution_block_reason="signal_throttled",
                 )
             )
 
@@ -678,6 +714,10 @@ class SignalThrottleLiveAnalyzer:
                 raw_verdict=verdict_text if verdict_text != "UNKNOWN" else None,
                 effective_action="HOLD",
                 is_downgraded=True,
+                pressure_source="SignalThrottle",
+                eligible_for_pressure_block=True,
+                eligible_for_execution=False,
+                execution_block_reason=reason or "downgraded_to_hold",
             )
         )
 
@@ -712,6 +752,11 @@ class SignalThrottleLiveAnalyzer:
                 raw_verdict=verdict_text,
                 effective_action="OBSERVE",
                 is_downgraded=False,
+                pressure_strength="CANARY",
+                pressure_source="signal_throttle_check",
+                eligible_for_pressure_block=True,
+                eligible_for_execution=False,
+                execution_block_reason=reason or "non_execute_verdict",
             )
         )
 
