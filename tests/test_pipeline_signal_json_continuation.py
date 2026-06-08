@@ -126,6 +126,7 @@ def test_pipeline_emits_valid_continuation_payload_by_default():
 
     assert emitted
     assert emitted[0]["status"] == "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"
+    assert emitted[0]["signal_json_emit_result"] is True
     assert emitted[0]["rr_to_valid_target"] >= emitted[0]["min_rr_required"]
     assert report["microboost_continuation_entry"]["signal_id"]
 
@@ -188,6 +189,57 @@ def test_pipeline_logs_generic_microboost_watch_as_signal_watch_json(caplog):
     assert '"status":"MICROBOOST_WATCH"' in caplog.text
     assert '"signal_family":"MICROBOOST_WATCH"' in caplog.text
     assert verdict["microboost_watch_entry"]["status"] == "MICROBOOST_WATCH"
+    assert verdict["microboost_watch_entry"]["signal_json_emit_result"] is True
+
+
+def test_pipeline_records_counter_entry_emit_result():
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_lifecycle_manager = SignalLifecycleManager()
+    emitted: list[dict] = []
+    pipeline._emit_signal_json_payload = lambda payload: emitted.append(payload) or False
+
+    class _Tracker:
+        def __init__(self) -> None:
+            self.tracked: list[dict] = []
+
+        def track(self, payload: dict) -> None:
+            self.tracked.append(payload)
+
+    tracker = _Tracker()
+    cast(Any, pipeline)._signal_block_finalizer = tracker
+    report = {
+        "microboost_counter_entry": {
+            "symbol": "USDCAD",
+            "cluster_id": "USDCAD_20260521T030620Z",
+            "status": "SELL_ABSORPTION_WATCH",
+            "signal_family": "MICROBOOST_COUNTER_ENTRY",
+            "raw_direction": "BUY",
+            "candidate_direction": "SELL",
+            "validated_direction": None,
+            "watch_direction": "SELL",
+            "final_direction": "WAIT",
+            "action": "WAIT_M15_CLOSE_CONFIRMATION",
+            "signal_valid_time_utc": "2026-05-21T03:09:22+00:00",
+            "signal_valid_price": 1.37633,
+            "entry_reference_price": 1.37633,
+            "entry_zone": [1.37633, 1.37647],
+            "rr_status": "WATCH",
+            "market_context_applied": True,
+            "valid_for_execution": False,
+            "requires_m15_close": True,
+            "pending_decision_id": "USDCAD_20260521T030620Z_M15_DECISION",
+        }
+    }
+    verdict: dict = {}
+
+    pipeline._apply_microboost_counter_entry_report(l12_verdict=verdict, report=report)
+
+    assert emitted
+    assert report["microboost_counter_entry"]["signal_json_emit_result"] is False
+    assert verdict["microboost_counter_entry"]["signal_json_emit_result"] is False
+    assert verdict["final_direction"] == "WAIT"
+    assert verdict["direction_source"] == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
+    assert tracker.tracked[0]["status"] == "SELL_ABSORPTION_WATCH"
 
 
 def test_pipeline_logs_block_finalizer_update_as_signal_decision_update_json(caplog):
@@ -237,6 +289,7 @@ def test_pipeline_logs_block_finalizer_update_as_signal_decision_update_json(cap
     assert verdict["final_direction"] == "WAIT"
     assert verdict["direction_source"] == "SIGNAL_BLOCK_FINALIZER_DECISION_UPDATE"
     assert finalizer.tracked[0]["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
+    assert report["signal_block_finalizer_updates"][0]["signal_json_emit_result"] is True
 
 
 def test_pipeline_logs_block_finalizer_final_as_signal_json(caplog):
@@ -260,4 +313,5 @@ def test_pipeline_logs_block_finalizer_final_as_signal_json(caplog):
     assert verdict["final_direction"] == "SELL"
     assert verdict["direction_source"] == "SIGNAL_BLOCK_FINALIZER"
     assert report["signal_block_finalizer_updates"][0]["status"] == "SELL_TIMING_VALID"
+    assert report["signal_block_finalizer_updates"][0]["signal_json_emit_result"] is True
     assert finalizer.tracked[0]["status"] == "SELL_TIMING_VALID"
