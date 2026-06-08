@@ -300,15 +300,16 @@ def test_pipeline_logs_no_trade_pressure_as_decision_update_not_signal_json(capl
     pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
 
     report = {
-        "counts": {"total_events": 1},
+        "counts": {"total_events": 3, "pairs": {"USDCAD": 3}},
         "symbol_activity": {
             "USDCAD": {
                 "latest_event_utc": "2026-06-08T08:49:17+00:00",
+                "latest_block_effective_ticks": 3,
             }
         },
         "microboost_summary": {"count_total": 0},
     }
-    verdict = {"verdict": "NO_TRADE", "direction": "BUY"}
+    verdict: dict[str, Any] = {"verdict": "NO_TRADE", "direction": "BUY"}
     market_contexts = {
         "USDCAD": MarketContext(
             symbol="USDCAD",
@@ -332,6 +333,47 @@ def test_pipeline_logs_no_trade_pressure_as_decision_update_not_signal_json(capl
     assert '"valid_for_execution":false' in caplog.text
     assert verdict["no_trade_pressure_decision_update"]["terminal_status"] == "NO_TRADE_REASONED"
     assert verdict["no_trade_pressure_decision_update"]["signal_json_emit_result"] is True
+    assert verdict["no_trade_pressure_decision_update"]["pressure_event_count"] == 3
+    assert verdict["no_trade_pressure_decision_update"]["pressure_level"] == "PRESSURE_CANARY"
+    assert verdict["no_trade_pressure_decision_update"]["execution_block_reason"] == "NON_EXECUTE_VERDICT"
+
+
+def test_pipeline_suppresses_single_no_trade_pressure_canary(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
+
+    report = {
+        "counts": {"total_events": 1, "pairs": {"USDCAD": 1}},
+        "symbol_activity": {
+            "USDCAD": {
+                "latest_event_utc": "2026-06-08T08:49:17+00:00",
+                "latest_block_effective_ticks": 1,
+            }
+        },
+        "microboost_summary": {"count_total": 0},
+    }
+    verdict: dict[str, Any] = {"verdict": "NO_TRADE", "direction": "BUY"}
+    market_contexts = {
+        "USDCAD": MarketContext(
+            symbol="USDCAD",
+            raw_allowed_direction="BUY",
+            bid=1.3763,
+            ask=1.3765,
+            price_at_signal_end=1.3764,
+        )
+    }
+
+    pipeline._apply_no_trade_pressure_decision_update(
+        symbol="USDCAD",
+        l12_verdict=verdict,
+        report=report,
+        market_contexts=market_contexts,
+    )
+
+    assert "no_trade_pressure_decision_update" not in verdict
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
 def test_pipeline_logs_block_finalizer_final_as_signal_json(caplog):
