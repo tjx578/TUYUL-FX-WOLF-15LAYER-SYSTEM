@@ -21,7 +21,10 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
-from ..schemas.direction import normalize_direction
+try:
+    from ..schemas.direction import normalize_direction
+except ImportError:  # pragma: no cover - supports top-level ``analysis`` imports in tests/tools.
+    from schemas.direction import normalize_direction
 from .market_context_validator import missing_market_context_result
 from .microboost_continuation_entry import MicroboostContinuationEngine
 from .microboost_counter_entry import MicroboostCounterEntryEngine
