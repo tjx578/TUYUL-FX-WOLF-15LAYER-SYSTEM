@@ -3984,10 +3984,11 @@ class WolfConstitutionalPipeline:
         continuation["orchestration_status"] = "VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH"
         if self._signal_json_gate_adapter.emit_continuation:
             continuation = self._signal_lifecycle_manager.apply(continuation)
+        continuation["signal_json_emit_result"] = False
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
         if self._signal_json_gate_adapter.emit_continuation:
-            self._emit_signal_json_payload(continuation)
+            continuation["signal_json_emit_result"] = self._emit_signal_json_payload(continuation)
 
     def _apply_microboost_watch_entry_report(
         self,
@@ -4004,7 +4005,7 @@ class WolfConstitutionalPipeline:
         watch_entry = dict(watch_entry)
         report["microboost_watch_entry"] = watch_entry
         l12_verdict["microboost_watch_entry"] = watch_entry
-        self._emit_signal_json_payload(watch_entry)
+        watch_entry["signal_json_emit_result"] = self._emit_signal_json_payload(watch_entry)
 
     def _apply_microboost_counter_entry_report(
         self,
@@ -4040,7 +4041,7 @@ class WolfConstitutionalPipeline:
             l12_verdict["action"] = counter_entry.get("action")
             l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY_WATCH"
 
-        self._emit_signal_json_payload(counter_entry)
+        counter_entry["signal_json_emit_result"] = self._emit_signal_json_payload(counter_entry)
 
     def _apply_signal_block_finalizer(
         self,
@@ -4072,7 +4073,7 @@ class WolfConstitutionalPipeline:
                 l12_verdict["action"] = update.get("action")
                 l12_verdict["direction_source"] = "SIGNAL_BLOCK_FINALIZER_DECISION_UPDATE"
 
-            self._emit_signal_json_payload(update)
+            update["signal_json_emit_result"] = self._emit_signal_json_payload(update)
 
         report["signal_block_finalizer_updates"] = applied_updates
         l12_verdict["signal_block_finalizer_updates"] = applied_updates
