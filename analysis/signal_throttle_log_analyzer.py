@@ -286,6 +286,7 @@ def analyze_signal_throttle_events(
             ),
             "microboost_continuation_entry": None,
             "microboost_counter_entry": None,
+            "microboost_watch_entry": None,
             "signal_watch_gate": _empty_signal_watch_gate("NO_SIGNAL_THROTTLE_DATA"),
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "market_context_validation": missing_market_context_result("UNKNOWN").to_dict(),
@@ -389,6 +390,12 @@ def analyze_signal_throttle_events(
         signal_watch_gate,
     )
     microboost_counter_entry = _counter_entry_payload(microboost_summary, signal_watch_gate)
+    microboost_watch_entry = _microboost_watch_payload(
+        microboost_summary,
+        signal_watch_gate,
+        continuation_entry=microboost_continuation_entry,
+        counter_entry=microboost_counter_entry,
+    )
 
     return {
         "final_mode": final_mode,
@@ -418,6 +425,7 @@ def analyze_signal_throttle_events(
         "microboost_summary": microboost_summary,
         "microboost_continuation_entry": microboost_continuation_entry,
         "microboost_counter_entry": microboost_counter_entry,
+        "microboost_watch_entry": microboost_watch_entry,
         "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
         "event_counts": event_type_counts,
@@ -1224,6 +1232,91 @@ def _continuation_entry_payload(
     return payload
 
 
+def _microboost_watch_payload(
+    microboost_summary: dict[str, Any],
+    signal_watch_gate: dict[str, Any],
+    *,
+    continuation_entry: dict[str, Any] | None,
+    counter_entry: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    latest = microboost_summary.get("latest")
+    if not isinstance(latest, dict):
+        return None
+    if _has_emit_candidate(continuation_entry) or _has_emit_candidate(counter_entry):
+        return None
+
+    snapshot = latest.get("market_context_snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+    signal_price = _first_number(
+        snapshot.get("price_at_signal_end"),
+        snapshot.get("price_at_5m_confirm"),
+        snapshot.get("price_at_signal_start"),
+        snapshot.get("bid"),
+        snapshot.get("ask"),
+    )
+    if signal_price is None:
+        return None
+    start_price = _first_number(snapshot.get("price_at_signal_start"))
+    end_price = _first_number(snapshot.get("price_at_signal_end"))
+    entry_zone = sorted(
+        {
+            round(start_price if start_price is not None else signal_price, 5),
+            round(end_price if end_price is not None else signal_price, 5),
+            round(signal_price, 5),
+        }
+    )
+    direction = str(latest.get("direction") or "").upper()
+    candidate_direction = direction if direction in {"BUY", "SELL"} else None
+    signal_time = latest.get("end_utc") or latest.get("start_utc")
+
+    payload = {
+        "enabled": True,
+        "status": "MICROBOOST_WATCH",
+        "signal_family": "MICROBOOST_WATCH",
+        "cluster_id": latest.get("cluster_id"),
+        "symbol": str(latest.get("symbol") or "").upper(),
+        "raw_direction": candidate_direction,
+        "candidate_direction": candidate_direction,
+        "validated_direction": None,
+        "watch_direction": candidate_direction,
+        "final_direction": "WAIT",
+        "direction_status": "MICROBOOST_WAIT_STATE",
+        "direction_validation_status": "WATCH_ONLY_PENDING_CONFIRMATION",
+        "action": latest.get("action") or "WAIT_MARKET_CONTEXT_OR_STRUCTURE_CONFIRMATION",
+        "reason": latest.get("reason") or signal_watch_gate["reason"],
+        "signal_valid_time": signal_time,
+        "signal_valid_time_utc": signal_time,
+        "signal_valid_price": signal_price,
+        "entry_reference_price": signal_price,
+        "entry_zone": entry_zone or [signal_price],
+        "price_position": latest.get("price_position") or snapshot.get("price_position"),
+        "m15_phase": latest.get("m15_phase") or snapshot.get("m15_phase"),
+        "h1_phase": latest.get("h1_phase") or snapshot.get("h1_phase"),
+        "phase_unpriced": latest.get("phase_unpriced"),
+        "phase_priced": latest.get("phase_priced"),
+        "effective_ticks": latest.get("effective_tick_count") or latest.get("effective_ticks"),
+        "effective_density": latest.get("effective_density_per_minute") or latest.get("effective_density"),
+        "duration_minutes": latest.get("duration_minutes"),
+        "rr_status": "WATCH",
+        "market_context_applied": True,
+        "valid_for_execution": False,
+        "requires_market_context": bool(latest.get("requires_market_context", False)),
+        "confidence_bucket": "MICROBOOST_WATCH_ONLY",
+        "emit_reason": "MICROBOOST_WAIT_STATE",
+        "signal_quality": "WATCH_ONLY",
+        **_golden_pattern_fields(latest),
+        **_signal_watch_source_fields(signal_watch_gate, bool(signal_watch_gate.get("eligible"))),
+    }
+    latest["microboost_watch"] = payload
+    microboost_summary["watch_entry"] = payload
+    return payload
+
+
+def _has_emit_candidate(payload: dict[str, Any] | None) -> bool:
+    return isinstance(payload, dict) and str(payload.get("status") or "NONE") != "NONE"
+
+
 def _signal_watch_gate(
     candidate: dict[str, Any] | None,
     microboost_summary: dict[str, Any],
@@ -1363,6 +1456,17 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _first_number(*values: Any) -> float | None:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _data_quality_block(

@@ -4,6 +4,7 @@ import csv
 from datetime import UTC, datetime, timedelta
 
 from analysis.market_context_validator import MarketContext
+from analysis.signal_json_emitter import build_signal_json_event
 from analysis.signal_throttle_log_analyzer import (
     SignalThrottleLiveAnalyzer,
     SignalThrottleLogEvent,
@@ -530,8 +531,7 @@ def test_microboost_counts_suppressed_logs_as_effective_ticks():
             "timestamp": (base + timedelta(seconds=index * 30)).isoformat(),
             "severity": "error",
             "message": (
-                "[SignalThrottle] CADJPY THROTTLED - verdict EXECUTE_BUY "
-                "1 signals in last 300s (max 1) suppressed=2"
+                "[SignalThrottle] CADJPY THROTTLED - verdict EXECUTE_BUY 1 signals in last 300s (max 1) suppressed=2"
             ),
         }
         for index in range(4)
@@ -790,7 +790,9 @@ def test_microboost_buy_at_main_resistance_becomes_exhaustion_warning():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
     base = datetime(2026, 5, 8, 9, 9, 36, tzinfo=UTC)
     for index in range(29):
-        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32))
+        analyzer.record_allowed(
+            symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32)
+        )
 
     report = analyzer.snapshot(
         market_contexts={
@@ -877,7 +879,9 @@ def test_microboost_buy_at_main_support_becomes_bounce_candidate():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
     base = datetime(2026, 5, 8, 9, 9, 36, tzinfo=UTC)
     for index in range(29):
-        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32))
+        analyzer.record_allowed(
+            symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32)
+        )
 
     report = analyzer.snapshot(
         market_contexts={
@@ -911,7 +915,9 @@ def test_microboost_buy_pressure_inside_m15_bearish_pullback_waits_for_reclaim()
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
     base = datetime(2026, 5, 18, 13, 30, tzinfo=UTC)
     for index in range(29):
-        analyzer.record_allowed(symbol="CADJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32))
+        analyzer.record_allowed(
+            symbol="CADJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32)
+        )
 
     report = analyzer.snapshot(
         market_contexts={
@@ -936,6 +942,7 @@ def test_microboost_buy_pressure_inside_m15_bearish_pullback_waits_for_reclaim()
     )
     latest = report["microboost_summary"]["latest"]
     lifecycle = report["microboost_summary"]["microboost_lifecycle"]
+    watch = report["microboost_watch_entry"]
 
     assert report["microboost_summary"]["market_context_applied"] is True
     assert latest["phase_priced"] == "BULLISH_PULLBACK_MICROBOOST"
@@ -945,13 +952,21 @@ def test_microboost_buy_pressure_inside_m15_bearish_pullback_waits_for_reclaim()
     assert lifecycle["cluster_count"] == 1
     assert lifecycle["raw_rows"] == 29
     assert lifecycle["dedup_required"] is True
+    assert watch["status"] == "MICROBOOST_WATCH"
+    assert watch["final_direction"] == "WAIT"
+    assert watch["watch_direction"] == "BUY"
+    assert watch["market_context_applied"] is True
+    assert watch["valid_for_execution"] is False
+    assert build_signal_json_event(watch) is not None
 
 
 def test_microboost_context_without_price_position_is_not_marked_applied():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
     base = datetime(2026, 5, 18, 13, 30, tzinfo=UTC)
     for index in range(29):
-        analyzer.record_allowed(symbol="CADJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32))
+        analyzer.record_allowed(
+            symbol="CADJPY", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 5.32)
+        )
 
     report = analyzer.snapshot(
         market_contexts={
@@ -981,7 +996,9 @@ def test_microboost_counter_to_running_trend_is_pullback_until_structure_break()
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
     base = datetime(2026, 5, 8, 9, 9, 36, tzinfo=UTC)
     for index in range(29):
-        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_SELL", timestamp=base + timedelta(seconds=index * 5.32))
+        analyzer.record_allowed(
+            symbol="GBPCAD", verdict="EXECUTE_SELL", timestamp=base + timedelta(seconds=index * 5.32)
+        )
 
     report = analyzer.snapshot(
         market_contexts={

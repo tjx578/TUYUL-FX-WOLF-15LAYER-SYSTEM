@@ -34,9 +34,7 @@ TERMINAL_INACTIVE_SIGNAL_STATUSES = {
 }
 
 TERMINAL_SIGNAL_STATUSES = (
-    TERMINAL_EXECUTION_READY_STATUSES
-    | TERMINAL_VALID_SIGNAL_STATUSES
-    | TERMINAL_INACTIVE_SIGNAL_STATUSES
+    TERMINAL_EXECUTION_READY_STATUSES | TERMINAL_VALID_SIGNAL_STATUSES | TERMINAL_INACTIVE_SIGNAL_STATUSES
 )
 
 TERMINAL_SIGNAL_PUBLIC_FIELDS = {
@@ -55,6 +53,7 @@ TERMINAL_SIGNAL_PUBLIC_FIELDS = {
 
 EMITTABLE_SIGNAL_STATUSES = TERMINAL_SIGNAL_STATUSES | {
     "PAIR_SIGNAL_CANDIDATE",
+    "MICROBOOST_WATCH",
     "MICROBOOST_COUNTER_ENTRY_WATCH",
     "MICROBOOST_COUNTER_ENTRY_VALID",
     "NANO_ABSORPTION_SELL_WATCH",
@@ -124,6 +123,7 @@ CONDITIONAL_SIGNAL_STATUSES = {
 }
 
 WATCH_SIGNAL_STATUSES = {
+    "MICROBOOST_WATCH",
     "NANO_ABSORPTION_SELL_WATCH",
     "EARLY_SELL_WATCH",
     "SELL_TIMING_WATCH",
@@ -548,7 +548,11 @@ class SignalJsonEmitter:
             watch_revision = self._mark_watch_transition(event)
             if watch_revision is None:
                 return False
-        if _is_final_payload(payload) and _uses_provisional_rr_fallback(payload) and not self.allow_provisional_rr_execution:
+        if (
+            _is_final_payload(payload)
+            and _uses_provisional_rr_fallback(payload)
+            and not self.allow_provisional_rr_execution
+        ):
             payload = _blocked_final_as_decision_update(payload, ["PROVISIONAL_RR_NOT_EXECUTION_GRADE"])
         elif self.strict_lifecycle and _is_final_payload(payload):
             if self._ensure_terminal_decision_update(payload):
@@ -645,10 +649,7 @@ class SignalJsonEmitter:
             reasons.append("MISSING_PARENT_WATCH_DECISION_ID_MATCH")
         if pending_id is not None and self._decision_states.get(pending_id) == "EXPIRED":
             reasons.append("PENDING_DECISION_ALREADY_EXPIRED")
-        if (
-            source_target_mode == "PROVISIONAL_RR_FALLBACK"
-            and not self.allow_provisional_rr_execution
-        ):
+        if source_target_mode == "PROVISIONAL_RR_FALLBACK" and not self.allow_provisional_rr_execution:
             reasons.append("PROVISIONAL_RR_NOT_EXECUTION_GRADE")
         if self.require_final_market_structure and not _is_structure_target_mode(payload.get("target_mode")):
             reasons.append("STRUCTURE_TARGET_MODE_REQUIRED")
@@ -688,7 +689,10 @@ class SignalJsonEmitter:
         )
 
     def _ensure_terminal_decision_update(self, payload: dict[str, Any]) -> bool:
-        if not self.require_terminal_decision_update or str(payload.get("promotion_path") or "").upper() == "DIRECT_BYPASS":
+        if (
+            not self.require_terminal_decision_update
+            or str(payload.get("promotion_path") or "").upper() == "DIRECT_BYPASS"
+        ):
             return True
         pending_id = _optional_str(payload.get("pending_decision_id"))
         if pending_id is None:
@@ -1037,15 +1041,11 @@ def should_emit_signal_json(
             return False
         if not bool(payload.get("signal_valid") or payload.get("direction_valid")):
             return False
-        if bool(payload.get("valid_for_execution", False)):
-            return False
-        return True
+        return not bool(payload.get("valid_for_execution", False))
     if status in TERMINAL_EXECUTION_READY_STATUSES:
         if not _is_final_payload(payload):
             return False
-        if _optional_bool(payload.get("execution_valid_now")) is not True:
-            return False
-        return True
+        return _optional_bool(payload.get("execution_valid_now")) is True
     if status in TERMINAL_INACTIVE_SIGNAL_STATUSES:
         return True
     if status in VALID_SIGNAL_STATUSES or str(status).endswith("_VALID"):
@@ -1187,7 +1187,9 @@ def _blocked_final_as_decision_update(payload: dict[str, Any], reasons: list[str
             "new_status": "WAIT_STRUCTURE_OR_NEXT_M15",
             "final_direction": "WAIT",
             "validated_direction": None,
-            "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("watch_direction"),
+            "watch_direction": source_direction
+            if source_direction in {"BUY", "SELL"}
+            else payload.get("watch_direction"),
             "direction_validation_status": "FINAL_CANDIDATE_BLOCKED_BY_STRICT_GATE",
             "action": "WAIT_LIFECYCLE_AUDIT_AND_STRUCTURE",
             "next_action": "WAIT_LIFECYCLE_AUDIT_AND_STRUCTURE",
@@ -1368,9 +1370,7 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
     diagnostics = _dict_value(payload.get("pattern_match_diagnostics")) or _dict_value(
         existing.get("pattern_match_diagnostics")
     )
-    top_supporting_patterns = [
-        pattern for pattern in matched_patterns or [] if pattern != selected_pattern_id
-    ][:3]
+    top_supporting_patterns = [pattern for pattern in matched_patterns or [] if pattern != selected_pattern_id][:3]
     if not any(
         (
             selected_pattern_id,
@@ -1767,8 +1767,7 @@ def _execution_contract_complete(payload: dict[str, Any]) -> bool:
     signal_expiry = payload.get("signal_expiry")
     return bool(
         payload.get("valid_for_execution") is True
-        and
-        payload.get("tradeplan_valid") is True
+        and payload.get("tradeplan_valid") is True
         and payload.get("execution_valid_now") is True
         and _optional_float(payload.get("selected_sl")) is not None
         and _optional_float(payload.get("selected_risk_pips") or payload.get("risk_pips")) is not None

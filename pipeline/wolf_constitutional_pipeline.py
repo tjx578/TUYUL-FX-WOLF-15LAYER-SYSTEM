@@ -3930,6 +3930,7 @@ class WolfConstitutionalPipeline:
         )
         self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
+        self._apply_microboost_watch_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_signal_block_finalizer(
             l12_verdict=l12_verdict,
             report=report,
@@ -3987,6 +3988,23 @@ class WolfConstitutionalPipeline:
         l12_verdict["microboost_continuation_entry"] = continuation
         if self._signal_json_gate_adapter.emit_continuation:
             self._emit_signal_json_payload(continuation)
+
+    def _apply_microboost_watch_entry_report(
+        self,
+        *,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+    ) -> None:
+        watch_entry = report.get("microboost_watch_entry")
+        if not isinstance(watch_entry, dict):
+            return
+        if watch_entry.get("status") == "NONE":
+            return
+
+        watch_entry = dict(watch_entry)
+        report["microboost_watch_entry"] = watch_entry
+        l12_verdict["microboost_watch_entry"] = watch_entry
+        self._emit_signal_json_payload(watch_entry)
 
     def _apply_microboost_counter_entry_report(
         self,
@@ -4097,7 +4115,7 @@ class WolfConstitutionalPipeline:
         )
         report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
         self._emit_microboost_intel_if_new(report)
-        for key in ("microboost_continuation_entry", "microboost_counter_entry"):
+        for key in ("microboost_continuation_entry", "microboost_counter_entry", "microboost_watch_entry"):
             candidate = report.get(key)
             if not isinstance(candidate, dict):
                 continue

@@ -65,6 +65,32 @@ def test_signal_json_emits_counter_entry_watch(caplog):
     assert '"status":"NANO_ABSORPTION_SELL_WATCH"' in caplog.text
 
 
+def test_signal_json_emits_generic_microboost_watch(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="CADJPY_20260518T133000Z",
+        symbol="CADJPY",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        action="WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+        phase_priced="BULLISH_PULLBACK_MICROBOOST",
+        rr_status="WATCH",
+        market_context_applied=True,
+        valid_for_execution=False,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"signal_family":"MICROBOOST_WATCH"' in caplog.text
+    assert '"status":"MICROBOOST_WATCH"' in caplog.text
+    assert '"watch_direction":"BUY"' in caplog.text
+
+
 def test_signal_json_does_not_emit_watch_by_default(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(cluster_id="USDCAD_20260519T145605Z")

@@ -80,3 +80,43 @@ def test_pipeline_logs_valid_continuation_as_signal_json(caplog):
     assert '"signal_valid":true' in caplog.text
     assert '"execution_valid_now":true' in caplog.text
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
+
+
+def test_pipeline_logs_generic_microboost_watch_as_signal_watch_json(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+
+    report = {
+        "microboost_watch_entry": {
+            "symbol": "CADJPY",
+            "cluster_id": "CADJPY_20260518T133000Z",
+            "signal_family": "MICROBOOST_WATCH",
+            "status": "MICROBOOST_WATCH",
+            "raw_direction": "BUY",
+            "candidate_direction": "BUY",
+            "validated_direction": None,
+            "watch_direction": "BUY",
+            "final_direction": "WAIT",
+            "action": "WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+            "signal_valid_time_utc": "2026-05-18T13:32:29+00:00",
+            "signal_valid_price": 115.5235,
+            "entry_reference_price": 115.5235,
+            "entry_zone": [115.5, 115.5235],
+            "phase_unpriced": "DENSE_MICROBOOST",
+            "phase_priced": "BULLISH_PULLBACK_MICROBOOST",
+            "rr_status": "WATCH",
+            "market_context_applied": True,
+            "valid_for_execution": False,
+            "reason": "microboost waits for M15 reclaim",
+        }
+    }
+    verdict: dict = {}
+
+    pipeline._apply_microboost_watch_entry_report(l12_verdict=verdict, report=report)
+
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"status":"MICROBOOST_WATCH"' in caplog.text
+    assert '"signal_family":"MICROBOOST_WATCH"' in caplog.text
+    assert verdict["microboost_watch_entry"]["status"] == "MICROBOOST_WATCH"
