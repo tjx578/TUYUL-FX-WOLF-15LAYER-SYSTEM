@@ -3986,6 +3986,72 @@ class WolfConstitutionalPipeline:
             reason=reason,
         )
 
+    @staticmethod
+    def _should_track_lifecycle_candidate(payload: dict[str, Any]) -> bool:
+        """Decide whether an emitted watch/continuation is an OFFICIAL lifecycle
+        candidate that must earn a terminal outcome via the SignalBlockFinalizer.
+
+        Only official, actionable candidates are tracked. Shadow/observability and
+        telemetry/debug pings are deliberately excluded so they never create a
+        hanging pending watch (no DecisionUpdate, no SignalJSON, no expiry).
+        """
+        if not isinstance(payload, dict):
+            return False
+        status = str(payload.get("status") or "")
+        signal_id = payload.get("signal_id") or payload.get("pending_decision_id")
+        shadow_only = payload.get("shadow_only") is True
+        telemetry_only = payload.get("signal_quality") in {"TELEMETRY_ONLY", "DEBUG_ONLY"}
+        return (
+            bool(payload.get("symbol"))
+            and bool(signal_id)
+            and not shadow_only
+            and not telemetry_only
+            and (
+                status.endswith("_WATCH")
+                or status.endswith("_VALID")
+                or status.endswith("_BY_DIRECT_ABSORPTION")
+            )
+        )
+
+    def _mark_official_lifecycle_candidate(self, payload: dict[str, Any]) -> None:
+        """Attach a stable lifecycle identity so the finalizer can adopt an official
+        watch candidate (``_is_pending_watch`` clause: pending_decision_id +
+        requires_m15_close). Final execution payloads keep their own terminal path
+        and are not flagged as ``requires_m15_close``.
+        """
+        if not (payload.get("pending_decision_id") or payload.get("signal_id")):
+            symbol = str(payload.get("symbol") or "").upper()
+            cluster_id = str(payload.get("cluster_id") or "").strip()
+            token = cluster_id or str(payload.get("signal_valid_time_utc") or "WATCH")
+            if symbol:
+                payload["pending_decision_id"] = f"{symbol}_{token}_M15_DECISION"
+        if payload.get("valid_for_execution") is not True:
+            payload.setdefault("requires_m15_close", True)
+
+    def _track_official_lifecycle_candidate(self, payload: dict[str, Any]) -> None:
+        """Register an official watch/continuation candidate with the finalizer so it
+        is guaranteed a terminal outcome. Gated by
+        ``SIGNAL_LIFECYCLE_TRACK_OFFICIAL_WATCH_ENABLED`` (default on) for rollback.
+        """
+        if os.getenv("SIGNAL_LIFECYCLE_TRACK_OFFICIAL_WATCH_ENABLED", "true").strip().lower() != "true":
+            return
+        if not isinstance(payload, dict):
+            return
+        status = str(payload.get("status") or "")
+        is_lifecycle_status = (
+            status.endswith("_WATCH") or status.endswith("_VALID") or status.endswith("_BY_DIRECT_ABSORPTION")
+        )
+        if not is_lifecycle_status or not payload.get("symbol"):
+            return
+        if payload.get("shadow_only") is True or payload.get("signal_quality") in {"TELEMETRY_ONLY", "DEBUG_ONLY"}:
+            return
+        finalizer = getattr(self, "_signal_block_finalizer", None)
+        if finalizer is None:
+            return
+        self._mark_official_lifecycle_candidate(payload)
+        if self._should_track_lifecycle_candidate(payload):
+            finalizer.track(payload)
+
     def _apply_microboost_continuation_entry_report(
         self,
         *,
@@ -4006,6 +4072,7 @@ class WolfConstitutionalPipeline:
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
         if self._signal_json_gate_adapter.emit_continuation:
+            self._track_official_lifecycle_candidate(continuation)
             continuation["signal_json_emit_result"] = self._emit_signal_json_payload(continuation)
 
     def _apply_microboost_watch_entry_report(
@@ -4023,6 +4090,7 @@ class WolfConstitutionalPipeline:
         watch_entry = dict(watch_entry)
         report["microboost_watch_entry"] = watch_entry
         l12_verdict["microboost_watch_entry"] = watch_entry
+        self._track_official_lifecycle_candidate(watch_entry)
         watch_entry["signal_json_emit_result"] = self._emit_signal_json_payload(watch_entry)
 
     def _apply_microboost_counter_entry_report(
@@ -4335,7 +4403,9 @@ class WolfConstitutionalPipeline:
             status = str(candidate.get("status") or "")
             if status == "NONE" or not status.endswith("_WATCH"):
                 continue
-            self._emit_signal_json_payload(dict(candidate))
+            shadow_candidate = dict(candidate)
+            shadow_candidate["shadow_only"] = True
+            self._emit_signal_json_payload(shadow_candidate)
 
     def _finalize_idle_signal_blocks(
         self,
