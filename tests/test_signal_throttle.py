@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 import time
+import logging
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from pathlib import Path
@@ -682,6 +683,47 @@ class TestPipelineSignalThrottle:
 
         output_lines = capsys.readouterr().out.splitlines()
         assert any(line.startswith("[MicroboostIntel]") and "symbol=GBPCAD" in line for line in output_lines)
+
+    def test_non_execute_shadow_path_emits_generic_microboost_watch(self, caplog, capsys):
+        """Priced WAIT microboost observations must continue into SignalWatchJSON."""
+        caplog.set_level(logging.WARNING, logger="signal_json")
+        pipe = self._make_pipeline()
+        pipe._context_bus.update_tick(
+            {
+                "symbol": "CADJPY",
+                "bid": 115.5230,
+                "ask": 115.5240,
+                "timestamp": time.time(),
+            }
+        )
+        for candle in (
+            {"symbol": "CADJPY", "timeframe": "M15", "open": 115.560, "high": 115.570, "low": 115.520, "close": 115.529},
+            {"symbol": "CADJPY", "timeframe": "H1", "open": 115.100, "high": 115.900, "low": 115.050, "close": 115.620},
+        ):
+            pipe._context_bus.update_candle(candle)
+
+        base = datetime.now(UTC) - timedelta(minutes=3)
+        for index in range(29):
+            pipe._signal_throttle_live_analyzer.record_downgraded(
+                symbol="CADJPY",
+                verdict="EXECUTE_BUY",
+                direction="BUY",
+                reason="market_context_unvalidated",
+                timestamp=base + timedelta(seconds=index * 5),
+            )
+
+        capsys.readouterr()
+        pipe._emit_microboost_watch_shadow(
+            symbol="CADJPY",
+            synthesis={"execution": {"direction": "BUY", "entry_price": 115.5605}},
+            l12_verdict={"verdict": "HOLD", "direction": "BUY", "market_context_downgrade": True},
+            source_verdict="HOLD",
+        )
+
+        assert "[SignalWatchJSON]" in caplog.text
+        assert '"status":"MICROBOOST_WATCH"' in caplog.text
+        assert '"event":"signal_watch_json"' in caplog.text
+        assert '"valid_for_execution":false' in caplog.text
 
     def test_usdcad_reclaim_and_demand_build_support_ladder_for_counter_targets(self):
         from context.live_context_bus import LiveContextBus
