@@ -21,9 +21,9 @@ from loguru import logger
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
 from core.redis_keys import candle_history, channel_candle, latest_candle
-from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
-from ingest.finnhub_ws import is_forex_market_open
-from ingest.hybrid_candle_provider import HybridCandleProvider
+from .finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
+from .finnhub_ws import is_forex_market_open
+from .hybrid_candle_provider import HybridCandleProvider
 
 
 def enqueue_candle_dict(candle: dict[str, Any]) -> None:
@@ -95,6 +95,7 @@ class RestPollFallback:
         # Track redis write stats for diagnostics
         self._redis_writes: int = 0
         self._redis_skips: int = 0
+        self._finnhub_all_keys_suspended_skip_until: float = 0.0
 
         # Log redis client status at init for visibility
         if self._redis is None:
@@ -170,7 +171,7 @@ class RestPollFallback:
 
     def _get_silent_pairs(self) -> list[str]:
         """Return pairs whose last WS tick exceeds the silence threshold."""
-        from ingest.dependencies import PAIR_WS_SILENCE_THRESHOLD_S, _pair_last_tick_ts
+        from .dependencies import PAIR_WS_SILENCE_THRESHOLD_S, _pair_last_tick_ts
 
         now = time.time()
         silent: list[str] = []
@@ -321,7 +322,7 @@ class RestPollFallback:
 
     async def _poll_symbol(self, symbol: str) -> None:
         """Fetch M15 + optional H1 for a single symbol and seed the context bus."""
-        from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+        from .finnhub_key_manager import finnhub_keys  # noqa: PLC0415
 
         fetch_candles: Any = self._fetch_from_repair_provider
 
@@ -331,13 +332,22 @@ class RestPollFallback:
         key_statuses = finnhub_keys.status()
         if key_statuses and all(k["suspended"] for k in key_statuses):
             remaining = max(k["cooldown_remaining_sec"] for k in key_statuses)
-            from ingest.fallback_provider import FallbackCandleProvider  # noqa: PLC0415
+            from .fallback_provider import FallbackCandleProvider  # noqa: PLC0415
 
-            fallback_provider = FallbackCandleProvider()
+            fallback_provider = FallbackCandleProvider(redis_client=self._redis)
             if not fallback_provider.available_providers:
+                now = time.monotonic()
+                if now < self._finnhub_all_keys_suspended_skip_until:
+                    logger.debug(
+                        "[RestPoll] Finnhub keys still suspended — cooldown-aware skip for %s (%.0fs remaining)",
+                        symbol,
+                        self._finnhub_all_keys_suspended_skip_until - now,
+                    )
+                    return
+                self._finnhub_all_keys_suspended_skip_until = now + max(1.0, remaining)
                 logger.warning(
                     "[RestPoll] Finnhub key suspended (%.0fs cooldown) — "
-                    "skipping REST poll for %s, no substitute provider configured",
+                    "entering degraded cooldown skip for %s, no substitute provider configured",
                     remaining,
                     symbol,
                 )
@@ -461,6 +471,7 @@ class RestPollFallback:
         dedup_skipped = 0
         skip_reasons: dict[str, int] = defaultdict(int)
         skip_samples: list[dict[str, Any]] = []
+        duplicate_heartbeat_candidates: list[dict[str, Any]] = []
 
         # ── Group valid candles by Redis key to batch writes ─────────────────
         # Reduces round trips: 4 × N → 3 × K + N  (K = unique keys, K ≤ N).
@@ -494,6 +505,7 @@ class RestPollFallback:
                 if await is_duplicate_candle(self._redis, key, candle):
                     dedup_skipped += 1
                     skip_reasons["duplicate_open_time"] += 1
+                    duplicate_heartbeat_candidates.append(candle)
                     if len(skip_samples) < 3:
                         skip_samples.append(
                             {
@@ -572,6 +584,16 @@ class RestPollFallback:
                 dedup_skipped,
                 self._redis_writes,
             )
+        elif candles and dict(skip_reasons) == {"duplicate_open_time": len(candles)}:
+            refreshed = await self._refresh_duplicate_heartbeat(duplicate_heartbeat_candidates)
+            logger.info(
+                "[RestPoll] 0/{} new candles — duplicate_open_time heartbeat refreshed={} symbol={} timeframe={} sample={}",
+                len(candles),
+                refreshed,
+                candles[0].get("symbol", "?"),
+                candles[0].get("timeframe", "?"),
+                skip_samples,
+            )
         elif candles:
             logger.warning(
                 "[RestPoll] 0/{} candles written — all skipped! symbol={} timeframe={} reasons={} sample={} first_keys={}",
@@ -582,3 +604,33 @@ class RestPollFallback:
                 skip_samples,
                 list(candles[0].keys())[:10],
             )
+
+    async def _refresh_duplicate_heartbeat(self, candles: list[dict[str, Any]]) -> int:
+        if not self._redis or not candles:
+            return 0
+        latest_by_hash: dict[str, str] = {}
+        for candle in candles:
+            symbol = candle.get("symbol")
+            timeframe = candle.get("timeframe")
+            if not symbol or not timeframe:
+                continue
+            try:
+                candle_json = orjson.dumps(candle).decode("utf-8")
+            except Exception:
+                continue
+            latest_by_hash[latest_candle(symbol, timeframe)] = candle_json
+        refreshed = 0
+        for hash_key, candle_json in latest_by_hash.items():
+            try:
+                await self._redis.hset(
+                    hash_key,
+                    mapping={
+                        "data": candle_json,
+                        "last_seen_ts": str(time.time()),
+                        "heartbeat_reason": "duplicate_open_time",
+                    },
+                )
+                refreshed += 1
+            except Exception as exc:
+                logger.debug("[RestPoll] duplicate heartbeat refresh failed {}: {}", hash_key, exc)
+        return refreshed
