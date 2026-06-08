@@ -9,7 +9,7 @@
 ## 1. Verifikasi Klaim Assessment vs Kode
 
 | # | Klaim assessment | Status | Lokasi kode |
-| --- | ------------------ | -------- | ------------- |
+|---|------------------|--------|-------------|
 | 1 | `signal_throttle_check` → `PRESSURE_CANARY`, `OBSERVE`, non-execute | ✅ Benar | `analysis/signal_throttle_log_analyzer.py:166-178` |
 | 2 | `record_pressure_canary()` menulis event_type `PRESSURE_CANARY` | ✅ Benar | `analysis/signal_throttle_log_analyzer.py:724-761` |
 | 3 | `PressureBlock` kaya (durasi, density, gap, effective ticks, dll) | ✅ Benar | `analysis/signal_throttle_log_analyzer.py:94-113` |
@@ -42,11 +42,13 @@ Jadi canary **tidak** otomatis menjadi microboost valid. Urutan yang dikhawatirk
 **Status: sudah dipenuhi — dengan pemisahan yang disengaja antara watch _actionable_ dan watch _observability_.**
 
 ### 3.1 Watch actionable DIJAMIN terminal
+
 - Watch dari counter-entry (`*_ABSORPTION_WATCH`/`*_TIMING_WATCH`, membawa `pending_decision_id` + `requires_m15_close`) di-`track()` ke finalizer (`pipeline/wolf_constitutional_pipeline.py:4043`).
 - Finalizer menjamin terminal: expiry → `PENDING_WATCH_EXPIRED` setelah ≥3 bar M15/45 mnt (`signal_block_finalizer.py:328-339, 571-572`); confirmed → final execution (`:340-354`); else → decision update WAIT.
 - `_finalize_idle_signal_blocks` dipanggil **setiap tick**, EXECUTE maupun non-EXECUTE (`pipeline/...:4505`), sehingga pending watch selalu didrain — shadow **bukan** satu-satunya jalur.
 
 ### 3.2 Watch observability SENGAJA tidak diberi lifecycle
+
 - `microboost_watch_entry` berstatus `MICROBOOST_WATCH` (`signal_throttle_log_analyzer.py:1365`) dan continuation murni berstatus `WAIT_M15_CLOSE_OR_STRUCTURE_TARGET` + `orchestration_status="VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH"` (`pipeline/...:4002`).
 - Keduanya **tidak** lolos `_is_pending_watch` (`signal_block_finalizer.py:786-792`), sehingga tidak diadopsi finalizer.
 
@@ -61,11 +63,13 @@ Artinya: watch fallback/observability memang **didesain** sebagai "radar ping" t
 ## 4. Temuan Kunci & Rekomendasi
 
 **Temuan:** Repo sudah konform dengan rancangan. Satu-satunya "celah" (continuation/watch entry tidak di-`track()`) adalah **boundary yang disengaja dan dikunci test**. Menutupnya (memaksa `MICROBOOST_WATCH` masuk finalizer) akan:
+
 1. Mematahkan `test_generic_microboost_watch_is_not_tracked_for_finalization`.
 2. Membalik keputusan arsitektur yang eksplisit.
 3. Menaikkan volume emisi decision-update/expiry untuk watch yang sebenarnya cuma observability.
 
 **Rekomendasi (tanpa mengubah perilaku):**
+
 1. **Jangan** override tracking. Pertahankan pemisahan actionable vs observability.
 2. **Kunci invariant dengan test regresi tambahan** (lihat Lampiran) — khususnya Risiko 1 (canary tidak auto-promote), agar refactor masa depan tidak merusak boundary.
 3. Jika tetap ingin "terminal untuk semua watch" demi dashboard, **jangan** lewat finalizer — cukup tambah **field audit observasional** (mis. `lifecycle_tracked: false`, `terminal_guarantee: "OBSERVABILITY_ONLY"`) pada `microboost_watch_entry`/continuation, sehingga niat desain terlihat di telemetry tanpa mengubah alur eksekusi.
@@ -109,5 +113,6 @@ def test_pressure_canary_alone_does_not_auto_promote_to_microboost():
 ```
 
 Boundary yang sudah dijaga test eksisting (jangan dihapus):
+
 - `tests/test_signal_block_finalizer.py::test_generic_microboost_watch_is_not_tracked_for_finalization` — MICROBOOST_WATCH observability tidak masuk finalizer.
 - `tests/test_signal_block_finalizer.py::test_pending_watch_expires_after_three_m15_bars_without_confirmation` — watch actionable dijamin terminal via expiry.
