@@ -380,7 +380,7 @@ async def run_ingest_services(
 
         _phase = "ws_connect"
         ws_feed = await create_finnhub_ws(
-            redis=redis,  # pyright: ignore[reportArgumentType]
+            redis=redis,
             candle_callback=_on_tick,
             on_connect=htf_refresh.force_refresh_now,
         )
