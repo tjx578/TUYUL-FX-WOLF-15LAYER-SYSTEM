@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import orjson
-from redis.asyncio import Redis
 
 from analysis.latency_tracker import LatencyTracker
 from analysis.signal_conditioner import SignalConditioner
@@ -25,6 +24,7 @@ from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from core.redis_keys import CHANNEL_TICK_UPDATES, TICK_STREAM_MAXLEN, latest_tick, tick_stream
 from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
+from ingest.redis_setup import RedisClient
 from ingest.spread_estimator import estimate_spread
 from ingest.tick_dlq import get_dlq
 
@@ -460,7 +460,7 @@ _handle_tick = handle_tick
 
 
 async def create_finnhub_ws(
-    redis: Redis,
+    redis: RedisClient,
     symbols: list[str] | None = None,
     candle_callback: Callable[[str, float, datetime, float], None] | None = None,
     on_connect: Callable[[], Coroutine[Any, Any, None]] | None = None,
