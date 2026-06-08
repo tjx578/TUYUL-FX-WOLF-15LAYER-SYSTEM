@@ -1,9 +1,9 @@
 """Hybrid REST candle repair provider.
 
-This tries configured substitute providers first for repair workloads, then
-falls back to Finnhub.  The default is intentionally broad because degraded
-production logs can affect any of the 30 enabled pairs, not just metals.  The
-order can still be narrowed with ``WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS``.
+Finnhub is the primary REST repair provider.  Substitute providers are used
+only as backups when Finnhub fails, is rate-limited, or returns no usable live
+data.  The order can still be overridden with
+``WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS`` for emergency provider isolation.
 
 Repair calls deliberately use live provider calls only so an old Redis cache is
 not rewritten as fresh data.
@@ -21,7 +21,7 @@ from loguru import logger
 from ingest.fallback_provider import FallbackCandleProvider
 from ingest.finnhub_candles import FinnhubCandleFetcher
 
-_DEFAULT_SUBSTITUTE_FIRST_SYMBOLS = frozenset({"*"})
+_DEFAULT_SUBSTITUTE_FIRST_SYMBOLS = frozenset()
 _REPAIR_SUBSTITUTE_FIRST_ENV = "WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS"
 
 
@@ -30,10 +30,7 @@ def _coerce_symbol_set(symbols: Iterable[str] | str | None) -> set[str]:
     if symbols is None:
         return set(_DEFAULT_SUBSTITUTE_FIRST_SYMBOLS)
 
-    if isinstance(symbols, str):
-        raw_items = symbols.split(",")
-    else:
-        raw_items = symbols
+    raw_items = symbols.split(",") if isinstance(symbols, str) else symbols
 
     normalized = {str(item).strip().upper() for item in raw_items if str(item).strip()}
     if normalized & {"", "NONE", "FALSE", "0", "OFF", "DISABLED"}:
@@ -44,7 +41,7 @@ def _coerce_symbol_set(symbols: Iterable[str] | str | None) -> set[str]:
 
 
 def _load_substitute_first_symbols_from_env() -> set[str]:
-    return _coerce_symbol_set(os.getenv(_REPAIR_SUBSTITUTE_FIRST_ENV, "*"))
+    return _coerce_symbol_set(os.getenv(_REPAIR_SUBSTITUTE_FIRST_ENV))
 
 
 @dataclass(frozen=True)
@@ -64,11 +61,11 @@ class HybridCandleFetchResult:
 class HybridCandleProvider:
     """Select a REST candle provider according to symbol risk.
 
-    - Default: substitute providers first (Twelve Data, then Alpha Vantage),
-      then Finnhub for all symbols.
+    - Default: Finnhub first for all symbols, substitute providers only as
+      backup.
     - Override: set ``WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS`` to a comma-separated
-      symbol list, ``*``/``ALL`` for every symbol, or ``none``/``off`` to make
-      Finnhub primary for every symbol.
+      symbol list or ``*``/``ALL`` for every symbol when an emergency needs a
+      substitute-first repair path.
     """
 
     def __init__(

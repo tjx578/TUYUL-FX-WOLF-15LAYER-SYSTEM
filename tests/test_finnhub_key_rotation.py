@@ -54,16 +54,17 @@ class TestFinnhubKeyManager:
         assert mgr.key_count == 2
         assert mgr.current_key() == "pk_a"
 
-    def test_comma_separated_keys(self):
+    def test_comma_separated_keys_append_after_primary_key(self):
         mgr = self._make_manager(
             {
                 "FINNHUB_API_KEYS": "k1, k2, k3",
-                "FINNHUB_API_KEY": "ignored",
-                "FINNHUB_API_KEY_SECONDARY": "ignored",
+                "FINNHUB_API_KEY": "premium",
+                "FINNHUB_API_KEY_SECONDARY": "secondary",
             }
         )
-        assert mgr.key_count == 3
-        assert mgr.current_key() == "k1"
+        assert mgr.key_count == 5
+        assert mgr.current_key() == "premium"
+        assert mgr.get_all_keys() == ["premium", "secondary", "k1", "k2", "k3"]
 
     def test_dedup_comma_keys(self):
         mgr = self._make_manager(

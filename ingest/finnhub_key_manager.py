@@ -9,7 +9,7 @@ Environment variables
 ---------------------
   FINNHUB_API_KEY           Primary key (required).
   FINNHUB_API_KEY_SECONDARY Optional fallback key.
-  FINNHUB_API_KEYS          Comma-separated list (overrides the above two if set).
+  FINNHUB_API_KEYS          Optional comma-separated backup keys.
 
 Usage
 -----
@@ -75,28 +75,29 @@ class FinnhubKeyManager:
     # ── Bootstrap ──────────────────────────────────────────────────
 
     def _load_keys(self) -> None:
-        """Load keys from environment variables (priority order).
+        """Load keys from environment variables in primary-first order.
 
-        1. ``FINNHUB_API_KEYS`` (comma-separated) — highest priority.
-        2. ``FINNHUB_API_KEY`` + optional ``FINNHUB_API_KEY_SECONDARY``.
+        ``FINNHUB_API_KEY`` is always treated as the primary key.  Additional
+        keys are appended as backups in this order:
+        ``FINNHUB_API_KEY_SECONDARY`` then ``FINNHUB_API_KEYS``.
         """
+        unique: list[str] = []
+
+        def add_key(raw: str | None) -> None:
+            key = str(raw or "").strip()
+            if not key or key == "YOUR_FINNHUB_API_KEY" or key in unique:
+                return
+            unique.append(key)
+
+        add_key(os.getenv("FINNHUB_API_KEY"))
+        add_key(os.getenv("FINNHUB_API_KEY_SECONDARY"))
+
         raw_keys = os.getenv("FINNHUB_API_KEYS", "").strip()
-
         if raw_keys:
-            unique: list[str] = []
-            for k in raw_keys.split(","):
-                k = k.strip()
-                if k and k not in unique:
-                    unique.append(k)
-            self._keys = [_KeyState(key=k) for k in unique]
-        else:
-            primary = os.getenv("FINNHUB_API_KEY", "").strip()
-            secondary = os.getenv("FINNHUB_API_KEY_SECONDARY", "").strip()
+            for key in raw_keys.split(","):
+                add_key(key)
 
-            if primary and primary != "YOUR_FINNHUB_API_KEY":
-                self._keys.append(_KeyState(key=primary))
-            if secondary and secondary != primary:
-                self._keys.append(_KeyState(key=secondary))
+        self._keys = [_KeyState(key=key) for key in unique]
 
         if not self._keys:
             logger.warning(

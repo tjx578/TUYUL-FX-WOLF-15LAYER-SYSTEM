@@ -138,8 +138,9 @@ class H1RefreshScheduler:
         """
         Refresh H1/H4 for a single symbol.
 
-        Uses the hybrid REST repair chain. XAU/XAG prefer configured
-        substitute providers first; other symbols keep Finnhub as primary.
+        Uses the hybrid REST repair chain. Finnhub is primary for all symbols;
+        configured substitute providers are backups unless an emergency
+        substitute-first override is enabled.
 
         Args:
             symbol: Trading symbol
@@ -147,7 +148,7 @@ class H1RefreshScheduler:
         async with self.semaphore:
             try:
                 # Fetch latest H1 bars through hybrid repair:
-                # XAU/XAG -> Twelve Data/Alpha first, other symbols -> Finnhub first.
+                # Finnhub first, substitute providers only as backup by default.
                 repair_result = await self._repair_provider.fetch(symbol, "H1", self.h1_bars)
                 h1_candles: list[dict[str, Any]] = repair_result.candles
                 provider_used = repair_result.provider

@@ -202,6 +202,20 @@ def test_analyzer_classifies_fragmented_latest_rotation_as_theme_alert():
     assert report["data_quality"]["source"] == "live_process"
 
 
+def test_live_analyzer_empty_snapshot_keeps_runtime_config():
+    analyzer = SignalThrottleLiveAnalyzer(retention_seconds=7200, max_events=20000)
+
+    report = analyzer.snapshot()
+
+    assert report["final_mode"] == "NO_SIGNAL_THROTTLE_DATA"
+    assert report["counts"]["total_events"] == 0
+    assert report["latest_window"]["event_count"] == 0
+    assert report["data_quality"]["source"] == "live_process"
+    assert report["data_quality"]["process_local"] is True
+    assert report["runtime_config"]["retention_seconds"] == 7200
+    assert report["runtime_config"]["max_events_in_memory"] == 20000
+
+
 def test_theme_scores_split_dominant_secondary_and_noisy_themes():
     events = []
     for index in range(40):

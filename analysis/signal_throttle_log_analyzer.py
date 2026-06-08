@@ -251,6 +251,33 @@ def analyze_signal_throttle_events(
             "theme_scores": [],
             "event_counts": _event_counts([]),  # noqa: F821
             "symbol_activity": {},
+            "time_range": {
+                "start_utc": None,
+                "end_utc": None,
+                "duration_seconds": 0.0,
+            },
+            "counts": {
+                "total_events": 0,
+                "severity": {},
+                "verdicts": {},
+                "event_types": _event_counts([]),  # noqa: F821
+                "pairs": {},
+            },
+            "latest_window": {
+                "seconds": latest_window_seconds,
+                "event_count": 0,
+                "unique_symbols": 0,
+                "top_pairs": {},
+                "largest_clean_block_seconds": 0.0,
+            },
+            "runtime_config": {
+                "latest_window_minutes": latest_window_seconds / 60.0,
+                "min_clean_block_minutes": clean_block_seconds / 60.0,
+                "microboost_window_minutes": microboost_window_minutes,
+                "candidate_lifecycle_window_seconds": candidate_lifecycle_window_seconds,
+                "fragmented_min_unique_pairs": fragmented_min_unique_pairs,
+                "fragmented_max_clean_block_minutes": fragmented_max_clean_block_minutes,
+            },
             "top_microboost": [],
             "microboost_summary": build_microboost_summary(
                 [],
@@ -271,6 +298,9 @@ def analyze_signal_throttle_events(
                 timezone_assumption=timezone_assumption,
                 state_metadata=state_metadata,
             ),
+            "currency_pressure": {currency: 0 for currency in _CURRENCIES},
+            "top_clean_blocks": [],
+            "recommended_action": "WAIT_FOR_SIGNAL_THROTTLE_DATA",
         }
 
     blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
@@ -646,6 +676,7 @@ class SignalThrottleLiveAnalyzer:
             fragmented_max_clean_block_minutes=self.fragmented_max_clean_block_minutes,
             market_contexts=market_contexts,
         )
+        report.setdefault("runtime_config", {})
         report["runtime_config"]["retention_seconds"] = self.retention_seconds
         report["runtime_config"]["active_block_ttl_seconds"] = self.active_block_ttl_seconds
         report["runtime_config"]["allowed_quorum_window_seconds"] = self.allowed_quorum_window_seconds
