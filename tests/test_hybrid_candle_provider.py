@@ -56,7 +56,7 @@ async def test_override_can_make_substitute_primary_for_emergency_repair() -> No
 
     assert result.provider == "twelve_data"
     assert result.reason == "substitute_first"
-    fallback.fetch.assert_awaited_once_with("EURUSD", "H1", 5, allow_stale_cache=False)
+    fallback.fetch.assert_awaited_once_with("EURUSD", "H1", 5, allow_stale_cache=True)
     finnhub.fetch.assert_not_awaited()
 
 
@@ -74,7 +74,7 @@ async def test_forex_falls_back_to_substitute_when_finnhub_fails() -> None:
     assert result.provider == "twelve_data"
     assert result.reason == "finnhub_failed_substitute"
     finnhub.fetch.assert_awaited_once_with("EURUSD", "H1", 5)
-    fallback.fetch.assert_awaited_once_with("EURUSD", "H1", 5, allow_stale_cache=False)
+    fallback.fetch.assert_awaited_once_with("EURUSD", "H1", 5, allow_stale_cache=True)
 
 
 @pytest.mark.asyncio
@@ -94,5 +94,5 @@ async def test_substitute_first_override_can_fall_back_to_finnhub_when_substitut
 
     assert result.provider == "finnhub"
     assert result.reason == "finnhub_fallback"
-    fallback.fetch.assert_awaited_once_with("XAUUSD", "D1", 1, allow_stale_cache=False)
+    fallback.fetch.assert_awaited_once_with("XAUUSD", "D1", 1, allow_stale_cache=True)
     finnhub.fetch.assert_awaited_once_with("XAUUSD", "D1", 1)
