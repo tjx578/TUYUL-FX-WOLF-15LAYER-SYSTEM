@@ -45,6 +45,73 @@ def _continuation_payload() -> dict:
     return MicroboostContinuationEngine().evaluate(cluster, allowed_quorum=quorum).to_dict()
 
 
+def _finalizer_final_sell_payload() -> dict:
+    return {
+        "symbol": "USDCAD",
+        "cluster_id": "USDCAD_20260521T030620Z",
+        "signal_family": "MICROBOOST_COUNTER_ENTRY",
+        "status": "SELL_TIMING_VALID",
+        "previous_status": "SELL_ABSORPTION_WATCH",
+        "raw_direction": "BUY",
+        "candidate_direction": "SELL",
+        "validated_direction": "SELL",
+        "watch_direction": "SELL",
+        "final_direction": "SELL",
+        "direction_validation_status": "VALIDATED_EXECUTION",
+        "action": "EXECUTE_SELL_STRUCTURE_TARGET",
+        "signal_valid_time_utc": "2026-05-21T03:09:22+00:00",
+        "signal_valid_price": 1.37633,
+        "entry_reference_price": 1.37633,
+        "entry_zone": [1.37633, 1.37647],
+        "price_position": "MAIN_RESISTANCE",
+        "m15_phase": "BEARISH_PULLBACK",
+        "h1_phase": "BEARISH",
+        "rr_status": "VALID",
+        "target_mode": "STRUCTURE_LADDER_TARGET",
+        "target_source": "support_resistance_ladder",
+        "market_context_applied": True,
+        "valid_for_execution": True,
+        "selected_sl": 1.37807,
+        "sl_safe": 1.37807,
+        "tp1": 1.3738,
+        "tp2": 1.3730,
+        "tp1_rr": 1.45,
+        "tp2_rr": 1.91,
+        "tp_min_rr": 1.373,
+        "tp_min_rr_value": 1.91,
+        "rr_to_valid_target": 1.91,
+        "min_rr_required": 1.5,
+        "main_support": 1.3730,
+        "main_resistance": 1.37647,
+        "key_support": 1.3730,
+        "key_resistance": 1.37647,
+        "spread_normal": True,
+        "theme_aligned": True,
+        "tradeplan_context_ready": True,
+        "targets_execution_usable": True,
+        "tradeplan_valid": True,
+        "execution_valid_now": True,
+        "signal_valid": True,
+        "direction_valid": True,
+        "analysis_valid": True,
+        "promotion_path": "WATCH_TO_FINAL",
+        "pending_decision_id": "USDCAD_20260521T030620Z_M15_DECISION",
+        "reason": "M15 rejection confirmed with structure ladder ready.",
+    }
+
+
+class _StaticFinalizer:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+        self.tracked: list[dict] = []
+
+    def finalize(self, **_kwargs: Any) -> list[dict]:
+        return [self.payload]
+
+    def track(self, payload: dict) -> None:
+        self.tracked.append(payload)
+
+
 def test_pipeline_emits_valid_continuation_payload_by_default():
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
@@ -156,18 +223,7 @@ def test_pipeline_logs_block_finalizer_update_as_signal_decision_update_json(cap
         "reason": "Pressure block ended; structure target is still incomplete.",
     }
 
-    class _Finalizer:
-        def __init__(self, payload: dict) -> None:
-            self.payload = payload
-            self.tracked: list[dict] = []
-
-        def finalize(self, **_kwargs) -> list[dict]:
-            return [self.payload]
-
-        def track(self, payload: dict) -> None:
-            self.tracked.append(payload)
-
-    finalizer = _Finalizer(update)
+    finalizer = _StaticFinalizer(update)
     cast(Any, pipeline)._signal_block_finalizer = finalizer
     report: dict = {"symbol_activity": {}}
     verdict: dict = {}
@@ -181,3 +237,27 @@ def test_pipeline_logs_block_finalizer_update_as_signal_decision_update_json(cap
     assert verdict["final_direction"] == "WAIT"
     assert verdict["direction_source"] == "SIGNAL_BLOCK_FINALIZER_DECISION_UPDATE"
     assert finalizer.tracked[0]["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
+
+
+def test_pipeline_logs_block_finalizer_final_as_signal_json(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._signal_lifecycle_manager = SignalLifecycleManager()
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
+    finalizer = _StaticFinalizer(_finalizer_final_sell_payload())
+    cast(Any, pipeline)._signal_block_finalizer = finalizer
+    report: dict = {"symbol_activity": {}}
+    verdict: dict = {}
+
+    pipeline._apply_signal_block_finalizer(l12_verdict=verdict, report=report, market_contexts={})
+
+    assert "[SignalJSON]" in caplog.text
+    assert '"status":"FINAL_EXECUTION_READY"' in caplog.text
+    assert '"source_status":"SELL_TIMING_VALID"' in caplog.text
+    assert '"execution_valid_now":true' in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert verdict["final_direction"] == "SELL"
+    assert verdict["direction_source"] == "SIGNAL_BLOCK_FINALIZER"
+    assert report["signal_block_finalizer_updates"][0]["status"] == "SELL_TIMING_VALID"
+    assert finalizer.tracked[0]["status"] == "SELL_TIMING_VALID"
