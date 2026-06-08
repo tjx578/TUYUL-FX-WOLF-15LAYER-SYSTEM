@@ -742,7 +742,7 @@ class SignalJsonEmitter:
 
     def _mark_watch_transition(self, event: SignalJsonEvent) -> str | None:
         cluster_key = event.cluster_id or f"{event.symbol}|{event.signal_family}|{event.entry_reference_price}"
-        state = f"{event.status}|{event.target_mode or ''}|{event.tp_status or ''}"
+        state = _watch_transition_state(event)
         now = time.time()
         event_seconds = _signal_time_epoch_seconds(event.signal_valid_time_utc)
         previous = self._cluster_state.get(cluster_key)
@@ -1268,6 +1268,20 @@ def _watch_payload_revision(payload: dict[str, Any]) -> str:
         "action",
     )
     return "|".join(str(payload.get(field) or "") for field in fields)
+
+
+def _watch_transition_state(event: SignalJsonEvent) -> str:
+    fields = (
+        event.status,
+        event.target_mode,
+        event.tp_status,
+        event.watch_direction,
+        event.direction_validation_status,
+        event.phase_priced,
+        event.price_position,
+        event.action,
+    )
+    return "|".join(str(field or "") for field in fields)
 
 
 def _signal_time_epoch_seconds(value: str | None) -> float | None:
