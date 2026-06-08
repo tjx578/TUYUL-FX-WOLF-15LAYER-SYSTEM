@@ -147,6 +147,7 @@ async def test_seed_exhausts_retries_degraded_mode(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setenv("ENGINE_WARMUP_MAX_RETRIES", "3")
     monkeypatch.setenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "0")
+    monkeypatch.setenv("ENGINE_WARMUP_PG_RECOVERY_ENABLED", "false")
 
     with (
         patch("context.redis_consumer.RedisConsumer", return_value=consumer),
@@ -162,6 +163,100 @@ async def test_seed_exhausts_retries_degraded_mode(monkeypatch: pytest.MonkeyPat
 
     # All retries exhausted
     assert consumer.load_candle_history.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_seed_tries_postgres_recovery_before_exhausting_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PostgreSQL recovery should not wait for the full Redis retry budget."""
+    pg_restored = {"done": False}
+
+    def check_warmup(_symbol: str, _min_bars: dict[str, int]) -> dict[str, Any]:
+        return {"ready": pg_restored["done"]}
+
+    bus = MagicMock()
+    bus.check_warmup = MagicMock(side_effect=check_warmup)
+    bus.get_warmup_bar_count = MagicMock(side_effect=lambda _symbol, _tf: 30 if pg_restored["done"] else 0)
+    bus.get_candles = MagicMock(return_value=[])
+
+    consumer = AsyncMock()
+    consumer.load_candle_history = AsyncMock()
+
+    async def fake_pg_restore(_pairs: list[str], _bus: Any) -> int:
+        pg_restored["done"] = True
+        return 4
+
+    monkeypatch.setenv("ENGINE_WARMUP_MAX_RETRIES", "10")
+    monkeypatch.setenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "0")
+    monkeypatch.setenv("ENGINE_WARMUP_PG_RECOVERY_AFTER_RETRIES", "2")
+
+    from startup import candle_seeding
+
+    pg_restore = AsyncMock(side_effect=fake_pg_restore)
+    with (
+        patch("context.redis_consumer.RedisConsumer", return_value=consumer),
+        patch("context.live_context_bus.LiveContextBus", return_value=bus),
+        patch("infrastructure.redis_client.get_client", new=AsyncMock(return_value=MagicMock())),
+        patch("core.redis_consumer_fix.sanitize_redis_keys", new=AsyncMock()),
+        patch("infrastructure.redis_url.get_redis_url", return_value="redis://localhost"),
+        patch.object(candle_seeding, "_try_restore_from_postgres", new=pg_restore),
+    ):
+        result = await candle_seeding._seed_from_redis(_TEST_PAIRS, {"H1": 30})
+
+    assert result == {
+        "source": "postgres_fallback",
+        "seeded_pairs": len(_TEST_PAIRS),
+        "attempts": 2,
+        "status": "recovered",
+    }
+    assert consumer.load_candle_history.await_count == 2
+    pg_restore.assert_awaited_once_with(_TEST_PAIRS, bus)
+
+
+@pytest.mark.asyncio
+async def test_seed_allows_quorum_start_when_two_symbols_remain_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """28/30 ready symbols should not stall the whole engine until retry 60."""
+    pairs = [f"SYM{i:02d}" for i in range(30)]
+    ready_pairs = set(pairs[:28])
+
+    def check_warmup(symbol: str, _min_bars: dict[str, int]) -> dict[str, Any]:
+        return {"ready": symbol in ready_pairs}
+
+    bus = MagicMock()
+    bus.check_warmup = MagicMock(side_effect=check_warmup)
+    bus.get_warmup_bar_count = MagicMock(side_effect=lambda symbol, _tf: 30 if symbol in ready_pairs else 0)
+    bus.get_candles = MagicMock(return_value=[])
+
+    consumer = AsyncMock()
+    consumer.load_candle_history = AsyncMock()
+
+    monkeypatch.setenv("ENGINE_WARMUP_MAX_RETRIES", "60")
+    monkeypatch.setenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "0")
+    monkeypatch.setenv("ENGINE_WARMUP_PG_RECOVERY_AFTER_RETRIES", "2")
+    monkeypatch.setenv("ENGINE_WARMUP_PARTIAL_START_AFTER_RETRIES", "2")
+    monkeypatch.setenv("ENGINE_WARMUP_QUORUM_RATIO", "0.90")
+
+    from startup import candle_seeding
+
+    pg_restore = AsyncMock(return_value=0)
+    with (
+        patch("context.redis_consumer.RedisConsumer", return_value=consumer),
+        patch("context.live_context_bus.LiveContextBus", return_value=bus),
+        patch("infrastructure.redis_client.get_client", new=AsyncMock(return_value=MagicMock())),
+        patch("core.redis_consumer_fix.sanitize_redis_keys", new=AsyncMock()),
+        patch("infrastructure.redis_url.get_redis_url", return_value="redis://localhost"),
+        patch.object(candle_seeding, "_try_restore_from_postgres", new=pg_restore),
+    ):
+        result = await candle_seeding._seed_from_redis(pairs, {"H1": 30})
+
+    assert result == {
+        "source": "redis",
+        "seeded_pairs": 28,
+        "attempts": 2,
+        "status": "partial",
+        "blocked_pairs": ["SYM28", "SYM29"],
+    }
+    assert consumer.load_candle_history.await_count == 2
+    pg_restore.assert_awaited_once_with(pairs, bus)
 
 
 @pytest.mark.asyncio
