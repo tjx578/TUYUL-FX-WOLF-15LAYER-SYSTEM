@@ -80,6 +80,11 @@ def test_parse_signal_throttle_check_as_pressure_canary():
     assert event.direction == "BUY"
     assert event.effective_action == "OBSERVE"
     assert event.is_downgraded is False
+    assert event.pressure_strength == "CANARY"
+    assert event.pressure_source == "signal_throttle_check"
+    assert event.eligible_for_pressure_block is True
+    assert event.eligible_for_execution is False
+    assert event.execution_block_reason == "non_execute_verdict"
 
 
 def test_parse_downgraded_hold_preserves_raw_verdict_and_effective_action():
