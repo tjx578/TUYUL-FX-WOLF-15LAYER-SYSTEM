@@ -116,6 +116,44 @@ def test_generic_microboost_watch_is_not_tracked_for_finalization():
     )
 
 
+def test_multiple_official_watches_for_same_symbol_do_not_overwrite_and_conflict_is_marked():
+    finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
+    first = _watch(
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        watch_direction="BUY",
+        pending_decision_id="USDCAD_BUY_20260521T030922Z_M15_DECISION",
+    )
+    second = _watch(
+        candidate_direction="SELL",
+        validated_direction="SELL",
+        watch_direction="SELL",
+        signal_valid_time_utc="2026-05-21T03:10:22+00:00",
+        pending_decision_id="USDCAD_SELL_20260521T031022Z_M15_DECISION",
+    )
+
+    finalizer.track(first)
+    finalizer.track(second)
+
+    assert finalizer.pending_symbols() == ["USDCAD"]
+    pending = finalizer.pending_state("USDCAD")
+    assert pending is not None
+    assert pending["pending_decision_id"] == "USDCAD_SELL_20260521T031022Z_M15_DECISION"
+    assert pending["lifecycle_status"] == "CONFLICT_PENDING_CONFIRMATION"
+
+    outputs = finalizer.finalize(
+        report=_report(),
+        market_contexts={},
+        now=datetime(2026, 5, 21, 3, 20, 0, tzinfo=UTC),
+    )
+
+    assert len(outputs) == 2
+    assert {output["pending_decision_id"] for output in outputs} == {
+        "USDCAD_BUY_20260521T030922Z_M15_DECISION",
+        "USDCAD_SELL_20260521T031022Z_M15_DECISION",
+    }
+
+
 def test_idle_resistance_watch_emits_decision_update_when_support_ladder_missing():
     finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
     finalizer.track(_watch())
