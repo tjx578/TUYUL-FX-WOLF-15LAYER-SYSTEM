@@ -23,31 +23,35 @@ def _candle(symbol: str, timeframe: str, source: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_xauusd_uses_substitute_provider_before_finnhub() -> None:
+async def test_default_uses_substitute_provider_before_finnhub_for_all_symbols() -> None:
     finnhub = MagicMock()
-    finnhub.fetch = AsyncMock(return_value=[_candle("XAUUSD", "H1", "rest_api")])
+    finnhub.fetch = AsyncMock(return_value=[_candle("CHFJPY", "H1", "rest_api")])
     fallback = MagicMock()
     fallback.available_providers = ["twelve_data", "alpha_vantage"]
-    fallback.fetch = AsyncMock(return_value=[_candle("XAUUSD", "H1", "twelve_data")])
+    fallback.fetch = AsyncMock(return_value=[_candle("CHFJPY", "H1", "twelve_data")])
 
     provider = HybridCandleProvider(finnhub_fetcher=finnhub, fallback_provider=fallback)
-    result = await provider.fetch("XAUUSD", "H1", 5)
+    result = await provider.fetch("CHFJPY", "H1", 5)
 
     assert result.provider == "twelve_data"
-    assert result.reason == "commodity_substitute_first"
-    fallback.fetch.assert_awaited_once_with("XAUUSD", "H1", 5, allow_stale_cache=False)
+    assert result.reason == "substitute_first"
+    fallback.fetch.assert_awaited_once_with("CHFJPY", "H1", 5, allow_stale_cache=False)
     finnhub.fetch.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_forex_uses_finnhub_before_substitute_provider() -> None:
+async def test_override_can_make_finnhub_primary_for_forex() -> None:
     finnhub = MagicMock()
     finnhub.fetch = AsyncMock(return_value=[_candle("EURUSD", "H1", "rest_api")])
     fallback = MagicMock()
     fallback.available_providers = ["twelve_data", "alpha_vantage"]
     fallback.fetch = AsyncMock(return_value=[_candle("EURUSD", "H1", "twelve_data")])
 
-    provider = HybridCandleProvider(finnhub_fetcher=finnhub, fallback_provider=fallback)
+    provider = HybridCandleProvider(
+        finnhub_fetcher=finnhub,
+        fallback_provider=fallback,
+        substitute_first_symbols=set(),
+    )
     result = await provider.fetch("EURUSD", "H1", 5)
 
     assert result.provider == "finnhub"
@@ -64,7 +68,11 @@ async def test_forex_falls_back_to_substitute_when_finnhub_fails() -> None:
     fallback.available_providers = ["twelve_data"]
     fallback.fetch = AsyncMock(return_value=[_candle("EURUSD", "H1", "twelve_data")])
 
-    provider = HybridCandleProvider(finnhub_fetcher=finnhub, fallback_provider=fallback)
+    provider = HybridCandleProvider(
+        finnhub_fetcher=finnhub,
+        fallback_provider=fallback,
+        substitute_first_symbols=set(),
+    )
     result = await provider.fetch("EURUSD", "H1", 5)
 
     assert result.provider == "twelve_data"
@@ -85,6 +93,6 @@ async def test_xauusd_can_fall_back_to_finnhub_when_substitute_empty() -> None:
     result = await provider.fetch("XAUUSD", "D1", 1)
 
     assert result.provider == "finnhub"
-    assert result.reason == "commodity_finnhub_fallback"
+    assert result.reason == "finnhub_fallback"
     fallback.fetch.assert_awaited_once_with("XAUUSD", "D1", 1, allow_stale_cache=False)
     finnhub.fetch.assert_awaited_once_with("XAUUSD", "D1", 1)

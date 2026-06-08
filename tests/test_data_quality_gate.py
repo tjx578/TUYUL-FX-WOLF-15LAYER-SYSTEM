@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
+from unittest.mock import patch
 
 import pytest
 
@@ -75,11 +77,54 @@ class TestDataQualityGate:
         assert report.low_tick_candles == 50
         assert any("low_tick_candles" in r for r in report.reasons)
 
+    def test_rest_candles_without_tick_metadata_do_not_degrade_low_tick(self) -> None:
+        gate = DataQualityGate(DataQualityConfig(min_tick_count=5, max_low_tick_ratio=0.10))
+        candles = [
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "open": 1.0850,
+                "high": 1.0860,
+                "low": 1.0840,
+                "close": 1.0855,
+                "volume": 0,
+                "source": "rest_api",
+            }
+            for _ in range(50)
+        ]
+        report = gate.assess("EURUSD", "H1", candles, last_update_ts=time.time())
+        assert report.degraded is False
+        assert report.low_tick_candles == 0
+        assert not any("low_tick_candles" in r for r in report.reasons)
+
+    def test_provider_candles_without_forex_volume_do_not_degrade_low_tick(self) -> None:
+        gate = DataQualityGate(DataQualityConfig(min_tick_count=5, max_low_tick_ratio=0.10))
+        candles = [
+            {
+                "symbol": "CHFJPY",
+                "timeframe": "H1",
+                "open": 171.0,
+                "high": 171.2,
+                "low": 170.8,
+                "close": 171.1,
+                "volume": 0,
+                "tick_count": 0,
+                "source": "twelve_data",
+            }
+            for _ in range(50)
+        ]
+        report = gate.assess("CHFJPY", "H1", candles, last_update_ts=time.time())
+        assert report.degraded is False
+        assert report.low_tick_candles == 0
+        assert not any("low_tick_candles" in r for r in report.reasons)
+
     def test_stale_data_triggers_degradation(self) -> None:
         gate = DataQualityGate(DataQualityConfig(stale_threshold_seconds=10.0, stale_candle_multiplier=0.0))
         candles = [_make_candle() for _ in range(50)]
-        old_ts = time.time() - 60.0
-        report = gate.assess("EURUSD", "M15", candles, last_update_ts=old_ts)
+        fixed_now = datetime(2026, 6, 10, 12, 0, tzinfo=UTC).timestamp()
+        old_ts = fixed_now - 60.0
+        with patch("analysis.data_quality_gate.time.time", return_value=fixed_now):
+            report = gate.assess("EURUSD", "M15", candles, last_update_ts=old_ts)
         assert report.degraded is True
         assert report.freshness_state == "stale_preserved"
         assert report.staleness_seconds > 50.0
@@ -97,8 +142,10 @@ class TestDataQualityGate:
     def test_h1_stale_after_two_candles(self) -> None:
         gate = DataQualityGate()
         candles = [_make_candle() for _ in range(50)]
-        old_ts = time.time() - 12000.0
-        report = gate.assess("EURUSD", "H1", candles, last_update_ts=old_ts)
+        fixed_now = datetime(2026, 6, 10, 12, 0, tzinfo=UTC).timestamp()
+        old_ts = fixed_now - 12000.0
+        with patch("analysis.data_quality_gate.time.time", return_value=fixed_now):
+            report = gate.assess("EURUSD", "H1", candles, last_update_ts=old_ts)
         assert report.degraded is True
         assert any("stale_data" in r for r in report.reasons)
 

@@ -9,6 +9,7 @@ Validates:
 
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock
@@ -272,3 +273,41 @@ class TestPipelineWarmupGate:
         assert any("WARMUP_INSUFFICIENT" in e for e in result2["errors"])
         assert warning_mock.call_count == 1
         assert error_mock.call_count == 0
+
+    def test_data_quality_uses_newer_bus_timestamp_when_redis_latest_is_stale(self):
+        """Startup repair in LiveContextBus must not be hidden by stale Redis hashes."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline  # noqa: PLC0415
+
+        pipe = WolfConstitutionalPipeline()
+        pipe.WARMUP_MIN_BARS = {"H1": 30}
+
+        fresh_ts = time.time()
+        stale_ts = fresh_ts - 24 * 3600
+        candles = [
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "open": 1.08,
+                "high": 1.09,
+                "low": 1.07,
+                "close": 1.085,
+                "volume": 0,
+                "timestamp": fresh_ts,
+                "source": "rest_api",
+            }
+            for _ in range(50)
+        ]
+
+        mock_bus = MagicMock()
+        mock_bus.get_candles.return_value = candles
+        pipe._context_bus = mock_bus
+
+        redis_client = MagicMock()
+        redis_client.hget.return_value = str(stale_ts)
+
+        penalty, reports = pipe._assess_data_quality("EURUSD", redis_client)
+
+        assert penalty == 0.0
+        assert reports[0]["freshness_state"] == "fresh"
+        assert not any("stale_data" in reason for reason in reports[0]["reasons"])
+        assert reports[0]["low_tick_candles"] == 0

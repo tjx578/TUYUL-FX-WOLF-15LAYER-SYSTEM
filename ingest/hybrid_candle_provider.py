@@ -1,13 +1,18 @@
 """Hybrid REST candle repair provider.
 
-This keeps Finnhub as the normal forex REST source while allowing commodity
-symbols to repair stale H1/HTF candles through configured substitute providers
-first.  It deliberately uses live provider calls only for repair so an old Redis
-cache is not rewritten as a fresh candle.
+This tries configured substitute providers first for repair workloads, then
+falls back to Finnhub.  The default is intentionally broad because degraded
+production logs can affect any of the 30 enabled pairs, not just metals.  The
+order can still be narrowed with ``WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS``.
+
+Repair calls deliberately use live provider calls only so an old Redis cache is
+not rewritten as fresh data.
 """
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,7 +21,30 @@ from loguru import logger
 from ingest.fallback_provider import FallbackCandleProvider
 from ingest.finnhub_candles import FinnhubCandleFetcher
 
-_COMMODITY_FIRST_SYMBOLS = frozenset({"XAUUSD", "XAGUSD"})
+_DEFAULT_SUBSTITUTE_FIRST_SYMBOLS = frozenset({"*"})
+_REPAIR_SUBSTITUTE_FIRST_ENV = "WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS"
+
+
+def _coerce_symbol_set(symbols: Iterable[str] | str | None) -> set[str]:
+    """Normalize a symbol list, supporting ``*`` for all and ``none`` for off."""
+    if symbols is None:
+        return set(_DEFAULT_SUBSTITUTE_FIRST_SYMBOLS)
+
+    if isinstance(symbols, str):
+        raw_items = symbols.split(",")
+    else:
+        raw_items = symbols
+
+    normalized = {str(item).strip().upper() for item in raw_items if str(item).strip()}
+    if normalized & {"", "NONE", "FALSE", "0", "OFF", "DISABLED"}:
+        return set()
+    if "*" in normalized or "ALL" in normalized:
+        return {"*"}
+    return normalized
+
+
+def _load_substitute_first_symbols_from_env() -> set[str]:
+    return _coerce_symbol_set(os.getenv(_REPAIR_SUBSTITUTE_FIRST_ENV, "*"))
 
 
 @dataclass(frozen=True)
@@ -36,10 +64,11 @@ class HybridCandleFetchResult:
 class HybridCandleProvider:
     """Select a REST candle provider according to symbol risk.
 
-    - XAUUSD/XAGUSD: substitute providers first (Twelve Data, then Alpha
-      Vantage), then Finnhub.  This targets the production symptom where gold
-      HTF candles went stale while commodity-capable providers were available.
-    - Other symbols: Finnhub first, then substitute providers on failure.
+    - Default: substitute providers first (Twelve Data, then Alpha Vantage),
+      then Finnhub for all symbols.
+    - Override: set ``WOLF_REPAIR_SUBSTITUTE_FIRST_SYMBOLS`` to a comma-separated
+      symbol list, ``*``/``ALL`` for every symbol, or ``none``/``off`` to make
+      Finnhub primary for every symbol.
     """
 
     def __init__(
@@ -48,16 +77,25 @@ class HybridCandleProvider:
         finnhub_fetcher: Any | None = None,
         fallback_provider: FallbackCandleProvider | None = None,
         redis_client: Any | None = None,
-        commodity_first_symbols: set[str] | frozenset[str] | None = None,
+        substitute_first_symbols: Iterable[str] | str | None = None,
+        commodity_first_symbols: Iterable[str] | str | None = None,
     ) -> None:
         self._finnhub = finnhub_fetcher or FinnhubCandleFetcher()
         self._fallback = fallback_provider or FallbackCandleProvider(redis_client=redis_client)
-        self._commodity_first_symbols = {
-            str(symbol).strip().upper() for symbol in (commodity_first_symbols or _COMMODITY_FIRST_SYMBOLS)
-        }
+        # ``commodity_first_symbols`` is kept as a compatibility alias for older
+        # callers/tests, but the runtime concept is now substitute-first repair.
+        configured_symbols = (
+            substitute_first_symbols
+            if substitute_first_symbols is not None
+            else commodity_first_symbols
+            if commodity_first_symbols is not None
+            else _load_substitute_first_symbols_from_env()
+        )
+        self._substitute_first_symbols = _coerce_symbol_set(configured_symbols)
 
     def prefers_substitute_first(self, symbol: str) -> bool:
-        return str(symbol or "").strip().upper() in self._commodity_first_symbols
+        normalized = str(symbol or "").strip().upper()
+        return "*" in self._substitute_first_symbols or normalized in self._substitute_first_symbols
 
     async def fetch(
         self,
@@ -71,10 +109,10 @@ class HybridCandleProvider:
         prefer_substitute = self.prefers_substitute_first(symbol) if substitute_first is None else substitute_first
 
         if prefer_substitute:
-            first = await self._fetch_substitute(symbol, timeframe, bars, reason="commodity_substitute_first")
+            first = await self._fetch_substitute(symbol, timeframe, bars, reason="substitute_first")
             if first.ok:
                 return first
-            second = await self._fetch_finnhub(symbol, timeframe, bars, reason="commodity_finnhub_fallback")
+            second = await self._fetch_finnhub(symbol, timeframe, bars, reason="finnhub_fallback")
             if second.ok:
                 return second
             return HybridCandleFetchResult(

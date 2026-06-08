@@ -30,6 +30,17 @@ from state.data_freshness import (
 )
 from utils.market_hours import weekend_gap_seconds
 
+_REST_LIKE_CANDLE_SOURCES: frozenset[str] = frozenset(
+    {
+        "rest_api",
+        "finnhub",
+        "twelve_data",
+        "alpha_vantage",
+        "h1_aggregated",
+        "d1_aggregated",
+    }
+)
+
 
 @dataclass(frozen=True)
 class DataQualityReport:
@@ -194,6 +205,8 @@ class DataQualityGate:
 
     @classmethod
     def _effective_tick_count(cls, candle: dict[str, Any]) -> float | None:
+        source = str(candle.get("source") or "").strip().lower()
+
         tick_count = cls._coerce_nonnegative_float(candle.get("tick_count"))
         if tick_count is not None and tick_count > 0:
             return tick_count
@@ -204,6 +217,18 @@ class DataQualityGate:
         volume = cls._coerce_nonnegative_float(candle.get("volume"))
         if volume is not None and volume > 0:
             return volume
+
+        # Finnhub/TwelveData/Alpha REST candles can legitimately omit tick
+        # counts, and forex volume is often absent or zero.  In that case the
+        # gate should classify freshness and OHLC integrity, not invent a
+        # low-tick penalty from missing metadata.  Tick-built candles without a
+        # REST-like source still return explicit zero below.
+        if (
+            source in _REST_LIKE_CANDLE_SOURCES
+            and (tick_count is None or tick_count == 0)
+            and (volume is None or volume == 0)
+        ):
+            return None
 
         return tick_count
 

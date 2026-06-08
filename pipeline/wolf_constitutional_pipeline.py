@@ -774,21 +774,24 @@ class WolfConstitutionalPipeline:
 
         for tf in self.WARMUP_MIN_BARS:
             candles = self._context_bus.get_candles(symbol, tf)
-            last_ts: float | None = None
+            last_ts_candidates: list[float] = []
             if redis_client is not None:
                 with contextlib.suppress(Exception):
                     raw_ts = redis_client.hget(_latest_candle_key(symbol, tf), "last_seen_ts")
                     if raw_ts is not None:
-                        last_ts = float(str(raw_ts))
-            if last_ts is None and candles:
+                        last_ts_candidates.append(float(str(raw_ts)))
+            if candles:
                 last_c = candles[-1]
-                last_ts = _coerce_timestamp_to_epoch(
+                candle_last_ts = _coerce_timestamp_to_epoch(
                     last_c.get("timestamp_close")
                     or last_c.get("close_time")
                     or last_c.get("timestamp")
                     or last_c.get("time")
                     or last_c.get("open_time")
                 )
+                if candle_last_ts is not None:
+                    last_ts_candidates.append(candle_last_ts)
+            last_ts = max(last_ts_candidates) if last_ts_candidates else None
             report = dq_gate.assess(symbol, tf, candles, last_update_ts=last_ts)
             reports.append(report.to_dict())
             if report.confidence_penalty > penalty:

@@ -302,7 +302,7 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
             )
 
     if degraded_pairs:
-        topped_up = await _top_up_missing_from_finnhub(degraded_pairs, warmup_min_bars, bus)
+        topped_up = await _top_up_missing_from_hybrid_provider(degraded_pairs, warmup_min_bars, bus)
         if topped_up:
             ready_count = 0
             degraded_pairs = []
@@ -482,28 +482,22 @@ def _env_true(name: str, default: bool = True) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-async def _top_up_missing_from_finnhub(
+async def _top_up_missing_from_hybrid_provider(
     pairs: list[str],
     warmup_min_bars: dict[str, int],
     bus: LiveContextBus,
 ) -> int:
-    """Best-effort REST repair for Redis seed shortfalls before analysis starts."""
+    """Best-effort hybrid REST repair for Redis seed shortfalls before analysis starts."""
     if not _env_true("ENGINE_WARMUP_REST_TOPUP", True):
         logger.info("[SEED] REST top-up disabled by ENGINE_WARMUP_REST_TOPUP")
         return 0
 
     try:
-        from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+        from ingest.hybrid_candle_provider import HybridCandleProvider  # noqa: PLC0415
 
-        if not finnhub_keys.available:
-            logger.warning("[SEED] REST top-up skipped — no Finnhub API key configured")
-            return 0
-
-        from ingest.finnhub_candles import FinnhubCandleFetcher  # noqa: PLC0415
-
-        fetcher = FinnhubCandleFetcher()
+        provider = HybridCandleProvider()
     except Exception as exc:
-        logger.warning("[SEED] REST top-up unavailable: {}", exc)
+        logger.warning("[SEED] Hybrid REST top-up unavailable: {}", exc)
         return 0
 
     repaired = 0
@@ -523,28 +517,35 @@ async def _top_up_missing_from_finnhub(
             have = bus.get_warmup_bar_count(pair, tf)
             bars_to_fetch = max(required + 20, have + int(missing.get(timeframe, 0)) + 20)
             try:
-                candles = await fetcher.fetch(pair, tf, bars_to_fetch)
+                result = await provider.fetch(pair, tf, bars_to_fetch)
             except Exception as exc:
-                logger.warning("[SEED] REST top-up failed for {}:{}: {}", pair, tf, exc)
+                logger.warning("[SEED] Hybrid REST top-up failed for {}:{}: {}", pair, tf, exc)
                 continue
+            candles = result.candles
             if len(candles) <= have:
                 logger.warning(
-                    "[SEED] REST top-up returned insufficient {}:{} bars={} existing={} required={}",
+                    "[SEED] Hybrid REST top-up returned insufficient {}:{} bars={} existing={} required={} provider={} reason={} attempts={}",
                     pair,
                     tf,
                     len(candles),
                     have,
                     required,
+                    result.provider,
+                    result.reason,
+                    result.attempts,
                 )
                 continue
             bus.set_candle_history(pair, tf, candles)
             repaired += 1
             logger.info(
-                "[SEED] REST top-up repaired {}:{} — {} -> {} bars",
+                "[SEED] Hybrid REST top-up repaired {}:{} — {} -> {} bars via {} ({}, attempts={})",
                 pair,
                 tf,
                 have,
                 len(candles),
+                result.provider,
+                result.reason,
+                result.attempts,
             )
 
     if repaired:
@@ -553,6 +554,15 @@ async def _top_up_missing_from_finnhub(
         _synthesize_w1_from_d1(bus, pairs)
         _synthesize_mn_from_d1(bus, pairs)
     return repaired
+
+
+async def _top_up_missing_from_finnhub(
+    pairs: list[str],
+    warmup_min_bars: dict[str, int],
+    bus: LiveContextBus,
+) -> int:
+    """Compatibility wrapper for older tests/callers."""
+    return await _top_up_missing_from_hybrid_provider(pairs, warmup_min_bars, bus)
 
 
 async def _seed_from_finnhub(pairs: list[str]) -> dict[str, object]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -166,7 +167,7 @@ async def test_seed_exhausts_retries_degraded_mode(monkeypatch: pytest.MonkeyPat
 @pytest.mark.asyncio
 async def test_rest_top_up_repairs_missing_h1(monkeypatch: pytest.MonkeyPatch) -> None:
     """Engine startup can repair Redis seed shortfalls before analysis starts."""
-    from startup.candle_seeding import _top_up_missing_from_finnhub
+    from startup.candle_seeding import _top_up_missing_from_hybrid_provider
 
     bus = MagicMock()
     bus.check_warmup = MagicMock(
@@ -181,17 +182,19 @@ async def test_rest_top_up_repairs_missing_h1(monkeypatch: pytest.MonkeyPatch) -
     bus.get_candles = MagicMock(return_value=[])
     bus.set_candle_history = MagicMock()
 
-    fake_keys = MagicMock()
-    fake_keys.available = True
-    fake_fetcher = MagicMock()
-    fake_fetcher.fetch = AsyncMock(return_value=[{"symbol": "XAGUSD", "timeframe": "H1", "close": 30.0}] * 50)
+    fake_provider = MagicMock()
+    fake_provider.fetch = AsyncMock(
+        return_value=SimpleNamespace(
+            candles=[{"symbol": "XAGUSD", "timeframe": "H1", "close": 30.0}] * 50,
+            provider="twelve_data",
+            reason="substitute_first",
+            attempts=("twelve_data",),
+        )
+    )
 
-    with (
-        patch("ingest.finnhub_key_manager.finnhub_keys", fake_keys),
-        patch("ingest.finnhub_candles.FinnhubCandleFetcher", return_value=fake_fetcher),
-    ):
-        repaired = await _top_up_missing_from_finnhub(["XAGUSD"], {"H1": 30}, bus)
+    with patch("ingest.hybrid_candle_provider.HybridCandleProvider", return_value=fake_provider):
+        repaired = await _top_up_missing_from_hybrid_provider(["XAGUSD"], {"H1": 30}, bus)
 
     assert repaired == 1
-    fake_fetcher.fetch.assert_awaited_once_with("XAGUSD", "H1", 50)
+    fake_provider.fetch.assert_awaited_once_with("XAGUSD", "H1", 50)
     bus.set_candle_history.assert_called_once()
