@@ -10,6 +10,7 @@ Strategy depends on CONTEXT_MODE env var:
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -20,6 +21,28 @@ if TYPE_CHECKING:
     from context.live_context_bus import LiveContextBus
 
 __all__ = ["seed_candles_on_startup"]
+
+
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(minimum, int(raw))
+    except (TypeError, ValueError):
+        logger.warning("[SEED] Invalid {}={} — using {}", name, raw, default)
+        return default
+
+
+def _env_float(name: str, default: float, *, minimum: float, maximum: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return min(maximum, max(minimum, float(raw)))
+    except (TypeError, ValueError):
+        logger.warning("[SEED] Invalid {}={} — using {}", name, raw, default)
+        return default
 
 
 def _extract_timestamp(candle: dict) -> datetime | None:
@@ -379,8 +402,20 @@ async def _seed_from_redis(
     """
     # Defaults target cross-service race in Railway: ingest warmup for 30x5 TF
     # can take several minutes before the first Redis history is available.
-    max_retries = int(os.getenv("ENGINE_WARMUP_MAX_RETRIES", "60"))
+    max_retries = _env_int("ENGINE_WARMUP_MAX_RETRIES", 60, minimum=1)
     retry_delay = float(os.getenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "5"))
+    pg_recovery_after = min(
+        max_retries,
+        _env_int("ENGINE_WARMUP_PG_RECOVERY_AFTER_RETRIES", 3, minimum=1),
+    )
+    pg_recovery_enabled = _env_true("ENGINE_WARMUP_PG_RECOVERY_ENABLED", True)
+    allow_partial_start = _env_true("ENGINE_WARMUP_ALLOW_PARTIAL_START", True)
+    quorum_ratio = _env_float("ENGINE_WARMUP_QUORUM_RATIO", 0.90, minimum=0.0, maximum=1.0)
+    min_ready_pairs = max(1, math.ceil(len(pairs) * quorum_ratio)) if pairs else 0
+    partial_start_after = min(
+        max_retries,
+        _env_int("ENGINE_WARMUP_PARTIAL_START_AFTER_RETRIES", pg_recovery_after, minimum=1),
+    )
 
     try:
         from context.live_context_bus import LiveContextBus  # noqa: PLC0415
@@ -399,6 +434,7 @@ async def _seed_from_redis(
 
             readiness_min_bars = dict(warmup_min_bars or {"H1": 1, "H4": 5})
             _htf_verify = {"D1": 1, "W1": 1, "MN": 1}
+            pg_recovery_attempted = False
 
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
@@ -436,7 +472,92 @@ async def _seed_from_redis(
                                 pair,
                                 missing_tfs,
                             )
-                    return {"source": "redis", "seeded_pairs": h1_count, "attempts": attempt, "status": "ok"}
+                    return {
+                        "source": "redis",
+                        "seeded_pairs": h1_count,
+                        "attempts": attempt,
+                        "status": "ok",
+                    }
+
+                if pg_recovery_enabled and not pg_recovery_attempted and attempt >= pg_recovery_after:
+                    pg_recovery_attempted = True
+                    logger.warning(
+                        "[SEED] Redis warmup still incomplete after attempt {}/{} "
+                        "(ready={}/{} H1={}/{}). Trying PostgreSQL candle recovery early.",
+                        attempt,
+                        max_retries,
+                        ready_count,
+                        len(pairs),
+                        h1_count,
+                        len(pairs),
+                    )
+                    pg_recovered = await _try_restore_from_postgres(pairs, bus)
+                    if pg_recovered > 0:
+                        _synthesize_h4_from_h1(bus, pairs)
+                        _synthesize_d1_from_h1(bus, pairs)
+                        _synthesize_w1_from_d1(bus, pairs)
+                        _synthesize_mn_from_d1(bus, pairs)
+
+                        h1_count = sum(1 for pair in pairs if bus.get_warmup_bar_count(pair, "H1") > 0)
+                        ready_count = sum(
+                            1 for pair in pairs if bus.check_warmup(pair, readiness_min_bars).get("ready")
+                        )
+                        if ready_count == len(pairs):
+                            logger.info(
+                                "[SEED] PostgreSQL recovery completed warmup "
+                                "({}/{} pairs ready, recovered {} symbol/timeframe combos, attempt {}).",
+                                ready_count,
+                                len(pairs),
+                                pg_recovered,
+                                attempt,
+                            )
+                            return {
+                                "source": "postgres_fallback",
+                                "seeded_pairs": ready_count,
+                                "attempts": attempt,
+                                "status": "recovered",
+                            }
+                        logger.warning(
+                            "[SEED] PostgreSQL recovery seeded {} symbol/timeframe combos but warmup is still "
+                            "incomplete (ready={}/{} H1={}/{}); continuing Redis wait.",
+                            pg_recovered,
+                            ready_count,
+                            len(pairs),
+                            h1_count,
+                            len(pairs),
+                        )
+
+                if (
+                    allow_partial_start
+                    and attempt >= partial_start_after
+                    and ready_count >= min_ready_pairs
+                    and (not pg_recovery_enabled or pg_recovery_attempted)
+                ):
+                    blocked_pairs = [
+                        pair
+                        for pair in pairs
+                        if not bus.check_warmup(pair, readiness_min_bars).get("ready")
+                    ]
+                    logger.warning(
+                        "[SEED] Redis warmup quorum reached after attempt {}/{} "
+                        "(ready={}/{} required_quorum={} H1={}/{}). "
+                        "Starting with partial warmup; blocked pairs remain gated: {}",
+                        attempt,
+                        max_retries,
+                        ready_count,
+                        len(pairs),
+                        min_ready_pairs,
+                        h1_count,
+                        len(pairs),
+                        blocked_pairs,
+                    )
+                    return {
+                        "source": "redis",
+                        "seeded_pairs": ready_count,
+                        "attempts": attempt,
+                        "status": "partial",
+                        "blocked_pairs": blocked_pairs,
+                    }
 
                 if attempt < max_retries:
                     logger.warning(
@@ -451,22 +572,32 @@ async def _seed_from_redis(
                     )
                     await asyncio.sleep(retry_delay)
 
-            logger.critical(
-                "[SEED] Redis warmup still incomplete after {} retries ({:.0f}s total wait). "
-                "Attempting PostgreSQL candle recovery before degraded mode.",
-                max_retries,
-                max_retries * retry_delay,
-            )
-            # Fallback: recover candle history from PostgreSQL snapshots
-            pg_recovered = await _try_restore_from_postgres(pairs, bus)
-            if pg_recovered > 0:
-                logger.info("[SEED] PostgreSQL recovery seeded {} pairs into LiveContextBus", pg_recovered)
-                return {
-                    "source": "postgres_fallback",
-                    "seeded_pairs": pg_recovered,
-                    "attempts": max_retries,
-                    "status": "recovered",
-                }
+            if pg_recovery_enabled and not pg_recovery_attempted:
+                logger.critical(
+                    "[SEED] Redis warmup still incomplete after {} retries ({:.0f}s total wait). "
+                    "Attempting PostgreSQL candle recovery before degraded mode.",
+                    max_retries,
+                    max_retries * retry_delay,
+                )
+                pg_recovered = await _try_restore_from_postgres(pairs, bus)
+                if pg_recovered > 0:
+                    logger.info(
+                        "[SEED] PostgreSQL recovery seeded {} symbol/timeframe combos into LiveContextBus",
+                        pg_recovered,
+                    )
+                    return {
+                        "source": "postgres_fallback",
+                        "seeded_pairs": pg_recovered,
+                        "attempts": max_retries,
+                        "status": "recovered",
+                    }
+            else:
+                logger.critical(
+                    "[SEED] Redis warmup still incomplete after {} retries ({:.0f}s total wait). "
+                    "PostgreSQL recovery was already attempted; continuing to degraded/REST repair path.",
+                    max_retries,
+                    max_retries * retry_delay,
+                )
             return {"source": "redis", "seeded_pairs": 0, "attempts": max_retries, "status": "degraded"}
         finally:
             pass  # Pooled client — don't close; pool is managed by RedisClientManager
