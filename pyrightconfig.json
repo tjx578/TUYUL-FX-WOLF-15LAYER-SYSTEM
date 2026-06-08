@@ -5,7 +5,7 @@
   "venv": ".venv",
   "reportMissingTypeStubs": false,
   "reportUnnecessaryTypeIgnoreComment": "warning",
-  "include": ["."],
+  "include": ["**/*.py"],
   "exclude": [
     "node_modules",
     ".venv",
