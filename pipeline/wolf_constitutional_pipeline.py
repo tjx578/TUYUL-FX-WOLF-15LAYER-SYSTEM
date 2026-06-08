@@ -369,6 +369,7 @@ class WolfConstitutionalPipeline:
         )
         self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
+        self._last_no_trade_pressure_decision_at: dict[str, float] = {}
         self._signal_lifecycle_manager = SignalLifecycleManager()
         self._signal_block_finalizer = SignalBlockFinalizer(
             enabled=os.getenv("SIGNAL_BLOCK_FINALIZER_ENABLED", "true").strip().lower() == "true",
@@ -3652,7 +3653,9 @@ class WolfConstitutionalPipeline:
             return f"NO_MINOR_{missing_label.upper()}_PREVIOUS_LEVELS"
         return f"{missing_label.upper()}_LADDER_MISSING"
 
-    def _m15_expansion_ratios(self, candles: list[dict[str, Any]], period: int = 14) -> tuple[float | None, float | None]:
+    def _m15_expansion_ratios(
+        self, candles: list[dict[str, Any]], period: int = 14
+    ) -> tuple[float | None, float | None]:
         if len(candles) < 3:
             return None, None
         latest = candles[-1]
@@ -4106,20 +4109,96 @@ class WolfConstitutionalPipeline:
         verdict = str(l12_verdict.get("verdict") or "").strip().upper()
         if verdict.startswith("EXECUTE"):
             return
-        pressure_seen = bool((report.get("counts") or {}).get("total_events"))
+        pressure_event_count = self._no_trade_pressure_event_count(symbol=symbol, report=report)
+        pressure_seen = pressure_event_count > 0
         if not pressure_seen:
+            return
+        microboost_summary = (
+            report.get("microboost_summary") if isinstance(report.get("microboost_summary"), dict) else {}
+        )
+        microboost_detected = bool((microboost_summary or {}).get("count_total"))
+        if not self._should_emit_no_trade_pressure_decision(
+            symbol=symbol,
+            pressure_event_count=pressure_event_count,
+            microboost_detected=microboost_detected,
+        ):
             return
         payload = self._no_trade_pressure_decision_update_payload(
             symbol=symbol,
             l12_verdict=l12_verdict,
             report=report,
             market_contexts=market_contexts,
+            pressure_event_count=pressure_event_count,
+            microboost_detected=microboost_detected,
         )
         if payload is None:
             return
         payload["signal_json_emit_result"] = self._emit_signal_json_payload(payload)
         report["no_trade_pressure_decision_update"] = payload
         l12_verdict["no_trade_pressure_decision_update"] = payload
+
+    def _no_trade_pressure_event_count(self, *, symbol: str, report: dict[str, Any]) -> int:
+        symbol_key = symbol.upper()
+        symbol_activity_raw = report.get("symbol_activity")
+        symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
+        activity_raw = symbol_activity.get(symbol_key)
+        activity = activity_raw if isinstance(activity_raw, dict) else None
+        if isinstance(activity, dict):
+            for key in ("latest_block_effective_ticks", "latest_block_events"):
+                value = self._coerce_non_negative_int(activity.get(key))
+                if value is not None:
+                    return value
+        counts_raw = report.get("counts")
+        counts = counts_raw if isinstance(counts_raw, dict) else {}
+        pairs_raw = counts.get("pairs")
+        pairs = pairs_raw if isinstance(pairs_raw, dict) else {}
+        pair_count = self._coerce_non_negative_int(pairs.get(symbol_key))
+        if pair_count is not None:
+            return pair_count
+        total_count = self._coerce_non_negative_int(counts.get("total_events"))
+        return total_count or 0
+
+    def _coerce_non_negative_int(self, value: Any) -> int | None:
+        try:
+            coerced = int(value)
+        except (TypeError, ValueError):
+            return None
+        return max(0, coerced)
+
+    def _should_emit_no_trade_pressure_decision(
+        self,
+        *,
+        symbol: str,
+        pressure_event_count: int,
+        microboost_detected: bool,
+    ) -> bool:
+        try:
+            min_events = max(
+                1,
+                int(os.getenv("SIGNAL_THROTTLE_NO_TRADE_DECISION_MIN_EVENTS", "3")),
+            )
+        except (TypeError, ValueError):
+            min_events = 3
+        try:
+            cooldown_seconds = max(
+                0.0,
+                float(os.getenv("SIGNAL_THROTTLE_NO_TRADE_DECISION_COOLDOWN_SECONDS", "75")),
+            )
+        except (TypeError, ValueError):
+            cooldown_seconds = 75.0
+        if not microboost_detected and pressure_event_count < min_events:
+            return False
+        now = time.time()
+        last_seen = getattr(self, "_last_no_trade_pressure_decision_at", None)
+        if not isinstance(last_seen, dict):
+            last_seen = {}
+            self._last_no_trade_pressure_decision_at = last_seen
+        symbol_key = symbol.upper()
+        previous = last_seen.get(symbol_key)
+        if previous is not None and now - previous < cooldown_seconds:
+            return False
+        last_seen[symbol_key] = now
+        return True
 
     def _no_trade_pressure_decision_update_payload(
         self,
@@ -4128,6 +4207,8 @@ class WolfConstitutionalPipeline:
         l12_verdict: dict[str, Any],
         report: dict[str, Any],
         market_contexts: dict[str, MarketContext],
+        pressure_event_count: int | None = None,
+        microboost_detected: bool | None = None,
     ) -> dict[str, Any] | None:
         context = market_contexts.get(symbol.upper())
         price = None
@@ -4143,14 +4224,19 @@ class WolfConstitutionalPipeline:
         if price is None:
             return None
         direction = self._direction_hint(l12_verdict.get("direction"))
-        symbol_activity = report.get("symbol_activity") if isinstance(report.get("symbol_activity"), dict) else {}
-        activity = symbol_activity.get(symbol.upper()) if isinstance(symbol_activity, dict) else None
-        activity = activity if isinstance(activity, dict) else {}
+        symbol_activity_raw = report.get("symbol_activity")
+        symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
+        activity_raw = symbol_activity.get(symbol.upper())
+        activity = activity_raw if isinstance(activity_raw, dict) else {}
         event_time = str(activity.get("latest_event_utc") or datetime.now(UTC).isoformat())
         cluster_stamp = event_time.replace(":", "").replace("-", "").replace("+", "Z")
         cluster_id = f"{symbol.upper()}_{cluster_stamp}_NO_TRADE"
-        microboost_summary = report.get("microboost_summary") if isinstance(report.get("microboost_summary"), dict) else {}
-        microboost_detected = bool((microboost_summary or {}).get("count_total"))
+        if pressure_event_count is None:
+            pressure_event_count = self._no_trade_pressure_event_count(symbol=symbol, report=report)
+        if microboost_detected is None:
+            microboost_summary_raw = report.get("microboost_summary")
+            microboost_summary = microboost_summary_raw if isinstance(microboost_summary_raw, dict) else {}
+            microboost_detected = bool(microboost_summary.get("count_total"))
         return {
             "event": "signal_decision_update_json",
             "symbol": symbol.upper(),
@@ -4184,6 +4270,11 @@ class WolfConstitutionalPipeline:
             "decision_update_trigger": "NON_EXECUTE_PRESSURE_CANARY",
             "pending_decision_id": f"{cluster_id}_DECISION",
             "pressure_seen": True,
+            "pressure_event_count": pressure_event_count,
+            "pressure_level": "MICROBOOST_WATCH" if microboost_detected else "PRESSURE_CANARY",
+            "pressure_strength": "MICROBOOST" if microboost_detected else "CANARY",
+            "pressure_source": "signal_throttle_check",
+            "execution_block_reason": "NON_EXECUTE_VERDICT",
             "microboost_detected": microboost_detected,
             "reason": (
                 "Pressure seen but execution verdict remains NO_TRADE; "
