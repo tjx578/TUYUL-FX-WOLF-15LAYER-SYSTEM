@@ -4001,11 +4001,23 @@ class WolfConstitutionalPipeline:
         signal_id = payload.get("signal_id") or payload.get("pending_decision_id")
         shadow_only = payload.get("shadow_only") is True
         telemetry_only = payload.get("signal_quality") in {"TELEMETRY_ONLY", "DEBUG_ONLY"}
+        validation_only = payload.get("orchestration_status") == "VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH"
+        direction = str(
+            payload.get("watch_direction")
+            or payload.get("candidate_direction")
+            or payload.get("validated_direction")
+            or ""
+        ).upper()
+        source_clean_block_confirmed = payload.get("source_clean_block_confirmed")
+        source_clean_block_ok = source_clean_block_confirmed is not False
         return (
             bool(payload.get("symbol"))
             and bool(signal_id)
             and not shadow_only
             and not telemetry_only
+            and not validation_only
+            and direction in {"BUY", "SELL"}
+            and source_clean_block_ok
             and (
                 status.endswith("_WATCH")
                 or status.endswith("_VALID")
@@ -4028,6 +4040,30 @@ class WolfConstitutionalPipeline:
         if payload.get("valid_for_execution") is not True:
             payload.setdefault("requires_m15_close", True)
 
+    def _prepare_lifecycle_tracking_metadata(self, payload: dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            return
+        status = str(payload.get("status") or "")
+        is_lifecycle_status = (
+            status.endswith("_WATCH") or status.endswith("_VALID") or status.endswith("_BY_DIRECT_ABSORPTION")
+        )
+        excluded = (
+            payload.get("shadow_only") is True
+            or payload.get("signal_quality") in {"TELEMETRY_ONLY", "DEBUG_ONLY"}
+            or payload.get("orchestration_status") == "VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH"
+        )
+        if is_lifecycle_status and payload.get("symbol") and not excluded:
+            self._mark_official_lifecycle_candidate(payload)
+        lifecycle_track = self._should_track_lifecycle_candidate(payload)
+        payload["lifecycle_track"] = lifecycle_track
+        if lifecycle_track:
+            payload.setdefault("lifecycle_status", "WATCH_ACTIVE")
+            payload.setdefault("terminal_required", True)
+            payload.setdefault("terminal_guarantee", "SIGNAL_BLOCK_FINALIZER")
+        else:
+            payload.setdefault("terminal_required", False)
+            payload.setdefault("terminal_guarantee", "OBSERVABILITY_ONLY")
+
     def _track_official_lifecycle_candidate(self, payload: dict[str, Any]) -> None:
         """Register an official watch/continuation candidate with the finalizer so it
         is guaranteed a terminal outcome. Gated by
@@ -4048,8 +4084,9 @@ class WolfConstitutionalPipeline:
         finalizer = getattr(self, "_signal_block_finalizer", None)
         if finalizer is None:
             return
-        self._mark_official_lifecycle_candidate(payload)
-        if self._should_track_lifecycle_candidate(payload):
+        if payload.get("lifecycle_track") is not True:
+            self._prepare_lifecycle_tracking_metadata(payload)
+        if payload.get("lifecycle_track") is True:
             finalizer.track(payload)
 
     def _apply_microboost_continuation_entry_report(
@@ -4072,8 +4109,10 @@ class WolfConstitutionalPipeline:
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
         if self._signal_json_gate_adapter.emit_continuation:
-            self._track_official_lifecycle_candidate(continuation)
+            self._prepare_lifecycle_tracking_metadata(continuation)
             continuation["signal_json_emit_result"] = self._emit_signal_json_payload(continuation)
+            if continuation["signal_json_emit_result"]:
+                self._track_official_lifecycle_candidate(continuation)
 
     def _apply_microboost_watch_entry_report(
         self,
@@ -4088,10 +4127,12 @@ class WolfConstitutionalPipeline:
             return
 
         watch_entry = dict(watch_entry)
+        self._prepare_lifecycle_tracking_metadata(watch_entry)
         report["microboost_watch_entry"] = watch_entry
         l12_verdict["microboost_watch_entry"] = watch_entry
-        self._track_official_lifecycle_candidate(watch_entry)
         watch_entry["signal_json_emit_result"] = self._emit_signal_json_payload(watch_entry)
+        if watch_entry["signal_json_emit_result"]:
+            self._track_official_lifecycle_candidate(watch_entry)
 
     def _apply_microboost_counter_entry_report(
         self,
