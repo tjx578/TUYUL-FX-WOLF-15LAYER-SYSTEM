@@ -173,6 +173,22 @@ class TestSignalThrottle:
             "[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1) suppressed=1"
         ]
 
+    def test_default_throttled_logs_do_not_repeat_inside_active_window(self, monkeypatch, capsys):
+        """Default production logging emits one error per active throttle window."""
+        now = 1000.0
+        monkeypatch.setattr("constitution.signal_throttle.time.time", lambda: now)
+        t = SignalThrottle(max_signals=1, window_seconds=300)
+        t.record("XAUUSD")
+
+        assert t.is_throttled("XAUUSD") is True
+        first = capsys.readouterr()
+        assert first.err.splitlines() == ["[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"]
+
+        now = 1031.0
+        assert t.is_throttled("XAUUSD") is True
+        repeated = capsys.readouterr()
+        assert repeated.err == ""
+
     def test_allowed_logs_plain_info_event(self, capsys):
         """Allowed signals must reach the platform as plain stdout events."""
         t = SignalThrottle(max_signals=3, window_seconds=300)
