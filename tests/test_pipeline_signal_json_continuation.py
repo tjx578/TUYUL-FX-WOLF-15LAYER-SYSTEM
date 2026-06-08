@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, cast
 
 from analysis.microboost_continuation_entry import MicroboostContinuationEngine
 from analysis.signal_json_emitter import SignalJsonEmitter
@@ -120,3 +121,63 @@ def test_pipeline_logs_generic_microboost_watch_as_signal_watch_json(caplog):
     assert '"status":"MICROBOOST_WATCH"' in caplog.text
     assert '"signal_family":"MICROBOOST_WATCH"' in caplog.text
     assert verdict["microboost_watch_entry"]["status"] == "MICROBOOST_WATCH"
+
+
+def test_pipeline_logs_block_finalizer_update_as_signal_decision_update_json(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
+
+    update = {
+        "event": "signal_decision_update_json",
+        "symbol": "USDCAD",
+        "cluster_id": "USDCAD_20260521T030620Z",
+        "signal_family": "MICROBOOST_COUNTER_ENTRY",
+        "status": "WAIT_STRUCTURE_OR_NEXT_M15",
+        "previous_status": "SELL_ABSORPTION_WATCH",
+        "raw_direction": "BUY",
+        "candidate_direction": "SELL",
+        "validated_direction": None,
+        "watch_direction": "SELL",
+        "final_direction": "WAIT",
+        "direction_validation_status": "WATCH_ONLY_PENDING_CONFIRMATION",
+        "action": "WAIT_STRUCTURE_OR_NEXT_M15",
+        "signal_valid_time_utc": "2026-05-21T03:09:22+00:00",
+        "signal_valid_price": 1.37633,
+        "entry_reference_price": 1.37633,
+        "entry_zone": [1.37633, 1.37647],
+        "rr_status": "WATCH",
+        "target_mode": "PROVISIONAL_RR_FALLBACK",
+        "market_context_applied": True,
+        "valid_for_execution": False,
+        "decision_update_trigger": "IDLE_AND_HARD_AGE_FINALIZER",
+        "pending_decision_id": "USDCAD_20260521T030620Z_M15_DECISION",
+        "reason": "Pressure block ended; structure target is still incomplete.",
+    }
+
+    class _Finalizer:
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+            self.tracked: list[dict] = []
+
+        def finalize(self, **_kwargs) -> list[dict]:
+            return [self.payload]
+
+        def track(self, payload: dict) -> None:
+            self.tracked.append(payload)
+
+    finalizer = _Finalizer(update)
+    cast(Any, pipeline)._signal_block_finalizer = finalizer
+    report: dict = {"symbol_activity": {}}
+    verdict: dict = {}
+
+    pipeline._apply_signal_block_finalizer(l12_verdict=verdict, report=report, market_contexts={})
+
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert '"status":"WAIT_STRUCTURE_OR_NEXT_M15"' in caplog.text
+    assert '"previous_status":"SELL_ABSORPTION_WATCH"' in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert verdict["final_direction"] == "WAIT"
+    assert verdict["direction_source"] == "SIGNAL_BLOCK_FINALIZER_DECISION_UPDATE"
+    assert finalizer.tracked[0]["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
