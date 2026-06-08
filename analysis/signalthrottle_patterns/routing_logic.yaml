@@ -6,6 +6,7 @@ pattern_router:
   step_5_decision_router:
     - "NO_NEW_ENTRY never emits executable SignalJSON"
     - "WAIT emits SignalWatchJSON or SignalDecisionUpdateJSON"
+    - "Priced microboost WAIT states emit MICROBOOST_WATCH SignalWatchJSON; unpriced context-required states remain MicroboostIntel only"
     - "SignalWatchJSON uses watch_direction; validated_direction stays null until execution is valid"
     - "M15 close confirmation is required only for ambiguous, counter, reversal, or lifecycle-conflict states"
     - "Direct absorption can emit final execution without M15 close when structure target, RR, phase, lifecycle, and spread gates are complete"
