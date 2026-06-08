@@ -3911,7 +3911,7 @@ class WolfConstitutionalPipeline:
             )
         return contexts
 
-    def _record_signal_throttle_live_report(
+    def _process_signal_throttle_snapshot(
         self,
         *,
         symbol: str,
@@ -3928,7 +3928,6 @@ class WolfConstitutionalPipeline:
         report = self._signal_throttle_live_analyzer.snapshot(
             market_contexts=market_contexts,
         )
-        l12_verdict["signal_throttle_live_report"] = report
         self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_signal_block_finalizer(
@@ -4187,7 +4186,7 @@ class WolfConstitutionalPipeline:
                     max_signals=self._signal_throttle.max_signals,
                     window_seconds=self._signal_throttle.window_seconds,
                 )
-                self._record_signal_throttle_live_report(
+                self._process_signal_throttle_snapshot(
                     symbol=symbol,
                     synthesis=synthesis,
                     l12_verdict=l12_verdict,
@@ -4212,7 +4211,7 @@ class WolfConstitutionalPipeline:
                     allowed_streak=allowed_streak,
                 )
                 l12_verdict["signal_throttle_intel"] = throttle_intel.to_dict()
-                self._record_signal_throttle_live_report(
+                self._process_signal_throttle_snapshot(
                     symbol=symbol,
                     synthesis=synthesis,
                     l12_verdict=l12_verdict,

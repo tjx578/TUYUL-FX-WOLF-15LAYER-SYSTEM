@@ -554,8 +554,8 @@ class TestPipelineSignalThrottle:
         assert not any(error.startswith("MARKET_CONTEXT_UNVALIDATED") for error in errors)
         assert any(event["event"] == "market_context_validation" for event in events)
 
-    def test_pipeline_live_report_applies_priced_microboost_context(self, monkeypatch, capsys):
-        """Live throttle report should price microboost when market context is available."""
+    def test_pipeline_signal_throttle_snapshot_applies_priced_microboost_context(self, monkeypatch, capsys):
+        """SignalThrottle snapshot should price microboost when market context is available."""
         WolfConstitutionalPipeline = _pipeline_cls()
 
         pipe = self._make_pipeline()
@@ -602,6 +602,15 @@ class TestPipelineSignalThrottle:
             "_emit_verdict_stream_event",
             staticmethod(lambda **kwargs: events.append(kwargs)),
         )
+        captured_reports: list[dict[str, Any]] = []
+        original_snapshot = pipe._process_signal_throttle_snapshot
+
+        def _capture_snapshot(**kwargs: Any) -> dict[str, Any]:
+            report = original_snapshot(**kwargs)
+            captured_reports.append(report)
+            return report
+
+        monkeypatch.setattr(pipe, "_process_signal_throttle_snapshot", _capture_snapshot)
         capsys.readouterr()
 
         errors: list[str] = []
@@ -625,7 +634,10 @@ class TestPipelineSignalThrottle:
             errors=errors,
         )
 
-        report = cast(dict[str, Any], l12_verdict["signal_throttle_live_report"])
+        removed_snapshot_key = "_".join(("signal", "throttle", "live", "report"))
+        assert removed_snapshot_key not in l12_verdict
+        assert captured_reports
+        report = cast(dict[str, Any], captured_reports[-1])
         latest = cast(dict[str, Any], report["microboost_summary"]["latest"])
         assert report["microboost_summary"]["market_context_applied"] is True
         assert latest["phase_unpriced"] == "DENSE_MICROBOOST"

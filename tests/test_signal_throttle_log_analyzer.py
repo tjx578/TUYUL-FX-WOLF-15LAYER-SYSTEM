@@ -1011,7 +1011,7 @@ def test_microboost_counter_to_running_trend_is_pullback_until_structure_break()
     assert latest["price_position"] == "MID_RANGE"
 
 
-def test_live_report_requires_market_context_without_prices():
+def test_live_analyzer_requires_market_context_without_prices():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
     analyzer.record_allowed(symbol="EURCAD", verdict="EXECUTE_BUY")
 

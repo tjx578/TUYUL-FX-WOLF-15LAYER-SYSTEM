@@ -27,7 +27,7 @@ from typing import Any
 try:
     from config.profile_engine import ConfigProfileEngine
 except Exception:  # noqa: BLE001
-    ConfigProfileEngine = None  # type: ignore[assignment]
+    ConfigProfileEngine = None
 
 _ORIGINAL_CONFIG_PROFILE_ENGINE = ConfigProfileEngine
 
