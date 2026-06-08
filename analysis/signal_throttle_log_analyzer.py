@@ -40,6 +40,7 @@ _DOWNGRADED_RE = re.compile(
     re.IGNORECASE,
 )
 _INTEL_RE = re.compile(r"\[SignalThrottleIntel\]\s+symbol=(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)", re.IGNORECASE)
+_SIGNAL_THROTTLE_CHECK_RE = re.compile(r"\bevent=signal_throttle_check\b", re.IGNORECASE)
 _SUPPRESSED_RE = re.compile(r"\bsuppressed=(?P<suppressed>\d+)\b", re.IGNORECASE)
 _COUNT_KV_RE = re.compile(r"\bcount=(?P<count>\d+)\b", re.IGNORECASE)
 _COUNT_SIGNAL_RE = re.compile(r"\b(?P<count>\d+)\s+signals?\s+in\s+last\b", re.IGNORECASE)
@@ -134,7 +135,8 @@ def parse_engine_log_event(event: dict[str, Any]) -> SignalThrottleLogEvent | No
 
 def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | None:
     message = _extract_field(row, "message", "body", "log", "text")
-    if "[SignalThrottle]" not in message:
+    is_signal_throttle_check = _SIGNAL_THROTTLE_CHECK_RE.search(message) is not None
+    if "[SignalThrottle]" not in message and not is_signal_throttle_check:
         return None
 
     timestamp = _parse_timestamp(_extract_field(row, "timestamp", "time", "@timestamp", "datetime"))
@@ -150,7 +152,16 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
     allowed = _ALLOWED_RE.search(message)
     downgraded = _DOWNGRADED_RE.search(message)
 
-    if downgraded:
+    if is_signal_throttle_check:
+        symbol = _extract_kv_text(message, "symbol").upper()
+        if not symbol:
+            return None
+        verdict = (_extract_kv_text(message, "source_verdict") or _extract_kv_text(message, "verdict")).upper()
+        event_type = "PRESSURE_CANARY"
+        effective_action = "OBSERVE"
+        is_downgraded = False
+        direction = normalize_direction(_extract_kv_text(message, "direction"), None)
+    elif downgraded:
         symbol = downgraded.group("symbol").upper()
         verdict = downgraded.group("verdict").upper()
         event_type = "DOWNGRADED_TO_HOLD"
@@ -182,7 +193,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         symbol=symbol,
         event_type=event_type,
         verdict=verdict,
-        direction=normalize_direction(None, verdict),
+        direction=direction if is_signal_throttle_check else normalize_direction(None, verdict),
         raw_verdict=verdict,
         effective_action=effective_action,
         is_downgraded=is_downgraded,
@@ -667,6 +678,40 @@ class SignalThrottleLiveAnalyzer:
                 raw_verdict=verdict_text if verdict_text != "UNKNOWN" else None,
                 effective_action="HOLD",
                 is_downgraded=True,
+            )
+        )
+
+    def record_pressure_canary(
+        self,
+        *,
+        symbol: str,
+        verdict: str | None = None,
+        direction: str | None = None,
+        reason: str | None = None,
+        timestamp: datetime | None = None,
+    ) -> None:
+        """Record non-executable throttle pressure without creating an order signal."""
+        now = _coerce_timestamp(timestamp)
+        verdict_text = str(verdict or "NO_TRADE").strip().upper() or "NO_TRADE"
+        normalized_direction = normalize_direction(direction, None) or normalize_direction(None, verdict_text)
+        reason_text = f" reason={reason}" if reason else ""
+        direction_text = normalized_direction or "WAIT"
+        self.record(
+            SignalThrottleLogEvent(
+                timestamp=now,
+                severity="info",
+                message=(
+                    f"event=signal_throttle_check symbol={symbol.upper()} "
+                    f"verdict={verdict_text} direction={direction_text} "
+                    f"status=pressure_canary{reason_text}"
+                ),
+                symbol=symbol.upper(),
+                event_type="PRESSURE_CANARY",
+                verdict=verdict_text,
+                direction=normalized_direction,
+                raw_verdict=verdict_text,
+                effective_action="OBSERVE",
+                is_downgraded=False,
             )
         )
 
@@ -1594,6 +1639,13 @@ def _extract_optional_float(message: str, *patterns: re.Pattern[str], group: str
     return None
 
 
+def _extract_kv_text(message: str, key: str) -> str:
+    match = re.search(rf"\b{re.escape(key)}=(?P<value>\S+)", message, re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group("value").strip()
+
+
 def _extract_suppressed(message: str) -> int:
     match = _SUPPRESSED_RE.search(message)
     if not match:
@@ -1686,6 +1738,9 @@ def _state_metadata_from_rows(
 
 
 def _state_symbol_from_message(message: str) -> str | None:
+    if _SIGNAL_THROTTLE_CHECK_RE.search(message):
+        symbol = _extract_kv_text(message, "symbol").upper()
+        return symbol or None
     for pattern in (_INTEL_RE, _THROTTLED_RE, _ALLOWED_RE, _DOWNGRADED_RE):
         match = pattern.search(message)
         if match:
