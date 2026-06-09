@@ -1404,6 +1404,7 @@ def _microboost_watch_payload(
         "direction_confidence": direction_confidence,
         "resolved_family": watch_resolved_family,
         "requires_m15_close": requires_m15_close,
+        "direction_inheritance_window_seconds": _env_float("MICROBOOST_DIRECTION_INHERIT_WINDOW_SECONDS", 600.0),
         "final_direction": "WAIT",
         "direction_status": "MICROBOOST_WAIT_STATE",
         "direction_validation_status": "WATCH_ONLY_PENDING_CONFIRMATION",
@@ -1516,11 +1517,13 @@ def resolve_microboost_direction(
         reference = max(stamps) if stamps else None
 
     directions: set[str] = set()
+    had_symbol_directional = False
     for event in events_list:
         event_symbol = str(getattr(event, "symbol", "") or "").upper()
         event_direction = str(getattr(event, "direction", "") or "").upper()
         if event_symbol != symbol or event_direction not in {"BUY", "SELL"}:
             continue
+        had_symbol_directional = True
         event_time = getattr(event, "timestamp", None)
         if reference is not None and event_time is not None:  # noqa: SIM102
             if (reference - event_time).total_seconds() > window_seconds:
@@ -1528,7 +1531,10 @@ def resolve_microboost_direction(
         directions.add(event_direction)
 
     if not directions:
-        return {"inherited_direction": None, "direction_source": "DIRECTION_MISSING", "direction_confidence": "NONE"}
+        # Separate "had directional intel but stale (outside window)" from "no intel at all"
+        # so canary counters can distinguish stale_intel_count vs direction_missing_count.
+        source = "DIRECTION_STALE_INTEL" if had_symbol_directional else "DIRECTION_MISSING"
+        return {"inherited_direction": None, "direction_source": source, "direction_confidence": "NONE"}
     if len(directions) > 1:
         return {
             "inherited_direction": None,
