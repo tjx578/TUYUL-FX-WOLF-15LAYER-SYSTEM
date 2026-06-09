@@ -51,13 +51,21 @@ def test_opposite_recent_intel_is_conflict():
     assert out["inherited_direction"] is None
 
 
-def test_stale_intel_outside_window_is_missing():
+def test_stale_intel_outside_window_is_stale_not_missing():
+    # Directional intel exists for the symbol but is older than the window.
     latest = {"symbol": "EURNZD", "direction": None, "h1_phase": "BULLISH"}
     out = resolve_microboost_direction(
         latest, events=[_ev("EURNZD", "BUY", ago_seconds=1200)], now=NOW, window_seconds=600
     )
-    assert out["direction_source"] == "DIRECTION_MISSING"
+    assert out["direction_source"] == "DIRECTION_STALE_INTEL"
     assert out["direction_confidence"] == "NONE"
+    assert out["inherited_direction"] is None
+
+
+def test_no_directional_intel_at_all_is_missing():
+    latest = {"symbol": "EURNZD", "direction": None, "h1_phase": "BULLISH"}
+    out = resolve_microboost_direction(latest, events=[], now=NOW, window_seconds=600)
+    assert out["direction_source"] == "DIRECTION_MISSING"
 
 
 def test_price_phase_conflict_rejects_inheritance():
