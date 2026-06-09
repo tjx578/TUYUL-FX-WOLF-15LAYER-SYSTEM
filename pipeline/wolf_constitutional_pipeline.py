@@ -3253,6 +3253,7 @@ class WolfConstitutionalPipeline:
         symbol: str,
         synthesis: dict[str, Any],
         l12_verdict: dict[str, Any],
+        allow_execution_entry_price: bool = True,
     ) -> MarketContext:
         execution = synthesis.get("execution", {}) if isinstance(synthesis.get("execution"), dict) else {}
         direction = self._normalize_market_context_direction(
@@ -3267,7 +3268,9 @@ class WolfConstitutionalPipeline:
         tick_mid = (bid + ask) / 2.0 if bid is not None and ask is not None else bid or ask
         latest_m15_close = self._latest_candle_close(symbol, "M15")
         latest_h1_close = self._latest_candle_close(symbol, "H1")
-        entry_price = self._coerce_positive_float(execution.get("entry_price"))
+        entry_price = (
+            self._coerce_positive_float(execution.get("entry_price")) if allow_execution_entry_price else None
+        )
         pip_value = self._pip_value(symbol)
         structure = self._derive_price_structure(
             symbol=symbol,
@@ -3912,6 +3915,7 @@ class WolfConstitutionalPipeline:
                 symbol=symbol,
                 synthesis=synthesis,
                 l12_verdict=context_verdict,
+                allow_execution_entry_price=False,
             )
         return contexts
 
@@ -4301,7 +4305,14 @@ class WolfConstitutionalPipeline:
         source_verdict: str,
     ) -> dict[str, Any] | None:
         context = market_contexts.get(symbol.upper())
-        price = self._pressure_reference_price(context=context, synthesis=synthesis, l12_verdict=l12_verdict)
+        if context is None:
+            return None
+        price = self._pressure_reference_price(
+            context=context,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+            allow_payload_fallback=False,
+        )
         if price is None:
             return None
         allowed_quorum_raw = report.get("allowed_quorum")
@@ -4364,13 +4375,13 @@ class WolfConstitutionalPipeline:
             "pressure_event_count": pressure_event_count,
             "pressure_level": "MICROBOOST_WATCH" if microboost_detected else "PRESSURE_CANARY",
             "pressure_strength": "MICROBOOST" if microboost_detected else "CANARY",
-            "pressure_source": "SignalThrottle",
+            "pressure_source": "SIGNAL_THROTTLE",
             "source_verdict": source_verdict,
             "execution_block_reason": blocker_reason,
             "watch_promotion_blockers": blockers,
             "microboost_detected": microboost_detected,
             "reason": (
-                "Allowed quorum pressure reached SignalThrottle, but price/theme/structure validation "
+                "Allowed quorum pressure reached throttle-radar, but price/theme/structure validation "
                 "is incomplete; no order is authorized until validation promotes a watch or final signal."
             ),
         }
@@ -4423,6 +4434,7 @@ class WolfConstitutionalPipeline:
         context: MarketContext | None,
         synthesis: dict[str, Any],
         l12_verdict: dict[str, Any],
+        allow_payload_fallback: bool = True,
     ) -> float | None:
         if context is not None:
             price = self._coerce_positive_float(
@@ -4434,6 +4446,8 @@ class WolfConstitutionalPipeline:
             )
             if price is not None:
                 return price
+        if not allow_payload_fallback:
+            return None
         execution_raw = synthesis.get("execution")
         execution = execution_raw if isinstance(execution_raw, dict) else {}
         for value in (
