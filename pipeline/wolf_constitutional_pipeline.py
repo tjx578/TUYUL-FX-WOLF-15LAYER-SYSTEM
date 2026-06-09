@@ -3949,6 +3949,7 @@ class WolfConstitutionalPipeline:
             source_verdict=source_verdict,
         )
         self._emit_microboost_intel_if_new(report)
+        report["family_counters"] = self.family_counters_snapshot()
         return report
 
     def _record_signal_throttle_downgrade_observation(
@@ -4323,7 +4324,7 @@ class WolfConstitutionalPipeline:
         microboost_summary_raw = report.get("microboost_summary")
         microboost_summary = microboost_summary_raw if isinstance(microboost_summary_raw, dict) else {}
         microboost_detected = bool(microboost_summary.get("count_total"))
-        return {
+        payload: dict[str, Any] = {
             "event": "signal_decision_update_json",
             "symbol": symbol.upper(),
             "cluster_id": cluster_id,
@@ -4373,6 +4374,15 @@ class WolfConstitutionalPipeline:
                 "is incomplete; no order is authorized until validation promotes a watch or final signal."
             ),
         }
+        if os.getenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "true").strip().lower() == "true":
+            payload.update(
+                self._pressure_family_lineage(
+                    report,
+                    microboost_detected=bool(microboost_detected),
+                    resolved_family="ALLOWED_QUORUM_PENDING_VALIDATION",
+                )
+            )
+        return payload
 
     def _allowed_quorum_blockers(
         self,
@@ -4542,6 +4552,73 @@ class WolfConstitutionalPipeline:
         last_seen[symbol_key] = now
         return True
 
+    @staticmethod
+    def _pressure_family_lineage(
+        report: dict[str, Any],
+        *,
+        microboost_detected: bool,
+        resolved_family: str,
+    ) -> dict[str, Any]:
+        """Derive family lineage for a pressure DecisionUpdate from signals already
+        present in ``report`` (pure + deterministic; no new data sources).
+
+        Preserves signal-family intelligence instead of flattening every decision to
+        the parent ``signal_family``. Returns ``source_family`` (origin),
+        ``source_stage`` (producing pipeline stage), ``resolved_family`` (outcome
+        semantics) and a ``family_lineage_version`` for forward-compat.
+        """
+        quorum_raw = report.get("allowed_quorum")
+        quorum = quorum_raw if isinstance(quorum_raw, dict) else {}
+        lifecycle_raw = report.get("candidate_lifecycle")
+        lifecycle = lifecycle_raw if isinstance(lifecycle_raw, dict) else {}
+        lifecycle_status = str(lifecycle.get("status") or "")
+        phase = str(report.get("latest_phase") or "")
+        micro_raw = report.get("microboost_summary")
+        micro = micro_raw if isinstance(micro_raw, dict) else {}
+        latest_raw = micro.get("latest")
+        latest = latest_raw if isinstance(latest_raw, dict) else {}
+        micro_phase = str(latest.get("phase_unpriced") or "").upper()
+
+        if quorum.get("quorum_reached"):
+            source_family, source_stage = "ALLOWED_CANARY_QUORUM", "SIGNAL_THROTTLE_INTEL"
+        elif microboost_detected:
+            source_stage = "MICROBOOST"
+            if "REPEATED" in micro_phase:
+                source_family = "REPEATED_MICROBOOST"
+            elif "IGNITION" in micro_phase:
+                source_family = "IGNITION_MICROBOOST"
+            elif "NEAR_TIMING_GATE" in micro_phase:
+                source_family = "NEAR_GATE_MICROBOOST"
+            else:
+                source_family = "MICROBOOST_PRESSURE"
+        elif lifecycle_status == "LATEST_IGNITION_WATCH_ONLY":
+            source_family, source_stage = "IGNITION_WATCH", "CANDIDATE_LIFECYCLE"
+        elif lifecycle_status.startswith("PAIR_SIGNAL_CANDIDATE"):
+            source_family, source_stage = "TIMING_BLOCK", "CANDIDATE_LIFECYCLE"
+        elif phase in {"THEME_PRESSURE", "BROAD_ROTATION_FRAGMENTED"}:
+            source_family, source_stage = "THEME_PRESSURE", "PRESSURE_BLOCK"
+        else:
+            source_family, source_stage = "THROTTLE_PRESSURE_CANARY", "SIGNAL_THROTTLE_INTEL"
+
+        reasons = {
+            "ALLOWED_CANARY_QUORUM": "allowed_quorum_reached_but_execution_quality_missing",
+            "REPEATED_MICROBOOST": "repeated_microboost_pressure_without_confirmed_direction",
+            "IGNITION_MICROBOOST": "ignition_microboost_pressure_pending_validation",
+            "NEAR_GATE_MICROBOOST": "near_timing_gate_microboost_pending_context",
+            "MICROBOOST_PRESSURE": "microboost_pressure_pending_context",
+            "IGNITION_WATCH": "latest_ignition_watch_only_no_clean_block_yet",
+            "TIMING_BLOCK": "timing_block_candidate_pending_execution_quality",
+            "THEME_PRESSURE": "theme_pressure_fragmented_no_pair_block",
+            "THROTTLE_PRESSURE_CANARY": "throttle_pressure_canary_telemetry_only",
+        }
+        return {
+            "source_family": source_family,
+            "source_stage": source_stage,
+            "resolved_family": resolved_family,
+            "family_lineage_version": 1,
+            "family_lineage_reason": reasons.get(source_family, "pressure_telemetry_only"),
+        }
+
     def _no_trade_pressure_decision_update_payload(
         self,
         *,
@@ -4579,7 +4656,7 @@ class WolfConstitutionalPipeline:
             microboost_summary_raw = report.get("microboost_summary")
             microboost_summary = microboost_summary_raw if isinstance(microboost_summary_raw, dict) else {}
             microboost_detected = bool(microboost_summary.get("count_total"))
-        return {
+        payload: dict[str, Any] = {
             "event": "signal_decision_update_json",
             "symbol": symbol.upper(),
             "cluster_id": cluster_id,
@@ -4623,8 +4700,72 @@ class WolfConstitutionalPipeline:
                 "no order is authorized from pressure telemetry alone."
             ),
         }
+        if os.getenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "true").strip().lower() == "true":
+            payload.update(
+                self._pressure_family_lineage(
+                    report,
+                    microboost_detected=bool(microboost_detected),
+                    resolved_family="NO_TRADE_PRESSURE_TELEMETRY_ONLY",
+                )
+            )
+        return payload
+
+    def _bump_family_counters(self, payload: dict[str, Any]) -> None:
+        """Accumulate in-memory family/direction counters for deploy validation.
+
+        Pure in-memory; does NOT add log volume. Gated by
+        ``SIGNAL_FAMILY_COUNTERS_ENABLED`` (default on). Surfaced via
+        ``family_counters_snapshot()`` and ``report["family_counters"]``.
+        """
+        if os.getenv("SIGNAL_FAMILY_COUNTERS_ENABLED", "true").strip().lower() != "true":
+            return
+        if not isinstance(payload, dict):
+            return
+        counters = getattr(self, "_family_counters", None)
+        if not isinstance(counters, dict):
+            counters = {}
+            self._family_counters = counters
+
+        def _bump(key: str) -> None:
+            counters[key] = int(counters.get(key, 0)) + 1
+
+        event = str(payload.get("event") or "")
+        status = str(payload.get("status") or "")
+        signal_family = str(payload.get("signal_family") or "")
+        direction_source = str(payload.get("direction_source") or "")
+        raw_direction = str(payload.get("raw_direction") or "").upper()
+        final_direction = str(payload.get("final_direction") or "").upper()
+
+        if event == "signal_decision_update_json":
+            _bump("pressure_decision_count")
+        if signal_family == "MICROBOOST_WATCH" or status.endswith("_WATCH"):
+            _bump("microboost_watch_count")
+        if direction_source.startswith("INHERITED"):
+            _bump("inherited_direction_count")
+        elif direction_source == "DIRECTION_MISSING" or (
+            status.endswith("_WATCH") and raw_direction in {"", "NONE"}
+        ):
+            _bump("direction_missing_count")
+        if final_direction in {"BUY", "SELL"}:
+            _bump("pattern_resolved_count")
+
+    def family_counters_snapshot(self) -> dict[str, int]:
+        """Return running family/direction counters (deploy-validation telemetry)."""
+        base = {
+            "pressure_decision_count": 0,
+            "microboost_watch_count": 0,
+            "direction_missing_count": 0,
+            "inherited_direction_count": 0,
+            "pattern_resolved_count": 0,
+        }
+        counters = getattr(self, "_family_counters", None)
+        if isinstance(counters, dict):
+            for key, value in counters.items():
+                base[key] = int(value)
+        return base
 
     def _emit_signal_json_payload(self, payload: dict[str, Any]) -> bool:
+        self._bump_family_counters(payload)
         gated_payload = self._signal_json_gate_adapter.apply(payload)
         signal_event = build_signal_json_event(gated_payload)
         if signal_event is None:
