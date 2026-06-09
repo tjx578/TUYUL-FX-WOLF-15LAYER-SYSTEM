@@ -176,6 +176,18 @@ def test_csv_state_warmup_detects_first_intel_continuation(tmp_path):
     }
 
 
+def test_allowed_quorum_without_microboost_exposes_watch_promotion_blockers():
+    events = [_event(index * 10, "AUDUSD", "ALLOWED") for index in range(3)]
+
+    report = analyze_signal_throttle_events(events)
+
+    assert report["allowed_quorum"]["quorum_reached"] is True
+    assert report["pair_eligible_for_analysis"] is True
+    assert report["microboost_summary"]["count_total"] == 0
+    assert report["watch_promotion_blockers"]["ALLOWED_QUORUM_PENDING_VALIDATION"] == 3
+    assert report["watch_promotion_blockers"]["MICROBOOST_NOT_FORMED"] == 3
+
+
 def test_build_pressure_blocks_groups_same_symbol_until_gap_or_rotation():
     events = [
         _event(0, "GBPCAD"),
