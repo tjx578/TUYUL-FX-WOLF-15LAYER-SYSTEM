@@ -144,7 +144,8 @@ def parse_engine_log_event(event: dict[str, Any]) -> SignalThrottleLogEvent | No
 def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | None:
     message = _extract_field(row, "message", "body", "log", "text")
     is_signal_throttle_check = _SIGNAL_THROTTLE_CHECK_RE.search(message) is not None
-    if "[SignalThrottle]" not in message and not is_signal_throttle_check:
+    intel = _INTEL_RE.search(message)
+    if "[SignalThrottle]" not in message and not is_signal_throttle_check and intel is None:
         return None
 
     timestamp = _parse_timestamp(_extract_field(row, "timestamp", "time", "@timestamp", "datetime"))
@@ -179,6 +180,21 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         pressure_source = "signal_throttle_check"
         eligible_for_execution = False
         execution_block_reason = _extract_kv_text(message, "reason") or "non_execute_verdict"
+    elif intel:
+        symbol = intel.group("symbol").upper()
+        verdict_text = _extract_kv_text(message, "verdict").upper()
+        verdict = verdict_text or None
+        event_type = "INTEL"
+        effective_action = (_extract_kv_text(message, "action") or "OBSERVE").upper()
+        is_downgraded = False
+        direction = normalize_direction(
+            _extract_kv_text(message, "raw_direction") or _extract_kv_text(message, "direction"),
+            verdict,
+        )
+        pressure_strength = (_extract_kv_text(message, "phase") or "INTEL").upper()
+        pressure_source = "SignalThrottleIntel"
+        eligible_for_execution = False
+        execution_block_reason = _extract_kv_text(message, "reason") or "signal_throttle_intel"
     elif downgraded:
         symbol = downgraded.group("symbol").upper()
         verdict = downgraded.group("verdict").upper()
@@ -216,7 +232,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         symbol=symbol,
         event_type=event_type,
         verdict=verdict,
-        direction=direction if is_signal_throttle_check else normalize_direction(None, verdict),
+        direction=direction if (is_signal_throttle_check or intel) else normalize_direction(None, verdict),
         raw_verdict=verdict,
         effective_action=effective_action,
         is_downgraded=is_downgraded,
@@ -1829,6 +1845,7 @@ def _data_quality_block(
     state_metadata = state_metadata or _state_metadata_from_events(events)
     return {
         "source": source,
+        "log_scope": "SIGNAL_THROTTLE_INTEL",
         "file_found": source_found if source == "csv" else None,
         "process_local": source == "live_process",
         "global_aggregation": False,
