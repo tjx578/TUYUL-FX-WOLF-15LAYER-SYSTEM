@@ -15,13 +15,40 @@ def _pipeline() -> WolfConstitutionalPipeline:
 
 def test_snapshot_defaults_zero():
     snap = _pipeline().family_counters_snapshot()
-    assert snap == {
-        "pressure_decision_count": 0,
-        "microboost_watch_count": 0,
-        "direction_missing_count": 0,
-        "inherited_direction_count": 0,
-        "pattern_resolved_count": 0,
-    }
+    for key in (
+        "pressure_decision_count",
+        "microboost_watch_count",
+        "direction_missing_count",
+        "inherited_direction_count",
+        "pattern_resolved_count",
+        "phase_ambiguous_count",
+        "recent_conflict_count",
+        "price_phase_conflict_count",
+        "stale_intel_count",
+    ):
+        assert snap[key] == 0
+    assert snap["microboost_direction_resolver_enabled"] is False
+    assert snap["direction_inheritance_window_seconds"] == 600.0
+
+
+def test_resolver_direction_source_counters():
+    p = _pipeline()
+    p._bump_family_counters({"status": "MICROBOOST_WATCH", "direction_source": "INHERITED_BUT_PHASE_AMBIGUOUS"})
+    p._bump_family_counters({"status": "MICROBOOST_WATCH", "direction_source": "DIRECTION_CONFLICT_RECENT_INTEL"})
+    p._bump_family_counters({"status": "MICROBOOST_WATCH", "direction_source": "DIRECTION_CONFLICT_PRICE_PHASE"})
+    p._bump_family_counters({"status": "MICROBOOST_WATCH", "direction_source": "DIRECTION_STALE_INTEL"})
+    snap = p.family_counters_snapshot()
+    assert snap["phase_ambiguous_count"] == 1
+    assert snap["inherited_direction_count"] == 1  # ambiguous is also inherited
+    assert snap["recent_conflict_count"] == 1
+    assert snap["price_phase_conflict_count"] == 1
+    assert snap["stale_intel_count"] == 1
+    assert snap["direction_missing_count"] == 0
+
+
+def test_resolver_enabled_reflects_flag(monkeypatch):
+    monkeypatch.setenv("MICROBOOST_DIRECTION_INHERIT_ENABLED", "true")
+    assert _pipeline().family_counters_snapshot()["microboost_direction_resolver_enabled"] is True
 
 
 def test_decision_update_bumps_pressure_decision():
