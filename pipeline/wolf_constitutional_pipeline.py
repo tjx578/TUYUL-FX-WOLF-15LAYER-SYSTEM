@@ -370,6 +370,7 @@ class WolfConstitutionalPipeline:
         self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
         self._last_no_trade_pressure_decision_at: dict[str, float] = {}
+        self._last_allowed_quorum_decision_at: dict[str, float] = {}
         self._signal_lifecycle_manager = SignalLifecycleManager()
         self._signal_block_finalizer = SignalBlockFinalizer(
             enabled=os.getenv("SIGNAL_BLOCK_FINALIZER_ENABLED", "true").strip().lower() == "true",
@@ -3939,6 +3940,14 @@ class WolfConstitutionalPipeline:
             report=report,
             market_contexts=market_contexts,
         )
+        self._apply_allowed_quorum_decision_update(
+            symbol=symbol,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+            report=report,
+            market_contexts=market_contexts,
+            source_verdict=source_verdict,
+        )
         self._emit_microboost_intel_if_new(report)
         return report
 
@@ -4204,6 +4213,230 @@ class WolfConstitutionalPipeline:
 
         report["signal_block_finalizer_updates"] = applied_updates
         l12_verdict["signal_block_finalizer_updates"] = applied_updates
+
+    def _apply_allowed_quorum_decision_update(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+        market_contexts: dict[str, MarketContext],
+        source_verdict: Any | None,
+    ) -> None:
+        if os.getenv("SIGNAL_THROTTLE_ALLOWED_QUORUM_DECISION_UPDATE_ENABLED", "true").strip().lower() != "true":
+            return
+        source_text = str(source_verdict or l12_verdict.get("verdict") or "").strip().upper()
+        if not source_text.startswith("EXECUTE"):
+            return
+        allowed_quorum_raw = report.get("allowed_quorum")
+        allowed_quorum = allowed_quorum_raw if isinstance(allowed_quorum_raw, dict) else {}
+        if not bool(allowed_quorum.get("quorum_reached")):
+            return
+        if self._has_signal_throttle_emit_candidate(report):
+            return
+        symbol_key = str(allowed_quorum.get("symbol") or symbol or "").upper()
+        if not symbol_key:
+            return
+        if not self._should_emit_allowed_quorum_decision(symbol=symbol_key):
+            return
+        payload = self._allowed_quorum_decision_update_payload(
+            symbol=symbol_key,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+            report=report,
+            market_contexts=market_contexts,
+            source_verdict=source_text,
+        )
+        if payload is None:
+            return
+        payload["signal_json_emit_result"] = self._emit_signal_json_payload(payload)
+        report["allowed_quorum_decision_update"] = payload
+        l12_verdict["allowed_quorum_decision_update"] = payload
+
+    @staticmethod
+    def _has_signal_throttle_emit_candidate(report: dict[str, Any]) -> bool:
+        for key in (
+            "microboost_continuation_entry",
+            "microboost_counter_entry",
+            "microboost_watch_entry",
+        ):
+            candidate = report.get(key)
+            if isinstance(candidate, dict) and str(candidate.get("status") or "NONE") != "NONE":
+                return True
+        updates = report.get("signal_block_finalizer_updates")
+        if isinstance(updates, list) and any(isinstance(update, dict) for update in updates):
+            return True
+        return isinstance(report.get("no_trade_pressure_decision_update"), dict)
+
+    def _should_emit_allowed_quorum_decision(self, *, symbol: str) -> bool:
+        try:
+            cooldown_seconds = max(
+                0.0,
+                float(os.getenv("SIGNAL_THROTTLE_ALLOWED_QUORUM_DECISION_COOLDOWN_SECONDS", "75")),
+            )
+        except (TypeError, ValueError):
+            cooldown_seconds = 75.0
+        now = time.time()
+        last_seen = getattr(self, "_last_allowed_quorum_decision_at", None)
+        if not isinstance(last_seen, dict):
+            last_seen = {}
+            self._last_allowed_quorum_decision_at = last_seen
+        symbol_key = symbol.upper()
+        previous = last_seen.get(symbol_key)
+        if previous is not None and now - previous < cooldown_seconds:
+            return False
+        last_seen[symbol_key] = now
+        return True
+
+    def _allowed_quorum_decision_update_payload(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+        market_contexts: dict[str, MarketContext],
+        source_verdict: str,
+    ) -> dict[str, Any] | None:
+        context = market_contexts.get(symbol.upper())
+        price = self._pressure_reference_price(context=context, synthesis=synthesis, l12_verdict=l12_verdict)
+        if price is None:
+            return None
+        allowed_quorum_raw = report.get("allowed_quorum")
+        allowed_quorum = allowed_quorum_raw if isinstance(allowed_quorum_raw, dict) else {}
+        direction = self._direction_hint(allowed_quorum.get("direction")) or self._direction_hint(
+            l12_verdict.get("direction")
+        )
+        symbol_activity_raw = report.get("symbol_activity")
+        symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
+        activity_raw = symbol_activity.get(symbol.upper())
+        activity = activity_raw if isinstance(activity_raw, dict) else {}
+        event_time = str(activity.get("latest_event_utc") or datetime.now(UTC).isoformat())
+        cluster_stamp = event_time.replace(":", "").replace("-", "").replace("+", "Z")
+        cluster_id = f"{symbol.upper()}_{cluster_stamp}_ALLOWED_QUORUM"
+        blockers = self._allowed_quorum_blockers(l12_verdict=l12_verdict, report=report)
+        blocker_reason = next(iter(blockers), "CANARY_QUORUM_PENDING_VALIDATION")
+        pressure_event_count = self._no_trade_pressure_event_count(symbol=symbol, report=report)
+        quorum_streak = self._coerce_non_negative_int(allowed_quorum.get("streak")) or 0
+        pressure_event_count = max(pressure_event_count, quorum_streak)
+        microboost_summary_raw = report.get("microboost_summary")
+        microboost_summary = microboost_summary_raw if isinstance(microboost_summary_raw, dict) else {}
+        microboost_detected = bool(microboost_summary.get("count_total"))
+        return {
+            "event": "signal_decision_update_json",
+            "symbol": symbol.upper(),
+            "cluster_id": cluster_id,
+            "signal_family": "SIGNAL_THROTTLE_ALLOWED_QUORUM",
+            "source_status": "CANARY_QUORUM_PENDING_VALIDATION",
+            "status": "NO_TRADE_REASONED",
+            "previous_status": "CANARY_QUORUM_PENDING_VALIDATION",
+            "new_status": "NO_TRADE_REASONED",
+            "raw_direction": direction,
+            "candidate_direction": direction,
+            "validated_direction": None,
+            "watch_direction": direction,
+            "final_direction": "WAIT",
+            "direction_validation_status": "ALLOWED_QUORUM_CONTEXT_INCOMPLETE",
+            "action": "WAIT_PRICE_THEME_STRUCTURE",
+            "next_action": "WAIT_PRICE_THEME_STRUCTURE",
+            "signal_valid_time_utc": event_time,
+            "signal_valid_price": price,
+            "entry_reference_price": price,
+            "entry_zone": [price, price],
+            "rr_status": "UNVALIDATED",
+            "market_context_applied": context is not None,
+            "valid_for_execution": False,
+            "signal_valid": False,
+            "analysis_valid": True,
+            "direction_valid": False,
+            "tradeplan_valid": False,
+            "execution_valid_now": False,
+            "execution_status": "NO_TRADE_REASONED",
+            "terminal_status": "NO_TRADE_REASONED",
+            "decision_update_trigger": "ALLOWED_QUORUM_CONTEXT_INCOMPLETE",
+            "pending_decision_id": f"{cluster_id}_DECISION",
+            "pressure_seen": True,
+            "allowed_quorum_seen": True,
+            "pair_eligible_for_analysis": True,
+            "allowed_quorum": dict(allowed_quorum),
+            "pressure_event_count": pressure_event_count,
+            "pressure_level": "MICROBOOST_WATCH" if microboost_detected else "PRESSURE_CANARY",
+            "pressure_strength": "MICROBOOST" if microboost_detected else "CANARY",
+            "pressure_source": "SignalThrottle",
+            "source_verdict": source_verdict,
+            "execution_block_reason": blocker_reason,
+            "watch_promotion_blockers": blockers,
+            "microboost_detected": microboost_detected,
+            "reason": (
+                "Allowed quorum pressure reached SignalThrottle, but price/theme/structure validation "
+                "is incomplete; no order is authorized until validation promotes a watch or final signal."
+            ),
+        }
+
+    def _allowed_quorum_blockers(
+        self,
+        *,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+    ) -> dict[str, int]:
+        blockers_raw = report.get("watch_promotion_blockers")
+        blockers: dict[str, int] = dict(blockers_raw) if isinstance(blockers_raw, dict) else {}
+        for reason in self._l12_blocker_reasons(l12_verdict):
+            blockers[reason] = int(blockers.get(reason, 0)) + 1
+        if not blockers:
+            blockers["CANARY_QUORUM_PENDING_VALIDATION"] = 1
+        return blockers
+
+    @staticmethod
+    def _l12_blocker_reasons(l12_verdict: dict[str, Any]) -> list[str]:
+        raw_values: list[Any] = []
+        for key in ("errors", "blockers", "audit_block_reasons", "hard_blockers", "soft_blockers"):
+            value = l12_verdict.get(key)
+            if isinstance(value, list):
+                raw_values.extend(value)
+            elif isinstance(value, str):
+                raw_values.append(value)
+        reasons: list[str] = []
+        for value in raw_values:
+            text = str(value or "").strip().upper()
+            if not text:
+                continue
+            if ":" in text:
+                text = text.rsplit(":", 1)[-1]
+            reasons.append(text)
+        return list(dict.fromkeys(reasons))
+
+    def _pressure_reference_price(
+        self,
+        *,
+        context: MarketContext | None,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+    ) -> float | None:
+        if context is not None:
+            price = self._coerce_positive_float(
+                context.price_at_signal_end
+                or context.price_at_5m_confirm
+                or context.price_at_signal_start
+                or context.bid
+                or context.ask
+            )
+            if price is not None:
+                return price
+        execution_raw = synthesis.get("execution")
+        execution = execution_raw if isinstance(execution_raw, dict) else {}
+        for value in (
+            l12_verdict.get("entry_price"),
+            l12_verdict.get("entry_reference_price"),
+            execution.get("entry_price"),
+            execution.get("entry_reference_price"),
+            execution.get("price"),
+        ):
+            price = self._coerce_positive_float(value)
+            if price is not None:
+                return price
+        return None
 
     def _apply_no_trade_pressure_decision_update(
         self,
