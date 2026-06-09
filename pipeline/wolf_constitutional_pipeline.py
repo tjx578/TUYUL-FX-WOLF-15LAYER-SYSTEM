@@ -4742,6 +4742,14 @@ class WolfConstitutionalPipeline:
             _bump("microboost_watch_count")
         if direction_source.startswith("INHERITED"):
             _bump("inherited_direction_count")
+            if direction_source == "INHERITED_BUT_PHASE_AMBIGUOUS":
+                _bump("phase_ambiguous_count")
+        elif direction_source == "DIRECTION_CONFLICT_RECENT_INTEL":
+            _bump("recent_conflict_count")
+        elif direction_source == "DIRECTION_CONFLICT_PRICE_PHASE":
+            _bump("price_phase_conflict_count")
+        elif direction_source == "DIRECTION_STALE_INTEL":
+            _bump("stale_intel_count")
         elif direction_source == "DIRECTION_MISSING" or (
             status.endswith("_WATCH") and raw_direction in {"", "NONE"}
         ):
@@ -4749,20 +4757,32 @@ class WolfConstitutionalPipeline:
         if final_direction in {"BUY", "SELL"}:
             _bump("pattern_resolved_count")
 
-    def family_counters_snapshot(self) -> dict[str, int]:
-        """Return running family/direction counters (deploy-validation telemetry)."""
-        base = {
+    def family_counters_snapshot(self) -> dict[str, Any]:
+        """Return running family/direction counters + resolver config (canary telemetry)."""
+        snapshot: dict[str, Any] = {
             "pressure_decision_count": 0,
             "microboost_watch_count": 0,
             "direction_missing_count": 0,
             "inherited_direction_count": 0,
             "pattern_resolved_count": 0,
+            "phase_ambiguous_count": 0,
+            "recent_conflict_count": 0,
+            "price_phase_conflict_count": 0,
+            "stale_intel_count": 0,
         }
         counters = getattr(self, "_family_counters", None)
         if isinstance(counters, dict):
             for key, value in counters.items():
-                base[key] = int(value)
-        return base
+                snapshot[key] = int(value)
+        snapshot["microboost_direction_resolver_enabled"] = (
+            os.getenv("MICROBOOST_DIRECTION_INHERIT_ENABLED", "false").strip().lower() == "true"
+        )
+        try:
+            window = float(os.getenv("MICROBOOST_DIRECTION_INHERIT_WINDOW_SECONDS", "600"))
+        except (TypeError, ValueError):
+            window = 600.0
+        snapshot["direction_inheritance_window_seconds"] = window
+        return snapshot
 
     def _emit_signal_json_payload(self, payload: dict[str, Any]) -> bool:
         self._bump_family_counters(payload)
