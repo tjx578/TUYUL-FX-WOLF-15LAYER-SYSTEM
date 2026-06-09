@@ -478,11 +478,13 @@ def test_pipeline_logs_allowed_quorum_context_gap_as_decision_update(caplog):
 
     assert "[SignalDecisionUpdateJSON]" in caplog.text
     assert "[SignalJSON]" not in caplog.text
+    assert "Allowed quorum pressure reached SignalThrottle" not in caplog.text
     assert '"signal_family":"SIGNAL_THROTTLE_ALLOWED_QUORUM"' in caplog.text
     assert '"status":"NO_TRADE_REASONED"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text
     update = verdict["allowed_quorum_decision_update"]
     assert update["terminal_status"] == "NO_TRADE_REASONED"
+    assert update["pressure_source"] == "SIGNAL_THROTTLE"
     assert update["allowed_quorum_seen"] is True
     assert update["pair_eligible_for_analysis"] is True
     assert update["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
