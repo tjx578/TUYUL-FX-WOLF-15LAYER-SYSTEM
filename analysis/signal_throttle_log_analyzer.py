@@ -21,15 +21,12 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
-try:
-    from ..schemas.direction import normalize_direction
-except ImportError:  # pragma: no cover - supports top-level ``analysis`` imports in tests/tools.
-    from schemas.direction import normalize_direction
-from .market_context_validator import missing_market_context_result
-from .microboost_continuation_entry import MicroboostContinuationEngine
-from .microboost_counter_entry import MicroboostCounterEntryEngine
-from .microboost_detector import build_microboost_summary
-from .signal_throttle_pattern_detector import classify_pressure_block
+from analysis.market_context_validator import missing_market_context_result
+from analysis.microboost_continuation_entry import MicroboostContinuationEngine
+from analysis.microboost_counter_entry import MicroboostCounterEntryEngine
+from analysis.microboost_detector import build_microboost_summary
+from analysis.signal_throttle_pattern_detector import classify_pressure_block
+from schemas.direction import normalize_direction
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -424,6 +421,7 @@ def analyze_signal_throttle_events(
         allowed_quorum=allowed_quorum,
         market_contexts=market_contexts,
     )
+    _apply_microboost_direction_inheritance(microboost_summary, events=ordered)
     signal_watch_gate = _signal_watch_gate(candidate, microboost_summary)
     microboost_continuation_entry = _continuation_entry_payload(
         microboost_summary,
@@ -1376,6 +1374,17 @@ def _microboost_watch_payload(
     )
     direction = str(latest.get("direction") or "").upper()
     candidate_direction = direction if direction in {"BUY", "SELL"} else None
+    if candidate_direction:
+        direction_source = "BLOCK_DIRECT"
+        direction_confidence = "HIGH"
+    else:
+        direction_source = str(latest.get("direction_source") or "DIRECTION_MISSING")
+        direction_confidence = str(latest.get("direction_confidence") or "NONE")
+        inherited_direction = str(latest.get("inherited_direction") or "").upper()
+        if inherited_direction in {"BUY", "SELL"}:
+            candidate_direction = inherited_direction
+    watch_resolved_family = "WATCH_ONLY_PENDING_CONTEXT" if candidate_direction else "WATCH_ONLY_DIRECTION_MISSING"
+    requires_m15_close = bool(latest.get("inherited_requires_m15_close"))
     signal_time = latest.get("end_utc") or latest.get("start_utc")
 
     payload = {
@@ -1388,6 +1397,10 @@ def _microboost_watch_payload(
         "candidate_direction": candidate_direction,
         "validated_direction": None,
         "watch_direction": candidate_direction,
+        "direction_source": direction_source,
+        "direction_confidence": direction_confidence,
+        "resolved_family": watch_resolved_family,
+        "requires_m15_close": requires_m15_close,
         "final_direction": "WAIT",
         "direction_status": "MICROBOOST_WAIT_STATE",
         "direction_validation_status": "WATCH_ONLY_PENDING_CONFIRMATION",
@@ -1419,6 +1432,161 @@ def _microboost_watch_payload(
     latest["microboost_watch"] = payload
     microboost_summary["watch_entry"] = payload
     return payload
+
+
+def _price_phase_consistency(
+    direction: str,
+    *,
+    m15_phase: Any,
+    h1_phase: Any,
+    price_position: Any,
+    phase_priced: Any,
+) -> str:
+    """Classify an inherited direction against price phase: CONSISTENT / AMBIGUOUS / CONFLICT.
+
+    First-pass heuristic (tunable). CONFLICT = hard-opposite context (reject inheritance);
+    CONSISTENT = phase affirmatively aligned (inherit, MEDIUM); AMBIGUOUS = insufficient/neutral
+    phase (inherit but LOW + requires_m15_close).
+    """
+    d = str(direction or "").upper()
+    m15 = str(m15_phase or "").upper()
+    h1 = str(h1_phase or "").upper()
+    pos = str(price_position or "").upper()
+    priced = str(phase_priced or "").upper()
+    if d == "BUY":
+        if (
+            (pos == "MAIN_RESISTANCE" and priced == "RESISTANCE_PRESSURE_WARNING")
+            or m15 in {"BEARISH_BREAKDOWN", "STRONG_BEARISH"}
+            or h1 == "DOWNTREND_STRONG"
+        ):
+            return "CONFLICT"
+        if "BULL" in h1 or "UPTREND" in h1 or "BULL" in m15:
+            return "CONSISTENT"
+        return "AMBIGUOUS"
+    if d == "SELL":
+        if (
+            (pos == "MAIN_SUPPORT" and priced == "SUPPORT_RECLAIM_WARNING")
+            or m15 in {"BULLISH_BREAKOUT", "STRONG_BULLISH"}
+            or h1 == "UPTREND_STRONG"
+        ):
+            return "CONFLICT"
+        if "BEAR" in h1 or "DOWNTREND" in h1 or "BEAR" in m15:
+            return "CONSISTENT"
+        return "AMBIGUOUS"
+    return "AMBIGUOUS"
+
+
+def resolve_microboost_direction(
+    latest: dict[str, Any],
+    *,
+    events: Iterable[Any],
+    now: datetime | None = None,
+    window_seconds: float = 600.0,
+) -> dict[str, Any]:
+    """Resolve a microboost block's direction, inheriting from the nearest directional
+    SignalThrottleIntel events when the block itself is directionless.
+
+    Pure + deterministic. Inheritance NEVER promotes execution -- callers keep
+    ``valid_for_execution=false`` and use the result only to open classification.
+
+    Guards (locked by review addendum v2):
+      * same symbol, within ``window_seconds``;
+      * mixed BUY+SELL in window -> DIRECTION_CONFLICT_RECENT_INTEL (REJECTED);
+      * no directional intel in window -> DIRECTION_MISSING (NONE);
+      * price-phase conflict -> DIRECTION_CONFLICT_PRICE_PHASE (REJECTED);
+      * price-phase ambiguous -> INHERITED_BUT_PHASE_AMBIGUOUS (LOW, requires_m15_close).
+    """
+    block_direction = str(latest.get("direction") or "").upper()
+    if block_direction in {"BUY", "SELL"}:
+        return {
+            "inherited_direction": block_direction,
+            "direction_source": "BLOCK_DIRECT",
+            "direction_confidence": "HIGH",
+        }
+
+    symbol = str(latest.get("symbol") or "").upper()
+    events_list = list(events)
+    reference = now
+    if reference is None:
+        stamps = [getattr(ev, "timestamp", None) for ev in events_list]
+        stamps = [stamp for stamp in stamps if stamp is not None]
+        reference = max(stamps) if stamps else None
+
+    directions: set[str] = set()
+    for event in events_list:
+        event_symbol = str(getattr(event, "symbol", "") or "").upper()
+        event_direction = str(getattr(event, "direction", "") or "").upper()
+        if event_symbol != symbol or event_direction not in {"BUY", "SELL"}:
+            continue
+        event_time = getattr(event, "timestamp", None)
+        if reference is not None and event_time is not None:
+            if (reference - event_time).total_seconds() > window_seconds:
+                continue
+        directions.add(event_direction)
+
+    if not directions:
+        return {"inherited_direction": None, "direction_source": "DIRECTION_MISSING", "direction_confidence": "NONE"}
+    if len(directions) > 1:
+        return {
+            "inherited_direction": None,
+            "direction_source": "DIRECTION_CONFLICT_RECENT_INTEL",
+            "direction_confidence": "REJECTED",
+        }
+
+    candidate = next(iter(directions))
+    consistency = _price_phase_consistency(
+        candidate,
+        m15_phase=latest.get("m15_phase"),
+        h1_phase=latest.get("h1_phase"),
+        price_position=latest.get("price_position"),
+        phase_priced=latest.get("phase_priced"),
+    )
+    if consistency == "CONFLICT":
+        return {
+            "inherited_direction": None,
+            "direction_source": "DIRECTION_CONFLICT_PRICE_PHASE",
+            "direction_confidence": "REJECTED",
+        }
+    if consistency == "AMBIGUOUS":
+        return {
+            "inherited_direction": candidate,
+            "direction_source": "INHERITED_BUT_PHASE_AMBIGUOUS",
+            "direction_confidence": "LOW",
+            "requires_m15_close": True,
+        }
+    return {
+        "inherited_direction": candidate,
+        "direction_source": "INHERITED_FROM_PRESSURE_INTEL",
+        "direction_confidence": "MEDIUM",
+    }
+
+
+def _apply_microboost_direction_inheritance(
+    microboost_summary: dict[str, Any],
+    *,
+    events: Iterable[Any],
+) -> None:
+    """Gated (default OFF via ``MICROBOOST_DIRECTION_INHERIT_ENABLED``): annotate the
+    latest microboost block with inherited-direction metadata.
+
+    Sets only watch-scoped fields and NEVER overwrites ``direction`` -- so
+    continuation/counter engines and execution remain untouched.
+    """
+    if not _env_bool("MICROBOOST_DIRECTION_INHERIT_ENABLED", False):
+        return
+    latest = microboost_summary.get("latest")
+    if not isinstance(latest, dict):
+        return
+    if str(latest.get("direction") or "").upper() in {"BUY", "SELL"}:
+        return
+    window = _env_float("MICROBOOST_DIRECTION_INHERIT_WINDOW_SECONDS", 600.0)
+    resolution = resolve_microboost_direction(latest, events=events, window_seconds=window)
+    latest["direction_source"] = resolution["direction_source"]
+    latest["direction_confidence"] = resolution["direction_confidence"]
+    if resolution.get("inherited_direction"):
+        latest["inherited_direction"] = resolution["inherited_direction"]
+    if resolution.get("requires_m15_close"):
+        latest["inherited_requires_m15_close"] = True
 
 
 def _has_emit_candidate(payload: dict[str, Any] | None) -> bool:
