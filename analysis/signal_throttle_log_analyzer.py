@@ -328,6 +328,8 @@ def analyze_signal_throttle_events(
             "microboost_watch_entry": None,
             "signal_watch_gate": _empty_signal_watch_gate("NO_SIGNAL_THROTTLE_DATA"),
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
+            "pair_eligible_for_analysis": False,
+            "watch_promotion_blockers": {},
             "market_context_validation": missing_market_context_result("UNKNOWN").to_dict(),
             "data_quality": _data_quality_block(
                 events=[],
@@ -435,6 +437,17 @@ def analyze_signal_throttle_events(
         continuation_entry=microboost_continuation_entry,
         counter_entry=microboost_counter_entry,
     )
+    pair_eligible_for_analysis = _pair_eligible_for_analysis(
+        allowed_quorum=allowed_quorum,
+        candidate=candidate,
+        main_watchlist=main_watchlist,
+    )
+    watch_promotion_blockers = _watch_promotion_blockers(
+        allowed_quorum=allowed_quorum,
+        microboost_summary=microboost_summary,
+        signal_watch_gate=signal_watch_gate,
+        market_context_validation=market_context_validation,
+    )
 
     return {
         "final_mode": final_mode,
@@ -467,6 +480,8 @@ def analyze_signal_throttle_events(
         "microboost_watch_entry": microboost_watch_entry,
         "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
+        "pair_eligible_for_analysis": pair_eligible_for_analysis,
+        "watch_promotion_blockers": watch_promotion_blockers,
         "event_counts": event_type_counts,
         "symbol_activity": symbol_activity,
         "time_range": {
@@ -1470,6 +1485,66 @@ def _signal_watch_source_fields(
     }
 
 
+def _pair_eligible_for_analysis(
+    *,
+    allowed_quorum: dict[str, Any],
+    candidate: dict[str, Any] | None,
+    main_watchlist: list[str],
+) -> bool:
+    """SignalThrottle presence makes a pair eligible for analysis.
+
+    Theme and structure are confidence/context inputs.  They must not erase a
+    pressure candidate before diagnostics or terminal no-trade output can be
+    emitted.
+    """
+    if isinstance(candidate, dict) and str(candidate.get("symbol") or "").strip():
+        return True
+    if str(allowed_quorum.get("symbol") or "").strip():
+        return True
+    return bool(main_watchlist)
+
+
+def _watch_promotion_blockers(
+    *,
+    allowed_quorum: dict[str, Any],
+    microboost_summary: dict[str, Any],
+    signal_watch_gate: dict[str, Any],
+    market_context_validation: dict[str, Any],
+) -> dict[str, int]:
+    blockers: Counter[str] = Counter()
+    quorum_streak = _coerce_non_negative_int(allowed_quorum.get("streak")) or 0
+    blocker_count = max(1, quorum_streak)
+    quorum_reached = bool(allowed_quorum.get("quorum_reached"))
+    microboost_count = _coerce_non_negative_int(microboost_summary.get("count_total")) or 0
+
+    if quorum_reached:
+        blockers["ALLOWED_QUORUM_PENDING_VALIDATION"] += blocker_count
+        if microboost_count <= 0:
+            blockers["MICROBOOST_NOT_FORMED"] += blocker_count
+
+    if not bool(signal_watch_gate.get("eligible")):
+        reason = str(signal_watch_gate.get("reason") or "SIGNAL_WATCH_GATE_NOT_ELIGIBLE").upper()
+        blockers[reason] += blocker_count if quorum_reached else 1
+
+    validation_reason = str(market_context_validation.get("reason") or "").upper()
+    if "LOW_CONTEXT_COHERENCE" in validation_reason:
+        blockers["LOW_CONTEXT_COHERENCE"] += blocker_count
+    if "MISSING_MARKET_CONTEXT" in validation_reason:
+        if "PRICE_AT_SIGNAL" in validation_reason:
+            blockers["PRICE_CONTEXT_MISSING"] += blocker_count
+        if "M15_PHASE" in validation_reason or "H1_PHASE" in validation_reason:
+            blockers["PRICE_PHASE_MISSING"] += blocker_count
+        if "SPREAD_NORMAL" in validation_reason:
+            blockers["SPREAD_CONTEXT_MISSING"] += blocker_count
+    elif validation_reason in {"PRICE_OR_PHASE_NOT_ALIGNED", "WAIT_PRICE_PHASE_ALIGNMENT"}:
+        blockers["PRICE_PHASE_NOT_ALIGNED"] += blocker_count
+
+    if microboost_count > 0 and bool(microboost_summary.get("requires_market_context")):
+        blockers["MARKET_CONTEXT_REQUIRED"] += blocker_count
+
+    return dict(blockers)
+
+
 def _blocked_microboost_payload(
     latest: dict[str, Any],
     *,
@@ -1673,6 +1748,15 @@ def _extract_optional_int(message: str, *patterns: re.Pattern[str], group: str) 
         except (IndexError, TypeError, ValueError):
             continue
     return None
+
+
+def _coerce_non_negative_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_optional_float(message: str, *patterns: re.Pattern[str], group: str) -> float | None:
