@@ -59,6 +59,31 @@ def test_parse_signal_throttle_rows_extracts_allowed_and_throttled():
     assert events[0].effective_ticks == 3
 
 
+def test_parse_signal_throttle_rows_ignores_signal_json_decision_updates():
+    rows = [
+        {
+            "timestamp": "2026-06-09T14:49:09Z",
+            "severity": "warning",
+            "message": (
+                '[SignalDecisionUpdateJSON] {"event":"signal_decision_update_json",'
+                '"symbol":"EURUSD","signal_family":"SIGNAL_THROTTLE_ALLOWED_QUORUM",'
+                '"status":"NO_TRADE_REASONED","reason":"Allowed quorum pressure reached SignalThrottle"}'
+            ),
+        },
+        {
+            "timestamp": "2026-06-09T14:49:10Z",
+            "severity": "info",
+            "message": "[SignalThrottleIntel] symbol=EURUSD raw_direction=BUY final_direction=WAIT",
+        },
+    ]
+
+    events = parse_signal_throttle_rows(rows)
+
+    assert [event.event_type for event in events] == ["INTEL"]
+    assert all("[SignalDecisionUpdateJSON]" not in event.message for event in events)
+    assert events[0].symbol == "EURUSD"
+
+
 def test_parse_signal_throttle_check_as_pressure_canary():
     event = parse_engine_log_event(
         {
@@ -107,6 +132,7 @@ def test_csv_fixture_reports_data_quality_without_large_raw_export():
 
     assert report["data_quality"] == {
         "source": "csv",
+        "log_scope": "SIGNAL_THROTTLE_INTEL",
         "file_found": True,
         "process_local": False,
         "global_aggregation": False,
@@ -159,7 +185,8 @@ def test_csv_state_warmup_detects_first_intel_continuation(tmp_path):
 
     report = analyze_signal_throttle_csv(csv_path)
 
-    assert report["data_quality"]["parsed_signal_count"] == 1
+    assert report["data_quality"]["log_scope"] == "SIGNAL_THROTTLE_INTEL"
+    assert report["data_quality"]["parsed_signal_count"] == 2
     assert report["state_warmup"] is True
     assert report["first_event_is_continuation"] is True
     assert report["state_warmup_reason"] == "streak_exceeds_window_count"
