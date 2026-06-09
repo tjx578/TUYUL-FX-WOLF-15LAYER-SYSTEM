@@ -10,7 +10,7 @@
 ## 1. Current State (Verified)
 
 | Gejala (dari log) | Akar di kode | Lokasi |
-| --- | --- | --- |
+|---|---|---|
 | Semua `SignalDecisionUpdateJSON` → `signal_family=SIGNAL_THROTTLE_PRESSURE` | `signal_family` di-hardcode di payload NO_TRADE | `pipeline/wolf_constitutional_pipeline.py:4586` |
 | Family kaya tak muncul saat NO_TRADE | Cabang family spesifik (`SIGNAL_THROTTLE_ALLOWED_QUORUM`) hanya menyala untuk verdict EXECUTE | `:4330` di-gate oleh `:4230` (`source_text.startswith("EXECUTE")`) |
 | `microboost raw_direction=NONE` | `raw_direction = latest.get("direction")`, dan `PressureBlock.direction` dari event canary NO_TRADE = `None` | `analysis/microboost_event_log.py:152`; `record_pressure_canary` → `normalize_direction(None,"NO_TRADE")=None` |
@@ -22,7 +22,7 @@
 
 ## 2. Requirements
 
-### Functional
+**Functional**
 
 - F1. `SignalDecisionUpdateJSON` mempertahankan lineage: `source_family`, `source_stage`, `resolved_family` (tanpa menghapus `signal_family` parent — kompatibilitas dashboard).
 - F2. Microboost dengan `raw_direction=NONE` mencoba mewarisi arah dari SignalThrottleIntel terdekat (symbol sama, dalam jendela waktu), divalidasi terhadap price phase.
@@ -30,14 +30,14 @@
 - F4. Family resolver dipanggil sebelum emit DecisionUpdate.
 - F5. Summary counter per snapshot/deployment (pressure_decision, microboost_watch, direction_missing, inherited_direction, pattern_resolved).
 
-### Non-functional
+**Non-functional**
 
 - N1. Zero perubahan pada kontrak keamanan: `valid_for_execution` tetap `false` untuk semua jalur non-execute. Resolver **tidak** boleh menghasilkan eksekusi.
 - N2. Aditif & reversibel: semua perilaku baru di balik env flag, default dapat di-rollback.
 - N3. Tidak menambah volume emisi (hanya menambah field; tidak menambah baris log).
 - N4. Tidak mengubah cara sistem membaca market (hanya pelabelan & inheritance arah untuk observability/lifecycle).
 
-### Constraints
+**Constraints**
 
 - C1. Pertahankan boundary yang sudah dikunci test (observability watch ≠ actionable watch).
 - C2. Inheritance arah **tidak** otomatis jadi final; tetap lewat validasi price phase + tetap `valid_for_execution=false` sampai finalizer/engine mengonfirmasi.
@@ -70,7 +70,7 @@ SignalThrottle events ─► SignalThrottleLiveAnalyzer.snapshot() ─► report
 ### 4.1 Taxonomy 3-tier (jangan buang parent, tambah lineage)
 
 | Field | Peran | Contoh nilai |
-| --- | --- | --- |
+|---|---|---|
 | `signal_family` | Parent (tetap, kompat dashboard) | `SIGNAL_THROTTLE_PRESSURE`, `SIGNAL_THROTTLE_ALLOWED_QUORUM`, `MICROBOOST_WATCH` |
 | `source_family` | Asal-usul sinyal | `ALLOWED_CANARY_QUORUM`, `IGNITION_WATCH`, `TIMING_BLOCK`, `REPEATED_MICROBOOST`, `THEME_PRESSURE`, `THROTTLE_PRESSURE_CANARY` |
 | `source_stage` | Tahap pipeline penghasil | `SIGNAL_THROTTLE_INTEL`, `MICROBOOST`, `PRESSURE_BLOCK`, `CANDIDATE_LIFECYCLE` |
@@ -121,7 +121,7 @@ Aturan keselamatan (C2): arah warisan **tidak** mempromosikan ke eksekusi; ia ha
 ### 4.4 Integration points (titik sisip)
 
 | Perubahan | Method | Lokasi |
-| --- | --- | --- |
+|---|---|---|
 | Panggil `_resolve_pressure_family`, merge 3 field ke payload | `_no_trade_pressure_decision_update_payload` | `:4582-4586` (saat membangun dict) |
 | Idem untuk jalur quorum | `_allowed_quorum_decision_update_payload` | `:4323-4330` |
 | Resolusi arah saat membangun watch/continuation | `_microboost_watch_payload` / `_continuation_entry_payload` | `analysis/signal_throttle_log_analyzer.py:1359`, `:1294` |
@@ -137,7 +137,7 @@ Dict proses-lokal `self._family_counters` (atau di `report["family_counters"]`),
 ## 5. Trade-off Analysis
 
 | Keputusan | Plus | Minus / risiko | Mitigasi |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Tambah field lineage (bukan ganti parent) | Kompat dashboard, info kaya | Payload sedikit lebih besar | 3-4 field kecil saja |
 | Inherit arah dari intel | Microboost bisa naik family | Arah warisan bisa salah | Validasi price phase + `valid_for_execution=false` + `direction_source` jelas |
 | Resolver deterministik dari `report` | Mudah diuji, tanpa data baru | Bergantung kualitas `candidate_lifecycle` | Sudah teruji di modul analyzer |
@@ -169,7 +169,7 @@ Urutan rilis: (1) lineage fields dulu (paling aman, murni label) → (2) directi
 ## 8. Tech-Debt Register (terprioritas)
 
 | ID | Item | Dampak | Effort | Prioritas |
-| --- | --- | --- | --- | --- |
+|---|---|---|---|---|
 | TD-1 | `signal_family` di-hardcode per cabang; tak ada lineage | Kehilangan signal intelligence di dashboard/analitik | S | **P0** |
 | TD-2 | Microboost kehilangan arah (`raw_direction=NONE`) → semua jadi WATCH generik | Family kaya tak pernah terbentuk | M | **P0** |
 | TD-3 | Family logic tersebar (hardcode string di banyak payload) | Sulit dirawat, rawan drift | M | P1 |
@@ -207,7 +207,7 @@ Hasil review menyetujui arah besar + menambah 4 koreksi production-safety. Semua
 ### 11.1 Koreksi 1 — `direction_confidence` (wajib di setiap output yang punya arah)
 
 | `direction_source` | `direction_confidence` |
-| --- | --- |
+|---|---|
 | `BLOCK_DIRECT` | `HIGH` |
 | `INHERITED_FROM_PRESSURE_INTEL` | `MEDIUM` |
 | `INHERITED_BUT_PHASE_AMBIGUOUS` | `LOW` |
@@ -220,12 +220,14 @@ Arah warisan **tidak** setara arah asli — dashboard/analitik harus bisa membed
 ### 11.2 Koreksi 2 — guard intel basi / berlawanan (sebelum inherit)
 
 Inherit hanya bila SEMUA benar:
+
 - symbol sama;
 - intel arah dalam `window_seconds` (default 600);
 - `cluster_id`/pressure-block sama bila tersedia;
 - **tidak ada** intel arah berlawanan yang lebih baru dalam window.
 
 Aturan tolak:
+
 ```text
 ada opposite directional intel lebih baru di window → JANGAN inherit
   → direction_source = DIRECTION_CONFLICT_RECENT_INTEL ; confidence = REJECTED
@@ -269,6 +271,7 @@ SALAH:  raw_direction NONE → inherit BUY → MICROBOOST_CONTINUATION → Signa
 BENAR:  raw_direction NONE → inherit BUY → MICROBOOST_WATCH_WITH_INHERITED_DIRECTION
         → price-phase validation → pattern classification → finalizer → baru Valid/Wait/NoTrade
 ```
+
 Inheritance hanya membuka **pintu klasifikasi**, bukan pintu eksekusi. `valid_for_execution` tetap `false`.
 
 ### 11.7 5 Tes wajib untuk direction resolver (Fase 3)
