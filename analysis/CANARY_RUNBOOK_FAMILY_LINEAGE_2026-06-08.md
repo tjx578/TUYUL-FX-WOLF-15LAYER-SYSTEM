@@ -29,7 +29,8 @@ pyright analysis/signal_throttle_log_analyzer.py pipeline/wolf_constitutional_pi
 
 ## 1. Canary 1 — Lineage + Counters ON, Resolver OFF
 
-**Env:**
+### Env
+
 ```env
 SIGNAL_FAMILY_LINEAGE_ENABLED=true
 SIGNAL_FAMILY_COUNTERS_ENABLED=true
@@ -38,13 +39,19 @@ MICROBOOST_DIRECTION_INHERIT_ENABLED=false
 
 **Durasi:** 3-6 jam (ambil baseline).
 
-**Yang dipantau (dari `report["family_counters"]` + log):**
+### Yang Dipantau
+
+Dari `report["family_counters"]` dan log:
+
 - `direction_missing_count` → **baseline** masalah arah saat ini.
 - `stale_intel_count` → seberapa sering intel arah ada tapi basi.
 - `pressure_decision_count`, `microboost_watch_count` → volume normal.
 - DecisionUpdate mulai bervariasi: `source_family` ∈ {ALLOWED_CANARY_QUORUM, REPEATED_MICROBOOST, TIMING_BLOCK, IGNITION_WATCH, THEME_PRESSURE, THROTTLE_PRESSURE_CANARY} — **bukan** 100% generik.
 
-**Gate lulus Canary 1 (semua harus benar):**
+### Gate Lulus Canary 1
+
+Semua harus benar:
+
 - [ ] `microboost_direction_resolver_enabled = false` di snapshot (konfirmasi resolver dorman).
 - [ ] Tidak ada error serialization / exception baru di log.
 - [ ] Jumlah `SignalJSON` (final execution) **tidak berubah** vs sebelum patch.
@@ -57,7 +64,10 @@ Kalau lolos → catat baseline counter, lanjut Canary 2.
 
 ## 2. Canary 2 — Resolver ON, window 600
 
-**Env (ubah satu baris):**
+### Env
+
+Ubah satu baris:
+
 ```env
 MICROBOOST_DIRECTION_INHERIT_ENABLED=true
 MICROBOOST_DIRECTION_INHERIT_WINDOW_SECONDS=600
@@ -65,13 +75,17 @@ MICROBOOST_DIRECTION_INHERIT_WINDOW_SECONDS=600
 
 **Durasi:** 3-6 jam, dibandingkan langsung dengan baseline Canary 1.
 
-**Yang HARUS naik / muncul:**
+### Yang Harus Naik atau Muncul
+
 - [ ] `inherited_direction_count` naik dari ~0.
 - [ ] `direction_source = INHERITED_FROM_PRESSURE_INTEL` muncul di SignalWatch.
 - [ ] `resolved_family` watch tidak lagi selalu `WATCH_ONLY_DIRECTION_MISSING` (sebagian jadi `WATCH_ONLY_PENDING_CONTEXT`).
 - [ ] `direction_missing_count` turun relatif terhadap baseline.
 
-**Yang DILARANG terjadi (fail = rollback langsung):**
+### Yang Dilarang Terjadi
+
+Fail = rollback langsung:
+
 - [ ] `valid_for_execution` **tiba-tiba true** pada path inherited-only.
 - [ ] `SignalJSON` (final) naik **hanya** karena inherited direction.
 - [ ] `latest["direction"]` berubah (engine continuation/counter ikut bergeser).
@@ -126,7 +140,8 @@ Setelah Canary 2 LULUS dan Canary 3 menemukan window stabil:
 
 ## Lampiran — Flag & counter ringkas
 
-**Flag:**
+### Flag
+
 | Flag | Default | Fase |
 | --- | --- | --- |
 | `SIGNAL_FAMILY_LINEAGE_ENABLED` | true | Lineage |
