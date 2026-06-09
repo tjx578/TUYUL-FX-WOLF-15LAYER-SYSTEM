@@ -21,12 +21,15 @@ from numbers import Real
 from pathlib import Path
 from typing import Any
 
-from analysis.market_context_validator import missing_market_context_result
-from analysis.microboost_continuation_entry import MicroboostContinuationEngine
-from analysis.microboost_counter_entry import MicroboostCounterEntryEngine
-from analysis.microboost_detector import build_microboost_summary
-from analysis.signal_throttle_pattern_detector import classify_pressure_block
-from schemas.direction import normalize_direction
+try:
+    from ..schemas.direction import normalize_direction
+except ImportError:  # pragma: no cover - supports top-level ``analysis`` imports in tests/tools.
+    from schemas.direction import normalize_direction
+from .market_context_validator import missing_market_context_result
+from .microboost_continuation_entry import MicroboostContinuationEngine
+from .microboost_counter_entry import MicroboostCounterEntryEngine
+from .microboost_detector import build_microboost_summary
+from .signal_throttle_pattern_detector import classify_pressure_block
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -1519,7 +1522,7 @@ def resolve_microboost_direction(
         if event_symbol != symbol or event_direction not in {"BUY", "SELL"}:
             continue
         event_time = getattr(event, "timestamp", None)
-        if reference is not None and event_time is not None:
+        if reference is not None and event_time is not None:  # noqa: SIM102
             if (reference - event_time).total_seconds() > window_seconds:
                 continue
         directions.add(event_direction)
