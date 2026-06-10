@@ -3,7 +3,9 @@
     "allow": [
       "Bash(find /c/Users/Administrator/Documents/GitHub/TUYUL-FX-WOLF-15LAYER-SYSTEM/src -type f -name *.ts -o -name *.tsx)",
       "Bash(find c:/Users/Administrator/Documents/GitHub/TUYUL-FX-WOLF-15LAYER-SYSTEM/dashboard/nextjs/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
-      "Bash(python -m pytest tests/test_orchestrator_state_manager.py -v)"
+      "Bash(python -m pytest tests/test_orchestrator_state_manager.py -v)",
+      "Bash(python -m pytest tests/test_microboost_continuation_entry.py tests/test_signal_json_gate_adapter.py tests/test_signal_json_emitter.py tests/test_signal_block_finalizer.py tests/test_signal_throttle_canary_no_auto_promote.py -q --no-header -p no:cacheprovider)",
+      "Bash(python -m pytest tests/test_signal_throttle.py tests/test_signal_throttle_intelligence.py tests/test_signal_throttle_log_analyzer.py tests/test_signal_throttle_canary_no_auto_promote.py tests/test_microboost_continuation_entry.py tests/test_microboost_counter_entry.py tests/test_microboost_direction_resolver.py tests/test_microboost_event_log.py tests/test_signal_json_emitter.py tests/test_signal_json_gate_adapter.py tests/test_signal_block_finalizer.py tests/test_pipeline_signal_json_continuation.py tests/test_signal_json_json_gate_adapter.py -q --no-header -p no:cacheprovider)"
     ]
   }
 }
