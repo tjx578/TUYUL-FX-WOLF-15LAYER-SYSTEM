@@ -533,6 +533,7 @@ class SignalJsonEmitter:
         self._cluster_watch_revisions: dict[str, int] = {}
         self._emitted_watch_refs: set[str] = set()
         self._last_watch_content: dict[str, str] = {}
+        self._cluster_semantic_watch: dict[str, float] = {}
         self._terminal_decisions: set[str] = set()
         self._decision_states: dict[str, str] = {}
         self._finalized_decisions: set[str] = set()
@@ -586,6 +587,19 @@ class SignalJsonEmitter:
             if self._last_watch_content.get(content_cluster) == content_key:
                 return False
             self._last_watch_content[content_cluster] = content_key
+
+        # Increment E (flag default OFF): collapse repeated watches for the same cluster
+        # by their MATERIAL fields only -- ignoring price/timestamp/density noise that
+        # Increment B's byte-identical check does NOT ignore (the 28x GBPCHF spam slipped
+        # through B because each tick carried a slightly different price). Suppresses only
+        # the duplicate EMIT; the first watch + any material change always pass, and
+        # finalizer lifecycle tracking is untouched. Enable: SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED=true.
+        if (
+            is_watch
+            and os.getenv("SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED", "false").strip().lower() == "true"
+            and self._is_cluster_watch_duplicate(payload)
+        ):
+            return False
 
         key = self._payload_key(payload, watch_revision=watch_revision)
         if self._is_duplicate(key):
@@ -791,6 +805,44 @@ class SignalJsonEmitter:
         if key in self._emitted:
             return True
         self._emitted[key] = now
+        return False
+
+    def _cluster_semantic_watch_key(self, payload: dict[str, Any]) -> str:
+        """Material-only identity for a cluster watch (Increment E). Deliberately omits
+        price / timestamp / density so identical scenarios collapse, while any change to
+        status, direction, price_position or valid_for_execution yields a new key.
+        """
+        return "|".join(
+            str(payload.get(field) or "")
+            for field in (
+                "symbol",
+                "cluster_id",
+                "signal_family",
+                "resolved_family",
+                "status",
+                "raw_direction",
+                "candidate_direction",
+                "watch_direction",
+                "price_position",
+                "valid_for_execution",
+                "reason",
+            )
+        )
+
+    def _is_cluster_watch_duplicate(self, payload: dict[str, Any]) -> bool:
+        """Return True when this cluster watch is a material-duplicate of one already
+        emitted within ``dedup_ttl_seconds``. The first watch and any material change
+        always return False (emit); the timestamp is NOT refreshed on a hit, so once the
+        TTL window lapses a fresh watch is allowed again.
+        """
+        now = time.time()
+        expired = [k for k, ts in self._cluster_semantic_watch.items() if now - ts > self.dedup_ttl_seconds]
+        for k in expired:
+            self._cluster_semantic_watch.pop(k, None)
+        key = self._cluster_semantic_watch_key(payload)
+        if key in self._cluster_semantic_watch:
+            return True
+        self._cluster_semantic_watch[key] = now
         return False
 
 
