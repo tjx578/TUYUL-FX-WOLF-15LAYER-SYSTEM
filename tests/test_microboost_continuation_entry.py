@@ -202,19 +202,26 @@ def test_continuation_fallback_terminalizes_as_valid_wait_structure(caplog):
 
     assert gated["status"] == "FINAL_VALID_WAIT_STRUCTURE_TARGET"
     assert gated["source_status"] == "WAIT_M15_CLOSE_OR_STRUCTURE_TARGET"
-    assert gated["final_direction"] == "BUY"
+    # Role contract: a deferred-but-valid continuation keeps its direction in
+    # validated_direction / watch_direction, but final_direction stays WAIT — a
+    # non-executable signal must never surface an actionable BUY/SELL. It
+    # terminalizes as a SignalDecisionUpdateJSON (terminal bridge), not a
+    # [SignalJSON], because execution_valid_now is False.
+    assert gated["final_direction"] == "WAIT"
+    assert gated["validated_direction"] == "BUY"
+    assert gated["watch_direction"] == "BUY"
     assert gated["signal_valid"] is True
     assert gated["direction_valid"] is True
     assert gated["tradeplan_valid"] is False
     assert gated["valid_for_execution"] is False
     assert gated["execution_valid_now"] is False
     assert event is not None
-    assert event.event == "signal_json"
-    assert event.is_final_signal is True
+    assert event.event == "signal_decision_update_json"
+    assert event.is_final_signal is False
     assert should_emit_signal_json(event) is True
     assert emitter.emit(event) is True
-    assert "[SignalJSON]" in caplog.text
-    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
 
 
 def test_schema_v1_continuation_retains_provisional_rr_ladder():
