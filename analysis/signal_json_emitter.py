@@ -532,6 +532,7 @@ class SignalJsonEmitter:
         self._cluster_watch_wall_seconds: dict[str, float] = {}
         self._cluster_watch_revisions: dict[str, int] = {}
         self._emitted_watch_refs: set[str] = set()
+        self._last_watch_content: dict[str, str] = {}
         self._terminal_decisions: set[str] = set()
         self._decision_states: dict[str, str] = {}
         self._finalized_decisions: set[str] = set()
@@ -569,6 +570,22 @@ class SignalJsonEmitter:
             require_market_context=self.require_market_context,
         ):
             return False
+
+        # Increment B (flag default OFF): suppress identical watch re-emits for the
+        # same cluster. The transition logic already rate-limits, but it still
+        # re-emits an unchanged watch every watch_update_interval; this collapses
+        # byte-identical content (symbol|family|status|reason|direction|price) until
+        # something materially changes. Enable: SIGNAL_WATCH_SUPPRESS_IDENTICAL=true.
+        if is_watch and os.getenv("SIGNAL_WATCH_SUPPRESS_IDENTICAL", "false").strip().lower() == "true":
+            content_cluster = str(payload.get("cluster_id") or payload.get("symbol") or "")
+            content_key = (
+                f"{payload.get('symbol')}|{payload.get('signal_family')}|{payload.get('status')}|"
+                f"{payload.get('reason')}|{payload.get('final_direction')}|"
+                f"{payload.get('watch_direction')}|{payload.get('entry_reference_price')}"
+            )
+            if self._last_watch_content.get(content_cluster) == content_key:
+                return False
+            self._last_watch_content[content_cluster] = content_key
 
         key = self._payload_key(payload, watch_revision=watch_revision)
         if self._is_duplicate(key):
