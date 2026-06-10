@@ -121,15 +121,12 @@ def test_confirmed_buy_defers_without_structure_contract_by_default():
     assert "LIVE_RR_BELOW_MINIMUM" not in decision.reasons
 
 
-def test_confirmed_buy_allows_at_min_rr_15_with_explicit_fallback_policy():
-    """Legacy RR-fallback execution requires explicit policy opt-in."""
-    decision = evaluate_signal_execution_gates(
-        _usdjpy_single_stop_candidate(),
-        rr_fallback_validates_signal=True,
-    )
+def test_confirmed_buy_cannot_bypass_structure_contract_with_legacy_policy():
+    """Provisional RR remains non-executable even if an old policy env exists."""
+    decision = evaluate_signal_execution_gates(_usdjpy_single_stop_candidate())
     assert decision.applies is True
-    assert decision.decision == "ALLOW", decision.reasons
-    assert decision.execution_status == "EXECUTION_GATE_ALLOWED"
+    assert decision.decision == "DEFER", decision.reasons
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in decision.reasons
     assert decision.live_rr is not None
     assert decision.live_rr["rr"] == 1.5
 
@@ -238,7 +235,10 @@ def test_no_market_chase_sell_still_allowed():
     """NO_MARKET_CHASE is chase-only; a valid SELL retest must still ALLOW (NZDJPY kept)."""
     payload = _nzdjpy_single_stop_sell()
     payload["entry_permission"] = "NO_MARKET_CHASE"
-    decision = evaluate_signal_execution_gates(payload, rr_fallback_validates_signal=True)
+    payload["target_mode"] = "FINAL_MARKET_STRUCTURE"
+    payload["structure_targets_available"] = True
+    payload["targets"] = [{"type": "STRUCTURE_TARGET", "level": payload["tp1"], "rr": 1.5}]
+    decision = evaluate_signal_execution_gates(payload)
     assert decision.decision == "ALLOW", decision.reasons
 
 
