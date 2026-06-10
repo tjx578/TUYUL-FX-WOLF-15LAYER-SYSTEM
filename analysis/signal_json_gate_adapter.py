@@ -28,15 +28,9 @@ class SignalJsonGateConfig:
     final_barrier: bool = False
     emit_continuation: bool = False
     emit_sidecar: bool = True
-    # When True, a DEFER (not BLOCK) on a directionally-confirmed candidate is
-    # emitted as a CONDITIONAL final signal (execution_mode=WAIT_RETEST) instead
-    # of being demoted to a non-final decision update. Off by default so live
-    # execution semantics do not change until downstream honors WAIT_RETEST.
-    emit_deferred_as_conditional_final: bool = False
     prefix: str = "[SignalExecutionGateJSON]"
     min_rr_required: float = SIGNAL_MIN_RR
     max_chase_r: float = 0.35
-    rr_fallback_validates_signal: bool = False
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> SignalJsonGateConfig:
@@ -57,13 +51,9 @@ class SignalJsonGateConfig:
             final_barrier=final_barrier,
             emit_continuation=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_CONTINUATION", final_barrier),
             emit_sidecar=_env_bool(env, "SIGNAL_JSON_EXEC_GATES_EMIT_SIDECAR", True),
-            emit_deferred_as_conditional_final=_env_bool(
-                env, "SIGNAL_JSON_EXEC_GATES_EMIT_DEFERRED_FINAL", False
-            ),
             prefix=str(env.get("SIGNAL_EXECUTION_GATE_JSON_LOG_PREFIX") or "[SignalExecutionGateJSON]"),
             min_rr_required=_env_float(env, "SIGNAL_JSON_MIN_RR_VALID", SIGNAL_MIN_RR),
             max_chase_r=_env_float(env, "SIGNAL_JSON_EXEC_GATES_MAX_CHASE_R", 0.35),
-            rr_fallback_validates_signal=_env_bool(env, "SIGNAL_JSON_RR_FALLBACK_VALIDATES_SIGNAL", False),
         )
 
 
@@ -92,9 +82,8 @@ class SignalJsonGateAdapter:
 
         With gates disabled this is a strict no-op. In shadow mode it logs a
         sidecar gate decision and returns the original payload. In enforce mode
-        BLOCK final signals are converted to decision updates, while DEFER
-        signals keep their direction and become terminal valid SignalJSON
-        payloads with ``valid_for_execution=False``.
+        BLOCK and DEFER candidates are converted to decision updates. Only an
+        execution-grade ALLOW may remain a final SignalJSON.
         """
         if not isinstance(payload, dict) or not self.config.enabled:
             return payload
@@ -103,24 +92,17 @@ class SignalJsonGateAdapter:
             payload,
             min_rr_required=self.config.min_rr_required,
             max_chase_r=self.config.max_chase_r,
-            rr_fallback_validates_signal=self.config.rr_fallback_validates_signal,
         )
         if self.config.emit_sidecar and decision.applies:
             self._emit_sidecar(payload, decision)
         if self.config.enforce and decision.applies and not decision.allows_execution:
-            if (
-                self.config.emit_deferred_as_conditional_final
-                and decision.decision == "DEFER"
-                and _is_retest_eligible(payload, decision)
-            ):
-                return self._deferred_as_conditional_final(payload, decision)
             if decision.decision == "DEFER":
-                return self._deferred_as_terminal_valid_signal(payload, decision)
+                return self._deferred_as_decision_update(payload, decision)
             return self._blocked_as_decision_update(payload, decision)
         if self.config.enforce and decision.applies and decision.allows_execution:
             return self._allowed_as_terminal_execution_ready(payload)
         if self.config.enforce and not decision.applies and _is_direction_valid_waiting(payload):
-            return self._direction_valid_wait_as_terminal_signal(payload)
+            return self._direction_valid_wait_as_decision_update(payload)
         return payload
 
     def _emit_sidecar(self, payload: dict[str, Any], decision: ExecutionGateDecision) -> None:
@@ -205,7 +187,7 @@ class SignalJsonGateAdapter:
         return blocked
 
     @staticmethod
-    def _deferred_as_terminal_valid_signal(
+    def _deferred_as_decision_update(
         payload: dict[str, Any],
         decision: ExecutionGateDecision,
     ) -> dict[str, Any]:
@@ -225,20 +207,20 @@ class SignalJsonGateAdapter:
         next_action = _terminal_next_action(terminal_status)
         terminal.update(
             {
-                "event": "signal_json",
+                "event": "signal_decision_update_json",
                 "source_status": source_status,
                 "source_final_direction": payload.get("final_direction") or source_direction,
                 "previous_status": payload.get("previous_status") or source_status,
                 "status": terminal_status,
                 "new_status": terminal_status,
                 "terminal_status": terminal_status,
-                "final_direction": source_direction,
+                "final_direction": "WAIT",
                 "validated_direction": source_direction,
-                "watch_direction": payload.get("watch_direction"),
+                "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("watch_direction"),
                 "direction_validation_status": "FINAL_DIRECTION_VALID_EXECUTION_DEFERRED",
                 "action": action,
                 "next_action": next_action,
-                "is_final_signal": True,
+                "is_final_signal": False,
                 "signal_valid": True,
                 "direction_valid": True,
                 "analysis_valid": True,
@@ -250,10 +232,10 @@ class SignalJsonGateAdapter:
                 "execution_reason": reasons,
                 "execution_grade": "TERMINAL_VALID_NON_EXECUTION",
                 "terminal_decision_confirmed": True,
-                "terminal_decision_event_type": "signal_json",
+                "terminal_decision_event_type": "signal_decision_update_json",
                 "audit_valid": False,
                 "audit_block_reasons": list(decision.reasons),
-                "emit_reason": "TERMINAL_VALID_SIGNAL",
+                "emit_reason": "EXECUTION_DEFERRED_DECISION_UPDATE",
                 "signal_quality": _terminal_signal_quality(terminal_status),
                 "exec_gate_decision": decision.decision,
                 "exec_gate_defer_reasons": list(decision.reasons),
@@ -268,7 +250,9 @@ class SignalJsonGateAdapter:
     @staticmethod
     def _allowed_as_terminal_execution_ready(payload: dict[str, Any]) -> dict[str, Any]:
         """Normalize an ALLOW decision into the terminal execution contract."""
-        source_target_mode = str(payload.get("target_mode") or "").upper()
+        tradeplan = payload.get("tradeplan_preview")
+        nested_target_mode = tradeplan.get("target_mode") if isinstance(tradeplan, dict) else None
+        source_target_mode = str(nested_target_mode or payload.get("target_mode") or "").upper()
         direction = str(
             payload.get("final_direction")
             or payload.get("validated_direction")
@@ -276,19 +260,28 @@ class SignalJsonGateAdapter:
             or "WAIT"
         ).upper()
         if direction not in {"BUY", "SELL"}:
-            return {**payload, "execution_valid_now": True}
+            return SignalJsonGateAdapter._deferred_as_decision_update(
+                payload,
+                ExecutionGateDecision(
+                    applies=True,
+                    decision="DEFER",
+                    execution_status="EXECUTION_GATE_DEFERRED",
+                    blocked_by=("DirectionContractGate",),
+                    reasons=("FINAL_DIRECTION_NOT_VALIDATED",),
+                ),
+            )
 
         if source_target_mode not in _STRUCTURE_TARGET_MODES:
-            return {
-                **payload,
-                "signal_valid": True,
-                "direction_valid": True,
-                "analysis_valid": True,
-                "tradeplan_valid": bool(payload.get("tradeplan_valid", True)),
-                "valid_for_execution": True,
-                "execution_valid_now": True,
-                "execution_status": "EXECUTION_READY",
-            }
+            return SignalJsonGateAdapter._deferred_as_decision_update(
+                payload,
+                ExecutionGateDecision(
+                    applies=True,
+                    decision="DEFER",
+                    execution_status="EXECUTION_GATE_DEFERRED",
+                    blocked_by=("TradePlanCompletenessGate",),
+                    reasons=("STRUCTURE_TARGET_MODE_REQUIRED",),
+                ),
+            )
 
         enriched = enrich_signal_json_payload({**payload, "execution_valid_now": True})
         terminal = dict(enriched)
@@ -341,25 +334,26 @@ class SignalJsonGateAdapter:
         return terminal
 
     @staticmethod
-    def _direction_valid_wait_as_terminal_signal(payload: dict[str, Any]) -> dict[str, Any]:
+    def _direction_valid_wait_as_decision_update(payload: dict[str, Any]) -> dict[str, Any]:
         terminal = dict(payload)
         direction = _direction_from_payload(payload)
         status = _terminal_status_for_direction_valid_wait(payload)
         terminal.update(
             {
-                "event": "signal_json",
+                "event": "signal_decision_update_json",
                 "source_status": payload.get("status"),
                 "source_final_direction": payload.get("final_direction") or direction,
                 "previous_status": payload.get("previous_status") or payload.get("status"),
                 "status": status,
                 "new_status": status,
                 "terminal_status": status,
-                "final_direction": direction,
+                "final_direction": "WAIT",
                 "validated_direction": direction,
+                "watch_direction": direction,
                 "direction_validation_status": "FINAL_DIRECTION_VALID_EXECUTION_DEFERRED",
                 "action": _terminal_action(status),
                 "next_action": _terminal_next_action(status),
-                "is_final_signal": True,
+                "is_final_signal": False,
                 "signal_valid": True,
                 "direction_valid": True,
                 "analysis_valid": True,
@@ -373,72 +367,18 @@ class SignalJsonGateAdapter:
                 or "execution_contract_not_ready",
                 "execution_grade": "TERMINAL_VALID_NON_EXECUTION",
                 "terminal_decision_confirmed": True,
-                "terminal_decision_event_type": "signal_json",
+                "terminal_decision_event_type": "signal_decision_update_json",
                 "audit_valid": False,
                 "audit_block_reasons": _direction_valid_wait_reasons(payload),
-                "emit_reason": "TERMINAL_VALID_SIGNAL",
+                "emit_reason": "EXECUTION_DEFERRED_DECISION_UPDATE",
                 "signal_quality": _terminal_signal_quality(status),
                 "reason": (
                     f"{payload.get('reason') or 'signal_candidate'} "
-                    "Direction valid; final SignalJSON emitted with execution deferred."
+                    "Direction valid; execution remains deferred in DecisionUpdate."
                 ),
             }
         )
         return terminal
-
-    @staticmethod
-    def _deferred_as_conditional_final(
-        payload: dict[str, Any],
-        decision: ExecutionGateDecision,
-    ) -> dict[str, Any]:
-        """Emit a DEFER on a confirmed candidate as a CONDITIONAL final signal.
-
-        The directional plan is valid; only immediate market execution is
-        deferred (e.g. waiting a retest or structure confirmation). Rather than
-        burying it as a non-final WAIT, keep it final and instruct a pending
-        limit at the entry zone with no chasing.
-        """
-        final = dict(payload)
-        reasons = ", ".join(decision.reasons) or decision.execution_status
-        final.update(
-            {
-                "is_final_signal": True,
-                "valid_for_execution": True,
-                "execution_valid_now": False,
-                "execution_mode": "WAIT_RETEST",
-                "entry_type": "PENDING_LIMIT",
-                "pending_entry_zone": payload.get("entry_zone"),
-                "execution_grade": "CONDITIONAL",
-                "execution_status": decision.execution_status,
-                "direction_validation_status": "FINAL_VALID_PENDING_RETEST",
-                "action": "PLACE_PENDING_LIMIT_AT_ENTRY_ZONE_NO_CHASE",
-                "next_action": "WAIT_RETEST_FILL_OR_INVALIDATION",
-                "emit_reason": "CONDITIONAL_FINAL_WAIT_RETEST",
-                "signal_quality": "CONDITIONAL_FINAL",
-                "exec_gate_decision": decision.decision,
-                "exec_gate_defer_reasons": list(decision.reasons),
-                "reason": (
-                    f"{payload.get('reason') or 'signal_candidate'} "
-                    "Final signal valid; enter on retest of the entry zone (no chase). "
-                    f"Execution deferred now because: {reasons}."
-                ),
-            }
-        )
-        return final
-
-
-_RETEST_ELIGIBLE_DEFER_REASONS = frozenset(
-    {
-        "STRUCTURE_TARGET_MODE_REQUIRED",
-        "STRUCTURE_TARGET_AT_MIN_RR_MISSING",
-        "SUPPORT_RESISTANCE_LADDER_INCOMPLETE",
-        "BREAKOUT_RETEST_NOT_CONFIRMED",
-        "BREAKDOWN_RETEST_NOT_CONFIRMED",
-        "MICROBOOST_WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
-        "MICROBOOST_STRUCTURE_REACTION_CONFIRMATION_REQUIRED",
-        "MICROBOOST_PRESSURE_WARNING_CONFIRMATION_REQUIRED",
-    }
-)
 
 _MANAGEMENT_DEFER_REASONS = frozenset(
     {
@@ -603,23 +543,6 @@ def _has_parent_or_pending_decision(payload: dict[str, Any]) -> bool:
         or payload.get("parent_watch_id")
         or _truthy(payload.get("parent_event_exists"))
     )
-
-
-def _is_retest_eligible(payload: dict[str, Any], decision: ExecutionGateDecision) -> bool:
-    """True when a DEFER can safely become a WAIT_RETEST conditional final signal."""
-    status = str(payload.get("status") or "")
-    direction = str(payload.get("final_direction") or "").upper()
-    rr_status = str(payload.get("rr_status") or "").upper()
-    directionally_valid = (
-        status.endswith("_VALID")
-        and direction in {"BUY", "SELL"}
-        and rr_status in {"VALID", "ACCEPTABLE"}
-        and bool(payload.get("valid_for_execution", False))
-    )
-    if not directionally_valid:
-        return False
-    reasons = set(decision.reasons)
-    return bool(reasons) and reasons.issubset(_RETEST_ELIGIBLE_DEFER_REASONS)
 
 
 def _env_bool(env: Mapping[str, str], key: str, default: bool) -> bool:
