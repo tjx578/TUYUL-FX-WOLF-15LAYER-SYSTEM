@@ -166,3 +166,27 @@ def test_microboost_table_events_emit_all_cluster_rows(capsys):
     assert parsed.event.window_local == "20:18:09-20:22:58"
     assert parsed.event.effective_tick_count == 46
     assert parsed.event.phase == "continuation"
+
+
+def test_microboost_parsers_ignore_signal_json_lifecycle_channels():
+    signal_watch_row = {
+        "timestamp": "2026-06-03T13:01:20Z",
+        "severity": "warning",
+        "message": (
+            '[SignalWatchJSON] {"event":"signal_watch_json","symbol":"NZDJPY",'
+            '"signal_family":"MICROBOOST_COUNTER_ENTRY","status":"BUY_TIMING_WATCH"}'
+        ),
+    }
+    decision_row = {
+        "timestamp": "2026-06-03T16:22:04Z",
+        "severity": "warning",
+        "message": (
+            '[SignalDecisionUpdateJSON] {"event":"signal_decision_update_json","symbol":"GBPCAD",'
+            '"signal_family":"MICROBOOST_COUNTER_ENTRY","status":"WAIT_STRUCTURE_OR_NEXT_M15"}'
+        ),
+    }
+
+    assert parse_microboost_intel_row(signal_watch_row) is None
+    assert parse_microboost_table_row(signal_watch_row) is None
+    assert parse_microboost_intel_row(decision_row) is None
+    assert parse_microboost_table_row(decision_row) is None
