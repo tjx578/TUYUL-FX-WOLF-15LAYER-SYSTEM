@@ -1389,6 +1389,100 @@ def _continuation_entry_payload(
     return payload
 
 
+def resolve_signal_watch_headline_from_pattern(
+    *,
+    raw_direction: str | None,
+    price_position: str | None,
+    phase_priced: str | None,
+    selected_pattern_id: str | None = None,
+    entry_permission: str | None = None,
+    management_action: str | None = None,
+    pattern_family: str | None = None,
+    duration_seconds: float | None = None,
+    timing_watch_min_seconds: float = 60.0,
+) -> dict[str, Any]:
+    """Increment C (flag-guarded, default OFF): upgrade a *generic* MICROBOOST_WATCH
+    headline into the directional counter scenario it already implies, reusing the
+    ``MicroboostCounterEntryEngine`` vocabulary (EARLY_SELL_WATCH / SELL_TIMING_WATCH /
+    EARLY_BUY_WATCH / BUY_TIMING_WATCH) instead of inventing new status names.
+
+    Pure function: it returns only headline OVERRIDES; the caller decides whether to
+    apply them. It NEVER sets ``valid_for_execution``, NEVER touches ``final_direction``
+    (stays WAIT), and NEVER emits a SignalJSON -- this is a classification/language fix,
+    not an execution change. ``raw_direction`` is the raw pressure direction and is
+    preserved by the caller; ``candidate_direction`` becomes the *scenario* direction
+    (the opposite side an absorption watch leans, e.g. BUY-stalled-at-resistance -> SELL).
+
+    Returns ``{"resolved": False}`` when the pattern context is not strong enough to
+    justify a direction-aware headline -- the watch then stays a generic MICROBOOST_WATCH.
+    """
+    raw = str(raw_direction or "").upper()
+    if raw not in {"BUY", "SELL"}:
+        return {"resolved": False}
+
+    pos = str(price_position or "").upper()
+    priced = str(phase_priced or "").upper()
+    pattern = str(selected_pattern_id or "").upper()
+    permission = str(entry_permission or "").upper()
+    mgmt = str(management_action or "").upper()
+    pattern_absorption = (
+        "ABSORPTION" in pattern
+        or "EXHAUSTION" in pattern
+        or "EXHAUSTION" in str(pattern_family or "").upper()
+    )
+
+    resistance_scenario = (
+        raw == "BUY"
+        and pos in {"MAIN_RESISTANCE", "UPPER_RANGE"}
+        and (
+            priced in {"RESISTANCE_PRESSURE_WARNING", "EXHAUSTION_AT_RESISTANCE"}
+            or pattern_absorption
+            or permission == "NO_NEW_BUY"
+            or "SELL_WATCH" in mgmt
+            or "PROTECT_LONG" in mgmt
+        )
+    )
+    support_scenario = (
+        raw == "SELL"
+        and pos in {"MAIN_SUPPORT", "LOWER_RANGE"}
+        and (
+            priced in {"SUPPORT_PRESSURE_WARNING", "EXHAUSTION_AT_SUPPORT"}
+            or pattern_absorption
+            or permission == "NO_NEW_SELL"
+            or "BUY_WATCH" in mgmt
+            or "PROTECT_SHORT" in mgmt
+        )
+    )
+    if not resistance_scenario and not support_scenario:
+        return {"resolved": False}
+
+    timing = duration_seconds is not None and duration_seconds >= timing_watch_min_seconds
+    if resistance_scenario:
+        scenario_direction = "SELL"
+        status = "SELL_TIMING_WATCH" if timing else "EARLY_SELL_WATCH"
+        action = "WAIT_REJECTION_OR_BREAKOUT_CONFIRMATION"
+        extreme = "MAIN_RESISTANCE"
+    else:
+        scenario_direction = "BUY"
+        status = "BUY_TIMING_WATCH" if timing else "EARLY_BUY_WATCH"
+        action = "WAIT_REJECTION_OR_BREAKDOWN_CONFIRMATION"
+        extreme = "MAIN_SUPPORT"
+
+    return {
+        "resolved": True,
+        "signal_family": "MICROBOOST_COUNTER_ENTRY",
+        "resolved_family": "MICROBOOST_COUNTER_ENTRY",
+        "status": status,
+        "candidate_direction": scenario_direction,
+        "watch_direction": scenario_direction,
+        "direction_status": "MICROBOOST_COUNTER_ENTRY_WATCH",
+        "direction_validation_status": "WATCH_ONLY_PENDING_CONFIRMATION",
+        "action": action,
+        "requires_m15_close": True,
+        "headline_resolve_reason": f"{pattern or 'COUNTER_SCENARIO'}_{raw}_AT_{extreme}",
+    }
+
+
 def _microboost_watch_payload(
     microboost_summary: dict[str, Any],
     signal_watch_gate: dict[str, Any],
@@ -1481,6 +1575,29 @@ def _microboost_watch_payload(
         **_golden_pattern_fields(latest),
         **_signal_watch_source_fields(signal_watch_gate, bool(signal_watch_gate.get("eligible"))),
     }
+    if candidate_direction and _env_bool("SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED", False):
+        duration_minutes = latest.get("duration_minutes")
+        duration_seconds = (
+            float(duration_minutes) * 60.0
+            if duration_minutes
+            else float(latest.get("duration_seconds") or 0.0)
+        )
+        headline = resolve_signal_watch_headline_from_pattern(
+            raw_direction=candidate_direction,
+            price_position=payload.get("price_position"),
+            phase_priced=latest.get("phase_priced"),
+            selected_pattern_id=latest.get("selected_pattern_id"),
+            entry_permission=latest.get("entry_permission"),
+            management_action=latest.get("management_action"),
+            pattern_family=latest.get("pattern_family"),
+            duration_seconds=duration_seconds,
+            timing_watch_min_seconds=_env_float("SIGNAL_JSON_TIMING_WATCH_MIN_SECONDS", 60.0),
+        )
+        if headline.get("resolved"):
+            # raw_direction stays the raw pressure side; candidate/headline become the
+            # counter scenario. final_direction (WAIT) + valid_for_execution (False) are
+            # deliberately NOT in `headline`, so they are never touched here.
+            payload.update({key: value for key, value in headline.items() if key != "resolved"})
     latest["microboost_watch"] = payload
     microboost_summary["watch_entry"] = payload
     return payload
