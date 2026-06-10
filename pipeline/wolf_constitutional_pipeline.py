@@ -3953,6 +3953,50 @@ class WolfConstitutionalPipeline:
         report["family_counters"] = self.family_counters_snapshot()
         return report
 
+    def _resolve_pressure_observation_direction(
+        self,
+        *,
+        l12_verdict: dict[str, Any],
+        synthesis: dict[str, Any] | None,
+        source_verdict: Any | None,
+    ) -> str | None:
+        """Restore the raw pressure direction for a non-execute pressure/canary
+        observation from current-tick upstream sources.
+
+        Classification-only: the result seeds ``raw_direction`` on the recorded
+        canary so the microboost counter/continuation engines can classify
+        (e.g. BUY stalled at resistance -> SELL absorption watch). It MUST NOT set
+        ``final_direction`` / ``valid_for_execution`` or emit a ``SignalJSON``.
+
+        Use-if-present and conflict-safe: returns ``None`` when no source carries a
+        BUY/SELL direction, or when sources disagree (never guesses). Kill switch:
+        ``SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY=false``.
+        """
+        if os.getenv("SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY", "true").strip().lower() != "true":
+            return None
+        from schemas.direction import normalize_direction  # noqa: PLC0415
+
+        intel = l12_verdict.get("signal_throttle_intel")
+        execution = synthesis.get("execution") if isinstance(synthesis, dict) else None
+        verdict_text = str(source_verdict or "").strip().upper() or None
+        raw_sources = (
+            l12_verdict.get("direction"),
+            l12_verdict.get("raw_direction"),
+            intel.get("raw_direction") if isinstance(intel, dict) else None,
+            execution.get("direction") if isinstance(execution, dict) else None,
+        )
+        found: set[str] = set()
+        for raw in raw_sources:
+            resolved = normalize_direction(str(raw) if raw else None)
+            if resolved in {"BUY", "SELL"}:
+                found.add(resolved)
+        verdict_direction = normalize_direction(None, verdict_text) if verdict_text else None
+        if verdict_direction in {"BUY", "SELL"}:
+            found.add(verdict_direction)
+        if len(found) == 1:
+            return next(iter(found))
+        return None
+
     def _record_signal_throttle_downgrade_observation(
         self,
         *,
@@ -3960,8 +4004,8 @@ class WolfConstitutionalPipeline:
         l12_verdict: dict[str, Any],
         legacy_verdict: Any,
         reason: str,
+        synthesis: dict[str, Any] | None = None,
     ) -> None:
-        direction = self._direction_hint(l12_verdict.get("direction"))
         source_verdict = (
             l12_verdict.get("market_context_from")
             or l12_verdict.get("sovereignty_from")
@@ -3970,7 +4014,20 @@ class WolfConstitutionalPipeline:
             or l12_verdict.get("verdict")
         )
         source_text = str(source_verdict or "").strip().upper()
-        direction = direction or self._direction_hint(source_text)
+        # C2 (restore direction propagation): a non-execute observation must still
+        # carry the raw pressure direction so it does not starve the microboost
+        # counter engine (which would fall back to raw_direction_missing). This is
+        # classification-only -- it never changes final_direction /
+        # valid_for_execution and never emits a SignalJSON.
+        direction = (
+            self._direction_hint(l12_verdict.get("direction"))
+            or self._direction_hint(source_text)
+            or self._resolve_pressure_observation_direction(
+                l12_verdict=l12_verdict,
+                synthesis=synthesis,
+                source_verdict=source_verdict,
+            )
+        )
         if direction not in {"BUY", "SELL"}:
             if reason == "non_execute_verdict":
                 self._signal_throttle_live_analyzer.record_pressure_canary(
@@ -5001,6 +5058,7 @@ class WolfConstitutionalPipeline:
                 l12_verdict=l12_verdict,
                 legacy_verdict=legacy_verdict,
                 reason=throttle_skip_reason,
+                synthesis=synthesis,
             )
             self._emit_verdict_stream_event(
                 event="signal_throttle_check",
