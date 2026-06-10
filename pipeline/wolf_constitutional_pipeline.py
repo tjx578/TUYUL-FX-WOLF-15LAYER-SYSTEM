@@ -4360,10 +4360,108 @@ class WolfConstitutionalPipeline:
             source_verdict=source_text,
         )
         if payload is None:
+            # Increment F.1: the priced NO_TRADE_REASONED could not be built (no market
+            # context / reference price). Emit a DIAGNOSTIC-ONLY terminal instead so the
+            # quorum does not die silently -- never a (price-mandatory) SignalDecisionUpdateJSON.
+            self._emit_contextless_quorum_diagnostic(
+                symbol=symbol_key,
+                allowed_quorum=allowed_quorum,
+                l12_verdict=l12_verdict,
+                report=report,
+            )
             return
         payload["signal_json_emit_result"] = self._emit_signal_json_payload(payload)
         report["allowed_quorum_decision_update"] = payload
         l12_verdict["allowed_quorum_decision_update"] = payload
+
+    def _emit_contextless_quorum_diagnostic(
+        self,
+        *,
+        symbol: str,
+        allowed_quorum: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Increment F.1 (flag default OFF): when an allowed quorum reaches the radar and
+        fails watch promotion but the normal *priced* NO_TRADE_REASONED cannot be built
+        (no MarketContext / reference price), emit a DIAGNOSTIC-ONLY terminal so the
+        pressure does not die silently.
+
+        Deliberately NOT a SignalDecisionUpdateJSON: that contract is price/trade-context
+        mandatory (``build_signal_json_event`` rejects a priceless payload) and weakening
+        it would risk the same protection that prevents fake SignalJSON. So this emits a
+        separate ``signal_quorum_terminal_diagnostic_json`` event straight to the log
+        channel -- it never calls ``build_signal_json_event``, never carries / invents a
+        price or entry_zone, never invents a direction, and is never executable.
+
+        Enable: ``SIGNAL_THROTTLE_ALLOWED_QUORUM_CONTEXTLESS_DIAGNOSTIC_ENABLED=true``.
+        """
+        if (
+            os.getenv("SIGNAL_THROTTLE_ALLOWED_QUORUM_CONTEXTLESS_DIAGNOSTIC_ENABLED", "false").strip().lower()
+            != "true"
+        ):
+            return None
+        symbol_key = str(symbol or "").upper()
+        if not symbol_key:
+            return None
+        direction = self._direction_hint(allowed_quorum.get("direction")) or self._direction_hint(
+            l12_verdict.get("direction")
+        )
+        symbol_activity_raw = report.get("symbol_activity")
+        symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
+        activity_raw = symbol_activity.get(symbol_key)
+        activity = activity_raw if isinstance(activity_raw, dict) else {}
+        event_time = str(activity.get("latest_event_utc") or datetime.now(UTC).isoformat())
+        cluster_stamp = event_time.replace(":", "").replace("-", "").replace("+", "Z")
+        cluster_id = f"{symbol_key}_{cluster_stamp}_ALLOWED_QUORUM_CONTEXTLESS"
+        blockers = self._allowed_quorum_blockers(l12_verdict=l12_verdict, report=report)
+        for forced in ("WATCH_PROMOTION_FAILED", "MARKET_CONTEXT_MISSING", "REFERENCE_PRICE_MISSING"):
+            blockers.setdefault(forced, 1)
+        payload: dict[str, Any] = {
+            "event": "signal_quorum_terminal_diagnostic_json",
+            "schema_version": "1.0",
+            "symbol": symbol_key,
+            "cluster_id": cluster_id,
+            "signal_family": "SIGNAL_THROTTLE_ALLOWED_QUORUM",
+            "source_status": "CANARY_QUORUM_PENDING_VALIDATION",
+            "terminal_status": "NO_TRADE_REASONED_CONTEXTLESS",
+            "raw_direction": direction,
+            "candidate_direction": direction,
+            "validated_direction": None,
+            "watch_direction": direction,
+            "final_direction": "WAIT",
+            "direction_validation_status": "ALLOWED_QUORUM_CONTEXT_MISSING",
+            "signal_valid_time_utc": event_time,
+            "market_context_applied": False,
+            "context_missing": True,
+            "diagnostic_only": True,
+            "valid_for_execution": False,
+            "is_final_signal": False,
+            "signal_valid": False,
+            "pair_eligible_for_analysis": True,
+            "pressure_seen": True,
+            "allowed_quorum_seen": True,
+            "allowed_quorum": dict(allowed_quorum),
+            "decision_update_trigger": "ALLOWED_QUORUM_CONTEXT_MISSING",
+            "pending_decision_id": f"{cluster_id}_DIAGNOSTIC",
+            "watch_promotion_blockers": blockers,
+            "reason": (
+                "Allowed quorum reached the throttle radar but watch promotion failed and market "
+                "context / reference price was unavailable, so no priced decision object could be "
+                "built. Diagnostic only; NOT a SignalDecisionUpdateJSON and never executable."
+            ),
+        }
+        import json  # noqa: PLC0415 -- local: stdlib json is not a module-level import here
+        import logging  # noqa: PLC0415 -- local: `logging` is only imported on the loguru-absent path
+
+        logging.getLogger("signal_json").warning(
+            "%s %s",
+            "[SignalQuorumDiagnosticJSON]",
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+        )
+        report["allowed_quorum_contextless_diagnostic"] = payload
+        l12_verdict["allowed_quorum_contextless_diagnostic"] = payload
+        return payload
 
     @staticmethod
     def _has_signal_throttle_emit_candidate(report: dict[str, Any]) -> bool:
