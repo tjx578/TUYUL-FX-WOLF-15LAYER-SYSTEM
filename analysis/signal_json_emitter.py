@@ -486,7 +486,6 @@ class SignalJsonEmitter:
         require_parent_watch: bool = False,
         allow_direct_bypass: bool = True,
         require_final_market_structure: bool = False,
-        allow_provisional_rr_execution: bool = False,
         require_theme_alignment: bool = True,
         theme_conflict_downgrade: bool = True,
         min_rr_valid: float = SIGNAL_MIN_RR,
@@ -514,7 +513,6 @@ class SignalJsonEmitter:
         self.require_parent_watch = require_parent_watch
         self.allow_direct_bypass = allow_direct_bypass
         self.require_final_market_structure = require_final_market_structure
-        self.allow_provisional_rr_execution = allow_provisional_rr_execution
         self.require_theme_alignment = require_theme_alignment
         self.theme_conflict_downgrade = theme_conflict_downgrade
         self.min_rr_valid = float(min_rr_valid)
@@ -543,6 +541,8 @@ class SignalJsonEmitter:
         if not self.enabled:
             return False
         payload = event.to_dict()
+        if _is_terminal_non_execution_status(str(payload.get("status") or "")):
+            payload = _terminal_non_execution_as_decision_update(payload)
         is_decision_update = _is_decision_update_payload(payload) or _is_decision_update_event(event)
         is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
         watch_revision: str | None = None
@@ -551,11 +551,7 @@ class SignalJsonEmitter:
             if watch_revision is None:
                 return False
         final_block_reasons = _final_execution_block_reasons(payload)
-        if (
-            _is_final_payload(payload)
-            and final_block_reasons
-            and _should_block_final_execution(final_block_reasons, allow_provisional_rr=self.allow_provisional_rr_execution)
-        ):
+        if final_block_reasons:
             payload = _blocked_final_as_decision_update(payload, final_block_reasons)
         elif self.strict_lifecycle and _is_final_payload(payload):
             if self._ensure_terminal_decision_update(payload):
@@ -652,7 +648,7 @@ class SignalJsonEmitter:
             reasons.append("MISSING_PARENT_WATCH_DECISION_ID_MATCH")
         if pending_id is not None and self._decision_states.get(pending_id) == "EXPIRED":
             reasons.append("PENDING_DECISION_ALREADY_EXPIRED")
-        if source_target_mode == "PROVISIONAL_RR_FALLBACK" and not self.allow_provisional_rr_execution:
+        if source_target_mode == "PROVISIONAL_RR_FALLBACK":
             reasons.append("PROVISIONAL_RR_NOT_EXECUTION_GRADE")
         if self.require_final_market_structure and not _is_structure_target_mode(payload.get("target_mode")):
             reasons.append("STRUCTURE_TARGET_MODE_REQUIRED")
@@ -1039,6 +1035,8 @@ def should_emit_signal_json(
     if _optional_float(payload.get("entry_reference_price")) is None:
         return False
     if status in TERMINAL_VALID_SIGNAL_STATUSES:
+        if not _is_decision_update_payload(payload):
+            return False
         terminal_direction = str(payload.get("final_direction") or payload.get("validated_direction") or "").upper()
         if terminal_direction not in {"BUY", "SELL"}:
             return False
@@ -1050,7 +1048,7 @@ def should_emit_signal_json(
             return False
         return _optional_bool(payload.get("execution_valid_now")) is True
     if status in TERMINAL_INACTIVE_SIGNAL_STATUSES:
-        return True
+        return _is_decision_update_payload(payload)
     if status in VALID_SIGNAL_STATUSES or str(status).endswith("_VALID"):
         rr_status = str(payload.get("rr_status") or "").upper()
         if rr_status not in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}:
@@ -1086,6 +1084,10 @@ def _is_terminal_signal_status(status: str) -> bool:
     return status in TERMINAL_SIGNAL_STATUSES
 
 
+def _is_terminal_non_execution_status(status: str) -> bool:
+    return status in TERMINAL_VALID_SIGNAL_STATUSES or status in TERMINAL_INACTIVE_SIGNAL_STATUSES
+
+
 def _is_structure_target_mode(value: Any) -> bool:
     return str(value or "").upper() in STRUCTURE_TARGET_MODES
 
@@ -1117,37 +1119,46 @@ def _emit_reason(status: str) -> str:
 def _is_final_payload(payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
     if status in TERMINAL_EXECUTION_READY_STATUSES:
-        target_mode = str(payload.get("target_mode") or "").upper()
+        target_mode = _effective_target_mode(payload)
         return (
             str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
             and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
             and target_mode in STRUCTURE_TARGET_MODES
-            and bool(payload.get("valid_for_execution", False))
-            and _optional_bool(payload.get("execution_valid_now")) is True
+            and _optional_bool(payload.get("analysis_valid")) is True
+            and _optional_bool(payload.get("direction_valid")) is True
+            and _optional_bool(payload.get("signal_valid")) is True
+            and _effective_tradeplan_valid(payload) is True
+            and _effective_valid_for_execution(payload) is True
+            and _effective_execution_valid_now(payload) is True
         )
     return (
         (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
         and str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
         and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
         and _target_contract_ok(payload, status=status)
-        and bool(payload.get("valid_for_execution", False))
+        and _optional_bool(payload.get("analysis_valid")) is True
+        and _optional_bool(payload.get("direction_valid")) is True
+        and _optional_bool(payload.get("signal_valid")) is True
+        and _effective_tradeplan_valid(payload) is True
+        and _effective_valid_for_execution(payload) is True
+        and _effective_execution_valid_now(payload) is True
     )
 
 
 def _uses_provisional_rr_fallback(payload: dict[str, Any]) -> bool:
     tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
     target_mode = str(
-        payload.get("source_target_mode")
-        or payload.get("target_mode")
-        or tradeplan.get("source_target_mode")
+        tradeplan.get("source_target_mode")
         or tradeplan.get("target_mode")
+        or payload.get("source_target_mode")
+        or payload.get("target_mode")
         or ""
     ).upper()
     return target_mode == "PROVISIONAL_RR_FALLBACK"
 
 
 def _final_execution_block_reasons(payload: dict[str, Any]) -> list[str]:
-    if not _is_final_payload(payload):
+    if not _is_directional_final_candidate(payload):
         return []
     tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
     execution_gate = _dict_value(payload.get("execution_gate")) or {}
@@ -1155,16 +1166,26 @@ def _final_execution_block_reasons(payload: dict[str, Any]) -> list[str]:
 
     if _uses_provisional_rr_fallback(payload):
         reasons.append("PROVISIONAL_RR_NOT_EXECUTION_GRADE")
+    elif not _target_contract_ok(payload, status=str(payload.get("status") or "")):
+        reasons.append("STRUCTURE_TARGET_MODE_REQUIRED")
+    if _optional_bool(payload.get("analysis_valid")) is not True:
+        reasons.append("ANALYSIS_CONTRACT_NOT_READY")
+    if _optional_bool(payload.get("direction_valid")) is not True:
+        reasons.append("DIRECTION_CONTRACT_NOT_READY")
+    if _optional_bool(payload.get("signal_valid")) is not True:
+        reasons.append("SIGNAL_CONTRACT_NOT_READY")
+    if _effective_tradeplan_valid(payload) is not True:
+        reasons.append("TRADEPLAN_CONTRACT_NOT_READY")
+    if _effective_execution_valid_now(payload) is not True:
+        reasons.append("EXECUTION_VALID_NOW_FALSE")
+    if _effective_valid_for_execution(payload) is not True:
+        reasons.append("VALID_FOR_EXECUTION_FALSE")
     if _optional_bool(tradeplan.get("structure_targets_available")) is False:
         reasons.append("STRUCTURE_TARGET_MODE_REQUIRED")
     if _optional_bool(tradeplan.get("tradeplan_context_ready")) is False:
         reasons.append("TRADEPLAN_CONTRACT_NOT_READY")
     if _optional_bool(tradeplan.get("targets_execution_usable")) is False:
         reasons.append("TARGETS_EXECUTION_NOT_USABLE")
-
-    nested_execution_valid_now = _optional_bool(execution_gate.get("execution_valid_now"))
-    if nested_execution_valid_now is False:
-        reasons.append("EXECUTION_VALID_NOW_FALSE")
 
     entry_permission = str(payload.get("entry_permission") or execution_gate.get("entry_permission") or "").upper()
     if entry_permission == "RETEST_ONLY":
@@ -1178,21 +1199,43 @@ def _final_execution_block_reasons(payload: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(reasons))
 
 
-def _should_block_final_execution(reasons: list[str], *, allow_provisional_rr: bool) -> bool:
-    if not reasons:
-        return False
-    if not allow_provisional_rr:
-        return True
-    return any(reason != "PROVISIONAL_RR_NOT_EXECUTION_GRADE" for reason in reasons)
+def _is_directional_final_candidate(payload: dict[str, Any]) -> bool:
+    status = str(payload.get("status") or "")
+    return bool(
+        (status in TERMINAL_EXECUTION_READY_STATUSES or status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
+        and str(payload.get("final_direction") or payload.get("validated_direction") or "").upper()
+        in {"BUY", "SELL"}
+    )
 
 
 def _target_contract_ok(payload: dict[str, Any], *, status: str) -> bool:
-    target_mode = str(payload.get("target_mode") or "").upper()
+    target_mode = _effective_target_mode(payload)
     if target_mode in STRUCTURE_TARGET_MODES:
         return True
-    if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES and target_mode == "PROVISIONAL_RR_FALLBACK":
-        return True
     return status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES and _legacy_structure_target_contract_complete(payload)
+
+
+def _effective_target_mode(payload: dict[str, Any]) -> str:
+    tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
+    return str(tradeplan.get("target_mode") or payload.get("target_mode") or "").upper()
+
+
+def _effective_tradeplan_valid(payload: dict[str, Any]) -> bool | None:
+    tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
+    nested = _optional_bool(tradeplan.get("tradeplan_valid"))
+    return nested if nested is not None else _optional_bool(payload.get("tradeplan_valid"))
+
+
+def _effective_execution_valid_now(payload: dict[str, Any]) -> bool | None:
+    execution_gate = _dict_value(payload.get("execution_gate")) or {}
+    nested = _optional_bool(execution_gate.get("execution_valid_now"))
+    return nested if nested is not None else _optional_bool(payload.get("execution_valid_now"))
+
+
+def _effective_valid_for_execution(payload: dict[str, Any]) -> bool | None:
+    execution_gate = _dict_value(payload.get("execution_gate")) or {}
+    nested = _optional_bool(execution_gate.get("valid_for_execution"))
+    return nested if nested is not None else _optional_bool(payload.get("valid_for_execution"))
 
 
 def _legacy_structure_target_contract_complete(payload: dict[str, Any]) -> bool:
@@ -1240,6 +1283,42 @@ def _signal_quality(payload: dict[str, Any]) -> str:
     if _is_watch_status(status):
         return "WATCH_ONLY"
     return "CANDIDATE"
+
+
+def _terminal_non_execution_as_decision_update(payload: dict[str, Any]) -> dict[str, Any]:
+    update = dict(payload)
+    terminal_status = str(payload.get("terminal_status") or payload.get("status") or "")
+    source_direction = str(
+        payload.get("validated_direction")
+        or payload.get("final_direction")
+        or payload.get("candidate_direction")
+        or "WAIT"
+    ).upper()
+    direction_valid = source_direction in {"BUY", "SELL"} and terminal_status in TERMINAL_VALID_SIGNAL_STATUSES
+    update.update(
+        {
+            "event": "signal_decision_update_json",
+            "source_status": payload.get("source_status") or payload.get("status"),
+            "source_final_direction": payload.get("source_final_direction") or payload.get("final_direction"),
+            "status": terminal_status,
+            "new_status": terminal_status,
+            "terminal_status": terminal_status,
+            "final_direction": "WAIT",
+            "validated_direction": source_direction if direction_valid else None,
+            "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("watch_direction"),
+            "is_final_signal": False,
+            "signal_valid": direction_valid,
+            "direction_valid": direction_valid,
+            "analysis_valid": direction_valid or bool(payload.get("analysis_valid")),
+            "valid_for_execution": False,
+            "execution_valid_now": False,
+            "terminal_decision_confirmed": True,
+            "terminal_decision_event_type": "signal_decision_update_json",
+            "emit_reason": "TERMINAL_LIFECYCLE_DECISION_UPDATE",
+            "signal_quality": "DECISION_UPDATE",
+        }
+    )
+    return update
 
 
 def _blocked_final_as_decision_update(payload: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
