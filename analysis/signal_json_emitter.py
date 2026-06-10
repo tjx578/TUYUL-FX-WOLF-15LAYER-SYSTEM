@@ -550,12 +550,13 @@ class SignalJsonEmitter:
             watch_revision = self._mark_watch_transition(event)
             if watch_revision is None:
                 return False
+        final_block_reasons = _final_execution_block_reasons(payload)
         if (
             _is_final_payload(payload)
-            and _uses_provisional_rr_fallback(payload)
-            and not self.allow_provisional_rr_execution
+            and final_block_reasons
+            and _should_block_final_execution(final_block_reasons, allow_provisional_rr=self.allow_provisional_rr_execution)
         ):
-            payload = _blocked_final_as_decision_update(payload, ["PROVISIONAL_RR_NOT_EXECUTION_GRADE"])
+            payload = _blocked_final_as_decision_update(payload, final_block_reasons)
         elif self.strict_lifecycle and _is_final_payload(payload):
             if self._ensure_terminal_decision_update(payload):
                 payload = self._strict_final_payload(payload)
@@ -1001,9 +1002,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         pair_calibration=_pair_calibration(counter_entry, symbol=symbol),
         pattern_context=_pattern_context(counter_entry),
         theme_context=_theme_context(counter_entry),
-        tradeplan_preview=_tradeplan_preview(counter_entry),
-        execution_gate=_execution_gate_context(counter_entry),
-        lifecycle=_lifecycle_context(counter_entry),
+        tradeplan_preview=_dict_value(counter_entry.get("tradeplan_preview")) or _tradeplan_preview(counter_entry),
+        execution_gate=_dict_value(counter_entry.get("execution_gate")) or _execution_gate_context(counter_entry),
+        lifecycle=_dict_value(counter_entry.get("lifecycle")) or _lifecycle_context(counter_entry),
     )
 
 
@@ -1056,11 +1057,7 @@ def should_emit_signal_json(
             return False
         if str(payload.get("final_direction") or "").upper() not in {"BUY", "SELL"}:
             return False
-        target_mode = str(payload.get("target_mode") or "").upper()
-        if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES:
-            if target_mode not in STRUCTURE_TARGET_MODES | {"PROVISIONAL_RR_FALLBACK"}:
-                return False
-        elif target_mode not in STRUCTURE_TARGET_MODES:
+        if not _target_contract_ok(payload, status=status):
             return False
         if not bool(payload.get("valid_for_execution", False)):
             return False
@@ -1119,13 +1116,8 @@ def _emit_reason(status: str) -> str:
 
 def _is_final_payload(payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
-    target_mode = str(payload.get("target_mode") or "").upper()
-    target_ok = (
-        target_mode in STRUCTURE_TARGET_MODES | {"PROVISIONAL_RR_FALLBACK"}
-        if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES
-        else target_mode in STRUCTURE_TARGET_MODES
-    )
     if status in TERMINAL_EXECUTION_READY_STATUSES:
+        target_mode = str(payload.get("target_mode") or "").upper()
         return (
             str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
             and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
@@ -1137,14 +1129,88 @@ def _is_final_payload(payload: dict[str, Any]) -> bool:
         (status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
         and str(payload.get("final_direction") or "").upper() in {"BUY", "SELL"}
         and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
-        and target_ok
+        and _target_contract_ok(payload, status=status)
         and bool(payload.get("valid_for_execution", False))
     )
 
 
 def _uses_provisional_rr_fallback(payload: dict[str, Any]) -> bool:
-    target_mode = str(payload.get("source_target_mode") or payload.get("target_mode") or "").upper()
+    tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
+    target_mode = str(
+        payload.get("source_target_mode")
+        or payload.get("target_mode")
+        or tradeplan.get("source_target_mode")
+        or tradeplan.get("target_mode")
+        or ""
+    ).upper()
     return target_mode == "PROVISIONAL_RR_FALLBACK"
+
+
+def _final_execution_block_reasons(payload: dict[str, Any]) -> list[str]:
+    if not _is_final_payload(payload):
+        return []
+    tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
+    execution_gate = _dict_value(payload.get("execution_gate")) or {}
+    reasons: list[str] = []
+
+    if _uses_provisional_rr_fallback(payload):
+        reasons.append("PROVISIONAL_RR_NOT_EXECUTION_GRADE")
+    if _optional_bool(tradeplan.get("structure_targets_available")) is False:
+        reasons.append("STRUCTURE_TARGET_MODE_REQUIRED")
+    if _optional_bool(tradeplan.get("tradeplan_context_ready")) is False:
+        reasons.append("TRADEPLAN_CONTRACT_NOT_READY")
+    if _optional_bool(tradeplan.get("targets_execution_usable")) is False:
+        reasons.append("TARGETS_EXECUTION_NOT_USABLE")
+
+    nested_execution_valid_now = _optional_bool(execution_gate.get("execution_valid_now"))
+    if nested_execution_valid_now is False:
+        reasons.append("EXECUTION_VALID_NOW_FALSE")
+
+    entry_permission = str(payload.get("entry_permission") or execution_gate.get("entry_permission") or "").upper()
+    if entry_permission == "RETEST_ONLY":
+        reasons.append("RETEST_ENTRY_REQUIRED")
+    chase_allowed = _optional_bool(payload.get("chase_allowed"))
+    if chase_allowed is None:
+        chase_allowed = _optional_bool(execution_gate.get("chase_allowed"))
+    if chase_allowed is False:
+        reasons.append("NO_CHASE_ENTRY_PERMISSION")
+
+    return list(dict.fromkeys(reasons))
+
+
+def _should_block_final_execution(reasons: list[str], *, allow_provisional_rr: bool) -> bool:
+    if not reasons:
+        return False
+    if not allow_provisional_rr:
+        return True
+    return any(reason != "PROVISIONAL_RR_NOT_EXECUTION_GRADE" for reason in reasons)
+
+
+def _target_contract_ok(payload: dict[str, Any], *, status: str) -> bool:
+    target_mode = str(payload.get("target_mode") or "").upper()
+    if target_mode in STRUCTURE_TARGET_MODES:
+        return True
+    if status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES and target_mode == "PROVISIONAL_RR_FALLBACK":
+        return True
+    return status in PROVISIONAL_TARGET_ALLOWED_FINAL_STATUSES and _legacy_structure_target_contract_complete(payload)
+
+
+def _legacy_structure_target_contract_complete(payload: dict[str, Any]) -> bool:
+    """Accept legacy final continuation payloads that predate explicit target_mode."""
+    if str(payload.get("target_mode") or "").strip():
+        return False
+    if _optional_float(payload.get("entry_reference_price") or payload.get("signal_valid_price")) is None:
+        return False
+    if _optional_float(payload.get("sl_safe") or payload.get("selected_sl") or payload.get("suggested_sl")) is None:
+        return False
+    if not any(_optional_float(payload.get(key)) is not None for key in ("tp1", "tp2", "tp3", "tp4")):
+        targets = payload.get("targets")
+        if not isinstance(targets, list) or not targets:
+            return False
+    return any(
+        _optional_float(payload.get(key)) is not None
+        for key in ("rr_to_tp1_tight", "tp1_rr", "tp_min_rr_value", "rr_to_valid_target")
+    )
 
 
 def _signal_quality(payload: dict[str, Any]) -> str:
@@ -1180,27 +1246,37 @@ def _blocked_final_as_decision_update(payload: dict[str, Any], reasons: list[str
     blocked = dict(payload)
     source_status = str(payload.get("status") or "")
     source_direction = str(payload.get("final_direction") or "WAIT")
+    terminal_status = _blocked_final_terminal_status(reasons)
     blocked.update(
         {
             "event": "signal_decision_update_json",
             "source_status": source_status,
             "source_final_direction": source_direction,
+            "source_valid_for_execution": bool(payload.get("valid_for_execution", False)),
             "status": "WAIT_STRUCTURE_OR_NEXT_M15",
             "new_status": "WAIT_STRUCTURE_OR_NEXT_M15",
+            "terminal_status": terminal_status,
             "final_direction": "WAIT",
             "validated_direction": None,
             "watch_direction": source_direction
             if source_direction in {"BUY", "SELL"}
             else payload.get("watch_direction"),
-            "direction_validation_status": "FINAL_CANDIDATE_BLOCKED_BY_STRICT_GATE",
-            "action": "WAIT_LIFECYCLE_AUDIT_AND_STRUCTURE",
-            "next_action": "WAIT_LIFECYCLE_AUDIT_AND_STRUCTURE",
+            "direction_validation_status": "FINAL_DIRECTION_VALID_EXECUTION_DEFERRED"
+            if source_direction in {"BUY", "SELL"}
+            else "FINAL_CANDIDATE_BLOCKED_BY_STRICT_GATE",
+            "action": _blocked_final_action(terminal_status),
+            "next_action": _blocked_final_next_action(terminal_status),
             "is_final_signal": False,
             "emit_reason": "STRICT_LIFECYCLE_DECISION_UPDATE",
             "signal_quality": "DECISION_UPDATE",
+            "signal_valid": source_direction in {"BUY", "SELL"},
+            "direction_valid": source_direction in {"BUY", "SELL"},
+            "analysis_valid": bool(payload.get("analysis_valid") or source_direction in {"BUY", "SELL"}),
+            "tradeplan_valid": False,
             "valid_for_execution": False,
             "execution_valid_now": False,
-            "execution_status": "BLOCKED_SIGNAL_JSON_STRICT_GATE",
+            "execution_status": _blocked_final_execution_status(terminal_status),
+            "execution_reason": ", ".join(reasons),
             "execution_grade": "CONDITIONAL",
             "audit_valid": False,
             "audit_block_reasons": list(dict.fromkeys(reasons)),
@@ -1208,6 +1284,41 @@ def _blocked_final_as_decision_update(payload: dict[str, Any], reasons: list[str
         }
     )
     return blocked
+
+
+def _blocked_final_terminal_status(reasons: list[str]) -> str:
+    reason_set = set(reasons)
+    if reason_set & {
+        "PROVISIONAL_RR_NOT_EXECUTION_GRADE",
+        "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE",
+        "STRUCTURE_TARGET_MODE_REQUIRED",
+        "TRADEPLAN_CONTRACT_NOT_READY",
+        "TARGETS_EXECUTION_NOT_USABLE",
+    }:
+        return "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+    if reason_set & {"RETEST_ENTRY_REQUIRED", "NO_CHASE_ENTRY_PERMISSION"}:
+        return "FINAL_VALID_WAIT_RETEST"
+    return "FINAL_VALID_EXECUTION_DEFERRED"
+
+
+def _blocked_final_action(terminal_status: str) -> str:
+    if terminal_status == "FINAL_VALID_WAIT_RETEST":
+        return "WAIT_RETEST_OR_CONFIRMATION"
+    if terminal_status == "FINAL_VALID_WAIT_STRUCTURE_TARGET":
+        return "WAIT_STRUCTURE_TARGET_OR_RETEST"
+    return "WAIT_EXECUTION_CONTRACT"
+
+
+def _blocked_final_next_action(terminal_status: str) -> str:
+    return _blocked_final_action(terminal_status)
+
+
+def _blocked_final_execution_status(terminal_status: str) -> str:
+    if terminal_status == "FINAL_VALID_WAIT_RETEST":
+        return "WAIT_RETEST_CONFIRMATION"
+    if terminal_status == "FINAL_VALID_WAIT_STRUCTURE_TARGET":
+        return "WAIT_STRUCTURE_TARGET"
+    return "WAIT_EXECUTION_CONTRACT"
 
 
 def _execution_ready_decision_update(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1367,7 +1478,7 @@ def _schema_v2_payload(payload: dict[str, Any], *, compact: bool = True) -> dict
     hidden = V11_OUTPUT_ONLY_FIELDS | PAIR_REFERENCE_COMPAT_FIELDS
     if compact:
         hidden |= PATTERN_DEBUG_FIELDS | NESTED_SCHEMA_DUPLICATE_FIELDS
-    if _is_terminal_signal_status(str(payload.get("status") or "")):
+    if _is_terminal_signal_status(str(payload.get("status") or "")) or _is_decision_update_payload(payload):
         hidden -= TERMINAL_SIGNAL_PUBLIC_FIELDS
     cleaned = {key: value for key, value in payload.items() if key not in hidden}
     return (_clean_context(cleaned) if compact else cleaned) or {}
@@ -1386,6 +1497,10 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
     diagnostics = _dict_value(payload.get("pattern_match_diagnostics")) or _dict_value(
         existing.get("pattern_match_diagnostics")
     )
+    pattern_bottlenecks = _clean_pattern_bottlenecks(
+        _string_list(payload.get("pattern_bottlenecks")) or _string_list(existing.get("pattern_bottlenecks")),
+        payload=payload,
+    )
     top_supporting_patterns = [pattern for pattern in matched_patterns or [] if pattern != selected_pattern_id][:3]
     if not any(
         (
@@ -1398,6 +1513,7 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
             _optional_int(payload.get("execution_readiness_score") or existing.get("execution_readiness_score")),
             reference_cases,
             pattern_evidence,
+            pattern_bottlenecks,
             diagnostics if include_debug else None,
         )
     ):
@@ -1418,8 +1534,7 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
         ),
         "reference_cases": reference_cases,
         "pattern_evidence": pattern_evidence[:5] if pattern_evidence else None,
-        "pattern_bottlenecks": _string_list(payload.get("pattern_bottlenecks"))
-        or _string_list(existing.get("pattern_bottlenecks")),
+        "pattern_bottlenecks": pattern_bottlenecks,
     }
     if include_debug:
         context.update(
@@ -1437,6 +1552,18 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
             }
         )
     return _clean_context(context)
+
+
+def _clean_pattern_bottlenecks(values: list[str] | None, *, payload: dict[str, Any]) -> list[str] | None:
+    if not values:
+        return None
+    final_direction = str(payload.get("final_direction") or payload.get("source_final_direction") or "").upper()
+    if final_direction == "WAIT":
+        final_direction = str(payload.get("source_final_direction") or "").upper()
+    cleaned = list(dict.fromkeys(values))
+    if final_direction in {"BUY", "SELL"}:
+        cleaned = [value for value in cleaned if str(value).upper() != "FINAL_DIRECTION_WAIT"]
+    return cleaned or None
 
 
 def _reference_cases(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
