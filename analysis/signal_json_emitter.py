@@ -1598,6 +1598,14 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
         payload=payload,
     )
     top_supporting_patterns = [pattern for pattern in matched_patterns or [] if pattern != selected_pattern_id][:3]
+    # Increment C: distinguish evidence-backed (confirmed) patterns from the full
+    # candidate scan. Additive -- matched_patterns is kept unchanged for dashboards
+    # that still read it; new fields let consumers stop treating the scan list as
+    # "all confirmed".
+    evidence_text = " ".join(pattern_evidence or [])
+    confirmed_patterns = [pattern for pattern in (matched_patterns or []) if pattern and pattern in evidence_text]
+    if selected_pattern_id and selected_pattern_id not in confirmed_patterns:
+        confirmed_patterns.insert(0, selected_pattern_id)
     if not any(
         (
             selected_pattern_id,
@@ -1617,6 +1625,8 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
     context = {
         "selected_pattern_id": selected_pattern_id,
         "matched_patterns": matched_patterns,
+        "confirmed_patterns": confirmed_patterns or None,
+        "candidate_patterns_count": len(matched_patterns) if matched_patterns else 0,
         "top_supporting_patterns": top_supporting_patterns,
         "pattern_family": _optional_str(payload.get("pattern_family") or existing.get("pattern_family")),
         "pattern_scope": _optional_str(payload.get("pattern_scope") or existing.get("pattern_scope")) or "UNIVERSAL",
