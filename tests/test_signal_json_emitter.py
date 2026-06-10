@@ -161,6 +161,11 @@ def test_final_signal_dedup_prefers_signal_id_across_stream_extracts(caplog):
         final_direction="SELL",
         rr_status="VALID",
         target_mode="FINAL_MARKET_STRUCTURE",
+        analysis_valid=True,
+        direction_valid=True,
+        signal_valid=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
         valid_for_execution=True,
         signal_id="NZDJPY_SELL_20260603_132500",
     )
@@ -171,6 +176,11 @@ def test_final_signal_dedup_prefers_signal_id_across_stream_extracts(caplog):
         final_direction="SELL",
         rr_status="VALID",
         target_mode="FINAL_MARKET_STRUCTURE",
+        analysis_valid=True,
+        direction_valid=True,
+        signal_valid=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
         valid_for_execution=True,
         signal_id="NZDJPY_SELL_20260603_132500",
     )
@@ -193,6 +203,11 @@ def test_legacy_breakdown_continuation_final_emits_without_target_mode(caplog):
         action="SELL_BREAKDOWN_RETEST",
         rr_status="VALID",
         target_mode=None,
+        analysis_valid=True,
+        direction_valid=True,
+        signal_valid=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
         valid_for_execution=True,
         signal_id="NZDJPY_SELL_20260603_132511",
     )
@@ -631,6 +646,11 @@ def test_final_signal_uses_signal_json_prefix(caplog):
         final_direction="SELL",
         rr_status="VALID",
         target_mode="FINAL_MARKET_STRUCTURE",
+        analysis_valid=True,
+        direction_valid=True,
+        signal_valid=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
         valid_for_execution=True,
     )
 
@@ -640,7 +660,7 @@ def test_final_signal_uses_signal_json_prefix(caplog):
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
-def test_terminal_valid_wait_structure_emits_signal_json_without_execution(caplog):
+def test_terminal_valid_wait_structure_emits_decision_update_without_execution(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
         cluster_id="NZDJPY_20260603T132500Z",
@@ -665,11 +685,11 @@ def test_terminal_valid_wait_structure_emits_signal_json_without_execution(caplo
         is_final_signal=True,
     )
 
-    assert should_emit_signal_json(event) is True
+    assert should_emit_signal_json(event) is False
     assert emitter.emit(event) is True
-    assert "[SignalJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
     assert "[SignalWatchJSON]" not in caplog.text
-    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
     assert '"status":"FINAL_VALID_WAIT_STRUCTURE_TARGET"' in caplog.text
     assert '"signal_valid":true' in caplog.text
     assert '"direction_valid":true' in caplog.text
@@ -699,15 +719,15 @@ def test_continuation_valid_with_rr_fallback_defaults_to_decision_update(caplog)
         risk_pips=12.0,
     )
 
-    assert should_emit_signal_json(event) is True
+    assert should_emit_signal_json(event) is False
     assert emitter.emit(event) is True
     assert "[SignalDecisionUpdateJSON]" in caplog.text
     assert "[SignalJSON]" not in caplog.text
     assert "PROVISIONAL_RR_NOT_EXECUTION_GRADE" in caplog.text
 
 
-def test_continuation_valid_with_rr_fallback_can_be_explicitly_enabled(caplog):
-    emitter = SignalJsonEmitter(enabled=True, allow_provisional_rr_execution=True)
+def test_continuation_valid_with_rr_fallback_cannot_be_explicitly_enabled(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
     event = _event(
         cluster_id="USDCAD_20260520T024532Z",
         symbol="USDCAD",
@@ -727,13 +747,11 @@ def test_continuation_valid_with_rr_fallback_can_be_explicitly_enabled(caplog):
         risk_pips=12.0,
     )
 
-    assert should_emit_signal_json(event) is True
+    assert should_emit_signal_json(event) is False
     assert emitter.emit(event) is True
-    assert "[SignalJSON]" in caplog.text
-    assert "[SignalWatchJSON]" not in caplog.text
-    assert '"signal_family":"MICROBOOST_TREND_CONTINUATION"' in caplog.text
-    assert '"emit_reason":"QUORUM_CONTINUATION_VALID"' in caplog.text
-    assert '"signal_quality":"TREND_CONTINUATION_VALID"' in caplog.text
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert "PROVISIONAL_RR_NOT_EXECUTION_GRADE" in caplog.text
 
 
 def test_strict_lifecycle_blocks_unready_final_as_decision_update(caplog):
@@ -742,7 +760,6 @@ def test_strict_lifecycle_blocks_unready_final_as_decision_update(caplog):
         strict_lifecycle=True,
         require_parent_watch=False,
         require_final_market_structure=True,
-        allow_provisional_rr_execution=False,
         require_theme_alignment=False,
         require_terminal_decision_update=False,
     )
