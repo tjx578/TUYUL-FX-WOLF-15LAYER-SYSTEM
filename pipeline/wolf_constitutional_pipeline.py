@@ -406,9 +406,6 @@ class WolfConstitutionalPipeline:
             require_final_market_structure=(
                 os.getenv("SIGNAL_JSON_REQUIRE_FINAL_MARKET_STRUCTURE", "false").strip().lower() == "true"
             ),
-            allow_provisional_rr_execution=(
-                os.getenv("SIGNAL_JSON_ALLOW_PROVISIONAL_RR_EXECUTION", "false").strip().lower() == "true"
-            ),
             require_theme_alignment=os.getenv("SIGNAL_JSON_REQUIRE_THEME_ALIGNMENT", "false").strip().lower() == "true",
             theme_conflict_downgrade=os.getenv("SIGNAL_JSON_THEME_CONFLICT_DOWNGRADE", "false").strip().lower()
             == "true",
