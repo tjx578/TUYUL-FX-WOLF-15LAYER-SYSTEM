@@ -84,6 +84,44 @@ def test_parse_signal_throttle_rows_ignores_signal_json_decision_updates():
     assert events[0].symbol == "EURUSD"
 
 
+def test_parse_signal_throttle_rows_ignores_signal_json_lifecycle_channels():
+    rows = [
+        {
+            "timestamp": "2026-06-03T13:01:20Z",
+            "severity": "warning",
+            "message": (
+                '[SignalWatchJSON] {"event":"signal_watch_json","symbol":"NZDJPY",'
+                '"signal_family":"MICROBOOST_COUNTER_ENTRY","status":"BUY_TIMING_WATCH"}'
+            ),
+        },
+        {
+            "timestamp": "2026-06-03T16:22:04Z",
+            "severity": "warning",
+            "message": (
+                '[SignalDecisionUpdateJSON] {"event":"signal_decision_update_json","symbol":"GBPCAD",'
+                '"signal_family":"MICROBOOST_COUNTER_ENTRY","status":"WAIT_STRUCTURE_OR_NEXT_M15"}'
+            ),
+        },
+        {
+            "timestamp": "2026-06-03T13:31:11Z",
+            "severity": "warning",
+            "message": (
+                '[SignalJSON] {"event":"signal_json","symbol":"NZDJPY",'
+                '"signal_family":"MICROBOOST_COUNTER_ENTRY","status":"SELL_BREAKDOWN_CONTINUATION_VALID"}'
+            ),
+        },
+        {
+            "timestamp": "2026-06-03T13:18:27Z",
+            "severity": "error",
+            "message": "[SignalThrottle] NZDJPY THROTTLED - 3 signals in last 300s (max 3) suppressed=5",
+        },
+    ]
+
+    events = parse_signal_throttle_rows(rows)
+
+    assert [(event.symbol, event.event_type) for event in events] == [("NZDJPY", "THROTTLED")]
+
+
 def test_parse_signal_throttle_check_as_pressure_canary():
     event = parse_engine_log_event(
         {
