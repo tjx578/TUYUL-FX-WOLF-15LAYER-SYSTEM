@@ -1293,6 +1293,38 @@ def _final_mode_from_lifecycle(
     return "THEME_ALERT_AND_PAIR_SELECTION"
 
 
+def _counter_watch_without_clean_block_ok(latest: dict[str, Any]) -> bool:
+    """Increment A (flag default OFF): allow a directional, ignition-class microboost
+    block at a main extreme to reach the counter engine even without a 5-minute clean
+    throttle block, so short absorption bursts surface as MICROBOOST_COUNTER_ENTRY
+    watches (e.g. EARLY_SELL_WATCH) instead of a generic MICROBOOST_WATCH.
+
+    Watch-only: the counter engine is still invoked with watch_only=True, so the
+    result keeps ``valid_for_execution=false`` -- this never opens execution. The
+    quality bar reuses the already-vetted ignition-watch thresholds (>=18s duration,
+    >=5 effective ticks, density >=8/min); it deliberately does NOT lower the bar to
+    sub-18s noise. Enable with ``MICROBOOST_COUNTER_WATCH_WITHOUT_CLEAN_BLOCK=true``.
+    """
+    if not _env_bool("MICROBOOST_COUNTER_WATCH_WITHOUT_CLEAN_BLOCK", False):
+        return False
+    direction = str(latest.get("direction") or latest.get("raw_direction") or "").upper()
+    if direction not in {"BUY", "SELL"}:
+        return False
+    phase_priced = str(latest.get("phase_priced") or "").upper()
+    if phase_priced not in {
+        "RESISTANCE_PRESSURE_WARNING",
+        "EXHAUSTION_AT_RESISTANCE",
+        "SUPPORT_PRESSURE_WARNING",
+        "EXHAUSTION_AT_SUPPORT",
+    }:
+        return False
+    ticks = latest.get("effective_ticks") or latest.get("effective_tick_count") or 0
+    density = latest.get("effective_density_per_minute") or latest.get("effective_density") or 0.0
+    duration_minutes = latest.get("duration_minutes") or 0.0
+    duration_seconds = duration_minutes * 60.0 if duration_minutes else float(latest.get("duration_seconds") or 0.0)
+    return duration_seconds >= 18.0 and float(ticks) >= 5 and float(density) >= 8.0
+
+
 def _counter_entry_payload(
     microboost_summary: dict[str, Any],
     signal_watch_gate: dict[str, Any],
@@ -1300,7 +1332,7 @@ def _counter_entry_payload(
     latest = microboost_summary.get("latest")
     if not isinstance(latest, dict):
         return None
-    if not signal_watch_gate["eligible"]:
+    if not signal_watch_gate["eligible"] and not _counter_watch_without_clean_block_ok(latest):
         payload = _blocked_microboost_payload(
             latest,
             signal_family="MICROBOOST_COUNTER_ENTRY",
