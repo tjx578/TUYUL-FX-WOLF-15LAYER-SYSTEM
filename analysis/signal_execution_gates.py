@@ -55,7 +55,6 @@ def evaluate_signal_execution_gates(
     *,
     min_rr_required: float = SIGNAL_MIN_RR,
     max_chase_r: float = 0.35,
-    rr_fallback_validates_signal: bool = False,
 ) -> ExecutionGateDecision:
     """Evaluate a final SignalJSON payload against execution-readiness gates."""
     if not _is_directional_final(payload):
@@ -76,11 +75,10 @@ def evaluate_signal_execution_gates(
         payload,
         enriched,
         min_rr_required,
-        rr_fallback_validates_signal,
         defer_gates,
         defer_reasons,
     )
-    _execution_contract_flag_gate(payload, rr_fallback_validates_signal, defer_gates, defer_reasons)
+    _execution_contract_flag_gate(payload, defer_gates, defer_reasons)
     _spread_news_gate(payload, block_gates, block_reasons)
     _pattern_permission_gate(payload, block_gates, block_reasons)
     _session_volatility_gate(payload, defer_gates, defer_reasons)
@@ -130,23 +128,17 @@ def _tradeplan_gate(
     payload: dict[str, Any],
     enriched: dict[str, Any],
     min_rr_required: float,
-    rr_fallback_validates_signal: bool,
     gates: list[str],
     reasons: list[str],
 ) -> None:
-    target_mode = str(payload.get("target_mode") or "").upper()
-    # Provisional RR fallback is watch/decision-grade by default.  It can become
-    # execution-grade only under an explicit opt-in policy and when the engine's
-    # own RR contract marks the projected targets usable.
-    provisional_usable = (
-        rr_fallback_validates_signal
-        and _optional_bool(payload.get("targets_execution_usable")) is True
-        and str(payload.get("rr_status") or "").upper() in {"VALID", "ACCEPTABLE"}
-        and _provisional_rr_meets_min(payload, min_rr_required)
-    )
-    if target_mode == "PROVISIONAL_RR_FALLBACK" and not rr_fallback_validates_signal:
+    target_mode = str(
+        _nested(payload, "tradeplan_preview", "target_mode")
+        or payload.get("target_mode")
+        or ""
+    ).upper()
+    if target_mode == "PROVISIONAL_RR_FALLBACK":
         _add(gates, reasons, "TradePlanCompletenessGate", "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE")
-    if target_mode not in _STRUCTURE_TARGET_MODES and not provisional_usable:
+    if target_mode not in _STRUCTURE_TARGET_MODES:
         _add(gates, reasons, "TradePlanCompletenessGate", "STRUCTURE_TARGET_MODE_REQUIRED")
         return
 
@@ -180,38 +172,44 @@ def _tradeplan_gate(
     if support is None or resistance is None:
         _add(gates, reasons, "TradePlanCompletenessGate", "SUPPORT_RESISTANCE_LADDER_INCOMPLETE")
 
-    if not provisional_usable and not _has_structure_target(payload, enriched, min_rr_required):
+    if not _has_structure_target(payload, enriched, min_rr_required):
         _add(gates, reasons, "TradePlanCompletenessGate", "STRUCTURE_TARGET_AT_MIN_RR_MISSING")
 
 
 def _execution_contract_flag_gate(
     payload: dict[str, Any],
-    rr_fallback_validates_signal: bool,
     gates: list[str],
     reasons: list[str],
 ) -> None:
     """Honor explicit contract flags already computed upstream."""
     explicit_execution_now = _first_bool(
-        payload.get("execution_valid_now"),
         _nested(payload, "execution_gate", "execution_valid_now"),
+        payload.get("execution_valid_now"),
     )
     if explicit_execution_now is False:
         _add(gates, reasons, "ExecutionContractGate", "EXECUTION_VALID_NOW_FALSE")
+    explicit_valid_for_execution = _first_bool(
+        _nested(payload, "execution_gate", "valid_for_execution"),
+        payload.get("valid_for_execution"),
+    )
+    if explicit_valid_for_execution is False:
+        _add(gates, reasons, "ExecutionContractGate", "VALID_FOR_EXECUTION_FALSE")
 
-    explicit_tradeplan_valid = _first_bool(payload.get("tradeplan_valid"))
+    explicit_tradeplan_valid = _first_bool(
+        _nested(payload, "tradeplan_preview", "tradeplan_valid"),
+        payload.get("tradeplan_valid"),
+    )
     tradeplan_ready = _first_bool(
-        payload.get("tradeplan_context_ready"),
         _nested(payload, "tradeplan_preview", "tradeplan_context_ready"),
+        payload.get("tradeplan_context_ready"),
     )
     targets_usable = _first_bool(
-        payload.get("targets_execution_usable"),
         _nested(payload, "tradeplan_preview", "targets_execution_usable"),
+        payload.get("targets_execution_usable"),
     )
-    target_mode = str(payload.get("target_mode") or "").upper()
-    provisional_policy_active = rr_fallback_validates_signal and target_mode == "PROVISIONAL_RR_FALLBACK"
     if targets_usable is False:
         _add(gates, reasons, "ExecutionContractGate", "TRADEPLAN_CONTRACT_NOT_READY")
-    elif (explicit_tradeplan_valid is False or tradeplan_ready is False) and not provisional_policy_active:
+    elif explicit_tradeplan_valid is False or tradeplan_ready is False:
         _add(gates, reasons, "ExecutionContractGate", "TRADEPLAN_CONTRACT_NOT_READY")
 
 
@@ -485,30 +483,6 @@ def _has_structure_target(payload: dict[str, Any], enriched: dict[str, Any], min
     for source in (payload, enriched):
         rr = _first_float(source.get("rr_to_valid_target"), source.get("tp_min_rr_value"))
         if rr is not None and rr >= min_rr_required and _first_float(source.get("tp_min_rr")) is not None:
-            return True
-    return False
-
-
-def _provisional_rr_meets_min(payload: dict[str, Any], min_rr_required: float) -> bool:
-    """True when the engine's own RR fields show the (provisional) plan clears min RR.
-
-    Used to accept RR-projected fallback targets for confirmed breakout/continuation
-    signals when no structure target is available. Reads only RR values the engine
-    pre-computed against the single sl_safe stop, so it stays consistent with the
-    live-RR gate. TP1 is the validation anchor (min RR is measured at TP1).
-    """
-    for key in (
-        "rr_to_valid_target",
-        "tp_min_rr_value",
-        "rr_to_tp1_tight",
-        "tp1_rr",
-        "rr_to_tp2_tight",
-        "tp2_rr",
-        "rr_to_tp3_tight",
-        "tp3_rr",
-    ):
-        rr = _optional_float(payload.get(key))
-        if rr is not None and rr >= min_rr_required:
             return True
     return False
 
