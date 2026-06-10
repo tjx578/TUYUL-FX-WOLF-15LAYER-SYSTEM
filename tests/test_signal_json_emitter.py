@@ -180,6 +180,98 @@ def test_final_signal_dedup_prefers_signal_id_across_stream_extracts(caplog):
     assert caplog.text.count("[SignalJSON]") == 1
 
 
+def test_legacy_breakdown_continuation_final_emits_without_target_mode(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="NZDJPY_20260603T132511Z",
+        symbol="NZDJPY",
+        status="SELL_BREAKDOWN_CONTINUATION_VALID",
+        raw_direction="SELL",
+        candidate_direction="SELL",
+        validated_direction="SELL",
+        final_direction="SELL",
+        action="SELL_BREAKDOWN_RETEST",
+        rr_status="VALID",
+        target_mode=None,
+        valid_for_execution=True,
+        signal_id="NZDJPY_SELL_20260603_132511",
+    )
+
+    assert should_emit_signal_json(event) is True
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert '"status":"SELL_BREAKDOWN_CONTINUATION_VALID"' in caplog.text
+    assert '"target_mode"' not in caplog.text
+
+
+def test_legacy_continuation_final_without_structure_targets_stays_blocked():
+    event = _event(
+        status="SELL_BREAKDOWN_CONTINUATION_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode=None,
+        valid_for_execution=True,
+        sl_safe=None,
+        tp1=None,
+        tp2=None,
+        tp3=None,
+        tp4=None,
+        rr_to_tp1_tight=None,
+    )
+
+    assert should_emit_signal_json(event) is False
+
+
+def test_nested_execution_gate_false_blocks_breakout_final_as_decision_update(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="GBPCAD_20260603T155608Z",
+        symbol="GBPCAD",
+        status="BUY_BREAKOUT_CONTINUATION_VALID",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction="BUY",
+        final_direction="BUY",
+        action="BUY_BREAKOUT_RETEST",
+        rr_status="VALID",
+        target_mode=None,
+        valid_for_execution=True,
+        signal_id="GBPCAD_BUY_20260603_235959",
+        tradeplan_preview={
+            "target_mode": "PROVISIONAL_RR_FALLBACK",
+            "target_source": "rr_projection_only",
+            "structure_targets_available": False,
+            "tradeplan_context_ready": False,
+            "targets_execution_usable": True,
+        },
+        execution_gate={
+            "entry_permission": "RETEST_ONLY",
+            "chase_allowed": False,
+            "valid_for_execution": True,
+            "execution_valid_now": False,
+        },
+        pattern_bottlenecks=[
+            "PATTERN_MATCHED_BUT_EXECUTION_READINESS_BLOCKED",
+            "RESISTANCE_LADDER_MISSING",
+            "FINAL_DIRECTION_WAIT",
+        ],
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    assert '"terminal_status":"FINAL_VALID_WAIT_STRUCTURE_TARGET"' in caplog.text
+    assert '"signal_valid":true' in caplog.text
+    assert '"direction_valid":true' in caplog.text
+    assert '"tradeplan_valid":false' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+    assert '"execution_valid_now":false' in caplog.text
+    assert "PROVISIONAL_RR_NOT_EXECUTION_GRADE" in caplog.text
+    assert "EXECUTION_VALID_NOW_FALSE" in caplog.text
+    assert "FINAL_DIRECTION_WAIT" not in caplog.text
+    assert "RESISTANCE_LADDER_MISSING" in caplog.text
+
+
 def test_signal_json_emits_watch_only_on_state_transition(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     first = _event(
