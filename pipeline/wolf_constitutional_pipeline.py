@@ -4093,6 +4093,58 @@ class WolfConstitutionalPipeline:
             )
         )
 
+    @staticmethod
+    def _should_track_official_watch(payload: dict[str, Any]) -> bool:
+        """Increment D (flag-guarded, default OFF): admit an OFFICIAL *resolved counter*
+        watch (EARLY_SELL_WATCH / EARLY_BUY_WATCH produced by the Increment C
+        pattern-aware headline resolver) into finalizer lifecycle tracking even when it
+        lacks a clean SignalThrottle block.
+
+        Why this exists: ``_should_track_lifecycle_candidate`` requires
+        ``source_clean_block_ok``, but resolved counter watches come from short
+        absorption bursts that never form a 5-minute clean block -- so without this
+        path they emit as SignalWatchJSON and then hang with no terminal
+        SignalDecisionUpdateJSON. This is a pure ADMISSION predicate: it never sets or
+        changes ``valid_for_execution`` / ``final_direction`` and never emits a
+        SignalJSON; the finalizer still owns the terminal decision on idle/TTL/M15.
+
+        Enable with ``SIGNAL_WATCH_FINALIZER_TRACK_EARLY_ENABLED=true``.
+        """
+        if os.getenv("SIGNAL_WATCH_FINALIZER_TRACK_EARLY_ENABLED", "false").strip().lower() != "true":
+            return False
+        if not isinstance(payload, dict):
+            return False
+        status = str(payload.get("status") or "").upper()
+        if status not in {"EARLY_SELL_WATCH", "EARLY_BUY_WATCH"}:
+            return False
+        if not str(payload.get("symbol") or "").strip():
+            return False
+        # official watch must carry a lifecycle identity (set by _mark_official_lifecycle_candidate)
+        if not (payload.get("signal_id") or payload.get("pending_decision_id")):
+            return False
+        # never executable, never a final signal -- this is a watch, not an entry
+        if payload.get("is_final_signal") is True or payload.get("valid_for_execution") is True:
+            return False
+        if str(payload.get("final_direction") or "WAIT").upper() != "WAIT":
+            return False
+        # exclude shadow / telemetry / validation-only pings
+        if payload.get("shadow_only") is True or payload.get("signal_quality") in {"TELEMETRY_ONLY", "DEBUG_ONLY"}:
+            return False
+        if payload.get("orchestration_status") == "VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH":
+            return False
+        # must lean a concrete scenario direction (resolved counter side)
+        direction = str(
+            payload.get("watch_direction")
+            or payload.get("candidate_direction")
+            or payload.get("validated_direction")
+            or ""
+        ).upper()
+        if direction not in {"BUY", "SELL"}:
+            return False
+        # must be a RESOLVED official counter watch, never a raw generic MICROBOOST_WATCH
+        resolved_family = str(payload.get("resolved_family") or payload.get("signal_family") or "").upper()
+        return resolved_family == "MICROBOOST_COUNTER_ENTRY"
+
     def _mark_official_lifecycle_candidate(self, payload: dict[str, Any]) -> None:
         """Attach a stable lifecycle identity so the finalizer can adopt an official
         watch candidate (``_is_pending_watch`` clause: pending_decision_id +
@@ -4122,7 +4174,7 @@ class WolfConstitutionalPipeline:
         )
         if is_lifecycle_status and payload.get("symbol") and not excluded:
             self._mark_official_lifecycle_candidate(payload)
-        lifecycle_track = self._should_track_lifecycle_candidate(payload)
+        lifecycle_track = self._should_track_lifecycle_candidate(payload) or self._should_track_official_watch(payload)
         payload["lifecycle_track"] = lifecycle_track
         if lifecycle_track:
             payload.setdefault("lifecycle_status", "WATCH_ACTIVE")
