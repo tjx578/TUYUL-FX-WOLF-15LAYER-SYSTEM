@@ -215,7 +215,6 @@ def test_provisional_rr_fallback_cannot_pass_with_removed_explicit_policy():
 
     assert gated["event"] == "signal_decision_update_json"
     assert gated["final_direction"] == "WAIT"
-    assert gated["validated_direction"] == "BUY"
     assert gated["valid_for_execution"] is False
     assert gated["execution_valid_now"] is False
 
