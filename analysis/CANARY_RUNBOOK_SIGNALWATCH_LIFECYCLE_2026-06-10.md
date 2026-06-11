@@ -18,8 +18,8 @@ appears, roll back that one flag (see Rollback).
 ```text
 Repository code present       : YES (origin/main = 79a05a32; C/D/E/F.1 shipped up to 152b5ff0)
 Increment C unit behavior     : PASS (10 resolver tests + 4 golden-reference)
-Railway deployment confirmed  : NOT PROVEN - post-C attempt #1 shows the resolver idle on eligible input
-Increment C runtime validated : NO - attempt #1 (sha256 65cc2e5e) is FRESH but C not active (flag/deploy)
+Railway deployment confirmed  : NOT PROVEN - attempts #1-#2 idle on eligible input; #2 mixes 13 deployments
+Increment C runtime validated : NO - #2 (sha256 a9e5a6bc) fresh but mixes 13 deploys; live deploy unproven (0 eligible on newest)
 Increment D/E/F.1 rollout     : HOLD
 ```
 
@@ -96,6 +96,37 @@ only when eligible MAIN_RESISTANCE/MAIN_SUPPORT events resolve to directional wa
 
 ---
 
+## Stage-1 attempt #2 ledger — the deployment-mixing trap
+
+Second gate-passing capture (`logs.1781147630898.json`): sha256 `a9e5a6bc…`, event-max
+`2026-06-11 02:11 UTC` (beats #1), 334 `[SignalWatchJSON]` / 16 symbols / 27 clusters. It PASSES
+freshness (new hash + later window) but **FAILS as rollout proof** — the export mixes **13 Railway
+deployment ids**. **Decision: NO-GO — invalid rollout proof; inconclusive on the current live deployment.**
+
+Split by deployment (newest event first), every segment resolved zero:
+
+```text
+deployment   watches   newest event        eligible(MAIN_RES+WARN)   resolved
+7eba79f4        9      2026-06-11 02:11          0                      0    <- NEWEST / live
+698afcfb       44      2026-06-10 08:35         44                      0
+820919d9       40      2026-06-10 13:23         40                      0
+e6ab509b       31      2026-06-10 09:16         28                      0
+... (13 deployments total)                     121 eligible            0
+```
+
+Correct reading (do NOT overclaim):
+- C is **confirmed OFF** on the older deployments that carried eligible cases (`698afcfb`/`820919d9`/`e6ab509b`
+  had 44/40/28 exact golden inputs, incl. 83 nested `UPPER_ABSORPTION_WARNING`, all stayed generic).
+- The **newest/live deployment `7eba79f4` is UNPROVEN** — 9 watches, **0 eligible** events to resolve;
+  the overnight window contained no `MAIN_RESISTANCE+RESISTANCE_PRESSURE_WARNING` event.
+
+**Safety (PASS):** `[SignalJSON]`=0 · `valid_for_execution=true`=0 · `final_direction=WAIT` 334/334 · `is_final_signal`=0.
+
+**Lesson → Evidence Gate v2:** a fresh hash is necessary but NOT sufficient. A fresh *mixed-deployment*
+export is still invalid rollout evidence. The gate below now rejects any sample spanning >1 deployment.
+
+---
+
 ## 0. Pre-rollout baseline (capture BEFORE enabling anything)
 
 Export a fresh Railway log window from a **single deployment** (mixing deployments invalidates the
@@ -121,22 +152,53 @@ $timestamps = [regex]::Matches(
 $timestamps | Measure-Object -Minimum -Maximum
 ```
 
-Reject the candidate as **duplicate/stale** if any of these applies:
+Then count distinct deployments — a fresh hash over a *mixed-deployment* export is still invalid proof
+(attempt #2 mixed 13 deployments):
 
-- SHA-256 equals the prior capture.
-- Event maximum is not later than the prior maximum (`2026-06-10 15:53 UTC` for the current baseline).
-- The export still contains the same 48-event fixed GBPNZD window.
-- Events come from a deployment other than the one whose commit and flags were checked.
+```powershell
+# Gate 2 — single deployment (deployment id lives in the Railway tags JSON, often escaped as \"deployment\")
+$deps = [regex]::Matches($raw, 'deployment\\?"\s*:\s*\\?"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})') |
+  ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+"deployment_id_count = $($deps.Count)"
+$deps
+if ($deps.Count -ne 1) { "REJECT for rollout proof — export mixes $($deps.Count) deployments" }
+```
 
-Before accepting a post-C sample, record all four values in the rollout evidence ledger: Railway
-deployment/commit, flag value, export SHA-256, and event min/max UTC. File mtime alone is not evidence
-of fresh runtime content.
+### Evidence Gate v2 — a sample is valid for GO/NO-GO only if ALL gates pass
+
+```text
+Gate 1  Freshness            sha256 != last accepted hash; event_max > last accepted event_max; rows > 0
+Gate 2  Single deployment    deployment_id_count == 1   (>1 -> REJECT for proof; exploratory analysis only)
+Gate 3  Deployment identity  that one id == current active Railway deploy; running_commit >= 152b5ff0
+                             (min 91cf167c); the stage flag is set on THAT deploy
+                             (Stage 1: SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED=true)
+Gate 4  Eligibility          >=1 watch with raw_direction in {BUY,SELL}
+                             + price_position in {MAIN_RESISTANCE, MAIN_SUPPORT}
+                             + phase_priced in {RESISTANCE_PRESSURE_WARNING, SUPPORT_PRESSURE_WARNING}
+                             golden: BUY + MAIN_RESISTANCE + RESISTANCE_PRESSURE_WARNING
+Gate 5  Safety               [SignalJSON]=0 (unless intentionally testing final); valid_for_execution=true=0;
+                             final_direction=WAIT for all watches; is_final_signal=true=0
+```
+
+**Stage-1 decision rules:**
+
+```text
+freshness fails                                  -> REJECT SAMPLE
+deployment_count > 1                             -> REJECT SAMPLE (proof); exploratory only
+current deploy has 0 eligible cases              -> INCONCLUSIVE (extend window / active session)
+eligible cases present + resolver fingerprints   -> GO   (EARLY_*_WATCH / resolved_family present)
+eligible cases present + NO resolver fingerprints -> NO-GO (C inactive / code path not executing)
+```
+
+The key correction: **fresh hash alone is not enough — a fresh mixed-deployment log can still be invalid
+rollout evidence.** Record all values in the ledger below before accepting any sample.
 
 | Sample | Railway deployment/commit | C flag | Content hash | Event window UTC | Verdict |
 |---|---|---|---|---|---|
 | Current duplicate baseline | Not established by capture | Not evidenced | Reported MD5 prefix `6160fca6` | 2026-06-10 02:58-15:53 | Baseline only |
 | post-C attempt #1 (`…142295337`) | Unknown — verify Railway commit (expect `152b5ff0+`) | Not effective (resolver idle → likely OFF) | `sha256:65cc2e5e…` | 2026-06-10 08:35 → 2026-06-11 01:44 | **NO-GO — C not active** |
-| Required post-C capture (GO) | `152b5ff0` or newer, verify on Railway | `true` | Record SHA-256 | Maximum later than 2026-06-11 01:44 | Pending |
+| post-C attempt #2 (`…147630898`) | MIXED — 13 deployments (newest `7eba79f4`) | Unknown per-deploy | `sha256:a9e5a6bc…` | up to 2026-06-11 02:11 | **NO-GO — invalid proof (deployment mixing); live deploy unproven** |
+| Required post-C capture (GO) | single id == active deploy, `152b5ff0+` | `true` on THAT deploy | new SHA-256 | max later than 2026-06-11 02:11 | Pending — needs `deployment_count==1` + ≥1 eligible |
 
 PowerShell KPI counter (point `$log` at the exported file):
 
