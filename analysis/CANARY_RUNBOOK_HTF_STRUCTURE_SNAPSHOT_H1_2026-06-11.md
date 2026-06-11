@@ -23,7 +23,10 @@ propagation is the *next* step, intentionally NOT in this canary).
 4. THEN H4 HTF Microboost Interpreter
 ```
 
-## What ships (already on origin/main)
+## What ships
+
+The code is present in the current branch. Before enabling the flag, verify that the Railway
+deployment commit contains these files; local branch state alone is not deployment evidence.
 
 ```text
 analysis/htf_structure_snapshot.py            : pure resolver (non-executable), 28 unit tests
@@ -54,8 +57,9 @@ HTF_DAILY_PHASE_FEED_ENABLED=false      # Step 1 Daily feed — separate canary,
 
 Deploy once. Then **freeze deployment churn** (root cause that stalled the prior SignalWatch canary —
 see [CANARY_RUNBOOK_SIGNALWATCH_LIFECYCLE_2026-06-10.md](CANARY_RUNBOOK_SIGNALWATCH_LIFECYCLE_2026-06-10.md)):
-do not redeploy/restart during the observation window, or the flag never reaches steady state and the
-capture is a boot-snapshot burst, not a canary.
+do not redeploy/restart during the observation window. A boot snapshot from the same confirmed
+deployment is valid because it runs the same resolver path. The invalid condition is deployment
+churn or a capture containing more than one deployment ID.
 
 Observe **one** stable deployment for 15–30 min over a session with active pairs (London/NY overlap
 gives the most GBPNZD/cross pressure).
@@ -75,8 +79,10 @@ Filter the log export by the running `deployment_id` and these tokens:
 <deployment_id> valid_for_execution
 ```
 
-A valid capture is a **single** `deployment_id`, a contiguous event window > 15 min, and at least one
-`[HTFStructureSnapshot]` line. A renamed/re-exported identical window is NOT a new sample.
+A valid capture has exactly **one** `deployment_id` and at least one `[HTFStructureSnapshot]` line.
+A contiguous 15-30 minute window is preferred for crash and dedup observation, but a same-deployment
+boot snapshot is admissible when the deployed commit and flag value are confirmed. A renamed or
+re-exported identical window is NOT a new sample.
 
 ---
 
@@ -159,7 +165,7 @@ Do not advance to the `raw_direction` fix until a single-deployment capture cont
 ```text
 H1 resolver pure        = DONE (28 tests)
 H1 pipeline wiring      = DONE (4 tests)
-Step 1 Daily Phase Feed = DONE in code, flag OFF (9 tests) — its own canary, separate from H1
+Step 1 Daily Phase Feed = DONE in code, flag OFF (9 focused tests) — its own canary, separate from H1
 H1 canary runtime       = THIS RUNBOOK (pending single-deployment capture)
 After H1 PASS           = raw_direction propagation fix
 Then                    = Increment L / H4 default-deny limit-watch
