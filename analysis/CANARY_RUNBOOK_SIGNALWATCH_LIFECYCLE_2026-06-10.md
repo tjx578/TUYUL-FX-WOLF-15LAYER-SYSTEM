@@ -16,10 +16,12 @@ appears, roll back that one flag (see Rollback).
 ## Current rollout status (2026-06-11)
 
 ```text
-Repository code present       : YES (origin/main = 79a05a32; C/D/E/F.1 shipped up to 152b5ff0)
-Increment C unit behavior     : PASS (10 resolver tests + 4 golden-reference)
-Railway deployment confirmed  : NOT PROVEN - attempts #1-#2 idle on eligible input; #2 mixes 13 deployments
-Increment C runtime validated : NO - #2 (sha256 a9e5a6bc) fresh but mixes 13 deploys; live deploy unproven (0 eligible on newest)
+Repository code present       : YES (origin/main; C/D/E/F.1 shipped through 152b5ff0)
+Increment C unit behavior     : PASS (10 resolver tests + 4 golden) - the code DOES resolve the golden input
+Stage-1 C runtime status      : NO-GO for progression - UNPROVEN on the live deployment (NOT "C failed")
+Root cause (likely)           : deployment churn - the flag never stabilizes on a steady-state runtime
+                                (13 sequential deploys in attempts #1-#2; each a 0-93s boot-snapshot burst)
+Unblock                       : ONE stable single-deployment capture (see "Freeze deployment churn" below)
 Increment D/E/F.1 rollout     : HOLD
 ```
 
@@ -132,6 +134,44 @@ export is still invalid rollout evidence. The gate below now rejects any sample 
 Export a fresh Railway log window from a **single deployment** (mixing deployments invalidates the
 read — this is why the 9-deployment `logs.1781099239310.json` showed 0 DecisionUpdate). Save as a text
 file and snapshot the KPIs below. Re-snapshot after every stage and compare.
+
+### Capture prerequisite — FREEZE deployment churn (do this FIRST)
+
+A fresh export can still be invalid evidence if the service is being **repeatedly redeployed/restarted**.
+The attempt-#2 pattern — multiple deployment ids, 0–93s one-shot watch bursts per deployment, spaced
+sequentially, no stable long-running window — is **sequential deploy/restart churn, not concurrent
+replicas**. So the export was a pile of boot snapshots from many deployments, not steady-state runtime.
+
+Most likely cause: Railway **auto-deploy-on-push** + this repo's **auto-commit/auto-save** workflow →
+every commit triggers a fresh deployment → the canary flag never reaches steady-state on one stable
+deployment, so C can never prove itself.
+
+**Freeze before capturing any Stage-1 proof:**
+
+```text
+1. Pause the auto-commit / auto-save watcher, or stop pushing to main.
+2. Disable Railway auto-deploy-on-push (or switch to manual deploy) for the canary window.
+3. Deploy ONE known commit only (>= 152b5ff0, minimum >= 91cf167c).
+4. Confirm the service-level var is set:  SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED=true
+5. Let that single deployment run continuously through an active London/EU session (30–60 min).
+6. Export logs filtered to that single deployment id only.
+```
+
+Verify with Railway deploy history: if deploy timestamps line up with `git push` times on `main`, the
+churn is auto-deploy driven by the auto-commit watcher — freezing it is the fix.
+
+**Operational verdict framing (do NOT call this "C failed"):**
+
+```text
+Stage-1 C is NO-GO for progression because the runtime environment is unstable (deployment churn),
+not because the resolver is broken. The code resolves the golden input in tests; the live deployment
+is simply UNPROVEN until one stable single-deployment sample is captured. Only if that stable sample
+has >=1 eligible case that stays generic MICROBOOST_WATCH may we call C runtime-inactive on that deploy.
+```
+
+Gate v2 below is run **only after** this freeze, and a valid sample must additionally contain
+**steady-state live ticks, not only boot-snapshot bursts** (event window belongs to the one active
+deployment). If churn is detected, reject the sample before judging C.
 
 ### Capture identity and freshness gate
 
