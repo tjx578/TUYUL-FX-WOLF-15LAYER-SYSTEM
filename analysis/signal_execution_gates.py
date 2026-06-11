@@ -209,9 +209,7 @@ def _execution_contract_flag_gate(
         _nested(payload, "tradeplan_preview", "targets_execution_usable"),
         payload.get("targets_execution_usable"),
     )
-    if targets_usable is False:
-        _add(gates, reasons, "ExecutionContractGate", "TRADEPLAN_CONTRACT_NOT_READY")
-    elif explicit_tradeplan_valid is False or tradeplan_ready is False:
+    if targets_usable is False or explicit_tradeplan_valid is False or tradeplan_ready is False:
         _add(gates, reasons, "ExecutionContractGate", "TRADEPLAN_CONTRACT_NOT_READY")
 
 
