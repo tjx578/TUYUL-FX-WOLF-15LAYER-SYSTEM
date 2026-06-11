@@ -62,6 +62,10 @@ class MarketContext:
     m15_phase: str | None = None
     h1_phase: str | None = None
     h4_phase: str | None = None
+    # Step 1 — HTF Daily Phase Feed. Populated only when HTF_DAILY_PHASE_FEED_ENABLED=true
+    # (default None preserves legacy behavior). Read by the golden-pattern matcher's
+    # dormant Daily-aware rules via asdict(context). Never a hard execution blocker.
+    d1_phase: str | None = None
     theme_aligned: bool | None = None
     theme_alignment: str | None = None
     counter_entry_theme_alignment: str | None = None
