@@ -110,23 +110,24 @@ def test_tp1_is_1p5r_against_sl_safe():
     assert round(reward / risk, 2) == 1.5
 
 
-def test_confirmed_buy_defers_without_structure_contract_by_default():
-    """The direction/RR is valid, but provisional fallback is not execution-grade by default."""
+def test_confirmed_buy_hard_blocks_provisional_rr_by_default():
+    """Patch 3: direction/RR valid, but a PROVISIONAL_RR_FALLBACK target is hard-BLOCKED
+    (not merely DEFERRED) -- never execution-grade, independent of any other gate."""
     decision = evaluate_signal_execution_gates(_usdjpy_single_stop_candidate())
     assert decision.applies is True
-    assert decision.decision == "DEFER", decision.reasons
-    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in decision.reasons
+    assert decision.decision == "BLOCK", decision.reasons
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTABLE" in decision.reasons
     assert decision.live_rr is not None
     assert decision.live_rr["rr"] == 1.5
     assert "LIVE_RR_BELOW_MINIMUM" not in decision.reasons
 
 
 def test_confirmed_buy_cannot_bypass_structure_contract_with_legacy_policy():
-    """Provisional RR remains non-executable even if an old policy env exists."""
+    """Provisional RR remains non-executable (now a hard BLOCK) even if an old policy env exists."""
     decision = evaluate_signal_execution_gates(_usdjpy_single_stop_candidate())
     assert decision.applies is True
-    assert decision.decision == "DEFER", decision.reasons
-    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in decision.reasons
+    assert decision.decision == "BLOCK", decision.reasons
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTABLE" in decision.reasons
     assert decision.live_rr is not None
     assert decision.live_rr["rr"] == 1.5
 
