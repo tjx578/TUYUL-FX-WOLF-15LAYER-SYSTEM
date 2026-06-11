@@ -3303,6 +3303,7 @@ class WolfConstitutionalPipeline:
             m15_phase=self._derive_timeframe_phase(symbol, "M15"),
             h1_phase=self._derive_timeframe_phase(symbol, "H1"),
             h4_phase=self._derive_timeframe_phase(symbol, "H4"),
+            d1_phase=self._derive_daily_phase_feed(symbol),
             theme_aligned=self._is_market_theme_aligned(synthesis, direction),
             theme_alignment=theme_alignment,
             counter_entry_theme_alignment=theme_alignment,
@@ -3714,6 +3715,34 @@ class WolfConstitutionalPipeline:
         if latest < first:
             return "SELL"
         return None
+
+    def _derive_daily_phase_feed(self, symbol: str) -> str | None:
+        """Step 1 — HTF Daily Phase Feed (flag-guarded, default OFF).
+
+        Returns a Daily phase string for ``MarketContext.d1_phase`` so the golden
+        matcher's already-written but dormant Daily-aware rules stop being dead
+        code. Single source of truth: the H1 HTF snapshot's ``daily_bias`` when it
+        has a real read; falls back to a 2-bar D1 phase derivation during the
+        transition window (e.g. snapshot still warming up).
+
+        Pure observability/context — it never blocks execution and never mutates a
+        verdict. When ``HTF_DAILY_PHASE_FEED_ENABLED`` is not ``true`` this returns
+        ``None`` and ``d1_phase`` stays absent, preserving legacy matcher behavior.
+        Any failure is swallowed (Daily context must never break the pipeline).
+        """
+        if os.getenv("HTF_DAILY_PHASE_FEED_ENABLED", "false").strip().lower() != "true":
+            return None
+        try:
+            bias = self._htf_snapshot_resolver.resolve(symbol).daily_bias
+            if bias and bias != "NO_BIAS":
+                return bias
+        except Exception as exc:  # pragma: no cover - defensive; context must not break execution
+            logger.debug("[HTFDailyPhaseFeed] snapshot daily_bias unavailable for {}: {}", symbol, exc)
+        try:
+            return self._derive_timeframe_phase(symbol, "D1")
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("[HTFDailyPhaseFeed] D1 fallback failed for {}: {}", symbol, exc)
+            return None
 
     def _derive_timeframe_phase(self, symbol: str, timeframe: str) -> str | None:
         candles = self._context_bus.get_candle_history(symbol, timeframe, count=2)
