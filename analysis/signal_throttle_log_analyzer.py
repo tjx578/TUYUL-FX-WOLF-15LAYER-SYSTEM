@@ -465,6 +465,11 @@ def analyze_signal_throttle_events(
         signal_watch_gate=signal_watch_gate,
         market_context_validation=market_context_validation,
     )
+    microboost_watch_miss_diagnostic = (
+        _microboost_watch_miss_diagnostic(microboost_blocks, clean_block_seconds=clean_block_seconds)
+        if not microboost_summary.get("latest")
+        else None
+    )
 
     return {
         "final_mode": final_mode,
@@ -495,6 +500,7 @@ def analyze_signal_throttle_events(
         "microboost_continuation_entry": microboost_continuation_entry,
         "microboost_counter_entry": microboost_counter_entry,
         "microboost_watch_entry": microboost_watch_entry,
+        "microboost_watch_miss_diagnostic": microboost_watch_miss_diagnostic,
         "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
         "pair_eligible_for_analysis": pair_eligible_for_analysis,
@@ -1162,10 +1168,74 @@ def _is_meaningful_candidate_block(block: PressureBlock, clean_block_seconds: in
     return block.duration_seconds >= clean_block_seconds and (block.effective_ticks or block.events) >= 10
 
 
+_MICROBOOST_WATCH_MIN_DURATION_SECONDS = 18.0
+_MICROBOOST_WATCH_MIN_TICKS = 5
+_MICROBOOST_WATCH_MIN_DENSITY = 8.0
+
+
 def _is_ignition_watch_block(block: PressureBlock, clean_block_seconds: int) -> bool:
     effective_ticks = block.effective_ticks or block.events
     effective_density = block.effective_density_per_minute or block.density_per_minute
-    return 18.0 <= block.duration_seconds < clean_block_seconds and effective_ticks >= 5 and effective_density >= 8.0
+    return (
+        _MICROBOOST_WATCH_MIN_DURATION_SECONDS <= block.duration_seconds < clean_block_seconds
+        and effective_ticks >= _MICROBOOST_WATCH_MIN_TICKS
+        and effective_density >= _MICROBOOST_WATCH_MIN_DENSITY
+    )
+
+
+def _microboost_watch_miss_diagnostic(
+    blocks: list[PressureBlock], *, clean_block_seconds: int
+) -> dict[str, Any] | None:
+    """Patch 1/2 (pure -- no logging): explain why the latest microboost block did NOT
+    qualify as a watch-eligible block, and whether it WOULD under the looser shadow
+    thresholds. The pipeline emits this (flag-gated) so a deployment that produces zero
+    SignalWatchJSON is not silent about the reason (window-quiet vs threshold). Diagnostic
+    only -- never carries execution intent.
+    """
+    candidates = [block for block in blocks if block.duration_seconds is not None]
+    if not candidates:
+        return None
+    block = max(candidates, key=lambda item: item.end)
+    if _is_ignition_watch_block(block, clean_block_seconds):
+        return None
+    effective_ticks = int(block.effective_ticks or block.events or 0)
+    effective_density = float(block.effective_density_per_minute or block.density_per_minute or 0.0)
+    duration = float(block.duration_seconds or 0.0)
+    blocked_by: list[str] = []
+    if effective_ticks < _MICROBOOST_WATCH_MIN_TICKS:
+        blocked_by.append("MICROBOOST_TICKS_BELOW_THRESHOLD")
+    if effective_density < _MICROBOOST_WATCH_MIN_DENSITY:
+        blocked_by.append("MICROBOOST_DENSITY_BELOW_THRESHOLD")
+    if duration < _MICROBOOST_WATCH_MIN_DURATION_SECONDS:
+        blocked_by.append("MICROBOOST_DURATION_BELOW_THRESHOLD")
+    elif duration >= clean_block_seconds:
+        blocked_by.append("MICROBOOST_DURATION_EXCEEDS_CLEAN_BLOCK")
+    shadow_ticks = int(_env_float("MICROBOOST_SHADOW_MIN_TICKS", 3.0))
+    shadow_density = _env_float("MICROBOOST_SHADOW_MIN_DENSITY", 5.0)
+    shadow_duration = _env_float("MICROBOOST_SHADOW_MIN_DURATION_SECONDS", 10.0)
+    shadow_watch_candidate = (
+        effective_ticks >= shadow_ticks
+        and effective_density >= shadow_density
+        and duration >= shadow_duration
+    )
+    return {
+        "symbol": block.symbol,
+        "raw_direction": block.direction,
+        "effective_ticks": effective_ticks,
+        "effective_density": round(effective_density, 2),
+        "duration_seconds": round(duration, 1),
+        "threshold_ticks": _MICROBOOST_WATCH_MIN_TICKS,
+        "threshold_density": _MICROBOOST_WATCH_MIN_DENSITY,
+        "threshold_duration_seconds": _MICROBOOST_WATCH_MIN_DURATION_SECONDS,
+        "eligible_for_watch": False,
+        "blocked_by": blocked_by,
+        "shadow_watch_candidate": bool(shadow_watch_candidate),
+        "shadow_thresholds": {
+            "ticks": shadow_ticks,
+            "density": shadow_density,
+            "duration_seconds": shadow_duration,
+        },
+    }
 
 
 def _is_major_leader_block(block: PressureBlock, clean_block_seconds: int) -> bool:
