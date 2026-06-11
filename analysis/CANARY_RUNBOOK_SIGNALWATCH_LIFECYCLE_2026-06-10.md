@@ -16,10 +16,10 @@ appears, roll back that one flag (see Rollback).
 ## Current rollout status (2026-06-11)
 
 ```text
-Repository code present       : YES (main/origin main = 62a8244c at review time)
-Increment C unit behavior     : PASS (10 resolver tests)
-Railway deployment confirmed  : NOT PROVEN BY THE CAPTURE
-Increment C runtime validated : NO - PENDING FRESH POST-FLAG EVIDENCE
+Repository code present       : YES (origin/main = 79a05a32; C/D/E/F.1 shipped up to 152b5ff0)
+Increment C unit behavior     : PASS (10 resolver tests + 4 golden-reference)
+Railway deployment confirmed  : NOT PROVEN - post-C attempt #1 shows the resolver idle on eligible input
+Increment C runtime validated : NO - attempt #1 (sha256 65cc2e5e) is FRESH but C not active (flag/deploy)
 Increment D/E/F.1 rollout     : HOLD
 ```
 
@@ -44,6 +44,55 @@ SignalDecisionUpdateJSON      : 0
 Verdict: safety remains intact, but the capture proves neither that C is enabled on Railway nor that
 the running deployment contains C. Do not advance to D until a later event window contains the C
 fingerprint described in Stage 1.
+
+---
+
+## Stage-1 attempt #1 ledger — C Pattern Headline Resolver
+
+First capture that PASSES the freshness gate (`logs.1781142295337.json`): sha256 `65cc2e5e…`,
+event window `2026-06-10 08:35 → 2026-06-11 01:44 UTC`, 168 `[SignalWatchJSON]` across 10 symbols,
+14 clusters. **Decision: NO-GO. Do not enable D/E/F.1.** The C resolver did not execute on exact
+eligible input; safety is intact but the headline resolver is not live.
+
+**Decisive evidence — 71 watches were the exact C-eligible golden-reference input, yet stayed generic:**
+
+```text
+Expected (C active)                    Observed (this capture)
+-----------------------------------    -----------------------------------
+raw_direction       = BUY              raw_direction       = BUY
+price_position      = MAIN_RESISTANCE  price_position      = MAIN_RESISTANCE
+phase_priced        = RESISTANCE_PRESSURE_WARNING (both)
+pattern             = UPPER_ABSORPTION_WARNING / NO_NEW_BUY / PROTECT_LONG_OR_SELL_WATCH (both)
+signal_family       = MICROBOOST_COUNTER_ENTRY     signal_family       = MICROBOOST_WATCH
+status              = EARLY_SELL_WATCH             status              = MICROBOOST_WATCH
+candidate_direction = SELL                         candidate_direction = BUY
+resolved_family / scenario_resolver / headline_resolve_reason : ABSENT (0/168)
+```
+
+`candidate=BUY` + generic reason + zero resolver fingerprints is exactly what **C-flag-OFF** looks like
+on a build that contains the C code. Cause is Railway-side (flag not set on the running deployment, or
+the deployed commit predates C) — not a confirmed code bug (the golden tests prove the code resolves
+this input).
+
+**Safety status (PASS):** `[SignalJSON]` = 0 · `valid_for_execution=true` = 0 · `is_final_signal` = 0 ·
+`final_direction=WAIT` 168/168.
+
+**Positive runtime findings (this deployment is newer than the baseline):**
+
+```text
+raw_direction propagation healthy : 163/168 (97%) watches carry raw_direction
+phase_priced present              : 163/168
+market_context / pattern_context / execution_gate : all attached
+```
+
+**E preview (not yet enabled):** 14 clusters carry 168 watches; **151/168 (90%) emits are
+semantic-duplicates** E would suppress (top clusters: GBPNZD 41, GBPJPY 40, CADCHF 36, GBPCHF 28).
+
+**Required next action:** (1) verify Railway runs `152b5ff0+` (min `91cf167c+`); (2) set
+`SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED=true` on the active service; (3) redeploy if the env
+change did not trigger one; (4) run 15–30 min; (5) export + re-run the freshness gate; (6) Stage-1 GO
+only when eligible MAIN_RESISTANCE/MAIN_SUPPORT events resolve to directional watch families while
+`[SignalJSON]` stays flat.
 
 ---
 
@@ -86,7 +135,8 @@ of fresh runtime content.
 | Sample | Railway deployment/commit | C flag | Content hash | Event window UTC | Verdict |
 |---|---|---|---|---|---|
 | Current duplicate baseline | Not established by capture | Not evidenced | Reported MD5 prefix `6160fca6` | 2026-06-10 02:58-15:53 | Baseline only |
-| Required post-C capture | `152b5ff0` or newer, verify on Railway | `true` | Record SHA-256 | Maximum later than 2026-06-10 15:53 | Pending |
+| post-C attempt #1 (`…142295337`) | Unknown — verify Railway commit (expect `152b5ff0+`) | Not effective (resolver idle → likely OFF) | `sha256:65cc2e5e…` | 2026-06-10 08:35 → 2026-06-11 01:44 | **NO-GO — C not active** |
+| Required post-C capture (GO) | `152b5ff0` or newer, verify on Railway | `true` | Record SHA-256 | Maximum later than 2026-06-11 01:44 | Pending |
 
 PowerShell KPI counter (point `$log` at the exported file):
 
