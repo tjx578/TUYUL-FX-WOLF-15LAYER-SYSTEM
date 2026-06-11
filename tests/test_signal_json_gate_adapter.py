@@ -152,7 +152,9 @@ def test_gate_adapter_shadow_logs_sidecar_without_changing_signal(caplog):
     assert "[SignalJSON]" not in caplog.text
 
 
-def test_gate_adapter_enforce_emits_terminal_valid_signal_for_unready_final(caplog):
+def test_gate_adapter_enforce_hard_blocks_provisional_rr_final(caplog):
+    """Patch 3: a PROVISIONAL_RR_FALLBACK final is a hard BLOCK (was DEFER) -- it becomes a
+    blocked terminal decision update, never executable, never a SignalJSON."""
     caplog.set_level(logging.WARNING, logger="signal_json")
     payload = _final_payload(target_mode="PROVISIONAL_RR_FALLBACK", targets=[], bid=None, ask=None)
     adapter = SignalJsonGateAdapter(SignalJsonGateConfig(enabled=True, enforce=True))
@@ -162,22 +164,18 @@ def test_gate_adapter_enforce_emits_terminal_valid_signal_for_unready_final(capl
     event = build_signal_json_event(gated)
 
     assert gated["event"] == "signal_decision_update_json"
-    assert gated["status"] == "FINAL_VALID_WAIT_STRUCTURE_TARGET"
-    assert gated["terminal_status"] == "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+    assert gated["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
     assert gated["final_direction"] == "WAIT"
-    assert gated["validated_direction"] == "BUY"
-    assert gated["signal_valid"] is True
-    assert gated["direction_valid"] is True
-    assert gated["tradeplan_valid"] is False
     assert gated["valid_for_execution"] is False
     assert gated["execution_valid_now"] is False
-    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in gated["reason"]
-    assert "STRUCTURE_TARGET_MODE_REQUIRED" in gated["reason"]
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTABLE" in gated["reason"]
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTABLE" in gated["audit_block_reasons"]
     assert event is not None
     assert event.is_final_signal is False
     assert emitter.emit(event) is True
     assert "[SignalExecutionGateJSON]" in caplog.text
     assert '"enforcement_mode":"ENFORCE"' in caplog.text
+    assert '"decision":"BLOCK"' in caplog.text
     assert "[SignalDecisionUpdateJSON]" in caplog.text
     assert "[SignalJSON]" not in caplog.text
 
@@ -196,13 +194,11 @@ def test_provisional_rr_fallback_is_not_execution_final_by_default():
     gated = adapter.apply(payload)
 
     assert gated["event"] == "signal_decision_update_json"
-    assert gated["status"] == "FINAL_VALID_WAIT_STRUCTURE_TARGET"
+    assert gated["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
     assert gated["final_direction"] == "WAIT"
-    assert gated["validated_direction"] == "BUY"
-    assert gated["signal_valid"] is True
     assert gated["valid_for_execution"] is False
     assert gated["execution_valid_now"] is False
-    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE" in gated["audit_block_reasons"]
+    assert "PROVISIONAL_RR_FALLBACK_NOT_EXECUTABLE" in gated["audit_block_reasons"]
 
 
 def test_provisional_rr_fallback_cannot_pass_with_removed_explicit_policy():
