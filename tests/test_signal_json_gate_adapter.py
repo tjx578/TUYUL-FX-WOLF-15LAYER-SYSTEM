@@ -147,7 +147,7 @@ def test_gate_adapter_shadow_logs_sidecar_without_changing_signal(caplog):
     assert emitter.emit(event) is True
     assert "[SignalExecutionGateJSON]" in caplog.text
     assert '"enforcement_mode":"SHADOW"' in caplog.text
-    assert '"decision":"DEFER"' in caplog.text
+    assert '"decision":"BLOCK"' in caplog.text  # Patch 3: PROVISIONAL_RR_FALLBACK is a hard BLOCK
     assert "[SignalDecisionUpdateJSON]" in caplog.text
     assert "[SignalJSON]" not in caplog.text
 
