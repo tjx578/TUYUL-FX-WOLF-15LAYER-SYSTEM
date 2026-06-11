@@ -69,6 +69,10 @@ from importlib import import_module
 from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 
+from analysis.htf_structure_snapshot import (
+    HTFStructureSnapshotResolver,
+    emit_htf_structure_snapshot,
+)
 from analysis.market_context_validator import MarketContext, validate_market_context
 from analysis.microboost_event_log import (
     build_microboost_intel_event,
@@ -369,6 +373,11 @@ class WolfConstitutionalPipeline:
         )
         self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
+        # Increment H1 — HTF Structure Snapshot (flag-guarded, default OFF).
+        # Bound to the same candle store the pipeline populates so the snapshot
+        # reads exactly the bars analysis sees. Non-executable observability only.
+        self._htf_snapshot_resolver = HTFStructureSnapshotResolver(candle_source=self._context_bus)
+        self._last_htf_snapshot_key: dict[str, tuple[Any, ...]] = {}
         self._last_no_trade_pressure_decision_at: dict[str, float] = {}
         self._last_allowed_quorum_decision_at: dict[str, float] = {}
         self._signal_lifecycle_manager = SignalLifecycleManager()
@@ -5042,6 +5051,7 @@ class WolfConstitutionalPipeline:
         report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
         self._emit_microboost_intel_if_new(report)
         self._emit_microboost_watch_miss_diagnostic(report)
+        self._emit_htf_structure_snapshot(symbol)
         self._apply_no_trade_pressure_decision_update(
             symbol=symbol,
             l12_verdict=shadow_verdict,
@@ -5170,6 +5180,31 @@ class WolfConstitutionalPipeline:
                 "[MicroboostShadowDiagnostic]",
                 json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
             )
+
+    def _emit_htf_structure_snapshot(self, symbol: str) -> None:
+        """Increment H1 (flag-guarded, default OFF): emit a non-executable HTF
+        structure snapshot for an active symbol.
+
+        Answers "where is price on Daily/H4 right now?" so a later increment can
+        interpret microboost pressure against structure (BUY pressure at an HTF
+        supply/resistance is absorption/no-chase, never an auto BUY LIMIT). This
+        is observability-only -- ``valid_for_execution`` is always ``False`` and
+        nothing here is a SignalJSON. Enable with ``HTF_STRUCTURE_SNAPSHOT_ENABLED``.
+
+        Per-symbol dedup suppresses unchanged structure repeats. Any failure is
+        swallowed: a snapshot must never disturb the execution path.
+        """
+        if os.getenv("HTF_STRUCTURE_SNAPSHOT_ENABLED", "false").strip().lower() != "true":
+            return
+        try:
+            snapshot = self._htf_snapshot_resolver.resolve(symbol)
+            key = snapshot.dedupe_key()
+            if self._last_htf_snapshot_key.get(snapshot.symbol) == key:
+                return
+            self._last_htf_snapshot_key[snapshot.symbol] = key
+            emit_htf_structure_snapshot(snapshot, enabled=True)
+        except Exception as exc:  # pragma: no cover - defensive; observability must not break
+            logger.debug("[HTFStructureSnapshot] resolve/emit skipped for {}: {}", symbol, exc)
 
     def _apply_effective_verdict_controls(
         self,
