@@ -13,6 +13,38 @@ All four increments are flag-guarded and default OFF (F itself was already ON). 
 stage**, observe 15–30 min, run the per-stage acceptance, and only then proceed. If any red flag
 appears, roll back that one flag (see Rollback).
 
+## Current rollout status (2026-06-11)
+
+```text
+Repository code present       : YES (main/origin main = 62a8244c at review time)
+Increment C unit behavior     : PASS (10 resolver tests)
+Railway deployment confirmed  : NOT PROVEN BY THE CAPTURE
+Increment C runtime validated : NO - PENDING FRESH POST-FLAG EVIDENCE
+Increment D/E/F.1 rollout     : HOLD
+```
+
+The latest submitted export is not new runtime evidence. It is reported byte-for-byte identical to
+the previous export (reported MD5 prefix `6160fca6`), with the same 48 GBPNZD
+`[SignalWatchJSON]` events and the same event window, `2026-06-10 02:58` through `15:53 UTC`.
+The two export names differ (ending `111006616` and `108027436`), but renaming or exporting the same
+fixed window does not create a new canary sample.
+
+Observed in that duplicate baseline:
+
+```text
+status / signal_family        : 48/48 MICROBOOST_WATCH
+final_direction              : 48/48 WAIT
+valid_for_execution=true      : 0
+resolved_family               : 0/48
+scenario_resolver             : 0/48
+lifecycle_track               : 0/48
+SignalDecisionUpdateJSON      : 0
+```
+
+Verdict: safety remains intact, but the capture proves neither that C is enabled on Railway nor that
+the running deployment contains C. Do not advance to D until a later event window contains the C
+fingerprint described in Stage 1.
+
 ---
 
 ## 0. Pre-rollout baseline (capture BEFORE enabling anything)
@@ -20,6 +52,41 @@ appears, roll back that one flag (see Rollback).
 Export a fresh Railway log window from a **single deployment** (mixing deployments invalidates the
 read — this is why the 9-deployment `logs.1781099239310.json` showed 0 DecisionUpdate). Save as a text
 file and snapshot the KPIs below. Re-snapshot after every stage and compare.
+
+### Capture identity and freshness gate
+
+Run this before parsing any candidate export. A different filename is not sufficient.
+
+```powershell
+$baseline = "railway_log_baseline.txt"
+$candidate = "railway_log_candidate.txt"
+
+Get-Item $baseline,$candidate | Select-Object Name,Length,LastWriteTimeUtc
+Get-FileHash $baseline,$candidate -Algorithm SHA256 | Select-Object Path,Hash
+
+$raw = Get-Content -Raw $candidate
+$timestamps = [regex]::Matches(
+  $raw,
+  '20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})'
+) | ForEach-Object { [datetimeoffset]::Parse($_.Value) }
+$timestamps | Measure-Object -Minimum -Maximum
+```
+
+Reject the candidate as **duplicate/stale** if any of these applies:
+
+- SHA-256 equals the prior capture.
+- Event maximum is not later than the prior maximum (`2026-06-10 15:53 UTC` for the current baseline).
+- The export still contains the same 48-event fixed GBPNZD window.
+- Events come from a deployment other than the one whose commit and flags were checked.
+
+Before accepting a post-C sample, record all four values in the rollout evidence ledger: Railway
+deployment/commit, flag value, export SHA-256, and event min/max UTC. File mtime alone is not evidence
+of fresh runtime content.
+
+| Sample | Railway deployment/commit | C flag | Content hash | Event window UTC | Verdict |
+|---|---|---|---|---|---|
+| Current duplicate baseline | Not established by capture | Not evidenced | Reported MD5 prefix `6160fca6` | 2026-06-10 02:58-15:53 | Baseline only |
+| Required post-C capture | `152b5ff0` or newer, verify on Railway | `true` | Record SHA-256 | Maximum later than 2026-06-10 15:53 | Pending |
 
 PowerShell KPI counter (point `$log` at the exported file):
 
@@ -70,6 +137,23 @@ Healthy example:
 
 **GO/NO-GO:** proceed to Stage 2 only if expected shifts seen AND no red flags AND
 `valid_for_execution=true`==0 AND `[SignalJSON]` flat.
+
+For the current baseline, the fastest unambiguous C **GO** fingerprint is at least one fresh
+structural-extreme watch with all of:
+
+```text
+status                 = EARLY_SELL_WATCH / SELL_TIMING_WATCH
+candidate_direction    = SELL
+raw_direction          = BUY
+price_position         = MAIN_RESISTANCE
+final_direction        = WAIT
+valid_for_execution    = false
+resolved_family        = MICROBOOST_COUNTER_ENTRY
+```
+
+The inverse SELL-at-MAIN_SUPPORT to BUY-watch case is equally valid. MID_RANGE counterflow remaining
+generic is expected and is not a C failure. If no structural-extreme event occurs in 15-30 minutes,
+extend the observation window; do not treat absence of an eligible event as either GO or NO-GO.
 
 ---
 
