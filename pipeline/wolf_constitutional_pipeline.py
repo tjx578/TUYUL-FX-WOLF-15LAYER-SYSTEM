@@ -3727,7 +3727,7 @@ class WolfConstitutionalPipeline:
 
         Pure observability/context — it never blocks execution and never mutates a
         verdict. When ``HTF_DAILY_PHASE_FEED_ENABLED`` is not ``true`` this returns
-        ``None`` and ``d1_phase`` stays absent, preserving legacy matcher behavior.
+        ``None`` and ``d1_phase`` remains unset, preserving legacy matcher decisions.
         Any failure is swallowed (Daily context must never break the pipeline).
         """
         if os.getenv("HTF_DAILY_PHASE_FEED_ENABLED", "false").strip().lower() != "true":
