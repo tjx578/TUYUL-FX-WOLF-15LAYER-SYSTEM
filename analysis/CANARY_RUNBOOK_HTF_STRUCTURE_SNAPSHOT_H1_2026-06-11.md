@@ -134,6 +134,56 @@ First line we want to see (shape, GBPNZD example):
 
 ---
 
+## Stage-1 result — PASS / H1 LOCKED (2026-06-11)
+
+First capture that passes the single-deployment freshness gate:
+
+```text
+File                       : logs.1781183792220.json
+SHA256                     : d096b340bc3d73d744d4ec2d6073cb330ae5bc88915eae1d3b81d843b7a7d052
+Deployment (single)        : 1b7ebb9d-9e3b-4aab-99db-76b46ff17244
+Window                     : 2026-06-11 13:06:37 -> 13:15:20 UTC (~9 min, contiguous)
+Rows                       : 50
+[HTFStructureSnapshot]     : 25  (25 distinct symbols)
+[MicroboostWatchDiagnostic]: 25
+```
+
+Hard gates (all PASS):
+
+```text
+valid_for_execution=true   : 0
+is_final_signal=true       : 0
+execution_valid_now=true   : 0
+SignalJSON                 : 0
+pipeline crash / traceback : 0
+snapshot dedup             : PASS (per-symbol structure repeats suppressed)
+data_sufficient            : true on all 25 (D1=60 bars, H4=66 bars) -> D1/H4 candle feed live
+```
+
+Manual review — reads plausible and conservative:
+
+```text
+daily_bias        : BEARISH 14 / BULLISH 8 / RANGE 2 / TRANSITION 1
+price_location    : H4_DEMAND 15 / H4_SUPPLY 10
+blocked_playbook  : BUY_LIMIT+BUY_BREAKOUT_CHASE 14 (every bearish-daily)
+                    SELL_LIMIT+SELL_BREAKOUT_CHASE 8 (every bullish-daily)
+                    BUY_LIMIT+SELL_LIMIT 1 (TRANSITION) ; breakout-only 2 (RANGE)
+Golden read (NZDJPY): Daily BEARISH + H4 BEARISH_IMPULSE + H4_DEMAND
+                    -> allowed WAIT_FOR_SELL_LOCATION, BUY_LIMIT blocked.
+                    Price sat at H4 demand but did NOT flip to BUY — Daily-bearish kept BUY blocked. CORRECT.
+```
+
+Verdict: **H1 runtime PASS — LOCKED.** Snapshot emitter live, candle feed live, zero execution leak.
+The doctrine invariant ("demand/support location alone is not enough for a BUY while Daily is bearish")
+is now observed in production. `HTF_STRUCTURE_SNAPSHOT_ENABLED=true` may remain ON.
+
+Carry-forward gap (NOT an H1 defect): the co-emitted `[MicroboostWatchDiagnostic]` rows show
+`raw_direction=null` on all 25 (with `effective_ticks=1`, `duration=0.0s` — correctly below the
+5-tick/18s watch threshold, so not eligible). The null direction confirms the **raw_direction
+propagation gap** is the blocker before H4 (HTF Microboost Interpreter).
+
+---
+
 ## Rollback
 
 ```env
@@ -166,7 +216,8 @@ Do not advance to the `raw_direction` fix until a single-deployment capture cont
 H1 resolver pure        = DONE (28 tests)
 H1 pipeline wiring      = DONE (4 tests)
 Step 1 Daily Phase Feed = DONE in code, flag OFF (9 focused tests) — its own canary, separate from H1
-H1 canary runtime       = THIS RUNBOOK (pending single-deployment capture)
-After H1 PASS           = raw_direction propagation fix
+H1 canary runtime       = PASS / LOCKED 2026-06-11 (logs.1781183792220.json, 25 snapshots, all gates 0)
+Next                    = Step 1 Daily Phase Feed canary (HTF_DAILY_PHASE_FEED_ENABLED=true)
+After Step 1 PASS       = raw_direction propagation fix
 Then                    = Increment L / H4 default-deny limit-watch
 ```
