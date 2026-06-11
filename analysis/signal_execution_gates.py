@@ -7,6 +7,7 @@ final SignalJSON is execution-ready enough to publish as a final log.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from analysis.signal_execution_gate_models import ExecutionGateDecision
@@ -81,6 +82,7 @@ def evaluate_signal_execution_gates(
     _execution_contract_flag_gate(payload, defer_gates, defer_reasons)
     _spread_news_gate(payload, block_gates, block_reasons)
     _pattern_permission_gate(payload, block_gates, block_reasons)
+    _provisional_rr_fallback_gate(payload, block_gates, block_reasons)
     _session_volatility_gate(payload, defer_gates, defer_reasons)
     _basket_theme_gate(payload, defer_gates, defer_reasons)
     _microboost_timing_gate(payload, defer_gates, defer_reasons, block_gates, block_reasons)
@@ -228,6 +230,29 @@ def _spread_news_gate(payload: dict[str, Any], gates: list[str], reasons: list[s
         _add(gates, reasons, "SpreadNewsExecutionGate", "NEWS_LOCK_ACTIVE")
     if _optional_bool(payload.get("news_blocked")) is True or _optional_bool(payload.get("is_news_locked")) is True:
         _add(gates, reasons, "SpreadNewsExecutionGate", "NEWS_LOCK_ACTIVE")
+
+
+def _provisional_rr_fallback_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
+    """Hard-BLOCK any PROVISIONAL_RR_FALLBACK target from execution.
+
+    A provisional RR-only target has no confirmed structure ladder, so it is never
+    execution-grade. Previously this was only a DEFER (via ``_tradeplan_gate``), which
+    means it could "un-defer" into execution once an unrelated condition cleared, and
+    it relied on another gate (e.g. PatternPermissionGate) incidentally blocking it.
+    This makes the rejection explicit and independent: target_mode==PROVISIONAL_RR_FALLBACK
+    => BLOCK, so ``valid_for_execution``/``execution_valid_now`` are forced false by the
+    gate adapter and no SignalJSON is ever published from it.
+    Kill switch (default ON): ``SIGNAL_EXEC_PROVISIONAL_RR_HARD_BLOCK_ENABLED=false``.
+    """
+    if os.getenv("SIGNAL_EXEC_PROVISIONAL_RR_HARD_BLOCK_ENABLED", "true").strip().lower() != "true":
+        return
+    target_mode = str(
+        _nested(payload, "tradeplan_preview", "target_mode")
+        or payload.get("target_mode")
+        or ""
+    ).upper()
+    if target_mode == "PROVISIONAL_RR_FALLBACK":
+        _add(gates, reasons, "ProvisionalRRFallbackGate", "PROVISIONAL_RR_FALLBACK_NOT_EXECUTABLE")
 
 
 def _pattern_permission_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
