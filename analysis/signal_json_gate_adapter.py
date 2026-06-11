@@ -119,7 +119,11 @@ class SignalJsonGateAdapter:
             "source_final_direction": payload.get("final_direction"),
             "target_mode": payload.get("target_mode"),
             "target_source": payload.get("target_source"),
-            "valid_for_execution": payload.get("valid_for_execution"),
+            # Reflect the GATE outcome, not the pre-gate input: a blocked/deferred
+            # candidate is never execution-valid, so the sidecar must not show
+            # valid_for_execution=true on it. The original input is kept separately.
+            "valid_for_execution": bool(payload.get("valid_for_execution")) and decision.allows_execution,
+            "source_valid_for_execution": payload.get("valid_for_execution"),
             "enforcement_mode": "ENFORCE" if self.config.enforce else "SHADOW",
             "final_barrier": self.config.final_barrier,
             "exec_gate": decision.to_dict(),
