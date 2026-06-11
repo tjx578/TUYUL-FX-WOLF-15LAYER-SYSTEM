@@ -5041,6 +5041,7 @@ class WolfConstitutionalPipeline:
         )
         report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
         self._emit_microboost_intel_if_new(report)
+        self._emit_microboost_watch_miss_diagnostic(report)
         self._apply_no_trade_pressure_decision_update(
             symbol=symbol,
             l12_verdict=shadow_verdict,
@@ -5095,6 +5096,80 @@ class WolfConstitutionalPipeline:
                 continue
             self._emitted_microboost_table_keys.add(table_key)
             emit_microboost_table_event(table_event)
+
+    def _emit_microboost_watch_miss_diagnostic(self, report: dict[str, Any]) -> None:
+        """Patch 1/2 (flag-guarded, default OFF): explain why the latest microboost block
+        did NOT become a watch, so a no-watch deployment is not silent. Diagnostic-only --
+        always ``valid_for_execution=false`` / ``is_final_signal=false``, never a SignalJSON.
+
+        Patch 1 ``MICROBOOST_WATCH_MISS_DIAGNOSTIC_ENABLED`` -> microboost_watch_candidate_diagnostic.
+        Patch 2 ``MICROBOOST_SHADOW_DIAGNOSTIC_ENABLED`` -> microboost_shadow_watch_diagnostic
+        (only when the block would qualify under the looser shadow thresholds).
+        Per-symbol dedup suppresses unchanged per-tick repeats.
+        """
+        diag = report.get("microboost_watch_miss_diagnostic")
+        if not isinstance(diag, dict):
+            return
+        patch1 = os.getenv("MICROBOOST_WATCH_MISS_DIAGNOSTIC_ENABLED", "false").strip().lower() == "true"
+        patch2 = os.getenv("MICROBOOST_SHADOW_DIAGNOSTIC_ENABLED", "false").strip().lower() == "true"
+        if not patch1 and not patch2:
+            return
+        symbol = str(diag.get("symbol") or "")
+        if not symbol:
+            return
+        blocked_by = list(diag.get("blocked_by") or [])
+        shadow_candidate = bool(diag.get("shadow_watch_candidate"))
+        store = getattr(self, "_last_watch_miss_diag_key", None)
+        if not isinstance(store, dict):
+            store = {}
+            self._last_watch_miss_diag_key = store
+        key = f"{symbol}|{'/'.join(blocked_by)}|sc={shadow_candidate}|p1={patch1}|p2={patch2}"
+        if store.get(symbol) == key:
+            return
+        store[symbol] = key
+        import json  # noqa: PLC0415 -- local: stdlib json is not a module-level import here
+        import logging  # noqa: PLC0415 -- local: `logging` is only imported on the loguru-absent path
+
+        logger = logging.getLogger("signal_json")
+        if patch1:
+            payload = {
+                "event": "microboost_watch_candidate_diagnostic",
+                "symbol": symbol,
+                "raw_direction": diag.get("raw_direction"),
+                "effective_ticks": diag.get("effective_ticks"),
+                "effective_density": diag.get("effective_density"),
+                "duration_seconds": diag.get("duration_seconds"),
+                "threshold_ticks": diag.get("threshold_ticks"),
+                "threshold_density": diag.get("threshold_density"),
+                "threshold_duration_seconds": diag.get("threshold_duration_seconds"),
+                "eligible_for_watch": False,
+                "blocked_by": blocked_by,
+                "valid_for_execution": False,
+                "is_final_signal": False,
+            }
+            logger.warning(
+                "%s %s",
+                "[MicroboostWatchDiagnostic]",
+                json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+            )
+        if patch2 and shadow_candidate:
+            payload = {
+                "event": "microboost_shadow_watch_diagnostic",
+                "symbol": symbol,
+                "raw_direction": diag.get("raw_direction"),
+                "shadow_watch_candidate": True,
+                "official_watch_candidate": False,
+                "shadow_thresholds": diag.get("shadow_thresholds"),
+                "reason": "below_official_threshold",
+                "would_have_been_watch_under_shadow_threshold": True,
+                "valid_for_execution": False,
+                "is_final_signal": False,
+            }
+            logger.warning(
+                "%s %s",
+                "[MicroboostShadowDiagnostic]",
+                json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+            )
 
     def _apply_effective_verdict_controls(
         self,
