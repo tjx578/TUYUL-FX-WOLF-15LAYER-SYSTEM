@@ -3,7 +3,7 @@
 Activates the golden matcher's already-written but dormant Daily-aware rules by
 populating ``MarketContext.d1_phase``. Pure context — no execution side-effect,
 no new BUY_LIMIT_WATCH, no candidate-direction change, Daily is never a hard
-execution blocker. When the flag is OFF, behavior is byte-for-byte legacy.
+execution blocker. When the flag is OFF, matcher decisions remain legacy-equivalent.
 """
 
 from __future__ import annotations
@@ -90,14 +90,25 @@ def test_flag_on_falls_back_to_d1_when_snapshot_no_bias(monkeypatch):
 
 
 def test_matcher_feature_dict_carries_d1_phase():
-    ctx = MarketContext(symbol="GBPNZD", raw_allowed_direction="BUY", d1_phase="BEARISH")
+    ctx = MarketContext(symbol="EURUSD", raw_allowed_direction="BUY", d1_phase="BEARISH")
     # asdict(context) is the exact mechanism _golden_pattern_features uses.
     features = asdict(ctx)
     assert features["d1_phase"] == "BEARISH"
-    # And the matcher consumes the feature dict without error.
-    out = match_golden_patterns(features)
-    assert isinstance(out, dict)
-    assert "matched_patterns" in out
+    features.update(
+        {
+            "range_position": 0.9,
+            "phase_priced": "NEUTRAL",
+            "m15_close_pos": 0.5,
+            "duration_seconds": 120,
+        }
+    )
+
+    without_daily = match_golden_patterns({**features, "d1_phase": None})
+    with_daily = match_golden_patterns(features)
+
+    assert "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE" not in without_daily["matched_patterns"]
+    assert "HIGH_DENSITY_CONTEXT_FILTER_NO_CHASE" in with_daily["matched_patterns"]
+    assert "late_upper_density_no_chase" in with_daily["pattern_evidence"]
 
 
 # --------------------------------------------------------------------------- #
