@@ -630,6 +630,7 @@ class TestPipelineSignalThrottle:
 
     def test_pipeline_signal_throttle_snapshot_applies_priced_microboost_context(self, monkeypatch, capsys):
         """SignalThrottle snapshot should price microboost when market context is available."""
+        monkeypatch.setenv("MICROBOOST_INTEL_FULL_PAYLOAD_ENABLED", "true")
         WolfConstitutionalPipeline = _pipeline_cls()
 
         pipe = self._make_pipeline()
