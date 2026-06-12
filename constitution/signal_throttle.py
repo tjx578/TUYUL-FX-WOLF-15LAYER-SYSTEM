@@ -41,10 +41,14 @@ from schemas.direction import normalize_direction
 __all__ = ["SignalThrottle"]
 
 # Defaults: max 3 EXECUTE signals per 5 minutes per symbol.
-# Throttle errors default to one log per throttle window so a sustained clamp
-# does not become a platform error flood.
 _DEFAULT_MAX_SIGNALS = 3
 _DEFAULT_WINDOW_SECONDS = 300.0
+# Raw "[SignalThrottle] ... THROTTLED" lines write straight to stderr and do NOT
+# pass through loguru's rate limiter, so this per-symbol minimum interval is the
+# only knob governing raw-radar visibility. 15s keeps the radar visible in
+# platform logs without flooding; suppressed repeats fold into "suppressed=N".
+# Override via SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS.
+_DEFAULT_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS = 15.0
 
 
 def _emit_throttle_error(message: str) -> None:
@@ -81,7 +85,7 @@ class SignalThrottle:
         self.throttle_error_log_min_interval_seconds = _coerce_non_negative_float(
             throttle_error_log_min_interval_seconds,
             env_name="SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS",
-            default=self.window_seconds,
+            default=_DEFAULT_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS,
         )
         # symbol -> deque of Unix timestamps (ascending)
         self._windows: dict[str, deque[float]] = defaultdict(deque)

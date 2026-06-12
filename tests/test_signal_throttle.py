@@ -174,7 +174,7 @@ class TestSignalThrottle:
         ]
 
     def test_default_throttled_logs_do_not_repeat_inside_active_window(self, monkeypatch, capsys):
-        """Default production logging emits one error per active throttle window."""
+        """Default production logging emits at most one raw error per 15s interval."""
         now = 1000.0
         monkeypatch.setattr("constitution.signal_throttle.time.time", lambda: now)
         t = SignalThrottle(max_signals=1, window_seconds=300)
@@ -184,10 +184,43 @@ class TestSignalThrottle:
         first = capsys.readouterr()
         assert first.err.splitlines() == ["[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"]
 
-        now = 1031.0
+        now = 1012.0  # within the 15s default interval -> still suppressed
         assert t.is_throttled("XAUUSD") is True
         repeated = capsys.readouterr()
         assert repeated.err == ""
+
+    def test_default_throttle_error_log_interval_is_15s(self):
+        """When the env var is unset, the raw-throttle log interval defaults to 15s."""
+        t = SignalThrottle(max_signals=1, window_seconds=300)
+        assert t.throttle_error_log_min_interval_seconds == 15.0
+
+    def test_env_overrides_default_throttle_error_log_interval(self, monkeypatch):
+        """SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS still overrides the default."""
+        monkeypatch.setenv("SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS", "45")
+        t = SignalThrottle(max_signals=1, window_seconds=300)
+        assert t.throttle_error_log_min_interval_seconds == 45.0
+
+    def test_default_15s_interval_surfaces_more_throttled_lines(self, monkeypatch, capsys):
+        """The 15s default surfaces a fresh THROTTLED line ~15s in; 300s would stay silent."""
+        now = 1000.0
+        monkeypatch.setattr("constitution.signal_throttle.time.time", lambda: now)
+        t = SignalThrottle(max_signals=1, window_seconds=300)  # default 15s log interval
+        t.record("XAUUSD")
+
+        assert t.is_throttled("XAUUSD") is True
+        assert capsys.readouterr().err.splitlines() == [
+            "[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"
+        ]
+
+        now = 1010.0  # within 15s -> suppressed
+        assert t.is_throttled("XAUUSD") is True
+        assert capsys.readouterr().err == ""
+
+        now = 1016.0  # past the 15s default -> a second line emits with the suppressed count
+        assert t.is_throttled("XAUUSD") is True
+        assert capsys.readouterr().err.splitlines() == [
+            "[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1) suppressed=1"
+        ]
 
     def test_allowed_logs_plain_info_event(self, capsys):
         """Allowed signals must reach the platform as plain stdout events."""
