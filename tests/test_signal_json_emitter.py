@@ -469,7 +469,8 @@ def test_build_signal_json_event_retains_golden_pattern_contract_fields():
     assert event.signal_id == "USDJPY_SELL_WATCH_20260519_145605"
 
 
-def test_emitted_payload_uses_universal_pattern_context_not_pair_owned_fields(caplog):
+def test_emitted_payload_uses_universal_pattern_context_not_pair_owned_fields(caplog, monkeypatch):
+    monkeypatch.setenv("SIGNAL_WATCH_INCLUDE_REFERENCE_CASES", "true")
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(
         cluster_id="USDCAD_20260601T084153Z",
@@ -499,7 +500,8 @@ def test_emitted_payload_uses_universal_pattern_context_not_pair_owned_fields(ca
     assert '"pair_role"' not in caplog.text
 
 
-def test_chfjpy_reference_pattern_emits_as_universal_context_not_pair_lock(caplog):
+def test_chfjpy_reference_pattern_emits_as_universal_context_not_pair_lock(caplog, monkeypatch):
+    monkeypatch.setenv("SIGNAL_WATCH_INCLUDE_REFERENCE_CASES", "true")
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(
         cluster_id="EURJPY_20260602T081500Z",
@@ -539,6 +541,32 @@ def test_chfjpy_reference_pattern_emits_as_universal_context_not_pair_lock(caplo
     assert '"pattern_bottlenecks":["PATTERN_CONTEXT_ONLY_NOT_FINAL_SIGNAL","THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER"]' in caplog.text
     assert '"golden_references"' not in caplog.text
     assert '"pair_role"' not in caplog.text
+
+
+def test_reference_cases_stripped_from_production_signalwatch_by_default(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="USDCAD_20260601T084153Z",
+        symbol="USDCAD",
+        selected_pattern_id="UPPER_ABSORPTION_WARNING",
+        pattern_family="EXHAUSTION_MANAGEMENT",
+        pattern_scope="UNIVERSAL",
+        golden_reference="USDJPY",
+        pair_role="MACRO_ANCHOR_AND_SIGNALWATCH_LIFECYCLE",
+        theme_alignment=None,
+        theme_alignment_status="ALIGNED",
+        support_ladder_ready=False,
+        structure_targets_available=False,
+        tradeplan_context_ready=False,
+        targets_execution_usable=False,
+        target_mode="PROVISIONAL_RR_FALLBACK",
+    )
+
+    assert emitter.emit(event) is True
+    # Default production: reference/golden cases never leak into the main watch payload.
+    assert '"reference_cases"' not in caplog.text
+    # The universal pattern context still emits, just without reference_cases.
+    assert '"pattern_context":{"selected_pattern_id":"UPPER_ABSORPTION_WARNING"' in caplog.text
 
 
 def test_production_signal_json_omits_null_duplicates_and_heavy_pattern_debug(caplog):
