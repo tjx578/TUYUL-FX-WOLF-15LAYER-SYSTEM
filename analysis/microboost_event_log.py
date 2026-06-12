@@ -9,6 +9,7 @@ from raw throttle rows.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from dataclasses import asdict, dataclass
@@ -240,6 +241,11 @@ def build_microboost_table_events(
     return rows
 
 
+def _microboost_intel_full_payload_enabled() -> bool:
+    """Heavy market-context fields are debug-only; the production line is lean."""
+    return os.getenv("MICROBOOST_INTEL_FULL_PAYLOAD_ENABLED", "false").strip().lower() == "true"
+
+
 def emit_microboost_intel(event: MicroboostIntelEvent | None) -> None:
     if event is None:
         return
@@ -262,14 +268,30 @@ def emit_microboost_intel(event: MicroboostIntelEvent | None) -> None:
         f"requires_market_context={_bool_text(event.requires_market_context)}",
         f"market_context_applied={_bool_text(event.market_context_applied)}",
         f"price_position={event.price_position or 'NONE'}",
-        f"m15_phase={event.m15_phase or 'NONE'}",
-        f"h1_phase={event.h1_phase or 'NONE'}",
-        f"price_start={_number_text(event.price_at_signal_start)}",
-        f"price_5m={_number_text(event.price_at_5m_confirm)}",
-        f"price_end={_number_text(event.price_at_signal_end)}",
-        f"end_utc={event.end_utc or 'NONE'}",
-        f"reason={event.reason}",
     ]
+    # M15/H1 phase + price path belong to SignalWatch/SignalDecision, not the
+    # Microboost timing line. Lean by default; full payload only under the debug
+    # flag MICROBOOST_INTEL_FULL_PAYLOAD_ENABLED=true.
+    if _microboost_intel_full_payload_enabled():
+        parts.extend(
+            [
+                f"m15_phase={event.m15_phase or 'NONE'}",
+                f"h1_phase={event.h1_phase or 'NONE'}",
+                f"price_start={_number_text(event.price_at_signal_start)}",
+                f"price_5m={_number_text(event.price_at_5m_confirm)}",
+                f"price_end={_number_text(event.price_at_signal_end)}",
+            ]
+        )
+    parts.extend(
+        [
+            f"end_utc={event.end_utc or 'NONE'}",
+            # Pure-stage contract markers: Microboost is timing evidence only.
+            "direction=UNRESOLVED",
+            "valid_for_execution=false",
+            "next_stage=SIGNAL_WATCH",
+            f"reason={event.reason}",
+        ]
+    )
     sys.stdout.write(" ".join(parts) + "\n")
     sys.stdout.flush()
 
