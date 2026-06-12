@@ -35,6 +35,7 @@ def _repo_attr(module_name: str, attr_name: str) -> Any:
 
 SignalThrottle = _repo_attr("constitution.signal_throttle", "SignalThrottle")
 SIGNAL_THROTTLED = _repo_attr("core.metrics", "SIGNAL_THROTTLED")
+SignalThrottleLiveAnalyzer = _repo_attr("analysis.signal_throttle_log_analyzer", "SignalThrottleLiveAnalyzer")
 
 
 def _pipeline_cls() -> Any:
@@ -174,7 +175,7 @@ class TestSignalThrottle:
         ]
 
     def test_default_throttled_logs_do_not_repeat_inside_active_window(self, monkeypatch, capsys):
-        """Default production logging emits at most one raw error per 15s interval."""
+        """Default production logging emits one error per active throttle window."""
         now = 1000.0
         monkeypatch.setattr("constitution.signal_throttle.time.time", lambda: now)
         t = SignalThrottle(max_signals=1, window_seconds=300)
@@ -184,27 +185,27 @@ class TestSignalThrottle:
         first = capsys.readouterr()
         assert first.err.splitlines() == ["[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"]
 
-        now = 1012.0  # within the 15s default interval -> still suppressed
+        now = 1031.0  # within the default window interval -> still suppressed
         assert t.is_throttled("XAUUSD") is True
         repeated = capsys.readouterr()
         assert repeated.err == ""
 
-    def test_default_throttle_error_log_interval_is_15s(self):
-        """When the env var is unset, the raw-throttle log interval defaults to 15s."""
+    def test_default_throttle_error_log_interval_follows_window_seconds(self):
+        """With the env var unset, the raw-throttle log interval follows window_seconds."""
+        assert SignalThrottle(max_signals=1, window_seconds=300).throttle_error_log_min_interval_seconds == 300.0
+        assert SignalThrottle(max_signals=1, window_seconds=120).throttle_error_log_min_interval_seconds == 120.0
+
+    def test_env_overrides_default_throttle_error_log_interval(self, monkeypatch):
+        """SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS still overrides the window default."""
+        monkeypatch.setenv("SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS", "15")
         t = SignalThrottle(max_signals=1, window_seconds=300)
         assert t.throttle_error_log_min_interval_seconds == 15.0
 
-    def test_env_overrides_default_throttle_error_log_interval(self, monkeypatch):
-        """SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS still overrides the default."""
-        monkeypatch.setenv("SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS", "45")
-        t = SignalThrottle(max_signals=1, window_seconds=300)
-        assert t.throttle_error_log_min_interval_seconds == 45.0
-
-    def test_default_15s_interval_surfaces_more_throttled_lines(self, monkeypatch, capsys):
-        """The 15s default surfaces a fresh THROTTLED line ~15s in; 300s would stay silent."""
+    def test_smaller_explicit_interval_surfaces_more_throttled_lines(self, monkeypatch, capsys):
+        """An explicit small interval (debug knob) surfaces more raw THROTTLED lines."""
         now = 1000.0
         monkeypatch.setattr("constitution.signal_throttle.time.time", lambda: now)
-        t = SignalThrottle(max_signals=1, window_seconds=300)  # default 15s log interval
+        t = SignalThrottle(max_signals=1, window_seconds=300, throttle_error_log_min_interval_seconds=15)
         t.record("XAUUSD")
 
         assert t.is_throttled("XAUUSD") is True
@@ -216,11 +217,34 @@ class TestSignalThrottle:
         assert t.is_throttled("XAUUSD") is True
         assert capsys.readouterr().err == ""
 
-        now = 1016.0  # past the 15s default -> a second line emits with the suppressed count
+        now = 1016.0  # past the explicit 15s interval -> a second line with the suppressed count
         assert t.is_throttled("XAUUSD") is True
         assert capsys.readouterr().err.splitlines() == [
             "[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1) suppressed=1"
         ]
+
+    def test_throttled_events_reach_recorder_even_when_stderr_log_suppressed(self, monkeypatch, capsys):
+        """Invariant: log suppression must NOT starve the block recorder.
+
+        The clamp rate-limits the stderr line, but every throttled event must still
+        reach SignalThrottleLiveAnalyzer so build_pressure_blocks sees the full stream.
+        """
+        monkeypatch.setattr("constitution.signal_throttle.time.time", lambda: 1000.0)
+        clamp = SignalThrottle(max_signals=1, window_seconds=300)  # default interval follows window
+        clamp.record("XAUUSD")
+        analyzer = SignalThrottleLiveAnalyzer()
+
+        base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+        for index in range(12):
+            # Mirror the pipeline gate: clamp decides (suppressed stderr), recorder always captures.
+            assert clamp.is_throttled("XAUUSD") is True
+            analyzer.record_throttled(symbol="XAUUSD", timestamp=base + timedelta(seconds=index * 5))
+
+        # Log: only the first THROTTLED line printed; the other 11 fold into suppression.
+        assert len(capsys.readouterr().err.splitlines()) == 1
+        # Recorder: every event captured for the block builder, regardless of log suppression.
+        report = analyzer.snapshot()
+        assert report["counts"]["total_events"] == 12
 
     def test_allowed_logs_plain_info_event(self, capsys):
         """Allowed signals must reach the platform as plain stdout events."""
