@@ -15,7 +15,10 @@ from analysis.signal_throttle_log_analyzer import (
     parse_engine_log_event,
     parse_signal_throttle_rows,
 )
-from analysis.microboost_core_event import MICROBOOST_DOWNSTREAM_METADATA_FIELDS
+from analysis.microboost_core_event import (
+    MICROBOOST_CORE_EVENT_FIELDS,
+    MICROBOOST_DOWNSTREAM_METADATA_FIELDS,
+)
 
 _FIXTURE = "tests/fixtures/signal_throttle_sample.csv"
 
@@ -821,6 +824,8 @@ def test_microboost_core_event_exposed_when_latest_present():
     assert core["next_stage"] == "SIGNAL_WATCH"
     # No validator pass-through metadata may leak into the core event.
     assert MICROBOOST_DOWNSTREAM_METADATA_FIELDS.isdisjoint(core)
+    # Stricter: every key is in the closed allowlist.
+    assert set(core).issubset(MICROBOOST_CORE_EVENT_FIELDS)
 
 
 def test_microboost_core_event_null_when_no_qualifying_microboost():
