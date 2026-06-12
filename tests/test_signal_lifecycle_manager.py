@@ -1,6 +1,19 @@
 from __future__ import annotations
 
-from analysis.signal_lifecycle_manager import SignalLifecycleManager
+import pytest
+
+from analysis.signal_lifecycle_manager import (
+    ACTIVE_LIFECYCLE_STATUSES,
+    SignalLifecycleManager,
+    build_lifecycle_preview,
+    classify_active_lifecycle_status,
+    record_active_if_execution_grade,
+    shadow_preview_event,
+)
+
+# P1A: each condition is asserted for BOTH directions so every BUY status has a
+# verified SELL mirror (and vice versa). (active, opposite) drives the template.
+_DIRECTIONS = [("BUY", "SELL"), ("SELL", "BUY")]
 
 
 def _buy_signal(**overrides):
@@ -224,3 +237,141 @@ def test_breakout_after_absorption_watch_reinforces_active_buy():
     assert follow_up["previous_signal_status"] == "REINFORCED"
     assert follow_up["linked_previous_signal"] == active["signal_id"]
     assert follow_up["valid_for_execution"] is True
+
+
+# ── P1A: pure lifecycle mapper, BUY/SELL symmetric ──────────────────────────
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_mapper_monitor_counter_pressure_symmetric(active, opposite):
+    payload = {
+        "validated_direction": opposite,
+        "status": f"{opposite}_TIMING_WATCH",
+        "phase_priced": "RESISTANCE_PRESSURE_WARNING" if active == "BUY" else "SUPPORT_PRESSURE_WARNING",
+        "valid_for_execution": False,
+    }
+    assert classify_active_lifecycle_status(active, payload) == f"ACTIVE_{active}_MONITOR_COUNTER_PRESSURE"
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_mapper_protect_profit_symmetric(active, opposite):
+    payload = {
+        "validated_direction": opposite,
+        "status": f"{opposite}_ABSORPTION_WATCH",
+        "phase_priced": "EXHAUSTION_AT_RESISTANCE" if active == "BUY" else "EXHAUSTION_AT_SUPPORT",
+        "valid_for_execution": False,
+    }
+    assert classify_active_lifecycle_status(active, payload) == f"ACTIVE_{active}_PROTECT_PROFIT"
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_mapper_exit_alert_symmetric(active, opposite):
+    payload = {
+        "phase_priced": "RESISTANCE_REJECTION_MICROBOOST" if active == "BUY" else "SUPPORT_BOUNCE_MICROBOOST",
+        "valid_for_execution": False,
+    }
+    assert classify_active_lifecycle_status(active, payload) == f"ACTIVE_{active}_EXIT_ALERT"
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_mapper_invalidated_symmetric(active, opposite):
+    payload = {"structure_flip": True, "valid_for_execution": False}
+    assert classify_active_lifecycle_status(active, payload) == f"ACTIVE_{active}_INVALIDATED"
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_mapper_reversed_to_opposite_watch_symmetric(active, opposite):
+    payload = {
+        "structure_flip": True,
+        "validated_direction": opposite,
+        "status": f"{opposite}_TIMING_VALID",
+        "valid_for_execution": False,
+    }
+    assert classify_active_lifecycle_status(active, payload) == f"ACTIVE_{active}_REVERSED_TO_{opposite}_WATCH"
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_mapper_no_new_add_symmetric(active, opposite):
+    payload = {
+        "validated_direction": active,
+        "price_position": "MAIN_RESISTANCE" if active == "BUY" else "MAIN_SUPPORT",
+        "valid_for_execution": False,
+    }
+    assert classify_active_lifecycle_status(active, payload) == f"ACTIVE_{active}_NO_NEW_ADD"
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_mapper_returns_none_when_no_lifecycle_change(active, opposite):
+    payload = {"validated_direction": active, "price_position": "MID_RANGE", "valid_for_execution": False}
+    assert classify_active_lifecycle_status(active, payload) is None
+
+
+def test_mapper_ignores_unknown_active_direction():
+    assert classify_active_lifecycle_status("WAIT", {"structure_flip": True}) is None
+    assert classify_active_lifecycle_status(None, {"structure_flip": True}) is None
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_mapper_never_marks_executable_and_uses_known_status(active, opposite):
+    # Every condition that yields a status must yield one from the closed taxonomy.
+    payloads = [
+        {"validated_direction": opposite, "status": f"{opposite}_TIMING_WATCH",
+         "phase_priced": "RESISTANCE_PRESSURE_WARNING" if active == "BUY" else "SUPPORT_PRESSURE_WARNING"},
+        {"phase_priced": "EXHAUSTION_AT_RESISTANCE" if active == "BUY" else "EXHAUSTION_AT_SUPPORT"},
+        {"structure_flip": True},
+        {"structure_flip": True, "validated_direction": opposite, "status": f"{opposite}_TIMING_VALID"},
+    ]
+    for payload in payloads:
+        status = classify_active_lifecycle_status(active, payload)
+        assert status in ACTIVE_LIFECYCLE_STATUSES
+
+
+# ── P1B: shadow preview (pure, never executable) ────────────────────────────
+
+
+@pytest.mark.parametrize("active, opposite", _DIRECTIONS)
+def test_shadow_preview_symmetric_protect_profit(active, opposite):
+    payload = {
+        "symbol": "USDCAD",
+        "validated_direction": opposite,
+        "status": f"{opposite}_ABSORPTION_WATCH",
+        "phase_priced": "EXHAUSTION_AT_RESISTANCE" if active == "BUY" else "EXHAUSTION_AT_SUPPORT",
+        "valid_for_execution": False,
+    }
+    preview = build_lifecycle_preview(active, payload)
+    assert preview["suggested_lifecycle_status"] == f"ACTIVE_{active}_PROTECT_PROFIT"
+    assert preview["suggested_management_action"] == f"PROTECT_{active}_PROFIT"
+    assert preview["active_signal_direction"] == active
+    assert preview["counter_direction"] == opposite
+    assert preview["live_applied"] is False
+    assert preview["confidence"] == "SHADOW_ONLY"
+    assert preview["source"] == "SignalLifecycleManagerShadow"
+    assert "valid_for_execution" not in preview  # preview never carries an execution flag
+
+
+def test_shadow_preview_none_when_no_lifecycle_change():
+    payload = {"symbol": "USDCAD", "validated_direction": "BUY", "price_position": "MID_RANGE"}
+    assert build_lifecycle_preview("BUY", payload) is None
+
+
+def test_shadow_preview_event_requires_active_signal():
+    counter = {
+        "symbol": "USDCAD",
+        "validated_direction": "SELL",
+        "phase_priced": "EXHAUSTION_AT_RESISTANCE",
+        "status": "SELL_ABSORPTION_WATCH",
+        "valid_for_execution": False,
+    }
+    assert shadow_preview_event({}, counter) is None
+    event = shadow_preview_event({"USDCAD": "BUY"}, counter)
+    assert event["event"] == "signal_lifecycle_shadow_preview"
+    assert event["lifecycle_preview"]["suggested_lifecycle_status"] == "ACTIVE_BUY_PROTECT_PROFIT"
+    assert event["lifecycle_preview"]["live_applied"] is False
+
+
+def test_record_active_only_for_execution_grade_finals():
+    active: dict[str, str] = {}
+    assert record_active_if_execution_grade(active, _sell_watch()) is False  # a watch is not execution-grade
+    assert active == {}
+    assert record_active_if_execution_grade(active, _buy_signal()) is True  # execution-grade BUY final
+    assert active["USDCAD"] == "BUY"
