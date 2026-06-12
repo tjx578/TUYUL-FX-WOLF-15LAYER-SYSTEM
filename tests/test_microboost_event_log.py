@@ -12,7 +12,8 @@ from analysis.microboost_event_log import (
 )
 
 
-def test_microboost_intel_emits_standalone_parseable_log(capsys):
+def test_microboost_intel_emits_standalone_parseable_log(capsys, monkeypatch):
+    monkeypatch.setenv("MICROBOOST_INTEL_FULL_PAYLOAD_ENABLED", "true")
     report = {
         "microboost_summary": {
             "count_total": 1,
@@ -72,6 +73,66 @@ def test_microboost_intel_emits_standalone_parseable_log(capsys):
     assert parsed.event.market_context_applied is True
     assert parsed.event.m15_phase == "PIVOT_RECLAIM"
     assert parsed.event.h1_phase == "BULLISH"
+
+
+def test_microboost_intel_lean_by_default_omits_heavy_market_context(capsys):
+    report = {
+        "microboost_summary": {
+            "count_total": 1,
+            "market_context_applied": True,
+            "latest": {
+                "symbol": "CADJPY",
+                "direction": "BUY",
+                "phase_unpriced": "DENSE_MICROBOOST",
+                "phase_priced": "TREND_CONTINUATION_MICROBOOST",
+                "action": "VALIDATE_RETEST_OR_HOLD",
+                "event_count": 4,
+                "effective_tick_count": 15,
+                "effective_density_per_minute": 8.25,
+                "duration_seconds": 109.2,
+                "requires_market_context": False,
+                "end_utc": "2026-05-18T10:15:23+00:00",
+                "market_context_validation": {"final_direction": "BUY"},
+                "market_context_snapshot": {
+                    "price_at_signal_start": 103.25,
+                    "price_at_5m_confirm": 103.32,
+                    "price_at_signal_end": 103.38,
+                    "m15_phase": "PIVOT_RECLAIM",
+                    "h1_phase": "BULLISH",
+                    "price_position": "MID_RANGE",
+                },
+                "reason": "microboost",
+            },
+        }
+    }
+
+    emit_microboost_intel(build_microboost_intel_event(report))
+    line = capsys.readouterr().out.strip()
+
+    assert line.startswith("[MicroboostIntel]")
+    # Pure-stage markers are always present.
+    assert "direction=UNRESOLVED" in line
+    assert "valid_for_execution=false" in line
+    assert "next_stage=SIGNAL_WATCH" in line
+    # Heavy market-context fields are stripped from the lean (default) line.
+    assert "m15_phase=" not in line
+    assert "h1_phase=" not in line
+    assert "price_start=" not in line
+    assert "price_5m=" not in line
+    assert "price_end=" not in line
+    # The lean line still round-trips; heavy fields parse to None.
+    parsed = parse_microboost_intel_row(
+        {
+            "timestamp": datetime(2026, 5, 18, 10, 15, 23, tzinfo=UTC).isoformat(),
+            "severity": "info",
+            "message": line,
+        }
+    )
+    assert parsed is not None
+    assert parsed.event.symbol == "CADJPY"
+    assert parsed.event.m15_phase is None
+    assert parsed.event.h1_phase is None
+    assert parsed.event.price_at_signal_start is None
 
 
 def test_microboost_table_events_emit_all_cluster_rows(capsys):
