@@ -1597,12 +1597,22 @@ def _float_list(value: Any) -> list[float]:
     return values
 
 
+def _reference_cases_enabled() -> bool:
+    """Reference/golden cases are pattern-debug, not main-payload. Default OFF.
+
+    When disabled they are stripped from the production SignalWatch/Decision/JSON
+    payload (and survive only on the ``[PatternMatchDebugJSON]`` sidecar). Enable
+    with ``SIGNAL_WATCH_INCLUDE_REFERENCE_CASES=true`` for debugging.
+    """
+    return os.getenv("SIGNAL_WATCH_INCLUDE_REFERENCE_CASES", "false").strip().lower() == "true"
+
+
 def _universal_pattern_payload(payload: dict[str, Any], *, compact: bool = True) -> dict[str, Any]:
     universal = dict(payload)
     universal["schema_version"] = UNIVERSAL_PATTERN_SCHEMA_VERSION
     universal["theme_alignment_status"] = _theme_alignment_status(universal)
     universal["alignment_missing_reason"] = _alignment_missing_reason(universal)
-    universal["reference_cases"] = _reference_cases(universal)
+    universal["reference_cases"] = _reference_cases(universal) if _reference_cases_enabled() else None
     universal["pair_calibration"] = _pair_calibration(universal)
     universal["pattern_context"] = _pattern_context(universal, include_debug=not compact)
     universal["theme_context"] = (
@@ -1690,7 +1700,7 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
         "execution_readiness_score": _optional_int(
             payload.get("execution_readiness_score") or existing.get("execution_readiness_score")
         ),
-        "reference_cases": reference_cases,
+        "reference_cases": reference_cases if _reference_cases_enabled() else None,
         "pattern_evidence": pattern_evidence[:5] if pattern_evidence else None,
         "pattern_bottlenecks": pattern_bottlenecks,
     }
