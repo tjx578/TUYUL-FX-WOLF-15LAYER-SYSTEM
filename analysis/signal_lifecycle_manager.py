@@ -35,6 +35,28 @@ ABSORPTION_WATCH_STATUSES = {
     "BUY_ABSORPTION_WATCH",
 }
 
+# P1A active-signal lifecycle taxonomy. Direction-agnostic: every BUY status has a
+# SELL mirror because the direction is a template parameter, never hardcoded.
+OPPOSITE_DIRECTION = {"BUY": "SELL", "SELL": "BUY"}
+
+_ACTIVE_LIFECYCLE_SUFFIXES = (
+    "MONITOR_COUNTER_PRESSURE",
+    "PROTECT_PROFIT",
+    "NO_NEW_ADD",
+    "EXIT_ALERT",
+    "INVALIDATED",
+)
+
+# REVERSED embeds the opposite direction, so it is templated separately.
+ACTIVE_LIFECYCLE_STATUSES = frozenset(
+    {f"ACTIVE_{direction}_{suffix}" for direction in ("BUY", "SELL") for suffix in _ACTIVE_LIFECYCLE_SUFFIXES}
+    | {f"ACTIVE_{direction}_REVERSED_TO_{OPPOSITE_DIRECTION[direction]}_WATCH" for direction in ("BUY", "SELL")}
+)
+
+_PROTECT_PROFIT_PHASES = frozenset(
+    {"EXHAUSTION_AT_RESISTANCE", "EXHAUSTION_AT_SUPPORT", "LATE_DENSE_PRESSURE"}
+)
+
 
 @dataclass(frozen=True)
 class ActiveSignal:
@@ -370,3 +392,185 @@ def _has_auditable_promotion(payload: dict[str, Any]) -> bool:
         and payload.get("parent_watch_required") is False
     )
     return has_parent or has_bypass
+
+
+def classify_active_lifecycle_status(active_direction: str | None, counter_payload: dict[str, Any]) -> str | None:
+    """Pure mapper: given an active signal's direction and a follow-up payload,
+    return the finer ``ACTIVE_{DIRECTION}_…`` lifecycle status, or ``None`` when the
+    follow-up does not change the active position's lifecycle.
+
+    Direction-agnostic: BUY and SELL flow through the same template, so every BUY
+    branch has an automatic SELL mirror.  This is evidence/management classification
+    only — it never marks anything executable and never mints a reversal signal.
+    Conditions are ordered most-severe first.
+    """
+    active = str(active_direction or "").upper()
+    if active not in {"BUY", "SELL"}:
+        return None
+    opposite = OPPOSITE_DIRECTION[active]
+    counter = _direction(counter_payload)
+
+    if _is_active_invalidated(counter_payload, active):
+        if _is_opposite_setup_valid_not_executable(counter_payload, opposite):
+            return f"ACTIVE_{active}_REVERSED_TO_{opposite}_WATCH"
+        return f"ACTIVE_{active}_INVALIDATED"
+
+    if _is_rejection_against_active(counter_payload, active):
+        return f"ACTIVE_{active}_EXIT_ALERT"
+
+    if _is_protect_profit_pressure(counter_payload):
+        return f"ACTIVE_{active}_PROTECT_PROFIT"
+
+    if counter == opposite:
+        return f"ACTIVE_{active}_MONITOR_COUNTER_PRESSURE"
+
+    if _is_over_extended(counter_payload, active):
+        return f"ACTIVE_{active}_NO_NEW_ADD"
+
+    return None
+
+
+def _is_active_invalidated(payload: dict[str, Any], active: str) -> bool:
+    if _truthy(payload.get("active_signal_invalidated")) or _truthy(payload.get("structure_flip")):
+        return True
+    if active == "BUY":
+        return _truthy(payload.get("m15_close_below_support"))
+    return _truthy(payload.get("m15_close_above_resistance"))
+
+
+def _is_opposite_setup_valid_not_executable(payload: dict[str, Any], opposite: str) -> bool:
+    if bool(payload.get("valid_for_execution", False)):
+        return False
+    validated = str(payload.get("validated_direction") or payload.get("candidate_direction") or "").upper()
+    if validated != opposite:
+        return False
+    status = str(payload.get("status") or "").upper()
+    rr_status = str(payload.get("rr_status") or "").upper()
+    return status.endswith("_VALID") or rr_status in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"} or _truthy(
+        payload.get("tradeplan_valid")
+    )
+
+
+def _is_rejection_against_active(payload: dict[str, Any], active: str) -> bool:
+    if _truthy(payload.get("failed_reclaim")) or _truthy(payload.get("strong_rejection")):
+        return True
+    phase = str(payload.get("phase_priced") or "").upper()
+    if active == "BUY":
+        return phase == "RESISTANCE_REJECTION_MICROBOOST"
+    return phase == "SUPPORT_BOUNCE_MICROBOOST"
+
+
+def _is_protect_profit_pressure(payload: dict[str, Any]) -> bool:
+    phase = str(payload.get("phase_priced") or "").upper()
+    status = str(payload.get("status") or "").upper()
+    return phase in _PROTECT_PROFIT_PHASES or status in ABSORPTION_WATCH_STATUSES
+
+
+def _is_over_extended(payload: dict[str, Any], active: str) -> bool:
+    if _truthy(payload.get("over_extended")):
+        return True
+    position = str(payload.get("price_position") or "").upper()
+    if active == "BUY":
+        return position == "MAIN_RESISTANCE"
+    return position == "MAIN_SUPPORT"
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
+
+
+# ── P1B: shadow-only preview (pure; no live behavior, never executable) ──────
+
+_LIFECYCLE_MANAGEMENT_TEMPLATES = {
+    "MONITOR_COUNTER_PRESSURE": "MONITOR_{active}_COUNTER_PRESSURE",
+    "PROTECT_PROFIT": "PROTECT_{active}_PROFIT",
+    "NO_NEW_ADD": "HOLD_{active}_NO_NEW_ADD",
+    "EXIT_ALERT": "EXIT_OR_PROTECT_{active}",
+    "INVALIDATED": "EXIT_{active}_INVALIDATED",
+}
+
+
+def is_active_execution_grade(payload: dict[str, Any]) -> bool:
+    """True when the payload is an execution-grade final that becomes the active signal."""
+    return _is_final_active(payload)
+
+
+def payload_signal_direction(payload: dict[str, Any]) -> str | None:
+    return _direction(payload)
+
+
+def build_lifecycle_preview(active_signal_direction: str | None, counter_payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Pure shadow preview: what the active-signal lifecycle WOULD say. ``live_applied``
+    is always False — this never changes a live decision or marks anything executable."""
+    active = str(active_signal_direction or "").upper()
+    if active not in {"BUY", "SELL"}:
+        return None
+    status = classify_active_lifecycle_status(active, counter_payload)
+    if status is None:
+        return None
+    opposite = OPPOSITE_DIRECTION[active]
+    return {
+        "source": "SignalLifecycleManagerShadow",
+        "active_signal_direction": active,
+        "counter_direction": _direction(counter_payload),
+        "suggested_lifecycle_status": status,
+        "suggested_management_action": _lifecycle_management_action(status, active, opposite),
+        "confidence": "SHADOW_ONLY",
+        "live_applied": False,
+        "reason": _lifecycle_preview_reason(status, active, opposite),
+    }
+
+
+def shadow_preview_event(active_directions: dict[str, str], payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Pure: build the shadow preview event for ``payload`` given the active-direction
+    map, or ``None``. Does not mutate inputs."""
+    symbol = str(payload.get("symbol") or "").upper()
+    if not symbol:
+        return None
+    active = active_directions.get(symbol)
+    if not active:
+        return None
+    preview = build_lifecycle_preview(active, payload)
+    if preview is None:
+        return None
+    return {"event": "signal_lifecycle_shadow_preview", "symbol": symbol, "lifecycle_preview": preview}
+
+
+def record_active_if_execution_grade(active_directions: dict[str, str], payload: dict[str, Any]) -> bool:
+    """Shadow-only state update: record ``symbol -> direction`` when ``payload`` is an
+    execution-grade final. Returns True if recorded. Mutates ``active_directions`` only."""
+    if not is_active_execution_grade(payload):
+        return False
+    symbol = str(payload.get("symbol") or "").upper()
+    direction = payload_signal_direction(payload)
+    if not symbol or direction not in {"BUY", "SELL"}:
+        return False
+    active_directions[symbol] = direction
+    return True
+
+
+def _lifecycle_management_action(status: str, active: str, opposite: str) -> str:
+    if status.endswith(f"_REVERSED_TO_{opposite}_WATCH"):
+        return f"EXIT_{active}_AND_WATCH_{opposite}"
+    for suffix, template in _LIFECYCLE_MANAGEMENT_TEMPLATES.items():
+        if status.endswith(f"_{suffix}"):
+            return template.format(active=active)
+    return f"MANAGE_{active}"
+
+
+def _lifecycle_preview_reason(status: str, active: str, opposite: str) -> str:
+    if status.endswith("_PROTECT_PROFIT"):
+        return f"Counter/exhaustion pressure while active {active} is in profit; protect, no auto-reversal."
+    if status.endswith("_MONITOR_COUNTER_PRESSURE"):
+        return f"Small {opposite} counter pressure against active {active}; monitor only."
+    if status.endswith("_NO_NEW_ADD"):
+        return f"Active {active} still valid but over-extended; hold, no new add."
+    if status.endswith("_EXIT_ALERT"):
+        return f"Active {active} rejection / failed reclaim; exit-or-protect alert."
+    if status.endswith("_INVALIDATED"):
+        return f"Active {active} invalidated by structure break."
+    if "_REVERSED_TO_" in status:
+        return f"Active {active} invalidated and {opposite} setup forming (not execution-grade); watch only."
+    return f"Active {active} lifecycle update."
