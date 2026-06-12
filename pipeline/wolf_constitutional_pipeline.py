@@ -87,7 +87,11 @@ from analysis.reflex_rqi import compute_rqi, latency_decay
 from analysis.signal_block_finalizer import SignalBlockFinalizer
 from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
-from analysis.signal_lifecycle_manager import SignalLifecycleManager
+from analysis.signal_lifecycle_manager import (
+    SignalLifecycleManager,
+    record_active_if_execution_grade,
+    shadow_preview_event,
+)
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
     emit_signal_throttle_intel,
@@ -373,6 +377,9 @@ class WolfConstitutionalPipeline:
         )
         self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
+        # P1B shadow-only active-signal tracker (symbol -> last execution-grade direction).
+        # Populated and read ONLY when SIGNAL_LIFECYCLE_MANAGER_SHADOW_ENABLED=true.
+        self._shadow_active_directions: dict[str, str] = {}
         # Increment H1 — HTF Structure Snapshot (flag-guarded, default OFF).
         # Bound to the same candle store the pipeline populates so the snapshot
         # reads exactly the bars analysis sees. Non-executable observability only.
@@ -5042,11 +5049,38 @@ class WolfConstitutionalPipeline:
 
     def _emit_signal_json_payload(self, payload: dict[str, Any]) -> bool:
         self._bump_family_counters(payload)
+        self._emit_lifecycle_shadow_preview(payload)
         gated_payload = self._signal_json_gate_adapter.apply(payload)
         signal_event = build_signal_json_event(gated_payload)
         if signal_event is None:
             return False
         return self._signal_json_emitter.emit(signal_event)
+
+    def _emit_lifecycle_shadow_preview(self, payload: dict[str, Any]) -> None:
+        """P1B (flag-guarded, default OFF): shadow-only preview of the active-signal
+        lifecycle. Emits a side-channel ``[SignalLifecycleShadowPreview]`` line and
+        NEVER mutates the payload, ``terminal_status``, ``lifecycle_status``, or
+        ``valid_for_execution``. The live ``SignalLifecycleManager.apply()`` is not
+        called; only the pure mapper is used.
+
+        Enable with ``SIGNAL_LIFECYCLE_MANAGER_SHADOW_ENABLED=true``.
+        """
+        if os.getenv("SIGNAL_LIFECYCLE_MANAGER_SHADOW_ENABLED", "false").strip().lower() != "true":
+            return
+        if not isinstance(payload, dict):
+            return
+        record_active_if_execution_grade(self._shadow_active_directions, payload)
+        event = shadow_preview_event(self._shadow_active_directions, payload)
+        if event is None:
+            return
+        import json as _json  # noqa: PLC0415
+        import logging as _logging  # noqa: PLC0415
+
+        _logging.getLogger("signal_json").warning(
+            "%s %s",
+            "[SignalLifecycleShadowPreview]",
+            _json.dumps(event, separators=(",", ":"), ensure_ascii=False),
+        )
 
     def _emit_microboost_watch_shadow(
         self,
