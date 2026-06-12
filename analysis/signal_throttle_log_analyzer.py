@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover - supports top-level ``analysis`` import
 from .market_context_validator import missing_market_context_result
 from .microboost_continuation_entry import MicroboostContinuationEngine
 from .microboost_counter_entry import MicroboostCounterEntryEngine
+from .microboost_core_event import to_microboost_core_event
 from .microboost_detector import build_microboost_summary
 from .signal_throttle_pattern_detector import classify_pressure_block
 
@@ -339,6 +340,7 @@ def analyze_signal_throttle_events(
                 window_minutes=microboost_window_minutes,
                 clean_block_seconds=clean_block_seconds,
             ),
+            "microboost_core_event": None,
             "microboost_continuation_entry": None,
             "microboost_counter_entry": None,
             "microboost_watch_entry": None,
@@ -470,6 +472,11 @@ def analyze_signal_throttle_events(
         if not microboost_summary.get("latest")
         else None
     )
+    microboost_core_event = (
+        to_microboost_core_event(microboost_summary["latest"])
+        if isinstance(microboost_summary.get("latest"), dict)
+        else None
+    )
 
     return {
         "final_mode": final_mode,
@@ -497,6 +504,7 @@ def analyze_signal_throttle_events(
         "candidate": candidate,
         "top_microboost": [_microboost_payload(block) for block in ranked_microboost_blocks[:10]],
         "microboost_summary": microboost_summary,
+        "microboost_core_event": microboost_core_event,
         "microboost_continuation_entry": microboost_continuation_entry,
         "microboost_counter_entry": microboost_counter_entry,
         "microboost_watch_entry": microboost_watch_entry,
