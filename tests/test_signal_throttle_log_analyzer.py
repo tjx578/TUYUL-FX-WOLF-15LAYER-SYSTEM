@@ -15,6 +15,7 @@ from analysis.signal_throttle_log_analyzer import (
     parse_engine_log_event,
     parse_signal_throttle_rows,
 )
+from analysis.microboost_core_event import MICROBOOST_DOWNSTREAM_METADATA_FIELDS
 
 _FIXTURE = "tests/fixtures/signal_throttle_sample.csv"
 
@@ -800,6 +801,39 @@ def test_microboost_summary_detects_strong_cluster_near_timing_gate_without_clea
     assert summary["latest"]["phase_unpriced"] == "NEAR_TIMING_GATE_MICROBOOST"
     assert summary["latest"]["phase_priced"] is None
     assert summary["action"] == "FETCH_MARKET_CONTEXT_FOR_TIMING_GATE"
+
+
+def test_microboost_core_event_exposed_when_latest_present():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+    for index in range(25):
+        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 7.5))
+
+    report = analyzer.snapshot()
+    core = report["microboost_core_event"]
+
+    assert core is not None
+    assert core["event"] == "microboost_qualified"
+    assert core["symbol"] == "GBPCAD"
+    assert core["direction"] == "UNRESOLVED"
+    assert core["raw_pressure_direction"] == "BUY"
+    assert core["valid_for_execution"] is False
+    assert core["next_stage"] == "SIGNAL_WATCH"
+    # No validator pass-through metadata may leak into the core event.
+    assert MICROBOOST_DOWNSTREAM_METADATA_FIELDS.isdisjoint(core)
+
+
+def test_microboost_core_event_null_when_no_qualifying_microboost():
+    report = analyze_signal_throttle_events([_event(0, "EURUSD"), _event(5, "USDCAD")])
+
+    assert report["microboost_summary"]["latest"] is None
+    assert report["microboost_core_event"] is None
+
+
+def test_microboost_core_event_null_on_empty_report():
+    report = analyze_signal_throttle_events([])
+
+    assert report["microboost_core_event"] is None
 
 
 def test_microboost_summary_counts_recurrence_by_symbol():
