@@ -4040,6 +4040,58 @@ class WolfConstitutionalPipeline:
             found.add(verdict_direction)
         if len(found) == 1:
             return next(iter(found))
+        # P2D' (flag-guarded, default OFF): when the primary sources carry no usable
+        # direction -- the common non-execute case where execution.direction has been
+        # collapsed to HOLD -- recover the raw pressure direction from the per-layer
+        # biases that survive in execution.direction_diagnostics.sources. Only fires
+        # when `found` is empty (a genuine primary-source conflict, len > 1, stays None).
+        if not found:
+            recovered = self._recover_direction_from_diagnostics(execution)
+            if recovered in {"BUY", "SELL"}:
+                return recovered
+        return None
+
+    @staticmethod
+    def _recover_direction_from_diagnostics(execution: Any | None) -> str | None:
+        """P2D' (flag-guarded, default OFF): recover the raw pressure direction from the
+        per-layer biases that survive in ``execution.direction_diagnostics.sources``
+        after ``resolve_trade_direction`` collapses ``execution.direction`` to HOLD
+        (reason ``no_l3_direction`` or ``direction_conflict``).
+
+        Restoration-only and conflict-safe: returns a BUY/SELL only when every layer
+        that expresses a direction agrees. Any disagreement -- or a pre-recorded
+        ``conflicts`` entry from the resolver -- returns ``None`` so the system never
+        guesses. Priority l3 -> l2 -> l1 -> l9 is used for deterministic iteration; the
+        agreement check is authoritative. The result only seeds ``raw_direction`` so the
+        microboost counter/continuation engines can classify (e.g. BUY stalled at
+        resistance -> SELL absorption watch). It NEVER sets ``final_direction`` /
+        ``valid_for_execution`` and never emits a ``SignalJSON``.
+
+        Enable with ``SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS=true``.
+        """
+        if os.getenv("SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS", "false").strip().lower() != "true":
+            return None
+        if not isinstance(execution, dict):
+            return None
+        diagnostics = execution.get("direction_diagnostics")
+        if not isinstance(diagnostics, dict):
+            return None
+        conflicts = diagnostics.get("conflicts")
+        if isinstance(conflicts, list) and conflicts:
+            return None
+        sources = diagnostics.get("sources")
+        if not isinstance(sources, dict):
+            return None
+        from schemas.direction import normalize_direction  # noqa: PLC0415
+
+        found: set[str] = set()
+        for key in ("l3", "l2", "l1", "l9"):
+            raw = sources.get(key)
+            resolved = normalize_direction(str(raw) if raw else None)
+            if resolved in {"BUY", "SELL"}:
+                found.add(resolved)
+        if len(found) == 1:
+            return next(iter(found))
         return None
 
     def _record_signal_throttle_downgrade_observation(
