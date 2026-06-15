@@ -331,3 +331,29 @@ def test_general_non_watch_unchanged(monkeypatch):
     before = copy.deepcopy(payload)
     _maybe_attach_structure_preview(payload, _buy_ready_snapshot())
     assert payload == before
+
+
+# G7. degenerate structure (SL noise-tight, RR implausible) -> PENDING + STRUCTURAL_SL_TOO_TIGHT.
+# Real GBPCAD case: SL 4.7 pips above entry (resistance_high==key_resistance, ladder missing),
+# TP1 49 pips away -> RR 10.49. Must NOT be presented as STRUCTURE_READY.
+def test_general_degenerate_sl_too_tight(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _early_sell_payload()
+    payload["signal_valid_price"] = 1.87801
+    payload["entry_reference_price"] = 1.87801
+    snap = {
+        "resistance_high": 1.87848,
+        "key_resistance": 1.87848,
+        "key_support": 1.87770,
+        "tp1_support": 1.87770,
+        "tp2_support": 1.87308,
+    }
+    _maybe_attach_structure_preview(payload, snap)
+    ms = payload["market_structure"]
+    tp = payload["tradeplan_preview"]
+    assert ms["market_structure_status"] == "STRUCTURE_PENDING"
+    assert ms["structure_ready"] is False
+    assert "STRUCTURAL_SL_TOO_TIGHT" in ms["structure_pending_reason"]
+    assert tp["rr_to_tp1"] > 6.0  # the implausible RR that exposed the degenerate SL
+    assert tp["target_mode"] == "PREVIEW_CONTEXT_INCOMPLETE"
+    assert tp["execution_usable"] is False
