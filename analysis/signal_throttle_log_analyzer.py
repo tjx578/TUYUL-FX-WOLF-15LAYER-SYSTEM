@@ -1698,49 +1698,112 @@ def _maybe_attach_structure_preview(payload: dict[str, Any], snapshot: Any) -> N
         payload.update(preview)
 
 
+PREVIEW_MIN_TP1_RR = 1.5
+
+
+def _preview_pip_size(payload: dict[str, Any], snap: dict[str, Any]) -> float:
+    cal = payload.get("pair_calibration") if isinstance(payload.get("pair_calibration"), dict) else {}
+    pip = _first_number(cal.get("pip_size"), snap.get("pip_value"))
+    if pip:
+        return float(pip)
+    return 0.01 if str(payload.get("symbol") or "").upper().endswith("JPY") else 0.0001
+
+
 def _market_structure_preview(payload: dict[str, Any], snapshot: Any) -> dict[str, Any] | None:
     """Pure: build ``{market_structure, tradeplan_preview}`` for an EARLY_SELL_WATCH
-    from the market_context_snapshot. Returns None for any other status. No fabricated
-    levels -- when structure/targets are missing the preview is marked
-    ``structure_ready=false`` / ``target_mode=PREVIEW_CONTEXT_INCOMPLETE``.
+    from the market_context_snapshot. Returns None for any other status.
+
+    SL is the STRUCTURAL INVALIDATION level only (a price ABOVE entry for a SELL) -- never a
+    fixed buffer. ``sl_source`` names the structure field used (it stays an honest
+    intraday/market-structure label until an H4/Daily HTF feed is wired). When no valid
+    structural invalidation exists, ``sl=None`` and the preview is marked
+    ``PREVIEW_CONTEXT_INCOMPLETE`` / ``structure_ready=false`` -- no fabricated levels.
+    TP1 must satisfy RR >= ``PREVIEW_MIN_TP1_RR`` against the structural SL; a nearer support
+    that does not meet it is surfaced as ``nearby_structure_marker``, never a target.
     ``execution_usable`` is ALWAYS False: a preview is a plan, not an entry.
     """
     if str(payload.get("status") or "") != "EARLY_SELL_WATCH":
         return None
     snap = snapshot if isinstance(snapshot, dict) else {}
+    entry = _first_number(payload.get("signal_valid_price"), payload.get("entry_reference_price"))
+    pip = _preview_pip_size(payload, snap)
+
+    # Structural invalidation == SL. For a SELL it must sit ABOVE entry.
+    sl = None
+    sl_source = "MISSING_STRUCTURE_INVALIDATION"
+    for source, raw in (
+        ("MARKET_STRUCTURE_RESISTANCE_HIGH", snap.get("resistance_high")),
+        ("MARKET_STRUCTURE_KEY_RESISTANCE", snap.get("key_resistance")),
+        ("MARKET_STRUCTURE_MAIN_RESISTANCE", snap.get("main_resistance")),
+    ):
+        value = _first_number(raw)
+        if value is not None and (entry is None or value > entry):
+            sl, sl_source = value, source
+            break
+
     key_resistance = _first_number(snap.get("key_resistance"), snap.get("main_resistance"), snap.get("resistance_high"))
     nearest_support = _first_number(snap.get("key_support"), snap.get("main_support"), snap.get("support_low"))
-    invalidation = _first_number(snap.get("resistance_high"), key_resistance)
-    sl_safe = _first_number(snap.get("sl_safe"))
-    sl_tight = _first_number(snap.get("sl_buffer"), snap.get("continuation_sl_safe"))
-    tp1 = _first_number(snap.get("tp1_support"))
-    tp2 = _first_number(snap.get("tp2_support"))
-    tp3 = _first_number(snap.get("tp3_support"))
-    has_structure = key_resistance is not None and nearest_support is not None
-    has_targets = tp1 is not None or tp2 is not None
-    structure_ready = bool(has_structure and sl_safe is not None and has_targets)
+
+    # SELL targets sit below entry; nearest first. RR is measured against the structural SL.
+    risk = (sl - entry) if (sl is not None and entry is not None and sl > entry) else None
+    candidates = sorted(
+        {
+            t
+            for t in (
+                _first_number(snap.get("tp1_support")),
+                _first_number(snap.get("tp2_support")),
+                _first_number(snap.get("tp3_support")),
+            )
+            if t is not None and (entry is None or t < entry)
+        },
+        reverse=True,
+    )
+    nearby_marker = None
+    targets: list[float] = []
+    for target in candidates:
+        if risk and not targets and (entry - target) / risk < PREVIEW_MIN_TP1_RR:
+            if nearby_marker is None:
+                nearby_marker = target
+            continue
+        targets.append(target)
+    tp1 = targets[0] if targets else None
+    tp2 = targets[1] if len(targets) > 1 else None
+    tp3 = targets[2] if len(targets) > 2 else None
+    risk_pips = round(risk / pip, 1) if (risk and pip) else None
+    rr_to_tp1 = round((entry - tp1) / risk, 2) if (tp1 is not None and risk) else None
+    structure_ready = bool(sl is not None and rr_to_tp1 is not None and rr_to_tp1 >= PREVIEW_MIN_TP1_RR)
+
     market_structure = {
         "structure_bias": "SELL_REJECTION_WATCH",
         "price_position": payload.get("price_position"),
         "key_resistance": key_resistance,
-        "invalidation_level": invalidation,
+        "invalidation_level": sl,
         "nearest_support": nearest_support,
         "structure_ready": structure_ready,
     }
     tradeplan_preview = {
         "setup_type": "SELL_REJECTION_WATCH",
         "entry_zone": payload.get("entry_zone"),
-        "sl_tight": sl_tight,
-        "sl_safe": sl_safe,
+        "sl": sl,
+        "sl_source": sl_source,
+        "invalidation_level": sl,
+        "nearby_structure_marker": nearby_marker,
         "tp1": tp1,
         "tp2": tp2,
         "tp3": tp3,
+        "risk_pips": risk_pips,
+        "rr_to_tp1": rr_to_tp1,
         "target_mode": "STRUCTURE_PREVIEW" if structure_ready else "PREVIEW_CONTEXT_INCOMPLETE",
         "execution_usable": False,
     }
+    # Core fields stay even when None (e.g. explicit sl=None in an incomplete preview);
+    # only optional levels/metrics are dropped.
+    always = {"setup_type", "entry_zone", "sl", "sl_source", "invalidation_level", "target_mode", "execution_usable"}
     return {
         "market_structure": {key: value for key, value in market_structure.items() if value is not None},
-        "tradeplan_preview": {key: value for key, value in tradeplan_preview.items() if value is not None},
+        "tradeplan_preview": {
+            key: value for key, value in tradeplan_preview.items() if key in always or value is not None
+        },
     }
 
 
