@@ -1684,18 +1684,28 @@ def _microboost_watch_payload(
 
 
 def _maybe_attach_structure_preview(payload: dict[str, Any], snapshot: Any) -> None:
-    """P2A Opsi A (flag-guarded, default OFF): attach a non-executable structure +
-    tradeplan preview to an EARLY_SELL_WATCH payload. Flag OFF is a byte-for-byte
-    no-op. NEVER changes status / final_direction / requires_m15_close /
-    valid_for_execution and never emits a SignalJSON.
+    """P2A (flag-guarded, default OFF): attach a NON-EXECUTABLE structure view to a watch
+    payload. Two independent layers, both default OFF and both byte-for-byte no-ops:
 
-    Enable with ``SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED=true``.
+    * ``SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED`` (P2A-General) -> EVERY official
+      ``*_WATCH`` gets ``market_structure_status`` + ``structure_class`` +
+      ``structure_pending_reason``, plus a directional ``tradeplan_preview`` when a
+      candidate direction and structure exist (else an explicit incomplete preview).
+    * ``SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED`` (P2A Opsi A) -> EARLY_SELL_WATCH only.
+
+    NEVER changes status / final_direction / requires_m15_close / valid_for_execution and
+    never emits a SignalJSON. Market structure -- not the pattern name -- is the reference:
+    if structure is ready a preview is built, otherwise the watch explains what is missing.
     """
-    if not _env_bool("SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED", False):
+    if _env_bool("SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED", False):
+        block = _market_structure_general(payload, snapshot)
+        if block:
+            payload.update(block)
         return
-    preview = _market_structure_preview(payload, snapshot)
-    if preview:
-        payload.update(preview)
+    if _env_bool("SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED", False):
+        preview = _market_structure_preview(payload, snapshot)
+        if preview:
+            payload.update(preview)
 
 
 PREVIEW_MIN_TP1_RR = 1.5
@@ -1709,59 +1719,66 @@ def _preview_pip_size(payload: dict[str, Any], snap: dict[str, Any]) -> float:
     return 0.01 if str(payload.get("symbol") or "").upper().endswith("JPY") else 0.0001
 
 
-def _market_structure_preview(payload: dict[str, Any], snapshot: Any) -> dict[str, Any] | None:
-    """Pure: build ``{market_structure, tradeplan_preview}`` for an EARLY_SELL_WATCH
-    from the market_context_snapshot. Returns None for any other status.
+def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any], direction: str) -> dict[str, Any]:
+    """Symmetric structural preview core (SELL or BUY).
 
-    SL is the STRUCTURAL INVALIDATION level only (a price ABOVE entry for a SELL) -- never a
-    fixed buffer. ``sl_source`` names the structure field used (it stays an honest
-    intraday/market-structure label until an H4/Daily HTF feed is wired). When no valid
-    structural invalidation exists, ``sl=None`` and the preview is marked
-    ``PREVIEW_CONTEXT_INCOMPLETE`` / ``structure_ready=false`` -- no fabricated levels.
-    TP1 must satisfy RR >= ``PREVIEW_MIN_TP1_RR`` against the structural SL; a nearer support
-    that does not meet it is surfaced as ``nearby_structure_marker``, never a target.
-    ``execution_usable`` is ALWAYS False: a preview is a plan, not an entry.
+    SELL: SL is a resistance ABOVE entry (invalidation), targets are the support ladder
+    BELOW. BUY: SL is a support BELOW entry, targets are the resistance ladder ABOVE.
+    SL is structural-only (never a buffer); TP1 must clear RR >= PREVIEW_MIN_TP1_RR or the
+    nearer level becomes ``nearby_structure_marker``. No fabricated levels;
+    ``execution_usable`` is always False. Returns the public {market_structure,
+    tradeplan_preview} plus internal ``_structure_ready/_sl/_tp1`` (stripped by callers).
     """
-    if str(payload.get("status") or "") != "EARLY_SELL_WATCH":
-        return None
-    snap = snapshot if isinstance(snapshot, dict) else {}
     entry = _first_number(payload.get("signal_valid_price"), payload.get("entry_reference_price"))
     pip = _preview_pip_size(payload, snap)
+    if direction == "SELL":
+        setup_type = "SELL_REJECTION_WATCH"
+        sl_sources = (
+            ("MARKET_STRUCTURE_RESISTANCE_HIGH", snap.get("resistance_high")),
+            ("MARKET_STRUCTURE_KEY_RESISTANCE", snap.get("key_resistance")),
+            ("MARKET_STRUCTURE_MAIN_RESISTANCE", snap.get("main_resistance")),
+        )
+        tp_raw = (snap.get("tp1_support"), snap.get("tp2_support"), snap.get("tp3_support"))
+        key_level = _first_number(snap.get("key_resistance"), snap.get("main_resistance"), snap.get("resistance_high"))
+        nearest_level = _first_number(snap.get("key_support"), snap.get("main_support"), snap.get("support_low"))
+        key_name, nearest_name = "key_resistance", "nearest_support"
+    else:  # BUY
+        setup_type = "BUY_RECLAIM_WATCH"
+        sl_sources = (
+            ("MARKET_STRUCTURE_SUPPORT_LOW", snap.get("support_low")),
+            ("MARKET_STRUCTURE_KEY_SUPPORT", snap.get("key_support")),
+            ("MARKET_STRUCTURE_MAIN_SUPPORT", snap.get("main_support")),
+        )
+        tp_raw = (snap.get("tp1_resistance"), snap.get("tp2_resistance"), snap.get("tp3_resistance"))
+        key_level = _first_number(snap.get("key_support"), snap.get("main_support"), snap.get("support_low"))
+        nearest_level = _first_number(snap.get("key_resistance"), snap.get("main_resistance"), snap.get("resistance_high"))
+        key_name, nearest_name = "key_support", "nearest_resistance"
 
-    # Structural invalidation == SL. For a SELL it must sit ABOVE entry.
     sl = None
     sl_source = "MISSING_STRUCTURE_INVALIDATION"
-    for source, raw in (
-        ("MARKET_STRUCTURE_RESISTANCE_HIGH", snap.get("resistance_high")),
-        ("MARKET_STRUCTURE_KEY_RESISTANCE", snap.get("key_resistance")),
-        ("MARKET_STRUCTURE_MAIN_RESISTANCE", snap.get("main_resistance")),
-    ):
+    for source, raw in sl_sources:
         value = _first_number(raw)
-        if value is not None and (entry is None or value > entry):
+        if value is None or entry is None:
+            continue
+        if (direction == "SELL" and value > entry) or (direction == "BUY" and value < entry):
             sl, sl_source = value, source
             break
 
-    key_resistance = _first_number(snap.get("key_resistance"), snap.get("main_resistance"), snap.get("resistance_high"))
-    nearest_support = _first_number(snap.get("key_support"), snap.get("main_support"), snap.get("support_low"))
+    risk = abs(sl - entry) if (sl is not None and entry is not None and sl != entry) else None
 
-    # SELL targets sit below entry; nearest first. RR is measured against the structural SL.
-    risk = (sl - entry) if (sl is not None and entry is not None and sl > entry) else None
-    candidates = sorted(
-        {
-            t
-            for t in (
-                _first_number(snap.get("tp1_support")),
-                _first_number(snap.get("tp2_support")),
-                _first_number(snap.get("tp3_support")),
-            )
-            if t is not None and (entry is None or t < entry)
-        },
-        reverse=True,
-    )
+    def _rr(level: float) -> float:
+        return (entry - level) / risk if direction == "SELL" else (level - entry) / risk
+
+    on_profit_side = [
+        t
+        for t in (_first_number(x) for x in tp_raw)
+        if t is not None and entry is not None and (t < entry if direction == "SELL" else t > entry)
+    ]
+    candidates = sorted(set(on_profit_side), reverse=(direction == "SELL"))
     nearby_marker = None
     targets: list[float] = []
     for target in candidates:
-        if risk and not targets and (entry - target) / risk < PREVIEW_MIN_TP1_RR:
+        if risk and not targets and _rr(target) < PREVIEW_MIN_TP1_RR:
             if nearby_marker is None:
                 nearby_marker = target
             continue
@@ -1770,19 +1787,19 @@ def _market_structure_preview(payload: dict[str, Any], snapshot: Any) -> dict[st
     tp2 = targets[1] if len(targets) > 1 else None
     tp3 = targets[2] if len(targets) > 2 else None
     risk_pips = round(risk / pip, 1) if (risk and pip) else None
-    rr_to_tp1 = round((entry - tp1) / risk, 2) if (tp1 is not None and risk) else None
+    rr_to_tp1 = round(_rr(tp1), 2) if (tp1 is not None and risk) else None
     structure_ready = bool(sl is not None and rr_to_tp1 is not None and rr_to_tp1 >= PREVIEW_MIN_TP1_RR)
 
     market_structure = {
-        "structure_bias": "SELL_REJECTION_WATCH",
+        "structure_bias": setup_type,
         "price_position": payload.get("price_position"),
-        "key_resistance": key_resistance,
+        key_name: key_level,
         "invalidation_level": sl,
-        "nearest_support": nearest_support,
+        nearest_name: nearest_level,
         "structure_ready": structure_ready,
     }
     tradeplan_preview = {
-        "setup_type": "SELL_REJECTION_WATCH",
+        "setup_type": setup_type,
         "entry_zone": payload.get("entry_zone"),
         "sl": sl,
         "sl_source": sl_source,
@@ -1796,15 +1813,118 @@ def _market_structure_preview(payload: dict[str, Any], snapshot: Any) -> dict[st
         "target_mode": "STRUCTURE_PREVIEW" if structure_ready else "PREVIEW_CONTEXT_INCOMPLETE",
         "execution_usable": False,
     }
-    # Core fields stay even when None (e.g. explicit sl=None in an incomplete preview);
-    # only optional levels/metrics are dropped.
     always = {"setup_type", "entry_zone", "sl", "sl_source", "invalidation_level", "target_mode", "execution_usable"}
     return {
         "market_structure": {key: value for key, value in market_structure.items() if value is not None},
         "tradeplan_preview": {
             key: value for key, value in tradeplan_preview.items() if key in always or value is not None
         },
+        "_structure_ready": structure_ready,
+        "_sl": sl,
+        "_tp1": tp1,
     }
+
+
+def _structure_pending_reasons(payload: dict[str, Any], direction: str, sl: Any, tp1: Any) -> list[str]:
+    """Explain WHY structure is not ready, from existing payload fields (no HTF feed needed)."""
+    reasons: list[str] = []
+    h1 = str(payload.get("h1_phase") or "").upper()
+    m15 = str(payload.get("m15_phase") or "").upper()
+    pos = str(payload.get("price_position") or "").upper()
+    if direction == "BUY":
+        if "DOWN" in h1 or "BEAR" in h1:
+            reasons.append("H1_DOWNTREND_CONFLICT")
+        if "LOWER_HIGH" in m15 or "BEARISH" in m15:
+            reasons.append("M15_LOWER_HIGH_NOT_RECLAIMED")
+    elif direction == "SELL":
+        if "UP" in h1 or "BULL" in h1:
+            reasons.append("H1_UPTREND_CONFLICT")
+        if "HIGHER_LOW" in m15 or "BULLISH" in m15:
+            reasons.append("M15_HIGHER_LOW_NOT_BROKEN")
+    if pos == "MID_RANGE":
+        reasons.append("MID_RANGE_NO_STRUCTURAL_ENTRY_ZONE")
+    if sl is None:
+        reasons.append("STRUCTURAL_SL_NOT_AVAILABLE")
+    if tp1 is None:
+        reasons.append("STRUCTURAL_TARGET_NOT_AVAILABLE")
+    return reasons
+
+
+def _structure_class(payload: dict[str, Any], direction: str) -> str:
+    pos = str(payload.get("price_position") or "").upper()
+    h1 = str(payload.get("h1_phase") or "").upper()
+    if direction == "SELL":
+        if pos in {"MAIN_RESISTANCE", "UPPER_RANGE"}:
+            return "COUNTER_PRESSURE_AT_RESISTANCE"
+        if "DOWN" in h1 or "BEAR" in h1:
+            return "SELL_CONTINUATION_CONTEXT"
+        return "SELL_RECLAIM_REQUIRED"
+    if direction == "BUY":
+        if pos in {"MAIN_SUPPORT", "LOWER_RANGE"}:
+            return "COUNTER_PRESSURE_AT_SUPPORT"
+        if "UP" in h1 or "BULL" in h1:
+            return "BUY_CONTINUATION_CONTEXT"
+        return "BUY_RECLAIM_REQUIRED"
+    return "DIRECTION_PENDING"
+
+
+def _market_structure_general(payload: dict[str, Any], snapshot: Any) -> dict[str, Any] | None:
+    """P2A-General: every official ``*_WATCH`` gets a market_structure_status. When a
+    candidate direction + structure exist -> directional preview + STRUCTURE_READY/PENDING;
+    when direction is unresolved -> STRUCTURE_PENDING with DIRECTION_NOT_RESOLVED. Never
+    fabricates SL/TP and never opens execution."""
+    if not str(payload.get("status") or "").endswith("_WATCH"):
+        return None
+    snap = snapshot if isinstance(snapshot, dict) else {}
+    direction = str(payload.get("candidate_direction") or payload.get("watch_direction") or "").upper()
+    if direction in {"BUY", "SELL"}:
+        core = _directional_structure_preview(payload, snap, direction)
+        ready = bool(core["_structure_ready"])
+        market_structure = dict(core["market_structure"])
+        market_structure["market_structure_status"] = "STRUCTURE_READY" if ready else "STRUCTURE_PENDING"
+        market_structure["structure_class"] = _structure_class(payload, direction)
+        if not ready:
+            reasons = _structure_pending_reasons(payload, direction, core["_sl"], core["_tp1"])
+            if reasons:
+                market_structure["structure_pending_reason"] = reasons
+        return {"market_structure": market_structure, "tradeplan_preview": core["tradeplan_preview"]}
+
+    # Direction not resolved: explain why, no directional plan.
+    reasons = ["DIRECTION_NOT_RESOLVED", *_structure_pending_reasons(payload, direction, None, None)]
+    market_structure = {
+        "structure_bias": "DIRECTION_PENDING",
+        "price_position": payload.get("price_position"),
+        "structure_ready": False,
+        "market_structure_status": "STRUCTURE_PENDING",
+        "structure_class": "DIRECTION_PENDING",
+        "structure_pending_reason": reasons,
+    }
+    tradeplan_preview = {
+        "setup_type": "STRUCTURE_PENDING",
+        "entry_zone": payload.get("entry_zone"),
+        "sl": None,
+        "sl_source": "MISSING_STRUCTURE_INVALIDATION",
+        "tp1": None,
+        "rr_to_tp1": None,
+        "target_mode": "PREVIEW_CONTEXT_INCOMPLETE",
+        "execution_usable": False,
+    }
+    return {
+        "market_structure": {key: value for key, value in market_structure.items() if value is not None},
+        "tradeplan_preview": tradeplan_preview,
+    }
+
+
+def _market_structure_preview(payload: dict[str, Any], snapshot: Any) -> dict[str, Any] | None:
+    """P2A Opsi A: build ``{market_structure, tradeplan_preview}`` for an EARLY_SELL_WATCH
+    via the shared directional core (SELL). Returns None for any other status. SL is the
+    structural invalidation only; see ``_directional_structure_preview``.
+    """
+    if str(payload.get("status") or "") != "EARLY_SELL_WATCH":
+        return None
+    snap = snapshot if isinstance(snapshot, dict) else {}
+    core = _directional_structure_preview(payload, snap, "SELL")
+    return {"market_structure": core["market_structure"], "tradeplan_preview": core["tradeplan_preview"]}
 
 
 def _price_phase_consistency(

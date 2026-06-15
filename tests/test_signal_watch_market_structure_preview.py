@@ -199,3 +199,135 @@ def test_emitter_market_structure_none_when_not_set(monkeypatch):
     event = build_signal_json_event(payload)
     assert event is not None
     assert event.to_dict().get("market_structure") is None
+
+
+# ----------------------------------------------------------------------------
+# P2A-General: market_structure_status + structure_pending_reason for ALL watches
+# ----------------------------------------------------------------------------
+_GEN_FLAG = "SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED"
+
+
+def _gbpcad_watch() -> dict:
+    # raw BUY pressure but H1 downtrend + M15 lower-high + mid-range -> structure pending
+    return {
+        "status": "MICROBOOST_WATCH",
+        "signal_family": "MICROBOOST_WATCH",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "final_direction": "WAIT",
+        "price_position": "MID_RANGE",
+        "m15_phase": "LOWER_HIGH",
+        "h1_phase": "DOWNTREND",
+        "entry_zone": [1.87585],
+        "signal_valid_price": 1.87585,
+        "entry_reference_price": 1.87585,
+        "requires_m15_close": False,
+        "valid_for_execution": False,
+    }
+
+
+def _buy_ready_snapshot() -> dict:
+    # entry 1.87585 ; SL = support_low 1.87390 (19.5 pips) ; resistance ladder above.
+    return {
+        "support_low": 1.87390,
+        "key_support": 1.87390,
+        "main_support": 1.87300,
+        "key_resistance": 1.87900,
+        "tp1_resistance": 1.87620,  # 0.18R -> nearby marker
+        "tp2_resistance": 1.87900,  # 1.62R -> tp1
+        "tp3_resistance": 1.88100,  # 2.64R -> tp2
+    }
+
+
+# G1. general flag ON + GBPCAD-like -> STRUCTURE_PENDING + reasons, no fabricated SL/TP
+def test_general_pending_structure_with_reasons(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _gbpcad_watch()
+    _maybe_attach_structure_preview(payload, {})
+    ms = payload["market_structure"]
+    tp = payload["tradeplan_preview"]
+    assert ms["market_structure_status"] == "STRUCTURE_PENDING"
+    assert ms["structure_class"] == "BUY_RECLAIM_REQUIRED"
+    assert "H1_DOWNTREND_CONFLICT" in ms["structure_pending_reason"]
+    assert "M15_LOWER_HIGH_NOT_RECLAIMED" in ms["structure_pending_reason"]
+    assert "MID_RANGE_NO_STRUCTURAL_ENTRY_ZONE" in ms["structure_pending_reason"]
+    assert "STRUCTURAL_SL_NOT_AVAILABLE" in ms["structure_pending_reason"]
+    assert tp["sl"] is None
+    assert tp["sl_source"] == "MISSING_STRUCTURE_INVALIDATION"
+    assert tp["target_mode"] == "PREVIEW_CONTEXT_INCOMPLETE"
+    assert tp["execution_usable"] is False
+    # safety untouched
+    assert payload["valid_for_execution"] is False
+    assert payload["requires_m15_close"] is False
+    assert payload["final_direction"] == "WAIT"
+
+
+# G2. general flag ON + BUY structure ready -> structural SL BELOW entry + TP ABOVE + RR
+def test_general_buy_structure_ready(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _gbpcad_watch()
+    payload["price_position"] = "MAIN_SUPPORT"
+    payload["h1_phase"] = "UPTREND"
+    payload["m15_phase"] = "HIGHER_LOW"
+    _maybe_attach_structure_preview(payload, _buy_ready_snapshot())
+    ms = payload["market_structure"]
+    tp = payload["tradeplan_preview"]
+    assert ms["market_structure_status"] == "STRUCTURE_READY"
+    assert ms["structure_class"] == "COUNTER_PRESSURE_AT_SUPPORT"
+    assert tp["sl"] == 1.87390  # support below entry
+    assert tp["sl_source"] == "MARKET_STRUCTURE_SUPPORT_LOW"
+    assert tp["sl"] < payload["signal_valid_price"]
+    assert tp["nearby_structure_marker"] == 1.87620
+    assert tp["tp1"] == 1.87900  # resistance above entry, RR>=1.5
+    assert tp["tp1"] > payload["signal_valid_price"]
+    assert tp["rr_to_tp1"] >= 1.5
+    assert tp["risk_pips"] == pytest.approx(19.5, abs=0.1)
+    assert tp["execution_usable"] is False
+
+
+# G3. general flag ON + no candidate direction -> DIRECTION_NOT_RESOLVED
+def test_general_direction_not_resolved(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _gbpcad_watch()
+    payload["candidate_direction"] = None
+    payload["watch_direction"] = None
+    _maybe_attach_structure_preview(payload, {})
+    ms = payload["market_structure"]
+    assert ms["market_structure_status"] == "STRUCTURE_PENDING"
+    assert ms["structure_class"] == "DIRECTION_PENDING"
+    assert "DIRECTION_NOT_RESOLVED" in ms["structure_pending_reason"]
+    assert payload["tradeplan_preview"]["execution_usable"] is False
+
+
+# G4. general flag ON + EARLY_SELL -> STRUCTURE_READY via shared SELL core
+def test_general_early_sell_uses_shared_core(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _early_sell_payload()
+    _maybe_attach_structure_preview(payload, _complete_snapshot())
+    ms = payload["market_structure"]
+    tp = payload["tradeplan_preview"]
+    assert ms["market_structure_status"] == "STRUCTURE_READY"
+    assert ms["structure_class"] == "COUNTER_PRESSURE_AT_RESISTANCE"
+    assert tp["sl"] == 0.57100  # same structural SL as P2A Opsi A
+    assert tp["tp1"] == 0.56800
+
+
+# G5. both flags OFF -> byte-for-byte no-op
+def test_general_flag_off_no_op(monkeypatch):
+    monkeypatch.delenv(_GEN_FLAG, raising=False)
+    monkeypatch.delenv(_FLAG, raising=False)
+    payload = _gbpcad_watch()
+    before = copy.deepcopy(payload)
+    _maybe_attach_structure_preview(payload, _buy_ready_snapshot())
+    assert payload == before
+
+
+# G6. general flag ON + non-watch status -> unchanged
+def test_general_non_watch_unchanged(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _gbpcad_watch()
+    payload["status"] = "NO_TRADE_REASONED"
+    before = copy.deepcopy(payload)
+    _maybe_attach_structure_preview(payload, _buy_ready_snapshot())
+    assert payload == before
