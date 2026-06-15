@@ -460,6 +460,7 @@ class SignalJsonEvent:
     pattern_context: dict[str, Any] | None = None
     theme_context: dict[str, Any] | None = None
     tradeplan_preview: dict[str, Any] | None = None
+    market_structure: dict[str, Any] | None = None
     execution_gate: dict[str, Any] | None = None
     lifecycle: dict[str, Any] | None = None
 
@@ -1068,6 +1069,7 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         pattern_context=_pattern_context(counter_entry),
         theme_context=_theme_context(counter_entry),
         tradeplan_preview=_dict_value(counter_entry.get("tradeplan_preview")) or _tradeplan_preview(counter_entry),
+        market_structure=_dict_value(counter_entry.get("market_structure")),
         execution_gate=_dict_value(counter_entry.get("execution_gate")) or _execution_gate_context(counter_entry),
         lifecycle=_dict_value(counter_entry.get("lifecycle")) or _lifecycle_context(counter_entry),
     )

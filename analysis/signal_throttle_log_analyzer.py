@@ -1431,6 +1431,7 @@ def _counter_entry_payload(
     ).evaluate(latest, watch_only=True)
     payload = result.to_dict()
     payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
+    _maybe_attach_structure_preview(payload, latest.get("market_context_snapshot"))
     latest["counter_entry"] = payload
     microboost_summary["counter_entry"] = payload
     return payload
@@ -1676,9 +1677,71 @@ def _microboost_watch_payload(
             # counter scenario. final_direction (WAIT) + valid_for_execution (False) are
             # deliberately NOT in `headline`, so they are never touched here.
             payload.update({key: value for key, value in headline.items() if key != "resolved"})
+    _maybe_attach_structure_preview(payload, snapshot)
     latest["microboost_watch"] = payload
     microboost_summary["watch_entry"] = payload
     return payload
+
+
+def _maybe_attach_structure_preview(payload: dict[str, Any], snapshot: Any) -> None:
+    """P2A Opsi A (flag-guarded, default OFF): attach a non-executable structure +
+    tradeplan preview to an EARLY_SELL_WATCH payload. Flag OFF is a byte-for-byte
+    no-op. NEVER changes status / final_direction / requires_m15_close /
+    valid_for_execution and never emits a SignalJSON.
+
+    Enable with ``SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED=true``.
+    """
+    if not _env_bool("SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED", False):
+        return
+    preview = _market_structure_preview(payload, snapshot)
+    if preview:
+        payload.update(preview)
+
+
+def _market_structure_preview(payload: dict[str, Any], snapshot: Any) -> dict[str, Any] | None:
+    """Pure: build ``{market_structure, tradeplan_preview}`` for an EARLY_SELL_WATCH
+    from the market_context_snapshot. Returns None for any other status. No fabricated
+    levels -- when structure/targets are missing the preview is marked
+    ``structure_ready=false`` / ``target_mode=PREVIEW_CONTEXT_INCOMPLETE``.
+    ``execution_usable`` is ALWAYS False: a preview is a plan, not an entry.
+    """
+    if str(payload.get("status") or "") != "EARLY_SELL_WATCH":
+        return None
+    snap = snapshot if isinstance(snapshot, dict) else {}
+    key_resistance = _first_number(snap.get("key_resistance"), snap.get("main_resistance"), snap.get("resistance_high"))
+    nearest_support = _first_number(snap.get("key_support"), snap.get("main_support"), snap.get("support_low"))
+    invalidation = _first_number(snap.get("resistance_high"), key_resistance)
+    sl_safe = _first_number(snap.get("sl_safe"))
+    sl_tight = _first_number(snap.get("sl_buffer"), snap.get("continuation_sl_safe"))
+    tp1 = _first_number(snap.get("tp1_support"))
+    tp2 = _first_number(snap.get("tp2_support"))
+    tp3 = _first_number(snap.get("tp3_support"))
+    has_structure = key_resistance is not None and nearest_support is not None
+    has_targets = tp1 is not None or tp2 is not None
+    structure_ready = bool(has_structure and sl_safe is not None and has_targets)
+    market_structure = {
+        "structure_bias": "SELL_REJECTION_WATCH",
+        "price_position": payload.get("price_position"),
+        "key_resistance": key_resistance,
+        "invalidation_level": invalidation,
+        "nearest_support": nearest_support,
+        "structure_ready": structure_ready,
+    }
+    tradeplan_preview = {
+        "setup_type": "SELL_REJECTION_WATCH",
+        "entry_zone": payload.get("entry_zone"),
+        "sl_tight": sl_tight,
+        "sl_safe": sl_safe,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+        "target_mode": "STRUCTURE_PREVIEW" if structure_ready else "PREVIEW_CONTEXT_INCOMPLETE",
+        "execution_usable": False,
+    }
+    return {
+        "market_structure": {key: value for key, value in market_structure.items() if value is not None},
+        "tradeplan_preview": {key: value for key, value in tradeplan_preview.items() if value is not None},
+    }
 
 
 def _price_phase_consistency(
