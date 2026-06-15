@@ -333,6 +333,70 @@ def test_general_non_watch_unchanged(monkeypatch):
     assert payload == before
 
 
+# G7. degenerate micro-box: SL ~1.4 pips (RR in-band) -> held PENDING, not fake READY
+def _tiny_sl_early_sell() -> dict:
+    return {
+        "status": "EARLY_SELL_WATCH",
+        "signal_family": "MICROBOOST_COUNTER_ENTRY",
+        "raw_direction": "BUY",
+        "candidate_direction": "SELL",
+        "watch_direction": "SELL",
+        "final_direction": "WAIT",
+        "price_position": "MAIN_RESISTANCE",
+        "h1_phase": "DOWNTREND",
+        "m15_phase": "BULLISH_PULLBACK",
+        "entry_zone": [0.99026, 0.99034],
+        "signal_valid_price": 0.99034,
+        "entry_reference_price": 0.99034,
+        "requires_m15_close": True,
+        "valid_for_execution": False,
+        "pair_calibration": {"pip_size": 0.0001},
+    }
+
+
+def test_tiny_absolute_sl_held_pending(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _tiny_sl_early_sell()
+    # SL 0.99048 is 1.4 pips above entry; tp1 0.99008 gives RR 1.86 (in band) but the SL is noise.
+    snap = {
+        "resistance_high": 0.99048,
+        "key_resistance": 0.99048,
+        "key_support": 0.99008,
+        "tp1_support": 0.99008,
+        "tp2_support": 0.98729,
+        "tp3_support": 0.98516,
+    }
+    _maybe_attach_structure_preview(payload, snap)
+    ms = payload["market_structure"]
+    tp = payload["tradeplan_preview"]
+    assert ms["market_structure_status"] == "STRUCTURE_PENDING"
+    assert ms["structure_ready"] is False
+    assert "STRUCTURAL_SL_TOO_TIGHT" in ms["structure_pending_reason"]
+    assert tp["target_mode"] == "PREVIEW_CONTEXT_INCOMPLETE"
+    assert tp["risk_pips"] < 3.0  # noise-level distance, not a structural invalidation
+    assert tp["execution_usable"] is False
+
+
+# G8. m15-range volatility floor: a 4-pip SL in a wide-range candle is still too tight
+def test_volatility_relative_sl_floor(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _tiny_sl_early_sell()
+    payload["signal_valid_price"] = 0.99034
+    payload["entry_reference_price"] = 0.99034
+    # SL 4 pips, but M15 range ~30 pips -> 0.4*30 = 12 pip floor -> still too tight.
+    snap = {
+        "resistance_high": 0.99074,  # 4 pips above entry
+        "key_resistance": 0.99074,
+        "key_support": 0.98900,
+        "tp1_support": 0.98900,  # ~13 pips -> RR ~3.3 (in band)
+        "m15_high": 0.99200,
+        "m15_low": 0.98900,  # 30-pip M15 range
+    }
+    _maybe_attach_structure_preview(payload, snap)
+    assert payload["market_structure"]["market_structure_status"] == "STRUCTURE_PENDING"
+    assert "STRUCTURAL_SL_TOO_TIGHT" in payload["market_structure"]["structure_pending_reason"]
+
+
 # G7. degenerate structure (SL noise-tight, RR implausible) -> PENDING + STRUCTURAL_SL_TOO_TIGHT.
 # Real GBPCAD case: SL 4.7 pips above entry (resistance_high==key_resistance, ladder missing),
 # TP1 49 pips away -> RR 10.49. Must NOT be presented as STRUCTURE_READY.

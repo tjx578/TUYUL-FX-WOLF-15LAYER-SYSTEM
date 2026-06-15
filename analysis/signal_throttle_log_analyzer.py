@@ -1714,6 +1714,11 @@ PREVIEW_MIN_TP1_RR = 1.5
 # resistance/support ladder missing -- so the preview is held PENDING instead of presenting a
 # fake STRUCTURE_READY with an implausible RR. Tunable; the real fix is an H4/Daily swing feed.
 PREVIEW_MAX_TP1_RR = 6.0
+# A structural SL must also clear noise in ABSOLUTE terms -- a 1-2 pip "invalidation" a tick
+# from entry is a degenerate micro-box, not structure (RR can still sit in-band). Require the
+# SL distance >= max(noise floor, a fraction of the M15 candle range as a volatility proxy).
+PREVIEW_MIN_SL_PIPS = 3.0
+PREVIEW_MIN_SL_M15_RANGE_FRAC = 0.4
 
 
 def _preview_pip_size(payload: dict[str, Any], snap: dict[str, Any]) -> float:
@@ -1793,10 +1798,17 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
     tp3 = targets[2] if len(targets) > 2 else None
     risk_pips = round(risk / pip, 1) if (risk and pip) else None
     rr_to_tp1 = round(_rr(tp1), 2) if (tp1 is not None and risk) else None
+    # Minimum structural SL distance: a real invalidation must clear noise/volatility, not sit a
+    # tick from entry. Volatility proxy = M15 candle range; backstopped by an absolute pip floor.
+    m15_hi, m15_lo = _first_number(snap.get("m15_high")), _first_number(snap.get("m15_low"))
+    m15_range_pips = (m15_hi - m15_lo) / pip if (m15_hi is not None and m15_lo is not None and m15_hi > m15_lo) else None
+    min_sl_pips = max(PREVIEW_MIN_SL_PIPS, PREVIEW_MIN_SL_M15_RANGE_FRAC * m15_range_pips) if m15_range_pips else PREVIEW_MIN_SL_PIPS
+    sl_too_tight = risk_pips is not None and risk_pips < min_sl_pips
     structure_ready = bool(
         sl is not None
         and rr_to_tp1 is not None
         and PREVIEW_MIN_TP1_RR <= rr_to_tp1 <= PREVIEW_MAX_TP1_RR
+        and not sl_too_tight
     )
 
     market_structure = {
@@ -1832,11 +1844,12 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
         "_sl": sl,
         "_tp1": tp1,
         "_rr_to_tp1": rr_to_tp1,
+        "_sl_too_tight": sl_too_tight,
     }
 
 
 def _structure_pending_reasons(
-    payload: dict[str, Any], direction: str, sl: Any, tp1: Any, rr_to_tp1: Any = None
+    payload: dict[str, Any], direction: str, sl: Any, tp1: Any, rr_to_tp1: Any = None, sl_too_tight: bool = False
 ) -> list[str]:
     """Explain WHY structure is not ready, from existing payload fields (no HTF feed needed)."""
     reasons: list[str] = []
@@ -1857,9 +1870,10 @@ def _structure_pending_reasons(
         reasons.append("MID_RANGE_NO_STRUCTURAL_ENTRY_ZONE")
     if sl is None:
         reasons.append("STRUCTURAL_SL_NOT_AVAILABLE")
-    elif rr_to_tp1 is not None and rr_to_tp1 > PREVIEW_MAX_TP1_RR:
-        # SL exists but is noise-tight vs the first target -> degenerate (e.g. resistance/support
-        # ladder missing). Not a real structural invalidation; needs a wider swing/HTF level.
+    elif sl_too_tight or (rr_to_tp1 is not None and rr_to_tp1 > PREVIEW_MAX_TP1_RR):
+        # SL exists but is degenerate -- either too tight in absolute/volatility terms (a tick
+        # from entry) or implausibly tight vs the first target (RR ceiling). Not a real structural
+        # invalidation; needs a wider swing/HTF level (resistance/support ladder missing).
         reasons.append("STRUCTURAL_SL_TOO_TIGHT")
     if tp1 is None:
         reasons.append("STRUCTURAL_TARGET_NOT_AVAILABLE")
@@ -1901,7 +1915,7 @@ def _market_structure_general(payload: dict[str, Any], snapshot: Any) -> dict[st
         market_structure["structure_class"] = _structure_class(payload, direction)
         if not ready:
             reasons = _structure_pending_reasons(
-                payload, direction, core["_sl"], core["_tp1"], core["_rr_to_tp1"]
+                payload, direction, core["_sl"], core["_tp1"], core["_rr_to_tp1"], core["_sl_too_tight"]
             )
             if reasons:
                 market_structure["structure_pending_reason"] = reasons
