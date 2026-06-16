@@ -34,7 +34,7 @@ class _BoomResolver:
         raise RuntimeError("snapshot boom")
 
 
-def _pipeline(resolver, *, d1_fallback="__unset__") -> WolfConstitutionalPipeline:
+def _pipeline(resolver, *, d1_fallback: str | None = "__unset__") -> WolfConstitutionalPipeline:
     p = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     p._htf_snapshot_resolver = resolver
     if d1_fallback != "__unset__":
