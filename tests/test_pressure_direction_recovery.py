@@ -12,6 +12,8 @@ final_direction / valid_for_execution and never emits a SignalJSON.
 """
 from __future__ import annotations
 
+from typing import Any, cast
+
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 
@@ -30,7 +32,7 @@ class _CapturingAnalyzer:
 def _pipeline():
     pipe = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     analyzer = _CapturingAnalyzer()
-    pipe._signal_throttle_live_analyzer = analyzer
+    cast(Any, pipe)._signal_throttle_live_analyzer = analyzer
     return pipe, analyzer
 
 
