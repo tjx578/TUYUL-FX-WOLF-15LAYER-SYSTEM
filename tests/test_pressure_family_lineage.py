@@ -7,6 +7,7 @@ Pure-function tests -- no pipeline/finalizer construction required.
 
 from __future__ import annotations
 
+from analysis.signal_json_emitter import build_signal_json_event
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 _lineage = WolfConstitutionalPipeline._pressure_family_lineage
@@ -111,3 +112,46 @@ def test_family_lineage_reason_present_and_matches_source():
         resolved_family="R",
     )
     assert repeated["family_lineage_reason"]
+
+
+# --------------------------------------------------------------------------- #
+# End-to-end: lineage must SURVIVE the dict -> SignalJsonEvent -> emit rebuild
+# (regression: it was computed default-ON but dropped before the log, 0/1484 live)
+# --------------------------------------------------------------------------- #
+
+
+def _decision_payload_with_lineage(**overrides):
+    payload = {
+        "event": "signal_decision_update_json",
+        "symbol": "EURCAD",
+        "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+        "status": "NO_TRADE_REASONED",
+        "signal_valid_time_utc": "2026-06-16T07:00:00+00:00",
+        "signal_valid_price": 1.5,
+        "entry_reference_price": 1.5,
+        "entry_zone": [1.5, 1.5],
+        "raw_direction": "BUY",
+        "source_family": "THROTTLE_PRESSURE_CANARY",
+        "source_stage": "SIGNAL_THROTTLE_INTEL",
+        "resolved_family": "NO_TRADE_PRESSURE_TELEMETRY_ONLY",
+        "family_lineage_reason": "throttle_pressure_canary_telemetry_only",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_lineage_survives_emission_round_trip():
+    out = build_signal_json_event(_decision_payload_with_lineage()).to_dict()
+    assert out["source_family"] == "THROTTLE_PRESSURE_CANARY"
+    assert out["source_stage"] == "SIGNAL_THROTTLE_INTEL"
+    assert out["resolved_family"] == "NO_TRADE_PRESSURE_TELEMETRY_ONLY"
+    assert out["family_lineage_reason"] == "throttle_pressure_canary_telemetry_only"
+
+
+def test_lineage_absent_emits_null_consistent_with_other_optionals():
+    payload = _decision_payload_with_lineage()
+    for k in ("source_family", "source_stage", "resolved_family", "family_lineage_reason"):
+        payload.pop(k)
+    out = build_signal_json_event(payload).to_dict()
+    assert out["source_family"] is None
+    assert out["resolved_family"] is None
