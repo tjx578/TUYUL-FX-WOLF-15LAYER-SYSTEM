@@ -463,6 +463,13 @@ class SignalJsonEvent:
     market_structure: dict[str, Any] | None = None
     execution_gate: dict[str, Any] | None = None
     lifecycle: dict[str, Any] | None = None
+    # Family lineage (gated upstream by SIGNAL_FAMILY_LINEAGE_ENABLED). Carried through
+    # so the lineage merged onto the pipeline payload actually reaches the emitted log
+    # instead of being dropped by the dict->event rebuild. Observability-only.
+    source_family: str | None = None
+    source_stage: str | None = None
+    resolved_family: str | None = None
+    family_lineage_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -879,6 +886,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         signal_family=str(
             counter_entry.get("signal_family") or counter_entry.get("signal_type") or "MICROBOOST_COUNTER_ENTRY"
         ),
+        source_family=_optional_str(counter_entry.get("source_family")),
+        source_stage=_optional_str(counter_entry.get("source_stage")),
+        resolved_family=_optional_str(counter_entry.get("resolved_family")),
+        family_lineage_reason=_optional_str(counter_entry.get("family_lineage_reason")),
         status=status,
         cluster_id=_optional_str(counter_entry.get("cluster_id")),
         is_final_signal=bool(counter_entry.get("is_final_signal", False)) or _is_final_payload(counter_entry),
