@@ -6,13 +6,13 @@ evidence-referenced) and candidate_patterns_count let dashboards stop reading th
 """
 from __future__ import annotations
 
-from analysis.signal_json_emitter import build_signal_json_event
+from analysis.signal_json_emitter import SignalJsonEvent, build_signal_json_event
 
 _MATCHED = ["UPPER_ABSORPTION_WARNING", "JPY_ALIGNMENT_REQUIRED", "LATE_UPPER_MICROBOOST", "FOO_BAR_FILTER"]
 
 
-def _event():
-    return build_signal_json_event(
+def _event() -> SignalJsonEvent:
+    event = build_signal_json_event(
         {
             "symbol": "NZDCHF",
             "signal_family": "MICROBOOST_WATCH",
@@ -35,6 +35,8 @@ def _event():
             ],
         }
     )
+    assert event is not None
+    return event
 
 
 def test_confirmed_patterns_are_evidence_backed():
@@ -49,5 +51,6 @@ def test_confirmed_patterns_are_evidence_backed():
 
 def test_candidate_count_and_matched_kept_intact():
     ctx = _event().pattern_context
+    assert ctx is not None
     assert ctx["candidate_patterns_count"] == 4
     assert ctx["matched_patterns"] == _MATCHED  # additive: full scan list preserved

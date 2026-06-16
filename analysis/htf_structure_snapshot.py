@@ -55,7 +55,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any
 
 __all__ = [
     "HTFStructureSnapshot",
@@ -134,7 +134,8 @@ LIQ_NONE = "NONE"
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class Swing(NamedTuple):
+@dataclass(frozen=True)
+class Swing:
     """A detected swing point."""
 
     index: int

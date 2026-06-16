@@ -339,6 +339,7 @@ def test_shadow_preview_symmetric_protect_profit(active, opposite):
         "valid_for_execution": False,
     }
     preview = build_lifecycle_preview(active, payload)
+    assert preview is not None
     assert preview["suggested_lifecycle_status"] == f"ACTIVE_{active}_PROTECT_PROFIT"
     assert preview["suggested_management_action"] == f"PROTECT_{active}_PROFIT"
     assert preview["active_signal_direction"] == active
@@ -364,6 +365,7 @@ def test_shadow_preview_event_requires_active_signal():
     }
     assert shadow_preview_event({}, counter) is None
     event = shadow_preview_event({"USDCAD": "BUY"}, counter)
+    assert event is not None
     assert event["event"] == "signal_lifecycle_shadow_preview"
     assert event["lifecycle_preview"]["suggested_lifecycle_status"] == "ACTIVE_BUY_PROTECT_PROFIT"
     assert event["lifecycle_preview"]["live_applied"] is False

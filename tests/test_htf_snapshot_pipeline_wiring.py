@@ -9,6 +9,7 @@ pipeline via ``__new__`` and inject only the state the method touches).
 from __future__ import annotations
 
 import logging
+from typing import Any, cast
 
 from analysis.htf_structure_snapshot import HTFStructureSnapshotResolver
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
@@ -102,7 +103,7 @@ def test_resolve_failure_is_swallowed(monkeypatch, caplog):
             raise RuntimeError("boom")
 
     p = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
-    p._htf_snapshot_resolver = _BoomResolver()
+    cast(Any, p)._htf_snapshot_resolver = _BoomResolver()
     p._last_htf_snapshot_key = {}
     # Must not raise — observability must never disturb the execution path.
     with caplog.at_level(logging.WARNING):

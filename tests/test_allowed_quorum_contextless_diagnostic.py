@@ -103,6 +103,7 @@ def test_flag_on_missing_direction_not_invented(monkeypatch, caplog):
         out = p._emit_contextless_quorum_diagnostic(
             symbol="GBPCAD", allowed_quorum=_quorum(direction=None), l12_verdict={}, report={}
         )
+    assert out is not None
     assert out["raw_direction"] is None
     assert out["candidate_direction"] is None
     assert out["final_direction"] == "WAIT"

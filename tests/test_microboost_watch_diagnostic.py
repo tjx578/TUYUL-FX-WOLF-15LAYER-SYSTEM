@@ -8,10 +8,10 @@ Diagnostic-only: never executable, never a SignalJSON.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
-from types import SimpleNamespace
+from datetime import UTC, datetime, timedelta
 
 from analysis.signal_throttle_log_analyzer import (
+    PressureBlock,
     _is_ignition_watch_block,
     _microboost_watch_miss_diagnostic,
 )
@@ -22,15 +22,18 @@ _P2 = "MICROBOOST_SHADOW_DIAGNOSTIC_ENABLED"
 
 
 def _block(ticks=4, density=7.2, duration=13.0, end=None, symbol="GBPAUD", direction="BUY"):
-    return SimpleNamespace(
+    block_end = end or datetime(2026, 6, 11, 8, 30, tzinfo=UTC)
+    return PressureBlock(
         symbol=symbol,
+        start=block_end - timedelta(seconds=duration),
+        end=block_end,
+        events=ticks,
+        max_gap_seconds=0.0,
         direction=direction,
         duration_seconds=duration,
         effective_ticks=ticks,
-        events=ticks,
         effective_density_per_minute=density,
         density_per_minute=density,
-        end=end or datetime(2026, 6, 11, 8, 30, tzinfo=UTC),
     )
 
 
@@ -78,6 +81,7 @@ def test_latest_block_is_diagnosed():
     older = _block(ticks=4, end=datetime(2026, 6, 11, 8, 0, tzinfo=UTC), symbol="OLD")
     newer = _block(ticks=4, end=datetime(2026, 6, 11, 9, 0, tzinfo=UTC), symbol="GBPAUD")
     diag = _microboost_watch_miss_diagnostic([older, newer], clean_block_seconds=300)
+    assert diag is not None
     assert diag["symbol"] == "GBPAUD"
 
 

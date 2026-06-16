@@ -10,6 +10,8 @@ is intentionally NOT promoted.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from analysis.signal_throttle_log_analyzer import _counter_entry_payload
 
 _INELIGIBLE_GATE = {
@@ -19,7 +21,7 @@ _INELIGIBLE_GATE = {
 }
 
 
-def _summary(duration_seconds: float) -> dict:
+def _summary(duration_seconds: float) -> dict[str, Any]:
     return {
         "latest": {
             "symbol": "NZDCHF",
@@ -45,8 +47,8 @@ def _summary(duration_seconds: float) -> dict:
     }
 
 
-def _status(payload: dict) -> str:
-    return str(payload.get("status"))
+def _status(payload: dict[str, Any] | None) -> str:
+    return str((payload or {}).get("status") or "NONE")
 
 
 def test_flag_off_keeps_blocked_none(monkeypatch):
@@ -58,6 +60,7 @@ def test_flag_off_keeps_blocked_none(monkeypatch):
 def test_flag_on_ignition_block_becomes_counter_sell_watch(monkeypatch):
     monkeypatch.setenv("MICROBOOST_COUNTER_WATCH_WITHOUT_CLEAN_BLOCK", "true")
     payload = _counter_entry_payload(_summary(20.0), dict(_INELIGIBLE_GATE))
+    assert payload is not None
     assert payload["signal_family"] == "MICROBOOST_COUNTER_ENTRY"
     assert _status(payload).endswith("SELL_WATCH")
     assert payload["candidate_direction"] == "SELL"
