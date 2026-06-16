@@ -15,6 +15,8 @@ Strict guardrails (this is a live trading verdict path):
 """
 from __future__ import annotations
 
+from typing import Any
+
 from analysis.signal_throttle_log_analyzer import (
     _empty_signal_watch_gate,
     _microboost_watch_payload,
@@ -33,7 +35,7 @@ def _latest(
     entry_permission: str | None = None,
     management_action: str | None = None,
     duration_minutes: float = 0.03,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "symbol": "GBPCHF",
         "direction": direction,
@@ -58,10 +60,12 @@ def _latest(
     }
 
 
-def _build_watch(latest: dict) -> dict:
+def _build_watch(latest: dict[str, Any]) -> dict[str, Any]:
     summary = {"latest": latest}
     gate = _empty_signal_watch_gate("MICROBOOST_NOT_CLEAN_BLOCK", {"symbol": "GBPCHF", "direction": "BUY"})
-    return _microboost_watch_payload(summary, gate, continuation_entry=None, counter_entry=None)
+    payload = _microboost_watch_payload(summary, gate, continuation_entry=None, counter_entry=None)
+    assert payload is not None
+    return payload
 
 
 # --- direct unit tests on the pure resolver -------------------------------------------------
