@@ -1722,7 +1722,8 @@ PREVIEW_MIN_SL_M15_RANGE_FRAC = 0.4
 
 
 def _preview_pip_size(payload: dict[str, Any], snap: dict[str, Any]) -> float:
-    cal = payload.get("pair_calibration") if isinstance(payload.get("pair_calibration"), dict) else {}
+    raw_cal = payload.get("pair_calibration")
+    cal: dict[str, Any] = raw_cal if isinstance(raw_cal, dict) else {}
     pip = _first_number(cal.get("pip_size"), snap.get("pip_value"))
     if pip:
         return float(pip)
@@ -1776,7 +1777,9 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
 
     risk = abs(sl - entry) if (sl is not None and entry is not None and sl != entry) else None
 
-    def _rr(level: float) -> float:
+    def _rr(level: float) -> float | None:
+        if entry is None or risk is None:
+            return None
         return (entry - level) / risk if direction == "SELL" else (level - entry) / risk
 
     on_profit_side = [
@@ -1788,7 +1791,8 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
     nearby_marker = None
     targets: list[float] = []
     for target in candidates:
-        if risk and not targets and _rr(target) < PREVIEW_MIN_TP1_RR:
+        target_rr = _rr(target)
+        if risk and not targets and target_rr is not None and target_rr < PREVIEW_MIN_TP1_RR:
             if nearby_marker is None:
                 nearby_marker = target
             continue
@@ -1797,7 +1801,8 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
     tp2 = targets[1] if len(targets) > 1 else None
     tp3 = targets[2] if len(targets) > 2 else None
     risk_pips = round(risk / pip, 1) if (risk and pip) else None
-    rr_to_tp1 = round(_rr(tp1), 2) if (tp1 is not None and risk) else None
+    tp1_rr = _rr(tp1) if tp1 is not None else None
+    rr_to_tp1 = round(tp1_rr, 2) if tp1_rr is not None else None
     # Minimum structural SL distance: a real invalidation must clear noise/volatility, not sit a
     # tick from entry. Volatility proxy = M15 candle range; backstopped by an absolute pip floor.
     m15_hi, m15_lo = _first_number(snap.get("m15_high")), _first_number(snap.get("m15_low"))
