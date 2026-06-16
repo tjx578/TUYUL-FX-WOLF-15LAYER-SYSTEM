@@ -5256,11 +5256,32 @@ class WolfConstitutionalPipeline:
         import logging  # noqa: PLC0415 -- local: `logging` is only imported on the loguru-absent path
 
         logger = logging.getLogger("signal_json")
+        # Direction-truthfulness (flag-guarded ``MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED``,
+        # default OFF, observability-only). A sub-threshold microboost block can carry no
+        # direction even when the SAME symbol's allowed-quorum context already resolved one
+        # (the gap behind raw_direction=null while the DecisionUpdate lane shows BUY/SELL).
+        # Surface that context here using the very ``allowed_quorum.direction`` the decision
+        # lane already trusts -- symbol-matched, so another pair's direction is never stamped.
+        # Payload-only: never changes the block, eligibility, the watch path, or execution.
+        recovery_on = (
+            os.getenv("MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false").strip().lower() == "true"
+        )
+        raw_direction = diag.get("raw_direction")
+        direction_recovery_source = None
+        if recovery_on:
+            direction_recovery_source = "BLOCK_DIRECT" if raw_direction in {"BUY", "SELL"} else None
+            if raw_direction not in {"BUY", "SELL"}:
+                quorum = report.get("allowed_quorum")
+                if isinstance(quorum, dict) and str(quorum.get("symbol") or "").upper() == symbol.upper():
+                    quorum_direction = str(quorum.get("direction") or "").upper()
+                    if quorum_direction in {"BUY", "SELL"}:
+                        raw_direction = quorum_direction
+                        direction_recovery_source = "ALLOWED_QUORUM_REPORT"
         if patch1:
             payload = {
                 "event": "microboost_watch_candidate_diagnostic",
                 "symbol": symbol,
-                "raw_direction": diag.get("raw_direction"),
+                "raw_direction": raw_direction,
                 "effective_ticks": diag.get("effective_ticks"),
                 "effective_density": diag.get("effective_density"),
                 "duration_seconds": diag.get("duration_seconds"),
@@ -5272,6 +5293,8 @@ class WolfConstitutionalPipeline:
                 "valid_for_execution": False,
                 "is_final_signal": False,
             }
+            if recovery_on:
+                payload["direction_recovery_source"] = direction_recovery_source
             logger.warning(
                 "%s %s",
                 "[MicroboostWatchDiagnostic]",
@@ -5281,7 +5304,7 @@ class WolfConstitutionalPipeline:
             payload = {
                 "event": "microboost_shadow_watch_diagnostic",
                 "symbol": symbol,
-                "raw_direction": diag.get("raw_direction"),
+                "raw_direction": raw_direction,
                 "shadow_watch_candidate": True,
                 "official_watch_candidate": False,
                 "shadow_thresholds": diag.get("shadow_thresholds"),
@@ -5290,6 +5313,8 @@ class WolfConstitutionalPipeline:
                 "valid_for_execution": False,
                 "is_final_signal": False,
             }
+            if recovery_on:
+                payload["direction_recovery_source"] = direction_recovery_source
             logger.warning(
                 "%s %s",
                 "[MicroboostShadowDiagnostic]",
