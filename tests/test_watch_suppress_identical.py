@@ -10,7 +10,7 @@ between emits so only the content-dedup can suppress, isolating Increment B.
 """
 from __future__ import annotations
 
-from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
+from analysis.signal_json_emitter import SignalJsonEmitter, SignalJsonEvent, build_signal_json_event
 
 
 def _fresh_emitter() -> SignalJsonEmitter:
@@ -32,8 +32,8 @@ def _reset_non_content(em: SignalJsonEmitter) -> None:
     em._cluster_watch_event_seconds.clear()
 
 
-def _watch_event():
-    return build_signal_json_event(
+def _watch_event() -> SignalJsonEvent:
+    event = build_signal_json_event(
         {
             "symbol": "NZDCHF",
             "signal_family": "MICROBOOST_WATCH",
@@ -52,6 +52,8 @@ def _watch_event():
             "valid_for_execution": False,
         }
     )
+    assert event is not None
+    return event
 
 
 def test_flag_on_suppresses_identical_reemit(monkeypatch):
@@ -96,4 +98,5 @@ def test_flag_on_allows_changed_content(monkeypatch):
             "valid_for_execution": False,
         }
     )
+    assert changed is not None
     assert em.emit(changed) is True
