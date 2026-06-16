@@ -13,7 +13,9 @@ unaffected (the first watch already established the pending decision).
 """
 from __future__ import annotations
 
-from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
+from typing import Any
+
+from analysis.signal_json_emitter import SignalJsonEmitter, SignalJsonEvent, build_signal_json_event
 
 _FLAG = "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED"
 
@@ -40,7 +42,7 @@ def _reset_non_e(em: SignalJsonEmitter) -> None:
     em._emitted_watch_refs.clear()
 
 
-def _watch_payload(**overrides) -> dict:
+def _watch_payload(**overrides: Any) -> dict[str, Any]:
     payload = {
         "symbol": "GBPCHF",
         "signal_family": "MICROBOOST_COUNTER_ENTRY",
@@ -64,8 +66,10 @@ def _watch_payload(**overrides) -> dict:
     return payload
 
 
-def _watch_event(**overrides):
-    return build_signal_json_event(_watch_payload(**overrides))
+def _watch_event(**overrides: Any) -> SignalJsonEvent:
+    event = build_signal_json_event(_watch_payload(**overrides))
+    assert event is not None
+    return event
 
 
 # --------------------------------------------------------------------------- #
@@ -177,6 +181,7 @@ def test_decision_update_not_touched_by_cluster_dedup(monkeypatch):
     decision = build_signal_json_event(
         _watch_payload(status="NO_TRADE_REASONED", signal_family="SIGNAL_DECISION_UPDATE")
     )
+    assert decision is not None
     em.emit(decision)
     # the decision-update did not add a cluster-dedup entry (E only governs watches)
     assert em._cluster_semantic_watch == before
