@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy to Railway (gated)
+    name: Deploy ${{ matrix.service }} (gated)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (
@@ -23,6 +23,22 @@ jobs:
         github.event.workflow_run.head_branch == 'main'
       )
     runs-on: ubuntu-latest
+    strategy:
+      # Deploy every service independently so one failing service does not block the rest.
+      fail-fast: false
+      matrix:
+        # IMPORTANT: each entry MUST match the exact service name in the Railway project,
+        # AND that service must point its Config-as-code path to its own railway-<svc>.toml
+        # (Railway dashboard -> service -> Settings -> Config-as-code). Otherwise the deploy
+        # for that service fails ("service not found") or uses the wrong config.
+        # Source of these names: infrastructure/railway/railway.json. Verify in the dashboard.
+        # (migrator intentionally excluded -- run DB migrations deliberately, not per push.)
+        service:
+          - wolf15-api
+          - wolf15-engine
+          - wolf15-ingest
+          - wolf15-orchestrator
+          - wolf15-worker
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,7 +61,9 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      - name: Deploy using railway.toml
+      - name: Deploy ${{ matrix.service }}
         env:
           RAILWAY_TOKEN: ${{ secrets['RAILWAY_TOKEN'] }}
-        run: railway up --ci
+        # --service targets one service; --ci runs non-interactively. Each service uses its
+        # own Config-as-code file as configured in the Railway dashboard.
+        run: railway up --service "${{ matrix.service }}" --ci
