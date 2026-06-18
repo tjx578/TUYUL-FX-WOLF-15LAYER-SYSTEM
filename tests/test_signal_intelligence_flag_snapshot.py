@@ -67,3 +67,22 @@ def test_snapshot_can_be_disabled(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="signal_json"):
         _pipeline()._emit_signal_intelligence_flag_snapshot()
     assert _TAG not in caplog.text
+
+
+def test_snapshot_reports_patch_b_clean_block_flag(monkeypatch, caplog):
+    # The clean-block fallback flag MUST be visible so a capture can confirm Patch B is enabled.
+    monkeypatch.delenv(_GATE, raising=False)
+    monkeypatch.setenv("SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK", "true")
+    with caplog.at_level(logging.WARNING, logger="signal_json"):
+        _pipeline()._emit_signal_intelligence_flag_snapshot()
+    p = _emitted_payload(caplog)
+    assert p["SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK"] is True
+
+
+def test_snapshot_patch_b_flag_defaults_false(monkeypatch, caplog):
+    monkeypatch.delenv(_GATE, raising=False)
+    monkeypatch.delenv("SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK", raising=False)
+    with caplog.at_level(logging.WARNING, logger="signal_json"):
+        _pipeline()._emit_signal_intelligence_flag_snapshot()
+    p = _emitted_payload(caplog)
+    assert p["SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK"] is False
