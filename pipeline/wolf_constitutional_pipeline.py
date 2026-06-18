@@ -511,6 +511,10 @@ class WolfConstitutionalPipeline:
             self._warmup_warning_log_interval_sec,
             self._dq_warning_log_interval_sec,
         )
+        try:
+            self._emit_signal_intelligence_flag_snapshot()
+        except Exception:  # noqa: BLE001 -- a diagnostic snapshot must never break startup
+            pass
 
     @staticmethod
     def _parse_env_float(name: str, default: float) -> float:
@@ -5221,6 +5225,51 @@ class WolfConstitutionalPipeline:
                 continue
             self._emitted_microboost_table_keys.add(table_key)
             emit_microboost_table_event(table_event)
+
+    def _emit_signal_intelligence_flag_snapshot(self) -> None:
+        """P1 (once per deployment, default ON): emit the effective state of the
+        signal-intelligence / canary flags + deployment identity so a log capture can
+        distinguish "flag OFF" from "logic active but failing". Pure observability --
+        never touches execution. Gated by ``SIGNAL_INTELLIGENCE_FLAG_SNAPSHOT_ENABLED``.
+        """
+        if os.getenv("SIGNAL_INTELLIGENCE_FLAG_SNAPSHOT_ENABLED", "true").strip().lower() != "true":
+            return
+
+        def _b(name: str, default: str) -> bool:
+            return os.getenv(name, default).strip().lower() == "true"
+
+        import json  # noqa: PLC0415 -- local: stdlib json is not a module-level import here
+        import logging  # noqa: PLC0415 -- local: `logging` is only used on this diagnostic path
+
+        payload = {
+            "event": "signal_intelligence_flag_snapshot",
+            "deployment_id": os.getenv("RAILWAY_DEPLOYMENT_ID") or os.getenv("DEPLOYMENT_ID") or "unknown",
+            "commit_sha": (
+                os.getenv("RAILWAY_GIT_COMMIT_SHA")
+                or os.getenv("GIT_COMMIT_SHA")
+                or os.getenv("COMMIT_SHA")
+                or "unknown"
+            ),
+            "SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY": _b("SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY", "true"),
+            "SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS": _b(
+                "SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS", "false"
+            ),
+            "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED": _b(
+                "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false"
+            ),
+            "MICROBOOST_WATCH_MISS_DIAGNOSTIC_ENABLED": _b("MICROBOOST_WATCH_MISS_DIAGNOSTIC_ENABLED", "false"),
+            "MICROBOOST_SHADOW_DIAGNOSTIC_ENABLED": _b("MICROBOOST_SHADOW_DIAGNOSTIC_ENABLED", "false"),
+            "SIGNAL_FAMILY_LINEAGE_ENABLED": _b("SIGNAL_FAMILY_LINEAGE_ENABLED", "false"),
+            "SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED": _b("SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED", "false"),
+            "SIGNAL_JSON_STRICT_LIFECYCLE": _b("SIGNAL_JSON_STRICT_LIFECYCLE", "true"),
+            "SIGNAL_JSON_EXEC_GATES_ENFORCE": _b("SIGNAL_JSON_EXEC_GATES_ENFORCE", "true"),
+            "SIGNAL_JSON_FINAL_BARRIER_ENABLED": _b("SIGNAL_JSON_FINAL_BARRIER_ENABLED", "true"),
+        }
+        logging.getLogger("signal_json").warning(
+            "%s %s",
+            "[SignalIntelligenceFlagSnapshot]",
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+        )
 
     def _emit_microboost_watch_miss_diagnostic(self, report: dict[str, Any]) -> None:
         """Patch 1/2 (flag-guarded, default OFF): explain why the latest microboost block
