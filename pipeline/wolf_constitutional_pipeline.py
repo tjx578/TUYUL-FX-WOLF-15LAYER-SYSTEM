@@ -4686,7 +4686,7 @@ class WolfConstitutionalPipeline:
                 "is incomplete; no order is authorized until validation promotes a watch or final signal."
             ),
         }
-        if os.getenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "true").strip().lower() == "true":
+        if os.getenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "false").strip().lower() == "true":
             payload.update(
                 self._pressure_family_lineage(
                     report,
@@ -5015,7 +5015,7 @@ class WolfConstitutionalPipeline:
                 "no order is authorized from pressure telemetry alone."
             ),
         }
-        if os.getenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "true").strip().lower() == "true":
+        if os.getenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "false").strip().lower() == "true":
             payload.update(
                 self._pressure_family_lineage(
                     report,
