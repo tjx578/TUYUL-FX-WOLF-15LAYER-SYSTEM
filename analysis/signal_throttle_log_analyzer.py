@@ -1598,6 +1598,7 @@ def _microboost_watch_payload(
     )
     direction = str(latest.get("direction") or "").upper()
     candidate_direction = direction if direction in {"BUY", "SELL"} else None
+    clean_block_fallback = False
     if candidate_direction:
         direction_source = "BLOCK_DIRECT"
         direction_confidence = "HIGH"
@@ -1607,6 +1608,16 @@ def _microboost_watch_payload(
         inherited_direction = str(latest.get("inherited_direction") or "").upper()
         if inherited_direction in {"BUY", "SELL"}:
             candidate_direction = inherited_direction
+        elif signal_watch_gate.get("clean_block_fallback"):
+            # Clean-block direction fallback: the clean SignalThrottle block carries a BUY/SELL
+            # direction even though microboost has not confirmed it. Use it so the Watch is not
+            # skipped (gate already enforced the flag + non-conflict). Stays non-executable.
+            gate_direction = str(signal_watch_gate.get("direction") or "").upper()
+            if gate_direction in {"BUY", "SELL"}:
+                candidate_direction = gate_direction
+                direction_source = "CLEAN_BLOCK_DIRECTION_FALLBACK"
+                direction_confidence = "CLEAN_BLOCK_CONTEXT"
+                clean_block_fallback = True
     watch_resolved_family = "WATCH_ONLY_PENDING_CONTEXT" if candidate_direction else "WATCH_ONLY_DIRECTION_MISSING"
     requires_m15_close = bool(latest.get("inherited_requires_m15_close"))
     signal_time = latest.get("end_utc") or latest.get("start_utc")
@@ -1654,7 +1665,7 @@ def _microboost_watch_payload(
         **_golden_pattern_fields(latest),
         **_signal_watch_source_fields(signal_watch_gate, bool(signal_watch_gate.get("eligible"))),
     }
-    if candidate_direction and _env_bool("SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED", False):
+    if candidate_direction and not clean_block_fallback and _env_bool("SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED", False):
         duration_minutes = latest.get("duration_minutes")
         duration_seconds = (
             float(duration_minutes) * 60.0
@@ -1678,9 +1689,57 @@ def _microboost_watch_payload(
             # deliberately NOT in `headline`, so they are never touched here.
             payload.update({key: value for key, value in headline.items() if key != "resolved"})
     _maybe_attach_structure_preview(payload, snapshot)
+    if clean_block_fallback and candidate_direction in {"BUY", "SELL"}:
+        _apply_clean_block_fallback_branding(payload, candidate_direction)
     latest["microboost_watch"] = payload
     microboost_summary["watch_entry"] = payload
     return payload
+
+
+def _apply_clean_block_fallback_branding(payload: dict[str, Any], direction: str) -> None:
+    """Clean-block direction fallback Watch (flag-guarded, default OFF).
+
+    A valid clean SignalThrottle block with its own direction MUST surface as a Watch even when
+    microboost has not confirmed the timing. Watch-only: final stays WAIT / non-executable, and a
+    ``market_structure`` PENDING object is always attached so downstream is never blind. Never an
+    entry command -- execution stays blocked until structure/tradeplan/RR/final gate pass.
+    """
+    side = "BUY" if direction == "BUY" else "SELL"
+    payload["status"] = f"CLEAN_BLOCK_{side}_WATCH"
+    payload["signal_family"] = f"CLEAN_BLOCK_{side}_WATCH"
+    payload["resolved_family"] = "CLEAN_BLOCK_DIRECTION_FALLBACK"
+    payload["raw_direction"] = direction
+    payload["candidate_direction"] = direction
+    payload["watch_direction"] = direction
+    payload["validated_direction"] = None
+    payload["final_direction"] = "WAIT"
+    payload["action"] = "WAIT_PRICE_THEME_STRUCTURE"
+    payload["direction_validation_status"] = "CLEAN_BLOCK_DIRECTION_FALLBACK_PENDING_STRUCTURE"
+    payload["rr_status"] = "UNVALIDATED"
+    payload["confidence_bucket"] = "CLEAN_BLOCK_WATCH_ONLY"
+    payload["signal_quality"] = "WATCH_ONLY"
+    payload["signal_valid"] = False
+    payload["tradeplan_valid"] = False
+    payload["execution_valid_now"] = False
+    payload["valid_for_execution"] = False
+    payload["is_final_signal"] = False
+    payload["reason"] = "clean_block_watch_requires_structure_context_but_execution_not_authorized"
+    # Mandatory market_structure object -- attached as PENDING when no richer structure exists,
+    # independent of SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED, so a clean-block Watch is never
+    # emitted structure-blind. setdefault keeps any real structure already attached upstream.
+    payload.setdefault(
+        "market_structure",
+        {
+            "structure_ready": False,
+            "structure_source": "CLEAN_BLOCK_CONTEXT",
+            "structure_bias": f"{side}_WATCH",
+            "market_structure_status": "PENDING_PRICE_THEME_STRUCTURE",
+            "invalidation_level": None,
+            "key_support": None,
+            "key_resistance": None,
+            "reason": "clean_block_watch_requires_structure_context_but_execution_not_authorized",
+        },
+    )
 
 
 def _maybe_attach_structure_preview(payload: dict[str, Any], snapshot: Any) -> None:
@@ -2144,19 +2203,41 @@ def _signal_watch_gate(
     latest_direction = str(latest.get("direction") or "").upper()
     if latest_symbol != candidate_symbol:
         return _empty_signal_watch_gate("MICROBOOST_PAIR_NOT_CLEAN_BLOCK_CANDIDATE", candidate)
-    if latest_direction not in {"BUY", "SELL"} or latest_direction != candidate_direction:
-        return _empty_signal_watch_gate("MICROBOOST_DIRECTION_NOT_CLEAN_BLOCK_DIRECTION", candidate)
 
-    return {
-        "eligible": True,
-        "source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
-        "reason": "clean_signal_throttle_block_confirmed_for_microboost_validation",
-        "symbol": candidate_symbol,
-        "direction": candidate_direction,
-        "valid_since_utc": candidate.get("valid_since_utc"),
-        "block_start_utc": candidate.get("block_start_utc"),
-        "block_end_utc": candidate.get("block_end_utc"),
-    }
+    def _eligible(reason: str, *, clean_block_fallback: bool = False) -> dict[str, Any]:
+        gate = {
+            "eligible": True,
+            "source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+            "reason": reason,
+            "symbol": candidate_symbol,
+            "direction": candidate_direction,
+            "valid_since_utc": candidate.get("valid_since_utc"),
+            "block_start_utc": candidate.get("block_start_utc"),
+            "block_end_utc": candidate.get("block_end_utc"),
+        }
+        if clean_block_fallback:
+            gate["clean_block_fallback"] = True
+        return gate
+
+    # Normal: microboost confirms the clean-block direction.
+    if latest_direction in {"BUY", "SELL"} and latest_direction == candidate_direction:
+        return _eligible("clean_signal_throttle_block_confirmed_for_microboost_validation")
+
+    # Clean-block direction fallback (flag-guarded SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK,
+    # default OFF). Design contract: a valid clean SignalThrottle block (>= clean_block_seconds)
+    # carrying its OWN BUY/SELL direction MUST still produce a Watch when the microboost direction
+    # is MISSING (not yet confirmed). Microboost confirms timing; it is NOT the sole key to allow a
+    # Watch. An OPPOSITE microboost direction stays a conflict and is still rejected. Watch-only --
+    # never opens execution (downstream keeps final_direction=WAIT, valid_for_execution=false).
+    if (
+        candidate_direction in {"BUY", "SELL"}
+        and latest_direction not in {"BUY", "SELL"}
+        and _env_bool("SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK", False)
+    ):
+        return _eligible("CLEAN_BLOCK_DIRECTION_FALLBACK", clean_block_fallback=True)
+
+    # Opposite microboost direction, fallback disabled, or candidate has no direction.
+    return _empty_signal_watch_gate("MICROBOOST_DIRECTION_NOT_CLEAN_BLOCK_DIRECTION", candidate)
 
 
 def _empty_signal_watch_gate(
