@@ -8,6 +8,7 @@ an unpriced cluster into a trade signal.
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any
@@ -456,6 +457,13 @@ class MicroboostCounterEntryEngine:
             missing_reason=_support_ladder_missing_reason(market),
             allow_rr_fallback=self.allow_rr_fallback,
         )
+        _maybe_emit_structure_ladder_diagnostic(
+            market,
+            symbol=str(base.get("symbol") or ""),
+            candidate_direction="SELL",
+            raw_direction=str(base.get("raw_direction") or ""),
+            target_result=target_result,
+        )
         rr_to_tp1 = _rr("SELL", entry_reference, levels["sl_safe"], target_result["tp1"])
         rr_to_tp2 = _rr("SELL", entry_reference, levels["sl_safe"], target_result["tp2"])
         rr_to_tp3 = _rr("SELL", entry_reference, levels["sl_safe"], target_result["tp3"])
@@ -713,6 +721,13 @@ class MicroboostCounterEntryEngine:
             tp1_rr=self.tp1_rr_required,
             missing_reason=_resistance_ladder_missing_reason(market),
             allow_rr_fallback=self.allow_rr_fallback,
+        )
+        _maybe_emit_structure_ladder_diagnostic(
+            market,
+            symbol=str(base.get("symbol") or ""),
+            candidate_direction="BUY",
+            raw_direction=str(base.get("raw_direction") or ""),
+            target_result=target_result,
         )
         rr_to_tp1 = _rr("BUY", entry_reference, levels["sl_safe"], target_result["tp1"])
         rr_to_tp2 = _rr("BUY", entry_reference, levels["sl_safe"], target_result["tp2"])
@@ -1558,6 +1573,90 @@ def _counter_entry_model_fields(
         "phase_coherence": phase_coherence,
         "signal_expiry": _signal_expiry(signal_time_utc, expiry_minutes),
     }
+
+
+def _maybe_emit_structure_ladder_diagnostic(
+    market: Any,
+    *,
+    symbol: str,
+    candidate_direction: str,
+    raw_direction: str,
+    target_result: dict[str, Any],
+) -> None:
+    """Patch A (flag-guarded ``STRUCTURE_LADDER_DIAGNOSTIC_ENABLED``, default OFF).
+
+    When the counter-entry is about to fall back to ``PROVISIONAL_RR_FALLBACK``, emit a read-only
+    ``[StructureLadderDiagnostic]`` describing whether H4/Daily structure + numeric levels exist,
+    what ``market_context`` carries, and which fields are missing for a ``FINAL_MARKET_STRUCTURE``
+    target. Observability-only: it NEVER mutates target_mode / valid_for_execution / TP / SL / RR /
+    SignalJSON (``execution_mutation`` is always false). It only proves where the chain breaks.
+    """
+    if os.getenv("STRUCTURE_LADDER_DIAGNOSTIC_ENABLED", "false").strip().lower() != "true":
+        return
+    target_mode_candidate = str(target_result.get("target_mode") or "")
+    if target_mode_candidate != "PROVISIONAL_RR_FALLBACK":
+        return
+
+    import json  # noqa: PLC0415 -- local: diagnostic-only path
+    import logging  # noqa: PLC0415 -- local: diagnostic-only path
+
+    def _f(name: str) -> Any:
+        return _field(market, name, None)
+
+    numeric_htf_levels = {
+        key: _optional_float(_f(key))
+        for key in (
+            "daily_key_support",
+            "daily_key_resistance",
+            "h4_key_support",
+            "h4_key_resistance",
+            "major_support",
+            "major_resistance",
+        )
+    }
+    side = "support" if candidate_direction == "SELL" else "resistance"
+    ladder_fields = (f"tp1_{side}", f"tp2_{side}", f"tp3_{side}", f"tp4_{side}", f"minor_{side}", f"major_{side}")
+    inspected = (
+        "price_position", "m15_phase", "h1_phase", "h4_phase", "d1_phase",
+        "key_support", "key_resistance", "main_support", "main_resistance",
+        "tp1_support", "tp1_resistance", "major_support", "major_resistance",
+    )
+    payload = {
+        "event": "structure_ladder_diagnostic",
+        "schema_version": "1.0",
+        "symbol": symbol,
+        "candidate_direction": candidate_direction or None,
+        "raw_direction": raw_direction or None,
+        "htf_primary_required": True,
+        "htf_snapshot_enabled": os.getenv("HTF_STRUCTURE_SNAPSHOT_ENABLED", "false").strip().lower() == "true",
+        "htf_daily_phase_feed_enabled": os.getenv("HTF_DAILY_PHASE_FEED_ENABLED", "false").strip().lower() == "true",
+        "htf_snapshot_available": any(_f(k) is not None for k in ("h4_phase", "d1_phase")),
+        "daily_bias": _f("d1_phase"),
+        "h4_structure": _f("h4_phase"),
+        "price_location": _f("price_position"),
+        "numeric_htf_levels": numeric_htf_levels,
+        "local_refinement_available": {
+            "h1_phase": _f("h1_phase") is not None,
+            "m15_phase": _f("m15_phase") is not None,
+            "minor_support": _f("minor_support") is not None,
+            "minor_resistance": _f("minor_resistance") is not None,
+            f"{side}_ladder_ready": bool(_optional_bool(_f(f"{side}_ladder_ready"))),
+        },
+        "market_context_keys_present": [k for k in inspected if _f(k) is not None],
+        "ladder_fields_present": [k for k in ladder_fields if _f(k) is not None],
+        "missing_required_for_final_market_structure": [k for k, v in numeric_htf_levels.items() if v is None],
+        "ladder_missing_reason": _f(f"{side}_ladder_missing_reason"),
+        "target_mode_candidate": target_mode_candidate,
+        "fallback_decision": "PROVISIONAL_RR_FALLBACK_BLOCKED",
+        "final_market_structure_available": False,
+        "valid_for_execution": False,
+        "execution_mutation": False,
+    }
+    logging.getLogger("signal_json").warning(
+        "%s %s",
+        "[StructureLadderDiagnostic]",
+        json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+    )
 
 
 def _build_target_result(
