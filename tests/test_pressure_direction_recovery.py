@@ -12,8 +12,10 @@ final_direction / valid_for_execution and never emits a SignalJSON.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 
@@ -277,3 +279,203 @@ def test_non_execute_canary_recovers_direction_from_diagnostics(monkeypatch):
     assert len(analyzer.canary) == 1
     assert analyzer.canary[0]["direction"] == "BUY"
     assert analyzer.downgraded == []
+
+
+# --- Root#1/case-c: SignalThrottleIntel -> pressure canary bridge ----------------
+
+
+def test_intel_direction_bridge_default_off(monkeypatch):
+    monkeypatch.delenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", raising=False)
+    pipe, _ = _pipeline()
+    pipe._cache_signal_throttle_intel_direction(
+        "AUDCAD",
+        {"raw_direction": "BUY", "final_direction": "WAIT", "direction_status": "ALLOWED_CANDIDATE"},
+    )
+
+    assert (
+        pipe._resolve_pressure_observation_direction(
+            symbol="AUDCAD",
+            l12_verdict={"verdict": "HOLD"},
+            synthesis=None,
+            source_verdict=None,
+        )
+        is None
+    )
+
+
+def test_intel_direction_bridge_recovers_same_symbol_direction(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "true")
+    pipe, _ = _pipeline()
+    pipe._cache_signal_throttle_intel_direction(
+        "AUDCAD",
+        {"raw_direction": "BUY", "final_direction": "WAIT", "direction_status": "ALLOWED_CANDIDATE"},
+    )
+
+    assert (
+        pipe._resolve_pressure_observation_direction(
+            symbol="AUDCAD",
+            l12_verdict={"verdict": "HOLD"},
+            synthesis=None,
+            source_verdict=None,
+        )
+        == "BUY"
+    )
+
+
+def test_non_execute_canary_carries_intel_bridge_direction(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "true")
+    pipe, analyzer = _pipeline()
+    pipe._cache_signal_throttle_intel_direction(
+        "AUDCAD",
+        {"raw_direction": "BUY", "final_direction": "WAIT", "direction_status": "CANARY_QUORUM_PENDING_VALIDATION"},
+    )
+
+    pipe._record_signal_throttle_downgrade_observation(
+        symbol="AUDCAD",
+        l12_verdict={"verdict": "HOLD"},
+        legacy_verdict=None,
+        reason="non_execute_verdict",
+        synthesis={"execution": {"direction": "HOLD"}},
+    )
+
+    assert len(analyzer.canary) == 1
+    assert analyzer.canary[0]["direction"] == "BUY"
+    assert analyzer.downgraded == []
+
+
+def test_intel_bridge_direction_reaches_microboost_summary(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "true")
+    pipe = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    real_analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600, microboost_window_minutes=15)
+    base = datetime(2026, 6, 21, 0, 0, 0, tzinfo=UTC)
+
+    class _TimestampedAnalyzer:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.downgraded: list[dict] = []
+
+        def record_pressure_canary(self, **kwargs) -> None:
+            kwargs["timestamp"] = base + timedelta(seconds=self.calls * 5)
+            self.calls += 1
+            real_analyzer.record_pressure_canary(**kwargs)
+
+        def record_downgraded(self, **kwargs) -> None:
+            self.downgraded.append(kwargs)
+
+    adapter = _TimestampedAnalyzer()
+    cast(Any, pipe)._signal_throttle_live_analyzer = adapter
+    pipe._cache_signal_throttle_intel_direction(
+        "AUDCAD",
+        {"raw_direction": "BUY", "final_direction": "WAIT", "direction_status": "ALLOWED_CANDIDATE"},
+    )
+
+    for _ in range(5):
+        pipe._record_signal_throttle_downgrade_observation(
+            symbol="AUDCAD",
+            l12_verdict={"verdict": "HOLD"},
+            legacy_verdict=None,
+            reason="non_execute_verdict",
+            synthesis={"execution": {"direction": "HOLD"}},
+        )
+
+    latest = real_analyzer.snapshot()["microboost_summary"]["latest"]
+    assert latest is not None
+    assert latest["symbol"] == "AUDCAD"
+    assert latest["direction"] == "BUY"
+    assert adapter.downgraded == []
+
+
+def test_intel_direction_bridge_ignores_other_symbol(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "true")
+    pipe, _ = _pipeline()
+    pipe._cache_signal_throttle_intel_direction(
+        "AUDCAD",
+        {"raw_direction": "BUY", "final_direction": "WAIT", "direction_status": "ALLOWED_CANDIDATE"},
+    )
+
+    assert (
+        pipe._resolve_pressure_observation_direction(
+            symbol="EURCAD",
+            l12_verdict={"verdict": "HOLD"},
+            synthesis=None,
+            source_verdict=None,
+        )
+        is None
+    )
+
+
+def test_intel_direction_bridge_rejects_stale_cache(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS", "60")
+    pipe, _ = _pipeline()
+    pipe._signal_throttle_intel_direction_cache = {
+        "AUDCAD": ("BUY", datetime.now(UTC) - timedelta(seconds=120)),
+    }
+
+    assert (
+        pipe._resolve_pressure_observation_direction(
+            symbol="AUDCAD",
+            l12_verdict={"verdict": "HOLD"},
+            synthesis=None,
+            source_verdict=None,
+        )
+        is None
+    )
+    assert "AUDCAD" not in pipe._signal_throttle_intel_direction_cache
+
+
+def test_intel_direction_bridge_does_not_override_primary_conflict(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "true")
+    pipe, _ = _pipeline()
+    pipe._cache_signal_throttle_intel_direction(
+        "AUDCAD",
+        {"raw_direction": "BUY", "final_direction": "WAIT", "direction_status": "ALLOWED_CANDIDATE"},
+    )
+
+    assert (
+        pipe._resolve_pressure_observation_direction(
+            symbol="AUDCAD",
+            l12_verdict={"raw_direction": "BUY"},
+            synthesis={"execution": {"direction": "SELL"}},
+            source_verdict=None,
+        )
+        is None
+    )
+
+
+def test_intel_direction_bridge_blocks_on_current_diagnostics_conflict(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "true")
+    pipe, _ = _pipeline()
+    pipe._cache_signal_throttle_intel_direction(
+        "AUDCAD",
+        {"raw_direction": "BUY", "final_direction": "WAIT", "direction_status": "ALLOWED_CANDIDATE"},
+    )
+
+    assert (
+        pipe._resolve_pressure_observation_direction(
+            symbol="AUDCAD",
+            l12_verdict={"verdict": "HOLD"},
+            synthesis=_hold_with_sources({"l1": "BUY", "l2": "SELL", "l3": None, "l9": None}),
+            source_verdict=None,
+        )
+        is None
+    )
+
+
+def test_intel_direction_bridge_does_not_cache_mismatch_intel(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "true")
+    pipe, _ = _pipeline()
+    pipe._cache_signal_throttle_intel_direction(
+        "AUDCAD",
+        {"raw_direction": "BUY", "final_direction": "BLOCK_DIRECTION", "direction_status": "DIRECTION_MISMATCH"},
+    )
+
+    assert (
+        pipe._resolve_pressure_observation_direction(
+            symbol="AUDCAD",
+            l12_verdict={"verdict": "HOLD"},
+            synthesis=None,
+            source_verdict=None,
+        )
+        is None
+    )
