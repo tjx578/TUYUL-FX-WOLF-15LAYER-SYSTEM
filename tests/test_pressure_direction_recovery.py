@@ -278,6 +278,8 @@ def test_non_execute_canary_recovers_direction_from_diagnostics(monkeypatch):
     )
     assert len(analyzer.canary) == 1
     assert analyzer.canary[0]["direction"] == "BUY"
+    assert analyzer.canary[0]["direction_source"] == "DIRECTION_DIAGNOSTICS"
+    assert analyzer.canary[0]["direction_confidence"] == "MEDIUM"
     assert analyzer.downgraded == []
 
 
@@ -340,6 +342,11 @@ def test_non_execute_canary_carries_intel_bridge_direction(monkeypatch):
 
     assert len(analyzer.canary) == 1
     assert analyzer.canary[0]["direction"] == "BUY"
+    assert analyzer.canary[0]["direction_source"] == "SIGNAL_THROTTLE_INTEL_CACHE"
+    assert analyzer.canary[0]["direction_confidence"] in {"HIGH", "MEDIUM"}
+    assert analyzer.canary[0]["direction_inherited"] is True
+    assert analyzer.canary[0]["inherited_direction"] == "BUY"
+    assert analyzer.canary[0]["inherited_direction_age_seconds"] >= 0
     assert analyzer.downgraded == []
 
 
@@ -379,9 +386,17 @@ def test_intel_bridge_direction_reaches_microboost_summary(monkeypatch):
         )
 
     latest = real_analyzer.snapshot()["microboost_summary"]["latest"]
+    direction_recovery = real_analyzer.snapshot()["direction_recovery"]
     assert latest is not None
     assert latest["symbol"] == "AUDCAD"
     assert latest["direction"] == "BUY"
+    assert latest["direction_source"] == "SIGNAL_THROTTLE_INTEL_CACHE"
+    assert latest["direction_confidence"] in {"HIGH", "MEDIUM"}
+    assert latest["direction_inherited"] is True
+    assert latest["inherited_direction"] == "BUY"
+    assert latest["inherited_direction_age_seconds"] >= 0
+    assert direction_recovery["pressure_canary_direction_recovered_count"] == 5
+    assert direction_recovery["microboost_raw_direction_recovered_count"] == 1
     assert adapter.downgraded == []
 
 
