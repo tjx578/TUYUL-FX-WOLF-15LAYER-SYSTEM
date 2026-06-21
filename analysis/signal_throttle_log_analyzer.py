@@ -83,6 +83,11 @@ class SignalThrottleLogEvent:
     eligible_for_pressure_block: bool | None = None
     eligible_for_execution: bool | None = None
     execution_block_reason: str | None = None
+    direction_source: str | None = None
+    direction_confidence: str | None = None
+    direction_inherited: bool = False
+    inherited_direction: str | None = None
+    inherited_direction_age_seconds: float | None = None
 
     @property
     def effective_ticks(self) -> int:
@@ -108,6 +113,11 @@ class PressureBlock:
     effective_ticks: int = 0
     suppressed_ticks: int = 0
     effective_density_per_minute: float = 0.0
+    direction_source: str | None = None
+    direction_confidence: str | None = None
+    direction_inherited: bool = False
+    inherited_direction: str | None = None
+    inherited_direction_age_seconds: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -163,6 +173,11 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
     eligible_for_pressure_block: bool | None = True
     eligible_for_execution: bool | None = None
     execution_block_reason: str | None = None
+    direction_source: str | None = None
+    direction_confidence: str | None = None
+    direction_inherited = False
+    inherited_direction: str | None = None
+    inherited_direction_age_seconds: float | None = None
 
     throttled = _THROTTLED_RE.search(message)
     allowed = _ALLOWED_RE.search(message)
@@ -181,6 +196,11 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         pressure_source = "signal_throttle_check"
         eligible_for_execution = False
         execution_block_reason = _extract_kv_text(message, "reason") or "non_execute_verdict"
+        direction_source = _extract_kv_text(message, "direction_source") or None
+        direction_confidence = _extract_kv_text(message, "direction_confidence") or None
+        direction_inherited = _extract_kv_text(message, "direction_inherited").lower() == "true"
+        inherited_direction = normalize_direction(_extract_kv_text(message, "inherited_direction"), None)
+        inherited_direction_age_seconds = _extract_kv_float(message, "inherited_direction_age_seconds")
     elif intel:
         symbol = intel.group("symbol").upper()
         verdict_text = _extract_kv_text(message, "verdict").upper()
@@ -196,6 +216,8 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         pressure_source = "SignalThrottleIntel"
         eligible_for_execution = False
         execution_block_reason = _extract_kv_text(message, "reason") or "signal_throttle_intel"
+        direction_source = "SIGNAL_THROTTLE_INTEL_LOG"
+        direction_confidence = "HIGH" if direction in {"BUY", "SELL"} else None
     elif downgraded:
         symbol = downgraded.group("symbol").upper()
         verdict = downgraded.group("verdict").upper()
@@ -248,6 +270,11 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         eligible_for_pressure_block=eligible_for_pressure_block,
         eligible_for_execution=eligible_for_execution,
         execution_block_reason=execution_block_reason,
+        direction_source=direction_source,
+        direction_confidence=direction_confidence,
+        direction_inherited=direction_inherited,
+        inherited_direction=inherited_direction,
+        inherited_direction_age_seconds=inherited_direction_age_seconds,
     )
 
 
@@ -344,6 +371,7 @@ def analyze_signal_throttle_events(
             "microboost_continuation_entry": None,
             "microboost_counter_entry": None,
             "microboost_watch_entry": None,
+            "direction_recovery": _empty_direction_recovery_counters(),
             "signal_watch_gate": _empty_signal_watch_gate("NO_SIGNAL_THROTTLE_DATA"),
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "pair_eligible_for_analysis": False,
@@ -443,6 +471,7 @@ def analyze_signal_throttle_events(
         market_contexts=market_contexts,
     )
     _apply_microboost_direction_inheritance(microboost_summary, events=ordered)
+    direction_recovery = _direction_recovery_counters(ordered, microboost_summary)
     signal_watch_gate = _signal_watch_gate(candidate, microboost_summary)
     microboost_continuation_entry = _continuation_entry_payload(
         microboost_summary,
@@ -509,6 +538,7 @@ def analyze_signal_throttle_events(
         "microboost_counter_entry": microboost_counter_entry,
         "microboost_watch_entry": microboost_watch_entry,
         "microboost_watch_miss_diagnostic": microboost_watch_miss_diagnostic,
+        "direction_recovery": direction_recovery,
         "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
         "pair_eligible_for_analysis": pair_eligible_for_analysis,
@@ -777,6 +807,11 @@ class SignalThrottleLiveAnalyzer:
         verdict: str | None = None,
         direction: str | None = None,
         reason: str | None = None,
+        direction_source: str | None = None,
+        direction_confidence: str | None = None,
+        direction_inherited: bool = False,
+        inherited_direction: str | None = None,
+        inherited_direction_age_seconds: float | None = None,
         timestamp: datetime | None = None,
     ) -> None:
         """Record non-executable throttle pressure without creating an order signal."""
@@ -785,6 +820,19 @@ class SignalThrottleLiveAnalyzer:
         normalized_direction = normalize_direction(direction, None) or normalize_direction(None, verdict_text)
         reason_text = f" reason={reason}" if reason else ""
         direction_text = normalized_direction or "WAIT"
+        normalized_inherited = normalize_direction(inherited_direction, None)
+        metadata_parts: list[str] = []
+        if direction_source:
+            metadata_parts.append(f"direction_source={str(direction_source).strip().upper()}")
+        if direction_confidence:
+            metadata_parts.append(f"direction_confidence={str(direction_confidence).strip().upper()}")
+        if direction_inherited:
+            metadata_parts.append("direction_inherited=true")
+        if normalized_inherited:
+            metadata_parts.append(f"inherited_direction={normalized_inherited}")
+        if inherited_direction_age_seconds is not None:
+            metadata_parts.append(f"inherited_direction_age_seconds={float(inherited_direction_age_seconds):.3f}")
+        metadata_text = f" {' '.join(metadata_parts)}" if metadata_parts else ""
         self.record(
             SignalThrottleLogEvent(
                 timestamp=now,
@@ -792,7 +840,7 @@ class SignalThrottleLiveAnalyzer:
                 message=(
                     f"event=signal_throttle_check symbol={symbol.upper()} "
                     f"verdict={verdict_text} direction={direction_text} "
-                    f"status=pressure_canary{reason_text}"
+                    f"status=pressure_canary{reason_text}{metadata_text}"
                 ),
                 symbol=symbol.upper(),
                 event_type="PRESSURE_CANARY",
@@ -806,6 +854,11 @@ class SignalThrottleLiveAnalyzer:
                 eligible_for_pressure_block=True,
                 eligible_for_execution=False,
                 execution_block_reason=reason or "non_execute_verdict",
+                direction_source=str(direction_source).strip().upper() if direction_source else None,
+                direction_confidence=str(direction_confidence).strip().upper() if direction_confidence else None,
+                direction_inherited=bool(direction_inherited),
+                inherited_direction=normalized_inherited,
+                inherited_direction_age_seconds=inherited_direction_age_seconds,
             )
         )
 
@@ -2462,6 +2515,8 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
     suppressed_ticks = sum(max(0, int(event.suppressed)) for event in events)
     effective_ticks = sum(event.effective_ticks for event in events)
     effective_density = effective_ticks / max(duration_seconds / 60.0, 1.0 / 60.0)
+    direction = _dominant_direction(events)
+    direction_metadata = _direction_metadata_for_block(events, direction)
     return PressureBlock(
         symbol=events[0].symbol,
         start=start,
@@ -2470,10 +2525,11 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
         duration_seconds=duration_seconds,
         density_per_minute=round(density, 2),
         max_gap_seconds=max(gaps, default=0.0),
-        direction=_dominant_direction(events),
+        direction=direction,
         effective_ticks=effective_ticks,
         suppressed_ticks=suppressed_ticks,
         effective_density_per_minute=round(effective_density, 2),
+        **direction_metadata,
     )
 
 
@@ -2561,6 +2617,16 @@ def _extract_kv_text(message: str, key: str) -> str:
     if not match:
         return ""
     return match.group("value").strip()
+
+
+def _extract_kv_float(message: str, key: str) -> float | None:
+    text = _extract_kv_text(message, key)
+    if not text:
+        return None
+    try:
+        return max(0.0, float(text))
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_suppressed(message: str) -> int:
@@ -2752,6 +2818,51 @@ def _event_counts(events: list[SignalThrottleLogEvent]) -> dict[str, int]:
     return counts
 
 
+def _empty_direction_recovery_counters() -> dict[str, int]:
+    return {
+        "pressure_canary_direction_null_count": 0,
+        "pressure_canary_direction_recovered_count": 0,
+        "microboost_raw_direction_null_count": 0,
+        "microboost_raw_direction_recovered_count": 0,
+    }
+
+
+def _direction_recovery_counters(
+    events: list[SignalThrottleLogEvent],
+    microboost_summary: dict[str, Any],
+) -> dict[str, int]:
+    counters = _empty_direction_recovery_counters()
+    for event in events:
+        if event.event_type != "PRESSURE_CANARY":
+            continue
+        if _pressure_event_direction(event) not in {"BUY", "SELL"}:
+            counters["pressure_canary_direction_null_count"] += 1
+        elif event.direction_inherited or event.direction_source == "SIGNAL_THROTTLE_INTEL_CACHE":
+            counters["pressure_canary_direction_recovered_count"] += 1
+
+    microboost_blocks: list[dict[str, Any]] = []
+    latest = microboost_summary.get("latest")
+    if isinstance(latest, dict):
+        microboost_blocks.append(latest)
+    raw_blocks = microboost_summary.get("blocks")
+    if isinstance(raw_blocks, list):
+        for block in raw_blocks:
+            if isinstance(block, dict) and block not in microboost_blocks:
+                microboost_blocks.append(block)
+
+    seen: set[str] = set()
+    for block in microboost_blocks:
+        key = str(block.get("cluster_id") or f"{block.get('symbol')}:{block.get('start_utc')}")
+        if key in seen:
+            continue
+        seen.add(key)
+        if str(block.get("direction") or "").upper() not in {"BUY", "SELL"}:
+            counters["microboost_raw_direction_null_count"] += 1
+        elif bool(block.get("direction_inherited")) or block.get("direction_source") == "SIGNAL_THROTTLE_INTEL_CACHE":
+            counters["microboost_raw_direction_recovered_count"] += 1
+    return counters
+
+
 def _candidate_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int) -> dict[str, Any] | None:
     """Extract candidate from pressure blocks."""
     if not blocks:
@@ -2778,6 +2889,7 @@ def _candidate_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int
         "direction": best_block.direction,
         "phase": _candidate_phase(best_block),
     }
+    payload.update(_block_direction_metadata_payload(best_block))
     payload.update(_pressure_profile_payload(best_block))
     return payload
 
@@ -2796,6 +2908,7 @@ def _microboost_payload(block: PressureBlock) -> dict[str, Any]:
         "start_utc": block.start.isoformat(),
         "end_utc": block.end.isoformat(),
     }
+    payload.update(_block_direction_metadata_payload(block))
     payload.update(_pressure_profile_payload(block))
     return payload
 
@@ -2868,6 +2981,40 @@ def _latest_direction_for_symbol(events: list[SignalThrottleLogEvent], symbol: s
         if direction:
             return direction
     return None
+
+
+def _direction_metadata_for_block(events: list[SignalThrottleLogEvent], direction: str | None) -> dict[str, Any]:
+    if direction not in {"BUY", "SELL"}:
+        return {}
+    for event in reversed(events):
+        if _pressure_event_direction(event) != direction:
+            continue
+        if not event.direction_source and not event.direction_inherited:
+            continue
+        inherited_direction = event.inherited_direction if event.inherited_direction in {"BUY", "SELL"} else direction
+        return {
+            "direction_source": event.direction_source,
+            "direction_confidence": event.direction_confidence,
+            "direction_inherited": bool(event.direction_inherited),
+            "inherited_direction": inherited_direction if event.direction_inherited else event.inherited_direction,
+            "inherited_direction_age_seconds": event.inherited_direction_age_seconds,
+        }
+    return {}
+
+
+def _block_direction_metadata_payload(block: PressureBlock) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if block.direction_source:
+        payload["direction_source"] = block.direction_source
+    if block.direction_confidence:
+        payload["direction_confidence"] = block.direction_confidence
+    if block.direction_inherited:
+        payload["direction_inherited"] = True
+    if block.inherited_direction:
+        payload["inherited_direction"] = block.inherited_direction
+    if block.inherited_direction_age_seconds is not None:
+        payload["inherited_direction_age_seconds"] = block.inherited_direction_age_seconds
+    return payload
 
 
 def _candidate_phase(block: PressureBlock) -> str:
