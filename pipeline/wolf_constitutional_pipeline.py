@@ -4013,6 +4013,23 @@ class WolfConstitutionalPipeline:
         synthesis: dict[str, Any] | None,
         source_verdict: Any | None,
     ) -> str | None:
+        detail = self._resolve_pressure_observation_direction_detail(
+            symbol=symbol,
+            l12_verdict=l12_verdict,
+            synthesis=synthesis,
+            source_verdict=source_verdict,
+        )
+        direction = detail.get("direction")
+        return direction if direction in {"BUY", "SELL"} else None
+
+    def _resolve_pressure_observation_direction_detail(
+        self,
+        *,
+        symbol: str | None = None,
+        l12_verdict: dict[str, Any],
+        synthesis: dict[str, Any] | None,
+        source_verdict: Any | None,
+    ) -> dict[str, Any]:
         """Restore the raw pressure direction for a non-execute pressure/canary
         observation from current-tick upstream sources.
 
@@ -4026,7 +4043,7 @@ class WolfConstitutionalPipeline:
         ``SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY=false``.
         """
         if os.getenv("SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY", "true").strip().lower() != "true":
-            return None
+            return {}
         from schemas.direction import normalize_direction  # noqa: PLC0415
 
         intel = l12_verdict.get("signal_throttle_intel")
@@ -4047,7 +4064,11 @@ class WolfConstitutionalPipeline:
         if verdict_direction in {"BUY", "SELL"}:
             found.add(verdict_direction)
         if len(found) == 1:
-            return next(iter(found))
+            return {
+                "direction": next(iter(found)),
+                "direction_source": "CURRENT_TICK_PRESSURE_SOURCE",
+                "direction_confidence": "HIGH",
+            }
         # P2D' (flag-guarded, default OFF): when the primary sources carry no usable
         # direction -- the common non-execute case where execution.direction has been
         # collapsed to HOLD -- recover the raw pressure direction from the per-layer
@@ -4056,16 +4077,20 @@ class WolfConstitutionalPipeline:
         if not found:
             recovered = self._recover_direction_from_diagnostics(execution)
             if recovered in {"BUY", "SELL"}:
-                return recovered
+                return {
+                    "direction": recovered,
+                    "direction_source": "DIRECTION_DIAGNOSTICS",
+                    "direction_confidence": "MEDIUM",
+                }
             if self._diagnostics_direction_conflict(execution):
-                return None
-            bridged = self._recover_direction_from_intel_bridge(
+                return {}
+            bridged = self._recover_direction_from_intel_bridge_detail(
                 symbol=symbol,
                 l12_verdict=l12_verdict,
             )
-            if bridged in {"BUY", "SELL"}:
+            if bridged.get("direction") in {"BUY", "SELL"}:
                 return bridged
-        return None
+        return {}
 
     @staticmethod
     def _recover_direction_from_diagnostics(execution: Any | None) -> str | None:
@@ -4178,6 +4203,19 @@ class WolfConstitutionalPipeline:
         symbol: str | None,
         l12_verdict: dict[str, Any],
     ) -> str | None:
+        detail = self._recover_direction_from_intel_bridge_detail(
+            symbol=symbol,
+            l12_verdict=l12_verdict,
+        )
+        direction = detail.get("direction")
+        return direction if direction in {"BUY", "SELL"} else None
+
+    def _recover_direction_from_intel_bridge_detail(
+        self,
+        *,
+        symbol: str | None,
+        l12_verdict: dict[str, Any],
+    ) -> dict[str, Any]:
         """Root#1/case-c bridge: carry latest allowed Intel direction to canary.
 
         Flag-guarded, same-symbol, bounded by a short TTL. The returned value
@@ -4185,21 +4223,21 @@ class WolfConstitutionalPipeline:
         execution direction and never emits SignalJSON.
         """
         if os.getenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "false").strip().lower() != "true":
-            return None
+            return {}
         normalized_symbol = str(symbol or l12_verdict.get("symbol") or "").strip().upper()
         if not normalized_symbol:
-            return None
+            return {}
         cache = getattr(self, "_signal_throttle_intel_direction_cache", None)
         if not isinstance(cache, dict):
-            return None
+            return {}
         cached = cache.get(normalized_symbol)
         if not isinstance(cached, tuple) or len(cached) != 2:
             cache.pop(normalized_symbol, None)
-            return None
+            return {}
         direction, seen_at = cached
         if direction not in {"BUY", "SELL"} or not isinstance(seen_at, datetime):
             cache.pop(normalized_symbol, None)
-            return None
+            return {}
         if seen_at.tzinfo is None:
             seen_at = seen_at.replace(tzinfo=UTC)
         try:
@@ -4207,10 +4245,19 @@ class WolfConstitutionalPipeline:
         except (TypeError, ValueError):
             window_seconds = 600.0
         window_seconds = max(1.0, window_seconds)
-        if (datetime.now(UTC) - seen_at).total_seconds() > window_seconds:
+        age_seconds = (datetime.now(UTC) - seen_at).total_seconds()
+        if age_seconds > window_seconds:
             cache.pop(normalized_symbol, None)
-            return None
-        return direction
+            return {}
+        confidence = "HIGH" if age_seconds <= min(60.0, window_seconds / 2.0) else "MEDIUM"
+        return {
+            "direction": direction,
+            "direction_source": "SIGNAL_THROTTLE_INTEL_CACHE",
+            "direction_confidence": confidence,
+            "direction_inherited": True,
+            "inherited_direction": direction,
+            "inherited_direction_age_seconds": round(max(0.0, age_seconds), 3),
+        }
 
     def _record_signal_throttle_downgrade_observation(
         self,
@@ -4234,16 +4281,16 @@ class WolfConstitutionalPipeline:
         # counter engine (which would fall back to raw_direction_missing). This is
         # classification-only -- it never changes final_direction /
         # valid_for_execution and never emits a SignalJSON.
-        direction = (
-            self._direction_hint(l12_verdict.get("direction"))
-            or self._direction_hint(source_text)
-            or self._resolve_pressure_observation_direction(
+        direction_detail: dict[str, Any] = {}
+        direction = self._direction_hint(l12_verdict.get("direction")) or self._direction_hint(source_text)
+        if direction not in {"BUY", "SELL"}:
+            direction_detail = self._resolve_pressure_observation_direction_detail(
                 symbol=symbol,
                 l12_verdict=l12_verdict,
                 synthesis=synthesis,
                 source_verdict=source_verdict,
             )
-        )
+            direction = direction_detail.get("direction")
         if direction not in {"BUY", "SELL"}:
             if reason == "non_execute_verdict":
                 self._signal_throttle_live_analyzer.record_pressure_canary(
@@ -4253,12 +4300,25 @@ class WolfConstitutionalPipeline:
                     reason=reason,
                 )
             return
+        direction_metadata = {
+            key: value
+            for key, value in direction_detail.items()
+            if key
+            in {
+                "direction_source",
+                "direction_confidence",
+                "direction_inherited",
+                "inherited_direction",
+                "inherited_direction_age_seconds",
+            }
+        }
         if reason == "non_execute_verdict" and not source_text.startswith("EXECUTE"):
             self._signal_throttle_live_analyzer.record_pressure_canary(
                 symbol=symbol,
                 verdict=l12_verdict.get("verdict"),
                 direction=direction,
                 reason=reason,
+                **direction_metadata,
             )
             return
         if not source_text.startswith("EXECUTE"):
