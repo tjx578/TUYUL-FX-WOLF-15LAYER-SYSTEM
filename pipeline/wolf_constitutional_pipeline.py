@@ -377,6 +377,9 @@ class WolfConstitutionalPipeline:
         )
         self._last_microboost_log_key: tuple[Any, ...] | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
+        # Root#1/case-c bridge: latest allowed SignalThrottleIntel direction per
+        # symbol. Read only by the flag-guarded non-execute pressure canary path.
+        self._signal_throttle_intel_direction_cache: dict[str, tuple[str, datetime]] = {}
         # P1B shadow-only active-signal tracker (symbol -> last execution-grade direction).
         # Populated and read ONLY when SIGNAL_LIFECYCLE_MANAGER_SHADOW_ENABLED=true.
         self._shadow_active_directions: dict[str, str] = {}
@@ -4005,6 +4008,7 @@ class WolfConstitutionalPipeline:
     def _resolve_pressure_observation_direction(
         self,
         *,
+        symbol: str | None = None,
         l12_verdict: dict[str, Any],
         synthesis: dict[str, Any] | None,
         source_verdict: Any | None,
@@ -4053,6 +4057,14 @@ class WolfConstitutionalPipeline:
             recovered = self._recover_direction_from_diagnostics(execution)
             if recovered in {"BUY", "SELL"}:
                 return recovered
+            if self._diagnostics_direction_conflict(execution):
+                return None
+            bridged = self._recover_direction_from_intel_bridge(
+                symbol=symbol,
+                l12_verdict=l12_verdict,
+            )
+            if bridged in {"BUY", "SELL"}:
+                return bridged
         return None
 
     @staticmethod
@@ -4098,6 +4110,108 @@ class WolfConstitutionalPipeline:
             return next(iter(found))
         return None
 
+    @staticmethod
+    def _diagnostics_direction_conflict(execution: Any | None) -> bool:
+        """Return true when current-tick diagnostics explicitly disagree.
+
+        The Intel bridge is cross-tick state. It must not seed a pressure canary
+        when same-tick diagnostic sources say BUY and SELL are both present, or
+        when the resolver already recorded a conflict.
+        """
+        if not isinstance(execution, dict):
+            return False
+        diagnostics = execution.get("direction_diagnostics")
+        if not isinstance(diagnostics, dict):
+            return False
+        conflicts = diagnostics.get("conflicts")
+        if isinstance(conflicts, list) and conflicts:
+            return True
+        sources = diagnostics.get("sources")
+        if not isinstance(sources, dict):
+            return False
+        found: set[str] = set()
+        for raw in sources.values():
+            direction = WolfConstitutionalPipeline._direction_hint(raw)
+            if direction in {"BUY", "SELL"}:
+                found.add(direction)
+        return len(found) > 1
+
+    @staticmethod
+    def _payload_field(payload: Any, key: str) -> Any:
+        if isinstance(payload, dict):
+            return payload.get(key)
+        return getattr(payload, key, None)
+
+    def _cache_signal_throttle_intel_direction(self, symbol: str, throttle_intel: Any) -> None:
+        """Cache latest safe Intel raw_direction per symbol for non-execute lanes.
+
+        Cache population is harmless while the bridge flag is OFF. Directions
+        from an Intel record that already detected a direction mismatch are not
+        cached, so stale clean Intel cannot override a fresh local conflict.
+        """
+        normalized_symbol = str(symbol or self._payload_field(throttle_intel, "symbol") or "").strip().upper()
+        if not normalized_symbol:
+            return
+
+        raw_direction = self._payload_field(throttle_intel, "raw_direction")
+        direction = self._direction_hint(raw_direction)
+        if direction not in {"BUY", "SELL"}:
+            return
+
+        final_direction = str(self._payload_field(throttle_intel, "final_direction") or "").strip().upper()
+        direction_status = str(self._payload_field(throttle_intel, "direction_status") or "").strip().upper()
+        if final_direction == "BLOCK_DIRECTION" or direction_status == "DIRECTION_MISMATCH":
+            cache = getattr(self, "_signal_throttle_intel_direction_cache", None)
+            if isinstance(cache, dict):
+                cache.pop(normalized_symbol, None)
+            return
+
+        cache = getattr(self, "_signal_throttle_intel_direction_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._signal_throttle_intel_direction_cache = cache
+        cache[normalized_symbol] = (direction, datetime.now(UTC))
+
+    def _recover_direction_from_intel_bridge(
+        self,
+        *,
+        symbol: str | None,
+        l12_verdict: dict[str, Any],
+    ) -> str | None:
+        """Root#1/case-c bridge: carry latest allowed Intel direction to canary.
+
+        Flag-guarded, same-symbol, bounded by a short TTL. The returned value
+        only seeds ``record_pressure_canary(direction=...)``; it is never a final
+        execution direction and never emits SignalJSON.
+        """
+        if os.getenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "false").strip().lower() != "true":
+            return None
+        normalized_symbol = str(symbol or l12_verdict.get("symbol") or "").strip().upper()
+        if not normalized_symbol:
+            return None
+        cache = getattr(self, "_signal_throttle_intel_direction_cache", None)
+        if not isinstance(cache, dict):
+            return None
+        cached = cache.get(normalized_symbol)
+        if not isinstance(cached, tuple) or len(cached) != 2:
+            cache.pop(normalized_symbol, None)
+            return None
+        direction, seen_at = cached
+        if direction not in {"BUY", "SELL"} or not isinstance(seen_at, datetime):
+            cache.pop(normalized_symbol, None)
+            return None
+        if seen_at.tzinfo is None:
+            seen_at = seen_at.replace(tzinfo=UTC)
+        try:
+            window_seconds = float(os.getenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS", "600"))
+        except (TypeError, ValueError):
+            window_seconds = 600.0
+        window_seconds = max(1.0, window_seconds)
+        if (datetime.now(UTC) - seen_at).total_seconds() > window_seconds:
+            cache.pop(normalized_symbol, None)
+            return None
+        return direction
+
     def _record_signal_throttle_downgrade_observation(
         self,
         *,
@@ -4124,6 +4238,7 @@ class WolfConstitutionalPipeline:
             self._direction_hint(l12_verdict.get("direction"))
             or self._direction_hint(source_text)
             or self._resolve_pressure_observation_direction(
+                symbol=symbol,
                 l12_verdict=l12_verdict,
                 synthesis=synthesis,
                 source_verdict=source_verdict,
@@ -5096,11 +5211,21 @@ class WolfConstitutionalPipeline:
         snapshot["microboost_direction_resolver_enabled"] = (
             os.getenv("MICROBOOST_DIRECTION_INHERIT_ENABLED", "false").strip().lower() == "true"
         )
+        snapshot["signal_throttle_intel_direction_bridge_enabled"] = (
+            os.getenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "false").strip().lower() == "true"
+        )
         try:
             window = float(os.getenv("MICROBOOST_DIRECTION_INHERIT_WINDOW_SECONDS", "600"))
         except (TypeError, ValueError):
             window = 600.0
         snapshot["direction_inheritance_window_seconds"] = window
+        try:
+            bridge_window = float(os.getenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS", "600"))
+        except (TypeError, ValueError):
+            bridge_window = 600.0
+        snapshot["intel_direction_bridge_window_seconds"] = max(1.0, bridge_window)
+        cache = getattr(self, "_signal_throttle_intel_direction_cache", None)
+        snapshot["intel_direction_bridge_cache_size"] = len(cache) if isinstance(cache, dict) else 0
         return snapshot
 
     def _emit_signal_json_payload(self, payload: dict[str, Any]) -> bool:
@@ -5253,6 +5378,9 @@ class WolfConstitutionalPipeline:
             "SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY": _b("SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY", "true"),
             "SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS": _b(
                 "SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS", "false"
+            ),
+            "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED": _b(
+                "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "false"
             ),
             "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED": _b(
                 "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false"
@@ -5468,6 +5596,7 @@ class WolfConstitutionalPipeline:
                     allowed_streak=allowed_streak,
                 )
                 l12_verdict["signal_throttle_intel"] = throttle_intel.to_dict()
+                self._cache_signal_throttle_intel_direction(symbol, throttle_intel)
                 self._process_signal_throttle_snapshot(
                     symbol=symbol,
                     synthesis=synthesis,
