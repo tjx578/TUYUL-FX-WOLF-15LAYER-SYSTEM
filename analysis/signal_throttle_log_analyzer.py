@@ -2814,6 +2814,11 @@ def rank_microboost_blocks(blocks: list[PressureBlock], *, clean_block_seconds: 
     )
 
 
+def _pressure_event_direction(event: SignalThrottleLogEvent) -> str | None:
+    """Resolve direction for pressure analytics, where HOLD may still carry raw side."""
+    return normalize_direction(event.direction, None) or normalize_direction(None, event.verdict)
+
+
 def compute_allowed_quorum(events: list[SignalThrottleLogEvent]) -> dict[str, Any]:
     """Compute allowed quorum statistics."""
     allowed_events = [e for e in events if e.event_type == "ALLOWED"]
@@ -2824,7 +2829,7 @@ def compute_allowed_quorum(events: list[SignalThrottleLogEvent]) -> dict[str, An
     streak_direction: str | None = None
     streak = 0
     for event in allowed_events:
-        direction = normalize_direction(event.direction, event.verdict)
+        direction = _pressure_event_direction(event)
         symbol = event.symbol.upper()
         if direction and symbol == streak_symbol and direction == streak_direction:
             streak += 1
@@ -2845,7 +2850,7 @@ def compute_allowed_quorum(events: list[SignalThrottleLogEvent]) -> dict[str, An
 def _dominant_direction(events: list[SignalThrottleLogEvent]) -> str | None:
     counts: Counter[str] = Counter()
     for event in events:
-        direction = normalize_direction(event.direction, event.verdict)
+        direction = _pressure_event_direction(event)
         if direction:
             counts[direction] += 1
     if not counts:
@@ -2859,7 +2864,7 @@ def _latest_direction_for_symbol(events: list[SignalThrottleLogEvent], symbol: s
     for event in reversed(events):
         if event.symbol.upper() != normalized_symbol:
             continue
-        direction = normalize_direction(event.direction, event.verdict)
+        direction = _pressure_event_direction(event)
         if direction:
             return direction
     return None
