@@ -29,6 +29,10 @@ def test_snapshot_emits_with_flag_state(monkeypatch, caplog):
     monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS", "true")
     monkeypatch.setenv("MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "false")
+    monkeypatch.setenv("SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_JSON_LOG_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_JSON_EMIT_WATCH", "true")
+    monkeypatch.setenv("SIGNAL_JSON_EXEC_GATES_ENABLED", "true")
     monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "dep-123")
     monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "abc123")
     with caplog.at_level(logging.WARNING, logger="signal_json"):
@@ -40,9 +44,14 @@ def test_snapshot_emits_with_flag_state(monkeypatch, caplog):
     assert p["SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS"] is True
     assert p["MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED"] is True
     assert p["SIGNAL_FAMILY_LINEAGE_ENABLED"] is False
+    assert p["SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED"] is True
+    assert p["SIGNAL_JSON_LOG_ENABLED"] is True
+    assert p["SIGNAL_JSON_EMIT_WATCH"] is True
+    assert p["SIGNAL_JSON_EXEC_GATES_ENABLED"] is True
     # safety gates surfaced and default-protective
     assert p["SIGNAL_JSON_STRICT_LIFECYCLE"] is True
     assert p["SIGNAL_JSON_EXEC_GATES_ENFORCE"] is True
+    assert p["SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE"] is True
 
 
 def test_snapshot_reflects_all_off_baseline(monkeypatch, caplog):

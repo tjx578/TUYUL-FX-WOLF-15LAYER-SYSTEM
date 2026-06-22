@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, cast
 
@@ -489,6 +490,15 @@ def test_pipeline_logs_allowed_quorum_context_gap_as_decision_update(caplog):
     assert update["pair_eligible_for_analysis"] is True
     assert update["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
     assert update["signal_json_emit_result"] is True
+    emitted = next(rec.message for rec in caplog.records if "[SignalDecisionUpdateJSON]" in rec.message)
+    emitted_payload = json.loads(emitted.split("[SignalDecisionUpdateJSON]", 1)[1].strip())
+    assert emitted_payload["pressure_source"] == "SIGNAL_THROTTLE"
+    assert emitted_payload["pressure_level"] == "PRESSURE_CANARY"
+    assert emitted_payload["allowed_quorum"] is True
+    assert emitted_payload["allowed_quorum_streak"] == 3
+    assert emitted_payload["allowed_quorum_context"]["quorum_reached"] is True
+    assert emitted_payload["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
+    assert emitted_payload["microboost_detected"] is False
 
 
 def test_pipeline_suppresses_single_no_trade_pressure_canary(caplog):

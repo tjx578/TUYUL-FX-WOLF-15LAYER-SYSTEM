@@ -470,6 +470,20 @@ class SignalJsonEvent:
     source_stage: str | None = None
     resolved_family: str | None = None
     family_lineage_reason: str | None = None
+    # Explain why a throttle candidate stopped at DecisionUpdate instead of
+    # being promoted to SignalWatchJSON or final SignalJSON.
+    pressure_seen: bool | None = None
+    allowed_quorum_seen: bool | None = None
+    pair_eligible_for_analysis: bool | None = None
+    pressure_event_count: int | None = None
+    pressure_level: str | None = None
+    pressure_strength: str | None = None
+    pressure_source: str | None = None
+    source_verdict: str | None = None
+    execution_block_reason: str | None = None
+    watch_promotion_blockers: dict[str, Any] | None = None
+    microboost_detected: bool | None = None
+    allowed_quorum_context: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -875,6 +889,8 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         return None
     is_decision_update = _is_decision_update_payload(counter_entry)
     is_watch = _is_watch_status(status) and not is_decision_update
+    allowed_quorum_raw = counter_entry.get("allowed_quorum")
+    allowed_quorum_context = _dict_value(allowed_quorum_raw)
     validated_direction = _validated_direction(counter_entry)
     watch_direction = _watch_direction(counter_entry, status=status, validated_direction=validated_direction)
     return SignalJsonEvent(
@@ -890,6 +906,18 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         source_stage=_optional_str(counter_entry.get("source_stage")),
         resolved_family=_optional_str(counter_entry.get("resolved_family")),
         family_lineage_reason=_optional_str(counter_entry.get("family_lineage_reason")),
+        pressure_seen=_optional_bool(counter_entry.get("pressure_seen")),
+        allowed_quorum_seen=_optional_bool(counter_entry.get("allowed_quorum_seen")),
+        pair_eligible_for_analysis=_optional_bool(counter_entry.get("pair_eligible_for_analysis")),
+        pressure_event_count=_optional_int(counter_entry.get("pressure_event_count")),
+        pressure_level=_optional_str(counter_entry.get("pressure_level")),
+        pressure_strength=_optional_str(counter_entry.get("pressure_strength")),
+        pressure_source=_optional_str(counter_entry.get("pressure_source")),
+        source_verdict=_optional_str(counter_entry.get("source_verdict")),
+        execution_block_reason=_optional_str(counter_entry.get("execution_block_reason")),
+        watch_promotion_blockers=_dict_value(counter_entry.get("watch_promotion_blockers")),
+        microboost_detected=_optional_bool(counter_entry.get("microboost_detected")),
+        allowed_quorum_context=allowed_quorum_context,
         status=status,
         cluster_id=_optional_str(counter_entry.get("cluster_id")),
         is_final_signal=bool(counter_entry.get("is_final_signal", False)) or _is_final_payload(counter_entry),
@@ -947,8 +975,15 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         tp2_rr=_optional_float(counter_entry.get("tp2_rr")),
         tp3_rr=_optional_float(counter_entry.get("tp3_rr")),
         tp4_rr=_optional_float(counter_entry.get("tp4_rr")),
-        allowed_quorum=_optional_bool(counter_entry.get("allowed_quorum")),
-        allowed_quorum_streak=_optional_int(counter_entry.get("allowed_quorum_streak")),
+        allowed_quorum=(
+            _optional_bool(allowed_quorum_context.get("quorum_reached"))
+            if allowed_quorum_context is not None
+            else _optional_bool(allowed_quorum_raw)
+        ),
+        allowed_quorum_streak=_optional_int(
+            counter_entry.get("allowed_quorum_streak")
+            or (allowed_quorum_context or {}).get("streak")
+        ),
         reclaim_trigger=_optional_float(counter_entry.get("reclaim_trigger")),
         risk_pips=_optional_float(counter_entry.get("risk_pips")),
         signal_id=_optional_str(counter_entry.get("signal_id"))
