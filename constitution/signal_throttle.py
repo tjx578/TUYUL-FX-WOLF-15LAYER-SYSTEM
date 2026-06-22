@@ -41,21 +41,21 @@ from schemas.direction import normalize_direction
 __all__ = ["SignalThrottle"]
 
 # Defaults: max 3 EXECUTE signals per 5 minutes per symbol.
-# Raw "[SignalThrottle] ... THROTTLED" lines write straight to stderr (not via the
+# Raw "[SignalThrottle] ... THROTTLED" lines write straight to stdout (not via the
 # loguru limiter) and emit at most once per throttle window (window_seconds) per
 # symbol so a sustained clamp does not flood platform logs; suppressed repeats fold
 # into "suppressed=N". This caps only the LOG line — every throttled event is still
 # recorded into SignalThrottleLiveAnalyzer, so log suppression never starves the
 # pressure-block builder. Lower SIGNAL_THROTTLE_ERROR_LOG_MIN_INTERVAL_SECONDS only
-# for debugging raw radar.
+# for debugging raw radar. The env var keeps its historical name for compatibility.
 _DEFAULT_MAX_SIGNALS = 3
 _DEFAULT_WINDOW_SECONDS = 300.0
 
 
-def _emit_throttle_error(message: str) -> None:
-    """Emit throttle-limit events as plain stderr lines for platform severity."""
-    sys.stderr.write(f"{message}\n")
-    sys.stderr.flush()
+def _emit_throttle_clamp(message: str) -> None:
+    """Emit throttle-limit events as plain info-level stdout lines."""
+    sys.stdout.write(f"{message}\n")
+    sys.stdout.flush()
 
 
 def _emit_throttle_info(message: str) -> None:
@@ -128,7 +128,7 @@ class SignalThrottle:
     def record_allowed_streak(self, symbol: str, verdict: str) -> int:
         """Track consecutive allowed events by symbol and direction.
 
-        Only allowed events call this method, so stderr throttle/error lines do
+        Only allowed events call this method, so throttle clamp lines do
         not break the streak.  A different allowed symbol or direction resets it.
         """
         direction = normalize_direction(None, verdict)
@@ -192,7 +192,7 @@ class SignalThrottle:
 
         suppressed = self._suppressed_throttle_error_logs.pop(normalized_symbol, 0)
         suffix = f" suppressed={suppressed}" if suppressed else ""
-        _emit_throttle_error(
+        _emit_throttle_clamp(
             f"[SignalThrottle] {normalized_symbol} THROTTLED — {count} signals in last "
             f"{self.window_seconds:.0f}s (max {self.max_signals}){suffix}"
         )
