@@ -5423,6 +5423,12 @@ class WolfConstitutionalPipeline:
         def _b(name: str, default: str) -> bool:
             return os.getenv(name, default).strip().lower() == "true"
 
+        def _f(name: str, default: str) -> float:
+            try:
+                return float(os.getenv(name, default))
+            except (TypeError, ValueError):
+                return float(default)
+
         import json  # noqa: PLC0415 -- local: stdlib json is not a module-level import here
         import logging  # noqa: PLC0415 -- local: `logging` is only used on this diagnostic path
 
@@ -5441,6 +5447,9 @@ class WolfConstitutionalPipeline:
             ),
             "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED": _b(
                 "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED", "false"
+            ),
+            "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS": _f(
+                "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS", "600"
             ),
             "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED": _b(
                 "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false"
