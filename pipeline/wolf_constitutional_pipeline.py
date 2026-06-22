@@ -339,6 +339,9 @@ class WolfConstitutionalPipeline:
         except (TypeError, ValueError):
             throttle_max_signals = 3
         throttle_window_seconds = self._parse_env_float("SIGNAL_THROTTLE_WINDOW_SECONDS", 300.0)
+        intel_direction_bridge_window_seconds = self._parse_env_float(
+            "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS", 600.0
+        )
         signal_throttle_cls = _module_attr("constitution.signal_throttle", "SignalThrottle")
         self._signal_throttle = signal_throttle_cls(
             max_signals=throttle_max_signals,
@@ -446,6 +449,8 @@ class WolfConstitutionalPipeline:
         _emit_canary_event(
             "event=signal_throttle_config symbol=* authority=SIGNAL_THROTTLE "
             f"max_signals={throttle_max_signals} window_seconds={throttle_window_seconds:.0f} "
+            f"signal_throttle_window_seconds={throttle_window_seconds:.0f} "
+            f"intel_direction_bridge_window_seconds={intel_direction_bridge_window_seconds:.0f} "
             f"error_log_min_interval_seconds={self._signal_throttle.throttle_error_log_min_interval_seconds:.0f}"
         )
         self._market_context_guard_enabled = os.getenv("MARKET_CONTEXT_EXECUTE_GUARD_ENABLED", "1") != "0"
