@@ -113,6 +113,32 @@ def test_theme_mismatch_does_not_block_price_phase_candidate():
     assert result.action == "BUY_ON_PULLBACK"
 
 
+def test_basket_contradiction_blocks_price_phase_candidate():
+    result = validate_market_context(
+        MarketContext(
+            symbol="AUDCAD",
+            raw_allowed_direction="BUY",
+            price_at_signal_start=0.8900,
+            price_at_5m_confirm=0.8920,
+            price_at_signal_end=0.8940,
+            m15_phase="PIVOT_RECLAIM",
+            h1_phase="BULLISH",
+            theme_aligned=True,
+            spread_normal=True,
+            base_basket_score=-0.82,
+            quote_basket_score=0.15,
+            pair_direction_alignment=-0.97,
+            basket_blockers=["BASE_AUD_BASKET_WEAK", "QUOTE_CAD_BASKET_STRONG"],
+        )
+    )
+
+    assert result.direction_validated is False
+    assert result.final_direction == "WAIT"
+    assert result.execution_grade == "BLOCKED"
+    assert result.action == "BLOCK_BASKET_CONTRADICTION"
+    assert result.reason == "basket_contradiction=BASE_AUD_BASKET_WEAK,QUOTE_CAD_BASKET_STRONG"
+
+
 def test_buy_pressure_at_upper_resistance_becomes_protect_not_entry():
     result = validate_market_context(
         MarketContext(
