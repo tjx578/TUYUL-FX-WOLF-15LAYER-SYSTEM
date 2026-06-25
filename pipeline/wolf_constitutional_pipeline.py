@@ -69,6 +69,7 @@ from importlib import import_module
 from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 
+from analysis.basket_direction_validator import validate_basket_direction
 from analysis.htf_structure_snapshot import (
     HTFStructureSnapshotResolver,
     emit_htf_structure_snapshot,
@@ -519,10 +520,8 @@ class WolfConstitutionalPipeline:
             self._warmup_warning_log_interval_sec,
             self._dq_warning_log_interval_sec,
         )
-        try:
+        with contextlib.suppress(Exception):
             self._emit_signal_intelligence_flag_snapshot()
-        except Exception:  # noqa: BLE001 -- a diagnostic snapshot must never break startup
-            pass
 
     @staticmethod
     def _parse_env_float(name: str, default: float) -> float:
@@ -3309,6 +3308,11 @@ class WolfConstitutionalPipeline:
         )
         spread_quality = self._spread_quality(symbol)
         theme_alignment = self._market_theme_alignment_snapshot(synthesis, direction)
+        basket_validation = self._basket_direction_validation_snapshot(
+            symbol=symbol,
+            direction=direction,
+            synthesis=synthesis,
+        )
 
         return MarketContext(
             symbol=symbol,
@@ -3326,6 +3330,11 @@ class WolfConstitutionalPipeline:
             theme_aligned=self._is_market_theme_aligned(synthesis, direction),
             theme_alignment=theme_alignment,
             counter_entry_theme_alignment=theme_alignment,
+            base_basket_score=self._coerce_float_or_none(basket_validation.get("base_score")),
+            quote_basket_score=self._coerce_float_or_none(basket_validation.get("quote_score")),
+            pair_direction_alignment=self._coerce_float_or_none(basket_validation.get("pair_alignment")),
+            basket_blockers=self._basket_blockers_from_validation(basket_validation),
+            basket_validation=basket_validation or None,
             spread_normal=spread_quality["spread_normal"],
             spread_pips=spread_quality["spread_pips"],
             max_allowed_spread_pips=spread_quality["max_allowed_spread_pips"],
@@ -3847,6 +3856,42 @@ class WolfConstitutionalPipeline:
                 return "LEGACY_FTA_DIRECTION_CONFLICT"
         return None
 
+    def _basket_direction_validation_snapshot(
+        self,
+        *,
+        symbol: str,
+        direction: str | None,
+        synthesis: dict[str, Any],
+    ) -> dict[str, Any]:
+        if os.getenv("SIGNAL_BASKET_DIRECTION_VALIDATION_ENABLED", "false").strip().lower() != "true":
+            return {}
+        if direction not in {"BUY", "SELL"}:
+            return {}
+        ranking = synthesis.get("universe_ranking") if isinstance(synthesis, dict) else None
+        if not isinstance(ranking, dict):
+            return {}
+        scores = ranking.get("currency_scores")
+        if not isinstance(scores, dict) or not scores:
+            return {}
+        try:
+            result = validate_basket_direction(symbol, direction, currency_scores=scores)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[Pipeline v8.0] Basket validation failed (non-fatal): {}", exc)
+            return {}
+        payload = result.to_dict()
+        payload["advisory_only"] = True
+        return payload
+
+    @staticmethod
+    def _basket_blockers_from_validation(validation: dict[str, Any]) -> list[str] | None:
+        if not validation or validation.get("data_ready") is not True:
+            return None
+        blockers = validation.get("blockers")
+        if not isinstance(blockers, list):
+            return None
+        values = [str(item).strip().upper() for item in blockers if str(item or "").strip()]
+        return values or None
+
     def _is_spread_normal(self, symbol: str) -> bool | None:
         return self._spread_quality(symbol)["spread_normal"]
 
@@ -3916,6 +3961,15 @@ class WolfConstitutionalPipeline:
         except (TypeError, ValueError):
             return None
         return number if number > 0 else None
+
+    @staticmethod
+    def _coerce_float_or_none(value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     def _signal_throttle_market_contexts(
         self,
