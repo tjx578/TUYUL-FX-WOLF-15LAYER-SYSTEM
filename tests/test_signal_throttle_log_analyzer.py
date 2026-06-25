@@ -4,6 +4,10 @@ import csv
 from datetime import UTC, datetime, timedelta
 
 from analysis.market_context_validator import MarketContext
+from analysis.microboost_core_event import (
+    MICROBOOST_CORE_EVENT_FIELDS,
+    MICROBOOST_DOWNSTREAM_METADATA_FIELDS,
+)
 from analysis.signal_json_emitter import build_signal_json_event
 from analysis.signal_throttle_log_analyzer import (
     SignalThrottleLiveAnalyzer,
@@ -14,10 +18,6 @@ from analysis.signal_throttle_log_analyzer import (
     compute_currency_pressure,
     parse_engine_log_event,
     parse_signal_throttle_rows,
-)
-from analysis.microboost_core_event import (
-    MICROBOOST_CORE_EVENT_FIELDS,
-    MICROBOOST_DOWNSTREAM_METADATA_FIELDS,
 )
 
 _FIXTURE = "tests/fixtures/signal_throttle_sample.csv"
@@ -255,6 +255,17 @@ def test_allowed_quorum_without_microboost_exposes_watch_promotion_blockers():
     assert report["microboost_summary"]["count_total"] == 0
     assert report["watch_promotion_blockers"]["ALLOWED_QUORUM_PENDING_VALIDATION"] == 3
     assert report["watch_promotion_blockers"]["MICROBOOST_NOT_FORMED"] == 3
+
+
+def test_pressure_cluster_summary_is_flag_guarded(monkeypatch):
+    events = [_event(index * 10, "USDCAD", "ALLOWED") for index in range(3)]
+
+    monkeypatch.setenv("SIGNAL_PRESSURE_CLUSTER_DEDUP_ENABLED", "true")
+    report = analyze_signal_throttle_events(events)
+
+    assert report["pressure_cluster_summary"]["raw_event_count"] == 3
+    assert report["pressure_cluster_summary"]["deduped_cluster_count"] == 1
+    assert report["pressure_cluster_summary"]["by_symbol_direction"]["USDCAD:BUY"]["raw_event_count"] == 3
 
 
 def test_build_pressure_blocks_groups_same_symbol_until_gap_or_rotation():
