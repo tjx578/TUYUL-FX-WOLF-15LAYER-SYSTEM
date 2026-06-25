@@ -25,11 +25,13 @@ try:
     from ..schemas.direction import normalize_direction
 except ImportError:  # pragma: no cover - supports top-level ``analysis`` imports in tests/tools.
     from schemas.direction import normalize_direction
+
 from .market_context_validator import missing_market_context_result
 from .microboost_continuation_entry import MicroboostContinuationEngine
-from .microboost_counter_entry import MicroboostCounterEntryEngine
 from .microboost_core_event import to_microboost_core_event
+from .microboost_counter_entry import MicroboostCounterEntryEngine
 from .microboost_detector import build_microboost_summary
+from .pressure_cluster_deduper import summarize_pressure_clusters
 from .signal_throttle_pattern_detector import classify_pressure_block
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
@@ -372,6 +374,9 @@ def analyze_signal_throttle_events(
             "microboost_counter_entry": None,
             "microboost_watch_entry": None,
             "direction_recovery": _empty_direction_recovery_counters(),
+            "pressure_cluster_summary": summarize_pressure_clusters([])
+            if _env_bool("SIGNAL_PRESSURE_CLUSTER_DEDUP_ENABLED", False)
+            else None,
             "signal_watch_gate": _empty_signal_watch_gate("NO_SIGNAL_THROTTLE_DATA"),
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "pair_eligible_for_analysis": False,
@@ -419,6 +424,11 @@ def analyze_signal_throttle_events(
     event_type_counts = _event_counts(ordered)  # noqa: F821
     currency_pressure = compute_currency_pressure(ordered)
     theme_scores = classify_themes(pair_counts=pair_counts, currency_pressure=currency_pressure)
+    pressure_cluster_summary = (
+        summarize_pressure_clusters(ordered)
+        if _env_bool("SIGNAL_PRESSURE_CLUSTER_DEDUP_ENABLED", False)
+        else None
+    )
     dominant_themes = theme_scores[:5]
     main_watchlist = [symbol for symbol, _ in latest_pair_counts.most_common(8)]
     if not main_watchlist:
@@ -539,6 +549,7 @@ def analyze_signal_throttle_events(
         "microboost_watch_entry": microboost_watch_entry,
         "microboost_watch_miss_diagnostic": microboost_watch_miss_diagnostic,
         "direction_recovery": direction_recovery,
+        "pressure_cluster_summary": pressure_cluster_summary,
         "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
         "pair_eligible_for_analysis": pair_eligible_for_analysis,
