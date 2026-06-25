@@ -72,6 +72,11 @@ class MarketContext:
     jpy_alignment_status: str | None = None
     jpy_alignment: str | None = None
     dual_theme_status: str | None = None
+    base_basket_score: float | None = None
+    quote_basket_score: float | None = None
+    pair_direction_alignment: float | None = None
+    basket_blockers: list[str] | None = None
+    basket_validation: dict[str, Any] | None = None
     spread_normal: bool | None = None
     spread_pips: float | None = None
     max_allowed_spread_pips: float | None = None
@@ -243,6 +248,17 @@ def validate_market_context(context: MarketContext) -> MarketContextValidation:
             "spread_not_normal",
         )
 
+    if context.basket_blockers:
+        return _result(
+            context,
+            "WAIT",
+            False,
+            "BLOCKED",
+            "BLOCK_BASKET_CONTRADICTION",
+            False,
+            _basket_contradiction_reason(context.basket_blockers),
+        )
+
     pattern = classify_market_pattern(context, direction=direction)
     if pattern.final_direction == "NO_NEW_ENTRY":
         return _result(
@@ -354,6 +370,11 @@ def _missing_fields(context: MarketContext) -> list[str]:
 
 def _phase(value: str | None) -> str:
     return str(value or "").strip().upper()
+
+
+def _basket_contradiction_reason(blockers: list[str]) -> str:
+    cleaned = [str(item).strip().upper() for item in blockers if str(item or "").strip()]
+    return "basket_contradiction=" + ",".join(cleaned or ["UNKNOWN"])
 
 
 def _result(
