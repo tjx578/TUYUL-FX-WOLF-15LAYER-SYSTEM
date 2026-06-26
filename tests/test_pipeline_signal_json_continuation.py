@@ -197,6 +197,84 @@ def test_pipeline_logs_generic_microboost_watch_as_signal_watch_json(caplog):
     assert verdict["microboost_watch_entry"]["pending_decision_id"]
 
 
+def test_pipeline_logs_clean_block_watch_entries_as_signal_watch_json(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+
+    report = {
+        "clean_block_watch_entries": [
+            {
+                "symbol": "USDCAD",
+                "cluster_id": "USDCAD_20260623T050049Z_20260623T055702Z",
+                "signal_family": "CLEAN_BLOCK_BUY_WATCH",
+                "status": "CLEAN_BLOCK_BUY_WATCH",
+                "raw_direction": "BUY",
+                "candidate_direction": "BUY",
+                "validated_direction": None,
+                "watch_direction": "BUY",
+                "final_direction": "WAIT",
+                "action": "WAIT_PRICE_THEME_STRUCTURE",
+                "signal_valid_time_utc": "2026-06-23T05:57:02+00:00",
+                "signal_valid_price": 1.3740,
+                "entry_reference_price": 1.3740,
+                "entry_zone": [1.3730, 1.3740],
+                "rr_status": "UNVALIDATED",
+                "market_context_applied": True,
+                "valid_for_execution": False,
+                "signal_quality": "WATCH_ONLY",
+                "reason": "clean_block_router_promoted_valid_clean_block_to_signal_watch",
+                "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+                "source_clean_block_confirmed": True,
+                "source_clean_block_id": "USDCAD_20260623T050049Z_20260623T055702Z",
+                "source_pressure_block_id": "USDCAD_20260623T050049Z_20260623T055702Z",
+                "clean_block_valid": True,
+                "clean_block_direction": "BUY",
+                "watch_promotion_source": "CLEAN_BLOCK_ROUTER",
+            }
+        ]
+    }
+    verdict: dict = {}
+
+    pipeline._apply_clean_block_watch_routes(l12_verdict=verdict, report=report)
+
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"status":"CLEAN_BLOCK_BUY_WATCH"' in caplog.text
+    assert report["clean_block_watch_entries"][0]["signal_json_emit_result"] is True
+    assert verdict["clean_block_watch_entries"][0]["source_clean_block_id"]
+
+
+def test_pipeline_emits_signal_watch_promotion_diagnostic(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    report = {
+        "signal_watch_promotion_diagnostics": [
+            {
+                "event": "signal_watch_promotion_diagnostic",
+                "symbol": "GBPNZD",
+                "source_clean_block_id": "GBPNZD_20260623T060000Z_20260623T065800Z",
+                "clean_block_valid": True,
+                "eligible_for_signal_watch": False,
+                "blocked_by": ["MARKET_CONTEXT_MISSING"],
+                "next_required_stage": "HYDRATE_MARKET_CONTEXT",
+                "valid_for_execution": False,
+                "is_final_signal": False,
+                "final_direction": "WAIT",
+            }
+        ]
+    }
+    verdict: dict = {}
+
+    pipeline._apply_clean_block_watch_routes(l12_verdict=verdict, report=report)
+
+    assert "[SignalWatchPromotionDiagnostic]" in caplog.text
+    assert '"event":"signal_watch_promotion_diagnostic"' in caplog.text
+    assert report["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is True
+    assert verdict["signal_watch_promotion_diagnostics"][0]["next_required_stage"] == "HYDRATE_MARKET_CONTEXT"
+
+
 def test_pipeline_tracks_official_watch_only_after_successful_emit():
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
