@@ -425,6 +425,53 @@ def test_pipeline_logs_no_trade_pressure_as_decision_update_not_signal_json(capl
     assert verdict["no_trade_pressure_decision_update"]["execution_block_reason"] == "NON_EXECUTE_VERDICT"
 
 
+def test_pipeline_routes_no_trade_pressure_to_pressure_state_when_guard_enabled(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true")
+    monkeypatch.setenv("SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR", "true")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._last_no_trade_pressure_decision_at = {}
+
+    report = {
+        "counts": {"total_events": 3, "pairs": {"USDCAD": 3}},
+        "symbol_activity": {
+            "USDCAD": {
+                "latest_event_utc": "2026-06-08T08:49:17+00:00",
+                "latest_block_effective_ticks": 3,
+            }
+        },
+        "microboost_summary": {"count_total": 0},
+    }
+    verdict: dict[str, Any] = {"verdict": "NO_TRADE", "direction": "BUY"}
+    market_contexts = {
+        "USDCAD": MarketContext(
+            symbol="USDCAD",
+            raw_allowed_direction="BUY",
+            bid=1.3763,
+            ask=1.3765,
+            price_at_signal_end=1.3764,
+        )
+    }
+
+    pipeline._apply_no_trade_pressure_decision_update(
+        symbol="USDCAD",
+        l12_verdict=verdict,
+        report=report,
+        market_contexts=market_contexts,
+    )
+
+    assert "[SignalPressureStateJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert "no_trade_pressure_decision_update" not in verdict
+    state = verdict["no_trade_pressure_state"]
+    assert state["event"] == "signal_pressure_state_json"
+    assert state["status"] == "PRESSURE_CANARY"
+    assert state["eligible_for_signal_decision"] is False
+    assert state["signal_pressure_state_emit_result"] is True
+
+
 def test_pipeline_logs_allowed_quorum_context_gap_as_decision_update(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
@@ -499,6 +546,70 @@ def test_pipeline_logs_allowed_quorum_context_gap_as_decision_update(caplog):
     assert emitted_payload["allowed_quorum_context"]["quorum_reached"] is True
     assert emitted_payload["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
     assert emitted_payload["microboost_detected"] is False
+
+
+def test_pipeline_routes_allowed_quorum_to_pressure_state_when_guard_enabled(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true")
+    monkeypatch.setenv("SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR", "true")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._last_allowed_quorum_decision_at = {}
+
+    report = {
+        "allowed_quorum": {
+            "symbol": "AUDUSD",
+            "direction": "BUY",
+            "streak": 3,
+            "quorum_size": 3,
+            "quorum_reached": True,
+        },
+        "counts": {"total_events": 3, "pairs": {"AUDUSD": 3}},
+        "symbol_activity": {
+            "AUDUSD": {
+                "latest_event_utc": "2026-06-09T02:01:28+00:00",
+                "latest_block_effective_ticks": 3,
+            }
+        },
+        "microboost_summary": {"count_total": 0},
+        "watch_promotion_blockers": {
+            "ALLOWED_QUORUM_PENDING_VALIDATION": 3,
+            "MICROBOOST_NOT_FORMED": 3,
+        },
+    }
+    verdict: dict[str, Any] = {
+        "verdict": "EXECUTE_REDUCED_RISK_BUY",
+        "direction": "BUY",
+        "errors": ["L1_BLOCKER:LOW_CONTEXT_COHERENCE"],
+    }
+    market_contexts = {
+        "AUDUSD": MarketContext(
+            symbol="AUDUSD",
+            raw_allowed_direction="BUY",
+            bid=0.6612,
+            ask=0.6613,
+            price_at_signal_end=0.66125,
+        )
+    }
+
+    pipeline._apply_allowed_quorum_decision_update(
+        symbol="AUDUSD",
+        synthesis={"execution": {"direction": "BUY", "entry_price": 0.66125}},
+        l12_verdict=verdict,
+        report=report,
+        market_contexts=market_contexts,
+        source_verdict="EXECUTE_REDUCED_RISK_BUY",
+    )
+
+    assert "[SignalPressureStateJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert "allowed_quorum_decision_update" not in verdict
+    state = verdict["allowed_quorum_pressure_state"]
+    assert state["status"] == "ALLOWED_QUORUM_WAIT_CONTEXT"
+    assert state["source_stage"] == "SIGNAL_THROTTLE_INTEL"
+    assert state["eligible_for_signal_decision"] is False
+    assert state["signal_pressure_state_emit_result"] is True
 
 
 def test_pipeline_suppresses_single_no_trade_pressure_canary(caplog):
