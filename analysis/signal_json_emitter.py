@@ -53,6 +53,11 @@ TERMINAL_SIGNAL_PUBLIC_FIELDS = {
 
 EMITTABLE_SIGNAL_STATUSES = TERMINAL_SIGNAL_STATUSES | {
     "PAIR_SIGNAL_CANDIDATE",
+    "CLEAN_BLOCK_BUY_WATCH",
+    "CLEAN_BLOCK_SELL_WATCH",
+    "CLEAN_BLOCK_WATCH_PENDING_CONTEXT",
+    "CLEAN_BLOCK_WATCH_PENDING_DIRECTION",
+    "CLEAN_BLOCK_WATCH_BLOCKED",
     "MICROBOOST_WATCH",
     "MICROBOOST_COUNTER_ENTRY_WATCH",
     "MICROBOOST_COUNTER_ENTRY_VALID",
@@ -124,6 +129,11 @@ CONDITIONAL_SIGNAL_STATUSES = {
 }
 
 WATCH_SIGNAL_STATUSES = {
+    "CLEAN_BLOCK_BUY_WATCH",
+    "CLEAN_BLOCK_SELL_WATCH",
+    "CLEAN_BLOCK_WATCH_PENDING_CONTEXT",
+    "CLEAN_BLOCK_WATCH_PENDING_DIRECTION",
+    "CLEAN_BLOCK_WATCH_BLOCKED",
     "MICROBOOST_WATCH",
     "NANO_ABSORPTION_SELL_WATCH",
     "EARLY_SELL_WATCH",
@@ -409,6 +419,15 @@ class SignalJsonEvent:
     signal_watch_source: str | None = None
     source_clean_block_confirmed: bool | None = None
     source_clean_block_valid_since_utc: str | None = None
+    source_clean_block_id: str | None = None
+    source_pressure_block_id: str | None = None
+    clean_block_valid: bool | None = None
+    clean_block_start_utc: str | None = None
+    clean_block_end_utc: str | None = None
+    clean_block_duration_seconds: float | None = None
+    clean_block_event_count: int | None = None
+    clean_block_direction: str | None = None
+    watch_promotion_source: str | None = None
     microboost_validation_status: str | None = None
     source_target_mode: str | None = None
     parent_event_type: str | None = None
@@ -1064,6 +1083,15 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         signal_watch_source=_optional_str(counter_entry.get("signal_watch_source")),
         source_clean_block_confirmed=_optional_bool(counter_entry.get("source_clean_block_confirmed")),
         source_clean_block_valid_since_utc=_optional_str(counter_entry.get("source_clean_block_valid_since_utc")),
+        source_clean_block_id=_optional_str(counter_entry.get("source_clean_block_id")),
+        source_pressure_block_id=_optional_str(counter_entry.get("source_pressure_block_id")),
+        clean_block_valid=_optional_bool(counter_entry.get("clean_block_valid")),
+        clean_block_start_utc=_optional_str(counter_entry.get("clean_block_start_utc")),
+        clean_block_end_utc=_optional_str(counter_entry.get("clean_block_end_utc")),
+        clean_block_duration_seconds=_optional_float(counter_entry.get("clean_block_duration_seconds")),
+        clean_block_event_count=_optional_int(counter_entry.get("clean_block_event_count")),
+        clean_block_direction=_optional_str(counter_entry.get("clean_block_direction")),
+        watch_promotion_source=_optional_str(counter_entry.get("watch_promotion_source")),
         microboost_validation_status=_optional_str(counter_entry.get("microboost_validation_status")),
         source_target_mode=_optional_str(counter_entry.get("source_target_mode")),
         parent_event_type=_optional_str(counter_entry.get("parent_event_type")),
