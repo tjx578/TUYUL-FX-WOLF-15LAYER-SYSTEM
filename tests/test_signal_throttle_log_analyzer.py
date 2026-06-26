@@ -628,6 +628,44 @@ def test_clean_throttle_block_then_resistance_microboost_creates_watch_before_an
     assert report["microboost_watch_entry"] is None
 
 
+def test_all_lifecycle_clean_blocks_get_watch_or_diagnostic_routes():
+    events = [_event(index * 30, "USDCAD", event_type="ALLOWED") for index in range(11)]
+    events.extend(_event(420 + index * 30, "GBPNZD", event_type="ALLOWED") for index in range(11))
+    markets = {
+        "USDCAD": MarketContext(
+            symbol="USDCAD",
+            raw_allowed_direction="BUY",
+            price_at_signal_start=1.3730,
+            price_at_5m_confirm=1.3735,
+            price_at_signal_end=1.3740,
+            m15_phase="BULLISH_PULLBACK",
+            h1_phase="BULLISH",
+            price_position="MID_RANGE",
+        ),
+        "GBPNZD": MarketContext(
+            symbol="GBPNZD",
+            raw_allowed_direction="BUY",
+            price_at_signal_start=2.0600,
+            price_at_5m_confirm=2.0610,
+            price_at_signal_end=2.0620,
+            m15_phase="BULLISH_PULLBACK",
+            h1_phase="BULLISH",
+            price_position="MID_RANGE",
+        ),
+    }
+
+    report = analyze_signal_throttle_events(events, market_contexts=markets)
+
+    candidates = report["clean_watch_candidates"]
+    outputs = report["clean_block_watch_entries"] + report["signal_watch_promotion_diagnostics"]
+    assert [candidate["symbol"] for candidate in candidates] == ["USDCAD", "GBPNZD"]
+    assert len(outputs) == len(candidates)
+    assert {entry["source_clean_block_id"] for entry in outputs} == {
+        candidate["source_clean_block_id"] for candidate in candidates
+    }
+    assert all(entry["status"].startswith("CLEAN_BLOCK_") for entry in report["clean_block_watch_entries"])
+
+
 def test_live_analyzer_same_second_batch_not_hard_interrupt():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
     base = datetime(2026, 5, 8, 12, 0, 5, tzinfo=UTC)
