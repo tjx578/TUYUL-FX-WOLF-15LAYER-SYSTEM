@@ -737,6 +737,15 @@ def _with_block_fields(
         "signal_watch_source",
         "source_clean_block_confirmed",
         "source_clean_block_valid_since_utc",
+        "source_clean_block_id",
+        "source_pressure_block_id",
+        "clean_block_valid",
+        "clean_block_start_utc",
+        "clean_block_end_utc",
+        "clean_block_duration_seconds",
+        "clean_block_event_count",
+        "clean_block_direction",
+        "watch_promotion_source",
         "microboost_validation_status",
     ):
         if payload.get(key) is None and watch.payload.get(key) is not None:
