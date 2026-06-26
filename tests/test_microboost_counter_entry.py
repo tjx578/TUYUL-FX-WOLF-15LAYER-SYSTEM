@@ -65,6 +65,47 @@ def test_buy_microboost_at_main_resistance_becomes_sell_watch():
     assert result.sl_safe == 1.8494
 
 
+def test_direction_conflict_resolver_blocks_counter_sell_when_raw_buy_basket_supported():
+    result = MicroboostCounterEntryEngine(direction_conflict_resolver_enabled=True).evaluate(
+        _cluster(
+            symbol="USDCAD",
+            duration_seconds=120.0,
+            price_at_signal_start=1.3750,
+            price_at_signal_end=1.37502,
+        ),
+        _market(
+            symbol="USDCAD",
+            price_at_signal_start=1.3750,
+            price_at_5m_confirm=1.37502,
+            price_at_signal_end=1.37502,
+            resistance_low=1.3750,
+            resistance_high=1.3765,
+            minor_support=1.3738,
+            major_support=1.3720,
+            basket_validation={
+                "symbol": "USDCAD",
+                "direction": "BUY",
+                "valid": True,
+                "data_ready": True,
+                "base_score": 0.72,
+                "quote_score": -0.38,
+                "pair_alignment": 1.1,
+                "evidence": {"currency_scores": {"USD": 0.72, "CAD": -0.38}},
+            },
+        ),
+    )
+
+    assert result.status == CounterEntryStatus.NONE
+    assert result.candidate_direction is None
+    assert result.watch_direction is None
+    assert result.direction_conflict is True
+    assert result.raw_direction_supported is True
+    assert result.counter_direction_allowed is False
+    assert result.counter_direction_block_reason == "BASKET_SUPPORTS_RAW_DIRECTION"
+    assert result.direction_validation_status == "COUNTER_DIRECTION_BLOCKED_BY_RAW_BASKET"
+    assert result.valid_for_execution is False
+
+
 def test_rejection_confirms_sell_timing_valid():
     result = MicroboostCounterEntryEngine().evaluate(
         _cluster(),
