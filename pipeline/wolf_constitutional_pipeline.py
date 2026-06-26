@@ -86,6 +86,7 @@ from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
 from analysis.signal_block_finalizer import SignalBlockFinalizer
+from analysis.signal_decision_source_guard import route_decision_or_pressure
 from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
 from analysis.signal_lifecycle_manager import (
@@ -93,6 +94,7 @@ from analysis.signal_lifecycle_manager import (
     record_active_if_execution_grade,
     shadow_preview_event,
 )
+from analysis.signal_pressure_state_emitter import emit_signal_pressure_state
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
     emit_signal_throttle_intel,
@@ -4705,6 +4707,13 @@ class WolfConstitutionalPipeline:
                 report=report,
             )
             return
+        if self._route_pressure_decision_or_emit(
+            payload,
+            report=report,
+            l12_verdict=l12_verdict,
+            state_key="allowed_quorum_pressure_state",
+        ):
+            return
         payload["signal_json_emit_result"] = self._emit_signal_json_payload(payload)
         report["allowed_quorum_decision_update"] = payload
         l12_verdict["allowed_quorum_decision_update"] = payload
@@ -4879,6 +4888,8 @@ class WolfConstitutionalPipeline:
             "symbol": symbol.upper(),
             "cluster_id": cluster_id,
             "signal_family": "SIGNAL_THROTTLE_ALLOWED_QUORUM",
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "promotion_stage": "PRESSURE_ONLY",
             "source_status": "CANARY_QUORUM_PENDING_VALIDATION",
             "status": "NO_TRADE_REASONED",
             "previous_status": "CANARY_QUORUM_PENDING_VALIDATION",
@@ -5037,6 +5048,13 @@ class WolfConstitutionalPipeline:
             microboost_detected=microboost_detected,
         )
         if payload is None:
+            return
+        if self._route_pressure_decision_or_emit(
+            payload,
+            report=report,
+            l12_verdict=l12_verdict,
+            state_key="no_trade_pressure_state",
+        ):
             return
         payload["signal_json_emit_result"] = self._emit_signal_json_payload(payload)
         report["no_trade_pressure_decision_update"] = payload
@@ -5214,6 +5232,8 @@ class WolfConstitutionalPipeline:
             "symbol": symbol.upper(),
             "cluster_id": cluster_id,
             "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "promotion_stage": "PRESSURE_ONLY",
             "status": "NO_TRADE_REASONED",
             "previous_status": "PRESSURE_SEEN",
             "new_status": "NO_TRADE_REASONED",
@@ -5355,6 +5375,45 @@ class WolfConstitutionalPipeline:
         if signal_event is None:
             return False
         return self._signal_json_emitter.emit(signal_event)
+
+    def _route_pressure_decision_or_emit(
+        self,
+        payload: dict[str, Any],
+        *,
+        report: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        state_key: str,
+    ) -> bool:
+        if os.getenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "false").strip().lower() != "true":
+            return False
+        if (
+            os.getenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "false").strip().lower()
+            != "true"
+        ):
+            return False
+        route = route_decision_or_pressure(
+            payload,
+            require_lifecycle_anchor=(
+                os.getenv("SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR", "false").strip().lower() == "true"
+            ),
+        )
+        if route.route != "SIGNAL_PRESSURE_STATE":
+            return False
+        pressure_payload = route.payload
+        pressure_payload["signal_pressure_state_emit_result"] = self._emit_signal_pressure_state_payload(
+            pressure_payload
+        )
+        report[state_key] = pressure_payload
+        l12_verdict[state_key] = pressure_payload
+        return True
+
+    @staticmethod
+    def _emit_signal_pressure_state_payload(payload: dict[str, Any]) -> bool:
+        return emit_signal_pressure_state(
+            payload,
+            enabled=os.getenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "false").strip().lower() == "true",
+            prefix=os.getenv("SIGNAL_PRESSURE_STATE_JSON_LOG_PREFIX", "[SignalPressureStateJSON]"),
+        )
 
     def _emit_lifecycle_shadow_preview(self, payload: dict[str, Any]) -> None:
         """P1B (flag-guarded, default OFF): shadow-only preview of the active-signal
