@@ -26,6 +26,7 @@ try:
 except ImportError:  # pragma: no cover - supports top-level ``analysis`` imports in tests/tools.
     from schemas.direction import normalize_direction
 
+from .direction_conflict_resolver import resolve_direction_conflict
 from .market_context_validator import MarketContext, missing_market_context_result, validate_market_context
 from .microboost_continuation_entry import MicroboostContinuationEngine
 from .microboost_core_event import to_microboost_core_event
@@ -1545,6 +1546,7 @@ def _counter_entry_payload(
         direct_absorption_require_theme_alignment=_env_bool("DIRECT_ABSORPTION_REQUIRE_THEME_ALIGNMENT", False),
         direct_absorption_require_rr=_env_bool("DIRECT_ABSORPTION_REQUIRE_RR", True),
         allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
+        direction_conflict_resolver_enabled=_env_bool("SIGNAL_DIRECTION_CONFLICT_RESOLVER_ENABLED", False),
     ).evaluate(latest, watch_only=True)
     payload = result.to_dict()
     payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
@@ -1805,12 +1807,45 @@ def _microboost_watch_payload(
             # counter scenario. final_direction (WAIT) + valid_for_execution (False) are
             # deliberately NOT in `headline`, so they are never touched here.
             payload.update({key: value for key, value in headline.items() if key != "resolved"})
+            _apply_direction_conflict_resolution_to_watch_payload(payload, snapshot)
     _maybe_attach_structure_preview(payload, snapshot)
     if clean_block_fallback and candidate_direction in {"BUY", "SELL"}:
         _apply_clean_block_fallback_branding(payload, candidate_direction)
     latest["microboost_watch"] = payload
     microboost_summary["watch_entry"] = payload
     return payload
+
+
+def _apply_direction_conflict_resolution_to_watch_payload(payload: dict[str, Any], snapshot: dict[str, Any]) -> None:
+    if not _env_bool("SIGNAL_DIRECTION_CONFLICT_RESOLVER_ENABLED", False):
+        return
+    resolution = resolve_direction_conflict(
+        symbol=str(payload.get("symbol") or ""),
+        raw_direction=payload.get("raw_direction"),
+        candidate_direction=payload.get("candidate_direction") or payload.get("watch_direction"),
+        market_context=snapshot,
+        basket_validation=snapshot.get("basket_validation") if isinstance(snapshot, dict) else None,
+    )
+    payload["direction_conflict"] = resolution.direction_conflict
+    payload["raw_direction_supported"] = resolution.raw_direction_status == "SUPPORTS_RAW_DIRECTION"
+    payload["counter_direction_allowed"] = resolution.counter_direction_allowed
+    payload["counter_direction_block_reason"] = resolution.counter_direction_block_reason
+    payload["direction_conflict_resolution"] = resolution.to_dict()
+    if resolution.counter_direction_allowed:
+        return
+    raw = resolution.raw_direction
+    payload["status"] = "MICROBOOST_WATCH"
+    payload["signal_family"] = "MICROBOOST_WATCH"
+    payload["resolved_family"] = "WATCH_ONLY_DIRECTION_CONFLICT"
+    payload["candidate_direction"] = raw
+    payload["watch_direction"] = raw
+    payload["final_direction"] = "WAIT"
+    payload["direction_status"] = "COUNTER_DIRECTION_BLOCKED_BY_RAW_BASKET"
+    payload["direction_validation_status"] = "COUNTER_DIRECTION_BLOCKED_BY_RAW_BASKET"
+    payload["action"] = resolution.action
+    payload["reason"] = resolution.counter_direction_block_reason or "counter_direction_blocked_by_direction_conflict"
+    payload["valid_for_execution"] = False
+    payload["signal_quality"] = "WATCH_ONLY"
 
 
 def _apply_clean_block_fallback_branding(payload: dict[str, Any], direction: str) -> None:
