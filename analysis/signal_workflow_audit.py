@@ -27,6 +27,7 @@ CHANNELS = (
     "MicroboostTable",
     "MicroboostWatchDiagnostic",
     "MicroboostShadowDiagnostic",
+    "SignalPressureStateJSON",
     "SignalWatchJSON",
     "SignalDecisionUpdateJSON",
     "SignalExecutionGateJSON",
