@@ -26,6 +26,8 @@ class BasketDirectionResult:
     base_score: float | None
     quote_score: float | None
     pair_alignment: float | None
+    basket_bias: str | None
+    directional_status: str
     valid: bool
     data_ready: bool
     blockers: list[str]
@@ -76,6 +78,8 @@ def validate_basket_direction(
             base_score=base_score,
             quote_score=quote_score,
             pair_alignment=None,
+            basket_bias=_basket_bias(None, min_pair_alignment),
+            directional_status="DIRECTION_MISSING",
             valid=False,
             data_ready=bool(scores),
             blockers=["DIRECTION_MISSING"],
@@ -91,6 +95,8 @@ def validate_basket_direction(
             base_score=base_score,
             quote_score=quote_score,
             pair_alignment=None,
+            basket_bias=_basket_bias(None, min_pair_alignment),
+            directional_status="DATA_UNAVAILABLE",
             valid=False,
             data_ready=False,
             blockers=["BASKET_DATA_UNAVAILABLE"],
@@ -122,6 +128,7 @@ def validate_basket_direction(
             blockers.append(f"QUOTE_{quote}_BASKET_WEAK" if quote_score <= -min_quote_strength else f"QUOTE_{quote}_BASKET_NOT_STRONG")
         if pair_alignment > -min_pair_alignment:
             blockers.append("PAIR_BASKET_NOT_ALIGNED_SELL")
+    basket_bias = _basket_bias(pair_alignment, min_pair_alignment)
 
     return BasketDirectionResult(
         symbol=normalized_symbol,
@@ -131,6 +138,8 @@ def validate_basket_direction(
         base_score=round(base_score, 4),
         quote_score=round(quote_score, 4),
         pair_alignment=round(pair_alignment, 4),
+        basket_bias=basket_bias,
+        directional_status=_directional_status(normalized_direction, basket_bias, blockers),
         valid=not blockers,
         data_ready=True,
         blockers=blockers,
@@ -162,6 +171,28 @@ def _score_for_base(base: str, scores: Mapping[str, float]) -> float | None:
     return scores.get(base)
 
 
+def _basket_bias(pair_alignment: float | None, min_pair_alignment: float) -> str:
+    if pair_alignment is None:
+        return "UNKNOWN"
+    if abs(float(pair_alignment)) < float(min_pair_alignment):
+        return "NEUTRAL_LOW_DIFFERENTIAL"
+    return "SUPPORTS_BUY" if pair_alignment > 0 else "SUPPORTS_SELL"
+
+
+def _directional_status(direction: str | None, basket_bias: str, blockers: list[str]) -> str:
+    if direction not in {"BUY", "SELL"}:
+        return "DIRECTION_MISSING"
+    if basket_bias == "NEUTRAL_LOW_DIFFERENTIAL":
+        return "NEUTRAL_LOW_DIFFERENTIAL"
+    if (direction == "BUY" and basket_bias == "SUPPORTS_BUY") or (
+        direction == "SELL" and basket_bias == "SUPPORTS_SELL"
+    ):
+        return "SUPPORTS_DIRECTION" if not blockers else "PARTIAL_SUPPORT_BLOCKED"
+    if basket_bias in {"SUPPORTS_BUY", "SUPPORTS_SELL"}:
+        return "REJECTS_DIRECTION"
+    return "UNKNOWN"
+
+
 def _empty_result(symbol: str, direction: str | None, blocker: str) -> BasketDirectionResult:
     return BasketDirectionResult(
         symbol=symbol,
@@ -171,6 +202,8 @@ def _empty_result(symbol: str, direction: str | None, blocker: str) -> BasketDir
         base_score=None,
         quote_score=None,
         pair_alignment=None,
+        basket_bias=None,
+        directional_status=blocker,
         valid=False,
         data_ready=False,
         blockers=[blocker],
