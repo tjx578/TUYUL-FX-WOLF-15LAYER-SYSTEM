@@ -70,6 +70,7 @@ from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 
 from analysis.basket_direction_validator import validate_basket_direction
+from analysis.clean_block_watch_router import emit_signal_watch_promotion_diagnostic
 from analysis.htf_structure_snapshot import (
     HTFStructureSnapshotResolver,
     emit_htf_structure_snapshot,
@@ -4049,6 +4050,7 @@ class WolfConstitutionalPipeline:
         self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_watch_entry_report(l12_verdict=l12_verdict, report=report)
+        self._apply_clean_block_watch_routes(l12_verdict=l12_verdict, report=report)
         self._apply_signal_block_finalizer(
             l12_verdict=l12_verdict,
             report=report,
@@ -4591,6 +4593,98 @@ class WolfConstitutionalPipeline:
         if watch_entry["signal_json_emit_result"]:
             self._track_official_lifecycle_candidate(watch_entry)
 
+    def _apply_clean_block_watch_routes(
+        self,
+        *,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+    ) -> None:
+        watch_entries = report.get("clean_block_watch_entries")
+        processed: list[dict[str, Any]] = []
+        covered_clean_blocks = self._covered_clean_block_watch_ids(report)
+        if isinstance(watch_entries, list):
+            for raw_entry in watch_entries:
+                if not isinstance(raw_entry, dict):
+                    continue
+                watch_entry = dict(raw_entry)
+                source_id = str(watch_entry.get("source_clean_block_id") or "").strip()
+                if source_id and source_id in covered_clean_blocks:
+                    watch_entry["signal_json_emit_result"] = False
+                    watch_entry["clean_block_watch_route_skipped"] = True
+                    watch_entry["skip_reason"] = "CLEAN_BLOCK_ALREADY_COVERED_BY_EXISTING_SIGNAL_WATCH"
+                    processed.append(watch_entry)
+                    continue
+
+                self._prepare_lifecycle_tracking_metadata(watch_entry)
+                watch_entry["signal_json_emit_result"] = self._emit_signal_json_payload(watch_entry)
+                if watch_entry["signal_json_emit_result"]:
+                    self._track_official_lifecycle_candidate(watch_entry)
+                    if source_id:
+                        covered_clean_blocks.add(source_id)
+                processed.append(watch_entry)
+
+        if processed:
+            report["clean_block_watch_entries"] = processed
+            l12_verdict["clean_block_watch_entries"] = processed
+
+        self._emit_signal_watch_promotion_diagnostics(report)
+        diagnostics = report.get("signal_watch_promotion_diagnostics")
+        if isinstance(diagnostics, list) and diagnostics:
+            l12_verdict["signal_watch_promotion_diagnostics"] = diagnostics
+
+    @staticmethod
+    def _covered_clean_block_watch_ids(report: dict[str, Any]) -> set[str]:
+        covered: set[str] = set()
+        for key in ("microboost_watch_entry", "microboost_counter_entry", "microboost_continuation_entry"):
+            candidate = report.get(key)
+            if not isinstance(candidate, dict):
+                continue
+            status = str(candidate.get("status") or "")
+            if not status.endswith("_WATCH"):
+                continue
+            if candidate.get("signal_json_emit_result") is not True:
+                continue
+            source_id = str(candidate.get("source_clean_block_id") or "").strip()
+            if source_id:
+                covered.add(source_id)
+        return covered
+
+    def _emit_signal_watch_promotion_diagnostics(self, report: dict[str, Any]) -> None:
+        diagnostics = report.get("signal_watch_promotion_diagnostics")
+        if not isinstance(diagnostics, list):
+            return
+        enabled = os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true").strip().lower() == "true"
+        prefix = os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_LOG_PREFIX", "[SignalWatchPromotionDiagnostic]")
+        store = getattr(self, "_last_signal_watch_promotion_diag_key", None)
+        if not isinstance(store, dict):
+            store = {}
+            self._last_signal_watch_promotion_diag_key = store
+
+        processed: list[dict[str, Any]] = []
+        for raw_diag in diagnostics:
+            if not isinstance(raw_diag, dict):
+                continue
+            diag = dict(raw_diag)
+            source_id = str(diag.get("source_clean_block_id") or diag.get("symbol") or "").strip()
+            blocked_by = "/".join(str(item) for item in diag.get("blocked_by") or [])
+            key = f"{source_id}|{blocked_by}|{diag.get('next_required_stage') or ''}"
+            if source_id and store.get(source_id) == key:
+                diag["diagnostic_emit_result"] = False
+                diag["diagnostic_deduped"] = True
+                processed.append(diag)
+                continue
+            if source_id:
+                store[source_id] = key
+            diag["diagnostic_emit_result"] = emit_signal_watch_promotion_diagnostic(
+                diag,
+                enabled=enabled,
+                prefix=prefix,
+            )
+            processed.append(diag)
+
+        if processed:
+            report["signal_watch_promotion_diagnostics"] = processed
+
     def _apply_microboost_counter_entry_report(
         self,
         *,
@@ -4817,6 +4911,17 @@ class WolfConstitutionalPipeline:
             candidate = report.get(key)
             if isinstance(candidate, dict) and str(candidate.get("status") or "NONE") != "NONE":
                 return True
+        clean_watch_entries = report.get("clean_block_watch_entries")
+        if isinstance(clean_watch_entries, list) and any(
+            isinstance(entry, dict) and str(entry.get("status") or "NONE") != "NONE"
+            for entry in clean_watch_entries
+        ):
+            return True
+        clean_watch_diagnostics = report.get("signal_watch_promotion_diagnostics")
+        if isinstance(clean_watch_diagnostics, list) and any(
+            isinstance(entry, dict) for entry in clean_watch_diagnostics
+        ):
+            return True
         updates = report.get("signal_block_finalizer_updates")
         if isinstance(updates, list) and any(isinstance(update, dict) for update in updates):
             return True
