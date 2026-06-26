@@ -181,6 +181,12 @@ def test_pipeline_logs_generic_microboost_watch_as_signal_watch_json(caplog):
             "market_context_applied": True,
             "valid_for_execution": False,
             "reason": "microboost waits for M15 reclaim",
+            "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+            "source_clean_block_confirmed": True,
+            "source_clean_block_id": "CADJPY_20260518T133000Z_20260518T133229Z",
+            "source_pressure_block_id": "CADJPY_20260518T133000Z_20260518T133229Z",
+            "clean_block_valid": True,
+            "clean_block_direction": "BUY",
         }
     }
     verdict: dict = {}
@@ -458,7 +464,7 @@ def test_pipeline_logs_block_finalizer_update_as_signal_decision_update_json(cap
     assert report["signal_block_finalizer_updates"][0]["signal_json_emit_result"] is True
 
 
-def test_pipeline_logs_no_trade_pressure_as_decision_update_not_signal_json(caplog):
+def test_pipeline_logs_no_trade_pressure_as_pressure_state_by_default(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
@@ -492,15 +498,17 @@ def test_pipeline_logs_no_trade_pressure_as_decision_update_not_signal_json(capl
         market_contexts=market_contexts,
     )
 
-    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalPressureStateJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
     assert "[SignalJSON]" not in caplog.text
-    assert '"status":"NO_TRADE_REASONED"' in caplog.text
+    assert '"status":"PRESSURE_CANARY"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text
-    assert verdict["no_trade_pressure_decision_update"]["terminal_status"] == "NO_TRADE_REASONED"
-    assert verdict["no_trade_pressure_decision_update"]["signal_json_emit_result"] is True
-    assert verdict["no_trade_pressure_decision_update"]["pressure_event_count"] == 3
-    assert verdict["no_trade_pressure_decision_update"]["pressure_level"] == "PRESSURE_CANARY"
-    assert verdict["no_trade_pressure_decision_update"]["execution_block_reason"] == "NON_EXECUTE_VERDICT"
+    state = verdict["no_trade_pressure_state"]
+    assert state["terminal_status"] == "PRESSURE_ONLY"
+    assert state["eligible_for_signal_decision"] is False
+    assert state["pressure_event_count"] == 3
+    assert state["pressure_level"] == "PRESSURE_CANARY"
+    assert state["execution_block_reason"] == "NON_EXECUTE_VERDICT"
 
 
 def test_pipeline_routes_no_trade_pressure_to_pressure_state_when_guard_enabled(monkeypatch, caplog):
@@ -550,7 +558,7 @@ def test_pipeline_routes_no_trade_pressure_to_pressure_state_when_guard_enabled(
     assert state["signal_pressure_state_emit_result"] is True
 
 
-def test_pipeline_logs_allowed_quorum_context_gap_as_decision_update(caplog):
+def test_pipeline_logs_allowed_quorum_context_gap_as_pressure_state_by_default(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
@@ -602,26 +610,26 @@ def test_pipeline_logs_allowed_quorum_context_gap_as_decision_update(caplog):
         source_verdict="EXECUTE_REDUCED_RISK_BUY",
     )
 
-    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "[SignalPressureStateJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
     assert "[SignalJSON]" not in caplog.text
     assert "Allowed quorum pressure reached SignalThrottle" not in caplog.text
     assert '"signal_family":"SIGNAL_THROTTLE_ALLOWED_QUORUM"' in caplog.text
-    assert '"status":"NO_TRADE_REASONED"' in caplog.text
+    assert '"status":"ALLOWED_QUORUM_WAIT_CONTEXT"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text
-    update = verdict["allowed_quorum_decision_update"]
-    assert update["terminal_status"] == "NO_TRADE_REASONED"
-    assert update["pressure_source"] == "SIGNAL_THROTTLE"
-    assert update["allowed_quorum_seen"] is True
-    assert update["pair_eligible_for_analysis"] is True
-    assert update["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
-    assert update["signal_json_emit_result"] is True
-    emitted = next(rec.message for rec in caplog.records if "[SignalDecisionUpdateJSON]" in rec.message)
-    emitted_payload = json.loads(emitted.split("[SignalDecisionUpdateJSON]", 1)[1].strip())
+    state = verdict["allowed_quorum_pressure_state"]
+    assert state["terminal_status"] == "PRESSURE_ONLY"
+    assert state["pressure_source"] == "SIGNAL_THROTTLE"
+    assert state["allowed_quorum_seen"] is True
+    assert state["pair_eligible_for_analysis"] is True
+    assert state["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
+    assert state["signal_pressure_state_emit_result"] is True
+    emitted = next(rec.message for rec in caplog.records if "[SignalPressureStateJSON]" in rec.message)
+    emitted_payload = json.loads(emitted.split("[SignalPressureStateJSON]", 1)[1].strip())
     assert emitted_payload["pressure_source"] == "SIGNAL_THROTTLE"
     assert emitted_payload["pressure_level"] == "PRESSURE_CANARY"
-    assert emitted_payload["allowed_quorum"] is True
-    assert emitted_payload["allowed_quorum_streak"] == 3
-    assert emitted_payload["allowed_quorum_context"]["quorum_reached"] is True
+    assert emitted_payload["allowed_quorum"]["quorum_reached"] is True
+    assert emitted_payload["allowed_quorum"]["streak"] == 3
     assert emitted_payload["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
     assert emitted_payload["microboost_detected"] is False
 
