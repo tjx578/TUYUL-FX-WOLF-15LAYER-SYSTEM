@@ -26,6 +26,7 @@ try:
 except ImportError:  # pragma: no cover - supports top-level ``analysis`` imports in tests/tools.
     from schemas.direction import normalize_direction
 
+from .clean_block_watch_router import clean_block_lineage_fields, route_clean_blocks_to_watch
 from .direction_conflict_resolver import resolve_direction_conflict
 from .market_context_validator import MarketContext, missing_market_context_result, validate_market_context
 from .microboost_continuation_entry import MicroboostContinuationEngine
@@ -373,6 +374,10 @@ def analyze_signal_throttle_events(
                 window_minutes=microboost_window_minutes,
                 clean_block_seconds=clean_block_seconds,
             ),
+            "clean_watch_candidates": [],
+            "clean_block_watch_routes": [],
+            "clean_block_watch_entries": [],
+            "signal_watch_promotion_diagnostics": [],
             "microboost_core_event": None,
             "microboost_continuation_entry": None,
             "microboost_counter_entry": None,
@@ -453,6 +458,16 @@ def analyze_signal_throttle_events(
         clean_block_seconds=clean_block_seconds,
         window_seconds=candidate_lifecycle_window_seconds,
     )
+    clean_watch_candidates = _clean_watch_candidates_from_blocks(lifecycle_blocks, clean_block_seconds)
+    clean_block_watch_routes = route_clean_blocks_to_watch(
+        clean_watch_candidates,
+        market_contexts=market_contexts,
+        clean_block_seconds=clean_block_seconds,
+    )
+    clean_block_watch_entries = [route.payload for route in clean_block_watch_routes if route.emit_as_watch]
+    signal_watch_promotion_diagnostics = [
+        route.payload for route in clean_block_watch_routes if route.diagnostic
+    ]
     lifecycle_candidate = candidate_lifecycle.get("active_candidate")
     latest_ignition_watch = candidate_lifecycle.get("latest_ignition_watch")
 
@@ -500,7 +515,7 @@ def analyze_signal_throttle_events(
     )
     _apply_microboost_direction_inheritance(microboost_summary, events=ordered)
     direction_recovery = _direction_recovery_counters(ordered, microboost_summary)
-    signal_watch_gate = _signal_watch_gate(candidate, microboost_summary)
+    signal_watch_gate = _signal_watch_gate(candidate, microboost_summary, clean_block_seconds=clean_block_seconds)
     microboost_continuation_entry = _continuation_entry_payload(
         microboost_summary,
         allowed_quorum,
@@ -589,6 +604,10 @@ def analyze_signal_throttle_events(
         "secondary_candidate": candidate_lifecycle.get("secondary_candidate_symbol"),
         "counter_rotation": candidate_lifecycle.get("counter_rotation"),
         "candidate_lifecycle": candidate_lifecycle,
+        "clean_watch_candidates": clean_watch_candidates,
+        "clean_block_watch_routes": [route.to_dict() for route in clean_block_watch_routes],
+        "clean_block_watch_entries": clean_block_watch_entries,
+        "signal_watch_promotion_diagnostics": signal_watch_promotion_diagnostics,
         "dominant_themes": dominant_themes,
         "theme_scores": theme_scores,
         "candidate": candidate,
@@ -1266,6 +1285,22 @@ def _empty_candidate_lifecycle(window_seconds: int) -> dict[str, Any]:
         "historical_leaders": [],
         "reason": "no_signal_throttle_data",
     }
+
+
+def _clean_watch_candidates_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    clean_blocks = [block for block in blocks if block.duration_seconds >= clean_block_seconds]
+    for block in sorted(clean_blocks, key=lambda item: (item.end, item.symbol, item.start)):
+        payload = _candidate_payload_from_block(block, clean_block_seconds)
+        payload["duration_seconds"] = round(block.duration_seconds, 3)
+        payload.update(clean_block_lineage_fields(payload, clean_block_seconds=clean_block_seconds))
+        key = str(payload.get("source_clean_block_id") or f"{block.symbol}|{block.start}|{block.end}")
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(payload)
+    return candidates
 
 
 def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int) -> dict[str, Any]:
@@ -2342,6 +2377,8 @@ def _has_emit_candidate(payload: dict[str, Any] | None) -> bool:
 def _signal_watch_gate(
     candidate: dict[str, Any] | None,
     microboost_summary: dict[str, Any],
+    *,
+    clean_block_seconds: int = 300,
 ) -> dict[str, Any]:
     latest = microboost_summary.get("latest")
     if not isinstance(candidate, dict):
@@ -2353,6 +2390,7 @@ def _signal_watch_gate(
     candidate_direction = str(candidate.get("direction") or "").upper()
     latest_symbol = str(latest.get("symbol") or "").upper()
     latest_direction = str(latest.get("direction") or "").upper()
+    candidate_lineage = clean_block_lineage_fields(candidate, clean_block_seconds=clean_block_seconds)
     if latest_symbol != candidate_symbol:
         return _empty_signal_watch_gate("MICROBOOST_PAIR_NOT_CLEAN_BLOCK_CANDIDATE", candidate)
 
@@ -2367,6 +2405,19 @@ def _signal_watch_gate(
             "block_start_utc": candidate.get("block_start_utc"),
             "block_end_utc": candidate.get("block_end_utc"),
         }
+        for key in (
+            "source_clean_block_id",
+            "source_pressure_block_id",
+            "clean_block_valid",
+            "clean_block_start_utc",
+            "clean_block_end_utc",
+            "clean_block_duration_seconds",
+            "clean_block_event_count",
+            "clean_block_direction",
+            "watch_promotion_source",
+        ):
+            if candidate_lineage.get(key) is not None:
+                gate[key] = candidate_lineage.get(key)
         if clean_block_fallback:
             gate["clean_block_fallback"] = True
         return gate
@@ -2397,6 +2448,7 @@ def _empty_signal_watch_gate(
     candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     candidate = candidate or {}
+    candidate_lineage = clean_block_lineage_fields(candidate) if candidate else {}
     return {
         "eligible": False,
         "source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
@@ -2406,6 +2458,15 @@ def _empty_signal_watch_gate(
         "valid_since_utc": candidate.get("valid_since_utc"),
         "block_start_utc": candidate.get("block_start_utc"),
         "block_end_utc": candidate.get("block_end_utc"),
+        "source_clean_block_id": candidate_lineage.get("source_clean_block_id"),
+        "source_pressure_block_id": candidate_lineage.get("source_pressure_block_id"),
+        "clean_block_valid": candidate_lineage.get("clean_block_valid"),
+        "clean_block_start_utc": candidate_lineage.get("clean_block_start_utc"),
+        "clean_block_end_utc": candidate_lineage.get("clean_block_end_utc"),
+        "clean_block_duration_seconds": candidate_lineage.get("clean_block_duration_seconds"),
+        "clean_block_event_count": candidate_lineage.get("clean_block_event_count"),
+        "clean_block_direction": candidate_lineage.get("clean_block_direction"),
+        "watch_promotion_source": candidate_lineage.get("watch_promotion_source"),
     }
 
 
@@ -2413,12 +2474,26 @@ def _signal_watch_source_fields(
     signal_watch_gate: dict[str, Any],
     microboost_validated: bool,
 ) -> dict[str, Any]:
-    return {
+    fields = {
         "signal_watch_source": signal_watch_gate["source"],
         "source_clean_block_confirmed": bool(signal_watch_gate["eligible"]),
         "source_clean_block_valid_since_utc": signal_watch_gate.get("valid_since_utc"),
         "microboost_validation_status": "PASSED" if microboost_validated else "NO_SIGNAL_PATTERN",
     }
+    for key in (
+        "source_clean_block_id",
+        "source_pressure_block_id",
+        "clean_block_valid",
+        "clean_block_start_utc",
+        "clean_block_end_utc",
+        "clean_block_duration_seconds",
+        "clean_block_event_count",
+        "clean_block_direction",
+        "watch_promotion_source",
+    ):
+        if signal_watch_gate.get(key) is not None:
+            fields[key] = signal_watch_gate.get(key)
+    return fields
 
 
 def _pair_eligible_for_analysis(
