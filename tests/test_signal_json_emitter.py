@@ -91,6 +91,39 @@ def test_signal_json_emits_generic_microboost_watch(caplog):
     assert '"watch_direction":"BUY"' in caplog.text
 
 
+def test_signal_json_emits_clean_block_watch_status(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="USDCAD_20260623T050049Z_20260623T055702Z",
+        symbol="USDCAD",
+        signal_family="CLEAN_BLOCK_BUY_WATCH",
+        status="CLEAN_BLOCK_BUY_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        action="WAIT_PRICE_THEME_STRUCTURE",
+        rr_status="UNVALIDATED",
+        signal_quality="WATCH_ONLY",
+        source_clean_block_id="USDCAD_20260623T050049Z_20260623T055702Z",
+        source_pressure_block_id="USDCAD_20260623T050049Z_20260623T055702Z",
+        clean_block_valid=True,
+        clean_block_start_utc="2026-06-23T05:00:49+00:00",
+        clean_block_end_utc="2026-06-23T05:57:02+00:00",
+        clean_block_duration_seconds=3373.0,
+        clean_block_event_count=48,
+        clean_block_direction="BUY",
+        watch_promotion_source="CLEAN_BLOCK_ROUTER",
+        valid_for_execution=False,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"status":"CLEAN_BLOCK_BUY_WATCH"' in caplog.text
+    assert '"source_clean_block_id":"USDCAD_20260623T050049Z_20260623T055702Z"' in caplog.text
+
+
 def test_signal_json_does_not_emit_watch_by_default(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(cluster_id="USDCAD_20260519T145605Z")
