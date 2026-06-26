@@ -14,8 +14,8 @@ import os
 import re
 import threading
 from collections import Counter, deque
-from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime, timedelta
 from numbers import Real
 from pathlib import Path
@@ -26,12 +26,15 @@ try:
 except ImportError:  # pragma: no cover - supports top-level ``analysis`` imports in tests/tools.
     from schemas.direction import normalize_direction
 
-from .market_context_validator import missing_market_context_result
+from .market_context_validator import MarketContext, missing_market_context_result, validate_market_context
 from .microboost_continuation_entry import MicroboostContinuationEngine
 from .microboost_core_event import to_microboost_core_event
 from .microboost_counter_entry import MicroboostCounterEntryEngine
 from .microboost_detector import build_microboost_summary
+from .outcome_memory import summarize_outcome_memory
 from .pressure_cluster_deduper import summarize_pressure_clusters
+from .regime_invalidation import validate_regime_state
+from .signal_promotion_score import score_signal_promotion
 from .signal_throttle_pattern_detector import classify_pressure_block
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
@@ -377,6 +380,15 @@ def analyze_signal_throttle_events(
             "pressure_cluster_summary": summarize_pressure_clusters([])
             if _env_bool("SIGNAL_PRESSURE_CLUSTER_DEDUP_ENABLED", False)
             else None,
+            "outcome_memory_summary": summarize_outcome_memory([])
+            if _env_bool("SIGNAL_OUTCOME_MEMORY_ENABLED", False)
+            else None,
+            "regime_invalidation": validate_regime_state(symbol="UNKNOWN", direction=None).to_dict()
+            if _env_bool("SIGNAL_REGIME_INVALIDATION_ENABLED", False)
+            else None,
+            "promotion_score": score_signal_promotion().to_dict()
+            if _env_bool("SIGNAL_PROMOTION_SCORE_ENABLED", False)
+            else None,
             "signal_watch_gate": _empty_signal_watch_gate("NO_SIGNAL_THROTTLE_DATA"),
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "pair_eligible_for_analysis": False,
@@ -466,7 +478,12 @@ def analyze_signal_throttle_events(
     validation_direction = (candidate or {}).get("direction") or _latest_direction_for_symbol(
         ordered, validation_symbol
     )
-    market_context_validation = missing_market_context_result(validation_symbol, validation_direction).to_dict()
+    market_context = _market_context_for_report(market_contexts, validation_symbol)
+    market_context_validation = (
+        validate_market_context(market_context).to_dict()
+        if market_context is not None
+        else missing_market_context_result(validation_symbol, validation_direction).to_dict()
+    )
     allowed_quorum = compute_allowed_quorum(ordered)
     ranked_microboost_blocks = rank_microboost_blocks(
         microboost_blocks,
@@ -516,6 +533,39 @@ def analyze_signal_throttle_events(
         if isinstance(microboost_summary.get("latest"), dict)
         else None
     )
+    outcome_memory_summary = (
+        summarize_outcome_memory(_outcome_memory_sources(ordered, market_contexts))
+        if _env_bool("SIGNAL_OUTCOME_MEMORY_ENABLED", False)
+        else None
+    )
+    regime_invalidation = (
+        validate_regime_state(
+            symbol=validation_symbol,
+            direction=validation_direction,
+            market_context=market_context,
+            market_context_validation=market_context_validation,
+            basket_validation=_basket_validation_from_context(market_context),
+            outcome_memory_summary=outcome_memory_summary,
+        ).to_dict()
+        if _env_bool("SIGNAL_REGIME_INVALIDATION_ENABLED", False)
+        else None
+    )
+    promotion_pressure_cluster_summary = pressure_cluster_summary
+    if promotion_pressure_cluster_summary is None and _env_bool("SIGNAL_PROMOTION_SCORE_ENABLED", False):
+        promotion_pressure_cluster_summary = summarize_pressure_clusters(ordered)
+    promotion_score = (
+        score_signal_promotion(
+            candidate=candidate,
+            allowed_quorum=allowed_quorum,
+            microboost_summary=microboost_summary,
+            market_context_validation=market_context_validation,
+            pressure_cluster_summary=promotion_pressure_cluster_summary,
+            outcome_memory_summary=outcome_memory_summary,
+            regime_invalidation=regime_invalidation,
+        ).to_dict()
+        if _env_bool("SIGNAL_PROMOTION_SCORE_ENABLED", False)
+        else None
+    )
 
     return {
         "final_mode": final_mode,
@@ -550,6 +600,9 @@ def analyze_signal_throttle_events(
         "microboost_watch_miss_diagnostic": microboost_watch_miss_diagnostic,
         "direction_recovery": direction_recovery,
         "pressure_cluster_summary": pressure_cluster_summary,
+        "outcome_memory_summary": outcome_memory_summary,
+        "regime_invalidation": regime_invalidation,
+        "promotion_score": promotion_score,
         "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
         "pair_eligible_for_analysis": pair_eligible_for_analysis,
@@ -2472,6 +2525,61 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _market_context_for_report(market_contexts: dict[str, Any] | None, symbol: str) -> MarketContext | None:
+    if not market_contexts:
+        return None
+    normalized_symbol = str(symbol or "").upper()
+    raw = (
+        market_contexts.get(normalized_symbol)
+        or market_contexts.get(normalized_symbol.lower())
+        or market_contexts.get(str(symbol or ""))
+    )
+    if raw is None:
+        return None
+    return _coerce_market_context_for_report(raw, normalized_symbol)
+
+
+def _coerce_market_context_for_report(raw: Any, symbol: str) -> MarketContext | None:
+    if isinstance(raw, MarketContext):
+        return raw
+    if not isinstance(raw, Mapping):
+        return None
+    allowed_fields = {field.name for field in fields(MarketContext)}
+    payload = {key: value for key, value in raw.items() if key in allowed_fields}
+    payload.setdefault("symbol", symbol)
+    payload.setdefault(
+        "raw_allowed_direction",
+        raw.get("raw_allowed_direction")
+        or raw.get("direction")
+        or raw.get("raw_direction")
+        or raw.get("candidate_direction")
+        or raw.get("validated_direction"),
+    )
+    try:
+        return MarketContext(**payload)
+    except TypeError:
+        return None
+
+
+def _outcome_memory_sources(
+    events: list[SignalThrottleLogEvent],
+    market_contexts: dict[str, Any] | None,
+) -> list[Any]:
+    contexts: list[Any] = []
+    if market_contexts:
+        for symbol, raw in market_contexts.items():
+            context = _coerce_market_context_for_report(raw, str(symbol).upper())
+            if context is not None:
+                contexts.append(context)
+    return contexts or list(events)
+
+
+def _basket_validation_from_context(context: MarketContext | None) -> dict[str, Any] | None:
+    if context is None or not isinstance(context.basket_validation, dict):
+        return None
+    return dict(context.basket_validation)
 
 
 def _first_number(*values: Any) -> float | None:
