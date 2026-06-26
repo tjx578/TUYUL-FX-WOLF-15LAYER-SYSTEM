@@ -268,6 +268,40 @@ def test_pressure_cluster_summary_is_flag_guarded(monkeypatch):
     assert report["pressure_cluster_summary"]["by_symbol_direction"]["USDCAD:BUY"]["raw_event_count"] == 3
 
 
+def test_advisory_intelligence_layers_are_flag_guarded(monkeypatch):
+    events = [_event(index * 10, "USDCAD", "ALLOWED") for index in range(3)]
+    market = MarketContext(
+        symbol="USDCAD",
+        raw_allowed_direction="BUY",
+        pip_value=0.0001,
+        price_at_signal_start=1.3750,
+        price_at_5m_confirm=1.3760,
+        price_at_signal_end=1.3765,
+        m15_phase="BULLISH_PULLBACK",
+        h1_phase="BULLISH",
+        spread_normal=True,
+        forward_mfe_pips=12,
+        forward_mae_pips=2,
+    )
+
+    default_report = analyze_signal_throttle_events(events, market_contexts={"USDCAD": market})
+
+    assert default_report["outcome_memory_summary"] is None
+    assert default_report["regime_invalidation"] is None
+    assert default_report["promotion_score"] is None
+
+    monkeypatch.setenv("SIGNAL_OUTCOME_MEMORY_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_REGIME_INVALIDATION_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PROMOTION_SCORE_ENABLED", "true")
+    report = analyze_signal_throttle_events(events, market_contexts={"USDCAD": market})
+
+    assert report["outcome_memory_summary"]["data_ready"] is True
+    assert report["regime_invalidation"]["advisory_only"] is True
+    assert report["regime_invalidation"]["status"] == "VALID"
+    assert report["promotion_score"]["advisory_only"] is True
+    assert report["promotion_score"]["symbol"] == "USDCAD"
+
+
 def test_build_pressure_blocks_groups_same_symbol_until_gap_or_rotation():
     events = [
         _event(0, "GBPCAD"),
