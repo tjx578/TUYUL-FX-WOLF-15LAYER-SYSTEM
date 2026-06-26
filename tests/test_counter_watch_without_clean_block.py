@@ -70,6 +70,33 @@ def test_flag_on_ignition_block_becomes_counter_sell_watch(monkeypatch):
     assert payload["source_clean_block_confirmed"] is False
 
 
+def test_direction_conflict_resolver_blocks_counter_watch_when_raw_basket_supported(monkeypatch):
+    monkeypatch.setenv("MICROBOOST_COUNTER_WATCH_WITHOUT_CLEAN_BLOCK", "true")
+    monkeypatch.setenv("SIGNAL_DIRECTION_CONFLICT_RESOLVER_ENABLED", "true")
+    summary = _summary(20.0)
+    latest = summary["latest"]
+    latest["symbol"] = "USDCAD"
+    latest["market_context_snapshot"]["basket_validation"] = {
+        "symbol": "USDCAD",
+        "direction": "BUY",
+        "valid": True,
+        "data_ready": True,
+        "base_score": 0.72,
+        "quote_score": -0.38,
+        "pair_alignment": 1.1,
+        "evidence": {"currency_scores": {"USD": 0.72, "CAD": -0.38}},
+    }
+
+    payload = _counter_entry_payload(summary, dict(_INELIGIBLE_GATE))
+
+    assert payload is not None
+    assert payload["status"] == "NONE"
+    assert payload["candidate_direction"] is None
+    assert payload["direction_conflict"] is True
+    assert payload["counter_direction_allowed"] is False
+    assert payload["counter_direction_block_reason"] == "BASKET_SUPPORTS_RAW_DIRECTION"
+
+
 def test_flag_on_short_burst_stays_blocked(monkeypatch):
     monkeypatch.setenv("MICROBOOST_COUNTER_WATCH_WITHOUT_CLEAN_BLOCK", "true")
     payload = _counter_entry_payload(_summary(2.0), dict(_INELIGIBLE_GATE))  # 2s < 18s bar
