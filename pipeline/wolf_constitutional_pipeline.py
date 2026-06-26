@@ -101,6 +101,19 @@ from analysis.signal_throttle_intelligence import (
     emit_signal_throttle_intel,
 )
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer
+from analysis.source_lineage_guard import (
+    DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX,
+    DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX,
+    DEFAULT_SIGNAL_THROTTLE_FRESHNESS_PREFIX,
+    DEFAULT_SIGNAL_THROTTLE_STATE_SNAPSHOT_PREFIX,
+    DEFAULT_SOURCE_FRESHNESS_SECONDS,
+    diagnostic_prefix,
+    emit_signal_throttle_state_snapshot,
+    emit_source_guard_diagnostic,
+    guard_microboost_source,
+    signal_throttle_state_snapshot_payload,
+    signal_watch_source_diagnostic,
+)
 from analysis.universe_ranking import UniverseRankingEngine
 from config_loader import CONFIG
 
@@ -4065,6 +4078,7 @@ class WolfConstitutionalPipeline:
             source_verdict=source_verdict,
         )
         self._emit_microboost_intel_if_new(report)
+        self._emit_signal_throttle_state_snapshot(report)
         report["family_counters"] = self.family_counters_snapshot()
         return report
 
@@ -5475,11 +5489,27 @@ class WolfConstitutionalPipeline:
     def _emit_signal_json_payload(self, payload: dict[str, Any]) -> bool:
         self._bump_family_counters(payload)
         self._emit_lifecycle_shadow_preview(payload)
+        watch_diagnostic = self._watch_source_guard_diagnostic(payload)
+        if watch_diagnostic is not None:
+            emit_result = emit_signal_watch_promotion_diagnostic(
+                watch_diagnostic,
+                enabled=os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true").strip().lower() == "true",
+                prefix=os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_LOG_PREFIX", "[SignalWatchPromotionDiagnostic]"),
+            )
+            payload["signal_json_emit_blocked_by_source_guard"] = True
+            payload["signal_watch_source_diagnostic_emit_result"] = emit_result
+            return False
         gated_payload = self._signal_json_gate_adapter.apply(payload)
         signal_event = build_signal_json_event(gated_payload)
         if signal_event is None:
             return False
         return self._signal_json_emitter.emit(signal_event)
+
+    @staticmethod
+    def _watch_source_guard_diagnostic(payload: dict[str, Any]) -> dict[str, Any] | None:
+        if os.getenv("SIGNAL_WATCH_SOURCE_GUARD_ENABLED", "true").strip().lower() != "true":
+            return None
+        return signal_watch_source_diagnostic(payload)
 
     def _route_pressure_decision_or_emit(
         self,
@@ -5489,17 +5519,17 @@ class WolfConstitutionalPipeline:
         l12_verdict: dict[str, Any],
         state_key: str,
     ) -> bool:
-        if os.getenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "false").strip().lower() != "true":
+        if os.getenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true").strip().lower() != "true":
             return False
         if (
-            os.getenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "false").strip().lower()
+            os.getenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true").strip().lower()
             != "true"
         ):
             return False
         route = route_decision_or_pressure(
             payload,
             require_lifecycle_anchor=(
-                os.getenv("SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR", "false").strip().lower() == "true"
+                os.getenv("SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR", "true").strip().lower() == "true"
             ),
         )
         if route.route != "SIGNAL_PRESSURE_STATE":
@@ -5516,7 +5546,7 @@ class WolfConstitutionalPipeline:
     def _emit_signal_pressure_state_payload(payload: dict[str, Any]) -> bool:
         return emit_signal_pressure_state(
             payload,
-            enabled=os.getenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "false").strip().lower() == "true",
+            enabled=os.getenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true").strip().lower() == "true",
             prefix=os.getenv("SIGNAL_PRESSURE_STATE_JSON_LOG_PREFIX", "[SignalPressureStateJSON]"),
         )
 
@@ -5622,6 +5652,8 @@ class WolfConstitutionalPipeline:
 
     def _emit_microboost_intel_if_new(self, report: dict[str, Any]) -> None:
         event = build_microboost_intel_event(report)
+        if event is not None and self._microboost_source_guard_blocks(report):
+            return
         if event is not None:
             key = event.dedupe_key()
             if key != self._last_microboost_log_key:
@@ -5633,6 +5665,67 @@ class WolfConstitutionalPipeline:
                 continue
             self._emitted_microboost_table_keys.add(table_key)
             emit_microboost_table_event(table_event)
+
+    def _microboost_source_guard_blocks(self, report: dict[str, Any]) -> bool:
+        if os.getenv("MICROBOOST_SOURCE_GUARD_ENABLED", "true").strip().lower() != "true":
+            return False
+        guard = guard_microboost_source(
+            report,
+            max_age_seconds=self._source_lineage_max_age_seconds(),
+        )
+        if guard.can_emit_microboost:
+            return False
+
+        diagnostics: list[dict[str, Any]] = []
+        for diagnostic in guard.diagnostics:
+            diag = dict(diagnostic)
+            diag["diagnostic_emit_result"] = self._emit_source_guard_diagnostic(diag)
+            diagnostics.append(diag)
+        report["microboost_source_diagnostics"] = diagnostics
+        return True
+
+    def _emit_source_guard_diagnostic(self, payload: dict[str, Any]) -> bool:
+        event = str(payload.get("event") or "")
+        prefix = {
+            "signal_throttle_freshness_diagnostic": os.getenv(
+                "SIGNAL_THROTTLE_FRESHNESS_DIAGNOSTIC_LOG_PREFIX",
+                DEFAULT_SIGNAL_THROTTLE_FRESHNESS_PREFIX,
+            ),
+            "microboost_source_diagnostic": os.getenv(
+                "MICROBOOST_SOURCE_DIAGNOSTIC_LOG_PREFIX",
+                DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX,
+            ),
+            "microboost_stale_diagnostic": os.getenv(
+                "MICROBOOST_STALE_DIAGNOSTIC_LOG_PREFIX",
+                DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX,
+            ),
+        }.get(event, diagnostic_prefix(event))
+        return emit_source_guard_diagnostic(payload, prefix=prefix)
+
+    def _emit_signal_throttle_state_snapshot(self, report: dict[str, Any]) -> None:
+        if os.getenv("SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED", "true").strip().lower() != "true":
+            return
+        interval = self._parse_env_float("SIGNAL_THROTTLE_STATE_SNAPSHOT_INTERVAL_SECONDS", 60.0)
+        now = time.time()
+        last_seen = getattr(self, "_last_signal_throttle_state_snapshot_at", None)
+        if isinstance(last_seen, (int, float)) and now - float(last_seen) < max(0.0, interval):
+            return
+        self._last_signal_throttle_state_snapshot_at = now
+        payload = signal_throttle_state_snapshot_payload(
+            report,
+            max_age_seconds=self._source_lineage_max_age_seconds(),
+        )
+        report["signal_throttle_state_snapshot"] = payload
+        emit_signal_throttle_state_snapshot(
+            payload,
+            prefix=os.getenv(
+                "SIGNAL_THROTTLE_STATE_SNAPSHOT_LOG_PREFIX",
+                DEFAULT_SIGNAL_THROTTLE_STATE_SNAPSHOT_PREFIX,
+            ),
+        )
+
+    def _source_lineage_max_age_seconds(self) -> float:
+        return self._parse_env_float("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", DEFAULT_SOURCE_FRESHNESS_SECONDS)
 
     def _emit_signal_intelligence_flag_snapshot(self) -> None:
         """P1 (once per deployment, default ON): emit the effective state of the
@@ -5690,6 +5783,13 @@ class WolfConstitutionalPipeline:
             "SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK": _b(
                 "SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK", "false"
             ),
+            "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED": _b(
+                "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true"
+            ),
+            "MICROBOOST_SOURCE_GUARD_ENABLED": _b("MICROBOOST_SOURCE_GUARD_ENABLED", "true"),
+            "SIGNAL_WATCH_SOURCE_GUARD_ENABLED": _b("SIGNAL_WATCH_SOURCE_GUARD_ENABLED", "true"),
+            "SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED": _b("SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED", "true"),
+            "SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS": _f("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", "300"),
             "STRUCTURE_LADDER_DIAGNOSTIC_ENABLED": _b("STRUCTURE_LADDER_DIAGNOSTIC_ENABLED", "false"),
             "SIGNAL_JSON_LOG_ENABLED": _b("SIGNAL_JSON_LOG_ENABLED", "true"),
             "SIGNAL_JSON_EMIT_WATCH": _b("SIGNAL_JSON_EMIT_WATCH", "true"),
@@ -5705,6 +5805,12 @@ class WolfConstitutionalPipeline:
             "SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE": _b(
                 "SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "true"
             ),
+            "SIGNAL_DECISION_SOURCE_GUARD_ENABLED": _b("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true"),
+            "SIGNAL_PRESSURE_STATE_JSON_ENABLED": _b("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true"),
+            "SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED": _b(
+                "SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true"
+            ),
+            "SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR": _b("SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR", "true"),
         }
         logging.getLogger("signal_json").warning(
             "%s %s",
