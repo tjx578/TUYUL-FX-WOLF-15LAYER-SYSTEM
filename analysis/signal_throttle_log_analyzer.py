@@ -513,6 +513,7 @@ def analyze_signal_throttle_events(
         allowed_quorum=allowed_quorum,
         market_contexts=market_contexts,
     )
+    _attach_clean_block_source_to_microboost_summary(microboost_summary, clean_watch_candidates)
     _apply_microboost_direction_inheritance(microboost_summary, events=ordered)
     direction_recovery = _direction_recovery_counters(ordered, microboost_summary)
     signal_watch_gate = _signal_watch_gate(candidate, microboost_summary, clean_block_seconds=clean_block_seconds)
@@ -1301,6 +1302,83 @@ def _clean_watch_candidates_from_blocks(blocks: list[PressureBlock], clean_block
         seen.add(key)
         candidates.append(payload)
     return candidates
+
+
+def _attach_clean_block_source_to_microboost_summary(
+    microboost_summary: dict[str, Any],
+    clean_watch_candidates: list[dict[str, Any]],
+) -> None:
+    if not isinstance(microboost_summary, dict) or not clean_watch_candidates:
+        return
+    blocks = microboost_summary.get("blocks")
+    if isinstance(blocks, list):
+        for block in blocks:
+            if isinstance(block, dict):
+                _attach_clean_block_source_to_microboost_block(block, clean_watch_candidates)
+    latest = microboost_summary.get("latest")
+    if isinstance(latest, dict):
+        _attach_clean_block_source_to_microboost_block(latest, clean_watch_candidates)
+
+
+def _attach_clean_block_source_to_microboost_block(
+    block: dict[str, Any],
+    clean_watch_candidates: list[dict[str, Any]],
+) -> None:
+    source = _matching_clean_block_source(block, clean_watch_candidates)
+    if source is None:
+        return
+    source_id = source.get("source_clean_block_id")
+    block["source_clean_block_id"] = source_id
+    block["source_pressure_block_id"] = source.get("source_pressure_block_id") or source_id
+    block["source_signal_throttle_event_range"] = {
+        "start_utc": source.get("clean_block_start_utc") or source.get("block_start_utc"),
+        "end_utc": source.get("clean_block_end_utc") or source.get("block_end_utc"),
+    }
+    block["source_age_seconds"] = _source_age_seconds(block, source)
+    for key in (
+        "clean_block_valid",
+        "clean_block_start_utc",
+        "clean_block_end_utc",
+        "clean_block_duration_seconds",
+        "clean_block_event_count",
+        "clean_block_direction",
+        "watch_promotion_source",
+    ):
+        if source.get(key) is not None:
+            block[key] = source.get(key)
+
+
+def _matching_clean_block_source(
+    block: dict[str, Any],
+    clean_watch_candidates: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    symbol = str(block.get("symbol") or "").upper()
+    if not symbol:
+        return None
+    block_start = _parse_timestamp(str(block.get("start_utc") or ""))
+    block_end = _parse_timestamp(str(block.get("end_utc") or ""))
+    matches = []
+    for candidate in clean_watch_candidates:
+        if str(candidate.get("symbol") or "").upper() != symbol:
+            continue
+        clean_start = _parse_timestamp(str(candidate.get("clean_block_start_utc") or candidate.get("block_start_utc") or ""))
+        clean_end = _parse_timestamp(str(candidate.get("clean_block_end_utc") or candidate.get("block_end_utc") or ""))
+        if clean_start is None or clean_end is None:
+            continue
+        if block_end is not None and clean_start <= block_end <= clean_end:
+            matches.append(candidate)
+            continue
+        if block_start is not None and block_end is not None and block_start >= clean_start and block_end <= clean_end:
+            matches.append(candidate)
+    return max(matches, key=lambda item: str(item.get("clean_block_end_utc") or item.get("block_end_utc") or ""), default=None)
+
+
+def _source_age_seconds(block: dict[str, Any], source: dict[str, Any]) -> float:
+    block_end = _parse_timestamp(str(block.get("end_utc") or ""))
+    source_end = _parse_timestamp(str(source.get("clean_block_end_utc") or source.get("block_end_utc") or ""))
+    if block_end is None or source_end is None:
+        return 0.0
+    return round(max(0.0, (block_end - source_end).total_seconds()), 3)
 
 
 def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int) -> dict[str, Any]:
