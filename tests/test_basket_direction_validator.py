@@ -13,6 +13,8 @@ def test_basket_validator_accepts_buy_when_base_strong_quote_weak() -> None:
     assert result.valid is True
     assert result.blockers == []
     assert result.pair_alignment == 1.1
+    assert result.basket_bias == "SUPPORTS_BUY"
+    assert result.directional_status == "SUPPORTS_DIRECTION"
 
 
 def test_basket_validator_blocks_audcad_buy_when_aud_basket_is_weak() -> None:
@@ -26,6 +28,8 @@ def test_basket_validator_blocks_audcad_buy_when_aud_basket_is_weak() -> None:
     assert "BASE_AUD_BASKET_WEAK" in result.blockers
     assert "QUOTE_CAD_BASKET_STRONG" in result.blockers
     assert "PAIR_BASKET_NOT_ALIGNED_BUY" in result.blockers
+    assert result.basket_bias == "SUPPORTS_SELL"
+    assert result.directional_status == "REJECTS_DIRECTION"
 
 
 def test_basket_validator_blocks_sell_when_base_is_strong() -> None:
@@ -38,6 +42,20 @@ def test_basket_validator_blocks_sell_when_base_is_strong() -> None:
     assert result.valid is False
     assert "BASE_NZD_BASKET_STRONG" in result.blockers
     assert "QUOTE_CHF_BASKET_WEAK" in result.blockers
+    assert result.basket_bias == "SUPPORTS_BUY"
+    assert result.directional_status == "REJECTS_DIRECTION"
+
+
+def test_basket_validator_marks_neutral_low_differential() -> None:
+    result = validate_basket_direction(
+        "AUDNZD",
+        "BUY",
+        currency_scores={"AUD": 0.05, "NZD": 0.01},
+    )
+
+    assert result.basket_bias == "NEUTRAL_LOW_DIFFERENTIAL"
+    assert result.directional_status == "NEUTRAL_LOW_DIFFERENTIAL"
+    assert "PAIR_BASKET_NOT_ALIGNED_BUY" in result.blockers
 
 
 def test_decompose_symbol_supports_metals_against_major_quote() -> None:
