@@ -13,9 +13,9 @@ Validates:
 
 from __future__ import annotations
 
+import logging
 import sys
 import time
-import logging
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from pathlib import Path
@@ -676,12 +676,12 @@ class TestPipelineSignalThrottle:
         ):
             pipe._context_bus.update_candle(candle)
 
-        base = datetime.now(UTC) - timedelta(minutes=2)
-        for index in range(30):
+        base = datetime.now(UTC) - timedelta(minutes=6)
+        for index in range(61):
             pipe._signal_throttle_live_analyzer.record_allowed(
                 symbol="EURUSD",
                 verdict="EXECUTE_BUY",
-                timestamp=base + timedelta(seconds=index * 2),
+                timestamp=base + timedelta(seconds=index * 5),
             )
 
         events: list[dict[str, Any]] = []
@@ -728,7 +728,8 @@ class TestPipelineSignalThrottle:
         report = cast(dict[str, Any], captured_reports[-1])
         latest = cast(dict[str, Any], report["microboost_summary"]["latest"])
         assert report["microboost_summary"]["market_context_applied"] is True
-        assert latest["phase_unpriced"] == "DENSE_MICROBOOST"
+        assert latest["phase_unpriced"] == "NEAR_TIMING_GATE_MICROBOOST"
+        assert latest["source_clean_block_id"]
         assert latest["phase_priced"] == "TREND_CONTINUATION_MICROBOOST"
         assert latest["market_context_validation"]["final_direction"] == "BUY"
         assert latest["market_context_snapshot"]["price_at_signal_start"] == 1.1
@@ -747,8 +748,9 @@ class TestPipelineSignalThrottle:
         assert "final_direction=BUY" in microboost_line
         assert "m15_phase=BULLISH_PULLBACK" in microboost_line
 
-    def test_non_execute_shadow_path_emits_microboost_intel(self, capsys):
-        """NO_TRADE/HOLD observations still need MicroboostIntel visibility."""
+    def test_non_execute_shadow_path_freezes_microboost_without_clean_source(self, caplog, capsys):
+        """NO_TRADE/HOLD microboost telemetry needs clean-block source before normal emit."""
+        caplog.set_level(logging.WARNING, logger="signal_json")
         pipe = self._make_pipeline()
         base = datetime.now(UTC) - timedelta(minutes=3)
         for index in range(25):
@@ -769,10 +771,12 @@ class TestPipelineSignalThrottle:
         )
 
         output_lines = capsys.readouterr().out.splitlines()
-        assert any(line.startswith("[MicroboostIntel]") and "symbol=GBPCAD" in line for line in output_lines)
+        assert not any(line.startswith("[MicroboostIntel]") and "symbol=GBPCAD" in line for line in output_lines)
+        assert "[MicroboostSourceDiagnostic]" in caplog.text
+        assert "SOURCE_CLEAN_BLOCK_ID_MISSING" in caplog.text
 
-    def test_non_execute_shadow_path_emits_generic_microboost_watch(self, caplog, capsys):
-        """Priced WAIT microboost observations must continue into SignalWatchJSON."""
+    def test_non_execute_shadow_path_blocks_generic_microboost_watch_without_source(self, caplog, capsys):
+        """Priced WAIT microboost observations cannot become SignalWatchJSON without source."""
         caplog.set_level(logging.WARNING, logger="signal_json")
         pipe = self._make_pipeline()
         pipe._context_bus.update_tick(
@@ -807,10 +811,10 @@ class TestPipelineSignalThrottle:
             source_verdict="HOLD",
         )
 
-        assert "[SignalWatchJSON]" in caplog.text
-        assert '"status":"MICROBOOST_WATCH"' in caplog.text
-        assert '"event":"signal_watch_json"' in caplog.text
-        assert '"valid_for_execution":false' in caplog.text
+        assert "[SignalWatchJSON]" not in caplog.text
+        assert "[MicroboostSourceDiagnostic]" in caplog.text
+        assert "[SignalWatchPromotionDiagnostic]" in caplog.text
+        assert "SOURCE_CLEAN_BLOCK_ID_MISSING" in caplog.text
 
     def test_usdcad_reclaim_and_demand_build_support_ladder_for_counter_targets(self):
         from context.live_context_bus import LiveContextBus
