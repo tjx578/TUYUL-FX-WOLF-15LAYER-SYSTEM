@@ -9,11 +9,12 @@ an unpriced cluster into a trade signal.
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from analysis.direction_conflict_resolver import resolve_direction_conflict
 from analysis.market_context_validator import MarketContext
 from analysis.signal_thresholds import SIGNAL_MIN_RR, TP1_TARGET_RR
 
@@ -179,6 +180,11 @@ class MicroboostCounterEntryResult:
     execution_quality: dict[str, Any] | None = None
     phase_coherence: dict[str, Any] | None = None
     signal_expiry: dict[str, Any] | None = None
+    direction_conflict: bool | None = None
+    raw_direction_supported: bool | None = None
+    counter_direction_allowed: bool | None = None
+    counter_direction_block_reason: str | None = None
+    direction_conflict_resolution: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -209,6 +215,7 @@ class MicroboostCounterEntryEngine:
         counter_entry_risk_multiplier: float = 0.5,
         counter_entry_expiry_minutes: int = 30,
         allow_rr_fallback: bool = True,
+        direction_conflict_resolver_enabled: bool = False,
     ) -> None:
         self.min_density_per_minute = min_density_per_minute
         self.max_stall_pips = max_stall_pips
@@ -227,6 +234,7 @@ class MicroboostCounterEntryEngine:
         self.counter_entry_risk_multiplier = max(0.0, min(1.0, float(counter_entry_risk_multiplier)))
         self.counter_entry_expiry_minutes = max(1, int(counter_entry_expiry_minutes))
         self.allow_rr_fallback = allow_rr_fallback
+        self.direction_conflict_resolver_enabled = direction_conflict_resolver_enabled
 
     def evaluate(
         self,
@@ -299,7 +307,7 @@ class MicroboostCounterEntryEngine:
             )
 
         if raw_direction == "BUY" and self._is_resistance_warning(phase_priced, price_position):
-            return self._evaluate_resistance_sell(
+            result = self._evaluate_resistance_sell(
                 cluster=cluster,
                 market=market,
                 observed_phase_unpriced=phase_unpriced,
@@ -311,9 +319,10 @@ class MicroboostCounterEntryEngine:
                 watch_only=watch_only,
                 **base,
             )
+            return self._apply_direction_conflict_resolution(result, cluster=cluster, market=market)
 
         if raw_direction == "SELL" and self._is_support_warning(phase_priced, price_position):
-            return self._evaluate_support_buy(
+            result = self._evaluate_support_buy(
                 cluster=cluster,
                 market=market,
                 observed_phase_unpriced=phase_unpriced,
@@ -325,6 +334,7 @@ class MicroboostCounterEntryEngine:
                 watch_only=watch_only,
                 **base,
             )
+            return self._apply_direction_conflict_resolution(result, cluster=cluster, market=market)
 
         return self._result(
             enabled=False,
@@ -934,6 +944,65 @@ class MicroboostCounterEntryEngine:
             "MAIN_SUPPORT",
             "LOWER_RANGE",
         }
+
+    def _apply_direction_conflict_resolution(
+        self,
+        result: MicroboostCounterEntryResult,
+        *,
+        cluster: Any,
+        market: Any | None,
+    ) -> MicroboostCounterEntryResult:
+        if not self.direction_conflict_resolver_enabled:
+            return result
+        resolution = resolve_direction_conflict(
+            symbol=result.symbol,
+            raw_direction=result.raw_direction,
+            candidate_direction=result.candidate_direction,
+            market_context=market or cluster,
+            basket_validation=_field(market or cluster, "basket_validation", None),
+        )
+        payload = resolution.to_dict()
+        if not resolution.direction_conflict:
+            return replace(
+                result,
+                direction_conflict=False,
+                raw_direction_supported=False,
+                counter_direction_allowed=True,
+                direction_conflict_resolution=payload,
+            )
+        if resolution.counter_direction_allowed:
+            return replace(
+                result,
+                direction_conflict=True,
+                raw_direction_supported=resolution.raw_direction_status == "SUPPORTS_RAW_DIRECTION",
+                counter_direction_allowed=True,
+                counter_direction_block_reason=None,
+                direction_conflict_resolution=payload,
+            )
+        return replace(
+            result,
+            enabled=False,
+            status=CounterEntryStatus.NONE,
+            candidate_direction=None,
+            validated_direction=None,
+            watch_direction=None,
+            final_direction="WAIT",
+            direction_status="COUNTER_DIRECTION_BLOCKED_BY_RAW_BASKET",
+            direction_validation_status="COUNTER_DIRECTION_BLOCKED_BY_RAW_BASKET",
+            action=resolution.action,
+            reason=resolution.counter_direction_block_reason or "counter_direction_blocked_by_direction_conflict",
+            valid_for_execution=False,
+            analysis_valid=False,
+            tradeplan_valid=False,
+            execution_valid_now=False,
+            execution_status="NO_COUNTER_ENTRY",
+            execution_reason=resolution.counter_direction_block_reason,
+            direction_conflict=True,
+            raw_direction_supported=resolution.raw_direction_status == "SUPPORTS_RAW_DIRECTION",
+            counter_direction_allowed=False,
+            counter_direction_block_reason=resolution.counter_direction_block_reason,
+            direction_conflict_resolution=payload,
+        )
 
     @staticmethod
     def _result(**kwargs: Any) -> MicroboostCounterEntryResult:
