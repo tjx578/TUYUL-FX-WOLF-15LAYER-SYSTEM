@@ -46,6 +46,11 @@ class MicroboostIntelEvent:
     price_at_5m_confirm: float | None
     price_at_signal_end: float | None
     end_utc: str | None
+    source_clean_block_id: str | None
+    source_pressure_block_id: str | None
+    source_signal_throttle_start_utc: str | None
+    source_signal_throttle_end_utc: str | None
+    source_age_seconds: float | None
     reason: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -61,6 +66,8 @@ class MicroboostIntelEvent:
             self.final_direction,
             self.cluster_stage,
             self.requires_market_context,
+            self.price_position,
+            self.source_clean_block_id,
         )
 
 
@@ -144,6 +151,8 @@ def build_microboost_intel_event(report: dict[str, Any]) -> MicroboostIntelEvent
     snapshot = latest.get("market_context_snapshot")
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     event_context_applied = _block_market_context_applied(latest)
+    source_range = latest.get("source_signal_throttle_event_range")
+    source_range = source_range if isinstance(source_range, dict) else {}
 
     return MicroboostIntelEvent(
         cluster_id=_optional_str(latest.get("cluster_id")),
@@ -169,6 +178,11 @@ def build_microboost_intel_event(report: dict[str, Any]) -> MicroboostIntelEvent
         price_at_5m_confirm=_optional_float(snapshot.get("price_at_5m_confirm")),
         price_at_signal_end=_optional_float(snapshot.get("price_at_signal_end")),
         end_utc=_optional_str(latest.get("end_utc")),
+        source_clean_block_id=_optional_str(latest.get("source_clean_block_id")),
+        source_pressure_block_id=_optional_str(latest.get("source_pressure_block_id")),
+        source_signal_throttle_start_utc=_optional_str(source_range.get("start_utc")),
+        source_signal_throttle_end_utc=_optional_str(source_range.get("end_utc")),
+        source_age_seconds=_optional_float(latest.get("source_age_seconds")),
         reason=str(latest.get("reason") or summary.get("reason") or "microboost_detected"),
     )
 
@@ -268,6 +282,9 @@ def emit_microboost_intel(event: MicroboostIntelEvent | None) -> None:
         f"requires_market_context={_bool_text(event.requires_market_context)}",
         f"market_context_applied={_bool_text(event.market_context_applied)}",
         f"price_position={event.price_position or 'NONE'}",
+        f"source_clean_block_id={event.source_clean_block_id or 'NONE'}",
+        f"source_pressure_block_id={event.source_pressure_block_id or 'NONE'}",
+        f"source_age={_number_text(event.source_age_seconds)}",
     ]
     # M15/H1 phase + price path belong to SignalWatch/SignalDecision, not the
     # Microboost timing line. Lean by default; full payload only under the debug
@@ -285,6 +302,8 @@ def emit_microboost_intel(event: MicroboostIntelEvent | None) -> None:
     parts.extend(
         [
             f"end_utc={event.end_utc or 'NONE'}",
+            f"source_start_utc={event.source_signal_throttle_start_utc or 'NONE'}",
+            f"source_end_utc={event.source_signal_throttle_end_utc or 'NONE'}",
             # Pure-stage contract markers: Microboost is timing evidence only.
             "direction=UNRESOLVED",
             "valid_for_execution=false",
@@ -364,6 +383,11 @@ def parse_microboost_intel_row(row: dict[str, Any]) -> MicroboostLogRecord | Non
         price_at_5m_confirm=_optional_float(fields.get("price_5m")),
         price_at_signal_end=_optional_float(fields.get("price_end")),
         end_utc=_none_text(fields.get("end_utc")),
+        source_clean_block_id=_none_text(fields.get("source_clean_block_id")),
+        source_pressure_block_id=_none_text(fields.get("source_pressure_block_id")),
+        source_signal_throttle_start_utc=_none_text(fields.get("source_start_utc")),
+        source_signal_throttle_end_utc=_none_text(fields.get("source_end_utc")),
+        source_age_seconds=_optional_float(fields.get("source_age")),
         reason=str(fields.get("reason") or "microboost_detected"),
     )
     return MicroboostLogRecord(
