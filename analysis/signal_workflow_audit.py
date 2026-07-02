@@ -7,6 +7,7 @@ execution intent.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import re
@@ -31,6 +32,7 @@ CHANNELS = (
     "MicroboostShadowDiagnostic",
     "SignalThrottleFreshnessDiagnostic",
     "SignalThrottleStateSnapshot",
+    "SignalThrottlePressureTierSnapshot",
     "SignalPressureStateJSON",
     "SignalWatchPromotionDiagnostic",
     "SignalWatchJSON",
@@ -69,6 +71,29 @@ def parse_signal_workflow_csv(path: str | Path, *, dedupe: bool = True) -> list[
     with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
     return parse_signal_workflow_rows(rows, dedupe=dedupe)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Summarize SignalThrottle/Microboost/Watch lifecycle logs from an exported CSV.",
+    )
+    parser.add_argument("csv_path", help="CSV export containing timestamp/message log rows.")
+    parser.add_argument(
+        "--no-dedupe",
+        action="store_true",
+        help="Keep duplicate CSV rows instead of deduplicating exact row matches.",
+    )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="Emit compact JSON instead of pretty-printed JSON.",
+    )
+    args = parser.parse_args(argv)
+
+    events = parse_signal_workflow_csv(args.csv_path, dedupe=not args.no_dedupe)
+    indent = None if args.compact else 2
+    print(json.dumps(summarize_signal_workflow(events), ensure_ascii=False, sort_keys=True, indent=indent))
+    return 0
 
 
 def parse_signal_workflow_rows(
@@ -129,8 +154,18 @@ def summarize_signal_workflow(events: Iterable[SignalWorkflowAuditEvent]) -> dic
     cluster_groups = _cluster_groups(ordered)
     conflict_counts = Counter()
     raw_buy_candidate_sell = Counter()
+    watch_tier_contexts = []
+    tier3_key_level_exceptions = Counter()
+    low_event_high_impact = Counter()
     for event in ordered:
         candidate = event.candidate_direction or event.watch_direction
+        tier_context = _pressure_priority_context(event)
+        if event.channel == "SignalWatchJSON" and tier_context is not None:
+            watch_tier_contexts.append(event)
+            if event.symbol and tier_context.get("effective_pressure_tier") == "TIER_3_KEY_LEVEL_RADAR_EXCEPTION":
+                tier3_key_level_exceptions[event.symbol] += 1
+            if event.symbol and tier_context.get("low_event_high_impact_candidate") is True:
+                low_event_high_impact[event.symbol] += 1
         if event.channel not in {"SignalWatchJSON", "SignalDecisionUpdateJSON"}:
             continue
         if event.raw_direction in {"BUY", "SELL"} and candidate in {"BUY", "SELL"}:
@@ -147,6 +182,17 @@ def summarize_signal_workflow(events: Iterable[SignalWorkflowAuditEvent]) -> dic
         "valid_for_execution_true": sum(event.valid_for_execution is True for event in ordered),
         "direction_conflicts_by_symbol": dict(conflict_counts.most_common()),
         "raw_buy_candidate_sell_by_symbol": dict(raw_buy_candidate_sell.most_common()),
+        "pressure_tier_snapshot_count": sum(
+            event.channel == "SignalThrottlePressureTierSnapshot" for event in ordered
+        ),
+        "latest_pressure_tier_snapshot": _latest_pressure_tier_snapshot(ordered),
+        "watch_pressure_priority_context_count": len(watch_tier_contexts),
+        "watch_pressure_priority_context_by_symbol": dict(
+            Counter(event.symbol or "UNKNOWN" for event in watch_tier_contexts).most_common()
+        ),
+        "tier3_key_level_exception_by_symbol": dict(tier3_key_level_exceptions.most_common()),
+        "low_event_high_impact_watch_by_symbol": dict(low_event_high_impact.most_common()),
+        "tier_leakage_guard": _tier_leakage_guard(ordered),
         "cluster_summary": _cluster_summary(cluster_groups),
     }
 
@@ -186,6 +232,63 @@ def _cluster_summary(groups: dict[str, list[SignalWorkflowAuditEvent]]) -> dict[
         "decision_clusters_with_watch": decision_with_watch,
         "decision_clusters_without_watch": decision_without_watch,
     }
+
+
+def _latest_pressure_tier_snapshot(events: list[SignalWorkflowAuditEvent]) -> dict[str, Any] | None:
+    snapshots = [event for event in events if event.channel == "SignalThrottlePressureTierSnapshot"]
+    if not snapshots:
+        return None
+    latest = max(snapshots, key=lambda item: item.timestamp or datetime.min.replace(tzinfo=UTC))
+    payload = latest.payload
+    summary = payload.get("summary")
+    visibility_policy = payload.get("visibility_policy")
+    execution_guard = payload.get("execution_guard")
+    return {
+        "generated_at_utc": payload.get("generated_at_utc"),
+        "schema_version": payload.get("schema_version"),
+        "display_line": payload.get("display_line"),
+        "summary": dict(summary) if isinstance(summary, Mapping) else {},
+        "tier_1": payload.get("tier_1") if isinstance(payload.get("tier_1"), list) else [],
+        "tier_2": payload.get("tier_2") if isinstance(payload.get("tier_2"), list) else [],
+        "tier_3_hidden_count": _non_negative_int(payload.get("tier_3_hidden_count")),
+        "stale_archive_count": _non_negative_int(payload.get("stale_archive_count")),
+        "unsafe_mixed_deployment_count": _non_negative_int(payload.get("unsafe_mixed_deployment_count")),
+        "visibility_policy": dict(visibility_policy) if isinstance(visibility_policy, Mapping) else {},
+        "execution_guard": dict(execution_guard) if isinstance(execution_guard, Mapping) else {},
+        "tier_is_execution_signal": payload.get("tier_is_execution_signal"),
+        "tier_execution_impact": payload.get("tier_execution_impact"),
+    }
+
+
+def _tier_leakage_guard(events: list[SignalWorkflowAuditEvent]) -> dict[str, Any]:
+    decision_or_final = [event for event in events if event.channel in {"SignalDecisionUpdateJSON", "SignalJSON"}]
+    pressure_context = [
+        event for event in decision_or_final if isinstance(event.payload.get("pressure_priority_context"), dict)
+    ]
+    direct_tier = [event for event in decision_or_final if event.payload.get("effective_pressure_tier") is not None]
+    reason_mentions = [
+        event
+        for event in decision_or_final
+        if "TIER_" in str(event.payload.get("reason") or "").upper()
+        or "PRESSURE_PRIORITY" in str(event.payload.get("reason") or "").upper()
+    ]
+    return {
+        "clean": not pressure_context and not direct_tier and not reason_mentions,
+        "decision_or_signal_with_pressure_priority_context": len(pressure_context),
+        "decision_or_signal_with_effective_pressure_tier": len(direct_tier),
+        "decision_or_signal_reason_mentions_tier": len(reason_mentions),
+        "leaking_symbols": sorted(
+            {
+                str(event.symbol or "UNKNOWN")
+                for event in [*pressure_context, *direct_tier, *reason_mentions]
+            }
+        ),
+    }
+
+
+def _pressure_priority_context(event: SignalWorkflowAuditEvent) -> Mapping[str, Any] | None:
+    context = event.payload.get("pressure_priority_context")
+    return context if isinstance(context, Mapping) else None
 
 
 def _extract_payload(message: str, channel: str) -> dict[str, Any]:
@@ -260,6 +363,13 @@ def _optional_bool(value: Any) -> bool | None:
     return None
 
 
+def _non_negative_int(value: Any) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _optional_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
@@ -277,8 +387,13 @@ def _is_final_signal(event: SignalWorkflowAuditEvent) -> bool:
 __all__ = [
     "CHANNELS",
     "SignalWorkflowAuditEvent",
+    "main",
     "parse_signal_workflow_csv",
     "parse_signal_workflow_row",
     "parse_signal_workflow_rows",
     "summarize_signal_workflow",
 ]
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
