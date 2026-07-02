@@ -9,6 +9,11 @@ from analysis.microboost_continuation_entry import MicroboostContinuationEngine
 from analysis.signal_json_emitter import SignalJsonEmitter
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
 from analysis.signal_lifecycle_manager import SignalLifecycleManager
+from analysis.signal_throttle_pressure_tier import (
+    TIER_1_PRIMARY_ANALYSIS,
+    TIER_2_CONFIRMATION_SUPPORT,
+    TIER_3_THEME_RADAR,
+)
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 
@@ -201,6 +206,230 @@ def test_pipeline_logs_generic_microboost_watch_as_signal_watch_json(caplog):
     assert verdict["microboost_watch_entry"]["lifecycle_track"] is True
     assert verdict["microboost_watch_entry"]["terminal_required"] is True
     assert verdict["microboost_watch_entry"]["pending_decision_id"]
+
+
+def test_pipeline_attaches_pressure_priority_context_to_signal_watch(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+
+    report = {
+        "pressure_tier_snapshot": {
+            "symbols": [
+                {
+                    "symbol": "CADJPY",
+                    "direction": "BUY",
+                    "effective_pressure_tier": TIER_1_PRIMARY_ANALYSIS,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 88.0,
+                    "tier_action": "PRIORITIZE_ANALYSIS",
+                    "tier_reasons": ["RECENT_CLEAN_BLOCK_GE_5M"],
+                    "metrics": {"live": {"event_count": 7}},
+                }
+            ]
+        },
+        "microboost_watch_entry": {
+            "symbol": "CADJPY",
+            "cluster_id": "CADJPY_20260518T133000Z",
+            "signal_family": "MICROBOOST_WATCH",
+            "status": "MICROBOOST_WATCH",
+            "raw_direction": "BUY",
+            "candidate_direction": "BUY",
+            "validated_direction": None,
+            "watch_direction": "BUY",
+            "final_direction": "WAIT",
+            "action": "WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+            "signal_valid_time_utc": "2026-05-18T13:32:29+00:00",
+            "signal_valid_price": 115.5235,
+            "entry_reference_price": 115.5235,
+            "entry_zone": [115.5, 115.5235],
+            "phase_unpriced": "DENSE_MICROBOOST",
+            "phase_priced": "BULLISH_PULLBACK_MICROBOOST",
+            "rr_status": "WATCH",
+            "market_context_applied": True,
+            "valid_for_execution": False,
+            "reason": "microboost waits for M15 reclaim",
+            "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+            "source_clean_block_confirmed": True,
+            "source_clean_block_id": "CADJPY_20260518T133000Z_20260518T133229Z",
+            "source_pressure_block_id": "CADJPY_20260518T133000Z_20260518T133229Z",
+            "clean_block_valid": True,
+            "clean_block_direction": "BUY",
+        },
+    }
+    verdict: dict = {}
+
+    pipeline._apply_microboost_watch_entry_report(l12_verdict=verdict, report=report)
+
+    context = verdict["microboost_watch_entry"]["pressure_priority_context"]
+    assert context["effective_pressure_tier"] == TIER_1_PRIMARY_ANALYSIS
+    assert context["tier_source_event"] == "SignalThrottlePressureTierSnapshot"
+    assert context["tier_execution_impact"] is False
+    assert '"pressure_priority_context":' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
+def test_pipeline_attaches_tier3_key_level_exception_only_at_key_level(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+
+    report = {
+        "pressure_tier_snapshot": {
+            "symbols": [
+                {
+                    "symbol": "EURUSD",
+                    "direction": "SELL",
+                    "effective_pressure_tier": TIER_3_THEME_RADAR,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 28.0,
+                    "tier_action": "RADAR_ONLY",
+                    "tier_reasons": ["LOW_ACTIVITY"],
+                    "metrics": {"live": {"event_count": 3}},
+                }
+            ]
+        },
+        "microboost_watch_entry": {
+            "symbol": "EURUSD",
+            "cluster_id": "EURUSD_20260518T133000Z",
+            "signal_family": "MICROBOOST_WATCH",
+            "status": "EARLY_SELL_WATCH",
+            "raw_direction": "BUY",
+            "candidate_direction": "SELL",
+            "validated_direction": None,
+            "watch_direction": "SELL",
+            "final_direction": "WAIT",
+            "action": "WAIT_REJECTION_OR_BREAKOUT_CONFIRMATION",
+            "signal_valid_time_utc": "2026-05-18T13:32:29+00:00",
+            "signal_valid_price": 1.0801,
+            "entry_reference_price": 1.0801,
+            "entry_zone": [1.0801, 1.0801],
+            "price_position": "MAIN_RESISTANCE",
+            "phase_priced": "RESISTANCE_PRESSURE_WARNING",
+            "rr_status": "WATCH",
+            "market_context_applied": True,
+            "valid_for_execution": False,
+            "reason": "low-event key-level watch",
+            "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+            "source_clean_block_confirmed": True,
+            "source_clean_block_id": "EURUSD_20260518T133000Z_20260518T133229Z",
+            "source_pressure_block_id": "EURUSD_20260518T133000Z_20260518T133229Z",
+            "clean_block_valid": True,
+            "clean_block_direction": "SELL",
+        },
+    }
+    verdict: dict = {}
+
+    pipeline._apply_microboost_watch_entry_report(l12_verdict=verdict, report=report)
+
+    context = verdict["microboost_watch_entry"]["pressure_priority_context"]
+    assert context["effective_pressure_tier"] == "TIER_3_KEY_LEVEL_RADAR_EXCEPTION"
+    assert context["tier_action"] == "RADAR_EXCEPTION_ONLY"
+    assert context["impact_tier"] == "IMPACT_TIER_1_KEY_LEVEL"
+    assert context["low_event_high_impact_candidate"] is True
+    assert '"TIER_3_KEY_LEVEL_RADAR_EXCEPTION"' in caplog.text
+
+
+def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    report = {
+        "pressure_tier_snapshot": {
+            "generated_at_utc": "2026-07-01T00:06:00+00:00",
+            "mixed_deployment": False,
+            "deployment_ids": [],
+            "summary": {
+                "tier_1": 1,
+                "tier_2": 0,
+                "tier_3": 2,
+                "stale_archive": 0,
+                "unsafe_mixed_deployment": 0,
+            },
+            "symbols": [
+                {
+                    "symbol": "XAGUSD",
+                    "direction": "SELL",
+                    "effective_pressure_tier": TIER_1_PRIMARY_ANALYSIS,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 88.0,
+                    "tier_action": "PRIORITIZE_ANALYSIS",
+                }
+            ],
+        }
+    }
+
+    pipeline._emit_signal_throttle_pressure_tier_snapshot(report)
+
+    assert report["pressure_tier_snapshot_emit_result"] is True
+    assert "[SignalThrottlePressureTierSnapshot]" in caplog.text
+    assert '"event":"signal_throttle_pressure_tier_snapshot"' in caplog.text
+    assert '"tier_3_hidden_count":2' in caplog.text
+    assert '"display_line":"pressure_tiers tier1=1[XAGUSD:SELL:88.0] tier2=0[-] tier3_hidden=2 stale=0 unsafe_mixed=0 execution_impact=false"' in caplog.text
+    assert '"decision_update_tier_context_allowed":false' in caplog.text
+
+
+def test_pipeline_pressure_tier_snapshot_log_respects_max_symbols_env(caplog, monkeypatch):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_MAX_SYMBOLS_PER_TIER", "1")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    report = {
+        "pressure_tier_snapshot": {
+            "generated_at_utc": "2026-07-01T00:06:00+00:00",
+            "mixed_deployment": False,
+            "deployment_ids": [],
+            "summary": {
+                "tier_1": 2,
+                "tier_2": 2,
+                "tier_3": 0,
+                "stale_archive": 0,
+                "unsafe_mixed_deployment": 0,
+            },
+            "symbols": [
+                {
+                    "symbol": "XAGUSD",
+                    "direction": "SELL",
+                    "effective_pressure_tier": TIER_1_PRIMARY_ANALYSIS,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 88.0,
+                    "tier_action": "PRIORITIZE_ANALYSIS",
+                },
+                {
+                    "symbol": "USDCAD",
+                    "direction": "BUY",
+                    "effective_pressure_tier": TIER_1_PRIMARY_ANALYSIS,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 82.0,
+                    "tier_action": "PRIORITIZE_ANALYSIS",
+                },
+                {
+                    "symbol": "AUDCAD",
+                    "direction": "BUY",
+                    "effective_pressure_tier": TIER_2_CONFIRMATION_SUPPORT,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 51.0,
+                    "tier_action": "CONFIRMATION_SUPPORT",
+                },
+                {
+                    "symbol": "EURUSD",
+                    "direction": "SELL",
+                    "effective_pressure_tier": TIER_2_CONFIRMATION_SUPPORT,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 49.0,
+                    "tier_action": "CONFIRMATION_SUPPORT",
+                },
+            ],
+        }
+    }
+
+    pipeline._emit_signal_throttle_pressure_tier_snapshot(report)
+
+    payload_text = caplog.text
+    assert '"tier_1":[{"symbol":"XAGUSD"' in payload_text
+    assert '"tier_2":[{"symbol":"AUDCAD"' in payload_text
+    assert '"symbol":"USDCAD"' not in payload_text
+    assert '"symbol":"EURUSD"' not in payload_text
 
 
 def test_pipeline_logs_clean_block_watch_entries_as_signal_watch_json(caplog):
