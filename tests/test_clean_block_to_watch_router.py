@@ -71,6 +71,20 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
     assert payload["valid_for_execution"] is False
 
 
+def test_clean_block_router_uses_raw_pressure_direction_when_direction_unresolved():
+    candidate = _candidate(direction="UNRESOLVED")
+    candidate["raw_pressure_direction"] = "BUY"
+
+    route = route_clean_block_to_watch(candidate, market_context=_market())
+
+    assert route.event == "signal_watch_json"
+    assert route.payload["status"] == "CLEAN_BLOCK_BUY_WATCH"
+    assert route.payload["raw_direction"] == "BUY"
+    assert route.payload["candidate_direction"] == "BUY"
+    assert route.payload["final_direction"] == "WAIT"
+    assert route.payload["valid_for_execution"] is False
+
+
 def test_missing_context_becomes_promotion_diagnostic():
     route = route_clean_block_to_watch(_candidate(), market_context=None)
 
