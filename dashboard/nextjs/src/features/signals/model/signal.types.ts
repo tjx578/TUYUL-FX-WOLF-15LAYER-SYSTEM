@@ -20,6 +20,29 @@ export interface SignalScoreViewModel {
     confluenceScore?: number;
 }
 
+export interface SignalPressurePriorityMemoryViewModel {
+    pressureMemoryScore?: number;
+    sameSymbolReentryCount?: number;
+    interruptedByOtherSymbols?: number;
+    cleanBlockCount?: number;
+    maxCleanBlockMinutes?: number;
+}
+
+export interface SignalPressurePriorityContextViewModel {
+    effectivePressureTier: string;
+    tierScope?: string;
+    tierScore?: number;
+    tierAction?: string;
+    tierSourceEvent?: string;
+    tierReasons?: string[];
+    impactTier?: string;
+    impactReasons?: string[];
+    lowEventHighImpactCandidate: boolean;
+    tierIsExecutionSignal: boolean;
+    tierExecutionImpact: boolean;
+    fragmentedPressureMemory?: SignalPressurePriorityMemoryViewModel;
+}
+
 export interface SignalViewModel {
     id: string;
     signalId?: string;
@@ -41,6 +64,7 @@ export interface SignalViewModel {
     holdReason?: string | null;
     effectiveReason?: string;
     throttledFrom?: string;
+    pressurePriorityContext?: SignalPressurePriorityContextViewModel;
 
     optimisticTakeStatus?: "IDLE" | "SUBMITTING" | "SUBMITTED";
 }
