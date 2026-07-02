@@ -101,6 +101,10 @@ from analysis.signal_throttle_intelligence import (
     emit_signal_throttle_intel,
 )
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer
+from analysis.signal_throttle_pressure_tier import (
+    pressure_priority_context_for_symbol,
+    pressure_tier_snapshot_log_payload,
+)
 from analysis.source_lineage_guard import (
     DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX,
     DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX,
@@ -4060,6 +4064,7 @@ class WolfConstitutionalPipeline:
         report = self._signal_throttle_live_analyzer.snapshot(
             market_contexts=market_contexts,
         )
+        self._emit_signal_throttle_pressure_tier_snapshot(report)
         self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_watch_entry_report(l12_verdict=l12_verdict, report=report)
@@ -4582,6 +4587,7 @@ class WolfConstitutionalPipeline:
         report["microboost_continuation_entry"] = continuation
         l12_verdict["microboost_continuation_entry"] = continuation
         if self._signal_json_gate_adapter.emit_continuation:
+            self._attach_pressure_priority_context(continuation, report)
             self._prepare_lifecycle_tracking_metadata(continuation)
             continuation["signal_json_emit_result"] = self._emit_signal_json_payload(continuation)
             if continuation["signal_json_emit_result"]:
@@ -4600,6 +4606,7 @@ class WolfConstitutionalPipeline:
             return
 
         watch_entry = dict(watch_entry)
+        self._attach_pressure_priority_context(watch_entry, report)
         self._prepare_lifecycle_tracking_metadata(watch_entry)
         report["microboost_watch_entry"] = watch_entry
         l12_verdict["microboost_watch_entry"] = watch_entry
@@ -4630,6 +4637,7 @@ class WolfConstitutionalPipeline:
                     continue
 
                 self._prepare_lifecycle_tracking_metadata(watch_entry)
+                self._attach_pressure_priority_context(watch_entry, report)
                 watch_entry["signal_json_emit_result"] = self._emit_signal_json_payload(watch_entry)
                 if watch_entry["signal_json_emit_result"]:
                     self._track_official_lifecycle_candidate(watch_entry)
@@ -4699,6 +4707,23 @@ class WolfConstitutionalPipeline:
         if processed:
             report["signal_watch_promotion_diagnostics"] = processed
 
+    def _attach_pressure_priority_context(self, payload: dict[str, Any], report: dict[str, Any]) -> None:
+        if os.getenv("SIGNAL_WATCH_PRESSURE_PRIORITY_CONTEXT_ENABLED", "true").strip().lower() != "true":
+            return
+        status = str(payload.get("status") or "")
+        if not status.endswith("_WATCH"):
+            return
+        symbol = str(payload.get("symbol") or "").upper()
+        if not symbol or isinstance(payload.get("pressure_priority_context"), dict):
+            return
+        context = pressure_priority_context_for_symbol(
+            report.get("pressure_tier_snapshot") if isinstance(report, dict) else None,
+            symbol,
+            watch_payload=payload,
+        )
+        if context is not None:
+            payload["pressure_priority_context"] = context
+
     def _apply_microboost_counter_entry_report(
         self,
         *,
@@ -4712,6 +4737,7 @@ class WolfConstitutionalPipeline:
             return
 
         counter_entry = self._signal_lifecycle_manager.apply(counter_entry)
+        self._attach_pressure_priority_context(counter_entry, report)
         report["microboost_counter_entry"] = counter_entry
         l12_verdict["microboost_counter_entry"] = counter_entry
         self._signal_block_finalizer.track(counter_entry)
@@ -5724,6 +5750,71 @@ class WolfConstitutionalPipeline:
             ),
         )
 
+    def _emit_signal_throttle_pressure_tier_snapshot(self, report: dict[str, Any]) -> None:
+        if os.getenv("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_LOG_ENABLED", "true").strip().lower() != "true":
+            return
+        max_symbols_per_tier = int(
+            self._parse_env_float("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_MAX_SYMBOLS_PER_TIER", 12.0)
+        )
+        payload = pressure_tier_snapshot_log_payload(
+            report.get("pressure_tier_snapshot"),
+            max_symbols_per_tier=max_symbols_per_tier,
+        )
+        if payload is None:
+            return
+        interval = self._parse_env_float("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS", 60.0)
+        now = time.time()
+        import json  # noqa: PLC0415 -- local: diagnostic-only log serialization
+        import logging  # noqa: PLC0415 -- local: diagnostic-only logger
+
+        def _tier_state(rows: Any) -> list[dict[str, Any]]:
+            if not isinstance(rows, list):
+                return []
+            return [
+                {
+                    "symbol": item.get("symbol"),
+                    "effective_pressure_tier": item.get("effective_pressure_tier"),
+                    "dominant_direction": item.get("dominant_direction"),
+                    "tier_action": item.get("tier_action"),
+                }
+                for item in rows
+                if isinstance(item, dict)
+            ]
+
+        state_key = json.dumps(
+            {
+                "tier_1": _tier_state(payload.get("tier_1")),
+                "tier_2": _tier_state(payload.get("tier_2")),
+                "tier_3_hidden_count": payload.get("tier_3_hidden_count"),
+                "stale_archive_count": payload.get("stale_archive_count"),
+                "unsafe_mixed_deployment_count": payload.get("unsafe_mixed_deployment_count"),
+                "mixed_deployment": payload.get("mixed_deployment"),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        previous_key = getattr(self, "_last_signal_throttle_pressure_tier_snapshot_key", None)
+        previous_at = getattr(self, "_last_signal_throttle_pressure_tier_snapshot_at", None)
+        if (
+            state_key == previous_key
+            and isinstance(previous_at, (int, float))
+            and now - float(previous_at) < max(0.0, interval)
+        ):
+            report["pressure_tier_snapshot_emit_result"] = False
+            report["pressure_tier_snapshot_emit_suppressed_reason"] = "UNCHANGED_WITHIN_INTERVAL"
+            return
+        self._last_signal_throttle_pressure_tier_snapshot_key = state_key
+        self._last_signal_throttle_pressure_tier_snapshot_at = now
+        logging.getLogger("signal_json").warning(
+            "%s %s",
+            os.getenv(
+                "SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_LOG_PREFIX",
+                "[SignalThrottlePressureTierSnapshot]",
+            ),
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+        )
+        report["pressure_tier_snapshot_emit_result"] = True
+
     def _source_lineage_max_age_seconds(self) -> float:
         return self._parse_env_float("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", DEFAULT_SOURCE_FRESHNESS_SECONDS)
 
@@ -6009,6 +6100,9 @@ class WolfConstitutionalPipeline:
                     max_signals=self._signal_throttle.max_signals,
                     window_seconds=self._signal_throttle.window_seconds,
                     allowed_streak=allowed_streak,
+                    count_before=count_before,
+                    remaining_before=remaining_before,
+                    verdict_source="POST_L12_PRE_V11",
                 )
                 l12_verdict["signal_throttle_intel"] = throttle_intel.to_dict()
                 self._cache_signal_throttle_intel_direction(symbol, throttle_intel)
