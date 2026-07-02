@@ -128,6 +128,48 @@ describe("mapVerdictToSignalViewModel", () => {
         expect(vm.holdReason).toBe("Signal throttled from EXECUTE_BUY by engine throttle");
     });
 
+    it("maps pressure priority context without changing execution fields", () => {
+        const verdict = makeVerdict({
+            verdict: VerdictType.HOLD,
+            pressure_priority_context: {
+                effective_pressure_tier: "TIER_3_KEY_LEVEL_RADAR_EXCEPTION",
+                tier_scope: "LIVE_120M",
+                tier_score: 67.4,
+                tier_action: "RADAR_EXCEPTION_ONLY",
+                tier_source_event: "SignalThrottlePressureTierSnapshot",
+                tier_reasons: ["LOW_EVENT_COUNT", "MAIN_RESISTANCE"],
+                impact_tier: "IMPACT_TIER_1_KEY_LEVEL",
+                impact_reasons: ["KEY_LEVEL_CONTEXT"],
+                low_event_high_impact_candidate: true,
+                tier_is_execution_signal: false,
+                tier_execution_impact: false,
+                fragmented_pressure_memory: {
+                    pressure_memory_score: 42.5,
+                    same_symbol_reentry_count: 3,
+                    clean_block_count: 2,
+                },
+            },
+        });
+
+        const vm = mapVerdictToSignalViewModel(verdict);
+
+        expect(vm.verdict).toBe("HOLD");
+        expect(vm.pressurePriorityContext).toMatchObject({
+            effectivePressureTier: "TIER_3_KEY_LEVEL_RADAR_EXCEPTION",
+            tierScope: "LIVE_120M",
+            tierScore: 67.4,
+            tierAction: "RADAR_EXCEPTION_ONLY",
+            lowEventHighImpactCandidate: true,
+            tierIsExecutionSignal: false,
+            tierExecutionImpact: false,
+            fragmentedPressureMemory: {
+                pressureMemoryScore: 42.5,
+                sameSymbolReentryCount: 3,
+                cleanBlockCount: 2,
+            },
+        });
+    });
+
     it("returns null holdReason for non-HOLD verdict", () => {
         const verdict = makeVerdict({ verdict: VerdictType.EXECUTE });
         const vm = mapVerdictToSignalViewModel(verdict);
