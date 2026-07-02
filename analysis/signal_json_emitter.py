@@ -482,6 +482,7 @@ class SignalJsonEvent:
     market_structure: dict[str, Any] | None = None
     execution_gate: dict[str, Any] | None = None
     lifecycle: dict[str, Any] | None = None
+    pressure_priority_context: dict[str, Any] | None = None
     # Family lineage (gated upstream by SIGNAL_FAMILY_LINEAGE_ENABLED). Carried through
     # so the lineage merged onto the pipeline payload actually reaches the emitted log
     # instead of being dropped by the dict->event rebuild. Observability-only.
@@ -604,6 +605,9 @@ class SignalJsonEmitter:
 
         is_decision_update = _is_decision_update_payload(payload)
         is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
+        if not is_watch:
+            payload.pop("pressure_priority_context", None)
+            payload.pop("effective_pressure_tier", None)
         if not should_emit_signal_json(
             payload,
             emit_watch=self.emit_watch,
@@ -1146,6 +1150,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         market_structure=_dict_value(counter_entry.get("market_structure")),
         execution_gate=_dict_value(counter_entry.get("execution_gate")) or _execution_gate_context(counter_entry),
         lifecycle=_dict_value(counter_entry.get("lifecycle")) or _lifecycle_context(counter_entry),
+        pressure_priority_context=(
+            _dict_value(counter_entry.get("pressure_priority_context")) if is_watch else None
+        ),
     )
 
 
