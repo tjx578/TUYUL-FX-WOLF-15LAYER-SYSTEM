@@ -88,6 +88,29 @@ export interface L12Scores {
   exec_score?: number;  // Execution 0-5
 }
 
+export interface PressurePriorityMemory {
+  pressure_memory_score?: number;
+  same_symbol_reentry_count?: number;
+  interrupted_by_other_symbols?: number;
+  clean_block_count?: number;
+  max_clean_block_minutes?: number;
+}
+
+export interface PressurePriorityContext {
+  effective_pressure_tier?: string;
+  tier_scope?: string;
+  tier_score?: number;
+  tier_action?: string;
+  tier_source_event?: string;
+  tier_reasons?: string[];
+  impact_tier?: string;
+  impact_reasons?: string[];
+  low_event_high_impact_candidate?: boolean;
+  tier_is_execution_signal?: boolean;
+  tier_execution_impact?: boolean;
+  fragmented_pressure_memory?: PressurePriorityMemory;
+}
+
 export interface L12Verdict {
   symbol: string;
   verdict: VerdictType;
@@ -108,6 +131,7 @@ export interface L12Verdict {
   effective_reason?: string;
   throttled_from?: string;
   last_hold_block_reason?: string;
+  pressure_priority_context?: PressurePriorityContext;
 }
 
 // ─── SIGNAL ──────────────────────────────────────────────────
