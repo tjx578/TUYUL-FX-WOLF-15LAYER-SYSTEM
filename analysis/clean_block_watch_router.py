@@ -61,7 +61,7 @@ def route_clean_block_to_watch(
     block = dict(candidate)
     lineage = clean_block_lineage_fields(block, clean_block_seconds=clean_block_seconds)
     symbol = str(block.get("symbol") or "").upper()
-    direction = str(block.get("direction") or block.get("clean_block_direction") or "").upper()
+    direction = _raw_pressure_direction(block)
     duration = _duration_seconds(block)
     blocked_by: list[str] = []
 
@@ -118,7 +118,7 @@ def clean_block_lineage_fields(
     end = _text(candidate.get("block_end_utc") or candidate.get("end_utc") or candidate.get("end"))
     duration = _duration_seconds(candidate)
     event_count = _int_value(candidate.get("events") or candidate.get("event_count"))
-    direction = str(candidate.get("direction") or candidate.get("clean_block_direction") or "").upper() or None
+    direction = _raw_pressure_direction(candidate)
     source_id = _text(candidate.get("source_clean_block_id")) or _clean_block_id(symbol, start, end)
     return {
         "source_clean_block_id": source_id,
@@ -328,6 +328,14 @@ def _duration_seconds(candidate: Mapping[str, Any]) -> float | None:
         minutes = _first_number(candidate.get("duration_minutes"))
         return None if minutes is None else minutes * 60.0
     return _first_number(raw)
+
+
+def _raw_pressure_direction(candidate: Mapping[str, Any]) -> str | None:
+    for key in ("raw_pressure_direction", "clean_block_direction", "direction"):
+        value = str(candidate.get(key) or "").upper()
+        if value in {"BUY", "SELL"}:
+            return value
+    return None
 
 
 def _int_value(value: Any) -> int | None:
