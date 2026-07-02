@@ -503,17 +503,25 @@ class TestPipelineSignalThrottle:
 
         throttle_events = [event for event in events if event["event"] == "signal_throttle_check"]
         captured = capsys.readouterr()
+        output_lines = captured.out.splitlines()
         assert throttle_events == []
-        assert captured.out.splitlines() == [
-            "[SignalThrottle] LOG_ALLOWED_TEST allowed — verdict EXECUTE_SELL",
-            "[SignalThrottleIntel] symbol=LOG_ALLOWED_TEST raw_direction=SELL final_direction=WAIT "
-            "direction_status=ALLOWED_CANDIDATE phase=IGNITION action=WAIT_PRICE_CONFIRMATION "
-            "verdict=EXECUTE_SELL count=1 remaining=2 streak=1 max=3 window=300s "
-            "reason=allowed_is_candidate_until_price_theme_structure_validation",
-        ]
+        assert output_lines[0] == "[SignalThrottle] LOG_ALLOWED_TEST allowed — verdict EXECUTE_SELL"
+        assert output_lines[1].startswith(
+            "[SignalThrottleIntel] symbol=LOG_ALLOWED_TEST base_ccy=NONE quote_ccy=NONE "
+            "symbol_orientation=UNKNOWN raw_direction=SELL final_direction=WAIT "
+        )
+        assert "verdict=EXECUTE_SELL verdict_source=POST_L12_PRE_V11 verdict_features_hash=" in output_lines[1]
+        assert "count_before=0 count_after=1 count=1" in output_lines[1]
+        assert "remaining_before=3 remaining_after=2 remaining=2" in output_lines[1]
+        assert "streak_before=0 streak_after=1 streak=1" in output_lines[1]
         assert captured.err == ""
         assert pipe._signal_throttle.get_count("LOG_ALLOWED_TEST") == 1
-        assert l12_verdict["signal_throttle_intel"] == {
+        intel_payload = l12_verdict["signal_throttle_intel"]
+        assert intel_payload["verdict_features_hash"]
+        assert len(intel_payload["verdict_features_hash"]) == 16
+        intel_payload_without_hash = dict(intel_payload)
+        intel_payload_without_hash.pop("verdict_features_hash")
+        assert intel_payload_without_hash == {
             "symbol": "LOG_ALLOWED_TEST",
             "verdict": "EXECUTE_SELL",
             "raw_direction": "SELL",
@@ -527,6 +535,16 @@ class TestPipelineSignalThrottle:
             "max_signals": 3,
             "window_seconds": 300.0,
             "reason": "allowed_is_candidate_until_price_theme_structure_validation",
+            "base_ccy": None,
+            "quote_ccy": None,
+            "symbol_orientation": "UNKNOWN",
+            "verdict_source": "POST_L12_PRE_V11",
+            "window_count_before": 0,
+            "window_count_after": 1,
+            "window_remaining_before": 3,
+            "window_remaining_after": 2,
+            "allowed_streak_before": 0,
+            "allowed_streak_after": 1,
         }
         assert "SIGNAL_THROTTLED" not in errors
 
