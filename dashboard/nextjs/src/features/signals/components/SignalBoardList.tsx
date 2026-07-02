@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import type { SignalViewModel } from "../model/signal.types";
 
 interface Props {
@@ -35,6 +36,31 @@ export function SignalBoardList({ signals, selectedId, onSelect }: Props) {
                         Confidence: {(signal.confidence * 100).toFixed(0)}%
                     </div>
 
+                    {signal.pressurePriorityContext && (
+                        <div
+                            style={{
+                                display: "flex",
+                                gap: 6,
+                                flexWrap: "wrap",
+                                alignItems: "center",
+                                marginTop: 8,
+                                fontSize: 11,
+                            }}
+                        >
+                            <span style={pressureTierBadgeStyle(signal.pressurePriorityContext.effectivePressureTier)}>
+                                {formatPressureTierLabel(signal.pressurePriorityContext.effectivePressureTier)}
+                            </span>
+                            {signal.pressurePriorityContext.tierScore != null && (
+                                <span style={{ opacity: 0.78 }}>
+                                    Score {signal.pressurePriorityContext.tierScore.toFixed(1)}
+                                </span>
+                            )}
+                            {signal.pressurePriorityContext.lowEventHighImpactCandidate && (
+                                <span style={{ color: "var(--yellow)" }}>Key level</span>
+                            )}
+                        </div>
+                    )}
+
                     <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
                         RR: {signal.riskRewardRatio != null ? `1:${signal.riskRewardRatio.toFixed(2)}` : "—"} •
                         Entry: {signal.entryPrice ?? "—"} • SL: {signal.stopLoss ?? "—"}
@@ -49,4 +75,29 @@ export function SignalBoardList({ signals, selectedId, onSelect }: Props) {
             ))}
         </div>
     );
+}
+
+function formatPressureTierLabel(tier: string): string {
+    if (tier === "TIER_1_PRIMARY_ANALYSIS") return "Tier 1";
+    if (tier === "TIER_2_CONFIRMATION_SUPPORT") return "Tier 2";
+    if (tier === "TIER_3_KEY_LEVEL_RADAR_EXCEPTION") return "Key-level radar";
+    return tier.replaceAll("_", " ");
+}
+
+function pressureTierBadgeStyle(tier: string): CSSProperties {
+    const color = tier === "TIER_1_PRIMARY_ANALYSIS"
+        ? "var(--green)"
+        : tier === "TIER_2_CONFIRMATION_SUPPORT"
+            ? "var(--blue)"
+            : "var(--yellow)";
+
+    return {
+        color,
+        border: `1px solid color-mix(in srgb, ${color} 38%, transparent)`,
+        background: `color-mix(in srgb, ${color} 10%, transparent)`,
+        borderRadius: 6,
+        padding: "2px 6px",
+        fontWeight: 700,
+        lineHeight: 1.4,
+    };
 }
