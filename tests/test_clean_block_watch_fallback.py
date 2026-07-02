@@ -164,4 +164,6 @@ def test_block_below_300s_is_not_clean_block():
 def test_block_at_threshold_is_clean_block():
     cand = _candidate_from_blocks([_block(305)], 300)
     assert cand is not None
-    assert cand["direction"] == "BUY"
+    assert cand["direction"] == "UNRESOLVED"
+    assert cand["raw_pressure_direction"] == "BUY"
+    assert cand["candidate_direction"] is None
