@@ -169,6 +169,63 @@ def test_parse_downgraded_hold_preserves_raw_verdict_and_effective_action():
     assert event.is_downgraded is True
 
 
+def test_parse_signal_throttle_intel_audit_metadata():
+    event = parse_engine_log_event(
+        {
+            "timestamp": "2026-06-30T01:42:30Z",
+            "severity": "info",
+            "message": (
+                "[SignalThrottleIntel] symbol=GBPAUD base_ccy=GBP quote_ccy=AUD "
+                "symbol_orientation=FX_BASE_QUOTE raw_direction=BUY final_direction=WAIT "
+                "direction_status=CANARY_QUORUM_PENDING_VALIDATION phase=ALLOWED_CANARY_QUORUM "
+                "action=WAIT_PRICE_THEME_STRUCTURE verdict=EXECUTE_REDUCED_RISK_BUY "
+                "verdict_source=POST_L12_PRE_V11 verdict_features_hash=abc123def4567890 "
+                "count_before=2 count_after=3 count=3 remaining_before=1 remaining_after=0 "
+                "remaining=0 streak_before=7 streak_after=8 streak=8 max=3 window=300s "
+                "reason=allowed_is_candidate_until_price_theme_structure_validation"
+            ),
+        }
+    )
+
+    assert event is not None
+    assert event.symbol == "GBPAUD"
+    assert event.direction == "BUY"
+    assert event.base_ccy == "GBP"
+    assert event.quote_ccy == "AUD"
+    assert event.symbol_orientation == "FX_BASE_QUOTE"
+    assert event.verdict_source == "POST_L12_PRE_V11"
+    assert event.verdict_features_hash == "abc123def4567890"
+    assert event.window_count_before == 2
+    assert event.window_count_after == 3
+    assert event.window_remaining_before == 1
+    assert event.window_remaining_after == 0
+    assert event.allowed_streak_before == 7
+    assert event.allowed_streak_after == 8
+    assert event.count == 3
+    assert event.remaining == 0
+    assert event.allowed_streak == 8
+
+
+def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
+    analyzer = SignalThrottleLiveAnalyzer()
+    analyzer.record_throttled(
+        symbol="USDJPY",
+        verdict="EXECUTE_REDUCED_RISK_BUY",
+        count=3,
+        remaining=0,
+        max_signals=3,
+        window_seconds=300,
+    )
+
+    events = list(analyzer._events)
+
+    assert events[0].event_type == "THROTTLED"
+    assert events[0].direction is None
+    assert events[0].throttled_inferred_direction == "BUY"
+    assert events[1].event_type == "DOWNGRADED_TO_HOLD"
+    assert events[1].direction == "BUY"
+
+
 def test_csv_fixture_reports_data_quality_without_large_raw_export():
     report = analyze_signal_throttle_csv(_FIXTURE)
 
@@ -405,7 +462,9 @@ def test_analyzer_classifies_clean_same_pair_block_as_pair_candidate():
         "effective_ticks": 12,
         "suppressed_ticks": 0,
         "effective_density_per_minute": 2.18,
-        "direction": None,
+        "direction": "UNRESOLVED",
+        "raw_pressure_direction": "NONE",
+        "candidate_direction": None,
         "phase": "LOW_DENSITY_OPEN_LANE",
         "pressure_grade": "C",
         "pressure_temperature": "CONTEXTUAL_RADAR",
@@ -417,6 +476,33 @@ def test_analyzer_classifies_clean_same_pair_block_as_pair_candidate():
     }
     assert report["market_context_validation"]["direction_validated"] is False
     assert report["market_context_validation"]["requires_market_context"] is True
+
+
+def test_analyzer_pure_clean_block_ignores_large_same_pair_gap():
+    events = [
+        _event(0, "USDJPY", event_type="ALLOWED"),
+        _event(60, "USDJPY", event_type="ALLOWED"),
+        _event(300, "USDJPY", event_type="ALLOWED"),
+        _event(540, "USDJPY", event_type="ALLOWED"),
+    ]
+
+    report = analyze_signal_throttle_events(events, latest_window_seconds=3600, clean_gap_seconds=75)
+
+    assert report["latest_phase"] == "PAIR_TIMING_BLOCK"
+    assert report["final_mode"] == "PAIR_SIGNAL_CANDIDATE"
+    assert report["candidate"]["symbol"] == "USDJPY"
+    assert report["candidate"]["direction"] == "UNRESOLVED"
+    assert report["candidate"]["raw_pressure_direction"] == "BUY"
+    assert report["candidate"]["candidate_direction"] is None
+    assert report["latest_window"]["largest_clean_block_seconds"] == 540.0
+    assert report["symbol_activity"]["USDJPY"]["latest_block_duration_seconds"] == 540.0
+    assert report["burst_symbol_activity"]["USDJPY"]["latest_block_duration_seconds"] == 0.0
+    assert report["top_clean_blocks"][0]["events"] == 4
+    assert report["top_clean_blocks"][0]["max_gap_seconds"] == 240.0
+    assert report["top_burst_blocks"][0]["duration_seconds"] == 60.0
+    assert report["runtime_config"]["pure_block_gap_policy"] == "PAIR_ROTATION_ONLY"
+    assert report["runtime_config"]["pure_block_max_gap_seconds"] is None
+    assert report["runtime_config"]["burst_block_max_gap_seconds"] == 75
 
 
 def test_live_analyzer_fragmented_rotation_returns_theme_alert():
