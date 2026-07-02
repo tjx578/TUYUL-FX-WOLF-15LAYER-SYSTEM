@@ -91,6 +91,37 @@ def test_signal_json_emits_generic_microboost_watch(caplog):
     assert '"watch_direction":"BUY"' in caplog.text
 
 
+def test_signal_watch_json_can_carry_pressure_priority_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="CADJPY_20260518T133000Z",
+        symbol="CADJPY",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        valid_for_execution=False,
+        pressure_priority_context={
+            "effective_pressure_tier": "TIER_1_PRIMARY_ANALYSIS",
+            "tier_scope": "LIVE_120M",
+            "tier_score": 88.0,
+            "tier_action": "PRIORITIZE_ANALYSIS",
+            "tier_source_event": "SignalThrottlePressureTierSnapshot",
+            "tier_is_execution_signal": False,
+            "tier_execution_impact": False,
+        },
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"pressure_priority_context":' in caplog.text
+    assert '"effective_pressure_tier":"TIER_1_PRIMARY_ANALYSIS"' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
 def test_signal_json_emits_clean_block_watch_status(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(
@@ -721,6 +752,32 @@ def test_final_signal_uses_signal_json_prefix(caplog):
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
 
 
+def test_final_signal_strips_pressure_priority_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        analysis_valid=True,
+        direction_valid=True,
+        signal_valid=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
+        valid_for_execution=True,
+        pressure_priority_context={
+            "effective_pressure_tier": "TIER_1_PRIMARY_ANALYSIS",
+            "tier_execution_impact": False,
+        },
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert "pressure_priority_context" not in caplog.text
+    assert "effective_pressure_tier" not in caplog.text
+
+
 def test_terminal_valid_wait_structure_emits_decision_update_without_execution(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
@@ -757,6 +814,42 @@ def test_terminal_valid_wait_structure_emits_decision_update_without_execution(c
     assert '"tradeplan_valid":false' in caplog.text
     assert '"execution_valid_now":false' in caplog.text
     assert '"valid_for_execution":false' in caplog.text
+
+
+def test_decision_update_strips_pressure_priority_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="NZDJPY_20260603T132500Z",
+        symbol="NZDJPY",
+        status="FINAL_VALID_WAIT_STRUCTURE_TARGET",
+        terminal_status="FINAL_VALID_WAIT_STRUCTURE_TARGET",
+        raw_direction="SELL",
+        candidate_direction="SELL",
+        validated_direction="SELL",
+        final_direction="SELL",
+        action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        next_action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        signal_valid=True,
+        direction_valid=True,
+        analysis_valid=True,
+        tradeplan_valid=False,
+        valid_for_execution=False,
+        execution_valid_now=False,
+        terminal_decision_confirmed=True,
+        is_final_signal=True,
+        pressure_priority_context={
+            "effective_pressure_tier": "TIER_1_PRIMARY_ANALYSIS",
+            "tier_execution_impact": False,
+        },
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "pressure_priority_context" not in caplog.text
+    assert "effective_pressure_tier" not in caplog.text
+    assert "pressure_tier" not in caplog.text
 
 
 def test_continuation_valid_with_rr_fallback_defaults_to_decision_update(caplog):
