@@ -38,6 +38,7 @@ from .pressure_cluster_deduper import summarize_pressure_clusters
 from .regime_invalidation import validate_regime_state
 from .signal_promotion_score import score_signal_promotion
 from .signal_throttle_pattern_detector import classify_pressure_block
+from .signal_throttle_pressure_tier import build_pressure_tier_snapshot
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -95,6 +96,18 @@ class SignalThrottleLogEvent:
     direction_inherited: bool = False
     inherited_direction: str | None = None
     inherited_direction_age_seconds: float | None = None
+    base_ccy: str | None = None
+    quote_ccy: str | None = None
+    symbol_orientation: str | None = None
+    verdict_source: str | None = None
+    verdict_features_hash: str | None = None
+    window_count_before: int | None = None
+    window_count_after: int | None = None
+    window_remaining_before: int | None = None
+    window_remaining_after: int | None = None
+    allowed_streak_before: int | None = None
+    allowed_streak_after: int | None = None
+    throttled_inferred_direction: str | None = None
 
     @property
     def effective_ticks(self) -> int:
@@ -282,6 +295,18 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         direction_inherited=direction_inherited,
         inherited_direction=inherited_direction,
         inherited_direction_age_seconds=inherited_direction_age_seconds,
+        base_ccy=state_fields.get("base_ccy"),
+        quote_ccy=state_fields.get("quote_ccy"),
+        symbol_orientation=state_fields.get("symbol_orientation"),
+        verdict_source=state_fields.get("verdict_source"),
+        verdict_features_hash=state_fields.get("verdict_features_hash"),
+        window_count_before=state_fields.get("window_count_before"),
+        window_count_after=state_fields.get("window_count_after"),
+        window_remaining_before=state_fields.get("window_remaining_before"),
+        window_remaining_after=state_fields.get("window_remaining_after"),
+        allowed_streak_before=state_fields.get("allowed_streak_before"),
+        allowed_streak_after=state_fields.get("allowed_streak_after"),
+        throttled_inferred_direction=state_fields.get("throttled_inferred_direction"),
     )
 
 
@@ -316,6 +341,16 @@ def analyze_signal_throttle_events(
     ordered = sorted(events, key=lambda item: item.timestamp)
     state_metadata = state_metadata or _state_metadata_from_events(ordered)
     if not ordered:
+        pressure_tier_snapshot = _build_pressure_tier_snapshot(
+            events=[],
+            blocks=[],
+            symbol_activity={},
+            clean_watch_candidates=[],
+            candidate_lifecycle=_empty_candidate_lifecycle(candidate_lifecycle_window_seconds),
+            theme_scores=[],
+            clean_block_seconds=clean_block_seconds,
+            state_metadata=state_metadata,
+        )
         return {
             "final_mode": "NO_SIGNAL_THROTTLE_DATA",
             "clean_entry_signal": False,
@@ -341,6 +376,10 @@ def analyze_signal_throttle_events(
             "theme_scores": [],
             "event_counts": _event_counts([]),  # noqa: F821
             "symbol_activity": {},
+            "burst_symbol_activity": {},
+            "pressure_tier_snapshot": pressure_tier_snapshot,
+            "pressure_tiers": pressure_tier_snapshot.get("symbols", []),
+            "pressure_tier_summary": pressure_tier_snapshot.get("summary", {}),
             "time_range": {
                 "start_utc": None,
                 "end_utc": None,
@@ -363,6 +402,9 @@ def analyze_signal_throttle_events(
             "runtime_config": {
                 "latest_window_minutes": latest_window_seconds / 60.0,
                 "min_clean_block_minutes": clean_block_seconds / 60.0,
+                "pure_block_gap_policy": "PAIR_ROTATION_ONLY",
+                "pure_block_max_gap_seconds": None,
+                "burst_block_max_gap_seconds": clean_gap_seconds,
                 "microboost_window_minutes": microboost_window_minutes,
                 "candidate_lifecycle_window_seconds": candidate_lifecycle_window_seconds,
                 "fragmented_min_unique_pairs": fragmented_min_unique_pairs,
@@ -411,19 +453,26 @@ def analyze_signal_throttle_events(
             ),
             "currency_pressure": {currency: 0 for currency in _CURRENCIES},
             "top_clean_blocks": [],
+            "top_burst_blocks": [],
             "recommended_action": "WAIT_FOR_SIGNAL_THROTTLE_DATA",
         }
 
-    blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
+    pure_blocks = build_pressure_blocks(ordered, max_gap_seconds=None)
+    burst_blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
     symbol_activity = build_symbol_activity(
+        ordered,
+        max_gap_seconds=None,
+        now=ordered[-1].timestamp,
+    )
+    burst_symbol_activity = build_symbol_activity(
         ordered,
         max_gap_seconds=clean_gap_seconds,
         now=ordered[-1].timestamp,
     )
-    lifecycle_blocks = build_pressure_blocks(ordered, max_gap_seconds=None)
+    lifecycle_blocks = pure_blocks
     latest_cutoff = ordered[-1].timestamp - timedelta(seconds=latest_window_seconds)
     latest_events = [event for event in ordered if event.timestamp >= latest_cutoff]
-    latest_blocks = build_pressure_blocks(latest_events, max_gap_seconds=clean_gap_seconds)
+    latest_blocks = build_pressure_blocks(latest_events, max_gap_seconds=None)
     microboost_cutoff = ordered[-1].timestamp - timedelta(minutes=microboost_window_minutes)
     microboost_events = [event for event in ordered if event.timestamp >= microboost_cutoff]
     microboost_blocks = build_pressure_blocks(microboost_events, max_gap_seconds=clean_gap_seconds)
@@ -459,6 +508,16 @@ def analyze_signal_throttle_events(
         window_seconds=candidate_lifecycle_window_seconds,
     )
     clean_watch_candidates = _clean_watch_candidates_from_blocks(lifecycle_blocks, clean_block_seconds)
+    pressure_tier_snapshot = _build_pressure_tier_snapshot(
+        events=ordered,
+        blocks=pure_blocks,
+        symbol_activity=symbol_activity,
+        clean_watch_candidates=clean_watch_candidates,
+        candidate_lifecycle=candidate_lifecycle,
+        theme_scores=theme_scores,
+        clean_block_seconds=clean_block_seconds,
+        state_metadata=state_metadata,
+    )
     clean_block_watch_routes = route_clean_blocks_to_watch(
         clean_watch_candidates,
         market_contexts=market_contexts,
@@ -491,9 +550,11 @@ def analyze_signal_throttle_events(
         main_watchlist,
     )
     validation_symbol = str((candidate or {}).get("symbol") or (main_watchlist[0] if main_watchlist else "UNKNOWN"))
-    validation_direction = (candidate or {}).get("direction") or _latest_direction_for_symbol(
-        ordered, validation_symbol
-    )
+    validation_direction = (
+        _candidate_raw_pressure_direction(candidate)
+        if isinstance(candidate, dict)
+        else None
+    ) or _latest_direction_for_symbol(ordered, validation_symbol)
     market_context = _market_context_for_report(market_contexts, validation_symbol)
     market_context_validation = (
         validate_market_context(market_context).to_dict()
@@ -630,6 +691,10 @@ def analyze_signal_throttle_events(
         "watch_promotion_blockers": watch_promotion_blockers,
         "event_counts": event_type_counts,
         "symbol_activity": symbol_activity,
+        "burst_symbol_activity": burst_symbol_activity,
+        "pressure_tier_snapshot": pressure_tier_snapshot,
+        "pressure_tiers": pressure_tier_snapshot.get("symbols", []),
+        "pressure_tier_summary": pressure_tier_snapshot.get("summary", {}),
         "time_range": {
             "start_utc": ordered[0].timestamp.isoformat(),
             "end_utc": ordered[-1].timestamp.isoformat(),
@@ -652,6 +717,9 @@ def analyze_signal_throttle_events(
         "runtime_config": {
             "latest_window_minutes": latest_window_seconds / 60.0,
             "min_clean_block_minutes": clean_block_seconds / 60.0,
+            "pure_block_gap_policy": "PAIR_ROTATION_ONLY",
+            "pure_block_max_gap_seconds": None,
+            "burst_block_max_gap_seconds": clean_gap_seconds,
             "microboost_window_minutes": microboost_window_minutes,
             "candidate_lifecycle_window_seconds": candidate_lifecycle_window_seconds,
             "fragmented_min_unique_pairs": fragmented_min_unique_pairs,
@@ -667,7 +735,8 @@ def analyze_signal_throttle_events(
             state_metadata=state_metadata,
         ),
         "currency_pressure": currency_pressure,
-        "top_clean_blocks": [block.to_dict() for block in rank_pressure_blocks(blocks)[:10]],
+        "top_clean_blocks": [block.to_dict() for block in rank_pressure_blocks(pure_blocks)[:10]],
+        "top_burst_blocks": [block.to_dict() for block in rank_pressure_blocks(burst_blocks)[:10]],
         "market_context_validation": market_context_validation,
         "recommended_action": _recommended_action(latest_phase, candidate_lifecycle),
     }
@@ -813,6 +882,7 @@ class SignalThrottleLiveAnalyzer:
                 eligible_for_pressure_block=True,
                 eligible_for_execution=False,
                 execution_block_reason="signal_throttled",
+                throttled_inferred_direction=normalize_direction(None, verdict),
             )
         )
         if verdict:
@@ -967,6 +1037,11 @@ class SignalThrottleLiveAnalyzer:
         report["runtime_config"]["allowed_quorum_window_seconds"] = self.allowed_quorum_window_seconds
         report["runtime_config"]["max_events_in_memory"] = self.max_events
         report["symbol_activity"] = build_symbol_activity(
+            events,
+            max_gap_seconds=None,
+            now=datetime.now(UTC),
+        )
+        report["burst_symbol_activity"] = build_symbol_activity(
             events,
             max_gap_seconds=self.clean_gap_seconds,
             now=datetime.now(UTC),
@@ -1384,6 +1459,7 @@ def _source_age_seconds(block: dict[str, Any], source: dict[str, Any]) -> float:
 def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int) -> dict[str, Any]:
     valid_since = block.start + timedelta(seconds=clean_block_seconds)
     role = "latest_meaningful_candidate" if block.duration_seconds >= clean_block_seconds else "latest_ignition_watch"
+    raw_pressure_direction = block.direction if block.direction in {"BUY", "SELL"} else None
     payload = {
         "symbol": block.symbol,
         "block_start_utc": block.start.isoformat(),
@@ -1395,7 +1471,9 @@ def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int
         "effective_ticks": block.effective_ticks,
         "suppressed_ticks": block.suppressed_ticks,
         "effective_density_per_minute": block.effective_density_per_minute,
-        "direction": block.direction,
+        "direction": "UNRESOLVED",
+        "raw_pressure_direction": raw_pressure_direction or "NONE",
+        "candidate_direction": None,
         "phase": _candidate_phase(block),
         "role": role,
     }
@@ -2465,7 +2543,7 @@ def _signal_watch_gate(
         return _empty_signal_watch_gate("MICROBOOST_VALIDATION_NOT_AVAILABLE", candidate)
 
     candidate_symbol = str(candidate.get("symbol") or "").upper()
-    candidate_direction = str(candidate.get("direction") or "").upper()
+    candidate_direction = _candidate_raw_pressure_direction(candidate)
     latest_symbol = str(latest.get("symbol") or "").upper()
     latest_direction = str(latest.get("direction") or "").upper()
     candidate_lineage = clean_block_lineage_fields(candidate, clean_block_seconds=clean_block_seconds)
@@ -2527,12 +2605,13 @@ def _empty_signal_watch_gate(
 ) -> dict[str, Any]:
     candidate = candidate or {}
     candidate_lineage = clean_block_lineage_fields(candidate) if candidate else {}
+    candidate_direction = _candidate_raw_pressure_direction(candidate) if candidate else None
     return {
         "eligible": False,
         "source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
         "reason": reason,
         "symbol": candidate.get("symbol"),
-        "direction": candidate.get("direction"),
+        "direction": candidate_direction,
         "valid_since_utc": candidate.get("valid_since_utc"),
         "block_start_utc": candidate.get("block_start_utc"),
         "block_end_utc": candidate.get("block_end_utc"),
@@ -2546,6 +2625,14 @@ def _empty_signal_watch_gate(
         "clean_block_direction": candidate_lineage.get("clean_block_direction"),
         "watch_promotion_source": candidate_lineage.get("watch_promotion_source"),
     }
+
+
+def _candidate_raw_pressure_direction(candidate: dict[str, Any]) -> str | None:
+    for key in ("raw_pressure_direction", "clean_block_direction", "direction"):
+        value = str(candidate.get(key) or "").upper()
+        if value in {"BUY", "SELL"}:
+            return value
+    return None
 
 
 def _signal_watch_source_fields(
@@ -2715,6 +2802,88 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _build_pressure_tier_snapshot(
+    *,
+    events: list[SignalThrottleLogEvent],
+    blocks: list[PressureBlock],
+    symbol_activity: dict[str, dict[str, Any]],
+    clean_watch_candidates: list[dict[str, Any]],
+    candidate_lifecycle: dict[str, Any],
+    theme_scores: list[dict[str, Any]],
+    clean_block_seconds: int,
+    state_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    live_window_seconds = int(_env_float("SIGNAL_THROTTLE_PRESSURE_TIER_LIVE_WINDOW_MINUTES", 120.0) * 60)
+    session_window_seconds = int(_env_float("SIGNAL_THROTTLE_PRESSURE_TIER_SESSION_WINDOW_HOURS", 24.0) * 3600)
+    deployment_ids = _pressure_tier_deployment_ids(state_metadata)
+    if not _env_bool("SIGNAL_THROTTLE_PRESSURE_TIER_ENABLED", True):
+        return _disabled_pressure_tier_snapshot(
+            deployment_ids=deployment_ids,
+            live_window_seconds=live_window_seconds,
+            session_window_seconds=session_window_seconds,
+            clean_block_seconds=clean_block_seconds,
+        )
+    snapshot = build_pressure_tier_snapshot(
+        events,
+        blocks=blocks,
+        symbol_activity=symbol_activity,
+        clean_watch_candidates=clean_watch_candidates,
+        candidate_lifecycle=candidate_lifecycle,
+        theme_scores=theme_scores,
+        clean_block_seconds=clean_block_seconds,
+        live_window_seconds=live_window_seconds,
+        session_window_seconds=session_window_seconds,
+        deployment_ids=deployment_ids,
+    )
+    if _env_bool("SIGNAL_THROTTLE_PRESSURE_TIER_EXECUTION_IMPACT", False):
+        snapshot["execution_impact_guard"] = "FORCED_FALSE_DIAGNOSTIC_ONLY"
+    return snapshot
+
+
+def _pressure_tier_deployment_ids(state_metadata: dict[str, Any]) -> list[str]:
+    raw = state_metadata.get("deployment_ids") or state_metadata.get("deployment_id")
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple, set)):
+        return sorted({str(item).strip() for item in raw if str(item).strip()})
+    text = str(raw).strip()
+    if not text:
+        return []
+    return sorted({part.strip() for part in re.split(r"[,;\s]+", text) if part.strip()})
+
+
+def _disabled_pressure_tier_snapshot(
+    *,
+    deployment_ids: list[str],
+    live_window_seconds: int,
+    session_window_seconds: int,
+    clean_block_seconds: int,
+) -> dict[str, Any]:
+    tiers = {
+        "tier_1": [],
+        "tier_2": [],
+        "tier_3": [],
+        "stale_archive": [],
+        "unsafe_mixed_deployment": [],
+    }
+    return {
+        "enabled": False,
+        "disabled_reason": "SIGNAL_THROTTLE_PRESSURE_TIER_ENABLED_FALSE",
+        "mixed_deployment": len(deployment_ids) > 1,
+        "deployment_ids": deployment_ids,
+        "scope_config": {
+            "live_window_seconds": int(live_window_seconds),
+            "session_window_seconds": int(session_window_seconds),
+            "clean_block_seconds": int(clean_block_seconds),
+        },
+        "tier_is_execution_signal": False,
+        "tier_execution_impact": False,
+        "tiers": tiers,
+        "summary": {key: 0 for key in tiers},
+        "symbols": [],
+    }
+
+
 def _market_context_for_report(market_contexts: dict[str, Any] | None, symbol: str) -> MarketContext | None:
     if not market_contexts:
         return None
@@ -2876,13 +3045,32 @@ def _parse_timestamp(value: str) -> datetime | None:
 
 
 def _extract_state_fields(message: str) -> dict[str, Any]:
+    count = _extract_optional_int(message, _COUNT_KV_RE, _COUNT_SIGNAL_RE, group="count")
+    remaining = _extract_optional_int(message, _REMAINING_RE, group="remaining")
+    allowed_streak = _extract_optional_int(message, _STREAK_RE, group="streak")
+    count_after = _extract_kv_optional_int(message, "count_after")
+    remaining_after = _extract_kv_optional_int(message, "remaining_after")
+    streak_after = _extract_kv_optional_int(message, "streak_after")
+    inferred_direction = normalize_direction(_extract_kv_text(message, "throttled_inferred_direction"), None)
     return {
-        "count": _extract_optional_int(message, _COUNT_KV_RE, _COUNT_SIGNAL_RE, group="count"),
-        "remaining": _extract_optional_int(message, _REMAINING_RE, group="remaining"),
-        "allowed_streak": _extract_optional_int(message, _STREAK_RE, group="streak"),
+        "count": count_after if count_after is not None else count,
+        "remaining": remaining_after if remaining_after is not None else remaining,
+        "allowed_streak": streak_after if streak_after is not None else allowed_streak,
         "max_signals": _extract_optional_int(message, _MAX_KV_RE, _MAX_PAREN_RE, group="max"),
         "window_seconds": _extract_optional_float(message, _WINDOW_KV_RE, _WINDOW_SIGNAL_RE, group="window"),
         "suppressed": _extract_suppressed(message),
+        "base_ccy": _extract_kv_optional_text(message, "base_ccy"),
+        "quote_ccy": _extract_kv_optional_text(message, "quote_ccy"),
+        "symbol_orientation": _extract_kv_optional_text(message, "symbol_orientation"),
+        "verdict_source": _extract_kv_optional_text(message, "verdict_source"),
+        "verdict_features_hash": _extract_kv_optional_text(message, "verdict_features_hash"),
+        "window_count_before": _extract_kv_optional_int(message, "count_before"),
+        "window_count_after": count_after,
+        "window_remaining_before": _extract_kv_optional_int(message, "remaining_before"),
+        "window_remaining_after": remaining_after,
+        "allowed_streak_before": _extract_kv_optional_int(message, "streak_before"),
+        "allowed_streak_after": streak_after,
+        "throttled_inferred_direction": inferred_direction,
     }
 
 
@@ -2905,6 +3093,20 @@ def _coerce_non_negative_int(value: Any) -> int | None:
         return max(0, int(float(value)))
     except (TypeError, ValueError):
         return None
+
+
+def _extract_kv_optional_int(message: str, key: str) -> int | None:
+    text = _extract_kv_text(message, key)
+    if not text or text.upper() == "NONE":
+        return None
+    return _coerce_non_negative_int(text)
+
+
+def _extract_kv_optional_text(message: str, key: str) -> str | None:
+    text = _extract_kv_text(message, key)
+    if not text or text.upper() == "NONE":
+        return None
+    return text
 
 
 def _extract_optional_float(message: str, *patterns: re.Pattern[str], group: str) -> float | None:
@@ -2969,8 +3171,12 @@ def _state_metadata_from_rows(
     events: list[SignalThrottleLogEvent],
 ) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
+    deployment_ids: set[str] = set()
     for row in rows:
         message = _extract_field(row, "message", "body", "log", "text")
+        deployment_id = _extract_deployment_id(message)
+        if deployment_id:
+            deployment_ids.add(deployment_id)
         if "[SignalThrottle" not in message:
             continue
         timestamp = _parse_timestamp(_extract_field(row, "timestamp", "time", "@timestamp", "datetime"))
@@ -2990,7 +3196,10 @@ def _state_metadata_from_rows(
         )
 
     if not records:
-        return _state_metadata_from_events(events)
+        metadata = _state_metadata_from_events(events)
+        if deployment_ids:
+            metadata["deployment_ids"] = sorted(deployment_ids)
+        return metadata
 
     records.sort(key=lambda item: item["timestamp"])
     first_symbol = events[0].symbol if events else str(records[0]["symbol"])
@@ -3024,7 +3233,10 @@ def _state_metadata_from_rows(
             if state[target_name] is None and record.get(source_name) is not None:
                 state[target_name] = record[source_name]
         state["suppressed"] = max(int(state["suppressed"] or 0), int(record.get("suppressed") or 0))
-    return _state_metadata_payload(state)
+    metadata = _state_metadata_payload(state)
+    if deployment_ids:
+        metadata["deployment_ids"] = sorted(deployment_ids)
+    return metadata
 
 
 def _state_symbol_from_message(message: str) -> str | None:
@@ -3036,6 +3248,24 @@ def _state_symbol_from_message(message: str) -> str | None:
         if match:
             return match.group("symbol").upper()
     return None
+
+
+def _extract_deployment_id(message: str) -> str | None:
+    kv_value = _extract_kv_text(message, "deployment_id")
+    if kv_value:
+        return kv_value
+    payload_start = message.find("{")
+    if payload_start < 0:
+        return None
+    try:
+        payload = json.loads(message[payload_start:])
+    except json.JSONDecodeError:
+        return None
+    value = payload.get("deployment_id")
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _state_metadata_payload(first_state: dict[str, Any] | None) -> dict[str, Any]:
@@ -3182,6 +3412,7 @@ def _candidate_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int
 
     best_block = max(clean_blocks, key=lambda b: b.duration_seconds)
     valid_since = best_block.start + timedelta(seconds=clean_block_seconds)
+    raw_pressure_direction = best_block.direction if best_block.direction in {"BUY", "SELL"} else None
     payload = {
         "symbol": best_block.symbol,
         "block_start_utc": best_block.start.isoformat(),
@@ -3193,7 +3424,9 @@ def _candidate_from_blocks(blocks: list[PressureBlock], clean_block_seconds: int
         "effective_ticks": best_block.effective_ticks,
         "suppressed_ticks": best_block.suppressed_ticks,
         "effective_density_per_minute": best_block.effective_density_per_minute,
-        "direction": best_block.direction,
+        "direction": "UNRESOLVED",
+        "raw_pressure_direction": raw_pressure_direction or "NONE",
+        "candidate_direction": None,
         "phase": _candidate_phase(best_block),
     }
     payload.update(_block_direction_metadata_payload(best_block))
