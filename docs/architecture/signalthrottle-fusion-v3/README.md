@@ -27,6 +27,29 @@ docs/architecture/contracts/signalthrottle-fusion-v3-contract.md
 
 That file defines the non-negotiable system boundaries.
 
+## Implementation status legend
+
+Use this legend inside all Fusion V3 docs and code reviews:
+
+```text
+IMPLEMENTED
+= already represented in current runtime code or existing architecture.
+
+PARTIAL
+= present in runtime, but naming, adapter coverage, or emitted surfaces still need normalization.
+
+PLANNED_CONTRACT
+= approved architecture target, but runtime implementation is not complete yet.
+
+OPTIONAL
+= useful observability field, but not required to land the first safe implementation.
+
+FORBIDDEN
+= implementation must not introduce this behavior.
+```
+
+This prevents documentation from being misread as a claim that every planned field is already emitted by runtime.
+
 ## Section documents
 
 ```text
@@ -84,6 +107,24 @@ No silent pressure disappearance
 Clean block lineage attached
 Pair tier explains priority
 Watch/Decision remains non-executable unless existing gates allow it
+```
+
+## Current contract status map
+
+Use this map to avoid confusing the contract target with runtime rollout state:
+
+```text
+Pure Pressure Ledger wrapper/output          = IMPLEMENTED
+Pure pressure quality diagnostics            = IMPLEMENTED
+Radar Context vs Execution Context split     = IMPLEMENTED
+SignalThrottleFusionV3 diagnostic output     = IMPLEMENTED
+Dynamic M15 close policy                     = IMPLEMENTED
+Microboost pure-stage boundary              = IMPLEMENTED / must preserve
+Source lineage guard                         = IMPLEMENTED / must preserve
+PairPriorityTier pressure-aware adapter      = PLANNED_CONTRACT
+DecisionUpdate terminal NO_TRADE_REASONED    = PARTIAL
+Fusion V3 execution impact                   = FORBIDDEN unless future gated rollout approves it
+Pair Tier influence on L12 / SignalJSON      = FORBIDDEN
 ```
 
 ## Review checklist for every future patch
