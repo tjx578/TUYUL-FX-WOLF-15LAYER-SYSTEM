@@ -179,6 +179,10 @@ def _watch_payload(
         or lineage.get("clean_block_valid_since_utc")
         or candidate.get("valid_since_utc")
     )
+    requires_m15_close, requires_m15_close_policy = _requires_m15_close_policy(
+        direction=direction,
+        market_context=market_context,
+    )
     payload = {
         "enabled": True,
         "status": f"CLEAN_BLOCK_{side}_WATCH",
@@ -192,7 +196,8 @@ def _watch_payload(
         "direction_source": candidate.get("direction_source") or "CLEAN_BLOCK_DIRECTION",
         "direction_confidence": candidate.get("direction_confidence") or "CLEAN_BLOCK_CONTEXT",
         "resolved_family": "CLEAN_BLOCK_TO_SIGNAL_WATCH",
-        "requires_m15_close": True,
+        "requires_m15_close": requires_m15_close,
+        "requires_m15_close_policy": requires_m15_close_policy,
         "final_direction": "WAIT",
         "direction_status": "CLEAN_BLOCK_WATCH_ONLY",
         "direction_validation_status": "CLEAN_BLOCK_WATCH_PENDING_STRUCTURE",
@@ -242,6 +247,46 @@ def _watch_payload(
     payload.update(lineage)
     payload["clean_block_valid"] = True
     return payload
+
+
+def _requires_m15_close_policy(*, direction: str, market_context: Any) -> tuple[bool, str]:
+    price_position = _normalized_field(market_context, "price_position")
+    m15_phase = _normalized_field(market_context, "m15_phase")
+    h1_phase = _normalized_field(market_context, "h1_phase")
+    market_bias = _normalized_field(market_context, "market_bias")
+    trend_direction = _normalized_field(market_context, "trend_direction")
+
+    if direction not in {"BUY", "SELL"}:
+        return False, "NOT_APPLICABLE_DIRECTION_UNRESOLVED"
+
+    if direction == "BUY" and price_position in {"MAIN_RESISTANCE", "KEY_RESISTANCE", "RESISTANCE"}:
+        return True, "REQUIRED_KEY_LEVEL_OR_REJECTION_RISK"
+    if direction == "SELL" and price_position in {"MAIN_SUPPORT", "KEY_SUPPORT", "SUPPORT"}:
+        return True, "REQUIRED_KEY_LEVEL_OR_REJECTION_RISK"
+
+    htf_aligned = any(
+        _phase_aligned(direction, phase)
+        for phase in (h1_phase, market_bias, trend_direction)
+    )
+    ltf_aligned = _phase_aligned(direction, m15_phase)
+    if htf_aligned and ltf_aligned:
+        return False, "OPTIONAL_HTF_ALIGNED_CONTINUATION"
+    if htf_aligned and price_position not in {"MAIN_RESISTANCE", "MAIN_SUPPORT", "KEY_RESISTANCE", "KEY_SUPPORT"}:
+        return False, "OPTIONAL_HTF_ALIGNED_STRUCTURE"
+    return True, "REQUIRED_STRUCTURE_CONFIRMATION"
+
+
+def _phase_aligned(direction: str, phase: str) -> bool:
+    if not phase:
+        return False
+    bullish_tokens = ("BULL", "UPTREND", "SUPPORT_HOLD", "PIVOT_RECLAIM", "ACCUMULATION")
+    bearish_tokens = ("BEAR", "DOWNTREND", "RESISTANCE_REJECTION", "SUPPORT_BREAK", "DISTRIBUTION")
+    tokens = bullish_tokens if direction == "BUY" else bearish_tokens
+    return any(token in phase for token in tokens)
+
+
+def _normalized_field(source: Any, name: str) -> str:
+    return str(_field(source, name) or "").strip().upper()
 
 
 def _diagnostic_payload(
