@@ -115,6 +115,37 @@ valid_for_execution=false
 final_direction=WAIT
 ```
 
+`avg_gap_seconds` is ledger metadata only. It can explain whether a block is
+fresh or sparse, but it must not become a split rule for the Pure Pressure
+Ledger.
+
+## Field implementation status
+
+```text
+Implemented / existing-style fields:
+- symbol
+- start_utc / end_utc equivalents
+- duration_seconds
+- event_count / events equivalents
+- density_per_minute / effective_density_per_minute equivalents
+- max_gap_seconds
+- avg_gap_seconds
+- source_pressure_block_id
+- gap_split_applied=false
+- split_rule=PAIR_ROTATION_ONLY
+- gap_policy=QUALITY_ONLY
+- raw_pressure_direction
+- valid_for_execution=false
+- final_direction=WAIT
+
+Contract fields that may still need naming normalization at downstream edges:
+- direction_status
+- source_signal_throttle_event_range
+```
+
+`avg_gap_seconds` is implemented in the runtime block payload. It remains
+quality metadata only; it must not be used to split a Pure Pressure Block.
+
 ## Bias guardrails
 
 Do not allow these mistakes:
