@@ -12,6 +12,28 @@ Pair Tier     = which pair deserves analysis first.
 Execution     = decided later by SignalJSON gates.
 ```
 
+## Implementation status note
+
+Pure pressure quality diagnostics are implemented as a Fusion V3 diagnostic
+surface. The repo also already has `UniverseRankingEngine` for relative-strength
+and basket-style advisory ranking.
+
+The full `PairPriorityTier` surface described here is still a Fusion V3 target
+contract. It should be implemented as an adapter over existing ranking and
+pressure data, not as a replacement for UniverseRanking.
+
+```text
+Implemented now:
+- pure_pressure_score / heat_score diagnostic scoring
+- UniverseRanking-style advisory ranking
+
+Planned/contract:
+- PairPriorityTier pressure-aware advisory surface
+
+Never allowed:
+- PairPriorityTier overriding L12 or SignalJSON gates
+```
+
 ## Two-score model
 
 Fusion V3 separates long-context pressure from fresh timing pressure.
@@ -134,6 +156,7 @@ pair_priority_score = (
   "execution_tier": "WAIT",
   "pair_priority_score": 78.4,
   "advisory_only": true,
+  "runtime_status": "PLANNED_CONTRACT_UNTIL_ADAPTER_IMPLEMENTED",
   "valid_for_execution": false,
   "reason": [
     "pure_pressure_block_valid",
@@ -154,6 +177,9 @@ UniverseRanking = relative strength / basket context
 PairPriorityTier = universe ranking + pure pressure + microboost + direction + context
 ```
 
+Until the runtime adapter exists, docs/tests should label PairPriorityTier as
+planned contract behavior rather than an already emitted output.
+
 ## Bias guardrails
 
 ```text
@@ -162,6 +188,7 @@ Do not let Pair Tier set valid_for_execution=true.
 Do not let Pair Tier override L12.
 Do not let Pair Tier mutate pure pressure blocks.
 Do not hide low-static-tier pairs that form dominant clean pressure.
+Do not present planned PairPriorityTier fields as already emitted until runtime support exists.
 ```
 
 ## Required tests
@@ -171,4 +198,5 @@ low static tier + strong pure pressure can outrank high static tier with weak pr
 T0/T1/T2/T3 output remains advisory-only
 execution_tier remains WAIT unless downstream gates explicitly validate
 UniverseRanking legacy tests remain unchanged
+planned PairPriorityTier fields are covered when adapter implementation lands
 ```
