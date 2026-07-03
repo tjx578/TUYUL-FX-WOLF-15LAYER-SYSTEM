@@ -17,7 +17,7 @@ SignalJSON     = final execution product only after gates pass
 
 Microboost must remain a pure-stage timing layer.
 
-Required invariants:
+Required invariants for **Microboost core event**:
 
 ```text
 direction=UNRESOLVED
@@ -43,15 +43,44 @@ source_clean_block_id
 source_pressure_block_id
 ```
 
-Microboost must not carry or decide:
+Microboost core must not carry or decide:
 
 ```text
-final_direction
+executable final_direction BUY/SELL
 entry permission
 RR validity
 tradeplan validity
 execution readiness
 order permission
+```
+
+## final_direction clarification
+
+Some downstream lifecycle payloads may need safety guard fields such as:
+
+```text
+final_direction=WAIT
+valid_for_execution=false
+```
+
+That is allowed only as a non-executable guard in SignalWatch/Decision-style
+payloads.
+
+Forbidden:
+
+```text
+Microboost resolving final_direction=BUY
+Microboost resolving final_direction=SELL
+Microboost setting valid_for_execution=true
+Microboost bypassing SignalWatch/SignalDecision
+```
+
+Short rule:
+
+```text
+Microboost core direction stays UNRESOLVED.
+Downstream lifecycle payload may carry WAIT as safety guard.
+No Microboost-derived payload may carry executable BUY/SELL direction before downstream validation.
 ```
 
 ## Pure block vs Microboost block
@@ -154,7 +183,7 @@ If lineage is missing, emit diagnostic instead of pretending the event is valid.
 
 ```text
 Do not make Microboost choose pairs by itself.
-Do not let Microboost resolve final direction.
+Do not let Microboost resolve executable final direction.
 Do not suppress pressure just because Microboost threshold failed.
 Do not emit SignalWatch without source lineage.
 Do not emit SignalJSON directly from Microboost.
@@ -165,6 +194,7 @@ Do not allow pending watches to disappear silently.
 
 ```text
 Microboost core output always direction UNRESOLVED
+Microboost lifecycle guard may carry final_direction WAIT only when non-executable
 Microboost without source_clean_block_id is blocked/diagnostic
 pure pressure without microboost emits radar/decision diagnostic, not silence
 Watch payload remains non-executable
