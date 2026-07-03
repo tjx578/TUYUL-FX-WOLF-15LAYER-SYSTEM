@@ -164,6 +164,9 @@ def test_integration_priced_path_unchanged(monkeypatch, caplog):
         "event": "signal_decision_update_json",
         "status": "NO_TRADE_REASONED",
         "symbol": "GBPCAD",
+        "source_stage": "SIGNAL_WATCH",
+        "source_clean_block_id": "GBPCAD_20260703T020000Z_20260703T020500Z",
+        "cluster_id": "GBPCAD_PRICED_DECISION",
     }
     report = {"allowed_quorum": _quorum()}
     with caplog.at_level(logging.WARNING):
