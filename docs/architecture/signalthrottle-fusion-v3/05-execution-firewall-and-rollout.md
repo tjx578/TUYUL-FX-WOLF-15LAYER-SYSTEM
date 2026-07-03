@@ -37,6 +37,32 @@ SIGNAL_THROTTLE_MICROBOOST_GAP_SPLIT_ENABLED=true
 PAIR_PRIORITY_TIER_ENGINE_ENABLED=false
 ```
 
+## Flag implementation status
+
+These flags are rollout contract names. They must be checked against runtime
+support before being added to production env.
+
+```text
+Existing-style / already familiar runtime flags:
+- SIGNAL_JSON_FINAL_BARRIER_ENABLED
+- SIGNAL_JSON_EXEC_GATES_ENABLED
+- SIGNAL_JSON_EXEC_GATES_ENFORCE
+- SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK
+- SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED
+
+Recommended / planned Fusion V3 flags:
+- SIGNAL_THROTTLE_FUSION_V3_ENABLED
+- SIGNAL_THROTTLE_FUSION_DIAGNOSTIC_ENABLED
+- SIGNAL_THROTTLE_FUSION_EXECUTION_ENABLED
+- SIGNAL_THROTTLE_PURE_LEDGER_ENABLED
+- SIGNAL_THROTTLE_PURE_LEDGER_GAP_AGNOSTIC
+- SIGNAL_THROTTLE_MICROBOOST_GAP_SPLIT_ENABLED
+- PAIR_PRIORITY_TIER_ENGINE_ENABLED
+```
+
+Do not assume a recommended flag is already wired. A runtime patch must
+explicitly implement and snapshot any new flag before production use.
+
 ## Canary sequence
 
 ### Stage 1 — Documentation and tests
@@ -126,7 +152,7 @@ Immediately disable runtime Fusion flags if any of these occur:
 Fusion output emits valid_for_execution=true.
 SignalJSON count rises without L12/gate explanation.
 Pure ledger starts splitting by time gap.
-Microboost resolves final direction.
+Microboost resolves executable final direction.
 Pair Tier changes L12 verdict behavior.
 Watch emits without source_clean_block_id.
 M15 close becomes universal for radar-only states.
@@ -140,4 +166,5 @@ Optimize for clearer pressure visibility and safer lifecycle explanation.
 Do not convert radar into execution.
 Do not loosen existing final barrier gates.
 Do not let documentation-only contract be bypassed in code review.
+Do not add planned Fusion flags to production env until runtime support and snapshot logging exist.
 ```
