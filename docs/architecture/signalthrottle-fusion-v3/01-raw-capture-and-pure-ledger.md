@@ -105,7 +105,7 @@ duration_seconds
 event_count
 density_per_minute
 max_gap_seconds
-avg_gap_seconds
+avg_gap_seconds optional until implemented in runtime payload
 gap_split_applied=false
 split_rule=PAIR_ROTATION_ONLY
 gap_policy=QUALITY_ONLY
@@ -114,6 +114,30 @@ direction_status
 valid_for_execution=false
 final_direction=WAIT
 ```
+
+## Field implementation status
+
+```text
+Implemented / existing-style fields:
+- symbol
+- start_utc / end_utc equivalents
+- duration_seconds
+- event_count / events equivalents
+- density_per_minute / effective_density_per_minute equivalents
+- max_gap_seconds equivalents
+
+Contract-required new/normalized fields:
+- source_pressure_block_id
+- gap_split_applied=false
+- split_rule=PAIR_ROTATION_ONLY
+- gap_policy=QUALITY_ONLY
+- direction_status
+
+Optional until runtime support is added:
+- avg_gap_seconds
+```
+
+`avg_gap_seconds` is a recommended observability field. It should not block the first implementation if the runtime block object only exposes `max_gap_seconds` or equivalent gap metadata.
 
 ## Bias guardrails
 
