@@ -137,6 +137,7 @@ class PressureBlock:
     duration_seconds: float
     density_per_minute: float
     max_gap_seconds: float
+    avg_gap_seconds: float = 0.0
     direction: str | None = None
     effective_ticks: int = 0
     suppressed_ticks: int = 0
@@ -3126,6 +3127,7 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
         duration_seconds=duration_seconds,
         density_per_minute=round(density, 2),
         max_gap_seconds=max(gaps, default=0.0),
+        avg_gap_seconds=round(sum(gaps) / len(gaps), 3) if gaps else 0.0,
         direction=direction,
         effective_ticks=effective_ticks,
         suppressed_ticks=suppressed_ticks,
