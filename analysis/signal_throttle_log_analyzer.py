@@ -28,7 +28,12 @@ except ImportError:  # pragma: no cover - supports top-level ``analysis`` import
 
 from .clean_block_watch_router import clean_block_lineage_fields, route_clean_blocks_to_watch
 from .direction_conflict_resolver import resolve_direction_conflict
-from .market_context_validator import MarketContext, missing_market_context_result, validate_market_context
+from .market_context_validator import (
+    MarketContext,
+    missing_market_context_result,
+    validate_execution_context,
+    validate_radar_context,
+)
 from .microboost_continuation_entry import MicroboostContinuationEngine
 from .microboost_core_event import to_microboost_core_event
 from .microboost_counter_entry import MicroboostCounterEntryEngine
@@ -37,8 +42,10 @@ from .outcome_memory import summarize_outcome_memory
 from .pressure_cluster_deduper import summarize_pressure_clusters
 from .regime_invalidation import validate_regime_state
 from .signal_promotion_score import score_signal_promotion
+from .signal_throttle_fusion_router import build_signal_throttle_fusion_v3_diagnostic
 from .signal_throttle_pattern_detector import classify_pressure_block
 from .signal_throttle_pressure_tier import build_pressure_tier_snapshot
+from .signal_throttle_pure_block_quality import score_pure_pressure_block
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -88,6 +95,7 @@ class SignalThrottleLogEvent:
     window_seconds: float | None = None
     pressure_strength: str | None = None
     pressure_source: str | None = None
+    source_stream: str | None = None
     eligible_for_pressure_block: bool | None = None
     eligible_for_execution: bool | None = None
     execution_block_reason: str | None = None
@@ -190,6 +198,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
     direction: str | None = None
     pressure_strength: str | None = None
     pressure_source: str | None = "SignalThrottle"
+    source_stream: str | None = None
     eligible_for_pressure_block: bool | None = True
     eligible_for_execution: bool | None = None
     execution_block_reason: str | None = None
@@ -214,6 +223,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         direction = normalize_direction(_extract_kv_text(message, "direction"), None)
         pressure_strength = "CANARY"
         pressure_source = "signal_throttle_check"
+        source_stream = "CANARY"
         eligible_for_execution = False
         execution_block_reason = _extract_kv_text(message, "reason") or "non_execute_verdict"
         direction_source = _extract_kv_text(message, "direction_source") or None
@@ -234,6 +244,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         )
         pressure_strength = (_extract_kv_text(message, "phase") or "INTEL").upper()
         pressure_source = "SignalThrottleIntel"
+        source_stream = "INTEL"
         eligible_for_execution = False
         execution_block_reason = _extract_kv_text(message, "reason") or "signal_throttle_intel"
         direction_source = "SIGNAL_THROTTLE_INTEL_LOG"
@@ -244,6 +255,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         event_type = "DOWNGRADED_TO_HOLD"
         effective_action = "HOLD"
         is_downgraded = True
+        source_stream = "DOWNGRADED"
         eligible_for_execution = False
         execution_block_reason = "downgraded_to_hold"
     elif allowed:
@@ -252,12 +264,14 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         event_type = "ALLOWED"
         effective_action = "ALLOWED"
         is_downgraded = False
+        source_stream = "ALLOWED"
         eligible_for_execution = bool(verdict and verdict.startswith("EXECUTE"))
     elif throttled:
         symbol = throttled.group("symbol").upper()
         event_type = "THROTTLED"
         effective_action = "HOLD"
         is_downgraded = False
+        source_stream = "RAW_THROTTLED"
         eligible_for_execution = False
         execution_block_reason = "signal_throttled"
     else:
@@ -287,6 +301,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         window_seconds=state_fields.get("window_seconds"),
         pressure_strength=pressure_strength,
         pressure_source=pressure_source,
+        source_stream=source_stream,
         eligible_for_pressure_block=eligible_for_pressure_block,
         eligible_for_execution=eligible_for_execution,
         execution_block_reason=execution_block_reason,
@@ -351,6 +366,10 @@ def analyze_signal_throttle_events(
             clean_block_seconds=clean_block_seconds,
             state_metadata=state_metadata,
         )
+        empty_market_context_validation = missing_market_context_result("UNKNOWN").to_dict()
+        empty_radar_context_validation = validate_radar_context(
+            MarketContext(symbol="UNKNOWN", raw_allowed_direction=None)
+        ).to_dict()
         return {
             "final_mode": "NO_SIGNAL_THROTTLE_DATA",
             "clean_entry_signal": False,
@@ -377,6 +396,11 @@ def analyze_signal_throttle_events(
             "event_counts": _event_counts([]),  # noqa: F821
             "symbol_activity": {},
             "burst_symbol_activity": {},
+            "pure_pressure_blocks": [],
+            "pure_top_blocks": [],
+            "pure_active_candidate": None,
+            "pure_block_ledger": [],
+            "pure_block_count": 0,
             "pressure_tier_snapshot": pressure_tier_snapshot,
             "pressure_tiers": pressure_tier_snapshot.get("symbols", []),
             "pressure_tier_summary": pressure_tier_snapshot.get("summary", {}),
@@ -441,7 +465,14 @@ def analyze_signal_throttle_events(
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "pair_eligible_for_analysis": False,
             "watch_promotion_blockers": {},
-            "market_context_validation": missing_market_context_result("UNKNOWN").to_dict(),
+            "radar_context_validation": empty_radar_context_validation,
+            "market_context_validation": empty_market_context_validation,
+            "signal_throttle_fusion_v3": build_signal_throttle_fusion_v3_diagnostic(
+                None,
+                radar_context_validation=empty_radar_context_validation,
+                execution_context_validation=empty_market_context_validation,
+                microboost_summary={},
+            ),
             "data_quality": _data_quality_block(
                 events=[],
                 source=source,
@@ -457,7 +488,7 @@ def analyze_signal_throttle_events(
             "recommended_action": "WAIT_FOR_SIGNAL_THROTTLE_DATA",
         }
 
-    pure_blocks = build_pressure_blocks(ordered, max_gap_seconds=None)
+    pure_blocks = build_pure_pressure_blocks(ordered)
     burst_blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
     symbol_activity = build_symbol_activity(
         ordered,
@@ -472,7 +503,7 @@ def analyze_signal_throttle_events(
     lifecycle_blocks = pure_blocks
     latest_cutoff = ordered[-1].timestamp - timedelta(seconds=latest_window_seconds)
     latest_events = [event for event in ordered if event.timestamp >= latest_cutoff]
-    latest_blocks = build_pressure_blocks(latest_events, max_gap_seconds=None)
+    latest_blocks = build_pure_pressure_blocks(latest_events)
     microboost_cutoff = ordered[-1].timestamp - timedelta(minutes=microboost_window_minutes)
     microboost_events = [event for event in ordered if event.timestamp >= microboost_cutoff]
     microboost_blocks = build_pressure_blocks(microboost_events, max_gap_seconds=clean_gap_seconds)
@@ -508,6 +539,12 @@ def analyze_signal_throttle_events(
         window_seconds=candidate_lifecycle_window_seconds,
     )
     clean_watch_candidates = _clean_watch_candidates_from_blocks(lifecycle_blocks, clean_block_seconds)
+    pure_block_ledger = _pure_pressure_ledger_payload(pure_blocks, clean_block_seconds=clean_block_seconds)
+    pure_top_blocks = [
+        _pure_pressure_block_payload(block, clean_block_seconds)
+        for block in rank_pressure_blocks(pure_blocks)[:10]
+    ]
+    pure_active_candidate = _pure_active_candidate(pure_blocks, clean_block_seconds=clean_block_seconds)
     pressure_tier_snapshot = _build_pressure_tier_snapshot(
         events=ordered,
         blocks=pure_blocks,
@@ -549,17 +586,27 @@ def analyze_signal_throttle_events(
         _candidate_lifecycle_symbols(candidate_lifecycle),
         main_watchlist,
     )
-    validation_symbol = str((candidate or {}).get("symbol") or (main_watchlist[0] if main_watchlist else "UNKNOWN"))
+    validation_source = candidate or pure_active_candidate or {}
+    validation_symbol = str(
+        (validation_source or {}).get("symbol") or (main_watchlist[0] if main_watchlist else "UNKNOWN")
+    )
     validation_direction = (
-        _candidate_raw_pressure_direction(candidate)
-        if isinstance(candidate, dict)
+        _candidate_raw_pressure_direction(validation_source)
+        if isinstance(validation_source, dict)
         else None
     ) or _latest_direction_for_symbol(ordered, validation_symbol)
     market_context = _market_context_for_report(market_contexts, validation_symbol)
     market_context_validation = (
-        validate_market_context(market_context).to_dict()
+        validate_execution_context(market_context).to_dict()
         if market_context is not None
         else missing_market_context_result(validation_symbol, validation_direction).to_dict()
+    )
+    radar_context_validation = (
+        validate_radar_context(market_context).to_dict()
+        if market_context is not None
+        else validate_radar_context(
+            MarketContext(symbol=validation_symbol, raw_allowed_direction=validation_direction)
+        ).to_dict()
     )
     allowed_quorum = compute_allowed_quorum(ordered)
     ranked_microboost_blocks = rank_microboost_blocks(
@@ -576,6 +623,12 @@ def analyze_signal_throttle_events(
     )
     _attach_clean_block_source_to_microboost_summary(microboost_summary, clean_watch_candidates)
     _apply_microboost_direction_inheritance(microboost_summary, events=ordered)
+    signal_throttle_fusion_v3 = build_signal_throttle_fusion_v3_diagnostic(
+        pure_active_candidate,
+        radar_context_validation=radar_context_validation,
+        execution_context_validation=market_context_validation,
+        microboost_summary=microboost_summary,
+    )
     direction_recovery = _direction_recovery_counters(ordered, microboost_summary)
     signal_watch_gate = _signal_watch_gate(candidate, microboost_summary, clean_block_seconds=clean_block_seconds)
     microboost_continuation_entry = _continuation_entry_payload(
@@ -692,6 +745,11 @@ def analyze_signal_throttle_events(
         "event_counts": event_type_counts,
         "symbol_activity": symbol_activity,
         "burst_symbol_activity": burst_symbol_activity,
+        "pure_pressure_blocks": pure_block_ledger,
+        "pure_top_blocks": pure_top_blocks,
+        "pure_active_candidate": pure_active_candidate,
+        "pure_block_ledger": pure_block_ledger,
+        "pure_block_count": len(pure_block_ledger),
         "pressure_tier_snapshot": pressure_tier_snapshot,
         "pressure_tiers": pressure_tier_snapshot.get("symbols", []),
         "pressure_tier_summary": pressure_tier_snapshot.get("summary", {}),
@@ -737,7 +795,9 @@ def analyze_signal_throttle_events(
         "currency_pressure": currency_pressure,
         "top_clean_blocks": [block.to_dict() for block in rank_pressure_blocks(pure_blocks)[:10]],
         "top_burst_blocks": [block.to_dict() for block in rank_pressure_blocks(burst_blocks)[:10]],
+        "radar_context_validation": radar_context_validation,
         "market_context_validation": market_context_validation,
+        "signal_throttle_fusion_v3": signal_throttle_fusion_v3,
         "recommended_action": _recommended_action(latest_phase, candidate_lifecycle),
     }
 
@@ -843,6 +903,7 @@ class SignalThrottleLiveAnalyzer:
                 remaining=None,
                 allowed_streak=1,
                 pressure_source="SignalThrottle",
+                source_stream="ALLOWED",
                 eligible_for_pressure_block=True,
                 eligible_for_execution=True,
             )
@@ -879,6 +940,7 @@ class SignalThrottleLiveAnalyzer:
                 max_signals=max_signals,
                 window_seconds=window_seconds,
                 pressure_source="SignalThrottle",
+                source_stream="RAW_THROTTLED",
                 eligible_for_pressure_block=True,
                 eligible_for_execution=False,
                 execution_block_reason="signal_throttled",
@@ -907,6 +969,7 @@ class SignalThrottleLiveAnalyzer:
                     max_signals=max_signals,
                     window_seconds=window_seconds,
                     pressure_source="SignalThrottle",
+                    source_stream="DOWNGRADED",
                     eligible_for_pressure_block=True,
                     eligible_for_execution=False,
                     execution_block_reason="signal_throttled",
@@ -949,6 +1012,7 @@ class SignalThrottleLiveAnalyzer:
                 effective_action="HOLD",
                 is_downgraded=True,
                 pressure_source="SignalThrottle",
+                source_stream="DOWNGRADED",
                 eligible_for_pressure_block=True,
                 eligible_for_execution=False,
                 execution_block_reason=reason or "downgraded_to_hold",
@@ -1006,6 +1070,7 @@ class SignalThrottleLiveAnalyzer:
                 is_downgraded=False,
                 pressure_strength="CANARY",
                 pressure_source="signal_throttle_check",
+                source_stream="CANARY",
                 eligible_for_pressure_block=True,
                 eligible_for_execution=False,
                 execution_block_reason=reason or "non_execute_verdict",
@@ -1089,6 +1154,12 @@ def build_pressure_blocks(
 
     blocks.extend(_make_block(current) for current, _ in states.values())
     return sorted(blocks, key=lambda block: (block.start, block.symbol))
+
+
+def build_pure_pressure_blocks(events: Iterable[SignalThrottleLogEvent]) -> list[PressureBlock]:
+    """Build the official gap-agnostic Pure Pressure Ledger blocks."""
+
+    return build_pressure_blocks(events, max_gap_seconds=None)
 
 
 def build_symbol_activity(
@@ -1479,6 +1550,60 @@ def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int
     }
     payload.update(_pressure_profile_payload(block))
     return payload
+
+
+def _pure_pressure_block_payload(block: PressureBlock, clean_block_seconds: int) -> dict[str, Any]:
+    raw_pressure_direction = block.direction if block.direction in {"BUY", "SELL"} else None
+    payload = block.to_dict()
+    payload.update(
+        {
+            "block_start_utc": block.start.isoformat(),
+            "block_end_utc": block.end.isoformat(),
+            "duration_minutes": round(block.duration_seconds / 60.0, 2),
+            "direction": "UNRESOLVED",
+            "raw_pressure_direction": raw_pressure_direction or "NONE",
+            "candidate_direction": None,
+            "pressure_direction": raw_pressure_direction,
+            "pure_block_valid": _is_meaningful_candidate_block(block, clean_block_seconds),
+            "source_signal_throttle_event_range": {
+                "start_utc": block.start.isoformat(),
+                "end_utc": block.end.isoformat(),
+            },
+            "final_direction": "WAIT",
+            "signal_valid": False,
+            "valid_for_execution": False,
+            "execution_valid_now": False,
+            "is_final_signal": False,
+            "advisory_only": True,
+        }
+    )
+    payload.update(_block_direction_metadata_payload(block))
+    payload.update(score_pure_pressure_block(block, clean_block_seconds=clean_block_seconds).to_dict())
+    payload.update(clean_block_lineage_fields(payload, clean_block_seconds=clean_block_seconds))
+    payload["source_pressure_block_id"] = (
+        payload.get("source_pressure_block_id") or payload.get("source_clean_block_id")
+    )
+    return payload
+
+
+def _pure_pressure_ledger_payload(
+    blocks: list[PressureBlock],
+    *,
+    clean_block_seconds: int,
+) -> list[dict[str, Any]]:
+    return [_pure_pressure_block_payload(block, clean_block_seconds) for block in blocks]
+
+
+def _pure_active_candidate(
+    blocks: list[PressureBlock],
+    *,
+    clean_block_seconds: int,
+) -> dict[str, Any] | None:
+    ranked = rank_pressure_blocks(blocks)
+    if not ranked:
+        return None
+    meaningful = [block for block in ranked if _is_meaningful_candidate_block(block, clean_block_seconds)]
+    return _pure_pressure_block_payload((meaningful or ranked)[0], clean_block_seconds)
 
 
 def _is_meaningful_candidate_block(block: PressureBlock, clean_block_seconds: int) -> bool:
