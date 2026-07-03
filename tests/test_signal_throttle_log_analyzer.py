@@ -14,6 +14,7 @@ from analysis.signal_throttle_log_analyzer import (
     SignalThrottleLogEvent,
     analyze_signal_throttle_csv,
     analyze_signal_throttle_events,
+    build_pure_pressure_blocks,
     build_pressure_blocks,
     compute_currency_pressure,
     parse_engine_log_event,
@@ -59,8 +60,10 @@ def test_parse_signal_throttle_rows_extracts_allowed_and_throttled():
     assert events[1].raw_verdict == "EXECUTE_BUY"
     assert events[1].effective_action == "ALLOWED"
     assert events[1].is_downgraded is False
+    assert events[1].source_stream == "ALLOWED"
     assert events[0].suppressed == 2
     assert events[0].effective_ticks == 3
+    assert events[0].source_stream == "RAW_THROTTLED"
 
 
 def test_parse_signal_throttle_rows_ignores_signal_json_decision_updates():
@@ -503,6 +506,41 @@ def test_analyzer_pure_clean_block_ignores_large_same_pair_gap():
     assert report["runtime_config"]["pure_block_gap_policy"] == "PAIR_ROTATION_ONLY"
     assert report["runtime_config"]["pure_block_max_gap_seconds"] is None
     assert report["runtime_config"]["burst_block_max_gap_seconds"] == 75
+    assert report["pure_block_count"] == 1
+    assert report["pure_active_candidate"]["symbol"] == "USDJPY"
+    assert report["pure_active_candidate"]["gap_policy"] == "QUALITY_ONLY"
+    assert report["pure_active_candidate"]["split_rule"] == "PAIR_ROTATION_ONLY"
+    assert report["pure_active_candidate"]["gap_split_applied"] is False
+    assert report["pure_active_candidate"]["valid_for_execution"] is False
+    assert report["pure_top_blocks"][0]["source_pressure_block_id"].startswith("USDJPY_")
+    assert report["signal_throttle_fusion_v3"]["valid_for_execution"] is False
+
+
+def test_build_pure_pressure_blocks_pair_rotation_splits_block():
+    events = [
+        _event(0, "USDJPY", event_type="ALLOWED"),
+        _event(60, "USDJPY", event_type="ALLOWED"),
+        _event(120, "EURJPY", event_type="ALLOWED"),
+        _event(540, "USDJPY", event_type="ALLOWED"),
+    ]
+
+    pure_blocks = build_pure_pressure_blocks(events)
+    usdjpy_blocks = [block for block in pure_blocks if block.symbol == "USDJPY"]
+
+    assert len(usdjpy_blocks) == 2
+    assert [block.events for block in usdjpy_blocks] == [2, 1]
+
+
+def test_pure_pressure_without_direction_emits_radar_only_diagnostic():
+    events = [_event(index * 60, "USDJPY", event_type="THROTTLED") for index in range(6)]
+
+    report = analyze_signal_throttle_events(events, latest_window_seconds=3600, clean_gap_seconds=75)
+
+    assert report["pure_active_candidate"]["symbol"] == "USDJPY"
+    assert report["pure_active_candidate"]["raw_pressure_direction"] == "NONE"
+    assert report["signal_throttle_fusion_v3"]["status"] == "PURE_RADAR_ONLY"
+    assert report["signal_throttle_fusion_v3"]["final_direction"] == "WAIT"
+    assert report["signal_throttle_fusion_v3"]["valid_for_execution"] is False
 
 
 def test_live_analyzer_fragmented_rotation_returns_theme_alert():
