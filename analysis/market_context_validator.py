@@ -209,6 +209,29 @@ class MarketContextValidation:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class RadarContextValidation:
+    symbol: str
+    raw_allowed_direction: str | None
+    radar_context_ready: bool
+    execution_context_ready: bool
+    final_direction: str
+    direction_validated: bool
+    structure_context_status: str
+    action: str
+    requires_market_context: bool
+    reason: str
+    waiting_for: str | None
+    available_fields: list[str]
+    missing_execution_fields: list[str]
+    requires_m15_close_policy: str = "NOT_APPLICABLE"
+    valid_for_execution: bool = False
+    execution_tier: str = "WAIT"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def validate_market_context(context: MarketContext) -> MarketContextValidation:
     direction = normalize_direction(context.raw_allowed_direction)
     if direction is None:
@@ -331,6 +354,53 @@ def validate_market_context(context: MarketContext) -> MarketContextValidation:
     )
 
 
+def validate_execution_context(context: MarketContext) -> MarketContextValidation:
+    """Validate strict execution context using the legacy execution firewall rules."""
+
+    return validate_market_context(context)
+
+
+def validate_radar_context(context: MarketContext) -> RadarContextValidation:
+    """Validate partial context for radar/tiering without granting execution."""
+
+    direction = normalize_direction(context.raw_allowed_direction)
+    available = _available_radar_fields(context)
+    missing_execution = _missing_fields(context)
+    execution_context_ready = not missing_execution and validate_execution_context(context).direction_validated
+    radar_context_ready = bool(available)
+    if not radar_context_ready:
+        action = "HYDRATE_RADAR_CONTEXT"
+        reason = "missing_radar_context"
+        waiting_for = "PRICE_POSITION_OR_HTF_STRUCTURE_CONTEXT"
+        structure_status = "RADAR_CONTEXT_MISSING"
+    elif context.spread_normal is False:
+        action = "RADAR_CONTEXT_READY_SPREAD_BLOCKED_FOR_EXECUTION"
+        reason = "radar_context_ready_spread_not_normal"
+        waiting_for = "SPREAD_NORMALIZATION_BEFORE_EXECUTION"
+        structure_status = "RADAR_CONTEXT_READY"
+    else:
+        action = "RADAR_CONTEXT_READY"
+        reason = "partial_market_context_available"
+        waiting_for = None if direction is not None else "DIRECTION_RECOVERY"
+        structure_status = "RADAR_CONTEXT_READY"
+
+    return RadarContextValidation(
+        symbol=context.symbol,
+        raw_allowed_direction=direction,
+        radar_context_ready=radar_context_ready,
+        execution_context_ready=execution_context_ready,
+        final_direction="WAIT",
+        direction_validated=False,
+        structure_context_status=structure_status,
+        action=action,
+        requires_market_context=not radar_context_ready,
+        reason=reason,
+        waiting_for=waiting_for,
+        available_fields=available,
+        missing_execution_fields=missing_execution,
+    )
+
+
 def missing_market_context_result(symbol: str, raw_allowed_direction: str | None = None) -> MarketContextValidation:
     return validate_market_context(MarketContext(symbol=symbol, raw_allowed_direction=raw_allowed_direction))
 
@@ -366,6 +436,22 @@ def _missing_fields(context: MarketContext) -> list[str]:
         if getattr(context, name) is None:
             missing.append(name)
     return missing
+
+
+def _available_radar_fields(context: MarketContext) -> list[str]:
+    fields = (
+        "price_position",
+        "main_support",
+        "main_resistance",
+        "key_support",
+        "key_resistance",
+        "h4_phase",
+        "d1_phase",
+        "market_bias",
+        "trend_direction",
+        "spread_normal",
+    )
+    return [name for name in fields if getattr(context, name) is not None]
 
 
 def _phase(value: str | None) -> str:
