@@ -502,6 +502,7 @@ def test_analyzer_pure_clean_block_ignores_large_same_pair_gap():
     assert report["burst_symbol_activity"]["USDJPY"]["latest_block_duration_seconds"] == 0.0
     assert report["top_clean_blocks"][0]["events"] == 4
     assert report["top_clean_blocks"][0]["max_gap_seconds"] == 240.0
+    assert report["top_clean_blocks"][0]["avg_gap_seconds"] == 180.0
     assert report["top_burst_blocks"][0]["duration_seconds"] == 60.0
     assert report["runtime_config"]["pure_block_gap_policy"] == "PAIR_ROTATION_ONLY"
     assert report["runtime_config"]["pure_block_max_gap_seconds"] is None
@@ -511,6 +512,7 @@ def test_analyzer_pure_clean_block_ignores_large_same_pair_gap():
     assert report["pure_active_candidate"]["gap_policy"] == "QUALITY_ONLY"
     assert report["pure_active_candidate"]["split_rule"] == "PAIR_ROTATION_ONLY"
     assert report["pure_active_candidate"]["gap_split_applied"] is False
+    assert report["pure_active_candidate"]["avg_gap_seconds"] == 180.0
     assert report["pure_active_candidate"]["valid_for_execution"] is False
     assert report["pure_top_blocks"][0]["source_pressure_block_id"].startswith("USDJPY_")
     assert report["signal_throttle_fusion_v3"]["valid_for_execution"] is False
