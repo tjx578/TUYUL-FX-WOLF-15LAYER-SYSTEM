@@ -69,6 +69,23 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
     assert payload["watch_promotion_source"] == "CLEAN_BLOCK_ROUTER"
     assert payload["final_direction"] == "WAIT"
     assert payload["valid_for_execution"] is False
+    assert payload["requires_m15_close"] is False
+    assert payload["requires_m15_close_policy"] == "OPTIONAL_HTF_ALIGNED_CONTINUATION"
+
+
+def test_clean_block_watch_requires_m15_close_at_key_level_risk():
+    market = _market()
+    market = MarketContext(
+        **{
+            **market.__dict__,
+            "price_position": "MAIN_RESISTANCE",
+        }
+    )
+
+    route = route_clean_block_to_watch(_candidate(), market_context=market)
+
+    assert route.payload["requires_m15_close"] is True
+    assert route.payload["requires_m15_close_policy"] == "REQUIRED_KEY_LEVEL_OR_REJECTION_RISK"
 
 
 def test_clean_block_router_uses_raw_pressure_direction_when_direction_unresolved():
