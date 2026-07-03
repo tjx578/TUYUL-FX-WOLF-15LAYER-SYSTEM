@@ -5000,12 +5000,14 @@ class WolfConstitutionalPipeline:
         context = market_contexts.get(symbol.upper())
         if context is None:
             return None
-        price = self._pressure_reference_price(
+        price_lineage = self._pressure_reference_price_lineage(
+            symbol=symbol,
             context=context,
             synthesis=synthesis,
             l12_verdict=l12_verdict,
             allow_payload_fallback=False,
         )
+        price = None if price_lineage is None else price_lineage.get("price")
         if price is None:
             return None
         allowed_quorum_raw = report.get("allowed_quorum")
@@ -5051,6 +5053,7 @@ class WolfConstitutionalPipeline:
             "signal_valid_price": price,
             "entry_reference_price": price,
             "entry_zone": [price, price],
+            **self._decision_price_lineage_payload(price_lineage),
             "rr_status": "UNVALIDATED",
             "market_context_applied": context is not None,
             "valid_for_execution": False,
@@ -5131,18 +5134,185 @@ class WolfConstitutionalPipeline:
         l12_verdict: dict[str, Any],
         allow_payload_fallback: bool = True,
     ) -> float | None:
+        lineage = self._pressure_reference_price_lineage(
+            symbol=None,
+            context=context,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+            allow_payload_fallback=allow_payload_fallback,
+        )
+        return None if lineage is None else self._coerce_positive_float(lineage.get("price"))
+
+    def _pressure_reference_price_lineage(
+        self,
+        *,
+        symbol: str | None,
+        context: MarketContext | None,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        allow_payload_fallback: bool = True,
+    ) -> dict[str, Any] | None:
         if context is not None:
-            price = self._coerce_positive_float(
-                context.price_at_signal_end
-                or context.price_at_5m_confirm
-                or context.price_at_signal_start
-                or context.bid
-                or context.ask
-            )
-            if price is not None:
-                return price
+            for field_name, value in (
+                ("price_at_signal_end", context.price_at_signal_end),
+                ("price_at_5m_confirm", context.price_at_5m_confirm),
+                ("price_at_signal_start", context.price_at_signal_start),
+                ("bid", context.bid),
+                ("ask", context.ask),
+            ):
+                price = self._coerce_positive_float(value)
+                if price is not None:
+                    resolved_symbol = str(symbol or context.symbol or "").upper() or None
+                    source_info = self._pressure_reference_price_source(
+                        symbol=resolved_symbol,
+                        context=context,
+                        field_name=field_name,
+                        price=price,
+                        synthesis=synthesis,
+                        l12_verdict=l12_verdict,
+                    )
+                    source = str(source_info.get("price_source") or "UNKNOWN")
+                    return {
+                        "price": price,
+                        "price_context_field": field_name,
+                        **source_info,
+                        **self._price_freshness_payload(
+                            symbol=resolved_symbol,
+                            source=source,
+                            source_timestamp=source_info.get("price_source_timestamp_epoch"),
+                        ),
+                    }
         if not allow_payload_fallback:
             return None
+        execution_raw = synthesis.get("execution")
+        execution = execution_raw if isinstance(execution_raw, dict) else {}
+        for field_name, value in (
+            ("l12_entry_price", l12_verdict.get("entry_price")),
+            ("l12_entry_reference_price", l12_verdict.get("entry_reference_price")),
+            ("execution_entry_price", execution.get("entry_price")),
+            ("execution_entry_reference_price", execution.get("entry_reference_price")),
+            ("execution_price", execution.get("price")),
+        ):
+            price = self._coerce_positive_float(value)
+            if price is not None:
+                return {
+                    "price": price,
+                    "price_source": "EXECUTION_ENTRY",
+                    "price_context_field": field_name,
+                    **self._price_freshness_payload(symbol=symbol, source="EXECUTION_ENTRY"),
+                }
+        return None
+
+    def _decision_price_lineage_payload(self, lineage: dict[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(lineage, dict):
+            return {
+                "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
+                "price_source": "UNKNOWN",
+                "price_snapshot_time_utc": None,
+                "price_age_seconds": None,
+                "price_freshness_status": "UNKNOWN",
+                "reference_price_is_live": False,
+                "price_lineage_version": 1,
+            }
+        price = self._coerce_positive_float(lineage.get("price"))
+        payload = {
+            "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
+            "reference_price_used_for_decision_update": price,
+            "price_source": str(lineage.get("price_source") or "UNKNOWN").upper(),
+            "price_context_field": lineage.get("price_context_field"),
+            "price_snapshot_time_utc": lineage.get("price_snapshot_time_utc"),
+            "price_age_seconds": lineage.get("price_age_seconds"),
+            "price_freshness_status": str(lineage.get("price_freshness_status") or "UNKNOWN").upper(),
+            "reference_price_is_live": bool(lineage.get("reference_price_is_live")),
+            "price_lineage_version": 1,
+        }
+        return payload
+
+    def _pressure_reference_price_source(
+        self,
+        *,
+        symbol: str | None,
+        context: MarketContext,
+        field_name: str,
+        price: float,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+    ) -> dict[str, Any]:
+        bid = self._coerce_positive_float(context.bid)
+        ask = self._coerce_positive_float(context.ask)
+        tick_mid = (bid + ask) / 2.0 if bid is not None and ask is not None else None
+        if tick_mid is not None and self._same_reference_price(price, tick_mid):
+            return {"price_source": "LIVE_TICK_MID"}
+        if field_name == "bid":
+            return {"price_source": "LIVE_TICK_BID"}
+        if field_name == "ask":
+            return {"price_source": "LIVE_TICK_ASK"}
+        if self._matches_execution_entry_price(price, synthesis=synthesis, l12_verdict=l12_verdict):
+            return {"price_source": "EXECUTION_ENTRY"}
+        if candle_source := self._matching_candle_reference(symbol=symbol, price=price, timeframes=("M15", "H1")):
+            return candle_source
+        if field_name == "price_at_5m_confirm":
+            return {"price_source": "M15_CLOSE"}
+        if field_name == "price_at_signal_end" and self._same_reference_price(price, context.price_at_5m_confirm):
+            return {"price_source": "M15_CLOSE"}
+        if field_name == "price_at_signal_start" and self._same_reference_price(price, context.price_at_5m_confirm):
+            return {"price_source": "M15_CLOSE"}
+        return {"price_source": "UNKNOWN"}
+
+    def _matching_candle_reference(
+        self,
+        *,
+        symbol: str | None,
+        price: float,
+        timeframes: tuple[str, ...],
+    ) -> dict[str, Any] | None:
+        if not symbol:
+            return None
+        for timeframe in timeframes:
+            candle = self._latest_candle_reference(symbol=symbol, timeframe=timeframe)
+            if candle is None or not self._same_reference_price(price, candle.get("close")):
+                continue
+            return {
+                "price_source": f"{timeframe.upper()}_CLOSE",
+                "price_source_timestamp_epoch": candle.get("timestamp_epoch"),
+            }
+        return None
+
+    def _latest_candle_reference(self, *, symbol: str, timeframe: str) -> dict[str, Any] | None:
+        bus = getattr(self, "_context_bus", None)
+        if bus is None or not hasattr(bus, "get_candle_history"):
+            return None
+        try:
+            candles = bus.get_candle_history(symbol, timeframe, count=1)
+        except Exception:  # noqa: BLE001 - diagnostics must not break decision payloads.
+            return None
+        if not candles:
+            return None
+        candle = candles[-1]
+        if not isinstance(candle, dict):
+            return None
+        close = self._candle_price(candle, "close")
+        timestamp = self._candle_timestamp_epoch(candle)
+        return {"close": close, "timestamp_epoch": timestamp}
+
+    @staticmethod
+    def _candle_timestamp_epoch(candle: dict[str, Any]) -> float | None:
+        for key in ("timestamp_close", "close_time", "timestamp", "time", "datetime", "last_seen_ts", "ts"):
+            timestamp = _coerce_timestamp_to_epoch(candle.get(key))
+            if timestamp is None:
+                continue
+            if timestamp > 10_000_000_000:
+                timestamp /= 1000.0
+            return timestamp
+        return None
+
+    def _matches_execution_entry_price(
+        self,
+        price: float,
+        *,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+    ) -> bool:
         execution_raw = synthesis.get("execution")
         execution = execution_raw if isinstance(execution_raw, dict) else {}
         for value in (
@@ -5152,10 +5322,74 @@ class WolfConstitutionalPipeline:
             execution.get("entry_reference_price"),
             execution.get("price"),
         ):
-            price = self._coerce_positive_float(value)
-            if price is not None:
-                return price
-        return None
+            if self._same_reference_price(price, self._coerce_positive_float(value)):
+                return True
+        return False
+
+    @staticmethod
+    def _same_reference_price(left: Any, right: Any) -> bool:
+        if left is None or right is None:
+            return False
+        try:
+            return abs(float(left) - float(right)) <= 1e-9
+        except (TypeError, ValueError):
+            return False
+
+    def _price_freshness_payload(
+        self,
+        *,
+        symbol: str | None,
+        source: str,
+        source_timestamp: Any | None = None,
+    ) -> dict[str, Any]:
+        symbol_key = str(symbol or "").upper()
+        bus = getattr(self, "_context_bus", None)
+        feed_status = "UNKNOWN"
+        feed_age: float | None = None
+        feed_timestamp: float | None = None
+        if symbol_key and bus is not None:
+            try:
+                if hasattr(bus, "get_feed_status"):
+                    feed_status = str(bus.get_feed_status(symbol_key) or "UNKNOWN").upper()
+            except Exception:  # noqa: BLE001 - diagnostics must not break decision payloads.
+                feed_status = "UNKNOWN"
+            try:
+                if hasattr(bus, "get_feed_age"):
+                    raw_age = bus.get_feed_age(symbol_key)
+                    feed_age = None if raw_age is None else round(max(0.0, float(raw_age)), 3)
+            except Exception:  # noqa: BLE001
+                feed_age = None
+            try:
+                if hasattr(bus, "get_feed_timestamp"):
+                    raw_ts = bus.get_feed_timestamp(symbol_key)
+                    feed_timestamp = None if raw_ts is None else float(raw_ts)
+            except Exception:  # noqa: BLE001
+                feed_timestamp = None
+        is_tick_source = str(source or "").upper().startswith("LIVE_TICK")
+        source_timestamp_epoch = self._coerce_float_or_none(source_timestamp)
+        if source_timestamp_epoch is not None and source_timestamp_epoch > 10_000_000_000:
+            source_timestamp_epoch /= 1000.0
+        source_age = (
+            None
+            if source_timestamp_epoch is None
+            else round(max(0.0, datetime.now(UTC).timestamp() - source_timestamp_epoch), 3)
+        )
+        snapshot_timestamp = feed_timestamp if is_tick_source else source_timestamp_epoch
+        return {
+            "price_snapshot_time_utc": self._epoch_to_utc_iso(snapshot_timestamp),
+            "price_age_seconds": feed_age if is_tick_source else source_age,
+            "price_freshness_status": feed_status,
+            "reference_price_is_live": is_tick_source and feed_status == "LIVE",
+        }
+
+    @staticmethod
+    def _epoch_to_utc_iso(value: float | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return datetime.fromtimestamp(float(value), UTC).isoformat()
+        except (OSError, OverflowError, TypeError, ValueError):
+            return None
 
     def _apply_no_trade_pressure_decision_update(
         self,
