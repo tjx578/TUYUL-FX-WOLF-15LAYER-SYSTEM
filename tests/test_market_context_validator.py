@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from analysis.market_context_validator import MarketContext, missing_market_context_result, validate_market_context
+from analysis.market_context_validator import (
+    MarketContext,
+    missing_market_context_result,
+    validate_execution_context,
+    validate_market_context,
+    validate_radar_context,
+)
 
 
 def test_missing_market_context_never_validates_direction():
@@ -29,6 +35,40 @@ def test_missing_market_context_never_validates_direction():
     assert {key: payload[key] for key in expected} == expected
     assert payload["selected_pattern_id"] is None
     assert payload["pattern_score"] == 0
+
+
+def test_radar_context_partial_does_not_require_m15_execution_fields():
+    result = validate_radar_context(
+        MarketContext(
+            symbol="USDJPY",
+            raw_allowed_direction=None,
+            price_position="MAIN_RESISTANCE",
+            h4_phase="DISTRIBUTION_BREAKDOWN",
+            key_resistance=160.20,
+        )
+    )
+
+    payload = result.to_dict()
+    assert payload["radar_context_ready"] is True
+    assert payload["execution_context_ready"] is False
+    assert payload["valid_for_execution"] is False
+    assert payload["requires_m15_close_policy"] == "NOT_APPLICABLE"
+    assert "m15_phase" in payload["missing_execution_fields"]
+
+
+def test_execution_context_alias_stays_strict_for_missing_fields():
+    result = validate_execution_context(
+        MarketContext(
+            symbol="USDJPY",
+            raw_allowed_direction="SELL",
+            price_position="MAIN_RESISTANCE",
+            h4_phase="DISTRIBUTION_BREAKDOWN",
+        )
+    )
+
+    assert result.direction_validated is False
+    assert result.action == "FETCH_MARKET_CONTEXT"
+    assert "m15_phase" in result.reason
 
 
 def test_buy_validates_only_when_price_theme_phase_align():
