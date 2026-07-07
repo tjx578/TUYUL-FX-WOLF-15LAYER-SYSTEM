@@ -7,8 +7,15 @@ final trade direction.
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 from collections.abc import Mapping
+from numbers import Real
 from typing import Any
+
+DEFAULT_SIGNAL_THROTTLE_FUSION_V3_LOGGER = "signal_throttle_fusion_v3"
+DEFAULT_SIGNAL_THROTTLE_FUSION_V3_PREFIX = "[SignalThrottleFusionV3]"
 
 
 def build_signal_throttle_fusion_v3_diagnostic(
@@ -23,6 +30,7 @@ def build_signal_throttle_fusion_v3_diagnostic(
     radar_ready = bool((radar_context_validation or {}).get("radar_context_ready", False))
     execution_ready = bool((execution_context_validation or {}).get("direction_validated", False))
     microboost_detected = isinstance((microboost_summary or {}).get("latest"), Mapping)
+    conflict = _direction_conflict(raw_direction, execution_context_validation) if raw_direction else False
 
     status, reason, next_stage = _route_status(
         pressure_seen=pressure_seen,
@@ -36,11 +44,41 @@ def build_signal_throttle_fusion_v3_diagnostic(
     return {
         "event": "signal_throttle_fusion_v3",
         "status": status,
+        "block_type": "PURE_PRESSURE_BLOCK" if pressure_seen else None,
         "symbol": None if pure_candidate is None else str(pure_candidate.get("symbol") or "").upper() or None,
+        "block_id": _block_id(pure_candidate),
+        "start_ts": _text_value(pure_candidate, "block_start_utc", "start_utc", "start"),
+        "end_ts": _text_value(pure_candidate, "block_end_utc", "end_utc", "end"),
+        "duration_minutes": _duration_minutes(pure_candidate),
+        "event_count": _int_value(None if pure_candidate is None else pure_candidate.get("events")),
+        "density_per_minute": _float_value(
+            None
+            if pure_candidate is None
+            else pure_candidate.get("effective_density_per_minute") or pure_candidate.get("density_per_minute")
+        ),
+        "max_gap_seconds": _float_value(None if pure_candidate is None else pure_candidate.get("max_gap_seconds")),
+        "gap_split_applied": bool(pure_candidate.get("gap_split_applied", False))
+        if isinstance(pure_candidate, Mapping)
+        else False,
+        "split_rule": _text_value(pure_candidate, "split_rule") or "PAIR_ROTATION_ONLY",
+        "pure_pressure_score": _float_value(
+            None if pure_candidate is None else pure_candidate.get("pure_pressure_score")
+        ),
+        "heat_score": _float_value(None if pure_candidate is None else pure_candidate.get("heat_score")),
+        "pressure_class": _text_value(pure_candidate, "pressure_class"),
         "pressure_seen": pressure_seen,
         "pressure_event_count": _int_value(None if pure_candidate is None else pure_candidate.get("events")),
-        "raw_pressure_direction": raw_direction or "NONE",
-        "direction_status": "UNRESOLVED" if raw_direction is None else "RAW_RECOVERED",
+        "raw_pressure_direction": raw_direction,
+        "direction_status": _direction_status(
+            raw_direction=raw_direction,
+            execution_ready=execution_ready,
+            conflict=conflict,
+        ),
+        "market_structure_status": _market_structure_status(
+            execution_context_validation=execution_context_validation,
+            execution_ready=execution_ready,
+            conflict=conflict,
+        ),
         "radar_context_ready": radar_ready,
         "execution_context_ready": execution_ready,
         "microboost_detected": microboost_detected,
@@ -60,6 +98,39 @@ def build_signal_throttle_fusion_v3_diagnostic(
     }
 
 
+def emit_signal_throttle_fusion_v3_diagnostic(
+    payload: Mapping[str, Any] | None,
+    *,
+    prefix: str | None = None,
+    logger_name: str | None = None,
+) -> bool:
+    """Emit Fusion V3 diagnostics on a dedicated SignalThrottle lane.
+
+    This must never use ``signal_json`` and must not be parsed back into the
+    raw ``[SignalThrottle]`` pressure stream.
+    """
+
+    if not isinstance(payload, Mapping):
+        return False
+    data = dict(payload)
+    data["event"] = "signal_throttle_fusion_v3"
+    data["final_direction"] = "WAIT"
+    data["valid_for_execution"] = False
+    data["execution_valid_now"] = False
+    data["is_final_signal"] = False
+    data["signal_valid"] = False
+    data["advisory_only"] = True
+    logging.getLogger(
+        logger_name
+        or os.getenv("SIGNAL_THROTTLE_FUSION_V3_LOGGER", DEFAULT_SIGNAL_THROTTLE_FUSION_V3_LOGGER)
+    ).warning(
+        "%s %s",
+        prefix or os.getenv("SIGNAL_THROTTLE_FUSION_V3_LOG_PREFIX", DEFAULT_SIGNAL_THROTTLE_FUSION_V3_PREFIX),
+        json.dumps(data, separators=(",", ":"), ensure_ascii=False),
+    )
+    return True
+
+
 def _route_status(
     *,
     pressure_seen: bool,
@@ -72,7 +143,7 @@ def _route_status(
     if not pressure_seen:
         return ("NO_PURE_PRESSURE", "no_pure_pressure_candidate", "WAIT_PRESSURE")
     if raw_direction is None:
-        return ("PURE_RADAR_ONLY", "pure_pressure_without_direction", "WAIT_DIRECTION")
+        return ("PURE_RADAR_ONLY", "pure_pressure_without_direction", "SIGNAL_WATCH")
     if _direction_conflict(raw_direction, execution_context_validation):
         return ("WAIT_DIRECTION_CONFLICT", "execution_context_direction_conflict", "WAIT_DIRECTION_RESOLUTION")
     if not radar_ready:
@@ -102,6 +173,51 @@ def _direction(candidate: Mapping[str, Any] | None) -> str | None:
     return None
 
 
+def _direction_status(*, raw_direction: str | None, execution_ready: bool, conflict: bool) -> str:
+    if raw_direction is None:
+        return "UNRESOLVED"
+    if conflict:
+        return "CONFLICT"
+    if execution_ready:
+        return "STRUCTURE_ALIGNED"
+    return "RAW_RECOVERED"
+
+
+def _market_structure_status(
+    *,
+    execution_context_validation: Mapping[str, Any] | None,
+    execution_ready: bool,
+    conflict: bool,
+) -> str:
+    if conflict:
+        return "CONFLICT"
+    if execution_ready:
+        return "ALIGNED"
+    if isinstance(execution_context_validation, Mapping) and execution_context_validation.get("requires_market_context") is False:
+        return "PARTIAL"
+    return "PENDING"
+
+
+def _block_id(candidate: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(candidate, Mapping):
+        return None
+    for key in ("source_pressure_block_id", "source_clean_block_id", "block_id", "cluster_id"):
+        value = str(candidate.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _duration_minutes(candidate: Mapping[str, Any] | None) -> float | None:
+    if not isinstance(candidate, Mapping):
+        return None
+    existing = _float_value(candidate.get("duration_minutes"))
+    if existing is not None:
+        return existing
+    seconds = _float_value(candidate.get("duration_seconds"))
+    return None if seconds is None else round(seconds / 60.0, 3)
+
+
 def _int_value(value: Any) -> int:
     if value is None or isinstance(value, bool):
         return 0
@@ -111,4 +227,31 @@ def _int_value(value: Any) -> int:
         return 0
 
 
-__all__ = ["build_signal_throttle_fusion_v3_diagnostic"]
+def _float_value(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, Real):
+        return round(float(value), 3)
+    try:
+        text = str(value).strip()
+        return round(float(text), 3) if text else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _text_value(candidate: Mapping[str, Any] | None, *keys: str) -> str | None:
+    if not isinstance(candidate, Mapping):
+        return None
+    for key in keys:
+        value = str(candidate.get(key) or "").strip()
+        if value and value.upper() != "NONE":
+            return value
+    return None
+
+
+__all__ = [
+    "DEFAULT_SIGNAL_THROTTLE_FUSION_V3_LOGGER",
+    "DEFAULT_SIGNAL_THROTTLE_FUSION_V3_PREFIX",
+    "build_signal_throttle_fusion_v3_diagnostic",
+    "emit_signal_throttle_fusion_v3_diagnostic",
+]

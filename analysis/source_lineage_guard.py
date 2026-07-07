@@ -22,6 +22,8 @@ DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX = "[MicroboostSourceDiagnostic]"
 DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX = "[MicroboostStaleDiagnostic]"
 DEFAULT_SIGNAL_THROTTLE_STATE_SNAPSHOT_PREFIX = "[SignalThrottleStateSnapshot]"
 DEFAULT_SIGNAL_THROTTLE_OBSERVABILITY_LOGGER = "signal_throttle_observability"
+DEFAULT_MICROBOOST_OBSERVABILITY_LOGGER = "microboost_observability"
+_MICROBOOST_DIAGNOSTIC_EVENTS = {"microboost_source_diagnostic", "microboost_stale_diagnostic"}
 
 
 @dataclass(frozen=True)
@@ -219,7 +221,9 @@ def signal_throttle_state_snapshot_payload(
     }
 
 
-def _observability_logger_name() -> str:
+def _observability_logger_name(event: str | None = None) -> str:
+    if str(event or "").strip().lower() in _MICROBOOST_DIAGNOSTIC_EVENTS:
+        return os.getenv("MICROBOOST_OBSERVABILITY_LOGGER", DEFAULT_MICROBOOST_OBSERVABILITY_LOGGER)
     return os.getenv("SIGNAL_THROTTLE_OBSERVABILITY_LOGGER", DEFAULT_SIGNAL_THROTTLE_OBSERVABILITY_LOGGER)
 
 
@@ -227,7 +231,7 @@ def emit_source_guard_diagnostic(payload: Mapping[str, Any], *, prefix: str, log
     data = dict(payload)
     data["valid_for_execution"] = False
     data["is_final_signal"] = False
-    logging.getLogger(logger_name or _observability_logger_name()).warning(
+    logging.getLogger(logger_name or _observability_logger_name(str(data.get("event") or ""))).warning(
         "%s %s",
         prefix,
         json.dumps(data, separators=(",", ":"), ensure_ascii=False),
@@ -366,6 +370,7 @@ def _text(value: Any) -> str | None:
 
 
 __all__ = [
+    "DEFAULT_MICROBOOST_OBSERVABILITY_LOGGER",
     "DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX",
     "DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX",
     "DEFAULT_SIGNAL_THROTTLE_FRESHNESS_PREFIX",

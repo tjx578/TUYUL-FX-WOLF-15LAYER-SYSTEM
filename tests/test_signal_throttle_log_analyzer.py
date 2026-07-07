@@ -545,6 +545,21 @@ def test_pure_pressure_without_direction_emits_radar_only_diagnostic():
     assert report["signal_throttle_fusion_v3"]["valid_for_execution"] is False
 
 
+def test_parser_ignores_dedicated_fusion_v3_log_lane():
+    rows = [
+        {
+            "timestamp": "2026-04-30T05:27:57Z",
+            "severity": "warning",
+            "message": (
+                '[SignalThrottleFusionV3] {"event":"signal_throttle_fusion_v3",'
+                '"symbol":"USDJPY","block_type":"PURE_PRESSURE_BLOCK"}'
+            ),
+        }
+    ]
+
+    assert parse_signal_throttle_rows(rows) == []
+
+
 def test_live_analyzer_fragmented_rotation_returns_theme_alert():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
     base = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)

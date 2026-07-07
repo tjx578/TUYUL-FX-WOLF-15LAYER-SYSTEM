@@ -376,6 +376,53 @@ def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
     assert '"decision_update_tier_context_allowed":false' in caplog.text
 
 
+def test_pipeline_emits_fusion_v3_diagnostic_on_dedicated_logger(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
+    caplog.set_level(logging.WARNING, logger="signal_throttle_fusion_v3")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    report = {
+        "signal_throttle_fusion_v3": {
+            "event": "signal_throttle_fusion_v3",
+            "status": "PURE_RADAR_ONLY",
+            "block_type": "PURE_PRESSURE_BLOCK",
+            "symbol": "USDJPY",
+            "block_id": "USDJPY_20260430T031631Z_20260430T052757Z",
+            "start_ts": "2026-04-30T03:16:31+00:00",
+            "end_ts": "2026-04-30T05:27:57+00:00",
+            "duration_minutes": 131.44,
+            "event_count": 105,
+            "density_per_minute": 0.8,
+            "max_gap_seconds": 3775.56,
+            "gap_split_applied": False,
+            "split_rule": "PAIR_ROTATION_ONLY",
+            "pure_pressure_score": 92.0,
+            "heat_score": 38.0,
+            "pressure_class": "LONG_CONTEXTUAL_RADAR",
+            "raw_pressure_direction": None,
+            "direction_status": "UNRESOLVED",
+            "market_structure_status": "PENDING",
+            "final_direction": "WAIT",
+            "valid_for_execution": False,
+            "next_stage": "SIGNAL_WATCH",
+        }
+    }
+
+    pipeline._emit_signal_throttle_fusion_v3_diagnostic(report)
+
+    fusion_records = [record for record in caplog.records if record.name == "signal_throttle_fusion_v3"]
+    signal_json_records = [record for record in caplog.records if record.name == "signal_json"]
+    observability_records = [record for record in caplog.records if record.name == "signal_throttle_observability"]
+    assert report["signal_throttle_fusion_v3_emit_result"] is True
+    assert fusion_records
+    assert not any("SignalThrottleFusionV3" in record.getMessage() for record in signal_json_records)
+    assert not any("SignalThrottleFusionV3" in record.getMessage() for record in observability_records)
+    assert "[SignalThrottleFusionV3]" in caplog.text
+    assert '"event":"signal_throttle_fusion_v3"' in caplog.text
+    assert '"gap_split_applied":false' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
 def test_pipeline_pressure_tier_snapshot_log_respects_max_symbols_env(caplog, monkeypatch):
     caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
     monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_MAX_SYMBOLS_PER_TIER", "1")

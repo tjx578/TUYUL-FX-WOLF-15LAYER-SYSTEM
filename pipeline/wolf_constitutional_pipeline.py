@@ -96,6 +96,7 @@ from analysis.signal_lifecycle_manager import (
     shadow_preview_event,
 )
 from analysis.signal_pressure_state_emitter import emit_signal_pressure_state
+from analysis.signal_throttle_fusion_router import emit_signal_throttle_fusion_v3_diagnostic
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
     emit_signal_throttle_intel,
@@ -4065,6 +4066,7 @@ class WolfConstitutionalPipeline:
         report = self._signal_throttle_live_analyzer.snapshot(
             market_contexts=market_contexts,
         )
+        self._emit_signal_throttle_fusion_v3_diagnostic(report)
         self._emit_signal_throttle_pressure_tier_snapshot(report)
         self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
@@ -5984,6 +5986,42 @@ class WolfConstitutionalPipeline:
                 DEFAULT_SIGNAL_THROTTLE_STATE_SNAPSHOT_PREFIX,
             ),
         )
+
+    def _emit_signal_throttle_fusion_v3_diagnostic(self, report: dict[str, Any]) -> None:
+        if os.getenv("SIGNAL_THROTTLE_FUSION_DIAGNOSTIC_ENABLED", "true").strip().lower() != "true":
+            return
+        payload = report.get("signal_throttle_fusion_v3")
+        if not isinstance(payload, dict):
+            return
+        interval = self._parse_env_float("SIGNAL_THROTTLE_FUSION_DIAGNOSTIC_INTERVAL_SECONDS", 60.0)
+        now = time.time()
+        import json  # noqa: PLC0415 -- local: diagnostic-only log state key
+
+        state_key = json.dumps(
+            {
+                "symbol": payload.get("symbol"),
+                "block_id": payload.get("block_id"),
+                "status": payload.get("status"),
+                "direction_status": payload.get("direction_status"),
+                "market_structure_status": payload.get("market_structure_status"),
+                "next_stage": payload.get("next_stage"),
+                "pure_pressure_score": payload.get("pure_pressure_score"),
+                "heat_score": payload.get("heat_score"),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        previous_key = getattr(self, "_last_signal_throttle_fusion_v3_key", None)
+        previous_at = getattr(self, "_last_signal_throttle_fusion_v3_at", None)
+        if isinstance(previous_at, (int, float)) and now - float(previous_at) < max(0.0, interval):
+            report["signal_throttle_fusion_v3_emit_result"] = False
+            report["signal_throttle_fusion_v3_emit_suppressed_reason"] = (
+                "UNCHANGED_WITHIN_INTERVAL" if state_key == previous_key else "RATE_LIMITED_WITHIN_INTERVAL"
+            )
+            return
+        self._last_signal_throttle_fusion_v3_key = state_key
+        self._last_signal_throttle_fusion_v3_at = now
+        report["signal_throttle_fusion_v3_emit_result"] = emit_signal_throttle_fusion_v3_diagnostic(payload)
 
     def _emit_signal_throttle_pressure_tier_snapshot(self, report: dict[str, Any]) -> None:
         if os.getenv("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_LOG_ENABLED", "true").strip().lower() != "true":
