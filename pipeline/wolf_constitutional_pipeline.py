@@ -109,6 +109,7 @@ from analysis.source_lineage_guard import (
     DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX,
     DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX,
     DEFAULT_SIGNAL_THROTTLE_FRESHNESS_PREFIX,
+    DEFAULT_SIGNAL_THROTTLE_OBSERVABILITY_LOGGER,
     DEFAULT_SIGNAL_THROTTLE_STATE_SNAPSHOT_PREFIX,
     DEFAULT_SOURCE_FRESHNESS_SECONDS,
     diagnostic_prefix,
@@ -6029,17 +6030,17 @@ class WolfConstitutionalPipeline:
         )
         previous_key = getattr(self, "_last_signal_throttle_pressure_tier_snapshot_key", None)
         previous_at = getattr(self, "_last_signal_throttle_pressure_tier_snapshot_at", None)
-        if (
-            state_key == previous_key
-            and isinstance(previous_at, (int, float))
-            and now - float(previous_at) < max(0.0, interval)
-        ):
+        if isinstance(previous_at, (int, float)) and now - float(previous_at) < max(0.0, interval):
             report["pressure_tier_snapshot_emit_result"] = False
-            report["pressure_tier_snapshot_emit_suppressed_reason"] = "UNCHANGED_WITHIN_INTERVAL"
+            report["pressure_tier_snapshot_emit_suppressed_reason"] = (
+                "UNCHANGED_WITHIN_INTERVAL" if state_key == previous_key else "RATE_LIMITED_WITHIN_INTERVAL"
+            )
             return
         self._last_signal_throttle_pressure_tier_snapshot_key = state_key
         self._last_signal_throttle_pressure_tier_snapshot_at = now
-        logging.getLogger("signal_json").warning(
+        logging.getLogger(
+            os.getenv("SIGNAL_THROTTLE_OBSERVABILITY_LOGGER", DEFAULT_SIGNAL_THROTTLE_OBSERVABILITY_LOGGER)
+        ).warning(
             "%s %s",
             os.getenv(
                 "SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_LOG_PREFIX",
