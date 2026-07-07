@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any, cast
 
+import pipeline.wolf_constitutional_pipeline as wolf_pipeline
 from analysis.market_context_validator import MarketContext
 from analysis.microboost_continuation_entry import MicroboostContinuationEngine
 from analysis.signal_json_emitter import SignalJsonEmitter
@@ -334,6 +335,7 @@ def test_pipeline_attaches_tier3_key_level_exception_only_at_key_level(caplog):
 
 def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     report = {
         "pressure_tier_snapshot": {
@@ -362,7 +364,11 @@ def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
 
     pipeline._emit_signal_throttle_pressure_tier_snapshot(report)
 
+    observability_records = [record for record in caplog.records if record.name == "signal_throttle_observability"]
+    signal_json_records = [record for record in caplog.records if record.name == "signal_json"]
     assert report["pressure_tier_snapshot_emit_result"] is True
+    assert observability_records
+    assert not any("SignalThrottlePressureTierSnapshot" in record.getMessage() for record in signal_json_records)
     assert "[SignalThrottlePressureTierSnapshot]" in caplog.text
     assert '"event":"signal_throttle_pressure_tier_snapshot"' in caplog.text
     assert '"tier_3_hidden_count":2' in caplog.text
@@ -371,7 +377,7 @@ def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
 
 
 def test_pipeline_pressure_tier_snapshot_log_respects_max_symbols_env(caplog, monkeypatch):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
     monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_MAX_SYMBOLS_PER_TIER", "1")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     report = {
@@ -430,6 +436,61 @@ def test_pipeline_pressure_tier_snapshot_log_respects_max_symbols_env(caplog, mo
     assert '"tier_2":[{"symbol":"AUDCAD"' in payload_text
     assert '"symbol":"USDCAD"' not in payload_text
     assert '"symbol":"EURUSD"' not in payload_text
+
+
+def test_pipeline_pressure_tier_snapshot_log_respects_interval_even_when_changed(caplog, monkeypatch):
+    caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
+    current_time = [1_000.0]
+    monkeypatch.setattr(wolf_pipeline.time, "time", lambda: current_time[0])
+    monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS", "60")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+
+    first_report = {
+        "pressure_tier_snapshot": {
+            "generated_at_utc": "2026-07-01T00:06:00+00:00",
+            "mixed_deployment": False,
+            "deployment_ids": [],
+            "summary": {"tier_1": 1, "tier_2": 0, "tier_3": 0, "stale_archive": 0, "unsafe_mixed_deployment": 0},
+            "symbols": [
+                {
+                    "symbol": "XAGUSD",
+                    "direction": "SELL",
+                    "effective_pressure_tier": TIER_1_PRIMARY_ANALYSIS,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 88.0,
+                    "tier_action": "PRIORITIZE_ANALYSIS",
+                }
+            ],
+        }
+    }
+    second_report = {
+        "pressure_tier_snapshot": {
+            "generated_at_utc": "2026-07-01T00:06:15+00:00",
+            "mixed_deployment": False,
+            "deployment_ids": [],
+            "summary": {"tier_1": 1, "tier_2": 0, "tier_3": 0, "stale_archive": 0, "unsafe_mixed_deployment": 0},
+            "symbols": [
+                {
+                    "symbol": "USDCAD",
+                    "direction": "BUY",
+                    "effective_pressure_tier": TIER_1_PRIMARY_ANALYSIS,
+                    "tier_scope": "LIVE_120M",
+                    "tier_score": 82.0,
+                    "tier_action": "PRIORITIZE_ANALYSIS",
+                }
+            ],
+        }
+    }
+
+    pipeline._emit_signal_throttle_pressure_tier_snapshot(first_report)
+    current_time[0] += 15.0
+    pipeline._emit_signal_throttle_pressure_tier_snapshot(second_report)
+
+    emitted = [record for record in caplog.records if "SignalThrottlePressureTierSnapshot" in record.getMessage()]
+    assert len(emitted) == 1
+    assert first_report["pressure_tier_snapshot_emit_result"] is True
+    assert second_report["pressure_tier_snapshot_emit_result"] is False
+    assert second_report["pressure_tier_snapshot_emit_suppressed_reason"] == "RATE_LIMITED_WITHIN_INTERVAL"
 
 
 def test_pipeline_logs_clean_block_watch_entries_as_signal_watch_json(caplog):
