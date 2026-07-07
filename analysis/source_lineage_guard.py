@@ -21,6 +21,7 @@ DEFAULT_SIGNAL_THROTTLE_FRESHNESS_PREFIX = "[SignalThrottleFreshnessDiagnostic]"
 DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX = "[MicroboostSourceDiagnostic]"
 DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX = "[MicroboostStaleDiagnostic]"
 DEFAULT_SIGNAL_THROTTLE_STATE_SNAPSHOT_PREFIX = "[SignalThrottleStateSnapshot]"
+DEFAULT_SIGNAL_THROTTLE_OBSERVABILITY_LOGGER = "signal_throttle_observability"
 
 
 @dataclass(frozen=True)
@@ -218,11 +219,15 @@ def signal_throttle_state_snapshot_payload(
     }
 
 
-def emit_source_guard_diagnostic(payload: Mapping[str, Any], *, prefix: str) -> bool:
+def _observability_logger_name() -> str:
+    return os.getenv("SIGNAL_THROTTLE_OBSERVABILITY_LOGGER", DEFAULT_SIGNAL_THROTTLE_OBSERVABILITY_LOGGER)
+
+
+def emit_source_guard_diagnostic(payload: Mapping[str, Any], *, prefix: str, logger_name: str | None = None) -> bool:
     data = dict(payload)
     data["valid_for_execution"] = False
     data["is_final_signal"] = False
-    logging.getLogger("signal_json").warning(
+    logging.getLogger(logger_name or _observability_logger_name()).warning(
         "%s %s",
         prefix,
         json.dumps(data, separators=(",", ":"), ensure_ascii=False),
@@ -230,9 +235,14 @@ def emit_source_guard_diagnostic(payload: Mapping[str, Any], *, prefix: str) -> 
     return True
 
 
-def emit_signal_throttle_state_snapshot(payload: Mapping[str, Any], *, prefix: str) -> bool:
+def emit_signal_throttle_state_snapshot(
+    payload: Mapping[str, Any],
+    *,
+    prefix: str,
+    logger_name: str | None = None,
+) -> bool:
     data = dict(payload)
-    logging.getLogger("signal_json").warning(
+    logging.getLogger(logger_name or _observability_logger_name()).warning(
         "%s %s",
         prefix,
         json.dumps(data, separators=(",", ":"), ensure_ascii=False),
@@ -359,6 +369,7 @@ __all__ = [
     "DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX",
     "DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX",
     "DEFAULT_SIGNAL_THROTTLE_FRESHNESS_PREFIX",
+    "DEFAULT_SIGNAL_THROTTLE_OBSERVABILITY_LOGGER",
     "DEFAULT_SIGNAL_THROTTLE_STATE_SNAPSHOT_PREFIX",
     "DEFAULT_SOURCE_FRESHNESS_SECONDS",
     "MicroboostSourceGuardResult",
