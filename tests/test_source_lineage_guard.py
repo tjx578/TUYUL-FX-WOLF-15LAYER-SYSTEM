@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from analysis.source_lineage_guard import (
+    emit_source_guard_diagnostic,
+    emit_signal_throttle_state_snapshot,
     guard_microboost_source,
     signal_throttle_state_snapshot_payload,
     signal_watch_source_diagnostic,
@@ -96,3 +99,39 @@ def test_signal_throttle_state_snapshot_summarizes_freshness():
     assert payload["stale_symbols"] == []
     assert payload["last_clean_block_id"] == "USDCAD_BLOCK_1"
     assert payload["record_buffer_size"] == 24
+
+
+def test_signal_throttle_state_snapshot_emits_on_observability_logger(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
+    report, now = _report(age_seconds=45.0)
+    payload = signal_throttle_state_snapshot_payload(report, now=now, max_age_seconds=300)
+
+    assert emit_signal_throttle_state_snapshot(payload, prefix="[SignalThrottleStateSnapshot]") is True
+
+    observability_records = [record for record in caplog.records if record.name == "signal_throttle_observability"]
+    signal_json_records = [record for record in caplog.records if record.name == "signal_json"]
+    assert observability_records
+    assert "[SignalThrottleStateSnapshot]" in observability_records[0].getMessage()
+    assert not any("SignalThrottleStateSnapshot" in record.getMessage() for record in signal_json_records)
+
+
+def test_signal_throttle_freshness_diagnostic_emits_on_observability_logger(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
+
+    assert emit_source_guard_diagnostic(
+        {
+            "event": "signal_throttle_freshness_diagnostic",
+            "symbol": "XAGUSD",
+            "blocked_stage": "MICROBOOST",
+            "reason": "STALE_SIGNAL_THROTTLE_SOURCE",
+        },
+        prefix="[SignalThrottleFreshnessDiagnostic]",
+    ) is True
+
+    observability_records = [record for record in caplog.records if record.name == "signal_throttle_observability"]
+    signal_json_records = [record for record in caplog.records if record.name == "signal_json"]
+    assert observability_records
+    assert "[SignalThrottleFreshnessDiagnostic]" in observability_records[0].getMessage()
+    assert not any("SignalThrottleFreshnessDiagnostic" in record.getMessage() for record in signal_json_records)
