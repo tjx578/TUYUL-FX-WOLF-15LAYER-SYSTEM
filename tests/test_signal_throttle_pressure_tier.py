@@ -16,6 +16,7 @@ from analysis.signal_throttle_pressure_tier import (
     TIER_2_CONFIRMATION_SUPPORT,
     TIER_3_KEY_LEVEL_RADAR_EXCEPTION,
     TIER_3_THEME_RADAR,
+    TIER_PRESSURE_MEMORY_RADAR,
     TIER_STALE_ARCHIVE,
     TIER_UNSAFE_MIXED_DEPLOYMENT,
     build_pressure_tier_snapshot,
@@ -163,6 +164,12 @@ def test_pressure_tier_tracks_fragmented_pressure_memory_without_clean_block():
     assert memory["same_symbol_reentry_count"] == 19
     assert memory["interrupted_by_other_symbols"] is True
     assert memory["pressure_memory_score"] >= 60
+    assert row["effective_pressure_tier"] == TIER_PRESSURE_MEMORY_RADAR
+    assert row["tier_action"] == "PRESSURE_MEMORY_RADAR_ONLY"
+    assert row["tier_family"] == "PRESSURE_MEMORY_RADAR"
+    assert row["pure_signal_throttle_tier"] is None
+    assert snapshot["tiers"]["tier_1"] == []
+    assert set(snapshot["tiers"]["pressure_memory_radar"]) == {"XAGUSD", "EURUSD"}
     assert "FRAGMENTED_PRESSURE_REPEATED" in row["tier_reasons"]
     assert "NO_CLEAN_BLOCK_FRAGMENTED_MEMORY" in row["tier_reasons"]
 
