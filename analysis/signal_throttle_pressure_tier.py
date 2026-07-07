@@ -17,6 +17,9 @@ TIER_1_PRIMARY_ANALYSIS = "TIER_1_PRIMARY_ANALYSIS"
 TIER_2_CONFIRMATION_SUPPORT = "TIER_2_CONFIRMATION_SUPPORT"
 TIER_3_THEME_RADAR = "TIER_3_THEME_RADAR"
 TIER_3_KEY_LEVEL_RADAR_EXCEPTION = "TIER_3_KEY_LEVEL_RADAR_EXCEPTION"
+TIER_FRAGMENTED_PRESSURE_RADAR = "FRAGMENTED_PRESSURE_RADAR"
+TIER_PRESSURE_MEMORY_RADAR = "PRESSURE_MEMORY_RADAR"
+TIER_THEME_ROTATION_RADAR = "THEME_ROTATION_RADAR"
 TIER_STALE_ARCHIVE = "TIER_STALE_ARCHIVE"
 TIER_UNSAFE_MIXED_DEPLOYMENT = "TIER_UNSAFE_MIXED_DEPLOYMENT"
 TIER_NONE = "TIER_NONE"
@@ -279,6 +282,15 @@ def _snapshot_payload(
             row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_2_CONFIRMATION_SUPPORT
         ],
         "tier_3": [row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_3_THEME_RADAR],
+        "fragmented_pressure_radar": [
+            row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_FRAGMENTED_PRESSURE_RADAR
+        ],
+        "pressure_memory_radar": [
+            row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_PRESSURE_MEMORY_RADAR
+        ],
+        "theme_rotation_radar": [
+            row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_THEME_ROTATION_RADAR
+        ],
         "stale_archive": [row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_STALE_ARCHIVE],
         "unsafe_mixed_deployment": [
             row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_UNSAFE_MIXED_DEPLOYMENT
@@ -328,6 +340,9 @@ def _symbol_row(
         "tier_score": round(score, 3),
         "tier_reasons": reasons,
         "tier_action": _tier_action(effective_tier),
+        "tier_family": _tier_family(effective_tier),
+        "clean_block_required_for_tier_1": True,
+        "pure_signal_throttle_tier": "CLEAN_BLOCK_TIER_1" if effective_tier == TIER_1_PRIMARY_ANALYSIS else None,
         "tier_stale": effective_tier == TIER_STALE_ARCHIVE,
         "tier_is_execution_signal": False,
         "tier_execution_impact": _EXECUTION_IMPACT,
@@ -761,8 +776,14 @@ def _tier_for_metrics(metrics: _ScopeMetrics) -> str:
     clean_block_valid = metrics.clean_block_duration_seconds > 0
     if clean_block_valid and metrics.score >= 55.0:
         return TIER_1_PRIMARY_ANALYSIS
-    if metrics.score >= 70.0 and metrics.direction_purity >= 0.75:
-        return TIER_1_PRIMARY_ANALYSIS
+    if not clean_block_valid:
+        if metrics.pressure_memory_score >= 60.0 or metrics.same_symbol_reentry_count >= 2:
+            return TIER_PRESSURE_MEMORY_RADAR
+        if metrics.theme_aligned:
+            return TIER_THEME_ROTATION_RADAR
+        if metrics.score >= 35.0:
+            return TIER_FRAGMENTED_PRESSURE_RADAR
+        return TIER_3_THEME_RADAR
     if metrics.score >= 35.0:
         return TIER_2_CONFIRMATION_SUPPORT
     return TIER_3_THEME_RADAR
@@ -824,6 +845,12 @@ def _tier_action(tier: str) -> str:
         return "PRIORITIZE_ANALYSIS"
     if tier == TIER_2_CONFIRMATION_SUPPORT:
         return "CONFIRMATION_SUPPORT"
+    if tier == TIER_PRESSURE_MEMORY_RADAR:
+        return "PRESSURE_MEMORY_RADAR_ONLY"
+    if tier == TIER_THEME_ROTATION_RADAR:
+        return "THEME_ROTATION_RADAR_ONLY"
+    if tier == TIER_FRAGMENTED_PRESSURE_RADAR:
+        return "FRAGMENTED_PRESSURE_RADAR_ONLY"
     if tier == TIER_3_THEME_RADAR:
         return "RADAR_ONLY"
     if tier == TIER_STALE_ARCHIVE:
@@ -833,14 +860,31 @@ def _tier_action(tier: str) -> str:
     return "NO_ACTION"
 
 
+def _tier_family(tier: str) -> str:
+    return {
+        TIER_1_PRIMARY_ANALYSIS: "CLEAN_BLOCK",
+        TIER_2_CONFIRMATION_SUPPORT: "CONFIRMATION_SUPPORT",
+        TIER_PRESSURE_MEMORY_RADAR: "PRESSURE_MEMORY_RADAR",
+        TIER_THEME_ROTATION_RADAR: "THEME_ROTATION_RADAR",
+        TIER_FRAGMENTED_PRESSURE_RADAR: "FRAGMENTED_PRESSURE_RADAR",
+        TIER_3_THEME_RADAR: "THEME_RADAR",
+        TIER_STALE_ARCHIVE: "ARCHIVE",
+        TIER_UNSAFE_MIXED_DEPLOYMENT: "UNSAFE_MIXED_DEPLOYMENT",
+        TIER_NONE: "NONE",
+    }.get(tier, "UNKNOWN")
+
+
 def _symbol_row_sort_key(row: Mapping[str, Any]) -> tuple[int, float, str]:
     priority = {
         TIER_1_PRIMARY_ANALYSIS: 0,
         TIER_2_CONFIRMATION_SUPPORT: 1,
-        TIER_3_THEME_RADAR: 2,
-        TIER_STALE_ARCHIVE: 3,
-        TIER_UNSAFE_MIXED_DEPLOYMENT: 4,
-        TIER_NONE: 5,
+        TIER_PRESSURE_MEMORY_RADAR: 2,
+        TIER_THEME_ROTATION_RADAR: 3,
+        TIER_FRAGMENTED_PRESSURE_RADAR: 4,
+        TIER_3_THEME_RADAR: 5,
+        TIER_STALE_ARCHIVE: 6,
+        TIER_UNSAFE_MIXED_DEPLOYMENT: 7,
+        TIER_NONE: 8,
     }.get(str(row.get("effective_pressure_tier")), 9)
     return priority, -float(row.get("tier_score") or 0.0), str(row.get("symbol") or "")
 
