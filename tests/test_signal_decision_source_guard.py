@@ -22,6 +22,10 @@ def test_signal_throttle_pressure_routes_to_pressure_state():
     assert routed.payload["event"] == "signal_pressure_state_json"
     assert routed.payload["eligible_for_signal_decision"] is False
     assert routed.payload["valid_for_execution"] is False
+    assert routed.payload["execution_valid_now"] is False
+    assert routed.payload["is_final_signal"] is False
+    assert routed.payload["signal_valid"] is False
+    assert routed.payload["tradeplan_valid"] is False
 
 
 def test_signal_watch_can_emit_signal_decision():

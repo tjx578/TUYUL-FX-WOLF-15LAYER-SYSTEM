@@ -1,13 +1,12 @@
-"""Increment F.1 — Contextless Allowed Quorum Diagnostic Terminal.
+"""Contextless Allowed Quorum pressure visibility.
 
 The priced ``NO_TRADE_REASONED`` SignalDecisionUpdateJSON already exists and is ON by
 default, but it silently returns None when MarketContext / reference price is missing
-(``build_signal_json_event`` is price-mandatory and must NOT be weakened). F.1 closes
-that silent gap with a DIAGNOSTIC-ONLY event — ``signal_quorum_terminal_diagnostic_json``,
-prefix ``[SignalQuorumDiagnosticJSON]`` — emitted straight to the log channel.
+(``build_signal_json_event`` is price-mandatory and must NOT be weakened). Runtime now closes
+that silent gap with ``SignalPressureStateJSON`` by default. The legacy diagnostic helper
+is still tested directly because it remains useful as a narrow side-channel.
 
 Guardrails locked here:
-- flag default OFF -> no diagnostic, old behavior
 - never emits [SignalDecisionUpdateJSON] / [SignalJSON]; never invents price/entry_zone
 - valid_for_execution=false, is_final_signal=false, final_direction=WAIT
 - never fires when a watch/signal candidate exists, or under cooldown
@@ -114,28 +113,34 @@ def test_flag_on_missing_direction_not_invented(monkeypatch, caplog):
 # --------------------------------------------------------------------------- #
 
 
-def test_integration_missing_context_emits_diagnostic(monkeypatch, caplog):
-    """Tests #3/#4 — quorum reached, no candidate, no market context -> diagnostic."""
+def test_integration_missing_context_emits_pressure_state(monkeypatch, caplog):
+    """Quorum reached, no candidate, no market context -> PressureState terminal."""
     monkeypatch.setenv(_OUTER_FLAG, "true")
     monkeypatch.setenv(_FLAG, "true")
     p = _pipeline()
     report = {"allowed_quorum": _quorum()}
     with caplog.at_level(logging.WARNING):
         _apply(p, report=report, market_contexts={})  # empty contexts -> priced payload is None
-    assert "[SignalQuorumDiagnosticJSON]" in caplog.text
+    assert "[SignalPressureStateJSON]" in caplog.text
+    assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert report["allowed_quorum_pressure_state"]["status"] == "ALLOWED_QUORUM_WAIT_CONTEXT"
+    assert report["allowed_quorum_pressure_state"]["valid_for_execution"] is False
+    assert report["allowed_quorum_pressure_state"]["is_final_signal"] is False
 
 
-def test_integration_flag_off_is_silent(monkeypatch, caplog):
-    """Test #2 — same conditions, flag OFF -> nothing emitted."""
+def test_integration_legacy_diagnostic_flag_off_still_emits_pressure_state(monkeypatch, caplog):
+    """Legacy diagnostic flag OFF no longer makes runtime pressure visibility silent."""
     monkeypatch.setenv(_OUTER_FLAG, "true")
     monkeypatch.setenv(_FLAG, "false")
     p = _pipeline()
     report = {"allowed_quorum": _quorum()}
     with caplog.at_level(logging.WARNING):
         _apply(p, report=report, market_contexts={})
+    assert "[SignalPressureStateJSON]" in caplog.text
     assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
     assert "allowed_quorum_contextless_diagnostic" not in report
+    assert report["allowed_quorum_pressure_state"]["eligible_for_signal_decision"] is False
 
 
 def test_integration_watch_candidate_blocks_diagnostic(monkeypatch, caplog):
@@ -150,6 +155,7 @@ def test_integration_watch_candidate_blocks_diagnostic(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         _apply(p, report=report, market_contexts={})
     assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
+    assert "[SignalPressureStateJSON]" not in caplog.text
 
 
 def test_integration_priced_path_unchanged(monkeypatch, caplog):
@@ -176,7 +182,7 @@ def test_integration_priced_path_unchanged(monkeypatch, caplog):
     assert report["allowed_quorum_decision_update"]["status"] == "NO_TRADE_REASONED"
 
 
-def test_integration_cooldown_blocks_second_diagnostic(monkeypatch, caplog):
+def test_integration_cooldown_blocks_second_pressure_state(monkeypatch, caplog):
     """Test #9 — the existing 75s per-symbol cooldown still applies; a second
     application within the window does not re-emit."""
     monkeypatch.setenv(_OUTER_FLAG, "true")
@@ -185,4 +191,5 @@ def test_integration_cooldown_blocks_second_diagnostic(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         _apply(p, report={"allowed_quorum": _quorum()}, market_contexts={})
         _apply(p, report={"allowed_quorum": _quorum()}, market_contexts={})
-    assert caplog.text.count("[SignalQuorumDiagnosticJSON]") == 1
+    assert caplog.text.count("[SignalPressureStateJSON]") == 1
+    assert "[SignalQuorumDiagnosticJSON]" not in caplog.text

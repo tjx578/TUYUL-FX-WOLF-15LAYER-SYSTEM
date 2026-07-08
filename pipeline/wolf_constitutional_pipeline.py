@@ -87,7 +87,7 @@ from analysis.reflex_gate import ReflexGateController
 from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
 from analysis.signal_block_finalizer import SignalBlockFinalizer
-from analysis.signal_decision_source_guard import route_decision_or_pressure
+from analysis.signal_decision_source_guard import convert_to_signal_pressure_state, route_decision_or_pressure
 from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
 from analysis.signal_lifecycle_manager import (
@@ -4940,13 +4940,11 @@ class WolfConstitutionalPipeline:
         if os.getenv("SIGNAL_THROTTLE_ALLOWED_QUORUM_DECISION_UPDATE_ENABLED", "true").strip().lower() != "true":
             return
         source_text = str(source_verdict or l12_verdict.get("verdict") or "").strip().upper()
-        if not source_text.startswith("EXECUTE"):
-            return
         allowed_quorum_raw = report.get("allowed_quorum")
         allowed_quorum = allowed_quorum_raw if isinstance(allowed_quorum_raw, dict) else {}
         if not bool(allowed_quorum.get("quorum_reached")):
             return
-        if self._has_signal_throttle_emit_candidate(report):
+        if self._has_signal_throttle_watch_or_decision_candidate(report):
             return
         symbol_key = str(allowed_quorum.get("symbol") or symbol or "").upper()
         if not symbol_key:
@@ -4962,14 +4960,21 @@ class WolfConstitutionalPipeline:
             source_verdict=source_text,
         )
         if payload is None:
-            # Increment F.1: the priced NO_TRADE_REASONED could not be built (no market
-            # context / reference price). Emit a DIAGNOSTIC-ONLY terminal instead so the
-            # quorum does not die silently -- never a (price-mandatory) SignalDecisionUpdateJSON.
-            self._emit_contextless_quorum_diagnostic(
+            # Context/price is missing, so this cannot become a priced decision update.
+            # Emit a PressureState terminal directly; it is observability-only and never
+            # passes through the final SignalJSON builder.
+            pressure_payload = self._allowed_quorum_contextless_pressure_payload(
                 symbol=symbol_key,
                 allowed_quorum=allowed_quorum,
                 l12_verdict=l12_verdict,
                 report=report,
+                source_verdict=source_text,
+            )
+            self._store_signal_pressure_state(
+                pressure_payload,
+                report=report,
+                l12_verdict=l12_verdict,
+                state_key="allowed_quorum_pressure_state",
             )
             return
         if self._route_pressure_decision_or_emit(
@@ -4982,6 +4987,97 @@ class WolfConstitutionalPipeline:
         payload["signal_json_emit_result"] = self._emit_signal_json_payload(payload)
         report["allowed_quorum_decision_update"] = payload
         l12_verdict["allowed_quorum_decision_update"] = payload
+
+    def _allowed_quorum_contextless_pressure_payload(
+        self,
+        *,
+        symbol: str,
+        allowed_quorum: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+        source_verdict: str,
+    ) -> dict[str, Any]:
+        symbol_key = str(symbol or "").upper()
+        direction = self._direction_hint(allowed_quorum.get("direction")) or self._direction_hint(
+            l12_verdict.get("direction")
+        )
+        symbol_activity_raw = report.get("symbol_activity")
+        symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
+        activity_raw = symbol_activity.get(symbol_key)
+        activity = activity_raw if isinstance(activity_raw, dict) else {}
+        event_time = str(activity.get("latest_event_utc") or datetime.now(UTC).isoformat())
+        cluster_stamp = event_time.replace(":", "").replace("-", "").replace("+", "Z")
+        cluster_id = f"{symbol_key}_{cluster_stamp}_ALLOWED_QUORUM_CONTEXTLESS"
+        blockers = self._allowed_quorum_blockers(l12_verdict=l12_verdict, report=report)
+        for forced in ("MARKET_CONTEXT_MISSING", "REFERENCE_PRICE_MISSING", "PRICE_THEME_STRUCTURE_PENDING"):
+            blockers.setdefault(forced, 1)
+        pressure_event_count = self._no_trade_pressure_event_count(symbol=symbol_key, report=report)
+        quorum_streak = self._coerce_non_negative_int(allowed_quorum.get("streak")) or 0
+        pressure_event_count = max(pressure_event_count, quorum_streak)
+        microboost_summary_raw = report.get("microboost_summary")
+        microboost_summary = microboost_summary_raw if isinstance(microboost_summary_raw, dict) else {}
+        microboost_detected = bool(microboost_summary.get("count_total"))
+        payload: dict[str, Any] = {
+            "event": "signal_decision_update_json",
+            "schema_version": "1.0-pressure-state",
+            "symbol": symbol_key,
+            "cluster_id": cluster_id,
+            "signal_family": "SIGNAL_THROTTLE_ALLOWED_QUORUM",
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "promotion_stage": "PRESSURE_ONLY",
+            "source_status": "CANARY_QUORUM_PENDING_VALIDATION",
+            "status": "ALLOWED_QUORUM_WAIT_CONTEXT",
+            "previous_status": "CANARY_QUORUM_PENDING_VALIDATION",
+            "new_status": "ALLOWED_QUORUM_WAIT_CONTEXT",
+            "raw_direction": direction,
+            "candidate_direction": direction,
+            "validated_direction": None,
+            "watch_direction": direction,
+            "final_direction": "WAIT",
+            "direction_validation_status": "ALLOWED_QUORUM_CONTEXT_MISSING",
+            "action": "WAIT_PRICE_THEME_STRUCTURE",
+            "next_action": "WAIT_PRICE_THEME_STRUCTURE",
+            "next_required_stage": "PRICE_THEME_STRUCTURE",
+            "signal_valid_time_utc": event_time,
+            "market_context_applied": False,
+            "context_missing": True,
+            "valid_for_execution": False,
+            "signal_valid": False,
+            "analysis_valid": True,
+            "direction_valid": False,
+            "tradeplan_valid": False,
+            "execution_valid_now": False,
+            "execution_status": "PRESSURE_ONLY",
+            "terminal_status": "PRESSURE_ONLY",
+            "decision_update_trigger": "ALLOWED_QUORUM_CONTEXT_INCOMPLETE",
+            "pending_decision_id": f"{cluster_id}_PRESSURE_STATE",
+            "pressure_seen": True,
+            "allowed_quorum_seen": True,
+            "pair_eligible_for_analysis": True,
+            "allowed_quorum": dict(allowed_quorum),
+            "pressure_event_count": pressure_event_count,
+            "pressure_level": "MICROBOOST_WATCH" if microboost_detected else "PRESSURE_CANARY",
+            "pressure_strength": "MICROBOOST" if microboost_detected else "CANARY",
+            "pressure_source": "SIGNAL_THROTTLE",
+            "source_verdict": source_verdict,
+            "source_verdict_is_execute": source_verdict.startswith("EXECUTE"),
+            "execution_block_reason": next(iter(blockers), "PRICE_THEME_STRUCTURE_PENDING"),
+            "watch_promotion_blockers": blockers,
+            "microboost_detected": microboost_detected,
+            "reason": (
+                "Allowed quorum reached SignalThrottle pressure state, but market context or "
+                "reference price is missing. Pressure remains visible; execution stays blocked."
+            ),
+        }
+        if os.getenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "false").strip().lower() == "true":
+            payload.update(
+                self._pressure_family_lineage(
+                    report,
+                    microboost_detected=bool(microboost_detected),
+                    resolved_family="ALLOWED_QUORUM_CONTEXTLESS_PRESSURE_STATE",
+                )
+            )
+        return payload
 
     def _emit_contextless_quorum_diagnostic(
         self,
@@ -5073,7 +5169,7 @@ class WolfConstitutionalPipeline:
         return payload
 
     @staticmethod
-    def _has_signal_throttle_emit_candidate(report: dict[str, Any]) -> bool:
+    def _has_signal_throttle_watch_or_decision_candidate(report: dict[str, Any]) -> bool:
         for key in (
             "microboost_continuation_entry",
             "microboost_counter_entry",
@@ -5088,13 +5184,12 @@ class WolfConstitutionalPipeline:
             for entry in clean_watch_entries
         ):
             return True
-        clean_watch_diagnostics = report.get("signal_watch_promotion_diagnostics")
-        if isinstance(clean_watch_diagnostics, list) and any(
-            isinstance(entry, dict) for entry in clean_watch_diagnostics
-        ):
-            return True
         updates = report.get("signal_block_finalizer_updates")
         if isinstance(updates, list) and any(isinstance(update, dict) for update in updates):
+            return True
+        if isinstance(report.get("allowed_quorum_pressure_state"), dict):
+            return True
+        if isinstance(report.get("no_trade_pressure_state"), dict):
             return True
         return isinstance(report.get("no_trade_pressure_decision_update"), dict)
 
@@ -5532,6 +5627,10 @@ class WolfConstitutionalPipeline:
     ) -> None:
         if os.getenv("SIGNAL_THROTTLE_NO_TRADE_DECISION_UPDATE_ENABLED", "true").strip().lower() != "true":
             return
+        if isinstance(report.get("allowed_quorum_pressure_state"), dict) or isinstance(
+            l12_verdict.get("allowed_quorum_pressure_state"), dict
+        ):
+            return
         verdict = str(l12_verdict.get("verdict") or "").strip().upper()
         if verdict.startswith("EXECUTE"):
             return
@@ -5558,6 +5657,19 @@ class WolfConstitutionalPipeline:
             microboost_detected=microboost_detected,
         )
         if payload is None:
+            pressure_payload = self._no_trade_contextless_pressure_payload(
+                symbol=symbol,
+                l12_verdict=l12_verdict,
+                report=report,
+                pressure_event_count=pressure_event_count,
+                microboost_detected=microboost_detected,
+            )
+            self._store_signal_pressure_state(
+                pressure_payload,
+                report=report,
+                l12_verdict=l12_verdict,
+                state_key="no_trade_pressure_state",
+            )
             return
         if self._route_pressure_decision_or_emit(
             payload,
@@ -5569,6 +5681,83 @@ class WolfConstitutionalPipeline:
         payload["signal_json_emit_result"] = self._emit_signal_json_payload(payload)
         report["no_trade_pressure_decision_update"] = payload
         l12_verdict["no_trade_pressure_decision_update"] = payload
+
+    def _no_trade_contextless_pressure_payload(
+        self,
+        *,
+        symbol: str,
+        l12_verdict: dict[str, Any],
+        report: dict[str, Any],
+        pressure_event_count: int,
+        microboost_detected: bool,
+    ) -> dict[str, Any]:
+        symbol_key = str(symbol or "").upper()
+        direction = self._direction_hint(l12_verdict.get("direction"))
+        symbol_activity_raw = report.get("symbol_activity")
+        symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
+        activity_raw = symbol_activity.get(symbol_key)
+        activity = activity_raw if isinstance(activity_raw, dict) else {}
+        event_time = str(activity.get("latest_event_utc") or datetime.now(UTC).isoformat())
+        cluster_stamp = event_time.replace(":", "").replace("-", "").replace("+", "Z")
+        cluster_id = f"{symbol_key}_{cluster_stamp}_NO_TRADE_CONTEXTLESS"
+        blockers = self._allowed_quorum_blockers(l12_verdict=l12_verdict, report=report)
+        for forced in ("NON_EXECUTE_VERDICT", "MARKET_CONTEXT_MISSING", "REFERENCE_PRICE_MISSING"):
+            blockers.setdefault(forced, 1)
+        payload: dict[str, Any] = {
+            "event": "signal_decision_update_json",
+            "schema_version": "1.0-pressure-state",
+            "symbol": symbol_key,
+            "cluster_id": cluster_id,
+            "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "promotion_stage": "PRESSURE_ONLY",
+            "status": "PRESSURE_CANARY",
+            "previous_status": "PRESSURE_SEEN",
+            "new_status": "PRESSURE_CANARY",
+            "raw_direction": direction,
+            "candidate_direction": direction,
+            "validated_direction": None,
+            "watch_direction": direction,
+            "final_direction": "WAIT",
+            "direction_validation_status": "NO_TRADE_PRESSURE_CONTEXT_MISSING",
+            "action": "WAIT_FOR_EXECUTION_QUALITY",
+            "next_action": "WAIT_FOR_EXECUTION_QUALITY",
+            "next_required_stage": "MARKET_CONTEXT_OR_EXECUTION_QUALITY",
+            "signal_valid_time_utc": event_time,
+            "market_context_applied": False,
+            "context_missing": True,
+            "valid_for_execution": False,
+            "signal_valid": False,
+            "analysis_valid": True,
+            "direction_valid": False,
+            "tradeplan_valid": False,
+            "execution_valid_now": False,
+            "execution_status": "PRESSURE_ONLY",
+            "terminal_status": "PRESSURE_ONLY",
+            "decision_update_trigger": "NON_EXECUTE_PRESSURE_CANARY",
+            "pending_decision_id": f"{cluster_id}_PRESSURE_STATE",
+            "pressure_seen": True,
+            "pressure_event_count": pressure_event_count,
+            "pressure_level": "MICROBOOST_WATCH" if microboost_detected else "PRESSURE_CANARY",
+            "pressure_strength": "MICROBOOST" if microboost_detected else "CANARY",
+            "pressure_source": "SIGNAL_THROTTLE",
+            "execution_block_reason": "NON_EXECUTE_VERDICT",
+            "watch_promotion_blockers": blockers,
+            "microboost_detected": microboost_detected,
+            "reason": (
+                "SignalThrottle pressure exists while L12 remains non-executable and market context "
+                "or reference price is missing. Pressure remains visible; execution stays blocked."
+            ),
+        }
+        if os.getenv("SIGNAL_FAMILY_LINEAGE_ENABLED", "false").strip().lower() == "true":
+            payload.update(
+                self._pressure_family_lineage(
+                    report,
+                    microboost_detected=bool(microboost_detected),
+                    resolved_family="NO_TRADE_CONTEXTLESS_PRESSURE_STATE",
+                )
+            )
+        return payload
 
     def _no_trade_pressure_event_count(self, *, symbol: str, report: dict[str, Any]) -> int:
         symbol_key = symbol.upper()
@@ -5929,6 +6118,24 @@ class WolfConstitutionalPipeline:
         l12_verdict[state_key] = pressure_payload
         return True
 
+    def _store_signal_pressure_state(
+        self,
+        payload: dict[str, Any],
+        *,
+        report: dict[str, Any],
+        l12_verdict: dict[str, Any],
+        state_key: str,
+    ) -> dict[str, Any]:
+        pressure_payload = convert_to_signal_pressure_state(payload)
+        if "next_required_stage" in payload:
+            pressure_payload["next_required_stage"] = payload["next_required_stage"]
+        pressure_payload["signal_pressure_state_emit_result"] = self._emit_signal_pressure_state_payload(
+            pressure_payload
+        )
+        report[state_key] = pressure_payload
+        l12_verdict[state_key] = pressure_payload
+        return pressure_payload
+
     @staticmethod
     def _emit_signal_pressure_state_payload(payload: dict[str, Any]) -> bool:
         return emit_signal_pressure_state(
@@ -5996,14 +6203,26 @@ class WolfConstitutionalPipeline:
         self._emit_microboost_intel_if_new(report)
         self._emit_microboost_watch_miss_diagnostic(report)
         self._emit_htf_structure_snapshot(symbol)
+        self._apply_allowed_quorum_decision_update(
+            symbol=symbol,
+            synthesis=synthesis,
+            l12_verdict=shadow_verdict,
+            report=report,
+            market_contexts=market_contexts,
+            source_verdict=source_verdict,
+        )
         self._apply_no_trade_pressure_decision_update(
             symbol=symbol,
             l12_verdict=shadow_verdict,
             report=report,
             market_contexts=market_contexts,
         )
+        if "allowed_quorum_pressure_state" in shadow_verdict:
+            l12_verdict["allowed_quorum_pressure_state"] = shadow_verdict["allowed_quorum_pressure_state"]
         if "no_trade_pressure_decision_update" in shadow_verdict:
             l12_verdict["no_trade_pressure_decision_update"] = shadow_verdict["no_trade_pressure_decision_update"]
+        if "no_trade_pressure_state" in shadow_verdict:
+            l12_verdict["no_trade_pressure_state"] = shadow_verdict["no_trade_pressure_state"]
         for key in ("microboost_continuation_entry", "microboost_counter_entry", "microboost_watch_entry"):
             candidate = report.get(key)
             if not isinstance(candidate, dict):

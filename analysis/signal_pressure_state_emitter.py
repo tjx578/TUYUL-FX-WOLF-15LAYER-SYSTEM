@@ -25,6 +25,8 @@ def emit_signal_pressure_state(
     data = dict(payload)
     data["event"] = "signal_pressure_state_json"
     data["valid_for_execution"] = False
+    data["execution_valid_now"] = False
+    data["is_final_signal"] = False
     data["final_direction"] = "WAIT"
     data["eligible_for_signal_decision"] = False
     logging.getLogger("signal_json").warning(

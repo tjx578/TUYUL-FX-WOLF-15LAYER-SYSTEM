@@ -1159,6 +1159,120 @@ def test_pipeline_routes_allowed_quorum_to_pressure_state_when_guard_enabled(mon
     assert state["signal_pressure_state_emit_result"] is True
 
 
+def test_allowed_quorum_contextless_l1_blocker_emits_pressure_state(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._last_allowed_quorum_decision_at = {}
+
+    report = {
+        "allowed_quorum": {
+            "symbol": "AUDUSD",
+            "direction": "BUY",
+            "streak": 3,
+            "quorum_size": 3,
+            "quorum_reached": True,
+        },
+        "counts": {"total_events": 3, "pairs": {"AUDUSD": 3}},
+        "symbol_activity": {
+            "AUDUSD": {
+                "latest_event_utc": "2026-06-09T02:01:28+00:00",
+                "latest_block_effective_ticks": 3,
+            }
+        },
+        "microboost_summary": {"count_total": 0},
+        "signal_watch_promotion_diagnostics": [
+            {
+                "event": "signal_throttle_clean_block_radar",
+                "symbol": "AUDUSD",
+                "status": "CLEAN_BLOCK_CONFIRMED_RADAR",
+                "valid_for_execution": False,
+            }
+        ],
+    }
+    verdict: dict[str, Any] = {
+        "verdict": "HOLD",
+        "direction": "BUY",
+        "errors": ["L1_BLOCKER:LOW_CONTEXT_COHERENCE"],
+    }
+
+    pipeline._apply_allowed_quorum_decision_update(
+        symbol="AUDUSD",
+        synthesis={"execution": {"direction": "BUY"}},
+        l12_verdict=verdict,
+        report=report,
+        market_contexts={},
+        source_verdict="HOLD",
+    )
+
+    assert "[SignalPressureStateJSON]" in caplog.text
+    assert "[SignalQuorumDiagnosticJSON]" not in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    state = verdict["allowed_quorum_pressure_state"]
+    assert state["event"] == "signal_pressure_state_json"
+    assert state["status"] == "ALLOWED_QUORUM_WAIT_CONTEXT"
+    assert state["source_verdict_is_execute"] is False
+    assert state["context_missing"] is True
+    assert state["valid_for_execution"] is False
+    assert state["execution_valid_now"] is False
+    assert state["is_final_signal"] is False
+    assert state["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
+    assert state["watch_promotion_blockers"]["MARKET_CONTEXT_MISSING"] == 1
+    assert state["watch_promotion_blockers"]["REFERENCE_PRICE_MISSING"] == 1
+    assert state["signal_pressure_state_emit_result"] is True
+
+
+def test_no_trade_contextless_pressure_emits_pressure_state(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._last_no_trade_pressure_decision_at = {}
+
+    report = {
+        "counts": {"total_events": 4, "pairs": {"USDCAD": 4}},
+        "symbol_activity": {
+            "USDCAD": {
+                "latest_event_utc": "2026-06-08T08:49:17+00:00",
+                "latest_block_effective_ticks": 4,
+            }
+        },
+        "microboost_summary": {"count_total": 0},
+    }
+    verdict: dict[str, Any] = {
+        "verdict": "NO_TRADE",
+        "direction": "BUY",
+        "errors": ["L1_BLOCKER:LOW_CONTEXT_COHERENCE"],
+    }
+
+    pipeline._apply_no_trade_pressure_decision_update(
+        symbol="USDCAD",
+        l12_verdict=verdict,
+        report=report,
+        market_contexts={},
+    )
+
+    assert "[SignalPressureStateJSON]" in caplog.text
+    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert "[SignalJSON]" not in caplog.text
+    state = verdict["no_trade_pressure_state"]
+    assert state["event"] == "signal_pressure_state_json"
+    assert state["status"] == "PRESSURE_CANARY"
+    assert state["context_missing"] is True
+    assert state["pressure_event_count"] == 4
+    assert state["valid_for_execution"] is False
+    assert state["execution_valid_now"] is False
+    assert state["is_final_signal"] is False
+    assert state["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
+    assert state["watch_promotion_blockers"]["NON_EXECUTE_VERDICT"] == 1
+    assert state["watch_promotion_blockers"]["MARKET_CONTEXT_MISSING"] == 1
+    assert state["signal_pressure_state_emit_result"] is True
+
+
 def test_pipeline_suppresses_single_no_trade_pressure_canary(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
