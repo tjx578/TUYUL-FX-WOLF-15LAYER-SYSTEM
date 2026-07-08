@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 from importlib import import_module
 from typing import Any
 
@@ -26,6 +27,7 @@ _POOL_MAX_INACTIVE_LIFETIME_SEC: float = float(os.getenv("PG_POOL_MAX_INACTIVE_S
 # Keepalive pings at 120s keep at least one connection alive, but
 # idle connections beyond that are retired by max_inactive_connection_lifetime.
 _POOL_KEEPALIVE_INTERVAL_SEC: int = int(os.getenv("PG_POOL_KEEPALIVE_SEC", "120"))
+_PG_DSN_RE = re.compile(r"\bpostgres(?:ql)?(?:\+\w+)?://[^\s'\"<>]+", re.IGNORECASE)
 
 
 def _load_asyncpg_module() -> Any:
@@ -53,9 +55,17 @@ def _pg_retry_exceptions() -> tuple[type[Exception], ...]:
                 asyncpg.InternalClientError,
             ]
         )
-    except ImportError:
+    except (ImportError, PostgresConnectionError):
         pass
     return tuple(base)
+
+
+def _redact_database_url(value: Any) -> str:
+    text = str(value)
+    configured = os.getenv("DATABASE_URL", "")
+    if configured:
+        text = text.replace(configured, "$DATABASE_URL")
+    return _PG_DSN_RE.sub("$DATABASE_URL", text)
 
 
 class PostgresClient:
@@ -111,7 +121,7 @@ class PostgresClient:
             )
             logger.debug(f"PostgreSQL pool keepalive started (interval={_POOL_KEEPALIVE_INTERVAL_SEC}s)")
         except Exception as exc:
-            raise PostgresConnectionError(str(exc)) from exc
+            raise PostgresConnectionError(_redact_database_url(exc)) from exc
 
     async def _keepalive_loop(self) -> None:
         """Periodic ping to prevent Railway proxy from killing idle connections."""
