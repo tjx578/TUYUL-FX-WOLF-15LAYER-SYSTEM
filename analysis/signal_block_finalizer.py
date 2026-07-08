@@ -49,6 +49,8 @@ STRUCTURE_TARGET_MODES = {
     "STRUCTURE_LADDER_TARGET",
     "KEY_LEVEL_STRUCTURE_TARGET",
 }
+RESISTANCE_POSITIONS = {"MAIN_RESISTANCE", "UPPER_RANGE", "RESISTANCE", "KEY_RESISTANCE"}
+SUPPORT_POSITIONS = {"MAIN_SUPPORT", "LOWER_RANGE", "SUPPORT", "KEY_SUPPORT"}
 
 
 @dataclass
@@ -89,9 +91,14 @@ class M15CloseConfirmationGate:
 
     def evaluate(self, watch: PendingDecisionState, market: Any | None) -> M15CloseDecision:
         candidate = _candidate_direction(watch.payload)
+        price_position = _watch_price_position(watch, market)
         if candidate == "SELL":
+            if price_position in SUPPORT_POSITIONS:
+                return self._evaluate_sell_support_watch(watch, market)
             return self._evaluate_resistance_watch(watch, market)
         if candidate == "BUY":
+            if price_position in RESISTANCE_POSITIONS:
+                return self._evaluate_buy_resistance_watch(watch, market)
             return self._evaluate_support_watch(watch, market)
         return M15CloseDecision(
             confirmation="PENDING_M15_CLOSE",
@@ -209,6 +216,110 @@ class M15CloseConfirmationGate:
             confirmation="PENDING_M15_CLOSE",
             final_direction="WAIT",
             reason="M15 has not confirmed rejection or breakdown from the support watch zone.",
+        )
+
+    def _evaluate_buy_resistance_watch(self, watch: PendingDecisionState, market: Any | None) -> M15CloseDecision:
+        signal_price = watch.signal_valid_price
+        resistance_high = _first_float(
+            watch.payload.get("key_resistance"),
+            watch.payload.get("breakout_reclaim_level"),
+            _zone_high(watch.entry_zone),
+            _field(market, "resistance_high"),
+            _field(market, "main_resistance"),
+        )
+        m15_open = _optional_float(_field(market, "m15_open"))
+        m15_high = _optional_float(_field(market, "m15_high"))
+        m15_close = _optional_float(_field(market, "m15_close"))
+
+        exact_breakout = (
+            m15_close is not None
+            and m15_open is not None
+            and resistance_high is not None
+            and m15_close > resistance_high
+            and m15_close > m15_open
+        )
+        fallback_breakout = _optional_bool(_field(market, "m15_close_above_resistance")) is True
+        if exact_breakout or fallback_breakout:
+            return M15CloseDecision(
+                confirmation="M15_CLOSE_ABOVE_RESISTANCE",
+                final_direction="BUY",
+                reason="M15 closed above resistance, confirming the buy breakout/reclaim watch.",
+            )
+
+        exact_rejection = (
+            m15_high is not None
+            and resistance_high is not None
+            and m15_close is not None
+            and m15_open is not None
+            and signal_price is not None
+            and m15_high >= resistance_high
+            and m15_close < signal_price
+            and m15_close < m15_open
+        )
+        fallback_rejection = _optional_bool(_field(market, "m15_rejection_from_resistance")) is True
+        if exact_rejection or fallback_rejection:
+            return M15CloseDecision(
+                confirmation="PENDING_M15_CLOSE",
+                final_direction="WAIT",
+                reason="M15 rejected resistance; buy watch remains pending until reclaim or pullback support hold.",
+            )
+
+        return M15CloseDecision(
+            confirmation="PENDING_M15_CLOSE",
+            final_direction="WAIT",
+            reason="M15 has not confirmed breakout/reclaim above resistance or pullback support hold for the buy watch.",
+        )
+
+    def _evaluate_sell_support_watch(self, watch: PendingDecisionState, market: Any | None) -> M15CloseDecision:
+        signal_price = watch.signal_valid_price
+        support_low = _first_float(
+            watch.payload.get("key_support"),
+            watch.payload.get("support_reclaim_level"),
+            _zone_low(watch.entry_zone),
+            _field(market, "support_low"),
+            _field(market, "main_support"),
+        )
+        m15_open = _optional_float(_field(market, "m15_open"))
+        m15_low = _optional_float(_field(market, "m15_low"))
+        m15_close = _optional_float(_field(market, "m15_close"))
+
+        exact_breakdown = (
+            m15_close is not None
+            and m15_open is not None
+            and support_low is not None
+            and m15_close < support_low
+            and m15_close < m15_open
+        )
+        fallback_breakdown = _optional_bool(_field(market, "m15_close_below_support")) is True
+        if exact_breakdown or fallback_breakdown:
+            return M15CloseDecision(
+                confirmation="M15_CLOSE_BELOW_SUPPORT",
+                final_direction="SELL",
+                reason="M15 closed below support, confirming the sell breakdown continuation watch.",
+            )
+
+        exact_rejection = (
+            m15_low is not None
+            and support_low is not None
+            and m15_close is not None
+            and m15_open is not None
+            and signal_price is not None
+            and m15_low <= support_low
+            and m15_close > signal_price
+            and m15_close > m15_open
+        )
+        fallback_rejection = _optional_bool(_field(market, "m15_rejection_from_support")) is True
+        if exact_rejection or fallback_rejection:
+            return M15CloseDecision(
+                confirmation="PENDING_M15_CLOSE",
+                final_direction="WAIT",
+                reason="M15 rejected support; sell watch remains pending until breakdown or pullback resistance hold.",
+            )
+
+        return M15CloseDecision(
+            confirmation="PENDING_M15_CLOSE",
+            final_direction="WAIT",
+            reason="M15 has not confirmed breakdown below support or pullback resistance hold for the sell watch.",
         )
 
 
@@ -863,6 +974,12 @@ def _candidate_direction(payload: dict[str, Any]) -> str | None:
     if "BUY" in status:
         return "BUY"
     return None
+
+
+def _watch_price_position(watch: PendingDecisionState, market: Any | None) -> str | None:
+    value = watch.payload.get("price_position") or _field(market, "price_position")
+    text = str(value or "").strip().upper()
+    return text or None
 
 
 def _field(source: Any, name: str, default: Any = None) -> Any:

@@ -191,6 +191,54 @@ def test_idle_resistance_watch_emits_decision_update_when_support_ladder_missing
     assert update["pending_age_seconds"] == 428.0
 
 
+def test_buy_watch_at_resistance_waits_for_breakout_reclaim_not_support_breakdown():
+    finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
+    finalizer.track(
+        _watch(
+            status="CLEAN_BLOCK_BUY_WATCH",
+            signal_family="CLEAN_BLOCK_BUY_WATCH",
+            raw_direction="BUY",
+            candidate_direction="BUY",
+            validated_direction=None,
+            watch_direction="BUY",
+            price_position="MAIN_RESISTANCE",
+            m15_phase="BULLISH_PULLBACK",
+            h1_phase="BULLISH",
+            source_clean_block_id="USDCAD_20260521T030620Z_20260521T031504Z",
+            source_pressure_block_id="USDCAD_20260521T030620Z_20260521T031504Z",
+            clean_block_valid=True,
+            clean_block_direction="BUY",
+            watch_promotion_source="CLEAN_BLOCK_ROUTER",
+        )
+    )
+
+    outputs = finalizer.finalize(
+        report=_report(),
+        market_contexts={
+            "USDCAD": _resistance_context(
+                m15_open=1.37650,
+                m15_high=1.37660,
+                m15_close=1.37634,
+                support_ladder_ready=True,
+            )
+        },
+        now=datetime(2026, 5, 21, 3, 16, 30, tzinfo=UTC),
+    )
+
+    assert len(outputs) == 1
+    update = outputs[0]
+    assert update["event"] == "signal_decision_update_json"
+    assert update["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
+    assert update["watch_direction"] == "BUY"
+    assert update["confirmation_policy"] == "PENDING_M15_CLOSE"
+    assert update["next_action"] == "WAIT_NEXT_M15_CLOSE"
+    assert "reclaim" in update["reason"]
+    assert "support watch zone" not in update["reason"]
+    assert "rejection or breakdown" not in update["reason"]
+    assert update["final_direction"] == "WAIT"
+    assert update["valid_for_execution"] is False
+
+
 def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_ladder_ready():
     finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
     finalizer.track(
