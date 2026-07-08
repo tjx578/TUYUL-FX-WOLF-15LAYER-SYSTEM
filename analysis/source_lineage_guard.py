@@ -190,18 +190,30 @@ def signal_throttle_state_snapshot_payload(
             latest_seen_dt = seen_dt
             last_seen = state.last_signal_throttle_utc
 
-    candidates = report.get("clean_watch_candidates")
-    candidates_list = [item for item in candidates if isinstance(item, Mapping)] if isinstance(candidates, list) else []
+    candidates_list = _clean_block_candidates(report)
     latest_clean = max(
         candidates_list,
         key=lambda item: _parse_time(_text(item.get("clean_block_end_utc") or item.get("block_end_utc"))) or datetime.min.replace(tzinfo=UTC),
         default=None,
     )
     last_clean_block_id = _text(latest_clean.get("source_clean_block_id")) if isinstance(latest_clean, Mapping) else None
-    active_clean_blocks = sum(
-        1
+    active_candidates = [
+        item
         for item in candidates_list
         if _is_fresh_time(_text(item.get("clean_block_end_utc") or item.get("block_end_utc")), reference, max_age_seconds)
+    ]
+    active_clean_blocks = len(active_candidates)
+    active_clean = max(
+        active_candidates,
+        key=lambda item: _parse_time(_text(item.get("clean_block_end_utc") or item.get("block_end_utc"))) or datetime.min.replace(tzinfo=UTC),
+        default=None,
+    )
+    active_clean_block_id = (
+        _text(active_clean.get("source_clean_block_id")) if isinstance(active_clean, Mapping) else None
+    )
+    max_clean_block_minutes = max(
+        (_duration_minutes(item) for item in candidates_list),
+        default=0.0,
     )
     counts = report.get("counts")
     total_events = counts.get("total_events") if isinstance(counts, Mapping) else None
@@ -210,7 +222,14 @@ def signal_throttle_state_snapshot_payload(
         "deployment_id": os.getenv("RAILWAY_DEPLOYMENT_ID") or os.getenv("DEPLOYMENT_ID") or "unknown",
         "last_signal_throttle_utc": last_seen,
         "last_clean_block_id": last_clean_block_id,
+        "last_valid_clean_block_id": last_clean_block_id,
+        "active_clean_block_id": active_clean_block_id,
         "active_clean_blocks": active_clean_blocks,
+        "clean_block_count": len(candidates_list),
+        "v1_clean_block_count": _optional_int(report.get("v1_clean_block_count")) or len(candidates_list),
+        "max_clean_block_minutes": round(max_clean_block_minutes, 3),
+        "clean_block_ledger_source": _text(report.get("clean_block_ledger_source"))
+        or "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER",
         "fresh_symbols": fresh_symbols,
         "stale_symbols": stale_symbols,
         "record_buffer_size": _optional_int(total_events) or 0,
@@ -219,6 +238,16 @@ def signal_throttle_state_snapshot_payload(
         "valid_for_execution": False,
         "is_final_signal": False,
     }
+
+
+def _clean_block_candidates(report: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    for key in ("v1_clean_block_ledger", "clean_watch_candidates"):
+        raw = report.get(key)
+        if isinstance(raw, list):
+            candidates = [item for item in raw if isinstance(item, Mapping)]
+            if candidates:
+                return candidates
+    return []
 
 
 def _observability_logger_name(event: str | None = None) -> str:
@@ -353,6 +382,14 @@ def _optional_float(value: Any) -> float | None:
         return float(text) if text else None
     except (TypeError, ValueError):
         return None
+
+
+def _duration_minutes(candidate: Mapping[str, Any]) -> float:
+    seconds = _optional_float(candidate.get("clean_block_duration_seconds") or candidate.get("duration_seconds"))
+    if seconds is not None:
+        return max(0.0, seconds / 60.0)
+    minutes = _optional_float(candidate.get("duration_minutes"))
+    return max(0.0, minutes or 0.0)
 
 
 def _optional_int(value: Any) -> int | None:
