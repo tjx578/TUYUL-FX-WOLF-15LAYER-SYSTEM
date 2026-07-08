@@ -618,6 +618,37 @@ def test_pipeline_emits_signal_watch_promotion_diagnostic(monkeypatch, caplog):
     assert verdict["signal_watch_promotion_diagnostics"][0]["next_required_stage"] == "HYDRATE_MARKET_CONTEXT"
 
 
+def test_pipeline_terminalizes_replayed_lineage_missing_watch_diagnostic(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_WATCH_LINEAGE_MISSING_TERMINAL_THRESHOLD", "2")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    payloads = [
+        {
+            "status": "MICROBOOST_WATCH",
+            "signal_family": "MICROBOOST_WATCH",
+            "cluster_id": "GBPJPY_20260707T144452Z",
+            "symbol": "GBPJPY",
+            "raw_direction": "SELL",
+            "final_direction": "WAIT",
+            "valid_for_execution": False,
+        }
+        for _ in range(4)
+    ]
+
+    results = [pipeline._emit_signal_json_payload(payload) for payload in payloads]
+
+    emitted = [record for record in caplog.records if "SignalWatchPromotionDiagnostic" in record.getMessage()]
+    assert results == [False, False, False, False]
+    assert len(emitted) == 3
+    assert '"lineage_missing_replay_count":1' in emitted[0].getMessage()
+    assert '"lineage_missing_replay_count":2' in emitted[1].getMessage()
+    assert '"status":"LINEAGE_MISSING_TERMINAL"' in emitted[2].getMessage()
+    assert payloads[2]["signal_json_emit_blocked_by_source_guard_terminal"] is True
+    assert payloads[3]["signal_watch_source_diagnostic_terminal_suppressed"] is True
+    assert payloads[3]["signal_watch_source_diagnostic_emit_result"] is False
+
+
 def test_pipeline_tracks_official_watch_only_after_successful_emit():
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
