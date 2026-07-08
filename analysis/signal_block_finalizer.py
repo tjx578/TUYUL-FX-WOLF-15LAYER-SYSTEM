@@ -709,6 +709,14 @@ class SignalBlockFinalizer:
                 "action": "EXPIRE_PENDING_WATCH",
                 "next_action": "REMOVE_PENDING_DECISION_STATE",
                 "requires_m15_close": False,
+                "lifecycle_status": "WATCH_EXPIRED",
+                "terminal_status": "PENDING_WATCH_EXPIRED",
+                "decision_state": "EXPIRED",
+                "terminal_decision_confirmed": True,
+                "terminal_decision_id": watch.pending_decision_id,
+                "terminal_decision_event_type": "signal_decision_update_json",
+                "execution_status": "PENDING_WATCH_EXPIRED",
+                "execution_reason": "pending_watch_expired_without_confirmation",
                 "reason": (
                     f"Pending watch expired after {watch.expires_after_m15_bars} M15 bars without confirmation."
                 ),
@@ -738,13 +746,26 @@ class SignalBlockFinalizer:
         block_end: datetime | None,
         confirmation: str,
     ) -> list[dict[str, Any]]:
+        _ = block_end
         decision_key = "|".join(
             [
                 watch.pending_decision_id,
+                str(payload.get("status") or ""),
                 confirmation,
-                "" if block_end is None else block_end.isoformat(),
+                str(payload.get("action") or ""),
+                str(payload.get("next_action") or ""),
+                str(payload.get("m15_confirmation_status") or ""),
+                str(payload.get("lifecycle_status") or ""),
+                str(payload.get("terminal_status") or ""),
+                str(payload.get("source_status") or ""),
+                str(payload.get("source_final_direction") or ""),
                 str(payload.get("target_mode") or ""),
                 str(payload.get("tp_missing_reason") or ""),
+                str(payload.get("target_block_reason") or ""),
+                str(payload.get("execution_status") or ""),
+                str(payload.get("execution_reason") or ""),
+                str(payload.get("structure_ready") or ""),
+                str(payload.get("tradeplan_valid") or ""),
             ]
         )
         if watch.last_decision_key == decision_key:

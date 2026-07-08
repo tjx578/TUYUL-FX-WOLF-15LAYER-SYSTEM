@@ -344,8 +344,47 @@ def test_pending_watch_expires_after_three_m15_bars_without_confirmation():
     assert update["event"] == "signal_decision_update_json"
     assert update["status"] == "PENDING_WATCH_EXPIRED"
     assert update["action"] == "EXPIRE_PENDING_WATCH"
+    assert update["next_action"] == "REMOVE_PENDING_DECISION_STATE"
+    assert update["lifecycle_status"] == "WATCH_EXPIRED"
+    assert update["terminal_status"] == "PENDING_WATCH_EXPIRED"
+    assert update["decision_state"] == "EXPIRED"
+    assert update["terminal_decision_confirmed"] is True
+    assert update["terminal_decision_event_type"] == "signal_decision_update_json"
     assert update["final_direction"] == "WAIT"
+    assert update["valid_for_execution"] is False
     assert finalizer.pending_symbols() == []
+
+
+def test_repeated_decision_update_suppressed_when_only_block_end_changes():
+    finalizer = SignalBlockFinalizer(idle_finalize_seconds=75)
+    finalizer.track(_watch())
+    market_context = _resistance_context(
+        support_ladder_ready=False,
+        support_ladder_missing_reason="NO_M15_H1_SUPPORT_LEVELS",
+    )
+
+    first = finalizer.finalize(
+        report=_report(),
+        market_contexts={"USDCAD": market_context},
+        now=datetime(2026, 5, 21, 3, 16, 30, tzinfo=UTC),
+    )
+    second = finalizer.finalize(
+        report={
+            "symbol_activity": {
+                "USDCAD": {
+                    "latest_event_utc": "2026-05-21T03:15:30+00:00",
+                    "latest_block_end_utc": "2026-05-21T03:15:30+00:00",
+                }
+            }
+        },
+        market_contexts={"USDCAD": market_context},
+        now=datetime(2026, 5, 21, 3, 16, 55, tzinfo=UTC),
+    )
+
+    assert len(first) == 1
+    assert first[0]["status"] == "WAIT_STRUCTURE_OR_NEXT_M15"
+    assert first[0]["block_end_utc"] == "2026-05-21T03:15:04+00:00"
+    assert second == []
 
 
 def test_hard_age_finalizer_explains_low_block_idle_seconds():

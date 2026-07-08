@@ -852,6 +852,30 @@ def test_decision_update_strips_pressure_priority_context(caplog):
     assert "pressure_tier" not in caplog.text
 
 
+def test_decision_update_payload_key_ignores_block_end_only_change():
+    first = {
+        "event": "signal_decision_update_json",
+        "pending_decision_id": "USDCAD_20260521T030620Z_M15_DECISION",
+        "symbol": "USDCAD",
+        "status": "WAIT_STRUCTURE_OR_NEXT_M15",
+        "m15_confirmation_status": "M15_CLOSE_REJECTION_CONFIRMED",
+        "action": "WAIT_STRUCTURE_TARGET_OR_SUPPORT_LADDER",
+        "next_action": "WAIT_STRUCTURE_TARGET_OR_SUPPORT_LADDER",
+        "lifecycle_status": "WATCH_ACTIVE",
+        "source_status": "SELL_TIMING_VALID",
+        "target_mode": "PROVISIONAL_RR_FALLBACK",
+        "tp_missing_reason": "NO_M15_H1_SUPPORT_LEVELS",
+        "block_end_wita": "2026-05-21 11:15:04",
+    }
+    second = dict(first)
+    second["block_end_wita"] = "2026-05-21 11:15:30"
+    changed = dict(second)
+    changed["target_block_reason"] = "NO_STRUCTURE_TARGET"
+
+    assert SignalJsonEmitter._payload_key(first) == SignalJsonEmitter._payload_key(second)
+    assert SignalJsonEmitter._payload_key(first) != SignalJsonEmitter._payload_key(changed)
+
+
 def test_continuation_valid_with_rr_fallback_defaults_to_decision_update(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(

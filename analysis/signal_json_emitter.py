@@ -686,8 +686,12 @@ class SignalJsonEmitter:
         if _is_decision_update_payload(payload):
             return (
                 f"{payload.get('pending_decision_id') or payload.get('symbol')}|decision|{payload.get('status')}|"
-                f"{payload.get('m15_confirmation_status') or ''}|{payload.get('block_end_wita') or ''}|"
-                f"{payload.get('source_status') or ''}|{payload.get('target_mode') or ''}"
+                f"{payload.get('m15_confirmation_status') or ''}|{payload.get('action') or ''}|"
+                f"{payload.get('next_action') or ''}|{payload.get('lifecycle_status') or ''}|"
+                f"{payload.get('terminal_status') or ''}|{payload.get('source_status') or ''}|"
+                f"{payload.get('source_final_direction') or ''}|{payload.get('target_mode') or ''}|"
+                f"{payload.get('tp_missing_reason') or ''}|{payload.get('target_block_reason') or ''}|"
+                f"{payload.get('execution_status') or ''}|{payload.get('execution_reason') or ''}"
             )
         if _is_watch_status(str(payload.get("status") or "")):
             revision_key = watch_revision or _watch_payload_revision(payload)
