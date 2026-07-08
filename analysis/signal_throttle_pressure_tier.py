@@ -48,6 +48,8 @@ class _ScopeMetrics:
     latest_event_age_seconds: float | None
     clean_block_duration_seconds: float
     clean_block_age_seconds: float | None
+    active_clean_block_id: str | None
+    last_valid_clean_block_id: str | None
     effective_density_per_minute: float
     direction: str | None
     direction_purity: float
@@ -342,6 +344,8 @@ def _symbol_row(
         "tier_action": _tier_action(effective_tier),
         "tier_family": _tier_family(effective_tier),
         "clean_block_required_for_tier_1": True,
+        "active_clean_block_id": effective_metrics.active_clean_block_id,
+        "last_valid_clean_block_id": effective_metrics.last_valid_clean_block_id,
         "pure_signal_throttle_tier": "CLEAN_BLOCK_TIER_1" if effective_tier == TIER_1_PRIMARY_ANALYSIS else None,
         "tier_stale": effective_tier == TIER_STALE_ARCHIVE,
         "tier_is_execution_signal": False,
@@ -386,6 +390,8 @@ def _compact_tier_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "event_count": _metric_value(row, "event_count"),
         "clean_block_count": _metric_value(row, "clean_block_count"),
         "max_clean_block_minutes": _memory_value(row, "max_clean_block_minutes"),
+        "active_clean_block_id": row.get("active_clean_block_id"),
+        "last_valid_clean_block_id": row.get("last_valid_clean_block_id"),
         "pressure_memory_score": _memory_value(row, "pressure_memory_score"),
         "same_symbol_reentry_count": _memory_value(row, "same_symbol_reentry_count"),
         "tier_is_execution_signal": False,
@@ -495,6 +501,8 @@ def _fragmented_memory_payload(metrics: _ScopeMetrics) -> dict[str, Any]:
         "fragmented_event_count": metrics.fragmented_event_count,
         "clean_block_count": metrics.clean_block_count,
         "max_clean_block_minutes": round(metrics.max_clean_block_minutes, 3),
+        "active_clean_block_id": metrics.active_clean_block_id,
+        "last_valid_clean_block_id": metrics.last_valid_clean_block_id,
         "same_symbol_reentry_count": metrics.same_symbol_reentry_count,
         "run_count": metrics.run_count,
         "interrupted_by_other_symbols": metrics.interrupted_by_other_symbols,
@@ -639,6 +647,7 @@ def _scope_metrics(
     latest_clean_block = max(clean_blocks, key=_block_end, default=None)
     clean_block_duration = _block_duration(latest_clean_block) if latest_clean_block is not None else 0.0
     clean_block_age = None if latest_clean_block is None else _age_seconds(_block_end(latest_clean_block), now)
+    latest_clean_block_id = _block_clean_block_id(latest_clean_block)
     clean_block_count = len(clean_blocks)
     max_clean_block_minutes = max((_block_duration(block) / 60.0 for block in clean_blocks), default=0.0)
     effective_density = max((_block_effective_density(block) for block in symbol_blocks), default=0.0)
@@ -680,6 +689,8 @@ def _scope_metrics(
         latest_event_age_seconds=latest_event_age,
         clean_block_duration_seconds=clean_block_duration,
         clean_block_age_seconds=clean_block_age,
+        active_clean_block_id=latest_clean_block_id,
+        last_valid_clean_block_id=latest_clean_block_id,
         effective_density_per_minute=effective_density,
         direction=direction,
         direction_purity=direction_purity,
@@ -823,6 +834,8 @@ def _metrics_payload(metrics: _ScopeMetrics) -> dict[str, Any]:
         "clean_block_age_seconds": (
             None if metrics.clean_block_age_seconds is None else round(metrics.clean_block_age_seconds, 3)
         ),
+        "active_clean_block_id": metrics.active_clean_block_id,
+        "last_valid_clean_block_id": metrics.last_valid_clean_block_id,
         "effective_density_per_minute": round(metrics.effective_density_per_minute, 3),
         "direction": metrics.direction,
         "direction_purity": round(metrics.direction_purity, 3),
@@ -974,6 +987,10 @@ def _block_end(block: Any) -> datetime:
     return _coerce_timestamp(getattr(block, "end", None))
 
 
+def _block_start(block: Any) -> datetime:
+    return _coerce_timestamp(getattr(block, "start", None))
+
+
 def _block_duration(block: Any) -> float:
     if block is None:
         return 0.0
@@ -990,6 +1007,22 @@ def _block_effective_density(block: Any) -> float:
 
 def _block_direction(block: Any) -> str | None:
     return _normalize_direction(getattr(block, "direction", None))
+
+
+def _block_clean_block_id(block: Any) -> str | None:
+    if block is None:
+        return None
+    source_id = _clean_text(getattr(block, "source_clean_block_id", None))
+    if source_id:
+        return source_id
+    symbol = _block_symbol(block)
+    if not symbol:
+        return None
+    return f"{symbol}_{_compact_time(_block_start(block))}_{_compact_time(_block_end(block))}"
+
+
+def _compact_time(value: datetime) -> str:
+    return _coerce_timestamp(value).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _latest_block_direction(blocks: Sequence[Any]) -> str | None:
