@@ -564,6 +564,8 @@ def _fragmented_memory_payload(metrics: _ScopeMetrics) -> dict[str, Any]:
         "same_symbol_reentry_count": metrics.same_symbol_reentry_count,
         "run_count": metrics.run_count,
         "interrupted_by_other_symbols": metrics.interrupted_by_other_symbols,
+        "pure_clean_block_interrupted": False if metrics.clean_block_count > 0 else metrics.interrupted_by_other_symbols,
+        "live_scope_fragmented_interrupted": metrics.interrupted_by_other_symbols,
         "pressure_memory_score": round(metrics.pressure_memory_score, 3),
     }
 

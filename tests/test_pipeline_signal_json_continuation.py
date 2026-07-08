@@ -207,6 +207,8 @@ def test_pipeline_logs_generic_microboost_watch_as_signal_watch_json(caplog):
     assert verdict["microboost_watch_entry"]["lifecycle_track"] is True
     assert verdict["microboost_watch_entry"]["terminal_required"] is True
     assert verdict["microboost_watch_entry"]["pending_decision_id"]
+    assert verdict["microboost_watch_entry"]["pending_decision_id"] == "CADJPY_20260518T133000Z_M15_DECISION"
+    assert "CADJPY_CADJPY" not in verdict["microboost_watch_entry"]["pending_decision_id"]
 
 
 def test_pipeline_attaches_pressure_priority_context_to_signal_watch(caplog):

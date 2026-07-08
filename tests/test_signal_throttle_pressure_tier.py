@@ -82,6 +82,9 @@ def test_pressure_tier_snapshot_is_diagnostic_only_for_live_clean_block():
     assert row["tier_execution_impact"] is False
     assert row["active_clean_block_id"].startswith("USDJPY_")
     assert row["last_valid_clean_block_id"] == row["active_clean_block_id"]
+    assert row["fragmented_pressure_memory"]["clean_block_count"] == 1
+    assert row["fragmented_pressure_memory"]["pure_clean_block_interrupted"] is False
+    assert row["fragmented_pressure_memory"]["live_scope_fragmented_interrupted"] is False
     assert snapshot["tier_is_execution_signal"] is False
     assert snapshot["tier_execution_impact"] is False
     assert report["clean_entry_signal"] is False
@@ -260,6 +263,8 @@ def test_pressure_tier_tracks_fragmented_pressure_memory_without_clean_block():
     assert memory["clean_block_count"] == 0
     assert memory["same_symbol_reentry_count"] == 19
     assert memory["interrupted_by_other_symbols"] is True
+    assert memory["pure_clean_block_interrupted"] is True
+    assert memory["live_scope_fragmented_interrupted"] is True
     assert memory["pressure_memory_score"] >= 60
     assert row["effective_pressure_tier"] == TIER_PRESSURE_MEMORY_RADAR
     assert row["tier_action"] == "PRESSURE_MEMORY_RADAR_ONLY"

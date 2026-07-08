@@ -272,6 +272,23 @@ def _coerce_timestamp_to_epoch(value: Any) -> float | None:
 # ══════════════════════════════════════════════════════════════
 
 
+def _normalized_watch_pending_decision_id(symbol: str, raw: str, *, cluster_id: str | None = None) -> str:
+    symbol_key = str(symbol or "").upper()
+    token = str(raw or cluster_id or "WATCH").strip()
+    if not symbol_key:
+        return f"{token or 'WATCH'}_M15_DECISION"
+
+    if token.upper().endswith("_M15_DECISION"):
+        token = token[: -len("_M15_DECISION")]
+
+    duplicate_prefix = f"{symbol_key}_{symbol_key}_"
+    if token.upper().startswith(duplicate_prefix):
+        token = f"{symbol_key}_{token[len(duplicate_prefix):]}"
+    elif not token.upper().startswith(f"{symbol_key}_"):
+        token = f"{symbol_key}_{token or 'WATCH'}"
+    return f"{token}_M15_DECISION"
+
+
 class WolfConstitutionalPipeline:
     """
     Wolf 15-Layer Constitutional Pipeline v8.0 -- Unified Super Pipeline.
@@ -4512,12 +4529,20 @@ class WolfConstitutionalPipeline:
         requires_m15_close). Final execution payloads keep their own terminal path
         and are not flagged as ``requires_m15_close``.
         """
-        if not (payload.get("pending_decision_id") or payload.get("signal_id")):
-            symbol = str(payload.get("symbol") or "").upper()
+        symbol = str(payload.get("symbol") or "").upper()
+        if symbol:
             cluster_id = str(payload.get("cluster_id") or "").strip()
-            token = cluster_id or str(payload.get("signal_valid_time_utc") or "WATCH")
-            if symbol:
-                payload["pending_decision_id"] = f"{symbol}_{token}_M15_DECISION"
+            token = str(
+                payload.get("pending_decision_id")
+                or cluster_id
+                or payload.get("signal_valid_time_utc")
+                or "WATCH"
+            )
+            payload["pending_decision_id"] = _normalized_watch_pending_decision_id(
+                symbol,
+                token,
+                cluster_id=cluster_id,
+            )
         if payload.get("valid_for_execution") is not True:
             payload.setdefault("requires_m15_close", True)
 

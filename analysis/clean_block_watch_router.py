@@ -152,6 +152,9 @@ def clean_block_lineage_fields(
         "clean_block_start_utc": start,
         "clean_block_end_utc": end,
         "clean_block_valid_since_utc": first_valid_end,
+        "clean_block_confirmed_at_utc": first_valid_end,
+        "clean_block_latest_end_utc": end,
+        "clean_block_live_duration_seconds": latest_duration,
         "clean_block_duration_seconds": latest_duration,
         "clean_block_event_count": event_count,
         "clean_block_direction": direction if direction in {"BUY", "SELL"} else None,
@@ -212,6 +215,12 @@ def _watch_payload(
         direction=direction,
         market_context=market_context,
     )
+    structure_room = _structure_room_payload(
+        symbol=symbol,
+        direction=direction,
+        market_context=market_context,
+        signal_price=signal_price,
+    )
     payload = {
         "enabled": True,
         "status": f"CLEAN_BLOCK_{side}_WATCH",
@@ -255,6 +264,8 @@ def _watch_payload(
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
         "source_clean_block_confirmed": True,
         "source_clean_block_valid_since_utc": lineage.get("clean_block_valid_since_utc"),
+        "source_clean_block_confirmed_at_utc": lineage.get("clean_block_confirmed_at_utc"),
+        "source_clean_block_latest_end_utc": lineage.get("clean_block_latest_end_utc"),
         "microboost_validation_status": "NOT_REQUIRED_CLEAN_BLOCK_ROUTER",
         "promotion_path": "CLEAN_BLOCK_TO_SIGNAL_WATCH",
         "promotion_trigger": "CLEAN_BLOCK_VALID",
@@ -273,6 +284,9 @@ def _watch_payload(
             "reason": "clean_block_watch_requires_structure_context_but_execution_not_authorized",
         },
     }
+    if structure_room:
+        payload["structure_room"] = structure_room
+        payload["raw_structure_room_pips"] = structure_room.get("directional_room_pips")
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
     payload["clean_block_valid"] = True
@@ -315,6 +329,49 @@ def _clean_block_radar_payload(
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
     return payload
+
+
+def _structure_room_payload(
+    *,
+    symbol: str,
+    direction: str,
+    market_context: Any,
+    signal_price: float,
+) -> dict[str, Any] | None:
+    key_support = _first_number(_field(market_context, "key_support"), _field(market_context, "main_support"))
+    key_resistance = _first_number(
+        _field(market_context, "key_resistance"),
+        _field(market_context, "main_resistance"),
+    )
+    if key_support is None and key_resistance is None:
+        return None
+    pip_size = _pip_size(symbol, market_context)
+    downside = None if key_support is None else round((signal_price - key_support) / pip_size, 2)
+    upside = None if key_resistance is None else round((key_resistance - signal_price) / pip_size, 2)
+    directional = upside if direction == "BUY" else downside if direction == "SELL" else None
+    directional_side = (
+        "UPSIDE_TO_KEY_RESISTANCE"
+        if direction == "BUY"
+        else "DOWNSIDE_TO_KEY_SUPPORT"
+        if direction == "SELL"
+        else "UNRESOLVED_DIRECTION"
+    )
+    return {
+        "advisory_only": True,
+        "basis": "KEY_SUPPORT_RESISTANCE_VS_SIGNAL_VALID_PRICE",
+        "symbol": symbol,
+        "direction": direction,
+        "reference_price": round(signal_price, 6),
+        "pip_size": pip_size,
+        "key_support": key_support,
+        "key_resistance": key_resistance,
+        "downside_to_key_support_pips": downside,
+        "upside_to_key_resistance_pips": upside,
+        "directional_room_side": directional_side,
+        "directional_room_pips": directional,
+        "valid_for_execution": False,
+        "execution_impact": False,
+    }
 
 
 def _requires_m15_close_policy(*, direction: str, market_context: Any) -> tuple[bool, str]:
@@ -458,6 +515,13 @@ def _first_number(*values: Any) -> float | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _pip_size(symbol: str, market_context: Any) -> float:
+    explicit = _first_number(_field(market_context, "pip_value"), _field(market_context, "pip_size"))
+    if explicit is not None and explicit > 0:
+        return explicit
+    return 0.01 if "JPY" in str(symbol or "").upper() else 0.0001
 
 
 def _duration_seconds(candidate: Mapping[str, Any]) -> float | None:

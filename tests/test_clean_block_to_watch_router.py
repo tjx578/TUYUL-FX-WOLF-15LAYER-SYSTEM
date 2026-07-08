@@ -79,6 +79,9 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
     assert payload["source_clean_block_id"] == "USDCAD_20260623T050049Z_20260623T050549Z"
     assert payload["source_clean_block_first_valid_end_utc"] == "2026-06-23T05:05:49+00:00"
     assert payload["source_clean_block_latest_end_utc"] == "2026-06-23T05:57:02+00:00"
+    assert payload["clean_block_confirmed_at_utc"] == "2026-06-23T05:05:49+00:00"
+    assert payload["clean_block_latest_end_utc"] == "2026-06-23T05:57:02+00:00"
+    assert payload["clean_block_live_duration_seconds"] == 3373.0
     assert payload["source_clean_block_latest_duration_seconds"] == 3373.0
     assert payload["watch_promotion_source"] == "CLEAN_BLOCK_ROUTER"
     assert payload["final_direction"] == "WAIT"
@@ -89,6 +92,23 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
     assert payload["source_stream_profile"]["RAW_THROTTLED"] == 36
     assert payload["raw_signal_throttle_primary_severity"] == "ERROR"
     assert payload["raw_pressure_origin"] == "SIGNAL_THROTTLE_RAW_THROTTLED"
+    assert payload["raw_structure_room_pips"] == 60.0
+    assert payload["structure_room"] == {
+        "advisory_only": True,
+        "basis": "KEY_SUPPORT_RESISTANCE_VS_SIGNAL_VALID_PRICE",
+        "symbol": "USDCAD",
+        "direction": "BUY",
+        "reference_price": 1.374,
+        "pip_size": 0.0001,
+        "key_support": 1.37,
+        "key_resistance": 1.38,
+        "downside_to_key_support_pips": 40.0,
+        "upside_to_key_resistance_pips": 60.0,
+        "directional_room_side": "UPSIDE_TO_KEY_RESISTANCE",
+        "directional_room_pips": 60.0,
+        "valid_for_execution": False,
+        "execution_impact": False,
+    }
 
 
 def test_clean_block_id_stays_stable_as_latest_end_moves():
@@ -100,6 +120,8 @@ def test_clean_block_id_stays_stable_as_latest_end_moves():
 
     assert first.payload["source_clean_block_id"] == later.payload["source_clean_block_id"]
     assert later.payload["source_clean_block_latest_end_utc"] == "2026-06-23T05:58:32+00:00"
+    assert later.payload["clean_block_confirmed_at_utc"] == "2026-06-23T05:05:49+00:00"
+    assert later.payload["clean_block_latest_end_utc"] == "2026-06-23T05:58:32+00:00"
 
 
 def test_clean_block_watch_requires_m15_close_at_key_level_risk():
