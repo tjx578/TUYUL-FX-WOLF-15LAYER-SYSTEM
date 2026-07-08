@@ -68,6 +68,10 @@ class _ScopeMetrics:
     max_clean_block_minutes: float
     fragmented_event_count: int
     pressure_memory_score: float
+    timing_maturity_bucket: str
+    timing_maturity_score: float
+    timing_maturity_duration_seconds: float
+    timing_maturity_reason_codes: tuple[str, ...]
     score: float
     reasons: tuple[str, ...]
 
@@ -417,7 +421,10 @@ def _compact_tier_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "tier_reason_codes": _tier_reason_codes(row),
         "event_count": _metric_value(row, "event_count"),
         "clean_block_count": _metric_value(row, "clean_block_count"),
+        "clean_block_duration_seconds": _metric_value(row, "clean_block_duration_seconds"),
         "max_clean_block_minutes": _memory_value(row, "max_clean_block_minutes"),
+        "timing_maturity_bucket": _metric_value(row, "timing_maturity_bucket"),
+        "timing_maturity_score": _metric_value(row, "timing_maturity_score"),
         "active_clean_block_id": row.get("active_clean_block_id"),
         "last_valid_clean_block_id": row.get("last_valid_clean_block_id"),
         "pressure_memory_score": _memory_value(row, "pressure_memory_score"),
@@ -584,6 +591,10 @@ def _watch_context_from_row(
         "tier_reason_codes": reasons[:8],
         "tier_is_execution_signal": False,
         "tier_execution_impact": _EXECUTION_IMPACT,
+        "timing_maturity_bucket": _metric_value(row, "timing_maturity_bucket"),
+        "timing_maturity_score": _metric_value(row, "timing_maturity_score"),
+        "clean_block_duration_seconds": _metric_value(row, "clean_block_duration_seconds"),
+        "max_clean_block_minutes": _metric_value(row, "max_clean_block_minutes"),
     }
     memory = row.get("fragmented_pressure_memory")
     if isinstance(memory, Mapping):
@@ -694,6 +705,8 @@ def _scope_metrics(
     directional_total = sum(directions.values())
     direction_purity = (max(directions.values()) / directional_total) if directional_total else 0.0
     latest_event_age = _latest_event_age(symbol_events, now)
+    latest_pressure_block = max(symbol_blocks, key=_block_end, default=None)
+    latest_pressure_block_duration = _block_duration(latest_pressure_block) if latest_pressure_block is not None else 0.0
     clean_blocks = [block for block in symbol_blocks if _block_duration(block) >= clean_block_seconds]
     latest_clean_block = max(clean_blocks, key=_block_end, default=None)
     clean_block_duration = _block_duration(latest_clean_block) if latest_clean_block is not None else 0.0
@@ -716,6 +729,12 @@ def _scope_metrics(
         same_symbol_reentry_count=same_symbol_reentry_count,
         clean_block_count=clean_block_count,
     )
+    timing_maturity_duration = clean_block_duration if clean_block_duration > 0 else latest_pressure_block_duration
+    timing_maturity_score, timing_maturity_bucket, timing_maturity_reasons = _clean_block_maturity_score(
+        duration_seconds=timing_maturity_duration,
+        clean_block_seconds=clean_block_seconds,
+        scope=scope,
+    )
     score, reasons = _score_metrics(
         scope=scope,
         event_count=event_count,
@@ -731,6 +750,8 @@ def _scope_metrics(
         pressure_memory_score=pressure_memory_score,
         same_symbol_reentry_count=same_symbol_reentry_count,
         clean_block_count=clean_block_count,
+        timing_maturity_score=timing_maturity_score,
+        timing_maturity_reason_codes=timing_maturity_reasons,
     )
     return _ScopeMetrics(
         symbol=symbol,
@@ -754,6 +775,10 @@ def _scope_metrics(
         max_clean_block_minutes=max_clean_block_minutes,
         fragmented_event_count=fragmented_event_count,
         pressure_memory_score=pressure_memory_score,
+        timing_maturity_bucket=timing_maturity_bucket,
+        timing_maturity_score=timing_maturity_score,
+        timing_maturity_duration_seconds=timing_maturity_duration,
+        timing_maturity_reason_codes=tuple(timing_maturity_reasons),
         score=score,
         reasons=tuple(reasons),
     )
@@ -775,6 +800,8 @@ def _score_metrics(
     pressure_memory_score: float,
     same_symbol_reentry_count: int,
     clean_block_count: int,
+    timing_maturity_score: float,
+    timing_maturity_reason_codes: Sequence[str],
 ) -> tuple[float, list[str]]:
     score = 0.0
     reasons: list[str] = []
@@ -784,16 +811,9 @@ def _score_metrics(
     if effective_ticks > 0:
         score += min(18.0, effective_ticks * 1.5)
         reasons.append("EFFECTIVE_TICKS_PRESENT")
-    if clean_block_duration_seconds >= clean_block_seconds:
-        score += min(30.0, 22.0 + ((clean_block_duration_seconds - clean_block_seconds) / clean_block_seconds) * 8.0)
-        if scope == LIVE_SCOPE:
-            reasons.append("RECENT_CLEAN_BLOCK_GE_5M")
-        elif scope == SESSION_SCOPE:
-            reasons.append("SESSION_CLEAN_BLOCK_GE_5M")
-        else:
-            reasons.append("ARCHIVE_CLEAN_BLOCK_GE_5M")
-    elif clean_block_duration_seconds > 0:
-        score += min(8.0, (clean_block_duration_seconds / clean_block_seconds) * 8.0)
+    if timing_maturity_score > 0:
+        score += timing_maturity_score
+        reasons.extend(timing_maturity_reason_codes)
     if effective_density_per_minute > 0:
         score += min(10.0, effective_density_per_minute)
         reasons.append("PRESSURE_DENSITY_PRESENT")
@@ -899,9 +919,56 @@ def _metrics_payload(metrics: _ScopeMetrics) -> dict[str, Any]:
         "run_count": metrics.run_count,
         "interrupted_by_other_symbols": metrics.interrupted_by_other_symbols,
         "pressure_memory_score": round(metrics.pressure_memory_score, 3),
+        "timing_maturity_bucket": metrics.timing_maturity_bucket,
+        "timing_maturity_score": round(metrics.timing_maturity_score, 3),
+        "timing_maturity_duration_seconds": round(metrics.timing_maturity_duration_seconds, 3),
+        "timing_maturity_reason_codes": list(metrics.timing_maturity_reason_codes),
         "score": round(metrics.score, 3),
         "reasons": list(metrics.reasons),
     }
+
+
+def _clean_block_maturity_score(
+    *,
+    duration_seconds: float,
+    clean_block_seconds: int,
+    scope: str,
+) -> tuple[float, str, tuple[str, ...]]:
+    duration = max(0.0, _safe_float(duration_seconds))
+    threshold = max(float(clean_block_seconds), 1.0)
+    reason_prefix = {
+        LIVE_SCOPE: "RECENT",
+        SESSION_SCOPE: "SESSION",
+        ARCHIVE_SCOPE: "ARCHIVE",
+    }.get(scope, "RECENT")
+
+    if duration <= 0:
+        return 0.0, "NO_CLEAN_BLOCK", ()
+    if duration < threshold:
+        return min(8.0, (duration / threshold) * 8.0), "SUB_5M_PRESSURE", ("CLEAN_BLOCK_BELOW_5M",)
+
+    base_reason = f"{reason_prefix}_CLEAN_BLOCK_GE_5M"
+    if duration < threshold * 2:
+        return 20.0, "TIMING_VALID_5M", (base_reason,)
+    if duration < threshold * 3:
+        return 24.0, "SUSTAINED_10M", (base_reason, f"{reason_prefix}_CLEAN_BLOCK_GE_10M")
+    if duration < threshold * 4:
+        return (
+            27.0,
+            "SUSTAINED_CONFIRMED_15M",
+            (base_reason, f"{reason_prefix}_CLEAN_BLOCK_GE_15M", "TIMING_MATURITY_CONFIRMED"),
+        )
+    if duration < threshold * 6:
+        return (
+            29.0,
+            "DOMINANT_20M",
+            (base_reason, f"{reason_prefix}_CLEAN_BLOCK_GE_20M", "DOMINANT_PRESSURE_DURATION"),
+        )
+    return (
+        30.0,
+        "MAJOR_30M",
+        (base_reason, f"{reason_prefix}_CLEAN_BLOCK_GE_30M", "MAJOR_PRESSURE_DURATION"),
+    )
 
 
 def _tier_action(tier: str) -> str:

@@ -626,6 +626,41 @@ def test_pipeline_emits_signal_watch_promotion_diagnostic(monkeypatch, caplog):
     assert verdict["signal_watch_promotion_diagnostics"][0]["next_required_stage"] == "HYDRATE_MARKET_CONTEXT"
 
 
+def test_pipeline_emits_clean_block_radar_confirmed_event(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    report = {
+        "signal_watch_promotion_diagnostics": [
+            {
+                "event": "signal_throttle_clean_block_radar",
+                "status": "CLEAN_BLOCK_CONFIRMED_RADAR",
+                "symbol": "GBPNZD",
+                "source_clean_block_id": "GBPNZD_20260623T060000Z_20260623T060500Z",
+                "clean_block_valid": True,
+                "eligible_for_signal_watch": False,
+                "blocked_by": ["MARKET_CONTEXT_MISSING"],
+                "next_required_stage": "PRICE_STRUCTURE_CONTEXT",
+                "market_context_applied": False,
+                "raw_signal_throttle_error_count": 7,
+                "valid_for_execution": False,
+                "is_final_signal": False,
+                "final_direction": "WAIT",
+            }
+        ]
+    }
+    verdict: dict = {}
+
+    pipeline._apply_clean_block_watch_routes(l12_verdict=verdict, report=report)
+
+    assert "[SignalWatchPromotionDiagnostic]" in caplog.text
+    assert '"event":"signal_throttle_clean_block_radar"' in caplog.text
+    assert '"status":"CLEAN_BLOCK_CONFIRMED_RADAR"' in caplog.text
+    assert '"raw_signal_throttle_error_count":7' in caplog.text
+    assert report["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is True
+    assert verdict["signal_watch_promotion_diagnostics"][0]["next_required_stage"] == "PRICE_STRUCTURE_CONTEXT"
+
+
 def test_pipeline_terminalizes_replayed_lineage_missing_watch_diagnostic(monkeypatch, caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")

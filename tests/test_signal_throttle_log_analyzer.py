@@ -15,9 +15,9 @@ from analysis.signal_throttle_log_analyzer import (
     SignalThrottleLogEvent,
     analyze_signal_throttle_csv,
     analyze_signal_throttle_events,
-    build_scanner_cycle_pressure_blocks,
-    build_pure_pressure_blocks,
     build_pressure_blocks,
+    build_pure_pressure_blocks,
+    build_scanner_cycle_pressure_blocks,
     compute_currency_pressure,
     parse_engine_log_event,
     parse_signal_throttle_rows,
@@ -559,6 +559,9 @@ def test_analyzer_pure_clean_block_ignores_large_same_pair_gap():
     assert report["runtime_config"]["burst_block_max_gap_seconds"] == 75
     assert report["pure_block_count"] == 1
     assert report["pure_active_candidate"]["symbol"] == "USDJPY"
+    assert report["pure_active_candidate"]["ledger_type"] == "PURE_PRESSURE_LEDGER"
+    assert report["pure_active_candidate"]["ledger_source"] == "SIGNAL_THROTTLE_PURE_PRESSURE_LEDGER"
+    assert report["pure_active_candidate"]["scanner_cycle_aware"] is False
     assert report["pure_active_candidate"]["gap_policy"] == "QUALITY_ONLY"
     assert report["pure_active_candidate"]["split_rule"] == "PAIR_ROTATION_ONLY"
     assert report["pure_active_candidate"]["gap_split_applied"] is False
@@ -575,12 +578,18 @@ def test_v1_clean_block_ledger_is_duration_based_source_of_truth():
 
     assert report["v1_clean_block_count"] == 1
     ledger = report["v1_clean_block_ledger"][0]
+    assert ledger["ledger_type"] == "V1_SCANNER_CLEAN_BLOCK_LEDGER"
     assert ledger["ledger_source"] == "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
     assert ledger["clean_block_rule"] == "SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE_DURATION_GE_THRESHOLD"
     assert ledger["legacy_pure_block_rule"] == "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
     assert ledger["clean_block_valid"] is True
     assert ledger["allowed_events"] == 6
     assert ledger["throttled_events"] == 0
+    assert ledger["source_stream_profile"] == {"ALLOWED": 6}
+    assert ledger["raw_signal_throttle_severity_profile"] == {"INFO": 6}
+    assert ledger["raw_signal_throttle_error_count"] == 0
+    assert ledger["raw_signal_throttle_primary_severity"] == "INFO"
+    assert ledger["raw_pressure_origin"] == "SIGNAL_THROTTLE_ALLOWED"
     assert report["active_candidate"] == "USDCHF"
     assert report["v1_active_clean_block"]["source_clean_block_id"] == ledger["source_clean_block_id"]
     assert report["signal_throttle_fusion_v3"]["source_clean_block_id"] == ledger["source_clean_block_id"]
@@ -676,6 +685,33 @@ def test_v1_clean_block_ledger_uses_scanner_cycle_persistence_for_multi_pair_run
     assert ledger["observed_cycle_index_max"] == 1
     assert report["active_candidate"] in {"USDJPY", "EURJPY", "GBPJPY"}
     assert report["runtime_config"]["scanner_cycle_max_gap_seconds"] == 300.0
+
+
+def test_pressure_ledger_preserves_raw_throttled_error_origin():
+    events = [
+        _event(0, "GBPUSD", event_type="THROTTLED", source_stream="RAW_THROTTLED"),
+        _event(60, "GBPUSD", event_type="THROTTLED", source_stream="RAW_THROTTLED"),
+        _event(120, "GBPUSD", event_type="ALLOWED", source_stream="ALLOWED"),
+        _event(180, "GBPUSD", event_type="DOWNGRADED_TO_HOLD", source_stream="DOWNGRADED", severity="info"),
+        _event(240, "GBPUSD", event_type="THROTTLED", source_stream="RAW_THROTTLED"),
+        _event(300, "GBPUSD", event_type="THROTTLED", source_stream="RAW_THROTTLED"),
+    ]
+
+    report = analyze_signal_throttle_events(events, latest_window_seconds=3600)
+    pure = report["pure_active_candidate"]
+    v1 = report["v1_clean_block_ledger"][0]
+    watch_or_radar = (report["clean_block_watch_entries"] + report["signal_watch_promotion_diagnostics"])[0]
+
+    assert pure["ledger_type"] == "PURE_PRESSURE_LEDGER"
+    assert pure["source_stream_profile"] == {"ALLOWED": 1, "DOWNGRADED": 1, "RAW_THROTTLED": 4}
+    assert pure["raw_signal_throttle_severity_profile"] == {"ERROR": 4, "INFO": 2}
+    assert pure["raw_signal_throttle_error_count"] == 4
+    assert pure["raw_signal_throttle_primary_severity"] == "ERROR"
+    assert pure["raw_pressure_origin"] == "SIGNAL_THROTTLE_RAW_THROTTLED"
+    assert v1["ledger_type"] == "V1_SCANNER_CLEAN_BLOCK_LEDGER"
+    assert v1["raw_pressure_origin"] == "SIGNAL_THROTTLE_RAW_THROTTLED"
+    assert watch_or_radar["event"] == "signal_throttle_clean_block_radar"
+    assert watch_or_radar["raw_signal_throttle_error_count"] == 4
 
 
 def test_pure_pressure_without_direction_emits_radar_only_diagnostic():

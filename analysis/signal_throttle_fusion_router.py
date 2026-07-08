@@ -45,6 +45,8 @@ def build_signal_throttle_fusion_v3_diagnostic(
         "event": "signal_throttle_fusion_v3",
         "status": status,
         "block_type": "PURE_PRESSURE_BLOCK" if pressure_seen else None,
+        "ledger_type": _text_value(pure_candidate, "ledger_type"),
+        "ledger_source": _text_value(pure_candidate, "ledger_source"),
         "symbol": None if pure_candidate is None else str(pure_candidate.get("symbol") or "").upper() or None,
         "block_id": _block_id(pure_candidate),
         "start_ts": _text_value(pure_candidate, "block_start_utc", "start_utc", "start"),
@@ -61,6 +63,10 @@ def build_signal_throttle_fusion_v3_diagnostic(
         if isinstance(pure_candidate, Mapping)
         else False,
         "split_rule": _text_value(pure_candidate, "split_rule") or "PAIR_ROTATION_ONLY",
+        "gap_policy": _text_value(pure_candidate, "gap_policy") or "QUALITY_ONLY",
+        "scanner_cycle_aware": bool(pure_candidate.get("scanner_cycle_aware", False))
+        if isinstance(pure_candidate, Mapping)
+        else False,
         "pure_pressure_score": _float_value(
             None if pure_candidate is None else pure_candidate.get("pure_pressure_score")
         ),
@@ -88,6 +94,19 @@ def build_signal_throttle_fusion_v3_diagnostic(
         if pure_candidate is None
         else pure_candidate.get("source_pressure_block_id") or pure_candidate.get("source_clean_block_id"),
         "source_clean_block_id": None if pure_candidate is None else pure_candidate.get("source_clean_block_id"),
+        "source_stream_profile": _mapping_value(pure_candidate, "source_stream_profile"),
+        "raw_signal_throttle_severity_profile": _mapping_value(
+            pure_candidate,
+            "raw_signal_throttle_severity_profile",
+        ),
+        "raw_signal_throttle_error_count": _int_value(
+            None if pure_candidate is None else pure_candidate.get("raw_signal_throttle_error_count")
+        ),
+        "raw_signal_throttle_primary_severity": _text_value(
+            pure_candidate,
+            "raw_signal_throttle_primary_severity",
+        ),
+        "raw_pressure_origin": _text_value(pure_candidate, "raw_pressure_origin"),
         "final_direction": "WAIT",
         "valid_for_execution": False,
         "execution_valid_now": False,
@@ -247,6 +266,13 @@ def _text_value(candidate: Mapping[str, Any] | None, *keys: str) -> str | None:
         if value and value.upper() != "NONE":
             return value
     return None
+
+
+def _mapping_value(candidate: Mapping[str, Any] | None, key: str) -> dict[str, Any] | None:
+    if not isinstance(candidate, Mapping):
+        return None
+    value = candidate.get(key)
+    return dict(value) if isinstance(value, Mapping) else None
 
 
 __all__ = [

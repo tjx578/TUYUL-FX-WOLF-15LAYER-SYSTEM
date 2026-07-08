@@ -17,6 +17,7 @@ from numbers import Real
 from typing import Any
 
 DEFAULT_SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PREFIX = "[SignalWatchPromotionDiagnostic]"
+_CONTEXT_BLOCKERS = {"MARKET_CONTEXT_MISSING", "SIGNAL_PRICE_MISSING"}
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,18 @@ def route_clean_block_to_watch(
         blocked_by.append("SIGNAL_PRICE_MISSING")
 
     if blocked_by:
+        if _should_emit_clean_block_radar(blocked_by=blocked_by, lineage=lineage):
+            return CleanBlockWatchRoute(
+                event="signal_throttle_clean_block_radar",
+                payload=_clean_block_radar_payload(
+                    block,
+                    lineage=lineage,
+                    blocked_by=blocked_by,
+                    clean_block_seconds=clean_block_seconds,
+                ),
+                emit_as_watch=False,
+                diagnostic=True,
+            )
         return CleanBlockWatchRoute(
             event="signal_watch_promotion_diagnostic",
             payload=_diagnostic_payload(
@@ -159,7 +172,7 @@ def emit_signal_watch_promotion_diagnostic(
     if not enabled:
         return False
     data = dict(payload)
-    data["event"] = "signal_watch_promotion_diagnostic"
+    data.setdefault("event", "signal_watch_promotion_diagnostic")
     data["valid_for_execution"] = False
     data["is_final_signal"] = False
     data["final_direction"] = "WAIT"
@@ -260,8 +273,47 @@ def _watch_payload(
             "reason": "clean_block_watch_requires_structure_context_but_execution_not_authorized",
         },
     }
+    payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
     payload["clean_block_valid"] = True
+    return payload
+
+
+def _should_emit_clean_block_radar(*, blocked_by: list[str], lineage: Mapping[str, Any]) -> bool:
+    blocked = {str(item) for item in blocked_by}
+    non_context_blockers = blocked - _CONTEXT_BLOCKERS
+    return not non_context_blockers and bool(lineage.get("clean_block_valid"))
+
+
+def _clean_block_radar_payload(
+    candidate: Mapping[str, Any],
+    *,
+    lineage: Mapping[str, Any],
+    blocked_by: list[str],
+    clean_block_seconds: int,
+) -> dict[str, Any]:
+    payload = {
+        "event": "signal_throttle_clean_block_radar",
+        "status": "CLEAN_BLOCK_CONFIRMED_RADAR",
+        "signal_family": "SIGNAL_THROTTLE_CLEAN_BLOCK_RADAR",
+        "symbol": str(candidate.get("symbol") or "").upper() or None,
+        "clean_block_valid": lineage.get("clean_block_valid"),
+        "eligible_for_signal_watch": False,
+        "blocked_by": blocked_by,
+        "next_required_stage": "PRICE_STRUCTURE_CONTEXT",
+        "clean_block_threshold_seconds": int(clean_block_seconds),
+        "market_context_applied": False,
+        "valid_for_execution": False,
+        "execution_valid_now": False,
+        "is_final_signal": False,
+        "signal_valid": False,
+        "final_direction": "WAIT",
+        "action": "WAIT_PRICE_STRUCTURE_CONTEXT",
+        "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+        "reason": "clean_block_confirmed_market_context_pending",
+    }
+    payload.update(_pressure_root_fields(candidate))
+    payload.update(lineage)
     return payload
 
 
@@ -326,8 +378,33 @@ def _diagnostic_payload(
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
         "reason": "clean_block_watch_promotion_blocked_explicitly",
     }
+    payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
     return payload
+
+
+def _pressure_root_fields(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    for key in (
+        "ledger_type",
+        "ledger_source",
+        "split_rule",
+        "gap_policy",
+        "scanner_cycle_aware",
+        "source_stream_profile",
+        "raw_signal_throttle_severity_profile",
+        "raw_signal_throttle_error_count",
+        "raw_signal_throttle_primary_severity",
+        "raw_pressure_origin",
+        "raw_signal_throttle_event_count",
+        "allowed_events",
+        "throttled_events",
+        "downgraded_events",
+    ):
+        value = candidate.get(key)
+        if value is not None:
+            fields[key] = dict(value) if isinstance(value, Mapping) else value
+    return fields
 
 
 def _next_required_stage(blocked_by: list[str]) -> str:

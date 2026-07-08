@@ -22,6 +22,16 @@ def _candidate(symbol="USDCAD", direction="BUY", start="2026-06-23T05:00:49+00:0
         "events": 48,
         "effective_ticks": 48,
         "effective_density_per_minute": 8.1,
+        "ledger_type": "V1_SCANNER_CLEAN_BLOCK_LEDGER",
+        "ledger_source": "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER",
+        "split_rule": "SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE",
+        "gap_policy": "SCANNER_CYCLE_QUALITY_ONLY",
+        "scanner_cycle_aware": True,
+        "source_stream_profile": {"RAW_THROTTLED": 36, "ALLOWED": 12},
+        "raw_signal_throttle_severity_profile": {"ERROR": 36, "INFO": 12},
+        "raw_signal_throttle_error_count": 36,
+        "raw_signal_throttle_primary_severity": "ERROR",
+        "raw_pressure_origin": "SIGNAL_THROTTLE_RAW_THROTTLED",
     }
 
 
@@ -53,6 +63,7 @@ def test_every_clean_block_gets_watch_or_diagnostic():
     assert {route.event for route in routes} <= {
         "signal_watch_json",
         "signal_watch_promotion_diagnostic",
+        "signal_throttle_clean_block_radar",
     }
     assert sum(route.emit_as_watch for route in routes) == 1
     assert sum(route.diagnostic for route in routes) == 2
@@ -74,6 +85,10 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
     assert payload["valid_for_execution"] is False
     assert payload["requires_m15_close"] is False
     assert payload["requires_m15_close_policy"] == "OPTIONAL_HTF_ALIGNED_CONTINUATION"
+    assert payload["ledger_type"] == "V1_SCANNER_CLEAN_BLOCK_LEDGER"
+    assert payload["source_stream_profile"]["RAW_THROTTLED"] == 36
+    assert payload["raw_signal_throttle_primary_severity"] == "ERROR"
+    assert payload["raw_pressure_origin"] == "SIGNAL_THROTTLE_RAW_THROTTLED"
 
 
 def test_clean_block_id_stays_stable_as_latest_end_moves():
@@ -116,14 +131,18 @@ def test_clean_block_router_uses_raw_pressure_direction_when_direction_unresolve
     assert route.payload["valid_for_execution"] is False
 
 
-def test_missing_context_becomes_promotion_diagnostic():
+def test_missing_context_becomes_clean_block_radar_confirmed():
     route = route_clean_block_to_watch(_candidate(), market_context=None)
 
-    assert route.event == "signal_watch_promotion_diagnostic"
+    assert route.event == "signal_throttle_clean_block_radar"
     assert route.diagnostic is True
+    assert route.payload["status"] == "CLEAN_BLOCK_CONFIRMED_RADAR"
     assert route.payload["eligible_for_signal_watch"] is False
     assert "MARKET_CONTEXT_MISSING" in route.payload["blocked_by"]
-    assert route.payload["next_required_stage"] == "HYDRATE_MARKET_CONTEXT"
+    assert route.payload["next_required_stage"] == "PRICE_STRUCTURE_CONTEXT"
+    assert route.payload["market_context_applied"] is False
+    assert route.payload["source_stream_profile"]["RAW_THROTTLED"] == 36
+    assert route.payload["raw_signal_throttle_error_count"] == 36
 
 
 def test_signal_watch_promotion_diagnostic_emits(caplog):
@@ -133,5 +152,6 @@ def test_signal_watch_promotion_diagnostic_emits(caplog):
         assert emit_signal_watch_promotion_diagnostic(route.payload) is True
 
     assert "[SignalWatchPromotionDiagnostic]" in caplog.text
-    assert '"event":"signal_watch_promotion_diagnostic"' in caplog.text
+    assert '"event":"signal_throttle_clean_block_radar"' in caplog.text
+    assert '"status":"CLEAN_BLOCK_CONFIRMED_RADAR"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text

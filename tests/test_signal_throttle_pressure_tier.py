@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from analysis.signal_throttle_log_analyzer import (
     SignalThrottleLogEvent,
@@ -46,6 +47,26 @@ def _pressure_event(offset_seconds: int, symbol: str, direction: str = "BUY") ->
 
 def _row(snapshot: dict, symbol: str) -> dict:
     return next(item for item in snapshot["symbols"] if item["symbol"] == symbol)
+
+
+def _pressure_block(
+    symbol: str,
+    *,
+    start_offset_seconds: int,
+    duration_seconds: int,
+    direction: str = "BUY",
+    effective_density_per_minute: float = 1.0,
+) -> SimpleNamespace:
+    start = datetime(2026, 7, 1, 0, 0, tzinfo=UTC) + timedelta(seconds=start_offset_seconds)
+    return SimpleNamespace(
+        symbol=symbol,
+        start=start,
+        end=start + timedelta(seconds=duration_seconds),
+        duration_seconds=float(duration_seconds),
+        direction=direction,
+        effective_density_per_minute=effective_density_per_minute,
+        density_per_minute=effective_density_per_minute,
+    )
 
 
 def test_pressure_tier_snapshot_is_diagnostic_only_for_live_clean_block():
@@ -149,6 +170,80 @@ def test_pressure_tier_scores_buy_and_sell_symmetrically():
 
     assert buy_row["effective_pressure_tier"] == sell_row["effective_pressure_tier"]
     assert buy_row["tier_score"] == sell_row["tier_score"]
+
+
+def test_pressure_tier_timing_maturity_prioritizes_15m_over_5m_clean_block():
+    events = [
+        *[_pressure_event(1750 + index * 5, "EURUSD", "BUY") for index in range(6)],
+        *[_pressure_event(1750 + index * 5, "GBPUSD", "BUY") for index in range(6)],
+    ]
+    snapshot = build_pressure_tier_snapshot(
+        events,
+        blocks=[
+            _pressure_block("EURUSD", start_offset_seconds=1500, duration_seconds=300),
+            _pressure_block("GBPUSD", start_offset_seconds=900, duration_seconds=900),
+        ],
+    )
+    early = _row(snapshot, "EURUSD")
+    mature = _row(snapshot, "GBPUSD")
+
+    assert early["metrics"]["live"]["timing_maturity_bucket"] == "TIMING_VALID_5M"
+    assert early["metrics"]["live"]["timing_maturity_score"] == 20.0
+    assert mature["metrics"]["live"]["timing_maturity_bucket"] == "SUSTAINED_CONFIRMED_15M"
+    assert mature["metrics"]["live"]["timing_maturity_score"] == 27.0
+    assert mature["tier_score"] > early["tier_score"]
+    assert "RECENT_CLEAN_BLOCK_GE_15M" in mature["tier_reasons"]
+    assert "TIMING_MATURITY_CONFIRMED" in mature["tier_reasons"]
+
+
+def test_pressure_tier_keeps_sub_5m_high_density_pressure_out_of_tier_1():
+    events = [_pressure_event(index * 8, "AUDJPY", "BUY") for index in range(30)]
+    snapshot = build_pressure_tier_snapshot(
+        events,
+        blocks=[
+            _pressure_block(
+                "AUDJPY",
+                start_offset_seconds=0,
+                duration_seconds=240,
+                effective_density_per_minute=30.0,
+            )
+        ],
+    )
+    row = _row(snapshot, "AUDJPY")
+
+    assert row["effective_pressure_tier"] != TIER_1_PRIMARY_ANALYSIS
+    assert row["metrics"]["live"]["clean_block_count"] == 0
+    assert row["metrics"]["live"]["timing_maturity_bucket"] == "SUB_5M_PRESSURE"
+    assert "CLEAN_BLOCK_BELOW_5M" in row["tier_reasons"]
+
+
+def test_pressure_tier_marks_30m_clean_block_as_major_pressure_duration():
+    events = [_pressure_event(1750 + index * 5, "GBPAUD", "BUY") for index in range(6)]
+    snapshot = build_pressure_tier_snapshot(
+        events,
+        blocks=[_pressure_block("GBPAUD", start_offset_seconds=0, duration_seconds=1800)],
+    )
+    row = _row(snapshot, "GBPAUD")
+
+    assert row["metrics"]["live"]["timing_maturity_bucket"] == "MAJOR_30M"
+    assert row["metrics"]["live"]["timing_maturity_score"] == 30.0
+    assert "RECENT_CLEAN_BLOCK_GE_30M" in row["tier_reasons"]
+    assert "MAJOR_PRESSURE_DURATION" in row["tier_reasons"]
+
+
+def test_pressure_tier_session_15m_clean_block_stays_confirmation_support():
+    session_events = [_pressure_event(index * 180, "NZDJPY", "SELL") for index in range(6)]
+    fresh_context = [_pressure_event(4 * 3600, "EURUSD", "BUY")]
+    snapshot = build_pressure_tier_snapshot(
+        session_events + fresh_context,
+        blocks=[_pressure_block("NZDJPY", start_offset_seconds=0, duration_seconds=900, direction="SELL")],
+    )
+    row = _row(snapshot, "NZDJPY")
+
+    assert row["effective_pressure_tier"] == TIER_2_CONFIRMATION_SUPPORT
+    assert row["tier_scope"] == "SESSION_24H"
+    assert row["metrics"]["session"]["timing_maturity_bucket"] == "SUSTAINED_CONFIRMED_15M"
+    assert "SESSION_FALLBACK_CAPPED_BELOW_LIVE" in row["tier_reasons"]
 
 
 def test_pressure_tier_tracks_fragmented_pressure_memory_without_clean_block():
@@ -284,6 +379,9 @@ def test_pressure_priority_context_attaches_tier_1_to_watch_only_as_context():
     assert context is not None
     assert context["effective_pressure_tier"] == TIER_1_PRIMARY_ANALYSIS
     assert context["tier_source_event"] == "SignalThrottlePressureTierSnapshot"
+    assert context["timing_maturity_bucket"] == "TIMING_VALID_5M"
+    assert context["timing_maturity_score"] == 20.0
+    assert context["clean_block_duration_seconds"] == 360.0
     assert context["tier_is_execution_signal"] is False
     assert context["tier_execution_impact"] is False
 

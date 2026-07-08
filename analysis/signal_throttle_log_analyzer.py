@@ -77,6 +77,9 @@ _DEFAULT_CANDIDATE_LIFECYCLE_WINDOW_SECONDS = 4 * 60 * 60
 DEFAULT_SIGNAL_THROTTLE_RAW_LOGGER = "signal_throttle_raw"
 DEFAULT_SIGNAL_THROTTLE_RAW_PREFIX = "[SignalThrottle]"
 DEFAULT_SIGNAL_THROTTLE_RAW_LEVEL = "WARNING"
+PURE_PRESSURE_LEDGER_SOURCE = "SIGNAL_THROTTLE_PURE_PRESSURE_LEDGER"
+PURE_PRESSURE_LEDGER_TYPE = "PURE_PRESSURE_LEDGER"
+V1_CLEAN_BLOCK_LEDGER_TYPE = "V1_SCANNER_CLEAN_BLOCK_LEDGER"
 V1_CLEAN_BLOCK_LEDGER_SOURCE = "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
 V1_CLEAN_BLOCK_RULE = "SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE_DURATION_GE_THRESHOLD"
 V1_CLEAN_BLOCK_LEGACY_RULE = "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
@@ -167,12 +170,18 @@ class PressureBlock:
     scanner_epoch_end_utc: str | None = None
     observed_cycle_index_min: int | None = None
     observed_cycle_index_max: int | None = None
+    source_stream_profile: tuple[tuple[str, int], ...] = ()
+    raw_signal_throttle_severity_profile: tuple[tuple[str, int], ...] = ()
+    raw_signal_throttle_error_count: int = 0
+    raw_signal_throttle_primary_severity: str | None = None
+    raw_pressure_origin: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["start"] = self.start.isoformat()
         payload["end"] = self.end.isoformat()
         payload.update(_pressure_profile_payload(self))
+        payload.update(_source_profile_payload(self))
         return payload
 
 
@@ -1710,6 +1719,20 @@ def _attach_clean_block_source_to_microboost_block(
         "source_clean_block_latest_end_utc",
         "source_clean_block_latest_duration_seconds",
         "watch_promotion_source",
+        "ledger_type",
+        "ledger_source",
+        "split_rule",
+        "gap_policy",
+        "scanner_cycle_aware",
+        "source_stream_profile",
+        "raw_signal_throttle_severity_profile",
+        "raw_signal_throttle_error_count",
+        "raw_signal_throttle_primary_severity",
+        "raw_pressure_origin",
+        "raw_signal_throttle_event_count",
+        "allowed_events",
+        "throttled_events",
+        "downgraded_events",
     ):
         if source.get(key) is not None:
             block[key] = source.get(key)
@@ -1815,6 +1838,7 @@ def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int
         "role": role,
     }
     payload.update(_pressure_profile_payload(block))
+    payload.update(_source_profile_payload(block))
     payload.update(clean_block_lineage_fields(payload, clean_block_seconds=clean_block_seconds))
     return payload
 
@@ -1831,6 +1855,9 @@ def _pure_pressure_block_payload(block: PressureBlock, clean_block_seconds: int)
             "raw_pressure_direction": raw_pressure_direction or "NONE",
             "candidate_direction": None,
             "pressure_direction": raw_pressure_direction,
+            "ledger_type": PURE_PRESSURE_LEDGER_TYPE,
+            "ledger_source": PURE_PRESSURE_LEDGER_SOURCE,
+            "scanner_cycle_aware": False,
             "pure_block_valid": _is_meaningful_candidate_block(block, clean_block_seconds),
             "source_signal_throttle_event_range": {
                 "start_utc": block.start.isoformat(),
@@ -1846,6 +1873,12 @@ def _pure_pressure_block_payload(block: PressureBlock, clean_block_seconds: int)
     )
     payload.update(_block_direction_metadata_payload(block))
     payload.update(score_pure_pressure_block(block, clean_block_seconds=clean_block_seconds).to_dict())
+    payload["ledger_type"] = PURE_PRESSURE_LEDGER_TYPE
+    payload["ledger_source"] = PURE_PRESSURE_LEDGER_SOURCE
+    payload["scanner_cycle_aware"] = False
+    payload["split_rule"] = "PAIR_ROTATION_ONLY"
+    payload["gap_policy"] = "QUALITY_ONLY"
+    payload["clean_block_min_duration_seconds"] = int(clean_block_seconds)
     payload.update(clean_block_lineage_fields(payload, clean_block_seconds=clean_block_seconds))
     payload["source_pressure_block_id"] = (
         payload.get("source_pressure_block_id") or payload.get("source_clean_block_id")
@@ -1871,6 +1904,7 @@ def _v1_clean_block_ledger_payload(
         if block.duration_seconds < clean_block_seconds:
             continue
         payload = _pure_pressure_block_payload(block, clean_block_seconds)
+        payload["ledger_type"] = V1_CLEAN_BLOCK_LEDGER_TYPE
         payload["ledger_source"] = V1_CLEAN_BLOCK_LEDGER_SOURCE
         payload["clean_block_rule"] = V1_CLEAN_BLOCK_RULE
         payload["legacy_pure_block_rule"] = V1_CLEAN_BLOCK_LEGACY_RULE
@@ -3508,6 +3542,7 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
     direction = _dominant_direction(events)
     direction_metadata = _direction_metadata_for_block(events, direction)
     scanner_metadata = _scanner_lineage_for_block(events)
+    source_profile = _source_profile_for_events(events)
     return PressureBlock(
         symbol=events[0].symbol,
         start=start,
@@ -3530,6 +3565,11 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
         scanner_epoch_end_utc=scanner_metadata["scanner_epoch_end_utc"],
         observed_cycle_index_min=scanner_metadata["observed_cycle_index_min"],
         observed_cycle_index_max=scanner_metadata["observed_cycle_index_max"],
+        source_stream_profile=source_profile["source_stream_profile"],
+        raw_signal_throttle_severity_profile=source_profile["raw_signal_throttle_severity_profile"],
+        raw_signal_throttle_error_count=source_profile["raw_signal_throttle_error_count"],
+        raw_signal_throttle_primary_severity=source_profile["raw_signal_throttle_primary_severity"],
+        raw_pressure_origin=source_profile["raw_pressure_origin"],
         **direction_metadata,
     )
 
@@ -4150,3 +4190,61 @@ def _pressure_profile_payload(block: PressureBlock) -> dict[str, Any]:
         max_gap_seconds=block.max_gap_seconds,
     )
     return profile.to_dict()
+
+
+def _source_profile_for_events(events: list[SignalThrottleLogEvent]) -> dict[str, Any]:
+    stream_counts = Counter(_source_stream_key(event) for event in events)
+    severity_counts = Counter(_severity_key(event.severity) for event in events)
+    raw_error_count = int(severity_counts.get("ERROR", 0))
+    primary_severity = _primary_severity(severity_counts)
+    return {
+        "source_stream_profile": tuple(sorted(stream_counts.items())),
+        "raw_signal_throttle_severity_profile": tuple(sorted(severity_counts.items())),
+        "raw_signal_throttle_error_count": raw_error_count,
+        "raw_signal_throttle_primary_severity": primary_severity,
+        "raw_pressure_origin": _raw_pressure_origin(stream_counts),
+    }
+
+
+def _source_profile_payload(block: PressureBlock) -> dict[str, Any]:
+    return {
+        "source_stream_profile": dict(block.source_stream_profile),
+        "raw_signal_throttle_severity_profile": dict(block.raw_signal_throttle_severity_profile),
+        "raw_signal_throttle_error_count": int(block.raw_signal_throttle_error_count),
+        "raw_signal_throttle_primary_severity": block.raw_signal_throttle_primary_severity,
+        "raw_pressure_origin": block.raw_pressure_origin,
+    }
+
+
+def _source_stream_key(event: SignalThrottleLogEvent) -> str:
+    stream = str(event.source_stream or "").strip().upper()
+    event_type = str(event.event_type or "").strip().upper()
+    if stream == "CANARY" and event_type == "PRESSURE_CANARY":
+        return "PRESSURE_CANARY"
+    return stream or event_type or "UNKNOWN"
+
+
+def _severity_key(value: str | None) -> str:
+    text = str(value or "").strip().upper()
+    return text or "UNKNOWN"
+
+
+def _primary_severity(counts: Counter[str]) -> str | None:
+    if not counts:
+        return None
+    priority = {"ERROR": 0, "CRITICAL": 1, "WARNING": 2, "WARN": 2, "INFO": 3, "DEBUG": 4, "UNKNOWN": 9}
+    return min(counts, key=lambda key: (-counts[key], priority.get(key, 8), key))
+
+
+def _raw_pressure_origin(stream_counts: Counter[str]) -> str:
+    if stream_counts.get("RAW_THROTTLED", 0) > 0:
+        return "SIGNAL_THROTTLE_RAW_THROTTLED"
+    if stream_counts.get("DOWNGRADED", 0) > 0:
+        return "SIGNAL_THROTTLE_DOWNGRADED"
+    if stream_counts.get("ALLOWED", 0) > 0:
+        return "SIGNAL_THROTTLE_ALLOWED"
+    if stream_counts.get("PRESSURE_CANARY", 0) > 0:
+        return "SIGNAL_THROTTLE_PRESSURE_CANARY"
+    if stream_counts.get("INTEL", 0) > 0:
+        return "SIGNAL_THROTTLE_INTEL"
+    return "SIGNAL_THROTTLE_UNKNOWN"
