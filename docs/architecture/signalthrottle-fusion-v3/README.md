@@ -115,6 +115,7 @@ Use this map to avoid confusing the contract target with runtime rollout state:
 
 ```text
 Pure Pressure Ledger wrapper/output          = IMPLEMENTED
+V1 scanner-cycle clean block ledger          = IMPLEMENTED
 Pure pressure quality diagnostics            = IMPLEMENTED
 Radar Context vs Execution Context split     = IMPLEMENTED
 SignalThrottleFusionV3 diagnostic output     = IMPLEMENTED
@@ -133,6 +134,7 @@ Any patch touching SignalThrottle, Microboost, SignalWatch, Pair Tier, Market Co
 
 ```text
 Does this preserve gap-agnostic Pure Pressure Ledger behavior?
+Does this preserve scanner-cycle-aware V1 clean block behavior?
 Does this keep Microboost direction UNRESOLVED?
 Does this keep Watch non-executable?
 Does this keep Pair Tier advisory-only?

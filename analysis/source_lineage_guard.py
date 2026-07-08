@@ -236,6 +236,9 @@ def signal_throttle_state_snapshot_payload(
         "max_clean_block_minutes": round(max_clean_block_minutes, 3),
         "clean_block_ledger_source": _text(report.get("clean_block_ledger_source"))
         or "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER",
+        "clean_block_rule": _runtime_config_text(report, "clean_block_rule"),
+        "legacy_pure_block_rule": _runtime_config_text(report, "legacy_pure_block_rule"),
+        "scanner_cycle_max_gap_seconds": _runtime_config_float(report, "scanner_cycle_max_gap_seconds"),
         "fresh_symbols": fresh_symbols,
         "stale_symbols": stale_symbols,
         "record_buffer_size": _optional_int(total_events) or 0,
@@ -254,6 +257,20 @@ def _clean_block_candidates(report: Mapping[str, Any]) -> list[Mapping[str, Any]
             if candidates:
                 return candidates
     return []
+
+
+def _runtime_config_text(report: Mapping[str, Any], key: str) -> str | None:
+    config = report.get("runtime_config")
+    if not isinstance(config, Mapping):
+        return None
+    return _text(config.get(key))
+
+
+def _runtime_config_float(report: Mapping[str, Any], key: str) -> float | None:
+    config = report.get("runtime_config")
+    if not isinstance(config, Mapping):
+        return None
+    return _optional_float(config.get(key))
 
 
 def _observability_logger_name(event: str | None = None) -> str:

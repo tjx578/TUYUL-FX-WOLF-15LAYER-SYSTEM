@@ -54,6 +54,19 @@ Implementation guardrail:
 build_pure_pressure_blocks(events) == build_pressure_blocks(events, max_gap_seconds=None)
 ```
 
+Runtime note:
+
+```text
+PurePressureLedger = diagnostic pressure truth, pair-rotation-only.
+V1CleanBlockLedger = production clean-block source, scanner-cycle-aware pair persistence.
+```
+
+The production scanner emits many pairs in a repeated cycle. A different pair
+between two same-symbol observations can be scanner interleaving, not proof
+that the first pair lost pressure. The V1 clean-block ledger must therefore
+preserve same-symbol persistence across scanner interleaving and split that
+symbol only after it goes quiet beyond the scanner-cycle window.
+
 ### 2. Burst/Microboost is allowed to be gap-sensitive
 
 Microboost measures fresh timing pressure, not long-context pressure.
@@ -157,17 +170,30 @@ source_pressure_block_id
 valid_for_execution=false
 ```
 
+Required V1 clean-block fields:
+
+```text
+clean_block_rule=SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE_DURATION_GE_THRESHOLD
+legacy_pure_block_rule=PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD
+scanner_cycle_aware=true
+split_rule=SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE
+gap_policy=SCANNER_CYCLE_QUALITY_ONLY
+source_clean_block_id
+valid_for_execution=false
+```
+
 ## Required implementation tests
 
 ```text
 1. Same-symbol huge-gap block with no pair interruption remains one pure block.
 2. Different-symbol interruption splits the pure block.
-3. Pure block without direction produces PURE_RADAR_ONLY or NO_TRADE_REASONED, not silence.
-4. Microboost remains gap-sensitive and direction UNRESOLVED.
-5. Pair tier can promote low-static-tier pair if pure pressure is dominant.
-6. Fusion output never emits valid_for_execution=true.
-7. SignalJSON gate tests remain green.
-8. UniverseRanking legacy tests remain green.
+3. Scanner-cycle clean blocks preserve repeated same-symbol pressure across scanner interleaving.
+4. Pure block without direction produces PURE_RADAR_ONLY or NO_TRADE_REASONED, not silence.
+5. Microboost remains gap-sensitive and direction UNRESOLVED.
+6. Pair tier can promote low-static-tier pair if pure pressure is dominant.
+7. Fusion output never emits valid_for_execution=true.
+8. SignalJSON gate tests remain green.
+9. UniverseRanking legacy tests remain green.
 ```
 
 ## Forbidden changes
@@ -175,7 +201,7 @@ valid_for_execution=false
 ```text
 Do not rewrite constitution/signal_throttle.py into a market-decision engine.
 Do not let pure pressure blocks emit orders.
-Do not use gap-sensitive blocks as the pure clean-block source of truth.
+Do not use Microboost gap-sensitive blocks as the V1 clean-block source of truth.
 Do not make Microboost a direction resolver.
 Do not make Pair Tier override L12.
 Do not make M15 close a universal requirement.

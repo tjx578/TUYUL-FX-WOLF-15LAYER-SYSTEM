@@ -78,7 +78,8 @@ DEFAULT_SIGNAL_THROTTLE_RAW_LOGGER = "signal_throttle_raw"
 DEFAULT_SIGNAL_THROTTLE_RAW_PREFIX = "[SignalThrottle]"
 DEFAULT_SIGNAL_THROTTLE_RAW_LEVEL = "WARNING"
 V1_CLEAN_BLOCK_LEDGER_SOURCE = "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
-V1_CLEAN_BLOCK_RULE = "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
+V1_CLEAN_BLOCK_RULE = "SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE_DURATION_GE_THRESHOLD"
+V1_CLEAN_BLOCK_LEGACY_RULE = "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
 
 
 @dataclass(frozen=True)
@@ -362,6 +363,7 @@ def analyze_signal_throttle_events(
         clean_block_seconds = int(min_clean_block_minutes * 60)
     clean_block_seconds = int(clean_block_seconds or 300)
     fragmented_max_clean_block_seconds = fragmented_max_clean_block_minutes * 60.0
+    scanner_cycle_gap_seconds = _env_float("SIGNAL_THROTTLE_SCANNER_CYCLE_MAX_GAP_SECONDS", 300.0)
 
     ordered = sorted(events, key=lambda item: item.timestamp)
     state_metadata = state_metadata or _state_metadata_from_events(ordered)
@@ -444,6 +446,8 @@ def analyze_signal_throttle_events(
                 "pure_block_max_gap_seconds": None,
                 "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
                 "clean_block_rule": V1_CLEAN_BLOCK_RULE,
+                "legacy_pure_block_rule": V1_CLEAN_BLOCK_LEGACY_RULE,
+                "scanner_cycle_max_gap_seconds": scanner_cycle_gap_seconds,
                 "burst_block_max_gap_seconds": clean_gap_seconds,
                 "microboost_window_minutes": microboost_window_minutes,
                 "candidate_lifecycle_window_seconds": candidate_lifecycle_window_seconds,
@@ -505,6 +509,10 @@ def analyze_signal_throttle_events(
         }
 
     pure_blocks = build_pure_pressure_blocks(ordered)
+    scanner_cycle_blocks = build_scanner_cycle_pressure_blocks(
+        ordered,
+        max_symbol_gap_seconds=scanner_cycle_gap_seconds,
+    )
     burst_blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
     symbol_activity = build_symbol_activity(
         ordered,
@@ -516,7 +524,7 @@ def analyze_signal_throttle_events(
         max_gap_seconds=clean_gap_seconds,
         now=ordered[-1].timestamp,
     )
-    lifecycle_blocks = pure_blocks
+    lifecycle_blocks = scanner_cycle_blocks
     latest_cutoff = ordered[-1].timestamp - timedelta(seconds=latest_window_seconds)
     latest_events = [event for event in ordered if event.timestamp >= latest_cutoff]
     latest_blocks = build_pure_pressure_blocks(latest_events)
@@ -554,7 +562,10 @@ def analyze_signal_throttle_events(
         clean_block_seconds=clean_block_seconds,
         window_seconds=candidate_lifecycle_window_seconds,
     )
-    v1_clean_block_ledger = _v1_clean_block_ledger_payload(lifecycle_blocks, clean_block_seconds=clean_block_seconds)
+    v1_clean_block_ledger = _v1_clean_block_ledger_payload(
+        lifecycle_blocks,
+        clean_block_seconds=clean_block_seconds,
+    )
     clean_watch_candidates = v1_clean_block_ledger
     pure_block_ledger = _pure_pressure_ledger_payload(pure_blocks, clean_block_seconds=clean_block_seconds)
     pure_top_blocks = [
@@ -565,7 +576,7 @@ def analyze_signal_throttle_events(
     v1_active_clean_block = _v1_active_clean_block(v1_clean_block_ledger)
     pressure_tier_snapshot = _build_pressure_tier_snapshot(
         events=ordered,
-        blocks=pure_blocks,
+        blocks=lifecycle_blocks,
         symbol_activity=symbol_activity,
         clean_watch_candidates=clean_watch_candidates,
         candidate_lifecycle=candidate_lifecycle,
@@ -801,6 +812,8 @@ def analyze_signal_throttle_events(
             "pure_block_max_gap_seconds": None,
             "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
             "clean_block_rule": V1_CLEAN_BLOCK_RULE,
+            "legacy_pure_block_rule": V1_CLEAN_BLOCK_LEGACY_RULE,
+            "scanner_cycle_max_gap_seconds": scanner_cycle_gap_seconds,
             "burst_block_max_gap_seconds": clean_gap_seconds,
             "microboost_window_minutes": microboost_window_minutes,
             "candidate_lifecycle_window_seconds": candidate_lifecycle_window_seconds,
@@ -817,7 +830,8 @@ def analyze_signal_throttle_events(
             state_metadata=state_metadata,
         ),
         "currency_pressure": currency_pressure,
-        "top_clean_blocks": [block.to_dict() for block in rank_pressure_blocks(pure_blocks)[:10]],
+        "top_clean_blocks": [block.to_dict() for block in rank_pressure_blocks(lifecycle_blocks)[:10]],
+        "top_pure_rotation_blocks": [block.to_dict() for block in rank_pressure_blocks(pure_blocks)[:10]],
         "top_burst_blocks": [block.to_dict() for block in rank_pressure_blocks(burst_blocks)[:10]],
         "radar_context_validation": radar_context_validation,
         "market_context_validation": market_context_validation,
@@ -1211,6 +1225,47 @@ def build_pure_pressure_blocks(events: Iterable[SignalThrottleLogEvent]) -> list
     """Build the official gap-agnostic Pure Pressure Ledger blocks."""
 
     return build_pressure_blocks(events, max_gap_seconds=None)
+
+
+def build_scanner_cycle_pressure_blocks(
+    events: Iterable[SignalThrottleLogEvent],
+    *,
+    max_symbol_gap_seconds: float | None = 300.0,
+) -> list[PressureBlock]:
+    """Build per-symbol pressure spans for multi-pair scanner streams.
+
+    Production emits many symbols in a repeated scan cycle. In that stream, a
+    different symbol between two same-symbol observations is scheduler
+    interleaving, not proof that the first symbol stopped carrying pressure.
+    This lane preserves same-symbol persistence and only starts a new block
+    when that symbol itself goes quiet beyond the scanner-cycle window.
+    """
+
+    by_symbol: dict[str, list[SignalThrottleLogEvent]] = {}
+    for event in sorted(events, key=lambda item: item.timestamp):
+        if event.eligible_for_pressure_block is False:
+            continue
+        symbol = str(event.symbol or "").upper()
+        if not symbol:
+            continue
+        by_symbol.setdefault(symbol, []).append(event)
+
+    blocks: list[PressureBlock] = []
+    for symbol_events in by_symbol.values():
+        current: list[SignalThrottleLogEvent] = []
+        for event in symbol_events:
+            if not current:
+                current = [event]
+                continue
+            gap = (event.timestamp - current[-1].timestamp).total_seconds()
+            if max_symbol_gap_seconds is not None and gap > max_symbol_gap_seconds:
+                blocks.append(_make_block(current))
+                current = [event]
+            else:
+                current.append(event)
+        if current:
+            blocks.append(_make_block(current))
+    return sorted(blocks, key=lambda block: (block.start, block.symbol))
 
 
 def build_symbol_activity(
@@ -1639,6 +1694,7 @@ def _candidate_payload_from_block(block: PressureBlock, clean_block_seconds: int
         "role": role,
     }
     payload.update(_pressure_profile_payload(block))
+    payload.update(clean_block_lineage_fields(payload, clean_block_seconds=clean_block_seconds))
     return payload
 
 
@@ -1696,6 +1752,10 @@ def _v1_clean_block_ledger_payload(
         payload = _pure_pressure_block_payload(block, clean_block_seconds)
         payload["ledger_source"] = V1_CLEAN_BLOCK_LEDGER_SOURCE
         payload["clean_block_rule"] = V1_CLEAN_BLOCK_RULE
+        payload["legacy_pure_block_rule"] = V1_CLEAN_BLOCK_LEGACY_RULE
+        payload["scanner_cycle_aware"] = True
+        payload["split_rule"] = "SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE"
+        payload["gap_policy"] = "SCANNER_CYCLE_QUALITY_ONLY"
         payload["clean_block_min_duration_seconds"] = int(clean_block_seconds)
         payload["allowed_events"] = block.allowed_events
         payload["throttled_events"] = block.throttled_events
@@ -2793,9 +2853,14 @@ def _signal_watch_gate(
     if not isinstance(candidate, dict):
         return _empty_signal_watch_gate("SIGNAL_THROTTLE_CLEAN_BLOCK_REQUIRED")
 
-    candidate_symbol = str(candidate.get("symbol") or "").upper()
-    candidate_direction = _candidate_raw_pressure_direction(candidate)
     latest_symbol = str(latest.get("symbol") or "").upper()
+    candidate_symbol = str(candidate.get("symbol") or "").upper()
+    latest_lineage_candidate = _candidate_from_microboost_lineage(latest)
+    if isinstance(latest_lineage_candidate, dict) and latest_symbol == candidate_symbol:
+        candidate = latest_lineage_candidate
+        candidate_symbol = latest_symbol
+
+    candidate_direction = _candidate_raw_pressure_direction(candidate)
     latest_direction = str(latest.get("direction") or "").upper()
     candidate_lineage = clean_block_lineage_fields(candidate, clean_block_seconds=clean_block_seconds)
     if latest_symbol != candidate_symbol:

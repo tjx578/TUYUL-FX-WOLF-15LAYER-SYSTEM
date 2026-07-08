@@ -38,6 +38,17 @@ Use this checklist before approving any code change related to SignalThrottle Fu
 [ ] Pure block output never sets valid_for_execution=true.
 ```
 
+## C2. V1 clean block ledger checks
+
+```text
+[ ] V1 clean block source is scanner-cycle-aware for multi-pair scanner runtime.
+[ ] V1 clean block rule is SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE_DURATION_GE_THRESHOLD.
+[ ] V1 clean blocks preserve same-symbol persistence across scanner interleaving.
+[ ] V1 clean blocks do not use Microboost burst blocks as source of truth.
+[ ] V1 clean block output has source_clean_block_id.
+[ ] V1 clean block output never sets valid_for_execution=true.
+```
+
 ## D. Block quality checks
 
 ```text

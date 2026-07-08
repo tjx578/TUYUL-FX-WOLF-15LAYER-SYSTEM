@@ -146,12 +146,51 @@ Contract fields that may still need naming normalization at downstream edges:
 `avg_gap_seconds` is implemented in the runtime block payload. It remains
 quality metadata only; it must not be used to split a Pure Pressure Block.
 
+## V1 clean block ledger
+
+The runtime also publishes a production clean-block ledger for scanner-cycle
+streams. This is intentionally separate from the Pure Pressure Ledger:
+
+```text
+Pure Pressure Ledger
+= diagnostic pressure truth
+= pair-rotation-only and gap-agnostic
+
+V1 Clean Block Ledger
+= production clean-block source
+= scanner-cycle-aware same-symbol persistence
+```
+
+Scanner output rotates through many pairs. A different pair between two
+same-symbol events can be scheduler interleaving, not a true pressure stop.
+For V1 clean blocks, the split rule is therefore:
+
+```text
+same symbol inside scanner-cycle window = continue that symbol's clean block
+same symbol quiet beyond scanner window = start a new clean block for that symbol
+different symbol                         = scanner interleaving, not a split reason
+```
+
+Required V1 fields:
+
+```text
+clean_block_rule=SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE_DURATION_GE_THRESHOLD
+legacy_pure_block_rule=PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD
+scanner_cycle_aware=true
+split_rule=SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE
+gap_policy=SCANNER_CYCLE_QUALITY_ONLY
+source_clean_block_id
+source_pressure_block_id
+valid_for_execution=false
+```
+
 ## Bias guardrails
 
 Do not allow these mistakes:
 
 ```text
 Do not use gap-sensitive blocks as pure ledger.
+Do not use hard pair rotation as the only V1 clean-block source for scanner-cycle runtime.
 Do not promote pure blocks directly to SignalJSON.
 Do not discard NO_TRADE pressure.
 Do not require M15/H1 context before recording pure pressure.
@@ -163,6 +202,7 @@ Do not let Pair Tier change the raw ledger.
 ```text
 same symbol + huge gap + no other pair = one pure block
 different symbol between same symbol events = split block
+scanner-cycle interleaving between same-symbol events = one V1 clean block
 same-second collision behavior remains documented and stable
 NO_TRADE pressure can still create pressure telemetry
 pure block never emits valid_for_execution=true

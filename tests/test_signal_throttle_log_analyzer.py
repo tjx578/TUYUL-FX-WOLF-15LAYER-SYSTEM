@@ -15,6 +15,7 @@ from analysis.signal_throttle_log_analyzer import (
     SignalThrottleLogEvent,
     analyze_signal_throttle_csv,
     analyze_signal_throttle_events,
+    build_scanner_cycle_pressure_blocks,
     build_pure_pressure_blocks,
     build_pressure_blocks,
     compute_currency_pressure,
@@ -403,12 +404,12 @@ def test_analyzer_classifies_fragmented_latest_rotation_as_theme_alert():
 
     report = analyze_signal_throttle_events(events, latest_window_seconds=3600)
 
-    assert report["final_mode"] == "THEME_ALERT_AND_PAIR_SELECTION"
+    assert report["final_mode"] == "PAIR_SIGNAL_CANDIDATE_FROM_ROTATION_CONTEXT"
     assert report["clean_entry_signal"] is False
-    assert report["pair_timing_candidate"] is False
+    assert report["pair_timing_candidate"] is True
     assert report["requires_market_context"] is True
     assert report["latest_phase"] == "BROAD_ROTATION_FRAGMENTED"
-    assert report["recommended_action"] == "OUTPUT_THEME_ALERT_AND_WATCHLIST"
+    assert report["recommended_action"] == "FETCH_GBPJPY_PRICE_CONTEXT_M15_H1_BEFORE_SIGNAL_OUTPUT"
     assert report["watchlist"] == report["main_watchlist"]
     assert report["data_quality"]["source"] == "live_process"
 
@@ -527,7 +528,8 @@ def test_v1_clean_block_ledger_is_duration_based_source_of_truth():
     assert report["v1_clean_block_count"] == 1
     ledger = report["v1_clean_block_ledger"][0]
     assert ledger["ledger_source"] == "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
-    assert ledger["clean_block_rule"] == "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
+    assert ledger["clean_block_rule"] == "SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE_DURATION_GE_THRESHOLD"
+    assert ledger["legacy_pure_block_rule"] == "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
     assert ledger["clean_block_valid"] is True
     assert ledger["allowed_events"] == 6
     assert ledger["throttled_events"] == 0
@@ -553,6 +555,44 @@ def test_build_pure_pressure_blocks_pair_rotation_splits_block():
 
     assert len(usdjpy_blocks) == 2
     assert [block.events for block in usdjpy_blocks] == [2, 1]
+
+
+def test_scanner_cycle_blocks_preserve_repeated_pair_across_scanner_interleaving():
+    events = []
+    for index in range(12):
+        offset = index * 30
+        events.append(_event(offset, "USDJPY", event_type="ALLOWED"))
+        events.append(_event(offset + 5, "EURJPY", event_type="ALLOWED"))
+        events.append(_event(offset + 10, "GBPJPY", event_type="ALLOWED"))
+
+    pure_blocks = build_pure_pressure_blocks(events)
+    scanner_blocks = build_scanner_cycle_pressure_blocks(events, max_symbol_gap_seconds=120)
+    usdjpy_scanner = next(block for block in scanner_blocks if block.symbol == "USDJPY")
+
+    assert max(block.duration_seconds for block in pure_blocks) < 30
+    assert usdjpy_scanner.duration_seconds == 330
+    assert usdjpy_scanner.events == 12
+
+
+def test_v1_clean_block_ledger_uses_scanner_cycle_persistence_for_multi_pair_runtime():
+    events = []
+    for index in range(12):
+        offset = index * 30
+        events.append(_event(offset, "USDJPY", event_type="ALLOWED"))
+        events.append(_event(offset + 5, "EURJPY", event_type="ALLOWED"))
+        events.append(_event(offset + 10, "GBPJPY", event_type="ALLOWED"))
+
+    report = analyze_signal_throttle_events(events, latest_window_seconds=3600)
+    ledger = next(item for item in report["v1_clean_block_ledger"] if item["symbol"] == "USDJPY")
+
+    assert report["v1_clean_block_count"] == 3
+    assert ledger["clean_block_rule"] == "SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE_DURATION_GE_THRESHOLD"
+    assert ledger["legacy_pure_block_rule"] == "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
+    assert ledger["scanner_cycle_aware"] is True
+    assert ledger["clean_block_valid"] is True
+    assert ledger["clean_block_duration_seconds"] == 330.0
+    assert report["active_candidate"] in {"USDJPY", "EURJPY", "GBPJPY"}
+    assert report["runtime_config"]["scanner_cycle_max_gap_seconds"] == 300.0
 
 
 def test_pure_pressure_without_direction_emits_radar_only_diagnostic():
@@ -591,10 +631,10 @@ def test_live_analyzer_fragmented_rotation_returns_theme_alert():
 
     report = analyzer.snapshot()
 
-    assert report["final_mode"] == "THEME_ALERT_AND_PAIR_SELECTION"
+    assert report["final_mode"] == "PAIR_SIGNAL_CANDIDATE_FROM_ROTATION_CONTEXT"
     assert report["latest_phase"] == "BROAD_ROTATION_FRAGMENTED"
     assert report["clean_entry_signal"] is False
-    assert report["pair_timing_candidate"] is False
+    assert report["pair_timing_candidate"] is True
     assert report["requires_market_context"] is True
 
 
@@ -1521,7 +1561,7 @@ def test_recent_clean_block_lineage_attaches_to_later_microboost_same_symbol():
     latest = report["microboost_summary"]["latest"]
     gate = report["signal_watch_gate"]
     assert latest["source_clean_block_id"].startswith("GBPCAD_")
-    assert latest["source_lineage_match"] == "RECENT_SAME_SYMBOL_CLEAN_BLOCK"
+    assert latest["source_lineage_match"] == "OVERLAP"
     assert latest["clean_block_valid"] is True
     assert gate["eligible"] is True
     assert gate["source_clean_block_id"] == latest["source_clean_block_id"]
