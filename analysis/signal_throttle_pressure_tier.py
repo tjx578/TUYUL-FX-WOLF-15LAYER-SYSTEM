@@ -698,7 +698,7 @@ def _scope_metrics(
     latest_clean_block = max(clean_blocks, key=_block_end, default=None)
     clean_block_duration = _block_duration(latest_clean_block) if latest_clean_block is not None else 0.0
     clean_block_age = None if latest_clean_block is None else _age_seconds(_block_end(latest_clean_block), now)
-    latest_clean_block_id = _block_clean_block_id(latest_clean_block)
+    latest_clean_block_id = _block_clean_block_id(latest_clean_block, clean_block_seconds=clean_block_seconds)
     clean_block_count = len(clean_blocks)
     max_clean_block_minutes = max((_block_duration(block) / 60.0 for block in clean_blocks), default=0.0)
     effective_density = max((_block_effective_density(block) for block in symbol_blocks), default=0.0)
@@ -1060,7 +1060,7 @@ def _block_direction(block: Any) -> str | None:
     return _normalize_direction(getattr(block, "direction", None))
 
 
-def _block_clean_block_id(block: Any) -> str | None:
+def _block_clean_block_id(block: Any, *, clean_block_seconds: float = 300.0) -> str | None:
     if block is None:
         return None
     source_id = _clean_text(getattr(block, "source_clean_block_id", None))
@@ -1069,7 +1069,8 @@ def _block_clean_block_id(block: Any) -> str | None:
     symbol = _block_symbol(block)
     if not symbol:
         return None
-    return f"{symbol}_{_compact_time(_block_start(block))}_{_compact_time(_block_end(block))}"
+    first_valid_end = _block_start(block) + timedelta(seconds=float(clean_block_seconds))
+    return f"{symbol}_{_compact_time(_block_start(block))}_{_compact_time(first_valid_end)}"
 
 
 def _compact_time(value: datetime) -> str:

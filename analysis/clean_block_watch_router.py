@@ -12,7 +12,7 @@ import logging
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from numbers import Real
 from typing import Any
 
@@ -119,17 +119,33 @@ def clean_block_lineage_fields(
     duration = _duration_seconds(candidate)
     event_count = _int_value(candidate.get("events") or candidate.get("event_count"))
     direction = _raw_pressure_direction(candidate)
-    source_id = _text(candidate.get("source_clean_block_id")) or _clean_block_id(symbol, start, end)
+    explicit_valid_since = _text(
+        candidate.get("source_clean_block_first_valid_end_utc")
+        or candidate.get("clean_block_first_valid_end_utc")
+        or candidate.get("clean_block_valid_since_utc")
+        or candidate.get("valid_since_utc")
+    )
+    first_valid_end = explicit_valid_since or _first_valid_end_utc(start, clean_block_seconds)
+    source_id = _text(candidate.get("source_clean_block_id")) or _stable_clean_block_id(
+        symbol,
+        start,
+        first_valid_end,
+    )
+    latest_duration = None if duration is None else round(duration, 3)
     return {
         "source_clean_block_id": source_id,
         "source_pressure_block_id": _text(candidate.get("source_pressure_block_id")) or source_id,
         "clean_block_valid": duration is not None and duration >= clean_block_seconds,
         "clean_block_start_utc": start,
         "clean_block_end_utc": end,
-        "clean_block_valid_since_utc": _text(candidate.get("valid_since_utc")),
-        "clean_block_duration_seconds": None if duration is None else round(duration, 3),
+        "clean_block_valid_since_utc": first_valid_end,
+        "clean_block_duration_seconds": latest_duration,
         "clean_block_event_count": event_count,
         "clean_block_direction": direction if direction in {"BUY", "SELL"} else None,
+        "source_clean_block_start_utc": start,
+        "source_clean_block_first_valid_end_utc": first_valid_end,
+        "source_clean_block_latest_end_utc": end,
+        "source_clean_block_latest_duration_seconds": latest_duration,
         "watch_promotion_source": "CLEAN_BLOCK_ROUTER",
     }
 
@@ -397,24 +413,41 @@ def _text(value: Any) -> str | None:
     return text or None
 
 
-def _clean_block_id(symbol: str, start: str | None, end: str | None) -> str | None:
-    if not symbol or not start or not end:
+def _stable_clean_block_id(symbol: str, start: str | None, first_valid_end: str | None) -> str | None:
+    if not symbol or not start or not first_valid_end:
         return None
-    return f"{symbol}_{_compact_time(start)}_{_compact_time(end)}"
+    return f"{symbol}_{_compact_time(start)}_{_compact_time(first_valid_end)}"
+
+
+def _first_valid_end_utc(start: str | None, clean_block_seconds: int) -> str | None:
+    start_dt = _parse_datetime(start)
+    if start_dt is None:
+        return None
+    return (start_dt + timedelta(seconds=int(clean_block_seconds))).astimezone(UTC).isoformat()
 
 
 def _compact_time(value: Any) -> str:
+    dt = _parse_datetime(value)
+    if dt is None:
+        text = str(value or "").strip()
+        return re.sub(r"[^A-Za-z0-9]+", "", text) or "UNKNOWN"
+    return dt.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _parse_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         dt = value
     else:
         text = str(value or "").strip()
+        if not text:
+            return None
         try:
             dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
         except ValueError:
-            return re.sub(r"[^A-Za-z0-9]+", "", text) or "UNKNOWN"
+            return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return dt.astimezone(UTC)
 
 
 __all__ = [

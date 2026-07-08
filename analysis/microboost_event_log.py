@@ -48,9 +48,14 @@ class MicroboostIntelEvent:
     end_utc: str | None
     source_clean_block_id: str | None
     source_pressure_block_id: str | None
+    source_clean_block_start_utc: str | None
+    source_clean_block_first_valid_end_utc: str | None
+    source_clean_block_latest_end_utc: str | None
+    source_clean_block_latest_duration_seconds: float | None
     source_signal_throttle_start_utc: str | None
     source_signal_throttle_end_utc: str | None
     source_age_seconds: float | None
+    microboost_cluster_age_since_end_seconds: float | None
     reason: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -66,8 +71,10 @@ class MicroboostIntelEvent:
             self.final_direction,
             self.cluster_stage,
             self.requires_market_context,
+            self.market_context_applied,
             self.price_position,
-            self.source_clean_block_id,
+            _stable_source_key(self),
+            _source_growth_bucket(self.source_clean_block_latest_duration_seconds),
         )
 
 
@@ -180,9 +187,20 @@ def build_microboost_intel_event(report: dict[str, Any]) -> MicroboostIntelEvent
         end_utc=_optional_str(latest.get("end_utc")),
         source_clean_block_id=_optional_str(latest.get("source_clean_block_id")),
         source_pressure_block_id=_optional_str(latest.get("source_pressure_block_id")),
+        source_clean_block_start_utc=_optional_str(
+            latest.get("source_clean_block_start_utc") or source_range.get("start_utc")
+        ),
+        source_clean_block_first_valid_end_utc=_optional_str(latest.get("source_clean_block_first_valid_end_utc")),
+        source_clean_block_latest_end_utc=_optional_str(
+            latest.get("source_clean_block_latest_end_utc") or source_range.get("end_utc")
+        ),
+        source_clean_block_latest_duration_seconds=_optional_float(
+            latest.get("source_clean_block_latest_duration_seconds")
+        ),
         source_signal_throttle_start_utc=_optional_str(source_range.get("start_utc")),
         source_signal_throttle_end_utc=_optional_str(source_range.get("end_utc")),
         source_age_seconds=_optional_float(latest.get("source_age_seconds")),
+        microboost_cluster_age_since_end_seconds=_cluster_age_since_end_seconds(latest),
         reason=str(latest.get("reason") or summary.get("reason") or "microboost_detected"),
     )
 
@@ -285,6 +303,10 @@ def emit_microboost_intel(event: MicroboostIntelEvent | None) -> None:
         f"source_clean_block_id={event.source_clean_block_id or 'NONE'}",
         f"source_pressure_block_id={event.source_pressure_block_id or 'NONE'}",
         f"source_age={_number_text(event.source_age_seconds)}",
+        f"source_first_valid_end_utc={event.source_clean_block_first_valid_end_utc or 'NONE'}",
+        f"source_latest_end_utc={event.source_clean_block_latest_end_utc or 'NONE'}",
+        f"source_latest_duration={_number_text(event.source_clean_block_latest_duration_seconds)}",
+        f"microboost_cluster_age_since_end={_number_text(event.microboost_cluster_age_since_end_seconds)}",
     ]
     # M15/H1 phase + price path belong to SignalWatch/SignalDecision, not the
     # Microboost timing line. Lean by default; full payload only under the debug
@@ -385,9 +407,20 @@ def parse_microboost_intel_row(row: dict[str, Any]) -> MicroboostLogRecord | Non
         end_utc=_none_text(fields.get("end_utc")),
         source_clean_block_id=_none_text(fields.get("source_clean_block_id")),
         source_pressure_block_id=_none_text(fields.get("source_pressure_block_id")),
+        source_clean_block_start_utc=_none_text(
+            fields.get("source_clean_block_start_utc") or fields.get("source_start_utc")
+        ),
+        source_clean_block_first_valid_end_utc=_none_text(
+            fields.get("source_clean_block_first_valid_end_utc") or fields.get("source_first_valid_end_utc")
+        ),
+        source_clean_block_latest_end_utc=_none_text(
+            fields.get("source_clean_block_latest_end_utc") or fields.get("source_latest_end_utc")
+        ),
+        source_clean_block_latest_duration_seconds=_optional_float(fields.get("source_latest_duration")),
         source_signal_throttle_start_utc=_none_text(fields.get("source_start_utc")),
         source_signal_throttle_end_utc=_none_text(fields.get("source_end_utc")),
         source_age_seconds=_optional_float(fields.get("source_age")),
+        microboost_cluster_age_since_end_seconds=_optional_float(fields.get("microboost_cluster_age_since_end")),
         reason=str(fields.get("reason") or "microboost_detected"),
     )
     return MicroboostLogRecord(
@@ -531,6 +564,30 @@ def _extract_window_local(fields: dict[str, str]) -> str:
         if key.startswith("window_"):
             return fields[key]
     return "UNKNOWN"
+
+
+def _stable_source_key(event: MicroboostIntelEvent) -> tuple[Any, ...]:
+    start = event.source_clean_block_start_utc or event.source_signal_throttle_start_utc
+    first_valid_end = event.source_clean_block_first_valid_end_utc
+    if start or first_valid_end:
+        return (start, first_valid_end)
+    return (event.source_clean_block_id,)
+
+
+def _source_growth_bucket(duration_seconds: float | None) -> int | None:
+    if duration_seconds is None:
+        return None
+    return int(max(0.0, duration_seconds) // 60.0)
+
+
+def _cluster_age_since_end_seconds(latest: dict[str, Any]) -> float | None:
+    explicit = _optional_float(latest.get("microboost_cluster_age_since_end_seconds"))
+    if explicit is not None:
+        return round(max(0.0, explicit), 3)
+    end = _parse_optional_timestamp(latest.get("end_utc"))
+    if end is None:
+        return None
+    return round(max(0.0, (datetime.now(UTC) - end).total_seconds()), 3)
 
 
 def _phase_label(phase_unpriced: str, phase_priced: str | None, action: str) -> str:

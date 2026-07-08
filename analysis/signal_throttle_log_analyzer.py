@@ -1701,9 +1701,14 @@ def _attach_clean_block_source_to_microboost_block(
         "clean_block_valid",
         "clean_block_start_utc",
         "clean_block_end_utc",
+        "clean_block_valid_since_utc",
         "clean_block_duration_seconds",
         "clean_block_event_count",
         "clean_block_direction",
+        "source_clean_block_start_utc",
+        "source_clean_block_first_valid_end_utc",
+        "source_clean_block_latest_end_utc",
+        "source_clean_block_latest_duration_seconds",
         "watch_promotion_source",
     ):
         if source.get(key) is not None:
@@ -1775,7 +1780,14 @@ def _lineage_match_payload(candidate: dict[str, Any], match_type: str) -> dict[s
 
 def _source_age_seconds(block: dict[str, Any], source: dict[str, Any]) -> float:
     block_end = _parse_timestamp(str(block.get("end_utc") or ""))
-    source_end = _parse_timestamp(str(source.get("clean_block_end_utc") or source.get("block_end_utc") or ""))
+    source_end = _parse_timestamp(
+        str(
+            source.get("source_clean_block_latest_end_utc")
+            or source.get("clean_block_end_utc")
+            or source.get("block_end_utc")
+            or ""
+        )
+    )
     if block_end is None or source_end is None:
         return 0.0
     return round(max(0.0, (block_end - source_end).total_seconds()), 3)
@@ -2996,9 +3008,14 @@ def _signal_watch_gate(
             "clean_block_valid",
             "clean_block_start_utc",
             "clean_block_end_utc",
+            "clean_block_valid_since_utc",
             "clean_block_duration_seconds",
             "clean_block_event_count",
             "clean_block_direction",
+            "source_clean_block_start_utc",
+            "source_clean_block_first_valid_end_utc",
+            "source_clean_block_latest_end_utc",
+            "source_clean_block_latest_duration_seconds",
             "watch_promotion_source",
         ):
             if candidate_lineage.get(key) is not None:
@@ -3039,7 +3056,8 @@ def _candidate_from_microboost_lineage(latest: dict[str, Any]) -> dict[str, Any]
         "symbol": symbol,
         "block_start_utc": latest.get("clean_block_start_utc"),
         "block_end_utc": latest.get("clean_block_end_utc"),
-        "valid_since_utc": latest.get("source_clean_block_valid_since_utc") or latest.get("clean_block_valid_since_utc"),
+        "valid_since_utc": latest.get("source_clean_block_valid_since_utc")
+        or latest.get("clean_block_valid_since_utc"),
         "duration_seconds": latest.get("clean_block_duration_seconds"),
         "duration_minutes": (
             round(float(latest.get("clean_block_duration_seconds") or 0.0) / 60.0, 3)
@@ -3054,9 +3072,14 @@ def _candidate_from_microboost_lineage(latest: dict[str, Any]) -> dict[str, Any]
         "clean_block_valid": True,
         "clean_block_start_utc": latest.get("clean_block_start_utc"),
         "clean_block_end_utc": latest.get("clean_block_end_utc"),
+        "clean_block_valid_since_utc": latest.get("clean_block_valid_since_utc"),
         "clean_block_duration_seconds": latest.get("clean_block_duration_seconds"),
         "clean_block_event_count": latest.get("clean_block_event_count"),
         "clean_block_direction": direction if direction in {"BUY", "SELL"} else None,
+        "source_clean_block_start_utc": latest.get("source_clean_block_start_utc"),
+        "source_clean_block_first_valid_end_utc": latest.get("source_clean_block_first_valid_end_utc"),
+        "source_clean_block_latest_end_utc": latest.get("source_clean_block_latest_end_utc"),
+        "source_clean_block_latest_duration_seconds": latest.get("source_clean_block_latest_duration_seconds"),
         "watch_promotion_source": "MICROBOOST_ATTACHED_CLEAN_BLOCK_LINEAGE",
         "source_lineage_match": latest.get("source_lineage_match"),
     }
@@ -3086,9 +3109,16 @@ def _empty_signal_watch_gate(
         "clean_block_valid": candidate_lineage.get("clean_block_valid"),
         "clean_block_start_utc": candidate_lineage.get("clean_block_start_utc"),
         "clean_block_end_utc": candidate_lineage.get("clean_block_end_utc"),
+        "clean_block_valid_since_utc": candidate_lineage.get("clean_block_valid_since_utc"),
         "clean_block_duration_seconds": candidate_lineage.get("clean_block_duration_seconds"),
         "clean_block_event_count": candidate_lineage.get("clean_block_event_count"),
         "clean_block_direction": candidate_lineage.get("clean_block_direction"),
+        "source_clean_block_start_utc": candidate_lineage.get("source_clean_block_start_utc"),
+        "source_clean_block_first_valid_end_utc": candidate_lineage.get("source_clean_block_first_valid_end_utc"),
+        "source_clean_block_latest_end_utc": candidate_lineage.get("source_clean_block_latest_end_utc"),
+        "source_clean_block_latest_duration_seconds": candidate_lineage.get(
+            "source_clean_block_latest_duration_seconds"
+        ),
         "watch_promotion_source": candidate_lineage.get("watch_promotion_source"),
     }
 
@@ -3117,9 +3147,14 @@ def _signal_watch_source_fields(
         "clean_block_valid",
         "clean_block_start_utc",
         "clean_block_end_utc",
+        "clean_block_valid_since_utc",
         "clean_block_duration_seconds",
         "clean_block_event_count",
         "clean_block_direction",
+        "source_clean_block_start_utc",
+        "source_clean_block_first_valid_end_utc",
+        "source_clean_block_latest_end_utc",
+        "source_clean_block_latest_duration_seconds",
         "watch_promotion_source",
     ):
         if signal_watch_gate.get(key) is not None:

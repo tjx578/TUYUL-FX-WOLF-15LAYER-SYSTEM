@@ -65,12 +65,26 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
     assert route.emit_as_watch is True
     payload = route.payload
     assert payload["status"] == "CLEAN_BLOCK_BUY_WATCH"
-    assert payload["source_clean_block_id"] == "USDCAD_20260623T050049Z_20260623T055702Z"
+    assert payload["source_clean_block_id"] == "USDCAD_20260623T050049Z_20260623T050549Z"
+    assert payload["source_clean_block_first_valid_end_utc"] == "2026-06-23T05:05:49+00:00"
+    assert payload["source_clean_block_latest_end_utc"] == "2026-06-23T05:57:02+00:00"
+    assert payload["source_clean_block_latest_duration_seconds"] == 3373.0
     assert payload["watch_promotion_source"] == "CLEAN_BLOCK_ROUTER"
     assert payload["final_direction"] == "WAIT"
     assert payload["valid_for_execution"] is False
     assert payload["requires_m15_close"] is False
     assert payload["requires_m15_close_policy"] == "OPTIONAL_HTF_ALIGNED_CONTINUATION"
+
+
+def test_clean_block_id_stays_stable_as_latest_end_moves():
+    first = route_clean_block_to_watch(_candidate(end="2026-06-23T05:57:02+00:00"), market_context=_market())
+    later = route_clean_block_to_watch(
+        _candidate(end="2026-06-23T05:58:32+00:00"),
+        market_context=_market(),
+    )
+
+    assert first.payload["source_clean_block_id"] == later.payload["source_clean_block_id"]
+    assert later.payload["source_clean_block_latest_end_utc"] == "2026-06-23T05:58:32+00:00"
 
 
 def test_clean_block_watch_requires_m15_close_at_key_level_risk():

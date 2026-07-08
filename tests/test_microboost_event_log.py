@@ -135,6 +135,60 @@ def test_microboost_intel_lean_by_default_omits_heavy_market_context(capsys):
     assert parsed.event.price_at_signal_start is None
 
 
+def test_microboost_intel_dedupe_ignores_moving_latest_end_within_growth_bucket():
+    def _report(latest_end: str, latest_duration: float):
+        return {
+            "microboost_summary": {
+                "count_total": 1,
+                "latest": {
+                    "cluster_id": "CADJPY_20260708T082330Z",
+                    "cluster_stage": "growing",
+                    "symbol": "CADJPY",
+                    "direction": "BUY",
+                    "phase_unpriced": "REPEATED_MICROBOOST",
+                    "phase_priced": "EXHAUSTION_AT_RESISTANCE",
+                    "action": "NO_NEW_BUY_WAIT_SELL_OR_PULLBACK_CONFIRMATION",
+                    "event_count": 8,
+                    "effective_tick_count": 8,
+                    "suppressed_tick_count": 0,
+                    "effective_density_per_minute": 262.98,
+                    "duration_seconds": 1.825,
+                    "requires_market_context": False,
+                    "price_position": "MAIN_RESISTANCE",
+                    "end_utc": "2026-07-08T08:27:09+00:00",
+                    "source_clean_block_id": "CADJPY_20260708T082209Z_20260708T082709Z",
+                    "source_pressure_block_id": "CADJPY_20260708T082209Z_20260708T082709Z",
+                    "source_clean_block_start_utc": "2026-07-08T08:22:09+00:00",
+                    "source_clean_block_first_valid_end_utc": "2026-07-08T08:27:09+00:00",
+                    "source_clean_block_latest_end_utc": latest_end,
+                    "source_clean_block_latest_duration_seconds": latest_duration,
+                    "source_signal_throttle_event_range": {
+                        "start_utc": "2026-07-08T08:22:09+00:00",
+                        "end_utc": latest_end,
+                    },
+                    "source_age_seconds": 0.0,
+                    "market_context_snapshot": {
+                        "price_at_signal_start": 115.1,
+                        "price_at_5m_confirm": 115.2,
+                        "price_at_signal_end": 115.3,
+                        "price_position": "MAIN_RESISTANCE",
+                    },
+                },
+            }
+        }
+
+    first = build_microboost_intel_event(_report("2026-07-08T08:27:18+00:00", 309.0))
+    same_bucket = build_microboost_intel_event(_report("2026-07-08T08:27:42+00:00", 342.0))
+    next_bucket = build_microboost_intel_event(_report("2026-07-08T08:28:20+00:00", 380.0))
+
+    assert first is not None
+    assert same_bucket is not None
+    assert next_bucket is not None
+    assert first.source_clean_block_latest_end_utc != same_bucket.source_clean_block_latest_end_utc
+    assert first.dedupe_key() == same_bucket.dedupe_key()
+    assert first.dedupe_key() != next_bucket.dedupe_key()
+
+
 def test_microboost_table_events_emit_all_cluster_rows(capsys):
     report = {
         "microboost_summary": {
