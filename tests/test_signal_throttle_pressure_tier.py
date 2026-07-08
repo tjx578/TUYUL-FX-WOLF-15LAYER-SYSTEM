@@ -59,6 +59,8 @@ def test_pressure_tier_snapshot_is_diagnostic_only_for_live_clean_block():
     assert row["tier_action"] == "PRIORITIZE_ANALYSIS"
     assert row["tier_is_execution_signal"] is False
     assert row["tier_execution_impact"] is False
+    assert row["active_clean_block_id"].startswith("USDJPY_")
+    assert row["last_valid_clean_block_id"] == row["active_clean_block_id"]
     assert snapshot["tier_is_execution_signal"] is False
     assert snapshot["tier_execution_impact"] is False
     assert report["clean_entry_signal"] is False
