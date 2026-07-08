@@ -113,12 +113,34 @@ def test_clean_block_gate_required():
     )
     assert wrong_pair["eligible"] is False
     assert wrong_pair["reason"] == "MICROBOOST_PAIR_NOT_CLEAN_BLOCK_CANDIDATE"
+    assert wrong_pair["source_clean_block_id"] is None
 
     eligible = _signal_watch_gate(
         {"symbol": "USDCAD", "direction": "BUY", "valid_since_utc": "x"},
         {"latest": {"symbol": "USDCAD", "direction": "BUY"}},
     )
     assert eligible["eligible"] is True
+
+    attached_lineage = _signal_watch_gate(
+        {"symbol": "AUDCAD", "direction": "SELL"},
+        {
+            "latest": {
+                "symbol": "CADJPY",
+                "direction": "BUY",
+                "source_clean_block_id": "CADJPY_20260708T093151Z_20260708T093654Z",
+                "source_pressure_block_id": "CADJPY_20260708T093151Z_20260708T093654Z",
+                "clean_block_valid": True,
+                "clean_block_direction": "BUY",
+                "clean_block_start_utc": "2026-07-08T09:31:51+00:00",
+                "clean_block_end_utc": "2026-07-08T09:36:54+00:00",
+                "clean_block_duration_seconds": 303.0,
+                "clean_block_event_count": 21,
+            }
+        },
+    )
+    assert attached_lineage["eligible"] is True
+    assert attached_lineage["symbol"] == "CADJPY"
+    assert attached_lineage["source_clean_block_id"].startswith("CADJPY_")
 
 
 # Test 5 -- no phase may ever mark the core event executable.

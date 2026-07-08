@@ -2965,7 +2965,7 @@ def _signal_watch_gate(
     latest_symbol = str(latest.get("symbol") or "").upper()
     candidate_symbol = str(candidate.get("symbol") or "").upper()
     latest_lineage_candidate = _candidate_from_microboost_lineage(latest)
-    if isinstance(latest_lineage_candidate, dict) and latest_symbol == candidate_symbol:
+    if isinstance(latest_lineage_candidate, dict):
         candidate = latest_lineage_candidate
         candidate_symbol = latest_symbol
 
@@ -2973,7 +2973,11 @@ def _signal_watch_gate(
     latest_direction = str(latest.get("direction") or "").upper()
     candidate_lineage = clean_block_lineage_fields(candidate, clean_block_seconds=clean_block_seconds)
     if latest_symbol != candidate_symbol:
-        return _empty_signal_watch_gate("MICROBOOST_PAIR_NOT_CLEAN_BLOCK_CANDIDATE", candidate)
+        return _empty_signal_watch_gate(
+            "MICROBOOST_PAIR_NOT_CLEAN_BLOCK_CANDIDATE",
+            candidate,
+            include_lineage=False,
+        )
 
     def _eligible(reason: str, *, clean_block_fallback: bool = False) -> dict[str, Any]:
         gate = {
@@ -3062,9 +3066,11 @@ def _candidate_from_microboost_lineage(latest: dict[str, Any]) -> dict[str, Any]
 def _empty_signal_watch_gate(
     reason: str,
     candidate: dict[str, Any] | None = None,
+    *,
+    include_lineage: bool = True,
 ) -> dict[str, Any]:
     candidate = candidate or {}
-    candidate_lineage = clean_block_lineage_fields(candidate) if candidate else {}
+    candidate_lineage = clean_block_lineage_fields(candidate) if candidate and include_lineage else {}
     candidate_direction = _candidate_raw_pressure_direction(candidate) if candidate else None
     return {
         "eligible": False,

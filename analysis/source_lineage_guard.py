@@ -100,6 +100,7 @@ def guard_microboost_source(
     source_id = _text(latest.get("source_clean_block_id"))
     freshness = source_freshness_state(report, symbol, now=now, max_age_seconds=max_age_seconds)
     diagnostics: list[dict[str, Any]] = []
+    source_symbol = _source_id_symbol(source_id)
 
     if not freshness.fresh_signal_throttle_seen:
         diagnostics.append(
@@ -111,7 +112,19 @@ def guard_microboost_source(
                 **_freshness_context(freshness),
             )
         )
-    if not source_id:
+    if source_id and symbol and source_symbol and source_symbol != symbol:
+        diagnostics.append(
+            _diagnostic(
+                "microboost_source_diagnostic",
+                blocked_stage="MICROBOOST",
+                blocked_by=["SOURCE_CLEAN_BLOCK_SYMBOL_MISMATCH"],
+                reason="MICROBOOST_REQUIRES_PAIR_LOCAL_SOURCE_CLEAN_BLOCK_ID",
+                source_clean_block_symbol=source_symbol,
+                **_microboost_context(latest),
+                **_freshness_context(freshness),
+            )
+        )
+    elif not source_id:
         diagnostics.append(
             _diagnostic(
                 "microboost_source_diagnostic",
@@ -144,9 +157,35 @@ def signal_watch_source_diagnostic(payload: Mapping[str, Any]) -> dict[str, Any]
     status = str(payload.get("status") or "")
     if not status.endswith("_WATCH"):
         return None
-    if _text(payload.get("source_clean_block_id")):
-        return None
     symbol = str(payload.get("symbol") or "").upper() or None
+    source_id = _text(payload.get("source_clean_block_id"))
+    source_symbol = _source_id_symbol(source_id)
+    if source_id and symbol and source_symbol and source_symbol != symbol:
+        cluster_id = payload.get("cluster_id")
+        return {
+            "event": "signal_watch_promotion_diagnostic",
+            "symbol": symbol,
+            "source_clean_block_id": source_id,
+            "source_clean_block_symbol": source_symbol,
+            "clean_block_valid": False,
+            "eligible_for_signal_watch": False,
+            "blocked_by": ["SOURCE_CLEAN_BLOCK_SYMBOL_MISMATCH"],
+            "next_required_stage": "REBUILD_PAIR_LOCAL_CLEAN_BLOCK_LINEAGE",
+            "status": status,
+            "signal_family": payload.get("signal_family"),
+            "cluster_id": cluster_id,
+            "source_lookup_stage": "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER",
+            "source_lookup_key": symbol,
+            "raw_cluster_id": cluster_id,
+            "nearest_clean_block_candidate": None,
+            "why_not_attached": "SOURCE_CLEAN_BLOCK_ID_SYMBOL_DOES_NOT_MATCH_WATCH_SYMBOL",
+            "valid_for_execution": False,
+            "is_final_signal": False,
+            "final_direction": "WAIT",
+            "reason": "signal_watch_requires_pair_local_source_clean_block_id",
+        }
+    if source_id:
+        return None
     cluster_id = payload.get("cluster_id")
     return {
         "event": "signal_watch_promotion_diagnostic",
@@ -435,6 +474,14 @@ def _optional_int(value: Any) -> int | None:
 def _text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _source_id_symbol(source_id: str | None) -> str | None:
+    text = _text(source_id)
+    if text is None:
+        return None
+    head = text.split("_", 1)[0].strip().upper()
+    return head or None
 
 
 __all__ = [

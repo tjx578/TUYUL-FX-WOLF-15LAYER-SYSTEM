@@ -65,6 +65,17 @@ def test_microboost_source_guard_requires_source_clean_block_id():
     assert "SOURCE_CLEAN_BLOCK_ID_MISSING" in result.diagnostics[0]["blocked_by"]
 
 
+def test_microboost_source_guard_rejects_cross_pair_clean_block_id():
+    report, now = _report(source_clean_block_id="AUDCAD_20260708T093150Z_20260708T093801Z")
+
+    result = guard_microboost_source(report, now=now, max_age_seconds=300)
+
+    assert result.can_emit_microboost is False
+    assert result.diagnostics[0]["event"] == "microboost_source_diagnostic"
+    assert result.diagnostics[0]["blocked_by"] == ["SOURCE_CLEAN_BLOCK_SYMBOL_MISMATCH"]
+    assert result.diagnostics[0]["source_clean_block_symbol"] == "AUDCAD"
+
+
 def test_microboost_source_guard_blocks_stale_cluster():
     report, now = _report(end_age_seconds=420.0)
 
@@ -91,6 +102,24 @@ def test_signal_watch_source_diagnostic_requires_clean_block_id():
     assert diagnostic["source_lookup_key"] == "CADJPY"
     assert diagnostic["nearest_clean_block_candidate"] is None
     assert diagnostic["why_not_attached"] == "WATCH_PAYLOAD_MISSING_SOURCE_CLEAN_BLOCK_ID"
+
+
+def test_signal_watch_source_diagnostic_rejects_cross_pair_clean_block_id():
+    diagnostic = signal_watch_source_diagnostic(
+        {
+            "symbol": "CADJPY",
+            "status": "EARLY_SELL_WATCH",
+            "signal_family": "MICROBOOST_COUNTER_ENTRY",
+            "source_clean_block_id": "AUDCAD_20260708T093150Z_20260708T093801Z",
+            "valid_for_execution": False,
+        }
+    )
+
+    assert diagnostic is not None
+    assert diagnostic["blocked_by"] == ["SOURCE_CLEAN_BLOCK_SYMBOL_MISMATCH"]
+    assert diagnostic["source_clean_block_symbol"] == "AUDCAD"
+    assert diagnostic["source_lookup_key"] == "CADJPY"
+    assert diagnostic["reason"] == "signal_watch_requires_pair_local_source_clean_block_id"
 
 
 def test_signal_throttle_state_snapshot_summarizes_freshness():
