@@ -147,6 +147,7 @@ def signal_watch_source_diagnostic(payload: Mapping[str, Any]) -> dict[str, Any]
     if _text(payload.get("source_clean_block_id")):
         return None
     symbol = str(payload.get("symbol") or "").upper() or None
+    cluster_id = payload.get("cluster_id")
     return {
         "event": "signal_watch_promotion_diagnostic",
         "symbol": symbol,
@@ -157,7 +158,12 @@ def signal_watch_source_diagnostic(payload: Mapping[str, Any]) -> dict[str, Any]
         "next_required_stage": "ATTACH_CLEAN_BLOCK_LINEAGE",
         "status": status,
         "signal_family": payload.get("signal_family"),
-        "cluster_id": payload.get("cluster_id"),
+        "cluster_id": cluster_id,
+        "source_lookup_stage": "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER",
+        "source_lookup_key": cluster_id or symbol,
+        "raw_cluster_id": cluster_id,
+        "nearest_clean_block_candidate": None,
+        "why_not_attached": "WATCH_PAYLOAD_MISSING_SOURCE_CLEAN_BLOCK_ID",
         "valid_for_execution": False,
         "is_final_signal": False,
         "final_direction": "WAIT",

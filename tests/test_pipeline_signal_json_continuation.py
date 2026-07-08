@@ -649,6 +649,56 @@ def test_pipeline_terminalizes_replayed_lineage_missing_watch_diagnostic(monkeyp
     assert payloads[3]["signal_watch_source_diagnostic_emit_result"] is False
 
 
+def test_pipeline_terminalizes_replayed_report_promotion_diagnostic(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_WATCH_LINEAGE_MISSING_TERMINAL_THRESHOLD", "2")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+
+    reports = []
+    for _ in range(4):
+        report = {
+            "v1_clean_block_ledger": [
+                {
+                    "symbol": "GBPJPY",
+                    "source_clean_block_id": "GBPJPY_20260707T143900Z_20260707T144500Z",
+                    "clean_block_valid": True,
+                    "clean_block_end_utc": "2026-07-07T14:45:00+00:00",
+                    "clean_block_duration_seconds": 360.0,
+                    "raw_pressure_direction": "SELL",
+                }
+            ],
+            "signal_watch_promotion_diagnostics": [
+                {
+                    "event": "signal_watch_promotion_diagnostic",
+                    "symbol": "GBPJPY",
+                    "source_clean_block_id": None,
+                    "clean_block_valid": False,
+                    "eligible_for_signal_watch": False,
+                    "blocked_by": ["SOURCE_CLEAN_BLOCK_ID_MISSING"],
+                    "next_required_stage": "ATTACH_CLEAN_BLOCK_LINEAGE",
+                    "status": "MICROBOOST_WATCH",
+                    "signal_family": "MICROBOOST_WATCH",
+                    "cluster_id": "GBPJPY_20260707T144452Z",
+                    "valid_for_execution": False,
+                    "is_final_signal": False,
+                    "final_direction": "WAIT",
+                }
+            ],
+        }
+        reports.append(report)
+        pipeline._apply_clean_block_watch_routes(l12_verdict={}, report=report)
+
+    emitted = [record for record in caplog.records if "SignalWatchPromotionDiagnostic" in record.getMessage()]
+    assert len(emitted) == 3
+    assert '"source_lookup_stage":"SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"' in emitted[0].getMessage()
+    assert '"source_clean_block_id":"GBPJPY_20260707T143900Z_20260707T144500Z"' in emitted[0].getMessage()
+    assert '"status":"LINEAGE_MISSING_TERMINAL"' in emitted[2].getMessage()
+    assert reports[2]["signal_watch_promotion_diagnostics"][0]["signal_json_emit_blocked_by_source_guard_terminal"]
+    assert reports[3]["signal_watch_promotion_diagnostics"][0]["signal_watch_source_diagnostic_terminal_suppressed"]
+    assert reports[3]["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is False
+
+
 def test_pipeline_tracks_official_watch_only_after_successful_emit():
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})

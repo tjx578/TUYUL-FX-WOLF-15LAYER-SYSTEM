@@ -87,6 +87,10 @@ def test_signal_watch_source_diagnostic_requires_clean_block_id():
     assert diagnostic is not None
     assert diagnostic["event"] == "signal_watch_promotion_diagnostic"
     assert diagnostic["blocked_by"] == ["SOURCE_CLEAN_BLOCK_ID_MISSING"]
+    assert diagnostic["source_lookup_stage"] == "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
+    assert diagnostic["source_lookup_key"] == "CADJPY"
+    assert diagnostic["nearest_clean_block_candidate"] is None
+    assert diagnostic["why_not_attached"] == "WATCH_PAYLOAD_MISSING_SOURCE_CLEAN_BLOCK_ID"
 
 
 def test_signal_throttle_state_snapshot_summarizes_freshness():

@@ -4690,6 +4690,21 @@ class WolfConstitutionalPipeline:
             if not isinstance(raw_diag, dict):
                 continue
             diag = dict(raw_diag)
+            diag = self._attach_signal_watch_source_lookup_context(diag, report)
+            blocked_by_values = {str(item) for item in diag.get("blocked_by") or []}
+            if "SOURCE_CLEAN_BLOCK_ID_MISSING" in blocked_by_values:
+                diag, should_emit = self._prepare_signal_watch_lineage_missing_diagnostic(diag, diag)
+                if not should_emit:
+                    diag["diagnostic_emit_result"] = False
+                    processed.append(diag)
+                    continue
+                diag["diagnostic_emit_result"] = emit_signal_watch_promotion_diagnostic(
+                    diag,
+                    enabled=enabled,
+                    prefix=prefix,
+                )
+                processed.append(diag)
+                continue
             source_id = str(diag.get("source_clean_block_id") or diag.get("symbol") or "").strip()
             blocked_by = "/".join(str(item) for item in diag.get("blocked_by") or [])
             key = f"{source_id}|{blocked_by}|{diag.get('next_required_stage') or ''}"
@@ -4710,42 +4725,113 @@ class WolfConstitutionalPipeline:
         if processed:
             report["signal_watch_promotion_diagnostics"] = processed
 
+    def _attach_signal_watch_source_lookup_context(
+        self,
+        diagnostic: dict[str, Any],
+        report: dict[str, Any],
+    ) -> dict[str, Any]:
+        diag = dict(diagnostic)
+        blocked_by = {str(item) for item in diag.get("blocked_by") or []}
+        if "SOURCE_CLEAN_BLOCK_ID_MISSING" not in blocked_by:
+            return diag
+        symbol = str(diag.get("symbol") or "").upper()
+        cluster_id = str(diag.get("cluster_id") or "").strip()
+        diag.setdefault("source_lookup_stage", "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER")
+        diag.setdefault("source_lookup_key", cluster_id or symbol or None)
+        diag.setdefault("raw_cluster_id", cluster_id or None)
+        nearest = self._nearest_clean_block_candidate(report, symbol)
+        diag.setdefault("nearest_clean_block_candidate", nearest)
+        if nearest is None:
+            diag.setdefault("why_not_attached", "NO_V1_CLEAN_BLOCK_CANDIDATE_FOR_SYMBOL")
+        else:
+            diag.setdefault("why_not_attached", "WATCH_CANDIDATE_MISSING_SOURCE_CLEAN_BLOCK_ID")
+        return diag
+
+    @staticmethod
+    def _nearest_clean_block_candidate(report: dict[str, Any], symbol: str) -> dict[str, Any] | None:
+        if not symbol:
+            return None
+        candidates: list[dict[str, Any]] = []
+        for key in ("v1_clean_block_ledger", "clean_watch_candidates"):
+            raw_candidates = report.get(key)
+            if not isinstance(raw_candidates, list):
+                continue
+            for raw_candidate in raw_candidates:
+                if not isinstance(raw_candidate, dict):
+                    continue
+                if str(raw_candidate.get("symbol") or "").upper() != symbol:
+                    continue
+                candidates.append(raw_candidate)
+            if candidates:
+                break
+        if not candidates:
+            return None
+
+        def _end_key(candidate: dict[str, Any]) -> str:
+            return str(candidate.get("clean_block_end_utc") or candidate.get("block_end_utc") or "")
+
+        candidate = max(candidates, key=_end_key)
+        return {
+            "symbol": str(candidate.get("symbol") or "").upper(),
+            "source_clean_block_id": candidate.get("source_clean_block_id"),
+            "clean_block_valid": candidate.get("clean_block_valid"),
+            "clean_block_end_utc": candidate.get("clean_block_end_utc") or candidate.get("block_end_utc"),
+            "clean_block_duration_seconds": candidate.get("clean_block_duration_seconds")
+            or candidate.get("duration_seconds"),
+            "raw_pressure_direction": candidate.get("raw_pressure_direction")
+            or candidate.get("clean_block_direction")
+            or candidate.get("direction"),
+        }
+
+    def _prepare_signal_watch_lineage_missing_diagnostic(
+        self,
+        diagnostic: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> tuple[dict[str, Any], bool]:
+        diag = dict(diagnostic)
+        blocked_by = {str(item) for item in diag.get("blocked_by") or []}
+        if "SOURCE_CLEAN_BLOCK_ID_MISSING" not in blocked_by:
+            return diag, True
+        replay_store = getattr(self, "_signal_watch_lineage_missing_replay_count", None)
+        if not isinstance(replay_store, dict):
+            replay_store = {}
+            self._signal_watch_lineage_missing_replay_count = replay_store
+        replay_key = "|".join(
+            str(part or "")
+            for part in (
+                diag.get("cluster_id") or payload.get("cluster_id"),
+                diag.get("symbol") or payload.get("symbol"),
+                diag.get("status") or payload.get("status"),
+                diag.get("signal_family") or payload.get("signal_family"),
+            )
+        )
+        replay_count = int(replay_store.get(replay_key, 0)) + 1
+        replay_store[replay_key] = replay_count
+        terminal_threshold = int(
+            max(1.0, self._parse_env_float("SIGNAL_WATCH_LINEAGE_MISSING_TERMINAL_THRESHOLD", 3.0))
+        )
+        diag["lineage_missing_replay_count"] = replay_count
+        diag["lineage_missing_terminal_threshold"] = terminal_threshold
+        if replay_count > terminal_threshold:
+            payload["signal_json_emit_blocked_by_source_guard_terminal"] = True
+            diag["signal_json_emit_blocked_by_source_guard_terminal"] = True
+            diag["status"] = "LINEAGE_MISSING_TERMINAL"
+            diag["reason"] = "source_clean_block_id_missing_replayed_until_terminal"
+            diag["next_required_stage"] = "ATTACH_CLEAN_BLOCK_LINEAGE_TERMINAL"
+            if replay_count > terminal_threshold + 1:
+                payload["signal_watch_source_diagnostic_terminal_suppressed"] = True
+                diag["signal_watch_source_diagnostic_terminal_suppressed"] = True
+                return diag, False
+        return diag, True
+
     def _emit_signal_watch_source_guard_diagnostic(
         self,
         diagnostic: dict[str, Any],
         payload: dict[str, Any],
     ) -> bool:
-        diag = dict(diagnostic)
-        blocked_by = {str(item) for item in diag.get("blocked_by") or []}
-        if "SOURCE_CLEAN_BLOCK_ID_MISSING" in blocked_by:
-            replay_store = getattr(self, "_signal_watch_lineage_missing_replay_count", None)
-            if not isinstance(replay_store, dict):
-                replay_store = {}
-                self._signal_watch_lineage_missing_replay_count = replay_store
-            replay_key = "|".join(
-                str(part or "")
-                for part in (
-                    diag.get("cluster_id") or payload.get("cluster_id"),
-                    diag.get("symbol") or payload.get("symbol"),
-                    diag.get("status") or payload.get("status"),
-                    diag.get("signal_family") or payload.get("signal_family"),
-                )
-            )
-            replay_count = int(replay_store.get(replay_key, 0)) + 1
-            replay_store[replay_key] = replay_count
-            terminal_threshold = int(
-                max(1.0, self._parse_env_float("SIGNAL_WATCH_LINEAGE_MISSING_TERMINAL_THRESHOLD", 3.0))
-            )
-            diag["lineage_missing_replay_count"] = replay_count
-            diag["lineage_missing_terminal_threshold"] = terminal_threshold
-            if replay_count > terminal_threshold:
-                payload["signal_json_emit_blocked_by_source_guard_terminal"] = True
-                diag["status"] = "LINEAGE_MISSING_TERMINAL"
-                diag["reason"] = "source_clean_block_id_missing_replayed_until_terminal"
-                diag["next_required_stage"] = "ATTACH_CLEAN_BLOCK_LINEAGE_TERMINAL"
-                if replay_count > terminal_threshold + 1:
-                    payload["signal_watch_source_diagnostic_terminal_suppressed"] = True
-                    return False
+        diag, should_emit = self._prepare_signal_watch_lineage_missing_diagnostic(diagnostic, payload)
+        if not should_emit:
+            return False
         return emit_signal_watch_promotion_diagnostic(
             diag,
             enabled=os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true").strip().lower() == "true",
