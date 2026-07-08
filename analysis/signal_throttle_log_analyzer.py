@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import os
 import re
 import threading
@@ -73,6 +74,11 @@ _WINDOW_SIGNAL_RE = re.compile(r"\blast\s+(?P<window>\d+(?:\.\d+)?)s\b", re.IGNO
 _CURRENCIES = ("AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD")
 _METAL_BASES = ("XAG", "XAU")
 _DEFAULT_CANDIDATE_LIFECYCLE_WINDOW_SECONDS = 4 * 60 * 60
+DEFAULT_SIGNAL_THROTTLE_RAW_LOGGER = "signal_throttle_raw"
+DEFAULT_SIGNAL_THROTTLE_RAW_PREFIX = "[SignalThrottle]"
+DEFAULT_SIGNAL_THROTTLE_RAW_LEVEL = "WARNING"
+V1_CLEAN_BLOCK_LEDGER_SOURCE = "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
+V1_CLEAN_BLOCK_RULE = "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
 
 
 @dataclass(frozen=True)
@@ -141,6 +147,9 @@ class PressureBlock:
     direction: str | None = None
     effective_ticks: int = 0
     suppressed_ticks: int = 0
+    allowed_events: int = 0
+    throttled_events: int = 0
+    downgraded_events: int = 0
     effective_density_per_minute: float = 0.0
     direction_source: str | None = None
     direction_confidence: str | None = None
@@ -402,6 +411,10 @@ def analyze_signal_throttle_events(
             "pure_active_candidate": None,
             "pure_block_ledger": [],
             "pure_block_count": 0,
+            "v1_clean_block_ledger": [],
+            "v1_clean_block_count": 0,
+            "v1_active_clean_block": None,
+            "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
             "pressure_tier_snapshot": pressure_tier_snapshot,
             "pressure_tiers": pressure_tier_snapshot.get("symbols", []),
             "pressure_tier_summary": pressure_tier_snapshot.get("summary", {}),
@@ -429,6 +442,8 @@ def analyze_signal_throttle_events(
                 "min_clean_block_minutes": clean_block_seconds / 60.0,
                 "pure_block_gap_policy": "PAIR_ROTATION_ONLY",
                 "pure_block_max_gap_seconds": None,
+                "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
+                "clean_block_rule": V1_CLEAN_BLOCK_RULE,
                 "burst_block_max_gap_seconds": clean_gap_seconds,
                 "microboost_window_minutes": microboost_window_minutes,
                 "candidate_lifecycle_window_seconds": candidate_lifecycle_window_seconds,
@@ -539,13 +554,15 @@ def analyze_signal_throttle_events(
         clean_block_seconds=clean_block_seconds,
         window_seconds=candidate_lifecycle_window_seconds,
     )
-    clean_watch_candidates = _clean_watch_candidates_from_blocks(lifecycle_blocks, clean_block_seconds)
+    v1_clean_block_ledger = _v1_clean_block_ledger_payload(lifecycle_blocks, clean_block_seconds=clean_block_seconds)
+    clean_watch_candidates = v1_clean_block_ledger
     pure_block_ledger = _pure_pressure_ledger_payload(pure_blocks, clean_block_seconds=clean_block_seconds)
     pure_top_blocks = [
         _pure_pressure_block_payload(block, clean_block_seconds)
         for block in rank_pressure_blocks(pure_blocks)[:10]
     ]
     pure_active_candidate = _pure_active_candidate(pure_blocks, clean_block_seconds=clean_block_seconds)
+    v1_active_clean_block = _v1_active_clean_block(v1_clean_block_ledger)
     pressure_tier_snapshot = _build_pressure_tier_snapshot(
         events=ordered,
         blocks=pure_blocks,
@@ -625,7 +642,7 @@ def analyze_signal_throttle_events(
     _attach_clean_block_source_to_microboost_summary(microboost_summary, clean_watch_candidates)
     _apply_microboost_direction_inheritance(microboost_summary, events=ordered)
     signal_throttle_fusion_v3 = build_signal_throttle_fusion_v3_diagnostic(
-        pure_active_candidate,
+        v1_active_clean_block or pure_active_candidate,
         radar_context_validation=radar_context_validation,
         execution_context_validation=market_context_validation,
         microboost_summary=microboost_summary,
@@ -751,6 +768,10 @@ def analyze_signal_throttle_events(
         "pure_active_candidate": pure_active_candidate,
         "pure_block_ledger": pure_block_ledger,
         "pure_block_count": len(pure_block_ledger),
+        "v1_clean_block_ledger": v1_clean_block_ledger,
+        "v1_clean_block_count": len(v1_clean_block_ledger),
+        "v1_active_clean_block": v1_active_clean_block,
+        "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
         "pressure_tier_snapshot": pressure_tier_snapshot,
         "pressure_tiers": pressure_tier_snapshot.get("symbols", []),
         "pressure_tier_summary": pressure_tier_snapshot.get("summary", {}),
@@ -778,6 +799,8 @@ def analyze_signal_throttle_events(
             "min_clean_block_minutes": clean_block_seconds / 60.0,
             "pure_block_gap_policy": "PAIR_ROTATION_ONLY",
             "pure_block_max_gap_seconds": None,
+            "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
+            "clean_block_rule": V1_CLEAN_BLOCK_RULE,
             "burst_block_max_gap_seconds": clean_gap_seconds,
             "microboost_window_minutes": microboost_window_minutes,
             "candidate_lifecycle_window_seconds": candidate_lifecycle_window_seconds,
@@ -827,6 +850,29 @@ def analyze_signal_throttle_csv(path: str | Path) -> dict[str, Any]:
     )
 
 
+def emit_signal_throttle_raw_event(event: SignalThrottleLogEvent) -> bool:
+    """Emit a parseable raw SignalThrottle event on a dedicated runtime lane.
+
+    The analyzer keeps an in-memory ledger, but production log exports also need
+    the raw sequence so clean blocks can be reconstructed outside the process.
+    This intentionally does not use ``signal_json``.
+    """
+
+    if os.getenv("SIGNAL_THROTTLE_RAW_LOG_ENABLED", "true").strip().lower() != "true":
+        return False
+    message = str(event.message or "").strip()
+    if not message:
+        return False
+    prefix = os.getenv("SIGNAL_THROTTLE_RAW_LOG_PREFIX", DEFAULT_SIGNAL_THROTTLE_RAW_PREFIX)
+    if not message.startswith(prefix):
+        message = f"{prefix} {message}"
+    logger = logging.getLogger(os.getenv("SIGNAL_THROTTLE_RAW_LOGGER", DEFAULT_SIGNAL_THROTTLE_RAW_LOGGER))
+    level_name = os.getenv("SIGNAL_THROTTLE_RAW_LOG_LEVEL", DEFAULT_SIGNAL_THROTTLE_RAW_LEVEL).strip().upper()
+    level = getattr(logging, level_name, logging.WARNING)
+    logger.log(level if isinstance(level, int) else logging.WARNING, message)
+    return True
+
+
 class SignalThrottleLiveAnalyzer:
     """Process-local live SignalThrottle intelligence buffer.
 
@@ -874,6 +920,10 @@ class SignalThrottleLiveAnalyzer:
             self._events.append(event)
             self._purge_locked(event.timestamp)
 
+    def _record_runtime_event(self, event: SignalThrottleLogEvent) -> None:
+        self.record(event)
+        emit_signal_throttle_raw_event(event)
+
     def record_log_event(self, event: dict[str, Any]) -> bool:
         parsed = parse_engine_log_event(event)
         if parsed is None:
@@ -889,7 +939,7 @@ class SignalThrottleLiveAnalyzer:
         timestamp: datetime | None = None,
     ) -> None:
         now = _coerce_timestamp(timestamp)
-        self.record(
+        self._record_runtime_event(
             SignalThrottleLogEvent(
                 timestamp=now,
                 severity="info",
@@ -925,7 +975,7 @@ class SignalThrottleLiveAnalyzer:
         count_text = "?" if count is None else str(count)
         max_text = "?" if max_signals is None else str(max_signals)
         window_text = _format_optional_number(window_seconds)
-        self.record(
+        self._record_runtime_event(
             SignalThrottleLogEvent(
                 timestamp=now,
                 severity="error",
@@ -950,7 +1000,7 @@ class SignalThrottleLiveAnalyzer:
         )
         if verdict:
             remaining_text = "?" if remaining is None else str(remaining)
-            self.record(
+            self._record_runtime_event(
                 SignalThrottleLogEvent(
                     timestamp=now,
                     severity="info",
@@ -1000,7 +1050,7 @@ class SignalThrottleLiveAnalyzer:
             verdict_text = f"EXECUTE_{normalized_direction}"
         else:
             verdict_text = "UNKNOWN"
-        self.record(
+        self._record_runtime_event(
             SignalThrottleLogEvent(
                 timestamp=now,
                 severity="info",
@@ -1053,7 +1103,7 @@ class SignalThrottleLiveAnalyzer:
         if inherited_direction_age_seconds is not None:
             metadata_parts.append(f"inherited_direction_age_seconds={float(inherited_direction_age_seconds):.3f}")
         metadata_text = f" {' '.join(metadata_parts)}" if metadata_parts else ""
-        self.record(
+        self._record_runtime_event(
             SignalThrottleLogEvent(
                 timestamp=now,
                 severity="info",
@@ -1482,6 +1532,7 @@ def _attach_clean_block_source_to_microboost_block(
         "end_utc": source.get("clean_block_end_utc") or source.get("block_end_utc"),
     }
     block["source_age_seconds"] = _source_age_seconds(block, source)
+    block["source_lineage_match"] = source.get("source_lineage_match") or "OVERLAP"
     for key in (
         "clean_block_valid",
         "clean_block_start_utc",
@@ -1513,11 +1564,49 @@ def _matching_clean_block_source(
         if clean_start is None or clean_end is None:
             continue
         if block_end is not None and clean_start <= block_end <= clean_end:
-            matches.append(candidate)
+            matches.append(_lineage_match_payload(candidate, "OVERLAP"))
             continue
         if block_start is not None and block_end is not None and block_start >= clean_start and block_end <= clean_end:
-            matches.append(candidate)
-    return max(matches, key=lambda item: str(item.get("clean_block_end_utc") or item.get("block_end_utc") or ""), default=None)
+            matches.append(_lineage_match_payload(candidate, "OVERLAP"))
+    if matches:
+        return max(matches, key=lambda item: str(item.get("clean_block_end_utc") or item.get("block_end_utc") or ""))
+    return _recent_same_symbol_clean_block_source(block, clean_watch_candidates)
+
+
+def _recent_same_symbol_clean_block_source(
+    block: dict[str, Any],
+    clean_watch_candidates: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    symbol = str(block.get("symbol") or "").upper()
+    if not symbol:
+        return None
+    block_end = _parse_timestamp(str(block.get("end_utc") or ""))
+    max_age_seconds = max(0.0, _env_float("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", 300.0))
+    fallback_matches: list[dict[str, Any]] = []
+    for candidate in clean_watch_candidates:
+        if str(candidate.get("symbol") or "").upper() != symbol:
+            continue
+        if candidate.get("clean_block_valid") is False:
+            continue
+        clean_end = _parse_timestamp(str(candidate.get("clean_block_end_utc") or candidate.get("block_end_utc") or ""))
+        if clean_end is None:
+            continue
+        if block_end is not None:
+            age_seconds = (block_end - clean_end).total_seconds()
+            if age_seconds < 0.0 or age_seconds > max_age_seconds:
+                continue
+        fallback_matches.append(_lineage_match_payload(candidate, "RECENT_SAME_SYMBOL_CLEAN_BLOCK"))
+    return max(
+        fallback_matches,
+        key=lambda item: str(item.get("clean_block_end_utc") or item.get("block_end_utc") or ""),
+        default=None,
+    )
+
+
+def _lineage_match_payload(candidate: dict[str, Any], match_type: str) -> dict[str, Any]:
+    payload = dict(candidate)
+    payload["source_lineage_match"] = match_type
+    return payload
 
 
 def _source_age_seconds(block: dict[str, Any], source: dict[str, Any]) -> float:
@@ -1595,6 +1684,40 @@ def _pure_pressure_ledger_payload(
     return [_pure_pressure_block_payload(block, clean_block_seconds) for block in blocks]
 
 
+def _v1_clean_block_ledger_payload(
+    blocks: list[PressureBlock],
+    *,
+    clean_block_seconds: int,
+) -> list[dict[str, Any]]:
+    ledger: list[dict[str, Any]] = []
+    for block in sorted(blocks, key=lambda item: (item.end, item.symbol, item.start)):
+        if block.duration_seconds < clean_block_seconds:
+            continue
+        payload = _pure_pressure_block_payload(block, clean_block_seconds)
+        payload["ledger_source"] = V1_CLEAN_BLOCK_LEDGER_SOURCE
+        payload["clean_block_rule"] = V1_CLEAN_BLOCK_RULE
+        payload["clean_block_min_duration_seconds"] = int(clean_block_seconds)
+        payload["allowed_events"] = block.allowed_events
+        payload["throttled_events"] = block.throttled_events
+        payload["downgraded_events"] = block.downgraded_events
+        payload["raw_signal_throttle_event_count"] = block.events
+        ledger.append(payload)
+    return ledger
+
+
+def _v1_active_clean_block(ledger: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not ledger:
+        return None
+    return max(
+        ledger,
+        key=lambda item: (
+            str(item.get("clean_block_end_utc") or item.get("block_end_utc") or ""),
+            float(item.get("clean_block_duration_seconds") or item.get("duration_seconds") or 0.0),
+            int(item.get("effective_ticks") or item.get("events") or 0),
+        ),
+    )
+
+
 def _pure_active_candidate(
     blocks: list[PressureBlock],
     *,
@@ -1608,7 +1731,7 @@ def _pure_active_candidate(
 
 
 def _is_meaningful_candidate_block(block: PressureBlock, clean_block_seconds: int) -> bool:
-    return block.duration_seconds >= clean_block_seconds and (block.effective_ticks or block.events) >= 10
+    return block.duration_seconds >= clean_block_seconds
 
 
 _MICROBOOST_WATCH_MIN_DURATION_SECONDS = 18.0
@@ -2663,10 +2786,12 @@ def _signal_watch_gate(
     clean_block_seconds: int = 300,
 ) -> dict[str, Any]:
     latest = microboost_summary.get("latest")
-    if not isinstance(candidate, dict):
-        return _empty_signal_watch_gate("SIGNAL_THROTTLE_CLEAN_BLOCK_REQUIRED")
     if not isinstance(latest, dict):
         return _empty_signal_watch_gate("MICROBOOST_VALIDATION_NOT_AVAILABLE", candidate)
+    if not isinstance(candidate, dict):
+        candidate = _candidate_from_microboost_lineage(latest)
+    if not isinstance(candidate, dict):
+        return _empty_signal_watch_gate("SIGNAL_THROTTLE_CLEAN_BLOCK_REQUIRED")
 
     candidate_symbol = str(candidate.get("symbol") or "").upper()
     candidate_direction = _candidate_raw_pressure_direction(candidate)
@@ -2723,6 +2848,41 @@ def _signal_watch_gate(
 
     # Opposite microboost direction, fallback disabled, or candidate has no direction.
     return _empty_signal_watch_gate("MICROBOOST_DIRECTION_NOT_CLEAN_BLOCK_DIRECTION", candidate)
+
+
+def _candidate_from_microboost_lineage(latest: dict[str, Any]) -> dict[str, Any] | None:
+    if not latest.get("source_clean_block_id") or latest.get("clean_block_valid") is not True:
+        return None
+    symbol = str(latest.get("symbol") or "").upper()
+    if not symbol:
+        return None
+    direction = str(latest.get("clean_block_direction") or latest.get("direction") or "").upper()
+    payload = {
+        "symbol": symbol,
+        "block_start_utc": latest.get("clean_block_start_utc"),
+        "block_end_utc": latest.get("clean_block_end_utc"),
+        "valid_since_utc": latest.get("source_clean_block_valid_since_utc") or latest.get("clean_block_valid_since_utc"),
+        "duration_seconds": latest.get("clean_block_duration_seconds"),
+        "duration_minutes": (
+            round(float(latest.get("clean_block_duration_seconds") or 0.0) / 60.0, 3)
+            if latest.get("clean_block_duration_seconds") is not None
+            else None
+        ),
+        "events": latest.get("clean_block_event_count"),
+        "raw_pressure_direction": direction if direction in {"BUY", "SELL"} else "NONE",
+        "direction": direction if direction in {"BUY", "SELL"} else "UNRESOLVED",
+        "source_clean_block_id": latest.get("source_clean_block_id"),
+        "source_pressure_block_id": latest.get("source_pressure_block_id") or latest.get("source_clean_block_id"),
+        "clean_block_valid": True,
+        "clean_block_start_utc": latest.get("clean_block_start_utc"),
+        "clean_block_end_utc": latest.get("clean_block_end_utc"),
+        "clean_block_duration_seconds": latest.get("clean_block_duration_seconds"),
+        "clean_block_event_count": latest.get("clean_block_event_count"),
+        "clean_block_direction": direction if direction in {"BUY", "SELL"} else None,
+        "watch_promotion_source": "MICROBOOST_ATTACHED_CLEAN_BLOCK_LINEAGE",
+        "source_lineage_match": latest.get("source_lineage_match"),
+    }
+    return payload
 
 
 def _empty_signal_watch_gate(
@@ -3117,6 +3277,9 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
     suppressed_ticks = sum(max(0, int(event.suppressed)) for event in events)
     effective_ticks = sum(event.effective_ticks for event in events)
     effective_density = effective_ticks / max(duration_seconds / 60.0, 1.0 / 60.0)
+    allowed_events = sum(1 for event in events if event.event_type == "ALLOWED")
+    throttled_events = sum(1 for event in events if event.event_type == "THROTTLED")
+    downgraded_events = sum(1 for event in events if event.event_type == "DOWNGRADED_TO_HOLD")
     direction = _dominant_direction(events)
     direction_metadata = _direction_metadata_for_block(events, direction)
     return PressureBlock(
@@ -3131,6 +3294,9 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
         direction=direction,
         effective_ticks=effective_ticks,
         suppressed_ticks=suppressed_ticks,
+        allowed_events=allowed_events,
+        throttled_events=throttled_events,
+        downgraded_events=downgraded_events,
         effective_density_per_minute=round(effective_density, 2),
         **direction_metadata,
     )
