@@ -101,6 +101,31 @@ def test_signal_throttle_state_snapshot_summarizes_freshness():
     assert payload["record_buffer_size"] == 24
 
 
+def test_signal_throttle_state_snapshot_reads_v1_clean_block_ledger():
+    report, now = _report(age_seconds=45.0)
+    report["clean_watch_candidates"] = []
+    report["v1_clean_block_count"] = 1
+    report["v1_clean_block_ledger"] = [
+        {
+            "symbol": "USDCAD",
+            "source_clean_block_id": "USDCAD_V1_BLOCK_1",
+            "clean_block_end_utc": (now - timedelta(seconds=20)).isoformat(),
+            "clean_block_duration_seconds": 360.0,
+        }
+    ]
+
+    payload = signal_throttle_state_snapshot_payload(report, now=now, max_age_seconds=300)
+
+    assert payload["last_clean_block_id"] == "USDCAD_V1_BLOCK_1"
+    assert payload["last_valid_clean_block_id"] == "USDCAD_V1_BLOCK_1"
+    assert payload["active_clean_block_id"] == "USDCAD_V1_BLOCK_1"
+    assert payload["active_clean_blocks"] == 1
+    assert payload["clean_block_count"] == 1
+    assert payload["v1_clean_block_count"] == 1
+    assert payload["max_clean_block_minutes"] == 6.0
+    assert payload["clean_block_ledger_source"] == "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
+
+
 def test_signal_throttle_state_snapshot_emits_on_observability_logger(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
