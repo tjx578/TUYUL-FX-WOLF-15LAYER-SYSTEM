@@ -4710,6 +4710,48 @@ class WolfConstitutionalPipeline:
         if processed:
             report["signal_watch_promotion_diagnostics"] = processed
 
+    def _emit_signal_watch_source_guard_diagnostic(
+        self,
+        diagnostic: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> bool:
+        diag = dict(diagnostic)
+        blocked_by = {str(item) for item in diag.get("blocked_by") or []}
+        if "SOURCE_CLEAN_BLOCK_ID_MISSING" in blocked_by:
+            replay_store = getattr(self, "_signal_watch_lineage_missing_replay_count", None)
+            if not isinstance(replay_store, dict):
+                replay_store = {}
+                self._signal_watch_lineage_missing_replay_count = replay_store
+            replay_key = "|".join(
+                str(part or "")
+                for part in (
+                    diag.get("cluster_id") or payload.get("cluster_id"),
+                    diag.get("symbol") or payload.get("symbol"),
+                    diag.get("status") or payload.get("status"),
+                    diag.get("signal_family") or payload.get("signal_family"),
+                )
+            )
+            replay_count = int(replay_store.get(replay_key, 0)) + 1
+            replay_store[replay_key] = replay_count
+            terminal_threshold = int(
+                max(1.0, self._parse_env_float("SIGNAL_WATCH_LINEAGE_MISSING_TERMINAL_THRESHOLD", 3.0))
+            )
+            diag["lineage_missing_replay_count"] = replay_count
+            diag["lineage_missing_terminal_threshold"] = terminal_threshold
+            if replay_count > terminal_threshold:
+                payload["signal_json_emit_blocked_by_source_guard_terminal"] = True
+                diag["status"] = "LINEAGE_MISSING_TERMINAL"
+                diag["reason"] = "source_clean_block_id_missing_replayed_until_terminal"
+                diag["next_required_stage"] = "ATTACH_CLEAN_BLOCK_LINEAGE_TERMINAL"
+                if replay_count > terminal_threshold + 1:
+                    payload["signal_watch_source_diagnostic_terminal_suppressed"] = True
+                    return False
+        return emit_signal_watch_promotion_diagnostic(
+            diag,
+            enabled=os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true").strip().lower() == "true",
+            prefix=os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_LOG_PREFIX", "[SignalWatchPromotionDiagnostic]"),
+        )
+
     def _attach_pressure_priority_context(self, payload: dict[str, Any], report: dict[str, Any]) -> None:
         if os.getenv("SIGNAL_WATCH_PRESSURE_PRIORITY_CONTEXT_ENABLED", "true").strip().lower() != "true":
             return
@@ -5754,11 +5796,7 @@ class WolfConstitutionalPipeline:
         self._emit_lifecycle_shadow_preview(payload)
         watch_diagnostic = self._watch_source_guard_diagnostic(payload)
         if watch_diagnostic is not None:
-            emit_result = emit_signal_watch_promotion_diagnostic(
-                watch_diagnostic,
-                enabled=os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true").strip().lower() == "true",
-                prefix=os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_LOG_PREFIX", "[SignalWatchPromotionDiagnostic]"),
-            )
+            emit_result = self._emit_signal_watch_source_guard_diagnostic(watch_diagnostic, payload)
             payload["signal_json_emit_blocked_by_source_guard"] = True
             payload["signal_watch_source_diagnostic_emit_result"] = emit_result
             return False
