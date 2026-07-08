@@ -3108,6 +3108,8 @@ def _build_pressure_tier_snapshot(
             live_window_seconds=live_window_seconds,
             session_window_seconds=session_window_seconds,
             clean_block_seconds=clean_block_seconds,
+            source_event_count=len(events),
+            source_block_count=len(blocks),
         )
     snapshot = build_pressure_tier_snapshot(
         events,
@@ -3144,6 +3146,8 @@ def _disabled_pressure_tier_snapshot(
     live_window_seconds: int,
     session_window_seconds: int,
     clean_block_seconds: int,
+    source_event_count: int = 0,
+    source_block_count: int = 0,
 ) -> dict[str, Any]:
     tiers = {
         "tier_1": [],
@@ -3162,6 +3166,9 @@ def _disabled_pressure_tier_snapshot(
             "session_window_seconds": int(session_window_seconds),
             "clean_block_seconds": int(clean_block_seconds),
         },
+        "source_event_count": max(0, int(source_event_count)),
+        "source_block_count": max(0, int(source_block_count)),
+        "symbol_count": 0,
         "tier_is_execution_signal": False,
         "tier_execution_impact": False,
         "tiers": tiers,

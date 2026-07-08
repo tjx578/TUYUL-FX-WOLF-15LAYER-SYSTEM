@@ -185,6 +185,9 @@ def test_pressure_tier_snapshot_log_payload_shows_tier_1_and_2_only():
             "tier_1": 1,
             "tier_2": 1,
             "tier_3": 2,
+            "fragmented_pressure_radar": 1,
+            "pressure_memory_radar": 1,
+            "theme_rotation_radar": 0,
             "stale_archive": 1,
             "unsafe_mixed_deployment": 0,
         },
@@ -229,17 +232,28 @@ def test_pressure_tier_snapshot_log_payload_shows_tier_1_and_2_only():
 
     assert payload is not None
     assert payload["event"] == "signal_throttle_pressure_tier_snapshot"
-    assert payload["schema_version"] == "1.1-pressure-tier"
+    assert payload["schema_version"] == "1.2-pressure-tier"
     assert payload["summary"] == {
         "tier_1": 1,
         "tier_2": 1,
-        "tier_3_hidden": 2,
+        "tier_3_hidden": 4,
+        "tier_3_theme_radar": 2,
+        "fragmented_pressure_radar": 1,
+        "pressure_memory_radar": 1,
+        "theme_rotation_radar": 0,
         "stale_archive": 1,
         "unsafe_mixed_deployment": 0,
     }
+    assert payload["radar_breakdown"] == {
+        "tier_3_theme_radar": 2,
+        "fragmented_pressure_radar": 1,
+        "pressure_memory_radar": 1,
+        "theme_rotation_radar": 0,
+    }
     assert payload["display_line"] == (
         "pressure_tiers tier1=1[XAGUSD:SELL:88.0] tier2=1[AUDCAD:BUY:44.0] "
-        "tier3_hidden=2 stale=1 unsafe_mixed=0 execution_impact=false"
+        "tier3_hidden=4 radar_breakdown[tier3=2 fragmented=1 memory=1 theme_rotation=0] "
+        "stale=1 unsafe_mixed=0 execution_impact=false"
     )
     assert payload["tier_1"][0]["symbol"] == "XAGUSD"
     assert payload["tier_1"][0]["event_count"] == 7
@@ -247,7 +261,8 @@ def test_pressure_tier_snapshot_log_payload_shows_tier_1_and_2_only():
     assert payload["tier_1"][0]["max_clean_block_minutes"] == 6.0
     assert payload["tier_1"][0]["tier_reason_codes"] == ["RECENT_CLEAN_BLOCK_GE_5M", "DIRECTION_PURITY_HIGH"]
     assert payload["tier_2"][0]["symbol"] == "AUDCAD"
-    assert payload["tier_3_hidden_count"] == 2
+    assert payload["tier_3_hidden_count"] == 4
+    assert payload["radar_hidden_count"] == 4
     assert payload["visibility_policy"]["tier_3"] == "HIDDEN_FROM_SNAPSHOT_ROWS"
     assert payload["execution_guard"]["decision_update_tier_context_allowed"] is False
     assert payload["tier_is_execution_signal"] is False

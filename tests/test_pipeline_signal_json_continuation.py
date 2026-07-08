@@ -346,6 +346,9 @@ def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
                 "tier_1": 1,
                 "tier_2": 0,
                 "tier_3": 2,
+                "fragmented_pressure_radar": 1,
+                "pressure_memory_radar": 0,
+                "theme_rotation_radar": 1,
                 "stale_archive": 0,
                 "unsafe_mixed_deployment": 0,
             },
@@ -371,8 +374,9 @@ def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
     assert not any("SignalThrottlePressureTierSnapshot" in record.getMessage() for record in signal_json_records)
     assert "[SignalThrottlePressureTierSnapshot]" in caplog.text
     assert '"event":"signal_throttle_pressure_tier_snapshot"' in caplog.text
-    assert '"tier_3_hidden_count":2' in caplog.text
-    assert '"display_line":"pressure_tiers tier1=1[XAGUSD:SELL:88.0] tier2=0[-] tier3_hidden=2 stale=0 unsafe_mixed=0 execution_impact=false"' in caplog.text
+    assert '"tier_3_hidden_count":4' in caplog.text
+    assert '"radar_breakdown":{"tier_3_theme_radar":2,"fragmented_pressure_radar":1,"pressure_memory_radar":0,"theme_rotation_radar":1}' in caplog.text
+    assert '"display_line":"pressure_tiers tier1=1[XAGUSD:SELL:88.0] tier2=0[-] tier3_hidden=4 radar_breakdown[tier3=2 fragmented=1 memory=0 theme_rotation=1] stale=0 unsafe_mixed=0 execution_impact=false"' in caplog.text
     assert '"decision_update_tier_context_allowed":false' in caplog.text
 
 

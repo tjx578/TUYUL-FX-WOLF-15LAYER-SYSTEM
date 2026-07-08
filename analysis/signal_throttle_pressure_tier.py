@@ -36,7 +36,13 @@ _EXECUTION_IMPACT = False
 _VISIBLE_WATCH_TIERS = {TIER_1_PRIMARY_ANALYSIS, TIER_2_CONFIRMATION_SUPPORT}
 _KEY_LEVEL_PRICE_POSITIONS = {"MAIN_SUPPORT", "MAIN_RESISTANCE"}
 _TIER_SOURCE_EVENT = "SignalThrottlePressureTierSnapshot"
-_LOG_SCHEMA_VERSION = "1.1-pressure-tier"
+_LOG_SCHEMA_VERSION = "1.2-pressure-tier"
+_RADAR_HIDDEN_TIER_KEYS = (
+    ("tier_3", "tier_3_theme_radar"),
+    ("fragmented_pressure_radar", "fragmented_pressure_radar"),
+    ("pressure_memory_radar", "pressure_memory_radar"),
+    ("theme_rotation_radar", "theme_rotation_radar"),
+)
 
 
 @dataclass(frozen=True)
@@ -98,6 +104,8 @@ def build_pressure_tier_snapshot(
             deployment_ids=deployment_id_list,
             scope_config=scope_config,
             mixed_deployment=False,
+            source_event_count=0,
+            source_block_count=len(ordered_blocks),
         )
 
     symbols = _all_symbols(
@@ -115,6 +123,8 @@ def build_pressure_tier_snapshot(
             deployment_ids=deployment_id_list,
             scope_config=scope_config,
             mixed_deployment=True,
+            source_event_count=len(ordered),
+            source_block_count=len(ordered_blocks),
         )
 
     live_cutoff = generated_at - timedelta(seconds=live_window_seconds)
@@ -171,6 +181,8 @@ def build_pressure_tier_snapshot(
         deployment_ids=deployment_id_list,
         scope_config=scope_config,
         mixed_deployment=False,
+        source_event_count=len(ordered),
+        source_block_count=len(ordered_blocks),
     )
 
 
@@ -194,10 +206,13 @@ def pressure_tier_snapshot_log_payload(
         for row in symbols
         if row.get("effective_pressure_tier") == TIER_2_CONFIRMATION_SUPPORT
     ][:max_symbols_per_tier]
+    radar_breakdown = _radar_hidden_breakdown(snapshot)
+    radar_hidden_count = sum(radar_breakdown.values())
     summary = {
         "tier_1": _tier_count(snapshot, "tier_1"),
         "tier_2": _tier_count(snapshot, "tier_2"),
-        "tier_3_hidden": _tier_count(snapshot, "tier_3"),
+        "tier_3_hidden": radar_hidden_count,
+        **radar_breakdown,
         "stale_archive": _tier_count(snapshot, "stale_archive"),
         "unsafe_mixed_deployment": _tier_count(snapshot, "unsafe_mixed_deployment"),
     }
@@ -206,20 +221,28 @@ def pressure_tier_snapshot_log_payload(
         "event": "signal_throttle_pressure_tier_snapshot",
         "schema_version": _LOG_SCHEMA_VERSION,
         "scope": LIVE_SCOPE,
+        "enabled": bool(snapshot.get("enabled", True)),
+        "disabled_reason": snapshot.get("disabled_reason"),
         "generated_at_utc": snapshot.get("generated_at_utc"),
         "mixed_deployment": bool(snapshot.get("mixed_deployment", False)),
         "deployment_ids": list(snapshot.get("deployment_ids") or []),
+        "source_event_count": _nonnegative_int(snapshot.get("source_event_count")),
+        "source_block_count": _nonnegative_int(snapshot.get("source_block_count")),
+        "total_symbols": _nonnegative_int(snapshot.get("symbol_count"), fallback=len(symbols)),
         "summary": summary,
+        "radar_breakdown": radar_breakdown,
         "display_line": display_line,
         "tier_1": tier_1,
         "tier_2": tier_2,
         "tier_3_hidden_count": summary["tier_3_hidden"],
+        "radar_hidden_count": summary["tier_3_hidden"],
         "stale_archive_count": summary["stale_archive"],
         "unsafe_mixed_deployment_count": summary["unsafe_mixed_deployment"],
         "visibility_policy": {
             "tier_1": "VISIBLE_IN_SNAPSHOT_AND_SIGNAL_WATCH_CONTEXT",
             "tier_2": "VISIBLE_IN_SNAPSHOT_AND_SIGNAL_WATCH_CONTEXT",
             "tier_3": "HIDDEN_FROM_SNAPSHOT_ROWS",
+            "radar_buckets": "HIDDEN_FROM_LOG_ROWS_COUNTS_ONLY",
             "tier_3_exception": "SIGNAL_WATCH_KEY_LEVEL_CONTEXT_ONLY",
         },
         "execution_guard": {
@@ -275,6 +298,8 @@ def _snapshot_payload(
     deployment_ids: list[str],
     scope_config: dict[str, int],
     mixed_deployment: bool,
+    source_event_count: int | None = None,
+    source_block_count: int | None = None,
 ) -> dict[str, Any]:
     tiers = {
         "tier_1": [
@@ -304,6 +329,9 @@ def _snapshot_payload(
         "mixed_deployment": bool(mixed_deployment),
         "deployment_ids": deployment_ids,
         "scope_config": scope_config,
+        "source_event_count": _nonnegative_int(source_event_count),
+        "source_block_count": _nonnegative_int(source_block_count),
+        "symbol_count": len(symbols),
         "tier_is_execution_signal": False,
         "tier_execution_impact": _EXECUTION_IMPACT,
         "tiers": tiers,
@@ -412,6 +440,12 @@ def _display_line(
         f"tier1={summary.get('tier_1', 0)}[{tier_1_labels}] "
         f"tier2={summary.get('tier_2', 0)}[{tier_2_labels}] "
         f"tier3_hidden={summary.get('tier_3_hidden', 0)} "
+        "radar_breakdown["
+        f"tier3={summary.get('tier_3_theme_radar', 0)} "
+        f"fragmented={summary.get('fragmented_pressure_radar', 0)} "
+        f"memory={summary.get('pressure_memory_radar', 0)} "
+        f"theme_rotation={summary.get('theme_rotation_radar', 0)}"
+        "] "
         f"stale={summary.get('stale_archive', 0)} "
         f"unsafe_mixed={summary.get('unsafe_mixed_deployment', 0)} "
         "execution_impact=false"
@@ -466,6 +500,23 @@ def _tier_count(snapshot: Mapping[str, Any], key: str) -> int:
     tiers = snapshot.get("tiers")
     values = tiers.get(key) if isinstance(tiers, Mapping) else []
     return len(values) if isinstance(values, list) else 0
+
+
+def _radar_hidden_breakdown(snapshot: Mapping[str, Any]) -> dict[str, int]:
+    breakdown = {
+        output_key: _tier_count(snapshot, tier_key)
+        for tier_key, output_key in _RADAR_HIDDEN_TIER_KEYS
+    }
+    if not any(breakdown.values()):
+        breakdown["tier_3_theme_radar"] = _tier_count(snapshot, "tier_3_hidden")
+    return breakdown
+
+
+def _nonnegative_int(value: Any, *, fallback: int = 0) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return max(0, int(fallback))
 
 
 def _memory_value(row: Mapping[str, Any], key: str) -> Any:
