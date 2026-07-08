@@ -109,6 +109,9 @@ def test_signal_throttle_state_snapshot_reads_v1_clean_block_ledger():
     report, now = _report(age_seconds=45.0)
     report["clean_watch_candidates"] = []
     report["v1_clean_block_count"] = 1
+    report["data_quality"] = {
+        "scanner_cycle_ids": ["SCAN_20260708T082000Z_300S", "SCAN_20260708T082500Z_300S"],
+    }
     report["v1_clean_block_ledger"] = [
         {
             "symbol": "USDCAD",
@@ -128,6 +131,8 @@ def test_signal_throttle_state_snapshot_reads_v1_clean_block_ledger():
     assert payload["v1_clean_block_count"] == 1
     assert payload["max_clean_block_minutes"] == 6.0
     assert payload["clean_block_ledger_source"] == "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
+    assert payload["scanner_cycle_id_count"] == 2
+    assert payload["scanner_cycle_ids"] == ["SCAN_20260708T082000Z_300S", "SCAN_20260708T082500Z_300S"]
 
 
 def test_signal_throttle_state_snapshot_emits_on_observability_logger(caplog):

@@ -25,6 +25,8 @@ Use this checklist before approving any code change related to SignalThrottle Fu
 [ ] signal_throttle_check / PRESSURE_CANARY events are normalized.
 [ ] eligible_for_pressure_block is explicit.
 [ ] eligible_for_execution is explicit.
+[ ] deployment_id is explicit.
+[ ] scanner_cycle_id / scanner_epoch / observed_cycle_index are explicit for runtime events.
 ```
 
 ## C. Pure ledger checks
@@ -46,6 +48,7 @@ Use this checklist before approving any code change related to SignalThrottle Fu
 [ ] V1 clean blocks preserve same-symbol persistence across scanner interleaving.
 [ ] V1 clean blocks do not use Microboost burst blocks as source of truth.
 [ ] V1 clean block output has source_clean_block_id.
+[ ] V1 clean block output carries scanner-cycle lineage metadata.
 [ ] V1 clean block output never sets valid_for_execution=true.
 ```
 

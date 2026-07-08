@@ -47,6 +47,10 @@ direction or raw_direction
 eligible_for_pressure_block
 eligible_for_execution
 execution_block_reason
+deployment_id
+scanner_cycle_id
+scanner_epoch
+observed_cycle_index
 ```
 
 ## Pure block rule
@@ -179,6 +183,12 @@ legacy_pure_block_rule=PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD
 scanner_cycle_aware=true
 split_rule=SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE
 gap_policy=SCANNER_CYCLE_QUALITY_ONLY
+deployment_ids
+scanner_cycle_ids
+scanner_epoch_start_utc
+scanner_epoch_end_utc
+observed_cycle_index_min
+observed_cycle_index_max
 source_clean_block_id
 source_pressure_block_id
 valid_for_execution=false

@@ -26,17 +26,24 @@ from analysis.signal_throttle_log_analyzer import (
 _FIXTURE = "tests/fixtures/signal_throttle_sample.csv"
 
 
-def _event(offset_seconds: int, symbol: str, event_type: str = "THROTTLED") -> SignalThrottleLogEvent:
+def _event(
+    offset_seconds: int,
+    symbol: str,
+    event_type: str = "THROTTLED",
+    **overrides,
+) -> SignalThrottleLogEvent:
     verdict = "EXECUTE_REDUCED_RISK_BUY" if event_type != "THROTTLED" else None
-    return SignalThrottleLogEvent(
-        timestamp=datetime(2026, 5, 8, 12, 0, tzinfo=UTC) + timedelta(seconds=offset_seconds),
-        severity="error" if event_type == "THROTTLED" else "info",
-        message=f"[SignalThrottle] {symbol} {event_type}",
-        symbol=symbol,
-        event_type=event_type,
-        verdict=verdict,
-        direction="BUY" if verdict else None,
-    )
+    payload = {
+        "timestamp": datetime(2026, 5, 8, 12, 0, tzinfo=UTC) + timedelta(seconds=offset_seconds),
+        "severity": "error" if event_type == "THROTTLED" else "info",
+        "message": f"[SignalThrottle] {symbol} {event_type}",
+        "symbol": symbol,
+        "event_type": event_type,
+        "verdict": verdict,
+        "direction": "BUY" if verdict else None,
+    }
+    payload.update(overrides)
+    return SignalThrottleLogEvent(**payload)
 
 
 def test_parse_signal_throttle_rows_extracts_allowed_and_throttled():
@@ -211,6 +218,44 @@ def test_parse_signal_throttle_intel_audit_metadata():
     assert event.allowed_streak == 8
 
 
+def test_parse_signal_throttle_row_extracts_scanner_cycle_metadata():
+    event = parse_engine_log_event(
+        {
+            "timestamp": "2026-07-08T08:22:09Z",
+            "severity": "warning",
+            "message": (
+                "[SignalThrottle] USDJPY allowed - verdict EXECUTE_BUY "
+                "deployment_id=dep-123 scanner_cycle_id=SCAN_20260708T082000Z_300S "
+                "scanner_epoch=2026-07-08T08:20:00+00:00 observed_cycle_index=4"
+            ),
+        }
+    )
+
+    assert event is not None
+    assert event.deployment_id == "dep-123"
+    assert event.scanner_cycle_id == "SCAN_20260708T082000Z_300S"
+    assert event.scanner_epoch == "2026-07-08T08:20:00+00:00"
+    assert event.observed_cycle_index == 4
+
+
+def test_live_analyzer_assigns_runtime_scanner_cycle_metadata(monkeypatch):
+    monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "dep-live")
+    analyzer = SignalThrottleLiveAnalyzer()
+    base = datetime(2026, 7, 8, 8, 22, 9, tzinfo=UTC)
+
+    analyzer.record_allowed(symbol="EURUSD", verdict="EXECUTE_BUY", timestamp=base)
+    analyzer.record_allowed(symbol="GBPUSD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=1))
+    analyzer.record_allowed(symbol="EURUSD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=2))
+
+    first, second, third = list(analyzer._events)
+    assert first.deployment_id == "dep-live"
+    assert first.scanner_cycle_id == "SCAN_20260708T082000Z_300S"
+    assert first.scanner_epoch == "2026-07-08T08:20:00+00:00"
+    assert first.observed_cycle_index == 1
+    assert second.observed_cycle_index == 2
+    assert third.observed_cycle_index == 1
+
+
 def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
     analyzer = SignalThrottleLiveAnalyzer()
     analyzer.record_throttled(
@@ -249,6 +294,9 @@ def test_csv_fixture_reports_data_quality_without_large_raw_export():
         "state_warmup": True,
         "first_event_is_continuation": True,
         "state_warmup_reason": "window_count_started_nonzero",
+        "deployment_ids": [],
+        "scanner_cycle_ids": [],
+        "scanner_cycle_id_count": 0,
         "first_event_state": {
             "symbol": "XAUUSD",
             "timestamp_utc": "2026-05-08T12:00:00+00:00",
@@ -578,9 +626,39 @@ def test_v1_clean_block_ledger_uses_scanner_cycle_persistence_for_multi_pair_run
     events = []
     for index in range(12):
         offset = index * 30
-        events.append(_event(offset, "USDJPY", event_type="ALLOWED"))
-        events.append(_event(offset + 5, "EURJPY", event_type="ALLOWED"))
-        events.append(_event(offset + 10, "GBPJPY", event_type="ALLOWED"))
+        events.append(
+            _event(
+                offset,
+                "USDJPY",
+                event_type="ALLOWED",
+                deployment_id="dep-a",
+                scanner_cycle_id="SCAN_20260508T120000Z_300S",
+                scanner_epoch="2026-05-08T12:00:00+00:00",
+                observed_cycle_index=1,
+            )
+        )
+        events.append(
+            _event(
+                offset + 5,
+                "EURJPY",
+                event_type="ALLOWED",
+                deployment_id="dep-a",
+                scanner_cycle_id="SCAN_20260508T120000Z_300S",
+                scanner_epoch="2026-05-08T12:00:00+00:00",
+                observed_cycle_index=2,
+            )
+        )
+        events.append(
+            _event(
+                offset + 10,
+                "GBPJPY",
+                event_type="ALLOWED",
+                deployment_id="dep-a",
+                scanner_cycle_id="SCAN_20260508T120000Z_300S",
+                scanner_epoch="2026-05-08T12:00:00+00:00",
+                observed_cycle_index=3,
+            )
+        )
 
     report = analyze_signal_throttle_events(events, latest_window_seconds=3600)
     ledger = next(item for item in report["v1_clean_block_ledger"] if item["symbol"] == "USDJPY")
@@ -591,6 +669,11 @@ def test_v1_clean_block_ledger_uses_scanner_cycle_persistence_for_multi_pair_run
     assert ledger["scanner_cycle_aware"] is True
     assert ledger["clean_block_valid"] is True
     assert ledger["clean_block_duration_seconds"] == 330.0
+    assert ledger["deployment_ids"] == ("dep-a",)
+    assert ledger["scanner_cycle_ids"] == ("SCAN_20260508T120000Z_300S",)
+    assert ledger["scanner_epoch_start_utc"] == "2026-05-08T12:00:00+00:00"
+    assert ledger["observed_cycle_index_min"] == 1
+    assert ledger["observed_cycle_index_max"] == 1
     assert report["active_candidate"] in {"USDJPY", "EURJPY", "GBPJPY"}
     assert report["runtime_config"]["scanner_cycle_max_gap_seconds"] == 300.0
 

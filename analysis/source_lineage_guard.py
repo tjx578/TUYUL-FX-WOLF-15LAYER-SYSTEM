@@ -223,6 +223,12 @@ def signal_throttle_state_snapshot_payload(
     )
     counts = report.get("counts")
     total_events = counts.get("total_events") if isinstance(counts, Mapping) else None
+    data_quality = report.get("data_quality")
+    scanner_cycle_ids: list[str] = []
+    if isinstance(data_quality, Mapping):
+        raw_cycle_ids = data_quality.get("scanner_cycle_ids")
+        if isinstance(raw_cycle_ids, list):
+            scanner_cycle_ids = [str(item) for item in raw_cycle_ids if str(item or "").strip()]
     return {
         "event": "signal_throttle_state_snapshot",
         "deployment_id": os.getenv("RAILWAY_DEPLOYMENT_ID") or os.getenv("DEPLOYMENT_ID") or "unknown",
@@ -239,6 +245,8 @@ def signal_throttle_state_snapshot_payload(
         "clean_block_rule": _runtime_config_text(report, "clean_block_rule"),
         "legacy_pure_block_rule": _runtime_config_text(report, "legacy_pure_block_rule"),
         "scanner_cycle_max_gap_seconds": _runtime_config_float(report, "scanner_cycle_max_gap_seconds"),
+        "scanner_cycle_id_count": len(scanner_cycle_ids),
+        "scanner_cycle_ids": scanner_cycle_ids[:8],
         "fresh_symbols": fresh_symbols,
         "stale_symbols": stale_symbols,
         "record_buffer_size": _optional_int(total_events) or 0,

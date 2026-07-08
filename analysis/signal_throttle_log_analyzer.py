@@ -103,6 +103,10 @@ class SignalThrottleLogEvent:
     pressure_strength: str | None = None
     pressure_source: str | None = None
     source_stream: str | None = None
+    deployment_id: str | None = None
+    scanner_cycle_id: str | None = None
+    scanner_epoch: str | None = None
+    observed_cycle_index: int | None = None
     eligible_for_pressure_block: bool | None = None
     eligible_for_execution: bool | None = None
     execution_block_reason: str | None = None
@@ -157,6 +161,12 @@ class PressureBlock:
     direction_inherited: bool = False
     inherited_direction: str | None = None
     inherited_direction_age_seconds: float | None = None
+    deployment_ids: tuple[str, ...] = ()
+    scanner_cycle_ids: tuple[str, ...] = ()
+    scanner_epoch_start_utc: str | None = None
+    scanner_epoch_end_utc: str | None = None
+    observed_cycle_index_min: int | None = None
+    observed_cycle_index_max: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -218,6 +228,26 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
     direction_inherited = False
     inherited_direction: str | None = None
     inherited_direction_age_seconds: float | None = None
+    deployment_id = (
+        _extract_kv_text(message, "deployment_id")
+        or _extract_json_text(message, "deployment_id")
+        or _extract_field(row, "deployment_id", "deployment", default="")
+    )
+    scanner_cycle_id = (
+        _extract_kv_text(message, "scanner_cycle_id")
+        or _extract_json_text(message, "scanner_cycle_id")
+        or _extract_field(row, "scanner_cycle_id", default="")
+    )
+    scanner_epoch = (
+        _extract_kv_text(message, "scanner_epoch")
+        or _extract_json_text(message, "scanner_epoch")
+        or _extract_field(row, "scanner_epoch", default="")
+    )
+    observed_cycle_index = (
+        _extract_kv_optional_int(message, "observed_cycle_index")
+        or _coerce_non_negative_int(_extract_json_text(message, "observed_cycle_index"))
+        or _coerce_non_negative_int(_extract_field(row, "observed_cycle_index", default=""))
+    )
 
     throttled = _THROTTLED_RE.search(message)
     allowed = _ALLOWED_RE.search(message)
@@ -313,6 +343,10 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         pressure_strength=pressure_strength,
         pressure_source=pressure_source,
         source_stream=source_stream,
+        deployment_id=deployment_id or None,
+        scanner_cycle_id=scanner_cycle_id or None,
+        scanner_epoch=scanner_epoch or None,
+        observed_cycle_index=observed_cycle_index,
         eligible_for_pressure_block=eligible_for_pressure_block,
         eligible_for_execution=eligible_for_execution,
         execution_block_reason=execution_block_reason,
@@ -883,8 +917,45 @@ def emit_signal_throttle_raw_event(event: SignalThrottleLogEvent) -> bool:
     logger = logging.getLogger(os.getenv("SIGNAL_THROTTLE_RAW_LOGGER", DEFAULT_SIGNAL_THROTTLE_RAW_LOGGER))
     level_name = os.getenv("SIGNAL_THROTTLE_RAW_LOG_LEVEL", DEFAULT_SIGNAL_THROTTLE_RAW_LEVEL).strip().upper()
     level = getattr(logging, level_name, logging.WARNING)
-    logger.log(level if isinstance(level, int) else logging.WARNING, message)
+    logger.log(level if isinstance(level, int) else logging.WARNING, _with_raw_lineage_metadata(message, event))
     return True
+
+
+def _with_raw_lineage_metadata(message: str, event: SignalThrottleLogEvent) -> str:
+    parts: list[str] = []
+    for key, value in (
+        ("deployment_id", event.deployment_id),
+        ("scanner_cycle_id", event.scanner_cycle_id),
+        ("scanner_epoch", event.scanner_epoch),
+        ("observed_cycle_index", event.observed_cycle_index),
+    ):
+        if value is None or f"{key}=" in message:
+            continue
+        parts.append(f"{key}={value}")
+    if not parts:
+        return message
+    return f"{message} {' '.join(parts)}"
+
+
+def _runtime_deployment_id() -> str:
+    return os.getenv("RAILWAY_DEPLOYMENT_ID") or os.getenv("DEPLOYMENT_ID") or "unknown"
+
+
+def _scanner_cycle_id_is_older_than(
+    cycle_id: str,
+    current_epoch: datetime,
+    *,
+    keep_windows: int,
+    window_seconds: float,
+) -> bool:
+    match = re.match(r"^SCAN_(?P<stamp>\d{8}T\d{6}Z)_", str(cycle_id or ""))
+    if not match:
+        return False
+    try:
+        cycle_epoch = datetime.strptime(match.group("stamp"), "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return False
+    return (current_epoch - cycle_epoch).total_seconds() > max(1, keep_windows) * max(1.0, window_seconds)
 
 
 class SignalThrottleLiveAnalyzer:
@@ -926,6 +997,8 @@ class SignalThrottleLiveAnalyzer:
         self.allowed_quorum_window_seconds = allowed_quorum_window_seconds
         self.fragmented_min_unique_pairs = fragmented_min_unique_pairs
         self.fragmented_max_clean_block_minutes = fragmented_max_clean_block_minutes
+        self.scanner_cycle_window_seconds = _env_float("SIGNAL_THROTTLE_SCANNER_CYCLE_MAX_GAP_SECONDS", 300.0)
+        self._scanner_cycle_symbol_order: dict[str, dict[str, int]] = {}
         self._events: deque[SignalThrottleLogEvent] = deque()
         self._lock = threading.Lock()
 
@@ -935,8 +1008,9 @@ class SignalThrottleLiveAnalyzer:
             self._purge_locked(event.timestamp)
 
     def _record_runtime_event(self, event: SignalThrottleLogEvent) -> None:
-        self.record(event)
-        emit_signal_throttle_raw_event(event)
+        enriched = self._with_runtime_lineage(event)
+        self.record(enriched)
+        emit_signal_throttle_raw_event(enriched)
 
     def record_log_event(self, event: dict[str, Any]) -> bool:
         parsed = parse_engine_log_event(event)
@@ -969,6 +1043,7 @@ class SignalThrottleLiveAnalyzer:
                 allowed_streak=1,
                 pressure_source="SignalThrottle",
                 source_stream="ALLOWED",
+                deployment_id=_runtime_deployment_id(),
                 eligible_for_pressure_block=True,
                 eligible_for_execution=True,
             )
@@ -1006,6 +1081,7 @@ class SignalThrottleLiveAnalyzer:
                 window_seconds=window_seconds,
                 pressure_source="SignalThrottle",
                 source_stream="RAW_THROTTLED",
+                deployment_id=_runtime_deployment_id(),
                 eligible_for_pressure_block=True,
                 eligible_for_execution=False,
                 execution_block_reason="signal_throttled",
@@ -1035,6 +1111,7 @@ class SignalThrottleLiveAnalyzer:
                     window_seconds=window_seconds,
                     pressure_source="SignalThrottle",
                     source_stream="DOWNGRADED",
+                    deployment_id=_runtime_deployment_id(),
                     eligible_for_pressure_block=True,
                     eligible_for_execution=False,
                     execution_block_reason="signal_throttled",
@@ -1078,6 +1155,7 @@ class SignalThrottleLiveAnalyzer:
                 is_downgraded=True,
                 pressure_source="SignalThrottle",
                 source_stream="DOWNGRADED",
+                deployment_id=_runtime_deployment_id(),
                 eligible_for_pressure_block=True,
                 eligible_for_execution=False,
                 execution_block_reason=reason or "downgraded_to_hold",
@@ -1136,6 +1214,7 @@ class SignalThrottleLiveAnalyzer:
                 pressure_strength="CANARY",
                 pressure_source="signal_throttle_check",
                 source_stream="CANARY",
+                deployment_id=_runtime_deployment_id(),
                 eligible_for_pressure_block=True,
                 eligible_for_execution=False,
                 execution_block_reason=reason or "non_execute_verdict",
@@ -1177,6 +1256,36 @@ class SignalThrottleLiveAnalyzer:
             now=datetime.now(UTC),
         )
         return report
+
+    def _with_runtime_lineage(self, event: SignalThrottleLogEvent) -> SignalThrottleLogEvent:
+        scanner_cycle_id, scanner_epoch, observed_cycle_index = self._scanner_cycle_metadata(
+            event.timestamp,
+            event.symbol,
+        )
+        values = asdict(event)
+        values["deployment_id"] = event.deployment_id or _runtime_deployment_id()
+        values["scanner_cycle_id"] = event.scanner_cycle_id or scanner_cycle_id
+        values["scanner_epoch"] = event.scanner_epoch or scanner_epoch
+        values["observed_cycle_index"] = event.observed_cycle_index or observed_cycle_index
+        return SignalThrottleLogEvent(**values)
+
+    def _scanner_cycle_metadata(self, timestamp: datetime, symbol: str) -> tuple[str, str, int]:
+        window = max(1.0, float(self.scanner_cycle_window_seconds or 300.0))
+        stamp = _coerce_timestamp(timestamp)
+        epoch_seconds = int(stamp.timestamp() // window * window)
+        epoch = datetime.fromtimestamp(epoch_seconds, tz=UTC)
+        scanner_epoch = epoch.isoformat()
+        cycle_id = f"SCAN_{epoch.strftime('%Y%m%dT%H%M%SZ')}_{int(window)}S"
+        order = self._scanner_cycle_symbol_order.setdefault(cycle_id, {})
+        symbol_key = str(symbol or "").upper()
+        if symbol_key not in order:
+            order[symbol_key] = len(order) + 1
+        self._scanner_cycle_symbol_order = {
+            key: value
+            for key, value in self._scanner_cycle_symbol_order.items()
+            if key == cycle_id or not _scanner_cycle_id_is_older_than(key, epoch, keep_windows=3, window_seconds=window)
+        }
+        return cycle_id, scanner_epoch, order[symbol_key]
 
     def _purge_locked(self, now: datetime) -> None:
         cutoff = now - timedelta(seconds=self.retention_seconds)
@@ -3337,6 +3446,9 @@ def _data_quality_block(
         "first_event_is_continuation": bool(state_metadata.get("first_event_is_continuation", False)),
         "state_warmup_reason": state_metadata.get("state_warmup_reason"),
         "first_event_state": state_metadata.get("first_event_state"),
+        "deployment_ids": state_metadata.get("deployment_ids", []),
+        "scanner_cycle_ids": state_metadata.get("scanner_cycle_ids", []),
+        "scanner_cycle_id_count": state_metadata.get("scanner_cycle_id_count", 0),
     }
 
 
@@ -3354,6 +3466,7 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
     downgraded_events = sum(1 for event in events if event.event_type == "DOWNGRADED_TO_HOLD")
     direction = _dominant_direction(events)
     direction_metadata = _direction_metadata_for_block(events, direction)
+    scanner_metadata = _scanner_lineage_for_block(events)
     return PressureBlock(
         symbol=events[0].symbol,
         start=start,
@@ -3370,8 +3483,41 @@ def _make_block(events: list[SignalThrottleLogEvent]) -> PressureBlock:
         throttled_events=throttled_events,
         downgraded_events=downgraded_events,
         effective_density_per_minute=round(effective_density, 2),
+        deployment_ids=scanner_metadata["deployment_ids"],
+        scanner_cycle_ids=scanner_metadata["scanner_cycle_ids"],
+        scanner_epoch_start_utc=scanner_metadata["scanner_epoch_start_utc"],
+        scanner_epoch_end_utc=scanner_metadata["scanner_epoch_end_utc"],
+        observed_cycle_index_min=scanner_metadata["observed_cycle_index_min"],
+        observed_cycle_index_max=scanner_metadata["observed_cycle_index_max"],
         **direction_metadata,
     )
+
+
+def _scanner_lineage_for_block(events: list[SignalThrottleLogEvent]) -> dict[str, Any]:
+    deployment_ids = tuple(
+        sorted({str(event.deployment_id).strip() for event in events if str(event.deployment_id or "").strip()})
+    )
+    scanner_cycle_ids = tuple(
+        sorted({str(event.scanner_cycle_id).strip() for event in events if str(event.scanner_cycle_id or "").strip()})
+    )
+    scanner_epochs = [
+        str(event.scanner_epoch).strip()
+        for event in events
+        if str(event.scanner_epoch or "").strip()
+    ]
+    observed_indexes = [
+        int(event.observed_cycle_index)
+        for event in events
+        if event.observed_cycle_index is not None
+    ]
+    return {
+        "deployment_ids": deployment_ids,
+        "scanner_cycle_ids": scanner_cycle_ids,
+        "scanner_epoch_start_utc": min(scanner_epochs) if scanner_epochs else None,
+        "scanner_epoch_end_utc": max(scanner_epochs) if scanner_epochs else None,
+        "observed_cycle_index_min": min(observed_indexes) if observed_indexes else None,
+        "observed_cycle_index_max": max(observed_indexes) if observed_indexes else None,
+    }
 
 
 def _extract_field(row: dict[str, Any], *keys: str, default: str = "") -> str:
@@ -3493,6 +3639,20 @@ def _extract_kv_text(message: str, key: str) -> str:
     return match.group("value").strip()
 
 
+def _extract_json_text(message: str, key: str) -> str:
+    payload_start = str(message or "").find("{")
+    if payload_start < 0:
+        return ""
+    try:
+        payload = json.loads(str(message)[payload_start:])
+    except json.JSONDecodeError:
+        return ""
+    value = payload.get(key)
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
 def _extract_kv_float(message: str, key: str) -> float | None:
     text = _extract_kv_text(message, key)
     if not text:
@@ -3528,7 +3688,17 @@ def _state_metadata_from_events(events: list[SignalThrottleLogEvent]) -> dict[st
         "window_seconds": first.window_seconds,
         "suppressed": first.suppressed,
     }
-    return _state_metadata_payload(state)
+    metadata = _state_metadata_payload(state)
+    deployment_ids = sorted({str(event.deployment_id).strip() for event in events if str(event.deployment_id or "").strip()})
+    scanner_cycle_ids = sorted(
+        {str(event.scanner_cycle_id).strip() for event in events if str(event.scanner_cycle_id or "").strip()}
+    )
+    if deployment_ids:
+        metadata["deployment_ids"] = deployment_ids
+    if scanner_cycle_ids:
+        metadata["scanner_cycle_ids"] = scanner_cycle_ids
+        metadata["scanner_cycle_id_count"] = len(scanner_cycle_ids)
+    return metadata
 
 
 def _state_metadata_from_rows(

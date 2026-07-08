@@ -116,12 +116,15 @@ Use this map to avoid confusing the contract target with runtime rollout state:
 ```text
 Pure Pressure Ledger wrapper/output          = IMPLEMENTED
 V1 scanner-cycle clean block ledger          = IMPLEMENTED
+Scanner-cycle raw event lineage metadata     = IMPLEMENTED
 Pure pressure quality diagnostics            = IMPLEMENTED
 Radar Context vs Execution Context split     = IMPLEMENTED
 SignalThrottleFusionV3 diagnostic output     = IMPLEMENTED
 Dynamic M15 close policy                     = IMPLEMENTED
 Microboost pure-stage boundary              = IMPLEMENTED / must preserve
 Source lineage guard                         = IMPLEMENTED / must preserve
+Lineage missing terminal replay guard        = IMPLEMENTED / must preserve
+PressureTier clean-block adapter             = IMPLEMENTED
 PairPriorityTier pressure-aware adapter      = PLANNED_CONTRACT
 DecisionUpdate terminal NO_TRADE_REASONED    = PARTIAL
 Fusion V3 execution impact                   = FORBIDDEN unless future gated rollout approves it
