@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 from datetime import UTC, datetime, timedelta
 
 from analysis.market_context_validator import MarketContext
@@ -516,6 +517,27 @@ def test_analyzer_pure_clean_block_ignores_large_same_pair_gap():
     assert report["pure_active_candidate"]["valid_for_execution"] is False
     assert report["pure_top_blocks"][0]["source_pressure_block_id"].startswith("USDJPY_")
     assert report["signal_throttle_fusion_v3"]["valid_for_execution"] is False
+
+
+def test_v1_clean_block_ledger_is_duration_based_source_of_truth():
+    events = [_event(offset, "USDCHF", event_type="ALLOWED") for offset in (0, 60, 120, 180, 240, 300)]
+
+    report = analyze_signal_throttle_events(events, latest_window_seconds=3600)
+
+    assert report["v1_clean_block_count"] == 1
+    ledger = report["v1_clean_block_ledger"][0]
+    assert ledger["ledger_source"] == "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"
+    assert ledger["clean_block_rule"] == "PAIR_ROTATION_ONLY_GAP_AGNOSTIC_DURATION_GE_THRESHOLD"
+    assert ledger["clean_block_valid"] is True
+    assert ledger["allowed_events"] == 6
+    assert ledger["throttled_events"] == 0
+    assert report["active_candidate"] == "USDCHF"
+    assert report["v1_active_clean_block"]["source_clean_block_id"] == ledger["source_clean_block_id"]
+    assert report["signal_throttle_fusion_v3"]["source_clean_block_id"] == ledger["source_clean_block_id"]
+    tier_row = next(row for row in report["pressure_tier_snapshot"]["symbols"] if row["symbol"] == "USDCHF")
+    assert tier_row["active_clean_block_id"] == ledger["source_clean_block_id"]
+    assert tier_row["last_valid_clean_block_id"] == ledger["source_clean_block_id"]
+    assert tier_row["metrics"]["live"]["clean_block_count"] == 1
 
 
 def test_build_pure_pressure_blocks_pair_rotation_splits_block():
@@ -1441,6 +1463,68 @@ def test_live_analyzer_records_engine_events_without_csv():
     assert report["data_quality"]["process_local"] is True
     assert report["data_quality"]["global_aggregation"] is False
     assert report["market_context_validation"]["symbol"] == "GBPCAD"
+
+
+def test_live_analyzer_emits_parseable_raw_signal_throttle_lane(caplog):
+    caplog.set_level(logging.INFO, logger="signal_throttle_raw")
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
+
+    analyzer.record_pressure_canary(symbol="GBPJPY", verdict="NO_TRADE", direction="SELL", reason="audit")
+
+    raw_records = [record for record in caplog.records if record.name == "signal_throttle_raw"]
+    assert raw_records
+    assert raw_records[0].levelno == logging.WARNING
+    message = raw_records[0].getMessage()
+    assert message.startswith("[SignalThrottle] event=signal_throttle_check symbol=GBPJPY")
+    parsed = parse_signal_throttle_rows(
+        [{"timestamp": "2026-07-08T00:00:00Z", "severity": "info", "message": message}]
+    )
+    assert len(parsed) == 1
+    assert parsed[0].symbol == "GBPJPY"
+    assert parsed[0].source_stream == "CANARY"
+    assert parsed[0].eligible_for_execution is False
+
+
+def test_recent_clean_block_lineage_attaches_to_later_microboost_same_symbol():
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=1800, microboost_window_minutes=15)
+    base = datetime(2026, 7, 8, 0, 0, tzinfo=UTC)
+    for index in range(11):
+        analyzer.record_allowed(symbol="GBPCAD", verdict="EXECUTE_BUY", timestamp=base + timedelta(seconds=index * 30))
+    analyzer.record_allowed(symbol="EURUSD", verdict="EXECUTE_SELL", timestamp=base + timedelta(seconds=310))
+    for index in range(12):
+        analyzer.record_allowed(
+            symbol="GBPCAD",
+            verdict="EXECUTE_BUY",
+            timestamp=base + timedelta(seconds=360 + index * 5),
+        )
+
+    report = analyzer.snapshot(
+        market_contexts={
+            "GBPCAD": MarketContext(
+                symbol="GBPCAD",
+                raw_allowed_direction="BUY",
+                price_at_signal_start=1.8340,
+                price_at_signal_end=1.8360,
+                m15_phase="BULLISH_PULLBACK",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+                spread_normal=True,
+                market_bias="BUY",
+                trend_direction="BUY",
+                price_position="MID_RANGE",
+                main_support=1.8320,
+                main_resistance=1.8585,
+            )
+        }
+    )
+
+    latest = report["microboost_summary"]["latest"]
+    gate = report["signal_watch_gate"]
+    assert latest["source_clean_block_id"].startswith("GBPCAD_")
+    assert latest["source_lineage_match"] == "RECENT_SAME_SYMBOL_CLEAN_BLOCK"
+    assert latest["clean_block_valid"] is True
+    assert gate["eligible"] is True
+    assert gate["source_clean_block_id"] == latest["source_clean_block_id"]
 
 
 def test_currency_pressure_counts_usd_quote_on_metals():
