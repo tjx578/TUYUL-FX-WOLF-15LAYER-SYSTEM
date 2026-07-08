@@ -119,6 +119,11 @@ def test_signal_watch_json_can_carry_pressure_priority_context(caplog):
     assert "[SignalWatchJSON]" in caplog.text
     assert '"pressure_priority_context":' in caplog.text
     assert '"effective_pressure_tier":"TIER_1_PRIMARY_ANALYSIS"' in caplog.text
+    assert '"signal_watch_pressure_tier":"TIER_1_PRIMARY_ANALYSIS"' in caplog.text
+    assert '"signal_watch_priority_bucket":"PRIMARY_ANALYSIS"' in caplog.text
+    assert '"signal_watch_tier_action":"PRIORITIZE_ANALYSIS"' in caplog.text
+    assert '"signal_watch_tier_score":88.0' in caplog.text
+    assert '"signal_watch_tier_source_event":"SignalThrottlePressureTierSnapshot"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text
 
 
@@ -776,6 +781,7 @@ def test_final_signal_strips_pressure_priority_context(caplog):
     assert "[SignalJSON]" in caplog.text
     assert "pressure_priority_context" not in caplog.text
     assert "effective_pressure_tier" not in caplog.text
+    assert "signal_watch_pressure_tier" not in caplog.text
 
 
 def test_terminal_valid_wait_structure_emits_decision_update_without_execution(caplog):
@@ -850,6 +856,7 @@ def test_decision_update_strips_pressure_priority_context(caplog):
     assert "pressure_priority_context" not in caplog.text
     assert "effective_pressure_tier" not in caplog.text
     assert "pressure_tier" not in caplog.text
+    assert "signal_watch_pressure_tier" not in caplog.text
 
 
 def test_decision_update_payload_key_ignores_block_end_only_change():

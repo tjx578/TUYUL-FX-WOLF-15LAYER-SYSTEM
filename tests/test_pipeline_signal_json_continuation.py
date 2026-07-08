@@ -268,6 +268,9 @@ def test_pipeline_attaches_pressure_priority_context_to_signal_watch(caplog):
     assert context["tier_source_event"] == "SignalThrottlePressureTierSnapshot"
     assert context["tier_execution_impact"] is False
     assert '"pressure_priority_context":' in caplog.text
+    assert '"signal_watch_pressure_tier":"TIER_1_PRIMARY_ANALYSIS"' in caplog.text
+    assert '"signal_watch_priority_bucket":"PRIMARY_ANALYSIS"' in caplog.text
+    assert '"signal_watch_tier_action":"PRIORITIZE_ANALYSIS"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text
 
 
@@ -331,6 +334,7 @@ def test_pipeline_attaches_tier3_key_level_exception_only_at_key_level(caplog):
     assert context["impact_tier"] == "IMPACT_TIER_1_KEY_LEVEL"
     assert context["low_event_high_impact_candidate"] is True
     assert '"TIER_3_KEY_LEVEL_RADAR_EXCEPTION"' in caplog.text
+    assert '"signal_watch_priority_bucket":"KEY_LEVEL_RADAR_EXCEPTION"' in caplog.text
 
 
 def test_pipeline_emits_pressure_tier_snapshot_log(caplog):

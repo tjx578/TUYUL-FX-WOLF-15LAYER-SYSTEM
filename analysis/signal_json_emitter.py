@@ -606,8 +606,9 @@ class SignalJsonEmitter:
         is_decision_update = _is_decision_update_payload(payload)
         is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
         if not is_watch:
-            payload.pop("pressure_priority_context", None)
-            payload.pop("effective_pressure_tier", None)
+            _strip_pressure_priority_fields(payload)
+        else:
+            _apply_signal_watch_pressure_tier_fields(payload)
         if not should_emit_signal_json(
             payload,
             emit_watch=self.emit_watch,
@@ -1643,6 +1644,57 @@ def _signal_time_epoch_seconds(value: str | None) -> float | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.timestamp()
+
+
+def _apply_signal_watch_pressure_tier_fields(payload: dict[str, Any]) -> None:
+    context = _dict_value(payload.get("pressure_priority_context"))
+    if not context:
+        return
+    tier = _optional_str(context.get("effective_pressure_tier"))
+    if tier is None:
+        return
+    payload["effective_pressure_tier"] = tier
+    payload["signal_watch_pressure_tier"] = tier
+    payload["signal_watch_priority_bucket"] = _signal_watch_priority_bucket(tier)
+    payload["signal_watch_tier_action"] = _optional_str(context.get("tier_action"))
+    payload["signal_watch_tier_score"] = _optional_float(context.get("tier_score"))
+    payload["signal_watch_tier_scope"] = _optional_str(context.get("tier_scope"))
+    payload["signal_watch_tier_source_event"] = _optional_str(context.get("tier_source_event"))
+    payload["signal_watch_tier_reason_codes"] = _string_list(context.get("tier_reason_codes"))
+    payload["signal_watch_tier_execution_impact"] = _optional_bool(context.get("tier_execution_impact"))
+    payload["signal_watch_tier_is_execution_signal"] = _optional_bool(context.get("tier_is_execution_signal"))
+
+
+def _strip_pressure_priority_fields(payload: dict[str, Any]) -> None:
+    for key in (
+        "pressure_priority_context",
+        "effective_pressure_tier",
+        "signal_watch_pressure_tier",
+        "signal_watch_priority_bucket",
+        "signal_watch_tier_action",
+        "signal_watch_tier_score",
+        "signal_watch_tier_scope",
+        "signal_watch_tier_source_event",
+        "signal_watch_tier_reason_codes",
+        "signal_watch_tier_execution_impact",
+        "signal_watch_tier_is_execution_signal",
+    ):
+        payload.pop(key, None)
+
+
+def _signal_watch_priority_bucket(tier: str) -> str:
+    tier_key = str(tier or "").upper()
+    return {
+        "TIER_1_PRIMARY_ANALYSIS": "PRIMARY_ANALYSIS",
+        "TIER_2_CONFIRMATION_SUPPORT": "CONFIRMATION_SUPPORT",
+        "TIER_3_KEY_LEVEL_RADAR_EXCEPTION": "KEY_LEVEL_RADAR_EXCEPTION",
+        "TIER_3_THEME_RADAR": "RADAR_ONLY",
+        "FRAGMENTED_PRESSURE_RADAR": "RADAR_ONLY",
+        "PRESSURE_MEMORY_RADAR": "RADAR_ONLY",
+        "THEME_ROTATION_RADAR": "RADAR_ONLY",
+        "TIER_STALE_ARCHIVE": "AUDIT_ONLY",
+        "TIER_UNSAFE_MIXED_DEPLOYMENT": "UNSAFE_MIXED_DEPLOYMENT",
+    }.get(tier_key, "UNCLASSIFIED")
 
 
 def _matched_watch_reference(payload: dict[str, Any], emitted_refs: set[str]) -> str | None:
