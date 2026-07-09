@@ -1,4 +1,4 @@
-"""Increment H1 — HTF Structure Snapshot (NON-EXECUTABLE, flag-guarded default OFF).
+"""Increment H1 — HTF Structure Snapshot (NON-EXECUTABLE, flag-guarded default ON).
 
 Strategic role
 --------------
@@ -73,8 +73,8 @@ EVENT_NAME = "htf_structure_snapshot_json"
 SCHEMA_VERSION = "1.0"
 LOG_PREFIX = "[HTFStructureSnapshot]"
 
-# Env flag — default OFF.  Mirrors the canary discipline used by the microboost
-# watch-miss / shadow diagnostics (flag-guarded, prove via canary first).
+# Env flag — default ON.  HTF structure is now a first-class map/context feed;
+# it remains non-executable and can still be disabled instantly for rollback.
 ENABLE_ENV = "HTF_STRUCTURE_SNAPSHOT_ENABLED"
 
 # Candle lookbacks (how many bars to pull per timeframe).
@@ -589,7 +589,7 @@ def build_htf_structure_snapshot_event(snapshot: HTFStructureSnapshot | dict[str
 
 
 def _flag_enabled() -> bool:
-    return os.getenv(ENABLE_ENV, "false").strip().lower() == "true"
+    return os.getenv(ENABLE_ENV, "true").strip().lower() == "true"
 
 
 def emit_htf_structure_snapshot(
@@ -600,7 +600,7 @@ def emit_htf_structure_snapshot(
 ) -> bool:
     """Emit the snapshot as a compact JSON log line — only when enabled.
 
-    Default OFF (env ``HTF_STRUCTURE_SNAPSHOT_ENABLED``).  Pass ``enabled``
+    Default ON (env ``HTF_STRUCTURE_SNAPSHOT_ENABLED``).  Pass ``enabled``
     explicitly to override the env flag (used by tests / canary harnesses).
 
     Returns ``True`` if a line was emitted, ``False`` otherwise.  Never raises

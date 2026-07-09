@@ -62,10 +62,21 @@ class MarketContext:
     m15_phase: str | None = None
     h1_phase: str | None = None
     h4_phase: str | None = None
-    # Step 1 — HTF Daily Phase Feed. Populated only when HTF_DAILY_PHASE_FEED_ENABLED=true
-    # (default None preserves legacy decision behavior). Read by the golden-pattern matcher's
-    # dormant Daily-aware rules via asdict(context). Never a hard execution blocker.
+    # HTF Daily Phase Feed. Populated by default from HTFStructureSnapshot;
+    # can be disabled with HTF_DAILY_PHASE_FEED_ENABLED=false. Read by the
+    # golden-pattern matcher's Daily-aware rules via asdict(context). Never a
+    # direct execution trigger.
     d1_phase: str | None = None
+    # HTF Structure Integration. These fields are context/permission only:
+    # Daily/H4 define the map, while H1/M15 still own timing confirmation.
+    htf_daily_bias: str | None = None
+    htf_h4_structure: str | None = None
+    htf_price_location: str | None = None
+    htf_liquidity_context: str | None = None
+    htf_allowed_playbook: str | None = None
+    htf_blocked_playbook: list[str] | None = None
+    htf_data_sufficient: bool | None = None
+    htf_structure_reason: str | None = None
     theme_aligned: bool | None = None
     theme_alignment: str | None = None
     counter_entry_theme_alignment: str | None = None
@@ -295,6 +306,19 @@ def validate_market_context(context: MarketContext) -> MarketContextValidation:
             pattern=pattern,
         )
 
+    htf_block_reason = _htf_structure_block_reason(context, direction)
+    if htf_block_reason is not None:
+        return _result(
+            context,
+            "WAIT",
+            False,
+            "BLOCKED",
+            "WAIT_HTF_STRUCTURE_PERMISSION",
+            False,
+            htf_block_reason,
+            pattern=pattern,
+        )
+
     if direction == "BUY" and _buy_context_valid(context):
         action, reason = _validated_action_reason(
             context,
@@ -423,6 +447,29 @@ def _sell_context_valid(context: MarketContext) -> bool:
     )
 
 
+def _htf_structure_block_reason(context: MarketContext, direction: str | None) -> str | None:
+    if direction not in {"BUY", "SELL"}:
+        return None
+    daily = _phase(context.htf_daily_bias or context.d1_phase)
+    h4_structure = _phase(context.htf_h4_structure or context.h4_phase)
+    location = _phase(context.htf_price_location)
+    blocked = {str(item or "").strip().upper() for item in context.htf_blocked_playbook or []}
+    has_htf = bool(daily or h4_structure or location or blocked)
+    if not has_htf:
+        return None
+    if direction == "BUY":
+        if "BUY_LIMIT" in blocked and "BUY_BREAKOUT_CHASE" in blocked:
+            return "htf_structure_blocks_buy_playbook"
+        if daily == "BEARISH" and location in {"PREMIUM", "H4_SUPPLY"}:
+            return "htf_daily_bearish_buy_pressure_at_premium_or_supply"
+    if direction == "SELL":
+        if "SELL_LIMIT" in blocked and "SELL_BREAKOUT_CHASE" in blocked:
+            return "htf_structure_blocks_sell_playbook"
+        if daily == "BULLISH" and location in {"DISCOUNT", "H4_DEMAND"}:
+            return "htf_daily_bullish_sell_pressure_at_discount_or_demand"
+    return None
+
+
 def _missing_fields(context: MarketContext) -> list[str]:
     missing: list[str] = []
     for name in (
@@ -447,6 +494,10 @@ def _available_radar_fields(context: MarketContext) -> list[str]:
         "key_resistance",
         "h4_phase",
         "d1_phase",
+        "htf_daily_bias",
+        "htf_h4_structure",
+        "htf_price_location",
+        "htf_allowed_playbook",
         "market_bias",
         "trend_direction",
         "spread_normal",

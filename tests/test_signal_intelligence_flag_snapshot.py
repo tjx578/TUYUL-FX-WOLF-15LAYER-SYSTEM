@@ -121,6 +121,9 @@ def test_snapshot_reports_candidate_market_context_hydration(monkeypatch, caplog
     assert p["SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_ENABLED"] is True
     assert p["SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_MAX_SYMBOLS"] == 5.0
     assert p["SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED"] is True
+    assert p["HTF_STRUCTURE_CONTEXT_ENABLED"] is True
+    assert p["HTF_STRUCTURE_SNAPSHOT_ENABLED"] is True
+    assert p["HTF_DAILY_PHASE_FEED_ENABLED"] is True
 
 
 def test_snapshot_bridge_window_defaults_to_canary_ttl(monkeypatch, caplog):

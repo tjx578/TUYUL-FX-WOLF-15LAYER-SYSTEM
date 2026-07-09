@@ -359,6 +359,21 @@ def test_pipeline_attaches_pressure_priority_context_to_signal_watch(caplog):
                 }
             ]
         },
+        "htf_structure_contexts": {
+            "CADJPY": {
+                "source_event": "HTFStructureSnapshot",
+                "daily_bias": "BULLISH",
+                "h4_structure": "BULLISH_PULLBACK",
+                "price_location": "H4_DEMAND",
+                "liquidity_context": "SELL_SIDE_LIQUIDITY_TEST",
+                "allowed_playbook": "BUY_ON_REJECTION",
+                "blocked_playbook": ["SELL_LIMIT", "SELL_BREAKOUT_CHASE"],
+                "data_sufficient": True,
+                "valid_for_execution": False,
+                "execution_impact": False,
+                "is_final_signal": False,
+            }
+        },
         "microboost_watch_entry": {
             "symbol": "CADJPY",
             "cluster_id": "CADJPY_20260518T133000Z",
@@ -396,8 +411,15 @@ def test_pipeline_attaches_pressure_priority_context_to_signal_watch(caplog):
     assert context["effective_pressure_tier"] == TIER_1_PRIMARY_ANALYSIS
     assert context["tier_source_event"] == "SignalThrottlePressureTierSnapshot"
     assert context["tier_execution_impact"] is False
+    htf_context = verdict["microboost_watch_entry"]["htf_structure_context"]
+    assert htf_context["daily_bias"] == "BULLISH"
+    assert htf_context["h4_structure"] == "BULLISH_PULLBACK"
+    assert htf_context["valid_for_execution"] is False
     assert '"pressure_priority_context":' in caplog.text
     assert '"signal_watch_pressure_tier":"TIER_1_PRIMARY_ANALYSIS"' in caplog.text
+    assert '"htf_structure_context":' in caplog.text
+    assert '"signal_watch_htf_daily_bias":"BULLISH"' in caplog.text
+    assert '"signal_watch_htf_h4_structure":"BULLISH_PULLBACK"' in caplog.text
     assert '"signal_watch_priority_bucket":"PRIMARY_ANALYSIS"' in caplog.text
     assert '"signal_watch_tier_action":"PRIORITIZE_ANALYSIS"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text

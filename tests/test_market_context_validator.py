@@ -91,6 +91,35 @@ def test_buy_validates_only_when_price_theme_phase_align():
     assert result.action == "BUY_ON_PULLBACK"
 
 
+def test_htf_structure_blocks_buy_even_when_m15_h1_align():
+    result = validate_market_context(
+        MarketContext(
+            symbol="GBPNZD",
+            raw_allowed_direction="BUY",
+            price_at_signal_start=2.0300,
+            price_at_5m_confirm=2.0320,
+            price_at_signal_end=2.0340,
+            m15_phase="PIVOT_RECLAIM",
+            h1_phase="BULLISH",
+            h4_phase="BEARISH",
+            d1_phase="BEARISH",
+            htf_daily_bias="BEARISH",
+            htf_h4_structure="H4_SUPPLY",
+            htf_price_location="H4_SUPPLY",
+            htf_allowed_playbook="SELL_ON_REJECTION",
+            htf_blocked_playbook=["BUY_LIMIT", "BUY_BREAKOUT_CHASE"],
+            theme_aligned=True,
+            spread_normal=True,
+        )
+    )
+
+    assert result.direction_validated is False
+    assert result.final_direction == "WAIT"
+    assert result.execution_grade == "BLOCKED"
+    assert result.action == "WAIT_HTF_STRUCTURE_PERMISSION"
+    assert result.reason == "htf_structure_blocks_buy_playbook"
+
+
 def test_sell_validates_only_when_price_theme_phase_align():
     result = validate_market_context(
         MarketContext(

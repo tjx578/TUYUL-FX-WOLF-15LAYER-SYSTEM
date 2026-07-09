@@ -3356,6 +3356,7 @@ class WolfConstitutionalPipeline:
             direction=direction,
             synthesis=synthesis,
         )
+        htf_context = self._resolve_htf_structure_context(symbol)
 
         return MarketContext(
             symbol=symbol,
@@ -3369,7 +3370,15 @@ class WolfConstitutionalPipeline:
             m15_phase=self._derive_timeframe_phase(symbol, "M15"),
             h1_phase=self._derive_timeframe_phase(symbol, "H1"),
             h4_phase=self._derive_timeframe_phase(symbol, "H4"),
-            d1_phase=self._derive_daily_phase_feed(symbol),
+            d1_phase=self._derive_daily_phase_feed(symbol, htf_snapshot=htf_context),
+            htf_daily_bias=self._optional_text_from_mapping(htf_context, "daily_bias"),
+            htf_h4_structure=self._optional_text_from_mapping(htf_context, "h4_structure"),
+            htf_price_location=self._optional_text_from_mapping(htf_context, "price_location"),
+            htf_liquidity_context=self._optional_text_from_mapping(htf_context, "liquidity_context"),
+            htf_allowed_playbook=self._optional_text_from_mapping(htf_context, "allowed_playbook"),
+            htf_blocked_playbook=self._string_list_from_mapping(htf_context, "blocked_playbook"),
+            htf_data_sufficient=self._optional_bool_from_mapping(htf_context, "data_sufficient"),
+            htf_structure_reason=self._optional_text_from_mapping(htf_context, "reason"),
             theme_aligned=self._is_market_theme_aligned(synthesis, direction),
             theme_alignment=theme_alignment,
             counter_entry_theme_alignment=theme_alignment,
@@ -3787,8 +3796,13 @@ class WolfConstitutionalPipeline:
             return "SELL"
         return None
 
-    def _derive_daily_phase_feed(self, symbol: str) -> str | None:
-        """Step 1 — HTF Daily Phase Feed (flag-guarded, default OFF).
+    def _derive_daily_phase_feed(
+        self,
+        symbol: str,
+        *,
+        htf_snapshot: dict[str, Any] | None = None,
+    ) -> str | None:
+        """HTF Daily Phase Feed (flag-guarded, default ON).
 
         Returns a Daily phase string for ``MarketContext.d1_phase`` so the golden
         matcher's already-written but dormant Daily-aware rules stop being dead
@@ -3797,14 +3811,18 @@ class WolfConstitutionalPipeline:
         transition window (e.g. snapshot still warming up).
 
         Pure observability/context — it never blocks execution and never mutates a
-        verdict. When ``HTF_DAILY_PHASE_FEED_ENABLED`` is not ``true`` this returns
-        ``None`` and ``d1_phase`` remains unset, preserving legacy matcher decisions.
+        verdict. Set ``HTF_DAILY_PHASE_FEED_ENABLED=false`` to return ``None`` and
+        preserve legacy matcher decisions.
         Any failure is swallowed (Daily context must never break the pipeline).
         """
-        if os.getenv("HTF_DAILY_PHASE_FEED_ENABLED", "false").strip().lower() != "true":
+        if os.getenv("HTF_DAILY_PHASE_FEED_ENABLED", "true").strip().lower() != "true":
             return None
         try:
-            bias = self._htf_snapshot_resolver.resolve(symbol).daily_bias
+            bias = (
+                self._optional_text_from_mapping(htf_snapshot, "daily_bias")
+                if isinstance(htf_snapshot, dict)
+                else self._htf_snapshot_resolver.resolve(symbol).daily_bias
+            )
             if bias and bias != "NO_BIAS":
                 return bias
         except Exception as exc:  # pragma: no cover - defensive; context must not break execution
@@ -3814,6 +3832,94 @@ class WolfConstitutionalPipeline:
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("[HTFDailyPhaseFeed] D1 fallback failed for {}: {}", symbol, exc)
             return None
+
+    def _resolve_htf_structure_context(self, symbol: str) -> dict[str, Any] | None:
+        """Resolve non-executable HTF structure context for watch/decision payloads."""
+        if os.getenv("HTF_STRUCTURE_CONTEXT_ENABLED", "true").strip().lower() != "true":
+            return None
+        try:
+            snapshot = self._htf_snapshot_resolver.resolve(symbol)
+        except Exception as exc:  # pragma: no cover - defensive; context must not break execution
+            logger.debug("[HTFStructureContext] resolve skipped for {}: {}", symbol, exc)
+            return None
+        return self._htf_structure_context_payload(snapshot.to_dict())
+
+    @staticmethod
+    def _htf_structure_context_payload(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(snapshot, dict):
+            return None
+        context = {
+            "source_event": "HTFStructureSnapshot",
+            "daily_bias": WolfConstitutionalPipeline._optional_text_from_mapping(snapshot, "daily_bias"),
+            "h4_structure": WolfConstitutionalPipeline._optional_text_from_mapping(snapshot, "h4_structure"),
+            "price_location": WolfConstitutionalPipeline._optional_text_from_mapping(snapshot, "price_location"),
+            "liquidity_context": WolfConstitutionalPipeline._optional_text_from_mapping(snapshot, "liquidity_context"),
+            "allowed_playbook": WolfConstitutionalPipeline._optional_text_from_mapping(snapshot, "allowed_playbook"),
+            "blocked_playbook": WolfConstitutionalPipeline._string_list_from_mapping(snapshot, "blocked_playbook"),
+            "data_sufficient": WolfConstitutionalPipeline._optional_bool_from_mapping(snapshot, "data_sufficient"),
+            "reason": WolfConstitutionalPipeline._optional_text_from_mapping(snapshot, "reason"),
+            "valid_for_execution": False,
+            "execution_impact": False,
+            "is_final_signal": False,
+            "advisory_only": True,
+        }
+        return {key: value for key, value in context.items() if value is not None}
+
+    @staticmethod
+    def _htf_structure_context_from_market_context(context: Any | None) -> dict[str, Any] | None:
+        if context is None:
+            return None
+        def _field(name: str) -> Any:
+            if isinstance(context, dict):
+                return context.get(name)
+            return getattr(context, name, None)
+
+        payload = {
+            "source_event": "HTFStructureSnapshot",
+            "daily_bias": _field("htf_daily_bias") or _field("d1_phase"),
+            "h4_structure": _field("htf_h4_structure") or _field("h4_phase"),
+            "price_location": _field("htf_price_location"),
+            "liquidity_context": _field("htf_liquidity_context"),
+            "allowed_playbook": _field("htf_allowed_playbook"),
+            "blocked_playbook": WolfConstitutionalPipeline._string_list_value(_field("htf_blocked_playbook")),
+            "data_sufficient": _field("htf_data_sufficient"),
+            "reason": _field("htf_structure_reason"),
+            "valid_for_execution": False,
+            "execution_impact": False,
+            "is_final_signal": False,
+            "advisory_only": True,
+        }
+        return {key: value for key, value in payload.items() if value is not None}
+
+    @staticmethod
+    def _optional_text_from_mapping(source: dict[str, Any] | None, key: str) -> str | None:
+        if not isinstance(source, dict):
+            return None
+        text = str(source.get(key) or "").strip()
+        return text or None
+
+    @staticmethod
+    def _optional_bool_from_mapping(source: dict[str, Any] | None, key: str) -> bool | None:
+        if not isinstance(source, dict):
+            return None
+        value = source.get(key)
+        return value if isinstance(value, bool) else None
+
+    @staticmethod
+    def _string_list_from_mapping(source: dict[str, Any] | None, key: str) -> list[str] | None:
+        if not isinstance(source, dict):
+            return None
+        return WolfConstitutionalPipeline._string_list_value(source.get(key))
+
+    @staticmethod
+    def _string_list_value(value: Any) -> list[str] | None:
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else None
+        if isinstance(value, (list, tuple, set)):
+            values = [str(item).strip() for item in value if str(item or "").strip()]
+            return values or None
+        return None
 
     def _derive_timeframe_phase(self, symbol: str, timeframe: str) -> str | None:
         candles = self._context_bus.get_candle_history(symbol, timeframe, count=2)
@@ -4204,6 +4310,8 @@ class WolfConstitutionalPipeline:
             )
         if hydration.get("enabled") is True:
             report["candidate_market_context_hydration"] = hydration
+        report["htf_structure_contexts"] = self._htf_structure_contexts_from_market_contexts(market_contexts)
+        self._emit_htf_structure_snapshots_for_contexts(market_contexts)
         self._emit_signal_throttle_fusion_v3_diagnostic(report)
         self._emit_signal_throttle_pressure_tier_snapshot(report)
         self._emit_signal_throttle_followthrough_scores(report)
@@ -4738,6 +4846,7 @@ class WolfConstitutionalPipeline:
         l12_verdict["microboost_continuation_entry"] = continuation
         if self._signal_json_gate_adapter.emit_continuation:
             self._attach_pressure_priority_context(continuation, report)
+            self._attach_htf_structure_context(continuation, report)
             self._attach_followthrough_context(continuation, report)
             self._prepare_lifecycle_tracking_metadata(continuation)
             continuation["signal_json_emit_result"] = self._emit_signal_json_payload(continuation)
@@ -4758,6 +4867,7 @@ class WolfConstitutionalPipeline:
 
         watch_entry = dict(watch_entry)
         self._attach_pressure_priority_context(watch_entry, report)
+        self._attach_htf_structure_context(watch_entry, report)
         self._attach_followthrough_context(watch_entry, report)
         self._prepare_lifecycle_tracking_metadata(watch_entry)
         report["microboost_watch_entry"] = watch_entry
@@ -4790,6 +4900,7 @@ class WolfConstitutionalPipeline:
 
                 self._prepare_lifecycle_tracking_metadata(watch_entry)
                 self._attach_pressure_priority_context(watch_entry, report)
+                self._attach_htf_structure_context(watch_entry, report)
                 self._attach_followthrough_context(watch_entry, report)
                 watch_entry["signal_json_emit_result"] = self._emit_signal_json_payload(watch_entry)
                 if watch_entry["signal_json_emit_result"]:
@@ -5005,6 +5116,60 @@ class WolfConstitutionalPipeline:
         if context is not None:
             payload["pressure_priority_context"] = context
 
+    def _attach_htf_structure_context(
+        self,
+        payload: dict[str, Any],
+        report: dict[str, Any],
+        *,
+        market_contexts: dict[str, Any] | None = None,
+    ) -> None:
+        if os.getenv("HTF_STRUCTURE_CONTEXT_ENABLED", "true").strip().lower() != "true":
+            return
+        if isinstance(payload.get("htf_structure_context"), dict):
+            return
+        symbol = str(payload.get("symbol") or "").upper()
+        if not symbol:
+            return
+        context = self._htf_context_from_report(report, symbol)
+        if context is None and isinstance(market_contexts, dict):
+            raw_context = (
+                market_contexts.get(symbol)
+                or market_contexts.get(symbol.lower())
+                or market_contexts.get(str(payload.get("symbol") or ""))
+            )
+            context = self._htf_structure_context_from_market_context(raw_context)
+        if context is None:
+            context = self._resolve_htf_structure_context(symbol)
+        if context is not None:
+            payload["htf_structure_context"] = context
+
+    @staticmethod
+    def _htf_context_from_report(report: dict[str, Any], symbol: str) -> dict[str, Any] | None:
+        contexts = report.get("htf_structure_contexts") if isinstance(report, dict) else None
+        if not isinstance(contexts, dict):
+            return None
+        raw = contexts.get(symbol.upper()) or contexts.get(symbol.lower()) or contexts.get(symbol)
+        return dict(raw) if isinstance(raw, dict) else None
+
+    def _htf_structure_contexts_from_market_contexts(self, market_contexts: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        contexts: dict[str, dict[str, Any]] = {}
+        if os.getenv("HTF_STRUCTURE_CONTEXT_ENABLED", "true").strip().lower() != "true":
+            return contexts
+        for symbol, context in market_contexts.items():
+            symbol_key = str(symbol or getattr(context, "symbol", "") or "").upper()
+            if not symbol_key:
+                continue
+            htf_context = self._htf_structure_context_from_market_context(context)
+            if htf_context is not None:
+                contexts[symbol_key] = htf_context
+        return contexts
+
+    def _emit_htf_structure_snapshots_for_contexts(self, market_contexts: dict[str, Any]) -> None:
+        if os.getenv("HTF_STRUCTURE_SNAPSHOT_ENABLED", "true").strip().lower() != "true":
+            return
+        for symbol in sorted({str(key or "").upper() for key in market_contexts if str(key or "").strip()}):
+            self._emit_htf_structure_snapshot(symbol)
+
     def _attach_followthrough_context(self, payload: dict[str, Any], report: dict[str, Any]) -> None:
         if os.getenv("SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED", "true").strip().lower() != "true":
             return
@@ -5035,6 +5200,7 @@ class WolfConstitutionalPipeline:
 
         counter_entry = self._signal_lifecycle_manager.apply(counter_entry)
         self._attach_pressure_priority_context(counter_entry, report)
+        self._attach_htf_structure_context(counter_entry, report)
         self._attach_followthrough_context(counter_entry, report)
         report["microboost_counter_entry"] = counter_entry
         l12_verdict["microboost_counter_entry"] = counter_entry
@@ -5077,6 +5243,7 @@ class WolfConstitutionalPipeline:
         for update in updates:
             if update.get("event") != "signal_decision_update_json":
                 update = self._signal_lifecycle_manager.apply(update)
+            self._attach_htf_structure_context(update, report, market_contexts=market_contexts)
             self._signal_block_finalizer.track(update)
             applied_updates.append(update)
             status = str(update.get("status") or "")
@@ -5244,6 +5411,9 @@ class WolfConstitutionalPipeline:
                     resolved_family="ALLOWED_QUORUM_CONTEXTLESS_PRESSURE_STATE",
                 )
             )
+        htf_context = self._resolve_htf_structure_context(symbol_key)
+        if htf_context is not None:
+            payload["htf_structure_context"] = htf_context
         return payload
 
     def _emit_contextless_quorum_diagnostic(
@@ -5484,6 +5654,9 @@ class WolfConstitutionalPipeline:
                     resolved_family="ALLOWED_QUORUM_PENDING_VALIDATION",
                 )
             )
+        htf_context = self._htf_structure_context_from_market_context(context)
+        if htf_context is not None:
+            payload["htf_structure_context"] = htf_context
         return payload
 
     def _allowed_quorum_blockers(
@@ -5924,6 +6097,9 @@ class WolfConstitutionalPipeline:
                     resolved_family="NO_TRADE_CONTEXTLESS_PRESSURE_STATE",
                 )
             )
+        htf_context = self._resolve_htf_structure_context(symbol_key)
+        if htf_context is not None:
+            payload["htf_structure_context"] = htf_context
         return payload
 
     def _no_trade_pressure_event_count(self, *, symbol: str, report: dict[str, Any]) -> int:
@@ -6147,6 +6323,9 @@ class WolfConstitutionalPipeline:
                     resolved_family="NO_TRADE_PRESSURE_TELEMETRY_ONLY",
                 )
             )
+        htf_context = self._htf_structure_context_from_market_context(context)
+        if htf_context is not None:
+            payload["htf_structure_context"] = htf_context
         return payload
 
     def _bump_family_counters(self, payload: dict[str, Any]) -> None:
@@ -6367,6 +6546,8 @@ class WolfConstitutionalPipeline:
             source_verdict=source_verdict,
         )
         report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        report["htf_structure_contexts"] = self._htf_structure_contexts_from_market_contexts(market_contexts)
+        self._emit_htf_structure_snapshots_for_contexts(market_contexts)
         self._emit_microboost_intel_if_new(report)
         self._emit_microboost_watch_miss_diagnostic(report)
         self._emit_htf_structure_snapshot(symbol)
@@ -6716,6 +6897,9 @@ class WolfConstitutionalPipeline:
             "SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED": _b(
                 "SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED", "true"
             ),
+            "HTF_STRUCTURE_CONTEXT_ENABLED": _b("HTF_STRUCTURE_CONTEXT_ENABLED", "true"),
+            "HTF_STRUCTURE_SNAPSHOT_ENABLED": _b("HTF_STRUCTURE_SNAPSHOT_ENABLED", "true"),
+            "HTF_DAILY_PHASE_FEED_ENABLED": _b("HTF_DAILY_PHASE_FEED_ENABLED", "true"),
             "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED": _b(
                 "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false"
             ),
@@ -6874,12 +7058,13 @@ class WolfConstitutionalPipeline:
         interpret microboost pressure against structure (BUY pressure at an HTF
         supply/resistance is absorption/no-chase, never an auto BUY LIMIT). This
         is observability-only -- ``valid_for_execution`` is always ``False`` and
-        nothing here is a SignalJSON. Enable with ``HTF_STRUCTURE_SNAPSHOT_ENABLED``.
+        nothing here is a SignalJSON. Disable with
+        ``HTF_STRUCTURE_SNAPSHOT_ENABLED=false``.
 
         Per-symbol dedup suppresses unchanged structure repeats. Any failure is
         swallowed: a snapshot must never disturb the execution path.
         """
-        if os.getenv("HTF_STRUCTURE_SNAPSHOT_ENABLED", "false").strip().lower() != "true":
+        if os.getenv("HTF_STRUCTURE_SNAPSHOT_ENABLED", "true").strip().lower() != "true":
             return
         try:
             snapshot = self._htf_snapshot_resolver.resolve(symbol)

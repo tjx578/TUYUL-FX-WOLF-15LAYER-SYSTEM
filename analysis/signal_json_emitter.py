@@ -502,6 +502,7 @@ class SignalJsonEvent:
     lifecycle: dict[str, Any] | None = None
     pressure_priority_context: dict[str, Any] | None = None
     followthrough_context: dict[str, Any] | None = None
+    htf_structure_context: dict[str, Any] | None = None
     # Family lineage (gated upstream by SIGNAL_FAMILY_LINEAGE_ENABLED). Carried through
     # so the lineage merged onto the pipeline payload actually reaches the emitted log
     # instead of being dropped by the dict->event rebuild. Observability-only.
@@ -624,14 +625,21 @@ class SignalJsonEmitter:
 
         is_decision_update = _is_decision_update_payload(payload)
         is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
-        if not is_watch:
-            _strip_pressure_priority_fields(payload)
-            _strip_followthrough_fields(payload)
-            _strip_microboost_role_fields(payload)
-        else:
+        if is_watch:
             _apply_signal_watch_pressure_tier_fields(payload)
             _apply_signal_watch_followthrough_fields(payload)
             _apply_signal_watch_microboost_role_fields(payload)
+            _apply_signal_htf_structure_fields(payload, prefix="signal_watch")
+        elif is_decision_update:
+            _strip_pressure_priority_fields(payload)
+            _strip_followthrough_fields(payload)
+            _strip_microboost_role_fields(payload)
+            _apply_signal_htf_structure_fields(payload, prefix="signal_decision")
+        else:
+            _strip_pressure_priority_fields(payload)
+            _strip_followthrough_fields(payload)
+            _strip_microboost_role_fields(payload)
+            _strip_htf_structure_fields(payload)
         if not should_emit_signal_json(
             payload,
             emit_watch=self.emit_watch,
@@ -1203,6 +1211,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         followthrough_context=(
             _dict_value(counter_entry.get("followthrough_context")) if is_watch else None
         ),
+        htf_structure_context=(
+            _dict_value(counter_entry.get("htf_structure_context")) if (is_watch or is_decision_update) else None
+        ),
     )
 
 
@@ -1730,6 +1741,11 @@ def _apply_signal_watch_followthrough_fields(payload: dict[str, Any]) -> None:
     payload["signal_watch_followthrough_source_event"] = _optional_str(context.get("source_event"))
     payload["signal_watch_followthrough_execution_impact"] = _optional_bool(context.get("execution_impact"))
     payload["signal_watch_followthrough_is_execution_signal"] = _optional_bool(context.get("valid_for_execution"))
+    payload["signal_watch_followthrough_htf_daily_bias"] = _optional_str(context.get("htf_daily_bias"))
+    payload["signal_watch_followthrough_htf_h4_structure"] = _optional_str(context.get("htf_h4_structure"))
+    payload["signal_watch_followthrough_htf_price_location"] = _optional_str(context.get("htf_price_location"))
+    payload["signal_watch_followthrough_htf_allowed_playbook"] = _optional_str(context.get("htf_allowed_playbook"))
+    payload["signal_watch_followthrough_htf_blocked_playbook"] = _string_list(context.get("htf_blocked_playbook"))
 
 
 def _apply_signal_watch_microboost_role_fields(payload: dict[str, Any]) -> None:
@@ -1760,6 +1776,26 @@ def _apply_signal_watch_microboost_role_fields(payload: dict[str, Any]) -> None:
     payload["signal_watch_microboost_role_is_execution_signal"] = _optional_bool(
         payload.get("microboost_role_valid_for_execution")
     )
+
+
+def _apply_signal_htf_structure_fields(payload: dict[str, Any], *, prefix: str) -> None:
+    context = _dict_value(payload.get("htf_structure_context"))
+    if not context:
+        return
+    daily_bias = _optional_str(context.get("daily_bias"))
+    h4_structure = _optional_str(context.get("h4_structure"))
+    if daily_bias is None and h4_structure is None:
+        return
+    payload[f"{prefix}_htf_daily_bias"] = daily_bias
+    payload[f"{prefix}_htf_h4_structure"] = h4_structure
+    payload[f"{prefix}_htf_price_location"] = _optional_str(context.get("price_location"))
+    payload[f"{prefix}_htf_liquidity_context"] = _optional_str(context.get("liquidity_context"))
+    payload[f"{prefix}_htf_allowed_playbook"] = _optional_str(context.get("allowed_playbook"))
+    payload[f"{prefix}_htf_blocked_playbook"] = _string_list(context.get("blocked_playbook"))
+    payload[f"{prefix}_htf_data_sufficient"] = _optional_bool(context.get("data_sufficient"))
+    payload[f"{prefix}_htf_source_event"] = _optional_str(context.get("source_event"))
+    payload[f"{prefix}_htf_execution_impact"] = _optional_bool(context.get("execution_impact"))
+    payload[f"{prefix}_htf_is_execution_signal"] = _optional_bool(context.get("valid_for_execution"))
 
 
 def _strip_pressure_priority_fields(payload: dict[str, Any]) -> None:
@@ -1795,6 +1831,11 @@ def _strip_followthrough_fields(payload: dict[str, Any]) -> None:
         "signal_watch_followthrough_source_event",
         "signal_watch_followthrough_execution_impact",
         "signal_watch_followthrough_is_execution_signal",
+        "signal_watch_followthrough_htf_daily_bias",
+        "signal_watch_followthrough_htf_h4_structure",
+        "signal_watch_followthrough_htf_price_location",
+        "signal_watch_followthrough_htf_allowed_playbook",
+        "signal_watch_followthrough_htf_blocked_playbook",
     ):
         payload.pop(key, None)
 
@@ -1819,6 +1860,13 @@ def _strip_microboost_role_fields(payload: dict[str, Any]) -> None:
         "signal_watch_microboost_role_is_execution_signal",
     ):
         payload.pop(key, None)
+
+
+def _strip_htf_structure_fields(payload: dict[str, Any]) -> None:
+    prefixes = ("signal_watch_htf_", "signal_decision_htf_")
+    for key in list(payload):
+        if key == "htf_structure_context" or key.startswith(prefixes):
+            payload.pop(key, None)
 
 
 def _signal_watch_priority_bucket(tier: str) -> str:

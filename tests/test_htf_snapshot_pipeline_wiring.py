@@ -65,15 +65,15 @@ def _bearish_data() -> dict[str, list[dict[str, float]]]:
 
 
 def test_flag_off_no_emit(monkeypatch, caplog):
-    monkeypatch.delenv(_FLAG, raising=False)
+    monkeypatch.setenv(_FLAG, "false")
     p = _pipeline_with_source(_bearish_data())
     with caplog.at_level(logging.WARNING):
         p._emit_htf_structure_snapshot("GBPNZD")
     assert "[HTFStructureSnapshot]" not in caplog.text
 
 
-def test_flag_on_emits_non_executable_snapshot(monkeypatch, caplog):
-    monkeypatch.setenv(_FLAG, "true")
+def test_default_on_emits_non_executable_snapshot(monkeypatch, caplog):
+    monkeypatch.delenv(_FLAG, raising=False)
     p = _pipeline_with_source(_bearish_data())
     with caplog.at_level(logging.WARNING):
         p._emit_htf_structure_snapshot("GBPNZD")

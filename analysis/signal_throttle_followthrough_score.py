@@ -39,6 +39,11 @@ class SignalThrottleFollowthroughScore:
     directional_room_pips: float | None
     pre_move_pips: float | None
     structure_alignment_score: float
+    htf_daily_bias: str | None
+    htf_h4_structure: str | None
+    htf_price_location: str | None
+    htf_allowed_playbook: str | None
+    htf_blocked_playbook: list[str] | None
     basket_theme_score: float
     microboost_role: str
     microboost_score: float
@@ -170,6 +175,11 @@ def score_signal_throttle_followthrough(
         "gap_degradation_penalty": round(gap_penalty, 2),
         "late_move_penalty": round(late_penalty, 2),
         "microboost_penalty": round(microboost_penalty, 2),
+        "htf_daily_bias": _text(_field(market_context, "htf_daily_bias") or _field(market_context, "d1_phase")) or None,
+        "htf_h4_structure": _text(_field(market_context, "htf_h4_structure") or _field(market_context, "h4_phase")) or None,
+        "htf_price_location": _text(_field(market_context, "htf_price_location")) or None,
+        "htf_allowed_playbook": _text(_field(market_context, "htf_allowed_playbook")) or None,
+        "htf_blocked_playbook": _string_list(_field(market_context, "htf_blocked_playbook")) or None,
     }
     return SignalThrottleFollowthroughScore(
         event="signal_throttle_followthrough_score_json",
@@ -189,6 +199,11 @@ def score_signal_throttle_followthrough(
         directional_room_pips=room["directional_room_pips"],
         pre_move_pips=room["pre_move_pips"],
         structure_alignment_score=round(structure_score, 2),
+        htf_daily_bias=_text(_field(market_context, "htf_daily_bias") or _field(market_context, "d1_phase")) or None,
+        htf_h4_structure=_text(_field(market_context, "htf_h4_structure") or _field(market_context, "h4_phase")) or None,
+        htf_price_location=_text(_field(market_context, "htf_price_location")) or None,
+        htf_allowed_playbook=_text(_field(market_context, "htf_allowed_playbook")) or None,
+        htf_blocked_playbook=_string_list(_field(market_context, "htf_blocked_playbook")) or None,
         basket_theme_score=round(basket_score, 2),
         microboost_role=microboost_role,
         microboost_score=round(microboost_score, 2),
@@ -220,6 +235,11 @@ def followthrough_context_for_symbol(
             "pressure_quality_bucket": _text(raw.get("pressure_quality_bucket")),
             "duration_maturity_bucket": _text(raw.get("duration_maturity_bucket")),
             "microboost_role": _text(raw.get("microboost_role")),
+            "htf_daily_bias": _text(raw.get("htf_daily_bias")),
+            "htf_h4_structure": _text(raw.get("htf_h4_structure")),
+            "htf_price_location": _text(raw.get("htf_price_location")),
+            "htf_allowed_playbook": _text(raw.get("htf_allowed_playbook")),
+            "htf_blocked_playbook": _string_list(raw.get("htf_blocked_playbook")),
             "room_to_move_score": _number_or_none(raw.get("room_to_move_score")),
             "directional_room_pips": _number_or_none(raw.get("directional_room_pips")),
             "gap_health": _text(raw.get("gap_health")),
@@ -277,6 +297,9 @@ def _compact_score(row: Mapping[str, Any]) -> dict[str, Any]:
         "duration_maturity_bucket": row.get("duration_maturity_bucket"),
         "pressure_quality_bucket": row.get("pressure_quality_bucket"),
         "microboost_role": row.get("microboost_role"),
+        "htf_daily_bias": row.get("htf_daily_bias"),
+        "htf_h4_structure": row.get("htf_h4_structure"),
+        "htf_price_location": row.get("htf_price_location"),
         "directional_room_pips": row.get("directional_room_pips"),
         "gap_health": row.get("gap_health"),
         "late_move_penalty": row.get("late_move_penalty"),
@@ -443,24 +466,58 @@ def _structure_alignment(direction: str | None, context: Any | None) -> tuple[fl
     risks: list[str] = []
     m15 = _text(_field(context, "m15_phase")).upper()
     h1 = _text(_field(context, "h1_phase")).upper()
+    h4 = _text(_field(context, "htf_h4_structure") or _field(context, "h4_phase")).upper()
+    daily = _text(_field(context, "htf_daily_bias") or _field(context, "d1_phase")).upper()
+    htf_location = _text(_field(context, "htf_price_location")).upper()
+    blocked_playbook = set(_string_list(_field(context, "htf_blocked_playbook")))
     price_position = _text(_field(context, "price_position")).upper()
     if direction in {"BUY", "SELL"} and _phase_aligned(direction, m15):
-        score += 6.0
+        score += 4.0
         positive.append("M15_STRUCTURE_ALIGNED")
     elif m15:
         risks.append("M15_STRUCTURE_CONFLICT")
     if direction in {"BUY", "SELL"} and _phase_aligned(direction, h1):
-        score += 8.0
+        score += 5.0
         positive.append("H1_STRUCTURE_ALIGNED")
     elif h1:
         risks.append("H1_STRUCTURE_CONFLICT")
+    if direction in {"BUY", "SELL"} and _htf_phase_aligned(direction, h4):
+        score += 5.0
+        positive.append("H4_STRUCTURE_ALIGNED")
+    elif h4 and h4 not in {"RANGE", "NO_STRUCTURE", "UNKNOWN"}:
+        risks.append("H4_STRUCTURE_CONFLICT")
+    if direction in {"BUY", "SELL"} and _htf_phase_aligned(direction, daily):
+        score += 5.0
+        positive.append("DAILY_BIAS_ALIGNED")
+    elif daily and daily not in {"RANGE", "TRANSITION", "NO_BIAS", "UNKNOWN"}:
+        risks.append("DAILY_BIAS_CONFLICT")
+    if direction == "BUY":
+        if htf_location in {"DISCOUNT", "H4_DEMAND"}:
+            score += 3.0
+            positive.append("HTF_BUY_LOCATION_SUPPORTED")
+        elif htf_location in {"PREMIUM", "H4_SUPPLY"}:
+            risks.append("HTF_BUY_AT_PREMIUM_OR_SUPPLY_NO_CHASE")
+        if "BUY_LIMIT" in blocked_playbook and "BUY_BREAKOUT_CHASE" in blocked_playbook:
+            risks.append("HTF_BUY_PLAYBOOK_BLOCKED")
+        elif blocked_playbook:
+            positive.append("HTF_BUY_PLAYBOOK_NOT_HARD_BLOCKED")
+    elif direction == "SELL":
+        if htf_location in {"PREMIUM", "H4_SUPPLY"}:
+            score += 3.0
+            positive.append("HTF_SELL_LOCATION_SUPPORTED")
+        elif htf_location in {"DISCOUNT", "H4_DEMAND"}:
+            risks.append("HTF_SELL_AT_DISCOUNT_OR_DEMAND_NO_CHASE")
+        if "SELL_LIMIT" in blocked_playbook and "SELL_BREAKOUT_CHASE" in blocked_playbook:
+            risks.append("HTF_SELL_PLAYBOOK_BLOCKED")
+        elif blocked_playbook:
+            positive.append("HTF_SELL_PLAYBOOK_NOT_HARD_BLOCKED")
     if direction == "BUY" and price_position in {"MID_RANGE", *_KEY_SUPPORT_POSITIONS}:
         score += 2.0
         positive.append("BUY_NOT_CHASING_KEY_RESISTANCE")
     elif direction == "SELL" and price_position in {"MID_RANGE", *_KEY_RESISTANCE_POSITIONS}:
         score += 2.0
         positive.append("SELL_NOT_CHASING_KEY_SUPPORT")
-    return min(16.0, score), positive, risks
+    return min(24.0, score), positive, risks
 
 
 def _basket_theme_score(
@@ -543,7 +600,14 @@ def _bucket(score: int, risks: Sequence[str]) -> str:
     risk_set = set(risks)
     if "MARKET_CONTEXT_MISSING" in risk_set or "REFERENCE_PRICE_MISSING" in risk_set:
         return "CONTEXT_REQUIRED"
-    if "BUY_PRESSURE_AT_KEY_RESISTANCE_NO_CHASE" in risk_set or "SELL_PRESSURE_AT_KEY_SUPPORT_NO_CHASE" in risk_set:
+    if (
+        "BUY_PRESSURE_AT_KEY_RESISTANCE_NO_CHASE" in risk_set
+        or "SELL_PRESSURE_AT_KEY_SUPPORT_NO_CHASE" in risk_set
+        or "HTF_BUY_AT_PREMIUM_OR_SUPPLY_NO_CHASE" in risk_set
+        or "HTF_SELL_AT_DISCOUNT_OR_DEMAND_NO_CHASE" in risk_set
+        or "HTF_BUY_PLAYBOOK_BLOCKED" in risk_set
+        or "HTF_SELL_PLAYBOOK_BLOCKED" in risk_set
+    ):
         return "LATE_OR_ABSORPTION_RISK"
     if "GAP_DEGRADED_BROKEN_SEQUENCE" in risk_set:
         return "GAP_DEGRADED_RADAR"
@@ -656,6 +720,15 @@ def _phase_aligned(direction: str, phase: str) -> bool:
     bullish = ("BULL", "UPTREND", "SUPPORT_HOLD", "PIVOT_RECLAIM", "ACCUMULATION", "BREAKOUT")
     bearish = ("BEAR", "DOWNTREND", "RESISTANCE_REJECTION", "SUPPORT_BREAK", "DISTRIBUTION", "BREAKDOWN")
     return any(token in phase for token in (bullish if direction == "BUY" else bearish))
+
+
+def _htf_phase_aligned(direction: str, phase: str) -> bool:
+    phase = str(phase or "").upper()
+    if not phase:
+        return False
+    if direction == "BUY":
+        return any(token in phase for token in ("BULL", "UPTREND", "DEMAND", "DISCOUNT"))
+    return any(token in phase for token in ("BEAR", "DOWNTREND", "SUPPLY", "PREMIUM"))
 
 
 def _pip_size(symbol: str, context: Any | None) -> float:

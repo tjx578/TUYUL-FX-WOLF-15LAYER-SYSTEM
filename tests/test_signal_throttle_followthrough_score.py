@@ -123,6 +123,64 @@ def test_followthrough_score_penalizes_late_buy_at_resistance_with_broken_gap():
     assert score["valid_for_execution"] is False
 
 
+def test_followthrough_score_penalizes_buy_blocked_by_htf_structure():
+    scores = build_signal_throttle_followthrough_scores(
+        clean_watch_candidates=[
+            {
+                "symbol": "GBPNZD",
+                "raw_pressure_direction": "BUY",
+                "source_clean_block_id": "GBPNZD_20260708T020000Z_20260708T023500Z",
+                "clean_block_duration_seconds": 2100.0,
+                "effective_ticks": 120,
+                "effective_density_per_minute": 35.0,
+                "max_gap_seconds": 60.0,
+            }
+        ],
+        pressure_tiers=[_tier_row("GBPNZD", "BUY")],
+        market_contexts={
+            "GBPNZD": MarketContext(
+                symbol="GBPNZD",
+                raw_allowed_direction="BUY",
+                pip_value=0.0001,
+                price_at_signal_start=2.0300,
+                price_at_signal_end=2.0320,
+                key_support=2.0280,
+                key_resistance=2.0380,
+                price_position="MAIN_RESISTANCE",
+                m15_phase="BULLISH_PULLBACK",
+                h1_phase="BULLISH",
+                h4_phase="BEARISH",
+                d1_phase="BEARISH",
+                htf_daily_bias="BEARISH",
+                htf_h4_structure="H4_SUPPLY",
+                htf_price_location="H4_SUPPLY",
+                htf_allowed_playbook="SELL_ON_REJECTION",
+                htf_blocked_playbook=["BUY_LIMIT", "BUY_BREAKOUT_CHASE"],
+                htf_data_sufficient=True,
+                theme_aligned=True,
+            )
+        },
+        microboost_summary={
+            "latest": {
+                "symbol": "GBPNZD",
+                "direction": "BUY",
+                "phase_priced": "CONTINUATION_MICROBOOST",
+            }
+        },
+    )
+
+    score = scores[0]
+    assert score["followthrough_bucket"] == "LATE_OR_ABSORPTION_RISK"
+    assert score["htf_daily_bias"] == "BEARISH"
+    assert score["htf_h4_structure"] == "H4_SUPPLY"
+    assert "HTF_BUY_PLAYBOOK_BLOCKED" in score["risk_flags"]
+    assert "HTF_BUY_AT_PREMIUM_OR_SUPPLY_NO_CHASE" in score["risk_flags"]
+    context = followthrough_context_for_symbol(scores, "GBPNZD")
+    assert context["htf_daily_bias"] == "BEARISH"
+    assert context["htf_blocked_playbook"] == ["BUY_LIMIT", "BUY_BREAKOUT_CHASE"]
+    assert context["valid_for_execution"] is False
+
+
 def test_followthrough_log_payload_and_watch_context_are_execution_neutral():
     scores = [
         {

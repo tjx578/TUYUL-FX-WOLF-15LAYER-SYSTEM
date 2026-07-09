@@ -1,9 +1,9 @@
-"""Step 1 — HTF Daily Phase Feed (flag-guarded, default OFF).
+"""Step 1 — HTF Daily Phase Feed (flag-guarded, default ON).
 
 Activates the golden matcher's already-written but dormant Daily-aware rules by
 populating ``MarketContext.d1_phase``. Pure context — no execution side-effect,
-no new BUY_LIMIT_WATCH, no candidate-direction change, Daily is never a hard
-execution blocker. When the flag is OFF, matcher decisions remain legacy-equivalent.
+no new BUY_LIMIT_WATCH, no candidate-direction change, Daily is never an entry
+trigger. When the flag is OFF, matcher decisions remain legacy-equivalent.
 """
 
 from __future__ import annotations
@@ -65,14 +65,14 @@ def test_marketcontext_accepts_explicit_d1_phase():
 
 
 def test_flag_off_returns_none(monkeypatch):
-    monkeypatch.delenv(_FLAG, raising=False)
+    monkeypatch.setenv(_FLAG, "false")
     # Even with a resolver that *would* yield BEARISH, OFF must yield None.
     p = _pipeline(_FakeResolver("BEARISH"))
     assert p._derive_daily_phase_feed("GBPNZD") is None
 
 
-def test_flag_on_uses_snapshot_daily_bias_as_source_of_truth(monkeypatch):
-    monkeypatch.setenv(_FLAG, "true")
+def test_default_on_uses_snapshot_daily_bias_as_source_of_truth(monkeypatch):
+    monkeypatch.delenv(_FLAG, raising=False)
     # Fallback would return FALLBACK; snapshot priority must win.
     p = _pipeline(_FakeResolver("BEARISH"), d1_fallback="FALLBACK")
     assert p._derive_daily_phase_feed("GBPNZD") == "BEARISH"
