@@ -63,6 +63,13 @@ def test_buy_microboost_at_main_resistance_becomes_sell_watch():
     assert result.aggressive_trigger == 1.845
     assert result.conservative_trigger == 1.8409
     assert result.sl_safe == 1.8494
+    assert result.microboost_role == "ABSORPTION_WARNING"
+    assert result.microboost_followthrough_bias == "COUNTER_WATCH"
+    assert result.microboost_price_behavior == "BUY_PRESSURE_STALLED_AT_RESISTANCE"
+    assert result.microboost_room_to_move_status == "COUNTER_CONFIRMATION_REQUIRED"
+    assert result.microboost_stall_pips == pytest.approx(4.45)
+    assert result.microboost_role_valid_for_execution is False
+    assert result.microboost_role_execution_impact is False
 
 
 def test_direction_conflict_resolver_blocks_counter_sell_when_raw_buy_basket_supported():

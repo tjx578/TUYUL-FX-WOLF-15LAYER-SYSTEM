@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from analysis.direction_conflict_resolver import resolve_direction_conflict
 from analysis.market_context_validator import MarketContext
+from analysis.microboost_followthrough_role import build_microboost_followthrough_role, microboost_role_fields_from
 from analysis.signal_thresholds import SIGNAL_MIN_RR, TP1_TARGET_RR
 
 
@@ -117,6 +118,27 @@ class MicroboostCounterEntryResult:
     duration_seconds: float | None = None
     duration_minutes: float | None = None
     price_delta_pips: float | None = None
+    microboost_role: str | None = None
+    microboost_followthrough_bias: str | None = None
+    microboost_room_to_move_pips: float | None = None
+    microboost_pre_move_pips: float | None = None
+    microboost_late_move_penalty: float | None = None
+    microboost_followthrough_context_ready: bool | None = None
+    microboost_price_behavior: str | None = None
+    microboost_room_to_move_status: str | None = None
+    microboost_stall_pips: float | None = None
+    microboost_room_to_target_pips: float | None = None
+    microboost_expected_horizon: str | None = None
+    microboost_outcome_tracking_required: bool | None = None
+    microboost_role_source_event: str | None = None
+    microboost_role_reason_codes: list[str] | None = None
+    microboost_role_valid_for_execution: bool | None = None
+    microboost_role_execution_impact: bool | None = None
+    microboost_role_advisory_only: bool | None = None
+    room_to_move_pips: float | None = None
+    pre_move_pips: float | None = None
+    late_move_penalty: float | None = None
+    followthrough_context_ready: bool | None = None
     confidence_bucket: str | None = None
     invalidation: str | None = None
     trade_plan: dict[str, Any] | None = None
@@ -291,6 +313,15 @@ class MicroboostCounterEntryEngine:
             "duration_minutes": round(duration_seconds / 60.0, 2) if duration_seconds is not None else None,
             "price_delta_pips": price_delta_pips,
             "theme_alignment": _theme_alignment_text(market),
+            **_microboost_role_context(
+                cluster,
+                market=market,
+                symbol=symbol,
+                raw_direction=raw_direction,
+                phase_unpriced=phase_unpriced,
+                phase_priced=phase_priced,
+                market_context_applied=market_context_applied,
+            ),
             **_pattern_base_fields(cluster),
         }
 
@@ -1191,6 +1222,67 @@ def _market_context_applied(cluster: Any, market: Any | None) -> bool:
             and _normalize_position(snapshot.get("price_position")) is not None
         )
     return market is not None and _optional_float(_field(market, "price_at_signal_end", None)) is not None
+
+
+def _microboost_role_context(
+    cluster: Any,
+    *,
+    market: Any | None,
+    symbol: str,
+    raw_direction: str | None,
+    phase_unpriced: str,
+    phase_priced: str | None,
+    market_context_applied: bool,
+) -> dict[str, Any]:
+    payload = {
+        "symbol": symbol,
+        "direction": raw_direction,
+        "phase_unpriced": phase_unpriced,
+        "phase_priced": phase_priced,
+        "action": _field(cluster, "action", None),
+        "requires_market_context": not market_context_applied,
+        "market_context_snapshot": _microboost_role_market_snapshot(cluster, market),
+    }
+    return microboost_role_fields_from(build_microboost_followthrough_role(payload))
+
+
+def _microboost_role_market_snapshot(cluster: Any, market: Any | None) -> dict[str, Any] | None:
+    raw = _field(cluster, "market_context_snapshot", None)
+    if isinstance(raw, dict):
+        return raw
+    if market is None:
+        return None
+    keys = (
+        "symbol",
+        "pip_value",
+        "price_at_signal_start",
+        "price_at_5m_confirm",
+        "price_at_signal_end",
+        "bid",
+        "ask",
+        "price_position",
+        "key_resistance",
+        "main_resistance",
+        "resistance_low",
+        "resistance_high",
+        "minor_resistance",
+        "tp1_resistance",
+        "tp2_resistance",
+        "tp3_resistance",
+        "tp4_resistance",
+        "key_support",
+        "main_support",
+        "support_low",
+        "support_high",
+        "minor_support",
+        "major_support",
+        "tp1_support",
+        "tp2_support",
+        "tp3_support",
+        "tp4_support",
+    )
+    snapshot = {key: _field(market, key, None) for key in keys if _field(market, key, None) is not None}
+    return snapshot or None
 
 
 def _price_start(cluster: Any, market: Any | None) -> float | None:

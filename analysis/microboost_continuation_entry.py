@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from analysis.microboost_followthrough_role import build_microboost_followthrough_role, microboost_role_fields_from
 from analysis.signal_thresholds import SIGNAL_MIN_RR, TP1_TARGET_RR
 
 
@@ -88,6 +89,27 @@ class MicroboostContinuationResult:
     duration_seconds: float | None = None
     duration_minutes: float | None = None
     price_delta_pips: float | None = None
+    microboost_role: str | None = None
+    microboost_followthrough_bias: str | None = None
+    microboost_room_to_move_pips: float | None = None
+    microboost_pre_move_pips: float | None = None
+    microboost_late_move_penalty: float | None = None
+    microboost_followthrough_context_ready: bool | None = None
+    microboost_price_behavior: str | None = None
+    microboost_room_to_move_status: str | None = None
+    microboost_stall_pips: float | None = None
+    microboost_room_to_target_pips: float | None = None
+    microboost_expected_horizon: str | None = None
+    microboost_outcome_tracking_required: bool | None = None
+    microboost_role_source_event: str | None = None
+    microboost_role_reason_codes: list[str] | None = None
+    microboost_role_valid_for_execution: bool | None = None
+    microboost_role_execution_impact: bool | None = None
+    microboost_role_advisory_only: bool | None = None
+    room_to_move_pips: float | None = None
+    pre_move_pips: float | None = None
+    late_move_penalty: float | None = None
+    followthrough_context_ready: bool | None = None
     allowed_quorum: bool = False
     allowed_quorum_streak: int | None = None
     confidence_bucket: str | None = None
@@ -201,6 +223,14 @@ class MicroboostContinuationEngine:
             "price_delta_pips": _price_delta_pips(price_start, price_end, pip_value),
             "allowed_quorum": quorum_ok,
             "allowed_quorum_streak": _optional_int(quorum.get("streak")),
+            **_microboost_role_context(
+                cluster,
+                symbol=symbol,
+                raw_direction=raw_direction,
+                phase_unpriced=phase_unpriced,
+                phase_priced=phase_priced,
+                snapshot=snapshot,
+            ),
             **_pattern_base_fields(cluster),
         }
 
@@ -595,6 +625,27 @@ def _continuation_structure_metadata(
             "max_allowed_spread_pips": _optional_float(_field(snapshot, "max_allowed_spread_pips", None)),
         },
     }
+
+
+def _microboost_role_context(
+    cluster: Any,
+    *,
+    symbol: str,
+    raw_direction: str | None,
+    phase_unpriced: str | None,
+    phase_priced: str | None,
+    snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    payload = {
+        "symbol": symbol,
+        "direction": raw_direction,
+        "phase_unpriced": phase_unpriced,
+        "phase_priced": phase_priced,
+        "action": _field(cluster, "action", None),
+        "requires_market_context": bool(_field(cluster, "requires_market_context", snapshot is None)),
+        "market_context_snapshot": snapshot,
+    }
+    return microboost_role_fields_from(build_microboost_followthrough_role(payload))
 
 
 def _field(obj: Any, name: str, default: Any = None) -> Any:

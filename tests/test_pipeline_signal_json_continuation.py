@@ -256,6 +256,10 @@ def test_pipeline_emits_valid_continuation_payload_by_default():
     pipeline._apply_microboost_continuation_entry_report(l12_verdict=verdict, report=report)
 
     assert emitted
+    assert report["microboost_continuation_entry"]["microboost_role"] == "ACCELERATION"
+    assert report["microboost_continuation_entry"]["microboost_followthrough_bias"] == "CONTINUATION"
+    assert report["microboost_continuation_entry"]["microboost_room_to_target_pips"] > 0
+    assert report["microboost_continuation_entry"]["microboost_role_valid_for_execution"] is False
     assert emitted[0]["status"] == "BUY_TIMING_VALID_BY_QUORUM_CONTINUATION"
     assert emitted[0]["signal_json_emit_result"] is True
     assert emitted[0]["rr_to_valid_target"] >= emitted[0]["min_rr_required"]
