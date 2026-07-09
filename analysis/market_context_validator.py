@@ -450,6 +450,8 @@ def _sell_context_valid(context: MarketContext) -> bool:
 def _htf_structure_block_reason(context: MarketContext, direction: str | None) -> str | None:
     if direction not in {"BUY", "SELL"}:
         return None
+    if context.htf_data_sufficient is False:
+        return None
     daily = _phase(context.htf_daily_bias or context.d1_phase)
     h4_structure = _phase(context.htf_h4_structure or context.h4_phase)
     location = _phase(context.htf_price_location)

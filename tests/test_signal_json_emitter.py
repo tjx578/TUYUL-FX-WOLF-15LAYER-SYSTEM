@@ -341,6 +341,45 @@ def test_signal_watch_transition_emits_immediately_when_action_changes(caplog):
     assert '"action":"WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION"' in caplog.text
 
 
+def test_signal_watch_change_only_reemits_on_duration_bucket_change(caplog):
+    emitter = SignalJsonEmitter(
+        enabled=True,
+        dedup_ttl_seconds=300,
+        emit_watch=True,
+        watch_emit_on_change_only=True,
+        watch_bucket_minutes=(5.0, 10.0, 15.0),
+    )
+    first = _event(
+        cluster_id="CADJPY_20260608T033000Z",
+        symbol="CADJPY",
+        status="MICROBOOST_WATCH",
+        watch_direction="BUY",
+        duration_minutes=5.1,
+        signal_valid_time_utc="2026-06-08T03:30:00Z",
+    )
+    same_bucket = _event(
+        cluster_id="CADJPY_20260608T033000Z",
+        symbol="CADJPY",
+        status="MICROBOOST_WATCH",
+        watch_direction="BUY",
+        duration_minutes=5.9,
+        signal_valid_time_utc="2026-06-08T03:31:00Z",
+    )
+    next_bucket = _event(
+        cluster_id="CADJPY_20260608T033000Z",
+        symbol="CADJPY",
+        status="MICROBOOST_WATCH",
+        watch_direction="BUY",
+        duration_minutes=10.1,
+        signal_valid_time_utc="2026-06-08T03:32:00Z",
+    )
+
+    assert emitter.emit(first) is True
+    assert emitter.emit(same_bucket) is False
+    assert emitter.emit(next_bucket) is True
+    assert caplog.text.count("[SignalWatchJSON]") == 2
+
+
 def test_final_signal_dedup_prefers_signal_id_across_stream_extracts(caplog):
     emitter = SignalJsonEmitter(enabled=True, dedup_ttl_seconds=300)
     first = _event(

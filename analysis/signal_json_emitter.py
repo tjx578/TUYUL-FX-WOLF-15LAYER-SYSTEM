@@ -285,6 +285,13 @@ STRUCTURE_TARGET_MODES = {
 }
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class SignalJsonEvent:
     event: str
@@ -543,7 +550,11 @@ class SignalJsonEmitter:
         emit_valid: bool = True,
         require_market_context: bool = True,
         watch_transition_only: bool = True,
+        watch_emit_on_change_only: bool = False,
         watch_update_interval_seconds: float = 15.0,
+        watch_suppress_identical: bool | None = None,
+        watch_cluster_dedup_enabled: bool | None = None,
+        watch_bucket_minutes: tuple[float, ...] | None = None,
         strict_lifecycle: bool = False,
         require_parent_watch: bool = False,
         allow_direct_bypass: bool = True,
@@ -570,7 +581,23 @@ class SignalJsonEmitter:
         self.emit_valid = emit_valid
         self.require_market_context = require_market_context
         self.watch_transition_only = watch_transition_only
+        self.watch_emit_on_change_only = watch_emit_on_change_only
         self.watch_update_interval_seconds = max(0.0, float(watch_update_interval_seconds))
+        self.watch_suppress_identical = (
+            _env_bool("SIGNAL_WATCH_SUPPRESS_IDENTICAL", False)
+            if watch_suppress_identical is None
+            else bool(watch_suppress_identical)
+        )
+        self.watch_cluster_dedup_enabled = (
+            _env_bool("SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED", False)
+            if watch_cluster_dedup_enabled is None
+            else bool(watch_cluster_dedup_enabled)
+        )
+        self.watch_bucket_minutes = (
+            tuple(sorted(float(bucket) for bucket in watch_bucket_minutes if float(bucket) > 0.0))
+            if watch_bucket_minutes is not None
+            else _watch_bucket_minutes_from_env()
+        )
         self.strict_lifecycle = strict_lifecycle
         self.require_parent_watch = require_parent_watch
         self.allow_direct_bypass = allow_direct_bypass
@@ -649,12 +676,12 @@ class SignalJsonEmitter:
         ):
             return False
 
-        # Increment B (flag default OFF): suppress identical watch re-emits for the
+        # Increment B: suppress identical watch re-emits for the
         # same cluster. The transition logic already rate-limits, but it still
         # re-emits an unchanged watch every watch_update_interval; this collapses
         # byte-identical content (symbol|family|status|reason|direction|price) until
-        # something materially changes. Enable: SIGNAL_WATCH_SUPPRESS_IDENTICAL=true.
-        if is_watch and os.getenv("SIGNAL_WATCH_SUPPRESS_IDENTICAL", "false").strip().lower() == "true":
+        # something materially changes.
+        if is_watch and self.watch_suppress_identical:
             content_cluster = str(payload.get("cluster_id") or payload.get("symbol") or "")
             content_key = (
                 f"{payload.get('symbol')}|{payload.get('signal_family')}|{payload.get('status')}|"
@@ -665,15 +692,15 @@ class SignalJsonEmitter:
                 return False
             self._last_watch_content[content_cluster] = content_key
 
-        # Increment E (flag default OFF): collapse repeated watches for the same cluster
+        # Increment E: collapse repeated watches for the same cluster
         # by their MATERIAL fields only -- ignoring price/timestamp/density noise that
         # Increment B's byte-identical check does NOT ignore (the 28x GBPCHF spam slipped
         # through B because each tick carried a slightly different price). Suppresses only
         # the duplicate EMIT; the first watch + any material change always pass, and
-        # finalizer lifecycle tracking is untouched. Enable: SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED=true.
+        # finalizer lifecycle tracking is untouched.
         if (
             is_watch
-            and os.getenv("SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED", "false").strip().lower() == "true"
+            and self.watch_cluster_dedup_enabled
             and self._is_cluster_watch_duplicate(payload)
         ):
             return False
@@ -853,11 +880,13 @@ class SignalJsonEmitter:
 
     def _mark_watch_transition(self, event: SignalJsonEvent) -> str | None:
         cluster_key = event.cluster_id or f"{event.symbol}|{event.signal_family}|{event.entry_reference_price}"
-        state = _watch_transition_state(event)
+        state = _watch_transition_state(event, bucket_minutes=self.watch_bucket_minutes)
         now = time.time()
         event_seconds = _signal_time_epoch_seconds(event.signal_valid_time_utc)
         previous = self._cluster_state.get(cluster_key)
         if previous == state:
+            if self.watch_emit_on_change_only:
+                return None
             previous_event_seconds = self._cluster_watch_event_seconds.get(cluster_key)
             previous_wall_seconds = self._cluster_watch_wall_seconds.get(cluster_key)
             event_elapsed = (
@@ -905,10 +934,17 @@ class SignalJsonEmitter:
                 "candidate_direction",
                 "watch_direction",
                 "price_position",
+                "m15_phase",
+                "h1_phase",
+                "microboost_role",
                 "valid_for_execution",
+                "execution_status",
+                "execution_block_reason",
+                "block_reason",
+                "target_block_reason",
                 "reason",
             )
-        )
+        ) + f"|{_watch_duration_bucket_label(payload, self.watch_bucket_minutes)}"
 
     def _is_cluster_watch_duplicate(self, payload: dict[str, Any]) -> bool:
         """Return True when this cluster watch is a material-duplicate of one already
@@ -1675,18 +1711,72 @@ def _watch_payload_revision(payload: dict[str, Any]) -> str:
     return "|".join(str(payload.get(field) or "") for field in fields)
 
 
-def _watch_transition_state(event: SignalJsonEvent) -> str:
+def _watch_transition_state(event: SignalJsonEvent, *, bucket_minutes: tuple[float, ...] = ()) -> str:
+    execution_gate = event.execution_gate if isinstance(event.execution_gate, dict) else {}
     fields = (
         event.status,
         event.target_mode,
         event.tp_status,
         event.watch_direction,
+        event.candidate_direction,
         event.direction_validation_status,
         event.phase_priced,
         event.price_position,
+        event.m15_phase,
+        event.h1_phase,
         event.action,
+        event.microboost_role,
+        event.valid_for_execution,
+        event.execution_status,
+        event.execution_reason,
+        event.block_reason,
+        event.target_block_reason,
+        execution_gate.get("block_reason") or execution_gate.get("reason"),
+        _watch_duration_bucket_label(event, bucket_minutes),
     )
     return "|".join(str(field or "") for field in fields)
+
+
+def _watch_bucket_minutes_from_env() -> tuple[float, ...]:
+    raw = os.getenv("SIGNAL_WATCH_BUCKET_EMIT_MINUTES", "5,10,15,20,30")
+    buckets: list[float] = []
+    for part in raw.split(","):
+        try:
+            value = float(part.strip())
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            buckets.append(value)
+    return tuple(sorted(set(buckets)))
+
+
+def _watch_duration_minutes(value: Any) -> float | None:
+    if isinstance(value, SignalJsonEvent):
+        minutes = _optional_float(value.duration_minutes)
+        if minutes is not None:
+            return minutes
+        seconds = _optional_float(value.clean_block_duration_seconds)
+        return seconds / 60.0 if seconds is not None else None
+    if isinstance(value, dict):
+        minutes = _optional_float(value.get("duration_minutes"))
+        if minutes is not None:
+            return minutes
+        seconds = _optional_float(value.get("clean_block_duration_seconds"))
+        return seconds / 60.0 if seconds is not None else None
+    return None
+
+
+def _watch_duration_bucket_label(value: Any, bucket_minutes: tuple[float, ...]) -> str:
+    minutes = _watch_duration_minutes(value)
+    if minutes is None or not bucket_minutes:
+        return ""
+    reached = [bucket for bucket in bucket_minutes if minutes >= bucket]
+    if not reached:
+        return "LT_FIRST"
+    bucket = reached[-1]
+    if float(bucket).is_integer():
+        return f"GE_{int(bucket)}M"
+    return f"GE_{bucket:g}M"
 
 
 def _signal_time_epoch_seconds(value: str | None) -> float | None:

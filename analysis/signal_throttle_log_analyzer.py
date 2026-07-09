@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import threading
+import time
 from collections import Counter, deque
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields
@@ -79,6 +80,8 @@ _DEFAULT_CANDIDATE_LIFECYCLE_WINDOW_SECONDS = 4 * 60 * 60
 DEFAULT_SIGNAL_THROTTLE_RAW_LOGGER = "signal_throttle_raw"
 DEFAULT_SIGNAL_THROTTLE_RAW_PREFIX = "[SignalThrottle]"
 DEFAULT_SIGNAL_THROTTLE_RAW_LEVEL = "WARNING"
+_SIGNAL_THROTTLE_RAW_SAMPLE_LAST: dict[str, float] = {}
+_SIGNAL_THROTTLE_RAW_SAMPLE_LOCK = threading.Lock()
 PURE_PRESSURE_LEDGER_SOURCE = "SIGNAL_THROTTLE_PURE_PRESSURE_LEDGER"
 PURE_PRESSURE_LEDGER_TYPE = "PURE_PRESSURE_LEDGER"
 V1_CLEAN_BLOCK_LEDGER_TYPE = "V1_SCANNER_CLEAN_BLOCK_LEDGER"
@@ -930,6 +933,8 @@ def emit_signal_throttle_raw_event(event: SignalThrottleLogEvent) -> bool:
     message = str(event.message or "").strip()
     if not message:
         return False
+    if not _signal_throttle_raw_sample_allowed(event):
+        return False
     prefix = os.getenv("SIGNAL_THROTTLE_RAW_LOG_PREFIX", DEFAULT_SIGNAL_THROTTLE_RAW_PREFIX)
     if not message.startswith(prefix):
         message = f"{prefix} {message}"
@@ -937,6 +942,51 @@ def emit_signal_throttle_raw_event(event: SignalThrottleLogEvent) -> bool:
     level_name = os.getenv("SIGNAL_THROTTLE_RAW_LOG_LEVEL", DEFAULT_SIGNAL_THROTTLE_RAW_LEVEL).strip().upper()
     level = getattr(logging, level_name, logging.WARNING)
     logger.log(level if isinstance(level, int) else logging.WARNING, _with_raw_lineage_metadata(message, event))
+    return True
+
+
+def _signal_log_compact_mode_enabled() -> bool:
+    return os.getenv("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _signal_throttle_raw_sample_seconds() -> float:
+    default = 60.0 if _signal_log_compact_mode_enabled() else 0.0
+    raw = os.getenv("SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS")
+    if raw is None:
+        return default
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _signal_throttle_raw_sample_key(event: SignalThrottleLogEvent) -> str:
+    return "|".join(
+        str(part or "")
+        for part in (
+            event.symbol,
+            event.event_type,
+            event.source_stream,
+            event.direction,
+            event.raw_verdict,
+            event.effective_action,
+            event.pressure_strength,
+            event.execution_block_reason,
+        )
+    )
+
+
+def _signal_throttle_raw_sample_allowed(event: SignalThrottleLogEvent) -> bool:
+    interval = _signal_throttle_raw_sample_seconds()
+    if interval <= 0.0:
+        return True
+    key = _signal_throttle_raw_sample_key(event)
+    now = time.time()
+    with _SIGNAL_THROTTLE_RAW_SAMPLE_LOCK:
+        previous = _SIGNAL_THROTTLE_RAW_SAMPLE_LAST.get(key)
+        if previous is not None and now - previous < interval:
+            return False
+        _SIGNAL_THROTTLE_RAW_SAMPLE_LAST[key] = now
     return True
 
 

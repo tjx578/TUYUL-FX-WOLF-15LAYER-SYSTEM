@@ -126,6 +126,41 @@ def test_snapshot_reports_candidate_market_context_hydration(monkeypatch, caplog
     assert p["HTF_DAILY_PHASE_FEED_ENABLED"] is True
 
 
+def test_snapshot_reports_log_noise_governance_defaults(monkeypatch, caplog):
+    monkeypatch.delenv(_GATE, raising=False)
+    for name in (
+        "SIGNAL_LOG_COMPACT_MODE_ENABLED",
+        "SIGNAL_WATCH_EMIT_ON_CHANGE_ONLY",
+        "SIGNAL_WATCH_SUPPRESS_IDENTICAL",
+        "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED",
+        "SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS",
+        "SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS",
+        "MICROBOOST_INTEL_EMIT_ON_ROLE_CHANGE_ONLY",
+        "MICROBOOST_TABLE_RATE_LIMIT_SECONDS",
+        "PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS",
+        "HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY",
+        "HTF_STRUCTURE_SNAPSHOT_INTERVAL_SECONDS",
+        "SIGNAL_JSON_VERBOSE_OBSERVABILITY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    with caplog.at_level(logging.WARNING, logger="signal_json"):
+        _pipeline()._emit_signal_intelligence_flag_snapshot()
+    p = _emitted_payload(caplog)
+    assert p["SIGNAL_LOG_COMPACT_MODE_ENABLED"] is True
+    assert p["SIGNAL_WATCH_EMIT_ON_CHANGE_ONLY"] is True
+    assert p["SIGNAL_WATCH_BUCKET_EMIT_MINUTES"] == "5,10,15,20,30"
+    assert p["SIGNAL_WATCH_SUPPRESS_IDENTICAL"] is True
+    assert p["SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED"] is True
+    assert p["SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS"] == 60.0
+    assert p["SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS"] == 60.0
+    assert p["MICROBOOST_INTEL_EMIT_ON_ROLE_CHANGE_ONLY"] is True
+    assert p["MICROBOOST_TABLE_RATE_LIMIT_SECONDS"] == 120.0
+    assert p["PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS"] == 60.0
+    assert p["HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY"] is True
+    assert p["HTF_STRUCTURE_SNAPSHOT_INTERVAL_SECONDS"] == 60.0
+    assert p["SIGNAL_JSON_VERBOSE_OBSERVABILITY"] is False
+
+
 def test_snapshot_bridge_window_defaults_to_canary_ttl(monkeypatch, caplog):
     monkeypatch.delenv(_GATE, raising=False)
     monkeypatch.delenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS", raising=False)

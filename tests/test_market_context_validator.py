@@ -120,6 +120,31 @@ def test_htf_structure_blocks_buy_even_when_m15_h1_align():
     assert result.reason == "htf_structure_blocks_buy_playbook"
 
 
+def test_htf_structure_insufficient_data_is_not_an_execution_block():
+    result = validate_market_context(
+        MarketContext(
+            symbol="EURUSD",
+            raw_allowed_direction="BUY",
+            price_at_signal_start=1.1000,
+            price_at_5m_confirm=1.1006,
+            price_at_signal_end=1.1008,
+            m15_phase="PIVOT_RECLAIM",
+            h1_phase="BULLISH",
+            htf_daily_bias="NO_BIAS",
+            htf_h4_structure="NO_STRUCTURE",
+            htf_price_location="UNKNOWN",
+            htf_blocked_playbook=["BUY_LIMIT", "BUY_BREAKOUT_CHASE"],
+            htf_data_sufficient=False,
+            theme_aligned=True,
+            spread_normal=True,
+        )
+    )
+
+    assert result.direction_validated is True
+    assert result.final_direction == "BUY"
+    assert result.action != "WAIT_HTF_STRUCTURE_PERMISSION"
+
+
 def test_sell_validates_only_when_price_theme_phase_align():
     result = validate_market_context(
         MarketContext(

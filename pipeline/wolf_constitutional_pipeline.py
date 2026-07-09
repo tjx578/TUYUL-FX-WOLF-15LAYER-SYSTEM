@@ -423,6 +423,8 @@ class WolfConstitutionalPipeline:
             ),
         )
         self._last_microboost_log_key: tuple[Any, ...] | None = None
+        self._last_microboost_role_key_by_symbol: dict[str, tuple[Any, ...]] = {}
+        self._last_microboost_table_emit_at: float | None = None
         self._emitted_microboost_table_keys: set[tuple[Any, ...]] = set()
         # Root#1/case-c bridge: latest allowed SignalThrottleIntel direction per
         # symbol. Read only by the flag-guarded non-execute pressure canary path.
@@ -435,6 +437,8 @@ class WolfConstitutionalPipeline:
         # reads exactly the bars analysis sees. Non-executable observability only.
         self._htf_snapshot_resolver = HTFStructureSnapshotResolver(candle_source=self._context_bus)
         self._last_htf_snapshot_key: dict[str, tuple[Any, ...]] = {}
+        self._last_htf_snapshot_emit_at: dict[str, float] = {}
+        self._last_signal_pressure_state_emit: dict[str, tuple[str, float]] = {}
         self._last_no_trade_pressure_decision_at: dict[str, float] = {}
         self._last_allowed_quorum_decision_at: dict[str, float] = {}
         self._signal_lifecycle_manager = SignalLifecycleManager()
@@ -449,6 +453,7 @@ class WolfConstitutionalPipeline:
             counter_entry_expiry_minutes=int(self._parse_env_float("SIGNAL_JSON_COUNTER_ENTRY_EXPIRY_MINUTES", 30.0)),
             allow_rr_fallback=os.getenv("SIGNAL_JSON_ALLOW_RR_FALLBACK", "true").strip().lower() == "true",
         )
+        log_compact_mode = self._signal_log_compact_mode_enabled()
         self._signal_json_emitter = SignalJsonEmitter(
             enabled=os.getenv("SIGNAL_JSON_LOG_ENABLED", "true").strip().lower() == "true",
             prefix=os.getenv("SIGNAL_JSON_LOG_PREFIX", "[SignalJSON]"),
@@ -466,6 +471,19 @@ class WolfConstitutionalPipeline:
             ),
             watch_transition_only=(os.getenv("SIGNAL_WATCH_EMIT_ON_TRANSITION_ONLY", "true").strip().lower() == "true"),
             watch_update_interval_seconds=self._parse_env_float("SIGNAL_WATCH_UPDATE_INTERVAL_SECONDS", 15.0),
+            watch_emit_on_change_only=self._parse_env_bool(
+                "SIGNAL_WATCH_EMIT_ON_CHANGE_ONLY",
+                log_compact_mode,
+            ),
+            watch_suppress_identical=self._parse_env_bool("SIGNAL_WATCH_SUPPRESS_IDENTICAL", log_compact_mode),
+            watch_cluster_dedup_enabled=self._parse_env_bool(
+                "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED",
+                log_compact_mode,
+            ),
+            watch_bucket_minutes=self._parse_env_float_list(
+                "SIGNAL_WATCH_BUCKET_EMIT_MINUTES",
+                (5.0, 10.0, 15.0, 20.0, 30.0),
+            ),
             strict_lifecycle=os.getenv("SIGNAL_JSON_STRICT_LIFECYCLE", "true").strip().lower() == "true",
             require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "false").strip().lower() == "true",
             allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "true").strip().lower() == "true",
@@ -484,7 +502,10 @@ class WolfConstitutionalPipeline:
             require_terminal_decision_update=(
                 os.getenv("SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "true").strip().lower() == "true"
             ),
-            compact_production=os.getenv("SIGNAL_JSON_COMPACT_PRODUCTION", "true").strip().lower() == "true",
+            compact_production=self._parse_env_bool(
+                "SIGNAL_JSON_COMPACT_PRODUCTION",
+                not self._parse_env_bool("SIGNAL_JSON_VERBOSE_OBSERVABILITY", False),
+            ),
             emit_pattern_debug=os.getenv("SIGNAL_JSON_PATTERN_DEBUG_ENABLED", "false").strip().lower() == "true",
             pattern_debug_prefix=os.getenv("SIGNAL_PATTERN_DEBUG_JSON_LOG_PREFIX", "[PatternMatchDebugJSON]"),
         )
@@ -574,6 +595,39 @@ class WolfConstitutionalPipeline:
         with contextlib.suppress(ValueError, TypeError):
             return max(1.0, float(raw))
         return default
+
+    @staticmethod
+    def _parse_env_float_allow_zero(name: str, default: float) -> float:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        with contextlib.suppress(ValueError, TypeError):
+            return max(0.0, float(raw))
+        return default
+
+    @staticmethod
+    def _parse_env_bool(name: str, default: bool) -> bool:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _parse_env_float_list(name: str, default: tuple[float, ...]) -> tuple[float, ...]:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        values: list[float] = []
+        for part in raw.split(","):
+            with contextlib.suppress(ValueError, TypeError):
+                value = float(part.strip())
+                if value > 0.0:
+                    values.append(value)
+        return tuple(sorted(set(values))) or default
+
+    @classmethod
+    def _signal_log_compact_mode_enabled(cls) -> bool:
+        return cls._parse_env_bool("SIGNAL_LOG_COMPACT_MODE_ENABLED", True)
 
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
@@ -6482,13 +6536,67 @@ class WolfConstitutionalPipeline:
         l12_verdict[state_key] = pressure_payload
         return pressure_payload
 
-    @staticmethod
-    def _emit_signal_pressure_state_payload(payload: dict[str, Any]) -> bool:
+    def _emit_signal_pressure_state_payload(self, payload: dict[str, Any]) -> bool:
+        if not self._pressure_state_log_allowed(payload):
+            return False
         return emit_signal_pressure_state(
             payload,
             enabled=os.getenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true").strip().lower() == "true",
             prefix=os.getenv("SIGNAL_PRESSURE_STATE_JSON_LOG_PREFIX", "[SignalPressureStateJSON]"),
         )
+
+    def _pressure_state_log_allowed(self, payload: dict[str, Any]) -> bool:
+        interval = self._parse_env_float_allow_zero(
+            "SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS",
+            60.0 if self._signal_log_compact_mode_enabled() else 0.0,
+        )
+        if interval <= 0.0:
+            return True
+        store = getattr(self, "_last_signal_pressure_state_emit", None)
+        if not isinstance(store, dict):
+            store = {}
+            self._last_signal_pressure_state_emit = store
+        symbol = str(payload.get("symbol") or "*").upper()
+        state_key = self._pressure_state_log_key(payload)
+        previous = store.get(symbol)
+        now = time.time()
+        if isinstance(previous, tuple) and len(previous) == 2:
+            previous_key, previous_at = previous
+            if previous_key == state_key and now - float(previous_at) < interval:
+                return False
+        store[symbol] = (state_key, now)
+        return True
+
+    @staticmethod
+    def _pressure_state_log_key(payload: dict[str, Any]) -> str:
+        import json  # noqa: PLC0415 -- local: diagnostic-only key serialization
+
+        htf = payload.get("htf_structure_context")
+        htf_key = {}
+        if isinstance(htf, dict):
+            htf_key = {
+                "daily_bias": htf.get("daily_bias"),
+                "h4_structure": htf.get("h4_structure"),
+                "price_location": htf.get("price_location"),
+                "allowed_playbook": htf.get("allowed_playbook"),
+                "blocked_playbook": htf.get("blocked_playbook"),
+            }
+        key = {
+            "symbol": payload.get("symbol"),
+            "signal_family": payload.get("signal_family"),
+            "status": payload.get("status"),
+            "raw_direction": payload.get("raw_direction"),
+            "candidate_direction": payload.get("candidate_direction"),
+            "watch_direction": payload.get("watch_direction"),
+            "source_stage": payload.get("source_stage"),
+            "resolved_family": payload.get("resolved_family"),
+            "direction_validation_status": payload.get("direction_validation_status"),
+            "execution_block_reason": payload.get("execution_block_reason"),
+            "next_required_stage": payload.get("next_required_stage"),
+            "reason": payload.get("reason"),
+            "htf": htf_key,
+        }
+        return json.dumps(key, sort_keys=True, separators=(",", ":"), default=str)
 
     def _emit_lifecycle_shadow_preview(self, payload: dict[str, Any]) -> None:
         """P1B (flag-guarded, default OFF): shadow-only preview of the active-signal
@@ -6610,15 +6718,54 @@ class WolfConstitutionalPipeline:
             return
         if event is not None:
             key = event.dedupe_key()
-            if key != self._last_microboost_log_key:
+            role_change_only = self._parse_env_bool(
+                "MICROBOOST_INTEL_EMIT_ON_ROLE_CHANGE_ONLY",
+                self._signal_log_compact_mode_enabled(),
+            )
+            role_key = (
+                event.symbol,
+                event.microboost_role,
+                event.microboost_followthrough_bias,
+                event.action,
+                event.price_position,
+                event.room_to_move_status,
+            )
+            role_store = getattr(self, "_last_microboost_role_key_by_symbol", None)
+            if not isinstance(role_store, dict):
+                role_store = {}
+                self._last_microboost_role_key_by_symbol = role_store
+            can_emit_role = not role_change_only or role_store.get(event.symbol) != role_key
+            if can_emit_role and key != self._last_microboost_log_key:
                 self._last_microboost_log_key = key
+                role_store[event.symbol] = role_key
                 emit_microboost_intel(event)
+        table_interval = self._parse_env_float_allow_zero(
+            "MICROBOOST_TABLE_RATE_LIMIT_SECONDS",
+            120.0 if self._signal_log_compact_mode_enabled() else 0.0,
+        )
+        now = time.time()
+        last_table_at = getattr(self, "_last_microboost_table_emit_at", None)
+        table_allowed = not (
+            table_interval > 0.0
+            and isinstance(last_table_at, (int, float))
+            and now - float(last_table_at) < table_interval
+        )
+        emitted_table = False
         for table_event in build_microboost_table_events(report):
+            if not table_allowed:
+                break
             table_key = table_event.dedupe_key()
-            if table_key in self._emitted_microboost_table_keys:
+            table_keys = getattr(self, "_emitted_microboost_table_keys", None)
+            if not isinstance(table_keys, set):
+                table_keys = set()
+                self._emitted_microboost_table_keys = table_keys
+            if table_key in table_keys:
                 continue
-            self._emitted_microboost_table_keys.add(table_key)
+            table_keys.add(table_key)
             emit_microboost_table_event(table_event)
+            emitted_table = True
+        if emitted_table:
+            self._last_microboost_table_emit_at = now
 
     def _microboost_source_guard_blocks(self, report: dict[str, Any]) -> bool:
         if os.getenv("MICROBOOST_SOURCE_GUARD_ENABLED", "true").strip().lower() != "true":
@@ -6726,7 +6873,10 @@ class WolfConstitutionalPipeline:
         )
         if payload is None:
             return
-        interval = self._parse_env_float("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS", 60.0)
+        interval = self._parse_env_float_allow_zero(
+            "PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS",
+            self._parse_env_float("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS", 60.0),
+        )
         now = time.time()
         import json  # noqa: PLC0415 -- local: diagnostic-only log serialization
         import logging  # noqa: PLC0415 -- local: diagnostic-only logger
@@ -6872,6 +7022,49 @@ class WolfConstitutionalPipeline:
                 or os.getenv("COMMIT_SHA")
                 or "unknown"
             ),
+            "SIGNAL_LOG_COMPACT_MODE_ENABLED": _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true"),
+            "SIGNAL_WATCH_EMIT_ON_CHANGE_ONLY": _b(
+                "SIGNAL_WATCH_EMIT_ON_CHANGE_ONLY",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_BUCKET_EMIT_MINUTES": os.getenv("SIGNAL_WATCH_BUCKET_EMIT_MINUTES", "5,10,15,20,30"),
+            "SIGNAL_WATCH_SUPPRESS_IDENTICAL": _b(
+                "SIGNAL_WATCH_SUPPRESS_IDENTICAL",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED": _b(
+                "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS": _f(
+                "SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS",
+                "60" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "0",
+            ),
+            "SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS": _f(
+                "SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS",
+                "60" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "0",
+            ),
+            "MICROBOOST_INTEL_EMIT_ON_ROLE_CHANGE_ONLY": _b(
+                "MICROBOOST_INTEL_EMIT_ON_ROLE_CHANGE_ONLY",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "MICROBOOST_TABLE_RATE_LIMIT_SECONDS": _f(
+                "MICROBOOST_TABLE_RATE_LIMIT_SECONDS",
+                "120" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "0",
+            ),
+            "PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS": _f(
+                "PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS",
+                os.getenv("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS", "60"),
+            ),
+            "HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY": _b(
+                "HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "HTF_STRUCTURE_SNAPSHOT_INTERVAL_SECONDS": _f(
+                "HTF_STRUCTURE_SNAPSHOT_INTERVAL_SECONDS",
+                "60" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "0",
+            ),
+            "SIGNAL_JSON_VERBOSE_OBSERVABILITY": _b("SIGNAL_JSON_VERBOSE_OBSERVABILITY", "false"),
             "SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY": _b("SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY", "true"),
             "SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS": _b(
                 "SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS", "false"
@@ -7069,9 +7262,35 @@ class WolfConstitutionalPipeline:
         try:
             snapshot = self._htf_snapshot_resolver.resolve(symbol)
             key = snapshot.dedupe_key()
-            if self._last_htf_snapshot_key.get(snapshot.symbol) == key:
+            emit_on_change_only = self._parse_env_bool(
+                "HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY",
+                self._signal_log_compact_mode_enabled(),
+            )
+            last_keys = getattr(self, "_last_htf_snapshot_key", None)
+            if not isinstance(last_keys, dict):
+                last_keys = {}
+                self._last_htf_snapshot_key = last_keys
+            if emit_on_change_only and last_keys.get(snapshot.symbol) == key:
                 return
-            self._last_htf_snapshot_key[snapshot.symbol] = key
+            interval = self._parse_env_float_allow_zero(
+                "HTF_STRUCTURE_SNAPSHOT_INTERVAL_SECONDS",
+                60.0 if self._signal_log_compact_mode_enabled() else 0.0,
+            )
+            last_at = getattr(self, "_last_htf_snapshot_emit_at", None)
+            if not isinstance(last_at, dict):
+                last_at = {}
+                self._last_htf_snapshot_emit_at = last_at
+            now = time.time()
+            if interval > 0.0 and last_keys.get(snapshot.symbol) == key:
+                previous_at = last_at.get(snapshot.symbol)
+                if isinstance(previous_at, (int, float)) and now - float(previous_at) < interval:
+                    return
+            if not emit_on_change_only and interval > 0.0:
+                previous_at = last_at.get(snapshot.symbol)
+                if isinstance(previous_at, (int, float)) and now - float(previous_at) < interval:
+                    return
+            last_keys[snapshot.symbol] = key
+            last_at[snapshot.symbol] = now
             emit_htf_structure_snapshot(snapshot, enabled=True)
         except Exception as exc:  # pragma: no cover - defensive; observability must not break
             logger.debug("[HTFStructureSnapshot] resolve/emit skipped for {}: {}", symbol, exc)
