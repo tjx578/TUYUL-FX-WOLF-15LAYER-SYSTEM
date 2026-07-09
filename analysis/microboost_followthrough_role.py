@@ -16,6 +16,12 @@ MICROBOOST_FOLLOWTHROUGH_ROLE_FIELDS: tuple[str, ...] = (
     "microboost_followthrough_bias",
     "microboost_room_to_move_pips",
     "microboost_pre_move_pips",
+    "microboost_late_move_penalty",
+    "microboost_followthrough_context_ready",
+    "microboost_price_behavior",
+    "microboost_room_to_move_status",
+    "microboost_stall_pips",
+    "microboost_room_to_target_pips",
     "microboost_expected_horizon",
     "microboost_outcome_tracking_required",
     "microboost_role_source_event",
@@ -23,6 +29,10 @@ MICROBOOST_FOLLOWTHROUGH_ROLE_FIELDS: tuple[str, ...] = (
     "microboost_role_valid_for_execution",
     "microboost_role_execution_impact",
     "microboost_role_advisory_only",
+    "room_to_move_pips",
+    "pre_move_pips",
+    "late_move_penalty",
+    "followthrough_context_ready",
 )
 
 _ABSORPTION_PHASES = {
@@ -71,6 +81,7 @@ def build_microboost_followthrough_role(block: Mapping[str, Any]) -> dict[str, A
         pip_size=pip_size,
         market_context=market_context,
     )
+    stall_pips = _stall_pips(pip_size=pip_size, market_context=market_context)
     role, bias, role_reasons = _classify_role(
         phase_unpriced=phase_unpriced,
         phase_priced=phase_priced,
@@ -89,12 +100,39 @@ def build_microboost_followthrough_role(block: Mapping[str, Any]) -> dict[str, A
             "EXECUTION_FIREWALL_UNCHANGED",
         ]
     )
+    late_move_penalty = _late_move_penalty(
+        role=role,
+        bias=bias,
+        room_to_move_pips=room_to_move,
+        pre_move_pips=pre_move,
+        late_risk_penalty=_number_or_none(block.get("late_risk_penalty")),
+    )
+    context_ready = bool(market_context) and room_to_move is not None and pre_move is not None
+    price_behavior = _price_behavior(
+        direction=direction,
+        phase_priced=phase_priced,
+        role=role,
+        bias=bias,
+    )
+    room_status = _room_to_move_status(
+        role=role,
+        bias=bias,
+        room_to_move_pips=room_to_move,
+        has_market_context=bool(market_context),
+    )
+    room_to_target = room_to_move if bias == "CONTINUATION" and role in {"ACCELERATION", "CONFIRMATION"} else None
 
     return {
         "microboost_role": role,
         "microboost_followthrough_bias": bias,
         "microboost_room_to_move_pips": room_to_move,
         "microboost_pre_move_pips": pre_move,
+        "microboost_late_move_penalty": late_move_penalty,
+        "microboost_followthrough_context_ready": context_ready,
+        "microboost_price_behavior": price_behavior,
+        "microboost_room_to_move_status": room_status,
+        "microboost_stall_pips": stall_pips,
+        "microboost_room_to_target_pips": room_to_target,
         "microboost_expected_horizon": _expected_horizon(
             role=role,
             bias=bias,
@@ -107,6 +145,10 @@ def build_microboost_followthrough_role(block: Mapping[str, Any]) -> dict[str, A
         "microboost_role_valid_for_execution": False,
         "microboost_role_execution_impact": False,
         "microboost_role_advisory_only": True,
+        "room_to_move_pips": room_to_move,
+        "pre_move_pips": pre_move,
+        "late_move_penalty": late_move_penalty,
+        "followthrough_context_ready": context_ready,
         "valid_for_execution": False,
         "is_final_signal": False,
     }
@@ -198,6 +240,77 @@ def _expected_horizon(
     return "15M"
 
 
+def _late_move_penalty(
+    *,
+    role: str,
+    bias: str,
+    room_to_move_pips: float | None,
+    pre_move_pips: float | None,
+    late_risk_penalty: float | None,
+) -> float:
+    if late_risk_penalty is not None:
+        return round(abs(late_risk_penalty), 2)
+    if role == "PROFIT_PROTECTION":
+        return 24.0
+    if role == "LATE_CONGESTION":
+        return 18.0
+    if role == "ABSORPTION_WARNING" and bias == "NO_CHASE":
+        return 16.0
+    if role == "ABSORPTION_WARNING":
+        return 10.0
+    if pre_move_pips is not None and room_to_move_pips is not None and pre_move_pips >= 25.0 and room_to_move_pips <= 10.0:
+        return 10.0
+    return 0.0
+
+
+def _price_behavior(
+    *,
+    direction: str | None,
+    phase_priced: str,
+    role: str,
+    bias: str,
+) -> str:
+    if phase_priced in {"RESISTANCE_PRESSURE_WARNING", "EXHAUSTION_AT_RESISTANCE"}:
+        return f"{direction or 'RAW'}_PRESSURE_STALLED_AT_RESISTANCE"
+    if phase_priced in {"SUPPORT_PRESSURE_WARNING", "EXHAUSTION_AT_SUPPORT"}:
+        return f"{direction or 'RAW'}_PRESSURE_STALLED_AT_SUPPORT"
+    if phase_priced == "SUPPORT_BOUNCE_MICROBOOST":
+        return "BUY_PRESSURE_REACTING_FROM_SUPPORT"
+    if phase_priced == "RESISTANCE_REJECTION_MICROBOOST":
+        return "SELL_PRESSURE_REJECTING_RESISTANCE"
+    if role == "PROFIT_PROTECTION":
+        return "LATE_PRESSURE_AFTER_EXTENSION"
+    if role == "LATE_CONGESTION":
+        return "LATE_CONGESTION_AFTER_PRE_MOVE"
+    if bias == "CONTINUATION":
+        return "DIRECTIONAL_PRESSURE_WITH_OPEN_LANE"
+    if bias == "CONTEXT_REQUIRED":
+        return "PRICE_CONTEXT_REQUIRED"
+    return "MICROBOOST_CONTEXT_PRESENT"
+
+
+def _room_to_move_status(
+    *,
+    role: str,
+    bias: str,
+    room_to_move_pips: float | None,
+    has_market_context: bool,
+) -> str:
+    if not has_market_context or room_to_move_pips is None:
+        return "CONTEXT_REQUIRED"
+    if role == "ABSORPTION_WARNING":
+        return "COUNTER_CONFIRMATION_REQUIRED"
+    if bias == "CONTEXT_REQUIRED":
+        return "CONTEXT_REQUIRED"
+    if bias == "PROTECT" or role in {"LATE_CONGESTION", "PROFIT_PROTECTION"}:
+        return "PROTECT_OR_NO_CHASE"
+    if room_to_move_pips <= 8.0:
+        return "ROOM_EXHAUSTED_NO_CHASE"
+    if room_to_move_pips <= 15.0:
+        return "LIMITED_ROOM"
+    return "ROOM_AVAILABLE"
+
+
 def _directional_room_to_move_pips(
     *,
     direction: str | None,
@@ -265,6 +378,20 @@ def _pre_move_pips(
         return None
     delta = (end - start) / pip_size if direction == "BUY" else (start - end) / pip_size
     return round(max(0.0, delta), 2)
+
+
+def _stall_pips(
+    *,
+    pip_size: float | None,
+    market_context: Mapping[str, Any],
+) -> float | None:
+    if pip_size is None or pip_size <= 0.0:
+        return None
+    start = _number_or_none(market_context.get("price_at_signal_start"))
+    end = _number_or_none(market_context.get("price_at_signal_end"))
+    if start is None or end is None:
+        return None
+    return round(abs(end - start) / pip_size, 2)
 
 
 def _reference_price(block: Mapping[str, Any], market_context: Mapping[str, Any]) -> float | None:

@@ -27,6 +27,13 @@ def test_microboost_role_marks_buy_pressure_at_resistance_as_absorption_no_chase
     assert payload["microboost_followthrough_bias"] == "NO_CHASE"
     assert payload["microboost_room_to_move_pips"] == 2.0
     assert payload["microboost_pre_move_pips"] == 68.0
+    assert payload["microboost_late_move_penalty"] == 16.0
+    assert payload["microboost_followthrough_context_ready"] is True
+    assert payload["microboost_price_behavior"] == "BUY_PRESSURE_STALLED_AT_RESISTANCE"
+    assert payload["microboost_room_to_move_status"] == "COUNTER_CONFIRMATION_REQUIRED"
+    assert payload["microboost_stall_pips"] == 68.0
+    assert payload["room_to_move_pips"] == 2.0
+    assert payload["followthrough_context_ready"] is True
     assert payload["microboost_expected_horizon"] == "15M"
     assert payload["microboost_outcome_tracking_required"] is True
     assert payload["microboost_role_valid_for_execution"] is False
@@ -50,6 +57,9 @@ def test_microboost_role_keeps_unpriced_ignition_context_required():
     assert payload["microboost_role"] == "IGNITION"
     assert payload["microboost_followthrough_bias"] == "CONTEXT_REQUIRED"
     assert payload["microboost_room_to_move_pips"] is None
+    assert payload["microboost_followthrough_context_ready"] is False
+    assert payload["microboost_room_to_move_status"] == "CONTEXT_REQUIRED"
+    assert payload["microboost_price_behavior"] == "PRICE_CONTEXT_REQUIRED"
     assert payload["microboost_expected_horizon"] == "CONTEXT_REQUIRED"
     assert "MARKET_CONTEXT_REQUIRED" in payload["microboost_role_reason_codes"]
     assert payload["microboost_role_execution_impact"] is False

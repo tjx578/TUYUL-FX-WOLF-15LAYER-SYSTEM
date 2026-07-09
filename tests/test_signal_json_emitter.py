@@ -183,6 +183,12 @@ def test_signal_watch_json_can_carry_microboost_role_context(caplog):
         microboost_followthrough_bias="NO_CHASE",
         microboost_room_to_move_pips=2.0,
         microboost_pre_move_pips=68.0,
+        microboost_late_move_penalty=16.0,
+        microboost_followthrough_context_ready=True,
+        microboost_price_behavior="BUY_PRESSURE_STALLED_AT_RESISTANCE",
+        microboost_room_to_move_status="COUNTER_CONFIRMATION_REQUIRED",
+        microboost_stall_pips=68.0,
+        microboost_room_to_target_pips=None,
         microboost_expected_horizon="15M",
         microboost_outcome_tracking_required=True,
         microboost_role_source_event="MicroboostFollowthroughRole",
@@ -198,6 +204,10 @@ def test_signal_watch_json_can_carry_microboost_role_context(caplog):
     assert '"microboost_followthrough_bias":"NO_CHASE"' in caplog.text
     assert '"signal_watch_microboost_role":"ABSORPTION_WARNING"' in caplog.text
     assert '"signal_watch_microboost_followthrough_bias":"NO_CHASE"' in caplog.text
+    assert '"signal_watch_microboost_late_move_penalty":16.0' in caplog.text
+    assert '"signal_watch_microboost_followthrough_context_ready":true' in caplog.text
+    assert '"signal_watch_microboost_price_behavior":"BUY_PRESSURE_STALLED_AT_RESISTANCE"' in caplog.text
+    assert '"signal_watch_microboost_room_to_move_status":"COUNTER_CONFIRMATION_REQUIRED"' in caplog.text
     assert '"signal_watch_microboost_role_execution_impact":false' in caplog.text
     assert '"signal_watch_microboost_role_is_execution_signal":false' in caplog.text
     assert '"valid_for_execution":false' in caplog.text

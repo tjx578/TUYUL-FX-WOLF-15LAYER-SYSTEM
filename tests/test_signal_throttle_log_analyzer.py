@@ -1404,6 +1404,11 @@ def test_microboost_buy_at_main_resistance_becomes_exhaustion_warning():
     assert latest["microboost_followthrough_bias"] == "NO_CHASE"
     assert latest["microboost_room_to_move_pips"] == 5.0
     assert latest["microboost_pre_move_pips"] == 80.0
+    assert latest["microboost_followthrough_context_ready"] is True
+    assert latest["microboost_price_behavior"] == "BUY_PRESSURE_STALLED_AT_RESISTANCE"
+    assert latest["microboost_room_to_move_status"] == "COUNTER_CONFIRMATION_REQUIRED"
+    assert latest["room_to_move_pips"] == 5.0
+    assert latest["followthrough_context_ready"] is True
     assert latest["microboost_role_valid_for_execution"] is False
     assert latest["valid_for_execution"] is False
 
@@ -1542,6 +1547,8 @@ def test_microboost_buy_pressure_inside_m15_bearish_pullback_waits_for_reclaim()
     assert watch["valid_for_execution"] is False
     assert watch["microboost_role"] == "CONFIRMATION"
     assert watch["microboost_followthrough_bias"] == "CONTEXT_REQUIRED"
+    assert watch["microboost_followthrough_context_ready"] is True
+    assert watch["microboost_room_to_move_status"] == "CONTEXT_REQUIRED"
     assert watch["microboost_role_execution_impact"] is False
     assert build_signal_json_event(watch) is not None
 

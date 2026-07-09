@@ -434,6 +434,12 @@ class SignalJsonEvent:
     microboost_followthrough_bias: str | None = None
     microboost_room_to_move_pips: float | None = None
     microboost_pre_move_pips: float | None = None
+    microboost_late_move_penalty: float | None = None
+    microboost_followthrough_context_ready: bool | None = None
+    microboost_price_behavior: str | None = None
+    microboost_room_to_move_status: str | None = None
+    microboost_stall_pips: float | None = None
+    microboost_room_to_target_pips: float | None = None
     microboost_expected_horizon: str | None = None
     microboost_outcome_tracking_required: bool | None = None
     microboost_role_source_event: str | None = None
@@ -1123,6 +1129,14 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         microboost_followthrough_bias=_optional_str(counter_entry.get("microboost_followthrough_bias")),
         microboost_room_to_move_pips=_optional_float(counter_entry.get("microboost_room_to_move_pips")),
         microboost_pre_move_pips=_optional_float(counter_entry.get("microboost_pre_move_pips")),
+        microboost_late_move_penalty=_optional_float(counter_entry.get("microboost_late_move_penalty")),
+        microboost_followthrough_context_ready=_optional_bool(
+            counter_entry.get("microboost_followthrough_context_ready")
+        ),
+        microboost_price_behavior=_optional_str(counter_entry.get("microboost_price_behavior")),
+        microboost_room_to_move_status=_optional_str(counter_entry.get("microboost_room_to_move_status")),
+        microboost_stall_pips=_optional_float(counter_entry.get("microboost_stall_pips")),
+        microboost_room_to_target_pips=_optional_float(counter_entry.get("microboost_room_to_target_pips")),
         microboost_expected_horizon=_optional_str(counter_entry.get("microboost_expected_horizon")),
         microboost_outcome_tracking_required=_optional_bool(counter_entry.get("microboost_outcome_tracking_required")),
         microboost_role_source_event=_optional_str(counter_entry.get("microboost_role_source_event")),
@@ -1726,6 +1740,14 @@ def _apply_signal_watch_microboost_role_fields(payload: dict[str, Any]) -> None:
     payload["signal_watch_microboost_followthrough_bias"] = _optional_str(payload.get("microboost_followthrough_bias"))
     payload["signal_watch_microboost_room_to_move_pips"] = _optional_float(payload.get("microboost_room_to_move_pips"))
     payload["signal_watch_microboost_pre_move_pips"] = _optional_float(payload.get("microboost_pre_move_pips"))
+    payload["signal_watch_microboost_late_move_penalty"] = _optional_float(payload.get("microboost_late_move_penalty"))
+    payload["signal_watch_microboost_followthrough_context_ready"] = _optional_bool(
+        payload.get("microboost_followthrough_context_ready")
+    )
+    payload["signal_watch_microboost_price_behavior"] = _optional_str(payload.get("microboost_price_behavior"))
+    payload["signal_watch_microboost_room_to_move_status"] = _optional_str(payload.get("microboost_room_to_move_status"))
+    payload["signal_watch_microboost_stall_pips"] = _optional_float(payload.get("microboost_stall_pips"))
+    payload["signal_watch_microboost_room_to_target_pips"] = _optional_float(payload.get("microboost_room_to_target_pips"))
     payload["signal_watch_microboost_expected_horizon"] = _optional_str(payload.get("microboost_expected_horizon"))
     payload["signal_watch_microboost_outcome_tracking_required"] = _optional_bool(
         payload.get("microboost_outcome_tracking_required")
@@ -1783,6 +1805,12 @@ def _strip_microboost_role_fields(payload: dict[str, Any]) -> None:
         "signal_watch_microboost_followthrough_bias",
         "signal_watch_microboost_room_to_move_pips",
         "signal_watch_microboost_pre_move_pips",
+        "signal_watch_microboost_late_move_penalty",
+        "signal_watch_microboost_followthrough_context_ready",
+        "signal_watch_microboost_price_behavior",
+        "signal_watch_microboost_room_to_move_status",
+        "signal_watch_microboost_stall_pips",
+        "signal_watch_microboost_room_to_target_pips",
         "signal_watch_microboost_expected_horizon",
         "signal_watch_microboost_outcome_tracking_required",
         "signal_watch_microboost_role_source_event",

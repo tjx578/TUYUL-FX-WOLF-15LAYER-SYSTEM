@@ -40,6 +40,16 @@ class MicroboostIntelEvent:
     requires_market_context: bool
     market_context_applied: bool
     price_position: str | None
+    microboost_role: str | None
+    microboost_followthrough_bias: str | None
+    room_to_move_pips: float | None
+    pre_move_pips: float | None
+    late_move_penalty: float | None
+    followthrough_context_ready: bool
+    microboost_price_behavior: str | None
+    room_to_move_status: str | None
+    microboost_expected_horizon: str | None
+    microboost_stall_pips: float | None
     m15_phase: str | None
     h1_phase: str | None
     price_at_signal_start: float | None
@@ -73,6 +83,11 @@ class MicroboostIntelEvent:
             self.requires_market_context,
             self.market_context_applied,
             self.price_position,
+            self.microboost_role,
+            self.microboost_followthrough_bias,
+            self.room_to_move_status,
+            _room_bucket(self.room_to_move_pips),
+            _room_bucket(self.late_move_penalty),
             _stable_source_key(self),
             _source_growth_bucket(self.source_clean_block_latest_duration_seconds),
         )
@@ -110,6 +125,12 @@ class MicroboostTableEvent:
     phase_unpriced: str
     phase_priced: str | None
     action: str
+    microboost_role: str | None
+    microboost_followthrough_bias: str | None
+    room_to_move_pips: float | None
+    late_move_penalty: float | None
+    followthrough_context_ready: bool
+    microboost_expected_horizon: str | None
     requires_market_context: bool
     market_context_applied: bool
     score: int
@@ -125,6 +146,8 @@ class MicroboostTableEvent:
             self.symbol,
             self.phase,
             self.action,
+            self.microboost_role,
+            self.microboost_followthrough_bias,
             self.cluster_stage,
             self.requires_market_context,
         )
@@ -179,6 +202,33 @@ def build_microboost_intel_event(report: dict[str, Any]) -> MicroboostIntelEvent
         requires_market_context=bool(latest.get("requires_market_context", True)),
         market_context_applied=event_context_applied,
         price_position=_optional_str(latest.get("price_position") or snapshot.get("price_position")),
+        microboost_role=_optional_str(latest.get("microboost_role")),
+        microboost_followthrough_bias=_optional_str(latest.get("microboost_followthrough_bias")),
+        room_to_move_pips=_optional_float(
+            latest.get("microboost_room_to_move_pips")
+            if latest.get("microboost_room_to_move_pips") is not None
+            else latest.get("room_to_move_pips")
+        ),
+        pre_move_pips=_optional_float(
+            latest.get("microboost_pre_move_pips")
+            if latest.get("microboost_pre_move_pips") is not None
+            else latest.get("pre_move_pips")
+        ),
+        late_move_penalty=_optional_float(
+            latest.get("microboost_late_move_penalty")
+            if latest.get("microboost_late_move_penalty") is not None
+            else latest.get("late_move_penalty")
+        ),
+        followthrough_context_ready=_coerce_bool(
+            latest.get("microboost_followthrough_context_ready")
+            if latest.get("microboost_followthrough_context_ready") is not None
+            else latest.get("followthrough_context_ready"),
+            False,
+        ),
+        microboost_price_behavior=_optional_str(latest.get("microboost_price_behavior")),
+        room_to_move_status=_optional_str(latest.get("microboost_room_to_move_status")),
+        microboost_expected_horizon=_optional_str(latest.get("microboost_expected_horizon")),
+        microboost_stall_pips=_optional_float(latest.get("microboost_stall_pips")),
         m15_phase=_optional_str(snapshot.get("m15_phase")),
         h1_phase=_optional_str(snapshot.get("h1_phase")),
         price_at_signal_start=_optional_float(snapshot.get("price_at_signal_start")),
@@ -263,6 +313,25 @@ def build_microboost_table_events(
                 phase_unpriced=phase_unpriced,
                 phase_priced=phase_priced,
                 action=str(block.get("action") or "WAIT"),
+                microboost_role=_optional_str(block.get("microboost_role")),
+                microboost_followthrough_bias=_optional_str(block.get("microboost_followthrough_bias")),
+                room_to_move_pips=_optional_float(
+                    block.get("microboost_room_to_move_pips")
+                    if block.get("microboost_room_to_move_pips") is not None
+                    else block.get("room_to_move_pips")
+                ),
+                late_move_penalty=_optional_float(
+                    block.get("microboost_late_move_penalty")
+                    if block.get("microboost_late_move_penalty") is not None
+                    else block.get("late_move_penalty")
+                ),
+                followthrough_context_ready=_coerce_bool(
+                    block.get("microboost_followthrough_context_ready")
+                    if block.get("microboost_followthrough_context_ready") is not None
+                    else block.get("followthrough_context_ready"),
+                    False,
+                ),
+                microboost_expected_horizon=_optional_str(block.get("microboost_expected_horizon")),
                 requires_market_context=bool(block.get("requires_market_context", True)),
                 market_context_applied=_block_market_context_applied(block),
                 score=_coerce_int(block.get("score"), 0),
@@ -300,6 +369,16 @@ def emit_microboost_intel(event: MicroboostIntelEvent | None) -> None:
         f"requires_market_context={_bool_text(event.requires_market_context)}",
         f"market_context_applied={_bool_text(event.market_context_applied)}",
         f"price_position={event.price_position or 'NONE'}",
+        f"microboost_role={event.microboost_role or 'NONE'}",
+        f"microboost_followthrough_bias={event.microboost_followthrough_bias or 'NONE'}",
+        f"room_to_move_pips={_number_text(event.room_to_move_pips)}",
+        f"pre_move_pips={_number_text(event.pre_move_pips)}",
+        f"late_move_penalty={_number_text(event.late_move_penalty)}",
+        f"followthrough_context_ready={_bool_text(event.followthrough_context_ready)}",
+        f"price_behavior={event.microboost_price_behavior or 'NONE'}",
+        f"room_to_move_status={event.room_to_move_status or 'NONE'}",
+        f"expected_horizon={event.microboost_expected_horizon or 'NONE'}",
+        f"stall_pips={_number_text(event.microboost_stall_pips)}",
         f"source_clean_block_id={event.source_clean_block_id or 'NONE'}",
         f"source_pressure_block_id={event.source_pressure_block_id or 'NONE'}",
         f"source_age={_number_text(event.source_age_seconds)}",
@@ -358,6 +437,12 @@ def emit_microboost_table_event(event: MicroboostTableEvent | None) -> None:
         f"phase_unpriced={event.phase_unpriced}",
         f"phase_priced={event.phase_priced or 'NONE'}",
         f"action={event.action}",
+        f"role={event.microboost_role or 'NONE'}",
+        f"bias={event.microboost_followthrough_bias or 'NONE'}",
+        f"room_pips={_number_text(event.room_to_move_pips)}",
+        f"late_penalty={_number_text(event.late_move_penalty)}",
+        f"followthrough_context_ready={_bool_text(event.followthrough_context_ready)}",
+        f"expected_horizon={event.microboost_expected_horizon or 'NONE'}",
         f"requires_market_context={_bool_text(event.requires_market_context)}",
         f"market_context_applied={_bool_text(event.market_context_applied)}",
         f"score={event.score}",
@@ -399,6 +484,16 @@ def parse_microboost_intel_row(row: dict[str, Any]) -> MicroboostLogRecord | Non
         requires_market_context=_coerce_bool(fields.get("requires_market_context"), True),
         market_context_applied=_coerce_bool(fields.get("market_context_applied"), False),
         price_position=_none_text(fields.get("price_position")),
+        microboost_role=_none_text(fields.get("microboost_role")),
+        microboost_followthrough_bias=_none_text(fields.get("microboost_followthrough_bias")),
+        room_to_move_pips=_optional_float(fields.get("room_to_move_pips")),
+        pre_move_pips=_optional_float(fields.get("pre_move_pips")),
+        late_move_penalty=_optional_float(fields.get("late_move_penalty")),
+        followthrough_context_ready=_coerce_bool(fields.get("followthrough_context_ready"), False),
+        microboost_price_behavior=_none_text(fields.get("price_behavior")),
+        room_to_move_status=_none_text(fields.get("room_to_move_status")),
+        microboost_expected_horizon=_none_text(fields.get("expected_horizon")),
+        microboost_stall_pips=_optional_float(fields.get("stall_pips")),
         m15_phase=_none_text(fields.get("m15_phase")),
         h1_phase=_none_text(fields.get("h1_phase")),
         price_at_signal_start=_optional_float(fields.get("price_start")),
@@ -461,6 +556,12 @@ def parse_microboost_table_row(row: dict[str, Any]) -> MicroboostTableLogRecord 
         phase_unpriced=str(fields.get("phase_unpriced") or "UNKNOWN"),
         phase_priced=_none_text(fields.get("phase_priced")),
         action=str(fields.get("action") or "WAIT"),
+        microboost_role=_none_text(fields.get("role")),
+        microboost_followthrough_bias=_none_text(fields.get("bias")),
+        room_to_move_pips=_optional_float(fields.get("room_pips")),
+        late_move_penalty=_optional_float(fields.get("late_penalty")),
+        followthrough_context_ready=_coerce_bool(fields.get("followthrough_context_ready"), False),
+        microboost_expected_horizon=_none_text(fields.get("expected_horizon")),
         requires_market_context=_coerce_bool(fields.get("requires_market_context"), True),
         market_context_applied=_coerce_bool(fields.get("market_context_applied"), False),
         score=_coerce_int(fields.get("score"), 0),
@@ -578,6 +679,12 @@ def _source_growth_bucket(duration_seconds: float | None) -> int | None:
     if duration_seconds is None:
         return None
     return int(max(0.0, duration_seconds) // 60.0)
+
+
+def _room_bucket(value: float | None) -> int | None:
+    if value is None:
+        return None
+    return int(max(0.0, value) // 5.0)
 
 
 def _cluster_age_since_end_seconds(latest: dict[str, Any]) -> float | None:

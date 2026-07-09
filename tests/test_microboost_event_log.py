@@ -31,6 +31,16 @@ def test_microboost_intel_emits_standalone_parseable_log(capsys, monkeypatch):
                 "effective_density_per_minute": 8.25,
                 "duration_seconds": 109.2,
                 "requires_market_context": False,
+                "microboost_role": "ACCELERATION",
+                "microboost_followthrough_bias": "CONTINUATION",
+                "microboost_room_to_move_pips": 22.5,
+                "microboost_pre_move_pips": 13.0,
+                "microboost_late_move_penalty": 0.0,
+                "microboost_followthrough_context_ready": True,
+                "microboost_price_behavior": "DIRECTIONAL_PRESSURE_WITH_OPEN_LANE",
+                "microboost_room_to_move_status": "ROOM_AVAILABLE",
+                "microboost_expected_horizon": "30M",
+                "microboost_stall_pips": 13.0,
                 "end_utc": "2026-05-18T10:15:23+00:00",
                 "market_context_validation": {"final_direction": "BUY"},
                 "market_context_snapshot": {
@@ -52,6 +62,10 @@ def test_microboost_intel_emits_standalone_parseable_log(capsys, monkeypatch):
 
     assert line.startswith("[MicroboostIntel]")
     assert "symbol=CADJPY" in line
+    assert "microboost_role=ACCELERATION" in line
+    assert "microboost_followthrough_bias=CONTINUATION" in line
+    assert "room_to_move_pips=22.5" in line
+    assert "followthrough_context_ready=true" in line
     parsed = parse_microboost_intel_row(
         {
             "timestamp": datetime(2026, 5, 18, 10, 15, 23, tzinfo=UTC).isoformat(),
@@ -71,6 +85,16 @@ def test_microboost_intel_emits_standalone_parseable_log(capsys, monkeypatch):
     assert parsed.event.effective_density_per_minute == 8.25
     assert parsed.event.requires_market_context is False
     assert parsed.event.market_context_applied is True
+    assert parsed.event.microboost_role == "ACCELERATION"
+    assert parsed.event.microboost_followthrough_bias == "CONTINUATION"
+    assert parsed.event.room_to_move_pips == 22.5
+    assert parsed.event.pre_move_pips == 13.0
+    assert parsed.event.late_move_penalty == 0.0
+    assert parsed.event.followthrough_context_ready is True
+    assert parsed.event.microboost_price_behavior == "DIRECTIONAL_PRESSURE_WITH_OPEN_LANE"
+    assert parsed.event.room_to_move_status == "ROOM_AVAILABLE"
+    assert parsed.event.microboost_expected_horizon == "30M"
+    assert parsed.event.microboost_stall_pips == 13.0
     assert parsed.event.m15_phase == "PIVOT_RECLAIM"
     assert parsed.event.h1_phase == "BULLISH"
 
@@ -223,6 +247,12 @@ def test_microboost_table_events_emit_all_cluster_rows(capsys):
                     "phase_unpriced": "NEAR_TIMING_GATE_MICROBOOST",
                     "phase_priced": "TREND_CONTINUATION_MICROBOOST",
                     "action": "VALIDATE_RETEST_OR_HOLD",
+                    "microboost_role": "ACCELERATION",
+                    "microboost_followthrough_bias": "CONTINUATION",
+                    "microboost_room_to_move_pips": 22.9,
+                    "microboost_late_move_penalty": 0.0,
+                    "microboost_followthrough_context_ready": True,
+                    "microboost_expected_horizon": "30M",
                     "requires_market_context": False,
                     "score": 88,
                     "reason": "microboost_aligns_with_running_trend_away_from_main_extreme",
@@ -239,6 +269,12 @@ def test_microboost_table_events_emit_all_cluster_rows(capsys):
                     "phase_unpriced": "REPEATED_MICROBOOST",
                     "phase_priced": "LATE_DENSE_PRESSURE",
                     "action": "PROTECT_PROFIT",
+                    "microboost_role": "PROFIT_PROTECTION",
+                    "microboost_followthrough_bias": "PROTECT",
+                    "microboost_room_to_move_pips": 4.0,
+                    "microboost_late_move_penalty": 24.0,
+                    "microboost_followthrough_context_ready": True,
+                    "microboost_expected_horizon": "15M",
                     "requires_market_context": False,
                     "score": 64,
                     "reason": "late_pressure_requires_protect_profit",
@@ -255,6 +291,11 @@ def test_microboost_table_events_emit_all_cluster_rows(capsys):
     assert rows[0].duration_minutes == 4.81
     assert rows[0].effective_density_per_minute == 9.57
     assert rows[0].phase == "continuation"
+    assert rows[0].microboost_role == "ACCELERATION"
+    assert rows[0].microboost_followthrough_bias == "CONTINUATION"
+    assert rows[0].room_to_move_pips == 22.9
+    assert rows[0].late_move_penalty == 0.0
+    assert rows[0].followthrough_context_ready is True
     assert rows[1].phase == "late_dense"
 
     emit_microboost_table_event(rows[0])
@@ -267,6 +308,10 @@ def test_microboost_table_events_emit_all_cluster_rows(capsys):
     assert "duration_minutes=4.81" in line
     assert "effective_density=9.57" in line
     assert "phase=continuation" in line
+    assert "role=ACCELERATION" in line
+    assert "bias=CONTINUATION" in line
+    assert "room_pips=22.9" in line
+    assert "late_penalty=0" in line
 
     parsed = parse_microboost_table_row(
         {
@@ -281,6 +326,11 @@ def test_microboost_table_events_emit_all_cluster_rows(capsys):
     assert parsed.event.window_local == "20:18:09-20:22:58"
     assert parsed.event.effective_tick_count == 46
     assert parsed.event.phase == "continuation"
+    assert parsed.event.microboost_role == "ACCELERATION"
+    assert parsed.event.microboost_followthrough_bias == "CONTINUATION"
+    assert parsed.event.room_to_move_pips == 22.9
+    assert parsed.event.late_move_penalty == 0.0
+    assert parsed.event.followthrough_context_ready is True
 
 
 def test_microboost_parsers_ignore_signal_json_lifecycle_channels():

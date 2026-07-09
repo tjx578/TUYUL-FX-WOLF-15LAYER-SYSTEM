@@ -179,6 +179,11 @@ def test_core_event_excludes_downstream_metadata():
         "score_components": {"density_score": 30},
         "microboost_role": "ABSORPTION_WARNING",
         "microboost_followthrough_bias": "NO_CHASE",
+        "microboost_late_move_penalty": 16.0,
+        "microboost_followthrough_context_ready": True,
+        "microboost_price_behavior": "BUY_PRESSURE_STALLED_AT_RESISTANCE",
+        "room_to_move_pips": 2.0,
+        "followthrough_context_ready": True,
         "microboost_role_execution_impact": False,
     }
 
