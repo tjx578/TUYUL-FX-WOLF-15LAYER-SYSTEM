@@ -1740,7 +1740,7 @@ def _watch_transition_state(event: SignalJsonEvent, *, bucket_minutes: tuple[flo
 def _watch_bucket_minutes_from_env() -> tuple[float, ...]:
     raw = os.getenv("SIGNAL_WATCH_BUCKET_EMIT_MINUTES", "5,10,15,20,30")
     buckets: list[float] = []
-    for part in raw.split(","):
+    for part in raw.replace(",", " ").split():
         try:
             value = float(part.strip())
         except (TypeError, ValueError):

@@ -380,6 +380,12 @@ def test_signal_watch_change_only_reemits_on_duration_bucket_change(caplog):
     assert caplog.text.count("[SignalWatchJSON]") == 2
 
 
+def test_signal_watch_bucket_env_accepts_space_separated_values(monkeypatch):
+    monkeypatch.setenv("SIGNAL_WATCH_BUCKET_EMIT_MINUTES", "5 10 15 20 30")
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    assert emitter.watch_bucket_minutes == (5.0, 10.0, 15.0, 20.0, 30.0)
+
+
 def test_final_signal_dedup_prefers_signal_id_across_stream_extracts(caplog):
     emitter = SignalJsonEmitter(enabled=True, dedup_ttl_seconds=300)
     first = _event(

@@ -618,7 +618,7 @@ class WolfConstitutionalPipeline:
         if raw is None:
             return default
         values: list[float] = []
-        for part in raw.split(","):
+        for part in raw.replace(",", " ").split():
             with contextlib.suppress(ValueError, TypeError):
                 value = float(part.strip())
                 if value > 0.0:
