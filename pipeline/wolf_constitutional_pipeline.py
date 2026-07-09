@@ -3959,7 +3959,8 @@ class WolfConstitutionalPipeline:
             normal_spread_pips = 2.0
 
         spread_pips = spread_price if spread_price > 0.05 else spread_price * pip_multiplier
-        max_allowed_spread_pips = normal_spread_pips * self._market_context_spread_multiplier
+        spread_multiplier = getattr(self, "_market_context_spread_multiplier", 2.5)
+        max_allowed_spread_pips = normal_spread_pips * spread_multiplier
         return {
             "spread_normal": spread_pips <= max_allowed_spread_pips,
             "spread_pips": round(spread_pips, 2),
@@ -4066,6 +4067,110 @@ class WolfConstitutionalPipeline:
             )
         return contexts
 
+    def _hydrate_signal_throttle_candidate_market_contexts(
+        self,
+        *,
+        report: dict[str, Any],
+        market_contexts: dict[str, MarketContext],
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+    ) -> dict[str, Any]:
+        if os.getenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true").strip().lower() != "true":
+            return {"enabled": False, "reason": "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED_FALSE"}
+        try:
+            max_symbols = max(
+                1,
+                int(self._parse_env_float("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", 4.0)),
+            )
+        except (TypeError, ValueError):
+            max_symbols = 4
+
+        existing = {str(symbol or "").upper() for symbol in market_contexts}
+        candidates = self._signal_throttle_context_candidates(report)
+        hydrated: list[str] = []
+        skipped: list[dict[str, Any]] = []
+        for candidate in candidates:
+            if len(hydrated) >= max_symbols:
+                break
+            symbol = str(candidate.get("symbol") or "").upper()
+            if not symbol:
+                continue
+            if symbol in existing:
+                skipped.append({"symbol": symbol, "reason": "CONTEXT_ALREADY_PRESENT"})
+                continue
+            direction = self._direction_hint(
+                candidate.get("clean_block_direction")
+                or candidate.get("raw_pressure_direction")
+                or candidate.get("direction")
+            )
+            if direction not in {"BUY", "SELL"}:
+                skipped.append({"symbol": symbol, "reason": "DIRECTION_UNRESOLVED"})
+                continue
+            context_verdict = dict(l12_verdict)
+            context_verdict["direction"] = direction
+            context_verdict["verdict"] = f"EXECUTE_{direction}"
+            try:
+                market_contexts[symbol] = self._build_market_context(
+                    symbol=symbol,
+                    synthesis=synthesis,
+                    l12_verdict=context_verdict,
+                    allow_execution_entry_price=False,
+                )
+            except Exception as exc:  # pragma: no cover - defensive; observability must not break pipeline
+                skipped.append({"symbol": symbol, "reason": "BUILD_MARKET_CONTEXT_FAILED", "error": str(exc)})
+                continue
+            existing.add(symbol)
+            hydrated.append(symbol)
+
+        return {
+            "enabled": True,
+            "source": "SIGNAL_THROTTLE_CLEAN_BLOCK_CANDIDATES",
+            "max_symbols": max_symbols,
+            "candidate_count": len(candidates),
+            "hydrated_symbols": hydrated,
+            "skipped": skipped[:12],
+            "snapshot_rebuild_required": bool(hydrated),
+            "execution_impact": False,
+            "advisory_only": True,
+        }
+
+    @staticmethod
+    def _signal_throttle_context_candidates(report: dict[str, Any]) -> list[dict[str, Any]]:
+        def _number(value: Any) -> float:
+            try:
+                return float(value or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        tier_scores = {
+            str(row.get("symbol") or "").upper(): _number(row.get("tier_score"))
+            for row in report.get("pressure_tiers") or []
+            if isinstance(row, dict) and str(row.get("symbol") or "").strip()
+        }
+        candidates: list[dict[str, Any]] = []
+        for raw in report.get("clean_watch_candidates") or []:
+            if not isinstance(raw, dict):
+                continue
+            symbol = str(raw.get("symbol") or "").upper()
+            if not symbol:
+                continue
+            candidate = dict(raw)
+            candidate["_tier_score"] = tier_scores.get(symbol, 0.0)
+            candidates.append(candidate)
+        candidates.sort(
+            key=lambda item: (
+                _number(item.get("_tier_score")),
+                _number(
+                    item.get("clean_block_duration_seconds")
+                    or item.get("source_clean_block_latest_duration_seconds")
+                    or item.get("duration_seconds")
+                ),
+                _number(item.get("effective_ticks") or item.get("clean_block_event_count") or item.get("events")),
+            ),
+            reverse=True,
+        )
+        return candidates
+
     def _process_signal_throttle_snapshot(
         self,
         *,
@@ -4083,6 +4188,18 @@ class WolfConstitutionalPipeline:
         report = self._signal_throttle_live_analyzer.snapshot(
             market_contexts=market_contexts,
         )
+        hydration = self._hydrate_signal_throttle_candidate_market_contexts(
+            report=report,
+            market_contexts=market_contexts,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+        )
+        if hydration.get("snapshot_rebuild_required") is True:
+            report = self._signal_throttle_live_analyzer.snapshot(
+                market_contexts=market_contexts,
+            )
+        if hydration.get("enabled") is True:
+            report["candidate_market_context_hydration"] = hydration
         self._emit_signal_throttle_fusion_v3_diagnostic(report)
         self._emit_signal_throttle_pressure_tier_snapshot(report)
         self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
@@ -6498,6 +6615,12 @@ class WolfConstitutionalPipeline:
             ),
             "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS": _f(
                 "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS", "600"
+            ),
+            "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED": _b(
+                "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true"
+            ),
+            "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS": _f(
+                "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "4"
             ),
             "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED": _b(
                 "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false"

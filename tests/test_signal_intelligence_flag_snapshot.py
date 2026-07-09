@@ -106,6 +106,17 @@ def test_snapshot_reports_signal_throttle_intel_bridge_window(monkeypatch, caplo
     assert p["SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS"] == 300.0
 
 
+def test_snapshot_reports_candidate_market_context_hydration(monkeypatch, caplog):
+    monkeypatch.delenv(_GATE, raising=False)
+    monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "3")
+    with caplog.at_level(logging.WARNING, logger="signal_json"):
+        _pipeline()._emit_signal_intelligence_flag_snapshot()
+    p = _emitted_payload(caplog)
+    assert p["SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED"] is True
+    assert p["SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS"] == 3.0
+
+
 def test_snapshot_bridge_window_defaults_to_canary_ttl(monkeypatch, caplog):
     monkeypatch.delenv(_GATE, raising=False)
     monkeypatch.delenv("SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS", raising=False)

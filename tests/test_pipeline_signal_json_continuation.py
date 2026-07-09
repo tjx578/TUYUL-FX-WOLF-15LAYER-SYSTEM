@@ -120,6 +120,129 @@ class _StaticFinalizer:
         self.tracked.append(payload)
 
 
+class _CandidateMarketContextBus:
+    def get_latest_tick(self, symbol: str) -> dict[str, float]:
+        if symbol.upper() == "AUDNZD":
+            return {"bid": 1.0710, "ask": 1.0712}
+        return {"bid": 1.0, "ask": 1.0002}
+
+    def get_candle_history(self, symbol: str, timeframe: str, count: int = 1) -> list[dict[str, float]]:
+        _ = symbol, timeframe
+        candles: list[dict[str, float]] = []
+        for index in range(max(count, 2)):
+            close = 1.0780 - (index * 0.00015)
+            open_ = close + 0.00005
+            candles.append(
+                {
+                    "open": open_,
+                    "high": max(open_, close) + 0.0008,
+                    "low": min(open_, close) - 0.0008,
+                    "close": close,
+                }
+            )
+        return candles[-count:]
+
+
+class _CandidateHydrationAnalyzer:
+    def __init__(self) -> None:
+        self.snapshot_context_symbols: list[list[str]] = []
+
+    def snapshot(self, *, market_contexts: dict[str, MarketContext]) -> dict[str, Any]:
+        self.snapshot_context_symbols.append(sorted(market_contexts))
+        candidate: dict[str, Any] = {
+            "symbol": "AUDNZD",
+            "clean_block_direction": "SELL",
+            "clean_block_duration_seconds": 7186.446,
+            "effective_ticks": 120,
+        }
+        context = market_contexts.get("AUDNZD")
+        if context is not None:
+            candidate["market_context_snapshot"] = {"price_at_signal_end": context.price_at_signal_end}
+        return {
+            "clean_watch_candidates": [candidate],
+            "pressure_tiers": [{"symbol": "AUDNZD", "tier_score": 100.0}],
+        }
+
+
+def test_pipeline_hydrates_market_context_for_global_signal_throttle_candidate(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "4")
+    monkeypatch.setenv("HTF_DAILY_PHASE_FEED_ENABLED", "false")
+    monkeypatch.setenv("SIGNAL_BASKET_DIRECTION_VALIDATION_ENABLED", "false")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    cast(Any, pipeline)._context_bus = _CandidateMarketContextBus()
+
+    report: dict[str, Any] = {
+        "clean_watch_candidates": [
+            {
+                "symbol": "AUDNZD",
+                "clean_block_direction": "SELL",
+                "clean_block_duration_seconds": 7186.446,
+                "effective_ticks": 120,
+            }
+        ],
+        "pressure_tiers": [{"symbol": "AUDNZD", "tier_score": 100.0}],
+    }
+    market_contexts: dict[str, MarketContext] = {}
+
+    hydration = pipeline._hydrate_signal_throttle_candidate_market_contexts(
+        report=report,
+        market_contexts=market_contexts,
+        synthesis={"execution": {"entry_price": 9.9999}},
+        l12_verdict={"verdict": "HOLD", "direction": None},
+    )
+
+    assert hydration["enabled"] is True
+    assert hydration["advisory_only"] is True
+    assert hydration["execution_impact"] is False
+    assert hydration["snapshot_rebuild_required"] is True
+    assert hydration["hydrated_symbols"] == ["AUDNZD"]
+    assert "AUDNZD" in market_contexts
+    context = market_contexts["AUDNZD"]
+    assert context.raw_allowed_direction == "SELL"
+    assert round(context.price_at_signal_end or 0.0, 4) == 1.0711
+    assert context.price_at_signal_start != 9.9999
+    assert context.price_position in {"MAIN_SUPPORT", "MID_RANGE", "MAIN_RESISTANCE"}
+
+
+def test_signal_throttle_snapshot_rebuilds_after_candidate_context_hydration(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "4")
+    monkeypatch.setenv("HTF_DAILY_PHASE_FEED_ENABLED", "false")
+    monkeypatch.setenv("SIGNAL_BASKET_DIRECTION_VALIDATION_ENABLED", "false")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    analyzer = _CandidateHydrationAnalyzer()
+    cast(Any, pipeline)._context_bus = _CandidateMarketContextBus()
+    cast(Any, pipeline)._signal_throttle_live_analyzer = analyzer
+    cast(Any, pipeline)._signal_throttle_market_contexts = lambda **_: {
+        "EURUSD": MarketContext(symbol="EURUSD", raw_allowed_direction="BUY", price_at_signal_end=1.0)
+    }
+    cast(Any, pipeline)._emit_signal_throttle_fusion_v3_diagnostic = lambda _report: None
+    cast(Any, pipeline)._emit_signal_throttle_pressure_tier_snapshot = lambda _report: None
+    cast(Any, pipeline)._apply_microboost_continuation_entry_report = lambda **_: None
+    cast(Any, pipeline)._apply_microboost_counter_entry_report = lambda **_: None
+    cast(Any, pipeline)._apply_microboost_watch_entry_report = lambda **_: None
+    cast(Any, pipeline)._apply_clean_block_watch_routes = lambda **_: None
+    cast(Any, pipeline)._apply_signal_block_finalizer = lambda **_: None
+    cast(Any, pipeline)._apply_allowed_quorum_decision_update = lambda **_: None
+    cast(Any, pipeline)._emit_microboost_intel_if_new = lambda _report: None
+    cast(Any, pipeline)._emit_signal_throttle_state_snapshot = lambda _report: None
+    cast(Any, pipeline).family_counters_snapshot = lambda: {}
+
+    report = pipeline._process_signal_throttle_snapshot(
+        symbol="EURUSD",
+        synthesis={"execution": {"entry_price": 9.9999}},
+        l12_verdict={"verdict": "HOLD", "direction": None},
+        source_verdict="HOLD",
+    )
+
+    assert analyzer.snapshot_context_symbols == [["EURUSD"], ["AUDNZD", "EURUSD"]]
+    hydration = report["candidate_market_context_hydration"]
+    assert hydration["hydrated_symbols"] == ["AUDNZD"]
+    assert hydration["execution_impact"] is False
+    assert report["clean_watch_candidates"][0]["market_context_snapshot"]["price_at_signal_end"] is not None
+
+
 def test_pipeline_emits_valid_continuation_payload_by_default():
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
