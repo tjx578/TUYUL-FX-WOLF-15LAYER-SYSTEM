@@ -110,11 +110,17 @@ def test_snapshot_reports_candidate_market_context_hydration(monkeypatch, caplog
     monkeypatch.delenv(_GATE, raising=False)
     monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "3")
+    monkeypatch.setenv("SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_MAX_SYMBOLS", "5")
+    monkeypatch.setenv("SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED", "true")
     with caplog.at_level(logging.WARNING, logger="signal_json"):
         _pipeline()._emit_signal_intelligence_flag_snapshot()
     p = _emitted_payload(caplog)
     assert p["SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED"] is True
     assert p["SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS"] == 3.0
+    assert p["SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_ENABLED"] is True
+    assert p["SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_MAX_SYMBOLS"] == 5.0
+    assert p["SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED"] is True
 
 
 def test_snapshot_bridge_window_defaults_to_canary_ttl(monkeypatch, caplog):

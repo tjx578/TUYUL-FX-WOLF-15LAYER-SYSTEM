@@ -96,6 +96,10 @@ from analysis.signal_lifecycle_manager import (
     shadow_preview_event,
 )
 from analysis.signal_pressure_state_emitter import emit_signal_pressure_state
+from analysis.signal_throttle_followthrough_score import (
+    followthrough_context_for_symbol,
+    signal_throttle_followthrough_score_log_payload,
+)
 from analysis.signal_throttle_fusion_router import emit_signal_throttle_fusion_v3_diagnostic
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
@@ -4202,6 +4206,7 @@ class WolfConstitutionalPipeline:
             report["candidate_market_context_hydration"] = hydration
         self._emit_signal_throttle_fusion_v3_diagnostic(report)
         self._emit_signal_throttle_pressure_tier_snapshot(report)
+        self._emit_signal_throttle_followthrough_scores(report)
         self._apply_microboost_continuation_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_counter_entry_report(l12_verdict=l12_verdict, report=report)
         self._apply_microboost_watch_entry_report(l12_verdict=l12_verdict, report=report)
@@ -4733,6 +4738,7 @@ class WolfConstitutionalPipeline:
         l12_verdict["microboost_continuation_entry"] = continuation
         if self._signal_json_gate_adapter.emit_continuation:
             self._attach_pressure_priority_context(continuation, report)
+            self._attach_followthrough_context(continuation, report)
             self._prepare_lifecycle_tracking_metadata(continuation)
             continuation["signal_json_emit_result"] = self._emit_signal_json_payload(continuation)
             if continuation["signal_json_emit_result"]:
@@ -4752,6 +4758,7 @@ class WolfConstitutionalPipeline:
 
         watch_entry = dict(watch_entry)
         self._attach_pressure_priority_context(watch_entry, report)
+        self._attach_followthrough_context(watch_entry, report)
         self._prepare_lifecycle_tracking_metadata(watch_entry)
         report["microboost_watch_entry"] = watch_entry
         l12_verdict["microboost_watch_entry"] = watch_entry
@@ -4783,6 +4790,7 @@ class WolfConstitutionalPipeline:
 
                 self._prepare_lifecycle_tracking_metadata(watch_entry)
                 self._attach_pressure_priority_context(watch_entry, report)
+                self._attach_followthrough_context(watch_entry, report)
                 watch_entry["signal_json_emit_result"] = self._emit_signal_json_payload(watch_entry)
                 if watch_entry["signal_json_emit_result"]:
                     self._track_official_lifecycle_candidate(watch_entry)
@@ -4997,6 +5005,22 @@ class WolfConstitutionalPipeline:
         if context is not None:
             payload["pressure_priority_context"] = context
 
+    def _attach_followthrough_context(self, payload: dict[str, Any], report: dict[str, Any]) -> None:
+        if os.getenv("SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED", "true").strip().lower() != "true":
+            return
+        status = str(payload.get("status") or "")
+        if not status.endswith("_WATCH"):
+            return
+        symbol = str(payload.get("symbol") or "").upper()
+        if not symbol or isinstance(payload.get("followthrough_context"), dict):
+            return
+        context = followthrough_context_for_symbol(
+            report.get("followthrough_scores") if isinstance(report, dict) else None,
+            symbol,
+        )
+        if context is not None:
+            payload["followthrough_context"] = context
+
     def _apply_microboost_counter_entry_report(
         self,
         *,
@@ -5011,6 +5035,7 @@ class WolfConstitutionalPipeline:
 
         counter_entry = self._signal_lifecycle_manager.apply(counter_entry)
         self._attach_pressure_priority_context(counter_entry, report)
+        self._attach_followthrough_context(counter_entry, report)
         report["microboost_counter_entry"] = counter_entry
         l12_verdict["microboost_counter_entry"] = counter_entry
         self._signal_block_finalizer.track(counter_entry)
@@ -6573,6 +6598,66 @@ class WolfConstitutionalPipeline:
         )
         report["pressure_tier_snapshot_emit_result"] = True
 
+    def _emit_signal_throttle_followthrough_scores(self, report: dict[str, Any]) -> None:
+        if os.getenv("SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_ENABLED", "true").strip().lower() != "true":
+            return
+        max_symbols = int(self._parse_env_float("SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_MAX_SYMBOLS", 8.0))
+        payload = signal_throttle_followthrough_score_log_payload(
+            report.get("followthrough_scores"),
+            max_symbols=max_symbols,
+        )
+        if payload is None:
+            report["followthrough_score_emit_result"] = False
+            report["followthrough_score_emit_suppressed_reason"] = "NO_FOLLOWTHROUGH_SCORES"
+            return
+        interval = self._parse_env_float("SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_INTERVAL_SECONDS", 60.0)
+        now = time.time()
+        import json  # noqa: PLC0415 -- local: diagnostic-only log serialization
+        import logging  # noqa: PLC0415 -- local: diagnostic-only logger
+
+        state_key = json.dumps(
+            {
+                "scores": [
+                    {
+                        "symbol": item.get("symbol"),
+                        "direction": item.get("direction"),
+                        "followthrough_score": item.get("followthrough_score"),
+                        "followthrough_bucket": item.get("followthrough_bucket"),
+                        "microboost_role": item.get("microboost_role"),
+                        "gap_health": item.get("gap_health"),
+                    }
+                    for item in payload.get("scores") or []
+                    if isinstance(item, dict)
+                ],
+                "score_count": payload.get("score_count"),
+                "late_risk_count": payload.get("late_risk_count"),
+                "gap_degraded_count": payload.get("gap_degraded_count"),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        previous_key = getattr(self, "_last_signal_throttle_followthrough_score_key", None)
+        previous_at = getattr(self, "_last_signal_throttle_followthrough_score_at", None)
+        if isinstance(previous_at, (int, float)) and now - float(previous_at) < max(0.0, interval):
+            report["followthrough_score_emit_result"] = False
+            report["followthrough_score_emit_suppressed_reason"] = (
+                "UNCHANGED_WITHIN_INTERVAL" if state_key == previous_key else "RATE_LIMITED_WITHIN_INTERVAL"
+            )
+            return
+        self._last_signal_throttle_followthrough_score_key = state_key
+        self._last_signal_throttle_followthrough_score_at = now
+        logging.getLogger(
+            os.getenv("SIGNAL_THROTTLE_OBSERVABILITY_LOGGER", DEFAULT_SIGNAL_THROTTLE_OBSERVABILITY_LOGGER)
+        ).warning(
+            "%s %s",
+            os.getenv(
+                "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_PREFIX",
+                "[SignalThrottleFollowthroughScore]",
+            ),
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+        )
+        report["followthrough_score_emit_result"] = True
+
     def _source_lineage_max_age_seconds(self) -> float:
         return self._parse_env_float("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", DEFAULT_SOURCE_FRESHNESS_SECONDS)
 
@@ -6621,6 +6706,15 @@ class WolfConstitutionalPipeline:
             ),
             "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS": _f(
                 "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "4"
+            ),
+            "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_ENABLED": _b(
+                "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_ENABLED", "true"
+            ),
+            "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_MAX_SYMBOLS": _f(
+                "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_MAX_SYMBOLS", "8"
+            ),
+            "SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED": _b(
+                "SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED", "true"
             ),
             "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED": _b(
                 "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false"

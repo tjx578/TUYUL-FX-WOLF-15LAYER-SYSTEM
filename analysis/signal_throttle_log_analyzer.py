@@ -43,6 +43,7 @@ from .outcome_memory import summarize_outcome_memory
 from .pressure_cluster_deduper import summarize_pressure_clusters
 from .regime_invalidation import validate_regime_state
 from .signal_promotion_score import score_signal_promotion
+from .signal_throttle_followthrough_score import build_signal_throttle_followthrough_scores
 from .signal_throttle_fusion_router import build_signal_throttle_fusion_v3_diagnostic
 from .signal_throttle_pattern_detector import classify_pressure_block
 from .signal_throttle_pressure_tier import build_pressure_tier_snapshot
@@ -524,6 +525,7 @@ def analyze_signal_throttle_events(
             "promotion_score": score_signal_promotion().to_dict()
             if _env_bool("SIGNAL_PROMOTION_SCORE_ENABLED", False)
             else None,
+            "followthrough_scores": [],
             "signal_watch_gate": _empty_signal_watch_gate("NO_SIGNAL_THROTTLE_DATA"),
             "allowed_quorum": compute_allowed_quorum([]),  # noqa: F821
             "pair_eligible_for_analysis": False,
@@ -769,6 +771,12 @@ def analyze_signal_throttle_events(
         if _env_bool("SIGNAL_PROMOTION_SCORE_ENABLED", False)
         else None
     )
+    followthrough_scores = build_signal_throttle_followthrough_scores(
+        clean_watch_candidates=clean_watch_candidates,
+        pressure_tiers=pressure_tier_snapshot.get("symbols", []),
+        market_contexts=market_contexts,
+        microboost_summary=microboost_summary,
+    )
 
     return {
         "final_mode": final_mode,
@@ -810,6 +818,7 @@ def analyze_signal_throttle_events(
         "outcome_memory_summary": outcome_memory_summary,
         "regime_invalidation": regime_invalidation,
         "promotion_score": promotion_score,
+        "followthrough_scores": followthrough_scores,
         "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
         "pair_eligible_for_analysis": pair_eligible_for_analysis,

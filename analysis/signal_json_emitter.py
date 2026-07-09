@@ -483,6 +483,7 @@ class SignalJsonEvent:
     execution_gate: dict[str, Any] | None = None
     lifecycle: dict[str, Any] | None = None
     pressure_priority_context: dict[str, Any] | None = None
+    followthrough_context: dict[str, Any] | None = None
     # Family lineage (gated upstream by SIGNAL_FAMILY_LINEAGE_ENABLED). Carried through
     # so the lineage merged onto the pipeline payload actually reaches the emitted log
     # instead of being dropped by the dict->event rebuild. Observability-only.
@@ -607,8 +608,10 @@ class SignalJsonEmitter:
         is_watch = _is_watch_status(str(payload.get("status") or "")) and not is_decision_update
         if not is_watch:
             _strip_pressure_priority_fields(payload)
+            _strip_followthrough_fields(payload)
         else:
             _apply_signal_watch_pressure_tier_fields(payload)
+            _apply_signal_watch_followthrough_fields(payload)
         if not should_emit_signal_json(
             payload,
             emit_watch=self.emit_watch,
@@ -1158,6 +1161,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         pressure_priority_context=(
             _dict_value(counter_entry.get("pressure_priority_context")) if is_watch else None
         ),
+        followthrough_context=(
+            _dict_value(counter_entry.get("followthrough_context")) if is_watch else None
+        ),
     )
 
 
@@ -1665,6 +1671,28 @@ def _apply_signal_watch_pressure_tier_fields(payload: dict[str, Any]) -> None:
     payload["signal_watch_tier_is_execution_signal"] = _optional_bool(context.get("tier_is_execution_signal"))
 
 
+def _apply_signal_watch_followthrough_fields(payload: dict[str, Any]) -> None:
+    context = _dict_value(payload.get("followthrough_context"))
+    if not context:
+        return
+    score = _optional_int(context.get("followthrough_score"))
+    if score is None:
+        return
+    payload["signal_watch_followthrough_score"] = score
+    payload["signal_watch_followthrough_bucket"] = _optional_str(context.get("followthrough_bucket"))
+    payload["signal_watch_pressure_quality_bucket"] = _optional_str(context.get("pressure_quality_bucket"))
+    payload["signal_watch_microboost_role"] = _optional_str(context.get("microboost_role"))
+    payload["signal_watch_room_to_move_score"] = _optional_float(context.get("room_to_move_score"))
+    payload["signal_watch_directional_room_pips"] = _optional_float(context.get("directional_room_pips"))
+    payload["signal_watch_gap_health"] = _optional_str(context.get("gap_health"))
+    payload["signal_watch_late_move_penalty"] = _optional_float(context.get("late_move_penalty"))
+    payload["signal_watch_gap_degradation_penalty"] = _optional_float(context.get("gap_degradation_penalty"))
+    payload["signal_watch_followthrough_risk_flags"] = _string_list(context.get("risk_flags"))
+    payload["signal_watch_followthrough_source_event"] = _optional_str(context.get("source_event"))
+    payload["signal_watch_followthrough_execution_impact"] = _optional_bool(context.get("execution_impact"))
+    payload["signal_watch_followthrough_is_execution_signal"] = _optional_bool(context.get("valid_for_execution"))
+
+
 def _strip_pressure_priority_fields(payload: dict[str, Any]) -> None:
     for key in (
         "pressure_priority_context",
@@ -1678,6 +1706,26 @@ def _strip_pressure_priority_fields(payload: dict[str, Any]) -> None:
         "signal_watch_tier_reason_codes",
         "signal_watch_tier_execution_impact",
         "signal_watch_tier_is_execution_signal",
+    ):
+        payload.pop(key, None)
+
+
+def _strip_followthrough_fields(payload: dict[str, Any]) -> None:
+    for key in (
+        "followthrough_context",
+        "signal_watch_followthrough_score",
+        "signal_watch_followthrough_bucket",
+        "signal_watch_pressure_quality_bucket",
+        "signal_watch_microboost_role",
+        "signal_watch_room_to_move_score",
+        "signal_watch_directional_room_pips",
+        "signal_watch_gap_health",
+        "signal_watch_late_move_penalty",
+        "signal_watch_gap_degradation_penalty",
+        "signal_watch_followthrough_risk_flags",
+        "signal_watch_followthrough_source_event",
+        "signal_watch_followthrough_execution_impact",
+        "signal_watch_followthrough_is_execution_signal",
     ):
         payload.pop(key, None)
 

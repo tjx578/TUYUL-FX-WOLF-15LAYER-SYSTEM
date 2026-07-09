@@ -75,6 +75,36 @@ def test_parse_signal_throttle_rows_extracts_allowed_and_throttled():
     assert events[0].source_stream == "RAW_THROTTLED"
 
 
+def test_analyzer_outputs_followthrough_scores_for_clean_block_with_market_context():
+    events = [_event(offset, "GBPCAD", direction="BUY") for offset in range(0, 1801, 60)]
+    report = analyze_signal_throttle_events(
+        events,
+        market_contexts={
+            "GBPCAD": MarketContext(
+                symbol="GBPCAD",
+                raw_allowed_direction="BUY",
+                pip_value=0.0001,
+                price_at_signal_start=1.8500,
+                price_at_signal_end=1.8520,
+                key_support=1.8480,
+                key_resistance=1.8580,
+                price_position="MID_RANGE",
+                m15_phase="BULLISH_PULLBACK",
+                h1_phase="BULLISH",
+                theme_aligned=True,
+            )
+        },
+    )
+
+    score = report["followthrough_scores"][0]
+    assert score["event"] == "signal_throttle_followthrough_score_json"
+    assert score["symbol"] == "GBPCAD"
+    assert score["followthrough_score"] > 0
+    assert score["directional_room_pips"] == 60.0
+    assert score["valid_for_execution"] is False
+    assert score["execution_impact"] is False
+
+
 def test_parse_signal_throttle_rows_ignores_signal_json_decision_updates():
     rows = [
         {

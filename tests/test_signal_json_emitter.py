@@ -127,6 +127,46 @@ def test_signal_watch_json_can_carry_pressure_priority_context(caplog):
     assert '"valid_for_execution":false' in caplog.text
 
 
+def test_signal_watch_json_can_carry_followthrough_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="CADJPY_20260518T133000Z",
+        symbol="CADJPY",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        valid_for_execution=False,
+        followthrough_context={
+            "followthrough_score": 82,
+            "followthrough_bucket": "HIGH_FOLLOWTHROUGH_CANDIDATE",
+            "pressure_quality_bucket": "ACTIVE_CLEAN_PRESSURE",
+            "microboost_role": "CONFIRMATION_OR_ACCELERATION",
+            "room_to_move_score": 18.0,
+            "directional_room_pips": 32.5,
+            "gap_health": "HEALTHY",
+            "late_move_penalty": 0.0,
+            "gap_degradation_penalty": 0.0,
+            "risk_flags": [],
+            "source_event": "SignalThrottleFollowthroughScore",
+            "valid_for_execution": False,
+            "execution_impact": False,
+        },
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"followthrough_context":' in caplog.text
+    assert '"signal_watch_followthrough_score":82' in caplog.text
+    assert '"signal_watch_followthrough_bucket":"HIGH_FOLLOWTHROUGH_CANDIDATE"' in caplog.text
+    assert '"signal_watch_microboost_role":"CONFIRMATION_OR_ACCELERATION"' in caplog.text
+    assert '"signal_watch_followthrough_execution_impact":false' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
 def test_signal_json_emits_clean_block_watch_status(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(
@@ -784,6 +824,34 @@ def test_final_signal_strips_pressure_priority_context(caplog):
     assert "signal_watch_pressure_tier" not in caplog.text
 
 
+def test_final_signal_strips_followthrough_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        analysis_valid=True,
+        direction_valid=True,
+        signal_valid=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
+        valid_for_execution=True,
+        followthrough_context={
+            "followthrough_score": 82,
+            "followthrough_bucket": "HIGH_FOLLOWTHROUGH_CANDIDATE",
+            "execution_impact": False,
+        },
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert "followthrough_context" not in caplog.text
+    assert "signal_watch_followthrough_score" not in caplog.text
+    assert "SignalThrottleFollowthroughScore" not in caplog.text
+
+
 def test_terminal_valid_wait_structure_emits_decision_update_without_execution(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
@@ -857,6 +925,43 @@ def test_decision_update_strips_pressure_priority_context(caplog):
     assert "effective_pressure_tier" not in caplog.text
     assert "pressure_tier" not in caplog.text
     assert "signal_watch_pressure_tier" not in caplog.text
+
+
+def test_decision_update_strips_followthrough_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="NZDJPY_20260603T132500Z",
+        symbol="NZDJPY",
+        status="FINAL_VALID_WAIT_STRUCTURE_TARGET",
+        terminal_status="FINAL_VALID_WAIT_STRUCTURE_TARGET",
+        raw_direction="SELL",
+        candidate_direction="SELL",
+        validated_direction="SELL",
+        final_direction="SELL",
+        action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        next_action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        signal_valid=True,
+        direction_valid=True,
+        analysis_valid=True,
+        tradeplan_valid=False,
+        valid_for_execution=False,
+        execution_valid_now=False,
+        terminal_decision_confirmed=True,
+        is_final_signal=True,
+        followthrough_context={
+            "followthrough_score": 68,
+            "followthrough_bucket": "MEDIUM_FOLLOWTHROUGH_CANDIDATE",
+            "execution_impact": False,
+        },
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert "followthrough_context" not in caplog.text
+    assert "signal_watch_followthrough_score" not in caplog.text
+    assert "SignalThrottleFollowthroughScore" not in caplog.text
 
 
 def test_decision_update_payload_key_ignores_block_end_only_change():

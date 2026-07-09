@@ -509,6 +509,42 @@ def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
     assert '"decision_update_tier_context_allowed":false' in caplog.text
 
 
+def test_pipeline_emits_followthrough_score_log(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    report = {
+        "followthrough_scores": [
+            {
+                "symbol": "XAGUSD",
+                "direction": "SELL",
+                "followthrough_score": 82,
+                "followthrough_bucket": "HIGH_FOLLOWTHROUGH_CANDIDATE",
+                "pressure_quality_bucket": "ACTIVE_CLEAN_PRESSURE",
+                "duration_maturity_bucket": "MAJOR_30M",
+                "microboost_role": "CONFIRMATION_OR_ACCELERATION",
+                "directional_room_pips": 44.0,
+                "gap_health": "HEALTHY",
+                "late_move_penalty": 0.0,
+                "gap_degradation_penalty": 0.0,
+                "risk_flags": [],
+            }
+        ]
+    }
+
+    pipeline._emit_signal_throttle_followthrough_scores(report)
+
+    observability_records = [record for record in caplog.records if record.name == "signal_throttle_observability"]
+    signal_json_records = [record for record in caplog.records if record.name == "signal_json"]
+    assert report["followthrough_score_emit_result"] is True
+    assert observability_records
+    assert not any("SignalThrottleFollowthroughScore" in record.getMessage() for record in signal_json_records)
+    assert "[SignalThrottleFollowthroughScore]" in caplog.text
+    assert '"event":"signal_throttle_followthrough_score_snapshot"' in caplog.text
+    assert '"display_line":"followthrough_scores total=1 top=1[XAGUSD:SELL:82:HIGH_FOLLOWTHROUGH_CANDIDATE] execution_impact=false"' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
 def test_pipeline_emits_fusion_v3_diagnostic_on_dedicated_logger(caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
