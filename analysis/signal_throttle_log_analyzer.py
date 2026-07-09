@@ -39,6 +39,7 @@ from .microboost_continuation_entry import MicroboostContinuationEngine
 from .microboost_core_event import to_microboost_core_event
 from .microboost_counter_entry import MicroboostCounterEntryEngine
 from .microboost_detector import build_microboost_summary
+from .microboost_followthrough_role import microboost_role_fields_from
 from .outcome_memory import summarize_outcome_memory
 from .pressure_cluster_deduper import summarize_pressure_clusters
 from .regime_invalidation import validate_regime_state
@@ -2213,6 +2214,7 @@ def _counter_entry_payload(
         direction_conflict_resolver_enabled=_env_bool("SIGNAL_DIRECTION_CONFLICT_RESOLVER_ENABLED", False),
     ).evaluate(latest, watch_only=True)
     payload = result.to_dict()
+    payload.update(microboost_role_fields_from(latest))
     payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
     _maybe_attach_structure_preview(payload, latest.get("market_context_snapshot"))
     latest["counter_entry"] = payload
@@ -2245,6 +2247,7 @@ def _continuation_entry_payload(
         allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
     ).evaluate(latest, allowed_quorum=allowed_quorum)
     payload = result.to_dict()
+    payload.update(microboost_role_fields_from(latest))
     payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
     latest["continuation_entry"] = payload
     microboost_summary["continuation_entry"] = payload
@@ -2445,6 +2448,7 @@ def _microboost_watch_payload(
         "confidence_bucket": "MICROBOOST_WATCH_ONLY",
         "emit_reason": "MICROBOOST_WAIT_STATE",
         "signal_quality": "WATCH_ONLY",
+        **microboost_role_fields_from(latest),
         **_golden_pattern_fields(latest),
         **_signal_watch_source_fields(signal_watch_gate, bool(signal_watch_gate.get("eligible"))),
     }
@@ -3283,6 +3287,7 @@ def _blocked_microboost_payload(
         "direction_status": "SIGNAL_THROTTLE_CLEAN_BLOCK_REQUIRED",
         "action": "WAIT_SIGNAL_THROTTLE_CLEAN_BLOCK",
         "reason": signal_watch_gate["reason"],
+        **microboost_role_fields_from(latest),
         **_golden_pattern_fields(latest),
         **_signal_watch_source_fields(signal_watch_gate, False),
     }

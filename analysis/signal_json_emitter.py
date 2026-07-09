@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from analysis.microboost_followthrough_role import MICROBOOST_FOLLOWTHROUGH_ROLE_FIELDS
 from analysis.signal_thresholds import SIGNAL_MIN_RR
 
 TERMINAL_EXECUTION_READY_STATUSES = {
@@ -429,6 +430,17 @@ class SignalJsonEvent:
     clean_block_direction: str | None = None
     watch_promotion_source: str | None = None
     microboost_validation_status: str | None = None
+    microboost_role: str | None = None
+    microboost_followthrough_bias: str | None = None
+    microboost_room_to_move_pips: float | None = None
+    microboost_pre_move_pips: float | None = None
+    microboost_expected_horizon: str | None = None
+    microboost_outcome_tracking_required: bool | None = None
+    microboost_role_source_event: str | None = None
+    microboost_role_reason_codes: list[str] | None = None
+    microboost_role_valid_for_execution: bool | None = None
+    microboost_role_execution_impact: bool | None = None
+    microboost_role_advisory_only: bool | None = None
     source_target_mode: str | None = None
     parent_event_type: str | None = None
     parent_event_exists: bool | None = None
@@ -609,9 +621,11 @@ class SignalJsonEmitter:
         if not is_watch:
             _strip_pressure_priority_fields(payload)
             _strip_followthrough_fields(payload)
+            _strip_microboost_role_fields(payload)
         else:
             _apply_signal_watch_pressure_tier_fields(payload)
             _apply_signal_watch_followthrough_fields(payload)
+            _apply_signal_watch_microboost_role_fields(payload)
         if not should_emit_signal_json(
             payload,
             emit_watch=self.emit_watch,
@@ -1105,6 +1119,17 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         clean_block_direction=_optional_str(counter_entry.get("clean_block_direction")),
         watch_promotion_source=_optional_str(counter_entry.get("watch_promotion_source")),
         microboost_validation_status=_optional_str(counter_entry.get("microboost_validation_status")),
+        microboost_role=_optional_str(counter_entry.get("microboost_role")),
+        microboost_followthrough_bias=_optional_str(counter_entry.get("microboost_followthrough_bias")),
+        microboost_room_to_move_pips=_optional_float(counter_entry.get("microboost_room_to_move_pips")),
+        microboost_pre_move_pips=_optional_float(counter_entry.get("microboost_pre_move_pips")),
+        microboost_expected_horizon=_optional_str(counter_entry.get("microboost_expected_horizon")),
+        microboost_outcome_tracking_required=_optional_bool(counter_entry.get("microboost_outcome_tracking_required")),
+        microboost_role_source_event=_optional_str(counter_entry.get("microboost_role_source_event")),
+        microboost_role_reason_codes=_string_list(counter_entry.get("microboost_role_reason_codes")),
+        microboost_role_valid_for_execution=_optional_bool(counter_entry.get("microboost_role_valid_for_execution")),
+        microboost_role_execution_impact=_optional_bool(counter_entry.get("microboost_role_execution_impact")),
+        microboost_role_advisory_only=_optional_bool(counter_entry.get("microboost_role_advisory_only")),
         source_target_mode=_optional_str(counter_entry.get("source_target_mode")),
         parent_event_type=_optional_str(counter_entry.get("parent_event_type")),
         parent_event_exists=_optional_bool(counter_entry.get("parent_event_exists")),
@@ -1693,6 +1718,28 @@ def _apply_signal_watch_followthrough_fields(payload: dict[str, Any]) -> None:
     payload["signal_watch_followthrough_is_execution_signal"] = _optional_bool(context.get("valid_for_execution"))
 
 
+def _apply_signal_watch_microboost_role_fields(payload: dict[str, Any]) -> None:
+    role = _optional_str(payload.get("microboost_role"))
+    if role is None:
+        return
+    payload["signal_watch_microboost_role"] = role
+    payload["signal_watch_microboost_followthrough_bias"] = _optional_str(payload.get("microboost_followthrough_bias"))
+    payload["signal_watch_microboost_room_to_move_pips"] = _optional_float(payload.get("microboost_room_to_move_pips"))
+    payload["signal_watch_microboost_pre_move_pips"] = _optional_float(payload.get("microboost_pre_move_pips"))
+    payload["signal_watch_microboost_expected_horizon"] = _optional_str(payload.get("microboost_expected_horizon"))
+    payload["signal_watch_microboost_outcome_tracking_required"] = _optional_bool(
+        payload.get("microboost_outcome_tracking_required")
+    )
+    payload["signal_watch_microboost_role_source_event"] = _optional_str(payload.get("microboost_role_source_event"))
+    payload["signal_watch_microboost_role_reason_codes"] = _string_list(payload.get("microboost_role_reason_codes"))
+    payload["signal_watch_microboost_role_execution_impact"] = _optional_bool(
+        payload.get("microboost_role_execution_impact")
+    )
+    payload["signal_watch_microboost_role_is_execution_signal"] = _optional_bool(
+        payload.get("microboost_role_valid_for_execution")
+    )
+
+
 def _strip_pressure_priority_fields(payload: dict[str, Any]) -> None:
     for key in (
         "pressure_priority_context",
@@ -1726,6 +1773,22 @@ def _strip_followthrough_fields(payload: dict[str, Any]) -> None:
         "signal_watch_followthrough_source_event",
         "signal_watch_followthrough_execution_impact",
         "signal_watch_followthrough_is_execution_signal",
+    ):
+        payload.pop(key, None)
+
+
+def _strip_microboost_role_fields(payload: dict[str, Any]) -> None:
+    for key in (
+        *MICROBOOST_FOLLOWTHROUGH_ROLE_FIELDS,
+        "signal_watch_microboost_followthrough_bias",
+        "signal_watch_microboost_room_to_move_pips",
+        "signal_watch_microboost_pre_move_pips",
+        "signal_watch_microboost_expected_horizon",
+        "signal_watch_microboost_outcome_tracking_required",
+        "signal_watch_microboost_role_source_event",
+        "signal_watch_microboost_role_reason_codes",
+        "signal_watch_microboost_role_execution_impact",
+        "signal_watch_microboost_role_is_execution_signal",
     ):
         payload.pop(key, None)
 

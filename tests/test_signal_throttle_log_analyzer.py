@@ -1400,6 +1400,12 @@ def test_microboost_buy_at_main_resistance_becomes_exhaustion_warning():
     assert latest["price_position"] == "MAIN_RESISTANCE"
     assert latest["trend_direction"] == "BUY"
     assert latest["score_components"]["late_risk_penalty"] == -24
+    assert latest["microboost_role"] == "ABSORPTION_WARNING"
+    assert latest["microboost_followthrough_bias"] == "NO_CHASE"
+    assert latest["microboost_room_to_move_pips"] == 5.0
+    assert latest["microboost_pre_move_pips"] == 80.0
+    assert latest["microboost_role_valid_for_execution"] is False
+    assert latest["valid_for_execution"] is False
 
 
 def test_downgraded_live_events_can_refresh_signal_watch_candidate():
@@ -1534,6 +1540,9 @@ def test_microboost_buy_pressure_inside_m15_bearish_pullback_waits_for_reclaim()
     assert watch["watch_direction"] == "BUY"
     assert watch["market_context_applied"] is True
     assert watch["valid_for_execution"] is False
+    assert watch["microboost_role"] == "CONFIRMATION"
+    assert watch["microboost_followthrough_bias"] == "CONTEXT_REQUIRED"
+    assert watch["microboost_role_execution_impact"] is False
     assert build_signal_json_event(watch) is not None
 
 

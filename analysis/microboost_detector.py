@@ -13,6 +13,7 @@ from numbers import Real
 from typing import Any
 
 from analysis.market_context_validator import MarketContext, validate_market_context
+from analysis.microboost_followthrough_role import build_microboost_followthrough_role
 
 _CURRENCIES = ("AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD")
 _METAL_BASES = ("XAG", "XAU")
@@ -112,7 +113,9 @@ class MicroboostBlockIntel:
     reason: str
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload.update(build_microboost_followthrough_role(payload))
+        return payload
 
 
 @dataclass(frozen=True)

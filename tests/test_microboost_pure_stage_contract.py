@@ -177,6 +177,9 @@ def test_core_event_excludes_downstream_metadata():
         "execution_readiness_score": 80,
         "pattern_match_diagnostics": {"scanned": 12},
         "score_components": {"density_score": 30},
+        "microboost_role": "ABSORPTION_WARNING",
+        "microboost_followthrough_bias": "NO_CHASE",
+        "microboost_role_execution_impact": False,
     }
 
     event = to_microboost_core_event(polluted)

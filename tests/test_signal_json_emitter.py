@@ -167,6 +167,42 @@ def test_signal_watch_json_can_carry_followthrough_context(caplog):
     assert '"valid_for_execution":false' in caplog.text
 
 
+def test_signal_watch_json_can_carry_microboost_role_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        valid_for_execution=False,
+        microboost_role="ABSORPTION_WARNING",
+        microboost_followthrough_bias="NO_CHASE",
+        microboost_room_to_move_pips=2.0,
+        microboost_pre_move_pips=68.0,
+        microboost_expected_horizon="15M",
+        microboost_outcome_tracking_required=True,
+        microboost_role_source_event="MicroboostFollowthroughRole",
+        microboost_role_reason_codes=["PRICE_EXTREME_ABSORPTION_WARNING", "EXECUTION_FIREWALL_UNCHANGED"],
+        microboost_role_valid_for_execution=False,
+        microboost_role_execution_impact=False,
+        microboost_role_advisory_only=True,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"microboost_role":"ABSORPTION_WARNING"' in caplog.text
+    assert '"microboost_followthrough_bias":"NO_CHASE"' in caplog.text
+    assert '"signal_watch_microboost_role":"ABSORPTION_WARNING"' in caplog.text
+    assert '"signal_watch_microboost_followthrough_bias":"NO_CHASE"' in caplog.text
+    assert '"signal_watch_microboost_role_execution_impact":false' in caplog.text
+    assert '"signal_watch_microboost_role_is_execution_signal":false' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
 def test_signal_json_emits_clean_block_watch_status(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(
@@ -852,6 +888,33 @@ def test_final_signal_strips_followthrough_context(caplog):
     assert "SignalThrottleFollowthroughScore" not in caplog.text
 
 
+def test_final_signal_strips_microboost_role_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        rr_status="VALID",
+        target_mode="FINAL_MARKET_STRUCTURE",
+        analysis_valid=True,
+        direction_valid=True,
+        signal_valid=True,
+        tradeplan_valid=True,
+        execution_valid_now=True,
+        valid_for_execution=True,
+        microboost_role="ABSORPTION_WARNING",
+        microboost_followthrough_bias="NO_CHASE",
+        microboost_role_source_event="MicroboostFollowthroughRole",
+        microboost_role_execution_impact=False,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalJSON]" in caplog.text
+    assert '"microboost_role"' not in caplog.text
+    assert "MicroboostFollowthroughRole" not in caplog.text
+    assert "signal_watch_microboost_role" not in caplog.text
+
+
 def test_terminal_valid_wait_structure_emits_decision_update_without_execution(caplog):
     emitter = SignalJsonEmitter(enabled=True)
     event = _event(
@@ -962,6 +1025,42 @@ def test_decision_update_strips_followthrough_context(caplog):
     assert "followthrough_context" not in caplog.text
     assert "signal_watch_followthrough_score" not in caplog.text
     assert "SignalThrottleFollowthroughScore" not in caplog.text
+
+
+def test_decision_update_strips_microboost_role_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True)
+    event = _event(
+        cluster_id="NZDJPY_20260603T132500Z",
+        symbol="NZDJPY",
+        status="FINAL_VALID_WAIT_STRUCTURE_TARGET",
+        terminal_status="FINAL_VALID_WAIT_STRUCTURE_TARGET",
+        raw_direction="SELL",
+        candidate_direction="SELL",
+        validated_direction="SELL",
+        final_direction="SELL",
+        action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        next_action="WAIT_STRUCTURE_TARGET_OR_RETEST",
+        rr_status="VALID",
+        target_mode="PROVISIONAL_RR_FALLBACK",
+        signal_valid=True,
+        direction_valid=True,
+        analysis_valid=True,
+        tradeplan_valid=False,
+        valid_for_execution=False,
+        execution_valid_now=False,
+        terminal_decision_confirmed=True,
+        is_final_signal=True,
+        microboost_role="PROFIT_PROTECTION",
+        microboost_followthrough_bias="PROTECT",
+        microboost_role_source_event="MicroboostFollowthroughRole",
+        microboost_role_execution_impact=False,
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    assert '"microboost_role"' not in caplog.text
+    assert "MicroboostFollowthroughRole" not in caplog.text
+    assert "signal_watch_microboost_role" not in caplog.text
 
 
 def test_decision_update_payload_key_ignores_block_end_only_change():
