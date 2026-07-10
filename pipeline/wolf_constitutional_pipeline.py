@@ -488,6 +488,19 @@ class WolfConstitutionalPipeline:
             require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "false").strip().lower() == "true",
             allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "true").strip().lower() == "true",
             production_watch_gate=self._parse_env_bool("SIGNAL_WATCH_PRODUCTION_GATE_ENABLED", log_compact_mode),
+            internal_watch_summary_enabled=self._parse_env_bool(
+                "SIGNAL_WATCH_INTERNAL_SUMMARY_ENABLED",
+                log_compact_mode,
+            ),
+            internal_watch_summary_prefix=os.getenv(
+                "SIGNAL_WATCH_INTERNAL_SUMMARY_LOG_PREFIX",
+                "[SignalWatchInternalSummary]",
+            ),
+            internal_watch_summary_log_level=os.getenv("SIGNAL_WATCH_INTERNAL_SUMMARY_LOG_LEVEL", "INFO"),
+            internal_watch_summary_interval_seconds=self._parse_env_float(
+                "SIGNAL_WATCH_INTERNAL_SUMMARY_INTERVAL_SECONDS",
+                300.0,
+            ),
             require_final_market_structure=(
                 os.getenv("SIGNAL_JSON_REQUIRE_FINAL_MARKET_STRUCTURE", "false").strip().lower() == "true"
             ),
@@ -7310,6 +7323,14 @@ class WolfConstitutionalPipeline:
             "SIGNAL_WATCH_PRODUCTION_GATE_ENABLED": _b(
                 "SIGNAL_WATCH_PRODUCTION_GATE_ENABLED",
                 "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_INTERNAL_SUMMARY_ENABLED": _b(
+                "SIGNAL_WATCH_INTERNAL_SUMMARY_ENABLED",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_INTERNAL_SUMMARY_INTERVAL_SECONDS": _f(
+                "SIGNAL_WATCH_INTERNAL_SUMMARY_INTERVAL_SECONDS",
+                "300",
             ),
             "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED": _b(
                 "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED",

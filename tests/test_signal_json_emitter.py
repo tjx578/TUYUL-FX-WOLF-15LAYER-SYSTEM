@@ -195,10 +195,87 @@ def test_production_watch_gate_suppresses_shadow_watch(caplog):
         clean_block_valid=True,
         pending_decision_id="XAUUSD_BLOCK_1_M15_DECISION",
         signal_quality="WATCH_ONLY",
+        tradeplan_preview={
+            "setup_type": "BUY_RECLAIM_WATCH",
+            "target_mode": "PREVIEW_CONTEXT_INCOMPLETE",
+        },
+        market_structure={
+            "market_structure_status": "STRUCTURE_PENDING",
+            "structure_pending_reason": ["HTF_STRUCTURE_CONTEXT_MISSING"],
+        },
     )
 
-    assert emitter.emit(event) is False
+    with caplog.at_level(logging.INFO, logger="signal_json"):
+        assert emitter.emit(event) is False
     assert "[SignalWatchJSON]" not in caplog.text
+    assert "[SignalWatchInternalSummary]" in caplog.text
+    summary = _logged_payload(caplog, "[SignalWatchInternalSummary]")
+    assert summary["event"] == "signal_watch_internal_summary"
+    assert summary["status"] == "SHADOW_WATCH_INTERNAL"
+    assert summary["symbol"] == "XAUUSD"
+    assert summary["production_suppress_reason"] == "SHADOW_WATCH_INTERNAL_ONLY"
+    assert summary["setup_type"] == "BUY_RECLAIM_WATCH"
+    assert summary["target_mode"] == "PREVIEW_CONTEXT_INCOMPLETE"
+    assert summary["market_structure_status"] == "STRUCTURE_PENDING"
+    assert summary["wait_for"] == "PROMOTABLE_SOURCE_VERDICT_AND_DECISION_GRADE_STRUCTURE"
+    assert summary["valid_for_execution"] is False
+
+
+def test_internal_watch_summary_material_dedup(caplog):
+    emitter = SignalJsonEmitter(
+        enabled=True,
+        emit_watch=True,
+        production_watch_gate=True,
+        watch_transition_only=False,
+        internal_watch_summary_interval_seconds=300.0,
+    )
+    base = dict(
+        cluster_id="AUDJPY_20260710T082856Z",
+        symbol="AUDJPY",
+        signal_family="MICROBOOST_COUNTER_ENTRY",
+        status="EARLY_BUY_WATCH",
+        raw_direction="SELL",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        market_context_applied=True,
+        valid_for_execution=False,
+        shadow_only=False,
+        source_clean_block_id="AUDJPY_BLOCK_1",
+        clean_block_valid=True,
+        pending_decision_id="AUDJPY_BLOCK_1_M15_DECISION",
+        signal_quality="WATCH_ONLY",
+        tradeplan_preview={
+            "setup_type": "BUY_RECLAIM_WATCH",
+            "target_mode": "PREVIEW_CONTEXT_INCOMPLETE",
+        },
+        market_structure={"market_structure_status": "STRUCTURE_PENDING"},
+    )
+
+    with caplog.at_level(logging.INFO, logger="signal_json"):
+        assert emitter.emit(_event(**base)) is False
+        assert emitter.emit(_event(**{**base, "entry_reference_price": 98.12, "signal_valid_price": 98.12})) is False
+        assert (
+            emitter.emit(
+                _event(
+                    **{
+                        **base,
+                        "tradeplan_preview": {
+                            "setup_type": "BUY_RECLAIM_WATCH",
+                            "target_mode": "STRUCTURE_TARGET",
+                        },
+                        "market_structure": {"market_structure_status": "STRUCTURE_READY"},
+                    }
+                )
+            )
+            is False
+        )
+
+    internal_summary_count = sum(
+        1 for record in caplog.records if "[SignalWatchInternalSummary]" in record.getMessage()
+    )
+    assert internal_summary_count == 2
 
 
 def test_production_watch_gate_emits_decision_grade_watch(caplog):
@@ -248,6 +325,7 @@ def test_production_watch_gate_emits_decision_grade_watch(caplog):
 
     assert emitter.emit(event) is True
     assert "[SignalWatchJSON]" in caplog.text
+    assert "[SignalWatchInternalSummary]" not in caplog.text
     assert '"status":"EARLY_SELL_WATCH"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text
 

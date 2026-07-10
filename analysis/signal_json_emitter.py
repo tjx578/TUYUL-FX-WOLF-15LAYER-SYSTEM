@@ -590,6 +590,10 @@ class SignalJsonEmitter:
         require_parent_watch: bool = False,
         allow_direct_bypass: bool = True,
         production_watch_gate: bool = False,
+        internal_watch_summary_enabled: bool | None = None,
+        internal_watch_summary_prefix: str = "[SignalWatchInternalSummary]",
+        internal_watch_summary_log_level: str | int | None = None,
+        internal_watch_summary_interval_seconds: float = 300.0,
         require_final_market_structure: bool = False,
         require_theme_alignment: bool = True,
         theme_conflict_downgrade: bool = True,
@@ -637,6 +641,14 @@ class SignalJsonEmitter:
         self.require_parent_watch = require_parent_watch
         self.allow_direct_bypass = allow_direct_bypass
         self.production_watch_gate = production_watch_gate
+        self.internal_watch_summary_enabled = (
+            production_watch_gate
+            if internal_watch_summary_enabled is None
+            else bool(internal_watch_summary_enabled)
+        )
+        self.internal_watch_summary_prefix = internal_watch_summary_prefix
+        self.internal_watch_summary_log_level = _log_level(internal_watch_summary_log_level, logging.INFO)
+        self.internal_watch_summary_interval_seconds = max(1.0, float(internal_watch_summary_interval_seconds))
         self.require_final_market_structure = require_final_market_structure
         self.require_theme_alignment = require_theme_alignment
         self.theme_conflict_downgrade = theme_conflict_downgrade
@@ -667,6 +679,7 @@ class SignalJsonEmitter:
         self._emitted_watch_refs: set[str] = set()
         self._last_watch_content: dict[str, str] = {}
         self._cluster_semantic_watch: dict[str, float] = {}
+        self._internal_watch_summary_state: dict[str, float] = {}
         self._terminal_decisions: set[str] = set()
         self._decision_states: dict[str, str] = {}
         self._finalized_decisions: set[str] = set()
@@ -703,9 +716,11 @@ class SignalJsonEmitter:
             _apply_signal_htf_structure_fields(payload, prefix="signal_watch")
             self._apply_pair_memory_context(payload)
             if self.production_watch_gate and not _is_promotable_signal_watch(payload):
+                suppress_reason = _signal_watch_suppress_reason(payload)
                 payload["signal_watch_production_emit_result"] = False
                 payload["signal_watch_production_suppressed"] = True
-                payload["signal_watch_production_suppress_reason"] = _signal_watch_suppress_reason(payload)
+                payload["signal_watch_production_suppress_reason"] = suppress_reason
+                self._emit_internal_watch_summary(payload, suppress_reason=suppress_reason)
                 return False
         elif is_decision_update:
             _strip_pair_memory_fields(payload)
@@ -795,6 +810,32 @@ class SignalJsonEmitter:
             self.pattern_debug_prefix,
             json.dumps(sidecar, separators=(",", ":"), ensure_ascii=False),
         )
+
+    def _emit_internal_watch_summary(self, payload: dict[str, Any], *, suppress_reason: str) -> bool:
+        if not self.internal_watch_summary_enabled:
+            return False
+        now = time.time()
+        expired = [
+            key
+            for key, emitted_at in self._internal_watch_summary_state.items()
+            if now - emitted_at > self.internal_watch_summary_interval_seconds
+        ]
+        for key in expired:
+            self._internal_watch_summary_state.pop(key, None)
+        key = f"{self._cluster_semantic_watch_key(payload)}|{suppress_reason}"
+        if key in self._internal_watch_summary_state:
+            return False
+        self._internal_watch_summary_state[key] = now
+        summary = _internal_watch_summary_payload(payload, suppress_reason=suppress_reason)
+        if summary is None:
+            return False
+        self.logger.log(
+            self.internal_watch_summary_log_level,
+            "%s %s",
+            self.internal_watch_summary_prefix,
+            json.dumps(summary, separators=(",", ":"), ensure_ascii=False),
+        )
+        return True
 
     @staticmethod
     def _payload_key(payload: dict[str, Any], *, watch_revision: str | None = None) -> str:
@@ -1500,6 +1541,156 @@ def _signal_watch_suppress_reason(payload: dict[str, Any]) -> str:
     if not _has_decision_grade_context(payload):
         return "DECISION_GRADE_CONTEXT_MISSING"
     return "PRODUCTION_WATCH_GATE_BLOCKED"
+
+
+def _internal_watch_summary_payload(payload: dict[str, Any], *, suppress_reason: str) -> dict[str, Any] | None:
+    lifecycle = _dict_value(payload.get("lifecycle")) or {}
+    market_structure = _dict_value(payload.get("market_structure")) or {}
+    tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
+    htf = _dict_value(payload.get("htf_structure_context")) or {}
+    execution_gate = _dict_value(payload.get("execution_gate")) or {}
+    memory = _dict_value(payload.get("pair_memory_context")) or {}
+
+    lifecycle_track = _optional_bool(payload.get("lifecycle_track"))
+    if lifecycle_track is None:
+        lifecycle_track = _optional_bool(lifecycle.get("lifecycle_track"))
+    structure_ready = _optional_bool(market_structure.get("structure_ready"))
+    if structure_ready is None:
+        structure_ready = _optional_bool(payload.get("structure_ready"))
+    valid_for_execution = _optional_bool(payload.get("valid_for_execution"))
+    execution_valid_now = _optional_bool(payload.get("execution_valid_now"))
+
+    summary = {
+        "event": "signal_watch_internal_summary",
+        "status": (
+            "SHADOW_WATCH_INTERNAL"
+            if _optional_bool(payload.get("shadow_only")) is True
+            else "CANDIDATE_WATCH_INTERNAL"
+        ),
+        "symbol": _optional_str(payload.get("symbol")),
+        "signal_family": _optional_str(payload.get("signal_family")),
+        "watch_status": _optional_str(payload.get("status")),
+        "raw_direction": _optional_str(payload.get("raw_direction")),
+        "candidate_direction": _optional_str(payload.get("candidate_direction")),
+        "watch_direction": _optional_str(payload.get("watch_direction")),
+        "final_direction": "WAIT",
+        "production_suppress_reason": suppress_reason,
+        "shadow_only": _optional_bool(payload.get("shadow_only")),
+        "shadow_reason": _optional_str(payload.get("shadow_reason") or lifecycle.get("shadow_reason")),
+        "shadow_source_verdict": _optional_str(
+            payload.get("shadow_source_verdict") or lifecycle.get("shadow_source_verdict")
+        ),
+        "lifecycle_status": _optional_str(payload.get("lifecycle_status") or lifecycle.get("lifecycle_status")),
+        "lifecycle_track": lifecycle_track,
+        "source_clean_block_id": _optional_str(payload.get("source_clean_block_id")),
+        "clean_block_valid": _optional_bool(payload.get("clean_block_valid")),
+        "clean_block_duration_seconds": _optional_float(payload.get("clean_block_duration_seconds")),
+        "clean_block_event_count": _optional_int(payload.get("clean_block_event_count")),
+        "clean_block_direction": _optional_str(payload.get("clean_block_direction")),
+        "market_context_applied": _optional_bool(payload.get("market_context_applied")),
+        "price_position": _optional_str(payload.get("price_position")),
+        "m15_phase": _optional_str(payload.get("m15_phase")),
+        "h1_phase": _optional_str(payload.get("h1_phase")),
+        "setup_type": _optional_str(tradeplan.get("setup_type")),
+        "target_mode": _optional_str(tradeplan.get("target_mode") or payload.get("target_mode")),
+        "market_structure_status": _optional_str(market_structure.get("market_structure_status")),
+        "structure_ready": structure_ready,
+        "structure_pending_reason": _compact_reason_list(market_structure.get("structure_pending_reason")),
+        "htf_data_sufficient": _optional_bool(htf.get("data_sufficient")),
+        "htf_daily_bias": _optional_str(htf.get("daily_bias")),
+        "htf_h4_structure": _optional_str(htf.get("h4_structure")),
+        "htf_price_location": _optional_str(htf.get("price_location")),
+        "memory_bias": _optional_str(memory.get("memory_bias") or memory.get("trend_bias")),
+        "memory_phase": _optional_str(memory.get("memory_phase") or memory.get("phase_structure_validation")),
+        "pair_lifecycle_transition": _optional_str(memory.get("lifecycle_transition")),
+        "m15_confirmation_status": _optional_str(payload.get("m15_confirmation_status")),
+        "pending_decision_id": _optional_str(payload.get("pending_decision_id")),
+        "source_valid_for_execution": valid_for_execution,
+        "source_execution_valid_now": execution_valid_now,
+        "execution_status": _optional_str(payload.get("execution_status") or execution_gate.get("execution_status")),
+        "execution_reason": _optional_str(payload.get("execution_reason") or execution_gate.get("execution_reason")),
+        "valid_for_execution": False,
+        "execution_valid_now": False,
+        "is_final_signal": False,
+        "wait_for": _internal_watch_wait_for(
+            payload,
+            suppress_reason=suppress_reason,
+            tradeplan=tradeplan,
+            market_structure=market_structure,
+            htf=htf,
+        ),
+        "reason": _internal_watch_operator_reason(
+            payload,
+            suppress_reason=suppress_reason,
+            tradeplan=tradeplan,
+            market_structure=market_structure,
+        ),
+    }
+    cleaned = _clean_context(summary)
+    return cleaned if isinstance(cleaned, dict) else None
+
+
+def _internal_watch_wait_for(
+    payload: dict[str, Any],
+    *,
+    suppress_reason: str,
+    tradeplan: dict[str, Any],
+    market_structure: dict[str, Any],
+    htf: dict[str, Any],
+) -> str:
+    if _optional_bool(payload.get("shadow_only")) is True:
+        return "PROMOTABLE_SOURCE_VERDICT_AND_DECISION_GRADE_STRUCTURE"
+    if suppress_reason == "MARKET_CONTEXT_MISSING":
+        return "PRICE_STRUCTURE_CONTEXT"
+    if suppress_reason in {"SOURCE_CLEAN_BLOCK_ID_MISSING", "CLEAN_BLOCK_NOT_VALID"}:
+        return "VALID_CLEAN_BLOCK_SOURCE"
+    if suppress_reason == "PENDING_DECISION_ID_MISSING":
+        return "WATCH_LIFECYCLE_DECISION_ANCHOR"
+    target_mode = str(tradeplan.get("target_mode") or payload.get("target_mode") or "").upper()
+    if target_mode in {"", "PREVIEW_CONTEXT_INCOMPLETE", "HTF_STRUCTURE_PENDING"}:
+        return "HTF_STRUCTURE_AND_TRADEPLAN_COMPLETION"
+    if _optional_bool(htf.get("data_sufficient")) is not True:
+        return "D1_H4_STRUCTURE_CONTEXT"
+    structure_status = str(market_structure.get("market_structure_status") or "").upper()
+    if structure_status not in {"STRUCTURE_READY", "STRUCTURE_PENDING_M15_ONLY"}:
+        return "DECISION_GRADE_PRICE_STRUCTURE"
+    return "DECISION_GRADE_CONTEXT"
+
+
+def _internal_watch_operator_reason(
+    payload: dict[str, Any],
+    *,
+    suppress_reason: str,
+    tradeplan: dict[str, Any],
+    market_structure: dict[str, Any],
+) -> str:
+    if _optional_bool(payload.get("shadow_only")) is True:
+        return (
+            "Watch exists internally, but source verdict is not promotable; full production SignalWatchJSON "
+            "remains hidden."
+        )
+    if suppress_reason == "MARKET_CONTEXT_MISSING":
+        return "Clean block pressure exists, but price structure context is still missing."
+    if suppress_reason == "DECISION_GRADE_CONTEXT_MISSING":
+        target_mode = str(tradeplan.get("target_mode") or payload.get("target_mode") or "").upper()
+        structure_status = str(market_structure.get("market_structure_status") or "").upper()
+        if target_mode in {"", "PREVIEW_CONTEXT_INCOMPLETE", "HTF_STRUCTURE_PENDING"}:
+            return "Watch candidate exists, but HTF trade plan preview is not complete."
+        if structure_status not in {"STRUCTURE_READY", "STRUCTURE_PENDING_M15_ONLY"}:
+            return "Watch candidate exists, but market structure is not decision-grade yet."
+    if suppress_reason == "VALID_FOR_EXECUTION_BELONGS_TO_SIGNALJSON":
+        return "Execution-ready payload belongs to final SignalJSON, not production SignalWatchJSON."
+    return "Watch candidate exists internally, but production SignalWatch gate has not accepted it."
+
+
+def _compact_reason_list(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple, set)):
+        values = [str(item).strip() for item in value if str(item or "").strip()]
+        return values or None
+    text = str(value).strip()
+    return [text] if text else None
 
 
 def _is_decision_update_status(status: str) -> bool:
