@@ -91,6 +91,73 @@ def test_signal_json_emits_generic_microboost_watch(caplog):
     assert '"watch_direction":"BUY"' in caplog.text
 
 
+def test_signal_watch_json_merges_lifecycle_metadata_into_existing_context(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="CADJPY_20260518T133000Z",
+        symbol="CADJPY",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        action="WAIT_M15_RECLAIM_OR_PULLBACK_COMPLETION",
+        rr_status="WATCH",
+        market_context_applied=True,
+        valid_for_execution=False,
+        pending_decision_id="CADJPY_20260518T133000Z_M15_DECISION",
+        requires_m15_close=True,
+        lifecycle_track=True,
+        terminal_required=True,
+        terminal_guarantee="SIGNAL_BLOCK_FINALIZER",
+        lifecycle={"cluster_id": "CADJPY_20260518T133000Z"},
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"pending_decision_id":"CADJPY_20260518T133000Z_M15_DECISION"' in caplog.text
+    assert '"lifecycle":' in caplog.text
+    assert '"requires_m15_close":true' in caplog.text
+    assert '"lifecycle_track":true' in caplog.text
+    assert '"terminal_required":true' in caplog.text
+    assert '"terminal_guarantee":"SIGNAL_BLOCK_FINALIZER"' in caplog.text
+
+
+def test_shadow_signal_watch_json_exposes_observability_only_lifecycle(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="XAUUSD_20260710T032735Z",
+        symbol="XAUUSD",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        action="WAIT_PULLBACK_COMPLETION",
+        rr_status="WATCH",
+        market_context_applied=True,
+        valid_for_execution=False,
+        shadow_only=True,
+        lifecycle_track=False,
+        lifecycle_status="SHADOW_WATCH_ACTIVE",
+        terminal_required=False,
+        terminal_guarantee="OBSERVABILITY_ONLY",
+        lifecycle={"cluster_id": "XAUUSD_20260710T032735Z"},
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"shadow_only":true' in caplog.text
+    assert '"lifecycle_track":false' in caplog.text
+    assert '"lifecycle_status":"SHADOW_WATCH_ACTIVE"' in caplog.text
+    assert '"terminal_required":false' in caplog.text
+    assert '"terminal_guarantee":"OBSERVABILITY_ONLY"' in caplog.text
+
+
 def test_signal_watch_json_can_carry_pressure_priority_context(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(

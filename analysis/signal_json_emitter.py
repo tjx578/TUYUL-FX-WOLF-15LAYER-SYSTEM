@@ -374,6 +374,10 @@ class SignalJsonEvent:
     linked_previous_signal: str | None = None
     previous_signal_status: str | None = None
     lifecycle_status: str | None = None
+    lifecycle_track: bool | None = None
+    terminal_required: bool | None = None
+    terminal_guarantee: str | None = None
+    shadow_only: bool | None = None
     active_signal: dict[str, Any] | None = None
     active_position_policy: str | None = None
     active_signal_management: dict[str, Any] | None = None
@@ -1121,6 +1125,10 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         linked_previous_signal=_optional_str(counter_entry.get("linked_previous_signal")),
         previous_signal_status=_optional_str(counter_entry.get("previous_signal_status")),
         lifecycle_status=_optional_str(counter_entry.get("lifecycle_status")),
+        lifecycle_track=_optional_bool(counter_entry.get("lifecycle_track")),
+        terminal_required=_optional_bool(counter_entry.get("terminal_required")),
+        terminal_guarantee=_optional_str(counter_entry.get("terminal_guarantee")),
+        shadow_only=_optional_bool(counter_entry.get("shadow_only")),
         active_signal=counter_entry.get("active_signal")
         if isinstance(counter_entry.get("active_signal"), dict)
         else None,
@@ -1268,7 +1276,7 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         tradeplan_preview=_dict_value(counter_entry.get("tradeplan_preview")) or _tradeplan_preview(counter_entry),
         market_structure=_dict_value(counter_entry.get("market_structure")),
         execution_gate=_dict_value(counter_entry.get("execution_gate")) or _execution_gate_context(counter_entry),
-        lifecycle=_dict_value(counter_entry.get("lifecycle")) or _lifecycle_context(counter_entry),
+        lifecycle=_merged_lifecycle_context(counter_entry),
         pair_memory_context=(
             _dict_value(counter_entry.get("pair_memory_context")) if is_watch else None
         ),
@@ -2081,7 +2089,7 @@ def _universal_pattern_payload(payload: dict[str, Any], *, compact: bool = True)
     universal["execution_gate"] = _clean_context(
         _dict_value(universal.get("execution_gate")) or _execution_gate_context(universal)
     )
-    universal["lifecycle"] = _clean_context(_dict_value(universal.get("lifecycle")) or _lifecycle_context(universal))
+    universal["lifecycle"] = _merged_lifecycle_context(universal)
     return _schema_v2_payload(universal, compact=compact)
 
 
@@ -2358,12 +2366,27 @@ def _lifecycle_context(payload: dict[str, Any]) -> dict[str, Any] | None:
         "linked_previous_signal": _optional_str(payload.get("linked_previous_signal")),
         "previous_signal_status": _optional_str(payload.get("previous_signal_status")),
         "lifecycle_status": _optional_str(payload.get("lifecycle_status")),
+        "lifecycle_track": _optional_bool(payload.get("lifecycle_track")),
+        "terminal_required": _optional_bool(payload.get("terminal_required")),
+        "terminal_guarantee": _optional_str(payload.get("terminal_guarantee")),
+        "shadow_only": _optional_bool(payload.get("shadow_only")),
+        "requires_m15_close": _optional_bool(payload.get("requires_m15_close")),
         "decision_watch_type": _optional_str(payload.get("decision_watch_type")),
         "decision_update_trigger": _optional_str(payload.get("decision_update_trigger")),
         "next_action": _optional_str(payload.get("next_action")),
         "pending_age_seconds": _optional_float(payload.get("pending_age_seconds")),
     }
     return _clean_context(context)
+
+
+def _merged_lifecycle_context(payload: dict[str, Any]) -> dict[str, Any] | None:
+    generated = _lifecycle_context(payload) or {}
+    existing = _dict_value(payload.get("lifecycle")) or {}
+    if not generated and not existing:
+        return None
+    merged = dict(existing)
+    merged.update(generated)
+    return _clean_context(merged)
 
 
 def _pattern_debug_payload(

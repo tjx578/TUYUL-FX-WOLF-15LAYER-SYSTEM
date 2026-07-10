@@ -1015,6 +1015,54 @@ def test_pipeline_does_not_track_watch_when_emit_fails():
     assert tracker.tracked == []
 
 
+def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    emitted: list[dict] = []
+    report = {
+        "microboost_watch_entry": {
+            "symbol": "XAUUSD",
+            "cluster_id": "XAUUSD_20260710T032735Z",
+            "signal_family": "MICROBOOST_WATCH",
+            "status": "MICROBOOST_WATCH",
+            "candidate_direction": "BUY",
+            "watch_direction": "BUY",
+            "final_direction": "WAIT",
+            "signal_valid_time_utc": "2026-07-10T03:27:36+00:00",
+            "signal_valid_price": 4125.35,
+            "entry_reference_price": 4125.35,
+            "entry_zone": [4125.35],
+            "market_context_applied": True,
+            "valid_for_execution": False,
+        }
+    }
+
+    monkeypatch.setattr(pipeline, "_signal_throttle_market_contexts", lambda **_: {})
+    monkeypatch.setattr(pipeline, "_htf_structure_contexts_from_market_contexts", lambda _: {})
+    monkeypatch.setattr(pipeline, "_emit_htf_structure_snapshots_for_contexts", lambda _: None)
+    monkeypatch.setattr(pipeline, "_emit_microboost_intel_if_new", lambda _: None)
+    monkeypatch.setattr(pipeline, "_emit_microboost_watch_miss_diagnostic", lambda _: None)
+    monkeypatch.setattr(pipeline, "_emit_htf_structure_snapshot", lambda _: None)
+    monkeypatch.setattr(pipeline, "_apply_allowed_quorum_decision_update", lambda **_: None)
+    monkeypatch.setattr(pipeline, "_apply_no_trade_pressure_decision_update", lambda **_: None)
+    monkeypatch.setattr(pipeline, "_emit_signal_json_payload", lambda payload: emitted.append(payload) or True)
+
+    class _Analyzer:
+        def snapshot(self, *, market_contexts):
+            return dict(report)
+
+    pipeline._signal_throttle_live_analyzer = _Analyzer()
+
+    verdict: dict = {}
+    pipeline._emit_microboost_watch_shadow(symbol="XAUUSD", synthesis={}, l12_verdict=verdict, source_verdict="HOLD")
+
+    assert emitted
+    assert emitted[0]["shadow_only"] is True
+    assert emitted[0]["lifecycle_track"] is False
+    assert emitted[0]["lifecycle_status"] == "SHADOW_WATCH_ACTIVE"
+    assert emitted[0]["terminal_required"] is False
+    assert emitted[0]["terminal_guarantee"] == "OBSERVABILITY_ONLY"
+
+
 def test_pipeline_records_counter_entry_emit_result():
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_lifecycle_manager = SignalLifecycleManager()

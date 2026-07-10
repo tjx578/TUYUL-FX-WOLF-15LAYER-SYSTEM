@@ -6689,6 +6689,10 @@ class WolfConstitutionalPipeline:
                 continue
             shadow_candidate = dict(candidate)
             shadow_candidate["shadow_only"] = True
+            shadow_candidate["lifecycle_status"] = "SHADOW_WATCH_ACTIVE"
+            shadow_candidate["terminal_required"] = False
+            shadow_candidate["terminal_guarantee"] = "OBSERVABILITY_ONLY"
+            self._prepare_lifecycle_tracking_metadata(shadow_candidate)
             self._emit_signal_json_payload(shadow_candidate)
 
     def _finalize_idle_signal_blocks(
