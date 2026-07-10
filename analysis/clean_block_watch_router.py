@@ -148,10 +148,29 @@ def clean_block_lineage_fields(
     clean_block_seconds: int = 300,
 ) -> dict[str, Any]:
     symbol = str(candidate.get("symbol") or "").upper()
-    start = _text(candidate.get("block_start_utc") or candidate.get("start_utc") or candidate.get("start"))
-    end = _text(candidate.get("block_end_utc") or candidate.get("end_utc") or candidate.get("end"))
+    start = _text(
+        candidate.get("block_start_utc")
+        or candidate.get("clean_block_start_utc")
+        or candidate.get("source_clean_block_start_utc")
+        or candidate.get("start_utc")
+        or candidate.get("start")
+    )
+    end = _text(
+        candidate.get("block_end_utc")
+        or candidate.get("clean_block_end_utc")
+        or candidate.get("source_clean_block_latest_end_utc")
+        or candidate.get("clean_block_latest_end_utc")
+        or candidate.get("end_utc")
+        or candidate.get("end")
+    )
     duration = _duration_seconds(candidate)
-    event_count = _int_value(candidate.get("events") or candidate.get("event_count"))
+    event_count = _int_value(
+        candidate.get("events")
+        or candidate.get("event_count")
+        or candidate.get("clean_block_event_count")
+        or candidate.get("raw_signal_throttle_event_count")
+        or candidate.get("effective_ticks")
+    )
     direction = _raw_pressure_direction(candidate)
     explicit_valid_since = _text(
         candidate.get("source_clean_block_first_valid_end_utc")
@@ -692,6 +711,11 @@ def _signal_price(market_context: Any | None) -> float | None:
         _field(market_context, "price_at_signal_end"),
         _field(market_context, "price_at_5m_confirm"),
         _field(market_context, "price_at_signal_start"),
+        _field(market_context, "signal_valid_price"),
+        _field(market_context, "entry_reference_price"),
+        _field(market_context, "current_price"),
+        _field(market_context, "price"),
+        _field(market_context, "last_price"),
         _field(market_context, "bid"),
         _field(market_context, "ask"),
     )
@@ -728,11 +752,16 @@ def _pip_size(symbol: str, market_context: Any) -> float:
 
 
 def _duration_seconds(candidate: Mapping[str, Any]) -> float | None:
-    raw = candidate.get("duration_seconds")
+    raw = _first_number(
+        candidate.get("duration_seconds"),
+        candidate.get("clean_block_duration_seconds"),
+        candidate.get("source_clean_block_latest_duration_seconds"),
+        candidate.get("clean_block_live_duration_seconds"),
+    )
     if raw is None and candidate.get("duration_minutes") is not None:
         minutes = _first_number(candidate.get("duration_minutes"))
         return None if minutes is None else minutes * 60.0
-    return _first_number(raw)
+    return raw
 
 
 def _raw_pressure_direction(candidate: Mapping[str, Any]) -> str | None:

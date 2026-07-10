@@ -219,6 +219,50 @@ def test_mature_scanner_cycle_clean_block_becomes_advisory_watch_with_market_con
     assert payload["is_final_signal"] is False
 
 
+def test_scanner_cycle_radar_shape_can_promote_when_reprocessed_with_market_context():
+    candidate = {
+        "symbol": "CHFJPY",
+        "clean_block_direction": "SELL",
+        "source_clean_block_id": "CHFJPY_20260710T091706Z_20260710T092206Z",
+        "clean_block_start_utc": "2026-07-10T09:17:06.198355+00:00",
+        "clean_block_end_utc": "2026-07-10T09:22:06.552355+00:00",
+        "clean_block_valid_since_utc": "2026-07-10T09:22:06.198355+00:00",
+        "clean_block_duration_seconds": 300.354,
+        "clean_block_event_count": 24,
+        "ledger_type": "V1_SCANNER_CLEAN_BLOCK_LEDGER",
+        "ledger_source": "SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER",
+        "split_rule": "SCANNER_CYCLE_AWARE_PAIR_PERSISTENCE",
+        "gap_policy": "SCANNER_CYCLE_QUALITY_ONLY",
+        "scanner_cycle_aware": True,
+        "source_stream_profile": {"PRESSURE_CANARY": 24},
+        "raw_signal_throttle_severity_profile": {"INFO": 24},
+        "raw_pressure_origin": "SIGNAL_THROTTLE_PRESSURE_CANARY",
+    }
+    market_context = {
+        "symbol": "CHFJPY",
+        "current_price": 181.23,
+        "price_position": "MID_RANGE",
+        "m15_phase": "PULLBACK",
+        "h1_phase": "TRANSITION",
+        "main_support": 180.8,
+        "main_resistance": 181.7,
+    }
+
+    route = route_clean_block_to_watch(candidate, market_context=market_context)
+
+    assert route.event == "signal_watch_json"
+    assert route.emit_as_watch is True
+    assert route.payload["status"] == "CLEAN_BLOCK_SELL_WATCH"
+    assert route.payload["promotion_path"] == "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
+    assert route.payload["watch_scope"] == "SCANNER_CYCLE_MEMORY_ADVISORY"
+    assert route.payload["scanner_cycle_advisory_watch"] is True
+    assert route.payload["source_clean_block_id"] == "CHFJPY_20260710T091706Z_20260710T092206Z"
+    assert route.payload["clean_block_duration_seconds"] == 300.354
+    assert route.payload["clean_block_event_count"] == 24
+    assert route.payload["signal_valid_price"] == 181.23
+    assert route.payload["valid_for_execution"] is False
+
+
 def test_missing_context_becomes_clean_block_radar_confirmed():
     route = route_clean_block_to_watch(_candidate(), market_context=None)
 
