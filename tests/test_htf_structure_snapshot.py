@@ -222,6 +222,21 @@ def test_snapshot_bearish_blocks_buy_limit_end_to_end():
     assert snap.valid_for_execution is False
 
 
+def test_snapshot_exposes_htf_structure_ladder_levels():
+    snap = build_snapshot("XAUUSD", _staircase_up(base=4100.0, step=5.0), _staircase_up(base=4110.0, step=3.0))
+    payload = snap.to_dict()
+
+    assert payload["h4_swing_high"] is not None
+    assert payload["h4_swing_low"] is not None
+    assert payload["daily_range_high"] is not None
+    assert payload["daily_range_low"] is not None
+    assert len(payload["h4_supply_zone"]) == 2
+    assert len(payload["h4_demand_zone"]) == 2
+    assert len(payload["daily_fib_zone"]) == 2
+    assert {"fib_382", "fib_500", "fib_618"} <= set(payload["daily_fib_levels"])
+    assert payload["valid_for_execution"] is False
+
+
 def test_snapshot_insufficient_daily_is_no_bias_and_locked():
     snap = build_snapshot("EURUSD", daily=[_c(2, 1)] * 3, h4=_staircase_up())
     assert snap.daily_bias == BIAS_NO_BIAS
@@ -279,7 +294,7 @@ def test_resolver_no_source_is_no_bias_locked():
 
 
 # --------------------------------------------------------------------------- #
-# §7  Flag-guarded emit (default OFF)
+# §7  Flag-guarded emit (default ON, explicit OFF supported)
 # --------------------------------------------------------------------------- #
 
 
@@ -287,8 +302,16 @@ def _snap() -> HTFStructureSnapshot:
     return build_snapshot("GBPNZD", _staircase_down(n=30, base=160.0), _staircase_down(n=30, base=132.0))
 
 
-def test_emit_off_by_default(monkeypatch, caplog):
+def test_emit_on_by_default(monkeypatch, caplog):
     monkeypatch.delenv(ENABLE_ENV, raising=False)
+    with caplog.at_level(logging.WARNING):
+        emitted = emit_htf_structure_snapshot(_snap())
+    assert emitted is True
+    assert "[HTFStructureSnapshot]" in caplog.text
+
+
+def test_emit_off_when_flag_disabled(monkeypatch, caplog):
+    monkeypatch.setenv(ENABLE_ENV, "false")
     with caplog.at_level(logging.WARNING):
         emitted = emit_htf_structure_snapshot(_snap())
     assert emitted is False

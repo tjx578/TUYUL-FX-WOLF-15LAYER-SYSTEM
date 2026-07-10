@@ -1,4 +1,7 @@
 signaljson_pattern_fields:
+  # Source/debug ledger. In compact production SignalWatchJSON this moves to
+  # PatternMatchDebugJSON; production pattern_context carries candidate count,
+  # confirmed patterns, and top supporting patterns.
   - matched_patterns
   - selected_pattern_id
   - pattern_tier
@@ -12,6 +15,7 @@ signaljson_pattern_fields:
   - pair_calibration
   - pattern_context
   - tradeplan_preview
+  - operator_tradeplan
   - execution_gate
   - lifecycle
   - pattern_search_space
@@ -33,3 +37,64 @@ signaljson_pattern_fields:
   - target_block_reason
   - decision_update_trigger
   - pending_age_seconds
+  - primary_structure_tf
+  - macro_context_tf
+  - timing_tf
+  - m15_role
+
+production_pattern_context_fields:
+  - selected_pattern_id
+  - confirmed_patterns
+  - candidate_patterns_count
+  - top_supporting_patterns
+  - debug_pattern_ledger_available
+  - pattern_family
+  - pattern_scope
+  - applies_to
+  - pattern_tier
+  - pattern_score
+  - pattern_match_score
+  - execution_readiness_score
+  - pattern_evidence
+  - pattern_bottlenecks
+
+pattern_debug_sidecar_fields:
+  - matched_patterns
+  - pattern_search_space
+  - pattern_db_candidates_scanned
+  - pattern_db_exact_matches
+  - pattern_db_fuzzy_matches
+  - pattern_match_diagnostics
+
+operator_tradeplan_fields:
+  - event
+  - symbol
+  - direction
+  - status
+  - setup
+  - pressure_valid
+  - pressure
+  - tradeplan_status
+  - memory_bias
+  - memory_phase
+  - memory
+  - big_trend
+  - daily_context
+  - h4_structure
+  - price_phase
+  - trade_location
+  - price_location
+  - structure_tf
+  - macro_tf
+  - timing_tf
+  - m15_role
+  - entry_zone
+  - sl
+  - tp1
+  - tp2
+  - rr_to_tp1
+  - execution
+  - execution_allowed
+  - valid_for_execution
+  - wait_for
+  - reason

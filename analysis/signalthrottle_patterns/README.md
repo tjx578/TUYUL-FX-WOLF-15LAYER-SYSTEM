@@ -82,15 +82,34 @@ Production SignalJSON uses `SIGNAL_JSON_COMPACT_PRODUCTION=true` by default.
 That keeps the public log focused on core identity, direction state, nested
 `pattern_context`, `tradeplan_preview`, `execution_gate`, and
 `lifecycle`, while dropping null placeholders and duplicated flat pattern/theme
-fields. Heavy matcher internals such as fuzzy matches, semantic hits, and
-candidate score maps are debug-only; enable `SIGNAL_JSON_PATTERN_DEBUG_ENABLED`
-to emit a separate `PatternMatchDebugJSON` sidecar.
+fields. The full `matched_patterns` scan ledger is also debug-only in compact
+production logs; the main `pattern_context` keeps `candidate_patterns_count`,
+evidence-backed `confirmed_patterns`, and `top_supporting_patterns`. Heavy
+matcher internals such as fuzzy matches, semantic hits, candidate score maps,
+and the full matched-pattern ledger are emitted only when
+`SIGNAL_JSON_PATTERN_DEBUG_ENABLED=true` creates a separate
+`PatternMatchDebugJSON` sidecar.
 
 Watch events must expose `watch_direction` while keeping
 `validated_direction=None` until structure, confirmation mode, and execution
 readiness are all satisfied. M15 close is only mandatory for ambiguous,
 counter, reversal, or lifecycle-conflict paths; direct absorption can bypass it
 when structure target, RR, phase, lifecycle, and spread gates are complete.
+
+SignalWatchJSON also carries an `operator_tradeplan` summary when HTF context is
+available. This is deliberately short: pressure, memory bias/phase, D1/H4
+location, setup, wait condition, and reason. D1/H4 are the structure map for
+watch planning; M15 is reported as `TIMING_CONFIRMATION_ONLY` and never becomes
+the source of structural SL/TP authority. The summary is read-only and always
+keeps `execution_allowed=false` until the normal SignalJSON firewall promotes a
+separate execution-grade payload.
+
+Actionable preview levels are only displayed when the watch location is
+confirmed by HTF structure: H4 demand/supply zone, H4 swing invalidation, a
+valid target ladder, and Daily fib/key-level confluence. When pressure exists
+but the HTF trade location is not confirmed, the operator setup remains
+`BUY_STRUCTURE_WATCH` / `SELL_STRUCTURE_WATCH`, entry/SL/TP are omitted, and
+`wait_for` is `H4_DAILY_STRUCTURE_AND_M15_TIMING`.
 
 `pattern_registry.yaml` and `pair_role_map.yaml` are the operational database.
 `reference_cases.yaml` stores historical pair windows as evidence sources, and

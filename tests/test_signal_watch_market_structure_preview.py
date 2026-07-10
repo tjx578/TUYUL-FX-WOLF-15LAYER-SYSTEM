@@ -286,6 +286,56 @@ def test_general_buy_structure_ready(monkeypatch):
     assert tp["execution_usable"] is False
 
 
+def test_xauusd_preview_normalizes_pips_points_and_blocks_tp_inside_entry_zone(monkeypatch):
+    monkeypatch.setenv(_GEN_FLAG, "true")
+    payload = _gbpcad_watch()
+    payload.update(
+        {
+            "symbol": "XAUUSD",
+            "entry_zone": [4123.005, 4125.35],
+            "signal_valid_price": 4123.005,
+            "entry_reference_price": 4123.005,
+            "m15_phase": "BEARISH_PULLBACK",
+            "h1_phase": "BEARISH",
+            "price_position": "MID_RANGE",
+            "requires_m15_close": False,
+            "signal_valid_time_utc": "2026-07-10T03:27:36.636902+00:00",
+            "market_context_applied": True,
+        }
+    )
+    snap = {
+        "support_low": 4122.055,
+        "key_support": 4122.745,
+        "key_resistance": 4138.06,
+        "tp1_resistance": 4125.24,
+        "tp2_resistance": 4125.745,
+    }
+
+    _maybe_attach_structure_preview(payload, snap)
+
+    ms = payload["market_structure"]
+    tp = payload["tradeplan_preview"]
+    assert tp["risk_pips"] == pytest.approx(95.0, abs=0.01)
+    assert tp["risk_points"] == pytest.approx(9500.0, abs=0.01)
+    assert tp["pip_size"] == 0.01
+    assert tp["point_size"] == pytest.approx(0.0001, abs=0.0000001)
+    assert tp["display_unit"] == "pips"
+    assert tp["preview_block_reason"] == "TP1_INSIDE_ENTRY_ZONE"
+    assert tp["tradeplan_preview_valid_for_display"] is False
+    assert tp["rr_to_tp1_display_valid"] is False
+    assert "rr_to_tp1" not in tp
+    assert "TP1_INSIDE_ENTRY_ZONE" in ms["structure_pending_reason"]
+    assert payload["requires_reclaim_confirmation"] is True
+    assert payload["requires_support_hold_confirmation"] is True
+    assert payload["requires_breakdown_confirmation"] is True
+    assert payload["valid_for_execution"] is False
+    event = build_signal_json_event(payload)
+    assert event is not None
+    assert event.requires_reclaim_confirmation is True
+    assert event.requires_support_hold_confirmation is True
+    assert event.requires_breakdown_confirmation is True
+
+
 # G3. general flag ON + no candidate direction -> DIRECTION_NOT_RESOLVED
 def test_general_direction_not_resolved(monkeypatch):
     monkeypatch.setenv(_GEN_FLAG, "true")

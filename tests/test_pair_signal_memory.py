@@ -62,6 +62,9 @@ def test_pair_memory_classifies_gbpcad_followthrough_as_late_after_pre_move():
 
     context = current["pair_memory_context"]
     assert context["memory_available"] is True
+    assert context["previous_watch_signal_id"] == "GBPCAD_BUY_WATCH_1"
+    assert context["minutes_since_previous_watch"] == 256.0
+    assert context["price_delta_from_previous_watch_pips"] == 47.6
     assert context["previous_valid_signal_id"] == "GBPCAD_BUY_WATCH_1"
     assert context["minutes_since_previous_valid"] == 256.0
     assert context["price_delta_from_previous_valid_pips"] == 47.6

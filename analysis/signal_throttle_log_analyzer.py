@@ -2715,7 +2715,44 @@ def _preview_pip_size(payload: dict[str, Any], snap: dict[str, Any]) -> float:
     pip = _first_number(cal.get("pip_size"), snap.get("pip_value"))
     if pip:
         return float(pip)
-    return 0.01 if str(payload.get("symbol") or "").upper().endswith("JPY") else 0.0001
+    symbol = str(payload.get("symbol") or "").upper()
+    if symbol.startswith(("XAU", "XAG")):
+        return 0.01
+    return 0.01 if symbol.endswith("JPY") else 0.0001
+
+
+def _preview_point_size(symbol: str, pip_size: float) -> float | None:
+    if pip_size <= 0:
+        return None
+    if symbol.startswith(("XAU", "XAG")):
+        return pip_size / 100.0
+    return pip_size / 10.0
+
+
+def _entry_zone_bounds(value: Any) -> tuple[float, float] | None:
+    if not isinstance(value, list):
+        return None
+    prices = [_first_number(item) for item in value]
+    prices = [price for price in prices if price is not None]
+    if not prices:
+        return None
+    return min(prices), max(prices)
+
+
+def _tp1_inside_entry_zone(*, direction: str, entry_zone: Any, tp1: float | None, entry: float | None) -> bool:
+    if tp1 is None:
+        return False
+    bounds = _entry_zone_bounds(entry_zone)
+    if bounds is None:
+        return False
+    zone_low, zone_high = bounds
+    if entry is not None and not (zone_low <= entry <= zone_high):
+        return False
+    if direction == "BUY":
+        return tp1 <= zone_high
+    if direction == "SELL":
+        return tp1 >= zone_low
+    return False
 
 
 def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any], direction: str) -> dict[str, Any]:
@@ -2789,8 +2826,18 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
     tp2 = targets[1] if len(targets) > 1 else None
     tp3 = targets[2] if len(targets) > 2 else None
     risk_pips = round(risk / pip, 1) if (risk and pip) else None
+    symbol = str(payload.get("symbol") or "").upper()
+    point_size = _preview_point_size(symbol, pip)
+    risk_points = round(risk / point_size, 1) if (risk and point_size) else None
     tp1_rr = _rr(tp1) if tp1 is not None else None
     rr_to_tp1 = round(tp1_rr, 2) if tp1_rr is not None else None
+    tp1_inside_zone = _tp1_inside_entry_zone(
+        direction=direction,
+        entry_zone=payload.get("entry_zone"),
+        tp1=tp1,
+        entry=entry,
+    )
+    display_rr_to_tp1 = None if tp1_inside_zone else rr_to_tp1
     # Minimum structural SL distance: a real invalidation must clear noise/volatility, not sit a
     # tick from entry. Volatility proxy = M15 candle range; backstopped by an absolute pip floor.
     m15_hi, m15_lo = _first_number(snap.get("m15_high")), _first_number(snap.get("m15_low"))
@@ -2802,6 +2849,7 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
         and rr_to_tp1 is not None
         and PREVIEW_MIN_TP1_RR <= rr_to_tp1 <= PREVIEW_MAX_TP1_RR
         and not sl_too_tight
+        and not tp1_inside_zone
     )
 
     market_structure = {
@@ -2823,7 +2871,14 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
         "tp2": tp2,
         "tp3": tp3,
         "risk_pips": risk_pips,
-        "rr_to_tp1": rr_to_tp1,
+        "risk_points": risk_points,
+        "pip_size": pip,
+        "point_size": point_size,
+        "display_unit": "pips",
+        "rr_to_tp1": display_rr_to_tp1,
+        "rr_to_tp1_display_valid": False if tp1_inside_zone else None,
+        "tradeplan_preview_valid_for_display": False if tp1_inside_zone else None,
+        "preview_block_reason": "TP1_INSIDE_ENTRY_ZONE" if tp1_inside_zone else None,
         "target_mode": "STRUCTURE_PREVIEW" if structure_ready else "PREVIEW_CONTEXT_INCOMPLETE",
         "execution_usable": False,
     }
@@ -2838,11 +2893,18 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
         "_tp1": tp1,
         "_rr_to_tp1": rr_to_tp1,
         "_sl_too_tight": sl_too_tight,
+        "_tp1_inside_entry_zone": tp1_inside_zone,
     }
 
 
 def _structure_pending_reasons(
-    payload: dict[str, Any], direction: str, sl: Any, tp1: Any, rr_to_tp1: Any = None, sl_too_tight: bool = False
+    payload: dict[str, Any],
+    direction: str,
+    sl: Any,
+    tp1: Any,
+    rr_to_tp1: Any = None,
+    sl_too_tight: bool = False,
+    tp1_inside_entry_zone: bool = False,
 ) -> list[str]:
     """Explain WHY structure is not ready, from existing payload fields (no HTF feed needed)."""
     reasons: list[str] = []
@@ -2868,9 +2930,53 @@ def _structure_pending_reasons(
         # from entry) or implausibly tight vs the first target (RR ceiling). Not a real structural
         # invalidation; needs a wider swing/HTF level (resistance/support ladder missing).
         reasons.append("STRUCTURAL_SL_TOO_TIGHT")
+    if tp1_inside_entry_zone:
+        reasons.append("TP1_INSIDE_ENTRY_ZONE")
     if tp1 is None:
         reasons.append("STRUCTURAL_TARGET_NOT_AVAILABLE")
     return reasons
+
+
+def _structure_confirmation_flags(
+    *,
+    payload: dict[str, Any],
+    direction: str,
+    ready: bool,
+    market_structure: dict[str, Any],
+) -> dict[str, bool]:
+    reasons = [str(item).upper() for item in market_structure.get("structure_pending_reason") or []]
+    structure_class = str(market_structure.get("structure_class") or "").upper()
+    management_action = str(payload.get("management_action") or "").upper()
+    block_reason = str(payload.get("block_reason") or "").upper()
+    pending = not ready
+    return {
+        "requires_reclaim_confirmation": bool(
+            pending
+            and (
+                "RECLAIM_REQUIRED" in structure_class
+                or "M15_LOWER_HIGH_NOT_RECLAIMED" in reasons
+                or "M15_HIGHER_LOW_NOT_BROKEN" in reasons
+            )
+        ),
+        "requires_support_hold_confirmation": bool(
+            pending
+            and direction == "BUY"
+            and (
+                market_structure.get("key_support") is not None
+                or market_structure.get("invalidation_level") is not None
+                or "BUY_RECLAIM_REQUIRED" in structure_class
+            )
+        ),
+        "requires_breakdown_confirmation": bool(
+            pending
+            and (
+                "BREAKDOWN" in management_action
+                or "BREAKDOWN" in block_reason
+                or "H1_DOWNTREND_CONFLICT" in reasons
+                or "H1_UPTREND_CONFLICT" in reasons
+            )
+        ),
+    }
 
 
 def _structure_class(payload: dict[str, Any], direction: str) -> str:
@@ -2908,11 +3014,26 @@ def _market_structure_general(payload: dict[str, Any], snapshot: Any) -> dict[st
         market_structure["structure_class"] = _structure_class(payload, direction)
         if not ready:
             reasons = _structure_pending_reasons(
-                payload, direction, core["_sl"], core["_tp1"], core["_rr_to_tp1"], core["_sl_too_tight"]
+                payload,
+                direction,
+                core["_sl"],
+                core["_tp1"],
+                core["_rr_to_tp1"],
+                core["_sl_too_tight"],
+                core["_tp1_inside_entry_zone"],
             )
             if reasons:
                 market_structure["structure_pending_reason"] = reasons
-        return {"market_structure": market_structure, "tradeplan_preview": core["tradeplan_preview"]}
+        return {
+            "market_structure": market_structure,
+            "tradeplan_preview": core["tradeplan_preview"],
+            **_structure_confirmation_flags(
+                payload=payload,
+                direction=direction,
+                ready=ready,
+                market_structure=market_structure,
+            ),
+        }
 
     # Direction not resolved: explain why, no directional plan.
     reasons = ["DIRECTION_NOT_RESOLVED", *_structure_pending_reasons(payload, direction, None, None)]

@@ -1,8 +1,7 @@
-"""Increment C - distinguish confirmed (evidence-backed) patterns from the candidate scan.
+"""Distinguish confirmed patterns from the candidate scan.
 
-Additive: matched_patterns is kept unchanged; new fields confirmed_patterns (selected +
-evidence-referenced) and candidate_patterns_count let dashboards stop reading the full
-40-item scan list as "all confirmed". No flag needed -- purely additive.
+Production context keeps count/confirmed/supporting patterns; the full matched-pattern
+ledger is debug-only so SignalWatchJSON stays readable.
 """
 from __future__ import annotations
 
@@ -49,8 +48,9 @@ def test_confirmed_patterns_are_evidence_backed():
     assert "JPY_ALIGNMENT_REQUIRED" not in confirmed  # no evidence reference
 
 
-def test_candidate_count_and_matched_kept_intact():
+def test_candidate_count_kept_and_matched_scan_debug_only():
     ctx = _event().pattern_context
     assert ctx is not None
     assert ctx["candidate_patterns_count"] == 4
-    assert ctx["matched_patterns"] == _MATCHED  # additive: full scan list preserved
+    assert ctx["debug_pattern_ledger_available"] is True
+    assert "matched_patterns" not in ctx

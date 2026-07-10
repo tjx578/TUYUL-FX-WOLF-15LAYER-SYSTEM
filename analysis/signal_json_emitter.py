@@ -303,6 +303,15 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
+def _log_level(value: str | int | None, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return value
+    name = str(value).strip().upper()
+    return getattr(logging, name, default)
+
+
 @dataclass(frozen=True)
 class SignalJsonEvent:
     event: str
@@ -394,6 +403,9 @@ class SignalJsonEvent:
     next_action: str | None = None
     confirmation_policy: str | None = None
     requires_m15_close: bool | None = None
+    requires_reclaim_confirmation: bool | None = None
+    requires_support_hold_confirmation: bool | None = None
+    requires_breakdown_confirmation: bool | None = None
     direct_valid_reason: str | None = None
     pending_decision_id: str | None = None
     price_delta_pips: float | None = None
@@ -588,6 +600,9 @@ class SignalJsonEmitter:
         compact_production: bool = True,
         emit_pattern_debug: bool | None = None,
         pattern_debug_prefix: str = "[PatternMatchDebugJSON]",
+        watch_log_level: str | int | None = None,
+        decision_update_log_level: str | int | None = None,
+        final_log_level: str | int | None = None,
     ) -> None:
         self.enabled = enabled
         self.prefix = prefix
@@ -634,6 +649,9 @@ class SignalJsonEmitter:
             if emit_pattern_debug is not None
             else os.getenv("SIGNAL_JSON_PATTERN_DEBUG_ENABLED", "false").strip().lower() == "true"
         )
+        self.watch_log_level = _log_level(watch_log_level, logging.WARNING)
+        self.decision_update_log_level = _log_level(decision_update_log_level, logging.WARNING)
+        self.final_log_level = _log_level(final_log_level, logging.WARNING)
         self._emitted: dict[str, float] = {}
         self._cluster_state: dict[str, str] = {}
         self._cluster_watch_event_seconds: dict[str, float] = {}
@@ -749,7 +767,12 @@ class SignalJsonEmitter:
         if self.emit_pattern_debug:
             self._emit_pattern_debug(debug_source_payload, payload)
         prefix = self.decision_update_prefix if is_decision_update else (self.watch_prefix if is_watch else self.prefix)
-        self.logger.warning("%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
+        level = (
+            self.decision_update_log_level
+            if is_decision_update
+            else (self.watch_log_level if is_watch else self.final_log_level)
+        )
+        self.logger.log(level, "%s %s", prefix, json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
         if is_watch:
             self._emitted_watch_refs.update(_watch_references(payload))
         if is_decision_update:
@@ -1150,6 +1173,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         next_action=_optional_str(counter_entry.get("next_action")),
         confirmation_policy=_optional_str(counter_entry.get("confirmation_policy")),
         requires_m15_close=_optional_bool(counter_entry.get("requires_m15_close")),
+        requires_reclaim_confirmation=_optional_bool(counter_entry.get("requires_reclaim_confirmation")),
+        requires_support_hold_confirmation=_optional_bool(counter_entry.get("requires_support_hold_confirmation")),
+        requires_breakdown_confirmation=_optional_bool(counter_entry.get("requires_breakdown_confirmation")),
         direct_valid_reason=_optional_str(counter_entry.get("direct_valid_reason")),
         pending_decision_id=_optional_str(counter_entry.get("pending_decision_id")),
         price_delta_pips=_optional_float(counter_entry.get("price_delta_pips")),
@@ -1928,6 +1954,13 @@ def _apply_signal_htf_structure_fields(payload: dict[str, Any], *, prefix: str) 
     payload[f"{prefix}_htf_allowed_playbook"] = _optional_str(context.get("allowed_playbook"))
     payload[f"{prefix}_htf_blocked_playbook"] = _string_list(context.get("blocked_playbook"))
     payload[f"{prefix}_htf_data_sufficient"] = _optional_bool(context.get("data_sufficient"))
+    payload[f"{prefix}_htf_h4_swing_high"] = _optional_float(context.get("h4_swing_high"))
+    payload[f"{prefix}_htf_h4_swing_low"] = _optional_float(context.get("h4_swing_low"))
+    payload[f"{prefix}_htf_daily_range_high"] = _optional_float(context.get("daily_range_high"))
+    payload[f"{prefix}_htf_daily_range_low"] = _optional_float(context.get("daily_range_low"))
+    payload[f"{prefix}_htf_h4_supply_zone"] = _float_list(context.get("h4_supply_zone")) or None
+    payload[f"{prefix}_htf_h4_demand_zone"] = _float_list(context.get("h4_demand_zone")) or None
+    payload[f"{prefix}_htf_daily_fib_zone"] = _float_list(context.get("daily_fib_zone")) or None
     payload[f"{prefix}_htf_source_event"] = _optional_str(context.get("source_event"))
     payload[f"{prefix}_htf_execution_impact"] = _optional_bool(context.get("execution_impact"))
     payload[f"{prefix}_htf_is_execution_signal"] = _optional_bool(context.get("valid_for_execution"))
@@ -2089,9 +2122,9 @@ def _universal_pattern_payload(payload: dict[str, Any], *, compact: bool = True)
     universal["theme_context"] = (
         None if compact else _clean_context(_dict_value(universal.get("theme_context")) or _theme_context(universal))
     )
-    universal["tradeplan_preview"] = _clean_context(
-        _dict_value(universal.get("tradeplan_preview")) or _tradeplan_preview(universal)
-    )
+    tradeplan_preview = _dict_value(universal.get("tradeplan_preview")) or _tradeplan_preview(universal)
+    universal["tradeplan_preview"] = _clean_context(_normalize_tradeplan_preview(universal, tradeplan_preview))
+    _apply_htf_led_watch_context(universal)
     universal["execution_gate"] = _clean_context(
         _dict_value(universal.get("execution_gate")) or _execution_gate_context(universal)
     )
@@ -2157,10 +2190,11 @@ def _pattern_context(payload: dict[str, Any], *, include_debug: bool = False) ->
         return None
     context = {
         "selected_pattern_id": selected_pattern_id,
-        "matched_patterns": matched_patterns,
+        "matched_patterns": matched_patterns if include_debug else None,
         "confirmed_patterns": confirmed_patterns or None,
         "candidate_patterns_count": len(matched_patterns) if matched_patterns else 0,
         "top_supporting_patterns": top_supporting_patterns,
+        "debug_pattern_ledger_available": bool(matched_patterns) if not include_debug else None,
         "pattern_family": _optional_str(payload.get("pattern_family") or existing.get("pattern_family")),
         "pattern_scope": _optional_str(payload.get("pattern_scope") or existing.get("pattern_scope")) or "UNIVERSAL",
         "applies_to": _optional_str(payload.get("applies_to") or existing.get("applies_to"))
@@ -2343,6 +2377,586 @@ def _tradeplan_preview(payload: dict[str, Any]) -> dict[str, Any] | None:
     return _clean_context(context)
 
 
+def _normalize_tradeplan_preview(
+    payload: dict[str, Any],
+    tradeplan: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not tradeplan:
+        return None
+    normalized = dict(tradeplan)
+    symbol = str(payload.get("symbol") or "").upper()
+    pip_size = _payload_pip_size(payload)
+    point_size = _point_size_for_symbol(symbol, pip_size)
+    entry = _optional_float(payload.get("entry_reference_price") or payload.get("signal_valid_price"))
+    sl = _optional_float(
+        normalized.get("sl")
+        or normalized.get("sl_safe")
+        or normalized.get("selected_sl")
+        or normalized.get("invalidation_level")
+    )
+    if entry is not None and sl is not None and pip_size is not None and pip_size > 0:
+        risk = abs(entry - sl)
+        normalized["risk_pips"] = round(risk / pip_size, 1)
+        normalized["pip_size"] = pip_size
+        normalized["display_unit"] = "pips"
+        if point_size is not None and point_size > 0:
+            normalized["risk_points"] = round(risk / point_size, 1)
+            normalized["point_size"] = point_size
+
+    direction = str(
+        payload.get("candidate_direction")
+        or payload.get("watch_direction")
+        or payload.get("raw_direction")
+        or ""
+    ).upper()
+    tp1 = _optional_float(normalized.get("tp1"))
+    entry_zone = _float_list(normalized.get("entry_zone")) or _float_list(payload.get("entry_zone"))
+    if _tp1_inside_entry_zone(direction=direction, entry_zone=entry_zone, tp1=tp1, entry=entry):
+        normalized["tradeplan_preview_valid_for_display"] = False
+        normalized["preview_block_reason"] = "TP1_INSIDE_ENTRY_ZONE"
+        normalized["rr_to_tp1_display_valid"] = False
+        normalized["rr_to_tp1"] = None
+        if normalized.get("target_mode") == "STRUCTURE_PREVIEW":
+            normalized["target_mode"] = "PREVIEW_CONTEXT_INCOMPLETE"
+    return normalized
+
+
+def _payload_pip_size(payload: dict[str, Any]) -> float | None:
+    calibration = _dict_value(payload.get("pair_calibration")) or {}
+    pip_size = _optional_float(calibration.get("pip_size") or payload.get("pip_size"))
+    if pip_size is not None and pip_size > 0:
+        return pip_size
+    return _pip_size_for_symbol(str(payload.get("symbol") or "").upper())
+
+
+def _point_size_for_symbol(symbol: str, pip_size: float | None) -> float | None:
+    if pip_size is None or pip_size <= 0:
+        return None
+    if symbol.startswith(("XAU", "XAG")):
+        return pip_size / 100.0
+    return pip_size / 10.0
+
+
+def _tp1_inside_entry_zone(
+    *,
+    direction: str,
+    entry_zone: list[float] | None,
+    tp1: float | None,
+    entry: float | None,
+) -> bool:
+    if tp1 is None or not entry_zone:
+        return False
+    zone_low = min(entry_zone)
+    zone_high = max(entry_zone)
+    if entry is not None and not (zone_low <= entry <= zone_high):
+        return False
+    if direction == "BUY":
+        return tp1 <= zone_high
+    if direction == "SELL":
+        return tp1 >= zone_low
+    return False
+
+
+def _apply_htf_led_watch_context(payload: dict[str, Any]) -> None:
+    if not _is_watch_status(str(payload.get("status") or "")):
+        return
+    htf = _dict_value(payload.get("htf_structure_context"))
+    if not htf:
+        return
+    direction = str(
+        payload.get("candidate_direction")
+        or payload.get("watch_direction")
+        or payload.get("raw_direction")
+        or ""
+    ).upper()
+    if direction not in {"BUY", "SELL"}:
+        return
+
+    market_structure = _dict_value(payload.get("market_structure")) or {}
+    enhanced_market_structure = _htf_led_market_structure(payload, htf, market_structure, direction)
+    payload["market_structure"] = _clean_context(enhanced_market_structure)
+
+    setup = _htf_operator_setup(direction, htf)
+    htf_tradeplan = _htf_led_tradeplan_preview(payload, htf, direction, setup)
+    if htf_tradeplan is not None:
+        payload["tradeplan_preview"] = _clean_context(htf_tradeplan)
+
+    payload["primary_structure_tf"] = "H4"
+    payload["macro_context_tf"] = "D1"
+    payload["timing_tf"] = "M15"
+    payload["m15_role"] = "TIMING_CONFIRMATION_ONLY"
+    payload["operator_tradeplan"] = _clean_context(
+        _operator_tradeplan_context(
+            payload=payload,
+            htf=htf,
+            direction=direction,
+            setup=setup,
+        )
+    )
+
+
+def _htf_led_market_structure(
+    payload: dict[str, Any],
+    htf: dict[str, Any],
+    market_structure: dict[str, Any],
+    direction: str,
+) -> dict[str, Any]:
+    out = dict(market_structure)
+    out["structure_source"] = "HTF_STRUCTURE_LADDER"
+    out["primary_structure_timeframe"] = "H4"
+    out["macro_context_timeframe"] = "D1"
+    out["timing_confirmation_timeframe"] = "M15"
+    out["m15_role"] = "TIMING_CONFIRMATION_ONLY"
+    out["daily_bias"] = _optional_str(htf.get("daily_bias"))
+    out["h4_structure"] = _optional_str(htf.get("h4_structure"))
+    out["htf_price_location"] = _optional_str(htf.get("price_location"))
+    out["h4_swing_high"] = _optional_float(htf.get("h4_swing_high"))
+    out["h4_swing_low"] = _optional_float(htf.get("h4_swing_low"))
+    out["daily_range_high"] = _optional_float(htf.get("daily_range_high"))
+    out["daily_range_low"] = _optional_float(htf.get("daily_range_low"))
+    out["h4_supply_zone"] = _float_list(htf.get("h4_supply_zone")) or None
+    out["h4_demand_zone"] = _float_list(htf.get("h4_demand_zone")) or None
+    out["daily_fib_zone"] = _float_list(htf.get("daily_fib_zone")) or None
+    out["allowed_playbook"] = _optional_str(htf.get("allowed_playbook"))
+    out["blocked_playbook"] = _string_list(htf.get("blocked_playbook"))
+    htf_reasons = _htf_structure_pending_reasons(direction=direction, htf=htf, payload=payload)
+    existing = _string_list_any(out.get("structure_pending_reason")) or []
+    timing_reason = _m15_timing_reason(existing)
+    de_emphasized = [
+        reason
+        for reason in existing
+        if str(reason).upper() not in {"M15_LOWER_HIGH_NOT_RECLAIMED", "M15_HIGHER_LOW_NOT_BROKEN"}
+    ]
+    if timing_reason and timing_reason not in htf_reasons:
+        htf_reasons.append(timing_reason)
+    out["structure_pending_reason"] = list(dict.fromkeys([*htf_reasons, *de_emphasized])) or None
+    if htf_reasons:
+        out["market_structure_status"] = "STRUCTURE_PENDING"
+        out["structure_ready"] = False
+    return out
+
+
+def _htf_structure_pending_reasons(*, direction: str, htf: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    location = str(htf.get("price_location") or "").upper()
+    blocked = {str(item).upper() for item in (_string_list(htf.get("blocked_playbook")) or [])}
+    data_sufficient = _optional_bool(htf.get("data_sufficient"))
+    h4_high = _optional_float(htf.get("h4_swing_high"))
+    h4_low = _optional_float(htf.get("h4_swing_low"))
+    daily_high = _optional_float(htf.get("daily_range_high"))
+    daily_low = _optional_float(htf.get("daily_range_low"))
+    if data_sufficient is False:
+        reasons.append("HTF_STRUCTURE_LADDER_MISSING")
+    if direction == "BUY":
+        if h4_low is None:
+            reasons.append("H4_SWING_INVALIDATION_MISSING")
+        if h4_high is None and daily_high is None:
+            reasons.append("DAILY_TARGET_LADDER_MISSING")
+        if location in {"PREMIUM", "H4_SUPPLY"} or "BUY_LIMIT" in blocked:
+            reasons.append("HTF_PREMIUM_NO_CHASE")
+        if location == "H4_SUPPLY":
+            reasons.append("H4_SUPPLY_BUY_BLOCK")
+    elif direction == "SELL":
+        if h4_high is None:
+            reasons.append("H4_SWING_INVALIDATION_MISSING")
+        if h4_low is None and daily_low is None:
+            reasons.append("DAILY_TARGET_LADDER_MISSING")
+        if location in {"DISCOUNT", "H4_DEMAND"} or "SELL_LIMIT" in blocked:
+            reasons.append("HTF_DISCOUNT_NO_CHASE")
+        if location == "H4_DEMAND":
+            reasons.append("H4_DEMAND_SELL_BLOCK")
+    if _optional_bool(payload.get("requires_reclaim_confirmation")) is True:
+        reasons.append("HTF_RECLAIM_CONFIRMATION_REQUIRED")
+    return list(dict.fromkeys(reasons))
+
+
+def _m15_timing_reason(existing_reasons: list[str]) -> str | None:
+    keys = {str(reason).upper() for reason in existing_reasons}
+    if {"M15_LOWER_HIGH_NOT_RECLAIMED", "M15_HIGHER_LOW_NOT_BROKEN"} & keys:
+        return "M15_TIMING_CONFIRMATION_PENDING"
+    return None
+
+
+def _htf_operator_setup(direction: str, htf: dict[str, Any]) -> str:
+    trade_location = _htf_trade_location_status(direction, htf)
+    if direction == "BUY":
+        if trade_location == "HTF_BLOCKED":
+            return "BUY_BLOCKED"
+        if trade_location == "HTF_CONFIRMED":
+            return "BUY_LIMIT_WATCH"
+        return "BUY_STRUCTURE_WATCH"
+    if trade_location == "HTF_BLOCKED":
+        return "SELL_BLOCKED"
+    if trade_location == "HTF_CONFIRMED":
+        return "SELL_LIMIT_WATCH"
+    return "SELL_STRUCTURE_WATCH"
+
+
+def _htf_trade_location_status(direction: str, htf: dict[str, Any]) -> str:
+    location = str(htf.get("price_location") or "").upper()
+    allowed = str(htf.get("allowed_playbook") or "").upper()
+    blocked = {str(item).upper() for item in (_string_list(htf.get("blocked_playbook")) or [])}
+    demand_zone = _float_list(htf.get("h4_demand_zone"))
+    supply_zone = _float_list(htf.get("h4_supply_zone"))
+    fib_zone = _float_list(htf.get("daily_fib_zone"))
+    h4_high = _optional_float(htf.get("h4_swing_high"))
+    h4_low = _optional_float(htf.get("h4_swing_low"))
+    daily_high = _optional_float(htf.get("daily_range_high"))
+    daily_low = _optional_float(htf.get("daily_range_low"))
+    if direction == "BUY":
+        if location in {"PREMIUM", "H4_SUPPLY"} or "BUY_LIMIT" in blocked:
+            return "HTF_BLOCKED"
+        if (
+            demand_zone
+            and h4_low is not None
+            and (h4_high is not None or daily_high is not None)
+            and (location in {"DISCOUNT", "H4_DEMAND"} or allowed == "BUY_ON_REJECTION")
+            and _zones_overlap(demand_zone, fib_zone)
+        ):
+            return "HTF_CONFIRMED"
+        return "HTF_LOCATION_NOT_CONFIRMED"
+    if location in {"DISCOUNT", "H4_DEMAND"} or "SELL_LIMIT" in blocked:
+        return "HTF_BLOCKED"
+    if (
+        supply_zone
+        and h4_high is not None
+        and (h4_low is not None or daily_low is not None)
+        and (location in {"PREMIUM", "H4_SUPPLY"} or allowed == "SELL_ON_REJECTION")
+        and _zones_overlap(supply_zone, fib_zone)
+    ):
+        return "HTF_CONFIRMED"
+    return "HTF_LOCATION_NOT_CONFIRMED"
+
+
+def _zones_overlap(primary: list[float] | None, secondary: list[float] | None) -> bool:
+    if not primary or not secondary:
+        return False
+    primary_low, primary_high = min(primary), max(primary)
+    secondary_low, secondary_high = min(secondary), max(secondary)
+    return max(primary_low, secondary_low) <= min(primary_high, secondary_high)
+
+
+def _htf_led_tradeplan_preview(
+    payload: dict[str, Any],
+    htf: dict[str, Any],
+    direction: str,
+    setup: str,
+) -> dict[str, Any] | None:
+    existing = _dict_value(payload.get("tradeplan_preview")) or {}
+    plan = dict(existing)
+    plan["primary_structure_tf"] = "H4"
+    plan["macro_context_tf"] = "D1"
+    plan["timing_tf"] = "M15"
+    plan["m15_role"] = "TIMING_CONFIRMATION_ONLY"
+    plan["execution_usable"] = False
+    plan["valid_for_execution"] = False
+    plan["setup_type"] = setup
+
+    if setup.endswith("_BLOCKED"):
+        _clear_actionable_tradeplan_preview(plan)
+        plan["target_mode"] = "HTF_STRUCTURE_BLOCKED"
+        plan["preview_block_reason"] = _operator_block_reason(direction, htf)
+        return plan
+    if not setup.endswith("_LIMIT_WATCH"):
+        _clear_actionable_tradeplan_preview(plan)
+        plan["target_mode"] = "HTF_STRUCTURE_PENDING"
+        plan["preview_block_reason"] = "HTF_TRADE_LOCATION_NOT_CONFIRMED"
+        plan["trade_location_status"] = _htf_trade_location_status(direction, htf)
+        return plan
+
+    zone = _float_list(htf.get("h4_demand_zone")) if direction == "BUY" else _float_list(htf.get("h4_supply_zone"))
+    sl = _optional_float(htf.get("h4_swing_low")) if direction == "BUY" else _optional_float(htf.get("h4_swing_high"))
+    tp1 = _htf_target_1(direction, htf)
+    tp2 = _htf_target_2(direction, htf, tp1)
+    if zone:
+        plan["entry_zone"] = zone
+        plan["entry_source"] = "H4_DEMAND_ZONE" if direction == "BUY" else "H4_SUPPLY_ZONE"
+    if sl is not None:
+        plan["sl"] = sl
+        plan["sl_source"] = "H4_SWING_LOW" if direction == "BUY" else "H4_SWING_HIGH"
+        plan["invalidation_level"] = sl
+    if tp1 is not None:
+        plan["tp1"] = tp1
+        plan["tp_source"] = "H4_RESISTANCE_OR_DAILY_KEY_LEVEL" if direction == "BUY" else "H4_SUPPORT_OR_DAILY_KEY_LEVEL"
+    if tp2 is not None:
+        plan["tp2"] = tp2
+    plan["target_mode"] = "HTF_STRUCTURE_PREVIEW" if zone and sl is not None and tp1 is not None else "PREVIEW_CONTEXT_INCOMPLETE"
+    plan["trade_location_status"] = _htf_trade_location_status(direction, htf)
+    _apply_tradeplan_rr(plan, payload, direction)
+    return plan
+
+
+def _clear_actionable_tradeplan_preview(plan: dict[str, Any]) -> None:
+    for key in (
+        "entry_zone",
+        "entry_source",
+        "sl",
+        "sl_source",
+        "invalidation_level",
+        "tp1",
+        "tp2",
+        "tp3",
+        "tp4",
+        "tp_source",
+        "rr_to_tp1",
+        "risk_pips",
+        "risk_points",
+        "selected_risk_pips",
+        "risk_pips_safe",
+    ):
+        plan.pop(key, None)
+
+
+def _htf_target_1(direction: str, htf: dict[str, Any]) -> float | None:
+    if direction == "BUY":
+        return _first_positive_target(
+            base=None,
+            candidates=(_optional_float(htf.get("h4_swing_high")), _optional_float(htf.get("daily_range_high"))),
+            direction=direction,
+        )
+    return _first_positive_target(
+        base=None,
+        candidates=(_optional_float(htf.get("h4_swing_low")), _optional_float(htf.get("daily_range_low"))),
+        direction=direction,
+    )
+
+
+def _htf_target_2(direction: str, htf: dict[str, Any], tp1: float | None) -> float | None:
+    candidate = _optional_float(htf.get("daily_range_high")) if direction == "BUY" else _optional_float(htf.get("daily_range_low"))
+    if candidate is None or tp1 is None or candidate == tp1:
+        return None
+    return candidate
+
+
+def _first_positive_target(
+    *,
+    base: float | None,
+    candidates: tuple[float | None, ...],
+    direction: str,
+) -> float | None:
+    if base is None:
+        for candidate in candidates:
+            if candidate is not None:
+                return candidate
+        return None
+    valid = [
+        candidate
+        for candidate in candidates
+        if candidate is not None and ((candidate > base) if direction == "BUY" else (candidate < base))
+    ]
+    return valid[0] if valid else None
+
+
+def _apply_tradeplan_rr(plan: dict[str, Any], payload: dict[str, Any], direction: str) -> None:
+    zone = _float_list(plan.get("entry_zone")) or _float_list(payload.get("entry_zone"))
+    sl = _optional_float(plan.get("sl") or plan.get("invalidation_level"))
+    tp1 = _optional_float(plan.get("tp1"))
+    if not zone or sl is None or tp1 is None:
+        return
+    entry = sum(zone) / len(zone)
+    risk = abs(entry - sl)
+    reward = (tp1 - entry) if direction == "BUY" else (entry - tp1)
+    pip_size = _payload_pip_size(payload)
+    point_size = _point_size_for_symbol(str(payload.get("symbol") or "").upper(), pip_size)
+    if risk <= 0 or reward <= 0:
+        return
+    if pip_size:
+        plan["risk_pips"] = round(risk / pip_size, 1)
+        plan["display_unit"] = "pips"
+        plan["pip_size"] = pip_size
+    if point_size:
+        plan["risk_points"] = round(risk / point_size, 1)
+        plan["point_size"] = point_size
+    plan["rr_to_tp1"] = round(reward / risk, 2)
+
+
+def _operator_tradeplan_context(
+    *,
+    payload: dict[str, Any],
+    htf: dict[str, Any],
+    direction: str,
+    setup: str,
+) -> dict[str, Any]:
+    tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
+    memory = _dict_value(payload.get("pair_memory_context")) or {}
+    blocked = setup.endswith("_BLOCKED")
+    trade_location = _optional_str(tradeplan.get("trade_location_status")) or _htf_trade_location_status(direction, htf)
+    return {
+        "event": "tradeplan_watch",
+        "symbol": payload.get("symbol"),
+        "direction": direction,
+        "status": "NO_TRADE" if blocked else "WAIT",
+        "setup": setup,
+        "pressure_valid": bool(payload.get("clean_block_valid") or payload.get("effective_ticks")),
+        "pressure": _operator_pressure_label(direction, payload),
+        "tradeplan_status": _operator_tradeplan_status(setup, trade_location),
+        "memory_bias": _operator_memory_bias(direction, htf, memory, setup),
+        "memory_phase": _operator_memory_phase(htf, memory),
+        "memory": _operator_memory_context(memory),
+        "big_trend": _operator_big_trend(htf),
+        "daily_context": _operator_daily_context(htf),
+        "h4_structure": _operator_h4_context(htf, direction),
+        "price_phase": payload.get("price_position"),
+        "trade_location": trade_location,
+        "price_location": htf.get("price_location") or payload.get("price_position"),
+        "structure_tf": "H4",
+        "macro_tf": "D1",
+        "timing_tf": "M15",
+        "m15_role": "TIMING_CONFIRMATION_ONLY",
+        "entry_zone": tradeplan.get("entry_zone"),
+        "sl": tradeplan.get("sl"),
+        "tp1": tradeplan.get("tp1"),
+        "tp2": tradeplan.get("tp2"),
+        "rr_to_tp1": tradeplan.get("rr_to_tp1"),
+        "execution": False,
+        "execution_allowed": False,
+        "valid_for_execution": False,
+        "wait_for": _operator_wait_for(direction, setup),
+        "reason": _operator_reason(direction, setup, htf, memory, trade_location),
+    }
+
+
+def _operator_tradeplan_status(setup: str, trade_location: str) -> str:
+    if setup.endswith("_BLOCKED"):
+        return "BLOCKED_BY_HTF_LOCATION"
+    if trade_location == "HTF_CONFIRMED" and setup.endswith("_LIMIT_WATCH"):
+        return "HTF_WATCH_ZONE_VALID_TIMING_PENDING"
+    return "HTF_DAILY_STRUCTURE_PENDING"
+
+
+def _operator_pressure_label(direction: str, payload: dict[str, Any]) -> str:
+    if bool(payload.get("clean_block_valid") or payload.get("effective_ticks")):
+        return f"{direction}_VALID"
+    return "PRESSURE_CONTEXT_NOT_AVAILABLE"
+
+
+def _operator_big_trend(htf: dict[str, Any]) -> str:
+    daily = _optional_str(htf.get("daily_bias"))
+    h4 = _optional_str(htf.get("h4_structure"))
+    if daily and h4:
+        return f"{daily}_WITH_{h4}"
+    if daily:
+        return daily
+    if h4:
+        return h4
+    return "CHECK_DAILY_H4"
+
+
+def _operator_memory_context(memory: dict[str, Any]) -> dict[str, Any] | None:
+    if not memory:
+        return None
+    return _clean_context(
+        {
+            "memory_available": _optional_bool(memory.get("memory_available")),
+            "lifecycle_transition": _optional_str(memory.get("lifecycle_transition")),
+            "phase_structure_validation": _optional_str(memory.get("phase_structure_validation")),
+            "recommended_interpretation": _optional_str(memory.get("recommended_interpretation")),
+            "previous_watch_signal_id": _optional_str(memory.get("previous_watch_signal_id")),
+            "minutes_since_previous_watch": _optional_float(memory.get("minutes_since_previous_watch")),
+        }
+    )
+
+
+def _operator_daily_context(htf: dict[str, Any]) -> dict[str, Any] | None:
+    return _clean_context(
+        {
+            "bias": _optional_str(htf.get("daily_bias")),
+            "range_high": _optional_float(htf.get("daily_range_high")),
+            "range_low": _optional_float(htf.get("daily_range_low")),
+            "fib_zone": _float_list(htf.get("daily_fib_zone")) or None,
+            "fib_levels": _dict_value(htf.get("daily_fib_levels")),
+        }
+    )
+
+
+def _operator_h4_context(htf: dict[str, Any], direction: str) -> dict[str, Any] | None:
+    return _clean_context(
+        {
+            "structure": _optional_str(htf.get("h4_structure")),
+            "entry_zone_source": "H4_DEMAND_OR_H4_PULLBACK_STRUCTURE"
+            if direction == "BUY"
+            else "H4_SUPPLY_OR_H4_PULLBACK_STRUCTURE",
+            "sl_source": "H4_SWING_LOW" if direction == "BUY" else "H4_SWING_HIGH",
+            "tp_source": "H4_RESISTANCE_OR_DAILY_KEY_LEVEL"
+            if direction == "BUY"
+            else "H4_SUPPORT_OR_DAILY_KEY_LEVEL",
+            "swing_high": _optional_float(htf.get("h4_swing_high")),
+            "swing_low": _optional_float(htf.get("h4_swing_low")),
+            "demand_zone": _float_list(htf.get("h4_demand_zone")) or None,
+            "supply_zone": _float_list(htf.get("h4_supply_zone")) or None,
+        }
+    )
+
+
+def _operator_memory_bias(direction: str, htf: dict[str, Any], memory: dict[str, Any], setup: str) -> str:
+    transition = str(memory.get("lifecycle_transition") or memory.get("phase_structure_validation") or "").upper()
+    daily = str(htf.get("daily_bias") or "").upper()
+    if "LATE" in transition or setup.endswith("_BLOCKED"):
+        return f"{direction}_PRESSURE_LATE_OR_BLOCKED"
+    if daily in {"BULLISH", "BEARISH", "RANGE", "TRANSITION", "NO_BIAS"}:
+        return daily
+    return "UNKNOWN"
+
+
+def _operator_memory_phase(htf: dict[str, Any], memory: dict[str, Any]) -> str:
+    phase = _optional_str(memory.get("phase_structure_validation"))
+    if phase is not None:
+        return phase
+    h4 = _optional_str(htf.get("h4_structure"))
+    daily = _optional_str(htf.get("daily_bias"))
+    if h4 or daily:
+        return "_".join(part for part in (daily, h4) if part)
+    return "UNKNOWN"
+
+
+def _operator_wait_for(direction: str, setup: str) -> str:
+    if setup.endswith("_BLOCKED"):
+        return "DEEPER_PULLBACK_OR_H4_RECLAIM" if direction == "BUY" else "DEEPER_PULLBACK_OR_H4_BREAKDOWN"
+    if setup.endswith("_LIMIT_WATCH"):
+        return (
+            "PRICE_PULLBACK_TO_ENTRY_ZONE_AND_M15_SUPPORT_HOLD"
+            if direction == "BUY"
+            else "PRICE_RETEST_TO_ENTRY_ZONE_AND_M15_REJECTION"
+        )
+    if setup.endswith("_STRUCTURE_WATCH"):
+        return "H4_DAILY_STRUCTURE_AND_M15_TIMING"
+    return "H4_RECLAIM_OR_M15_TIMING_CONFIRMATION" if direction == "BUY" else "H4_BREAKDOWN_OR_M15_TIMING_CONFIRMATION"
+
+
+def _operator_reason(
+    direction: str,
+    setup: str,
+    htf: dict[str, Any],
+    memory: dict[str, Any],
+    trade_location: str,
+) -> str:
+    location = str(htf.get("price_location") or "UNKNOWN").upper()
+    if setup.endswith("_BLOCKED"):
+        return (
+            f"{direction} pressure exists, but HTF location/playbook blocks fresh entry at {location}. "
+            "Wait for deeper pullback or H4 structural confirmation."
+        )
+    if setup.endswith("_LIMIT_WATCH"):
+        return (
+            f"{direction} pressure is visible and D1/H4 structure provides a watch zone. "
+            "Execution remains locked until price reaches the zone and M15 confirms timing."
+        )
+    transition = str(memory.get("lifecycle_transition") or "HTF_CONTEXT_PENDING")
+    return (
+        f"{direction} pressure detected, but HTF trade location is not confirmed ({trade_location}; {transition}). "
+        "M15 is timing only, not structure authority."
+    )
+
+
+def _operator_block_reason(direction: str, htf: dict[str, Any]) -> str:
+    location = str(htf.get("price_location") or "").upper()
+    if direction == "BUY" and location in {"PREMIUM", "H4_SUPPLY"}:
+        return "HTF_PREMIUM_NO_CHASE"
+    if direction == "SELL" and location in {"DISCOUNT", "H4_DEMAND"}:
+        return "HTF_DISCOUNT_NO_CHASE"
+    return "HTF_PLAYBOOK_BLOCKED"
+
+
 def _execution_gate_context(payload: dict[str, Any]) -> dict[str, Any] | None:
     target_mode = str(payload.get("target_mode") or "").upper()
     target_usable = _optional_bool(payload.get("targets_execution_usable"))
@@ -2412,6 +3026,9 @@ def _pattern_debug_payload(
     fuzzy_matches = _string_list(source_payload.get("pattern_db_fuzzy_matches")) or _string_list(
         pattern_context.get("pattern_db_fuzzy_matches")
     )
+    matched_patterns = _string_list_any(source_payload.get("matched_patterns")) or _string_list_any(
+        pattern_context.get("matched_patterns")
+    )
     patterns_scanned = _optional_int(source_payload.get("pattern_db_candidates_scanned")) or _optional_int(
         pattern_context.get("pattern_db_candidates_scanned")
     )
@@ -2425,7 +3042,17 @@ def _pattern_debug_payload(
         semantic_hits = _dict_value(diagnostics.get("semantic_hits"))
         candidate_scores_top = _dict_value(diagnostics.get("candidate_scores_top"))
         search_mode = _optional_str(diagnostics.get("search_mode"))
-    if not any((diagnostics, exact_matches, fuzzy_matches, patterns_scanned, semantic_hits, candidate_scores_top)):
+    if not any(
+        (
+            diagnostics,
+            exact_matches,
+            fuzzy_matches,
+            matched_patterns,
+            patterns_scanned,
+            semantic_hits,
+            candidate_scores_top,
+        )
+    ):
         return None
 
     sidecar = {
@@ -2438,6 +3065,7 @@ def _pattern_debug_payload(
         "selected_pattern_id": source_payload.get("selected_pattern_id") or pattern_context.get("selected_pattern_id"),
         "search_mode": search_mode,
         "patterns_scanned": patterns_scanned,
+        "matched_patterns": matched_patterns,
         "exact_matches": exact_matches,
         "fuzzy_matches": fuzzy_matches,
         "candidate_scores_top": candidate_scores_top,

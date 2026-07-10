@@ -357,6 +357,51 @@ def classify_liquidity_context(close: float | None, daily_range: tuple[float, fl
     return LIQ_NONE
 
 
+def _zone_pad(daily_range: tuple[float, float] | None) -> float | None:
+    if daily_range is None:
+        return None
+    high, low = daily_range
+    span = high - low
+    if span <= 0:
+        return None
+    return span * 0.03
+
+
+def _h4_supply_zone(swing_high: float | None, daily_range: tuple[float, float] | None) -> list[float] | None:
+    pad = _zone_pad(daily_range)
+    if swing_high is None or pad is None:
+        return None
+    return [round(swing_high - pad, 6), round(swing_high, 6)]
+
+
+def _h4_demand_zone(swing_low: float | None, daily_range: tuple[float, float] | None) -> list[float] | None:
+    pad = _zone_pad(daily_range)
+    if swing_low is None or pad is None:
+        return None
+    return [round(swing_low, 6), round(swing_low + pad, 6)]
+
+
+def _daily_fib_levels(daily_range: tuple[float, float] | None) -> dict[str, float] | None:
+    if daily_range is None:
+        return None
+    high, low = daily_range
+    span = high - low
+    if span <= 0:
+        return None
+    return {
+        "fib_382": round(low + span * 0.382, 6),
+        "fib_500": round(low + span * 0.5, 6),
+        "fib_618": round(low + span * 0.618, 6),
+    }
+
+
+def _daily_fib_zone(daily_range: tuple[float, float] | None) -> list[float] | None:
+    levels = _daily_fib_levels(daily_range)
+    if not levels:
+        return None
+    return [levels["fib_382"], levels["fib_618"]]
+
+
 def resolve_playbook(daily_bias: str, price_location: str) -> tuple[str, list[str]]:
     """Map (daily_bias, price_location) to (allowed_playbook, blocked_playbook).
 
@@ -408,6 +453,14 @@ class HTFStructureSnapshot:
     reason: str
     daily_bars: int = 0
     h4_bars: int = 0
+    h4_swing_high: float | None = None
+    h4_swing_low: float | None = None
+    daily_range_high: float | None = None
+    daily_range_low: float | None = None
+    h4_supply_zone: list[float] | None = None
+    h4_demand_zone: list[float] | None = None
+    daily_fib_zone: list[float] | None = None
+    daily_fib_levels: dict[str, float] | None = None
     # Hard invariant — H1 never authorises execution.
     valid_for_execution: bool = False
     is_final_signal: bool = False
@@ -426,12 +479,20 @@ class HTFStructureSnapshot:
             "data_sufficient": self.data_sufficient,
             "daily_bars": self.daily_bars,
             "h4_bars": self.h4_bars,
+            "h4_swing_high": self.h4_swing_high,
+            "h4_swing_low": self.h4_swing_low,
+            "daily_range_high": self.daily_range_high,
+            "daily_range_low": self.daily_range_low,
+            "h4_supply_zone": self.h4_supply_zone,
+            "h4_demand_zone": self.h4_demand_zone,
+            "daily_fib_zone": self.daily_fib_zone,
+            "daily_fib_levels": self.daily_fib_levels,
             "reason": self.reason,
             # Safety lock — emitted explicitly so consumers can never misread it.
             "valid_for_execution": False,
             "is_final_signal": False,
         }
-        return payload
+        return {key: value for key, value in payload.items() if value is not None}
 
     def dedupe_key(self) -> tuple[Any, ...]:
         """Stable identity for per-symbol emit deduplication."""
@@ -443,6 +504,10 @@ class HTFStructureSnapshot:
             self.liquidity_context,
             self.allowed_playbook,
             tuple(self.blocked_playbook),
+            self.h4_swing_high,
+            self.h4_swing_low,
+            self.daily_range_high,
+            self.daily_range_low,
         )
 
 
@@ -549,6 +614,8 @@ def build_snapshot(
     h4_lows = find_swing_lows(h4, swing_window) if h4_ok else []
     h4_swing_high = h4_highs[-1].price if h4_highs else None
     h4_swing_low = h4_lows[-1].price if h4_lows else None
+    daily_range_high = d_range[0] if d_range else None
+    daily_range_low = d_range[1] if d_range else None
 
     price_location = classify_price_location(daily_close, d_range, h4_swing_high, h4_swing_low)
     liquidity_context = classify_liquidity_context(daily_close, d_range)
@@ -568,6 +635,14 @@ def build_snapshot(
         reason=reason,
         daily_bars=daily_bars,
         h4_bars=h4_bars,
+        h4_swing_high=h4_swing_high,
+        h4_swing_low=h4_swing_low,
+        daily_range_high=daily_range_high,
+        daily_range_low=daily_range_low,
+        h4_supply_zone=_h4_supply_zone(h4_swing_high, d_range),
+        h4_demand_zone=_h4_demand_zone(h4_swing_low, d_range),
+        daily_fib_zone=_daily_fib_zone(d_range),
+        daily_fib_levels=_daily_fib_levels(d_range),
     )
 
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+
 import analysis.signal_json_emitter as signal_json_emitter
 from analysis.signal_json_emitter import (
     UNIVERSAL_PATTERN_SCHEMA_VERSION,
@@ -51,6 +54,14 @@ def _event(**overrides):
     }
     payload.update(overrides)
     return SignalJsonEvent(**payload)
+
+
+def _logged_payload(caplog, marker: str = "[SignalWatchJSON]") -> dict:
+    for record in caplog.records:
+        message = record.getMessage()
+        if marker in message:
+            return json.loads(message.split(marker, 1)[1].strip())
+    raise AssertionError(f"{marker} payload was not emitted")
 
 
 def test_signal_json_emits_counter_entry_watch(caplog):
@@ -489,6 +500,8 @@ def test_signal_watch_carries_pair_memory_context_for_same_cluster(caplog):
     assert '"lifecycle_transition":"FIRST_VALID_PRESSURE"' in caplog.text
     assert '"lifecycle_transition":"SAME_CLEAN_BLOCK_STILL_PENDING"' in caplog.text
     assert '"previous_valid_signal_id":"USDCAD_BUY_WATCH_1"' in caplog.text
+    assert '"previous_watch_signal_id":"USDCAD_BUY_WATCH_1"' in caplog.text
+    assert '"price_delta_from_previous_watch_pips":2.0' in caplog.text
     assert '"price_delta_from_previous_valid_pips":2.0' in caplog.text
     assert '"phase_structure_validation":"NO_NEW_STATE_CHANGE"' in caplog.text
 
@@ -955,6 +968,237 @@ def test_production_signal_json_omits_null_duplicates_and_heavy_pattern_debug(ca
     assert '"support_ladder_ready":false' in caplog.text
 
 
+def test_signal_watch_normalizes_xauusd_tradeplan_units_and_blocks_inside_zone_rr(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="XAUUSD_20260710T032735Z",
+        symbol="XAUUSD",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        watch_direction="BUY",
+        final_direction="WAIT",
+        entry_reference_price=4123.005,
+        signal_valid_price=4123.005,
+        entry_zone=[4123.005, 4125.35],
+        pair_calibration={"symbol": "XAUUSD", "asset_class": "METAL", "pip_size": 0.01},
+        tradeplan_preview={
+            "setup_type": "BUY_RECLAIM_WATCH",
+            "entry_zone": [4123.005, 4125.35],
+            "sl": 4122.055,
+            "invalidation_level": 4122.055,
+            "tp1": 4125.24,
+            "tp2": 4125.745,
+            "risk_pips": 9500.0,
+            "rr_to_tp1": 2.35,
+            "target_mode": "PREVIEW_CONTEXT_INCOMPLETE",
+            "execution_usable": False,
+        },
+        market_context_applied=True,
+        valid_for_execution=False,
+    )
+
+    assert emitter.emit(event) is True
+
+    assert '"risk_pips":95.0' in caplog.text
+    assert '"risk_points":9500.0' in caplog.text
+    assert '"pip_size":0.01' in caplog.text
+    assert '"point_size":0.0001' in caplog.text
+    assert '"preview_block_reason":"TP1_INSIDE_ENTRY_ZONE"' in caplog.text
+    assert '"tradeplan_preview_valid_for_display":false' in caplog.text
+    assert '"rr_to_tp1_display_valid":false' in caplog.text
+    assert '"rr_to_tp1":2.35' not in caplog.text
+
+
+def test_signal_watch_builds_htf_led_operator_tradeplan(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="XAUUSD_HTF_LED_WATCH",
+        symbol="XAUUSD",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        watch_direction="BUY",
+        final_direction="WAIT",
+        entry_reference_price=4123.005,
+        signal_valid_price=4123.005,
+        entry_zone=[4123.005, 4125.35],
+        pair_calibration={"symbol": "XAUUSD", "asset_class": "METAL", "pip_size": 0.01},
+        market_structure={
+            "structure_ready": False,
+            "market_structure_status": "STRUCTURE_PENDING",
+            "structure_pending_reason": [
+                "H1_DOWNTREND_CONFLICT",
+                "M15_LOWER_HIGH_NOT_RECLAIMED",
+            ],
+        },
+        htf_structure_context={
+            "source_event": "HTFStructureSnapshot",
+            "daily_bias": "BULLISH",
+            "h4_structure": "BULLISH_PULLBACK",
+            "price_location": "H4_DEMAND",
+            "allowed_playbook": "BUY_ON_REJECTION",
+            "blocked_playbook": ["SELL_LIMIT"],
+            "data_sufficient": True,
+            "h4_swing_low": 4114.0,
+            "h4_swing_high": 4138.0,
+            "daily_range_low": 4075.0,
+            "daily_range_high": 4150.0,
+            "h4_demand_zone": [4120.0, 4123.0],
+            "h4_supply_zone": [4132.0, 4138.0],
+            "daily_fib_zone": [4103.65, 4121.35],
+            "valid_for_execution": False,
+            "execution_impact": False,
+        },
+        market_context_applied=True,
+        valid_for_execution=False,
+    )
+
+    assert emitter.emit(event) is True
+
+    assert '"operator_tradeplan":{"event":"tradeplan_watch"' in caplog.text
+    assert '"setup":"BUY_LIMIT_WATCH"' in caplog.text
+    assert '"structure_source":"HTF_STRUCTURE_LADDER"' in caplog.text
+    assert '"primary_structure_timeframe":"H4"' in caplog.text
+    assert '"macro_context_timeframe":"D1"' in caplog.text
+    assert '"m15_role":"TIMING_CONFIRMATION_ONLY"' in caplog.text
+    assert '"entry_zone":[4120.0,4123.0]' in caplog.text
+    assert '"sl":4114.0' in caplog.text
+    assert '"tp1":4138.0' in caplog.text
+    assert '"execution_allowed":false' in caplog.text
+    assert '"wait_for":"PRICE_PULLBACK_TO_ENTRY_ZONE_AND_M15_SUPPORT_HOLD"' in caplog.text
+    assert '"M15_TIMING_CONFIRMATION_PENDING"' in caplog.text
+    assert "M15_LOWER_HIGH_NOT_RECLAIMED" not in caplog.text
+
+
+def test_signal_watch_clears_actionable_levels_when_htf_location_unconfirmed(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="XAUUSD_HTF_PENDING_WATCH",
+        symbol="XAUUSD",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        watch_direction="BUY",
+        final_direction="WAIT",
+        entry_reference_price=4123.005,
+        signal_valid_price=4123.005,
+        entry_zone=[4123.005, 4125.35],
+        pair_calibration={"symbol": "XAUUSD", "asset_class": "METAL", "pip_size": 0.01},
+        tradeplan_preview={
+            "setup_type": "BUY_RECLAIM_WATCH",
+            "entry_zone": [4123.005, 4125.35],
+            "sl": 4122.055,
+            "tp1": 4125.24,
+            "tp2": 4125.745,
+            "rr_to_tp1": 2.35,
+            "target_mode": "PREVIEW_CONTEXT_INCOMPLETE",
+            "execution_usable": False,
+        },
+        htf_structure_context={
+            "source_event": "HTFStructureSnapshot",
+            "daily_bias": "BULLISH",
+            "h4_structure": "BULLISH_PULLBACK",
+            "price_location": "EQUILIBRIUM",
+            "allowed_playbook": "WAIT_FOR_H4_LOCATION",
+            "blocked_playbook": ["SELL_LIMIT"],
+            "data_sufficient": True,
+            "h4_swing_low": 4114.0,
+            "h4_swing_high": 4138.0,
+            "daily_range_low": 4075.0,
+            "daily_range_high": 4150.0,
+            "h4_demand_zone": [4120.0, 4123.0],
+            "h4_supply_zone": [4132.0, 4138.0],
+            "daily_fib_zone": [4090.0, 4100.0],
+            "valid_for_execution": False,
+            "execution_impact": False,
+        },
+        market_context_applied=True,
+        valid_for_execution=False,
+        validated_direction=None,
+    )
+
+    assert emitter.emit(event) is True
+
+    payload = _logged_payload(caplog)
+    preview = payload["tradeplan_preview"]
+    operator = payload["operator_tradeplan"]
+
+    assert preview["setup_type"] == "BUY_STRUCTURE_WATCH"
+    assert preview["target_mode"] == "HTF_STRUCTURE_PENDING"
+    assert preview["preview_block_reason"] == "HTF_TRADE_LOCATION_NOT_CONFIRMED"
+    assert preview["trade_location_status"] == "HTF_LOCATION_NOT_CONFIRMED"
+    assert "entry_zone" not in preview
+    assert "sl" not in preview
+    assert "tp1" not in preview
+    assert "rr_to_tp1" not in preview
+
+    assert operator["setup"] == "BUY_STRUCTURE_WATCH"
+    assert operator["tradeplan_status"] == "HTF_DAILY_STRUCTURE_PENDING"
+    assert operator["pressure"] == "BUY_VALID"
+    assert operator["memory"]["lifecycle_transition"] == "FIRST_VALID_PRESSURE"
+    assert operator["daily_context"]["fib_zone"] == [4090.0, 4100.0]
+    assert operator["h4_structure"]["demand_zone"] == [4120.0, 4123.0]
+    assert operator["trade_location"] == "HTF_LOCATION_NOT_CONFIRMED"
+    assert operator["m15_role"] == "TIMING_CONFIRMATION_ONLY"
+    assert operator["execution"] is False
+    assert operator["wait_for"] == "H4_DAILY_STRUCTURE_AND_M15_TIMING"
+    assert "entry_zone" not in operator
+    assert "sl" not in operator
+    assert "tp1" not in operator
+    assert "rr_to_tp1" not in operator
+
+
+def test_signal_watch_blocks_buy_limit_at_htf_premium(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    event = _event(
+        cluster_id="XAUUSD_HTF_PREMIUM_BLOCK",
+        symbol="XAUUSD",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        watch_direction="BUY",
+        final_direction="WAIT",
+        htf_structure_context={
+            "source_event": "HTFStructureSnapshot",
+            "daily_bias": "RANGE",
+            "h4_structure": "BULLISH_IMPULSE",
+            "price_location": "H4_SUPPLY",
+            "allowed_playbook": "RANGE_FADE_EXTREME",
+            "blocked_playbook": ["BUY_LIMIT", "BUY_BREAKOUT_CHASE"],
+            "data_sufficient": True,
+            "h4_swing_high": 4138.0,
+            "h4_swing_low": 4114.0,
+            "valid_for_execution": False,
+        },
+        market_context_applied=True,
+        valid_for_execution=False,
+    )
+
+    assert emitter.emit(event) is True
+
+    assert '"setup":"BUY_BLOCKED"' in caplog.text
+    assert '"status":"NO_TRADE"' in caplog.text
+    assert '"preview_block_reason":"HTF_PREMIUM_NO_CHASE"' in caplog.text
+    assert '"H4_SUPPLY_BUY_BLOCK"' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
+def test_signal_watch_log_level_can_be_info(caplog):
+    caplog.set_level(logging.INFO, logger="signal_json")
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True, watch_log_level="INFO")
+
+    assert emitter.emit(_event(cluster_id="USDCAD_INFO_WATCH")) is True
+
+    watch_records = [record for record in caplog.records if "[SignalWatchJSON]" in record.getMessage()]
+    assert watch_records
+    assert watch_records[-1].levelno == logging.INFO
+
+
 def test_pattern_match_debug_sidecar_is_opt_in(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True, emit_pattern_debug=True)
     event = _event(
@@ -976,6 +1220,7 @@ def test_pattern_match_debug_sidecar_is_opt_in(caplog):
     assert "[PatternMatchDebugJSON]" in caplog.text
     assert '"event":"pattern_match_debug_json"' in caplog.text
     assert '"patterns_scanned":52' in caplog.text
+    assert '"matched_patterns":["UPPER_ABSORPTION_WARNING","JPY_ALIGNMENT_REQUIRED"]' in caplog.text
     assert '"exact_matches":["UPPER_ABSORPTION_WARNING"]' in caplog.text
     assert '"fuzzy_matches":["LATE_UPPER_MICROBOOST"]' in caplog.text
     assert '"semantic_hits":{"LATE_UPPER_MICROBOOST":["microboost"]}' in caplog.text

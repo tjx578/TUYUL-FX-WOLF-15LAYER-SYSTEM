@@ -508,6 +508,9 @@ class WolfConstitutionalPipeline:
             ),
             emit_pattern_debug=os.getenv("SIGNAL_JSON_PATTERN_DEBUG_ENABLED", "false").strip().lower() == "true",
             pattern_debug_prefix=os.getenv("SIGNAL_PATTERN_DEBUG_JSON_LOG_PREFIX", "[PatternMatchDebugJSON]"),
+            watch_log_level=os.getenv("SIGNAL_WATCH_JSON_LOG_LEVEL", "INFO"),
+            decision_update_log_level=os.getenv("SIGNAL_DECISION_UPDATE_JSON_LOG_LEVEL", "INFO"),
+            final_log_level=os.getenv("SIGNAL_JSON_LOG_LEVEL", "WARNING"),
         )
         self._signal_json_gate_adapter = SignalJsonGateAdapter.from_env()
         self._governance_now_ts: float | None = None
@@ -3911,6 +3914,14 @@ class WolfConstitutionalPipeline:
             "allowed_playbook": WolfConstitutionalPipeline._optional_text_from_mapping(snapshot, "allowed_playbook"),
             "blocked_playbook": WolfConstitutionalPipeline._string_list_from_mapping(snapshot, "blocked_playbook"),
             "data_sufficient": WolfConstitutionalPipeline._optional_bool_from_mapping(snapshot, "data_sufficient"),
+            "h4_swing_high": WolfConstitutionalPipeline._optional_float_from_mapping(snapshot, "h4_swing_high"),
+            "h4_swing_low": WolfConstitutionalPipeline._optional_float_from_mapping(snapshot, "h4_swing_low"),
+            "daily_range_high": WolfConstitutionalPipeline._optional_float_from_mapping(snapshot, "daily_range_high"),
+            "daily_range_low": WolfConstitutionalPipeline._optional_float_from_mapping(snapshot, "daily_range_low"),
+            "h4_supply_zone": WolfConstitutionalPipeline._float_list_from_mapping(snapshot, "h4_supply_zone"),
+            "h4_demand_zone": WolfConstitutionalPipeline._float_list_from_mapping(snapshot, "h4_demand_zone"),
+            "daily_fib_zone": WolfConstitutionalPipeline._float_list_from_mapping(snapshot, "daily_fib_zone"),
+            "daily_fib_levels": WolfConstitutionalPipeline._dict_from_mapping(snapshot, "daily_fib_levels"),
             "reason": WolfConstitutionalPipeline._optional_text_from_mapping(snapshot, "reason"),
             "valid_for_execution": False,
             "execution_impact": False,
@@ -3937,6 +3948,19 @@ class WolfConstitutionalPipeline:
             "allowed_playbook": _field("htf_allowed_playbook"),
             "blocked_playbook": WolfConstitutionalPipeline._string_list_value(_field("htf_blocked_playbook")),
             "data_sufficient": _field("htf_data_sufficient"),
+            "h4_swing_high": _field("h4_swing_high") or _field("htf_h4_swing_high"),
+            "h4_swing_low": _field("h4_swing_low") or _field("htf_h4_swing_low"),
+            "daily_range_high": _field("daily_range_high") or _field("htf_daily_range_high"),
+            "daily_range_low": _field("daily_range_low") or _field("htf_daily_range_low"),
+            "h4_supply_zone": WolfConstitutionalPipeline._float_list_value(
+                _field("h4_supply_zone") or _field("htf_h4_supply_zone")
+            ),
+            "h4_demand_zone": WolfConstitutionalPipeline._float_list_value(
+                _field("h4_demand_zone") or _field("htf_h4_demand_zone")
+            ),
+            "daily_fib_zone": WolfConstitutionalPipeline._float_list_value(
+                _field("daily_fib_zone") or _field("htf_daily_fib_zone")
+            ),
             "reason": _field("htf_structure_reason"),
             "valid_for_execution": False,
             "execution_impact": False,
@@ -3960,6 +3984,25 @@ class WolfConstitutionalPipeline:
         return value if isinstance(value, bool) else None
 
     @staticmethod
+    def _optional_float_from_mapping(source: dict[str, Any] | None, key: str) -> float | None:
+        if not isinstance(source, dict):
+            return None
+        return WolfConstitutionalPipeline._coerce_float_or_none(source.get(key))
+
+    @staticmethod
+    def _float_list_from_mapping(source: dict[str, Any] | None, key: str) -> list[float] | None:
+        if not isinstance(source, dict):
+            return None
+        return WolfConstitutionalPipeline._float_list_value(source.get(key))
+
+    @staticmethod
+    def _dict_from_mapping(source: dict[str, Any] | None, key: str) -> dict[str, Any] | None:
+        if not isinstance(source, dict):
+            return None
+        value = source.get(key)
+        return dict(value) if isinstance(value, dict) else None
+
+    @staticmethod
     def _string_list_from_mapping(source: dict[str, Any] | None, key: str) -> list[str] | None:
         if not isinstance(source, dict):
             return None
@@ -3974,6 +4017,17 @@ class WolfConstitutionalPipeline:
             values = [str(item).strip() for item in value if str(item or "").strip()]
             return values or None
         return None
+
+    @staticmethod
+    def _float_list_value(value: Any) -> list[float] | None:
+        if not isinstance(value, (list, tuple, set)):
+            return None
+        values: list[float] = []
+        for item in value:
+            number = WolfConstitutionalPipeline._coerce_float_or_none(item)
+            if number is not None:
+                values.append(number)
+        return values or None
 
     def _derive_timeframe_phase(self, symbol: str, timeframe: str) -> str | None:
         candles = self._context_bus.get_candle_history(symbol, timeframe, count=2)
@@ -7143,6 +7197,14 @@ class WolfConstitutionalPipeline:
             "SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS": _f("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", "300"),
             "STRUCTURE_LADDER_DIAGNOSTIC_ENABLED": _b("STRUCTURE_LADDER_DIAGNOSTIC_ENABLED", "false"),
             "SIGNAL_JSON_LOG_ENABLED": _b("SIGNAL_JSON_LOG_ENABLED", "true"),
+            "SIGNAL_JSON_LOG_LEVEL": os.getenv("SIGNAL_JSON_LOG_LEVEL", "WARNING").strip().upper(),
+            "SIGNAL_WATCH_JSON_LOG_LEVEL": os.getenv("SIGNAL_WATCH_JSON_LOG_LEVEL", "INFO").strip().upper(),
+            "SIGNAL_DECISION_UPDATE_JSON_LOG_LEVEL": os.getenv(
+                "SIGNAL_DECISION_UPDATE_JSON_LOG_LEVEL",
+                "INFO",
+            )
+            .strip()
+            .upper(),
             "SIGNAL_JSON_EMIT_WATCH": _b("SIGNAL_JSON_EMIT_WATCH", "true"),
             "SIGNAL_JSON_EMIT_CONDITIONAL": _b("SIGNAL_JSON_EMIT_CONDITIONAL", "true"),
             "SIGNAL_JSON_EMIT_VALID": _b("SIGNAL_JSON_EMIT_VALID", "true"),
