@@ -4298,10 +4298,10 @@ class WolfConstitutionalPipeline:
         try:
             max_symbols = max(
                 1,
-                int(self._parse_env_float("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", 4.0)),
+                int(self._parse_env_float("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", 12.0)),
             )
         except (TypeError, ValueError):
-            max_symbols = 4
+            max_symbols = 12
 
         existing = {str(symbol or "").upper() for symbol in market_contexts}
         candidates = self._signal_throttle_context_candidates(report)
@@ -4360,6 +4360,17 @@ class WolfConstitutionalPipeline:
             except (TypeError, ValueError):
                 return 0.0
 
+        scope_config = report.get("scope_config") if isinstance(report.get("scope_config"), dict) else {}
+        clean_block_seconds = max(
+            1.0,
+            _number(
+                report.get("clean_block_seconds")
+                or scope_config.get("clean_block_seconds")
+                or 300.0
+            ),
+        )
+        fresh_maturity_window = max(60.0, clean_block_seconds)
+
         tier_scores = {
             str(row.get("symbol") or "").upper(): _number(row.get("tier_score"))
             for row in report.get("pressure_tiers") or []
@@ -4376,15 +4387,40 @@ class WolfConstitutionalPipeline:
             candidate = dict(raw)
             candidate["_tier_score"] = tier_scores.get(symbol, 0.0)
             candidates.append(candidate)
+
+        def _duration(item: dict[str, Any]) -> float:
+            return _number(
+                item.get("clean_block_duration_seconds")
+                or item.get("source_clean_block_latest_duration_seconds")
+                or item.get("duration_seconds")
+            )
+
+        def _events(item: dict[str, Any]) -> float:
+            return _number(item.get("effective_ticks") or item.get("clean_block_event_count") or item.get("events"))
+
+        def _freshly_matured_rank(item: dict[str, Any]) -> float:
+            duration = _duration(item)
+            if duration < clean_block_seconds:
+                return 0.0
+            maturity_age = duration - clean_block_seconds
+            if maturity_age > fresh_maturity_window:
+                return 0.0
+            return 1.0
+
+        def _freshness_score(item: dict[str, Any]) -> float:
+            duration = _duration(item)
+            if duration < clean_block_seconds:
+                return 0.0
+            maturity_age = min(max(duration - clean_block_seconds, 0.0), fresh_maturity_window)
+            return fresh_maturity_window - maturity_age
+
         candidates.sort(
             key=lambda item: (
+                _freshly_matured_rank(item),
+                _freshness_score(item),
                 _number(item.get("_tier_score")),
-                _number(
-                    item.get("clean_block_duration_seconds")
-                    or item.get("source_clean_block_latest_duration_seconds")
-                    or item.get("duration_seconds")
-                ),
-                _number(item.get("effective_ticks") or item.get("clean_block_event_count") or item.get("events")),
+                _duration(item),
+                _events(item),
             ),
             reverse=True,
         )
@@ -7203,7 +7239,7 @@ class WolfConstitutionalPipeline:
                 "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true"
             ),
             "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS": _f(
-                "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "4"
+                "SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "12"
             ),
             "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_ENABLED": _b(
                 "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_LOG_ENABLED", "true"

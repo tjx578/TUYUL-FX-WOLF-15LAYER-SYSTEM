@@ -205,6 +205,52 @@ def test_pipeline_hydrates_market_context_for_global_signal_throttle_candidate(m
     assert context.price_position in {"MAIN_SUPPORT", "MID_RANGE", "MAIN_RESISTANCE"}
 
 
+def test_pipeline_prioritizes_newly_matured_clean_block_for_market_context(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "1")
+    monkeypatch.setenv("HTF_DAILY_PHASE_FEED_ENABLED", "false")
+    monkeypatch.setenv("SIGNAL_BASKET_DIRECTION_VALIDATION_ENABLED", "false")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    cast(Any, pipeline)._context_bus = _CandidateMarketContextBus()
+
+    report: dict[str, Any] = {
+        "scope_config": {"clean_block_seconds": 300},
+        "clean_watch_candidates": [
+            {
+                "symbol": "USDJPY",
+                "clean_block_direction": "SELL",
+                "clean_block_duration_seconds": 5407.575,
+                "clean_block_event_count": 175,
+            },
+            {
+                "symbol": "EURCHF",
+                "clean_block_direction": "BUY",
+                "clean_block_duration_seconds": 319.507,
+                "clean_block_event_count": 14,
+            },
+        ],
+        "pressure_tiers": [
+            {"symbol": "USDJPY", "tier_score": 100.0},
+            {"symbol": "EURCHF", "tier_score": 10.0},
+        ],
+    }
+    market_contexts: dict[str, MarketContext] = {}
+
+    hydration = pipeline._hydrate_signal_throttle_candidate_market_contexts(
+        report=report,
+        market_contexts=market_contexts,
+        synthesis={"execution": {"entry_price": 9.9999}},
+        l12_verdict={"verdict": "HOLD", "direction": None},
+    )
+
+    assert hydration["enabled"] is True
+    assert hydration["max_symbols"] == 1
+    assert hydration["hydrated_symbols"] == ["EURCHF"]
+    assert "EURCHF" in market_contexts
+    assert "USDJPY" not in market_contexts
+    assert market_contexts["EURCHF"].raw_allowed_direction == "BUY"
+
+
 def test_signal_throttle_snapshot_rebuilds_after_candidate_context_hydration(monkeypatch):
     monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_THROTTLE_CANDIDATE_MARKET_CONTEXT_MAX_SYMBOLS", "4")
