@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from analysis.microboost_followthrough_role import MICROBOOST_FOLLOWTHROUGH_ROLE_FIELDS
+from analysis.pair_signal_memory import PairSignalMemoryStore
 from analysis.signal_thresholds import SIGNAL_MIN_RR
 
 TERMINAL_EXECUTION_READY_STATUSES = {
@@ -290,6 +291,16 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return float(default)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return float(default)
 
 
 @dataclass(frozen=True)
@@ -621,7 +632,11 @@ class SignalJsonEmitter:
         self._cluster_watch_event_seconds: dict[str, float] = {}
         self._cluster_watch_wall_seconds: dict[str, float] = {}
         self._cluster_watch_revisions: dict[str, int] = {}
-        self._cluster_pair_memory: dict[str, dict[str, Any]] = {}
+        self.pair_memory_enabled = _env_bool("SIGNAL_WATCH_PAIR_MEMORY_ENABLED", True)
+        self._pair_memory_store = PairSignalMemoryStore(
+            lookback_minutes=_env_float("PAIR_MEMORY_LOOKBACK_MINUTES", 720.0),
+            phase_structure_validation_enabled=_env_bool("SIGNAL_WATCH_PHASE_STRUCTURE_VALIDATION_ENABLED", True),
+        )
         self._emitted_watch_refs: set[str] = set()
         self._last_watch_content: dict[str, str] = {}
         self._cluster_semantic_watch: dict[str, float] = {}
@@ -661,11 +676,13 @@ class SignalJsonEmitter:
             _apply_signal_htf_structure_fields(payload, prefix="signal_watch")
             self._apply_pair_memory_context(payload)
         elif is_decision_update:
+            _strip_pair_memory_fields(payload)
             _strip_pressure_priority_fields(payload)
             _strip_followthrough_fields(payload)
             _strip_microboost_role_fields(payload)
             _apply_signal_htf_structure_fields(payload, prefix="signal_decision")
         else:
+            _strip_pair_memory_fields(payload)
             _strip_pressure_priority_fields(payload)
             _strip_followthrough_fields(payload)
             _strip_microboost_role_fields(payload)
@@ -966,63 +983,12 @@ class SignalJsonEmitter:
         return False
 
     def _apply_pair_memory_context(self, payload: dict[str, Any]) -> None:
-        cluster_key = str(
-            payload.get("cluster_id")
-            or f"{payload.get('symbol')}|{payload.get('signal_family')}|{payload.get('entry_reference_price')}"
+        if not self.pair_memory_enabled:
+            return
+        self._pair_memory_store.enrich_watch_payload(
+            payload,
+            material_state=self._cluster_semantic_watch_key(payload),
         )
-        current_price = _optional_float(payload.get("entry_reference_price") or payload.get("signal_valid_price"))
-        current_state = self._cluster_semantic_watch_key(payload)
-        previous = self._cluster_pair_memory.get(cluster_key)
-        previous_price = _optional_float((previous or {}).get("current_price"))
-        delta_pips = _price_delta_pips(
-            symbol=str(payload.get("symbol") or ""),
-            current_price=current_price,
-            previous_price=previous_price,
-        )
-        existing = _dict_value(payload.get("pair_memory_context")) or {}
-        lifecycle_transition = (
-            "NEW_CLEAN_BLOCK_WATCH"
-            if previous is None
-            else "SAME_CLEAN_BLOCK_STILL_PENDING"
-        )
-        phase_structure_validation = (
-            "NO_PREVIOUS_WATCH_STATE"
-            if previous is None
-            else "NO_NEW_STATE_CHANGE"
-            if previous.get("material_state") == current_state
-            else "MATERIAL_STATE_CHANGED"
-        )
-        context = {
-            **existing,
-            "symbol": _optional_str(payload.get("symbol")) or existing.get("symbol"),
-            "cluster_id": _optional_str(payload.get("cluster_id")) or existing.get("cluster_id"),
-            "previous_valid_signal_id": (previous or {}).get("signal_id"),
-            "previous_valid_price": previous_price,
-            "current_price": current_price,
-            "price_delta_from_previous_valid_pips": delta_pips,
-            "lifecycle_transition": lifecycle_transition,
-            "phase_structure_validation": phase_structure_validation,
-            "recommended_interpretation": (
-                "TRACK_AS_FRESH_WATCH_CONTEXT"
-                if previous is None or phase_structure_validation == "MATERIAL_STATE_CHANGED"
-                else "DO_NOT_TREAT_AS_FRESH_SIGNAL"
-            ),
-            "source_clean_block_id": payload.get("source_clean_block_id") or existing.get("source_clean_block_id"),
-            "active_clean_block_id": payload.get("source_clean_block_id") or existing.get("active_clean_block_id"),
-            "watch_direction": payload.get("watch_direction") or existing.get("watch_direction"),
-            "price_position": payload.get("price_position") or existing.get("price_position"),
-            "m15_phase": payload.get("m15_phase") or existing.get("m15_phase"),
-            "h1_phase": payload.get("h1_phase") or existing.get("h1_phase"),
-            "valid_for_execution": False,
-            "execution_impact": False,
-        }
-        payload["pair_memory_context"] = _clean_context(context)
-        self._cluster_pair_memory[cluster_key] = {
-            "signal_id": payload.get("signal_id"),
-            "current_price": current_price,
-            "material_state": current_state,
-            "source_clean_block_id": payload.get("source_clean_block_id"),
-        }
 
 
 def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonEvent | None:
@@ -1966,6 +1932,16 @@ def _strip_pressure_priority_fields(payload: dict[str, Any]) -> None:
         "signal_watch_tier_reason_codes",
         "signal_watch_tier_execution_impact",
         "signal_watch_tier_is_execution_signal",
+    ):
+        payload.pop(key, None)
+
+
+def _strip_pair_memory_fields(payload: dict[str, Any]) -> None:
+    for key in (
+        "pair_memory_context",
+        "phase_structure_validation",
+        "pair_lifecycle_transition",
+        "pair_memory_recommended_interpretation",
     ):
         payload.pop(key, None)
 

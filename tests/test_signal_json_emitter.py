@@ -413,10 +413,11 @@ def test_signal_watch_carries_pair_memory_context_for_same_cluster(caplog):
     assert emitter.emit(changed) is True
 
     assert '"pair_memory_context":' in caplog.text
-    assert '"lifecycle_transition":"NEW_CLEAN_BLOCK_WATCH"' in caplog.text
+    assert '"lifecycle_transition":"FIRST_VALID_PRESSURE"' in caplog.text
     assert '"lifecycle_transition":"SAME_CLEAN_BLOCK_STILL_PENDING"' in caplog.text
     assert '"previous_valid_signal_id":"USDCAD_BUY_WATCH_1"' in caplog.text
     assert '"price_delta_from_previous_valid_pips":2.0' in caplog.text
+    assert '"phase_structure_validation":"NO_NEW_STATE_CHANGE"' in caplog.text
 
 
 def test_signal_watch_bucket_env_accepts_space_separated_values(monkeypatch):
