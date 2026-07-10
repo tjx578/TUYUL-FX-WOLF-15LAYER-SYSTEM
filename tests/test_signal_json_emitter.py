@@ -146,6 +146,9 @@ def test_shadow_signal_watch_json_exposes_observability_only_lifecycle(caplog):
         lifecycle_status="SHADOW_WATCH_ACTIVE",
         terminal_required=False,
         terminal_guarantee="OBSERVABILITY_ONLY",
+        shadow_reason="SOURCE_VERDICT_NOT_EXECUTE",
+        shadow_source_verdict="NO_TRADE",
+        shadow_source_stage="POST_L12_PRE_V11",
         lifecycle={"cluster_id": "XAUUSD_20260710T032735Z"},
     )
 
@@ -156,6 +159,9 @@ def test_shadow_signal_watch_json_exposes_observability_only_lifecycle(caplog):
     assert '"lifecycle_status":"SHADOW_WATCH_ACTIVE"' in caplog.text
     assert '"terminal_required":false' in caplog.text
     assert '"terminal_guarantee":"OBSERVABILITY_ONLY"' in caplog.text
+    assert '"shadow_reason":"SOURCE_VERDICT_NOT_EXECUTE"' in caplog.text
+    assert '"shadow_source_verdict":"NO_TRADE"' in caplog.text
+    assert '"shadow_source_stage":"POST_L12_PRE_V11"' in caplog.text
 
 
 def test_signal_watch_json_can_carry_pressure_priority_context(caplog):

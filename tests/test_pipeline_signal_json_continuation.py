@@ -1053,7 +1053,7 @@ def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
     pipeline._signal_throttle_live_analyzer = _Analyzer()
 
     verdict: dict = {}
-    pipeline._emit_microboost_watch_shadow(symbol="XAUUSD", synthesis={}, l12_verdict=verdict, source_verdict="HOLD")
+    pipeline._emit_microboost_watch_shadow(symbol="XAUUSD", synthesis={}, l12_verdict=verdict, source_verdict="NO_TRADE")
 
     assert emitted
     assert emitted[0]["shadow_only"] is True
@@ -1061,6 +1061,9 @@ def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
     assert emitted[0]["lifecycle_status"] == "SHADOW_WATCH_ACTIVE"
     assert emitted[0]["terminal_required"] is False
     assert emitted[0]["terminal_guarantee"] == "OBSERVABILITY_ONLY"
+    assert emitted[0]["shadow_reason"] == "SOURCE_VERDICT_NOT_EXECUTE"
+    assert emitted[0]["shadow_source_verdict"] == "NO_TRADE"
+    assert emitted[0]["shadow_source_stage"] == "POST_L12_PRE_V11"
 
 
 def test_pipeline_records_counter_entry_emit_result():

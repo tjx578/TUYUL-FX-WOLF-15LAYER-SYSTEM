@@ -378,6 +378,9 @@ class SignalJsonEvent:
     terminal_required: bool | None = None
     terminal_guarantee: str | None = None
     shadow_only: bool | None = None
+    shadow_reason: str | None = None
+    shadow_source_verdict: str | None = None
+    shadow_source_stage: str | None = None
     active_signal: dict[str, Any] | None = None
     active_position_policy: str | None = None
     active_signal_management: dict[str, Any] | None = None
@@ -1129,6 +1132,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         terminal_required=_optional_bool(counter_entry.get("terminal_required")),
         terminal_guarantee=_optional_str(counter_entry.get("terminal_guarantee")),
         shadow_only=_optional_bool(counter_entry.get("shadow_only")),
+        shadow_reason=_optional_str(counter_entry.get("shadow_reason")),
+        shadow_source_verdict=_optional_str(counter_entry.get("shadow_source_verdict")),
+        shadow_source_stage=_optional_str(counter_entry.get("shadow_source_stage")),
         active_signal=counter_entry.get("active_signal")
         if isinstance(counter_entry.get("active_signal"), dict)
         else None,
@@ -2370,6 +2376,9 @@ def _lifecycle_context(payload: dict[str, Any]) -> dict[str, Any] | None:
         "terminal_required": _optional_bool(payload.get("terminal_required")),
         "terminal_guarantee": _optional_str(payload.get("terminal_guarantee")),
         "shadow_only": _optional_bool(payload.get("shadow_only")),
+        "shadow_reason": _optional_str(payload.get("shadow_reason")),
+        "shadow_source_verdict": _optional_str(payload.get("shadow_source_verdict")),
+        "shadow_source_stage": _optional_str(payload.get("shadow_source_stage")),
         "requires_m15_close": _optional_bool(payload.get("requires_m15_close")),
         "decision_watch_type": _optional_str(payload.get("decision_watch_type")),
         "decision_update_trigger": _optional_str(payload.get("decision_update_trigger")),

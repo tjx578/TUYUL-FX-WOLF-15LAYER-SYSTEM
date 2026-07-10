@@ -6680,6 +6680,12 @@ class WolfConstitutionalPipeline:
             l12_verdict["no_trade_pressure_decision_update"] = shadow_verdict["no_trade_pressure_decision_update"]
         if "no_trade_pressure_state" in shadow_verdict:
             l12_verdict["no_trade_pressure_state"] = shadow_verdict["no_trade_pressure_state"]
+        shadow_source_verdict = str(source_verdict or l12_verdict.get("verdict") or "").upper()
+        shadow_reason = (
+            "SOURCE_EXECUTE_BLOCKED_BY_SAFE_MODE"
+            if shadow_source_verdict.startswith("EXECUTE")
+            else "SOURCE_VERDICT_NOT_EXECUTE"
+        )
         for key in ("microboost_continuation_entry", "microboost_counter_entry", "microboost_watch_entry"):
             candidate = report.get(key)
             if not isinstance(candidate, dict):
@@ -6692,6 +6698,9 @@ class WolfConstitutionalPipeline:
             shadow_candidate["lifecycle_status"] = "SHADOW_WATCH_ACTIVE"
             shadow_candidate["terminal_required"] = False
             shadow_candidate["terminal_guarantee"] = "OBSERVABILITY_ONLY"
+            shadow_candidate["shadow_reason"] = shadow_reason
+            shadow_candidate["shadow_source_verdict"] = shadow_source_verdict or "UNKNOWN"
+            shadow_candidate["shadow_source_stage"] = "POST_L12_PRE_V11"
             self._prepare_lifecycle_tracking_metadata(shadow_candidate)
             self._emit_signal_json_payload(shadow_candidate)
 
