@@ -1066,6 +1066,72 @@ def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
     assert emitted[0]["shadow_source_stage"] == "POST_L12_PRE_V11"
 
 
+def test_shadow_clean_block_watch_is_marked_observability_only(monkeypatch):
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    emitted: list[dict] = []
+    report = {
+        "clean_block_watch_entries": [
+            {
+                "symbol": "EURNZD",
+                "cluster_id": "EURNZD_20260710T113659Z_20260710T114159Z",
+                "source_clean_block_id": "EURNZD_20260710T113659Z_20260710T114159Z",
+                "signal_family": "CLEAN_BLOCK_SELL_WATCH",
+                "status": "CLEAN_BLOCK_SELL_WATCH",
+                "raw_direction": "SELL",
+                "candidate_direction": "SELL",
+                "watch_direction": "SELL",
+                "final_direction": "WAIT",
+                "signal_valid_time_utc": "2026-07-10T11:50:33+00:00",
+                "signal_valid_price": 1.7620,
+                "entry_reference_price": 1.7620,
+                "entry_zone": [1.7620],
+                "market_context_applied": True,
+                "source_clean_block_confirmed": True,
+                "valid_for_execution": False,
+            }
+        ],
+        "signal_watch_promotion_diagnostics": [],
+    }
+
+    monkeypatch.setattr(pipeline, "_signal_throttle_market_contexts", lambda **_: {})
+    monkeypatch.setattr(
+        pipeline,
+        "_hydrate_signal_throttle_candidate_market_contexts",
+        lambda **_: {"enabled": True, "snapshot_rebuild_required": False},
+    )
+    monkeypatch.setattr(pipeline, "_htf_structure_contexts_from_market_contexts", lambda _: {})
+    monkeypatch.setattr(pipeline, "_emit_htf_structure_snapshots_for_contexts", lambda _: None)
+    monkeypatch.setattr(pipeline, "_emit_microboost_intel_if_new", lambda _: None)
+    monkeypatch.setattr(pipeline, "_emit_microboost_watch_miss_diagnostic", lambda _: None)
+    monkeypatch.setattr(pipeline, "_emit_htf_structure_snapshot", lambda _: None)
+    monkeypatch.setattr(pipeline, "_apply_allowed_quorum_decision_update", lambda **_: None)
+    monkeypatch.setattr(pipeline, "_apply_no_trade_pressure_decision_update", lambda **_: None)
+    monkeypatch.setattr(pipeline, "_attach_pressure_priority_context", lambda *_: None)
+    monkeypatch.setattr(pipeline, "_attach_htf_structure_context", lambda *_: None)
+    monkeypatch.setattr(pipeline, "_attach_followthrough_context", lambda *_: None)
+    monkeypatch.setattr(pipeline, "_emit_signal_json_payload", lambda payload: emitted.append(payload) or True)
+
+    class _Analyzer:
+        def snapshot(self, *, market_contexts):
+            return dict(report)
+
+    pipeline._signal_throttle_live_analyzer = _Analyzer()
+
+    verdict: dict = {}
+    pipeline._emit_microboost_watch_shadow(symbol="EURNZD", synthesis={}, l12_verdict=verdict, source_verdict="NO_TRADE")
+
+    assert emitted
+    assert emitted[0]["status"] == "CLEAN_BLOCK_SELL_WATCH"
+    assert emitted[0]["shadow_only"] is True
+    assert emitted[0]["lifecycle_track"] is False
+    assert emitted[0]["lifecycle_status"] == "SHADOW_WATCH_ACTIVE"
+    assert emitted[0]["terminal_required"] is False
+    assert emitted[0]["terminal_guarantee"] == "OBSERVABILITY_ONLY"
+    assert emitted[0]["shadow_reason"] == "SOURCE_VERDICT_NOT_EXECUTE"
+    assert emitted[0]["shadow_source_verdict"] == "NO_TRADE"
+    assert emitted[0]["shadow_source_stage"] == "POST_L12_PRE_V11"
+
+
 def test_pipeline_records_counter_entry_emit_result():
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_lifecycle_manager = SignalLifecycleManager()

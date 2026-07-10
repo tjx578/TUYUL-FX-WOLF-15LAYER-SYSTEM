@@ -192,6 +192,8 @@ def test_scanner_cycle_clean_block_below_advisory_maturity_stays_memory_radar_ev
     assert payload["status"] == "CLEAN_BLOCK_SCANNER_MEMORY_RADAR"
     assert payload["blocked_by"] == ["PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY"]
     assert payload["next_required_stage"] == "PAIR_ROTATION_PRIMARY_AUTHORITY"
+    assert payload["market_context_applied"] is True
+    assert payload["reference_price_available"] is True
     assert payload["reason"] == "scanner_cycle_clean_block_memory_only_primary_watch_requires_pair_rotation"
     assert payload["primary_watch_authority"] == "SCANNER_CYCLE_AWARE_MEMORY_ONLY"
     assert payload["scanner_cycle_memory_only"] is True

@@ -6702,6 +6702,12 @@ class WolfConstitutionalPipeline:
         if os.getenv("SIGNAL_WATCH_SHADOW_ENABLED", "true").strip().lower() != "true":
             return
         shadow_verdict = dict(l12_verdict)
+        shadow_source_verdict = str(source_verdict or l12_verdict.get("verdict") or "").upper()
+        shadow_reason = (
+            "SOURCE_EXECUTE_BLOCKED_BY_SAFE_MODE"
+            if shadow_source_verdict.startswith("EXECUTE")
+            else "SOURCE_VERDICT_NOT_EXECUTE"
+        )
         market_contexts = self._signal_throttle_market_contexts(
             symbol=symbol,
             synthesis=synthesis,
@@ -6709,6 +6715,16 @@ class WolfConstitutionalPipeline:
             source_verdict=source_verdict,
         )
         report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        hydration = self._hydrate_signal_throttle_candidate_market_contexts(
+            report=report,
+            market_contexts=market_contexts,
+            synthesis=synthesis,
+            l12_verdict=shadow_verdict,
+        )
+        if hydration.get("snapshot_rebuild_required") is True:
+            report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        if hydration.get("enabled") is True:
+            report["candidate_market_context_hydration"] = hydration
         report["htf_structure_contexts"] = self._htf_structure_contexts_from_market_contexts(market_contexts)
         self._emit_htf_structure_snapshots_for_contexts(market_contexts)
         self._emit_microboost_intel_if_new(report)
@@ -6734,12 +6750,12 @@ class WolfConstitutionalPipeline:
             l12_verdict["no_trade_pressure_decision_update"] = shadow_verdict["no_trade_pressure_decision_update"]
         if "no_trade_pressure_state" in shadow_verdict:
             l12_verdict["no_trade_pressure_state"] = shadow_verdict["no_trade_pressure_state"]
-        shadow_source_verdict = str(source_verdict or l12_verdict.get("verdict") or "").upper()
-        shadow_reason = (
-            "SOURCE_EXECUTE_BLOCKED_BY_SAFE_MODE"
-            if shadow_source_verdict.startswith("EXECUTE")
-            else "SOURCE_VERDICT_NOT_EXECUTE"
+        self._mark_shadow_clean_block_watch_entries(
+            report,
+            shadow_reason=shadow_reason,
+            shadow_source_verdict=shadow_source_verdict or "UNKNOWN",
         )
+        self._apply_clean_block_watch_routes(l12_verdict=shadow_verdict, report=report)
         for key in ("microboost_continuation_entry", "microboost_counter_entry", "microboost_watch_entry"):
             candidate = report.get(key)
             if not isinstance(candidate, dict):
@@ -6748,15 +6764,51 @@ class WolfConstitutionalPipeline:
             if status == "NONE" or not status.endswith("_WATCH"):
                 continue
             shadow_candidate = dict(candidate)
-            shadow_candidate["shadow_only"] = True
-            shadow_candidate["lifecycle_status"] = "SHADOW_WATCH_ACTIVE"
-            shadow_candidate["terminal_required"] = False
-            shadow_candidate["terminal_guarantee"] = "OBSERVABILITY_ONLY"
-            shadow_candidate["shadow_reason"] = shadow_reason
-            shadow_candidate["shadow_source_verdict"] = shadow_source_verdict or "UNKNOWN"
-            shadow_candidate["shadow_source_stage"] = "POST_L12_PRE_V11"
+            self._mark_shadow_watch_payload(
+                shadow_candidate,
+                shadow_reason=shadow_reason,
+                shadow_source_verdict=shadow_source_verdict or "UNKNOWN",
+            )
             self._prepare_lifecycle_tracking_metadata(shadow_candidate)
             self._emit_signal_json_payload(shadow_candidate)
+
+    def _mark_shadow_clean_block_watch_entries(
+        self,
+        report: dict[str, Any],
+        *,
+        shadow_reason: str,
+        shadow_source_verdict: str,
+    ) -> None:
+        entries = report.get("clean_block_watch_entries")
+        if not isinstance(entries, list):
+            return
+        shadow_entries: list[dict[str, Any]] = []
+        for raw_entry in entries:
+            if not isinstance(raw_entry, dict):
+                continue
+            entry = dict(raw_entry)
+            self._mark_shadow_watch_payload(
+                entry,
+                shadow_reason=shadow_reason,
+                shadow_source_verdict=shadow_source_verdict,
+            )
+            shadow_entries.append(entry)
+        report["clean_block_watch_entries"] = shadow_entries
+
+    @staticmethod
+    def _mark_shadow_watch_payload(
+        payload: dict[str, Any],
+        *,
+        shadow_reason: str,
+        shadow_source_verdict: str,
+    ) -> None:
+        payload["shadow_only"] = True
+        payload["lifecycle_status"] = "SHADOW_WATCH_ACTIVE"
+        payload["terminal_required"] = False
+        payload["terminal_guarantee"] = "OBSERVABILITY_ONLY"
+        payload["shadow_reason"] = shadow_reason
+        payload["shadow_source_verdict"] = shadow_source_verdict or "UNKNOWN"
+        payload["shadow_source_stage"] = "POST_L12_PRE_V11"
 
     def _finalize_idle_signal_blocks(
         self,

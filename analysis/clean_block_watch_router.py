@@ -104,6 +104,8 @@ def route_clean_block_to_watch(
                     blocked_by=blocked_by,
                     clean_block_seconds=clean_block_seconds,
                     authority=authority,
+                    market_context_applied=market_context is not None and signal_price is not None,
+                    signal_price=signal_price,
                 ),
                 emit_as_watch=False,
                 diagnostic=True,
@@ -116,6 +118,8 @@ def route_clean_block_to_watch(
                 blocked_by=blocked_by,
                 clean_block_seconds=clean_block_seconds,
                 authority=authority,
+                market_context_applied=market_context is not None and signal_price is not None,
+                signal_price=signal_price,
             ),
             emit_as_watch=False,
             diagnostic=True,
@@ -371,6 +375,8 @@ def _clean_block_radar_payload(
     blocked_by: list[str],
     clean_block_seconds: int,
     authority: Mapping[str, Any],
+    market_context_applied: bool,
+    signal_price: float | None,
 ) -> dict[str, Any]:
     authority_blocked = bool(set(blocked_by) & _PRIMARY_AUTHORITY_BLOCKERS)
     payload = {
@@ -383,7 +389,8 @@ def _clean_block_radar_payload(
         "blocked_by": blocked_by,
         "next_required_stage": _clean_block_radar_next_stage(blocked_by),
         "clean_block_threshold_seconds": int(clean_block_seconds),
-        "market_context_applied": False,
+        "market_context_applied": bool(market_context_applied),
+        "reference_price_available": signal_price is not None,
         "valid_for_execution": False,
         "execution_valid_now": False,
         "is_final_signal": False,
@@ -397,6 +404,9 @@ def _clean_block_radar_payload(
             else "clean_block_confirmed_market_context_pending"
         ),
     }
+    if signal_price is not None:
+        payload["signal_valid_price"] = signal_price
+        payload["entry_reference_price"] = signal_price
     payload.update(_promotion_authority_fields(authority))
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
@@ -493,6 +503,8 @@ def _diagnostic_payload(
     blocked_by: list[str],
     clean_block_seconds: int,
     authority: Mapping[str, Any],
+    market_context_applied: bool = False,
+    signal_price: float | None = None,
 ) -> dict[str, Any]:
     payload = {
         "event": "signal_watch_promotion_diagnostic",
@@ -502,12 +514,17 @@ def _diagnostic_payload(
         "blocked_by": blocked_by,
         "next_required_stage": _next_required_stage(blocked_by),
         "clean_block_threshold_seconds": int(clean_block_seconds),
+        "market_context_applied": bool(market_context_applied),
+        "reference_price_available": signal_price is not None,
         "valid_for_execution": False,
         "is_final_signal": False,
         "final_direction": "WAIT",
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
         "reason": "clean_block_watch_promotion_blocked_explicitly",
     }
+    if signal_price is not None:
+        payload["signal_valid_price"] = signal_price
+        payload["entry_reference_price"] = signal_price
     payload.update(_promotion_authority_fields(authority))
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
