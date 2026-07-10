@@ -509,6 +509,8 @@ def analyze_signal_throttle_events(
                 clean_block_seconds=clean_block_seconds,
             ),
             "clean_watch_candidates": [],
+            "primary_clean_watch_candidates": [],
+            "clean_block_watch_route_candidates": [],
             "clean_block_watch_routes": [],
             "clean_block_watch_entries": [],
             "signal_watch_promotion_diagnostics": [],
@@ -611,12 +613,17 @@ def analyze_signal_throttle_events(
         clean_block_seconds=clean_block_seconds,
         window_seconds=candidate_lifecycle_window_seconds,
     )
+    pure_block_ledger = _pure_pressure_ledger_payload(pure_blocks, clean_block_seconds=clean_block_seconds)
+    primary_clean_watch_candidates = _primary_clean_watch_candidates(pure_block_ledger)
     v1_clean_block_ledger = _v1_clean_block_ledger_payload(
         lifecycle_blocks,
         clean_block_seconds=clean_block_seconds,
     )
     clean_watch_candidates = v1_clean_block_ledger
-    pure_block_ledger = _pure_pressure_ledger_payload(pure_blocks, clean_block_seconds=clean_block_seconds)
+    clean_block_watch_route_candidates = _clean_block_watch_route_candidates(
+        primary_clean_watch_candidates,
+        v1_clean_block_ledger,
+    )
     pure_top_blocks = [
         _pure_pressure_block_payload(block, clean_block_seconds)
         for block in rank_pressure_blocks(pure_blocks)[:10]
@@ -625,16 +632,16 @@ def analyze_signal_throttle_events(
     v1_active_clean_block = _v1_active_clean_block(v1_clean_block_ledger)
     pressure_tier_snapshot = _build_pressure_tier_snapshot(
         events=ordered,
-        blocks=lifecycle_blocks,
+        blocks=pure_blocks,
         symbol_activity=symbol_activity,
-        clean_watch_candidates=clean_watch_candidates,
+        clean_watch_candidates=clean_block_watch_route_candidates,
         candidate_lifecycle=candidate_lifecycle,
         theme_scores=theme_scores,
         clean_block_seconds=clean_block_seconds,
         state_metadata=state_metadata,
     )
     clean_block_watch_routes = route_clean_blocks_to_watch(
-        clean_watch_candidates,
+        clean_block_watch_route_candidates,
         market_contexts=market_contexts,
         clean_block_seconds=clean_block_seconds,
     )
@@ -804,6 +811,8 @@ def analyze_signal_throttle_events(
         "counter_rotation": candidate_lifecycle.get("counter_rotation"),
         "candidate_lifecycle": candidate_lifecycle,
         "clean_watch_candidates": clean_watch_candidates,
+        "primary_clean_watch_candidates": primary_clean_watch_candidates,
+        "clean_block_watch_route_candidates": clean_block_watch_route_candidates,
         "clean_block_watch_routes": [route.to_dict() for route in clean_block_watch_routes],
         "clean_block_watch_entries": clean_block_watch_entries,
         "signal_watch_promotion_diagnostics": signal_watch_promotion_diagnostics,
@@ -1732,6 +1741,56 @@ def _clean_watch_candidates_from_blocks(blocks: list[PressureBlock], clean_block
         seen.add(key)
         candidates.append(payload)
     return candidates
+
+
+def _primary_clean_watch_candidates(pure_block_ledger: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for raw in pure_block_ledger:
+        if not isinstance(raw, dict) or raw.get("clean_block_valid") is not True:
+            continue
+        candidate = dict(raw)
+        candidate["primary_watch_eligible"] = True
+        candidate["primary_watch_authority"] = "PAIR_ROTATION_ONLY"
+        candidate["primary_watch_authority_rule"] = "PAIR_ROTATION_ONLY_PRIMARY_WATCH"
+        candidate["scanner_cycle_memory_only"] = False
+        candidates.append(candidate)
+    return candidates
+
+
+def _clean_block_watch_route_candidates(
+    primary_candidates: list[dict[str, Any]],
+    scanner_cycle_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def append_candidate(raw: dict[str, Any], *, primary: bool) -> None:
+        candidate = dict(raw)
+        source_id = str(candidate.get("source_clean_block_id") or "").strip()
+        key = source_id or "|".join(
+            str(candidate.get(part) or "")
+            for part in ("symbol", "clean_block_start_utc", "clean_block_valid_since_utc")
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        if primary:
+            candidate.setdefault("primary_watch_eligible", True)
+            candidate.setdefault("primary_watch_authority", "PAIR_ROTATION_ONLY")
+            candidate.setdefault("primary_watch_authority_rule", "PAIR_ROTATION_ONLY_PRIMARY_WATCH")
+            candidate.setdefault("scanner_cycle_memory_only", False)
+        else:
+            candidate.setdefault("primary_watch_eligible", False)
+            candidate.setdefault("primary_watch_authority", "SCANNER_CYCLE_AWARE_MEMORY_ONLY")
+            candidate.setdefault("primary_watch_authority_rule", "SCANNER_CYCLE_AWARE_MEMORY_RADAR_ONLY")
+            candidate.setdefault("scanner_cycle_memory_only", True)
+        merged.append(candidate)
+
+    for candidate in primary_candidates:
+        append_candidate(candidate, primary=True)
+    for candidate in scanner_cycle_candidates:
+        append_candidate(candidate, primary=False)
+    return merged
 
 
 def _attach_clean_block_source_to_microboost_summary(
@@ -3414,6 +3473,7 @@ def _build_pressure_tier_snapshot(
 ) -> dict[str, Any]:
     live_window_seconds = int(_env_float("SIGNAL_THROTTLE_PRESSURE_TIER_LIVE_WINDOW_MINUTES", 120.0) * 60)
     session_window_seconds = int(_env_float("SIGNAL_THROTTLE_PRESSURE_TIER_SESSION_WINDOW_HOURS", 24.0) * 3600)
+    visible_tier_1_max_symbols = int(_env_float("SIGNAL_THROTTLE_TIER1_VISIBLE_MAX_SYMBOLS", 5.0))
     deployment_ids = _pressure_tier_deployment_ids(state_metadata)
     if not _env_bool("SIGNAL_THROTTLE_PRESSURE_TIER_ENABLED", True):
         return _disabled_pressure_tier_snapshot(
@@ -3435,6 +3495,7 @@ def _build_pressure_tier_snapshot(
         live_window_seconds=live_window_seconds,
         session_window_seconds=session_window_seconds,
         deployment_ids=deployment_ids,
+        visible_tier_1_max_symbols=visible_tier_1_max_symbols,
     )
     if _env_bool("SIGNAL_THROTTLE_PRESSURE_TIER_EXECUTION_IMPACT", False):
         snapshot["execution_impact_guard"] = "FORCED_FALSE_DIAGNOSTIC_ONLY"

@@ -13,6 +13,7 @@ from analysis.signal_throttle_log_analyzer import (
 from analysis.signal_throttle_pressure_tier import (
     ARCHIVE_SCOPE,
     IMPACT_TIER_1_KEY_LEVEL,
+    TIER_1_OVERFLOW_RADAR,
     TIER_1_PRIMARY_ANALYSIS,
     TIER_2_CONFIRMATION_SUPPORT,
     TIER_3_KEY_LEVEL_RADAR_EXCEPTION,
@@ -284,6 +285,7 @@ def test_pressure_tier_snapshot_log_payload_shows_tier_1_and_2_only():
         "summary": {
             "tier_1": 1,
             "tier_2": 1,
+            "tier_1_overflow_radar": 0,
             "tier_3": 2,
             "fragmented_pressure_radar": 1,
             "pressure_memory_radar": 1,
@@ -337,6 +339,7 @@ def test_pressure_tier_snapshot_log_payload_shows_tier_1_and_2_only():
         "tier_1": 1,
         "tier_2": 1,
         "tier_3_hidden": 4,
+        "tier_1_overflow_radar": 0,
         "tier_3_theme_radar": 2,
         "fragmented_pressure_radar": 1,
         "pressure_memory_radar": 1,
@@ -345,6 +348,7 @@ def test_pressure_tier_snapshot_log_payload_shows_tier_1_and_2_only():
         "unsafe_mixed_deployment": 0,
     }
     assert payload["radar_breakdown"] == {
+        "tier_1_overflow_radar": 0,
         "tier_3_theme_radar": 2,
         "fragmented_pressure_radar": 1,
         "pressure_memory_radar": 1,
@@ -363,10 +367,39 @@ def test_pressure_tier_snapshot_log_payload_shows_tier_1_and_2_only():
     assert payload["tier_2"][0]["symbol"] == "AUDCAD"
     assert payload["tier_3_hidden_count"] == 4
     assert payload["radar_hidden_count"] == 4
+    assert payload["visibility_policy"]["tier_1"] == "VISIBLE_PRIMARY_ANALYSIS_CAPPED"
+    assert payload["visibility_policy"]["tier_1_overflow_radar"] == "HIDDEN_FROM_PRIMARY_WATCH_CONTEXT"
     assert payload["visibility_policy"]["tier_3"] == "HIDDEN_FROM_SNAPSHOT_ROWS"
     assert payload["execution_guard"]["decision_update_tier_context_allowed"] is False
     assert payload["tier_is_execution_signal"] is False
     assert payload["tier_execution_impact"] is False
+
+
+def test_pressure_tier_caps_visible_tier_1_and_moves_overflow_to_radar():
+    events = []
+    blocks = []
+    for index, symbol in enumerate(["EURUSD", "GBPUSD", "USDJPY", "AUDUSD"]):
+        events.extend(_pressure_event(index * 10 + offset, symbol, "BUY") for offset in range(0, 361, 60))
+        blocks.append(
+            _pressure_block(
+                symbol,
+                start_offset_seconds=index * 10,
+                duration_seconds=360,
+                effective_density_per_minute=5.0 - index,
+            )
+        )
+
+    snapshot = build_pressure_tier_snapshot(events, blocks=blocks, visible_tier_1_max_symbols=2)
+
+    assert len(snapshot["tiers"]["tier_1"]) == 2
+    assert len(snapshot["tiers"]["tier_1_overflow_radar"]) == 2
+    overflow = [
+        row for row in snapshot["symbols"] if row["effective_pressure_tier"] == TIER_1_OVERFLOW_RADAR
+    ]
+    assert len(overflow) == 2
+    assert all(row["original_effective_pressure_tier"] == TIER_1_PRIMARY_ANALYSIS for row in overflow)
+    assert all(row["tier_action"] == "TIER_1_OVERFLOW_RADAR_ONLY" for row in overflow)
+    assert all("TIER_1_VISIBLE_LIMIT_OVERFLOW" in row["tier_reasons"] for row in overflow)
 
 
 def test_pressure_priority_context_attaches_tier_1_to_watch_only_as_context():

@@ -507,6 +507,7 @@ class SignalJsonEvent:
     market_structure: dict[str, Any] | None = None
     execution_gate: dict[str, Any] | None = None
     lifecycle: dict[str, Any] | None = None
+    pair_memory_context: dict[str, Any] | None = None
     pressure_priority_context: dict[str, Any] | None = None
     followthrough_context: dict[str, Any] | None = None
     htf_structure_context: dict[str, Any] | None = None
@@ -620,6 +621,7 @@ class SignalJsonEmitter:
         self._cluster_watch_event_seconds: dict[str, float] = {}
         self._cluster_watch_wall_seconds: dict[str, float] = {}
         self._cluster_watch_revisions: dict[str, int] = {}
+        self._cluster_pair_memory: dict[str, dict[str, Any]] = {}
         self._emitted_watch_refs: set[str] = set()
         self._last_watch_content: dict[str, str] = {}
         self._cluster_semantic_watch: dict[str, float] = {}
@@ -657,6 +659,7 @@ class SignalJsonEmitter:
             _apply_signal_watch_followthrough_fields(payload)
             _apply_signal_watch_microboost_role_fields(payload)
             _apply_signal_htf_structure_fields(payload, prefix="signal_watch")
+            self._apply_pair_memory_context(payload)
         elif is_decision_update:
             _strip_pressure_priority_fields(payload)
             _strip_followthrough_fields(payload)
@@ -962,6 +965,65 @@ class SignalJsonEmitter:
         self._cluster_semantic_watch[key] = now
         return False
 
+    def _apply_pair_memory_context(self, payload: dict[str, Any]) -> None:
+        cluster_key = str(
+            payload.get("cluster_id")
+            or f"{payload.get('symbol')}|{payload.get('signal_family')}|{payload.get('entry_reference_price')}"
+        )
+        current_price = _optional_float(payload.get("entry_reference_price") or payload.get("signal_valid_price"))
+        current_state = self._cluster_semantic_watch_key(payload)
+        previous = self._cluster_pair_memory.get(cluster_key)
+        previous_price = _optional_float((previous or {}).get("current_price"))
+        delta_pips = _price_delta_pips(
+            symbol=str(payload.get("symbol") or ""),
+            current_price=current_price,
+            previous_price=previous_price,
+        )
+        existing = _dict_value(payload.get("pair_memory_context")) or {}
+        lifecycle_transition = (
+            "NEW_CLEAN_BLOCK_WATCH"
+            if previous is None
+            else "SAME_CLEAN_BLOCK_STILL_PENDING"
+        )
+        phase_structure_validation = (
+            "NO_PREVIOUS_WATCH_STATE"
+            if previous is None
+            else "NO_NEW_STATE_CHANGE"
+            if previous.get("material_state") == current_state
+            else "MATERIAL_STATE_CHANGED"
+        )
+        context = {
+            **existing,
+            "symbol": _optional_str(payload.get("symbol")) or existing.get("symbol"),
+            "cluster_id": _optional_str(payload.get("cluster_id")) or existing.get("cluster_id"),
+            "previous_valid_signal_id": (previous or {}).get("signal_id"),
+            "previous_valid_price": previous_price,
+            "current_price": current_price,
+            "price_delta_from_previous_valid_pips": delta_pips,
+            "lifecycle_transition": lifecycle_transition,
+            "phase_structure_validation": phase_structure_validation,
+            "recommended_interpretation": (
+                "TRACK_AS_FRESH_WATCH_CONTEXT"
+                if previous is None or phase_structure_validation == "MATERIAL_STATE_CHANGED"
+                else "DO_NOT_TREAT_AS_FRESH_SIGNAL"
+            ),
+            "source_clean_block_id": payload.get("source_clean_block_id") or existing.get("source_clean_block_id"),
+            "active_clean_block_id": payload.get("source_clean_block_id") or existing.get("active_clean_block_id"),
+            "watch_direction": payload.get("watch_direction") or existing.get("watch_direction"),
+            "price_position": payload.get("price_position") or existing.get("price_position"),
+            "m15_phase": payload.get("m15_phase") or existing.get("m15_phase"),
+            "h1_phase": payload.get("h1_phase") or existing.get("h1_phase"),
+            "valid_for_execution": False,
+            "execution_impact": False,
+        }
+        payload["pair_memory_context"] = _clean_context(context)
+        self._cluster_pair_memory[cluster_key] = {
+            "signal_id": payload.get("signal_id"),
+            "current_price": current_price,
+            "material_state": current_state,
+            "source_clean_block_id": payload.get("source_clean_block_id"),
+        }
+
 
 def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonEvent | None:
     if not isinstance(counter_entry, dict):
@@ -1241,6 +1303,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         market_structure=_dict_value(counter_entry.get("market_structure")),
         execution_gate=_dict_value(counter_entry.get("execution_gate")) or _execution_gate_context(counter_entry),
         lifecycle=_dict_value(counter_entry.get("lifecycle")) or _lifecycle_context(counter_entry),
+        pair_memory_context=(
+            _dict_value(counter_entry.get("pair_memory_context")) if is_watch else None
+        ),
         pressure_priority_context=(
             _dict_value(counter_entry.get("pressure_priority_context")) if is_watch else None
         ),
@@ -2445,6 +2510,20 @@ def _pip_size_for_symbol(symbol: str) -> float | None:
         return 0.01
     quote = symbol[3:6] if len(symbol) >= 6 else ""
     return 0.01 if quote == "JPY" else 0.0001
+
+
+def _price_delta_pips(
+    *,
+    symbol: str,
+    current_price: float | None,
+    previous_price: float | None,
+) -> float | None:
+    if current_price is None or previous_price is None:
+        return None
+    pip_size = _pip_size_for_symbol(str(symbol or "").upper())
+    if pip_size is None or pip_size <= 0:
+        return None
+    return round((current_price - previous_price) / pip_size, 2)
 
 
 def _clean_context(value: Any) -> Any:

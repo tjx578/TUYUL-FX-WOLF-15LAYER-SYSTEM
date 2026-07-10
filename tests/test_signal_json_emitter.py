@@ -380,6 +380,45 @@ def test_signal_watch_change_only_reemits_on_duration_bucket_change(caplog):
     assert caplog.text.count("[SignalWatchJSON]") == 2
 
 
+def test_signal_watch_carries_pair_memory_context_for_same_cluster(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
+    first = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        signal_id="USDCAD_BUY_WATCH_1",
+        status="CLEAN_BLOCK_BUY_WATCH",
+        signal_family="CLEAN_BLOCK_BUY_WATCH",
+        watch_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        entry_reference_price=1.3769,
+        signal_valid_price=1.3769,
+        action="WAIT_PRICE_THEME_STRUCTURE",
+        source_clean_block_id="USDCAD_BLOCK_1",
+    )
+    changed = _event(
+        cluster_id="USDCAD_20260519T145605Z",
+        signal_id="USDCAD_BUY_WATCH_2",
+        status="CLEAN_BLOCK_BUY_WATCH",
+        signal_family="CLEAN_BLOCK_BUY_WATCH",
+        watch_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        entry_reference_price=1.3771,
+        signal_valid_price=1.3771,
+        action="WAIT_M15_CLOSE_OR_STRUCTURE_TARGET",
+        source_clean_block_id="USDCAD_BLOCK_1",
+    )
+
+    assert emitter.emit(first) is True
+    assert emitter.emit(changed) is True
+
+    assert '"pair_memory_context":' in caplog.text
+    assert '"lifecycle_transition":"NEW_CLEAN_BLOCK_WATCH"' in caplog.text
+    assert '"lifecycle_transition":"SAME_CLEAN_BLOCK_STILL_PENDING"' in caplog.text
+    assert '"previous_valid_signal_id":"USDCAD_BUY_WATCH_1"' in caplog.text
+    assert '"price_delta_from_previous_valid_pips":2.0' in caplog.text
+
+
 def test_signal_watch_bucket_env_accepts_space_separated_values(monkeypatch):
     monkeypatch.setenv("SIGNAL_WATCH_BUCKET_EMIT_MINUTES", "5 10 15 20 30")
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)

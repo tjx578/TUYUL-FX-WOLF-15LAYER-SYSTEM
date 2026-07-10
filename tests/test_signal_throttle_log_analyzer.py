@@ -1018,6 +1018,43 @@ def test_all_lifecycle_clean_blocks_get_watch_or_diagnostic_routes():
     assert all(entry["status"].startswith("CLEAN_BLOCK_") for entry in report["clean_block_watch_entries"])
 
 
+def test_scanner_cycle_clean_blocks_remain_radar_when_pair_rotation_is_interrupted():
+    events: list[SignalThrottleLogEvent] = []
+    for index in range(12):
+        events.append(_event(index * 60, "USDCAD", event_type="ALLOWED"))
+        events.append(_event(index * 60 + 30, "GBPNZD", event_type="ALLOWED"))
+    markets = {
+        "USDCAD": MarketContext(
+            symbol="USDCAD",
+            raw_allowed_direction="BUY",
+            price_at_signal_start=1.3730,
+            price_at_signal_end=1.3740,
+            m15_phase="BULLISH_PULLBACK",
+            h1_phase="BULLISH",
+            price_position="MID_RANGE",
+        ),
+        "GBPNZD": MarketContext(
+            symbol="GBPNZD",
+            raw_allowed_direction="BUY",
+            price_at_signal_start=2.0600,
+            price_at_signal_end=2.0620,
+            m15_phase="BULLISH_PULLBACK",
+            h1_phase="BULLISH",
+            price_position="MID_RANGE",
+        ),
+    }
+
+    report = analyze_signal_throttle_events(events, market_contexts=markets)
+
+    assert report["primary_clean_watch_candidates"] == []
+    assert report["clean_block_watch_entries"] == []
+    assert {item["symbol"] for item in report["clean_watch_candidates"]} == {"USDCAD", "GBPNZD"}
+    assert {
+        item["status"] for item in report["signal_watch_promotion_diagnostics"]
+    } == {"CLEAN_BLOCK_SCANNER_MEMORY_RADAR"}
+    assert report["pressure_tier_snapshot"]["summary"]["tier_1"] == 0
+
+
 def test_live_analyzer_same_second_batch_not_hard_interrupt():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
     base = datetime(2026, 5, 8, 12, 0, 5, tzinfo=UTC)

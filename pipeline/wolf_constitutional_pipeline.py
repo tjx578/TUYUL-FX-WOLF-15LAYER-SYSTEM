@@ -4312,7 +4312,8 @@ class WolfConstitutionalPipeline:
             if isinstance(row, dict) and str(row.get("symbol") or "").strip()
         }
         candidates: list[dict[str, Any]] = []
-        for raw in report.get("clean_watch_candidates") or []:
+        raw_candidates = report.get("clean_block_watch_route_candidates") or report.get("clean_watch_candidates") or []
+        for raw in raw_candidates:
             if not isinstance(raw, dict):
                 continue
             symbol = str(raw.get("symbol") or "").upper()
@@ -7055,6 +7056,10 @@ class WolfConstitutionalPipeline:
             "PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS": _f(
                 "PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS",
                 os.getenv("SIGNAL_THROTTLE_PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS", "60"),
+            ),
+            "SIGNAL_THROTTLE_TIER1_VISIBLE_MAX_SYMBOLS": _f(
+                "SIGNAL_THROTTLE_TIER1_VISIBLE_MAX_SYMBOLS",
+                "5",
             ),
             "HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY": _b(
                 "HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY",

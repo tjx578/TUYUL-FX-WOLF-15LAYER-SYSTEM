@@ -17,6 +17,7 @@ TIER_1_PRIMARY_ANALYSIS = "TIER_1_PRIMARY_ANALYSIS"
 TIER_2_CONFIRMATION_SUPPORT = "TIER_2_CONFIRMATION_SUPPORT"
 TIER_3_THEME_RADAR = "TIER_3_THEME_RADAR"
 TIER_3_KEY_LEVEL_RADAR_EXCEPTION = "TIER_3_KEY_LEVEL_RADAR_EXCEPTION"
+TIER_1_OVERFLOW_RADAR = "TIER_1_OVERFLOW_RADAR"
 TIER_FRAGMENTED_PRESSURE_RADAR = "FRAGMENTED_PRESSURE_RADAR"
 TIER_PRESSURE_MEMORY_RADAR = "PRESSURE_MEMORY_RADAR"
 TIER_THEME_ROTATION_RADAR = "THEME_ROTATION_RADAR"
@@ -38,6 +39,7 @@ _KEY_LEVEL_PRICE_POSITIONS = {"MAIN_SUPPORT", "MAIN_RESISTANCE"}
 _TIER_SOURCE_EVENT = "SignalThrottlePressureTierSnapshot"
 _LOG_SCHEMA_VERSION = "1.2-pressure-tier"
 _RADAR_HIDDEN_TIER_KEYS = (
+    ("tier_1_overflow_radar", "tier_1_overflow_radar"),
     ("tier_3", "tier_3_theme_radar"),
     ("fragmented_pressure_radar", "fragmented_pressure_radar"),
     ("pressure_memory_radar", "pressure_memory_radar"),
@@ -88,6 +90,7 @@ def build_pressure_tier_snapshot(
     live_window_seconds: int = 7200,
     session_window_seconds: int = 86400,
     deployment_ids: Iterable[str] | None = None,
+    visible_tier_1_max_symbols: int = 5,
 ) -> dict[str, Any]:
     """Build a diagnostic-only priority ranking for pressure analysis."""
 
@@ -179,6 +182,7 @@ def build_pressure_tier_snapshot(
         rows.append(_symbol_row(symbol, live_metrics, session_metrics, archive_metrics))
 
     rows.sort(key=_symbol_row_sort_key)
+    rows = _apply_tier_1_visible_cap(rows, visible_tier_1_max_symbols)
     return _snapshot_payload(
         generated_at=generated_at,
         symbols=rows,
@@ -243,7 +247,8 @@ def pressure_tier_snapshot_log_payload(
         "stale_archive_count": summary["stale_archive"],
         "unsafe_mixed_deployment_count": summary["unsafe_mixed_deployment"],
         "visibility_policy": {
-            "tier_1": "VISIBLE_IN_SNAPSHOT_AND_SIGNAL_WATCH_CONTEXT",
+            "tier_1": "VISIBLE_PRIMARY_ANALYSIS_CAPPED",
+            "tier_1_overflow_radar": "HIDDEN_FROM_PRIMARY_WATCH_CONTEXT",
             "tier_2": "VISIBLE_IN_SNAPSHOT_AND_SIGNAL_WATCH_CONTEXT",
             "tier_3": "HIDDEN_FROM_SNAPSHOT_ROWS",
             "radar_buckets": "HIDDEN_FROM_LOG_ROWS_COUNTS_ONLY",
@@ -313,6 +318,9 @@ def _snapshot_payload(
             row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_2_CONFIRMATION_SUPPORT
         ],
         "tier_3": [row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_3_THEME_RADAR],
+        "tier_1_overflow_radar": [
+            row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_1_OVERFLOW_RADAR
+        ],
         "fragmented_pressure_radar": [
             row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_FRAGMENTED_PRESSURE_RADAR
         ],
@@ -976,6 +984,8 @@ def _clean_block_maturity_score(
 def _tier_action(tier: str) -> str:
     if tier == TIER_1_PRIMARY_ANALYSIS:
         return "PRIORITIZE_ANALYSIS"
+    if tier == TIER_1_OVERFLOW_RADAR:
+        return "TIER_1_OVERFLOW_RADAR_ONLY"
     if tier == TIER_2_CONFIRMATION_SUPPORT:
         return "CONFIRMATION_SUPPORT"
     if tier == TIER_PRESSURE_MEMORY_RADAR:
@@ -996,6 +1006,7 @@ def _tier_action(tier: str) -> str:
 def _tier_family(tier: str) -> str:
     return {
         TIER_1_PRIMARY_ANALYSIS: "CLEAN_BLOCK",
+        TIER_1_OVERFLOW_RADAR: "TIER_1_OVERFLOW_RADAR",
         TIER_2_CONFIRMATION_SUPPORT: "CONFIRMATION_SUPPORT",
         TIER_PRESSURE_MEMORY_RADAR: "PRESSURE_MEMORY_RADAR",
         TIER_THEME_ROTATION_RADAR: "THEME_ROTATION_RADAR",
@@ -1011,15 +1022,46 @@ def _symbol_row_sort_key(row: Mapping[str, Any]) -> tuple[int, float, str]:
     priority = {
         TIER_1_PRIMARY_ANALYSIS: 0,
         TIER_2_CONFIRMATION_SUPPORT: 1,
-        TIER_PRESSURE_MEMORY_RADAR: 2,
-        TIER_THEME_ROTATION_RADAR: 3,
-        TIER_FRAGMENTED_PRESSURE_RADAR: 4,
-        TIER_3_THEME_RADAR: 5,
-        TIER_STALE_ARCHIVE: 6,
-        TIER_UNSAFE_MIXED_DEPLOYMENT: 7,
-        TIER_NONE: 8,
+        TIER_1_OVERFLOW_RADAR: 2,
+        TIER_PRESSURE_MEMORY_RADAR: 3,
+        TIER_THEME_ROTATION_RADAR: 4,
+        TIER_FRAGMENTED_PRESSURE_RADAR: 5,
+        TIER_3_THEME_RADAR: 6,
+        TIER_STALE_ARCHIVE: 7,
+        TIER_UNSAFE_MIXED_DEPLOYMENT: 8,
+        TIER_NONE: 9,
     }.get(str(row.get("effective_pressure_tier")), 9)
     return priority, -float(row.get("tier_score") or 0.0), str(row.get("symbol") or "")
+
+
+def _apply_tier_1_visible_cap(rows: list[dict[str, Any]], max_symbols: int) -> list[dict[str, Any]]:
+    try:
+        limit = max(1, int(max_symbols))
+    except (TypeError, ValueError):
+        limit = 5
+    visible_count = 0
+    capped: list[dict[str, Any]] = []
+    for row in rows:
+        if row.get("effective_pressure_tier") != TIER_1_PRIMARY_ANALYSIS:
+            capped.append(row)
+            continue
+        visible_count += 1
+        if visible_count <= limit:
+            capped.append(row)
+            continue
+        overflow = dict(row)
+        reasons = list(overflow.get("tier_reasons") or [])
+        reasons.append("TIER_1_VISIBLE_LIMIT_OVERFLOW")
+        overflow["original_effective_pressure_tier"] = TIER_1_PRIMARY_ANALYSIS
+        overflow["effective_pressure_tier"] = TIER_1_OVERFLOW_RADAR
+        overflow["tier_action"] = _tier_action(TIER_1_OVERFLOW_RADAR)
+        overflow["tier_family"] = _tier_family(TIER_1_OVERFLOW_RADAR)
+        overflow["tier_reasons"] = list(dict.fromkeys(str(reason) for reason in reasons if str(reason or "").strip()))
+        overflow["pure_signal_throttle_tier"] = None
+        overflow["tier_1_visible_overflow"] = True
+        capped.append(overflow)
+    capped.sort(key=_symbol_row_sort_key)
+    return capped
 
 
 def _all_symbols(

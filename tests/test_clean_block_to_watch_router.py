@@ -10,8 +10,15 @@ from analysis.clean_block_watch_router import (
 from analysis.market_context_validator import MarketContext
 
 
-def _candidate(symbol="USDCAD", direction="BUY", start="2026-06-23T05:00:49+00:00", end="2026-06-23T05:57:02+00:00"):
-    return {
+def _candidate(
+    symbol="USDCAD",
+    direction="BUY",
+    start="2026-06-23T05:00:49+00:00",
+    end="2026-06-23T05:57:02+00:00",
+    *,
+    primary=True,
+):
+    payload = {
         "symbol": symbol,
         "direction": direction,
         "block_start_utc": start,
@@ -33,6 +40,22 @@ def _candidate(symbol="USDCAD", direction="BUY", start="2026-06-23T05:00:49+00:0
         "raw_signal_throttle_primary_severity": "ERROR",
         "raw_pressure_origin": "SIGNAL_THROTTLE_RAW_THROTTLED",
     }
+    if primary:
+        payload.update(
+            {
+                "ledger_type": "PURE_PRESSURE_LEDGER",
+                "ledger_source": "SIGNAL_THROTTLE_PURE_PRESSURE_LEDGER",
+                "split_rule": "PAIR_ROTATION_ONLY",
+                "gap_policy": "QUALITY_ONLY",
+                "scanner_cycle_aware": False,
+                "primary_watch_eligible": True,
+            }
+        )
+    return payload
+
+
+def _scanner_candidate(**overrides):
+    return _candidate(primary=False, **overrides)
 
 
 def _market(symbol="USDCAD"):
@@ -88,7 +111,11 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
     assert payload["valid_for_execution"] is False
     assert payload["requires_m15_close"] is False
     assert payload["requires_m15_close_policy"] == "OPTIONAL_HTF_ALIGNED_CONTINUATION"
-    assert payload["ledger_type"] == "V1_SCANNER_CLEAN_BLOCK_LEDGER"
+    assert payload["ledger_type"] == "PURE_PRESSURE_LEDGER"
+    assert payload["primary_watch_authority"] == "PAIR_ROTATION_ONLY"
+    assert payload["primary_watch_authority_rule"] == "PAIR_ROTATION_ONLY_PRIMARY_WATCH"
+    assert payload["scanner_cycle_memory_only"] is False
+    assert payload["pair_memory_context"]["phase_structure_validation"] == "PENDING_PRICE_THEME_STRUCTURE"
     assert payload["source_stream_profile"]["RAW_THROTTLED"] == 36
     assert payload["raw_signal_throttle_primary_severity"] == "ERROR"
     assert payload["raw_pressure_origin"] == "SIGNAL_THROTTLE_RAW_THROTTLED"
@@ -151,6 +178,21 @@ def test_clean_block_router_uses_raw_pressure_direction_when_direction_unresolve
     assert route.payload["candidate_direction"] == "BUY"
     assert route.payload["final_direction"] == "WAIT"
     assert route.payload["valid_for_execution"] is False
+
+
+def test_scanner_cycle_clean_block_stays_memory_radar_even_with_market_context():
+    route = route_clean_block_to_watch(_scanner_candidate(), market_context=_market())
+
+    assert route.event == "signal_throttle_clean_block_radar"
+    assert route.emit_as_watch is False
+    assert route.diagnostic is True
+    payload = route.payload
+    assert payload["status"] == "CLEAN_BLOCK_SCANNER_MEMORY_RADAR"
+    assert payload["blocked_by"] == ["PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY"]
+    assert payload["next_required_stage"] == "PAIR_ROTATION_PRIMARY_AUTHORITY"
+    assert payload["reason"] == "scanner_cycle_clean_block_memory_only_primary_watch_requires_pair_rotation"
+    assert payload["primary_watch_authority"] == "SCANNER_CYCLE_AWARE_MEMORY_ONLY"
+    assert payload["scanner_cycle_memory_only"] is True
 
 
 def test_missing_context_becomes_clean_block_radar_confirmed():

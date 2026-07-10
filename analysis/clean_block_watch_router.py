@@ -18,6 +18,9 @@ from typing import Any
 
 DEFAULT_SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PREFIX = "[SignalWatchPromotionDiagnostic]"
 _CONTEXT_BLOCKERS = {"MARKET_CONTEXT_MISSING", "SIGNAL_PRICE_MISSING"}
+_PRIMARY_AUTHORITY_BLOCKERS = {"PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY"}
+_PAIR_ROTATION_AUTHORITY = "PAIR_ROTATION_ONLY"
+_SCANNER_CYCLE_MEMORY_AUTHORITY = "SCANNER_CYCLE_AWARE_MEMORY_ONLY"
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,9 @@ def route_clean_block_to_watch(
         blocked_by.append("SOURCE_CLEAN_BLOCK_ID_MISSING")
     if direction not in {"BUY", "SELL"}:
         blocked_by.append("CLEAN_BLOCK_DIRECTION_MISSING")
+    authority = _primary_watch_authority(block)
+    if not authority["eligible_for_primary_watch"]:
+        blocked_by.append("PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY")
 
     signal_price = _signal_price(market_context)
     if market_context is None:
@@ -90,6 +96,7 @@ def route_clean_block_to_watch(
                     lineage=lineage,
                     blocked_by=blocked_by,
                     clean_block_seconds=clean_block_seconds,
+                    authority=authority,
                 ),
                 emit_as_watch=False,
                 diagnostic=True,
@@ -101,6 +108,7 @@ def route_clean_block_to_watch(
                 lineage=lineage,
                 blocked_by=blocked_by,
                 clean_block_seconds=clean_block_seconds,
+                authority=authority,
             ),
             emit_as_watch=False,
             diagnostic=True,
@@ -115,6 +123,7 @@ def route_clean_block_to_watch(
             market_context=market_context,
             signal_price=signal_price,
             direction=direction,
+            authority=authority,
         ),
         emit_as_watch=True,
         diagnostic=False,
@@ -194,6 +203,7 @@ def _watch_payload(
     market_context: Any,
     signal_price: float,
     direction: str,
+    authority: Mapping[str, Any],
 ) -> dict[str, Any]:
     symbol = str(candidate.get("symbol") or "").upper()
     side = "BUY" if direction == "BUY" else "SELL"
@@ -269,6 +279,9 @@ def _watch_payload(
         "microboost_validation_status": "NOT_REQUIRED_CLEAN_BLOCK_ROUTER",
         "promotion_path": "CLEAN_BLOCK_TO_SIGNAL_WATCH",
         "promotion_trigger": "CLEAN_BLOCK_VALID",
+        "primary_watch_authority": authority.get("primary_watch_authority"),
+        "primary_watch_authority_rule": authority.get("primary_watch_authority_rule"),
+        "scanner_cycle_memory_only": authority.get("scanner_cycle_memory_only"),
         "signal_valid": False,
         "tradeplan_valid": False,
         "execution_valid_now": False,
@@ -287,6 +300,14 @@ def _watch_payload(
     if structure_room:
         payload["structure_room"] = structure_room
         payload["raw_structure_room_pips"] = structure_room.get("directional_room_pips")
+    payload["pair_memory_context"] = _router_pair_memory_context(
+        symbol=symbol,
+        direction=direction,
+        lineage=lineage,
+        market_context=market_context,
+        signal_price=signal_price,
+        authority=authority,
+    )
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
     payload["clean_block_valid"] = True
@@ -295,7 +316,7 @@ def _watch_payload(
 
 def _should_emit_clean_block_radar(*, blocked_by: list[str], lineage: Mapping[str, Any]) -> bool:
     blocked = {str(item) for item in blocked_by}
-    non_context_blockers = blocked - _CONTEXT_BLOCKERS
+    non_context_blockers = blocked - _CONTEXT_BLOCKERS - _PRIMARY_AUTHORITY_BLOCKERS
     return not non_context_blockers and bool(lineage.get("clean_block_valid"))
 
 
@@ -305,16 +326,18 @@ def _clean_block_radar_payload(
     lineage: Mapping[str, Any],
     blocked_by: list[str],
     clean_block_seconds: int,
+    authority: Mapping[str, Any],
 ) -> dict[str, Any]:
+    authority_blocked = bool(set(blocked_by) & _PRIMARY_AUTHORITY_BLOCKERS)
     payload = {
         "event": "signal_throttle_clean_block_radar",
-        "status": "CLEAN_BLOCK_CONFIRMED_RADAR",
+        "status": "CLEAN_BLOCK_SCANNER_MEMORY_RADAR" if authority_blocked else "CLEAN_BLOCK_CONFIRMED_RADAR",
         "signal_family": "SIGNAL_THROTTLE_CLEAN_BLOCK_RADAR",
         "symbol": str(candidate.get("symbol") or "").upper() or None,
         "clean_block_valid": lineage.get("clean_block_valid"),
         "eligible_for_signal_watch": False,
         "blocked_by": blocked_by,
-        "next_required_stage": "PRICE_STRUCTURE_CONTEXT",
+        "next_required_stage": _clean_block_radar_next_stage(blocked_by),
         "clean_block_threshold_seconds": int(clean_block_seconds),
         "market_context_applied": False,
         "valid_for_execution": False,
@@ -322,10 +345,15 @@ def _clean_block_radar_payload(
         "is_final_signal": False,
         "signal_valid": False,
         "final_direction": "WAIT",
-        "action": "WAIT_PRICE_STRUCTURE_CONTEXT",
+        "action": "TRACK_AS_PRESSURE_MEMORY_RADAR" if authority_blocked else "WAIT_PRICE_STRUCTURE_CONTEXT",
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
-        "reason": "clean_block_confirmed_market_context_pending",
+        "reason": (
+            "scanner_cycle_clean_block_memory_only_primary_watch_requires_pair_rotation"
+            if authority_blocked
+            else "clean_block_confirmed_market_context_pending"
+        ),
     }
+    payload.update(_promotion_authority_fields(authority))
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
     return payload
@@ -420,6 +448,7 @@ def _diagnostic_payload(
     lineage: Mapping[str, Any],
     blocked_by: list[str],
     clean_block_seconds: int,
+    authority: Mapping[str, Any],
 ) -> dict[str, Any]:
     payload = {
         "event": "signal_watch_promotion_diagnostic",
@@ -435,6 +464,7 @@ def _diagnostic_payload(
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
         "reason": "clean_block_watch_promotion_blocked_explicitly",
     }
+    payload.update(_promotion_authority_fields(authority))
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
     return payload
@@ -445,6 +475,8 @@ def _pressure_root_fields(candidate: Mapping[str, Any]) -> dict[str, Any]:
     for key in (
         "ledger_type",
         "ledger_source",
+        "clean_block_rule",
+        "legacy_pure_block_rule",
         "split_rule",
         "gap_policy",
         "scanner_cycle_aware",
@@ -462,6 +494,76 @@ def _pressure_root_fields(candidate: Mapping[str, Any]) -> dict[str, Any]:
         if value is not None:
             fields[key] = dict(value) if isinstance(value, Mapping) else value
     return fields
+
+
+def _primary_watch_authority(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    explicit = _optional_bool(
+        candidate.get("primary_watch_eligible")
+        if candidate.get("primary_watch_eligible") is not None
+        else candidate.get("signal_watch_primary_eligible")
+    )
+    split_rule = str(candidate.get("split_rule") or "").upper()
+    ledger_type = str(candidate.get("ledger_type") or "").upper()
+    scanner_cycle_aware = _optional_bool(candidate.get("scanner_cycle_aware")) is True
+    pair_rotation = split_rule == _PAIR_ROTATION_AUTHORITY or ledger_type == "PURE_PRESSURE_LEDGER"
+    eligible = bool(explicit) if explicit is not None else pair_rotation and not scanner_cycle_aware
+    authority = _PAIR_ROTATION_AUTHORITY if eligible else _SCANNER_CYCLE_MEMORY_AUTHORITY
+    return {
+        "eligible_for_primary_watch": eligible,
+        "primary_watch_authority": authority,
+        "primary_watch_authority_rule": (
+            "PAIR_ROTATION_ONLY_PRIMARY_WATCH"
+            if eligible
+            else "SCANNER_CYCLE_AWARE_MEMORY_RADAR_ONLY"
+        ),
+        "scanner_cycle_memory_only": not eligible and (scanner_cycle_aware or "SCANNER_CYCLE" in split_rule),
+    }
+
+
+def _promotion_authority_fields(authority: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "eligible_for_primary_watch": bool(authority.get("eligible_for_primary_watch")),
+        "primary_watch_authority": authority.get("primary_watch_authority"),
+        "primary_watch_authority_rule": authority.get("primary_watch_authority_rule"),
+        "scanner_cycle_memory_only": bool(authority.get("scanner_cycle_memory_only")),
+    }
+
+
+def _clean_block_radar_next_stage(blocked_by: list[str]) -> str:
+    blocked = set(blocked_by)
+    if blocked & _PRIMARY_AUTHORITY_BLOCKERS:
+        return "PAIR_ROTATION_PRIMARY_AUTHORITY"
+    return "PRICE_STRUCTURE_CONTEXT"
+
+
+def _router_pair_memory_context(
+    *,
+    symbol: str,
+    direction: str,
+    lineage: Mapping[str, Any],
+    market_context: Any,
+    signal_price: float,
+    authority: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "symbol": symbol,
+        "source": "CLEAN_BLOCK_ROUTER",
+        "source_clean_block_id": lineage.get("source_clean_block_id"),
+        "active_clean_block_id": lineage.get("source_clean_block_id"),
+        "clean_block_start_utc": lineage.get("clean_block_start_utc"),
+        "clean_block_latest_end_utc": lineage.get("clean_block_latest_end_utc"),
+        "watch_direction": direction,
+        "current_price": round(float(signal_price), 6),
+        "price_position": _field(market_context, "price_position"),
+        "m15_phase": _field(market_context, "m15_phase"),
+        "h1_phase": _field(market_context, "h1_phase"),
+        "lifecycle_transition": "PRIMARY_CLEAN_BLOCK_WATCH_ACTIVE",
+        "phase_structure_validation": "PENDING_PRICE_THEME_STRUCTURE",
+        "recommended_interpretation": "TRACK_AS_PRIMARY_WATCH_CONTEXT_ONLY",
+        "primary_watch_authority": authority.get("primary_watch_authority"),
+        "valid_for_execution": False,
+        "execution_impact": False,
+    }
 
 
 def _next_required_stage(blocked_by: list[str]) -> str:
@@ -552,6 +654,19 @@ def _int_value(value: Any) -> int | None:
 def _text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return None
 
 
 def _stable_clean_block_id(symbol: str, start: str | None, first_valid_end: str | None) -> str | None:
