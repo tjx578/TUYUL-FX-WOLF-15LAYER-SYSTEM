@@ -3,8 +3,9 @@
 Increment B already suppresses *byte-identical* watch re-emits, but a watch whose
 price/timestamp/density ticks every interval slips through (this is why one GBPCHF
 cluster produced 28 near-identical SignalWatchJSON). Increment E collapses repeats
-by their MATERIAL identity only — symbol, cluster, family, status, direction,
-price_position, valid_for_execution, reason — ignoring the noisy numeric fields.
+by their MATERIAL identity only — symbol, cluster/source, setup, direction, HTF
+context, market-structure status, memory phase, M15 confirmation, and execution
+status — ignoring the noisy numeric fields.
 
 Flag ``SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED`` (default OFF). Suppresses only the
 duplicate EMIT; the first watch and any material change always pass, decision
@@ -92,11 +93,15 @@ def test_identical_material_is_duplicate():
     assert em._is_cluster_watch_duplicate(_watch_payload(signal_valid_time_utc="2026-06-10T05:02:00+00:00")) is True
 
 
-def test_status_change_is_not_duplicate():
-    """Guardrail #6 — a status transition re-emits."""
+def test_setup_change_is_not_duplicate():
+    """Guardrail #6 — a setup transition re-emits."""
     em = _fresh_emitter()
-    assert em._is_cluster_watch_duplicate(_watch_payload(status="MICROBOOST_WATCH")) is False
-    assert em._is_cluster_watch_duplicate(_watch_payload(status="EARLY_SELL_WATCH")) is False
+    assert em._is_cluster_watch_duplicate(
+        _watch_payload(tradeplan_preview={"setup_type": "SELL_REJECTION_WATCH"})
+    ) is False
+    assert em._is_cluster_watch_duplicate(
+        _watch_payload(tradeplan_preview={"setup_type": "SELL_BREAKDOWN_WATCH"})
+    ) is False
 
 
 def test_direction_change_is_not_duplicate():
@@ -113,11 +118,11 @@ def test_price_position_change_is_not_duplicate():
     assert em._is_cluster_watch_duplicate(_watch_payload(price_position="MID_RANGE")) is False
 
 
-def test_valid_for_execution_change_is_not_duplicate():
-    """Guardrail #9 — a valid_for_execution change re-emits."""
+def test_execution_status_change_is_not_duplicate():
+    """Guardrail #9 — an execution-state change re-emits."""
     em = _fresh_emitter()
-    assert em._is_cluster_watch_duplicate(_watch_payload(valid_for_execution=False)) is False
-    assert em._is_cluster_watch_duplicate(_watch_payload(valid_for_execution=True)) is False
+    assert em._is_cluster_watch_duplicate(_watch_payload(execution_status="WAIT_STRUCTURE_TARGET")) is False
+    assert em._is_cluster_watch_duplicate(_watch_payload(execution_status="WAIT_M15_CONFIRMATION")) is False
 
 
 def test_different_clusters_do_not_cross_suppress():
@@ -163,12 +168,12 @@ def test_flag_on_suppresses_duplicate(monkeypatch):
 
 
 def test_flag_on_status_change_reemits(monkeypatch):
-    """Owner test #3 — MICROBOOST_WATCH -> EARLY_SELL_WATCH is a material change, re-emits."""
+    """Owner test #3 — a setup/target change is material and re-emits."""
     monkeypatch.setenv(_FLAG, "true")
     em = _fresh_emitter()
-    assert em.emit(_watch_event(status="MICROBOOST_WATCH", signal_family="MICROBOOST_WATCH")) is True
+    assert em.emit(_watch_event(tradeplan_preview={"setup_type": "SELL_REJECTION_WATCH"})) is True
     _reset_non_e(em)
-    assert em.emit(_watch_event(status="EARLY_SELL_WATCH")) is True
+    assert em.emit(_watch_event(tradeplan_preview={"setup_type": "SELL_BREAKDOWN_WATCH"})) is True
 
 
 def test_decision_update_not_touched_by_cluster_dedup(monkeypatch):

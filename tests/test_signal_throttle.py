@@ -831,7 +831,7 @@ class TestPipelineSignalThrottle:
 
         assert "[SignalWatchJSON]" not in caplog.text
         assert "[MicroboostSourceDiagnostic]" in caplog.text
-        assert "[SignalWatchPromotionDiagnostic]" in caplog.text
+        assert "[SignalWatchPromotionDiagnostic]" not in caplog.text
         assert "SOURCE_CLEAN_BLOCK_ID_MISSING" in caplog.text
 
     def test_usdcad_reclaim_and_demand_build_support_ladder_for_counter_targets(self):

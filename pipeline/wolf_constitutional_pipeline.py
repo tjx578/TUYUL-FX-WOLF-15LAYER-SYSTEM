@@ -487,6 +487,7 @@ class WolfConstitutionalPipeline:
             strict_lifecycle=os.getenv("SIGNAL_JSON_STRICT_LIFECYCLE", "true").strip().lower() == "true",
             require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "false").strip().lower() == "true",
             allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "true").strip().lower() == "true",
+            production_watch_gate=self._parse_env_bool("SIGNAL_WATCH_PRODUCTION_GATE_ENABLED", log_compact_mode),
             require_final_market_structure=(
                 os.getenv("SIGNAL_JSON_REQUIRE_FINAL_MARKET_STRUCTURE", "false").strip().lower() == "true"
             ),
@@ -5086,6 +5087,10 @@ class WolfConstitutionalPipeline:
             return
         enabled = os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true").strip().lower() == "true"
         prefix = os.getenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_LOG_PREFIX", "[SignalWatchPromotionDiagnostic]")
+        production_gate = self._parse_env_bool(
+            "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED",
+            self._signal_log_compact_mode_enabled(),
+        )
         store = getattr(self, "_last_signal_watch_promotion_diag_key", None)
         if not isinstance(store, dict):
             store = {}
@@ -5100,6 +5105,10 @@ class WolfConstitutionalPipeline:
             blocked_by_values = {str(item) for item in diag.get("blocked_by") or []}
             if "SOURCE_CLEAN_BLOCK_ID_MISSING" in blocked_by_values:
                 diag, should_emit = self._prepare_signal_watch_lineage_missing_diagnostic(diag, diag)
+                if should_emit and not self._should_emit_promotion_diagnostic(diag, production_gate=production_gate):
+                    diag["production_log_suppressed"] = True
+                    diag["production_log_suppress_reason"] = "PROMOTION_DIAGNOSTIC_INTERNAL_ONLY"
+                    should_emit = False
                 if not should_emit:
                     diag["diagnostic_emit_result"] = False
                     processed.append(diag)
@@ -5121,6 +5130,12 @@ class WolfConstitutionalPipeline:
                 continue
             if source_id:
                 store[source_id] = key
+            if not self._should_emit_promotion_diagnostic(diag, production_gate=production_gate):
+                diag["diagnostic_emit_result"] = False
+                diag["production_log_suppressed"] = True
+                diag["production_log_suppress_reason"] = "PROMOTION_DIAGNOSTIC_INTERNAL_ONLY"
+                processed.append(diag)
+                continue
             diag["diagnostic_emit_result"] = emit_signal_watch_promotion_diagnostic(
                 diag,
                 enabled=enabled,
@@ -5130,6 +5145,99 @@ class WolfConstitutionalPipeline:
 
         if processed:
             report["signal_watch_promotion_diagnostics"] = processed
+            self._emit_signal_watch_promotion_summary(report, processed)
+
+    def _should_emit_promotion_diagnostic(self, payload: dict[str, Any], *, production_gate: bool) -> bool:
+        if not production_gate:
+            return True
+        blocked_by = {str(item) for item in payload.get("blocked_by") or []}
+        event = str(payload.get("event") or "")
+        status = str(payload.get("status") or "")
+        if event == "signal_throttle_clean_block_radar":
+            return False
+        if "SOURCE_CLEAN_BLOCK_ID_MISSING" in blocked_by:
+            return status == "LINEAGE_MISSING_TERMINAL" and not bool(
+                payload.get("signal_watch_source_diagnostic_terminal_suppressed")
+            )
+        if "MARKET_CONTEXT_MISSING" in blocked_by:
+            return False
+        if "PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY" in blocked_by:
+            return False
+        return self._parse_env_bool("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_DEBUG_ENABLED", False)
+
+    def _emit_signal_watch_promotion_summary(
+        self,
+        report: dict[str, Any],
+        diagnostics: list[dict[str, Any]],
+    ) -> None:
+        enabled = self._parse_env_bool(
+            "SIGNAL_WATCH_PROMOTION_SUMMARY_ENABLED",
+            self._signal_log_compact_mode_enabled(),
+        )
+        if not enabled or not diagnostics:
+            return
+        interval = max(1.0, self._parse_env_float("SIGNAL_WATCH_PROMOTION_SUMMARY_INTERVAL_SECONDS", 300.0))
+        now = time.time()
+        last_emit = getattr(self, "_last_signal_watch_promotion_summary_ts", None)
+        if isinstance(last_emit, (int, float)) and now - float(last_emit) < interval:
+            return
+        self._last_signal_watch_promotion_summary_ts = now
+
+        import json  # noqa: PLC0415
+        import logging  # noqa: PLC0415
+        from collections import Counter  # noqa: PLC0415
+
+        blocked_counter: Counter[str] = Counter()
+        symbol_counter: Counter[str] = Counter()
+        radar_count = 0
+        lineage_missing = 0
+        market_context_missing = 0
+        primary_authority = 0
+        for diag in diagnostics:
+            event = str(diag.get("event") or "")
+            status = str(diag.get("status") or "")
+            if event == "signal_throttle_clean_block_radar" or "RADAR" in status:
+                radar_count += 1
+            symbol = str(diag.get("symbol") or "").upper()
+            if symbol:
+                symbol_counter[symbol] += 1
+            blocked = {str(item) for item in diag.get("blocked_by") or []}
+            for item in blocked:
+                blocked_counter[item] += 1
+            if "SOURCE_CLEAN_BLOCK_ID_MISSING" in blocked:
+                lineage_missing += 1
+            if "MARKET_CONTEXT_MISSING" in blocked:
+                market_context_missing += 1
+            if "PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY" in blocked:
+                primary_authority += 1
+
+        watch_entries = report.get("clean_block_watch_entries") if isinstance(report, dict) else None
+        promotable_count = sum(
+            1
+            for entry in (watch_entries or [])
+            if isinstance(entry, dict) and entry.get("signal_json_emit_result") is True
+        )
+        payload = {
+            "event": "signal_watch_promotion_summary",
+            "window": f"{int(interval)}s",
+            "radar_memory_count": radar_count,
+            "lineage_missing_count": lineage_missing,
+            "market_context_missing_count": market_context_missing,
+            "primary_authority_count": primary_authority,
+            "internal_candidate_count": len(diagnostics),
+            "promotable_watch_count": promotable_count,
+            "top_memory_pairs": [symbol for symbol, _ in symbol_counter.most_common(8)],
+            "blocked_by_summary": dict(blocked_counter.most_common(8)),
+            "execution_impact": False,
+            "valid_for_execution": False,
+            "reason": "promotion_diagnostics_compacted_to_summary",
+        }
+        prefix = os.getenv("SIGNAL_WATCH_PROMOTION_SUMMARY_LOG_PREFIX", "[SignalWatchPromotionSummary]")
+        logging.getLogger("signal_json").info(
+            "%s %s",
+            prefix,
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=False),
+        )
 
     def _attach_signal_watch_source_lookup_context(
         self,
@@ -5237,6 +5345,13 @@ class WolfConstitutionalPipeline:
     ) -> bool:
         diag, should_emit = self._prepare_signal_watch_lineage_missing_diagnostic(diagnostic, payload)
         if not should_emit:
+            return False
+        production_gate = self._parse_env_bool(
+            "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED",
+            self._signal_log_compact_mode_enabled(),
+        )
+        if not self._should_emit_promotion_diagnostic(diag, production_gate=production_gate):
+            payload["signal_watch_source_diagnostic_production_suppressed"] = True
             return False
         return emit_signal_watch_promotion_diagnostic(
             diag,
@@ -7191,6 +7306,21 @@ class WolfConstitutionalPipeline:
             "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED": _b(
                 "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED",
                 "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_PRODUCTION_GATE_ENABLED": _b(
+                "SIGNAL_WATCH_PRODUCTION_GATE_ENABLED",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED": _b(
+                "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_PROMOTION_SUMMARY_ENABLED": _b(
+                "SIGNAL_WATCH_PROMOTION_SUMMARY_ENABLED",
+                "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_PROMOTION_SUMMARY_INTERVAL_SECONDS": _f(
+                "SIGNAL_WATCH_PROMOTION_SUMMARY_INTERVAL_SECONDS", "300"
             ),
             "SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS": _f(
                 "SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS",

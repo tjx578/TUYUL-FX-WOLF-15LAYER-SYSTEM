@@ -175,6 +175,83 @@ def test_shadow_signal_watch_json_exposes_observability_only_lifecycle(caplog):
     assert '"shadow_source_stage":"POST_L12_PRE_V11"' in caplog.text
 
 
+def test_production_watch_gate_suppresses_shadow_watch(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True, production_watch_gate=True)
+    event = _event(
+        cluster_id="XAUUSD_20260710T032735Z",
+        symbol="XAUUSD",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        market_context_applied=True,
+        valid_for_execution=False,
+        shadow_only=True,
+        lifecycle_track=False,
+        source_clean_block_id="XAUUSD_BLOCK_1",
+        clean_block_valid=True,
+        pending_decision_id="XAUUSD_BLOCK_1_M15_DECISION",
+        signal_quality="WATCH_ONLY",
+    )
+
+    assert emitter.emit(event) is False
+    assert "[SignalWatchJSON]" not in caplog.text
+
+
+def test_production_watch_gate_emits_decision_grade_watch(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True, production_watch_gate=True)
+    event = _event(
+        cluster_id="GBPCAD_20260710T060118Z",
+        symbol="GBPCAD",
+        signal_family="MICROBOOST_COUNTER_ENTRY",
+        status="EARLY_SELL_WATCH",
+        raw_direction="BUY",
+        candidate_direction="SELL",
+        validated_direction=None,
+        watch_direction="SELL",
+        final_direction="WAIT",
+        market_context_applied=True,
+        valid_for_execution=False,
+        source_clean_block_id="GBPCAD_20260710T055956Z_20260710T060456Z",
+        source_pressure_block_id="GBPCAD_20260710T055956Z_20260710T060456Z",
+        clean_block_valid=True,
+        clean_block_direction="BUY",
+        pending_decision_id="GBPCAD_20260710T060118Z_M15_DECISION",
+        signal_quality="WATCH_ONLY",
+        tradeplan_preview={
+            "setup_type": "SELL_REJECTION_WATCH",
+            "target_mode": "STRUCTURE_TARGET",
+            "primary_structure_tf": "H4",
+            "execution_usable": False,
+        },
+        market_structure={
+            "market_structure_status": "STRUCTURE_READY",
+            "structure_class": "COUNTER_PRESSURE_AT_RESISTANCE",
+            "primary_structure_tf": "H4",
+        },
+        htf_structure_context={
+            "source_event": "HTFStructureSnapshot",
+            "daily_bias": "RANGE",
+            "h4_structure": "RANGE",
+            "price_location": "H4_SUPPLY",
+            "data_sufficient": True,
+            "valid_for_execution": False,
+        },
+        pair_memory_context={
+            "lifecycle_transition": "SAME_CLEAN_BLOCK_STILL_PENDING",
+            "phase_structure_validation": "MATERIAL_STATE_CHANGED",
+        },
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert '"status":"EARLY_SELL_WATCH"' in caplog.text
+    assert '"valid_for_execution":false' in caplog.text
+
+
 def test_signal_watch_json_can_carry_pressure_priority_context(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(

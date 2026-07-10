@@ -589,6 +589,7 @@ class SignalJsonEmitter:
         strict_lifecycle: bool = False,
         require_parent_watch: bool = False,
         allow_direct_bypass: bool = True,
+        production_watch_gate: bool = False,
         require_final_market_structure: bool = False,
         require_theme_alignment: bool = True,
         theme_conflict_downgrade: bool = True,
@@ -635,6 +636,7 @@ class SignalJsonEmitter:
         self.strict_lifecycle = strict_lifecycle
         self.require_parent_watch = require_parent_watch
         self.allow_direct_bypass = allow_direct_bypass
+        self.production_watch_gate = production_watch_gate
         self.require_final_market_structure = require_final_market_structure
         self.require_theme_alignment = require_theme_alignment
         self.theme_conflict_downgrade = theme_conflict_downgrade
@@ -700,6 +702,11 @@ class SignalJsonEmitter:
             _apply_signal_watch_microboost_role_fields(payload)
             _apply_signal_htf_structure_fields(payload, prefix="signal_watch")
             self._apply_pair_memory_context(payload)
+            if self.production_watch_gate and not _is_promotable_signal_watch(payload):
+                payload["signal_watch_production_emit_result"] = False
+                payload["signal_watch_production_suppressed"] = True
+                payload["signal_watch_production_suppress_reason"] = _signal_watch_suppress_reason(payload)
+                return False
         elif is_decision_update:
             _strip_pair_memory_fields(payload)
             _strip_pressure_priority_fields(payload)
@@ -968,33 +975,59 @@ class SignalJsonEmitter:
         return False
 
     def _cluster_semantic_watch_key(self, payload: dict[str, Any]) -> str:
-        """Material-only identity for a cluster watch (Increment E). Deliberately omits
-        price / timestamp / density so identical scenarios collapse, while any change to
-        status, direction, price_position or valid_for_execution yields a new key.
+        """Material-only identity for a cluster watch.
+
+        Deliberately omits price / timestamp / density / event-count noise so
+        identical scenarios collapse. Only operator-relevant semantic state changes
+        re-open the production log lane.
         """
+        market_structure = _dict_value(payload.get("market_structure")) or {}
+        tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
+        htf = _dict_value(payload.get("htf_structure_context")) or {}
+        memory = _dict_value(payload.get("pair_memory_context")) or {}
+        setup_type = (
+            payload.get("setup_type")
+            or tradeplan.get("setup_type")
+            or payload.get("signal_family")
+            or payload.get("status")
+        )
+        parent_watch_id = (
+            payload.get("parent_watch_id")
+            or payload.get("source_clean_block_id")
+            or payload.get("pending_decision_id")
+            or payload.get("cluster_id")
+        )
+        phase_validation = str(
+            memory.get("phase_structure_validation") or payload.get("phase_structure_validation") or ""
+        ).upper()
+        memory_transition = (
+            memory.get("lifecycle_transition") or payload.get("pair_lifecycle_transition")
+            if phase_validation == "MATERIAL_STATE_CHANGED"
+            else ""
+        )
+        memory_phase = phase_validation if phase_validation == "MATERIAL_STATE_CHANGED" else ""
         return "|".join(
-            str(payload.get(field) or "")
-            for field in (
-                "symbol",
-                "cluster_id",
-                "signal_family",
-                "resolved_family",
-                "status",
-                "raw_direction",
-                "candidate_direction",
-                "watch_direction",
-                "price_position",
-                "m15_phase",
-                "h1_phase",
-                "microboost_role",
-                "valid_for_execution",
-                "execution_status",
-                "execution_block_reason",
-                "block_reason",
-                "target_block_reason",
-                "reason",
+            str(value or "")
+            for value in (
+                payload.get("symbol"),
+                parent_watch_id,
+                setup_type,
+                payload.get("watch_direction"),
+                payload.get("raw_direction"),
+                payload.get("candidate_direction"),
+                htf.get("daily_bias") or payload.get("signal_watch_htf_daily_bias"),
+                htf.get("h4_structure") or payload.get("signal_watch_htf_h4_structure"),
+                htf.get("price_location") or payload.get("signal_watch_htf_price_location"),
+                market_structure.get("market_structure_status"),
+                market_structure.get("structure_class"),
+                tradeplan.get("tradeplan_status") or tradeplan.get("target_mode"),
+                payload.get("m15_confirmation_status"),
+                memory.get("current_price_position") or payload.get("price_position"),
+                memory_transition,
+                memory_phase,
+                payload.get("execution_status") or _nested_text(payload, "execution_gate", "execution_status"),
             )
-        ) + f"|{_watch_duration_bucket_label(payload, self.watch_bucket_minutes)}"
+        )
 
     def _is_cluster_watch_duplicate(self, payload: dict[str, Any]) -> bool:
         """Return True when this cluster watch is a material-duplicate of one already
@@ -1384,6 +1417,89 @@ def should_emit_signal_json(
 
 def _is_watch_status(status: str) -> bool:
     return status in WATCH_SIGNAL_STATUSES or status.endswith("_WATCH")
+
+
+def _is_promotable_signal_watch(payload: dict[str, Any]) -> bool:
+    if _optional_bool(payload.get("valid_for_execution")) is True:
+        return False
+    if not _optional_str(payload.get("source_clean_block_id")):
+        return False
+    if _optional_bool(payload.get("clean_block_valid")) is not True:
+        return False
+    if _optional_bool(payload.get("shadow_only")) is True:
+        return False
+    if _optional_bool(payload.get("market_context_applied")) is not True:
+        return False
+    if not _optional_str(payload.get("pending_decision_id")):
+        return False
+    signal_quality = str(payload.get("signal_quality") or _signal_quality(payload) or "").upper()
+    if signal_quality != "WATCH_ONLY":
+        return False
+    eligible = _optional_bool(payload.get("eligible_for_signal_watch"))
+    primary_authority = _optional_str(payload.get("primary_watch_authority"))
+    if eligible is False and primary_authority is None:
+        return False
+    return _has_decision_grade_context(payload)
+
+
+def _has_decision_grade_context(payload: dict[str, Any]) -> bool:
+    htf = _dict_value(payload.get("htf_structure_context")) or {}
+    market_structure = _dict_value(payload.get("market_structure")) or {}
+    tradeplan = _dict_value(payload.get("tradeplan_preview")) or {}
+    memory = _dict_value(payload.get("pair_memory_context")) or {}
+
+    if _optional_bool(htf.get("data_sufficient")) is not True:
+        return False
+    if not _optional_str(htf.get("daily_bias")) or not _optional_str(htf.get("h4_structure")):
+        return False
+
+    primary_tf = _optional_str(
+        market_structure.get("primary_structure_tf")
+        or tradeplan.get("primary_structure_tf")
+        or payload.get("primary_structure_tf")
+    )
+    if primary_tf is not None and primary_tf.upper() not in {"H4", "D1"}:
+        return False
+
+    if (
+        str(memory.get("lifecycle_transition") or "").upper() == "SAME_CLEAN_BLOCK_STILL_PENDING"
+        and str(memory.get("phase_structure_validation") or "").upper() != "MATERIAL_STATE_CHANGED"
+    ):
+        return False
+
+    target_mode = str(tradeplan.get("target_mode") or payload.get("target_mode") or "").upper()
+    if target_mode in {"", "PREVIEW_CONTEXT_INCOMPLETE", "HTF_STRUCTURE_PENDING"}:
+        return False
+    if _optional_str(tradeplan.get("setup_type")) is None:
+        return False
+
+    structure_status = str(market_structure.get("market_structure_status") or "").upper()
+    return structure_status in {"STRUCTURE_READY", "STRUCTURE_PENDING_M15_ONLY"}
+
+
+def _signal_watch_suppress_reason(payload: dict[str, Any]) -> str:
+    if _optional_bool(payload.get("valid_for_execution")) is True:
+        return "VALID_FOR_EXECUTION_BELONGS_TO_SIGNALJSON"
+    if not _optional_str(payload.get("source_clean_block_id")):
+        return "SOURCE_CLEAN_BLOCK_ID_MISSING"
+    if _optional_bool(payload.get("clean_block_valid")) is not True:
+        return "CLEAN_BLOCK_NOT_VALID"
+    if _optional_bool(payload.get("shadow_only")) is True:
+        return "SHADOW_WATCH_INTERNAL_ONLY"
+    if _optional_bool(payload.get("market_context_applied")) is not True:
+        return "MARKET_CONTEXT_MISSING"
+    if not _optional_str(payload.get("pending_decision_id")):
+        return "PENDING_DECISION_ID_MISSING"
+    signal_quality = str(payload.get("signal_quality") or _signal_quality(payload) or "").upper()
+    if signal_quality != "WATCH_ONLY":
+        return "SIGNAL_QUALITY_NOT_WATCH_ONLY"
+    eligible = _optional_bool(payload.get("eligible_for_signal_watch"))
+    primary_authority = _optional_str(payload.get("primary_watch_authority"))
+    if eligible is False and primary_authority is None:
+        return "NOT_ELIGIBLE_FOR_SIGNAL_WATCH"
+    if not _has_decision_grade_context(payload):
+        return "DECISION_GRADE_CONTEXT_MISSING"
+    return "PRODUCTION_WATCH_GATE_BLOCKED"
 
 
 def _is_decision_update_status(status: str) -> bool:
@@ -3184,6 +3300,13 @@ def _clean_context(value: Any) -> Any:
 
 def _dict_value(value: Any) -> dict[str, Any] | None:
     return dict(value) if isinstance(value, dict) else None
+
+
+def _nested_text(payload: dict[str, Any], section: str, field: str) -> str | None:
+    context = _dict_value(payload.get(section))
+    if not context:
+        return None
+    return _optional_str(context.get(field))
 
 
 def _dict_list(value: Any) -> list[dict[str, Any]] | None:

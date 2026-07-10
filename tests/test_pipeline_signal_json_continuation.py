@@ -832,7 +832,7 @@ def test_pipeline_logs_clean_block_watch_entries_as_signal_watch_json(caplog):
     assert verdict["clean_block_watch_entries"][0]["source_clean_block_id"]
 
 
-def test_pipeline_emits_signal_watch_promotion_diagnostic(monkeypatch, caplog):
+def test_pipeline_suppresses_market_context_promotion_diagnostic_in_production(monkeypatch, caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
@@ -856,13 +856,13 @@ def test_pipeline_emits_signal_watch_promotion_diagnostic(monkeypatch, caplog):
 
     pipeline._apply_clean_block_watch_routes(l12_verdict=verdict, report=report)
 
-    assert "[SignalWatchPromotionDiagnostic]" in caplog.text
-    assert '"event":"signal_watch_promotion_diagnostic"' in caplog.text
-    assert report["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is True
+    assert "[SignalWatchPromotionDiagnostic]" not in caplog.text
+    assert report["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is False
+    assert report["signal_watch_promotion_diagnostics"][0]["production_log_suppressed"] is True
     assert verdict["signal_watch_promotion_diagnostics"][0]["next_required_stage"] == "HYDRATE_MARKET_CONTEXT"
 
 
-def test_pipeline_emits_clean_block_radar_confirmed_event(monkeypatch, caplog):
+def test_pipeline_suppresses_clean_block_radar_confirmed_event_in_production(monkeypatch, caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
@@ -889,12 +889,72 @@ def test_pipeline_emits_clean_block_radar_confirmed_event(monkeypatch, caplog):
 
     pipeline._apply_clean_block_watch_routes(l12_verdict=verdict, report=report)
 
-    assert "[SignalWatchPromotionDiagnostic]" in caplog.text
-    assert '"event":"signal_throttle_clean_block_radar"' in caplog.text
-    assert '"status":"CLEAN_BLOCK_CONFIRMED_RADAR"' in caplog.text
-    assert '"raw_signal_throttle_error_count":7' in caplog.text
-    assert report["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is True
+    assert "[SignalWatchPromotionDiagnostic]" not in caplog.text
+    assert report["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is False
+    assert report["signal_watch_promotion_diagnostics"][0]["production_log_suppressed"] is True
     assert verdict["signal_watch_promotion_diagnostics"][0]["next_required_stage"] == "PRICE_STRUCTURE_CONTEXT"
+
+
+def test_pipeline_emits_promotion_summary_for_suppressed_diagnostics(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_SUMMARY_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_SUMMARY_INTERVAL_SECONDS", "1")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    report = {
+        "signal_watch_promotion_diagnostics": [
+            {
+                "event": "signal_throttle_clean_block_radar",
+                "status": "CLEAN_BLOCK_CONFIRMED_RADAR",
+                "symbol": "EURCHF",
+                "source_clean_block_id": "EURCHF_20260710T141511Z_20260710T142011Z",
+                "clean_block_valid": True,
+                "eligible_for_signal_watch": False,
+                "blocked_by": ["MARKET_CONTEXT_MISSING"],
+                "next_required_stage": "PRICE_STRUCTURE_CONTEXT",
+                "valid_for_execution": False,
+                "is_final_signal": False,
+                "final_direction": "WAIT",
+            }
+        ]
+    }
+
+    pipeline._apply_clean_block_watch_routes(l12_verdict={}, report=report)
+
+    assert "[SignalWatchPromotionDiagnostic]" not in caplog.text
+    assert "[SignalWatchPromotionSummary]" in caplog.text
+    assert '"event":"signal_watch_promotion_summary"' in caplog.text
+    assert '"radar_memory_count":1' in caplog.text
+    assert '"market_context_missing_count":1' in caplog.text
+    assert '"top_memory_pairs":["EURCHF"]' in caplog.text
+
+
+def test_pipeline_debug_can_emit_promotion_diagnostic(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED", "false")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    report = {
+        "signal_watch_promotion_diagnostics": [
+            {
+                "event": "signal_watch_promotion_diagnostic",
+                "symbol": "GBPNZD",
+                "source_clean_block_id": "GBPNZD_20260623T060000Z_20260623T065800Z",
+                "clean_block_valid": True,
+                "eligible_for_signal_watch": False,
+                "blocked_by": ["MARKET_CONTEXT_MISSING"],
+                "next_required_stage": "HYDRATE_MARKET_CONTEXT",
+                "valid_for_execution": False,
+                "is_final_signal": False,
+                "final_direction": "WAIT",
+            }
+        ]
+    }
+
+    pipeline._apply_clean_block_watch_routes(l12_verdict={}, report=report)
+
+    assert "[SignalWatchPromotionDiagnostic]" in caplog.text
+    assert report["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is True
 
 
 def test_pipeline_terminalizes_replayed_lineage_missing_watch_diagnostic(monkeypatch, caplog):
@@ -919,10 +979,8 @@ def test_pipeline_terminalizes_replayed_lineage_missing_watch_diagnostic(monkeyp
 
     emitted = [record for record in caplog.records if "SignalWatchPromotionDiagnostic" in record.getMessage()]
     assert results == [False, False, False, False]
-    assert len(emitted) == 3
-    assert '"lineage_missing_replay_count":1' in emitted[0].getMessage()
-    assert '"lineage_missing_replay_count":2' in emitted[1].getMessage()
-    assert '"status":"LINEAGE_MISSING_TERMINAL"' in emitted[2].getMessage()
+    assert len(emitted) == 1
+    assert '"status":"LINEAGE_MISSING_TERMINAL"' in emitted[0].getMessage()
     assert payloads[2]["signal_json_emit_blocked_by_source_guard_terminal"] is True
     assert payloads[3]["signal_watch_source_diagnostic_terminal_suppressed"] is True
     assert payloads[3]["signal_watch_source_diagnostic_emit_result"] is False
@@ -969,10 +1027,10 @@ def test_pipeline_terminalizes_replayed_report_promotion_diagnostic(monkeypatch,
         pipeline._apply_clean_block_watch_routes(l12_verdict={}, report=report)
 
     emitted = [record for record in caplog.records if "SignalWatchPromotionDiagnostic" in record.getMessage()]
-    assert len(emitted) == 3
+    assert len(emitted) == 1
     assert '"source_lookup_stage":"SIGNAL_THROTTLE_V1_CLEAN_BLOCK_LEDGER"' in emitted[0].getMessage()
     assert '"source_clean_block_id":"GBPJPY_20260707T143900Z_20260707T144500Z"' in emitted[0].getMessage()
-    assert '"status":"LINEAGE_MISSING_TERMINAL"' in emitted[2].getMessage()
+    assert '"status":"LINEAGE_MISSING_TERMINAL"' in emitted[0].getMessage()
     assert reports[2]["signal_watch_promotion_diagnostics"][0]["signal_json_emit_blocked_by_source_guard_terminal"]
     assert reports[3]["signal_watch_promotion_diagnostics"][0]["signal_watch_source_diagnostic_terminal_suppressed"]
     assert reports[3]["signal_watch_promotion_diagnostics"][0]["diagnostic_emit_result"] is False
