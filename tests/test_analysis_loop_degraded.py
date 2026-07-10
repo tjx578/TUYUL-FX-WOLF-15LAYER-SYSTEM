@@ -223,6 +223,54 @@ class TestAnalyzePairDegradedFallback:
             assert "PERSIST_ERROR" in written["EURUSD"]["errors"][0]
 
 
+class TestAnalysisLoopConcurrency:
+    def test_max_concurrent_pairs_defaults_and_clamps(self, monkeypatch):
+        from startup.analysis_loop import _analysis_max_concurrent_pairs
+
+        monkeypatch.delenv("ANALYSIS_MAX_CONCURRENT_PAIRS", raising=False)
+        assert _analysis_max_concurrent_pairs(10) == 4
+        assert _analysis_max_concurrent_pairs(2) == 2
+
+        monkeypatch.setenv("ANALYSIS_MAX_CONCURRENT_PAIRS", "3")
+        assert _analysis_max_concurrent_pairs(10) == 3
+
+        monkeypatch.setenv("ANALYSIS_MAX_CONCURRENT_PAIRS", "0")
+        assert _analysis_max_concurrent_pairs(10) == 1
+
+        monkeypatch.setenv("ANALYSIS_MAX_CONCURRENT_PAIRS", "invalid")
+        assert _analysis_max_concurrent_pairs(10) == 4
+
+    @pytest.mark.asyncio
+    async def test_run_analysis_batch_limits_pair_fanout(self, monkeypatch):
+        import startup.analysis_loop as analysis_loop_module
+
+        active = 0
+        max_seen = 0
+        started: list[str] = []
+
+        async def _fake_analyze(pair, pipeline):
+            nonlocal active, max_seen
+            del pipeline
+            active += 1
+            max_seen = max(max_seen, active)
+            started.append(pair)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return {"symbol": pair}
+
+        monkeypatch.setenv("ANALYSIS_MAX_CONCURRENT_PAIRS", "2")
+        monkeypatch.setattr(analysis_loop_module, "_analyze_pair", _fake_analyze)
+
+        results = await analysis_loop_module._run_analysis_batch(
+            ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "AUDUSD"],
+            MagicMock(),
+        )
+
+        assert max_seen == 2
+        assert started == ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "AUDUSD"]
+        assert [result["symbol"] for result in results] == started
+
+
 class TestBuildVerdictCachePayload:
     """_build_verdict_cache_payload handles all pipeline result shapes."""
 

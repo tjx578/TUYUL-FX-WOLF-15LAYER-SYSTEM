@@ -57,6 +57,7 @@ __all__ = ["analysis_loop"]
 # (e.g.  CPU-bound computation or Redis latency spike) from blocking the
 # entire analysis loop.  Override via ``PIPELINE_TIMEOUT_SEC`` env var.
 _PIPELINE_TIMEOUT_SEC = float(os.getenv("PIPELINE_TIMEOUT_SEC", "30"))
+_ANALYSIS_MAX_CONCURRENT_PAIRS_DEFAULT = 4
 _ENGINE_HEARTBEAT_INTERVAL_SEC = float(os.getenv("ENGINE_HEARTBEAT_INTERVAL_SEC", "10"))
 _engine_tracer = setup_tracer("wolf-engine-loop")
 _ERROR_LOG_WINDOW_SEC = float(os.getenv("PIPELINE_ERROR_LOG_WINDOW_SEC", "30"))
@@ -93,6 +94,53 @@ def _log_pipeline_exception(pair: str, exc: BaseException, *, kind: str) -> None
         return
 
     state["suppressed"] = int(state["suppressed"]) + 1
+
+
+def _analysis_max_concurrent_pairs(total_symbols: int) -> int:
+    """Bound per-cycle pair fan-out so advisory engines cannot exhaust workers.
+
+    Each pair runs the full pipeline in a worker thread and Phase 2.5 can spawn
+    its own enrichment worker pool. Running the entire universe at once can
+    multiply into hundreds of live threads. The cap is analysis-only: it changes
+    scheduling, never L12/execution semantics.
+    """
+    total = max(1, int(total_symbols or 1))
+    raw = os.getenv("ANALYSIS_MAX_CONCURRENT_PAIRS")
+    if raw is None or not str(raw).strip():
+        return min(total, _ANALYSIS_MAX_CONCURRENT_PAIRS_DEFAULT)
+    try:
+        configured = int(float(str(raw).strip()))
+    except (TypeError, ValueError):
+        configured = _ANALYSIS_MAX_CONCURRENT_PAIRS_DEFAULT
+    return max(1, min(total, configured))
+
+
+async def _run_analysis_batch(
+    symbols: list[str],
+    pipeline: PipelineExecutor,
+) -> list[Any]:
+    max_concurrent = _analysis_max_concurrent_pairs(len(symbols))
+    if max_concurrent >= len(symbols):
+        return await asyncio.gather(
+            *(_analyze_pair(pair, pipeline) for pair in symbols),
+            return_exceptions=True,
+        )
+
+    logger.info(
+        "[AnalysisLoop] Pair concurrency limited: running {} symbol(s) with max_concurrent={}",
+        len(symbols),
+        max_concurrent,
+    )
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def _guarded(pair: str) -> Any:
+        async with semaphore:
+            return await _analyze_pair(pair, pipeline)
+
+    return await asyncio.gather(
+        *(_guarded(pair) for pair in symbols),
+        return_exceptions=True,
+    )
 
 
 def _normalize_boundary_direction(
@@ -732,10 +780,7 @@ async def analysis_loop(
                     continue
 
         cycle_start_time = time.time()
-        results = await asyncio.gather(
-            *(_analyze_pair(pair, pipeline) for pair in symbols_to_run),
-            return_exceptions=True,
-        )
+        results = await _run_analysis_batch(symbols_to_run, pipeline)
         verdicts_generated = 0
         for pair, result in zip(symbols_to_run, results, strict=False):
             if isinstance(result, Exception):
