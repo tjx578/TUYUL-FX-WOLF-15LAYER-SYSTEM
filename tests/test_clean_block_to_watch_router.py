@@ -180,8 +180,10 @@ def test_clean_block_router_uses_raw_pressure_direction_when_direction_unresolve
     assert route.payload["valid_for_execution"] is False
 
 
-def test_scanner_cycle_clean_block_stays_memory_radar_even_with_market_context():
-    route = route_clean_block_to_watch(_scanner_candidate(), market_context=_market())
+def test_scanner_cycle_clean_block_below_advisory_maturity_stays_memory_radar_even_with_market_context():
+    candidate = _scanner_candidate()
+    candidate["duration_seconds"] = 600.0
+    route = route_clean_block_to_watch(candidate, market_context=_market())
 
     assert route.event == "signal_throttle_clean_block_radar"
     assert route.emit_as_watch is False
@@ -193,6 +195,30 @@ def test_scanner_cycle_clean_block_stays_memory_radar_even_with_market_context()
     assert payload["reason"] == "scanner_cycle_clean_block_memory_only_primary_watch_requires_pair_rotation"
     assert payload["primary_watch_authority"] == "SCANNER_CYCLE_AWARE_MEMORY_ONLY"
     assert payload["scanner_cycle_memory_only"] is True
+
+
+def test_mature_scanner_cycle_clean_block_becomes_advisory_watch_with_market_context():
+    route = route_clean_block_to_watch(_scanner_candidate(), market_context=_market())
+
+    assert route.event == "signal_watch_json"
+    assert route.emit_as_watch is True
+    assert route.diagnostic is False
+    payload = route.payload
+    assert payload["status"] == "CLEAN_BLOCK_BUY_WATCH"
+    assert payload["eligible_for_primary_watch"] is False
+    assert payload["eligible_for_signal_watch"] is True
+    assert payload["primary_watch_authority"] == "SCANNER_CYCLE_AWARE_MEMORY_ONLY"
+    assert payload["primary_watch_authority_rule"] == "SCANNER_CYCLE_AWARE_MEMORY_RADAR_ONLY"
+    assert payload["scanner_cycle_memory_only"] is True
+    assert payload["scanner_cycle_advisory_watch"] is True
+    assert payload["watch_scope"] == "SCANNER_CYCLE_MEMORY_ADVISORY"
+    assert payload["watch_promotion_source"] == "SCANNER_CYCLE_MEMORY_ROUTER"
+    assert payload["promotion_path"] == "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
+    assert payload["promotion_trigger"] == "SCANNER_CYCLE_CLEAN_BLOCK_MATURE_WITH_CONTEXT"
+    assert payload["confidence_bucket"] == "SCANNER_CYCLE_MEMORY_WATCH_ONLY"
+    assert payload["valid_for_execution"] is False
+    assert payload["execution_valid_now"] is False
+    assert payload["is_final_signal"] is False
 
 
 def test_missing_context_becomes_clean_block_radar_confirmed():

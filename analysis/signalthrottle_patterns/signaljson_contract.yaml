@@ -41,6 +41,11 @@ signaljson_pattern_fields:
   - macro_context_tf
   - timing_tf
   - m15_role
+  - watch_scope
+  - eligible_for_signal_watch
+  - eligible_for_primary_watch
+  - scanner_cycle_advisory_watch
+  - advisory_watch_authority_rule
 
 production_pattern_context_fields:
   - selected_pattern_id

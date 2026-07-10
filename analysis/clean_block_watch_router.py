@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, is_dataclass
@@ -78,7 +79,13 @@ def route_clean_block_to_watch(
     if direction not in {"BUY", "SELL"}:
         blocked_by.append("CLEAN_BLOCK_DIRECTION_MISSING")
     authority = _primary_watch_authority(block)
-    if not authority["eligible_for_primary_watch"]:
+    scanner_advisory_watch = _scanner_cycle_advisory_watch_allowed(
+        block,
+        lineage=lineage,
+        authority=authority,
+        clean_block_seconds=clean_block_seconds,
+    )
+    if not authority["eligible_for_primary_watch"] and not scanner_advisory_watch:
         blocked_by.append("PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY")
 
     signal_price = _signal_price(market_context)
@@ -124,6 +131,7 @@ def route_clean_block_to_watch(
             signal_price=signal_price,
             direction=direction,
             authority=authority,
+            scanner_advisory_watch=scanner_advisory_watch,
         ),
         emit_as_watch=True,
         diagnostic=False,
@@ -204,9 +212,11 @@ def _watch_payload(
     signal_price: float,
     direction: str,
     authority: Mapping[str, Any],
+    scanner_advisory_watch: bool = False,
 ) -> dict[str, Any]:
     symbol = str(candidate.get("symbol") or "").upper()
     side = "BUY" if direction == "BUY" else "SELL"
+    is_scanner_advisory = bool(scanner_advisory_watch)
     start_price = _first_number(_field(market_context, "price_at_signal_start"))
     end_price = _first_number(_field(market_context, "price_at_signal_end"))
     entry_zone = sorted(
@@ -250,7 +260,11 @@ def _watch_payload(
         "direction_status": "CLEAN_BLOCK_WATCH_ONLY",
         "direction_validation_status": "CLEAN_BLOCK_WATCH_PENDING_STRUCTURE",
         "action": "WAIT_PRICE_THEME_STRUCTURE",
-        "reason": "clean_block_router_promoted_valid_clean_block_to_signal_watch",
+        "reason": (
+            "scanner_cycle_clean_block_mature_with_context_promoted_to_advisory_signal_watch"
+            if is_scanner_advisory
+            else "clean_block_router_promoted_valid_clean_block_to_signal_watch"
+        ),
         "signal_valid_time": signal_time,
         "signal_valid_time_utc": signal_time,
         "signal_valid_price": signal_price,
@@ -268,8 +282,14 @@ def _watch_payload(
         "market_context_applied": True,
         "valid_for_execution": False,
         "requires_market_context": True,
-        "confidence_bucket": "CLEAN_BLOCK_WATCH_ONLY",
-        "emit_reason": "CLEAN_BLOCK_TO_SIGNAL_WATCH",
+        "eligible_for_signal_watch": True,
+        "eligible_for_primary_watch": bool(authority.get("eligible_for_primary_watch")),
+        "confidence_bucket": "SCANNER_CYCLE_MEMORY_WATCH_ONLY" if is_scanner_advisory else "CLEAN_BLOCK_WATCH_ONLY",
+        "emit_reason": (
+            "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
+            if is_scanner_advisory
+            else "CLEAN_BLOCK_TO_SIGNAL_WATCH"
+        ),
         "signal_quality": "WATCH_ONLY",
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
         "source_clean_block_confirmed": True,
@@ -277,8 +297,24 @@ def _watch_payload(
         "source_clean_block_confirmed_at_utc": lineage.get("clean_block_confirmed_at_utc"),
         "source_clean_block_latest_end_utc": lineage.get("clean_block_latest_end_utc"),
         "microboost_validation_status": "NOT_REQUIRED_CLEAN_BLOCK_ROUTER",
-        "promotion_path": "CLEAN_BLOCK_TO_SIGNAL_WATCH",
-        "promotion_trigger": "CLEAN_BLOCK_VALID",
+        "promotion_path": (
+            "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
+            if is_scanner_advisory
+            else "CLEAN_BLOCK_TO_SIGNAL_WATCH"
+        ),
+        "promotion_trigger": (
+            "SCANNER_CYCLE_CLEAN_BLOCK_MATURE_WITH_CONTEXT"
+            if is_scanner_advisory
+            else "CLEAN_BLOCK_VALID"
+        ),
+        "watch_promotion_source": "SCANNER_CYCLE_MEMORY_ROUTER" if is_scanner_advisory else "CLEAN_BLOCK_ROUTER",
+        "watch_scope": "SCANNER_CYCLE_MEMORY_ADVISORY" if is_scanner_advisory else "PAIR_ROTATION_PRIMARY",
+        "scanner_cycle_advisory_watch": is_scanner_advisory,
+        "advisory_watch_authority_rule": (
+            "SCANNER_CYCLE_MEMORY_MATURE_WITH_CONTEXT_NON_EXECUTABLE"
+            if is_scanner_advisory
+            else None
+        ),
         "primary_watch_authority": authority.get("primary_watch_authority"),
         "primary_watch_authority_rule": authority.get("primary_watch_authority_rule"),
         "scanner_cycle_memory_only": authority.get("scanner_cycle_memory_only"),
@@ -294,7 +330,11 @@ def _watch_payload(
             "invalidation_level": None,
             "key_support": _field(market_context, "key_support") or _field(market_context, "main_support"),
             "key_resistance": _field(market_context, "key_resistance") or _field(market_context, "main_resistance"),
-            "reason": "clean_block_watch_requires_structure_context_but_execution_not_authorized",
+            "reason": (
+                "scanner_cycle_memory_watch_requires_htf_tradeplan_validation"
+                if is_scanner_advisory
+                else "clean_block_watch_requires_structure_context_but_execution_not_authorized"
+            ),
         },
     }
     if structure_room:
@@ -310,6 +350,10 @@ def _watch_payload(
     )
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
+    if is_scanner_advisory:
+        payload["watch_promotion_source"] = "SCANNER_CYCLE_MEMORY_ROUTER"
+        payload["promotion_path"] = "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
+        payload["promotion_trigger"] = "SCANNER_CYCLE_CLEAN_BLOCK_MATURE_WITH_CONTEXT"
     payload["clean_block_valid"] = True
     return payload
 
@@ -520,6 +564,46 @@ def _primary_watch_authority(candidate: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _scanner_cycle_advisory_watch_allowed(
+    candidate: Mapping[str, Any],
+    *,
+    lineage: Mapping[str, Any],
+    authority: Mapping[str, Any],
+    clean_block_seconds: int,
+) -> bool:
+    if not _env_bool("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_WATCH_ENABLED", True):
+        return False
+    if authority.get("eligible_for_primary_watch") is True:
+        return False
+    if authority.get("scanner_cycle_memory_only") is not True:
+        return False
+    if lineage.get("clean_block_valid") is not True:
+        return False
+    if _raw_pressure_direction(candidate) not in {"BUY", "SELL"}:
+        return False
+
+    min_seconds = max(
+        float(clean_block_seconds),
+        _env_float("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_MIN_SECONDS", 900.0),
+    )
+    duration = _first_number(
+        candidate.get("clean_block_duration_seconds"),
+        candidate.get("source_clean_block_latest_duration_seconds"),
+        candidate.get("duration_seconds"),
+    )
+    if duration is None or duration < min_seconds:
+        return False
+
+    min_events = max(1, int(_env_float("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_MIN_EVENTS", 12.0)))
+    events = _first_number(
+        candidate.get("clean_block_event_count"),
+        candidate.get("effective_ticks"),
+        candidate.get("raw_signal_throttle_event_count"),
+        candidate.get("events"),
+    )
+    return events is not None and events >= min_events
+
+
 def _promotion_authority_fields(authority: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "eligible_for_primary_watch": bool(authority.get("eligible_for_primary_watch")),
@@ -667,6 +751,19 @@ def _optional_bool(value: Any) -> bool | None:
     if text in {"0", "false", "no", "off"}:
         return False
     return None
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    parsed = _optional_bool(raw)
+    return default if parsed is None else parsed
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return float(default)
 
 
 def _stable_clean_block_id(symbol: str, start: str | None, first_valid_end: str | None) -> str | None:

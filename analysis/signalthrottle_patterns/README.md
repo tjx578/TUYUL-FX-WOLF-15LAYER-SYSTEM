@@ -111,6 +111,15 @@ but the HTF trade location is not confirmed, the operator setup remains
 `BUY_STRUCTURE_WATCH` / `SELL_STRUCTURE_WATCH`, entry/SL/TP are omitted, and
 `wait_for` is `H4_DAILY_STRUCTURE_AND_M15_TIMING`.
 
+Scanner-cycle clean blocks remain non-primary authority. A mature scanner-cycle
+memory block can emit an advisory `SignalWatchJSON` only when market context is
+available and `SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_WATCH_ENABLED=true`
+with the configured maturity thresholds met. These watches carry
+`watch_scope=SCANNER_CYCLE_MEMORY_ADVISORY`,
+`eligible_for_primary_watch=false`, and `valid_for_execution=false`; they exist
+to prevent strong pressure memory from going silent, not to bypass L12 or the
+SignalJSON execution firewall.
+
 `pattern_registry.yaml` and `pair_role_map.yaml` are the operational database.
 `reference_cases.yaml` stores historical pair windows as evidence sources, and
 `historical_validation_log.yaml` records what each upload proved or corrected.
