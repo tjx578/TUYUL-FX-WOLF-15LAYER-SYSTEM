@@ -114,7 +114,9 @@ but the HTF trade location is not confirmed, the operator setup remains
 Scanner-cycle clean blocks remain non-primary authority. A mature scanner-cycle
 memory block can emit an advisory `SignalWatchJSON` only when market context is
 available and `SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_WATCH_ENABLED=true`
-with the configured maturity thresholds met. These watches carry
+with the configured maturity thresholds met. The default maturity follows the
+clean-block threshold (`300s` in production) so valid pressure memory does not
+go silent while waiting for pair-rotation authority. These watches carry
 `watch_scope=SCANNER_CYCLE_MEMORY_ADVISORY`,
 `eligible_for_primary_watch=false`, and `valid_for_execution=false`; they exist
 to prevent strong pressure memory from going silent, not to bypass L12 or the

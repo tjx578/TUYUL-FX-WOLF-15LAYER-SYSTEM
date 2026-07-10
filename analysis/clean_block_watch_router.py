@@ -601,7 +601,7 @@ def _scanner_cycle_advisory_watch_allowed(
 
     min_seconds = max(
         float(clean_block_seconds),
-        _env_float("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_MIN_SECONDS", 900.0),
+        _env_float("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_MIN_SECONDS", float(clean_block_seconds)),
     )
     duration = _first_number(
         candidate.get("clean_block_duration_seconds"),
