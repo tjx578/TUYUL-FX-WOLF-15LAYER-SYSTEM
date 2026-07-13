@@ -1198,9 +1198,10 @@ def test_pipeline_refuses_lineage_backfill_when_raw_direction_conflicts():
 
 def test_pipeline_terminalizes_stale_microboost_cluster_once(monkeypatch):
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
-    emitted: list[dict] = []
+    diagnostics: list[dict] = []
+    decisions: list[dict] = []
     now = datetime.now(UTC)
-    end = (now - timedelta(seconds=360)).isoformat()
+    end = (now - timedelta(seconds=480)).isoformat()
 
     def stale_report() -> dict:
         cluster = {
@@ -1219,10 +1220,17 @@ def test_pipeline_terminalizes_stale_microboost_cluster_once(monkeypatch):
         }
 
     monkeypatch.setattr(pipeline, "_source_lineage_max_age_seconds", lambda: 300.0)
+    monkeypatch.setattr(pipeline, "_microboost_active_timing_max_age_seconds", lambda: 120.0)
+    monkeypatch.setattr(pipeline, "_microboost_lineage_wait_grace_seconds", lambda: 420.0)
     monkeypatch.setattr(
         pipeline,
         "_emit_source_guard_diagnostic",
-        lambda payload: emitted.append(dict(payload)) or True,
+        lambda payload: diagnostics.append(dict(payload)) or True,
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "_emit_signal_json_payload",
+        lambda payload: decisions.append(dict(payload)) or True,
     )
 
     report = stale_report()
@@ -1230,18 +1238,120 @@ def test_pipeline_terminalizes_stale_microboost_cluster_once(monkeypatch):
     assert report["microboost_summary"]["latest"] is None
     assert report["microboost_watch_entry"] is None
     assert report["microboost_core_event"] is None
-    assert report["microboost_stale_terminalization"]["terminal_status"] == "EXPIRED_SOURCE_STALE"
-    assert len(emitted) == 1
+    assert report["microboost_stale_terminalization"]["terminal_status"] == "PENDING_WATCH_EXPIRED"
+    assert report["microboost_terminal_decision_update"]["status"] == "PENDING_WATCH_EXPIRED"
+    assert report["microboost_terminal_decision_update"]["decision_state"] == "EXPIRED"
+    assert report["microboost_terminal_decision_update"]["signal_json_emit_result"] is True
+    assert len(diagnostics) == 1
+    assert len(decisions) == 1
 
     replay = stale_report()
     assert pipeline._terminalize_stale_microboost_cluster(replay) is True
     assert replay["microboost_stale_terminalization"]["terminalization_replayed"] is True
-    assert len(emitted) == 1
+    assert replay["microboost_terminal_decision_update"]["signal_json_emit_result"] is False
+    assert len(diagnostics) == 1
+    assert len(decisions) == 1
+
+
+def test_pipeline_downgrades_old_microboost_within_lineage_grace(monkeypatch):
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    diagnostics: list[dict] = []
+    decisions: list[dict] = []
+    now = datetime.now(UTC)
+    end = (now - timedelta(seconds=300)).isoformat()
+    report = {
+        "symbol_activity": {
+            "XAGUSD": {"latest_event_utc": now.isoformat(), "idle_seconds": 0.0},
+        },
+        "microboost_summary": {
+            "latest": {
+                "cluster_id": "XAGUSD_20260713T052250Z",
+                "symbol": "XAGUSD",
+                "end_utc": end,
+                "source_clean_block_id": "XAGUSD_20260713T052054Z_20260713T052554Z",
+            }
+        },
+        "microboost_watch_entry": {"status": "MICROBOOST_WATCH"},
+        "microboost_core_event": {"event": "microboost_intel"},
+        "clean_block_watch_entries": [
+            {
+                "symbol": "XAGUSD",
+                "status": "CLEAN_BLOCK_BUY_WATCH",
+                "microboost_validation_status": "NOT_REQUIRED_CLEAN_BLOCK_ROUTER",
+            }
+        ],
+        "signal_watch_promotion_diagnostics": [
+            {"symbol": "XAGUSD", "event": "signal_throttle_clean_block_radar"}
+        ],
+    }
+    monkeypatch.setattr(pipeline, "_source_lineage_max_age_seconds", lambda: 300.0)
+    monkeypatch.setattr(pipeline, "_microboost_active_timing_max_age_seconds", lambda: 120.0)
+    monkeypatch.setattr(pipeline, "_microboost_lineage_wait_grace_seconds", lambda: 420.0)
+    monkeypatch.setattr(
+        pipeline,
+        "_emit_source_guard_diagnostic",
+        lambda payload: diagnostics.append(dict(payload)) or True,
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "_emit_signal_json_payload",
+        lambda payload: decisions.append(dict(payload)) or True,
+    )
+
+    assert pipeline._terminalize_stale_microboost_cluster(report) is True
+
+    assert report["microboost_summary"]["latest"] is None
+    assert report["microboost_watch_entry"] is None
+    assert report["microboost_core_event"] is None
+    assert "microboost_stale_terminalization" not in report
+    assert "microboost_terminal_decision_update" not in report
+    assert report["microboost_timing_downgrade"]["lineage_waiting"] is True
+    assert report["microboost_timing_downgrade"]["timing_status"] == (
+        "CLEAN_BLOCK_WATCH_PENDING_CURRENT_TIMING"
+    )
+    watch = report["clean_block_watch_entries"][0]
+    assert watch["status"] == "CLEAN_BLOCK_BUY_WATCH"
+    assert watch["clean_block_outcome_status"] == "CLEAN_BLOCK_WATCH_PENDING_CURRENT_TIMING"
+    assert watch["microboost_validation_status"] == "STALE_HISTORY_ONLY"
+    assert watch["next_required_stage"] == "WAIT_CURRENT_MICROBOOST_OR_PRICE_REACTION"
+    assert len(diagnostics) == 1
+    assert decisions == []
+
+
+def test_pipeline_counts_contextless_prewatch_expiry_as_decision_update_emit(monkeypatch):
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    emitted = []
+
+    class _Emitter:
+        def emit(self, event):
+            emitted.append(event)
+            return True
+
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter()
+    pipeline._signal_json_emitter = _Emitter()
+    monkeypatch.setenv("SIGNAL_LIFECYCLE_MANAGER_SHADOW_ENABLED", "false")
+    payload = pipeline._prewatch_expiry_decision_update(
+        {
+            "symbol": "XAGUSD",
+            "cluster_id": "XAGUSD_20260713T052250Z",
+            "end_utc": "2026-07-13T05:22:50+00:00",
+            "source_clean_block_id": "XAGUSD_20260713T052054Z_20260713T052554Z",
+        },
+        {
+            "microboost_timing_age_seconds": 480.0,
+            "microboost_active_timing_max_age_seconds": 120.0,
+        },
+    )
+
+    assert pipeline._emit_signal_json_payload(payload) is True
+    assert emitted
+    assert payload["signal_json_emitted_as_price_decision_update"] is False
 
 
 def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     emitted: list[dict] = []
+    snapshots: list[dict] = []
     report = {
         "microboost_watch_entry": {
             "symbol": "XAUUSD",
@@ -1269,6 +1379,7 @@ def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
     monkeypatch.setattr(pipeline, "_apply_allowed_quorum_decision_update", lambda **_: None)
     monkeypatch.setattr(pipeline, "_apply_no_trade_pressure_decision_update", lambda **_: None)
     monkeypatch.setattr(pipeline, "_emit_signal_json_payload", lambda payload: emitted.append(payload) or True)
+    monkeypatch.setattr(pipeline, "_emit_signal_throttle_state_snapshot", lambda payload: snapshots.append(payload))
 
     class _Analyzer:
         def snapshot(self, *, market_contexts):
@@ -1288,6 +1399,7 @@ def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
     assert emitted[0]["shadow_reason"] == "SOURCE_VERDICT_NOT_EXECUTE"
     assert emitted[0]["shadow_source_verdict"] == "NO_TRADE"
     assert emitted[0]["shadow_source_stage"] == "POST_L12_PRE_V11"
+    assert snapshots and snapshots[0] is not report
 
 
 def test_shadow_clean_block_watch_is_marked_observability_only(monkeypatch):
