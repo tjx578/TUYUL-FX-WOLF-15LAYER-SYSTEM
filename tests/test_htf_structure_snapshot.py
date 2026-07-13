@@ -26,6 +26,7 @@ from analysis.htf_structure_snapshot import (
     LOC_PREMIUM,
     HTFStructureSnapshot,
     HTFStructureSnapshotResolver,
+    _average_true_range,
     build_snapshot,
     classify_bias,
     classify_liquidity_context,
@@ -348,3 +349,20 @@ def test_build_event_reasserts_safety_lock_on_loose_dict():
     assert payload["valid_for_execution"] is False
     assert payload["is_final_signal"] is False
     assert payload["event"] == EVENT_NAME
+
+
+def test_atr_ignores_explicitly_forming_last_bar():
+    closed = [
+        {**_c(101.0, 99.0, close=100.0), "complete": True},
+        {**_c(102.0, 100.0, close=101.0), "complete": True},
+    ]
+    forming_spike = {**_c(130.0, 80.0, close=120.0), "complete": False}
+
+    assert _average_true_range([*closed, forming_spike], period=14) == _average_true_range(closed, period=14)
+
+
+def test_snapshot_dedupe_key_changes_when_atr_changes():
+    base = _snap()
+    changed = HTFStructureSnapshot(**{**base.__dict__, "h4_atr": 9.5})
+
+    assert changed.dedupe_key() != base.dedupe_key()
