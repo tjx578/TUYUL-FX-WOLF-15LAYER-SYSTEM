@@ -229,7 +229,7 @@ class MicroboostCounterEntryEngine:
         timing_valid_min_seconds: float = 180.0,
         absorption_valid_density_per_minute: float = 15.0,
         absorption_valid_max_stall_pips: float = 2.0,
-        direct_absorption_enabled: bool = True,
+        direct_absorption_enabled: bool = False,
         direct_absorption_require_theme_alignment: bool = False,
         direct_absorption_require_rr: bool = True,
         min_rr_valid: float = SIGNAL_MIN_RR,
@@ -470,12 +470,7 @@ class MicroboostCounterEntryEngine:
 
         rejection = bool(_optional_bool(_field(market, "m15_rejection_from_resistance", None)))
         minor_break = bool(_optional_bool(_field(market, "m15_close_below_minor_support", None)))
-        m15_close = _optional_float(_field(market, "m15_close", None))
-        close_below_signal = m15_close is not None and entry_reference is not None and m15_close < entry_reference
-        closed_without_buy_breakout = m15_close is not None
-        m15_counter_confirmation = False if watch_only else (
-            rejection or minor_break or close_below_signal or closed_without_buy_breakout
-        )
+        m15_counter_confirmation = False if watch_only else (rejection or minor_break)
         status = self._sell_watch_status(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -514,7 +509,7 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        direct_absorption = False if (watch_only or m15_counter_confirmation) else self._direct_absorption_valid(
+        direct_absorption = False if watch_only else self._direct_absorption_valid(
             direction="SELL",
             market=market,
             target_result=target_result,
@@ -522,7 +517,8 @@ class MicroboostCounterEntryEngine:
         )
         tradeplan_valid = bool(target_result["structure_rr_valid"])
         phase_ready = _counter_entry_phase_allows_execution("SELL", market)
-        can_promote = tradeplan_valid and m15_counter_confirmation
+        direct_absorption = direct_absorption and tradeplan_valid and m15_counter_confirmation and phase_ready
+        can_promote = tradeplan_valid and phase_ready and m15_counter_confirmation
         if direct_absorption:
             status = CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION
             final_direction = "SELL"
@@ -620,17 +616,17 @@ class MicroboostCounterEntryEngine:
             tp3_rr=target_result["tp3_rr"],
             tp4_rr=target_result["tp4_rr"],
             confirmation_policy=(
-                "DIRECT_ABSORPTION_NO_M15_WAIT"
+                "DIRECT_ABSORPTION_WITH_M15_CONFIRMATION"
                 if direct_absorption
                 else ("M15_CLOSE_CONFIRMED" if m15_counter_confirmation else "M15_CLOSE_REQUIRED")
             ),
-            requires_m15_close=not (direct_absorption or m15_counter_confirmation),
+            requires_m15_close=not m15_counter_confirmation,
             direct_valid_reason=("mature_absorption_with_structure_and_rr" if direct_absorption else None),
-            pending_decision_id=None if (direct_absorption or m15_counter_confirmation) else _pending_decision_id(base),
+            pending_decision_id=None if m15_counter_confirmation else _pending_decision_id(base),
             structure_ready=tradeplan_valid,
             rr_to_valid_target=target_result["selected_rr"],
             m15_confirmation_status=(
-                "DIRECT_ABSORPTION_CONFIRMED"
+                "DIRECT_ABSORPTION_M15_CONFIRMED"
                 if direct_absorption
                 else (
                     "BUY_BREAKOUT_CONFIRMED"
@@ -735,12 +731,7 @@ class MicroboostCounterEntryEngine:
 
         rejection = bool(_optional_bool(_field(market, "m15_rejection_from_support", None)))
         minor_break = bool(_optional_bool(_field(market, "m15_close_above_minor_resistance", None)))
-        m15_close = _optional_float(_field(market, "m15_close", None))
-        close_above_signal = m15_close is not None and entry_reference is not None and m15_close > entry_reference
-        closed_without_sell_breakdown = m15_close is not None
-        m15_counter_confirmation = False if watch_only else (
-            rejection or minor_break or close_above_signal or closed_without_sell_breakdown
-        )
+        m15_counter_confirmation = False if watch_only else (rejection or minor_break)
         status = self._buy_watch_status(
             phase_unpriced=observed_phase_unpriced,
             density=density,
@@ -779,7 +770,7 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        direct_absorption = False if (watch_only or m15_counter_confirmation) else self._direct_absorption_valid(
+        direct_absorption = False if watch_only else self._direct_absorption_valid(
             direction="BUY",
             market=market,
             target_result=target_result,
@@ -787,7 +778,8 @@ class MicroboostCounterEntryEngine:
         )
         tradeplan_valid = bool(target_result["structure_rr_valid"])
         phase_ready = _counter_entry_phase_allows_execution("BUY", market)
-        can_promote = tradeplan_valid and m15_counter_confirmation
+        direct_absorption = direct_absorption and tradeplan_valid and m15_counter_confirmation and phase_ready
+        can_promote = tradeplan_valid and phase_ready and m15_counter_confirmation
         if direct_absorption:
             status = CounterEntryStatus.BUY_TIMING_VALID_BY_DIRECT_ABSORPTION
             final_direction = "BUY"
@@ -884,17 +876,17 @@ class MicroboostCounterEntryEngine:
             tp3_rr=target_result["tp3_rr"],
             tp4_rr=target_result["tp4_rr"],
             confirmation_policy=(
-                "DIRECT_ABSORPTION_NO_M15_WAIT"
+                "DIRECT_ABSORPTION_WITH_M15_CONFIRMATION"
                 if direct_absorption
                 else ("M15_CLOSE_CONFIRMED" if m15_counter_confirmation else "M15_CLOSE_REQUIRED")
             ),
-            requires_m15_close=not (direct_absorption or m15_counter_confirmation),
+            requires_m15_close=not m15_counter_confirmation,
             direct_valid_reason=("mature_absorption_with_structure_and_rr" if direct_absorption else None),
-            pending_decision_id=None if (direct_absorption or m15_counter_confirmation) else _pending_decision_id(base),
+            pending_decision_id=None if m15_counter_confirmation else _pending_decision_id(base),
             structure_ready=tradeplan_valid,
             rr_to_valid_target=target_result["selected_rr"],
             m15_confirmation_status=(
-                "DIRECT_ABSORPTION_CONFIRMED"
+                "DIRECT_ABSORPTION_M15_CONFIRMED"
                 if direct_absorption
                 else (
                     "SELL_BREAKDOWN_CONFIRMED"
