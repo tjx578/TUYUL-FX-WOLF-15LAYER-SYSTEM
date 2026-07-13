@@ -4488,6 +4488,7 @@ class WolfConstitutionalPipeline:
             )
         if hydration.get("enabled") is True:
             report["candidate_market_context_hydration"] = hydration
+        self._terminalize_stale_microboost_cluster(report)
         report["htf_structure_contexts"] = self._htf_structure_contexts_from_market_contexts(market_contexts)
         self._emit_htf_structure_snapshots_for_contexts(market_contexts)
         self._emit_signal_throttle_fusion_v3_diagnostic(report)
@@ -7300,6 +7301,7 @@ class WolfConstitutionalPipeline:
             report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
         if hydration.get("enabled") is True:
             report["candidate_market_context_hydration"] = hydration
+        self._terminalize_stale_microboost_cluster(report)
         report["htf_structure_contexts"] = self._htf_structure_contexts_from_market_contexts(market_contexts)
         self._emit_htf_structure_snapshots_for_contexts(market_contexts)
         self._emit_microboost_intel_if_new(report)
@@ -7478,6 +7480,92 @@ class WolfConstitutionalPipeline:
             diag["diagnostic_emit_result"] = self._emit_source_guard_diagnostic(diag)
             diagnostics.append(diag)
         report["microboost_source_diagnostics"] = diagnostics
+        return True
+
+    def _terminalize_stale_microboost_cluster(self, report: dict[str, Any]) -> bool:
+        """Stop a stale Microboost cluster from re-entering every runtime snapshot.
+
+        The analyzer intentionally retains source events for observability.  That
+        must not resurrect an already stale Microboost candidate on every tick.
+        We preserve the source rows, emit one terminal diagnostic per cluster,
+        and remove only the derived candidate/Watch path from this report.
+        """
+        if not self._parse_env_bool("MICROBOOST_STALE_CLUSTER_TERMINALIZATION_ENABLED", True):
+            return False
+        summary = report.get("microboost_summary")
+        if not isinstance(summary, dict):
+            return False
+        latest = summary.get("latest")
+        if not isinstance(latest, dict):
+            return False
+
+        guard = guard_microboost_source(
+            report,
+            max_age_seconds=self._source_lineage_max_age_seconds(),
+        )
+        stale_diagnostic = next(
+            (
+                dict(diagnostic)
+                for diagnostic in guard.diagnostics
+                if str(diagnostic.get("event") or "") == "microboost_stale_diagnostic"
+            ),
+            None,
+        )
+        if stale_diagnostic is None:
+            return False
+
+        cluster_id = str(latest.get("cluster_id") or "").strip()
+        cluster_key = "|".join(
+            (
+                cluster_id or str(latest.get("symbol") or "").upper(),
+                str(latest.get("end_utc") or ""),
+                str(latest.get("source_clean_block_id") or ""),
+            )
+        )
+        if not cluster_key.strip("|"):
+            return False
+
+        terminalized = getattr(self, "_terminalized_microboost_clusters", None)
+        if not isinstance(terminalized, dict):
+            terminalized = {}
+            self._terminalized_microboost_clusters = terminalized
+        first_terminalization = cluster_key not in terminalized
+        terminalized[cluster_key] = time.monotonic()
+        max_cache = max(
+            32,
+            int(self._parse_env_float("MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE", 512.0)),
+        )
+        while len(terminalized) > max_cache:
+            oldest = min(terminalized, key=terminalized.get)
+            terminalized.pop(oldest, None)
+
+        terminal_payload = {
+            **stale_diagnostic,
+            "reason": "MICROBOOST_CLUSTER_EXPIRED_SOURCE_STALE",
+            "terminal_status": "EXPIRED_SOURCE_STALE",
+            "cluster_terminalized": True,
+            "active_candidate_removed": True,
+            "terminalization_replayed": not first_terminalization,
+        }
+        if first_terminalization:
+            terminal_payload["diagnostic_emit_result"] = self._emit_source_guard_diagnostic(terminal_payload)
+        else:
+            terminal_payload["diagnostic_emit_result"] = False
+
+        summary["latest"] = None
+        summary["latest_terminalized_cluster_id"] = cluster_id or None
+        summary["latest_terminalization_status"] = "EXPIRED_SOURCE_STALE"
+        report["microboost_core_event"] = None
+        for entry_key in (
+            "microboost_continuation_entry",
+            "microboost_counter_entry",
+            "microboost_watch_entry",
+        ):
+            # These payloads are all built from ``microboost_summary.latest`` in
+            # the analyzer.  Clear the derived lane even when a legacy payload
+            # omitted its cluster_id, rather than allowing it to bypass expiry.
+            report[entry_key] = None
+        report["microboost_stale_terminalization"] = terminal_payload
         return True
 
     def _emit_source_guard_diagnostic(self, payload: dict[str, Any]) -> bool:
@@ -7858,6 +7946,12 @@ class WolfConstitutionalPipeline:
                 "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true"
             ),
             "MICROBOOST_SOURCE_GUARD_ENABLED": _b("MICROBOOST_SOURCE_GUARD_ENABLED", "true"),
+            "MICROBOOST_STALE_CLUSTER_TERMINALIZATION_ENABLED": _b(
+                "MICROBOOST_STALE_CLUSTER_TERMINALIZATION_ENABLED", "true"
+            ),
+            "MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE": _f(
+                "MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE", "512"
+            ),
             "SIGNAL_WATCH_SOURCE_GUARD_ENABLED": _b("SIGNAL_WATCH_SOURCE_GUARD_ENABLED", "true"),
             "SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED": _b("SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED", "true"),
             "SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS": _f("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", "300"),
