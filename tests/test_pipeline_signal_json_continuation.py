@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pipeline.wolf_constitutional_pipeline as wolf_pipeline
@@ -1193,6 +1194,49 @@ def test_pipeline_refuses_lineage_backfill_when_raw_direction_conflicts():
     assert attached is False
     assert "source_clean_block_id" not in payload
     assert payload["source_clean_block_backfill_status"] == "NO_SAFE_PAIR_LOCAL_MATCH"
+
+
+def test_pipeline_terminalizes_stale_microboost_cluster_once(monkeypatch):
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    emitted: list[dict] = []
+    now = datetime.now(UTC)
+    end = (now - timedelta(seconds=360)).isoformat()
+
+    def stale_report() -> dict:
+        cluster = {
+            "cluster_id": "EURNZD_20260713T044457Z",
+            "symbol": "EURNZD",
+            "end_utc": end,
+            "source_clean_block_id": "EURNZD_20260713T043900Z_20260713T044400Z",
+        }
+        return {
+            "symbol_activity": {
+                "EURNZD": {"latest_event_utc": now.isoformat(), "idle_seconds": 0.0},
+            },
+            "microboost_summary": {"latest": dict(cluster)},
+            "microboost_watch_entry": {"cluster_id": cluster["cluster_id"], "status": "MICROBOOST_WATCH"},
+            "microboost_core_event": {"cluster_id": cluster["cluster_id"]},
+        }
+
+    monkeypatch.setattr(pipeline, "_source_lineage_max_age_seconds", lambda: 300.0)
+    monkeypatch.setattr(
+        pipeline,
+        "_emit_source_guard_diagnostic",
+        lambda payload: emitted.append(dict(payload)) or True,
+    )
+
+    report = stale_report()
+    assert pipeline._terminalize_stale_microboost_cluster(report) is True
+    assert report["microboost_summary"]["latest"] is None
+    assert report["microboost_watch_entry"] is None
+    assert report["microboost_core_event"] is None
+    assert report["microboost_stale_terminalization"]["terminal_status"] == "EXPIRED_SOURCE_STALE"
+    assert len(emitted) == 1
+
+    replay = stale_report()
+    assert pipeline._terminalize_stale_microboost_cluster(replay) is True
+    assert replay["microboost_stale_terminalization"]["terminalization_replayed"] is True
+    assert len(emitted) == 1
 
 
 def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
