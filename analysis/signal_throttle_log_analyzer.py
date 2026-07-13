@@ -1797,7 +1797,7 @@ def _attach_clean_block_source_to_microboost_summary(
     microboost_summary: dict[str, Any],
     clean_watch_candidates: list[dict[str, Any]],
 ) -> None:
-    if not isinstance(microboost_summary, dict) or not clean_watch_candidates:
+    if not isinstance(microboost_summary, dict):
         return
     blocks = microboost_summary.get("blocks")
     if isinstance(blocks, list):
@@ -1807,13 +1807,19 @@ def _attach_clean_block_source_to_microboost_summary(
     latest = microboost_summary.get("latest")
     if isinstance(latest, dict):
         _attach_clean_block_source_to_microboost_block(latest, clean_watch_candidates)
+        resolution = latest.get("source_clean_block_lineage_resolution")
+        if isinstance(resolution, dict):
+            # Keep the current candidate's proof (or precise failure) at summary level
+            # so downstream Watch diagnostics do not need to infer it from raw rows.
+            microboost_summary["lineage_resolution"] = dict(resolution)
 
 
 def _attach_clean_block_source_to_microboost_block(
     block: dict[str, Any],
     clean_watch_candidates: list[dict[str, Any]],
 ) -> None:
-    source = _matching_clean_block_source(block, clean_watch_candidates)
+    source, resolution = _resolve_clean_block_source(block, clean_watch_candidates)
+    block["source_clean_block_lineage_resolution"] = resolution
     if source is None:
         return
     source_id = source.get("source_clean_block_id")
@@ -1857,61 +1863,153 @@ def _attach_clean_block_source_to_microboost_block(
             block[key] = source.get(key)
 
 
-def _matching_clean_block_source(
+def _resolve_clean_block_source(
     block: dict[str, Any],
     clean_watch_candidates: list[dict[str, Any]],
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Resolve direct Microboost lineage with auditable, fail-closed criteria.
+
+    A Watch must inherit the exact clean block that produced its pressure, not a
+    merely recent block from another pair/direction/deployment.  The counters
+    deliberately travel with the candidate so production diagnostics can state
+    *why* recovery was refused instead of collapsing every failure into
+    ``NO_SAFE_PAIR_LOCAL_MATCH``.
+    """
+    candidates = [candidate for candidate in clean_watch_candidates if isinstance(candidate, dict)]
     symbol = str(block.get("symbol") or "").upper()
+    resolution: dict[str, Any] = {
+        "status": "NO_SAFE_PAIR_LOCAL_MATCH",
+        "reason": "NO_LEDGER_CANDIDATE",
+        "lineage_candidate_count": len(candidates),
+        "lineage_symbol_match_count": 0,
+        "lineage_source_id_available_count": 0,
+        "lineage_valid_block_count": 0,
+        "lineage_deployment_match_count": 0,
+        "lineage_direction_match_count": 0,
+        "lineage_time_overlap_count": 0,
+        "lineage_recent_window_match_count": 0,
+        "lineage_safe_match_count": 0,
+    }
     if not symbol:
-        return None
+        resolution["reason"] = "SYMBOL_MISSING"
+        return None, resolution
+
+    symbol_matches = [
+        candidate
+        for candidate in candidates
+        if str(candidate.get("symbol") or "").upper() == symbol
+    ]
+    resolution["lineage_symbol_match_count"] = len(symbol_matches)
+    if not symbol_matches:
+        return None, resolution
+
+    source_matches = [
+        candidate for candidate in symbol_matches if str(candidate.get("source_clean_block_id") or "").strip()
+    ]
+    resolution["lineage_source_id_available_count"] = len(source_matches)
+    if not source_matches:
+        resolution["reason"] = "SOURCE_ID_UNAVAILABLE"
+        return None, resolution
+
+    valid_matches = [candidate for candidate in source_matches if candidate.get("clean_block_valid") is True]
+    resolution["lineage_valid_block_count"] = len(valid_matches)
+    if not valid_matches:
+        resolution["reason"] = "BLOCK_NOT_MATURE"
+        return None, resolution
+
+    expected_deployments = _lineage_deployment_ids(block)
+    deployment_matches = [
+        candidate
+        for candidate in valid_matches
+        if _lineage_deployments_compatible(expected_deployments, _lineage_deployment_ids(candidate))
+    ]
+    resolution["lineage_deployment_match_count"] = len(deployment_matches)
+    if not deployment_matches:
+        resolution["reason"] = "DEPLOYMENT_MISMATCH"
+        return None, resolution
+
+    expected_direction = _lineage_direction(block)
+    direction_matches = [
+        candidate
+        for candidate in deployment_matches
+        if _lineage_directions_compatible(expected_direction, _lineage_direction(candidate))
+    ]
+    resolution["lineage_direction_match_count"] = len(direction_matches)
+    if not direction_matches:
+        resolution["reason"] = "DIRECTION_MISMATCH"
+        return None, resolution
+
     block_start = _parse_timestamp(str(block.get("start_utc") or ""))
     block_end = _parse_timestamp(str(block.get("end_utc") or ""))
-    matches = []
-    for candidate in clean_watch_candidates:
-        if str(candidate.get("symbol") or "").upper() != symbol:
-            continue
+    overlap_matches: list[dict[str, Any]] = []
+    recent_matches: list[dict[str, Any]] = []
+    max_age_seconds = max(0.0, _env_float("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", 300.0))
+    for candidate in direction_matches:
         clean_start = _parse_timestamp(str(candidate.get("clean_block_start_utc") or candidate.get("block_start_utc") or ""))
         clean_end = _parse_timestamp(str(candidate.get("clean_block_end_utc") or candidate.get("block_end_utc") or ""))
         if clean_start is None or clean_end is None:
             continue
         if block_end is not None and clean_start <= block_end <= clean_end:
-            matches.append(_lineage_match_payload(candidate, "OVERLAP"))
+            overlap_matches.append(_lineage_match_payload(candidate, "OVERLAP"))
             continue
         if block_start is not None and block_end is not None and block_start >= clean_start and block_end <= clean_end:
-            matches.append(_lineage_match_payload(candidate, "OVERLAP"))
-    if matches:
-        return max(matches, key=lambda item: str(item.get("clean_block_end_utc") or item.get("block_end_utc") or ""))
-    return _recent_same_symbol_clean_block_source(block, clean_watch_candidates)
-
-
-def _recent_same_symbol_clean_block_source(
-    block: dict[str, Any],
-    clean_watch_candidates: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    symbol = str(block.get("symbol") or "").upper()
-    if not symbol:
-        return None
-    block_end = _parse_timestamp(str(block.get("end_utc") or ""))
-    max_age_seconds = max(0.0, _env_float("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", 300.0))
-    fallback_matches: list[dict[str, Any]] = []
-    for candidate in clean_watch_candidates:
-        if str(candidate.get("symbol") or "").upper() != symbol:
-            continue
-        if candidate.get("clean_block_valid") is False:
-            continue
-        clean_end = _parse_timestamp(str(candidate.get("clean_block_end_utc") or candidate.get("block_end_utc") or ""))
-        if clean_end is None:
+            overlap_matches.append(_lineage_match_payload(candidate, "OVERLAP"))
             continue
         if block_end is not None:
             age_seconds = (block_end - clean_end).total_seconds()
-            if age_seconds < 0.0 or age_seconds > max_age_seconds:
-                continue
-        fallback_matches.append(_lineage_match_payload(candidate, "RECENT_SAME_SYMBOL_CLEAN_BLOCK"))
-    return max(
-        fallback_matches,
+            if 0.0 <= age_seconds <= max_age_seconds:
+                recent_matches.append(_lineage_match_payload(candidate, "RECENT_SAME_SYMBOL_CLEAN_BLOCK"))
+
+    resolution["lineage_time_overlap_count"] = len(overlap_matches)
+    resolution["lineage_recent_window_match_count"] = len(recent_matches)
+    safe_matches = overlap_matches or recent_matches
+    resolution["lineage_safe_match_count"] = len(safe_matches)
+    if not safe_matches:
+        resolution["reason"] = "TIME_WINDOW_MISMATCH"
+        return None, resolution
+
+    source = max(
+        safe_matches,
         key=lambda item: str(item.get("clean_block_end_utc") or item.get("block_end_utc") or ""),
-        default=None,
     )
+    resolution.update(
+        {
+            "status": "ATTACHED_DIRECT_PAIR_LOCAL_LINEAGE",
+            "reason": "DIRECT_LINEAGE_ATTACHED",
+            "match_policy": "PAIR_LOCAL_DIRECTIONAL_DEPLOYMENT_TIME_OVERLAP",
+            "source_clean_block_id": source.get("source_clean_block_id"),
+            "source_lineage_match": source.get("source_lineage_match"),
+        }
+    )
+    return source, resolution
+
+
+def _lineage_deployment_ids(payload: dict[str, Any]) -> set[str]:
+    values: set[str] = set()
+    raw_ids = payload.get("deployment_ids")
+    if isinstance(raw_ids, (list, tuple, set)):
+        values.update(str(item).strip() for item in raw_ids if str(item or "").strip())
+    for key in ("deployment_id", "railway_deployment_id", "deployment_uuid", "source_deployment_id"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            values.add(value)
+    return values
+
+
+def _lineage_deployments_compatible(expected: set[str], candidate: set[str]) -> bool:
+    return not expected or not candidate or bool(expected & candidate)
+
+
+def _lineage_direction(payload: dict[str, Any]) -> str | None:
+    for key in ("raw_pressure_direction", "clean_block_direction", "direction", "raw_direction"):
+        value = str(payload.get(key) or "").upper()
+        if value in {"BUY", "SELL"}:
+            return value
+    return None
+
+
+def _lineage_directions_compatible(expected: str | None, candidate: str | None) -> bool:
+    return expected is None or candidate is None or expected == candidate
 
 
 def _lineage_match_payload(candidate: dict[str, Any], match_type: str) -> dict[str, Any]:
@@ -2325,7 +2423,7 @@ def _counter_entry_payload(
     payload = result.to_dict()
     _apply_conditional_counter_scenario_contract(payload)
     payload.update(microboost_role_fields_from(latest))
-    payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
+    payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE", latest))
     _maybe_attach_structure_preview(payload, latest.get("market_context_snapshot"))
     latest["counter_entry"] = payload
     microboost_summary["counter_entry"] = payload
@@ -2389,7 +2487,7 @@ def _continuation_entry_payload(
     ).evaluate(latest, allowed_quorum=allowed_quorum)
     payload = result.to_dict()
     payload.update(microboost_role_fields_from(latest))
-    payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
+    payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE", latest))
     latest["continuation_entry"] = payload
     microboost_summary["continuation_entry"] = payload
     return payload
@@ -2604,7 +2702,7 @@ def _microboost_watch_payload(
         "signal_quality": "WATCH_ONLY",
         **microboost_role_fields_from(latest),
         **_golden_pattern_fields(latest),
-        **_signal_watch_source_fields(signal_watch_gate, bool(signal_watch_gate.get("eligible"))),
+        **_signal_watch_source_fields(signal_watch_gate, bool(signal_watch_gate.get("eligible")), latest),
     }
     if candidate_direction and not clean_block_fallback and _env_bool("SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED", False):
         duration_minutes = latest.get("duration_minutes")
@@ -3469,6 +3567,7 @@ def _candidate_raw_pressure_direction(candidate: dict[str, Any]) -> str | None:
 def _signal_watch_source_fields(
     signal_watch_gate: dict[str, Any],
     microboost_validated: bool,
+    microboost_source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     fields = {
         "signal_watch_source": signal_watch_gate["source"],
@@ -3494,6 +3593,10 @@ def _signal_watch_source_fields(
     ):
         if signal_watch_gate.get(key) is not None:
             fields[key] = signal_watch_gate.get(key)
+    if isinstance(microboost_source, dict):
+        resolution = microboost_source.get("source_clean_block_lineage_resolution")
+        if isinstance(resolution, dict):
+            fields["source_clean_block_lineage_resolution"] = dict(resolution)
     return fields
 
 
@@ -3577,7 +3680,7 @@ def _blocked_microboost_payload(
         "reason": signal_watch_gate["reason"],
         **microboost_role_fields_from(latest),
         **_golden_pattern_fields(latest),
-        **_signal_watch_source_fields(signal_watch_gate, False),
+        **_signal_watch_source_fields(signal_watch_gate, False, latest),
     }
 
 
