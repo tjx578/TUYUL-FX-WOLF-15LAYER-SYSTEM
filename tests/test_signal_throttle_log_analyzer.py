@@ -1780,8 +1780,34 @@ def test_recent_clean_block_lineage_attaches_to_later_microboost_same_symbol():
     assert latest["source_clean_block_id"].startswith("GBPCAD_")
     assert latest["source_lineage_match"] == "OVERLAP"
     assert latest["clean_block_valid"] is True
+    assert latest["source_clean_block_lineage_resolution"]["status"] == "ATTACHED_DIRECT_PAIR_LOCAL_LINEAGE"
+    assert latest["source_clean_block_lineage_resolution"]["lineage_safe_match_count"] == 1
     assert gate["eligible"] is True
     assert gate["source_clean_block_id"] == latest["source_clean_block_id"]
+
+
+def test_microboost_lineage_resolution_explains_direction_mismatch():
+    events = [
+        _event(index * 30, "GBPCAD", event_type="ALLOWED", direction="BUY")
+        for index in range(11)
+    ]
+    # The scanner-cycle ledger remains a single BUY clean block, while the later
+    # dense cluster is SELL.  Lineage must fail closed and identify the stage.
+    events.extend(
+        _event(390 + index * 5, "GBPCAD", event_type="ALLOWED", direction="SELL")
+        for index in range(10)
+    )
+
+    report = analyze_signal_throttle_events(events)
+    latest = report["microboost_summary"]["latest"]
+    resolution = latest["source_clean_block_lineage_resolution"]
+
+    assert latest.get("source_clean_block_id") is None
+    assert resolution["status"] == "NO_SAFE_PAIR_LOCAL_MATCH"
+    assert resolution["reason"] == "DIRECTION_MISMATCH"
+    assert resolution["lineage_candidate_count"] == 1
+    assert resolution["lineage_valid_block_count"] == 1
+    assert resolution["lineage_direction_match_count"] == 0
 
 
 def test_currency_pressure_counts_usd_quote_on_metals():
