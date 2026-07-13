@@ -374,7 +374,8 @@ def _live_rr_gate(
     block_reasons: list[str],
 ) -> dict[str, Any] | None:
     direction = _direction(payload)
-    live_price = _live_price(payload)
+    live_price = _live_entry_price(payload, direction)
+    exit_price = _live_exit_price(payload, direction)
     entry = _first_float(payload.get("entry_reference_price"), payload.get("signal_valid_price"))
     selected_sl = _first_float(
         payload.get("selected_sl"),
@@ -391,6 +392,28 @@ def _live_rr_gate(
     if live_price is None:
         _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_PRICE_MISSING")
         return None
+
+    if direction is not None and selected_sl is not None and target is not None:
+        stop_breached = (direction == "BUY" and exit_price <= selected_sl) or (
+            direction == "SELL" and exit_price >= selected_sl
+        )
+        target_reached = (direction == "BUY" and exit_price >= target) or (
+            direction == "SELL" and exit_price <= target
+        )
+        if stop_breached or target_reached:
+            reason = "LIVE_PRICE_AT_OR_BEYOND_STOP" if stop_breached else "TARGET_ALREADY_REACHED_NO_NEW_ENTRY"
+            _add(block_gates, block_reasons, "LivePriceValidityGate", reason)
+            return {
+                "price": live_price,
+                "exit_price": exit_price,
+                "entry": entry,
+                "selected_sl": selected_sl,
+                "target": target,
+                "rr": None,
+                "min_rr_required": min_rr_required,
+                "price_valid_for_new_entry": False,
+                "price_invalid_reason": reason,
+            }
 
     # Single-stop model: the target ladder and the live stop are both derived from
     # sl_safe, so the engine's pre-validated RR (rr_to_valid_target / tp_min_rr_value)
@@ -415,8 +438,8 @@ def _live_rr_gate(
     if direction is None or selected_sl is None or target is None:
         _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_RR_INPUT_INCOMPLETE")
         return {"price": live_price, "rr": None}
-    risk = abs(live_price - selected_sl)
-    reward = abs(target - live_price)
+    risk = live_price - selected_sl if direction == "BUY" else selected_sl - live_price
+    reward = target - live_price if direction == "BUY" else live_price - target
     live_rr = round(reward / risk, 2) if risk > 0 else None
     result = {
         "price": live_price,
@@ -511,11 +534,12 @@ def _has_structure_target(payload: dict[str, Any], enriched: dict[str, Any], min
 
 
 def _live_price(payload: dict[str, Any]) -> float | None:
-    bid = _first_float(payload.get("bid"), _nested(payload, "market_context_snapshot", "bid"))
-    ask = _first_float(payload.get("ask"), _nested(payload, "market_context_snapshot", "ask"))
+    bid = _first_float(payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid"))
+    ask = _first_float(payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask"))
     if bid is not None and ask is not None:
         return round((bid + ask) / 2.0, _price_digits(payload))
     return _first_float(
+        payload.get("observed_mid"),
         payload.get("current_price"),
         payload.get("mid_price"),
         payload.get("last_price"),
@@ -525,6 +549,22 @@ def _live_price(payload: dict[str, Any]) -> float | None:
         payload.get("signal_valid_price"),
         payload.get("entry_reference_price"),
     )
+
+
+def _live_entry_price(payload: dict[str, Any], direction: str | None) -> float | None:
+    bid = _first_float(payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid"))
+    ask = _first_float(payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask"))
+    if bid is not None and ask is not None:
+        return ask if direction == "BUY" else (bid if direction == "SELL" else round((bid + ask) / 2.0, _price_digits(payload)))
+    return _live_price(payload)
+
+
+def _live_exit_price(payload: dict[str, Any], direction: str | None) -> float | None:
+    bid = _first_float(payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid"))
+    ask = _first_float(payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask"))
+    if bid is not None and ask is not None:
+        return bid if direction == "BUY" else (ask if direction == "SELL" else round((bid + ask) / 2.0, _price_digits(payload)))
+    return _live_price(payload)
 
 
 def _pip_size(payload: dict[str, Any]) -> float:
@@ -596,10 +636,6 @@ def _microboost_structure_reaction_confirmed(payload: dict[str, Any]) -> bool:
 
 
 def _microboost_pressure_warning_confirmed(payload: dict[str, Any]) -> bool:
-    if str(payload.get("confirmation_policy") or "").upper() == "DIRECT_ABSORPTION_NO_M15_WAIT":
-        return True
-    if str(payload.get("m15_confirmation_status") or "").upper() == "DIRECT_ABSORPTION_CONFIRMED":
-        return True
     direction = _direction(payload)
     phase_priced = _phase_value(payload, "phase_priced")
     if direction == "BUY" and phase_priced == "RESISTANCE_PRESSURE_WARNING":
