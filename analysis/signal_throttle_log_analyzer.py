@@ -2316,19 +2316,51 @@ def _counter_entry_payload(
         tp1_rr_required=_env_float("SIGNAL_JSON_TP1_RR_REQUIRED", 2.0),
         counter_entry_risk_multiplier=_env_float("SIGNAL_JSON_COUNTER_ENTRY_RISK_MULTIPLIER", 0.5),
         counter_entry_expiry_minutes=int(_env_float("SIGNAL_JSON_COUNTER_ENTRY_EXPIRY_MINUTES", 30.0)),
-        direct_absorption_enabled=_env_bool("DIRECT_ABSORPTION_VALID_ENABLED", True),
+        direct_absorption_enabled=_env_bool("DIRECT_ABSORPTION_VALID_ENABLED", False),
         direct_absorption_require_theme_alignment=_env_bool("DIRECT_ABSORPTION_REQUIRE_THEME_ALIGNMENT", False),
         direct_absorption_require_rr=_env_bool("DIRECT_ABSORPTION_REQUIRE_RR", True),
         allow_rr_fallback=_env_bool("SIGNAL_JSON_ALLOW_RR_FALLBACK", True),
         direction_conflict_resolver_enabled=_env_bool("SIGNAL_DIRECTION_CONFLICT_RESOLVER_ENABLED", False),
     ).evaluate(latest, watch_only=True)
     payload = result.to_dict()
+    _apply_conditional_counter_scenario_contract(payload)
     payload.update(microboost_role_fields_from(latest))
     payload.update(_signal_watch_source_fields(signal_watch_gate, payload["status"] != "NONE"))
     _maybe_attach_structure_preview(payload, latest.get("market_context_snapshot"))
     latest["counter_entry"] = payload
     microboost_summary["counter_entry"] = payload
     return payload
+
+
+def _apply_conditional_counter_scenario_contract(payload: dict[str, Any]) -> None:
+    """Keep raw pressure primary while preserving the legacy counter-watch headline."""
+
+    raw = str(payload.get("raw_direction") or "").upper()
+    counter = str(payload.get("candidate_direction") or payload.get("watch_direction") or "").upper()
+    if raw not in {"BUY", "SELL"} or counter not in {"BUY", "SELL"} or raw == counter:
+        return
+    if str(payload.get("final_direction") or "WAIT").upper() != "WAIT":
+        return
+    legacy_status = str(payload.get("status") or "MICROBOOST_COUNTER_ENTRY_WATCH")
+    action = str(payload.get("action") or "WAIT_M15_CLOSE_CONFIRMATION")
+    payload["counter_watch_direction"] = counter
+    payload["legacy_watch_status"] = legacy_status
+    payload["counter_scenario"] = {
+        "status": "CONDITIONAL",
+        "direction": counter,
+        "legacy_watch_status": legacy_status,
+        "action": action,
+        "requires_m15_close": True,
+        "valid_for_execution": False,
+    }
+    payload["candidate_direction"] = raw
+    payload["watch_direction"] = raw
+    payload["status"] = "COUNTER_SCENARIO_WATCH"
+    payload["validated_direction"] = None
+    payload["direction_status"] = "MICROBOOST_COUNTER_SCENARIO_WATCH"
+    payload["direction_validation_status"] = "WATCH_ONLY_COUNTER_SCENARIO_CONDITIONAL"
+    payload["requires_m15_close"] = True
+    payload["valid_for_execution"] = False
 
 
 def _continuation_entry_payload(
@@ -2380,12 +2412,11 @@ def resolve_signal_watch_headline_from_pattern(
     ``MicroboostCounterEntryEngine`` vocabulary (EARLY_SELL_WATCH / SELL_TIMING_WATCH /
     EARLY_BUY_WATCH / BUY_TIMING_WATCH) instead of inventing new status names.
 
-    Pure function: it returns only headline OVERRIDES; the caller decides whether to
-    apply them. It NEVER sets ``valid_for_execution``, NEVER touches ``final_direction``
-    (stays WAIT), and NEVER emits a SignalJSON -- this is a classification/language fix,
-    not an execution change. ``raw_direction`` is the raw pressure direction and is
-    preserved by the caller; ``candidate_direction`` becomes the *scenario* direction
-    (the opposite side an absorption watch leans, e.g. BUY-stalled-at-resistance -> SELL).
+    Pure function: it returns only Watch classification overrides and NEVER emits a
+    SignalJSON. ``raw_direction`` and ``candidate_direction`` stay on the primary raw
+    pressure side. The opposite absorption thesis is exposed separately as a conditional
+    ``counter_scenario`` / ``counter_watch_direction`` so downstream consumers cannot
+    mistake a counter-watch headline for an already-selected directional candidate.
 
     Returns ``{"resolved": False}`` when the pattern context is not strong enough to
     justify a direction-aware headline -- the watch then stays a generic MICROBOOST_WATCH.
@@ -2446,13 +2477,27 @@ def resolve_signal_watch_headline_from_pattern(
         "resolved": True,
         "signal_family": "MICROBOOST_COUNTER_ENTRY",
         "resolved_family": "MICROBOOST_COUNTER_ENTRY",
-        "status": status,
-        "candidate_direction": scenario_direction,
-        "watch_direction": scenario_direction,
-        "direction_status": "MICROBOOST_COUNTER_ENTRY_WATCH",
-        "direction_validation_status": "WATCH_ONLY_PENDING_CONFIRMATION",
+        "status": "COUNTER_SCENARIO_WATCH",
+        "legacy_watch_status": status,
+        # Keep the legacy directional headline for operator observability, while the
+        # top-level status and candidate remain neutral/anchored to raw pressure.
+        "candidate_direction": raw,
+        "watch_direction": raw,
+        "counter_watch_direction": scenario_direction,
+        "counter_scenario": {
+            "status": "CONDITIONAL",
+            "direction": scenario_direction,
+            "legacy_watch_status": status,
+            "action": action,
+            "requires_m15_close": True,
+            "valid_for_execution": False,
+        },
+        "direction_status": "MICROBOOST_COUNTER_SCENARIO_WATCH",
+        "direction_validation_status": "WATCH_ONLY_COUNTER_SCENARIO_CONDITIONAL",
         "action": action,
         "requires_m15_close": True,
+        "final_direction": "WAIT",
+        "valid_for_execution": False,
         "headline_resolve_reason": f"{pattern or 'COUNTER_SCENARIO'}_{raw}_AT_{extreme}",
     }
 
@@ -2580,9 +2625,9 @@ def _microboost_watch_payload(
             timing_watch_min_seconds=_env_float("SIGNAL_JSON_TIMING_WATCH_MIN_SECONDS", 60.0),
         )
         if headline.get("resolved"):
-            # raw_direction stays the raw pressure side; candidate/headline become the
-            # counter scenario. final_direction (WAIT) + valid_for_execution (False) are
-            # deliberately NOT in `headline`, so they are never touched here.
+            # The legacy headline remains counter-directional for operator observability,
+            # while raw/candidate/watch stay on the primary pressure side. The opposite
+            # thesis is carried only by counter_scenario/counter_watch_direction.
             payload.update({key: value for key, value in headline.items() if key != "resolved"})
             _apply_direction_conflict_resolution_to_watch_payload(payload, snapshot)
     _maybe_attach_structure_preview(payload, snapshot)
@@ -2599,7 +2644,11 @@ def _apply_direction_conflict_resolution_to_watch_payload(payload: dict[str, Any
     resolution = resolve_direction_conflict(
         symbol=str(payload.get("symbol") or ""),
         raw_direction=payload.get("raw_direction"),
-        candidate_direction=payload.get("candidate_direction") or payload.get("watch_direction"),
+        candidate_direction=(
+            payload.get("counter_watch_direction")
+            or payload.get("candidate_direction")
+            or payload.get("watch_direction")
+        ),
         market_context=snapshot,
         basket_validation=snapshot.get("basket_validation") if isinstance(snapshot, dict) else None,
     )
@@ -2611,6 +2660,15 @@ def _apply_direction_conflict_resolution_to_watch_payload(payload: dict[str, Any
     if resolution.counter_direction_allowed:
         return
     raw = resolution.raw_direction
+    counter_scenario = payload.get("counter_scenario")
+    if isinstance(counter_scenario, dict):
+        counter_scenario.update(
+            {
+                "status": "BLOCKED",
+                "valid_for_execution": False,
+                "block_reason": resolution.counter_direction_block_reason,
+            }
+        )
     payload["status"] = "MICROBOOST_WATCH"
     payload["signal_family"] = "MICROBOOST_WATCH"
     payload["resolved_family"] = "WATCH_ONLY_DIRECTION_CONFLICT"
