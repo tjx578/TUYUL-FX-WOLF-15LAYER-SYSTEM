@@ -39,6 +39,10 @@ def _watch(**overrides):
         "confirmation_policy": "M15_CLOSE_REQUIRED",
         "requires_m15_close": True,
         "pending_decision_id": "USDCAD_USDCAD_20260521T030620Z_M15_DECISION",
+        "lifecycle_id": "USDCAD_20260521T030620Z",
+        "lifecycle_track": True,
+        "terminal_required": True,
+        "terminal_guarantee": "SIGNAL_BLOCK_FINALIZER",
     }
     payload.update(overrides)
     return payload
@@ -286,6 +290,10 @@ def test_idle_resistance_watch_promotes_to_final_sell_after_m15_rejection_and_la
     assert signal["signal_watch_source"] == "SIGNAL_THROTTLE_CLEAN_BLOCK"
     assert signal["source_clean_block_confirmed"] is True
     assert signal["microboost_validation_status"] == "PASSED"
+    assert signal["lifecycle_id"] == "USDCAD_20260521T030620Z"
+    assert signal["lifecycle_track"] is True
+    assert signal["terminal_required"] is True
+    assert signal["terminal_guarantee"] == "SIGNAL_BLOCK_FINALIZER"
     assert finalizer.pending_symbols() == []
 
 
