@@ -107,6 +107,8 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
     assert payload["clean_block_live_duration_seconds"] == 3373.0
     assert payload["source_clean_block_latest_duration_seconds"] == 3373.0
     assert payload["watch_promotion_source"] == "CLEAN_BLOCK_ROUTER"
+    assert payload["clean_block_outcome_status"] == "CLEAN_BLOCK_WATCH_PENDING"
+    assert payload["microboost_lineage_status"] == "NOT_REQUIRED_FOR_CLEAN_BLOCK_ELIGIBILITY"
     assert payload["final_direction"] == "WAIT"
     assert payload["valid_for_execution"] is False
     assert payload["requires_m15_close"] is False
