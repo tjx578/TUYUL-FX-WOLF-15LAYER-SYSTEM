@@ -7,7 +7,7 @@ from typing import Any, cast
 import pipeline.wolf_constitutional_pipeline as wolf_pipeline
 from analysis.market_context_validator import MarketContext
 from analysis.microboost_continuation_entry import MicroboostContinuationEngine
-from analysis.signal_json_emitter import SignalJsonEmitter
+from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
 from analysis.signal_lifecycle_manager import SignalLifecycleManager
 from analysis.signal_throttle_pressure_tier import (
@@ -104,6 +104,10 @@ def _finalizer_final_sell_payload() -> dict:
         "analysis_valid": True,
         "promotion_path": "WATCH_TO_FINAL",
         "pending_decision_id": "USDCAD_20260521T030620Z_M15_DECISION",
+        "parent_event_type": "signal_watch_json",
+        "parent_event_exists": True,
+        "parent_watch_id": "USDCAD_20260521T030620Z_M15_DECISION",
+        "parent_watch_required": True,
         "reason": "M15 rejection confirmed with structure ladder ready.",
     }
 
@@ -1119,6 +1123,78 @@ def test_pipeline_does_not_track_watch_when_emit_fails():
     assert tracker.tracked == []
 
 
+def test_pipeline_backfills_microboost_watch_lineage_from_pair_local_mature_block():
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    payload = {
+        "symbol": "CADJPY",
+        "cluster_id": "CADJPY_20260710T060118Z",
+        "status": "MICROBOOST_WATCH",
+        "signal_family": "MICROBOOST_WATCH",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "signal_valid_time_utc": "2026-07-10T06:01:18+00:00",
+        "deployment_id": "deploy-a",
+    }
+    report = {
+        "v1_clean_block_ledger": [
+            {
+                "symbol": "CADJPY",
+                "raw_pressure_direction": "BUY",
+                "source_clean_block_id": "CADJPY_20260710T055700Z_20260710T060200Z",
+                "clean_block_start_utc": "2026-07-10T05:57:00+00:00",
+                "clean_block_end_utc": "2026-07-10T06:02:00+00:00",
+                "clean_block_duration_seconds": 300.0,
+                "deployment_id": "deploy-a",
+            }
+        ],
+        "signal_watch_promotion_diagnostics": [
+            {
+                "symbol": "CADJPY",
+                "cluster_id": "CADJPY_20260710T060118Z",
+                "blocked_by": ["SOURCE_CLEAN_BLOCK_ID_MISSING"],
+            }
+        ],
+    }
+
+    attached = pipeline._backfill_microboost_watch_lineage(payload, report)
+
+    assert attached is True
+    assert payload["source_clean_block_id"] == "CADJPY_20260710T055700Z_20260710T060200Z"
+    assert payload["clean_block_valid"] is True
+    assert payload["source_clean_block_backfill_status"] == "ATTACHED_SAFE_PAIR_LOCAL_MATCH"
+    assert payload["source_clean_block_backfill_deployment_verified"] is True
+    assert report["signal_watch_promotion_diagnostics"] == []
+    assert report["signal_watch_lineage_backfills"][0]["match_policy"] == "PAIR_LOCAL_DIRECTIONAL_TIME_OVERLAP"
+
+
+def test_pipeline_refuses_lineage_backfill_when_raw_direction_conflicts():
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    payload = {
+        "symbol": "CADJPY",
+        "status": "MICROBOOST_WATCH",
+        "raw_direction": "BUY",
+        "signal_valid_time_utc": "2026-07-10T06:01:18+00:00",
+    }
+    report = {
+        "v1_clean_block_ledger": [
+            {
+                "symbol": "CADJPY",
+                "raw_pressure_direction": "SELL",
+                "source_clean_block_id": "CADJPY_20260710T055700Z_20260710T060200Z",
+                "clean_block_start_utc": "2026-07-10T05:57:00+00:00",
+                "clean_block_end_utc": "2026-07-10T06:02:00+00:00",
+                "clean_block_duration_seconds": 300.0,
+            }
+        ]
+    }
+
+    attached = pipeline._backfill_microboost_watch_lineage(payload, report)
+
+    assert attached is False
+    assert "source_clean_block_id" not in payload
+    assert payload["source_clean_block_backfill_status"] == "NO_SAFE_PAIR_LOCAL_MATCH"
+
+
 def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     emitted: list[dict] = []
@@ -1236,7 +1312,7 @@ def test_shadow_clean_block_watch_is_marked_observability_only(monkeypatch):
     assert emitted[0]["shadow_source_stage"] == "POST_L12_PRE_V11"
 
 
-def test_pipeline_records_counter_entry_emit_result():
+def test_pipeline_does_not_track_counter_entry_that_failed_to_emit():
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_lifecycle_manager = SignalLifecycleManager()
     emitted: list[dict] = []
@@ -1283,7 +1359,7 @@ def test_pipeline_records_counter_entry_emit_result():
     assert verdict["microboost_counter_entry"]["signal_json_emit_result"] is False
     assert verdict["final_direction"] == "WAIT"
     assert verdict["direction_source"] == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
-    assert tracker.tracked[0]["status"] == "SELL_ABSORPTION_WATCH"
+    assert tracker.tracked == []
 
 
 def test_pipeline_logs_block_finalizer_update_as_signal_decision_update_json(caplog):
@@ -1727,7 +1803,24 @@ def test_pipeline_logs_block_finalizer_final_as_signal_json(caplog):
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
     pipeline._signal_lifecycle_manager = SignalLifecycleManager()
-    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True, emit_watch=True, strict_lifecycle=True)
+    parent_payload = _finalizer_final_sell_payload()
+    parent_payload.update(
+        {
+            "status": "SELL_ABSORPTION_WATCH",
+            "validated_direction": None,
+            "final_direction": "WAIT",
+            "valid_for_execution": False,
+            "signal_valid": False,
+            "direction_valid": False,
+            "tradeplan_valid": False,
+            "execution_valid_now": False,
+        }
+    )
+    parent_event = build_signal_json_event(parent_payload)
+    assert parent_event is not None
+    assert pipeline._signal_json_emitter.emit(parent_event) is True
+    caplog.clear()
     finalizer = _StaticFinalizer(_finalizer_final_sell_payload())
     cast(Any, pipeline)._signal_block_finalizer = finalizer
     report: dict = {"symbol_activity": {}}
@@ -1739,9 +1832,11 @@ def test_pipeline_logs_block_finalizer_final_as_signal_json(caplog):
     assert '"status":"FINAL_EXECUTION_READY"' in caplog.text
     assert '"source_status":"SELL_TIMING_VALID"' in caplog.text
     assert '"execution_valid_now":true' in caplog.text
-    assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
     assert verdict["final_direction"] == "SELL"
     assert verdict["direction_source"] == "SIGNAL_BLOCK_FINALIZER"
     assert report["signal_block_finalizer_updates"][0]["status"] == "SELL_TIMING_VALID"
     assert report["signal_block_finalizer_updates"][0]["signal_json_emit_result"] is True
+    assert report["signal_block_finalizer_updates"][0]["terminal_required"] is True
+    assert report["signal_block_finalizer_updates"][0]["terminal_guarantee"] == "SIGNAL_BLOCK_FINALIZER"
     assert finalizer.tracked[0]["status"] == "SELL_TIMING_VALID"
