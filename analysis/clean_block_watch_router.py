@@ -331,6 +331,8 @@ def _watch_payload(
         "source_clean_block_confirmed_at_utc": lineage.get("clean_block_confirmed_at_utc"),
         "source_clean_block_latest_end_utc": lineage.get("clean_block_latest_end_utc"),
         "microboost_validation_status": "NOT_REQUIRED_CLEAN_BLOCK_ROUTER",
+        "clean_block_outcome_status": "CLEAN_BLOCK_WATCH_PENDING",
+        "microboost_lineage_status": "NOT_REQUIRED_FOR_CLEAN_BLOCK_ELIGIBILITY",
         "promotion_path": (
             "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
             if is_scanner_advisory
@@ -427,6 +429,8 @@ def _clean_block_radar_payload(
         "signal_valid": False,
         "final_direction": "WAIT",
         "action": "TRACK_AS_PRESSURE_MEMORY_RADAR" if authority_blocked else "WAIT_PRICE_STRUCTURE_CONTEXT",
+        "clean_block_outcome_status": "PURE_RADAR_ONLY",
+        "microboost_lineage_status": "NOT_REQUIRED_FOR_CLEAN_BLOCK_ELIGIBILITY",
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
         "reason": (
             "scanner_cycle_clean_block_memory_only_primary_watch_requires_pair_rotation"
@@ -550,6 +554,8 @@ def _diagnostic_payload(
         "is_final_signal": False,
         "final_direction": "WAIT",
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
+        "clean_block_outcome_status": "NO_TRADE_REASONED",
+        "microboost_lineage_status": "NOT_REQUIRED_FOR_CLEAN_BLOCK_ELIGIBILITY",
         "reason": "clean_block_watch_promotion_blocked_explicitly",
     }
     if signal_price is not None:
