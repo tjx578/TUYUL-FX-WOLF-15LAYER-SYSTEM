@@ -160,6 +160,9 @@ def signal_watch_source_diagnostic(payload: Mapping[str, Any]) -> dict[str, Any]
     symbol = str(payload.get("symbol") or "").upper() or None
     source_id = _text(payload.get("source_clean_block_id"))
     source_symbol = _source_id_symbol(source_id)
+    lineage_resolution = payload.get("source_clean_block_lineage_resolution")
+    if not isinstance(lineage_resolution, Mapping):
+        lineage_resolution = None
     if source_id and symbol and source_symbol and source_symbol != symbol:
         cluster_id = payload.get("cluster_id")
         return {
@@ -179,6 +182,7 @@ def signal_watch_source_diagnostic(payload: Mapping[str, Any]) -> dict[str, Any]
             "raw_cluster_id": cluster_id,
             "nearest_clean_block_candidate": None,
             "why_not_attached": "SOURCE_CLEAN_BLOCK_ID_SYMBOL_DOES_NOT_MATCH_WATCH_SYMBOL",
+            "source_clean_block_lineage_resolution": lineage_resolution,
             "valid_for_execution": False,
             "is_final_signal": False,
             "final_direction": "WAIT",
@@ -203,6 +207,7 @@ def signal_watch_source_diagnostic(payload: Mapping[str, Any]) -> dict[str, Any]
         "raw_cluster_id": cluster_id,
         "nearest_clean_block_candidate": None,
         "why_not_attached": "WATCH_PAYLOAD_MISSING_SOURCE_CLEAN_BLOCK_ID",
+        "source_clean_block_lineage_resolution": lineage_resolution,
         "valid_for_execution": False,
         "is_final_signal": False,
         "final_direction": "WAIT",
@@ -398,6 +403,7 @@ def _microboost_context(latest: Mapping[str, Any]) -> dict[str, Any]:
         "source_clean_block_latest_end_utc": latest.get("source_clean_block_latest_end_utc"),
         "source_clean_block_latest_duration_seconds": latest.get("source_clean_block_latest_duration_seconds"),
         "source_signal_throttle_event_range": latest.get("source_signal_throttle_event_range"),
+        "source_clean_block_lineage_resolution": latest.get("source_clean_block_lineage_resolution"),
         "microboost_end_utc": latest.get("end_utc"),
         "phase_unpriced": latest.get("phase_unpriced"),
         "phase_priced": latest.get("phase_priced"),
