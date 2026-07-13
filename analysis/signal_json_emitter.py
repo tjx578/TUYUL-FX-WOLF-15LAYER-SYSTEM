@@ -49,6 +49,8 @@ TERMINAL_SIGNAL_PUBLIC_FIELDS = {
     "execution_valid_now",
     "execution_status",
     "execution_grade",
+    "decision_state",
+    "microboost_validation_status",
     "terminal_decision_confirmed",
     "terminal_decision_event_type",
     "terminal_status",
@@ -331,7 +333,7 @@ class SignalJsonEvent:
     signal_valid_time_utc: str
     signal_valid_time_wita: str | None
     signal_valid_price: float | None
-    entry_reference_price: float
+    entry_reference_price: float | None
     entry_zone: list[float]
     price_position: str | None
     m15_phase: str | None
@@ -475,7 +477,13 @@ class SignalJsonEvent:
     clean_block_event_count: int | None = None
     clean_block_direction: str | None = None
     watch_promotion_source: str | None = None
+    clean_block_outcome_status: str | None = None
+    microboost_lineage_status: str | None = None
     microboost_validation_status: str | None = None
+    microboost_timing_fresh: bool | None = None
+    microboost_timing_age_seconds: float | None = None
+    microboost_active_timing_max_age_seconds: float | None = None
+    microboost_lineage_wait_grace_seconds: float | None = None
     microboost_role: str | None = None
     microboost_followthrough_bias: str | None = None
     microboost_room_to_move_pips: float | None = None
@@ -1165,14 +1173,15 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
     symbol = str(counter_entry.get("symbol") or "").upper()
     status = str(counter_entry.get("status") or "")
     watch_or_decision = _is_watch_status(status) or _is_decision_update_payload(counter_entry)
+    contextless_terminal_expiry = status == "PENDING_WATCH_EXPIRED"
     price_integrity_invalid = (
         _optional_bool(counter_entry.get("price_integrity_evaluated")) is True
         and _optional_bool(counter_entry.get("price_integrity_valid")) is not True
     )
     if (
         not signal_valid_time
-        or (signal_valid_price is None and not price_integrity_invalid)
-        or entry_reference_price is None
+        or (signal_valid_price is None and not price_integrity_invalid and not contextless_terminal_expiry)
+        or (entry_reference_price is None and not contextless_terminal_expiry)
         or (not entry_zone and not watch_or_decision)
         or not symbol
     ):
@@ -1378,7 +1387,17 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         clean_block_event_count=_optional_int(counter_entry.get("clean_block_event_count")),
         clean_block_direction=_optional_str(counter_entry.get("clean_block_direction")),
         watch_promotion_source=_optional_str(counter_entry.get("watch_promotion_source")),
+        clean_block_outcome_status=_optional_str(counter_entry.get("clean_block_outcome_status")),
+        microboost_lineage_status=_optional_str(counter_entry.get("microboost_lineage_status")),
         microboost_validation_status=_optional_str(counter_entry.get("microboost_validation_status")),
+        microboost_timing_fresh=_optional_bool(counter_entry.get("microboost_timing_fresh")),
+        microboost_timing_age_seconds=_optional_float(counter_entry.get("microboost_timing_age_seconds")),
+        microboost_active_timing_max_age_seconds=_optional_float(
+            counter_entry.get("microboost_active_timing_max_age_seconds")
+        ),
+        microboost_lineage_wait_grace_seconds=_optional_float(
+            counter_entry.get("microboost_lineage_wait_grace_seconds")
+        ),
         microboost_role=_optional_str(counter_entry.get("microboost_role")),
         microboost_followthrough_bias=_optional_str(counter_entry.get("microboost_followthrough_bias")),
         microboost_room_to_move_pips=_optional_float(counter_entry.get("microboost_room_to_move_pips")),
@@ -1496,6 +1515,8 @@ def should_emit_signal_json(
     if status not in EMITTABLE_SIGNAL_STATUSES:
         return False
     if _is_decision_update_payload(payload):
+        if status == "PENDING_WATCH_EXPIRED":
+            return bool(_optional_str(payload.get("signal_valid_time_utc")))
         return (
             (
                 _optional_float(payload.get("signal_valid_price")) is not None
