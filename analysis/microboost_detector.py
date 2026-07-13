@@ -49,6 +49,7 @@ class MicroboostBlockIntel:
     direction_inherited: bool
     inherited_direction: str | None
     inherited_direction_age_seconds: float | None
+    deployment_ids: list[str] | None
     start_utc: str
     end_utc: str
     duration_seconds: float
@@ -296,6 +297,7 @@ def _build_block_intel(
         direction_inherited=bool(_get(block, "direction_inherited", False)),
         inherited_direction=_normalize_direction(_get(block, "inherited_direction", None)),
         inherited_direction_age_seconds=_optional_float(_get(block, "inherited_direction_age_seconds", None)),
+        deployment_ids=_string_list(_get(block, "deployment_ids", None)),
         start_utc=start_utc,
         end_utc=end_utc,
         duration_seconds=duration_seconds,
@@ -1218,7 +1220,7 @@ def _optional_str(value: Any) -> str | None:
 
 
 def _string_list(value: Any) -> list[str] | None:
-    if not isinstance(value, list):
+    if not isinstance(value, (list, tuple, set)):
         return None
     values = [str(item) for item in value if str(item or "").strip()]
     return values or None
