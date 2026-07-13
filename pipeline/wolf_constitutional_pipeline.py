@@ -88,7 +88,12 @@ from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
 from analysis.signal_block_finalizer import SignalBlockFinalizer
 from analysis.signal_decision_source_guard import convert_to_signal_pressure_state, route_decision_or_pressure
-from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event, canonicalize_signal_tradeplan
+from analysis.signal_json_emitter import (
+    DECISION_UPDATE_STATUSES,
+    SignalJsonEmitter,
+    build_signal_json_event,
+    canonicalize_signal_tradeplan,
+)
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
 from analysis.signal_lifecycle_manager import (
     SignalLifecycleManager,
@@ -120,6 +125,8 @@ from analysis.signal_throttle_pressure_tier import (
     pressure_tier_snapshot_log_payload,
 )
 from analysis.source_lineage_guard import (
+    DEFAULT_MICROBOOST_ACTIVE_TIMING_SECONDS,
+    DEFAULT_MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS,
     DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX,
     DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX,
     DEFAULT_SIGNAL_THROTTLE_FRESHNESS_PREFIX,
@@ -6921,8 +6928,13 @@ class WolfConstitutionalPipeline:
         if signal_event is None:
             return False
         emit_result = self._signal_json_emitter.emit(signal_event)
+        source_is_decision_update = bool(
+            str(payload.get("event") or "").lower() == "signal_decision_update_json"
+            or str(payload.get("status") or "").upper() in DECISION_UPDATE_STATUSES
+        )
         payload["signal_json_emitted_as_price_decision_update"] = bool(
             emit_result
+            and not source_is_decision_update
             and payload.get("price_integrity_evaluated") is True
             and payload.get("price_integrity_valid") is not True
         )
@@ -7348,6 +7360,7 @@ class WolfConstitutionalPipeline:
             )
             self._prepare_lifecycle_tracking_metadata(shadow_candidate)
             self._emit_signal_json_payload(shadow_candidate)
+        self._emit_signal_throttle_state_snapshot(report)
 
     def _mark_shadow_clean_block_watch_entries(
         self,
@@ -7470,6 +7483,7 @@ class WolfConstitutionalPipeline:
         guard = guard_microboost_source(
             report,
             max_age_seconds=self._source_lineage_max_age_seconds(),
+            microboost_active_timing_max_age_seconds=self._microboost_active_timing_max_age_seconds(),
         )
         if guard.can_emit_microboost:
             return False
@@ -7483,12 +7497,15 @@ class WolfConstitutionalPipeline:
         return True
 
     def _terminalize_stale_microboost_cluster(self, report: dict[str, Any]) -> bool:
-        """Stop a stale Microboost cluster from re-entering every runtime snapshot.
+        """Downgrade stale timing evidence and terminalize it after lineage grace.
 
         The analyzer intentionally retains source events for observability.  That
-        must not resurrect an already stale Microboost candidate on every tick.
-        We preserve the source rows, emit one terminal diagnostic per cluster,
-        and remove only the derived candidate/Watch path from this report.
+        must not resurrect an old Microboost as current timing authority.  Source
+        freshness, active timing, and lineage waiting use separate clocks:
+
+        * fresh SignalThrottle source can keep the pair analytically eligible;
+        * old Microboost inside lineage grace is historical evidence only;
+        * old Microboost beyond lineage grace receives a terminal DecisionUpdate.
         """
         if not self._parse_env_bool("MICROBOOST_STALE_CLUSTER_TERMINALIZATION_ENABLED", True):
             return False
@@ -7502,6 +7519,7 @@ class WolfConstitutionalPipeline:
         guard = guard_microboost_source(
             report,
             max_age_seconds=self._source_lineage_max_age_seconds(),
+            microboost_active_timing_max_age_seconds=self._microboost_active_timing_max_age_seconds(),
         )
         stale_diagnostic = next(
             (
@@ -7514,6 +7532,10 @@ class WolfConstitutionalPipeline:
         if stale_diagnostic is None:
             return False
 
+        timing_age = float(stale_diagnostic.get("microboost_timing_age_seconds") or 0.0)
+        lineage_grace = self._microboost_lineage_wait_grace_seconds()
+        within_lineage_grace = timing_age <= lineage_grace
+
         cluster_id = str(latest.get("cluster_id") or "").strip()
         cluster_key = "|".join(
             (
@@ -7525,48 +7547,223 @@ class WolfConstitutionalPipeline:
         if not cluster_key.strip("|"):
             return False
 
-        terminalized = getattr(self, "_terminalized_microboost_clusters", None)
-        if not isinstance(terminalized, dict):
-            terminalized = {}
-            self._terminalized_microboost_clusters = terminalized
-        first_terminalization = cluster_key not in terminalized
-        terminalized[cluster_key] = time.monotonic()
+        cache_name = (
+            "_downgraded_microboost_clusters"
+            if within_lineage_grace
+            else "_terminalized_microboost_clusters"
+        )
+        transition_cache = getattr(self, cache_name, None)
+        if not isinstance(transition_cache, dict):
+            transition_cache = {}
+            setattr(self, cache_name, transition_cache)
+        first_transition = cluster_key not in transition_cache
+        transition_cache[cluster_key] = time.monotonic()
         max_cache = max(
             32,
             int(self._parse_env_float("MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE", 512.0)),
         )
-        while len(terminalized) > max_cache:
-            oldest = min(terminalized, key=terminalized.get)
-            terminalized.pop(oldest, None)
+        while len(transition_cache) > max_cache:
+            oldest = min(transition_cache, key=transition_cache.get)
+            transition_cache.pop(oldest, None)
 
-        terminal_payload = {
-            **stale_diagnostic,
-            "reason": "MICROBOOST_CLUSTER_EXPIRED_SOURCE_STALE",
-            "terminal_status": "EXPIRED_SOURCE_STALE",
-            "cluster_terminalized": True,
-            "active_candidate_removed": True,
-            "terminalization_replayed": not first_terminalization,
-        }
-        if first_terminalization:
-            terminal_payload["diagnostic_emit_result"] = self._emit_source_guard_diagnostic(terminal_payload)
-        else:
-            terminal_payload["diagnostic_emit_result"] = False
-
+        summary["latest_history"] = dict(latest)
         summary["latest"] = None
-        summary["latest_terminalized_cluster_id"] = cluster_id or None
-        summary["latest_terminalization_status"] = "EXPIRED_SOURCE_STALE"
+        report["microboost_history_evidence"] = {
+            **dict(latest),
+            "microboost_timing_age_seconds": round(timing_age, 3),
+            "microboost_active_timing_max_age_seconds": self._microboost_active_timing_max_age_seconds(),
+            "microboost_lineage_wait_grace_seconds": lineage_grace,
+            "microboost_timing_fresh": False,
+            "microboost_history_status": "HISTORICAL_EVIDENCE_ONLY",
+            "valid_for_active_timing": False,
+        }
         report["microboost_core_event"] = None
         for entry_key in (
             "microboost_continuation_entry",
             "microboost_counter_entry",
             "microboost_watch_entry",
         ):
-            # These payloads are all built from ``microboost_summary.latest`` in
-            # the analyzer.  Clear the derived lane even when a legacy payload
-            # omitted its cluster_id, rather than allowing it to bypass expiry.
+            # All three are derived from ``microboost_summary.latest``.  Once
+            # timing is stale they may remain lineage evidence, never a Watch.
             report[entry_key] = None
+
+        if within_lineage_grace:
+            pending_payload = {
+                **stale_diagnostic,
+                "reason": "MICROBOOST_TIMING_STALE_WITHIN_LINEAGE_GRACE",
+                "timing_status": "CLEAN_BLOCK_WATCH_PENDING_CURRENT_TIMING",
+                "terminal_status": None,
+                "cluster_terminalized": False,
+                "active_candidate_removed": True,
+                "lineage_waiting": True,
+                "lineage_wait_grace_seconds": lineage_grace,
+                "lineage_wait_remaining_seconds": round(max(0.0, lineage_grace - timing_age), 3),
+                "timing_downgrade_replayed": not first_transition,
+            }
+            if first_transition:
+                pending_payload["diagnostic_emit_result"] = self._emit_source_guard_diagnostic(pending_payload)
+            else:
+                pending_payload["diagnostic_emit_result"] = False
+            summary["latest_timing_status"] = "HISTORICAL_EVIDENCE_ONLY"
+            report["microboost_timing_downgrade"] = pending_payload
+            self._annotate_clean_block_timing_outcome(
+                report,
+                outcome_status="CLEAN_BLOCK_WATCH_PENDING_CURRENT_TIMING",
+                microboost_lineage_status="HISTORICAL_EVIDENCE_WITHIN_LINEAGE_GRACE",
+                timing_age_seconds=timing_age,
+            )
+            return True
+
+        terminal_payload = {
+            **stale_diagnostic,
+            "reason": "MICROBOOST_LINEAGE_WAIT_GRACE_EXPIRED",
+            "terminal_status": "PENDING_WATCH_EXPIRED",
+            "cluster_terminalized": True,
+            "active_candidate_removed": True,
+            "lineage_waiting": False,
+            "lineage_wait_grace_seconds": lineage_grace,
+            "terminalization_replayed": not first_transition,
+        }
+        if first_transition:
+            terminal_payload["diagnostic_emit_result"] = self._emit_source_guard_diagnostic(terminal_payload)
+        else:
+            terminal_payload["diagnostic_emit_result"] = False
+
+        summary["latest_terminalized_cluster_id"] = cluster_id or None
+        summary["latest_terminalization_status"] = "PENDING_WATCH_EXPIRED"
         report["microboost_stale_terminalization"] = terminal_payload
+        self._annotate_clean_block_timing_outcome(
+            report,
+            outcome_status="CLEAN_BLOCK_ACTIVE_MICROBOOST_LINEAGE_EXPIRED",
+            microboost_lineage_status="PENDING_WATCH_EXPIRED",
+            timing_age_seconds=timing_age,
+        )
+        decision_update = self._prewatch_expiry_decision_update(latest, stale_diagnostic)
+        decision_update["microboost_lineage_wait_grace_seconds"] = lineage_grace
+        decision_update["terminalization_replayed"] = not first_transition
+        decision_update["signal_json_emit_result"] = (
+            self._emit_signal_json_payload(decision_update) if first_transition else False
+        )
+        report["microboost_terminal_decision_update"] = decision_update
         return True
+
+    def _annotate_clean_block_timing_outcome(
+        self,
+        report: dict[str, Any],
+        *,
+        outcome_status: str,
+        microboost_lineage_status: str,
+        timing_age_seconds: float,
+    ) -> None:
+        """Keep clean-block eligibility visible while removing stale timing authority."""
+        for collection_name in ("clean_block_watch_entries", "signal_watch_promotion_diagnostics"):
+            collection = report.get(collection_name)
+            if not isinstance(collection, list):
+                continue
+            annotated: list[Any] = []
+            for raw_payload in collection:
+                if not isinstance(raw_payload, dict):
+                    annotated.append(raw_payload)
+                    continue
+                payload = dict(raw_payload)
+                payload.update(
+                    {
+                        "clean_block_outcome_status": outcome_status,
+                        "microboost_lineage_status": microboost_lineage_status,
+                        "microboost_validation_status": "STALE_HISTORY_ONLY",
+                        "microboost_timing_fresh": False,
+                        "microboost_timing_age_seconds": round(timing_age_seconds, 3),
+                        "microboost_active_timing_max_age_seconds": self._microboost_active_timing_max_age_seconds(),
+                        "microboost_lineage_wait_grace_seconds": self._microboost_lineage_wait_grace_seconds(),
+                    }
+                )
+                if microboost_lineage_status != "PENDING_WATCH_EXPIRED":
+                    payload["next_required_stage"] = "WAIT_CURRENT_MICROBOOST_OR_PRICE_REACTION"
+                annotated.append(payload)
+            report[collection_name] = annotated
+
+    @staticmethod
+    def _prewatch_expiry_decision_update(
+        latest: dict[str, Any],
+        stale_diagnostic: dict[str, Any],
+    ) -> dict[str, Any]:
+        symbol = str(latest.get("symbol") or "").upper()
+        cluster_id = str(latest.get("cluster_id") or "").strip() or None
+        source_id = str(latest.get("source_clean_block_id") or "").strip() or None
+        event_time = str(latest.get("end_utc") or datetime.now(UTC).isoformat())
+        pending_id = f"{cluster_id or symbol}:PREWATCH"
+        direction = str(
+            latest.get("raw_direction")
+            or latest.get("candidate_direction")
+            or latest.get("direction")
+            or ""
+        ).upper()
+        watch_direction = direction if direction in {"BUY", "SELL"} else None
+        return {
+            "event": "signal_decision_update_json",
+            "schema_version": "2.0-universal-pattern",
+            "symbol": symbol,
+            "signal_family": "MICROBOOST_PREWATCH_LIFECYCLE",
+            "source_stage": "MICROBOOST_TIMING_GUARD",
+            "status": "PENDING_WATCH_EXPIRED",
+            "previous_status": "MICROBOOST_CANDIDATE",
+            "new_status": "PENDING_WATCH_EXPIRED",
+            "terminal_status": "PENDING_WATCH_EXPIRED",
+            "decision_state": "EXPIRED",
+            "decision_update_trigger": "MICROBOOST_TIMING_EXPIRED_BEFORE_WATCH_PROMOTION",
+            "cluster_id": cluster_id,
+            "pending_decision_id": pending_id,
+            "lifecycle_id": f"{pending_id}:LIFECYCLE",
+            "lifecycle_status": "TERMINAL_EXPIRED",
+            "lifecycle_track": False,
+            "terminal_required": False,
+            "terminal_guarantee": "MICROBOOST_TIMING_GUARD",
+            "terminal_decision_confirmed": True,
+            "terminal_decision_event_type": "signal_decision_update_json",
+            "source_clean_block_id": source_id,
+            # Parent provenance is retained for audit.  It is deliberately not
+            # promoted into current clean-block or execution authority here.
+            "source_clean_block_confirmed": True if source_id else None,
+            "clean_block_valid": None,
+            "microboost_detected": True,
+            "microboost_validation_status": "EXPIRED_HISTORICAL_EVIDENCE",
+            "microboost_timing_fresh": False,
+            "microboost_timing_age_seconds": stale_diagnostic.get("microboost_timing_age_seconds"),
+            "microboost_active_timing_max_age_seconds": stale_diagnostic.get(
+                "microboost_active_timing_max_age_seconds"
+            ),
+            "raw_direction": watch_direction,
+            "candidate_direction": watch_direction,
+            "watch_direction": watch_direction,
+            "validated_direction": None,
+            "final_direction": "WAIT",
+            "direction_validation_status": "MICROBOOST_TIMING_EXPIRED",
+            "action": "ARCHIVE_MICROBOOST_WAIT_NEW_CURRENT_TIMING",
+            "next_action": "WAIT_NEW_MICROBOOST_OR_CURRENT_PRICE_REACTION",
+            "reason": "microboost lineage grace expired before a current timing Watch could be promoted",
+            "signal_valid_time_utc": event_time,
+            "signal_valid_price": None,
+            "entry_reference_price": None,
+            "entry_zone": [],
+            "market_context_applied": False,
+            "price_integrity_evaluated": True,
+            "price_integrity_valid": False,
+            "price_integrity_status": "NOT_REQUIRED_TERMINAL_PREWATCH_EXPIRY",
+            "price_integrity_reason": "TERMINAL_LIFECYCLE_EVENT_WITHOUT_CURRENT_PRICE",
+            "pressure_seen": True,
+            "pair_eligible_for_analysis": None,
+            "signal_valid": False,
+            "direction_valid": False,
+            "analysis_valid": True,
+            "tradeplan_valid": False,
+            "valid_for_execution": False,
+            "execution_valid_now": False,
+            "execution_status": "PENDING_WATCH_EXPIRED",
+            "execution_reason": "MICROBOOST_LINEAGE_WAIT_GRACE_EXPIRED",
+            "is_final_signal": False,
+            "emit_reason": "TERMINAL_LIFECYCLE_DECISION_UPDATE",
+            "signal_quality": "DECISION_UPDATE",
+        }
 
     def _emit_source_guard_diagnostic(self, payload: dict[str, Any]) -> bool:
         event = str(payload.get("event") or "")
@@ -7775,6 +7972,24 @@ class WolfConstitutionalPipeline:
     def _source_lineage_max_age_seconds(self) -> float:
         return self._parse_env_float("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", DEFAULT_SOURCE_FRESHNESS_SECONDS)
 
+    def _microboost_active_timing_max_age_seconds(self) -> float:
+        return max(
+            1.0,
+            self._parse_env_float(
+                "MICROBOOST_ACTIVE_TIMING_MAX_AGE_SECONDS",
+                DEFAULT_MICROBOOST_ACTIVE_TIMING_SECONDS,
+            ),
+        )
+
+    def _microboost_lineage_wait_grace_seconds(self) -> float:
+        return max(
+            self._microboost_active_timing_max_age_seconds(),
+            self._parse_env_float(
+                "MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS",
+                DEFAULT_MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS,
+            ),
+        )
+
     def _emit_signal_intelligence_flag_snapshot(self) -> None:
         """P1 (once per deployment, default ON): emit the effective state of the
         signal-intelligence / canary flags + deployment identity so a log capture can
@@ -7951,6 +8166,12 @@ class WolfConstitutionalPipeline:
             ),
             "MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE": _f(
                 "MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE", "512"
+            ),
+            "MICROBOOST_ACTIVE_TIMING_MAX_AGE_SECONDS": _f(
+                "MICROBOOST_ACTIVE_TIMING_MAX_AGE_SECONDS", "120"
+            ),
+            "MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS": _f(
+                "MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS", "420"
             ),
             "SIGNAL_WATCH_SOURCE_GUARD_ENABLED": _b("SIGNAL_WATCH_SOURCE_GUARD_ENABLED", "true"),
             "SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED": _b("SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED", "true"),
