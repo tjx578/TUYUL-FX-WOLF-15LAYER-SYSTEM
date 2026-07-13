@@ -243,6 +243,59 @@ def test_no_market_chase_sell_still_allowed():
     assert decision.decision == "ALLOW", decision.reasons
 
 
+def test_observed_live_price_blocks_new_entry_after_stop_or_target_is_crossed():
+    buy_stop = _usdjpy_structure_ready_candidate()
+    buy_stop["observed_mid"] = 159.395
+    buy_target = _usdjpy_structure_ready_candidate()
+    buy_target["observed_mid"] = 159.95
+
+    sell_stop = _nzdjpy_single_stop_sell()
+    sell_target = _nzdjpy_single_stop_sell()
+    for payload in (sell_stop, sell_target):
+        payload["target_mode"] = "FINAL_MARKET_STRUCTURE"
+        payload["structure_targets_available"] = True
+        payload["tradeplan_context_ready"] = True
+        payload["targets"] = [{"type": "STRUCTURE_TARGET", "level": payload["tp1"], "rr": 1.5}]
+    sell_stop["observed_mid"] = 94.30
+    sell_target["observed_mid"] = 93.77
+
+    cases = (
+        (buy_stop, "LIVE_PRICE_AT_OR_BEYOND_STOP"),
+        (buy_target, "TARGET_ALREADY_REACHED_NO_NEW_ENTRY"),
+        (sell_stop, "LIVE_PRICE_AT_OR_BEYOND_STOP"),
+        (sell_target, "TARGET_ALREADY_REACHED_NO_NEW_ENTRY"),
+    )
+    for payload, expected_reason in cases:
+        decision = evaluate_signal_execution_gates(payload)
+        assert decision.decision == "BLOCK"
+        assert expected_reason in decision.reasons
+        assert decision.live_rr["price_valid_for_new_entry"] is False
+
+
+def test_stop_breach_uses_executable_bid_for_buy_and_ask_for_sell():
+    buy = _usdjpy_structure_ready_candidate()
+    buy.update({"observed_bid": 159.438, "observed_ask": 159.442, "observed_mid": 159.440})
+
+    sell = _nzdjpy_single_stop_sell()
+    sell.update(
+        {
+            "target_mode": "FINAL_MARKET_STRUCTURE",
+            "structure_targets_available": True,
+            "tradeplan_context_ready": True,
+            "targets": [{"type": "STRUCTURE_TARGET", "level": sell["tp1"], "rr": 1.5}],
+            "observed_bid": 94.278,
+            "observed_ask": 94.279,
+            "observed_mid": 94.2785,
+        }
+    )
+
+    for payload, expected_exit_price in ((buy, 159.438), (sell, 94.279)):
+        decision = evaluate_signal_execution_gates(payload)
+        assert decision.decision == "BLOCK"
+        assert "LIVE_PRICE_AT_OR_BEYOND_STOP" in decision.reasons
+        assert decision.live_rr["exit_price"] == expected_exit_price
+
+
 def test_allow_stamps_execution_valid_now_true():
     """On ALLOW the adapter stamps execution_valid_now=True (flag consistency)."""
     adapter = SignalJsonGateAdapter(
