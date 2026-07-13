@@ -966,11 +966,16 @@ def test_clean_throttle_block_then_resistance_microboost_creates_watch_before_an
     watch = report["microboost_counter_entry"]
 
     assert report["signal_watch_gate"]["eligible"] is True
-    assert watch["status"] == "SELL_ABSORPTION_WATCH"
+    assert watch["status"] == "COUNTER_SCENARIO_WATCH"
+    assert watch["legacy_watch_status"] == "SELL_ABSORPTION_WATCH"
     assert watch["final_direction"] == "WAIT"
     assert watch["validated_direction"] is None
-    assert watch["watch_direction"] == "SELL"
-    assert watch["direction_validation_status"] == "WATCH_ONLY_PENDING_M15"
+    assert watch["candidate_direction"] == "BUY"
+    assert watch["watch_direction"] == "BUY"
+    assert watch["counter_watch_direction"] == "SELL"
+    assert watch["counter_scenario"]["status"] == "CONDITIONAL"
+    assert watch["counter_scenario"]["requires_m15_close"] is True
+    assert watch["direction_validation_status"] == "WATCH_ONLY_COUNTER_SCENARIO_CONDITIONAL"
     assert watch["valid_for_execution"] is False
     assert watch["requires_m15_close"] is True
     assert watch["targets_execution_usable"] is False
@@ -1015,7 +1020,13 @@ def test_all_lifecycle_clean_blocks_get_watch_or_diagnostic_routes():
     assert {entry["source_clean_block_id"] for entry in outputs} == {
         candidate["source_clean_block_id"] for candidate in candidates
     }
-    assert all(entry["status"].startswith("CLEAN_BLOCK_") for entry in report["clean_block_watch_entries"])
+    assert all(
+        entry["status"].startswith(("CLEAN_BLOCK_", "SCANNER_MEMORY_"))
+        for entry in report["clean_block_watch_entries"]
+    )
+    for entry in report["clean_block_watch_entries"]:
+        if entry["status"].startswith("SCANNER_MEMORY_"):
+            assert entry["legacy_signal_family"].startswith("CLEAN_BLOCK_")
 
 
 def test_scanner_cycle_clean_blocks_become_advisory_watch_when_context_is_available():
