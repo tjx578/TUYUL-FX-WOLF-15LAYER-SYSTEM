@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -16,6 +17,41 @@ from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger as loguru_logger
+
+_CONNECTION_URL_RE = re.compile(
+    r"\b(?:postgres(?:ql)?(?:\+\w+)?|redis(?:s)?|mysql(?:\+\w+)?|mongodb(?:\+\w+)?)://[^\s'\"<>]+",
+    re.IGNORECASE,
+)
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?P<name>\b(?:DATABASE_URL|PGPASSWORD|POSTGRES_PASSWORD|REDIS_URL|REDIS_PRIVATE_URL|"
+    r"REDIS_PASSWORD|REDISPASSWORD|JWT_SECRET|DASHBOARD_JWT_SECRET|API_KEY)\b)\s*=\s*"
+    r"(?:'[^']*'|\"[^\"]*\"|[^\s,;]+)",
+    re.IGNORECASE,
+)
+_SENSITIVE_ENV_NAMES = (
+    "DATABASE_URL",
+    "PGPASSWORD",
+    "POSTGRES_PASSWORD",
+    "REDIS_URL",
+    "REDIS_PRIVATE_URL",
+    "REDIS_PASSWORD",
+    "REDISPASSWORD",
+    "JWT_SECRET",
+    "DASHBOARD_JWT_SECRET",
+    "API_KEY",
+)
+
+
+def redact_sensitive_log_text(value: object) -> str:
+    """Return log text with connection strings and resolved secret values removed."""
+
+    text = str(value)
+    for name in _SENSITIVE_ENV_NAMES:
+        configured = os.getenv(name)
+        if configured:
+            text = text.replace(configured, f"${name}")
+    text = _CONNECTION_URL_RE.sub("$CONNECTION_URL", text)
+    return _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group('name')}=$REDACTED", text)
 
 
 @dataclass(slots=True)
@@ -132,10 +168,17 @@ class _StdlibMaxLevelFilter(logging.Filter):
         return record.levelno <= self._maximum
 
 
+class _RedactingFormatter(logging.Formatter):
+    """Redact rendered messages and exception text before a platform receives it."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_sensitive_log_text(super().format(record))
+
+
 def configure_stdlib_logging(level: str | None = None) -> None:
     """Route stdlib INFO/WARNING to stdout and ERROR/CRITICAL to stderr."""
     resolved_level = resolve_stdlib_log_level(level)
-    log_format = logging.Formatter("%(asctime)s  %(levelname)-8s  %(name)s  %(message)s")
+    log_format = _RedactingFormatter("%(asctime)s  %(levelname)-8s  %(name)s  %(message)s")
 
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setLevel(resolved_level)
@@ -188,6 +231,10 @@ def configure_loguru_logging(level: str | None = None) -> None:
             return False
         return not (rate_enabled and not rate_limiter.allow())
 
+    def _redact_loguru_record(record: dict[str, Any]) -> None:
+        record["message"] = redact_sensitive_log_text(record.get("message", ""))
+
+    loguru_logger.configure(patcher=_redact_loguru_record)
     loguru_logger.remove()
     log_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
