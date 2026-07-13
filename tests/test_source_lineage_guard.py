@@ -85,6 +85,27 @@ def test_microboost_source_guard_blocks_stale_cluster():
     assert {diag["event"] for diag in result.diagnostics} == {"microboost_stale_diagnostic"}
 
 
+def test_microboost_source_guard_separates_source_freshness_from_active_timing():
+    report, now = _report(age_seconds=5.0, end_age_seconds=150.0)
+
+    result = guard_microboost_source(
+        report,
+        now=now,
+        max_age_seconds=300,
+        microboost_active_timing_max_age_seconds=120,
+    )
+
+    assert result.can_emit_microboost is False
+    diagnostic = result.diagnostics[0]
+    assert diagnostic["event"] == "microboost_stale_diagnostic"
+    assert diagnostic["fresh_signal_throttle_seen"] is True
+    assert diagnostic["source_age_seconds"] == 5.0
+    assert diagnostic["microboost_timing_age_seconds"] == 150.0
+    assert diagnostic["microboost_active_timing_max_age_seconds"] == 120
+    assert diagnostic["microboost_timing_fresh"] is False
+    assert diagnostic["microboost_history_status"] == "HISTORICAL_EVIDENCE_ONLY"
+
+
 def test_signal_watch_source_diagnostic_requires_clean_block_id():
     diagnostic = signal_watch_source_diagnostic(
         {

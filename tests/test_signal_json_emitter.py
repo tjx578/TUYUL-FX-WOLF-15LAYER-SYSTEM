@@ -76,6 +76,56 @@ def test_signal_json_emits_counter_entry_watch(caplog):
     assert '"status":"NANO_ABSORPTION_SELL_WATCH"' in caplog.text
 
 
+def test_contextless_prewatch_expiry_emits_terminal_decision_update(caplog):
+    payload = {
+        "event": "signal_decision_update_json",
+        "symbol": "XAGUSD",
+        "signal_family": "MICROBOOST_PREWATCH_LIFECYCLE",
+        "status": "PENDING_WATCH_EXPIRED",
+        "cluster_id": "XAGUSD_20260713T052250Z",
+        "pending_decision_id": "XAGUSD_20260713T052250Z:PREWATCH",
+        "decision_state": "EXPIRED",
+        "terminal_status": "PENDING_WATCH_EXPIRED",
+        "terminal_decision_confirmed": True,
+        "terminal_decision_event_type": "signal_decision_update_json",
+        "final_direction": "WAIT",
+        "action": "ARCHIVE_MICROBOOST_WAIT_NEW_CURRENT_TIMING",
+        "signal_valid_time_utc": "2026-07-13T05:22:50+00:00",
+        "signal_valid_price": None,
+        "entry_reference_price": None,
+        "entry_zone": [],
+        "market_context_applied": False,
+        "price_integrity_evaluated": True,
+        "price_integrity_valid": False,
+        "price_integrity_status": "NOT_REQUIRED_TERMINAL_PREWATCH_EXPIRY",
+        "price_integrity_reason": "TERMINAL_LIFECYCLE_EVENT_WITHOUT_CURRENT_PRICE",
+        "microboost_validation_status": "EXPIRED_HISTORICAL_EVIDENCE",
+        "microboost_timing_fresh": False,
+        "microboost_timing_age_seconds": 480.0,
+        "microboost_active_timing_max_age_seconds": 120.0,
+        "microboost_lineage_wait_grace_seconds": 420.0,
+        "analysis_valid": True,
+        "valid_for_execution": False,
+        "execution_valid_now": False,
+        "reason": "microboost lineage grace expired before Watch promotion",
+    }
+
+    event = build_signal_json_event(payload)
+
+    assert event is not None
+    assert event.entry_reference_price is None
+    assert should_emit_signal_json(event) is True
+    emitter = SignalJsonEmitter(enabled=True, decision_update_log_level="WARNING")
+    with caplog.at_level(logging.WARNING, logger="signal_json"):
+        assert emitter.emit(event) is True
+    logged = _logged_payload(caplog, marker="[SignalDecisionUpdateJSON]")
+    assert logged["event"] == "signal_decision_update_json"
+    assert logged["status"] == "PENDING_WATCH_EXPIRED"
+    assert logged["decision_state"] == "EXPIRED"
+    assert logged.get("entry_reference_price") is None
+    assert logged["microboost_timing_age_seconds"] == 480.0
+
+
 def test_signal_json_emits_generic_microboost_watch(caplog):
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(
