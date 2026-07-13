@@ -81,6 +81,7 @@ class LiveContextBus:
         self._candles: dict[str, dict[str, list[dict[str, Any]]]] = {}
         # {symbol: tick_dict}
         self._ticks: dict[str, dict[str, Any]] = {}
+        self._tick_timestamps: dict[str, float] = {}
         self._candle_history: dict[str, list[dict[str, Any]]] = {}
         # {symbol: conditioned return list}
         self._conditioned_returns: dict[str, list[float]] = {}
@@ -197,9 +198,22 @@ class LiveContextBus:
         symbol = tick.get("symbol")
         if symbol:
             sym = str(symbol)
+            raw_feed_timestamp = tick.get("last_seen_ts")
+            try:
+                feed_timestamp = float(raw_feed_timestamp) if raw_feed_timestamp is not None else time.time()
+            except (TypeError, ValueError):
+                feed_timestamp = time.time()
+            if feed_timestamp > 10_000_000_000:
+                feed_timestamp /= 1000.0
             with self._lock:
+                current_tick_timestamp = self._tick_timestamps.get(sym)
+                if current_tick_timestamp is not None and feed_timestamp < current_tick_timestamp:
+                    return
                 self._ticks[sym] = tick
-                self._feed_timestamps[sym] = time.time()
+                self._tick_timestamps[sym] = feed_timestamp
+                current_feed_timestamp = self._feed_timestamps.get(sym)
+                if current_feed_timestamp is None or feed_timestamp >= current_feed_timestamp:
+                    self._feed_timestamps[sym] = feed_timestamp
         else:
             logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
 
@@ -224,6 +238,7 @@ class LiveContextBus:
             # Data layer
             self._candles = {}
             self._ticks = {}
+            self._tick_timestamps = {}
             self._candle_history = {}
             self._conditioned_returns = {}
             self._conditioning_meta = {}
@@ -485,6 +500,10 @@ class LiveContextBus:
     def get_latest_tick(self, symbol: str) -> dict[str, Any] | None:
         """Return latest tick for symbol, or None if not yet received."""
         return self._ticks.get(symbol)
+
+    def get_tick_timestamp(self, symbol: str) -> float | None:
+        """Return the observation time of the cached tick, independent of candle freshness."""
+        return self._tick_timestamps.get(symbol)
 
     # ------------------------------------------------------------------
     # Feed staleness API (read-only — no execution logic)
