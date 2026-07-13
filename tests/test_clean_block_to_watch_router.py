@@ -202,7 +202,9 @@ def test_mature_scanner_cycle_clean_block_becomes_advisory_watch_with_market_con
     assert route.emit_as_watch is True
     assert route.diagnostic is False
     payload = route.payload
-    assert payload["status"] == "CLEAN_BLOCK_BUY_WATCH"
+    assert payload["status"] == "SCANNER_MEMORY_BUY_WATCH"
+    assert payload["signal_family"] == "SCANNER_MEMORY_BUY_WATCH"
+    assert payload["legacy_signal_family"] == "CLEAN_BLOCK_BUY_WATCH"
     assert payload["eligible_for_primary_watch"] is False
     assert payload["eligible_for_signal_watch"] is True
     assert payload["primary_watch_authority"] == "SCANNER_CYCLE_AWARE_MEMORY_ONLY"
@@ -252,7 +254,9 @@ def test_scanner_cycle_radar_shape_can_promote_when_reprocessed_with_market_cont
 
     assert route.event == "signal_watch_json"
     assert route.emit_as_watch is True
-    assert route.payload["status"] == "CLEAN_BLOCK_SELL_WATCH"
+    assert route.payload["status"] == "SCANNER_MEMORY_SELL_WATCH"
+    assert route.payload["signal_family"] == "SCANNER_MEMORY_SELL_WATCH"
+    assert route.payload["legacy_signal_family"] == "CLEAN_BLOCK_SELL_WATCH"
     assert route.payload["promotion_path"] == "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
     assert route.payload["watch_scope"] == "SCANNER_CYCLE_MEMORY_ADVISORY"
     assert route.payload["scanner_cycle_advisory_watch"] is True
