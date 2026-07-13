@@ -219,7 +219,7 @@ def test_usdcad_zero_expansion_density_becomes_nano_absorption_sell_watch():
     assert result.rr_to_tp3_tight == pytest.approx(2.53)
 
 
-def test_audcad_mature_near_timing_gate_stalled_at_resistance_can_direct_validate():
+def test_audcad_mature_absorption_without_m15_confirmation_stays_watch():
     cluster = _cluster(
         symbol="AUDCAD",
         phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
@@ -252,28 +252,26 @@ def test_audcad_mature_near_timing_gate_stalled_at_resistance_can_direct_validat
 
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
-    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION
-    assert result.validated_direction == "SELL"
-    assert result.watch_direction is None
-    assert result.direction_validation_status == "VALIDATED_EXECUTION"
-    assert result.final_direction == "SELL"
-    assert result.direction_status == "MICROBOOST_DIRECT_ABSORPTION_VALIDATED"
-    assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
-    assert result.requires_rejection_or_breakdown is False
+    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
+    assert result.validated_direction is None
+    assert result.watch_direction == "SELL"
+    assert result.final_direction == "WAIT"
+    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
+    assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
     assert result.signal_valid_price == 0.98504
     assert result.sl_safe == 0.9875
     assert result.tp1 == 0.982
     assert result.tp2 == 0.978
     assert result.tp3 == 0.9746
     assert result.rr_to_tp2_tight == pytest.approx(2.86)
-    assert result.rr_status == "VALID"
-    assert result.confirmation_policy == "DIRECT_ABSORPTION_NO_M15_WAIT"
-    assert result.requires_m15_close is False
-    assert result.valid_for_execution is True
+    assert result.rr_status == "WATCH"
+    assert result.confirmation_policy == "M15_CLOSE_REQUIRED"
+    assert result.requires_m15_close is True
+    assert result.valid_for_execution is False
     assert result.signal_valid_time_wita == "2026-05-19 04:33:08"
 
 
-def test_audcad_complete_absorption_with_theme_and_structure_direct_validates_without_m15_close():
+def test_audcad_complete_absorption_with_theme_and_structure_still_waits_for_m15_close():
     cluster = _cluster(
         symbol="AUDCAD",
         phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
@@ -307,20 +305,62 @@ def test_audcad_complete_absorption_with_theme_and_structure_direct_validates_wi
 
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
-    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION
-    assert result.validated_direction == "SELL"
-    assert result.final_direction == "SELL"
-    assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
-    assert result.confirmation_policy == "DIRECT_ABSORPTION_NO_M15_WAIT"
-    assert result.requires_m15_close is False
-    assert result.direct_valid_reason == "mature_absorption_with_structure_and_rr"
-    assert result.pending_decision_id is None
+    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
+    assert result.validated_direction is None
+    assert result.final_direction == "WAIT"
+    assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
+    assert result.confirmation_policy == "M15_CLOSE_REQUIRED"
+    assert result.requires_m15_close is True
+    assert result.direct_valid_reason is None
+    assert result.pending_decision_id is not None
     assert result.structure_ready is True
-    assert result.rr_status == "VALID"
+    assert result.rr_status == "WATCH"
+    assert result.valid_for_execution is False
+
+
+def test_direct_absorption_flag_requires_and_records_explicit_m15_confirmation():
+    cluster = _cluster(
+        symbol="AUDCAD",
+        phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
+        effective_density_per_minute=28.76,
+        effective_tick_count=87,
+        duration_seconds=181.502,
+        price_at_signal_start=0.98504,
+        price_at_signal_end=0.98504,
+        end_utc="2026-05-18T20:33:08+00:00",
+    )
+    market = _market(
+        symbol="AUDCAD",
+        price_at_signal_start=0.98504,
+        price_at_5m_confirm=0.98504,
+        price_at_signal_end=0.98504,
+        resistance_low=0.9850,
+        resistance_high=0.9859,
+        minor_support=0.9845,
+        major_support=0.9820,
+        h1_phase="BEARISH",
+        theme_alignment="STRONG_SELL",
+        m15_rejection_from_resistance=True,
+        m15_close_below_minor_support=False,
+        sl_buffer=0.0006,
+        tp1_support=0.9820,
+        tp2_support=0.9780,
+        tp3_support=0.9746,
+        tp4_support=0.9700,
+    )
+
+    result = MicroboostCounterEntryEngine(direct_absorption_enabled=True).evaluate(cluster, market)
+
+    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_DIRECT_ABSORPTION
+    assert result.final_direction == "SELL"
     assert result.valid_for_execution is True
+    assert result.confirmation_policy == "DIRECT_ABSORPTION_WITH_M15_CONFIRMATION"
+    assert result.m15_confirmation_status == "DIRECT_ABSORPTION_M15_CONFIRMED"
+    assert result.requires_m15_close is False
+    assert result.pending_decision_id is None
 
 
-def test_audcad_m15_close_confirms_absorption_as_sell_timing_valid():
+def test_audcad_unqualified_m15_close_does_not_confirm_absorption():
     cluster = _cluster(
         symbol="AUDCAD",
         phase_unpriced="NEAR_TIMING_GATE_MICROBOOST",
@@ -351,12 +391,12 @@ def test_audcad_m15_close_confirms_absorption_as_sell_timing_valid():
 
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
-    assert result.status == CounterEntryStatus.SELL_TIMING_VALID
-    assert result.validated_direction == "SELL"
-    assert result.final_direction == "SELL"
-    assert result.action == "SELL_AT_SIGNAL_VALID_PRICE_OR_RETEST"
-    assert result.rr_status == "VALID"
-    assert result.valid_for_execution is True
+    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
+    assert result.validated_direction is None
+    assert result.final_direction == "WAIT"
+    assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
+    assert result.rr_status == "WATCH"
+    assert result.valid_for_execution is False
 
 
 def test_cadjpy_near_timing_gate_absorption_waits_for_m15_close_without_final_execution():
@@ -501,21 +541,19 @@ def test_cadjpy_m15_close_confirms_absorption_but_missing_structure_keeps_execut
 
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
-    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
-    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_TIMING_VALID"
+    assert result.status == CounterEntryStatus.SELL_ABSORPTION_WATCH
+    assert result.direction_status == "MICROBOOST_COUNTER_ENTRY_ABSORPTION_WATCH"
     assert result.validated_direction is None
     assert result.watch_direction == "SELL"
-    assert result.direction_validation_status == "TIMING_VALID_STRUCTURE_PENDING"
+    assert result.direction_validation_status == "WATCH_ONLY_PENDING_M15"
     assert result.final_direction == "WAIT"
-    assert result.action == "WAIT_STRUCTURE_TARGET_OR_RETEST"
-    assert result.requires_rejection_or_breakdown is False
+    assert result.action == "WAIT_M15_CLOSE_CONFIRMATION"
     assert result.valid_for_execution is False
     assert result.target_mode == "PROVISIONAL_RR_FALLBACK"
     assert result.rr_status == "WATCH_PROVISIONAL"
-    assert result.confirmation_policy == "M15_CLOSE_CONFIRMED"
-    assert result.requires_m15_close is False
-    assert result.pending_decision_id is None
-    assert result.confidence_bucket == "B_TIMING_VALID_CONDITIONAL"
+    assert result.confirmation_policy == "M15_CLOSE_REQUIRED"
+    assert result.requires_m15_close is True
+    assert result.pending_decision_id is not None
 
 
 def test_nzdjpy_mature_resistance_absorption_watch_waits_for_m15_close():
@@ -674,9 +712,9 @@ def test_explicit_key_support_can_supply_final_structure_target_without_full_lad
 
     result = MicroboostCounterEntryEngine().evaluate(cluster, market)
 
-    assert result.status == CounterEntryStatus.SELL_TIMING_VALID
-    assert result.final_direction == "SELL"
-    assert result.valid_for_execution is True
+    assert result.status == CounterEntryStatus.SELL_TIMING_VALID_BY_ABSORPTION
+    assert result.final_direction == "WAIT"
+    assert result.valid_for_execution is False
     assert result.target_mode == "KEY_LEVEL_STRUCTURE_TARGET"
     assert result.target_source == "key_support_or_key_resistance"
     assert result.structure_targets_available is True
@@ -789,15 +827,15 @@ def test_schema_v1_audnzd_counter_sell_exports_observed_structure_even_when_spre
     assert result.invalidation_rules["hard_invalid_level"] == 1.22375
 
 
-def test_schema_v1_m15_rejection_can_validate_counter_sell_against_bullish_h1():
+def test_m15_rejection_cannot_validate_counter_sell_against_bullish_h1():
     result = MicroboostCounterEntryEngine().evaluate(
         _cluster(),
         _market(m15_rejection_from_resistance=True, m15_close_below_minor_support=True),
     )
 
     assert result.tradeplan_valid is True
-    assert result.execution_valid_now is True
-    assert result.final_direction == "SELL"
-    assert result.execution_status == "VALID_COUNTER_ENTRY"
+    assert result.execution_valid_now is False
+    assert result.final_direction == "WAIT"
+    assert result.execution_status == "WAIT_TIMEFRAME_ALIGNMENT"
     assert result.phase_coherence is not None
     assert result.phase_coherence["status"] == "H1_DIRECTION_CONFLICT"
