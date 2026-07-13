@@ -4,13 +4,16 @@ A generic ``MICROBOOST_WATCH`` whose pattern context already reads as a counter
 absorption setup (e.g. raw BUY pressure stalled at MAIN_RESISTANCE with
 UPPER_ABSORPTION_WARNING / NO_NEW_BUY) should surface with the directional
 counter headline the brain already implies — EARLY_SELL_WATCH / SELL_TIMING_WATCH —
-reusing the existing ``MicroboostCounterEntryEngine`` vocabulary.
+reusing the existing ``MicroboostCounterEntryEngine`` vocabulary. The headline is
+legacy operator observability; the directional contract keeps the raw pressure as
+the primary candidate and exposes the opposite thesis as a conditional scenario.
 
 Strict guardrails (this is a live trading verdict path):
 - flag default OFF  -> payload byte-for-byte unchanged
 - insufficient pattern -> stays a generic MICROBOOST_WATCH
 - valid_for_execution stays False, final_direction stays WAIT (never promoted)
-- raw_direction (pressure side) is preserved; only candidate/watch direction flip
+- raw/candidate/watch direction stay on the primary pressure side
+- opposite direction is carried by counter_scenario/counter_watch_direction only
 - ``latest["direction"]`` is never overwritten
 """
 from __future__ import annotations
@@ -83,12 +86,23 @@ def test_resolver_buy_at_resistance_resolves_to_sell_watch():
     )
     assert out["resolved"] is True
     assert out["signal_family"] == "MICROBOOST_COUNTER_ENTRY"
-    assert out["status"] == "EARLY_SELL_WATCH"
-    assert out["candidate_direction"] == "SELL"
-    assert out["watch_direction"] == "SELL"
+    assert out["status"] == "COUNTER_SCENARIO_WATCH"
+    assert out["legacy_watch_status"] == "EARLY_SELL_WATCH"
+    assert out["candidate_direction"] == "BUY"
+    assert out["watch_direction"] == "BUY"
+    assert out["counter_watch_direction"] == "SELL"
+    assert out["counter_scenario"] == {
+        "status": "CONDITIONAL",
+        "direction": "SELL",
+        "legacy_watch_status": "EARLY_SELL_WATCH",
+        "action": "WAIT_REJECTION_OR_BREAKOUT_CONFIRMATION",
+        "requires_m15_close": True,
+        "valid_for_execution": False,
+    }
     assert "raw_direction" not in out  # caller preserves raw pressure side
-    assert "valid_for_execution" not in out  # never promotes execution
-    assert "final_direction" not in out  # never touches WAIT
+    assert out["valid_for_execution"] is False
+    assert out["final_direction"] == "WAIT"
+    assert out["requires_m15_close"] is True
 
 
 def test_resolver_long_stall_resolves_to_timing_watch():
@@ -98,7 +112,8 @@ def test_resolver_long_stall_resolves_to_timing_watch():
         phase_priced="RESISTANCE_PRESSURE_WARNING",
         duration_seconds=90.0,
     )
-    assert out["status"] == "SELL_TIMING_WATCH"
+    assert out["status"] == "COUNTER_SCENARIO_WATCH"
+    assert out["legacy_watch_status"] == "SELL_TIMING_WATCH"
 
 
 def test_resolver_sell_at_support_resolves_to_buy_watch():
@@ -108,8 +123,13 @@ def test_resolver_sell_at_support_resolves_to_buy_watch():
         phase_priced="SUPPORT_PRESSURE_WARNING",
         duration_seconds=1.8,
     )
-    assert out["status"] == "EARLY_BUY_WATCH"
-    assert out["candidate_direction"] == "BUY"
+    assert out["status"] == "COUNTER_SCENARIO_WATCH"
+    assert out["legacy_watch_status"] == "EARLY_BUY_WATCH"
+    assert out["candidate_direction"] == "SELL"
+    assert out["watch_direction"] == "SELL"
+    assert out["counter_watch_direction"] == "BUY"
+    assert out["counter_scenario"]["status"] == "CONDITIONAL"
+    assert out["counter_scenario"]["direction"] == "BUY"
 
 
 def test_resolver_midrange_stays_generic():
@@ -164,10 +184,15 @@ def test_flag_on_buy_at_resistance_resolves_to_sell_watch(monkeypatch):
     )
     payload = _build_watch(latest)
     assert payload["signal_family"] == "MICROBOOST_COUNTER_ENTRY"
-    assert payload["status"] in {"EARLY_SELL_WATCH", "SELL_TIMING_WATCH"}
+    assert payload["status"] == "COUNTER_SCENARIO_WATCH"
+    assert payload["legacy_watch_status"] in {"EARLY_SELL_WATCH", "SELL_TIMING_WATCH"}
     assert payload["raw_direction"] == "BUY"
-    assert payload["candidate_direction"] == "SELL"
-    assert payload["watch_direction"] == "SELL"
+    assert payload["candidate_direction"] == "BUY"
+    assert payload["watch_direction"] == "BUY"
+    assert payload["counter_watch_direction"] == "SELL"
+    assert payload["counter_scenario"]["status"] == "CONDITIONAL"
+    assert payload["counter_scenario"]["direction"] == "SELL"
+    assert payload["requires_m15_close"] is True
     assert payload["final_direction"] == "WAIT"
     assert payload["valid_for_execution"] is False
     # guardrail #6: the source block direction is never overwritten
@@ -187,9 +212,52 @@ def test_flag_on_sell_at_support_resolves_to_buy_watch(monkeypatch):
         )
     )
     assert payload["signal_family"] == "MICROBOOST_COUNTER_ENTRY"
-    assert payload["status"] in {"EARLY_BUY_WATCH", "BUY_TIMING_WATCH"}
+    assert payload["status"] == "COUNTER_SCENARIO_WATCH"
+    assert payload["legacy_watch_status"] in {"EARLY_BUY_WATCH", "BUY_TIMING_WATCH"}
     assert payload["raw_direction"] == "SELL"
+    assert payload["candidate_direction"] == "SELL"
+    assert payload["watch_direction"] == "SELL"
+    assert payload["counter_watch_direction"] == "BUY"
+    assert payload["counter_scenario"]["status"] == "CONDITIONAL"
+    assert payload["counter_scenario"]["direction"] == "BUY"
+    assert payload["requires_m15_close"] is True
+    assert payload["final_direction"] == "WAIT"
+    assert payload["valid_for_execution"] is False
+
+
+def test_direction_conflict_blocks_only_counter_scenario(monkeypatch):
+    """Raw-supporting basket evidence blocks the counter thesis, not the primary direction."""
+    monkeypatch.setenv(_FLAG, "true")
+    monkeypatch.setenv("SIGNAL_DIRECTION_CONFLICT_RESOLVER_ENABLED", "true")
+    latest = _latest(
+        direction="BUY",
+        price_position="MAIN_RESISTANCE",
+        phase_priced="RESISTANCE_PRESSURE_WARNING",
+        selected_pattern_id="UPPER_ABSORPTION_WARNING",
+        entry_permission="NO_NEW_BUY",
+    )
+    latest["symbol"] = "USDCAD"
+    latest["market_context_snapshot"]["basket_validation"] = {
+        "symbol": "USDCAD",
+        "direction": "BUY",
+        "valid": True,
+        "data_ready": True,
+        "base_score": 0.72,
+        "quote_score": -0.38,
+        "pair_alignment": 1.1,
+        "evidence": {"currency_scores": {"USD": 0.72, "CAD": -0.38}},
+    }
+
+    payload = _build_watch(latest)
+
+    assert payload["status"] == "MICROBOOST_WATCH"
+    assert payload["raw_direction"] == "BUY"
     assert payload["candidate_direction"] == "BUY"
+    assert payload["watch_direction"] == "BUY"
+    assert payload["counter_watch_direction"] == "SELL"
+    assert payload["counter_scenario"]["status"] == "BLOCKED"
+    assert payload["counter_scenario"]["valid_for_execution"] is False
+    assert payload["counter_scenario"]["block_reason"] == "BASKET_SUPPORTS_RAW_DIRECTION"
     assert payload["final_direction"] == "WAIT"
     assert payload["valid_for_execution"] is False
 
