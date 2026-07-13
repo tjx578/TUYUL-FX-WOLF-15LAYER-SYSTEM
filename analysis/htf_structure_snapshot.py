@@ -367,6 +367,36 @@ def _zone_pad(daily_range: tuple[float, float] | None) -> float | None:
     return span * 0.03
 
 
+def _average_true_range(candles: list[dict[str, Any]], period: int = 14) -> float | None:
+    """Return a closed-bar ATR in price units without introducing a TA dependency."""
+
+    closed_candles = [candle for candle in candles if not _is_explicitly_forming(candle)]
+    if len(closed_candles) < 2 or period <= 0:
+        return None
+    true_ranges: list[float] = []
+    start = max(1, len(closed_candles) - period)
+    for index in range(start, len(closed_candles)):
+        high = _candle_high(closed_candles[index])
+        low = _candle_low(closed_candles[index])
+        previous_close = _candle_close(closed_candles[index - 1])
+        if high is None or low is None or previous_close is None:
+            continue
+        true_ranges.append(max(high - low, abs(high - previous_close), abs(low - previous_close)))
+    if not true_ranges:
+        return None
+    return sum(true_ranges) / len(true_ranges)
+
+
+def _is_explicitly_forming(candle: dict[str, Any]) -> bool:
+    for key in ("closed", "is_closed", "complete", "is_complete"):
+        if key not in candle:
+            continue
+        value = candle.get(key)
+        if value is False or str(value).strip().lower() in {"false", "0", "no", "open", "forming"}:
+            return True
+    return False
+
+
 def _h4_supply_zone(swing_high: float | None, daily_range: tuple[float, float] | None) -> list[float] | None:
     pad = _zone_pad(daily_range)
     if swing_high is None or pad is None:
@@ -455,6 +485,8 @@ class HTFStructureSnapshot:
     h4_bars: int = 0
     h4_swing_high: float | None = None
     h4_swing_low: float | None = None
+    h4_atr: float | None = None
+    daily_atr: float | None = None
     daily_range_high: float | None = None
     daily_range_low: float | None = None
     h4_supply_zone: list[float] | None = None
@@ -481,6 +513,8 @@ class HTFStructureSnapshot:
             "h4_bars": self.h4_bars,
             "h4_swing_high": self.h4_swing_high,
             "h4_swing_low": self.h4_swing_low,
+            "h4_atr": self.h4_atr,
+            "daily_atr": self.daily_atr,
             "daily_range_high": self.daily_range_high,
             "daily_range_low": self.daily_range_low,
             "h4_supply_zone": self.h4_supply_zone,
@@ -506,6 +540,8 @@ class HTFStructureSnapshot:
             tuple(self.blocked_playbook),
             self.h4_swing_high,
             self.h4_swing_low,
+            self.h4_atr,
+            self.daily_atr,
             self.daily_range_high,
             self.daily_range_low,
         )
@@ -637,6 +673,8 @@ def build_snapshot(
         h4_bars=h4_bars,
         h4_swing_high=h4_swing_high,
         h4_swing_low=h4_swing_low,
+        h4_atr=_average_true_range(h4),
+        daily_atr=_average_true_range(daily),
         daily_range_high=daily_range_high,
         daily_range_low=daily_range_low,
         h4_supply_zone=_h4_supply_zone(h4_swing_high, d_range),
