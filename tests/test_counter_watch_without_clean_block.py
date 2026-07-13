@@ -62,8 +62,15 @@ def test_flag_on_ignition_block_becomes_counter_sell_watch(monkeypatch):
     payload = _counter_entry_payload(_summary(20.0), dict(_INELIGIBLE_GATE))
     assert payload is not None
     assert payload["signal_family"] == "MICROBOOST_COUNTER_ENTRY"
-    assert _status(payload).endswith("SELL_WATCH")
-    assert payload["candidate_direction"] == "SELL"
+    assert _status(payload) == "COUNTER_SCENARIO_WATCH"
+    assert payload["legacy_watch_status"].endswith("SELL_WATCH")
+    assert payload["candidate_direction"] == "BUY"
+    assert payload["watch_direction"] == "BUY"
+    assert payload["counter_watch_direction"] == "SELL"
+    assert payload["counter_scenario"]["direction"] == "SELL"
+    assert payload["counter_scenario"]["status"] == "CONDITIONAL"
+    assert payload["counter_scenario"]["requires_m15_close"] is True
+    assert payload["counter_scenario"]["valid_for_execution"] is False
     assert payload["final_direction"] == "WAIT"
     assert payload["valid_for_execution"] is False
     # honest: no clean-block confirmation backed this watch
