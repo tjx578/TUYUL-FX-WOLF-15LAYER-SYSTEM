@@ -31,6 +31,28 @@ signaljson_pattern_fields:
   - block_reason
   - pattern_evidence
   - watch_direction
+  - counter_watch_direction
+  - counter_scenario
+  - legacy_watch_status
+  - lifecycle_id
+  - linked_previous_lifecycle_id
+  - observed_bid
+  - observed_ask
+  - observed_mid
+  - price_observed_at_utc
+  - price_quote_age_seconds
+  - price_range_source
+  - price_allowed_range_low
+  - price_allowed_range_high
+  - price_integrity_valid
+  - price_integrity_status
+  - price_integrity_reason
+  - reference_support
+  - reference_resistance
+  - tradeplan_authority
+  - tradeplan_contract_version
+  - tradeplan_hash
+  - tradeplan_projection_consistent
   - direction_validation_status
   - targets_execution_usable
   - target_source
@@ -46,6 +68,10 @@ signaljson_pattern_fields:
   - eligible_for_primary_watch
   - scanner_cycle_advisory_watch
   - advisory_watch_authority_rule
+  - legacy_signal_family
+  - source_clean_block_backfill_status
+  - source_clean_block_backfill_source
+  - source_clean_block_backfill_time_distance_seconds
 
 production_pattern_context_fields:
   - selected_pattern_id
@@ -72,6 +98,9 @@ pattern_debug_sidecar_fields:
   - pattern_match_diagnostics
 
 operator_tradeplan_fields:
+  - contract_version
+  - source_of_truth
+  - plan_hash
   - event
   - symbol
   - direction
