@@ -7,5 +7,5 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
 fi
 
 echo "[startup] Running database migrations (alembic upgrade head)..."
-python -m alembic upgrade head
+python deploy/railway/migration_runner.py
 echo "[startup] Migration completed successfully."
