@@ -7,8 +7,10 @@ for watch states.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import math
 import os
 import time
 from dataclasses import asdict, dataclass
@@ -61,6 +63,7 @@ EMITTABLE_SIGNAL_STATUSES = TERMINAL_SIGNAL_STATUSES | {
     "CLEAN_BLOCK_WATCH_PENDING_DIRECTION",
     "CLEAN_BLOCK_WATCH_BLOCKED",
     "MICROBOOST_WATCH",
+    "COUNTER_SCENARIO_WATCH",
     "MICROBOOST_COUNTER_ENTRY_WATCH",
     "MICROBOOST_COUNTER_ENTRY_VALID",
     "NANO_ABSORPTION_SELL_WATCH",
@@ -137,6 +140,7 @@ WATCH_SIGNAL_STATUSES = {
     "CLEAN_BLOCK_WATCH_PENDING_DIRECTION",
     "CLEAN_BLOCK_WATCH_BLOCKED",
     "MICROBOOST_WATCH",
+    "COUNTER_SCENARIO_WATCH",
     "NANO_ABSORPTION_SELL_WATCH",
     "EARLY_SELL_WATCH",
     "SELL_TIMING_WATCH",
@@ -326,7 +330,7 @@ class SignalJsonEvent:
     action: str
     signal_valid_time_utc: str
     signal_valid_time_wita: str | None
-    signal_valid_price: float
+    signal_valid_price: float | None
     entry_reference_price: float
     entry_zone: list[float]
     price_position: str | None
@@ -351,6 +355,9 @@ class SignalJsonEvent:
     reason: str
     invalidation: str | None
     watch_direction: str | None = None
+    counter_watch_direction: str | None = None
+    counter_scenario: dict[str, Any] | None = None
+    legacy_watch_status: str | None = None
     direction_validation_status: str | None = None
     cluster_id: str | None = None
     is_final_signal: bool = False
@@ -380,7 +387,9 @@ class SignalJsonEvent:
     reclaim_trigger: float | None = None
     risk_pips: float | None = None
     signal_id: str | None = None
+    lifecycle_id: str | None = None
     linked_previous_signal: str | None = None
+    linked_previous_lifecycle_id: str | None = None
     previous_signal_status: str | None = None
     lifecycle_status: str | None = None
     lifecycle_track: bool | None = None
@@ -541,6 +550,23 @@ class SignalJsonEvent:
     pressure_priority_context: dict[str, Any] | None = None
     followthrough_context: dict[str, Any] | None = None
     htf_structure_context: dict[str, Any] | None = None
+    operator_tradeplan: dict[str, Any] | None = None
+    observed_bid: float | None = None
+    observed_ask: float | None = None
+    observed_mid: float | None = None
+    price_observed_at_utc: str | None = None
+    price_quote_age_seconds: float | None = None
+    price_allowed_range_low: float | None = None
+    price_allowed_range_high: float | None = None
+    price_range_source: str | None = None
+    reference_signal_price: float | None = None
+    reference_entry_price: float | None = None
+    reference_support: float | None = None
+    reference_resistance: float | None = None
+    price_integrity_valid: bool | None = None
+    price_integrity_status: str | None = None
+    price_integrity_reason: str | None = None
+    price_integrity_evaluated: bool | None = None
     # Family lineage (gated upstream by SIGNAL_FAMILY_LINEAGE_ENABLED). Carried through
     # so the lineage merged onto the pipeline payload actually reaches the emitted log
     # instead of being dropped by the dict->event rebuild. Observability-only.
@@ -588,8 +614,10 @@ class SignalJsonEmitter:
         watch_bucket_minutes: tuple[float, ...] | None = None,
         strict_lifecycle: bool = False,
         require_parent_watch: bool = False,
-        allow_direct_bypass: bool = True,
+        allow_direct_bypass: bool = False,
         production_watch_gate: bool = False,
+        production_watch_require_decision_grade: bool = False,
+        price_integrity_gate: bool = False,
         internal_watch_summary_enabled: bool | None = None,
         internal_watch_summary_prefix: str = "[SignalWatchInternalSummary]",
         internal_watch_summary_log_level: str | int | None = None,
@@ -641,6 +669,12 @@ class SignalJsonEmitter:
         self.require_parent_watch = require_parent_watch
         self.allow_direct_bypass = allow_direct_bypass
         self.production_watch_gate = production_watch_gate
+        # A Watch is candidate intelligence, not a near-final decision.  Keep the
+        # old stricter policy as an explicit rollback switch, but let the
+        # production gate otherwise police provenance/lifecycle and leave
+        # decision-grade requirements to SignalDecisionUpdateJSON.
+        self.production_watch_require_decision_grade = production_watch_require_decision_grade
+        self.price_integrity_gate = price_integrity_gate
         self.internal_watch_summary_enabled = (
             production_watch_gate
             if internal_watch_summary_enabled is None
@@ -699,6 +733,9 @@ class SignalJsonEmitter:
             if watch_revision is None:
                 return False
         final_block_reasons = _final_execution_block_reasons(payload)
+        price_integrity_reason = _price_integrity_block_reason(payload) if self.price_integrity_gate else None
+        if price_integrity_reason and _is_final_payload(payload):
+            final_block_reasons.append(price_integrity_reason)
         if final_block_reasons:
             payload = _blocked_final_as_decision_update(payload, final_block_reasons)
         elif self.strict_lifecycle and _is_final_payload(payload):
@@ -715,8 +752,22 @@ class SignalJsonEmitter:
             _apply_signal_watch_microboost_role_fields(payload)
             _apply_signal_htf_structure_fields(payload, prefix="signal_watch")
             self._apply_pair_memory_context(payload)
-            if self.production_watch_gate and not _is_promotable_signal_watch(payload):
-                suppress_reason = _signal_watch_suppress_reason(payload)
+            if price_integrity_reason:
+                payload["signal_watch_production_emit_result"] = False
+                payload["signal_watch_production_suppressed"] = True
+                payload["signal_watch_production_suppress_reason"] = price_integrity_reason
+                self._emit_internal_watch_summary(payload, suppress_reason=price_integrity_reason)
+                payload = _price_integrity_as_decision_update(payload, price_integrity_reason)
+                is_watch = False
+                is_decision_update = True
+            if is_watch and self.production_watch_gate and not _is_promotable_signal_watch(
+                payload,
+                require_decision_grade_context=self.production_watch_require_decision_grade,
+            ):
+                suppress_reason = _signal_watch_suppress_reason(
+                    payload,
+                    require_decision_grade_context=self.production_watch_require_decision_grade,
+                )
                 payload["signal_watch_production_emit_result"] = False
                 payload["signal_watch_production_suppressed"] = True
                 payload["signal_watch_production_suppress_reason"] = suppress_reason
@@ -925,10 +976,9 @@ class SignalJsonEmitter:
         )
 
     def _ensure_terminal_decision_update(self, payload: dict[str, Any]) -> bool:
-        if (
-            not self.require_terminal_decision_update
-            or str(payload.get("promotion_path") or "").upper() == "DIRECT_BYPASS"
-        ):
+        if not self.require_terminal_decision_update:
+            return True
+        if self._valid_direct_bypass(payload):
             return True
         pending_id = _optional_str(payload.get("pending_decision_id"))
         if pending_id is None:
@@ -940,6 +990,14 @@ class SignalJsonEmitter:
             payload["terminal_decision_event_type"] = "signal_decision_update_json"
             return True
 
+        # A final payload may only ask the emitter to synthesize its terminal
+        # transition when an upstream lifecycle finalizer explicitly owns it.
+        # This prevents arbitrary finals from manufacturing their own approval.
+        if (
+            _optional_bool(payload.get("terminal_required")) is not True
+            or str(payload.get("terminal_guarantee") or "").upper() != "SIGNAL_BLOCK_FINALIZER"
+        ):
+            return False
         update = _execution_ready_decision_update(payload)
         self.logger.warning(
             "%s %s",
@@ -1106,11 +1164,16 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
     entry_zone = _float_list(counter_entry.get("entry_zone"))
     symbol = str(counter_entry.get("symbol") or "").upper()
     status = str(counter_entry.get("status") or "")
+    watch_or_decision = _is_watch_status(status) or _is_decision_update_payload(counter_entry)
+    price_integrity_invalid = (
+        _optional_bool(counter_entry.get("price_integrity_evaluated")) is True
+        and _optional_bool(counter_entry.get("price_integrity_valid")) is not True
+    )
     if (
         not signal_valid_time
-        or signal_valid_price is None
+        or (signal_valid_price is None and not price_integrity_invalid)
         or entry_reference_price is None
-        or not entry_zone
+        or (not entry_zone and not watch_or_decision)
         or not symbol
     ):
         return None
@@ -1154,6 +1217,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         candidate_direction=_optional_str(counter_entry.get("candidate_direction")),
         validated_direction=validated_direction,
         watch_direction=watch_direction,
+        counter_watch_direction=_optional_str(counter_entry.get("counter_watch_direction")),
+        counter_scenario=_dict_value(counter_entry.get("counter_scenario")),
+        legacy_watch_status=_optional_str(counter_entry.get("legacy_watch_status")),
         direction_validation_status=_optional_str(counter_entry.get("direction_validation_status"))
         or _direction_validation_status(counter_entry, status=status, validated_direction=validated_direction),
         final_direction=str(counter_entry.get("final_direction") or "WAIT"),
@@ -1222,7 +1288,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
             is_watch=is_watch,
             is_decision_update=is_decision_update,
         ),
+        lifecycle_id=_optional_str(counter_entry.get("lifecycle_id")),
         linked_previous_signal=_optional_str(counter_entry.get("linked_previous_signal")),
+        linked_previous_lifecycle_id=_optional_str(counter_entry.get("linked_previous_lifecycle_id")),
         previous_signal_status=_optional_str(counter_entry.get("previous_signal_status")),
         lifecycle_status=_optional_str(counter_entry.get("lifecycle_status")),
         lifecycle_track=_optional_bool(counter_entry.get("lifecycle_track")),
@@ -1395,6 +1463,23 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         htf_structure_context=(
             _dict_value(counter_entry.get("htf_structure_context")) if (is_watch or is_decision_update) else None
         ),
+        operator_tradeplan=_dict_value(counter_entry.get("operator_tradeplan")),
+        observed_bid=_optional_float(counter_entry.get("observed_bid")),
+        observed_ask=_optional_float(counter_entry.get("observed_ask")),
+        observed_mid=_optional_float(counter_entry.get("observed_mid")),
+        price_observed_at_utc=_optional_str(counter_entry.get("price_observed_at_utc")),
+        price_quote_age_seconds=_optional_float(counter_entry.get("price_quote_age_seconds")),
+        price_allowed_range_low=_optional_float(counter_entry.get("price_allowed_range_low")),
+        price_allowed_range_high=_optional_float(counter_entry.get("price_allowed_range_high")),
+        price_range_source=_optional_str(counter_entry.get("price_range_source")),
+        reference_signal_price=_optional_float(counter_entry.get("reference_signal_price")),
+        reference_entry_price=_optional_float(counter_entry.get("reference_entry_price")),
+        reference_support=_optional_float(counter_entry.get("reference_support")),
+        reference_resistance=_optional_float(counter_entry.get("reference_resistance")),
+        price_integrity_valid=_optional_bool(counter_entry.get("price_integrity_valid")),
+        price_integrity_status=_optional_str(counter_entry.get("price_integrity_status")),
+        price_integrity_reason=_optional_str(counter_entry.get("price_integrity_reason")),
+        price_integrity_evaluated=_optional_bool(counter_entry.get("price_integrity_evaluated")),
     )
 
 
@@ -1412,7 +1497,13 @@ def should_emit_signal_json(
         return False
     if _is_decision_update_payload(payload):
         return (
-            _optional_float(payload.get("signal_valid_price")) is not None
+            (
+                _optional_float(payload.get("signal_valid_price")) is not None
+                or (
+                    _optional_bool(payload.get("price_integrity_evaluated")) is True
+                    and _optional_bool(payload.get("price_integrity_valid")) is not True
+                )
+            )
             and _optional_float(payload.get("entry_reference_price")) is not None
         )
     is_conditional = status in CONDITIONAL_SIGNAL_STATUSES
@@ -1456,11 +1547,28 @@ def should_emit_signal_json(
     return True
 
 
+def _price_integrity_block_reason(payload: dict[str, Any]) -> str | None:
+    """Return the exact production block reason for a priced signal payload."""
+
+    if _optional_bool(payload.get("price_integrity_evaluated")) is not True:
+        return "PRICE_CONTEXT_STALE"
+    if _optional_bool(payload.get("price_integrity_valid")) is True:
+        return None
+    reason = str(payload.get("price_integrity_reason") or "").upper()
+    if reason in {"PRICE_CONTEXT_STALE", "PRICE_CONTEXT_OUT_OF_RANGE"}:
+        return reason
+    return "PRICE_CONTEXT_OUT_OF_RANGE"
+
+
 def _is_watch_status(status: str) -> bool:
     return status in WATCH_SIGNAL_STATUSES or status.endswith("_WATCH")
 
 
-def _is_promotable_signal_watch(payload: dict[str, Any]) -> bool:
+def _is_promotable_signal_watch(
+    payload: dict[str, Any],
+    *,
+    require_decision_grade_context: bool = False,
+) -> bool:
     if _optional_bool(payload.get("valid_for_execution")) is True:
         return False
     if not _optional_str(payload.get("source_clean_block_id")):
@@ -1473,6 +1581,14 @@ def _is_promotable_signal_watch(payload: dict[str, Any]) -> bool:
         return False
     if not _optional_str(payload.get("pending_decision_id")):
         return False
+    if not _optional_str(payload.get("lifecycle_id")):
+        return False
+    if _optional_bool(payload.get("lifecycle_track")) is not True:
+        return False
+    if _optional_bool(payload.get("terminal_required")) is not True:
+        return False
+    if str(payload.get("terminal_guarantee") or "").upper() != "SIGNAL_BLOCK_FINALIZER":
+        return False
     signal_quality = str(payload.get("signal_quality") or _signal_quality(payload) or "").upper()
     if signal_quality != "WATCH_ONLY":
         return False
@@ -1480,7 +1596,7 @@ def _is_promotable_signal_watch(payload: dict[str, Any]) -> bool:
     primary_authority = _optional_str(payload.get("primary_watch_authority"))
     if eligible is False and primary_authority is None:
         return False
-    return _has_decision_grade_context(payload)
+    return not require_decision_grade_context or _has_decision_grade_context(payload)
 
 
 def _has_decision_grade_context(payload: dict[str, Any]) -> bool:
@@ -1518,7 +1634,11 @@ def _has_decision_grade_context(payload: dict[str, Any]) -> bool:
     return structure_status in {"STRUCTURE_READY", "STRUCTURE_PENDING_M15_ONLY"}
 
 
-def _signal_watch_suppress_reason(payload: dict[str, Any]) -> str:
+def _signal_watch_suppress_reason(
+    payload: dict[str, Any],
+    *,
+    require_decision_grade_context: bool = False,
+) -> str:
     if _optional_bool(payload.get("valid_for_execution")) is True:
         return "VALID_FOR_EXECUTION_BELONGS_TO_SIGNALJSON"
     if not _optional_str(payload.get("source_clean_block_id")):
@@ -1538,7 +1658,7 @@ def _signal_watch_suppress_reason(payload: dict[str, Any]) -> str:
     primary_authority = _optional_str(payload.get("primary_watch_authority"))
     if eligible is False and primary_authority is None:
         return "NOT_ELIGIBLE_FOR_SIGNAL_WATCH"
-    if not _has_decision_grade_context(payload):
+    if require_decision_grade_context and not _has_decision_grade_context(payload):
         return "DECISION_GRADE_CONTEXT_MISSING"
     return "PRODUCTION_WATCH_GATE_BLOCKED"
 
@@ -1992,6 +2112,42 @@ def _blocked_final_as_decision_update(payload: dict[str, Any], reasons: list[str
     return blocked
 
 
+def _price_integrity_as_decision_update(payload: dict[str, Any], reason: str) -> dict[str, Any]:
+    update = dict(payload)
+    source_direction = str(payload.get("watch_direction") or payload.get("candidate_direction") or "WAIT").upper()
+    update.update(
+        {
+            "event": "signal_decision_update_json",
+            "source_status": payload.get("status"),
+            "source_final_direction": payload.get("final_direction"),
+            "status": "WAIT_STRUCTURE_OR_NEXT_M15",
+            "new_status": "WAIT_STRUCTURE_OR_NEXT_M15",
+            "terminal_status": reason,
+            "final_direction": "WAIT",
+            "validated_direction": None,
+            "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else None,
+            "direction_validation_status": "PRICE_INTEGRITY_BLOCKED",
+            "action": "WAIT_FRESH_CORROBORATED_PRICE_CONTEXT",
+            "next_action": "WAIT_FRESH_CORROBORATED_PRICE_CONTEXT",
+            "is_final_signal": False,
+            "emit_reason": "PRICE_INTEGRITY_DECISION_UPDATE",
+            "signal_quality": "DECISION_UPDATE",
+            "signal_valid": False,
+            "direction_valid": False,
+            "analysis_valid": bool(payload.get("analysis_valid", True)),
+            "tradeplan_valid": False,
+            "valid_for_execution": False,
+            "execution_valid_now": False,
+            "execution_status": "WAIT_PRICE_CONTEXT",
+            "execution_reason": reason,
+            "audit_valid": False,
+            "audit_block_reasons": [reason],
+            "reason": f"{payload.get('reason') or 'signal_candidate'} Price integrity blocked: {reason}.",
+        }
+    )
+    return update
+
+
 def _blocked_final_terminal_status(reasons: list[str]) -> str:
     reason_set = set(reasons)
     if reason_set & {
@@ -2109,6 +2265,12 @@ def _watch_transition_state(event: SignalJsonEvent, *, bucket_minutes: tuple[flo
         event.execution_reason,
         event.block_reason,
         event.target_block_reason,
+        event.price_integrity_evaluated,
+        event.price_integrity_valid,
+        event.price_integrity_status,
+        event.price_integrity_reason,
+        event.price_observed_at_utc,
+        event.observed_mid,
         execution_gate.get("block_reason") or execution_gate.get("reason"),
         _watch_duration_bucket_label(event, bucket_minutes),
     )
@@ -2429,9 +2591,7 @@ def _universal_pattern_payload(payload: dict[str, Any], *, compact: bool = True)
     universal["theme_context"] = (
         None if compact else _clean_context(_dict_value(universal.get("theme_context")) or _theme_context(universal))
     )
-    tradeplan_preview = _dict_value(universal.get("tradeplan_preview")) or _tradeplan_preview(universal)
-    universal["tradeplan_preview"] = _clean_context(_normalize_tradeplan_preview(universal, tradeplan_preview))
-    _apply_htf_led_watch_context(universal)
+    canonicalize_signal_tradeplan(universal)
     universal["execution_gate"] = _clean_context(
         _dict_value(universal.get("execution_gate")) or _execution_gate_context(universal)
     )
@@ -2972,7 +3132,17 @@ def _htf_led_tradeplan_preview(
         return plan
 
     zone = _float_list(htf.get("h4_demand_zone")) if direction == "BUY" else _float_list(htf.get("h4_supply_zone"))
-    sl = _optional_float(htf.get("h4_swing_low")) if direction == "BUY" else _optional_float(htf.get("h4_swing_high"))
+    structural_sl = (
+        _optional_float(htf.get("h4_swing_low"))
+        if direction == "BUY"
+        else _optional_float(htf.get("h4_swing_high"))
+    )
+    sl, sl_buffer, sl_buffer_sources = _volatility_aware_structural_stop(
+        payload=payload,
+        htf=htf,
+        direction=direction,
+        structural_sl=structural_sl,
+    )
     tp1 = _htf_target_1(direction, htf)
     tp2 = _htf_target_2(direction, htf, tp1)
     if zone:
@@ -2980,7 +3150,18 @@ def _htf_led_tradeplan_preview(
         plan["entry_source"] = "H4_DEMAND_ZONE" if direction == "BUY" else "H4_SUPPLY_ZONE"
     if sl is not None:
         plan["sl"] = sl
-        plan["sl_source"] = "H4_SWING_LOW" if direction == "BUY" else "H4_SWING_HIGH"
+        plan["structural_sl"] = structural_sl
+        plan["sl_buffer"] = sl_buffer
+        plan["sl_buffer_sources"] = sl_buffer_sources
+        plan["sl_source"] = (
+            "H4_SWING_LOW_PLUS_VOLATILITY_BUFFER"
+            if direction == "BUY" and sl_buffer > 0
+            else (
+                "H4_SWING_HIGH_PLUS_VOLATILITY_BUFFER"
+                if direction == "SELL" and sl_buffer > 0
+                else ("H4_SWING_LOW" if direction == "BUY" else "H4_SWING_HIGH")
+            )
+        )
         plan["invalidation_level"] = sl
     if tp1 is not None:
         plan["tp1"] = tp1
@@ -2991,6 +3172,69 @@ def _htf_led_tradeplan_preview(
     plan["trade_location_status"] = _htf_trade_location_status(direction, htf)
     _apply_tradeplan_rr(plan, payload, direction)
     return plan
+
+
+def _volatility_aware_structural_stop(
+    *,
+    payload: dict[str, Any],
+    htf: dict[str, Any],
+    direction: str,
+    structural_sl: float | None,
+) -> tuple[float | None, float, list[str]]:
+    if structural_sl is None:
+        return None, 0.0, []
+
+    buffers: list[tuple[str, float]] = []
+    h4_atr = _optional_float(htf.get("h4_atr"))
+    volatility_enabled = _env_bool("SIGNAL_TRADEPLAN_VOLATILITY_BUFFER_ENABLED", True)
+    if volatility_enabled and h4_atr is not None and h4_atr > 0:
+        ratio = max(0.0, _env_float("SIGNAL_TRADEPLAN_H4_ATR_STOP_BUFFER_RATIO", 0.10))
+        if ratio > 0:
+            buffers.append(("H4_ATR", h4_atr * ratio))
+
+    execution_quality = _dict_value(payload.get("execution_quality")) or {}
+    spread_pips = _optional_float(execution_quality.get("spread_pips"))
+    pip_size = _payload_pip_size(payload)
+    if spread_pips is not None and pip_size is not None and spread_pips > 0 and pip_size > 0:
+        multiplier = max(0.0, _env_float("SIGNAL_TRADEPLAN_SPREAD_STOP_BUFFER_MULTIPLIER", 1.5))
+        if multiplier > 0:
+            buffers.append(("SPREAD", spread_pips * pip_size * multiplier))
+
+    explicit_buffer = _optional_float(payload.get("sl_buffer"))
+    if explicit_buffer is not None and explicit_buffer > 0:
+        buffers.append(("STRUCTURE_BUFFER", explicit_buffer))
+
+    if not buffers:
+        return structural_sl, 0.0, []
+    # Each component protects a distinct risk: structural clearance, volatility,
+    # and transaction cost. They are additive rather than competing maxima.
+    buffer = sum(value for _, value in buffers)
+    buffered_sl = structural_sl - buffer if direction == "BUY" else structural_sl + buffer
+    tick_size = _price_tick_size(payload)
+    if tick_size is not None:
+        scaled = buffered_sl / tick_size
+        buffered_sl = (
+            math.floor(scaled + 1e-12) * tick_size
+            if direction == "BUY"
+            else math.ceil(scaled - 1e-12) * tick_size
+        )
+        buffered_sl = round(buffered_sl, 12)
+        buffer = round(abs(structural_sl - buffered_sl), 12)
+    return buffered_sl, buffer, [name for name, _ in buffers]
+
+
+def _price_tick_size(payload: dict[str, Any]) -> float | None:
+    calibration = _dict_value(payload.get("pair_calibration")) or {}
+    tick_size = _optional_float(
+        calibration.get("tick_size")
+        or calibration.get("point_size")
+        or payload.get("tick_size")
+        or payload.get("point_size")
+    )
+    if tick_size is not None and tick_size > 0:
+        return tick_size
+    pip_size = _payload_pip_size(payload)
+    return pip_size if pip_size is not None and pip_size > 0 else None
 
 
 def _clear_actionable_tradeplan_preview(plan: dict[str, Any]) -> None:
@@ -3060,7 +3304,9 @@ def _apply_tradeplan_rr(plan: dict[str, Any], payload: dict[str, Any], direction
     tp1 = _optional_float(plan.get("tp1"))
     if not zone or sl is None or tp1 is None:
         return
-    entry = sum(zone) / len(zone)
+    # Use the least favourable executable edge so preview RR cannot be inflated
+    # by a midpoint that may never be filled.
+    entry = max(zone) if direction == "BUY" else min(zone)
     risk = abs(entry - sl)
     reward = (tp1 - entry) if direction == "BUY" else (entry - tp1)
     pip_size = _payload_pip_size(payload)
@@ -3075,6 +3321,130 @@ def _apply_tradeplan_rr(plan: dict[str, Any], payload: dict[str, Any], direction
         plan["risk_points"] = round(risk / point_size, 1)
         plan["point_size"] = point_size
     plan["rr_to_tp1"] = round(reward / risk, 2)
+
+
+def canonicalize_signal_tradeplan(payload: dict[str, Any]) -> dict[str, Any]:
+    """Canonicalize a Watch tradeplan in-place before gates and lifecycle tracking."""
+
+    if not _is_watch_status(str(payload.get("status") or "")):
+        return payload
+    tradeplan_preview = _dict_value(payload.get("tradeplan_preview")) or _tradeplan_preview(payload)
+    payload["tradeplan_preview"] = _clean_context(_normalize_tradeplan_preview(payload, tradeplan_preview))
+    _apply_htf_led_watch_context(payload)
+    _ensure_canonical_operator_tradeplan(payload)
+    return payload
+
+
+def _ensure_canonical_operator_tradeplan(payload: dict[str, Any]) -> None:
+    """Make one Watch tradeplan authoritative and project compatibility fields from it."""
+
+    if not _is_watch_status(str(payload.get("status") or "")):
+        return
+    preview = _dict_value(payload.get("tradeplan_preview")) or {}
+    operator = _dict_value(payload.get("operator_tradeplan")) or {}
+    if not operator and not preview:
+        return
+
+    direction = str(
+        payload.get("candidate_direction")
+        or payload.get("watch_direction")
+        or payload.get("raw_direction")
+        or "WAIT"
+    ).upper()
+    if not operator:
+        operator = {
+            "event": "tradeplan_watch",
+            "symbol": payload.get("symbol"),
+            "direction": direction,
+            "status": "WAIT",
+            "setup": preview.get("setup_type") or payload.get("signal_family"),
+            "tradeplan_status": "PREVIEW_ONLY_TIMING_PENDING",
+            "entry_zone": preview.get("entry_zone"),
+            "sl": preview.get("sl") or preview.get("invalidation_level"),
+            "structural_sl": preview.get("structural_sl"),
+            "sl_buffer": preview.get("sl_buffer"),
+            "sl_buffer_sources": preview.get("sl_buffer_sources"),
+            "tp1": preview.get("tp1"),
+            "tp2": preview.get("tp2"),
+            "tp3": preview.get("tp3"),
+            "tp4": preview.get("tp4"),
+            "rr_to_tp1": preview.get("rr_to_tp1"),
+            "execution": False,
+            "execution_allowed": False,
+            "valid_for_execution": False,
+            "wait_for": "DECISION_GRADE_STRUCTURE_AND_M15_TIMING",
+            "reason": preview.get("preview_block_reason") or "canonical_watch_tradeplan_preview",
+        }
+
+    operator["contract_version"] = "2.0-canonical"
+    operator["source_of_truth"] = "operator_tradeplan"
+    operator["execution"] = False
+    operator["execution_allowed"] = False
+    operator["valid_for_execution"] = False
+    operator.setdefault("structural_sl", preview.get("structural_sl"))
+    operator.setdefault("sl_buffer", preview.get("sl_buffer"))
+    operator.setdefault("sl_buffer_sources", preview.get("sl_buffer_sources"))
+    operator.setdefault("tp3", preview.get("tp3"))
+    operator.setdefault("tp4", preview.get("tp4"))
+    operator.setdefault("invalidation_rules", {"hard_invalid_level": operator.get("sl")})
+    operator.setdefault(
+        "risk_reward",
+        {
+            "rr_to_tp1": operator.get("rr_to_tp1"),
+            "risk_pips": preview.get("risk_pips"),
+            "risk_points": preview.get("risk_points"),
+        },
+    )
+    material = {
+        "symbol": operator.get("symbol"),
+        "direction": operator.get("direction"),
+        "entry_zone": operator.get("entry_zone"),
+        "sl": operator.get("sl"),
+        "structural_sl": operator.get("structural_sl"),
+        "sl_buffer": operator.get("sl_buffer"),
+        "sl_buffer_sources": operator.get("sl_buffer_sources"),
+        "tp1": operator.get("tp1"),
+        "tp2": operator.get("tp2"),
+        "tp3": operator.get("tp3"),
+        "tp4": operator.get("tp4"),
+        "rr_to_tp1": operator.get("rr_to_tp1"),
+        "invalidation_rules": operator.get("invalidation_rules"),
+        "risk_reward": operator.get("risk_reward"),
+        "target_policy": operator.get("target_policy"),
+    }
+    plan_hash = hashlib.sha256(
+        json.dumps(material, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    operator["plan_hash"] = plan_hash
+    operator["levels_hash"] = plan_hash
+    payload["operator_tradeplan"] = _clean_context(operator)
+    payload["tradeplan_authority"] = "operator_tradeplan"
+    payload["tradeplan_contract_version"] = "2.0-canonical"
+    payload["tradeplan_hash"] = plan_hash
+    payload["tradeplan_projection_consistent"] = True
+
+    projection = {
+        "entry_zone": operator.get("entry_zone"),
+        "sl_safe": operator.get("sl"),
+        "tp1": operator.get("tp1"),
+        "tp2": operator.get("tp2"),
+        "tp3": operator.get("tp3"),
+        "tp4": operator.get("tp4"),
+        "tp1_rr": operator.get("rr_to_tp1"),
+        "selected_sl": operator.get("sl"),
+    }
+    for field, value in projection.items():
+        if value is None:
+            payload.pop(field, None)
+        else:
+            payload[field] = value
+    invalidation = _dict_value(payload.get("invalidation_rules")) or {}
+    invalidation["hard_invalid_level"] = operator.get("sl")
+    payload["invalidation_rules"] = _clean_context(invalidation)
+    risk_reward = _dict_value(payload.get("risk_reward")) or {}
+    risk_reward.update(_dict_value(operator.get("risk_reward")) or {})
+    risk_reward["selected_sl"] = operator.get("sl")
+    payload["risk_reward"] = _clean_context(risk_reward)
 
 
 def _operator_tradeplan_context(
@@ -3112,8 +3482,13 @@ def _operator_tradeplan_context(
         "m15_role": "TIMING_CONFIRMATION_ONLY",
         "entry_zone": tradeplan.get("entry_zone"),
         "sl": tradeplan.get("sl"),
+        "structural_sl": tradeplan.get("structural_sl"),
+        "sl_buffer": tradeplan.get("sl_buffer"),
+        "sl_buffer_sources": tradeplan.get("sl_buffer_sources"),
         "tp1": tradeplan.get("tp1"),
         "tp2": tradeplan.get("tp2"),
+        "tp3": tradeplan.get("tp3"),
+        "tp4": tradeplan.get("tp4"),
         "rr_to_tp1": tradeplan.get("rr_to_tp1"),
         "execution": False,
         "execution_allowed": False,
