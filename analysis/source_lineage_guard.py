@@ -17,6 +17,8 @@ from numbers import Real
 from typing import Any
 
 DEFAULT_SOURCE_FRESHNESS_SECONDS = 300.0
+DEFAULT_MICROBOOST_ACTIVE_TIMING_SECONDS = 120.0
+DEFAULT_MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS = 420.0
 DEFAULT_SIGNAL_THROTTLE_FRESHNESS_PREFIX = "[SignalThrottleFreshnessDiagnostic]"
 DEFAULT_MICROBOOST_SOURCE_DIAGNOSTIC_PREFIX = "[MicroboostSourceDiagnostic]"
 DEFAULT_MICROBOOST_STALE_DIAGNOSTIC_PREFIX = "[MicroboostStaleDiagnostic]"
@@ -91,6 +93,7 @@ def guard_microboost_source(
     *,
     now: datetime | None = None,
     max_age_seconds: float = DEFAULT_SOURCE_FRESHNESS_SECONDS,
+    microboost_active_timing_max_age_seconds: float | None = None,
 ) -> MicroboostSourceGuardResult:
     latest = _latest_microboost(report)
     if latest is None:
@@ -136,15 +139,24 @@ def guard_microboost_source(
             )
         )
 
+    timing_max_age = (
+        max_age_seconds
+        if microboost_active_timing_max_age_seconds is None
+        else max(1.0, float(microboost_active_timing_max_age_seconds))
+    )
     stale_age = _cluster_stale_age(latest, now=now)
-    if stale_age is not None and stale_age > max_age_seconds:
+    if stale_age is not None and stale_age > timing_max_age:
         diagnostics.append(
             _diagnostic(
                 "microboost_stale_diagnostic",
                 blocked_stage="MICROBOOST",
                 blocked_by=["MICROBOOST_CLUSTER_STALE"],
-                reason="MICROBOOST_CLUSTER_END_EXCEEDS_SOURCE_STALE_WINDOW",
+                reason="MICROBOOST_CLUSTER_END_EXCEEDS_ACTIVE_TIMING_WINDOW",
                 cluster_stale_age_seconds=round(stale_age, 3),
+                microboost_timing_age_seconds=round(stale_age, 3),
+                microboost_active_timing_max_age_seconds=timing_max_age,
+                microboost_timing_fresh=False,
+                microboost_history_status="HISTORICAL_EVIDENCE_ONLY",
                 **_microboost_context(latest),
                 **_freshness_context(freshness),
             )
