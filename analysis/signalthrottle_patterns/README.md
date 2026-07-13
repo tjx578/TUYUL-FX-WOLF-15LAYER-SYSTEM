@@ -90,11 +90,14 @@ and the full matched-pattern ledger are emitted only when
 `SIGNAL_JSON_PATTERN_DEBUG_ENABLED=true` creates a separate
 `PatternMatchDebugJSON` sidecar.
 
-Watch events must expose `watch_direction` while keeping
-`validated_direction=None` until structure, confirmation mode, and execution
-readiness are all satisfied. M15 close is only mandatory for ambiguous,
-counter, reversal, or lifecycle-conflict paths; direct absorption can bypass it
-when structure target, RR, phase, lifecycle, and spread gates are complete.
+Watch events keep the raw pressure direction as `candidate_direction` and
+`watch_direction`. An opposing absorption thesis is isolated under
+`counter_scenario`/`counter_watch_direction`, remains conditional, and always
+requires an explicit closed-M15 confirmation. Direct absorption never bypasses
+the M15 gate. `validated_direction` stays `None` until structure, phase,
+lifecycle, spread, and confirmation gates are all satisfied.
+The top-level status is direction-neutral `COUNTER_SCENARIO_WATCH`; the old
+counter-directional name is retained only as `legacy_watch_status`.
 
 SignalWatchJSON also carries an `operator_tradeplan` summary when HTF context is
 available. This is deliberately short: pressure, memory bias/phase, D1/H4
@@ -102,7 +105,19 @@ location, setup, wait condition, and reason. D1/H4 are the structure map for
 watch planning; M15 is reported as `TIMING_CONFIRMATION_ONLY` and never becomes
 the source of structural SL/TP authority. The summary is read-only and always
 keeps `execution_allowed=false` until the normal SignalJSON firewall promotes a
-separate execution-grade payload.
+separate execution-grade payload. `operator_tradeplan` is the canonical source
+of truth; compatibility flat fields are projected from it and carry the same
+`tradeplan_hash`. H4 swing invalidation receives the configured H4-ATR/spread
+buffer before it is exposed as the operator stop.
+
+Every production Watch must also pass price integrity. `signal_valid_price`
+comes only from a validated current bid/ask midpoint; it is null when the quote
+is stale, outside its contemporaneous M1/tick range, or has no independent
+range corroboration. The raw quote remains diagnostic-only under
+`observed_bid`/`observed_ask`/`observed_mid`, while planned entry, support,
+resistance, and old signal levels remain analytical reference fields. Stale or
+uncorroborated quotes and out-of-range quotes are blocked with
+`PRICE_CONTEXT_STALE` / `PRICE_CONTEXT_OUT_OF_RANGE`.
 
 Actionable preview levels are only displayed when the watch location is
 confirmed by HTF structure: H4 demand/supply zone, H4 swing invalidation, a
@@ -116,7 +131,10 @@ memory block can emit an advisory `SignalWatchJSON` only when market context is
 available and `SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_WATCH_ENABLED=true`
 with the configured maturity thresholds met. The default maturity follows the
 clean-block threshold (`300s` in production) so valid pressure memory does not
-go silent while waiting for pair-rotation authority. These watches carry
+go silent while waiting for pair-rotation authority. They are named
+`SCANNER_MEMORY_BUY_WATCH` / `SCANNER_MEMORY_SELL_WATCH` (with the old
+`CLEAN_BLOCK_*_WATCH` value available only as `legacy_signal_family`) so they
+cannot be mistaken for primary pair-rotation clean blocks. These watches carry
 `watch_scope=SCANNER_CYCLE_MEMORY_ADVISORY`,
 `eligible_for_primary_watch=false`, and `valid_for_execution=false`; they exist
 to prevent strong pressure memory from going silent, not to bypass L12 or the
