@@ -4,8 +4,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from analysis.source_lineage_guard import (
-    emit_source_guard_diagnostic,
     emit_signal_throttle_state_snapshot,
+    emit_source_guard_diagnostic,
     guard_microboost_source,
     signal_throttle_state_snapshot_payload,
     signal_watch_source_diagnostic,
@@ -102,6 +102,30 @@ def test_signal_watch_source_diagnostic_requires_clean_block_id():
     assert diagnostic["source_lookup_key"] == "CADJPY"
     assert diagnostic["nearest_clean_block_candidate"] is None
     assert diagnostic["why_not_attached"] == "WATCH_PAYLOAD_MISSING_SOURCE_CLEAN_BLOCK_ID"
+
+
+def test_signal_watch_source_diagnostic_carries_lineage_resolution():
+    diagnostic = signal_watch_source_diagnostic(
+        {
+            "symbol": "EURNZD",
+            "status": "MICROBOOST_WATCH",
+            "signal_family": "MICROBOOST_WATCH",
+            "source_clean_block_lineage_resolution": {
+                "status": "NO_SAFE_PAIR_LOCAL_MATCH",
+                "reason": "TIME_WINDOW_MISMATCH",
+                "lineage_candidate_count": 3,
+                "lineage_time_overlap_count": 0,
+            },
+        }
+    )
+
+    assert diagnostic is not None
+    assert diagnostic["source_clean_block_lineage_resolution"] == {
+        "status": "NO_SAFE_PAIR_LOCAL_MATCH",
+        "reason": "TIME_WINDOW_MISMATCH",
+        "lineage_candidate_count": 3,
+        "lineage_time_overlap_count": 0,
+    }
 
 
 def test_signal_watch_source_diagnostic_rejects_cross_pair_clean_block_id():
