@@ -70,7 +70,7 @@ from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 
 from analysis.basket_direction_validator import validate_basket_direction
-from analysis.clean_block_watch_router import emit_signal_watch_promotion_diagnostic
+from analysis.clean_block_watch_router import clean_block_lineage_fields, emit_signal_watch_promotion_diagnostic
 from analysis.htf_structure_snapshot import (
     HTFStructureSnapshotResolver,
     emit_htf_structure_snapshot,
@@ -88,7 +88,7 @@ from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
 from analysis.signal_block_finalizer import SignalBlockFinalizer
 from analysis.signal_decision_source_guard import convert_to_signal_pressure_state, route_decision_or_pressure
-from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
+from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event, canonicalize_signal_tradeplan
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
 from analysis.signal_lifecycle_manager import (
     SignalLifecycleManager,
@@ -96,6 +96,15 @@ from analysis.signal_lifecycle_manager import (
     shadow_preview_event,
 )
 from analysis.signal_pressure_state_emitter import emit_signal_pressure_state
+from analysis.signal_price_integrity import (
+    PRICE_CONTEXT_STALE,
+    ObservedPrice,
+    ObservedPriceRange,
+    PriceIntegrityPolicy,
+    ReferencePriceLevels,
+    SignalPriceContext,
+    validate_signal_price_integrity,
+)
 from analysis.signal_throttle_followthrough_score import (
     followthrough_context_for_symbol,
     signal_throttle_followthrough_score_log_payload,
@@ -251,7 +260,8 @@ def _coerce_timestamp_to_epoch(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int | float):
-        return float(value)
+        numeric = float(value)
+        return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
     if isinstance(value, datetime):
         dt = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
         return dt.timestamp()
@@ -260,7 +270,8 @@ def _coerce_timestamp_to_epoch(value: Any) -> float | None:
         if not text:
             return None
         try:
-            return float(text)
+            numeric = float(text)
+            return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
         except ValueError:
             with contextlib.suppress(ValueError):
                 dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
@@ -486,8 +497,16 @@ class WolfConstitutionalPipeline:
             ),
             strict_lifecycle=os.getenv("SIGNAL_JSON_STRICT_LIFECYCLE", "true").strip().lower() == "true",
             require_parent_watch=os.getenv("SIGNAL_JSON_REQUIRE_PARENT_WATCH", "false").strip().lower() == "true",
-            allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "true").strip().lower() == "true",
+            allow_direct_bypass=os.getenv("SIGNAL_JSON_ALLOW_DIRECT_BYPASS", "false").strip().lower() == "true",
             production_watch_gate=self._parse_env_bool("SIGNAL_WATCH_PRODUCTION_GATE_ENABLED", log_compact_mode),
+            production_watch_require_decision_grade=self._parse_env_bool(
+                "SIGNAL_WATCH_REQUIRE_DECISION_GRADE_CONTEXT",
+                False,
+            ),
+            price_integrity_gate=(
+                self._parse_env_bool("SIGNAL_PRICE_INTEGRITY_ENABLED", True)
+                and self._parse_env_bool("SIGNAL_PRICE_INTEGRITY_GATE_ENABLED", True)
+            ),
             internal_watch_summary_enabled=self._parse_env_bool(
                 "SIGNAL_WATCH_INTERNAL_SUMMARY_ENABLED",
                 log_compact_mode,
@@ -4921,6 +4940,20 @@ class WolfConstitutionalPipeline:
         symbol = str(payload.get("symbol") or "").upper()
         if symbol:
             cluster_id = str(payload.get("cluster_id") or "").strip()
+            lifecycle_anchor = str(
+                payload.get("lifecycle_id")
+                or payload.get("source_clean_block_id")
+                or cluster_id
+                or payload.get("source_pressure_block_id")
+                or payload.get("pending_decision_id")
+                or payload.get("signal_valid_time_utc")
+                or "WATCH"
+            ).strip()
+            payload["lifecycle_id"] = (
+                lifecycle_anchor
+                if lifecycle_anchor.upper().startswith(f"{symbol}_")
+                else f"{symbol}_{lifecycle_anchor}"
+            )
             token = str(
                 payload.get("pending_decision_id")
                 or cluster_id
@@ -4937,6 +4970,11 @@ class WolfConstitutionalPipeline:
 
     def _prepare_lifecycle_tracking_metadata(self, payload: dict[str, Any]) -> None:
         if not isinstance(payload, dict):
+            return
+        if (
+            payload.get("price_integrity_evaluated") is True
+            and payload.get("price_integrity_valid") is not True
+        ):
             return
         status = str(payload.get("status") or "")
         is_lifecycle_status = (
@@ -4968,6 +5006,11 @@ class WolfConstitutionalPipeline:
             return
         if not isinstance(payload, dict):
             return
+        if (
+            payload.get("price_integrity_evaluated") is True
+            and payload.get("price_integrity_valid") is not True
+        ):
+            return
         status = str(payload.get("status") or "")
         is_lifecycle_status = (
             status.endswith("_WATCH") or status.endswith("_VALID") or status.endswith("_BY_DIRECT_ABSORPTION")
@@ -4997,6 +5040,7 @@ class WolfConstitutionalPipeline:
             return
 
         continuation = dict(continuation)
+        self._backfill_microboost_watch_lineage(continuation, report)
         continuation["orchestration_status"] = "VALIDATION_ONLY_REQUIRES_SIGNAL_WATCH"
         if self._signal_json_gate_adapter.emit_continuation:
             continuation = self._signal_lifecycle_manager.apply(continuation)
@@ -5025,6 +5069,7 @@ class WolfConstitutionalPipeline:
             return
 
         watch_entry = dict(watch_entry)
+        self._backfill_microboost_watch_lineage(watch_entry, report)
         self._attach_pressure_priority_context(watch_entry, report)
         self._attach_htf_structure_context(watch_entry, report)
         self._attach_followthrough_context(watch_entry, report)
@@ -5471,13 +5516,14 @@ class WolfConstitutionalPipeline:
         if counter_entry.get("status") == "NONE":
             return
 
+        counter_entry = dict(counter_entry)
+        self._backfill_microboost_watch_lineage(counter_entry, report)
         counter_entry = self._signal_lifecycle_manager.apply(counter_entry)
         self._attach_pressure_priority_context(counter_entry, report)
         self._attach_htf_structure_context(counter_entry, report)
         self._attach_followthrough_context(counter_entry, report)
         report["microboost_counter_entry"] = counter_entry
         l12_verdict["microboost_counter_entry"] = counter_entry
-        self._signal_block_finalizer.track(counter_entry)
         status = str(counter_entry.get("status") or "")
         if status.endswith("_VALID") or status.endswith("_BY_DIRECT_ABSORPTION"):
             l12_verdict["final_direction"] = counter_entry.get("final_direction")
@@ -5496,7 +5542,179 @@ class WolfConstitutionalPipeline:
             l12_verdict["action"] = counter_entry.get("action")
             l12_verdict["direction_source"] = "MICROBOOST_COUNTER_ENTRY_WATCH"
 
+        self._prepare_lifecycle_tracking_metadata(counter_entry)
         counter_entry["signal_json_emit_result"] = self._emit_signal_json_payload(counter_entry)
+        if counter_entry["signal_json_emit_result"]:
+            self._track_official_lifecycle_candidate(counter_entry)
+
+    def _backfill_microboost_watch_lineage(self, payload: dict[str, Any], report: dict[str, Any]) -> bool:
+        """Attach clean-block lineage only when a pair-local match is provable.
+
+        Microboost can be detected before the same clean block reaches maturity.
+        Once the ledger is present in the same snapshot, this bridge restores the
+        missing parent instead of emitting a permanently blocked Watch.  A match
+        must agree on symbol, raw pressure direction, deployment (when both are
+        known), and event-time overlap; otherwise the source guard stays closed.
+        """
+
+        if not self._parse_env_bool("SIGNAL_WATCH_LINEAGE_BACKFILL_ENABLED", True):
+            return False
+        if not str(payload.get("status") or "").endswith("_WATCH"):
+            return False
+        if str(payload.get("source_clean_block_id") or "").strip():
+            return False
+
+        symbol = str(payload.get("symbol") or "").upper()
+        watch_time = self._watch_lineage_event_epoch(payload)
+        if not symbol or watch_time is None:
+            payload["source_clean_block_backfill_status"] = "SKIPPED_INSUFFICIENT_WATCH_IDENTITY"
+            return False
+
+        expected_direction = self._lineage_direction(payload)
+        deployment_id = self._lineage_deployment_id(payload)
+        clean_block_seconds = int(
+            self._parse_env_float("SIGNAL_THROTTLE_INTEL_MIN_CLEAN_BLOCK_MINUTES", 5.0) * 60.0
+        )
+        max_distance = self._parse_env_float("SIGNAL_WATCH_LINEAGE_BACKFILL_MAX_TIME_DISTANCE_SECONDS", 300.0)
+        matches: list[tuple[float, float, dict[str, Any], dict[str, Any]]] = []
+
+        for key in ("v1_clean_block_ledger", "clean_watch_candidates"):
+            raw_candidates = report.get(key)
+            if not isinstance(raw_candidates, list):
+                continue
+            for raw_candidate in raw_candidates:
+                if not isinstance(raw_candidate, dict):
+                    continue
+                if str(raw_candidate.get("symbol") or "").upper() != symbol:
+                    continue
+                candidate_deployment = self._lineage_deployment_id(raw_candidate)
+                if deployment_id and candidate_deployment and deployment_id != candidate_deployment:
+                    continue
+                candidate_direction = self._lineage_direction(raw_candidate)
+                if expected_direction and candidate_direction and expected_direction != candidate_direction:
+                    continue
+                lineage = clean_block_lineage_fields(
+                    raw_candidate,
+                    clean_block_seconds=clean_block_seconds,
+                )
+                source_id = str(lineage.get("source_clean_block_id") or "").strip()
+                if not source_id or lineage.get("clean_block_valid") is not True:
+                    continue
+                bounds = self._clean_block_lineage_time_bounds(lineage)
+                if bounds is None:
+                    continue
+                start, end = bounds
+                distance = 0.0 if start <= watch_time <= end else min(abs(watch_time - start), abs(watch_time - end))
+                if distance > max_distance:
+                    continue
+                matches.append((distance, -end, lineage, raw_candidate))
+
+        if not matches:
+            payload["source_clean_block_backfill_status"] = "NO_SAFE_PAIR_LOCAL_MATCH"
+            return False
+
+        _distance, _latest_end, lineage, candidate = min(matches, key=lambda item: (item[0], item[1]))
+        for key, value in lineage.items():
+            if value is not None:
+                payload[key] = value
+        payload.update(
+            {
+                "source_clean_block_confirmed": True,
+                "source_clean_block_backfill_status": "ATTACHED_SAFE_PAIR_LOCAL_MATCH",
+                "source_clean_block_backfill_source": "CLEAN_BLOCK_LEDGER",
+                "source_clean_block_backfill_time_distance_seconds": round(_distance, 3),
+                "source_clean_block_backfill_deployment_verified": bool(
+                    deployment_id and self._lineage_deployment_id(candidate)
+                ),
+            }
+        )
+        self._record_resolved_watch_lineage_diagnostic(payload, report)
+        report.setdefault("signal_watch_lineage_backfills", []).append(
+            {
+                "symbol": symbol,
+                "cluster_id": payload.get("cluster_id"),
+                "status": payload.get("status"),
+                "source_clean_block_id": payload.get("source_clean_block_id"),
+                "time_distance_seconds": round(_distance, 3),
+                "match_policy": "PAIR_LOCAL_DIRECTIONAL_TIME_OVERLAP",
+            }
+        )
+        return True
+
+    @staticmethod
+    def _watch_lineage_event_epoch(payload: dict[str, Any]) -> float | None:
+        for key in (
+            "signal_valid_time_utc",
+            "signal_valid_time",
+            "event_timestamp",
+            "timestamp",
+            "end_utc",
+            "clean_block_end_utc",
+        ):
+            value = _coerce_timestamp_to_epoch(payload.get(key))
+            if value is not None:
+                return value
+        return None
+
+    @staticmethod
+    def _lineage_direction(payload: dict[str, Any]) -> str | None:
+        for key in (
+            "raw_pressure_direction",
+            "clean_block_direction",
+            "raw_direction",
+            "watch_direction",
+            "candidate_direction",
+            "direction",
+        ):
+            direction = str(payload.get(key) or "").upper()
+            if direction in {"BUY", "SELL"}:
+                return direction
+        return None
+
+    @staticmethod
+    def _lineage_deployment_id(payload: dict[str, Any]) -> str | None:
+        for key in ("deployment_id", "railway_deployment_id", "deployment_uuid", "source_deployment_id"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                return value
+        return None
+
+    @staticmethod
+    def _clean_block_lineage_time_bounds(lineage: dict[str, Any]) -> tuple[float, float] | None:
+        end = _coerce_timestamp_to_epoch(
+            lineage.get("clean_block_latest_end_utc") or lineage.get("clean_block_end_utc")
+        )
+        if end is None:
+            return None
+        start = _coerce_timestamp_to_epoch(lineage.get("clean_block_start_utc"))
+        duration = lineage.get("clean_block_duration_seconds")
+        with contextlib.suppress(TypeError, ValueError):
+            if start is None and duration is not None:
+                start = end - max(0.0, float(duration))
+        if start is None or start > end:
+            return None
+        return start, end
+
+    @staticmethod
+    def _record_resolved_watch_lineage_diagnostic(payload: dict[str, Any], report: dict[str, Any]) -> None:
+        diagnostics = report.get("signal_watch_promotion_diagnostics")
+        if not isinstance(diagnostics, list):
+            return
+        symbol = str(payload.get("symbol") or "").upper()
+        cluster_id = str(payload.get("cluster_id") or "").strip()
+        retained: list[Any] = []
+        for diagnostic in diagnostics:
+            if not isinstance(diagnostic, dict):
+                retained.append(diagnostic)
+                continue
+            blocked_by = {str(item) for item in diagnostic.get("blocked_by") or []}
+            same_symbol = str(diagnostic.get("symbol") or "").upper() == symbol
+            diagnostic_cluster_id = str(diagnostic.get("cluster_id") or "").strip()
+            same_cluster = bool(cluster_id and diagnostic_cluster_id and cluster_id == diagnostic_cluster_id)
+            if same_symbol and same_cluster and "SOURCE_CLEAN_BLOCK_ID_MISSING" in blocked_by:
+                continue
+            retained.append(diagnostic)
+        report["signal_watch_promotion_diagnostics"] = retained
 
     def _apply_signal_block_finalizer(
         self,
@@ -5516,6 +5734,7 @@ class WolfConstitutionalPipeline:
         for update in updates:
             if update.get("event") != "signal_decision_update_json":
                 update = self._signal_lifecycle_manager.apply(update)
+                self._prepare_lifecycle_tracking_metadata(update)
             self._attach_htf_structure_context(update, report, market_contexts=market_contexts)
             self._signal_block_finalizer.track(update)
             applied_updates.append(update)
@@ -6694,11 +6913,203 @@ class WolfConstitutionalPipeline:
             payload["signal_json_emit_blocked_by_source_guard"] = True
             payload["signal_watch_source_diagnostic_emit_result"] = emit_result
             return False
+        canonicalize_signal_tradeplan(payload)
+        self._attach_signal_price_integrity(payload)
         gated_payload = self._signal_json_gate_adapter.apply(payload)
         signal_event = build_signal_json_event(gated_payload)
         if signal_event is None:
             return False
-        return self._signal_json_emitter.emit(signal_event)
+        emit_result = self._signal_json_emitter.emit(signal_event)
+        payload["signal_json_emitted_as_price_decision_update"] = bool(
+            emit_result
+            and payload.get("price_integrity_evaluated") is True
+            and payload.get("price_integrity_valid") is not True
+        )
+        return bool(emit_result and not payload["signal_json_emitted_as_price_decision_update"])
+
+    def _attach_signal_price_integrity(self, payload: dict[str, Any]) -> None:
+        """Attach the canonical observed-price contract before any SignalJSON build.
+
+        Analytical levels already present on *payload* remain references.  They are
+        never allowed to become the current signal price when a live quote exists.
+        Missing/stale quotes remain visible to DecisionUpdate diagnostics, while the
+        emitter's production price gate prevents Watch/final promotion.
+        """
+
+        if not self._parse_env_bool("SIGNAL_PRICE_INTEGRITY_ENABLED", True):
+            return
+        symbol = str(payload.get("symbol") or "").upper()
+        if not symbol:
+            return
+
+        context_bus = getattr(self, "_context_bus", None)
+        if context_bus is None:
+            return
+        latest_tick_raw = context_bus.get_latest_tick(symbol)
+        latest_tick = latest_tick_raw if isinstance(latest_tick_raw, dict) else {}
+        bid = self._coerce_positive_float(latest_tick.get("bid") or latest_tick.get("price"))
+        ask = self._coerce_positive_float(latest_tick.get("ask") or latest_tick.get("price"))
+        tick_timestamp = _coerce_timestamp_to_epoch(
+            latest_tick.get("last_seen_ts") or latest_tick.get("timestamp") or latest_tick.get("ts")
+        )
+        get_tick_timestamp = getattr(context_bus, "get_tick_timestamp", None)
+        if tick_timestamp is None and callable(get_tick_timestamp):
+            tick_timestamp = _coerce_timestamp_to_epoch(get_tick_timestamp(symbol))
+        feed_timestamp_fn = getattr(context_bus, "get_feed_timestamp", None)
+        feed_timestamp = (
+            tick_timestamp
+            if tick_timestamp is not None
+            else (feed_timestamp_fn(symbol) if callable(feed_timestamp_fn) else None)
+        )
+        try:
+            feed_timestamp_value = float(feed_timestamp) if feed_timestamp is not None else None
+        except (TypeError, ValueError):
+            feed_timestamp_value = None
+
+        legacy_signal_price = self._coerce_positive_float(payload.get("signal_valid_price"))
+        legacy_entry_price = self._coerce_positive_float(payload.get("entry_reference_price"))
+        payload.setdefault("reference_signal_price", legacy_signal_price)
+        payload.setdefault("reference_entry_price", legacy_entry_price)
+
+        if bid is None or ask is None or feed_timestamp_value is None:
+            payload.update(
+                {
+                    "signal_valid_price": None,
+                    "price_integrity_valid": False,
+                    "price_integrity_status": "INVALID",
+                    "price_integrity_reason": PRICE_CONTEXT_STALE,
+                    "price_integrity_evaluated": True,
+                }
+            )
+            return
+
+        mid = (bid + ask) / 2.0
+        observed_range = self._observed_price_range(
+            symbol,
+            latest_tick,
+            bid=bid,
+            ask=ask,
+            feed_timestamp=feed_timestamp_value,
+        )
+        if observed_range is None:
+            payload.update(
+                {
+                    "signal_valid_price": None,
+                    "observed_bid": bid,
+                    "observed_ask": ask,
+                    "observed_mid": mid,
+                    "price_observed_at_utc": datetime.fromtimestamp(feed_timestamp_value, tz=UTC).isoformat(),
+                    "price_integrity_valid": False,
+                    "price_integrity_status": "INVALID",
+                    "price_integrity_reason": PRICE_CONTEXT_STALE,
+                    "price_integrity_evaluated": True,
+                    "price_range_source": "UNAVAILABLE",
+                }
+            )
+            return
+        range_low, range_high, range_source = observed_range
+        entry_zone = payload.get("entry_zone")
+        entry_zone_values = (
+            [self._coerce_positive_float(value) for value in entry_zone]
+            if isinstance(entry_zone, list | tuple)
+            else []
+        )
+        entry_zone_values = [value for value in entry_zone_values if value is not None]
+        references = ReferencePriceLevels(
+            support=self._first_positive_payload_value(
+                payload,
+                "reference_support",
+                "main_support",
+                "key_support",
+                "minor_support",
+            ),
+            resistance=self._first_positive_payload_value(
+                payload,
+                "reference_resistance",
+                "main_resistance",
+                "key_resistance",
+                "minor_resistance",
+            ),
+            entry_zone_low=min(entry_zone_values) if entry_zone_values else None,
+            entry_zone_high=max(entry_zone_values) if entry_zone_values else None,
+        )
+        observed_at = datetime.fromtimestamp(feed_timestamp_value, tz=UTC)
+        evaluated_at = datetime.now(UTC)
+        result = validate_signal_price_integrity(
+            SignalPriceContext(
+                symbol=symbol,
+                observed=ObservedPrice(bid=bid, ask=ask, mid=mid, observed_at=observed_at),
+                market_range=ObservedPriceRange(low=range_low, high=range_high),
+                references=references,
+            ),
+            evaluated_at=evaluated_at,
+            policy=PriceIntegrityPolicy(
+                max_quote_age_seconds=self._parse_env_float("SIGNAL_PRICE_MAX_QUOTE_AGE_SECONDS", 5.0),
+                max_future_skew_seconds=self._parse_env_float("SIGNAL_PRICE_MAX_FUTURE_SKEW_SECONDS", 1.0),
+                range_buffer=self._parse_env_float("SIGNAL_PRICE_RANGE_BUFFER", 0.0),
+            ),
+        )
+        payload.update(
+            {
+                "observed_bid": bid,
+                "observed_ask": ask,
+                "observed_mid": mid,
+                "price_observed_at_utc": observed_at.isoformat(),
+                "price_quote_age_seconds": result.quote_age_seconds,
+                "price_allowed_range_low": result.allowed_range_low,
+                "price_allowed_range_high": result.allowed_range_high,
+                "price_range_source": range_source,
+                "reference_support": references.support,
+                "reference_resistance": references.resistance,
+                "price_integrity_valid": result.valid,
+                "price_integrity_status": "VALID" if result.valid else "INVALID",
+                "price_integrity_reason": result.reason,
+                "price_integrity_evaluated": True,
+            }
+        )
+        # Only an integrity-validated quote may occupy the executable price field.
+        # Invalid quotes remain available as observed_mid for diagnostics. Planned
+        # entry_reference_price remains analytical so no-chase/RR gates can compare
+        # it with the current executable quote.
+        payload["signal_valid_price"] = mid if result.valid else None
+
+    def _observed_price_range(
+        self,
+        symbol: str,
+        latest_tick: dict[str, Any],
+        *,
+        bid: float,
+        ask: float,
+        feed_timestamp: float,
+    ) -> tuple[float, float, str] | None:
+        low = self._coerce_positive_float(latest_tick.get("low"))
+        high = self._coerce_positive_float(latest_tick.get("high"))
+        range_source = "TICK_RANGE"
+        get_candle_history = getattr(self._context_bus, "get_candle_history", None)
+        if (low is None or high is None) and callable(get_candle_history):
+            history = get_candle_history(symbol, "M1", count=2)
+            candles = history if isinstance(history, list) else []
+            for candle in reversed(candles):
+                if not isinstance(candle, dict):
+                    continue
+                candle_timestamp = self._candle_timestamp_epoch(candle)
+                if candle_timestamp is None or abs(feed_timestamp - candle_timestamp) > 60.0:
+                    continue
+                low = self._coerce_positive_float(candle.get("low"))
+                high = self._coerce_positive_float(candle.get("high"))
+                if low is not None and high is not None:
+                    range_source = "M1_CANDLE"
+                    break
+        if low is None or high is None or low > high:
+            return None
+        return low, high, range_source
+
+    def _first_positive_payload_value(self, payload: dict[str, Any], *keys: str) -> float | None:
+        for key in keys:
+            value = self._coerce_positive_float(payload.get(key))
+            if value is not None:
+                return value
+        return None
 
     @staticmethod
     def _watch_source_guard_diagnostic(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -7323,6 +7734,22 @@ class WolfConstitutionalPipeline:
             "SIGNAL_WATCH_PRODUCTION_GATE_ENABLED": _b(
                 "SIGNAL_WATCH_PRODUCTION_GATE_ENABLED",
                 "true" if _b("SIGNAL_LOG_COMPACT_MODE_ENABLED", "true") else "false",
+            ),
+            "SIGNAL_WATCH_REQUIRE_DECISION_GRADE_CONTEXT": _b(
+                "SIGNAL_WATCH_REQUIRE_DECISION_GRADE_CONTEXT",
+                "false",
+            ),
+            "SIGNAL_PRICE_INTEGRITY_ENABLED": _b("SIGNAL_PRICE_INTEGRITY_ENABLED", "true"),
+            "SIGNAL_PRICE_INTEGRITY_GATE_ENABLED": _b("SIGNAL_PRICE_INTEGRITY_GATE_ENABLED", "true"),
+            "SIGNAL_PRICE_MAX_QUOTE_AGE_SECONDS": _f("SIGNAL_PRICE_MAX_QUOTE_AGE_SECONDS", "5"),
+            "DIRECT_ABSORPTION_VALID_ENABLED": _b("DIRECT_ABSORPTION_VALID_ENABLED", "false"),
+            "SIGNAL_TRADEPLAN_H4_ATR_STOP_BUFFER_RATIO": _f(
+                "SIGNAL_TRADEPLAN_H4_ATR_STOP_BUFFER_RATIO",
+                "0.10",
+            ),
+            "SIGNAL_TRADEPLAN_SPREAD_STOP_BUFFER_MULTIPLIER": _f(
+                "SIGNAL_TRADEPLAN_SPREAD_STOP_BUFFER_MULTIPLIER",
+                "1.5",
             ),
             "SIGNAL_WATCH_INTERNAL_SUMMARY_ENABLED": _b(
                 "SIGNAL_WATCH_INTERNAL_SUMMARY_ENABLED",
