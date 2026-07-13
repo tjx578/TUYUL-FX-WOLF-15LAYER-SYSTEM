@@ -107,6 +107,43 @@ def test_opposing_absorption_watch_protects_active_buy_without_reversal():
     assert follow_up["active_signal_management"]["policy"] == "PROTECT_PROFIT_ONLY_WAIT_M15_CLOSE"
 
 
+@pytest.mark.parametrize(("active_direction", "counter_direction"), [("BUY", "SELL"), ("SELL", "BUY")])
+def test_nested_conditional_counter_scenario_protects_same_raw_direction_active_signal(
+    active_direction: str,
+    counter_direction: str,
+):
+    manager = SignalLifecycleManager()
+    active_payload = _buy_signal(
+        status=f"{active_direction}_TIMING_VALID",
+        raw_direction=active_direction,
+        validated_direction=active_direction,
+        final_direction=active_direction,
+    )
+    manager.apply(active_payload)
+    watch = _buy_signal(
+        status="COUNTER_SCENARIO_WATCH",
+        raw_direction=active_direction,
+        candidate_direction=active_direction,
+        validated_direction=None,
+        final_direction="WAIT",
+        valid_for_execution=False,
+        counter_watch_direction=counter_direction,
+        counter_scenario={
+            "status": "CONDITIONAL",
+            "direction": counter_direction,
+            "requires_m15_close": True,
+            "valid_for_execution": False,
+        },
+    )
+
+    follow_up = manager.apply(watch)
+
+    assert follow_up["final_direction"] == "WAIT"
+    assert follow_up["counter_monitor_direction"] == counter_direction
+    assert follow_up["lifecycle_status"] == f"CONFLICT_PROTECT_ACTIVE_{active_direction}"
+    assert follow_up["active_position_policy"] == f"PROTECT_ACTIVE_{active_direction}_NO_AUTO_REVERSAL"
+
+
 def test_confirmed_opposing_sell_supersedes_active_buy_as_reversal():
     manager = SignalLifecycleManager()
     active = manager.apply(_buy_signal())
@@ -118,6 +155,7 @@ def test_confirmed_opposing_sell_supersedes_active_buy_as_reversal():
         valid_for_execution=True,
         execution_valid_now=True,
         m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+        cooldown_m15_bars_elapsed=1,
     )
 
     follow_up = manager.apply(confirmed_sell)
@@ -144,6 +182,7 @@ def test_absorption_timing_valid_can_supersede_active_buy_when_execution_valid()
         valid_for_execution=True,
         execution_valid_now=True,
         m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+        cooldown_m15_bars_elapsed=1,
     )
 
     follow_up = manager.apply(confirmed_absorption)
@@ -154,7 +193,7 @@ def test_absorption_timing_valid_can_supersede_active_buy_when_execution_valid()
     assert follow_up["previous_signal_status"] == "SUPERSEDED"
 
 
-def test_schema_v1_valid_counter_entry_supersedes_active_buy_without_export_audit_contract():
+def test_unconfirmed_opposing_final_waits_without_superseding_active_buy():
     manager = SignalLifecycleManager()
     manager.apply(_buy_signal())
     incomplete_sell = _sell_watch(
@@ -167,15 +206,17 @@ def test_schema_v1_valid_counter_entry_supersedes_active_buy_without_export_audi
 
     follow_up = manager.apply(incomplete_sell)
 
-    assert follow_up["final_direction"] == "SELL"
-    assert follow_up["status"] == "SELL_REVERSAL_VALID"
-    assert follow_up["lifecycle_status"] == "SUPERSEDES_ACTIVE_BUY"
+    assert follow_up["final_direction"] == "WAIT"
+    assert follow_up["status"] == "SELL_TIMING_VALID"
+    assert follow_up["source_final_direction"] == "SELL"
+    assert follow_up["lifecycle_status"] == "CONFLICT_WAIT_REVERSAL_CONFIRMATION_AND_COOLDOWN"
+    assert follow_up["valid_for_execution"] is False
     current_active = manager.active_signal("USDCAD")
     assert current_active is not None
-    assert current_active["direction"] == "SELL"
+    assert current_active["direction"] == "BUY"
 
 
-def test_schema_v1_opposing_final_reverses_without_terminal_export_gate():
+def test_schema_v1_opposing_final_waits_without_m15_confirmation():
     manager = SignalLifecycleManager()
     manager.apply(_buy_signal())
     unconfirmed_sell = _sell_watch(
@@ -189,12 +230,170 @@ def test_schema_v1_opposing_final_reverses_without_terminal_export_gate():
 
     follow_up = manager.apply(unconfirmed_sell)
 
-    assert follow_up["status"] == "SELL_REVERSAL_VALID"
-    assert follow_up["final_direction"] == "SELL"
-    assert follow_up["lifecycle_status"] == "SUPERSEDES_ACTIVE_BUY"
+    assert follow_up["status"] == "SELL_TIMING_VALID"
+    assert follow_up["final_direction"] == "WAIT"
+    assert follow_up["source_final_direction"] == "SELL"
+    assert follow_up["lifecycle_status"] == "CONFLICT_WAIT_REVERSAL_CONFIRMATION_AND_COOLDOWN"
+    assert follow_up["direction_validation_status"] == "REVERSAL_WATCH_PENDING_COOLDOWN"
     current_active = manager.active_signal("USDCAD")
     assert current_active is not None
-    assert current_active["direction"] == "SELL"
+    assert current_active["direction"] == "BUY"
+
+
+def test_confirmed_opposing_final_waits_until_one_m15_bar_elapsed():
+    manager = SignalLifecycleManager()
+    manager.apply(_buy_signal())
+    confirmed_sell = _sell_watch(
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        valid_for_execution=True,
+        execution_valid_now=True,
+        m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+        cooldown_m15_bars_elapsed=0,
+    )
+
+    follow_up = manager.apply(confirmed_sell)
+
+    assert follow_up["final_direction"] == "WAIT"
+    assert follow_up["reversal_confirmed"] is True
+    assert follow_up["cooldown_m15_bars_elapsed"] == 0
+    assert manager.active_signal("USDCAD")["direction"] == "BUY"
+
+
+def test_confirmed_opposing_final_without_explicit_cooldown_defaults_to_zero():
+    manager = SignalLifecycleManager()
+    manager.apply(_buy_signal())
+    confirmed_sell = _sell_watch(
+        status="SELL_TIMING_VALID",
+        final_direction="SELL",
+        valid_for_execution=True,
+        execution_valid_now=True,
+        m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+    )
+
+    follow_up = manager.apply(confirmed_sell)
+
+    assert follow_up["final_direction"] == "WAIT"
+    assert follow_up["reversal_confirmed"] is True
+    assert follow_up["cooldown_m15_bars_elapsed"] == 0
+    assert manager.active_signal("USDCAD")["direction"] == "BUY"
+
+
+def test_lifecycle_id_is_stable_across_direction_revisions_in_same_clean_block():
+    manager = SignalLifecycleManager()
+    source_id = "USDCAD_20260520T024500Z_20260520T080000Z"
+    active = manager.apply(
+        _buy_signal(
+            cluster_id="USDCAD_BUY_REVISION_1",
+            source_clean_block_id=source_id,
+        )
+    )
+    reversed_signal = manager.apply(
+        _sell_watch(
+            cluster_id="USDCAD_SELL_REVISION_2",
+            source_clean_block_id=source_id,
+            status="SELL_TIMING_VALID",
+            final_direction="SELL",
+            valid_for_execution=True,
+            execution_valid_now=True,
+            m15_confirmation_status="M15_CLOSE_REJECTION_CONFIRMED",
+            cooldown_m15_bars_elapsed=1,
+        )
+    )
+
+    assert active["lifecycle_id"] == source_id
+    assert reversed_signal["lifecycle_id"] == source_id
+    assert reversed_signal["linked_previous_lifecycle_id"] == source_id
+    assert active["signal_id"].startswith("USDCAD_BUY_")
+    assert reversed_signal["signal_id"].startswith("USDCAD_SELL_")
+    assert active["signal_id"] != reversed_signal["signal_id"]
+
+
+def test_lifecycle_id_uses_cluster_when_clean_block_lineage_is_absent():
+    manager = SignalLifecycleManager()
+    cluster_id = "USDCAD_PRESSURE_EPISODE_42"
+
+    active = manager.apply(_buy_signal(cluster_id=cluster_id))
+    opposing_watch = manager.apply(_sell_watch(cluster_id=cluster_id))
+
+    assert active["lifecycle_id"] == cluster_id
+    assert opposing_watch["lifecycle_id"] == cluster_id
+    assert opposing_watch["linked_previous_lifecycle_id"] == cluster_id
+
+
+def test_four_clusters_in_eleven_minutes_share_one_raw_pressure_lifecycle():
+    manager = SignalLifecycleManager()
+    events = [
+        {
+            "symbol": "CHFJPY",
+            "cluster_id": f"CHFJPY_CLUSTER_{index}",
+            "status": "MICROBOOST_WATCH",
+            "raw_direction": "SELL",
+            "candidate_direction": candidate,
+            "final_direction": "WAIT",
+            "valid_for_execution": False,
+            "signal_valid_time_utc": timestamp,
+        }
+        for index, candidate, timestamp in (
+            (1, "SELL", "2026-07-10T08:15:00+00:00"),
+            (2, "BUY", "2026-07-10T08:16:00+00:00"),
+            (3, "SELL", "2026-07-10T08:21:00+00:00"),
+            (4, "BUY", "2026-07-10T08:26:00+00:00"),
+        )
+    ]
+
+    applied = [manager.apply(event) for event in events]
+
+    assert {event["lifecycle_id"] for event in applied} == {"CHFJPY_CLUSTER_1"}
+
+
+def test_opposite_raw_pressure_starts_new_lifecycle_inside_episode_window():
+    manager = SignalLifecycleManager()
+    sell_episode = manager.apply(
+        {
+            "symbol": "CHFJPY",
+            "cluster_id": "CHFJPY_SHARED_CLUSTER",
+            "status": "MICROBOOST_WATCH",
+            "raw_direction": "SELL",
+            "candidate_direction": "SELL",
+            "final_direction": "WAIT",
+            "valid_for_execution": False,
+            "signal_valid_time_utc": "2026-07-10T08:15:00+00:00",
+        }
+    )
+    buy_episode = manager.apply(
+        {
+            "symbol": "CHFJPY",
+            "cluster_id": "CHFJPY_SHARED_CLUSTER",
+            "status": "MICROBOOST_WATCH",
+            "raw_direction": "BUY",
+            "candidate_direction": "BUY",
+            "final_direction": "WAIT",
+            "valid_for_execution": False,
+            "signal_valid_time_utc": "2026-07-10T08:20:00+00:00",
+        }
+    )
+
+    assert sell_episode["lifecycle_id"] == "CHFJPY_SHARED_CLUSTER"
+    assert buy_episode["lifecycle_id"] == "CHFJPY_SHARED_CLUSTER_BUY"
+    assert buy_episode["lifecycle_id"] != sell_episode["lifecycle_id"]
+
+
+def test_explicit_lifecycle_id_is_never_overridden_by_episode_coalescing():
+    manager = SignalLifecycleManager()
+    payload = {
+        "symbol": "CHFJPY",
+        "cluster_id": "CHFJPY_CLUSTER_NEW",
+        "lifecycle_id": "CHFJPY_OPERATOR_ASSIGNED_EPISODE",
+        "status": "MICROBOOST_WATCH",
+        "raw_direction": "SELL",
+        "candidate_direction": "SELL",
+        "final_direction": "WAIT",
+        "valid_for_execution": False,
+        "signal_valid_time_utc": "2026-07-10T08:17:00+00:00",
+    }
+
+    assert manager.apply(payload)["lifecycle_id"] == "CHFJPY_OPERATOR_ASSIGNED_EPISODE"
 
 
 def test_schema_v1_valid_continuation_does_not_require_fixed_two_r_tp1():
