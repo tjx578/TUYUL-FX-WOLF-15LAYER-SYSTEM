@@ -226,6 +226,7 @@ def test_internal_watch_summary_material_dedup(caplog):
         enabled=True,
         emit_watch=True,
         production_watch_gate=True,
+        production_watch_require_decision_grade=True,
         watch_transition_only=False,
         internal_watch_summary_interval_seconds=300.0,
     )
@@ -297,6 +298,10 @@ def test_production_watch_gate_emits_decision_grade_watch(caplog):
         clean_block_valid=True,
         clean_block_direction="BUY",
         pending_decision_id="GBPCAD_20260710T060118Z_M15_DECISION",
+        lifecycle_id="GBPCAD_20260710T055956Z_20260710T060456Z",
+        lifecycle_track=True,
+        terminal_required=True,
+        terminal_guarantee="SIGNAL_BLOCK_FINALIZER",
         signal_quality="WATCH_ONLY",
         tradeplan_preview={
             "setup_type": "SELL_REJECTION_WATCH",
@@ -328,6 +333,38 @@ def test_production_watch_gate_emits_decision_grade_watch(caplog):
     assert "[SignalWatchInternalSummary]" not in caplog.text
     assert '"status":"EARLY_SELL_WATCH"' in caplog.text
     assert '"valid_for_execution":false' in caplog.text
+
+
+def test_production_watch_gate_emits_candidate_grade_watch_by_default(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True, production_watch_gate=True)
+    event = _event(
+        cluster_id="CADJPY_20260710T060118Z",
+        symbol="CADJPY",
+        signal_family="MICROBOOST_WATCH",
+        status="MICROBOOST_WATCH",
+        raw_direction="BUY",
+        candidate_direction="BUY",
+        validated_direction=None,
+        watch_direction="BUY",
+        final_direction="WAIT",
+        market_context_applied=True,
+        valid_for_execution=False,
+        source_clean_block_id="CADJPY_20260710T055956Z_20260710T060456Z",
+        clean_block_valid=True,
+        pending_decision_id="CADJPY_20260710T060118Z_M15_DECISION",
+        lifecycle_id="CADJPY_20260710T055956Z_20260710T060456Z",
+        lifecycle_track=True,
+        terminal_required=True,
+        terminal_guarantee="SIGNAL_BLOCK_FINALIZER",
+        signal_quality="WATCH_ONLY",
+        tradeplan_preview={"setup_type": "BUY_RECLAIM_WATCH", "target_mode": "HTF_STRUCTURE_PENDING"},
+        market_structure={"market_structure_status": "PENDING_PRICE_THEME_STRUCTURE"},
+        htf_structure_context={"data_sufficient": False},
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" in caplog.text
+    assert "[SignalWatchInternalSummary]" not in caplog.text
 
 
 def test_signal_watch_json_can_carry_pressure_priority_context(caplog):
@@ -1166,7 +1203,8 @@ def test_signal_watch_normalizes_xauusd_tradeplan_units_and_blocks_inside_zone_r
     assert '"rr_to_tp1":2.35' not in caplog.text
 
 
-def test_signal_watch_builds_htf_led_operator_tradeplan(caplog):
+def test_signal_watch_builds_htf_led_operator_tradeplan(caplog, monkeypatch):
+    monkeypatch.setenv("SIGNAL_TRADEPLAN_H4_ATR_STOP_BUFFER_RATIO", "0.10")
     emitter = SignalJsonEmitter(enabled=True, emit_watch=True)
     event = _event(
         cluster_id="XAUUSD_HTF_LED_WATCH",
@@ -1199,6 +1237,7 @@ def test_signal_watch_builds_htf_led_operator_tradeplan(caplog):
             "data_sufficient": True,
             "h4_swing_low": 4114.0,
             "h4_swing_high": 4138.0,
+            "h4_atr": 10.0,
             "daily_range_low": 4075.0,
             "daily_range_high": 4150.0,
             "h4_demand_zone": [4120.0, 4123.0],
@@ -1207,6 +1246,7 @@ def test_signal_watch_builds_htf_led_operator_tradeplan(caplog):
             "valid_for_execution": False,
             "execution_impact": False,
         },
+        execution_quality={"spread_pips": 2.0},
         market_context_applied=True,
         valid_for_execution=False,
     )
@@ -1220,12 +1260,96 @@ def test_signal_watch_builds_htf_led_operator_tradeplan(caplog):
     assert '"macro_context_timeframe":"D1"' in caplog.text
     assert '"m15_role":"TIMING_CONFIRMATION_ONLY"' in caplog.text
     assert '"entry_zone":[4120.0,4123.0]' in caplog.text
-    assert '"sl":4114.0' in caplog.text
+    assert '"structural_sl":4114.0' in caplog.text
+    assert '"sl_buffer":1.03' in caplog.text
+    assert '"sl":4112.97' in caplog.text
     assert '"tp1":4138.0' in caplog.text
     assert '"execution_allowed":false' in caplog.text
     assert '"wait_for":"PRICE_PULLBACK_TO_ENTRY_ZONE_AND_M15_SUPPORT_HOLD"' in caplog.text
     assert '"M15_TIMING_CONFIRMATION_PENDING"' in caplog.text
     assert "M15_LOWER_HIGH_NOT_RECLAIMED" not in caplog.text
+    payload = _logged_payload(caplog)
+    operator = payload["operator_tradeplan"]
+    assert payload["tradeplan_authority"] == "operator_tradeplan"
+    assert payload["tradeplan_contract_version"] == "2.0-canonical"
+    assert payload["tradeplan_hash"] == operator["plan_hash"]
+    assert payload["sl_safe"] == operator["sl"] == 4112.97
+    assert payload["tp1"] == operator["tp1"]
+    assert operator["rr_to_tp1"] == 1.5
+    assert operator["levels_hash"] == operator["plan_hash"]
+    assert payload["tradeplan_projection_consistent"] is True
+
+
+def test_price_integrity_gate_suppresses_stale_watch(caplog):
+    emitter = SignalJsonEmitter(
+        enabled=True,
+        emit_watch=True,
+        price_integrity_gate=True,
+        internal_watch_summary_enabled=False,
+    )
+    event = _event(
+        price_integrity_evaluated=True,
+        price_integrity_valid=False,
+        price_integrity_status="INVALID",
+        price_integrity_reason="PRICE_CONTEXT_STALE",
+    )
+
+    assert emitter.emit(event) is True
+    assert "[SignalWatchJSON]" not in caplog.text
+    assert "[SignalDecisionUpdateJSON]" in caplog.text
+    payload = _logged_payload(caplog, "[SignalDecisionUpdateJSON]")
+    assert payload["terminal_status"] == "PRICE_CONTEXT_STALE"
+    assert payload["execution_status"] == "WAIT_PRICE_CONTEXT"
+
+
+def test_price_integrity_gate_allows_fresh_canonical_quote(caplog):
+    emitter = SignalJsonEmitter(enabled=True, emit_watch=True, price_integrity_gate=True)
+    event = _event(
+        observed_bid=1.37695,
+        observed_ask=1.37697,
+        observed_mid=1.37696,
+        price_observed_at_utc="2026-05-19T10:24:13+00:00",
+        price_integrity_evaluated=True,
+        price_integrity_valid=True,
+        price_integrity_status="VALID",
+    )
+
+    assert emitter.emit(event) is True
+    payload = _logged_payload(caplog)
+    assert payload["signal_valid_price"] == 1.37696
+    assert payload["price_integrity_status"] == "VALID"
+
+
+def test_price_integrity_recovery_is_not_suppressed_as_same_watch_transition(caplog):
+    emitter = SignalJsonEmitter(
+        enabled=True,
+        emit_watch=True,
+        price_integrity_gate=True,
+        watch_transition_only=True,
+        internal_watch_summary_enabled=False,
+    )
+    stale = _event(
+        cluster_id="USDCAD_PRICE_RECOVERY",
+        price_integrity_evaluated=True,
+        price_integrity_valid=False,
+        price_integrity_status="INVALID",
+        price_integrity_reason="PRICE_CONTEXT_STALE",
+    )
+    recovered = _event(
+        cluster_id="USDCAD_PRICE_RECOVERY",
+        observed_bid=1.37695,
+        observed_ask=1.37697,
+        observed_mid=1.37696,
+        price_observed_at_utc="2026-05-19T10:24:14+00:00",
+        price_integrity_evaluated=True,
+        price_integrity_valid=True,
+        price_integrity_status="VALID",
+        price_integrity_reason=None,
+    )
+
+    assert emitter.emit(stale) is True
+    assert emitter.emit(recovered) is True
+    assert "[SignalWatchJSON]" in caplog.text
 
 
 def test_signal_watch_clears_actionable_levels_when_htf_location_unconfirmed(caplog):
