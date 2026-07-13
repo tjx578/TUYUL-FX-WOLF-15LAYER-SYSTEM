@@ -240,6 +240,8 @@ def _watch_payload(
     symbol = str(candidate.get("symbol") or "").upper()
     side = "BUY" if direction == "BUY" else "SELL"
     is_scanner_advisory = bool(scanner_advisory_watch)
+    watch_family_prefix = "SCANNER_MEMORY" if is_scanner_advisory else "CLEAN_BLOCK"
+    legacy_clean_block_family = f"CLEAN_BLOCK_{side}_WATCH" if is_scanner_advisory else None
     start_price = _first_number(_field(market_context, "price_at_signal_start"))
     end_price = _first_number(_field(market_context, "price_at_signal_end"))
     entry_zone = sorted(
@@ -266,8 +268,13 @@ def _watch_payload(
     )
     payload = {
         "enabled": True,
-        "status": f"CLEAN_BLOCK_{side}_WATCH",
-        "signal_family": f"CLEAN_BLOCK_{side}_WATCH",
+        # Scanner-cycle persistence is useful advisory evidence, but it is not
+        # a pure pair-rotation clean block.  Give it an honest public family so
+        # dashboards and downstream operators cannot mistake it for primary
+        # clean-block authority.
+        "status": f"{watch_family_prefix}_{side}_WATCH",
+        "signal_family": f"{watch_family_prefix}_{side}_WATCH",
+        "legacy_signal_family": legacy_clean_block_family,
         "cluster_id": lineage.get("source_clean_block_id"),
         "symbol": symbol,
         "raw_direction": direction,
@@ -276,12 +283,16 @@ def _watch_payload(
         "watch_direction": direction,
         "direction_source": candidate.get("direction_source") or "CLEAN_BLOCK_DIRECTION",
         "direction_confidence": candidate.get("direction_confidence") or "CLEAN_BLOCK_CONTEXT",
-        "resolved_family": "CLEAN_BLOCK_TO_SIGNAL_WATCH",
+        "resolved_family": "SCANNER_MEMORY_TO_SIGNAL_WATCH" if is_scanner_advisory else "CLEAN_BLOCK_TO_SIGNAL_WATCH",
         "requires_m15_close": requires_m15_close,
         "requires_m15_close_policy": requires_m15_close_policy,
         "final_direction": "WAIT",
-        "direction_status": "CLEAN_BLOCK_WATCH_ONLY",
-        "direction_validation_status": "CLEAN_BLOCK_WATCH_PENDING_STRUCTURE",
+        "direction_status": "SCANNER_MEMORY_WATCH_ONLY" if is_scanner_advisory else "CLEAN_BLOCK_WATCH_ONLY",
+        "direction_validation_status": (
+            "SCANNER_MEMORY_WATCH_PENDING_STRUCTURE"
+            if is_scanner_advisory
+            else "CLEAN_BLOCK_WATCH_PENDING_STRUCTURE"
+        ),
         "action": "WAIT_PRICE_THEME_STRUCTURE",
         "reason": (
             "scanner_cycle_clean_block_mature_with_context_promoted_to_advisory_signal_watch"
