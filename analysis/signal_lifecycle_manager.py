@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 FINAL_ACTIVE_STATUSES = {
@@ -31,6 +31,7 @@ FINAL_ACTIVE_STATUSES = {
 }
 
 ABSORPTION_WATCH_STATUSES = {
+    "COUNTER_SCENARIO_WATCH",
     "SELL_ABSORPTION_WATCH",
     "BUY_ABSORPTION_WATCH",
 }
@@ -61,6 +62,7 @@ _PROTECT_PROFIT_PHASES = frozenset(
 @dataclass(frozen=True)
 class ActiveSignal:
     signal_id: str
+    lifecycle_id: str
     symbol: str
     direction: str
     status: str
@@ -77,6 +79,7 @@ class ActiveSignal:
     def to_payload(self) -> dict[str, Any]:
         return {
             "signal_id": self.signal_id,
+            "lifecycle_id": self.lifecycle_id,
             "symbol": self.symbol,
             "direction": self.direction,
             "status": self.status,
@@ -92,11 +95,19 @@ class ActiveSignal:
         }
 
 
+@dataclass(frozen=True)
+class PressureEpisode:
+    lifecycle_id: str
+    last_seen_at: datetime | None
+
+
 class SignalLifecycleManager:
     """Keep per-symbol signal state and classify conflicting follow-up signals."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, pressure_episode_window_seconds: float = 900.0) -> None:
         self._active: dict[str, ActiveSignal] = {}
+        self.pressure_episode_window_seconds = max(1.0, float(pressure_episode_window_seconds))
+        self._pressure_episodes: dict[tuple[str, str], PressureEpisode] = {}
 
     def apply(self, signal: dict[str, Any]) -> dict[str, Any]:
         payload = deepcopy(signal)
@@ -104,6 +115,7 @@ class SignalLifecycleManager:
         direction = _direction(payload)
         if not symbol or direction not in {"BUY", "SELL"}:
             return payload
+        payload["lifecycle_id"] = self._pressure_episode_lifecycle_id(payload, symbol, direction)
 
         active = self._active.get(symbol)
         if active is None:
@@ -111,6 +123,7 @@ class SignalLifecycleManager:
                 self._active[symbol] = _active_from_payload(payload)
                 payload.setdefault("lifecycle_status", f"ACTIVE_{direction}_VALID")
                 payload.setdefault("signal_id", self._active[symbol].signal_id)
+                payload.setdefault("lifecycle_id", self._active[symbol].lifecycle_id)
                 payload.setdefault("active_position_policy", f"TRACK_ACTIVE_{direction}")
                 payload.setdefault(
                     "active_signal_management",
@@ -119,6 +132,7 @@ class SignalLifecycleManager:
             return payload
 
         payload["linked_previous_signal"] = active.signal_id
+        payload["linked_previous_lifecycle_id"] = active.lifecycle_id
         payload["previous_signal_status"] = active.lifecycle_status
         payload["active_signal"] = active.to_payload()
         payload.setdefault("active_position_policy", "ACTIVE_SIGNAL_AWARE")
@@ -126,6 +140,11 @@ class SignalLifecycleManager:
             "active_signal_management",
             _management_payload(active, policy="COMPARE_WITH_EXISTING_ACTIVE_SIGNAL"),
         )
+
+        conditional_counter_direction = _conditional_counter_direction(payload)
+        if conditional_counter_direction == OPPOSITE_DIRECTION[active.direction]:
+            payload["counter_monitor_direction"] = conditional_counter_direction
+            return self._protect_active_signal(active, payload)
 
         if active.direction == direction:
             if _is_breakout_reinforcement(active, payload):
@@ -146,7 +165,9 @@ class SignalLifecycleManager:
             return self._protect_active_signal(active, payload)
 
         if _is_final_active(payload):
-            return self._supersede_with_reversal(active, payload)
+            if self._reversal_transition_ready(active, payload):
+                return self._supersede_with_reversal(active, payload)
+            return self._hold_opposing_final_for_confirmation(active, payload)
 
         payload["lifecycle_status"] = "CONFLICT_WAIT_M15_CLOSE"
         payload["action"] = "WAIT_M15_CLOSE"
@@ -164,6 +185,42 @@ class SignalLifecycleManager:
     def active_signal(self, symbol: str) -> dict[str, Any] | None:
         active = self._active.get(symbol.upper())
         return None if active is None else active.to_payload()
+
+    def _pressure_episode_lifecycle_id(
+        self,
+        payload: dict[str, Any],
+        symbol: str,
+        direction: str,
+    ) -> str:
+        explicit = _optional_str(payload.get("lifecycle_id"))
+        raw_direction = _raw_direction(payload) or direction
+        key = (symbol, raw_direction)
+        event_at = _signal_time(payload)
+
+        if explicit:
+            self._pressure_episodes[key] = PressureEpisode(explicit, event_at)
+            return explicit
+
+        derived = _lifecycle_id(payload, direction)
+        current = self._pressure_episodes.get(key)
+        if current is not None and _within_pressure_episode_window(
+            current.last_seen_at,
+            event_at,
+            self.pressure_episode_window_seconds,
+        ):
+            latest_seen = _latest_datetime(current.last_seen_at, event_at)
+            self._pressure_episodes[key] = PressureEpisode(current.lifecycle_id, latest_seen)
+            return current.lifecycle_id
+
+        lifecycle_id = self._distinct_implicit_lifecycle_id(symbol, raw_direction, derived)
+        self._pressure_episodes[key] = PressureEpisode(lifecycle_id, event_at)
+        return lifecycle_id
+
+    def _distinct_implicit_lifecycle_id(self, symbol: str, raw_direction: str, derived: str) -> str:
+        for (episode_symbol, episode_raw), episode in self._pressure_episodes.items():
+            if episode_symbol == symbol and episode_raw != raw_direction and episode.lifecycle_id == derived:
+                return f"{derived}_{raw_direction}"
+        return derived
 
     def _protect_active_signal(self, active: ActiveSignal, payload: dict[str, Any]) -> dict[str, Any]:
         payload["final_direction"] = "WAIT"
@@ -237,7 +294,7 @@ class SignalLifecycleManager:
         }
         elapsed = _optional_int(payload.get("cooldown_m15_bars_elapsed"))
         if elapsed is None:
-            elapsed = _elapsed_m15_bars(active.signal_valid_time_utc, _optional_str(payload.get("signal_valid_time_utc")))
+            elapsed = 0
         payload["reversal_confirmed"] = confirmed
         payload["cooldown_m15_bars_elapsed"] = elapsed
         return confirmed and elapsed >= 1
@@ -291,6 +348,24 @@ def _direction(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _conditional_counter_direction(payload: dict[str, Any]) -> str | None:
+    scenario = payload.get("counter_scenario")
+    if not isinstance(scenario, dict):
+        return None
+    status = str(scenario.get("status") or "").upper()
+    direction = str(scenario.get("direction") or payload.get("counter_watch_direction") or "").upper()
+    if status != "CONDITIONAL" or direction not in {"BUY", "SELL"}:
+        return None
+    if bool(scenario.get("valid_for_execution", False)):
+        return None
+    return direction
+
+
+def _raw_direction(payload: dict[str, Any]) -> str | None:
+    raw = str(payload.get("raw_direction") or "").upper()
+    return raw if raw in {"BUY", "SELL"} else None
+
+
 def _is_breakout_reinforcement(active: ActiveSignal, payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
     return (
@@ -303,6 +378,7 @@ def _active_from_payload(payload: dict[str, Any], lifecycle_status: str | None =
     direction = _direction(payload) or "WAIT"
     return ActiveSignal(
         signal_id=str(payload.get("signal_id") or _signal_id(payload, direction)),
+        lifecycle_id=_lifecycle_id(payload, direction),
         symbol=symbol,
         direction=direction,
         status=str(payload.get("status") or "UNKNOWN"),
@@ -323,6 +399,28 @@ def _signal_id(payload: dict[str, Any], direction: str) -> str:
     raw_time = str(payload.get("signal_valid_time_wita") or payload.get("signal_valid_time_utc") or "")
     compact_time = _compact_time(raw_time)
     return f"{symbol}_{direction}_{compact_time}" if compact_time else f"{symbol}_{direction}_ACTIVE"
+
+
+def _lifecycle_id(payload: dict[str, Any], direction: str) -> str:
+    """Return an episode identity that is stable across direction revisions.
+
+    ``signal_id`` intentionally keeps its legacy direction/time format.  When
+    clean-block or cluster lineage exists, lifecycle identity instead follows
+    that source episode so SELL/BUY revisions do not mint separate lifecycles.
+    """
+    explicit = _optional_str(payload.get("lifecycle_id"))
+    if explicit:
+        return explicit
+
+    symbol = str(payload.get("symbol") or "UNKNOWN").upper()
+    for key in ("source_clean_block_id", "cluster_id", "source_pressure_block_id"):
+        source_id = _optional_str(payload.get(key))
+        if not source_id:
+            continue
+        return source_id if source_id.upper().startswith(f"{symbol}_") else f"{symbol}_{source_id}"
+
+    # Compatibility fallback for payloads that predate lifecycle lineage.
+    return _optional_str(payload.get("signal_id")) or _signal_id(payload, direction)
 
 
 def _compact_time(value: str) -> str | None:
@@ -373,15 +471,33 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
-def _elapsed_m15_bars(start: str | None, end: str | None) -> int:
-    if not start or not end:
-        return 0
+def _signal_time(payload: dict[str, Any]) -> datetime | None:
+    raw = _optional_str(payload.get("signal_valid_time_utc"))
+    if raw is None:
+        return None
     try:
-        start_at = datetime.fromisoformat(start.replace("Z", "+00:00"))
-        end_at = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
-        return 0
-    return max(0, int((end_at - start_at).total_seconds() // (15 * 60)))
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _within_pressure_episode_window(
+    previous: datetime | None,
+    current: datetime | None,
+    window_seconds: float,
+) -> bool:
+    if previous is None or current is None:
+        return False
+    return abs((current - previous).total_seconds()) <= window_seconds
+
+
+def _latest_datetime(previous: datetime | None, current: datetime | None) -> datetime | None:
+    if previous is None:
+        return current
+    if current is None:
+        return previous
+    return max(previous, current)
 
 
 def _has_auditable_promotion(payload: dict[str, Any]) -> bool:
