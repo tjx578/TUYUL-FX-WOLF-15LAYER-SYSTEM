@@ -319,7 +319,9 @@ class RedisConsumer:
             ts = float(raw_value.decode() if isinstance(raw_value, bytes | bytearray) else str(raw_value))
         except (TypeError, ValueError):
             return None
-        return ts if ts > 0 else None
+        if ts <= 0:
+            return None
+        return ts / 1000.0 if ts > 10_000_000_000 else ts
 
     async def _hydrate_feed_timestamps(self) -> None:
         """Seed bus feed timestamps from Redis-preserved last_seen_ts values."""
@@ -639,6 +641,11 @@ class RedisConsumer:
         if not isinstance(symbol, str) or not symbol.strip():
             return
         tick_last_seen = self._coerce_last_seen_ts(tick.get("last_seen_ts") or tick.get("timestamp") or tick.get("ts"))
+        normalized_tick = dict(tick)
+        normalized_tick["symbol"] = symbol.strip()
+        if tick_last_seen is not None:
+            normalized_tick["last_seen_ts"] = tick_last_seen
+        self._bus.update_tick(normalized_tick)
         self._bus.record_feed_update(symbol.strip(), tick_last_seen)
 
     def _emit_candle_closed(self, symbol: str, timeframe: str) -> None:
