@@ -21,6 +21,7 @@ from analysis.signal_thresholds import SIGNAL_MIN_RR, TP1_TARGET_RR
 _TZ_WITA = ZoneInfo("Asia/Makassar")
 
 PENDING_WATCH_STATUSES = {
+    "COUNTER_SCENARIO_WATCH",
     "SELL_ABSORPTION_WATCH",
     "BUY_ABSORPTION_WATCH",
     "SELL_TIMING_WATCH",
@@ -351,6 +352,7 @@ class SignalBlockFinalizer:
             counter_entry_risk_multiplier=counter_entry_risk_multiplier,
             counter_entry_expiry_minutes=counter_entry_expiry_minutes,
             allow_rr_fallback=allow_rr_fallback,
+            direct_absorption_enabled=False,
         )
 
     def track(self, payload: dict[str, Any]) -> None:
@@ -879,6 +881,12 @@ def _with_block_fields(
         "clean_block_direction",
         "watch_promotion_source",
         "microboost_validation_status",
+        "signal_id",
+        "lifecycle_id",
+        "linked_previous_lifecycle_id",
+        "lifecycle_track",
+        "terminal_required",
+        "terminal_guarantee",
     ):
         if payload.get(key) is None and watch.payload.get(key) is not None:
             payload[key] = watch.payload.get(key)
