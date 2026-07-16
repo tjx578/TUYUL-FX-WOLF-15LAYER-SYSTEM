@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -11,6 +12,7 @@ from analysis.microboost_continuation_entry import MicroboostContinuationEngine
 from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_event
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter
 from analysis.signal_lifecycle_manager import SignalLifecycleManager
+from analysis.signal_pressure_state_observability import PressureStateSummaryTracker
 from analysis.signal_throttle_pressure_tier import (
     TIER_1_PRIMARY_ANALYSIS,
     TIER_2_CONFIRMATION_SUPPORT,
@@ -1579,9 +1581,23 @@ def test_pipeline_logs_no_trade_pressure_as_pressure_state_by_default(caplog):
         "symbol_activity": {
             "USDCAD": {
                 "latest_event_utc": "2026-06-08T08:49:17+00:00",
+                "latest_block_start_utc": "2026-06-08T08:48:05+00:00",
+                "latest_block_end_utc": "2026-06-08T08:49:17+00:00",
+                "latest_block_duration_seconds": 72.0,
+                "latest_block_events": 5,
                 "latest_block_effective_ticks": 3,
+                "latest_block_effective_density_per_minute": 2.5,
+                "pair_interruption_count": 2,
+                "pair_interruption_count_scope": "ANALYZER_RETENTION_WINDOW",
             }
         },
+        "clean_watch_candidates": [
+            {
+                "symbol": "USDCAD",
+                "source_clean_block_id": "USDCAD_BLOCK_001",
+                "clean_block_direction": "BUY",
+            }
+        ],
         "microboost_summary": {"count_total": 0},
     }
     verdict: dict[str, Any] = {"verdict": "NO_TRADE", "direction": "BUY"}
@@ -1613,6 +1629,18 @@ def test_pipeline_logs_no_trade_pressure_as_pressure_state_by_default(caplog):
     assert state["pressure_event_count"] == 3
     assert state["pressure_level"] == "PRESSURE_CANARY"
     assert state["execution_block_reason"] == "NON_EXECUTE_VERDICT"
+    assert state["pressure_event_count_scope"] == "LATEST_BLOCK_EFFECTIVE_TICKS"
+    assert state["current_snapshot_events"] == 3
+    assert state["current_block_events"] == 5
+    assert state["current_block_effective_ticks"] == 3
+    assert state["session_symbol_event_count"] == 3
+    assert state["session_symbol_event_count_scope"] == "ANALYZER_RETENTION_WINDOW"
+    assert state["source_clean_block_id"] == "USDCAD_BLOCK_001"
+    assert state["block_duration_seconds"] == 72.0
+    assert state["block_density"] == 2.5
+    assert state["block_direction"] == "BUY"
+    assert state["pair_interruption_count"] == 2
+    assert state["pair_interruption_count_scope"] == "ANALYZER_RETENTION_WINDOW"
 
 
 def test_pipeline_routes_no_trade_pressure_to_pressure_state_when_guard_enabled(monkeypatch, caplog):
@@ -1916,8 +1944,9 @@ def test_no_trade_contextless_pressure_emits_pressure_state(monkeypatch, caplog)
     assert state["signal_pressure_state_emit_result"] is True
 
 
-def test_pipeline_suppresses_single_no_trade_pressure_canary(caplog):
+def test_pipeline_suppresses_single_no_trade_pressure_canary(monkeypatch, caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_SUMMARY_ENABLED", "false")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
     pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
@@ -1952,6 +1981,85 @@ def test_pipeline_suppresses_single_no_trade_pressure_canary(caplog):
 
     assert "no_trade_pressure_decision_update" not in verdict
     assert "[SignalDecisionUpdateJSON]" not in caplog.text
+    assert pipeline._pressure_state_summary_tracker.symbol_totals("USDCAD") == {
+        "pressure_state_attempted": 1,
+        "pressure_state_emitted": 0,
+        "pressure_state_suppressed": 1,
+    }
+    summary = pipeline._pressure_state_summary_tracker.roll_if_due(
+        interval_seconds=1.0,
+        now=time.time() + 2.0,
+    )
+    assert summary is not None
+    assert summary["by_suppression_reason"] == {"BELOW_MIN_EVENTS": 1}
+
+
+def test_pipeline_counts_semantic_pressure_state_rate_limit(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS", "60")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_SUMMARY_ENABLED", "false")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    payload = {
+        "symbol": "USDCAD",
+        "source_stage": "SIGNAL_THROTTLE_INTEL",
+        "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+        "status": "PRESSURE_CANARY",
+        "raw_direction": "BUY",
+        "reason": "Pressure remains below promotion threshold.",
+    }
+
+    assert pipeline._emit_signal_pressure_state_payload(payload) is True
+    assert pipeline._emit_signal_pressure_state_payload(dict(payload)) is False
+
+    assert caplog.text.count("[SignalPressureStateJSON]") == 1
+    assert pipeline._pressure_state_summary_tracker.symbol_totals("USDCAD") == {
+        "pressure_state_attempted": 2,
+        "pressure_state_emitted": 1,
+        "pressure_state_suppressed": 1,
+    }
+    summary = pipeline._pressure_state_summary_tracker.roll_if_due(
+        interval_seconds=1.0,
+        now=time.time() + 2.0,
+    )
+    assert summary is not None
+    assert summary["by_suppression_reason"] == {"SEMANTIC_RATE_LIMIT": 1}
+
+
+def test_pipeline_emits_rolling_pressure_state_summary(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS", "0")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_SUMMARY_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_SUMMARY_INTERVAL_SECONDS", "60")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    tracker = PressureStateSummaryTracker(now=time.time() - 61.0)
+    tracker.record(
+        {"symbol": "AUDUSD", "source_stage": "SIGNAL_THROTTLE_INTEL"},
+        emitted=False,
+        suppression_reason="UPSTREAM_COOLDOWN",
+    )
+    pipeline._pressure_state_summary_tracker = tracker
+
+    assert pipeline._emit_signal_pressure_state_payload(
+        {
+            "symbol": "USDCAD",
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+            "status": "PRESSURE_CANARY",
+        }
+    ) is True
+
+    summary_message = next(
+        record.message for record in caplog.records if "[SignalPressureStateSummary]" in record.message
+    )
+    summary = json.loads(summary_message.split("[SignalPressureStateSummary]", 1)[1].strip())
+    assert summary["attempted"] == 1
+    assert summary["emitted"] == 0
+    assert summary["suppressed"] == 1
+    assert summary["active_symbol_list"] == ["AUDUSD"]
+    assert summary["by_suppression_reason"] == {"UPSTREAM_COOLDOWN": 1}
+    assert summary["valid_for_execution"] is False
 
 
 def test_pipeline_logs_block_finalizer_final_as_signal_json(caplog):

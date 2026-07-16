@@ -84,6 +84,13 @@ def test_flag_on_falls_back_to_d1_when_snapshot_no_bias(monkeypatch):
     assert p._derive_daily_phase_feed("GBPNZD") == "DOWNTREND"
 
 
+def test_stale_snapshot_is_advisory_and_does_not_fallback_into_hard_phase(monkeypatch):
+    monkeypatch.setenv(_FLAG, "true")
+    p = _pipeline(_FakeResolver("STALE"), d1_fallback="BULLISH")
+
+    assert p._derive_daily_phase_feed("GBPNZD") is None
+
+
 # --------------------------------------------------------------------------- #
 # 4. Matcher receives d1_phase (dormant Daily rules no longer dead-code).
 # --------------------------------------------------------------------------- #

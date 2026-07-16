@@ -9,12 +9,14 @@ auto-promoted to a BUY LIMIT.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from analysis.htf_structure_snapshot import (
     BIAS_BEARISH,
     BIAS_BULLISH,
     BIAS_NO_BIAS,
     BIAS_RANGE,
+    BIAS_STALE,
     BIAS_TRANSITION,
     ENABLE_ENV,
     EVENT_NAME,
@@ -29,7 +31,9 @@ from analysis.htf_structure_snapshot import (
     _average_true_range,
     build_snapshot,
     classify_bias,
+    classify_daily_bias_v2,
     classify_liquidity_context,
+    classify_liquidity_resolution,
     classify_price_location,
     dealing_range,
     emit_htf_structure_snapshot,
@@ -135,6 +139,12 @@ def test_bias_range_on_contraction():
     assert classify_bias(highs, lows) == BIAS_RANGE
 
 
+def test_daily_bias_v2_resolves_swing_blind_spot_with_ema20_momentum():
+    candles = [_c(101.0 + index, 99.0 + index, close=100.0 + index) for index in range(30)]
+
+    assert classify_daily_bias_v2(candles) == BIAS_BULLISH
+
+
 # --------------------------------------------------------------------------- #
 # §3  Location + liquidity
 # --------------------------------------------------------------------------- #
@@ -164,6 +174,23 @@ def test_liquidity_buy_side_near_high():
 
 def test_liquidity_sell_side_near_low():
     assert classify_liquidity_context(101.0, (120.0, 100.0)) == LIQ_SELL_SIDE
+
+
+def test_liquidity_resolution_distinguishes_acceptance_and_rejection():
+    daily_range = (120.0, 100.0)
+
+    assert classify_liquidity_resolution(_c(121.0, 119.0, close=120.8), daily_range, atr=1.0) == (
+        "BUY_SIDE_ACCEPTED"
+    )
+    assert classify_liquidity_resolution(_c(121.0, 118.5, close=119.0), daily_range, atr=1.0) == (
+        "BUY_SIDE_REJECTED"
+    )
+    assert classify_liquidity_resolution(_c(101.0, 99.0, close=99.2), daily_range, atr=1.0) == (
+        "SELL_SIDE_ACCEPTED"
+    )
+    assert classify_liquidity_resolution(_c(101.5, 99.0, close=101.0), daily_range, atr=1.0) == (
+        "SELL_SIDE_REJECTED"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -211,6 +238,56 @@ def test_snapshot_is_never_executable():
     assert d["valid_for_execution"] is False
     assert d["is_final_signal"] is False
     assert d["event"] == EVENT_NAME
+
+
+def test_snapshot_marks_stale_daily_bias_advisory_only():
+    now = datetime(2026, 7, 10, 12, 0, tzinfo=UTC)
+    daily = _staircase_down(n=30, base=1.60)
+    h4 = _staircase_down(n=30, base=1.55)
+    for index, candle in enumerate(daily):
+        candle["timestamp"] = (now - timedelta(days=len(daily) - index + 5)).isoformat()
+    for index, candle in enumerate(h4):
+        candle["timestamp"] = (now - timedelta(hours=(len(h4) - index + 12) * 4)).isoformat()
+
+    snapshot = build_snapshot(
+        "GBPAUD",
+        daily,
+        h4,
+        now=now,
+        daily_bias_max_age_seconds=86_400,
+    )
+
+    assert snapshot.daily_bias == BIAS_STALE
+    assert snapshot.daily_bias_unstaled == BIAS_BEARISH
+    assert snapshot.daily_bias_freshness_status == "STALE"
+    assert snapshot.daily_bias_source_candle is not None
+    assert snapshot.daily_bias_snapshot_time == now.isoformat()
+    assert snapshot.daily_bias_rule_version == 2
+    assert snapshot.allowed_playbook == "NONE"
+    assert snapshot.valid_for_execution is False
+
+
+def test_snapshot_carries_auditable_location_price_lineage():
+    now = datetime(2026, 7, 10, 12, 0, tzinfo=UTC)
+    daily = [
+        {**_c(120.0, 100.0, close=110.0), "timestamp": (now - timedelta(days=30 - index)).isoformat()}
+        for index in range(30)
+    ]
+    h4 = [
+        {**_c(119.0, 117.0, close=118.0), "timestamp": (now - timedelta(hours=(12 - index) * 4)).isoformat()}
+        for index in range(12)
+    ]
+
+    snapshot = build_snapshot("XAUUSD", daily, h4, now=now)
+
+    assert snapshot.location_reference_price == 118.0
+    assert snapshot.location_reference_source == "H4_CLOSED_CANDLE"
+    assert snapshot.location_reference_time == (now - timedelta(hours=4)).isoformat()
+    assert snapshot.location_reference_age_seconds == 14_400.0
+    assert snapshot.location_ratio == 0.9
+    assert snapshot.dealing_range_source == "D1_30D_CLOSED"
+    assert snapshot.distance_to_range_high_pips == 200.0
+    assert snapshot.price_location == LOC_PREMIUM
 
 
 def test_snapshot_bearish_blocks_buy_limit_end_to_end():

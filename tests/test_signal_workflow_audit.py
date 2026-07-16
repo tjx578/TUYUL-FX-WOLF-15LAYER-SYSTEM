@@ -56,6 +56,46 @@ def test_signal_workflow_audit_joins_channels_and_counts_conflicts():
     assert summary["raw_buy_candidate_sell_by_symbol"] == {"USDCAD": 2}
     assert summary["cluster_summary"]["watch_clusters_without_microboost"] == 0
     assert summary["cluster_summary"]["decision_clusters_with_watch"] == 1
+    assert summary["accuracy_scope_gate"]["status"] == "SINGLE_DEPLOYMENT_VALID"
+    assert summary["accuracy_scope_gate"]["accuracy_computation_allowed"] is True
+
+
+def test_signal_workflow_audit_rejects_mixed_deployment_accuracy_without_explicit_mode():
+    rows = [
+        {
+            "timestamp": "2026-07-10T00:00:00Z",
+            "message": (
+                '[SignalPressureStateJSON] {"event":"signal_pressure_state_json",'
+                '"schema_version":"2.0-pressure-state","symbol":"NZDCHF","valid_for_execution":false}'
+            ),
+            "tags": '{"deployment":"dep-a"}',
+        },
+        {
+            "timestamp": "2026-07-10T00:01:00Z",
+            "message": (
+                '[SignalPressureStateJSON] {"event":"signal_pressure_state_json",'
+                '"symbol":"NZDCAD","valid_for_execution":false}'
+            ),
+            "tags": '{"deployment":"dep-b"}',
+        },
+    ]
+    events = parse_signal_workflow_rows(rows)
+
+    summary = summarize_signal_workflow(events)
+    historical = summarize_signal_workflow(events, historical_cross_deployment_audit=True)
+
+    assert summary["accuracy_scope_gate"]["status"] == "REJECTED_MIXED_DEPLOYMENT"
+    assert summary["accuracy_scope_gate"]["accuracy_computation_allowed"] is False
+    assert historical["accuracy_scope_gate"]["status"] == "HISTORICAL_CROSS_DEPLOYMENT_AUDIT"
+    assert historical["accuracy_scope_gate"]["accuracy_computation_allowed"] is True
+    assert summary["pressure_state_schema_gate"] == {
+        "canonical_schema_version": "2.0-pressure-state",
+        "schema_counts": {"2.0-pressure-state": 1, "LEGACY_UNVERSIONED": 1},
+        "total_pressure_states": 2,
+        "noncanonical_pressure_states": 1,
+        "consistent": False,
+        "status": "REJECTED_MIXED_OR_LEGACY_SCHEMA",
+    }
 
 
 def test_signal_workflow_audit_summarizes_pressure_tier_snapshot_and_watch_context():

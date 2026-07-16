@@ -127,6 +127,11 @@ def test_integration_missing_context_emits_pressure_state(monkeypatch, caplog):
     assert report["allowed_quorum_pressure_state"]["status"] == "ALLOWED_QUORUM_WAIT_CONTEXT"
     assert report["allowed_quorum_pressure_state"]["valid_for_execution"] is False
     assert report["allowed_quorum_pressure_state"]["is_final_signal"] is False
+    assert report["allowed_quorum_pressure_state"]["schema_version"] == "2.0-pressure-state"
+    assert report["allowed_quorum_pressure_state"]["schema_contract_complete"] is True
+    assert report["allowed_quorum_pressure_state"]["observed_price"] is None
+    assert report["allowed_quorum_pressure_state"]["reference_price_status"] == "MISSING"
+    assert report["allowed_quorum_pressure_state"]["price_location"] == "UNKNOWN"
 
 
 def test_integration_legacy_diagnostic_flag_off_still_emits_pressure_state(monkeypatch, caplog):

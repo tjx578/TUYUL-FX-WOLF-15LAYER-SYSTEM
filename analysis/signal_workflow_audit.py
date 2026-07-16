@@ -88,11 +88,26 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Emit compact JSON instead of pretty-printed JSON.",
     )
+    parser.add_argument(
+        "--historical-cross-deployment-audit",
+        action="store_true",
+        help="Explicitly allow accuracy-oriented analysis across multiple deployments.",
+    )
     args = parser.parse_args(argv)
 
     events = parse_signal_workflow_csv(args.csv_path, dedupe=not args.no_dedupe)
     indent = None if args.compact else 2
-    print(json.dumps(summarize_signal_workflow(events), ensure_ascii=False, sort_keys=True, indent=indent))
+    print(
+        json.dumps(
+            summarize_signal_workflow(
+                events,
+                historical_cross_deployment_audit=args.historical_cross_deployment_audit,
+            ),
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=indent,
+        )
+    )
     return 0
 
 
@@ -147,7 +162,11 @@ def parse_signal_workflow_row(row: Mapping[str, Any]) -> SignalWorkflowAuditEven
     )
 
 
-def summarize_signal_workflow(events: Iterable[SignalWorkflowAuditEvent]) -> dict[str, Any]:
+def summarize_signal_workflow(
+    events: Iterable[SignalWorkflowAuditEvent],
+    *,
+    historical_cross_deployment_audit: bool = False,
+) -> dict[str, Any]:
     ordered = list(events)
     channel_counts = Counter(event.channel for event in ordered)
     deployment_counts = Counter(event.deployment_id or "UNKNOWN" for event in ordered)
@@ -178,6 +197,11 @@ def summarize_signal_workflow(events: Iterable[SignalWorkflowAuditEvent]) -> dic
         "total_events": len(ordered),
         "channel_counts": dict(channel_counts.most_common()),
         "deployment_counts": dict(deployment_counts.most_common()),
+        "accuracy_scope_gate": _accuracy_scope_gate(
+            deployment_counts,
+            historical_cross_deployment_audit=historical_cross_deployment_audit,
+        ),
+        "pressure_state_schema_gate": _pressure_state_schema_gate(ordered),
         "signal_json_final": sum(_is_final_signal(event) for event in ordered),
         "valid_for_execution_true": sum(event.valid_for_execution is True for event in ordered),
         "direction_conflicts_by_symbol": dict(conflict_counts.most_common()),
@@ -194,6 +218,58 @@ def summarize_signal_workflow(events: Iterable[SignalWorkflowAuditEvent]) -> dic
         "low_event_high_impact_watch_by_symbol": dict(low_event_high_impact.most_common()),
         "tier_leakage_guard": _tier_leakage_guard(ordered),
         "cluster_summary": _cluster_summary(cluster_groups),
+    }
+
+
+def _pressure_state_schema_gate(events: list[SignalWorkflowAuditEvent]) -> dict[str, Any]:
+    versions = Counter(
+        str(event.payload.get("schema_version") or "LEGACY_UNVERSIONED")
+        for event in events
+        if event.channel == "SignalPressureStateJSON"
+    )
+    noncanonical = sum(count for version, count in versions.items() if version != "2.0-pressure-state")
+    total = sum(versions.values())
+    return {
+        "canonical_schema_version": "2.0-pressure-state",
+        "schema_counts": dict(versions.most_common()),
+        "total_pressure_states": total,
+        "noncanonical_pressure_states": noncanonical,
+        "consistent": total == 0 or noncanonical == 0,
+        "status": "CANONICAL" if total == 0 or noncanonical == 0 else "REJECTED_MIXED_OR_LEGACY_SCHEMA",
+    }
+
+
+def _accuracy_scope_gate(
+    deployment_counts: Counter[str],
+    *,
+    historical_cross_deployment_audit: bool,
+) -> dict[str, Any]:
+    known_deployments = [deployment for deployment in deployment_counts if deployment != "UNKNOWN"]
+    deployment_count = len(known_deployments)
+    mixed = deployment_count > 1
+    unknown_present = bool(deployment_counts.get("UNKNOWN"))
+    single_known_deployment = deployment_count == 1 and not unknown_present
+    allowed = single_known_deployment or historical_cross_deployment_audit
+    return {
+        "deployment_count": deployment_count,
+        "mixed_deployment": mixed,
+        "unknown_deployment_present": unknown_present,
+        "historical_cross_deployment_audit": historical_cross_deployment_audit,
+        "accuracy_computation_allowed": allowed,
+        "status": (
+            "HISTORICAL_CROSS_DEPLOYMENT_AUDIT"
+            if historical_cross_deployment_audit and not single_known_deployment
+            else "REJECTED_MIXED_DEPLOYMENT"
+            if mixed
+            else "REJECTED_UNKNOWN_DEPLOYMENT"
+            if unknown_present or deployment_count == 0
+            else "SINGLE_DEPLOYMENT_VALID"
+        ),
+        "reason": (
+            None
+            if allowed
+            else "Accuracy evidence requires one deployment and one runtime configuration."
+        ),
     }
 
 

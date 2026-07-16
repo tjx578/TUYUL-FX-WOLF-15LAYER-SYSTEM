@@ -55,12 +55,17 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
+
+from analysis.candle_freshness import candle_age_seconds, parse_candle_timestamp
 
 __all__ = [
     "HTFStructureSnapshot",
     "HTFStructureSnapshotResolver",
     "build_htf_structure_snapshot_event",
+    "classify_daily_bias_v2",
+    "classify_liquidity_resolution",
     "emit_htf_structure_snapshot",
     "resolve_htf_structure_snapshot",
 ]
@@ -70,7 +75,7 @@ __all__ = [
 # ═══════════════════════════════════════════════════════════════════════════
 
 EVENT_NAME = "htf_structure_snapshot_json"
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "2.0"
 LOG_PREFIX = "[HTFStructureSnapshot]"
 
 # Env flag — default ON.  HTF structure is now a first-class map/context feed;
@@ -88,6 +93,10 @@ _SWING_WINDOW = 2
 # Minimum bars required for a timeframe to be considered analysable.
 _MIN_DAILY_BARS = 10
 _MIN_H4_BARS = 12
+_DAILY_BIAS_RULE_VERSION = 2
+_LIQUIDITY_RESOLUTION_RULE_VERSION = 1
+_DEFAULT_DAILY_BIAS_MAX_AGE_SECONDS = 259_200.0
+_DEFAULT_LIQUIDITY_MAX_AGE_SECONDS = 21_600.0
 
 # Premium/discount equilibrium band (fraction of dealing range around 0.5).
 # pct >= 0.5 + band -> PREMIUM ; pct <= 0.5 - band -> DISCOUNT ; else EQUILIBRIUM.
@@ -109,6 +118,7 @@ BIAS_BEARISH = "BEARISH"
 BIAS_RANGE = "RANGE"
 BIAS_TRANSITION = "TRANSITION"
 BIAS_NO_BIAS = "NO_BIAS"
+BIAS_STALE = "STALE"
 
 H4_BULLISH_IMPULSE = "BULLISH_IMPULSE"
 H4_BULLISH_PULLBACK = "BULLISH_PULLBACK"
@@ -127,6 +137,17 @@ LOC_UNKNOWN = "UNKNOWN"
 LIQ_BUY_SIDE = "BUY_SIDE_LIQUIDITY_TEST"
 LIQ_SELL_SIDE = "SELL_SIDE_LIQUIDITY_TEST"
 LIQ_NONE = "NONE"
+
+LIQ_BUY_APPROACHING = "BUY_SIDE_APPROACHING"
+LIQ_BUY_TESTING = "BUY_SIDE_TESTING"
+LIQ_BUY_ACCEPTED = "BUY_SIDE_ACCEPTED"
+LIQ_BUY_REJECTED = "BUY_SIDE_REJECTED"
+LIQ_BUY_EXPIRED = "BUY_SIDE_EXPIRED"
+LIQ_SELL_APPROACHING = "SELL_SIDE_APPROACHING"
+LIQ_SELL_TESTING = "SELL_SIDE_TESTING"
+LIQ_SELL_ACCEPTED = "SELL_SIDE_ACCEPTED"
+LIQ_SELL_REJECTED = "SELL_SIDE_REJECTED"
+LIQ_SELL_EXPIRED = "SELL_SIDE_EXPIRED"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -236,6 +257,53 @@ def classify_bias(swing_highs: list[Swing], swing_lows: list[Swing]) -> str:
         return BIAS_TRANSITION
     # LH+HL (contraction) and all equal-price ties fall through to RANGE.
     return BIAS_RANGE
+
+
+def _ema(values: list[float], period: int) -> list[float]:
+    if not values or period <= 0:
+        return []
+    alpha = 2.0 / (period + 1.0)
+    result = [values[0]]
+    for value in values[1:]:
+        result.append((value * alpha) + (result[-1] * (1.0 - alpha)))
+    return result
+
+
+def classify_daily_bias_v2(candles: list[dict[str, Any]], window: int = _SWING_WINDOW) -> str:
+    """Resolve Daily bias from closed-bar swing structure plus EMA20 momentum.
+
+    The legacy two-swing classifier is retained as the structural authority.
+    EMA20 position and five-bar slope only resolve the legacy ``RANGE`` /
+    ``NO_BIAS`` blind spot, or downgrade a direct swing/momentum conflict to
+    ``TRANSITION``.  It never creates execution authority.
+    """
+
+    closed = [candle for candle in candles if not _is_explicitly_forming(candle)]
+    swing_bias = classify_bias(find_swing_highs(closed, window), find_swing_lows(closed, window))
+    closes = [value for candle in closed if (value := _candle_close(candle)) is not None]
+    if len(closes) < 20:
+        return swing_bias
+
+    ema20 = _ema(closes, 20)
+    slope_lookback = min(5, len(ema20) - 1)
+    if slope_lookback <= 0:
+        return swing_bias
+    slope = ema20[-1] - ema20[-1 - slope_lookback]
+    atr = _average_true_range(closed) or 0.0
+    material_move = max(atr * 0.05, abs(ema20[-1]) * 1e-6)
+    momentum_bias = BIAS_RANGE
+    if closes[-1] > ema20[-1] and slope > material_move:
+        momentum_bias = BIAS_BULLISH
+    elif closes[-1] < ema20[-1] and slope < -material_move:
+        momentum_bias = BIAS_BEARISH
+
+    if swing_bias in {BIAS_RANGE, BIAS_NO_BIAS} and momentum_bias in {BIAS_BULLISH, BIAS_BEARISH}:
+        return momentum_bias
+    if swing_bias == BIAS_BULLISH and momentum_bias == BIAS_BEARISH:
+        return BIAS_TRANSITION
+    if swing_bias == BIAS_BEARISH and momentum_bias == BIAS_BULLISH:
+        return BIAS_TRANSITION
+    return swing_bias
 
 
 def _detect_choch(bias: str, close: float | None, swing_highs: list[Swing], swing_lows: list[Swing]) -> bool:
@@ -357,6 +425,62 @@ def classify_liquidity_context(close: float | None, daily_range: tuple[float, fl
     return LIQ_NONE
 
 
+def classify_liquidity_resolution(
+    candle: dict[str, Any] | None,
+    daily_range: tuple[float, float] | None,
+    *,
+    atr: float | None = None,
+) -> str:
+    """Classify an auditable buy/sell-side liquidity lifecycle state.
+
+    Acceptance requires a closed price beyond the prior range. Rejection
+    requires a wick through the range followed by a close back inside. Merely
+    approaching or touching an extreme remains unresolved telemetry.
+    """
+
+    if not isinstance(candle, dict) or daily_range is None:
+        return LIQ_NONE
+    close = _candle_close(candle)
+    high = _candle_high(candle)
+    low = _candle_low(candle)
+    if close is None or high is None or low is None:
+        return LIQ_NONE
+    range_high, range_low = daily_range
+    span = range_high - range_low
+    if span <= 0:
+        return LIQ_NONE
+
+    break_buffer = max(span * 0.0025, float(atr or 0.0) * 0.10)
+    test_tolerance = max(span * 0.03, float(atr or 0.0) * 0.25)
+    ratio = location_pct(close, range_high, range_low)
+
+    if close > range_high + break_buffer:
+        return LIQ_BUY_ACCEPTED
+    if high > range_high and close < range_high - break_buffer:
+        return LIQ_BUY_REJECTED
+    if close < range_low - break_buffer:
+        return LIQ_SELL_ACCEPTED
+    if low < range_low and close > range_low + break_buffer:
+        return LIQ_SELL_REJECTED
+    if high >= range_high - test_tolerance or ratio >= 0.88:
+        return LIQ_BUY_TESTING
+    if low <= range_low + test_tolerance or ratio <= 0.12:
+        return LIQ_SELL_TESTING
+    if ratio >= 0.72:
+        return LIQ_BUY_APPROACHING
+    if ratio <= 0.28:
+        return LIQ_SELL_APPROACHING
+    return LIQ_NONE
+
+
+def _liquidity_context_from_resolution(resolution: str) -> str:
+    if resolution.startswith("BUY_SIDE_"):
+        return LIQ_BUY_SIDE
+    if resolution.startswith("SELL_SIDE_"):
+        return LIQ_SELL_SIDE
+    return LIQ_NONE
+
+
 def _zone_pad(daily_range: tuple[float, float] | None) -> float | None:
     if daily_range is None:
         return None
@@ -395,6 +519,52 @@ def _is_explicitly_forming(candle: dict[str, Any]) -> bool:
         if value is False or str(value).strip().lower() in {"false", "0", "no", "open", "forming"}:
             return True
     return False
+
+
+def _closed_candles(candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [candle for candle in candles if not _is_explicitly_forming(candle)]
+
+
+def _candle_source_time(candle: dict[str, Any] | None) -> str | None:
+    if not isinstance(candle, dict):
+        return None
+    raw = (
+        candle.get("timestamp")
+        or candle.get("time")
+        or candle.get("datetime")
+        or candle.get("open_time")
+        or candle.get("close_time")
+    )
+    parsed = parse_candle_timestamp(raw)
+    return None if parsed is None else parsed.isoformat()
+
+
+def _env_max_age(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _freshness_status(age_seconds: float | None, max_age_seconds: float) -> str:
+    if age_seconds is None:
+        return "UNKNOWN"
+    return "STALE" if age_seconds > max_age_seconds else "FRESH"
+
+
+def _pip_size(symbol: str) -> float:
+    symbol_key = str(symbol or "").upper()
+    if symbol_key.endswith("JPY"):
+        return 0.01
+    if symbol_key in {"XAUUSD", "XAGUSD"}:
+        return 0.01
+    return 0.0001
+
+
+def _distance_pips(left: float | None, right: float | None, symbol: str) -> float | None:
+    if left is None or right is None:
+        return None
+    return round(abs(float(left) - float(right)) / _pip_size(symbol), 3)
 
 
 def _h4_supply_zone(swing_high: float | None, daily_range: tuple[float, float] | None) -> list[float] | None:
@@ -493,6 +663,29 @@ class HTFStructureSnapshot:
     h4_demand_zone: list[float] | None = None
     daily_fib_zone: list[float] | None = None
     daily_fib_levels: dict[str, float] | None = None
+    daily_bias_unstaled: str | None = None
+    daily_bias_source: str = "D1_CLOSED_CANDLE_SWING_EMA20"
+    daily_bias_source_candle: str | None = None
+    daily_bias_snapshot_time: str | None = None
+    daily_bias_age_seconds: float | None = None
+    daily_bias_freshness_status: str = "UNKNOWN"
+    daily_bias_max_age_seconds: float = _DEFAULT_DAILY_BIAS_MAX_AGE_SECONDS
+    daily_bias_rule_version: int = _DAILY_BIAS_RULE_VERSION
+    daily_bias_advisory_only: bool = True
+    daily_bias_execution_impact: bool = False
+    location_reference_price: float | None = None
+    location_reference_time: str | None = None
+    location_reference_source: str | None = None
+    location_reference_age_seconds: float | None = None
+    location_ratio: float | None = None
+    dealing_range_source: str | None = None
+    distance_to_range_high_pips: float | None = None
+    distance_to_range_low_pips: float | None = None
+    liquidity_resolution: str = LIQ_NONE
+    liquidity_resolution_time: str | None = None
+    liquidity_resolution_age_seconds: float | None = None
+    liquidity_resolution_freshness_status: str = "UNKNOWN"
+    liquidity_resolution_rule_version: int = _LIQUIDITY_RESOLUTION_RULE_VERSION
     # Hard invariant — H1 never authorises execution.
     valid_for_execution: bool = False
     is_final_signal: bool = False
@@ -521,6 +714,29 @@ class HTFStructureSnapshot:
             "h4_demand_zone": self.h4_demand_zone,
             "daily_fib_zone": self.daily_fib_zone,
             "daily_fib_levels": self.daily_fib_levels,
+            "daily_bias_unstaled": self.daily_bias_unstaled,
+            "daily_bias_source": self.daily_bias_source,
+            "daily_bias_source_candle": self.daily_bias_source_candle,
+            "daily_bias_snapshot_time": self.daily_bias_snapshot_time,
+            "daily_bias_age_seconds": self.daily_bias_age_seconds,
+            "daily_bias_freshness_status": self.daily_bias_freshness_status,
+            "daily_bias_max_age_seconds": self.daily_bias_max_age_seconds,
+            "daily_bias_rule_version": self.daily_bias_rule_version,
+            "daily_bias_advisory_only": True,
+            "daily_bias_execution_impact": False,
+            "location_reference_price": self.location_reference_price,
+            "location_reference_time": self.location_reference_time,
+            "location_reference_source": self.location_reference_source,
+            "location_reference_age_seconds": self.location_reference_age_seconds,
+            "location_ratio": self.location_ratio,
+            "dealing_range_source": self.dealing_range_source,
+            "distance_to_range_high_pips": self.distance_to_range_high_pips,
+            "distance_to_range_low_pips": self.distance_to_range_low_pips,
+            "liquidity_resolution": self.liquidity_resolution,
+            "liquidity_resolution_time": self.liquidity_resolution_time,
+            "liquidity_resolution_age_seconds": self.liquidity_resolution_age_seconds,
+            "liquidity_resolution_freshness_status": self.liquidity_resolution_freshness_status,
+            "liquidity_resolution_rule_version": self.liquidity_resolution_rule_version,
             "reason": self.reason,
             # Safety lock — emitted explicitly so consumers can never misread it.
             "valid_for_execution": False,
@@ -544,6 +760,12 @@ class HTFStructureSnapshot:
             self.daily_atr,
             self.daily_range_high,
             self.daily_range_low,
+            self.daily_bias_source_candle,
+            self.daily_bias_freshness_status,
+            self.location_reference_price,
+            self.location_reference_time,
+            self.liquidity_resolution,
+            self.liquidity_resolution_time,
         )
 
 
@@ -566,6 +788,8 @@ class HTFStructureSnapshotResolver:
     swing_window: int = _SWING_WINDOW
     daily_lookback: int = _DAILY_LOOKBACK
     h4_lookback: int = _H4_LOOKBACK
+    daily_bias_max_age_seconds: float | None = None
+    liquidity_max_age_seconds: float | None = None
 
     def _bind_source(self) -> Any:
         if self.candle_source is not None:
@@ -599,7 +823,14 @@ class HTFStructureSnapshotResolver:
         sym = str(symbol or "").upper()
         daily = self._history(sym, "D1", self.daily_lookback)
         h4 = self._history(sym, "H4", self.h4_lookback)
-        return build_snapshot(sym, daily, h4, swing_window=self.swing_window)
+        return build_snapshot(
+            sym,
+            daily,
+            h4,
+            swing_window=self.swing_window,
+            daily_bias_max_age_seconds=self.daily_bias_max_age_seconds,
+            liquidity_max_age_seconds=self.liquidity_max_age_seconds,
+        )
 
 
 def build_snapshot(
@@ -608,10 +839,31 @@ def build_snapshot(
     h4: list[dict[str, Any]],
     *,
     swing_window: int = _SWING_WINDOW,
+    now: datetime | None = None,
+    daily_bias_max_age_seconds: float | None = None,
+    liquidity_max_age_seconds: float | None = None,
 ) -> HTFStructureSnapshot:
     """Pure snapshot builder over already-fetched Daily + H4 candle lists."""
-    daily_bars = len(daily)
-    h4_bars = len(h4)
+    now_utc = (now or datetime.now(UTC)).astimezone(UTC)
+    daily_closed = _closed_candles(daily)
+    h4_closed = _closed_candles(h4)
+    daily_bars = len(daily_closed)
+    h4_bars = len(h4_closed)
+    daily_max_age = (
+        _env_max_age("HTF_DAILY_BIAS_MAX_AGE_SECONDS", _DEFAULT_DAILY_BIAS_MAX_AGE_SECONDS)
+        if daily_bias_max_age_seconds is None
+        else max(0.0, float(daily_bias_max_age_seconds))
+    )
+    liquidity_max_age = (
+        _env_max_age("HTF_LIQUIDITY_RESOLUTION_MAX_AGE_SECONDS", _DEFAULT_LIQUIDITY_MAX_AGE_SECONDS)
+        if liquidity_max_age_seconds is None
+        else max(0.0, float(liquidity_max_age_seconds))
+    )
+    snapshot_time = now_utc.isoformat()
+    daily_source_candle = daily_closed[-1] if daily_closed else None
+    daily_source_time = _candle_source_time(daily_source_candle)
+    daily_age = None if daily_source_candle is None else candle_age_seconds(daily_source_candle, now_utc)
+    daily_freshness = _freshness_status(daily_age, daily_max_age)
 
     daily_ok = daily_bars >= _MIN_DAILY_BARS
     h4_ok = h4_bars >= _MIN_H4_BARS
@@ -631,33 +883,63 @@ def build_snapshot(
             reason=f"insufficient_daily_bars:{daily_bars}<{_MIN_DAILY_BARS}",
             daily_bars=daily_bars,
             h4_bars=h4_bars,
+            daily_bias_unstaled=BIAS_NO_BIAS,
+            daily_bias_source_candle=daily_source_time,
+            daily_bias_snapshot_time=snapshot_time,
+            daily_bias_age_seconds=None if daily_age is None else round(daily_age, 3),
+            daily_bias_freshness_status=daily_freshness,
+            daily_bias_max_age_seconds=daily_max_age,
         )
 
-    daily_highs = find_swing_highs(daily, swing_window)
-    daily_lows = find_swing_lows(daily, swing_window)
-    daily_close = _candle_close(daily[-1])
+    daily_highs = find_swing_highs(daily_closed, swing_window)
+    daily_lows = find_swing_lows(daily_closed, swing_window)
+    daily_close = _candle_close(daily_closed[-1])
 
-    daily_bias = classify_bias(daily_highs, daily_lows)
-    if daily_bias in (BIAS_BULLISH, BIAS_BEARISH) and _detect_choch(
-        daily_bias, daily_close, daily_highs, daily_lows
+    daily_bias_unstaled = classify_daily_bias_v2(daily_closed, swing_window)
+    if daily_bias_unstaled in (BIAS_BULLISH, BIAS_BEARISH) and _detect_choch(
+        daily_bias_unstaled, daily_close, daily_highs, daily_lows
     ):
-        daily_bias = BIAS_TRANSITION
+        daily_bias_unstaled = BIAS_TRANSITION
+    daily_bias = BIAS_STALE if daily_freshness == "STALE" else daily_bias_unstaled
 
-    h4_structure = classify_h4_structure(h4, swing_window) if h4_ok else H4_NO_STRUCTURE
+    h4_structure = classify_h4_structure(h4_closed, swing_window) if h4_ok else H4_NO_STRUCTURE
 
-    d_range = dealing_range(daily, _RANGE_LOOKBACK_DAILY)
-    h4_highs = find_swing_highs(h4, swing_window) if h4_ok else []
-    h4_lows = find_swing_lows(h4, swing_window) if h4_ok else []
+    d_range = dealing_range(daily_closed, _RANGE_LOOKBACK_DAILY)
+    h4_highs = find_swing_highs(h4_closed, swing_window) if h4_ok else []
+    h4_lows = find_swing_lows(h4_closed, swing_window) if h4_ok else []
     h4_swing_high = h4_highs[-1].price if h4_highs else None
     h4_swing_low = h4_lows[-1].price if h4_lows else None
     daily_range_high = d_range[0] if d_range else None
     daily_range_low = d_range[1] if d_range else None
 
-    price_location = classify_price_location(daily_close, d_range, h4_swing_high, h4_swing_low)
-    liquidity_context = classify_liquidity_context(daily_close, d_range)
+    location_candle = h4_closed[-1] if h4_ok else daily_closed[-1]
+    location_price = _candle_close(location_candle)
+    location_time = _candle_source_time(location_candle)
+    location_age = candle_age_seconds(location_candle, now_utc)
+    location_source = "H4_CLOSED_CANDLE" if h4_ok else "D1_CLOSED_CANDLE"
+    price_location = classify_price_location(location_price, d_range, h4_swing_high, h4_swing_low)
+    location_ratio_value = (
+        None if location_price is None or d_range is None else round(location_pct(location_price, *d_range), 6)
+    )
+
+    liquidity_resolution = classify_liquidity_resolution(
+        location_candle,
+        d_range,
+        atr=_average_true_range(h4_closed),
+    )
+    liquidity_freshness = _freshness_status(location_age, liquidity_max_age)
+    if liquidity_freshness == "STALE":
+        if liquidity_resolution.startswith("BUY_SIDE_"):
+            liquidity_resolution = LIQ_BUY_EXPIRED
+        elif liquidity_resolution.startswith("SELL_SIDE_"):
+            liquidity_resolution = LIQ_SELL_EXPIRED
+    liquidity_context = _liquidity_context_from_resolution(liquidity_resolution)
     allowed, blocked = resolve_playbook(daily_bias, price_location)
 
-    reason = "htf_structure_snapshot" if data_sufficient else f"degraded_h4_bars:{h4_bars}<{_MIN_H4_BARS}"
+    if daily_freshness == "STALE":
+        reason = "daily_bias_stale_advisory_only"
+    else:
+        reason = "htf_structure_snapshot" if data_sufficient else f"degraded_h4_bars:{h4_bars}<{_MIN_H4_BARS}"
 
     return HTFStructureSnapshot(
         symbol=symbol,
@@ -673,14 +955,40 @@ def build_snapshot(
         h4_bars=h4_bars,
         h4_swing_high=h4_swing_high,
         h4_swing_low=h4_swing_low,
-        h4_atr=_average_true_range(h4),
-        daily_atr=_average_true_range(daily),
+        h4_atr=_average_true_range(h4_closed),
+        daily_atr=_average_true_range(daily_closed),
         daily_range_high=daily_range_high,
         daily_range_low=daily_range_low,
         h4_supply_zone=_h4_supply_zone(h4_swing_high, d_range),
         h4_demand_zone=_h4_demand_zone(h4_swing_low, d_range),
         daily_fib_zone=_daily_fib_zone(d_range),
         daily_fib_levels=_daily_fib_levels(d_range),
+        daily_bias_unstaled=daily_bias_unstaled,
+        daily_bias_source_candle=daily_source_time,
+        daily_bias_snapshot_time=snapshot_time,
+        daily_bias_age_seconds=None if daily_age is None else round(daily_age, 3),
+        daily_bias_freshness_status=daily_freshness,
+        daily_bias_max_age_seconds=daily_max_age,
+        location_reference_price=location_price,
+        location_reference_time=location_time,
+        location_reference_source=location_source,
+        location_reference_age_seconds=None if location_age is None else round(location_age, 3),
+        location_ratio=location_ratio_value,
+        dealing_range_source=f"D1_{_RANGE_LOOKBACK_DAILY}D_CLOSED",
+        distance_to_range_high_pips=_distance_pips(
+            location_price,
+            daily_range_high,
+            symbol,
+        ),
+        distance_to_range_low_pips=_distance_pips(
+            location_price,
+            daily_range_low,
+            symbol,
+        ),
+        liquidity_resolution=liquidity_resolution,
+        liquidity_resolution_time=location_time,
+        liquidity_resolution_age_seconds=None if location_age is None else round(location_age, 3),
+        liquidity_resolution_freshness_status=liquidity_freshness,
     )
 
 
@@ -695,6 +1003,7 @@ def build_htf_structure_snapshot_event(snapshot: HTFStructureSnapshot | dict[str
         return snapshot.to_dict()
     payload = dict(snapshot)
     payload.setdefault("event", EVENT_NAME)
+    payload["schema_version"] = SCHEMA_VERSION
     # Re-assert the safety lock even if a caller handed us a loose dict.
     payload["valid_for_execution"] = False
     payload["is_final_signal"] = False

@@ -18,6 +18,7 @@ from analysis.signal_throttle_log_analyzer import (
     build_pressure_blocks,
     build_pure_pressure_blocks,
     build_scanner_cycle_pressure_blocks,
+    build_symbol_activity,
     compute_currency_pressure,
     parse_engine_log_event,
     parse_signal_throttle_rows,
@@ -599,6 +600,22 @@ def test_analyzer_pure_clean_block_ignores_large_same_pair_gap():
     assert report["pure_active_candidate"]["valid_for_execution"] is False
     assert report["pure_top_blocks"][0]["source_pressure_block_id"].startswith("USDJPY_")
     assert report["signal_throttle_fusion_v3"]["valid_for_execution"] is False
+
+
+def test_symbol_activity_counts_pair_rotation_interruptions():
+    events = [
+        _event(0, "USDJPY", event_type="ALLOWED"),
+        _event(60, "USDJPY", event_type="ALLOWED"),
+        _event(120, "EURUSD", event_type="ALLOWED"),
+        _event(180, "USDJPY", event_type="ALLOWED"),
+    ]
+
+    activity = build_symbol_activity(events, max_gap_seconds=None)
+
+    assert activity["USDJPY"]["latest_block_events"] == 1
+    assert activity["USDJPY"]["pair_interruption_count"] == 1
+    assert activity["USDJPY"]["pair_interruption_count_scope"] == "ANALYZER_RETENTION_WINDOW"
+    assert activity["EURUSD"]["pair_interruption_count"] == 0
 
 
 def test_v1_clean_block_ledger_is_duration_based_source_of_truth():

@@ -113,6 +113,9 @@ def test_allowed_quorum_uses_symbol_market_context_price_not_execution_fallback(
     assert payload["signal_valid_price"] == 1.15627
     assert payload["entry_reference_price"] == 1.15627
     assert payload["entry_zone"] == [1.15627, 1.15627]
+    assert payload["reference_price"] == 1.15627
+    assert payload["reference_price_role"] == "REFERENCE_ONLY_NOT_EXECUTABLE"
+    assert payload["reference_price_status"] == "AVAILABLE"
 
 
 def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
@@ -150,6 +153,11 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
     assert payload["price_freshness_status"] == "STALE_PRESERVED"
     assert payload["reference_price_is_live"] is False
     assert payload["valid_for_execution"] is False
+    assert payload["observed_price"] == 1.1501
+    assert payload["observed_price_status"] == "STALE"
+    assert payload["reference_price"] == 1.1501
+    assert payload["reference_price_status"] == "STALE"
+    assert payload["price_lineage_version"] == 2
 
 
 def test_allowed_quorum_m15_reference_price_is_not_labeled_live() -> None:
@@ -178,6 +186,9 @@ def test_allowed_quorum_m15_reference_price_is_not_labeled_live() -> None:
     assert payload["price_age_seconds"] is None
     assert payload["price_freshness_status"] == "NO_PRODUCER"
     assert payload["reference_price_is_live"] is False
+    assert payload["observed_price"] == 1.15627
+    assert payload["observed_price_source"] == "M15_CLOSE"
+    assert payload["reference_price_status"] == "STALE"
 
 
 def test_allowed_quorum_h1_reference_price_gets_candle_lineage() -> None:

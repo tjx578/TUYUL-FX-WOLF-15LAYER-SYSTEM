@@ -1471,10 +1471,13 @@ def build_symbol_activity(
         latest_event_by_symbol[event.symbol.upper()] = event
 
     latest_block_by_symbol: dict[str, PressureBlock] = {}
+    block_count_by_symbol: Counter[str] = Counter()
     for block in blocks:
-        latest = latest_block_by_symbol.get(block.symbol.upper())
+        symbol_key = block.symbol.upper()
+        block_count_by_symbol[symbol_key] += 1
+        latest = latest_block_by_symbol.get(symbol_key)
         if latest is None or block.end >= latest.end:
-            latest_block_by_symbol[block.symbol.upper()] = block
+            latest_block_by_symbol[symbol_key] = block
 
     activity: dict[str, dict[str, Any]] = {}
     for symbol, event in latest_event_by_symbol.items():
@@ -1488,10 +1491,13 @@ def build_symbol_activity(
             "latest_block_start_utc": None if block is None else block.start.isoformat(),
             "latest_block_end_utc": None if block is None else block.end.isoformat(),
             "latest_block_duration_seconds": None if block is None else block.duration_seconds,
+            "latest_block_events": None if block is None else block.events,
             "latest_block_effective_ticks": None if block is None else block.effective_ticks,
             "latest_block_effective_density_per_minute": (
                 None if block is None else block.effective_density_per_minute
             ),
+            "pair_interruption_count": max(0, block_count_by_symbol[symbol] - 1),
+            "pair_interruption_count_scope": "ANALYZER_RETENTION_WINDOW",
         }
     return activity
 
