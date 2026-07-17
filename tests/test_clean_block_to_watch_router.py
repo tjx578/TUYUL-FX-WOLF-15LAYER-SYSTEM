@@ -223,6 +223,39 @@ def test_mature_scanner_cycle_clean_block_becomes_advisory_watch_with_market_con
     assert payload["is_final_signal"] is False
 
 
+def test_scanner_advisory_refusal_records_min_events_reason(monkeypatch):
+    # A mature scanner-memory block with context that is refused advisory
+    # promotion purely on the min-events floor must say so explicitly, instead
+    # of collapsing into a bare PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY.
+    monkeypatch.setenv("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_MIN_EVENTS", "999")
+
+    route = route_clean_block_to_watch(_scanner_candidate(), market_context=_market())
+
+    assert route.event == "signal_throttle_clean_block_radar"
+    assert route.emit_as_watch is False
+    payload = route.payload
+    assert payload["status"] == "CLEAN_BLOCK_SCANNER_MEMORY_RADAR"
+    assert "PRIMARY_WATCH_REQUIRES_PAIR_ROTATION_AUTHORITY" in payload["blocked_by"]
+    assert payload["advisory_watch_refused_reason"] == "ADVISORY_BELOW_MIN_EVENTS_999"
+
+
+def test_scanner_advisory_disabled_records_reason(monkeypatch):
+    monkeypatch.setenv("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_WATCH_ENABLED", "false")
+
+    route = route_clean_block_to_watch(_scanner_candidate(), market_context=_market())
+
+    assert route.event == "signal_throttle_clean_block_radar"
+    assert route.payload["advisory_watch_refused_reason"] == "ADVISORY_WATCH_DISABLED"
+
+
+def test_scanner_advisory_granted_leaves_no_refusal_reason():
+    route = route_clean_block_to_watch(_scanner_candidate(), market_context=_market())
+
+    # Promotion succeeded, so there is no refusal to report on the watch payload.
+    assert route.event == "signal_watch_json"
+    assert "advisory_watch_refused_reason" not in route.payload
+
+
 def test_scanner_cycle_radar_shape_can_promote_when_reprocessed_with_market_context():
     candidate = {
         "symbol": "CHFJPY",
