@@ -79,7 +79,7 @@ def route_clean_block_to_watch(
     if direction not in {"BUY", "SELL"}:
         blocked_by.append("CLEAN_BLOCK_DIRECTION_MISSING")
     authority = _primary_watch_authority(block)
-    scanner_advisory_watch = _scanner_cycle_advisory_watch_allowed(
+    scanner_advisory_watch, advisory_refused_reason = _scanner_cycle_advisory_watch_decision(
         block,
         lineage=lineage,
         authority=authority,
@@ -106,6 +106,7 @@ def route_clean_block_to_watch(
                     authority=authority,
                     market_context_applied=market_context is not None and signal_price is not None,
                     signal_price=signal_price,
+                    advisory_refused_reason=advisory_refused_reason,
                 ),
                 emit_as_watch=False,
                 diagnostic=True,
@@ -120,6 +121,7 @@ def route_clean_block_to_watch(
                 authority=authority,
                 market_context_applied=market_context is not None and signal_price is not None,
                 signal_price=signal_price,
+                advisory_refused_reason=advisory_refused_reason,
             ),
             emit_as_watch=False,
             diagnostic=True,
@@ -409,6 +411,7 @@ def _clean_block_radar_payload(
     authority: Mapping[str, Any],
     market_context_applied: bool,
     signal_price: float | None,
+    advisory_refused_reason: str | None = None,
 ) -> dict[str, Any]:
     authority_blocked = bool(set(blocked_by) & _PRIMARY_AUTHORITY_BLOCKERS)
     payload = {
@@ -441,6 +444,8 @@ def _clean_block_radar_payload(
     if signal_price is not None:
         payload["signal_valid_price"] = signal_price
         payload["entry_reference_price"] = signal_price
+    if authority_blocked and advisory_refused_reason:
+        payload["advisory_watch_refused_reason"] = advisory_refused_reason
     payload.update(_promotion_authority_fields(authority))
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
@@ -539,6 +544,7 @@ def _diagnostic_payload(
     authority: Mapping[str, Any],
     market_context_applied: bool = False,
     signal_price: float | None = None,
+    advisory_refused_reason: str | None = None,
 ) -> dict[str, Any]:
     payload = {
         "event": "signal_watch_promotion_diagnostic",
@@ -561,6 +567,8 @@ def _diagnostic_payload(
     if signal_price is not None:
         payload["signal_valid_price"] = signal_price
         payload["entry_reference_price"] = signal_price
+    if set(blocked_by) & _PRIMARY_AUTHORITY_BLOCKERS and advisory_refused_reason:
+        payload["advisory_watch_refused_reason"] = advisory_refused_reason
     payload.update(_promotion_authority_fields(authority))
     payload.update(_pressure_root_fields(candidate))
     payload.update(lineage)
@@ -624,16 +632,40 @@ def _scanner_cycle_advisory_watch_allowed(
     authority: Mapping[str, Any],
     clean_block_seconds: int,
 ) -> bool:
+    allowed, _reason = _scanner_cycle_advisory_watch_decision(
+        candidate,
+        lineage=lineage,
+        authority=authority,
+        clean_block_seconds=clean_block_seconds,
+    )
+    return allowed
+
+
+def _scanner_cycle_advisory_watch_decision(
+    candidate: Mapping[str, Any],
+    *,
+    lineage: Mapping[str, Any],
+    authority: Mapping[str, Any],
+    clean_block_seconds: int,
+) -> tuple[bool, str | None]:
+    """Decide scanner-cycle advisory-watch eligibility and expose the refusal reason.
+
+    The reason lets radar/diagnostic payloads state *why* a mature scanner-memory
+    block was not promoted to an advisory Watch, so a min-events/min-seconds
+    refusal is no longer indistinguishable from a plain pair-rotation authority
+    block. ``None`` means the candidate never entered the advisory lane (primary
+    path or non-scanner block), so there is nothing to report.
+    """
     if not _env_bool("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_WATCH_ENABLED", True):
-        return False
+        return False, "ADVISORY_WATCH_DISABLED"
     if authority.get("eligible_for_primary_watch") is True:
-        return False
+        return False, None
     if authority.get("scanner_cycle_memory_only") is not True:
-        return False
+        return False, None
     if lineage.get("clean_block_valid") is not True:
-        return False
+        return False, "CLEAN_BLOCK_NOT_VALID"
     if _raw_pressure_direction(candidate) not in {"BUY", "SELL"}:
-        return False
+        return False, "ADVISORY_DIRECTION_UNRESOLVED"
 
     min_seconds = max(
         float(clean_block_seconds),
@@ -645,7 +677,7 @@ def _scanner_cycle_advisory_watch_allowed(
         candidate.get("duration_seconds"),
     )
     if duration is None or duration < min_seconds:
-        return False
+        return False, f"ADVISORY_BELOW_MIN_SECONDS_{int(min_seconds)}"
 
     min_events = max(1, int(_env_float("SIGNAL_THROTTLE_SCANNER_MEMORY_ADVISORY_MIN_EVENTS", 12.0)))
     events = _first_number(
@@ -654,7 +686,9 @@ def _scanner_cycle_advisory_watch_allowed(
         candidate.get("raw_signal_throttle_event_count"),
         candidate.get("events"),
     )
-    return events is not None and events >= min_events
+    if events is None or events < min_events:
+        return False, f"ADVISORY_BELOW_MIN_EVENTS_{min_events}"
+    return True, "ADVISORY_WATCH_GRANTED"
 
 
 def _promotion_authority_fields(authority: Mapping[str, Any]) -> dict[str, Any]:
