@@ -2104,3 +2104,43 @@ def test_pipeline_logs_block_finalizer_final_as_signal_json(caplog):
     assert report["signal_block_finalizer_updates"][0]["terminal_required"] is True
     assert report["signal_block_finalizer_updates"][0]["terminal_guarantee"] == "SIGNAL_BLOCK_FINALIZER"
     assert finalizer.tracked[0]["status"] == "SELL_TIMING_VALID"
+
+
+def test_idle_clean_block_promotion_flag_gates_and_rate_limits(monkeypatch):
+    import types
+
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    calls = {"routes": 0, "snapshots": 0}
+
+    def _contexts(**_kwargs):
+        return {}
+
+    def _snapshot(**_kwargs):
+        calls["snapshots"] += 1
+        return {"clean_block_watch_entries": []}
+
+    def _hydrate(**_kwargs):
+        return {"snapshot_rebuild_required": False}
+
+    def _routes(**_kwargs):
+        calls["routes"] += 1
+
+    cast(Any, pipeline)._signal_throttle_market_contexts = _contexts
+    cast(Any, pipeline)._signal_throttle_live_analyzer = types.SimpleNamespace(snapshot=_snapshot)
+    cast(Any, pipeline)._hydrate_signal_throttle_candidate_market_contexts = _hydrate
+    cast(Any, pipeline)._apply_clean_block_watch_routes = _routes
+
+    kwargs = {"symbol": "EURUSD", "synthesis": {}, "l12_verdict": {"verdict": "HOLD"}}
+
+    monkeypatch.delenv("SIGNAL_WATCH_IDLE_PROMOTION_ENABLED", raising=False)
+    pipeline._promote_idle_clean_block_watches(**kwargs)
+    assert calls == {"routes": 0, "snapshots": 0}
+
+    monkeypatch.setenv("SIGNAL_WATCH_IDLE_PROMOTION_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_WATCH_IDLE_PROMOTION_INTERVAL_SECONDS", "60")
+    pipeline._promote_idle_clean_block_watches(**kwargs)
+    assert calls["routes"] == 1
+    assert calls["snapshots"] == 1
+
+    pipeline._promote_idle_clean_block_watches(**kwargs)
+    assert calls["routes"] == 1
