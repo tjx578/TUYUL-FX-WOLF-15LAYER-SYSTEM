@@ -7,7 +7,13 @@
       "Bash(python -m pytest tests/test_microboost_continuation_entry.py tests/test_signal_json_gate_adapter.py tests/test_signal_json_emitter.py tests/test_signal_block_finalizer.py tests/test_signal_throttle_canary_no_auto_promote.py -q --no-header -p no:cacheprovider)",
       "Bash(python -m pytest tests/test_signal_throttle.py tests/test_signal_throttle_intelligence.py tests/test_signal_throttle_log_analyzer.py tests/test_signal_throttle_canary_no_auto_promote.py tests/test_microboost_continuation_entry.py tests/test_microboost_counter_entry.py tests/test_microboost_direction_resolver.py tests/test_microboost_event_log.py tests/test_signal_json_emitter.py tests/test_signal_json_gate_adapter.py tests/test_signal_block_finalizer.py tests/test_pipeline_signal_json_continuation.py tests/test_signal_json_json_gate_adapter.py -q --no-header -p no:cacheprovider)",
       "Read(//c/Users/INTEL/Downloads/**)",
-      "Bash(python -)"
+      "Bash(python -)",
+      "Bash(python \"C:\\\\Users\\\\INTEL\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-INTEL-OneDrive-Documents-GitHub-TUYUL-FX-WOLF-15LAYER-SYSTEM\\\\0ca83496-ade9-4533-94ec-def68218e51c\\\\scratchpad\\\\repro_emit_gate.py\")",
+      "Bash(railway logs *)",
+      "Bash(railway service *)",
+      "Bash(railway list *)",
+      "Bash(railway variables *)",
+      "Bash(python -c ' *)"
     ]
   }
 }
