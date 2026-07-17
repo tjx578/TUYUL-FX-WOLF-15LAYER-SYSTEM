@@ -170,6 +170,12 @@ from pipeline.phases.vault import compute_vault_sync
 from pipeline.result import PipelineResult
 from pipeline.warmup_utils import normalize_warmup  # noqa: E402  # delayed import to avoid circular dependency
 
+# Per-cluster promotion bookkeeping dicts are keyed by identifiers that embed
+# timestamps (source_clean_block_id), so they grow without bound over a long
+# process lifetime.  Cap them and reset on overflow: the worst case is a single
+# stale terminal/dedup entry being re-evaluated once, which is harmless.
+_SIGNAL_WATCH_PROMOTION_STORE_MAX_ENTRIES = 4096
+
 
 class _SpreadQuality(TypedDict):
     spread_normal: bool | None
@@ -5322,6 +5328,8 @@ class WolfConstitutionalPipeline:
                 processed.append(diag)
                 continue
             if source_id:
+                if source_id not in store and len(store) >= _SIGNAL_WATCH_PROMOTION_STORE_MAX_ENTRIES:
+                    store.clear()
                 store[source_id] = key
             if not self._should_emit_promotion_diagnostic(diag, production_gate=production_gate):
                 diag["diagnostic_emit_result"] = False
@@ -5512,6 +5520,8 @@ class WolfConstitutionalPipeline:
                 diag.get("signal_family") or payload.get("signal_family"),
             )
         )
+        if replay_key not in replay_store and len(replay_store) >= _SIGNAL_WATCH_PROMOTION_STORE_MAX_ENTRIES:
+            replay_store.clear()
         replay_count = int(replay_store.get(replay_key, 0)) + 1
         replay_store[replay_key] = replay_count
         terminal_threshold = int(
@@ -7823,6 +7833,52 @@ class WolfConstitutionalPipeline:
             market_contexts=current_contexts,
         )
 
+    def _promote_idle_clean_block_watches(
+        self,
+        *,
+        symbol: str,
+        synthesis: dict[str, Any],
+        l12_verdict: dict[str, Any],
+    ) -> None:
+        """Route mature clean blocks to SignalWatch on non-EXECUTE cycles.
+
+        The main SignalThrottle snapshot path only runs on EXECUTE verdicts, so
+        clean-block Watch promotion is coupled to how often the current symbol
+        happens to produce an EXECUTE.  In a regime with valid clean blocks but no
+        EXECUTE verdicts, the ledger fills with promotable blocks that are never
+        routed.  This idle path decouples promotion cadence from EXECUTE cadence.
+
+        Observability-only: every routed payload is still gated by price
+        integrity and remains ``valid_for_execution=false`` /
+        ``final_direction=WAIT``.  Flag-guarded (default off) and rate-limited so
+        it cannot add per-tick overhead or emit noise.
+        """
+        if not self._parse_env_bool("SIGNAL_WATCH_IDLE_PROMOTION_ENABLED", False):
+            return
+        interval = self._parse_env_float("SIGNAL_WATCH_IDLE_PROMOTION_INTERVAL_SECONDS", 60.0)
+        now = time.time()
+        last_emit = getattr(self, "_last_idle_clean_block_promotion_ts", None)
+        if isinstance(last_emit, (int, float)) and now - float(last_emit) < interval:
+            return
+        self._last_idle_clean_block_promotion_ts = now
+
+        market_contexts = self._signal_throttle_market_contexts(
+            symbol=symbol,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+            source_verdict=l12_verdict.get("verdict"),
+        )
+        report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        hydration = self._hydrate_signal_throttle_candidate_market_contexts(
+            report=report,
+            market_contexts=market_contexts,
+            synthesis=synthesis,
+            l12_verdict=l12_verdict,
+        )
+        if hydration.get("snapshot_rebuild_required") is True:
+            report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        self._apply_clean_block_watch_routes(l12_verdict=l12_verdict, report=report)
+
     def _emit_microboost_intel_if_new(self, report: dict[str, Any]) -> None:
         event = build_microboost_intel_event(report)
         if event is not None and self._microboost_source_guard_blocks(report):
@@ -8863,6 +8919,11 @@ class WolfConstitutionalPipeline:
                 synthesis=synthesis,
                 l12_verdict=l12_verdict,
             )
+            self._promote_idle_clean_block_watches(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+            )
             self._emit_microboost_watch_shadow(
                 symbol=symbol,
                 synthesis=synthesis,
@@ -8899,6 +8960,11 @@ class WolfConstitutionalPipeline:
                 },
             )
             self._finalize_idle_signal_blocks(
+                symbol=symbol,
+                synthesis=synthesis,
+                l12_verdict=l12_verdict,
+            )
+            self._promote_idle_clean_block_watches(
                 symbol=symbol,
                 synthesis=synthesis,
                 l12_verdict=l12_verdict,
