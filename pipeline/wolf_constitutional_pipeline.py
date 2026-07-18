@@ -115,6 +115,7 @@ from analysis.signal_throttle_followthrough_score import (
     followthrough_context_for_symbol,
     signal_throttle_followthrough_score_log_payload,
 )
+from analysis.tick_feed_heartbeat import TickFeedHeartbeat
 from analysis.signal_throttle_fusion_router import emit_signal_throttle_fusion_v3_diagnostic
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
@@ -1679,6 +1680,7 @@ class WolfConstitutionalPipeline:
         start_time = time.time()
         logger.info("[VerdictPath] pipeline started | symbol={} safe_mode={}", symbol, safe_mode)
         VERDICT_PATH_EVENT_TOTAL.labels(event="pipeline_started", symbol=symbol, status="ok").inc()
+        self._check_tick_feed_heartbeat(symbol)
         self._ensure_analyzers()
         self._ensure_governance_engines()
         errors: list[str] = []
@@ -7835,6 +7837,62 @@ class WolfConstitutionalPipeline:
             report=report,
             market_contexts=current_contexts,
         )
+
+    def _check_tick_feed_heartbeat(self, symbol: str) -> None:
+        """Alarm when the tick feed is silent during forex market hours.
+
+        The Jul-17 Finnhub entitlement outage went unnoticed for a day because
+        feed death only surfaced as drift WARNINGs buried in logs.  This emits
+        a rate-limited ``[TickFeedHeartbeat]`` ERROR while the market is open
+        and no symbol has produced a tick within the silence budget, plus a
+        recovery notice when ticks resume.  Flag-guarded
+        (``TICK_FEED_HEARTBEAT_ENABLED``, default off), self rate-limited, and
+        exception-swallowing: it must never affect the trading pipeline.
+        """
+        try:
+            heartbeat = getattr(self, "_tick_feed_heartbeat", None)
+            if heartbeat is None:
+                heartbeat = TickFeedHeartbeat.from_env()
+                self._tick_feed_heartbeat = heartbeat
+            if not heartbeat.enabled:
+                return
+            now = time.time()
+            last_check = getattr(self, "_tick_feed_heartbeat_checked_at", None)
+            if isinstance(last_check, (int, float)) and now - float(last_check) < 30.0:
+                return
+            self._tick_feed_heartbeat_checked_at = now
+
+            freshest: float | None = None
+            bus = getattr(self, "_context_bus", None)
+            if bus is not None and hasattr(bus, "get_feed_timestamps"):
+                timestamps = bus.get_feed_timestamps()
+                if isinstance(timestamps, dict) and timestamps:
+                    freshest = max(
+                        value
+                        for value in (self._coerce_float_or_none(ts) for ts in timestamps.values())
+                        if value is not None
+                    )
+            if freshest is None and bus is not None and hasattr(bus, "get_feed_timestamp"):
+                freshest = self._coerce_float_or_none(bus.get_feed_timestamp(symbol))
+
+            from utils.market_hours import is_forex_market_open  # noqa: PLC0415 -- avoid import-order churn
+
+            event = heartbeat.check(
+                freshest_tick_epoch=freshest,
+                market_open=is_forex_market_open(),
+                now=now,
+            )
+            if event is None:
+                return
+            import json  # noqa: PLC0415 -- local: diagnostic-only serialization
+
+            payload = json.dumps(event, separators=(",", ":"), ensure_ascii=False)
+            if event.get("event") == "tick_feed_heartbeat_alarm":
+                logger.error("[TickFeedHeartbeat] {}", payload)
+            else:
+                logger.warning("[TickFeedHeartbeat] {}", payload)
+        except Exception:  # noqa: BLE001 - heartbeat must never break the pipeline.
+            return
 
     def _promote_idle_clean_block_watches(
         self,
