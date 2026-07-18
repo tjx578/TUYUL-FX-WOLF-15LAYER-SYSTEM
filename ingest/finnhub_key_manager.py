@@ -107,7 +107,7 @@ class FinnhubKeyManager:
             logger.info("[FINNHUB-KEY] Single API key loaded (no rotation available).")
         else:
             logger.info(
-                "[FINNHUB-KEY] %d API keys loaded — rotation enabled.",
+                "[FINNHUB-KEY] {} API keys loaded — rotation enabled.",
                 len(self._keys),
             )
 
@@ -138,7 +138,7 @@ class FinnhubKeyManager:
             if state.suspended and now >= state.suspend_until:
                 state.suspended = False
                 logger.info(
-                    "[FINNHUB-KEY] Key #%d cooldown expired — re-enabling.",
+                    "[FINNHUB-KEY] Key #{} cooldown expired — re-enabling.",
                     self._active_index,
                 )
 
@@ -153,7 +153,7 @@ class FinnhubKeyManager:
                 remaining = max(0.0, state.suspend_until - now)
                 if remaining > 0:
                     logger.warning(
-                        "[FINNHUB-KEY] Single key sedang cooldown (%.0fs sisa) — request berikutnya mungkin 429",
+                        "[FINNHUB-KEY] Single key sedang cooldown ({:.0f}s sisa) — request berikutnya mungkin 429",
                         remaining,
                     )
 
@@ -193,7 +193,7 @@ class FinnhubKeyManager:
             state.suspend_until = now + cooldown
 
             logger.warning(
-                "[FINNHUB-KEY] Key #%d %s (total failures: %d). Suspended for %ds.",
+                "[FINNHUB-KEY] Key #{} {} (total failures: {}). Suspended for {}s.",
                 idx,
                 reason,
                 state.failures,
@@ -274,7 +274,7 @@ class FinnhubKeyManager:
                 old = self._active_index
                 self._active_index = candidate
                 logger.info(
-                    "[FINNHUB-KEY] Rotated from key #%d to key #%d.",
+                    "[FINNHUB-KEY] Rotated from key #{} to key #{}.",
                     old,
                     candidate,
                 )
