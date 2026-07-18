@@ -13,7 +13,15 @@
       "Bash(railway service *)",
       "Bash(railway list *)",
       "Bash(railway variables *)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python -m pytest tests/ -q -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\")",
+      "Bash(python -m pytest tests/test_pipeline_signal_conditioning_fallback.py::test_pipeline_fallback_uses_candle_conditioned_path -q)",
+      "Bash(git stash *)",
+      "Bash(python -m pytest tests/test_pipeline_signal_conditioning_fallback.py -q)",
+      "Bash(python -m pytest tests/ -p no:cacheprovider -q -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\")",
+      "Bash(python -m pytest tests/ -p no:cacheprovider -q -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\" --co -q)",
+      "Bash(python -m pytest tests/ -p no:cacheprovider -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\" --co -q)",
+      "Bash(python)"
     ]
   }
 }
