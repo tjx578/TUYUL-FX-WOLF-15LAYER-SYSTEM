@@ -121,6 +121,7 @@ def convert_to_signal_pressure_state(payload: Mapping[str, Any]) -> dict[str, An
 def _apply_pressure_state_contract_v2(payload: dict[str, Any]) -> dict[str, Any]:
     payload["schema_version"] = PRESSURE_STATE_SCHEMA_VERSION
     _apply_price_lineage_contract(payload)
+    _apply_entry_field_integrity(payload)
     _apply_direction_scope_contract(payload)
 
     htf = payload.get("htf_structure_context")
@@ -208,6 +209,15 @@ def _apply_price_lineage_contract(payload: dict[str, Any]) -> None:
     else:
         reference_status = "AVAILABLE"
 
+    age_limit = _reference_price_max_age_seconds(source)
+    if reference_status == "AVAILABLE":
+        if age_limit is not None and age_seconds is not None and age_seconds > age_limit:
+            reference_status = "STALE"
+        elif source == "UNKNOWN" and snapshot_time is None and age_seconds is None:
+            # A price with no source, no timestamp, and no age cannot be trusted
+            # as anything better than an unverified reference.
+            reference_status = "UNVERIFIED"
+
     payload.update(
         {
             "observed_price": observed_price,
@@ -223,10 +233,62 @@ def _apply_price_lineage_contract(payload: dict[str, Any]) -> None:
             "reference_price_age_seconds": age_seconds,
             "reference_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "reference_price_status": reference_status,
+            "reference_price_age_limit_seconds": age_limit,
             "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "price_lineage_version": 2,
         }
     )
+
+
+_REFERENCE_PRICE_MAX_AGE_DEFAULTS: tuple[tuple[str, float], ...] = (
+    ("LIVE_TICK", 60.0),
+    ("M1_CLOSE", 180.0),
+    ("M5_CLOSE", 600.0),
+    ("M15_CLOSE", 1800.0),
+    ("H1_CLOSE", 7200.0),
+    ("H4_CLOSE", 28800.0),
+    ("D1_CLOSE", 172800.0),
+)
+
+
+def _reference_price_max_age_seconds(source: str) -> float | None:
+    override = os.getenv("SIGNAL_PRESSURE_REFERENCE_MAX_AGE_SECONDS", "").strip()
+    if override:
+        try:
+            parsed = float(override)
+        except ValueError:
+            parsed = None
+        if parsed is not None and parsed > 0.0:
+            return parsed
+    normalized = str(source or "").upper()
+    for token, max_age in _REFERENCE_PRICE_MAX_AGE_DEFAULTS:
+        if normalized.startswith(token) or normalized.endswith(token):
+            return max_age
+    return None
+
+
+def _apply_entry_field_integrity(payload: dict[str, Any]) -> None:
+    """Mirror the Watch-path price-integrity contract on the pressure channel.
+
+    Without a LIVE observed quote, entry-shaped fields must not carry an
+    audit/reference price: a stale number duplicated into ``signal_valid_price``,
+    ``entry_reference_price`` and ``entry_zone`` reads as four independent pieces
+    of evidence downstream when it is one unverified value.  The original values
+    stay visible via ``reference_signal_price`` / ``reference_entry_price`` and
+    the reference lineage fields.
+    """
+    if os.getenv("SIGNAL_PRESSURE_ENTRY_FIELD_INTEGRITY_ENABLED", "false").strip().lower() != "true":
+        return
+    operational = payload.get("observed_price") is not None and payload.get("observed_price_status") == "LIVE"
+    payload["operational_price_valid"] = operational
+    if operational:
+        return
+    payload.setdefault("reference_signal_price", payload.get("signal_valid_price"))
+    payload.setdefault("reference_entry_price", payload.get("entry_reference_price"))
+    payload["signal_valid_price"] = None
+    payload["entry_reference_price"] = None
+    payload["entry_zone"] = None
+    payload["entry_field_integrity_reason"] = "OPERATIONAL_PRICE_NOT_LIVE_REFERENCE_ONLY"
 
 
 def _apply_direction_scope_contract(payload: dict[str, Any]) -> None:
