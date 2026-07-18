@@ -180,3 +180,105 @@ def test_allowed_source_without_anchor_routes_to_pressure_state_when_required():
 
     assert routed.route == "SIGNAL_PRESSURE_STATE"
     assert routed.reason == "missing_lifecycle_anchor"
+
+
+def test_pressure_contract_downgrades_aged_candle_reference_to_stale():
+    payload = convert_to_signal_pressure_state(
+        {
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "symbol": "EURCHF",
+            "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+            "reference_price_used_for_decision_update": 0.925245,
+            "price_source": "M15_CLOSE",
+            "price_snapshot_time_utc": "2026-07-17T09:00:00+00:00",
+            "price_age_seconds": 7200.0,
+        }
+    )
+
+    assert payload["reference_price"] == 0.925245
+    assert payload["reference_price_source"] == "M15_CLOSE"
+    assert payload["reference_price_status"] == "STALE"
+    assert payload["reference_price_age_limit_seconds"] == 1800.0
+    assert payload["observed_price"] == 0.925245
+    assert payload["observed_price_status"] == "STALE"
+
+
+def test_pressure_contract_marks_unknown_reference_without_lineage_unverified():
+    payload = convert_to_signal_pressure_state(
+        {
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "symbol": "EURCHF",
+            "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+            "signal_valid_price": 0.925245,
+        }
+    )
+
+    assert payload["reference_price"] == 0.925245
+    assert payload["reference_price_source"] == "UNKNOWN"
+    assert payload["reference_price_status"] == "UNVERIFIED"
+    assert payload["observed_price"] is None
+    assert payload["observed_price_status"] == "MISSING"
+
+
+def test_entry_field_integrity_disabled_keeps_legacy_entry_fields(monkeypatch):
+    monkeypatch.delenv("SIGNAL_PRESSURE_ENTRY_FIELD_INTEGRITY_ENABLED", raising=False)
+    payload = convert_to_signal_pressure_state(
+        {
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "symbol": "EURCHF",
+            "signal_valid_price": 0.925245,
+            "entry_reference_price": 0.925245,
+            "entry_zone": [0.925245, 0.925245],
+        }
+    )
+
+    assert payload["signal_valid_price"] == 0.925245
+    assert payload["entry_reference_price"] == 0.925245
+    assert payload["entry_zone"] == [0.925245, 0.925245]
+    assert "operational_price_valid" not in payload
+
+
+def test_entry_field_integrity_nulls_entry_fields_without_live_quote(monkeypatch):
+    monkeypatch.setenv("SIGNAL_PRESSURE_ENTRY_FIELD_INTEGRITY_ENABLED", "true")
+    payload = convert_to_signal_pressure_state(
+        {
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "symbol": "EURCHF",
+            "signal_valid_price": 0.925245,
+            "entry_reference_price": 0.925245,
+            "entry_zone": [0.925245, 0.925245],
+        }
+    )
+
+    assert payload["operational_price_valid"] is False
+    assert payload["signal_valid_price"] is None
+    assert payload["entry_reference_price"] is None
+    assert payload["entry_zone"] is None
+    assert payload["reference_signal_price"] == 0.925245
+    assert payload["reference_entry_price"] == 0.925245
+    assert payload["reference_price"] == 0.925245
+    assert payload["entry_field_integrity_reason"] == "OPERATIONAL_PRICE_NOT_LIVE_REFERENCE_ONLY"
+
+
+def test_entry_field_integrity_keeps_entry_fields_with_live_quote(monkeypatch):
+    monkeypatch.setenv("SIGNAL_PRESSURE_ENTRY_FIELD_INTEGRITY_ENABLED", "true")
+    payload = convert_to_signal_pressure_state(
+        {
+            "source_stage": "SIGNAL_THROTTLE_INTEL",
+            "symbol": "NZDCAD",
+            "signal_valid_price": 0.81234,
+            "entry_reference_price": 0.81234,
+            "entry_zone": [0.81234, 0.81234],
+            "price_source": "LIVE_TICK_MID",
+            "price_snapshot_time_utc": "2026-07-16T01:00:00+00:00",
+            "price_age_seconds": 1.25,
+            "price_freshness_status": "LIVE",
+            "reference_price_is_live": True,
+        }
+    )
+
+    assert payload["operational_price_valid"] is True
+    assert payload["signal_valid_price"] == 0.81234
+    assert payload["entry_reference_price"] == 0.81234
+    assert payload["entry_zone"] == [0.81234, 0.81234]
+    assert payload["observed_price_status"] == "LIVE"
