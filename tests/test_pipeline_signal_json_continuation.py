@@ -1643,6 +1643,52 @@ def test_pipeline_logs_no_trade_pressure_as_pressure_state_by_default(caplog):
     assert state["pair_interruption_count_scope"] == "ANALYZER_RETENTION_WINDOW"
 
 
+def test_no_trade_pressure_payload_carries_price_lineage(caplog):
+    caplog.set_level(logging.WARNING, logger="signal_json")
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
+    pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
+
+    report = {
+        "counts": {"total_events": 3, "pairs": {"USDCAD": 3}},
+        "symbol_activity": {
+            "USDCAD": {
+                "latest_event_utc": "2026-06-08T08:49:17+00:00",
+                "latest_block_events": 5,
+            }
+        },
+        "microboost_summary": {"count_total": 0},
+    }
+    verdict: dict[str, Any] = {"verdict": "NO_TRADE", "direction": "BUY"}
+    market_contexts = {
+        "USDCAD": MarketContext(
+            symbol="USDCAD",
+            raw_allowed_direction="BUY",
+            bid=1.3763,
+            ask=1.3765,
+            price_at_signal_end=1.3764,
+        )
+    }
+
+    pipeline._apply_no_trade_pressure_decision_update(
+        symbol="USDCAD",
+        l12_verdict=verdict,
+        report=report,
+        market_contexts=market_contexts,
+        synthesis={},
+    )
+
+    state = verdict["no_trade_pressure_state"]
+    assert state["price_source"] == "LIVE_TICK_MID"
+    assert state["reference_price"] == 1.3764
+    assert state["reference_price_source"] == "LIVE_TICK_MID"
+    assert state["observed_price"] == 1.3764
+    assert state["observed_price_source"] == "LIVE_TICK_MID"
+    assert state["reference_price_status"] != "UNVERIFIED"
+    assert state["price_lineage_version"] == 2
+    assert state["signal_valid_price"] == 1.3764
+
+
 def test_pipeline_routes_no_trade_pressure_to_pressure_state_when_guard_enabled(monkeypatch, caplog):
     caplog.set_level(logging.WARNING, logger="signal_json")
     monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
