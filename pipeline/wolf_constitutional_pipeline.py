@@ -6662,6 +6662,7 @@ class WolfConstitutionalPipeline:
         l12_verdict: dict[str, Any],
         report: dict[str, Any],
         market_contexts: dict[str, MarketContext],
+        synthesis: dict[str, Any] | None = None,
     ) -> None:
         if os.getenv("SIGNAL_THROTTLE_NO_TRADE_DECISION_UPDATE_ENABLED", "true").strip().lower() != "true":
             return
@@ -6706,6 +6707,7 @@ class WolfConstitutionalPipeline:
             market_contexts=market_contexts,
             pressure_event_count=pressure_event_count,
             microboost_detected=microboost_detected,
+            synthesis=synthesis,
         )
         if payload is None:
             pressure_payload = self._no_trade_contextless_pressure_payload(
@@ -7059,18 +7061,17 @@ class WolfConstitutionalPipeline:
         market_contexts: dict[str, MarketContext],
         pressure_event_count: int | None = None,
         microboost_detected: bool | None = None,
+        synthesis: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         context = market_contexts.get(symbol.upper())
-        price = None
-        if context is not None:
-            price = (
-                context.price_at_signal_end
-                or context.price_at_signal_start
-                or context.price_at_5m_confirm
-                or context.bid
-                or context.ask
-            )
-        price = self._coerce_positive_float(price)
+        price_lineage = self._pressure_reference_price_lineage(
+            symbol=symbol,
+            context=context,
+            synthesis=synthesis if isinstance(synthesis, dict) else {},
+            l12_verdict=l12_verdict,
+            allow_payload_fallback=False,
+        )
+        price = None if price_lineage is None else self._coerce_positive_float(price_lineage.get("price"))
         if price is None:
             return None
         direction = self._direction_hint(l12_verdict.get("direction"))
@@ -7109,6 +7110,7 @@ class WolfConstitutionalPipeline:
             "signal_valid_price": price,
             "entry_reference_price": price,
             "entry_zone": [price, price],
+            **self._decision_price_lineage_payload(price_lineage),
             "rr_status": "UNVALIDATED",
             "market_context_applied": context is not None,
             "valid_for_execution": False,
@@ -7743,6 +7745,7 @@ class WolfConstitutionalPipeline:
             l12_verdict=shadow_verdict,
             report=report,
             market_contexts=market_contexts,
+            synthesis=synthesis,
         )
         if "allowed_quorum_pressure_state" in shadow_verdict:
             l12_verdict["allowed_quorum_pressure_state"] = shadow_verdict["allowed_quorum_pressure_state"]
