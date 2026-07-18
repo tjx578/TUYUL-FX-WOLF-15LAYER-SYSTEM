@@ -21,7 +21,8 @@
       "Bash(python -m pytest tests/ -p no:cacheprovider -q -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\")",
       "Bash(python -m pytest tests/ -p no:cacheprovider -q -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\" --co -q)",
       "Bash(python -m pytest tests/ -p no:cacheprovider -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\" --co -q)",
-      "Bash(python)"
+      "Bash(python)",
+      "Bash(git log *)"
     ]
   }
 }
