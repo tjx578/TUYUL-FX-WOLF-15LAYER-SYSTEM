@@ -43,6 +43,12 @@ class _BusStub:
     def get_account_state(self, symbol: str) -> dict[str, Any]:
         return {}
 
+    def get_latest_tick(self, symbol: str) -> dict[str, Any] | None:
+        return None
+
+    def get_candle_history(self, symbol: str, timeframe: str, count: int | None = None) -> list[dict[str, Any]]:
+        return []
+
     def inference_snapshot(self) -> dict[str, Any]:
         return {}
 
