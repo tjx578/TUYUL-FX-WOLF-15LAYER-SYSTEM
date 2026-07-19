@@ -13,7 +13,8 @@ import json
 import math
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
+from uuid import UUID
 
 from contracts.strategy_5scr import (
     CONFIRMATION_POLICY,
@@ -22,10 +23,13 @@ from contracts.strategy_5scr import (
     STRATEGY_RULE_STATUS,
     STRATEGY_RULE_VERSION,
     STRATEGY_VALIDATION_STATUS,
+    PressureAuthority,
+    RiskAuthority,
     Strategy5SCRProof,
     evaluate_strategy_5scr_proof,
 )
 from contracts.strategy_5scr_pressure import (
+    CampaignAnchorSource,
     LegacyEpisodePolicy,
     PressureEvent,
     PressureInputMode,
@@ -33,7 +37,9 @@ from contracts.strategy_5scr_pressure import (
     PressureTradePlanBuildResult,
     Strategy5SCRMarketEvidence,
     Strategy5SCRTradePlan,
+    TradeDirection,
 )
+from contracts.strategy_5scr_pressure_outbox import PressureOutboxEnvelope
 
 PRESSURE_LOG_PREFIX = "[SignalPressureStateJSON]"
 MIN_RR = 1.5
@@ -46,6 +52,14 @@ _RUNTIME_IDENTITY_FIELDS = frozenset(
         "commit_sha",
         "replica_id",
         "generated_at_utc",
+    }
+)
+_TRANSPORT_IDENTITY_FIELDS = frozenset(
+    {
+        "event_id",
+        "lifecycle_id",
+        "lifecycle_sequence",
+        "pressure_outbox_id",
     }
 )
 
@@ -147,7 +161,7 @@ class PressureEventNormalizer:
     """Normalize current or legacy pressure payloads into one immutable event."""
 
     def __init__(self, *, input_mode: PressureInputMode) -> None:
-        self.input_mode = input_mode
+        self.input_mode: PressureInputMode = input_mode
 
     def normalize(self, record: Mapping[str, Any] | str) -> PressureEvent:
         payload, outer_timestamp = _extract_payload(record)
@@ -166,12 +180,13 @@ class PressureEventNormalizer:
 
         clean_block_id = _text(payload.get("source_clean_block_id"))
         source_watch_id = _text(payload.get("source_watch_id"))
+        canonical_lifecycle_id = _text(payload.get("lifecycle_id"))
         if clean_block_id:
-            campaign_anchor = clean_block_id
-            anchor_source = "SOURCE_CLEAN_BLOCK_ID"
+            campaign_anchor = canonical_lifecycle_id or clean_block_id
+            anchor_source: CampaignAnchorSource = "SOURCE_CLEAN_BLOCK_ID"
             anchor_execution_grade = True
         elif source_watch_id:
-            campaign_anchor = source_watch_id
+            campaign_anchor = canonical_lifecycle_id or source_watch_id
             anchor_source = "SOURCE_WATCH_ID"
             anchor_execution_grade = True
         else:
@@ -180,16 +195,28 @@ class PressureEventNormalizer:
             anchor_execution_grade = False
 
         raw_direction_text = str(payload.get("raw_direction") or "").upper()
-        raw_direction = raw_direction_text if raw_direction_text in {"BUY", "SELL"} else None
+        raw_direction: TradeDirection | None = (
+            cast(TradeDirection, raw_direction_text) if raw_direction_text in {"BUY", "SELL"} else None
+        )
         allowed_quorum = payload.get("allowed_quorum")
         allowed_quorum_reached = bool(
             isinstance(allowed_quorum, Mapping) and allowed_quorum.get("quorum_reached") is True
         )
         htf = payload.get("htf_structure_context")
-        semantic_payload = {key: value for key, value in payload.items() if key not in _RUNTIME_IDENTITY_FIELDS}
+        semantic_payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in (_RUNTIME_IDENTITY_FIELDS | _TRANSPORT_IDENTITY_FIELDS)
+        }
+        canonical_event_id = _text(payload.get("event_id"))
+        if canonical_event_id is not None:
+            try:
+                canonical_event_id = str(UUID(canonical_event_id))
+            except ValueError as exc:
+                raise PressureInputError("PRESSURE_EVENT_ID_INVALID") from exc
 
         return PressureEvent(
-            event_id=_sha256_tag(semantic_payload),
+            event_id=canonical_event_id or _sha256_tag(semantic_payload),
             source_hash=_sha256_tag(payload),
             input_mode=self.input_mode,
             schema_version=str(payload.get("schema_version") or "legacy-unversioned"),
@@ -333,7 +360,10 @@ class PressureLifecycleAccumulator:
     def snapshots(self) -> list[PressureLifecycle]:
         return sorted(self._lifecycles.values(), key=lambda item: (item.started_at_utc, item.campaign_id))
 
-    def _resolve_campaign(self, event: PressureEvent) -> tuple[str, str, bool, str | None]:
+    def _resolve_campaign(
+        self,
+        event: PressureEvent,
+    ) -> tuple[str, CampaignAnchorSource, bool, str | None]:
         if event.campaign_anchor is not None:
             return (
                 event.campaign_anchor,
@@ -471,17 +501,17 @@ class PressureToTradePlanBuilder:
             production_proven=False,
             confirmation_policy=CONFIRMATION_POLICY,
             authority_chain=("PRESSURE", "CONTEXT_RESOLUTION", "H4", "H1", "M15", "M1", "RISK"),
-            pressure={
-                "selected_pair": lifecycle.symbol,
-                "lifecycle_id": lifecycle.campaign_id,
-                "selection_confirmed": True,
-            },
+            pressure=PressureAuthority(
+                selected_pair=lifecycle.symbol,
+                lifecycle_id=lifecycle.campaign_id,
+                selection_confirmed=True,
+            ),
             context_resolution=context,
             h4=h4,
             h1=h1,
             m15=m15,
             m1=m1,
-            risk={"structural_sl": stop, "sizing_basis": "STRUCTURAL_SL"},
+            risk=RiskAuthority(structural_sl=stop, sizing_basis="STRUCTURAL_SL"),
         )
         proof_evaluation = evaluate_strategy_5scr_proof(
             {
@@ -614,6 +644,31 @@ def replay_pressure_records(
     return accumulator.ingest_many(events)
 
 
+def replay_pressure_outbox_events(
+    records: Iterable[PressureOutboxEnvelope | Mapping[str, Any]],
+) -> list[PressureLifecycle]:
+    """Rebuild LIVE pressure lifecycles from canonical PostgreSQL outbox rows."""
+
+    envelopes = [
+        record if isinstance(record, PressureOutboxEnvelope) else PressureOutboxEnvelope.model_validate(record)
+        for record in records
+    ]
+    envelopes.sort(key=lambda item: (item.lifecycle_id, item.lifecycle_sequence))
+    expected_by_lifecycle: dict[str, int] = {}
+    normalizer = PressureEventNormalizer(input_mode="LIVE")
+    accumulator = PressureLifecycleAccumulator()
+    for envelope in envelopes:
+        expected = expected_by_lifecycle.get(envelope.lifecycle_id, 0) + 1
+        if envelope.lifecycle_sequence != expected:
+            raise PressureLifecycleOrderError("PRESSURE_OUTBOX_LIFECYCLE_SEQUENCE_GAP")
+        expected_by_lifecycle[envelope.lifecycle_id] = expected
+        event = normalizer.normalize(envelope.payload)
+        lifecycle, _duplicate = accumulator.ingest(event)
+        if lifecycle.campaign_id != envelope.lifecycle_id:
+            raise PressureInputError("PRESSURE_OUTBOX_LIFECYCLE_MISMATCH")
+    return accumulator.snapshots()
+
+
 __all__ = [
     "MIN_FX_TARGET_PIPS",
     "MIN_RR",
@@ -624,5 +679,6 @@ __all__ = [
     "PressureLifecycleAccumulator",
     "PressureLifecycleOrderError",
     "PressureToTradePlanBuilder",
+    "replay_pressure_outbox_events",
     "replay_pressure_records",
 ]
