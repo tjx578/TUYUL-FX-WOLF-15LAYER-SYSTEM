@@ -1,9 +1,13 @@
-# Wolf15 Strategy 5-S to MT5 Dumb Executor
+# Wolf15 Strategy 5S-CR to MT5 Dumb Executor
 
 Status: production foundation, live execution disabled by rollout policy
 
 Protocol: `wolf15.mt5.exec.v1`
-Decision authority: Wolf15 constitution / final SignalJSON only
+Decision authority: frozen Strategy 5S-CR proof / final SignalJSON only
+
+Strategy 5S-CR Final is the primary candidate baseline. Strategy 5-S Final is
+retained as the pre-Context-Resolution benchmark. The candidate is strong
+provisional, not out-of-sample validated, and not production-proven.
 
 ## Architecture decision
 
@@ -28,7 +32,7 @@ wolf15-ea-bridge (public domain, minimal API)
 PostgreSQL command/report/snapshot ledger
         ^
         |
-wolf15 trade/risk plane <- final SignalJSON <- Strategy 5-S state engine
+wolf15 trade/risk plane <- final SignalJSON <- frozen Strategy 5S-CR authority chain
 ```
 
 ### Railway service boundary
@@ -86,6 +90,11 @@ signal_valid
 final_direction in BUY, SELL
 RR status is final and execution-grade
 lifecycle anchor exists
+strategy_5scr proof schema is complete and frozen
+Context Resolution status is RESOLVED
+H1 structure is confirmed by a closed candle
+M15 closed structural break is followed by acceptance or failed-reclaim/retest
+H4 structural TP1, M1 fill, and structural SL match the command exactly
 fresh reconciled account snapshot exists
 risk reservation exists
 executor/account/broker mapping matches
@@ -94,6 +103,16 @@ executor/account/broker mapping matches
 Explicitly denied sources include pressure state, pressure summary, watch,
 decision update, SignalThrottle, and pressure-tier events. Railway logs are an
 audit/validation source and must never be scraped as the live order queue.
+
+The locked authority chain is:
+
+```text
+Pressure -> Context Resolution -> H4 -> H1 -> M15 -> M1 -> Risk Engine
+```
+
+One rejection candle or a weakening-but-unconfirmed H1 must remain
+`NO_TRADE_CONTEXT_UNRESOLVED`. See
+`docs/strategy/strategy-5scr-final.md` for the frozen rule and validation record.
 
 ## Pull protocol
 
@@ -134,7 +153,7 @@ Exactly-once refers to the logical broker side effect, not packet delivery.
 The EA local ledger must be persisted before and after `OrderSend`. A timeout
 after submission is not permission to send again.
 
-## Strategy 5-S risk policy
+## Strategy 5S-CR risk policy
 
 For the supplied USD 1,000 scenario:
 
@@ -201,13 +220,14 @@ NO-GO now:
 
 ## Remaining production increments
 
-This foundation intentionally does not claim that the full Strategy 5-S state
-engine is complete. The next increments are:
+This foundation now enforces the frozen 5S-CR proof at final-signal and command
+promotion boundaries. It does not claim OOS or production validation. The next
+increments are:
 
 1. publish pressure telemetry to a typed durable internal stream while keeping
    it non-executable;
-2. implement and replay-validate campaign/box/H4/H1/M15/M1 state without future
-   leakage;
+2. populate the typed 5S-CR proof from replay-validated campaign/context/H4/H1/
+   M15/M1 state without future leakage;
 3. persist campaign risk locks and reservations atomically with final-signal
    outbox rows;
 4. add local cryptographic verification and durable restart/retry storage to

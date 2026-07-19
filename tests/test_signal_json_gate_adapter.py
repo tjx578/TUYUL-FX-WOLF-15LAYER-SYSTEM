@@ -7,11 +7,75 @@ from analysis.signal_json_emitter import SignalJsonEmitter, build_signal_json_ev
 from analysis.signal_json_gate_adapter import SignalJsonGateAdapter, SignalJsonGateConfig
 
 
+def _strategy_5scr_proof(payload):
+    direction = payload["final_direction"]
+    entry = payload["entry_reference_price"]
+    half_box = max(abs(entry) * 0.000001, 0.000001)
+    lifecycle_id = payload["lifecycle_id"]
+    return {
+        "strategy_model": "STRATEGY_5S_CR_FINAL",
+        "rule_version": "5scr.final.2026-07-19",
+        "rule_status": "FROZEN",
+        "validation_status": "STRONG_PROVISIONAL",
+        "out_of_sample_status": "NOT_YET_VALIDATED",
+        "production_proven": False,
+        "confirmation_policy": "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST",
+        "authority_chain": ["PRESSURE", "CONTEXT_RESOLUTION", "H4", "H1", "M15", "M1", "RISK"],
+        "pressure": {
+            "selected_pair": payload["symbol"],
+            "lifecycle_id": lifecycle_id,
+            "selection_confirmed": True,
+        },
+        "context_resolution": {
+            "status": "RESOLVED",
+            "origin": "WAIT_FOR_CONFIRMATION",
+            "price_location": payload.get("price_position") or "STRUCTURAL_LOCATION",
+            "liquidity_context": "LIQUIDITY_RESOLVED",
+            "daily_bias": direction,
+            "h4_structure": f"{direction}_STRUCTURE",
+            "allowed_playbook": f"{direction}_ON_CONFIRMED_BREAK_RETEST",
+            "selected_playbook": f"{direction}_ON_CONFIRMED_BREAK_RETEST",
+            "blocked_playbook": [],
+            "scenario_allowed": True,
+        },
+        "h4": {
+            "target_mode": payload["target_mode"],
+            "structural_tp1": payload["tp1"],
+            "target_room_valid": True,
+        },
+        "h1": {
+            "direction": direction,
+            "structure_state": f"{direction}_CONFIRMED",
+            "structure_confirmed": True,
+            "candle_closed": True,
+            "confirmed_at_utc": payload["signal_valid_time_utc"],
+        },
+        "m15": {
+            "direction": direction,
+            "structural_break": True,
+            "candle_closed": True,
+            "acceptance_confirmed": True,
+            "failed_reclaim_or_retest_confirmed": False,
+            "rejection_candle_only": False,
+            "confirmed_at_utc": payload["signal_valid_time_utc"],
+        },
+        "m1": {
+            "box_id": f"{lifecycle_id}:m1",
+            "box_low": entry - half_box,
+            "box_high": entry + half_box,
+            "fill_price": entry,
+            "return_to_box_invalidated": False,
+        },
+        "risk": {"structural_sl": payload["selected_sl"], "sizing_basis": "STRUCTURAL_SL"},
+    }
+
+
 def _final_payload(**overrides):
     payload = {
         "event": "signal_json",
         "schema_version": "1.0",
         "symbol": "USDCAD",
+        "lifecycle_id": "USDCAD-LIFECYCLE-001",
         "signal_family": "MICROBOOST_COUNTER_ENTRY",
         "status": "BUY_BREAKOUT_CONTINUATION_VALID",
         "raw_direction": "BUY",
@@ -55,6 +119,8 @@ def _final_payload(**overrides):
         "reason": "test final candidate",
     }
     payload.update(overrides)
+    if "strategy_5scr" not in overrides:
+        payload["strategy_5scr"] = _strategy_5scr_proof(payload)
     return payload
 
 
@@ -237,7 +303,10 @@ def test_execution_ready_terminal_survives_strict_lifecycle_direct_bypass(caplog
     assert gated["status"] == "FINAL_EXECUTION_READY"
     assert gated["promotion_path"] == "DIRECT_BYPASS"
     assert gated["parent_watch_required"] is False
+    assert gated["execution_gate"]["strategy_5scr"]["rule_status"] == "FROZEN"
     assert event is not None
+    assert event.execution_gate is not None
+    assert event.execution_gate["strategy_5scr"]["strategy_model"] == "STRATEGY_5S_CR_FINAL"
     assert emitter.emit(event) is True
     assert "[SignalJSON]" in caplog.text
     assert "[SignalDecisionUpdateJSON]" not in caplog.text

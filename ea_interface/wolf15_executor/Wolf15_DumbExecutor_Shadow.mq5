@@ -3,7 +3,7 @@
 //| No signal logic. No risk calculation. No broker side effect.     |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "0.10"
+#property version   "0.11"
 #property description "Wolf15 pull/claim/report client. SHADOW ONLY."
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
@@ -21,7 +21,9 @@ input int    InpHttpTimeoutMs       = 1500;
 input bool   InpExecutionEnabled    = false;
 
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
-#define W15_VERSION  "0.10-shadow"
+#define W15_VERSION  "0.11-shadow"
+#define W15_STRATEGY "STRATEGY_5S_CR_FINAL"
+#define W15_CONFIRMATION_POLICY "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"
 
 datetime g_last_poll = 0;
 datetime g_last_heartbeat = 0;
@@ -360,6 +362,14 @@ bool ValidateShadowCommand(const string json, string &reason)
       !JsonBool(json, "tradeplan_valid"))
    {
       reason = "SOURCE_GATE_REJECTED";
+      return false;
+   }
+   if(JsonValue(json, "strategy_model") != W15_STRATEGY ||
+      JsonValue(json, "strategy_rule_status") != "FROZEN" ||
+      JsonValue(json, "context_resolution_status") != "RESOLVED" ||
+      JsonValue(json, "confirmation_policy") != W15_CONFIRMATION_POLICY)
+   {
+      reason = "STRATEGY_5SCR_SOURCE_PROOF_REJECTED";
       return false;
    }
    if(JsonValue(json, "account_id") != InpExpectedAccountId ||

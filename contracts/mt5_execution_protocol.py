@@ -93,6 +93,12 @@ class CommandSource(StrictModel):
     valid_for_execution: Literal[True]
     execution_gate_passed: Literal[True]
     tradeplan_valid: Literal[True]
+    strategy_model: Literal["STRATEGY_5S_CR_FINAL"]
+    strategy_rule_version: Literal["5scr.final.2026-07-19"]
+    strategy_rule_status: Literal["FROZEN"]
+    strategy_proof_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    context_resolution_status: Literal["RESOLVED"]
+    confirmation_policy: Literal["H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"]
 
 
 class OrderInstruction(StrictModel):

@@ -7,6 +7,7 @@ calculate a side, target, stop, or volume.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -26,6 +27,7 @@ from contracts.mt5_execution_protocol import (
     sha256_tag,
     sign_execution_command,
 )
+from contracts.strategy_5scr import Strategy5SCRProof, evaluate_strategy_5scr_proof
 
 _DENIED_EVENTS = {
     "signal_pressure_state_json",
@@ -89,7 +91,7 @@ def _effective_bool(signal: Mapping[str, Any], field: str, nested: str) -> bool:
     return signal.get(field) is True
 
 
-def _validate_final_signal(signal: Mapping[str, Any]) -> tuple[str, str, str]:
+def _validate_final_signal(signal: Mapping[str, Any]) -> tuple[str, str, str, Strategy5SCRProof]:
     event = str(signal.get("event") or "").lower()
     if event in _DENIED_EVENTS or event != "signal_json":
         raise PromotionRejectedError("PROMOTION_SOURCE_DENIED", f"event={event or 'missing'} is not final SignalJSON")
@@ -119,7 +121,13 @@ def _validate_final_signal(signal: Mapping[str, Any]) -> tuple[str, str, str]:
         raise PromotionRejectedError(
             "PROMOTION_LINEAGE_MISSING", "signal id, lifecycle anchor, and schema are required"
         )
-    return side, signal_id, lifecycle_anchor
+    strategy_evaluation = evaluate_strategy_5scr_proof(signal)
+    if not strategy_evaluation.ready or strategy_evaluation.proof is None:
+        raise PromotionRejectedError(
+            "PROMOTION_5SCR_GATE_REJECTED",
+            ",".join(strategy_evaluation.reasons) or "strategy proof is not execution-ready",
+        )
+    return side, signal_id, lifecycle_anchor, strategy_evaluation.proof
 
 
 def promote_final_signal_to_command(
@@ -130,7 +138,7 @@ def promote_final_signal_to_command(
     signing_key_id: str,
     command_id: UUID | None = None,
 ) -> ExecutionCommandV1:
-    side, signal_id, lifecycle_anchor = _validate_final_signal(signal)
+    side, signal_id, lifecycle_anchor, strategy_proof = _validate_final_signal(signal)
     if context.action not in {ExecutionAction.PLACE_MARKET, ExecutionAction.PLACE_PENDING}:
         raise PromotionRejectedError(
             "PROMOTION_ACTION_INVALID",
@@ -140,6 +148,12 @@ def promote_final_signal_to_command(
         raise PromotionRejectedError("PROMOTION_SYMBOL_MISMATCH", "context symbol does not match final signal")
     if not context.order_type.startswith(side):
         raise PromotionRejectedError("PROMOTION_ORDER_SIDE_MISMATCH", "order type does not match final side")
+    if not math.isclose(context.entry_price, strategy_proof.m1.fill_price, rel_tol=1e-9, abs_tol=1e-9):
+        raise PromotionRejectedError("PROMOTION_5SCR_ENTRY_MISMATCH", "command entry is not the authorized M1 fill")
+    if not math.isclose(context.stop_loss, strategy_proof.risk.structural_sl, rel_tol=1e-9, abs_tol=1e-9):
+        raise PromotionRejectedError("PROMOTION_5SCR_SL_MISMATCH", "command stop is not the structural SL")
+    if not math.isclose(context.take_profit, strategy_proof.h4.structural_tp1, rel_tol=1e-9, abs_tol=1e-9):
+        raise PromotionRejectedError("PROMOTION_5SCR_TP1_MISMATCH", "command target is not structural TP1")
 
     command_uuid = command_id or uuid4()
     idempotency_key = ":".join(
@@ -184,6 +198,12 @@ def promote_final_signal_to_command(
             valid_for_execution=True,
             execution_gate_passed=True,
             tradeplan_valid=True,
+            strategy_model=strategy_proof.strategy_model,
+            strategy_rule_version=strategy_proof.rule_version,
+            strategy_rule_status=strategy_proof.rule_status,
+            strategy_proof_hash=sha256_tag(strategy_proof.model_dump(mode="json")),
+            context_resolution_status=strategy_proof.context_resolution.status,
+            confirmation_policy=strategy_proof.confirmation_policy,
         ),
         "action": context.action,
         "order": OrderInstruction(

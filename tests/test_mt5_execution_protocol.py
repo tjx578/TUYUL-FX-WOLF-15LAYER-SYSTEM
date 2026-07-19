@@ -23,6 +23,66 @@ from execution.mt5_command_promotion import (
 SECRET = "s" * 64
 
 
+def _strategy_5scr_proof() -> dict:
+    confirmed_at = datetime.now(UTC).isoformat()
+    return {
+        "strategy_model": "STRATEGY_5S_CR_FINAL",
+        "rule_version": "5scr.final.2026-07-19",
+        "rule_status": "FROZEN",
+        "validation_status": "STRONG_PROVISIONAL",
+        "out_of_sample_status": "NOT_YET_VALIDATED",
+        "production_proven": False,
+        "confirmation_policy": "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST",
+        "authority_chain": ["PRESSURE", "CONTEXT_RESOLUTION", "H4", "H1", "M15", "M1", "RISK"],
+        "pressure": {
+            "selected_pair": "EURUSD",
+            "lifecycle_id": "lifecycle-001",
+            "selection_confirmed": True,
+        },
+        "context_resolution": {
+            "status": "RESOLVED",
+            "origin": "WAIT_FOR_CONFIRMATION",
+            "price_location": "H4_DEMAND",
+            "liquidity_context": "SELL_SIDE_REJECTED",
+            "daily_bias": "BULLISH",
+            "h4_structure": "BULLISH_PULLBACK",
+            "allowed_playbook": "BUY_ON_CONFIRMED_BREAK_RETEST",
+            "selected_playbook": "BUY_ON_CONFIRMED_BREAK_RETEST",
+            "blocked_playbook": ["SELL_LIMIT"],
+            "scenario_allowed": True,
+        },
+        "h4": {
+            "target_mode": "FINAL_MARKET_STRUCTURE",
+            "structural_tp1": 1.11,
+            "target_room_valid": True,
+        },
+        "h1": {
+            "direction": "BUY",
+            "structure_state": "BULLISH_CONFIRMED",
+            "structure_confirmed": True,
+            "candle_closed": True,
+            "confirmed_at_utc": confirmed_at,
+        },
+        "m15": {
+            "direction": "BUY",
+            "structural_break": True,
+            "candle_closed": True,
+            "acceptance_confirmed": True,
+            "failed_reclaim_or_retest_confirmed": False,
+            "rejection_candle_only": False,
+            "confirmed_at_utc": confirmed_at,
+        },
+        "m1": {
+            "box_id": "lifecycle-001:m1",
+            "box_low": 1.0999,
+            "box_high": 1.1001,
+            "fill_price": 1.1,
+            "return_to_box_invalidated": False,
+        },
+        "risk": {"structural_sl": 1.095, "sizing_basis": "STRUCTURAL_SL"},
+    }
+
+
 def _unsigned_command() -> dict:
     now = datetime.now(UTC)
     executor_id = uuid4()
@@ -54,6 +114,12 @@ def _unsigned_command() -> dict:
             "valid_for_execution": True,
             "execution_gate_passed": True,
             "tradeplan_valid": True,
+            "strategy_model": "STRATEGY_5S_CR_FINAL",
+            "strategy_rule_version": "5scr.final.2026-07-19",
+            "strategy_rule_status": "FROZEN",
+            "strategy_proof_hash": "sha256:" + "c" * 64,
+            "context_resolution_status": "RESOLVED",
+            "confirmation_policy": "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST",
         },
         "action": "PLACE_PENDING",
         "order": {
@@ -103,6 +169,10 @@ def _final_signal() -> dict:
         "signal_valid": True,
         "final_direction": "BUY",
         "rr_status": "VALID",
+        "entry_reference_price": 1.1,
+        "selected_sl": 1.095,
+        "tp1": 1.11,
+        "strategy_5scr": _strategy_5scr_proof(),
     }
 
 
@@ -195,7 +265,22 @@ def test_final_signal_promotes_to_shadow_command() -> None:
     assert command.executor_binding.execution_mode == ExecutorMode.SHADOW
     assert command.source.source_event == "signal_json"
     assert command.source.valid_for_execution is True
+    assert command.source.strategy_model == "STRATEGY_5S_CR_FINAL"
+    assert command.source.context_resolution_status == "RESOLVED"
     assert verify_execution_command(command, secret=SECRET)
+
+
+def test_final_signal_without_5scr_proof_cannot_be_promoted() -> None:
+    signal = _final_signal()
+    signal.pop("strategy_5scr")
+    with pytest.raises(PromotionRejectedError) as exc:
+        promote_final_signal_to_command(
+            signal,
+            context=_promotion_context(),
+            signing_secret=SECRET,
+            signing_key_id="exec-key-test",
+        )
+    assert exc.value.reason_code == "PROMOTION_5SCR_GATE_REJECTED"
 
 
 def test_final_signal_cannot_promote_to_lifecycle_action() -> None:

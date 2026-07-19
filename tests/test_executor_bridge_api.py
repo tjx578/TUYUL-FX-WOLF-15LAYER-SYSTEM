@@ -43,6 +43,12 @@ def _command(executor_id: UUID) -> ExecutionCommandV1:
             "valid_for_execution": True,
             "execution_gate_passed": True,
             "tradeplan_valid": True,
+            "strategy_model": "STRATEGY_5S_CR_FINAL",
+            "strategy_rule_version": "5scr.final.2026-07-19",
+            "strategy_rule_status": "FROZEN",
+            "strategy_proof_hash": "sha256:" + "c" * 64,
+            "context_resolution_status": "RESOLVED",
+            "confirmation_policy": "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST",
         },
         "action": "PLACE_PENDING",
         "order": {
