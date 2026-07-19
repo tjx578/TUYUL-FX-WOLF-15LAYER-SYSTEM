@@ -259,14 +259,33 @@ limited to deterministic replay and cannot become production lineage.
 ## Remaining production increments
 
 This foundation now enforces the frozen 5S-CR proof at final-signal and command
-promotion boundaries. It does not claim OOS or production validation. The next
-increments are:
+promotion boundaries. It does not claim OOS or production validation.
 
-1. publish pressure telemetry to a typed durable internal stream while keeping
-   it non-executable;
-2. connect the implemented pressure-to-tradeplan assembler to the live closed-
+The durable pressure transport is now implemented behind
+`SIGNAL_PRESSURE_OUTBOX_ENABLED=false`:
+
+- migration `20260720_01` creates a distinct `pressure_outbox`, atomic
+  per-lifecycle sequences, and the idempotent `strategy_5scr_inbox`;
+- the engine writes canonical-lineage pressure into PostgreSQL before log
+  sampling, while retaining `SignalPressureStateJSON` for observability;
+- the dedicated `services.pressure_outbox.runner` worker claims events with a
+  PostgreSQL lease and `FOR UPDATE SKIP LOCKED`, retries exponentially, and
+  moves exhausted or integrity-violating events to `DEAD`;
+- at-least-once redelivery is collapsed by the inbox `event_id` key and
+  `payload_hash`; a reused ID with a different hash is quarantined;
+- replay reads `pressure_outbox` rows through lifecycle sequence, never Railway
+  logs. Historical JSON remains a backtest-only compatibility input.
+
+Apply the migration and deploy `deploy/railway/start_pressure_outbox.sh` before
+enabling the engine producer flag. The worker stops at `WAITING_EVIDENCE` until
+the closed-candle provider is supplied. It never routes pressure to the EA.
+
+The next increments are:
+
+1. connect the implemented pressure-to-tradeplan assembler to the live closed-
    candle evidence provider and lifecycle repository, then replay-validate its
    Context/H4/H1/M15/M1 inputs without future leakage;
+2. persist the resulting non-executable tradeplan candidate;
 3. persist campaign risk locks and reservations atomically with final-signal
    outbox rows;
 4. add local cryptographic verification and durable restart/retry storage to
