@@ -153,6 +153,20 @@ async def test_dispatch_claim_uses_atomic_skip_locked_lease() -> None:
     assert "UPDATE pressure_outbox AS target" in sql
 
 
+@pytest.mark.asyncio
+async def test_consumer_backlog_reads_only_published_received_rows() -> None:
+    pg = _FakePostgres()
+    repository = PressureOutboxRepository(pg=cast(Any, pg))
+
+    assert await repository.load_consumer_pending(limit=25) == []
+
+    sql = " ".join(pg.fetch_queries[0].split())
+    assert "status = 'PUBLISHED'" in sql
+    assert "inbox.status IN ('RECEIVED', 'FAILED')" in sql
+    assert "inbox.event_id = pressure_outbox.event_id" in sql
+    assert "LIMIT $1" in sql
+
+
 def test_retry_delay_is_exponential_and_capped() -> None:
     assert [pressure_retry_delay(attempt) for attempt in range(1, 6)] == [1.0, 2.0, 4.0, 8.0, 16.0]
     assert pressure_retry_delay(20, max_backoff_seconds=300) == 300.0

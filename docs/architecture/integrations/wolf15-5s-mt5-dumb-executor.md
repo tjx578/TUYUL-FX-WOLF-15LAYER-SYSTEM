@@ -277,7 +277,17 @@ The durable pressure transport is now implemented behind
   logs. Historical JSON remains a backtest-only compatibility input.
 
 Apply the migration and deploy `deploy/railway/start_pressure_outbox.sh` before
-enabling the engine producer flag. The worker stops at `WAITING_EVIDENCE` until
+enabling any runtime path. `SIGNAL_PRESSURE_OUTBOX_ENABLED` is the master kill
+switch. Dark rollout then enables one boundary at a time:
+
+1. `SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED=true` captures pressure while the
+   dispatcher and consumer remain off;
+2. `SIGNAL_PRESSURE_OUTBOX_DISPATCH_ENABLED=true` delivers to the durable inbox
+   but leaves each row at `RECEIVED`;
+3. `STRATEGY_5SCR_PRESSURE_CONSUMER_ENABLED=true` starts shadow processing of
+   both new deliveries and the previously received backlog.
+
+All four flags default to `false`. The worker stops at `WAITING_EVIDENCE` until
 the closed-candle provider is supplied. It never routes pressure to the EA.
 
 The next increments are:

@@ -155,6 +155,23 @@ async def test_duplicate_delivery_produces_one_strategy_effect() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_only_persists_received_before_shadow_processing() -> None:
+    pg = _InboxPostgres()
+    processor = _CountingProcessor()
+    consumer = Strategy5SCRInboxConsumer(pg=cast(Any, pg), processor=processor)
+    event = _envelope()
+
+    received = await consumer.consume(event, process=False)
+    processed = await consumer.consume(event, process=True)
+
+    assert received.status == "RECEIVED"
+    assert received.decision == "DEFER"
+    assert processor.calls == 1
+    assert processed.status == "WAITING_EVIDENCE"
+    assert pg.rows[event.event_id]["status"] == "WAITING_EVIDENCE"
+
+
+@pytest.mark.asyncio
 async def test_same_event_id_with_different_hash_is_quarantined() -> None:
     pg = _InboxPostgres()
     consumer = Strategy5SCRInboxConsumer(pg=cast(Any, pg))
@@ -193,6 +210,9 @@ class _AckCrashRepository:
     async def metrics_snapshot(self) -> dict[str, float]:
         return {}
 
+    async def load_consumer_pending(self, **_: Any) -> list[PressureOutboxEnvelope]:
+        return []
+
 
 @pytest.mark.asyncio
 async def test_crash_after_delivery_before_ack_redelivers_without_duplicate_effect() -> None:
@@ -204,6 +224,9 @@ async def test_crash_after_delivery_before_ack_redelivers_without_duplicate_effe
         worker_id="worker-crash",
         repository=cast(Any, repository),
         consumer=consumer,
+        master_enabled=True,
+        dispatch_enabled=True,
+        consumer_enabled=True,
     )
 
     assert await worker.process_once() == 1
@@ -240,12 +263,16 @@ class _ConcurrentLeaseRepository:
     async def metrics_snapshot(self) -> dict[str, float]:
         return {}
 
+    async def load_consumer_pending(self, **_: Any) -> list[PressureOutboxEnvelope]:
+        return []
+
 
 class _RecordingConsumer:
     def __init__(self) -> None:
         self.events: list[Any] = []
 
-    async def consume(self, event: PressureOutboxEnvelope) -> PressureInboxOutcome:
+    async def consume(self, event: PressureOutboxEnvelope, *, process: bool = True) -> PressureInboxOutcome:
+        assert process is True
         self.events.append(event.event_id)
         return PressureInboxOutcome(
             event_id=event.event_id,
@@ -266,6 +293,9 @@ async def test_two_workers_claim_distinct_events() -> None:
             repository=cast(Any, repository),
             consumer=cast(Any, consumer),
             batch_size=1,
+            master_enabled=True,
+            dispatch_enabled=True,
+            consumer_enabled=True,
         )
         for index in range(2)
     ]
@@ -275,3 +305,71 @@ async def test_two_workers_claim_distinct_events() -> None:
     assert processed == [1, 1]
     assert len(set(consumer.events)) == 2
     assert repository.published == {event.event_id for event in events}
+
+
+class _StagedRolloutRepository:
+    def __init__(self, event: PressureOutboxEnvelope) -> None:
+        self.event = event
+        self.claim_calls = 0
+        self.published = False
+
+    async def claim_batch(self, **_: Any) -> list[PressureOutboxEnvelope]:
+        self.claim_calls += 1
+        return [] if self.published else [self.event]
+
+    async def mark_published(self, *_: Any, **__: Any) -> bool:
+        self.published = True
+        return True
+
+    async def mark_dead(self, *_: Any, **__: Any) -> bool:
+        return True
+
+    async def mark_retry(self, *_: Any, **__: Any) -> str:
+        return "PENDING"
+
+    async def load_consumer_pending(self, **_: Any) -> list[PressureOutboxEnvelope]:
+        return [self.event] if self.published else []
+
+    async def metrics_snapshot(self) -> dict[str, float]:
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_rollout_flags_separate_dispatch_from_shadow_consumer() -> None:
+    event = _envelope(anchor="clean-staged")
+    repository = _StagedRolloutRepository(event)
+    pg = _InboxPostgres()
+    processor = _CountingProcessor()
+    consumer = Strategy5SCRInboxConsumer(pg=cast(Any, pg), processor=processor)
+
+    killed = PressureOutboxWorker(
+        repository=cast(Any, repository),
+        consumer=consumer,
+        master_enabled=False,
+        dispatch_enabled=True,
+        consumer_enabled=True,
+    )
+    dispatcher = PressureOutboxWorker(
+        repository=cast(Any, repository),
+        consumer=consumer,
+        master_enabled=True,
+        dispatch_enabled=True,
+        consumer_enabled=False,
+    )
+    shadow_consumer = PressureOutboxWorker(
+        repository=cast(Any, repository),
+        consumer=consumer,
+        master_enabled=True,
+        dispatch_enabled=False,
+        consumer_enabled=True,
+    )
+
+    assert await killed.process_once() == 0
+    assert repository.claim_calls == 0
+    assert await dispatcher.process_once() == 1
+    assert repository.published is True
+    assert pg.rows[event.event_id]["status"] == "RECEIVED"
+    assert processor.calls == 0
+    assert await shadow_consumer.process_once() == 1
+    assert pg.rows[event.event_id]["status"] == "WAITING_EVIDENCE"
+    assert processor.calls == 1

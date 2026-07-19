@@ -111,9 +111,14 @@ class Strategy5SCRInboxConsumer:
         self._pg = pg or pg_client
         self._processor = processor or Strategy5SCRPressureProcessor()
 
-    async def consume(self, envelope: PressureOutboxEnvelope) -> PressureInboxOutcome:
+    async def consume(
+        self,
+        envelope: PressureOutboxEnvelope,
+        *,
+        process: bool = True,
+    ) -> PressureInboxOutcome:
         async with self._pg.transaction() as conn:
-            await conn.execute(
+            insert_result = await conn.execute(
                 """
                 INSERT INTO strategy_5scr_inbox (event_id, payload_hash, received_at, status)
                 VALUES ($1, $2, NOW(), 'RECEIVED')
@@ -170,6 +175,17 @@ class Strategy5SCRInboxConsumer:
                     duplicate=True,
                     result_id=_row_value(row, "result_id"),
                     reasons=reasons,
+                )
+
+            if not process:
+                PRESSURE_INBOX_DELIVERY_TOTAL.labels(outcome="received").inc()
+                return PressureInboxOutcome(
+                    event_id=envelope.event_id,
+                    lifecycle_id=envelope.lifecycle_id,
+                    status="RECEIVED",
+                    duplicate=insert_result.endswith(" 0"),
+                    decision="DEFER",
+                    reasons=("STRATEGY_5SCR_PRESSURE_CONSUMER_DISABLED",),
                 )
 
             await conn.execute(

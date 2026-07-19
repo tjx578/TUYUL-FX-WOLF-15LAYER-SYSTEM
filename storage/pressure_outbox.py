@@ -506,6 +506,35 @@ class PressureOutboxRepository:
         PRESSURE_OUTBOX_OLDEST_AGE_SECONDS.set(snapshot["oldest_age_seconds"])
         return snapshot
 
+    async def load_consumer_pending(self, *, limit: int = 100) -> list[PressureOutboxEnvelope]:
+        """Load inboxed events that are ready for the shadow strategy consumer.
+
+        Dispatcher-only rollout acknowledges an outbox row after the durable
+        inbox transaction commits with ``RECEIVED``.  Enabling the consumer
+        later drains those already-published rows without re-opening or
+        mutating the transport event.
+        """
+
+        if not self._pg.is_available:
+            return []
+        rows = await self._pg.fetch(
+            f"""
+            SELECT {_SELECT_COLUMNS}
+            FROM pressure_outbox
+            WHERE status = 'PUBLISHED'
+              AND EXISTS (
+                  SELECT 1
+                  FROM strategy_5scr_inbox AS inbox
+                  WHERE inbox.event_id = pressure_outbox.event_id
+                    AND inbox.status IN ('RECEIVED', 'FAILED')
+              )
+            ORDER BY published_at, created_at, lifecycle_id, lifecycle_sequence
+            LIMIT $1
+            """,
+            max(1, int(limit)),
+        )
+        return [pressure_envelope_from_row(row) for row in rows]
+
     async def load_replay_events(
         self,
         *,
@@ -550,7 +579,9 @@ class PressureOutboxRuntime:
         self._repository = None
 
     def persist_sync(self, payload: Mapping[str, Any], *, timeout_seconds: float = 5.0) -> PressurePersistenceResult:
-        if os.getenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "false").strip().lower() != "true":
+        master_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "false").strip().lower() == "true"
+        write_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "false").strip().lower() == "true"
+        if not (master_enabled and write_enabled):
             return PressurePersistenceResult(status="DISABLED")
         loop = self._loop
         repository = self._repository

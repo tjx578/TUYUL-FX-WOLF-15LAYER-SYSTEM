@@ -55,7 +55,7 @@ async def init_persistent_storage() -> PersistenceSync | None:
         return None
 
     # Bind the synchronous analysis thread to the asyncpg owner loop.  The
-    # feature remains inert unless SIGNAL_PRESSURE_OUTBOX_ENABLED=true.
+    # feature remains inert unless both the master and granular write flags are true.
     from storage.pressure_outbox import configure_pressure_outbox_runtime  # noqa: PLC0415
 
     configure_pressure_outbox_runtime(loop=asyncio.get_running_loop())

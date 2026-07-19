@@ -15,11 +15,16 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine.reflection import Inspector
 
 revision = "20260720_01"
 down_revision = "20260719_01"
 branch_labels = None
 depends_on = None
+
+
+def _index_names(inspector: Inspector, table_name: str) -> set[str]:
+    return {str(item["name"]) for item in inspector.get_indexes(table_name)}
 
 
 def upgrade() -> None:
@@ -76,16 +81,37 @@ def upgrade() -> None:
                 name="uq_pressure_outbox_lifecycle_sequence",
             ),
         )
+
+    inspector = inspect(bind)
+    pressure_indexes = _index_names(inspector, "pressure_outbox")
+    if "ix_pressure_outbox_pending" not in pressure_indexes:
         op.create_index(
-            "ix_pressure_outbox_dispatch",
+            "ix_pressure_outbox_pending",
             "pressure_outbox",
-            ["status", "available_at", "lease_expires_at", "created_at"],
+            ["available_at", "created_at"],
+            postgresql_where=sa.text("status = 'PENDING'"),
         )
+    if "ix_pressure_outbox_lease_expiry" not in pressure_indexes:
+        op.create_index(
+            "ix_pressure_outbox_lease_expiry",
+            "pressure_outbox",
+            ["lease_expires_at", "created_at"],
+            postgresql_where=sa.text("status = 'IN_FLIGHT'"),
+        )
+    if "ix_pressure_outbox_published" not in pressure_indexes:
+        op.create_index(
+            "ix_pressure_outbox_published",
+            "pressure_outbox",
+            ["published_at", "created_at"],
+            postgresql_where=sa.text("status = 'PUBLISHED'"),
+        )
+    if "ix_pressure_outbox_lifecycle" not in pressure_indexes:
         op.create_index(
             "ix_pressure_outbox_lifecycle",
             "pressure_outbox",
             ["lifecycle_id", "lifecycle_sequence"],
         )
+    if "ix_pressure_outbox_signal_valid_at" not in pressure_indexes:
         op.create_index("ix_pressure_outbox_signal_valid_at", "pressure_outbox", ["signal_valid_at"])
 
     if not inspector.has_table("strategy_5scr_inbox"):
@@ -104,14 +130,36 @@ def upgrade() -> None:
                 name="ck_strategy_5scr_inbox_status",
             ),
         )
+
+    inspector = inspect(bind)
+    inbox_indexes = _index_names(inspector, "strategy_5scr_inbox")
+    if "ix_strategy_5scr_inbox_status_received" not in inbox_indexes:
         op.create_index("ix_strategy_5scr_inbox_status_received", "strategy_5scr_inbox", ["status", "received_at"])
 
 
 def downgrade() -> None:
-    op.drop_index("ix_strategy_5scr_inbox_status_received", table_name="strategy_5scr_inbox")
-    op.drop_table("strategy_5scr_inbox")
-    op.drop_index("ix_pressure_outbox_signal_valid_at", table_name="pressure_outbox")
-    op.drop_index("ix_pressure_outbox_lifecycle", table_name="pressure_outbox")
-    op.drop_index("ix_pressure_outbox_dispatch", table_name="pressure_outbox")
-    op.drop_table("pressure_outbox")
-    op.drop_table("pressure_lifecycle_sequences")
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if inspector.has_table("strategy_5scr_inbox"):
+        inbox_indexes = _index_names(inspector, "strategy_5scr_inbox")
+        if "ix_strategy_5scr_inbox_status_received" in inbox_indexes:
+            op.drop_index("ix_strategy_5scr_inbox_status_received", table_name="strategy_5scr_inbox")
+        op.drop_table("strategy_5scr_inbox")
+
+    inspector = inspect(bind)
+    if inspector.has_table("pressure_outbox"):
+        pressure_indexes = _index_names(inspector, "pressure_outbox")
+        for index_name in (
+            "ix_pressure_outbox_signal_valid_at",
+            "ix_pressure_outbox_lifecycle",
+            "ix_pressure_outbox_published",
+            "ix_pressure_outbox_lease_expiry",
+            "ix_pressure_outbox_pending",
+        ):
+            if index_name in pressure_indexes:
+                op.drop_index(index_name, table_name="pressure_outbox")
+        op.drop_table("pressure_outbox")
+
+    inspector = inspect(bind)
+    if inspector.has_table("pressure_lifecycle_sequences"):
+        op.drop_table("pressure_lifecycle_sequences")

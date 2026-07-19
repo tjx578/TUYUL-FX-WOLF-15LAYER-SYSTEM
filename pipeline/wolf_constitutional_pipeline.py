@@ -7513,7 +7513,9 @@ class WolfConstitutionalPipeline:
         return pressure_payload
 
     def _emit_signal_pressure_state_payload(self, payload: dict[str, Any]) -> bool:
-        if os.getenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "false").strip().lower() == "true":
+        outbox_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "false").strip().lower() == "true"
+        write_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "false").strip().lower() == "true"
+        if outbox_enabled and write_enabled:
             from storage.pressure_outbox import persist_pressure_payload_sync  # noqa: PLC0415
 
             prepared_payload = build_signal_pressure_state_payload(payload)
