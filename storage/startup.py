@@ -54,6 +54,12 @@ async def init_persistent_storage() -> PersistenceSync | None:
     if not pg_client.is_available:
         return None
 
+    # Bind the synchronous analysis thread to the asyncpg owner loop.  The
+    # feature remains inert unless SIGNAL_PRESSURE_OUTBOX_ENABLED=true.
+    from storage.pressure_outbox import configure_pressure_outbox_runtime  # noqa: PLC0415
+
+    configure_pressure_outbox_runtime(loop=asyncio.get_running_loop())
+
     redis = RedisClient()
     try:
         has_candles = _has_candle_data(redis)
@@ -113,6 +119,9 @@ async def shutdown_persistent_storage() -> None:
     except Exception:
         pass
 
+    from storage.pressure_outbox import pressure_outbox_runtime  # noqa: PLC0415
+
+    pressure_outbox_runtime.clear()
     await pg_client.close()
 
 
