@@ -355,6 +355,7 @@ Mapping service ke file deploy Railway dan start script:
 | Engine | `railway-engine.toml` | `deploy/railway/start_engine.sh` |
 | Allocation | `railway-allocation.toml` | `deploy/railway/start_allocation.sh` |
 | Execution | `railway-execution.toml` | `deploy/railway/start_execution.sh` |
+| MT5 EA Bridge | `railway-ea-bridge.toml` | `deploy/railway/start_ea_bridge.sh` |
 | Orchestrator | `railway-orchestrator.toml` | `deploy/railway/start_orchestrator.sh` |
 | Worker Backtest | `railway-worker-backtest.toml` | `deploy/railway/start_worker.sh` |
 | Worker Monte Carlo | `railway-worker-montecarlo.toml` | `deploy/railway/start_worker.sh` |
