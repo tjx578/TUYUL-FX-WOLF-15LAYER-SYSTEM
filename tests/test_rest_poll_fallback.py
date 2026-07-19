@@ -293,6 +293,7 @@ class TestRestPollFallback:
 
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806
+            patch("ingest.hybrid_candle_provider.FallbackCandleProvider") as MockFallback,  # noqa: N806
             patch(
                 "ingest.rest_poll_fallback.load_finnhub",
                 return_value={
@@ -308,6 +309,9 @@ class TestRestPollFallback:
         ):
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(side_effect=_failing_fetch)
+            mock_fallback = MockFallback.return_value
+            mock_fallback.fetch = AsyncMock(return_value=[])
+            mock_fallback.available_providers = ()
 
             RestPollFallback = _repo_attr("ingest.rest_poll_fallback", "RestPollFallback")
 
