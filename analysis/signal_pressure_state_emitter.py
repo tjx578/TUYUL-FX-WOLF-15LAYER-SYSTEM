@@ -29,6 +29,23 @@ def signal_pressure_runtime_identity(*, generated_at: datetime | None = None) ->
     }
 
 
+def build_signal_pressure_state_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the single canonical payload shared by the outbox and log."""
+
+    data = dict(payload)
+    for key, value in signal_pressure_runtime_identity().items():
+        data.setdefault(key, value)
+    data["event"] = "signal_pressure_state_json"
+    data["schema_version"] = "2.0-pressure-state"
+    data["promotion_stage"] = "PRESSURE_ONLY"
+    data["valid_for_execution"] = False
+    data["execution_valid_now"] = False
+    data["is_final_signal"] = False
+    data["final_direction"] = "WAIT"
+    data["eligible_for_signal_decision"] = False
+    return data
+
+
 def emit_signal_pressure_state(
     payload: Mapping[str, Any],
     *,
@@ -37,16 +54,7 @@ def emit_signal_pressure_state(
 ) -> bool:
     if not enabled:
         return False
-    data = dict(payload)
-    for key, value in signal_pressure_runtime_identity().items():
-        data.setdefault(key, value)
-    data["event"] = "signal_pressure_state_json"
-    data["schema_version"] = "2.0-pressure-state"
-    data["valid_for_execution"] = False
-    data["execution_valid_now"] = False
-    data["is_final_signal"] = False
-    data["final_direction"] = "WAIT"
-    data["eligible_for_signal_decision"] = False
+    data = build_signal_pressure_state_payload(payload)
     logging.getLogger("signal_json").warning(
         "%s %s",
         prefix,
