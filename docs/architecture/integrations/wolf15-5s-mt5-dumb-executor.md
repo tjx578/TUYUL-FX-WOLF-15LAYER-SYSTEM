@@ -153,16 +153,22 @@ Exactly-once refers to the logical broker side effect, not packet delivery.
 The EA local ledger must be persisted before and after `OrderSend`. A timeout
 after submission is not permission to send again.
 
-## Strategy 5S-CR risk policy
+## Strategy 5S-CR risk profiles
 
-For the supplied USD 1,000 scenario:
+Backtest statistics and production rollout use separate, explicit profiles:
 
 ```text
 campaign closed-balance base = USD 1,000
 campaign R                   = 5% = USD 50
 parent maximum planned loss  = USD 50
-child maximum planned loss   = USD 50
-campaign maximum             = 2R = USD 100
+
+BACKTEST_FULL_RISK
+child maximum planned loss   = USD 50 (1.0R)
+
+PRODUCTION_ADJUSTED
+child maximum planned loss   = USD 25 (0.5R)
+parent must be BE/protected before child
+campaign open-risk cap       = 1.0R-1.25R
 ```
 
 `risk/s5_campaign_risk.py` implements the broker-aware primitive:
@@ -177,6 +183,10 @@ final_volume  = floor(raw_volume / volume_step) * volume_step
 The implementation never rounds volume upward and never clamps a calculated
 volume up to the broker minimum. Floating equity affects safety checks but does
 not increase the locked campaign R.
+
+The current primitive implements the full-risk parent/child calculation. The
+production-adjusted child multiplier and durable reservation ledger remain a
+DEMO gate; production execution must stay disabled until both are integrated.
 
 The initial account-wide open-risk cap is 10%. This is a rollout policy, not a
 fact inferred from pressure logs.
@@ -218,6 +228,34 @@ NO-GO now:
 - allowing the EA to calculate risk, direction, entry, SL, or TP;
 - merging before the MQL5 executor compiles and shadow replay is deterministic.
 
+## Pressure-to-tradeplan module
+
+The analysis path now contains:
+
+- `contracts/strategy_5scr_pressure.py`: immutable pressure, lifecycle, market
+  evidence, and tradeplan contracts;
+- `analysis/strategy_5scr_pressure_to_tradeplan.py`: Railway-log/current-event
+  normalizer, SHA-256 deduplication, legacy replay lifecycle grouping, and the
+  fail-closed 5S-CR proof/tradeplan assembler;
+- `tests/test_strategy_5scr_pressure_to_tradeplan.py`: pressure invariants,
+  replay deduplication, Context Resolution gates, future-leakage rejection,
+  broker-aware target floor, direction authority, and deterministic plan IDs.
+
+The output event is `strategy_5scr_tradeplan_candidate`, not `signal_json`.
+Even a strategy-ready plan remains:
+
+```text
+is_final_signal=false
+valid_for_execution=false
+next_required_stage=RISK_RESERVATION
+```
+
+Only a later transaction may reserve risk and write the final `signal_json`
+outbox row atomically. A LIVE pressure event without `source_clean_block_id` or
+a stable `source_watch_id` defers with
+`STRATEGY_5SCR_CANONICAL_LIFECYCLE_REQUIRED`. Legacy synthetic anchors are
+limited to deterministic replay and cannot become production lineage.
+
 ## Remaining production increments
 
 This foundation now enforces the frozen 5S-CR proof at final-signal and command
@@ -226,8 +264,9 @@ increments are:
 
 1. publish pressure telemetry to a typed durable internal stream while keeping
    it non-executable;
-2. populate the typed 5S-CR proof from replay-validated campaign/context/H4/H1/
-   M15/M1 state without future leakage;
+2. connect the implemented pressure-to-tradeplan assembler to the live closed-
+   candle evidence provider and lifecycle repository, then replay-validate its
+   Context/H4/H1/M15/M1 inputs without future leakage;
 3. persist campaign risk locks and reservations atomically with final-signal
    outbox rows;
 4. add local cryptographic verification and durable restart/retry storage to
