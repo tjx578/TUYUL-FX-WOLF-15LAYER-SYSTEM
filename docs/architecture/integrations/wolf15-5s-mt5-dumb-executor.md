@@ -276,6 +276,15 @@ The durable pressure transport is now implemented behind
 - replay reads `pressure_outbox` rows through lifecycle sequence, never Railway
   logs. Historical JSON remains a backtest-only compatibility input.
 
+Production log validation also proves that pressure qualification and canonical
+lineage arrive in different events. `pressure_radar_gate_v1` therefore creates
+a deployment-scoped provisional manifest at `ticks >= 3` plus an allowed stage,
+then associates a later clean-block interval without allowing the latest
+one-tick row to erase the latched qualification. Exact `context_version` is not
+a join key because it changes across otherwise stable structural snapshots.
+See [Pressure Radar Gate v1 validation](pressure-radar-gate-v1-validation.md)
+for the frozen predicate and the 10-pair replay evidence.
+
 Apply the migration, create the dedicated Railway service from
 `railway-pressure-outbox.toml`, and set its service variables before enabling
 any runtime path. Railway variables are service-scoped: writer flags belong to
