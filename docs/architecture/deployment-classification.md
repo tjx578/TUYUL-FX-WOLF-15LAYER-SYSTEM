@@ -43,15 +43,15 @@ Setiap deployment target harus diklasifikasikan sebagai salah satu dari tiga sta
 
 Alasan:
 
-* repo memiliki 11 Railway toml configs (8 active, 3 deprecated/rollback)
+* repo memiliki 13 Railway toml configs (10 active, 3 deprecated/rollback)
 * Railway topology sudah mengalami **consolidation wave** — bukan pure per-service lagi:
   * `railway.toml` = API + embedded Orchestrator (`WOLF15_EMBED_ORCHESTRATOR=true`)
   * `railway-execution.toml` = Allocation + Execution consolidated via `services/trade/runner.py`
   * `railway-engine.toml` = Engine-only (`RUN_MODE=engine-only`)
 * dedicated service entrypoints (`services/api/main.py`, `services/engine/runner.py`, `services/trade/runner.py`, `services/dashboard_bff/main.py`) menegaskan arah service-oriented runtime
-* startup scripts di `deploy/railway/` sudah lengkap (12 scripts: 6 active + 6 deprecated/rollback)
+* startup scripts di `deploy/railway/` sudah lengkap (14 scripts)
 
-**Active Railway services (8):**
+**Active Railway services (10):**
 
 | Config | Start Script | Purpose | Lifecycle |
 | ------ | ----------- | ------- | --------- |
@@ -59,6 +59,8 @@ Alasan:
 | `railway-engine.toml` | `start_engine_consolidated.sh` | Engine-only pipeline | ON_FAILURE (5 retries) |
 | `railway-execution.toml` | `start_trade_consolidated.sh` | Allocation + Execution consolidated | ON_FAILURE (5 retries) |
 | `railway-dashboard-bff.toml` | `start_dashboard_bff.sh` | Dashboard BFF aggregation | ON_FAILURE (5 retries) |
+| `railway-ea-bridge.toml` | `start_ea_bridge.sh` | SHADOW MT5 command bridge | ON_FAILURE (5 retries) |
+| `railway-pressure-outbox.toml` | `start_pressure_outbox.sh` | Durable pressure dispatcher/inbox worker | ON_FAILURE (5 retries) |
 | `railway-migrator.toml` | `start_migrator.sh` | One-shot DB migration (alembic) | NEVER restart |
 | `railway-worker-montecarlo.toml` | `start_worker.sh` | Monte Carlo cron (daily 1:00 UTC) | NEVER restart |
 | `railway-worker-backtest.toml` | `start_worker.sh` | Nightly backtest cron (daily 1:30 UTC) | NEVER restart |
@@ -158,7 +160,7 @@ Fakta:
 
 | Deployment target | Status | Primary purpose | Source of truth scope | Notes |
 | ----------------- | ------ | --------------- | -------------------- | ----- |
-| Railway | **Canonical** | Cloud runtime (consolidated services) | Current service-oriented runtime topology | 8 active + 3 deprecated tomls |
+| Railway | **Canonical** | Cloud runtime (consolidated services) | Current service-oriented runtime topology | 10 active + 3 deprecated tomls |
 | Docker Compose | **Canonical** | Local/integration full-stack | Local reproducibility, integration validation | 14 services (hybrid transitional) |
 | Vercel | **Supported** | Dashboard frontend deployment | Frontend deployment only | SIN1 region, `dashboard/nextjs/` |
 | Hostinger VPS | **Removed** | (formerly bare-metal ops) | N/A | `deploy/hostinger/` deleted from repo |
@@ -356,7 +358,7 @@ Tidak ada deployment target yang boleh diam-diam menciptakan perilaku runtime ba
 ```text
 v1.0 — Initial deployment classification (flat inventory format)
 v2.0 — Rewritten with 3-tier classification model
-       - Railway: canonical cloud (8 active + 3 deprecated tomls)
+       - Railway: canonical cloud (10 active + 3 deprecated tomls)
        - Docker Compose: canonical local/integration (14 services)
        - Vercel: supported (dashboard frontend, SIN1)
        - Hostinger: removed (deploy/hostinger/ deleted from repo)

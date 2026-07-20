@@ -35,6 +35,17 @@ _PRESSURE_EVENT_NAMESPACE = UUID("a267327e-9b80-5be0-a169-5547a412471d")
 _PRESSURE_OUTBOX_NAMESPACE = UUID("4d2f67b2-6d27-5a31-870a-7e17df64d826")
 _RUNTIME_IDENTITY_FIELDS = frozenset({"deployment_id", "commit_sha", "replica_id", "generated_at_utc"})
 _TRANSPORT_FIELDS = frozenset({"event_id", "lifecycle_id", "lifecycle_sequence", "pressure_outbox_id"})
+_REQUIRED_PRESSURE_TABLES = frozenset({"pressure_lifecycle_sequences", "pressure_outbox", "strategy_5scr_inbox"})
+_REQUIRED_PRESSURE_INDEXES = frozenset(
+    {
+        "ix_pressure_outbox_pending",
+        "ix_pressure_outbox_lease_expiry",
+        "ix_pressure_outbox_published",
+        "ix_pressure_outbox_lifecycle",
+        "ix_pressure_outbox_signal_valid_at",
+        "ix_strategy_5scr_inbox_status_received",
+    }
+)
 
 _SELECT_COLUMNS = """
     id, event_id, event_type, schema_version, symbol, lifecycle_id,
@@ -78,6 +89,18 @@ class PressurePersistenceResult:
     status: PersistenceStatus
     envelope: PressureOutboxEnvelope | None = None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class PressureOutboxSchemaStatus:
+    present_tables: frozenset[str]
+    present_indexes: frozenset[str]
+    missing_tables: tuple[str, ...]
+    missing_indexes: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return not self.missing_tables and not self.missing_indexes
 
 
 def _text(value: Any) -> str | None:
@@ -260,6 +283,43 @@ class PressureOutboxRepository:
     @property
     def is_available(self) -> bool:
         return self._pg.is_available
+
+    async def schema_status(self) -> PressureOutboxSchemaStatus:
+        """Return a non-secret readiness snapshot for migration ``20260720_01``."""
+
+        if not self._pg.is_available:
+            return PressureOutboxSchemaStatus(
+                present_tables=frozenset(),
+                present_indexes=frozenset(),
+                missing_tables=tuple(sorted(_REQUIRED_PRESSURE_TABLES)),
+                missing_indexes=tuple(sorted(_REQUIRED_PRESSURE_INDEXES)),
+            )
+        table_rows = await self._pg.fetch(
+            """
+            SELECT tablename
+            FROM pg_catalog.pg_tables
+            WHERE schemaname = current_schema()
+              AND tablename = ANY($1::text[])
+            """,
+            sorted(_REQUIRED_PRESSURE_TABLES),
+        )
+        index_rows = await self._pg.fetch(
+            """
+            SELECT indexname
+            FROM pg_catalog.pg_indexes
+            WHERE schemaname = current_schema()
+              AND indexname = ANY($1::text[])
+            """,
+            sorted(_REQUIRED_PRESSURE_INDEXES),
+        )
+        present_tables = frozenset(str(_row_value(row, "tablename") or "") for row in table_rows)
+        present_indexes = frozenset(str(_row_value(row, "indexname") or "") for row in index_rows)
+        return PressureOutboxSchemaStatus(
+            present_tables=present_tables,
+            present_indexes=present_indexes,
+            missing_tables=tuple(sorted(_REQUIRED_PRESSURE_TABLES - present_tables)),
+            missing_indexes=tuple(sorted(_REQUIRED_PRESSURE_INDEXES - present_indexes)),
+        )
 
     async def enqueue(self, payload: Mapping[str, Any]) -> tuple[PressureOutboxEnvelope, bool]:
         """Persist one event and allocate its sequence in one DB transaction.
@@ -646,6 +706,7 @@ __all__ = [
     "PressureOutboxError",
     "PressureOutboxIntegrityError",
     "PressureOutboxRepository",
+    "PressureOutboxSchemaStatus",
     "PressureOutboxRuntime",
     "PressurePersistenceResult",
     "configure_pressure_outbox_runtime",

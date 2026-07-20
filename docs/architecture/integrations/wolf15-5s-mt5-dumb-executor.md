@@ -276,19 +276,28 @@ The durable pressure transport is now implemented behind
 - replay reads `pressure_outbox` rows through lifecycle sequence, never Railway
   logs. Historical JSON remains a backtest-only compatibility input.
 
-Apply the migration and deploy `deploy/railway/start_pressure_outbox.sh` before
-enabling any runtime path. `SIGNAL_PRESSURE_OUTBOX_ENABLED` is the master kill
-switch. Dark rollout then enables one boundary at a time:
+Apply the migration, create the dedicated Railway service from
+`railway-pressure-outbox.toml`, and set its service variables before enabling
+any runtime path. Railway variables are service-scoped: writer flags belong to
+the engine, while dispatcher and consumer flags belong to the pressure worker.
+`SIGNAL_PRESSURE_OUTBOX_ENABLED` remains the master kill switch in each service.
 
-1. `SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED=true` captures pressure while the
-   dispatcher and consumer remain off;
-2. `SIGNAL_PRESSURE_OUTBOX_DISPATCH_ENABLED=true` delivers to the durable inbox
-   but leaves each row at `RECEIVED`;
-3. `STRATEGY_5SCR_PRESSURE_CONSUMER_ENABLED=true` starts shadow processing of
-   both new deliveries and the previously received backlog.
+The fail-closed rollout order is:
 
-All four flags default to `false`. The worker stops at `WAITING_EVIDENCE` until
-the closed-candle provider is supplied. It never routes pressure to the EA.
+1. dark: engine master/write are `false`; worker
+   `PRESSURE_OUTBOX_EXPECTED_PHASE=dark` and all four feature flags are `false`;
+2. capture: engine master/write become `true`; worker remains in the dark phase
+   so no row can be claimed;
+3. dispatch: worker phase becomes `dispatcher`, with master/dispatch `true` and
+   write/consumer `false`; delivery stops at durable inbox status `RECEIVED`;
+4. consume: worker phase becomes `consumer`, with master/dispatch/consumer
+   `true` and write `false`; shadow processing covers new deliveries and the
+   previously received backlog.
+
+The startup preflight verifies the exact phase/flag contract plus all migration
+tables and indexes before the worker loop starts. All feature flags default to
+`false`. The consumer stops at `WAITING_EVIDENCE` until the closed-candle
+provider is supplied, and pressure is never routed to the EA.
 
 The next increments are:
 
