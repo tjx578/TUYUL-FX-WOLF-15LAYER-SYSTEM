@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
+from storage.pressure_radar_manifest import PressureRadarManifestRepository
 
 
 def _enabled(value: str | None) -> bool:
@@ -67,6 +68,13 @@ async def run_preflight() -> dict[str, object]:
                 f"tables={','.join(schema.missing_tables) or 'none'}:"
                 f"indexes={','.join(schema.missing_indexes) or 'none'}"
             )
+        radar_schema = await PressureRadarManifestRepository(pg=pg_client).schema_status()
+        if not radar_schema.ready:
+            raise RuntimeError(
+                "PRESSURE_RADAR_SCHEMA_NOT_READY:"
+                f"tables={','.join(radar_schema.missing_tables) or 'none'}:"
+                f"indexes={','.join(radar_schema.missing_indexes) or 'none'}"
+            )
         return {
             "event": "pressure_outbox_preflight",
             "ready": True,
@@ -74,6 +82,8 @@ async def run_preflight() -> dict[str, object]:
             "flags": asdict(flags),
             "schema_tables": sorted(schema.present_tables),
             "schema_indexes": sorted(schema.present_indexes),
+            "radar_schema_tables": sorted(radar_schema.present_tables),
+            "radar_schema_indexes": sorted(radar_schema.present_indexes),
         }
     finally:
         await pg_client.close()

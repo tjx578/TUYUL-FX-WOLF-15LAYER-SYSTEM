@@ -412,6 +412,19 @@ class PressureOutboxRepository:
         )
         return pressure_envelope_from_row(row), False
 
+    async def load_event_in_transaction(
+        self,
+        conn: Any,
+        event_id: UUID,
+    ) -> PressureOutboxEnvelope | None:
+        """Load one event while participating in the caller's transaction."""
+
+        row = await conn.fetchrow(
+            f"SELECT {_SELECT_COLUMNS} FROM pressure_outbox WHERE event_id = $1",
+            event_id,
+        )
+        return None if row is None else pressure_envelope_from_row(row)
+
     async def claim_batch(
         self,
         *,

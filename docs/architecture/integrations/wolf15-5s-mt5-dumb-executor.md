@@ -285,6 +285,28 @@ a join key because it changes across otherwise stable structural snapshots.
 See [Pressure Radar Gate v1 validation](pressure-radar-gate-v1-validation.md)
 for the frozen predicate and the 10-pair replay evidence.
 
+Migration `20260720_02` makes that deferred association durable:
+
+- `pressure_radar_events` deduplicates on `(deployment_id, event_id)` and
+  rejects identity reuse with a different payload hash;
+- `pressure_radar_manifests` persists the qualifying payload, latched stage and
+  ticks, context signature, expiry, lineage state, and optional outbox link;
+- ingestion takes a PostgreSQL advisory transaction lock scoped to deployment
+  and symbol before loading active manifests `FOR UPDATE`;
+- a provisional or reserve event cannot enter `pressure_outbox`;
+- the transition to `ANALYSIS_READY` and canonical pressure-outbox enqueue use
+  one PostgreSQL transaction, so a crash cannot commit only one side;
+- duplicate delivery after a committed write returns the same manifest and
+  outbox event without advancing the lifecycle sequence;
+- database constraints preserve `final_direction=WAIT`,
+  `valid_for_execution=false`, and `is_final_signal=false`.
+
+The engine uses this path only when `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=true`
+in addition to both existing outbox master/write flags. The new flag defaults
+to `false`; without it, the previously deployed canonical direct-writer path is
+unchanged. This permits schema deployment and shadow validation before routing
+live pressure through the durable radar.
+
 Apply the migration, create the dedicated Railway service from
 `railway-pressure-outbox.toml`, and set its service variables before enabling
 any runtime path. Railway variables are service-scoped: writer flags belong to
@@ -295,8 +317,9 @@ The fail-closed rollout order is:
 
 1. dark: engine master/write are `false`; worker
    `PRESSURE_OUTBOX_EXPECTED_PHASE=dark` and all four feature flags are `false`;
-2. capture: engine master/write become `true`; worker remains in the dark phase
-   so no row can be claimed;
+2. radar capture: after migration and replay parity checks, engine
+   master/write/radar-write become `true`; worker remains in the dark phase so
+   no row can be claimed;
 3. dispatch: worker phase becomes `dispatcher`, with master/dispatch `true` and
    write/consumer `false`; delivery stops at durable inbox status `RECEIVED`;
 4. consume: worker phase becomes `consumer`, with master/dispatch/consumer
@@ -310,12 +333,15 @@ provider is supplied, and pressure is never routed to the EA.
 
 The next increments are:
 
-1. connect the implemented pressure-to-tradeplan assembler to the live closed-
+1. apply migration `20260720_02`, validate radar schema preflight, and shadow
+   compare the atomic durable path against the frozen 10-pair replay before
+   enabling `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED`;
+2. connect the implemented pressure-to-tradeplan assembler to the live closed-
    candle evidence provider and lifecycle repository, then replay-validate its
    Context/H4/H1/M15/M1 inputs without future leakage;
-2. persist the resulting non-executable tradeplan candidate;
-3. persist campaign risk locks and reservations atomically with final-signal
+3. persist the resulting non-executable tradeplan candidate;
+4. persist campaign risk locks and reservations atomically with final-signal
    outbox rows;
-4. add local cryptographic verification and durable restart/retry storage to
+5. add local cryptographic verification and durable restart/retry storage to
    the MQL5 scaffold, then compile it in MetaEditor;
-5. run SHADOW, DEMO, then a symbol-limited LIVE canary.
+6. run SHADOW, DEMO, then a symbol-limited LIVE canary.

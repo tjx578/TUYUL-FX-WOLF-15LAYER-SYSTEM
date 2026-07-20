@@ -1,6 +1,6 @@
 # Pressure Radar Gate v1 — Production Log Validation
 
-Status: replay-validated, non-executable foundation
+Status: replay-validated; durable path implemented dark-by-default; non-executable
 
 Source window: 2026-07-20 06:51:20–07:21:20 UTC
 
@@ -114,6 +114,31 @@ is_final_signal     false
 
 The gate never ranks candidates and never claims directional accuracy. Tier or
 market-priority ordering belongs to the future closed-candle evidence layer.
+
+## Durable implementation boundary
+
+Migration `20260720_02` persists deployment-scoped event deduplication and the
+latched manifest. Repository ingestion serializes each deployment/symbol using
+a PostgreSQL advisory transaction lock, reloads active manifests `FOR UPDATE`,
+and retains the original qualifying payload across restarts.
+
+The canonical outbox event is prepared only on the
+`WAITING_CANONICAL_LINEAGE -> ANALYSIS_READY` transition. Outbox sequence
+allocation, outbox insertion, manifest update, and event dedup insertion occur
+inside the same transaction. Tests cover failure during outbox insertion,
+failure after outbox insertion but before manifest update, connection loss
+after commit but before acknowledgement, duplicate delivery, and two concurrent
+workers processing the same event.
+
+A repository-level replay of all 302 target records produces the same ten
+`ANALYSIS_READY` manifests and exactly ten outbox events (7 BUY, 3 SELL). Every
+outbox payload remains non-executable and every new clean-block lifecycle starts
+at sequence 1.
+
+This runtime route additionally requires
+`SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=true`. It remains `false` by default and
+has not been activated on Railway. No risk reservation, execution command, or
+EA path is reachable from the radar repository.
 
 ## Reproduction
 

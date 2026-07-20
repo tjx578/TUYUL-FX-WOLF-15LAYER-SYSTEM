@@ -7516,10 +7516,20 @@ class WolfConstitutionalPipeline:
         outbox_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "false").strip().lower() == "true"
         write_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "false").strip().lower() == "true"
         if outbox_enabled and write_enabled:
-            from storage.pressure_outbox import persist_pressure_payload_sync  # noqa: PLC0415
-
             prepared_payload = build_signal_pressure_state_payload(payload)
-            persistence = persist_pressure_payload_sync(prepared_payload)
+            radar_write_enabled = (
+                os.getenv("SIGNAL_PRESSURE_RADAR_WRITE_ENABLED", "false").strip().lower() == "true"
+            )
+            if radar_write_enabled:
+                from storage.pressure_radar_manifest import (  # noqa: PLC0415
+                    persist_pressure_radar_payload_sync,
+                )
+
+                persistence = persist_pressure_radar_payload_sync(prepared_payload)
+            else:
+                from storage.pressure_outbox import persist_pressure_payload_sync  # noqa: PLC0415
+
+                persistence = persist_pressure_payload_sync(prepared_payload)
             if persistence.envelope is not None:
                 prepared_payload = dict(persistence.envelope.payload)
             payload.clear()

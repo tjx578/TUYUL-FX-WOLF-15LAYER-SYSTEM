@@ -308,8 +308,11 @@ def associate_canonical_lineage(
 class PressureRadarAssembler:
     """Latch provisional qualifications and join later canonical lineage."""
 
-    def __init__(self) -> None:
-        self._manifests: dict[str, PressureRadarManifest] = {}
+    def __init__(self, manifests: Iterable[PressureRadarManifest] | None = None) -> None:
+        seeded = tuple(manifests or ())
+        self._manifests: dict[str, PressureRadarManifest] = {manifest.manifest_id: manifest for manifest in seeded}
+        if len(self._manifests) != len(seeded):
+            raise PressureRadarError("PRESSURE_RADAR_DUPLICATE_MANIFEST_ID")
         self._seen_event_ids: set[tuple[str, str]] = set()
 
     def ingest(self, record: Mapping[str, Any] | str) -> PressureRadarIngestResult:
