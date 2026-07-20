@@ -47,7 +47,13 @@ class _SchemaPostgres:
 
     async def fetch(self, query: str, *_: Any) -> list[dict[str, str]]:
         if "pg_catalog.pg_tables" in query:
-            tables = ["pressure_lifecycle_sequences", "pressure_outbox", "strategy_5scr_inbox"]
+            tables = [
+                "pressure_lifecycle_sequences",
+                "pressure_outbox",
+                "strategy_5scr_inbox",
+                "pressure_radar_manifests",
+                "pressure_radar_events",
+            ]
             return [{"tablename": item} for item in tables if self.complete or item == "pressure_outbox"]
         indexes = [
             "ix_pressure_outbox_pending",
@@ -56,6 +62,9 @@ class _SchemaPostgres:
             "ix_pressure_outbox_lifecycle",
             "ix_pressure_outbox_signal_valid_at",
             "ix_strategy_5scr_inbox_status_received",
+            "ix_pressure_radar_manifest_active",
+            "ix_pressure_radar_manifest_expiry",
+            "ix_pressure_radar_event_manifest",
         ]
         return [{"indexname": item} for item in indexes if self.complete]
 

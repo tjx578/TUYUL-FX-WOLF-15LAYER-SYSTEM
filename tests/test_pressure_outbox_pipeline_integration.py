@@ -13,6 +13,7 @@ from storage.pressure_outbox import (
     PressurePersistenceResult,
     prepare_pressure_event,
 )
+from storage.pressure_radar_manifest import PressureRadarPersistenceResult
 
 
 def _persisted_result(payload: dict[str, Any]) -> PressurePersistenceResult:
@@ -111,6 +112,54 @@ def test_master_switch_does_not_enable_writer_without_write_flag(
     emitted = pipeline._emit_signal_pressure_state_payload({"symbol": "AUDUSD"})
 
     assert emitted is False
+    assert outcomes[0]["suppression_reason"] == "EMITTER_DISABLED"
+
+
+def test_radar_flag_routes_pipeline_through_atomic_manifest_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_RADAR_WRITE_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "false")
+    monkeypatch.setattr(
+        "storage.pressure_outbox.persist_pressure_payload_sync",
+        lambda _payload: pytest.fail("direct outbox writer must be bypassed in radar mode"),
+    )
+    captured: list[dict[str, Any]] = []
+
+    def _persist(payload: dict[str, Any]) -> PressureRadarPersistenceResult:
+        captured.append(dict(payload))
+        return PressureRadarPersistenceResult(
+            status="PERSISTED",
+            transition="WAITING_CANONICAL_LINEAGE",
+        )
+
+    monkeypatch.setattr("storage.pressure_radar_manifest.persist_pressure_radar_payload_sync", _persist)
+    monkeypatch.setattr(pipeline, "_pressure_state_log_allowed", lambda _payload: True)
+    outcomes: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        pipeline,
+        "_record_pressure_state_outcome",
+        lambda payload, **kwargs: outcomes.append({"payload": dict(payload), **kwargs}),
+    )
+    payload = {
+        "symbol": "AUDUSD",
+        "cluster_id": "AUDUSD_RADAR_CLUSTER",
+        "signal_valid_time_utc": "2026-07-20T04:00:00+00:00",
+        "promotion_stage": "PRESSURE_ONLY",
+        "final_direction": "WAIT",
+        "valid_for_execution": False,
+        "execution_valid_now": False,
+        "is_final_signal": False,
+    }
+
+    emitted = pipeline._emit_signal_pressure_state_payload(payload)
+
+    assert emitted is False
+    assert len(captured) == 1
+    assert captured[0]["symbol"] == "AUDUSD"
     assert outcomes[0]["suppression_reason"] == "EMITTER_DISABLED"
 
 
