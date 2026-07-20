@@ -100,7 +100,11 @@ from analysis.signal_lifecycle_manager import (
     record_active_if_execution_grade,
     shadow_preview_event,
 )
-from analysis.signal_pressure_state_emitter import emit_signal_pressure_state, emit_signal_pressure_state_summary
+from analysis.signal_pressure_state_emitter import (
+    build_signal_pressure_state_payload,
+    emit_signal_pressure_state,
+    emit_signal_pressure_state_summary,
+)
 from analysis.signal_pressure_state_observability import PressureStateSummaryTracker
 from analysis.signal_price_integrity import (
     PRICE_CONTEXT_STALE,
@@ -115,7 +119,6 @@ from analysis.signal_throttle_followthrough_score import (
     followthrough_context_for_symbol,
     signal_throttle_followthrough_score_log_payload,
 )
-from analysis.tick_feed_heartbeat import TickFeedHeartbeat
 from analysis.signal_throttle_fusion_router import emit_signal_throttle_fusion_v3_diagnostic
 from analysis.signal_throttle_intelligence import (
     classify_allowed_signal,
@@ -142,6 +145,7 @@ from analysis.source_lineage_guard import (
     signal_throttle_state_snapshot_payload,
     signal_watch_source_diagnostic,
 )
+from analysis.tick_feed_heartbeat import TickFeedHeartbeat
 from analysis.universe_ranking import UniverseRankingEngine
 from config_loader import CONFIG
 
@@ -7509,6 +7513,18 @@ class WolfConstitutionalPipeline:
         return pressure_payload
 
     def _emit_signal_pressure_state_payload(self, payload: dict[str, Any]) -> bool:
+        outbox_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "false").strip().lower() == "true"
+        write_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "false").strip().lower() == "true"
+        if outbox_enabled and write_enabled:
+            from storage.pressure_outbox import persist_pressure_payload_sync  # noqa: PLC0415
+
+            prepared_payload = build_signal_pressure_state_payload(payload)
+            persistence = persist_pressure_payload_sync(prepared_payload)
+            if persistence.envelope is not None:
+                prepared_payload = dict(persistence.envelope.payload)
+            payload.clear()
+            payload.update(prepared_payload)
+
         enabled = os.getenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true").strip().lower() == "true"
         if not enabled:
             self._record_pressure_state_outcome(

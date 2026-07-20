@@ -6,6 +6,8 @@ import asyncio
 import contextlib
 import os
 import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from importlib import import_module
 from typing import Any
 
@@ -76,13 +78,16 @@ class PostgresClient:
     """
 
     _instance: PostgresClient | None = None
+    _pool: Any | None
+    _keepalive_task: asyncio.Task[None] | None
+    _loop: asyncio.AbstractEventLoop | None
 
     def __new__(cls) -> PostgresClient:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._pool = None
-            cls._instance._keepalive_task: asyncio.Task[None] | None = None  # type: ignore
-            cls._instance._loop: asyncio.AbstractEventLoop | None = None  # type: ignore
+            cls._instance._keepalive_task = None
+            cls._instance._loop = None
         return cls._instance
 
     async def initialize(self) -> None:
@@ -169,7 +174,7 @@ class PostgresClient:
         if self._pool is None:
             return "SKIP"
         async with self._pool.acquire() as conn:
-            return await conn.execute(query, *args)
+            return str(await conn.execute(query, *args))
 
     @retry(
         retry=retry_if_exception_type(_pg_retry_exceptions()),
@@ -182,7 +187,7 @@ class PostgresClient:
         if self._pool is None:
             return []
         async with self._pool.acquire() as conn:
-            return await conn.fetch(query, *args)
+            return list(await conn.fetch(query, *args))
 
     @retry(
         retry=retry_if_exception_type(_pg_retry_exceptions()),
@@ -227,6 +232,15 @@ class PostgresClient:
                 result = await conn.execute(query, *args)
                 results.append(result)
         return results
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]:
+        """Yield one connection inside a database transaction."""
+
+        if self._pool is None:
+            raise PostgresConnectionError("PostgreSQL is not initialized")
+        async with self._pool.acquire() as conn, conn.transaction():
+            yield conn
 
 
 pg_client = PostgresClient()

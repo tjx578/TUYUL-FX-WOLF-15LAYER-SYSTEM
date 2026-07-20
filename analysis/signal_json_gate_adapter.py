@@ -322,6 +322,12 @@ class SignalJsonGateAdapter:
                 ),
             }
         )
+        strategy_proof = payload.get("strategy_5scr")
+        if isinstance(strategy_proof, dict):
+            execution_gate = terminal.get("execution_gate")
+            bound_gate = dict(execution_gate) if isinstance(execution_gate, dict) else {}
+            bound_gate["strategy_5scr"] = strategy_proof
+            terminal["execution_gate"] = bound_gate
         if not _has_parent_or_pending_decision(terminal):
             terminal.update(
                 {

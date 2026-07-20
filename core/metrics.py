@@ -984,6 +984,49 @@ INGEST_TICKS_PER_PAIR = _R.counter(
 )
 
 # ══════════════════════════════════════════════════════════
+#  Strategy 5S-CR durable pressure transport
+# ══════════════════════════════════════════════════════════
+
+PRESSURE_OUTBOX_PRODUCER_TOTAL = _R.counter(
+    "wolf_pressure_outbox_producer_total",
+    "Durable pressure producer outcomes",
+    label_names=("outcome",),
+)
+
+PRESSURE_OUTBOX_BACKLOG = _R.gauge(
+    "wolf_pressure_outbox_backlog",
+    "Pressure outbox rows by delivery status",
+    label_names=("status",),
+)
+
+PRESSURE_OUTBOX_OLDEST_AGE_SECONDS = _R.gauge(
+    "wolf_pressure_outbox_oldest_age_seconds",
+    "Age in seconds of the oldest dispatchable pressure event",
+)
+
+PRESSURE_OUTBOX_RETRY_TOTAL = _R.counter(
+    "wolf_pressure_outbox_retry_total",
+    "Pressure outbox delivery retries",
+)
+
+PRESSURE_OUTBOX_DEAD_TOTAL = _R.counter(
+    "wolf_pressure_outbox_dead_total",
+    "Pressure outbox events moved to the dead-letter state",
+)
+
+PRESSURE_OUTBOX_PROCESSING_LATENCY = _R.histogram(
+    "wolf_pressure_outbox_processing_latency_seconds",
+    "End-to-end pressure event latency from source-valid time to inbox processing",
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 900.0),
+)
+
+PRESSURE_INBOX_DELIVERY_TOTAL = _R.counter(
+    "wolf_strategy_5scr_inbox_delivery_total",
+    "Idempotent Strategy 5S-CR pressure inbox outcomes",
+    label_names=("outcome",),
+)
+
+# ══════════════════════════════════════════════════════════
 #  Lorentzian Field Stabilizer (LFS) observability
 # ══════════════════════════════════════════════════════════
 

@@ -21,6 +21,7 @@ Service scripts:
 - Execution: deploy/railway/start_execution.sh
 - Orchestrator: deploy/railway/start_orchestrator.sh
 - Migrator: deploy/railway/start_migrator.sh
+- Pressure outbox: deploy/railway/start_pressure_outbox.sh
 - Worker generic: deploy/railway/start_worker.sh
 
 ## A. Pre-Deploy Checklist (All Environments)
@@ -36,6 +37,7 @@ Service scripts:
 1. Deployment manifests
 
 - [ ] railway-migrator.toml exists and points to deploy/railway/start_migrator.sh
+- [ ] railway-pressure-outbox.toml exists and points to deploy/railway/start_pressure_outbox.sh
 - [ ] Runtime services use their start scripts in railway *.toml
 - [ ] Worker services use explicit entries (montecarlo, backtest, regime)
 
@@ -66,6 +68,14 @@ Goal: validate release behavior before production cutover.
 - [ ] Deploy wolf15-migrator with new image
 - [ ] Run one-shot command and wait until completed
 - [ ] Confirm Alembic reached head revision
+
+1. Deploy pressure transport dark
+
+- [ ] Create/deploy wolf15-pressure-outbox from railway-pressure-outbox.toml
+- [ ] Set PRESSURE_OUTBOX_EXPECTED_PHASE=dark on the worker service
+- [ ] Keep engine master/write and all worker feature flags false
+- [ ] Confirm pressure-outbox schema/flag preflight passes
+- [ ] Confirm no outbox row is claimed or delivered
 
 1. Deploy runtime core in order
 
@@ -118,6 +128,14 @@ Goal: controlled rollout with fail-fast schema readiness and clear rollback.
 - [ ] Execute one-shot migration
 - [ ] Confirm migration completed successfully
 - [ ] Abort production rollout if migration fails
+
+1. Deploy pressure transport dark
+
+- [ ] Deploy wolf15-pressure-outbox from railway-pressure-outbox.toml
+- [ ] Set PRESSURE_OUTBOX_EXPECTED_PHASE=dark on the worker service
+- [ ] Keep engine master/write and all worker feature flags false
+- [ ] Confirm pressure-outbox schema/flag preflight passes
+- [ ] Confirm no outbox row is claimed or delivered
 
 1. Roll out long-running services
 

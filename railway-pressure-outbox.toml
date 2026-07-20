@@ -1,0 +1,13 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "bash deploy/railway/start_pressure_outbox.sh"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# Railway config-as-code does not define service variables. Before the first
+# deploy, configure PRESSURE_OUTBOX_EXPECTED_PHASE=dark in the service and keep
+# every SIGNAL_PRESSURE_OUTBOX_* / STRATEGY_5SCR_PRESSURE_CONSUMER_ENABLED flag
+# false. The startup preflight rejects any phase/flag mismatch.

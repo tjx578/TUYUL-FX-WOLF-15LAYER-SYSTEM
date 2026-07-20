@@ -14,6 +14,7 @@ from analysis.signal_execution_gate_models import ExecutionGateDecision
 from analysis.signal_json_emitter import VALID_SIGNAL_STATUSES
 from analysis.signal_json_enrichment import enrich_signal_json_payload
 from analysis.signal_thresholds import SIGNAL_MIN_RR
+from contracts.strategy_5scr import evaluate_strategy_5scr_proof
 
 _STRUCTURE_TARGET_MODES = {
     "FINAL_MARKET_STRUCTURE",
@@ -71,6 +72,7 @@ def evaluate_signal_execution_gates(
     defer_reasons: list[str] = []
     defer_gates: list[str] = []
 
+    _strategy_5scr_context_gate(payload, block_gates, block_reasons, defer_gates, defer_reasons)
     _reinforcement_management_gate(payload, defer_gates, defer_reasons)
     _tradeplan_gate(
         payload,
@@ -114,6 +116,28 @@ def evaluate_signal_execution_gates(
         execution_status="EXECUTION_GATE_ALLOWED",
         live_rr=live_rr,
     )
+
+
+def _strategy_5scr_context_gate(
+    payload: dict[str, Any],
+    block_gates: list[str],
+    block_reasons: list[str],
+    defer_gates: list[str],
+    defer_reasons: list[str],
+) -> None:
+    execution_gate = payload.get("execution_gate")
+    nested_proof = execution_gate.get("strategy_5scr") if isinstance(execution_gate, dict) else None
+    if payload.get("strategy_5scr_required") is not True and not isinstance(
+        payload.get("strategy_5scr") or nested_proof, dict
+    ):
+        return
+    evaluation = evaluate_strategy_5scr_proof(payload)
+    if evaluation.decision == "BLOCK":
+        for reason in evaluation.reasons:
+            _add(block_gates, block_reasons, "Strategy5SCRContextGate", reason)
+    elif evaluation.decision == "DEFER":
+        for reason in evaluation.reasons:
+            _add(defer_gates, defer_reasons, "Strategy5SCRContextGate", reason)
 
 
 def _reinforcement_management_gate(payload: dict[str, Any], gates: list[str], reasons: list[str]) -> None:
