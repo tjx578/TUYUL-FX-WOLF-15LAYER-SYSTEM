@@ -8,6 +8,7 @@ and commits only the deterministic non-executable outcome.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 from collections.abc import Mapping, Sequence
@@ -46,6 +47,22 @@ def _enabled(value: str | None) -> bool:
     return str(value or "false").strip().lower() == "true"
 
 
+def _row_value(row: object, key: str) -> object | None:
+    if isinstance(row, Mapping):
+        return row.get(key)
+    try:
+        return row[key]  # type: ignore[index]
+    except (KeyError, TypeError):
+        return None
+
+
+def _row_datetime(row: object, key: str) -> datetime:
+    value = _row_value(row, key)
+    if not isinstance(value, datetime):
+        raise RuntimeError(f"STRATEGY_5SCR_EVIDENCE_ROW_{key.upper()}_INVALID")
+    return value
+
+
 @dataclass(frozen=True)
 class EvidenceRuntimeConfig:
     enabled: bool = False
@@ -56,6 +73,7 @@ class EvidenceRuntimeConfig:
     execution_enabled: bool = False
     poll_seconds: float = 5.0
     batch_size: int = 25
+    max_attempts: int = 8
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> EvidenceRuntimeConfig:
@@ -79,6 +97,10 @@ class EvidenceRuntimeConfig:
                 1,
                 int(source.get("STRATEGY_5SCR_EVIDENCE_BATCH_SIZE") or "25"),
             ),
+            max_attempts=max(
+                1,
+                int(source.get("STRATEGY_5SCR_EVIDENCE_MAX_ATTEMPTS") or "8"),
+            ),
         )
         config.validate()
         return config
@@ -94,15 +116,22 @@ class EvidenceRuntimeConfig:
             raise RuntimeError("STRATEGY_5SCR_EVIDENCE_REQUIRES_EXECUTION_OFF")
 
 
+@dataclass(frozen=True)
+class EvidenceWorkItem:
+    envelope: PressureOutboxEnvelope
+    lifecycle_anchor_at: datetime
+    evidence_attempt_count: int = 0
+
+
 class EvidenceRepository(Protocol):
-    async def load_waiting(self, *, limit: int) -> Sequence[PressureOutboxEnvelope]: ...
+    async def load_waiting(self, *, limit: int) -> Sequence[EvidenceWorkItem]: ...
 
     async def record_outcome(
         self,
         envelope: PressureOutboxEnvelope,
         outcome: PressureInboxOutcome,
         *,
-        evidence_snapshot_id: str | None,
+        evidence_snapshot: Strategy5SCRMarketEvidence,
     ) -> bool: ...
 
     async def record_failure(
@@ -110,6 +139,8 @@ class EvidenceRepository(Protocol):
         envelope: PressureOutboxEnvelope,
         *,
         error: str,
+        retry_delay_seconds: float,
+        max_attempts: int,
     ) -> bool: ...
 
 
@@ -119,33 +150,83 @@ class PostgresEvidenceRepository:
     def __init__(self, *, pg: PostgresClient | None = None) -> None:
         self._pg = pg or pg_client
 
-    async def load_waiting(self, *, limit: int) -> Sequence[PressureOutboxEnvelope]:
+    async def load_waiting(self, *, limit: int) -> Sequence[EvidenceWorkItem]:
         if not self._pg.is_available:
             return ()
         rows = await self._pg.fetch(
             f"""
-            SELECT {_SELECT_COLUMNS}
+            SELECT {_SELECT_COLUMNS},
+                   lifecycle.anchor_at AS lifecycle_anchor_at,
+                   inbox.evidence_attempt_count AS evidence_attempt_count
             FROM pressure_outbox AS outbox
             JOIN strategy_5scr_inbox AS inbox
               ON inbox.event_id = outbox.event_id
+            JOIN strategy_5scr_lifecycles AS lifecycle
+              ON lifecycle.lifecycle_id = outbox.lifecycle_id
             WHERE outbox.status = 'PUBLISHED'
               AND inbox.status = 'WAITING_EVIDENCE'
+              AND inbox.evidence_next_attempt_at <= NOW()
             ORDER BY outbox.signal_valid_at, outbox.lifecycle_id, outbox.lifecycle_sequence
             LIMIT $1
             """,
             max(1, int(limit)),
         )
-        return tuple(pressure_envelope_from_row(row) for row in rows)
+        return tuple(
+            EvidenceWorkItem(
+                envelope=pressure_envelope_from_row(row),
+                lifecycle_anchor_at=_row_datetime(row, "lifecycle_anchor_at"),
+                evidence_attempt_count=int(_row_value(row, "evidence_attempt_count") or 0),
+            )
+            for row in rows
+        )
 
     async def record_outcome(
         self,
         envelope: PressureOutboxEnvelope,
         outcome: PressureInboxOutcome,
         *,
-        evidence_snapshot_id: str | None,
+        evidence_snapshot: Strategy5SCRMarketEvidence,
     ) -> bool:
-        result = await self._pg.execute(
-            """
+        if evidence_snapshot.evidence_snapshot_id is None:
+            raise RuntimeError("STRATEGY_5SCR_EVIDENCE_SNAPSHOT_ID_REQUIRED")
+        snapshot_payload = evidence_snapshot.model_dump(mode="json")
+        encoded = json.dumps(
+            snapshot_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        snapshot_hash = hashlib.sha256(encoded.encode()).hexdigest()
+        async with self._pg.transaction() as conn:
+            await conn.execute(
+                """
+                INSERT INTO strategy_5scr_evidence_snapshots (
+                    snapshot_id, lifecycle_id, event_id, decision_at,
+                    lifecycle_anchor_at, payload, payload_hash
+                )
+                SELECT $1, $2, $3, $4, lifecycle.anchor_at, $5::jsonb, $6
+                FROM strategy_5scr_lifecycles AS lifecycle
+                WHERE lifecycle.lifecycle_id = $2
+                ON CONFLICT (snapshot_id) DO NOTHING
+                """,
+                evidence_snapshot.evidence_snapshot_id,
+                envelope.lifecycle_id,
+                envelope.event_id,
+                evidence_snapshot.decision_at_utc,
+                encoded,
+                snapshot_hash,
+            )
+            stored = await conn.fetchrow(
+                """
+                SELECT payload_hash
+                FROM strategy_5scr_evidence_snapshots
+                WHERE snapshot_id = $1
+                """,
+                evidence_snapshot.evidence_snapshot_id,
+            )
+            if stored is None or str(_row_value(stored, "payload_hash") or "") != snapshot_hash:
+                raise RuntimeError("STRATEGY_5SCR_EVIDENCE_SNAPSHOT_IMMUTABILITY_VIOLATION")
+            result = await conn.execute(
+                """
             UPDATE strategy_5scr_inbox
             SET status = $2,
                 processed_at = CASE WHEN $2 = 'PROCESSED' THEN NOW() ELSE NULL END,
@@ -154,26 +235,27 @@ class PostgresEvidenceRepository:
                 evidence_snapshot_id = $5,
                 evidence_attempt_count = evidence_attempt_count + 1,
                 evidence_last_attempt_at = NOW(),
+                evidence_next_attempt_at = NOW(),
                 last_error = $6
             WHERE event_id = $1
               AND status = 'WAITING_EVIDENCE'
             """,
-            envelope.event_id,
-            outcome.status,
-            outcome.result_id,
-            (
-                json.dumps(
-                    outcome.candidate_payload,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                    default=str,
-                )
-                if outcome.candidate_payload is not None
-                else None
-            ),
-            evidence_snapshot_id,
-            "|".join(outcome.reasons)[:2000] or None,
-        )
+                envelope.event_id,
+                outcome.status,
+                outcome.result_id,
+                (
+                    json.dumps(
+                        outcome.candidate_payload,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    if outcome.candidate_payload is not None
+                    else None
+                ),
+                evidence_snapshot.evidence_snapshot_id,
+                "|".join(outcome.reasons)[:2000] or None,
+            )
         return result.endswith(" 1")
 
     async def record_failure(
@@ -181,18 +263,27 @@ class PostgresEvidenceRepository:
         envelope: PressureOutboxEnvelope,
         *,
         error: str,
+        retry_delay_seconds: float,
+        max_attempts: int,
     ) -> bool:
         result = await self._pg.execute(
             """
             UPDATE strategy_5scr_inbox
             SET evidence_attempt_count = evidence_attempt_count + 1,
                 evidence_last_attempt_at = NOW(),
+                evidence_next_attempt_at = NOW() + ($3 * INTERVAL '1 second'),
+                status = CASE
+                    WHEN evidence_attempt_count + 1 >= $4 THEN 'FAILED'
+                    ELSE status
+                END,
                 last_error = $2
             WHERE event_id = $1
               AND status = 'WAITING_EVIDENCE'
             """,
             envelope.event_id,
             error[:2000],
+            max(0.1, float(retry_delay_seconds)),
+            max(1, int(max_attempts)),
         )
         return result.endswith(" 1")
 
@@ -203,6 +294,7 @@ class EvidenceProvider(Protocol):
         *,
         symbol: str,
         decision_at_utc: datetime,
+        lifecycle_anchor_utc: datetime,
     ) -> Strategy5SCRMarketEvidence | None: ...
 
 
@@ -226,18 +318,34 @@ class Strategy5SCREvidenceWorker:
     async def process_once(self) -> int:
         if not self._config.enabled:
             return 0
-        envelopes = await self._repository.load_waiting(limit=self._config.batch_size)
+        work_items = await self._repository.load_waiting(limit=self._config.batch_size)
         processed = 0
-        for envelope in envelopes:
+        for loaded_item in work_items:
+            work_item = (
+                loaded_item
+                if isinstance(loaded_item, EvidenceWorkItem)
+                else EvidenceWorkItem(
+                    envelope=loaded_item,
+                    lifecycle_anchor_at=loaded_item.signal_valid_at,
+                )
+            )
+            envelope = work_item.envelope
+            retry_delay = min(
+                3600.0,
+                self._config.poll_seconds * (2**work_item.evidence_attempt_count),
+            )
             try:
                 evidence = await self._provider.provide(
                     symbol=envelope.symbol,
                     decision_at_utc=envelope.signal_valid_at,
+                    lifecycle_anchor_utc=work_item.lifecycle_anchor_at,
                 )
                 if evidence is None:
                     await self._repository.record_failure(
                         envelope,
                         error="STRATEGY_5SCR_CLOSED_CANDLE_EVIDENCE_INCOMPLETE",
+                        retry_delay_seconds=retry_delay,
+                        max_attempts=self._config.max_attempts,
                     )
                     processed += 1
                     continue
@@ -245,11 +353,16 @@ class Strategy5SCREvidenceWorker:
                 await self._repository.record_outcome(
                     envelope,
                     outcome,
-                    evidence_snapshot_id=evidence.evidence_snapshot_id,
+                    evidence_snapshot=evidence,
                 )
                 processed += 1
             except ClosedCandleEvidenceError as exc:
-                await self._repository.record_failure(envelope, error=str(exc))
+                await self._repository.record_failure(
+                    envelope,
+                    error=str(exc),
+                    retry_delay_seconds=retry_delay,
+                    max_attempts=self._config.max_attempts,
+                )
                 processed += 1
             except Exception as exc:
                 # The durable row remains WAITING_EVIDENCE.  A crash or
@@ -258,6 +371,8 @@ class Strategy5SCREvidenceWorker:
                 await self._repository.record_failure(
                     envelope,
                     error=f"STRATEGY_5SCR_EVIDENCE_WORKER_ERROR:{type(exc).__name__}",
+                    retry_delay_seconds=retry_delay,
+                    max_attempts=self._config.max_attempts,
                 )
                 logger.exception(
                     "5S-CR evidence worker failed event={} symbol={}",
@@ -298,6 +413,7 @@ def build_evidence_worker(
 
 
 __all__ = [
+    "EvidenceWorkItem",
     "EvidenceRuntimeConfig",
     "PostgresEvidenceRepository",
     "Strategy5SCREvidenceWorker",

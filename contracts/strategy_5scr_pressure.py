@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from contracts.canonical_candle import CanonicalCandle
 from contracts.strategy_5scr import (
     ContextResolution,
     H1Confirmation,
@@ -136,15 +137,14 @@ class Strategy5SCRMarketEvidence(FrozenContract):
     """Already-resolved closed-candle evidence supplied by Wolf15 analysis."""
 
     decision_at_utc: datetime
+    lifecycle_anchor_utc: datetime | None = None
     evidence_mode: Literal["SHADOW", "REPLAY"] = "SHADOW"
     evidence_snapshot_id: str | None = Field(
         default=None,
         pattern=r"^5scr-evidence:[0-9a-f]{32}$",
     )
     market_data_provider: str = Field(default="unspecified", min_length=2, max_length=200)
-    execution_cost_authority: Literal["ESTIMATED_NOT_BROKER", "BROKER_SNAPSHOT"] = (
-        "ESTIMATED_NOT_BROKER"
-    )
+    execution_cost_authority: Literal["ESTIMATED_NOT_BROKER", "BROKER_SNAPSHOT"] = "ESTIMATED_NOT_BROKER"
     context_resolution: ContextResolution | None = None
     h4: H4StructuralTarget | None = None
     h1: H1Confirmation | None = None
@@ -155,11 +155,32 @@ class Strategy5SCRMarketEvidence(FrozenContract):
     spread_price: float | None = Field(default=None, ge=0)
     source_candle_close_times: tuple[datetime, ...] = ()
     source_candle_count: int = Field(default=0, ge=0)
+    source_candles: tuple[CanonicalCandle, ...] = ()
 
-    @field_validator("decision_at_utc")
+    @field_validator("decision_at_utc", "lifecycle_anchor_utc")
     @classmethod
-    def _decision_time_is_utc(cls, value: datetime) -> datetime:
-        return _utc(value, "decision_at_utc")
+    def _evidence_times_are_utc(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else _utc(value, "evidence timestamp")
+
+    @model_validator(mode="after")
+    def _anchor_cannot_follow_decision(self) -> Strategy5SCRMarketEvidence:
+        if self.lifecycle_anchor_utc is not None and self.lifecycle_anchor_utc > self.decision_at_utc:
+            raise ValueError("lifecycle_anchor_utc cannot follow decision_at_utc")
+        if self.source_candles and len(self.source_candles) != self.source_candle_count:
+            raise ValueError("source_candle_count must match immutable source_candles")
+        if self.h1 is not None and self.h1.confirmed_at_utc > self.decision_at_utc:
+            raise ValueError("H1 confirmation cannot follow decision_at_utc")
+        if self.m15 is not None:
+            if self.m15.confirmed_at_utc > self.decision_at_utc:
+                raise ValueError("M15 confirmation cannot follow decision_at_utc")
+            if self.lifecycle_anchor_utc is not None and self.m15.confirmed_at_utc <= self.lifecycle_anchor_utc:
+                raise ValueError("M15 confirmation must follow lifecycle_anchor_utc")
+        if self.m1 is not None and self.m1.formed_at_utc is not None:
+            if self.m1.formed_at_utc > self.decision_at_utc:
+                raise ValueError("M1 box cannot follow decision_at_utc")
+            if self.m15 is not None and self.m1.formed_at_utc <= self.m15.confirmed_at_utc:
+                raise ValueError("M1 box must follow M15 confirmation")
+        return self
 
     @field_validator("source_candle_close_times")
     @classmethod

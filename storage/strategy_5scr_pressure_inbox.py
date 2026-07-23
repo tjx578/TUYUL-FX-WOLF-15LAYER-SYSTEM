@@ -201,6 +201,55 @@ class Strategy5SCRInboxConsumer:
                     reasons=("STRATEGY_5SCR_PRESSURE_CONSUMER_DISABLED",),
                 )
 
+            lifecycle_result = await conn.execute(
+                """
+                INSERT INTO strategy_5scr_lifecycles (
+                    lifecycle_id, symbol, anchor_at, anchor_event_id, anchor_sequence,
+                    latest_event_at, last_sequence
+                )
+                VALUES ($1, $2, $3, $4, $5, $3, $5)
+                ON CONFLICT (lifecycle_id) DO UPDATE SET
+                    anchor_at = CASE
+                        WHEN EXCLUDED.anchor_sequence < strategy_5scr_lifecycles.anchor_sequence
+                          OR (
+                              EXCLUDED.anchor_sequence = strategy_5scr_lifecycles.anchor_sequence
+                              AND EXCLUDED.anchor_at < strategy_5scr_lifecycles.anchor_at
+                          )
+                        THEN EXCLUDED.anchor_at
+                        ELSE strategy_5scr_lifecycles.anchor_at
+                    END,
+                    anchor_event_id = CASE
+                        WHEN EXCLUDED.anchor_sequence < strategy_5scr_lifecycles.anchor_sequence
+                          OR (
+                              EXCLUDED.anchor_sequence = strategy_5scr_lifecycles.anchor_sequence
+                              AND EXCLUDED.anchor_at < strategy_5scr_lifecycles.anchor_at
+                          )
+                        THEN EXCLUDED.anchor_event_id
+                        ELSE strategy_5scr_lifecycles.anchor_event_id
+                    END,
+                    anchor_sequence = LEAST(
+                        strategy_5scr_lifecycles.anchor_sequence,
+                        EXCLUDED.anchor_sequence
+                    ),
+                    latest_event_at = GREATEST(
+                        strategy_5scr_lifecycles.latest_event_at,
+                        EXCLUDED.latest_event_at
+                    ),
+                    last_sequence = GREATEST(
+                        strategy_5scr_lifecycles.last_sequence,
+                        EXCLUDED.last_sequence
+                    ),
+                    updated_at = NOW()
+                WHERE strategy_5scr_lifecycles.symbol = EXCLUDED.symbol
+                """,
+                envelope.lifecycle_id,
+                envelope.symbol,
+                envelope.signal_valid_at,
+                envelope.event_id,
+                envelope.lifecycle_sequence,
+            )
+            if lifecycle_result.endswith(" 0"):
+                raise PressureOutboxIntegrityError("PRESSURE_DELIVERY_LIFECYCLE_SYMBOL_COLLISION")
             await conn.execute(
                 "UPDATE strategy_5scr_inbox SET status = 'PROCESSING', last_error = NULL WHERE event_id = $1",
                 envelope.event_id,

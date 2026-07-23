@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
+from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
 from contracts.strategy_5scr_pressure_outbox import (
     PressureInboxOutcome,
     PressureOutboxEnvelope,
 )
 from services.pressure_outbox.evidence_worker import (
     EvidenceRuntimeConfig,
+    PostgresEvidenceRepository,
     Strategy5SCREvidenceWorker,
 )
 from storage.pressure_outbox import prepare_pressure_event
@@ -143,6 +146,91 @@ def test_live_evidence_requires_explicit_two_key_activation() -> None:
     )
 
     assert config.enabled is True
+
+
+class _SnapshotConnection:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.snapshot_hash: str | None = None
+
+    async def execute(self, query: str, *args: Any) -> str:
+        normalized = " ".join(query.split())
+        self.calls.append(normalized)
+        if "INSERT INTO strategy_5scr_evidence_snapshots" in normalized:
+            self.snapshot_hash = str(args[5])
+            return "INSERT 0 1"
+        if "UPDATE strategy_5scr_inbox" in normalized:
+            return "UPDATE 1"
+        raise AssertionError(normalized)
+
+    async def fetchrow(self, query: str, *_: Any) -> dict[str, str]:
+        assert "strategy_5scr_evidence_snapshots" in query
+        assert self.snapshot_hash is not None
+        return {"payload_hash": self.snapshot_hash}
+
+
+class _SnapshotPostgres:
+    def __init__(self) -> None:
+        self.conn = _SnapshotConnection()
+
+    @asynccontextmanager
+    async def transaction(self) -> Any:
+        yield self.conn
+
+
+class _RetryPostgres:
+    def __init__(self) -> None:
+        self.args: tuple[Any, ...] = ()
+        self.query = ""
+
+    async def execute(self, query: str, *args: Any) -> str:
+        self.query = " ".join(query.split())
+        self.args = args
+        return "UPDATE 1"
+
+
+@pytest.mark.asyncio
+async def test_failure_schedules_bounded_retry_and_terminal_attempt() -> None:
+    envelope = _envelope()
+    pg = _RetryPostgres()
+    repository = PostgresEvidenceRepository(pg=cast(Any, pg))
+
+    assert await repository.record_failure(
+        envelope,
+        error="TRANSIENT_CANDLE_GAP",
+        retry_delay_seconds=40,
+        max_attempts=8,
+    )
+    assert "evidence_next_attempt_at" in pg.query
+    assert "status = CASE" in pg.query
+    assert pg.args[2:] == (40.0, 8)
+
+
+@pytest.mark.asyncio
+async def test_outcome_commits_immutable_snapshot_before_inbox_result() -> None:
+    envelope = _envelope()
+    pg = _SnapshotPostgres()
+    repository = PostgresEvidenceRepository(pg=cast(Any, pg))
+    evidence = Strategy5SCRMarketEvidence(
+        decision_at_utc=envelope.signal_valid_at,
+        lifecycle_anchor_utc=envelope.signal_valid_at,
+        evidence_snapshot_id="5scr-evidence:" + "b" * 32,
+    )
+    outcome = PressureInboxOutcome(
+        event_id=envelope.event_id,
+        lifecycle_id=envelope.lifecycle_id,
+        status="PROCESSED",
+        decision="DEFER",
+        result_id=f"5scr-defer:{envelope.event_id}",
+    )
+
+    assert await repository.record_outcome(
+        envelope,
+        outcome,
+        evidence_snapshot=evidence,
+    )
+    assert "INSERT INTO strategy_5scr_evidence_snapshots" in pg.conn.calls[0]
+    assert "UPDATE strategy_5scr_inbox" in pg.conn.calls[1]
 
 
 @pytest.mark.asyncio

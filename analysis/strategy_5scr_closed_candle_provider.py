@@ -97,6 +97,7 @@ class Strategy5SCRClosedCandleEvidenceProvider:
         *,
         symbol: str,
         decision_at_utc: datetime,
+        lifecycle_anchor_utc: datetime | None = None,
     ) -> Strategy5SCRMarketEvidence | None:
         cutoff = as_utc(decision_at_utc, "decision_at_utc")
         snapshot = await self._load_snapshot(symbol.upper(), cutoff)
@@ -105,6 +106,7 @@ class Strategy5SCRClosedCandleEvidenceProvider:
         return self.build_from_snapshot(
             symbol=symbol.upper(),
             decision_at_utc=cutoff,
+            lifecycle_anchor_utc=lifecycle_anchor_utc,
             candles_by_timeframe=snapshot,
         )
 
@@ -144,6 +146,7 @@ class Strategy5SCRClosedCandleEvidenceProvider:
         *,
         symbol: str,
         decision_at_utc: datetime,
+        lifecycle_anchor_utc: datetime | None = None,
         candles_by_timeframe: Mapping[str, Sequence[CanonicalCandle]],
     ) -> Strategy5SCRMarketEvidence | None:
         cutoff = as_utc(decision_at_utc, "decision_at_utc")
@@ -166,36 +169,50 @@ class Strategy5SCRClosedCandleEvidenceProvider:
         h1 = normalized["H1"]
         m15 = normalized["M15"]
         m1 = normalized["M1"]
-        entry = m1[-1].close
+        anchor = (
+            as_utc(lifecycle_anchor_utc, "lifecycle_anchor_utc")
+            if lifecycle_anchor_utc is not None
+            else m15[0].open_time
+        )
+        if anchor > cutoff:
+            raise ClosedCandleEvidenceError("LIFECYCLE_ANCHOR_AFTER_DECISION")
         direction, h1_confirmed = self._h1_direction(h1)
+        m15_confirmation = self._m15_confirmation(direction, m15, anchor)
+        m15_ready = m15_confirmation.acceptance_confirmed or (
+            m15_confirmation.structural_break and m15_confirmation.failed_reclaim_or_retest_confirmed
+        )
+        m1_box = self._m1_box(symbol, m1, after_utc=m15_confirmation.confirmed_at_utc) if m15_ready else None
+        entry = m1_box.fill_price if m1_box is not None else m1[-1].close
         context = self._context(direction, entry, d1, h4)
         h4_target = self._h4_target(direction, entry, h4)
         h1_confirmation = H1Confirmation(
             direction=direction,
             structure_state=(
-                f"{direction}_CLOSED_BREAK_CONFIRMED"
-                if h1_confirmed
-                else f"{direction}_CLOSED_DIRECTION_UNCONFIRMED"
+                f"{direction}_CLOSED_BREAK_CONFIRMED" if h1_confirmed else f"{direction}_CLOSED_DIRECTION_UNCONFIRMED"
             ),
             structure_confirmed=h1_confirmed,
             candle_closed=True,
             confirmed_at_utc=h1[-1].close_time,
         )
-        m15_confirmation = self._m15_confirmation(direction, m15)
-        m1_box = self._m1_box(symbol, m1)
         structural_sl = self._structural_sl(direction, entry, h1, m15, m1)
         if h4_target is None or structural_sl is None:
             return None
 
         all_candles = [candle for timeframe in _LOOKBACKS for candle in normalized[timeframe]]
         close_times = tuple(sorted({candle.close_time for candle in all_candles}))
-        snapshot_id = self._snapshot_id(symbol, cutoff, normalized)
+        snapshot_id = self._snapshot_id(
+            symbol,
+            cutoff,
+            normalized,
+            lifecycle_anchor_utc=anchor,
+        )
         providers = "+".join(sorted({candle.provider for candle in all_candles}))
         pip_size = _pip_size(symbol)
         spread_price = max(0.0, float(self._spread_estimator(symbol, pip_size)))
 
         return Strategy5SCRMarketEvidence(
             decision_at_utc=cutoff,
+            lifecycle_anchor_utc=anchor,
             evidence_mode=self._mode,
             evidence_snapshot_id=snapshot_id,
             market_data_provider=providers,
@@ -210,6 +227,7 @@ class Strategy5SCRClosedCandleEvidenceProvider:
             spread_price=spread_price,
             source_candle_close_times=close_times,
             source_candle_count=len(all_candles),
+            source_candles=tuple(all_candles),
         )
 
     @staticmethod
@@ -231,18 +249,19 @@ class Strategy5SCRClosedCandleEvidenceProvider:
     ) -> ContextResolution:
         daily_bias = "BULLISH" if d1[-1].close >= d1[0].close else "BEARISH"
         h4_structure = (
-            "BULLISH_IMPULSE" if h4[-1].close > h4[-2].high
-            else "BEARISH_IMPULSE" if h4[-1].close < h4[-2].low
-            else "BULLISH_PULLBACK" if h4[-1].close >= h4[-2].close
+            "BULLISH_IMPULSE"
+            if h4[-1].close > h4[-2].high
+            else "BEARISH_IMPULSE"
+            if h4[-1].close < h4[-2].low
+            else "BULLISH_PULLBACK"
+            if h4[-1].close >= h4[-2].close
             else "BEARISH_PULLBACK"
         )
         recent_high = max(candle.high for candle in h4[-12:])
         recent_low = min(candle.low for candle in h4[-12:])
         midpoint = (recent_high + recent_low) / 2
         price_location = "H4_PREMIUM" if entry > midpoint else "H4_DISCOUNT"
-        aligned = (direction == "BUY" and daily_bias == "BULLISH") or (
-            direction == "SELL" and daily_bias == "BEARISH"
-        )
+        aligned = (direction == "BUY" and daily_bias == "BULLISH") or (direction == "SELL" and daily_bias == "BEARISH")
         playbook = f"{direction}_ON_CONFIRMED_BREAK_RETEST"
         opposite = "SELL" if direction == "BUY" else "BUY"
         return ContextResolution(
@@ -250,9 +269,7 @@ class Strategy5SCRClosedCandleEvidenceProvider:
             origin="DIRECT_CONTEXT" if aligned else "WAIT_FOR_CONFIRMATION",
             price_location=price_location,
             liquidity_context=(
-                "SELL_SIDE_LIQUIDITY_RECLAIMED"
-                if direction == "BUY"
-                else "BUY_SIDE_LIQUIDITY_REJECTED"
+                "SELL_SIDE_LIQUIDITY_RECLAIMED" if direction == "BUY" else "BUY_SIDE_LIQUIDITY_REJECTED"
             ),
             daily_bias=daily_bias,
             h4_structure=h4_structure,
@@ -289,32 +306,77 @@ class Strategy5SCRClosedCandleEvidenceProvider:
     def _m15_confirmation(
         direction: Literal["BUY", "SELL"],
         candles: Sequence[CanonicalCandle],
+        lifecycle_anchor_utc: datetime,
     ) -> M15Confirmation:
-        before, previous, latest = candles[-3], candles[-2], candles[-1]
-        if direction == "BUY":
-            level = previous.high
-            structural_break = latest.close > level
-            previous_break = previous.close > before.high
-            retest = previous_break and latest.low <= before.high and latest.close > before.high
-        else:
-            level = previous.low
-            structural_break = latest.close < level
-            previous_break = previous.close < before.low
-            retest = previous_break and latest.high >= before.low and latest.close < before.low
-        acceptance = structural_break
+        ordered = list(candles)
+        first_eligible = next(
+            (index for index, candle in enumerate(ordered) if candle.close_time > lifecycle_anchor_utc),
+            len(ordered),
+        )
+        first_break: tuple[CanonicalCandle, float] | None = None
+        for index in range(max(1, first_eligible), len(ordered)):
+            previous, breakout = ordered[index - 1 : index + 1]
+            if direction == "BUY":
+                broke = breakout.close > previous.high
+                level = previous.high
+            else:
+                broke = breakout.close < previous.low
+                level = previous.low
+            if not broke:
+                continue
+            first_break = (breakout, level)
+            if index + 1 >= len(ordered):
+                break
+            confirmation = ordered[index + 1]
+            if direction == "BUY":
+                acceptance = confirmation.close > level
+                retest = confirmation.low <= level and confirmation.close > level
+            else:
+                acceptance = confirmation.close < level
+                retest = confirmation.high >= level and confirmation.close < level
+            if acceptance or retest:
+                return M15Confirmation(
+                    direction=direction,
+                    structural_break=True,
+                    candle_closed=True,
+                    acceptance_confirmed=acceptance,
+                    failed_reclaim_or_retest_confirmed=retest,
+                    rejection_candle_only=False,
+                    confirmed_at_utc=confirmation.close_time,
+                )
+        if first_break is not None:
+            breakout, _level = first_break
+            return M15Confirmation(
+                direction=direction,
+                structural_break=True,
+                candle_closed=True,
+                acceptance_confirmed=False,
+                failed_reclaim_or_retest_confirmed=False,
+                rejection_candle_only=False,
+                confirmed_at_utc=breakout.close_time,
+            )
+        latest = ordered[-1]
         return M15Confirmation(
             direction=direction,
-            structural_break=structural_break,
+            structural_break=False,
             candle_closed=True,
-            acceptance_confirmed=acceptance,
-            failed_reclaim_or_retest_confirmed=retest,
-            rejection_candle_only=not (acceptance or retest),
+            acceptance_confirmed=False,
+            failed_reclaim_or_retest_confirmed=False,
+            rejection_candle_only=True,
             confirmed_at_utc=latest.close_time,
         )
 
     @staticmethod
-    def _m1_box(symbol: str, candles: Sequence[CanonicalCandle]) -> M1ExecutionBox:
-        window = candles[-3:]
+    def _m1_box(
+        symbol: str,
+        candles: Sequence[CanonicalCandle],
+        *,
+        after_utc: datetime,
+    ) -> M1ExecutionBox | None:
+        eligible = [candle for candle in candles if candle.open_time >= after_utc]
+        if len(eligible) < 3:
+            return None
+        window = eligible[:3]
         low = min(candle.low for candle in window)
         high = max(candle.high for candle in window)
         latest = window[-1]
@@ -326,6 +388,7 @@ class Strategy5SCRClosedCandleEvidenceProvider:
             box_high=high,
             fill_price=latest.close,
             return_to_box_invalidated=False,
+            formed_at_utc=latest.close_time,
         )
 
     @staticmethod
@@ -348,10 +411,12 @@ class Strategy5SCRClosedCandleEvidenceProvider:
         symbol: str,
         cutoff: datetime,
         snapshot: Mapping[str, Sequence[CanonicalCandle]],
+        lifecycle_anchor_utc: datetime | None = None,
     ) -> str:
         payload = {
             "symbol": symbol,
             "decision_at_utc": cutoff.isoformat(),
+            "lifecycle_anchor_utc": (lifecycle_anchor_utc.isoformat() if lifecycle_anchor_utc is not None else None),
             "candles": {
                 timeframe: [
                     (
