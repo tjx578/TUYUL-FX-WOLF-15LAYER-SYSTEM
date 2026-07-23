@@ -151,6 +151,8 @@ async def test_dispatch_claim_uses_atomic_skip_locked_lease() -> None:
     assert "predecessor.lifecycle_sequence < candidate.lifecycle_sequence" in sql
     assert "predecessor.status NOT IN ('PUBLISHED', 'DEAD')" in sql
     assert "UPDATE pressure_outbox AS target" in sql
+    assert "RETURNING target.id, target.event_id" in sql
+    assert "target.created_at" in sql
 
 
 @pytest.mark.asyncio
