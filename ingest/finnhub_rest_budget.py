@@ -33,9 +33,9 @@ class FinnhubRestBudget:
 
     def __init__(self) -> None:
         self._state_lock = threading.Lock()
-        self._loop_states: weakref.WeakKeyDictionary[
-            asyncio.AbstractEventLoop, _LoopPacingState
-        ] = weakref.WeakKeyDictionary()
+        self._loop_states: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, _LoopPacingState] = (
+            weakref.WeakKeyDictionary()
+        )
         self._cooldown_until = 0.0
 
     def _loop_state(self) -> _LoopPacingState:
@@ -78,10 +78,7 @@ class FinnhubRestBudget:
             if wait_for > 0:
                 await asyncio.sleep(wait_for)
 
-            state.next_request_at = (
-                max(state.next_request_at, time.monotonic())
-                + max(0.0, float(delay_seconds))
-            )
+            state.next_request_at = max(state.next_request_at, time.monotonic()) + max(0.0, float(delay_seconds))
 
     def reset_for_tests(self) -> None:
         """Clear process state. Intended only for isolated unit tests."""

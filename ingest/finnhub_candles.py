@@ -342,9 +342,7 @@ class FinnhubCandleFetcher:
             return [
                 candle
                 for candle in self.aggregate_h4(h1_candles)
-                if candle.get("complete") is True
-                and candle["open_time"] >= start
-                and candle["close_time"] <= end
+                if candle.get("complete") is True and candle["open_time"] >= start and candle["close_time"] <= end
             ]
         if timeframe not in self.RESOLUTION_MAP:
             raise FinnhubCandleError(f"Unsupported timeframe: {timeframe}")
@@ -376,9 +374,7 @@ class FinnhubCandleFetcher:
                         raise FinnhubCandleError(f"[429] Rate limited for {symbol} {timeframe}")
                     if response.status_code == 403:
                         self._key_manager.report_failure(active_key, 403)
-                        raise FinnhubCandlePremiumError(
-                            f"Premium access required for {symbol} {timeframe}"
-                        )
+                        raise FinnhubCandlePremiumError(f"Premium access required for {symbol} {timeframe}")
                     response.raise_for_status()
                     self._key_manager.report_success(active_key)
                     candles = self.normalize_response(
@@ -396,21 +392,16 @@ class FinnhubCandleFetcher:
                     ]
             except FinnhubRestCooldownError as exc:
                 raise FinnhubCandleError(
-                    f"Finnhub cooldown active for {symbol} {timeframe}; "
-                    f"retry_in={exc.retry_after_sec:.1f}s"
+                    f"Finnhub cooldown active for {symbol} {timeframe}; retry_in={exc.retry_after_sec:.1f}s"
                 ) from exc
             except (FinnhubCandleError, FinnhubCandlePremiumError):
                 raise
             except httpx.HTTPStatusError as exc:
                 status_code = exc.response.status_code
                 self._key_manager.report_failure(active_key, status_code)
-                raise FinnhubCandleError(
-                    f"HTTP {status_code} for {symbol} {timeframe}"
-                ) from exc
+                raise FinnhubCandleError(f"HTTP {status_code} for {symbol} {timeframe}") from exc
             except Exception as exc:
-                raise FinnhubCandleError(
-                    f"Error fetching range for {symbol} {timeframe}: {exc}"
-                ) from exc
+                raise FinnhubCandleError(f"Error fetching range for {symbol} {timeframe}: {exc}") from exc
 
     async def fetch(self, symbol: str, timeframe: str, bars: int = 100) -> list[dict[str, Any]]:
         """
@@ -520,8 +511,7 @@ class FinnhubCandleFetcher:
                     timeframe,
                     bars,
                     FinnhubCandleError(
-                        f"Finnhub cooldown active for {symbol} {timeframe}; "
-                        f"retry_in={exc.retry_after_sec:.1f}s"
+                        f"Finnhub cooldown active for {symbol} {timeframe}; retry_in={exc.retry_after_sec:.1f}s"
                     ),
                 )
             except httpx.HTTPStatusError as exc:
@@ -533,8 +523,7 @@ class FinnhubCandleFetcher:
                     )
                 elif status_code == 429:
                     raise FinnhubCandleError(
-                        f"[429] Rate limited for {symbol} {timeframe} — "
-                        "warmup akan skip, WS akan feed data secara live"
+                        f"[429] Rate limited for {symbol} {timeframe} — warmup akan skip, WS akan feed data secara live"
                     ) from exc
                 else:
                     primary_error = FinnhubCandleError(f"HTTP {status_code} for {symbol} {timeframe}")
@@ -598,8 +587,7 @@ class FinnhubCandleFetcher:
             groups.setdefault(group_start, []).append(h1)
 
         h4_candles = [
-            self._build_h4_candle(group, group_start=group_start)
-            for group_start, group in sorted(groups.items())
+            self._build_h4_candle(group, group_start=group_start) for group_start, group in sorted(groups.items())
         ]
 
         logger.debug(f"Aggregated {len(valid_h1)} H1 bars into {len(h4_candles)} H4 bars")
@@ -664,8 +652,7 @@ class FinnhubCandleFetcher:
             len(ordered) == 4
             and actual_opens == expected_opens
             and all(
-                item.get("complete") is True
-                and item["close_time"] == item["open_time"] + timedelta(hours=1)
+                item.get("complete") is True and item["close_time"] == item["open_time"] + timedelta(hours=1)
                 for item in ordered
             )
         )
@@ -694,9 +681,7 @@ class FinnhubCandleFetcher:
             "provider": "+".join(providers),
             "provider_timestamp_semantics": "CANONICAL_WINDOW",
             "aggregation_component_count": len(ordered),
-            "aggregation_diagnostic": (
-                "AUTHORITATIVE_4X_H1" if authoritative else "INCOMPLETE_OR_GAPPED_H1_GROUP"
-            ),
+            "aggregation_diagnostic": ("AUTHORITATIVE_4X_H1" if authoritative else "INCOMPLETE_OR_GAPPED_H1_GROUP"),
             "source": "h1_aggregated",
         }
 
