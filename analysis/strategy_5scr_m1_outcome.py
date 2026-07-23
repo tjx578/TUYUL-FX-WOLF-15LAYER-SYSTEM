@@ -4,14 +4,35 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime
+from typing import cast
 
 from contracts.canonical_candle import CanonicalCandle, as_utc
 from contracts.strategy_5scr_pressure import Strategy5SCRTradePlan
 from contracts.strategy_5scr_replay import Strategy5SCRM1Outcome, Strategy5SCROutcomeStatus
 
 CLASSIFIER_VERSION = "5scr.m1-outcome.v1"
+
+
+def tradeplan_from_candidate_payload(
+    payload: Mapping[str, object],
+) -> Strategy5SCRTradePlan:
+    """Rebuild the typed immutable plan stored inside a candidate payload."""
+
+    preview = payload.get("tradeplan_preview")
+    proof = payload.get("strategy_5scr")
+    if not isinstance(preview, Mapping) or not isinstance(proof, Mapping):
+        raise ValueError("5S-CR candidate is missing tradeplan_preview or strategy_5scr proof")
+    return cast(
+        Strategy5SCRTradePlan,
+        Strategy5SCRTradePlan.model_validate(
+            {
+                **dict(preview),
+                "proof": dict(proof),
+            }
+        ),
+    )
 
 
 def _canonical_outcome_candles(
@@ -156,4 +177,5 @@ def classify_strategy_5scr_m1_outcome(
 __all__ = [
     "CLASSIFIER_VERSION",
     "classify_strategy_5scr_m1_outcome",
+    "tradeplan_from_candidate_payload",
 ]

@@ -58,9 +58,11 @@ def _envelope() -> PressureOutboxEnvelope:
 
 class _Provider:
     calls = 0
+    kwargs: dict[str, Any] = {}
 
-    async def provide(self, **_: Any) -> Any:
+    async def provide(self, **kwargs: Any) -> Any:
         self.calls += 1
+        self.kwargs = kwargs
         return SimpleNamespace(evidence_snapshot_id="5scr-evidence:" + "a" * 32)
 
 
@@ -146,6 +148,34 @@ def test_live_evidence_requires_explicit_two_key_activation() -> None:
     )
 
     assert config.enabled is True
+
+
+def test_production_observe_requires_every_execution_plane_flag_off() -> None:
+    config = EvidenceRuntimeConfig.from_env(
+        {
+            "STRATEGY_5SCR_EVIDENCE_ENABLED": "true",
+            "STRATEGY_5SCR_EVIDENCE_LIVE_ALLOWED": "true",
+            "STRATEGY_5SCR_EVIDENCE_MODE": "PRODUCTION_OBSERVE",
+        }
+    )
+
+    assert config.enabled is True
+    assert config.mode == "PRODUCTION_OBSERVE"
+    assert config.execution_enabled is False
+    assert config.risk_reservation_enabled is False
+    assert config.trade_outbox_write_enabled is False
+    assert config.ea_command_delivery_enabled is False
+    assert config.mt5_order_send_enabled is False
+
+    with pytest.raises(RuntimeError, match="REQUIRES_EXECUTION_OFF"):
+        EvidenceRuntimeConfig.from_env(
+            {
+                "STRATEGY_5SCR_EVIDENCE_ENABLED": "true",
+                "STRATEGY_5SCR_EVIDENCE_LIVE_ALLOWED": "true",
+                "STRATEGY_5SCR_EVIDENCE_MODE": "PRODUCTION_OBSERVE",
+                "EA_COMMAND_DELIVERY_ENABLED": "true",
+            }
+        )
 
 
 class _SnapshotConnection:
@@ -262,3 +292,45 @@ async def test_crash_before_outcome_commit_replays_deterministically() -> None:
     assert repository.outcome_attempts == 2
     assert provider.calls == 2
     assert processor.calls == 2
+
+
+class _DeferredProcessor:
+    def process(self, envelope: PressureOutboxEnvelope, *, evidence: Any) -> PressureInboxOutcome:
+        return PressureInboxOutcome(
+            event_id=envelope.event_id,
+            lifecycle_id=envelope.lifecycle_id,
+            status="PROCESSED",
+            decision="DEFER",
+            result_id=f"5scr-defer:{envelope.event_id}",
+            reasons=("STRATEGY_5SCR_M15_CLOSED_STRUCTURAL_BREAK_REQUIRED",),
+        )
+
+
+@pytest.mark.asyncio
+async def test_live_evaluation_time_advances_beyond_anchor_and_defer_retries() -> None:
+    envelope = _envelope()
+    anchor = envelope.signal_valid_at
+    evaluation_at = datetime(2026, 7, 20, 6, 30, tzinfo=UTC)
+    repository = _CrashWindowRepository(envelope)
+    provider = _Provider()
+    worker = Strategy5SCREvidenceWorker(
+        repository=cast(Any, repository),
+        provider=provider,
+        processor=cast(Any, _DeferredProcessor()),
+        config=EvidenceRuntimeConfig(
+            enabled=True,
+            live_allowed=True,
+            activation_requested=True,
+            mode="PRODUCTION_OBSERVE",
+            provider="finnhub",
+            poll_seconds=5,
+            batch_size=1,
+        ),
+        clock=lambda: evaluation_at,
+    )
+
+    assert await worker.process_once() == 1
+    assert provider.kwargs["decision_at_utc"] == evaluation_at
+    assert provider.kwargs["lifecycle_anchor_utc"] == anchor
+    assert repository.failure_records == 1
+    assert repository.outcome_attempts == 0

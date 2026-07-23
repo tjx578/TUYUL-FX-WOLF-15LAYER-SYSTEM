@@ -68,12 +68,14 @@ class PressureEvent(FrozenContract):
     event_time_source: str = Field(..., min_length=2, max_length=100)
     cluster_id: str = Field(..., min_length=1, max_length=240)
     campaign_anchor: str | None = Field(default=None, max_length=240)
+    campaign_anchor_at_utc: datetime | None = None
     campaign_anchor_source: CampaignAnchorSource
     campaign_anchor_execution_grade: bool
     raw_direction: TradeDirection | None = None
     pressure_seen: bool
     pair_eligible_for_analysis: bool
     allowed_quorum_reached: bool
+    pressure_selection_confirmed: bool = False
     pressure_event_count: int = Field(default=0, ge=0)
     pressure_level: str | None = Field(default=None, max_length=100)
     pressure_strength: str | None = Field(default=None, max_length=100)
@@ -82,10 +84,10 @@ class PressureEvent(FrozenContract):
     reference_price_role: Literal["REFERENCE_ONLY_NOT_EXECUTABLE"] = "REFERENCE_ONLY_NOT_EXECUTABLE"
     htf_structure_context: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("event_time_utc")
+    @field_validator("event_time_utc", "campaign_anchor_at_utc")
     @classmethod
-    def _event_time_is_utc(cls, value: datetime) -> datetime:
-        return _utc(value, "event_time_utc")
+    def _event_time_is_utc(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else _utc(value, "pressure event timestamp")
 
     @model_validator(mode="after")
     def _anchor_contract_is_consistent(self) -> PressureEvent:
@@ -95,6 +97,11 @@ class PressureEvent(FrozenContract):
                 raise ValueError("canonical campaign anchors must be present and execution-grade")
         elif has_anchor or self.campaign_anchor_execution_grade:
             raise ValueError("unresolved/legacy anchors are assigned by the lifecycle accumulator")
+        if self.campaign_anchor_at_utc is not None:
+            if not self.campaign_anchor_execution_grade:
+                raise ValueError("explicit campaign anchor time requires canonical lineage")
+            if self.campaign_anchor_at_utc > self.event_time_utc:
+                raise ValueError("campaign_anchor_at_utc cannot follow event_time_utc")
         return self
 
 
@@ -138,7 +145,7 @@ class Strategy5SCRMarketEvidence(FrozenContract):
 
     decision_at_utc: datetime
     lifecycle_anchor_utc: datetime | None = None
-    evidence_mode: Literal["SHADOW", "REPLAY"] = "SHADOW"
+    evidence_mode: Literal["SHADOW", "REPLAY", "PRODUCTION_OBSERVE"] = "SHADOW"
     evidence_snapshot_id: str | None = Field(
         default=None,
         pattern=r"^5scr-evidence:[0-9a-f]{32}$",

@@ -13,6 +13,10 @@ from services.pressure_outbox.evidence_worker import (
     EvidenceRuntimeConfig,
     build_evidence_worker,
 )
+from services.pressure_outbox.outcome_worker import (
+    OutcomeRuntimeConfig,
+    build_outcome_worker,
+)
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_outbox_worker import PressureOutboxWorker
@@ -36,32 +40,38 @@ async def _main() -> None:
         max_attempts=int(os.getenv("PRESSURE_OUTBOX_MAX_ATTEMPTS", "8")),
     )
     evidence_config = EvidenceRuntimeConfig.from_env()
-    evidence_worker = (
-        build_evidence_worker(pg=pg_client, config=evidence_config)
-        if evidence_config.enabled
-        else None
-    )
+    evidence_worker = build_evidence_worker(pg=pg_client, config=evidence_config) if evidence_config.enabled else None
+    outcome_config = OutcomeRuntimeConfig.from_env()
+    outcome_worker = build_outcome_worker(pg=pg_client, config=outcome_config) if outcome_config.enabled else None
 
     async def _stop_workers() -> None:
         await worker.stop()
         if evidence_worker is not None:
             await evidence_worker.stop()
+        if outcome_worker is not None:
+            await outcome_worker.stop()
 
     loop = asyncio.get_running_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError, RuntimeError):
             loop.add_signal_handler(signal_name, lambda: asyncio.create_task(_stop_workers()))
     try:
-        if evidence_worker is None:
-            await worker.run()
-        else:
+        tasks = [worker.run()]
+        if evidence_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR evidence worker mode={} provider={} execution_enabled={}",
                 evidence_config.mode,
                 evidence_config.provider,
                 evidence_config.execution_enabled,
             )
-            await asyncio.gather(worker.run(), evidence_worker.run())
+            tasks.append(evidence_worker.run())
+        if outcome_worker is not None:
+            logger.info(
+                "Starting Strategy 5S-CR M1 outcome worker horizon_minutes={}",
+                outcome_config.horizon_minutes,
+            )
+            tasks.append(outcome_worker.run())
+        await asyncio.gather(*tasks)
     finally:
         await pg_client.close()
 
