@@ -27,15 +27,19 @@ if TYPE_CHECKING:
 
 _UPSERT_SQL = """
 INSERT INTO ohlc_candles (symbol, timeframe, open_time, close_time,
-                          open, high, low, close, volume, tick_count)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                          open, high, low, close, volume, tick_count,
+                          complete, provider, provider_timestamp_semantics)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 ON CONFLICT (symbol, timeframe, open_time) DO UPDATE SET
     close_time = EXCLUDED.close_time,
     high       = GREATEST(ohlc_candles.high, EXCLUDED.high),
     low        = LEAST(ohlc_candles.low, EXCLUDED.low),
     close      = EXCLUDED.close,
     volume     = EXCLUDED.volume,
-    tick_count = EXCLUDED.tick_count
+    tick_count = EXCLUDED.tick_count,
+    complete   = EXCLUDED.complete,
+    provider   = EXCLUDED.provider,
+    provider_timestamp_semantics = EXCLUDED.provider_timestamp_semantics
 """
 
 # ---------------------------------------------------------------------------
@@ -57,11 +61,13 @@ def enqueue_candle(candle: Candle) -> None:
 
 def _parse_dt(value: object) -> datetime | None:
     if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        parsed = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     if isinstance(value, str):
         with contextlib.suppress(ValueError):
-            parsed = datetime.fromisoformat(value)
-            return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            resolved = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+            return resolved.astimezone(UTC)
     return None
 
 
@@ -100,17 +106,34 @@ def enqueue_candle_dict(candle_dict: dict[str, object]) -> None:
 
         open_time = _parse_dt(candle_dict.get("open_time"))
         close_time = _parse_dt(candle_dict.get("close_time"))
+        provider_timestamp = _parse_dt(candle_dict.get("timestamp"))
+        semantics = str(candle_dict.get("provider_timestamp_semantics") or "").strip().upper()
+        tf_delta = _timeframe_to_delta(timeframe)
 
-        if open_time is None:
-            open_time = _parse_dt(candle_dict.get("timestamp"))
-        if open_time is None:
-            return
-
-        if close_time is None:
-            tf_delta = _timeframe_to_delta(timeframe)
-            if tf_delta is None:
+        if open_time is None or close_time is None:
+            if provider_timestamp is None or tf_delta is None:
                 return
-            close_time = open_time + tf_delta
+            if semantics == "PERIOD_END":
+                open_time = provider_timestamp - tf_delta
+                close_time = provider_timestamp
+            else:
+                # Preserve legacy diagnostics using the historical PERIOD_OPEN
+                # interpretation, but do not grant closed-candle authority.
+                open_time = provider_timestamp
+                close_time = provider_timestamp + tf_delta
+                if not semantics:
+                    semantics = "UNSPECIFIED"
+
+        if not semantics:
+            semantics = "CANONICAL_WINDOW"
+        complete = candle_dict.get("complete") is True and semantics != "UNSPECIFIED"
+        provider = str(
+            candle_dict.get("provider")
+            or candle_dict.get("source")
+            or "legacy_unknown"
+        ).strip()
+        if not provider:
+            provider = "legacy_unknown"
 
         candle = Candle(
             symbol=symbol,
@@ -123,7 +146,9 @@ def enqueue_candle_dict(candle_dict: dict[str, object]) -> None:
             close=_to_float(candle_dict.get("close")),
             volume=_to_float(candle_dict.get("volume")),
             tick_count=_to_int(candle_dict.get("tick_count")),
-            complete=True,
+            complete=complete,
+            provider=provider,
+            provider_timestamp_semantics=semantics,
         )
         enqueue_candle(candle)
     except Exception:
@@ -162,6 +187,9 @@ async def _flush_batch() -> int:
                         c.close,
                         c.volume,
                         c.tick_count,
+                        c.complete,
+                        c.provider,
+                        c.provider_timestamp_semantics,
                     )
                     for c in batch
                 ],
