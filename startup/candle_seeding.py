@@ -760,7 +760,9 @@ async def _try_restore_from_postgres(
                     try:
                         rows = await conn.fetch(
                             """
-                            SELECT open_time, close_time, open, high, low, close, volume, tick_count
+                            SELECT open_time, close_time, open, high, low, close,
+                                   volume, tick_count, complete, provider,
+                                   provider_timestamp_semantics
                             FROM ohlc_candles
                             WHERE symbol = $1 AND timeframe = $2
                             ORDER BY open_time DESC
@@ -782,8 +784,13 @@ async def _try_restore_from_postgres(
                                 "low": float(r["low"]),
                                 "close": float(r["close"]),
                                 "volume": float(r["volume"]) if r["volume"] else 0.0,
-                                "tick_count": int(r["tick_count"]) if r["tick_count"] else 0,
-                                "_source": "postgres_recovery",
+                                 "tick_count": int(r["tick_count"]) if r["tick_count"] else 0,
+                                 "complete": r["complete"] is True,
+                                 "provider": str(r["provider"]),
+                                 "provider_timestamp_semantics": str(
+                                     r["provider_timestamp_semantics"]
+                                 ),
+                                 "_source": "postgres_recovery",
                             }
                             for r in reversed(rows)  # oldest first
                         ]
