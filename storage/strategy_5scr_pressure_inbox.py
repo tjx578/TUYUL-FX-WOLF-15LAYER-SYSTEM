@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any, Literal, cast
 
 from analysis.strategy_5scr_pressure_to_tradeplan import (
@@ -17,7 +17,6 @@ from storage.postgres_client import PostgresClient, pg_client
 from storage.pressure_outbox import PressureOutboxIntegrityError, pressure_payload_hash
 
 InboxDeliveryAction = Literal["PROCESS", "DUPLICATE", "INTEGRITY_VIOLATION"]
-EvidenceProvider = Callable[[PressureOutboxEnvelope], Strategy5SCRMarketEvidence | None]
 
 
 def decide_inbox_delivery(
@@ -47,18 +46,23 @@ def _row_value(row: Any, key: str, default: Any = None) -> Any:
 class Strategy5SCRPressureProcessor:
     """Pure integration boundary from a durable envelope to tradeplan logic.
 
-    Closed-candle evidence is deliberately optional in this milestone.  When
-    it is unavailable, the inbox records ``WAITING_EVIDENCE`` and the outbox
-    delivery is still safely acknowledged.  No execution signal is emitted.
+    Dispatcher delivery supplies no evidence, so the inbox records
+    ``WAITING_EVIDENCE`` and acknowledges the durable outbox safely.  The
+    separate evidence worker may later call ``process(..., evidence=...)``
+    outside this transaction.  No execution signal is emitted.
     """
 
-    def __init__(self, *, evidence_provider: EvidenceProvider | None = None) -> None:
+    def __init__(self) -> None:
         self._normalizer = PressureEventNormalizer(input_mode="LIVE")
         self._accumulator = PressureLifecycleAccumulator()
         self._builder = PressureToTradePlanBuilder()
-        self._evidence_provider = evidence_provider
 
-    def process(self, envelope: PressureOutboxEnvelope) -> PressureInboxOutcome:
+    def process(
+        self,
+        envelope: PressureOutboxEnvelope,
+        *,
+        evidence: Strategy5SCRMarketEvidence | None = None,
+    ) -> PressureInboxOutcome:
         if pressure_payload_hash(envelope.payload) != envelope.payload_hash:
             raise PressureOutboxIntegrityError("PRESSURE_DELIVERY_PAYLOAD_HASH_MISMATCH")
 
@@ -67,7 +71,7 @@ class Strategy5SCRPressureProcessor:
         if lifecycle.campaign_id != envelope.lifecycle_id:
             raise PressureOutboxIntegrityError("PRESSURE_DELIVERY_LIFECYCLE_MISMATCH")
 
-        evidence = self._evidence_provider(envelope) if self._evidence_provider is not None else None
+        evidence_resolved = evidence is not None
         if evidence is None:
             evidence = Strategy5SCRMarketEvidence(decision_at_utc=envelope.signal_valid_at)
         result = self._builder.build(lifecycle, evidence)
@@ -88,6 +92,15 @@ class Strategy5SCRPressureProcessor:
                 status="PROCESSED",
                 decision="BLOCK",
                 result_id=f"5scr-block:{envelope.event_id}",
+                reasons=result.reasons,
+            )
+        if evidence_resolved:
+            return PressureInboxOutcome(
+                event_id=envelope.event_id,
+                lifecycle_id=envelope.lifecycle_id,
+                status="PROCESSED",
+                decision="DEFER",
+                result_id=f"5scr-defer:{envelope.event_id}",
                 reasons=result.reasons,
             )
         return PressureInboxOutcome(
@@ -212,7 +225,6 @@ class Strategy5SCRInboxConsumer:
 
 
 __all__ = [
-    "EvidenceProvider",
     "Strategy5SCRInboxConsumer",
     "Strategy5SCRPressureProcessor",
     "decide_inbox_delivery",
