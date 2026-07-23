@@ -86,13 +86,15 @@ class FinnhubCandleFetcher:
             finnhub_rest_budget.defer_for(key_cooldown)
         await finnhub_rest_budget.wait_for_slot(self.request_delay)
 
-    @staticmethod
-    def _register_rate_limit(retry_after: str | None) -> None:
+    def _register_rate_limit(self, retry_after: str | None) -> None:
         """Propagate a provider 429 into the shared process cooldown."""
-        parsed = FinnhubCandleFetcher._retry_after_seconds(retry_after)
-        # Finnhub's key manager defaults to 65 seconds.  A missing or zero
-        # Retry-After must not permit another worker to immediately retry.
-        finnhub_rest_budget.defer_for(max(parsed, 65.0))
+        parsed = self._retry_after_seconds(retry_after)
+        key_cooldown = self._key_manager.next_available_in()
+        if not isinstance(key_cooldown, (int, float)):
+            key_cooldown = 0.0
+        # A missing or zero Retry-After must not permit another worker to
+        # immediately retry; the key manager remains the cooldown authority.
+        finnhub_rest_budget.defer_for(max(parsed, key_cooldown))
 
     async def _fallback_or_raise(
         self,
