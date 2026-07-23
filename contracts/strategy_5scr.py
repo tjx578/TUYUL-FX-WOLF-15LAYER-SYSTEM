@@ -100,6 +100,12 @@ class M1ExecutionBox(StrictFrozenModel):
     box_high: float = Field(..., gt=0)
     fill_price: float = Field(..., gt=0)
     return_to_box_invalidated: bool
+    formed_at_utc: datetime | None = None
+
+    @field_validator("formed_at_utc")
+    @classmethod
+    def _formed_at_is_utc(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else _utc(value, "m1.formed_at_utc")
 
     @model_validator(mode="after")
     def _fill_is_inside_box(self) -> M1ExecutionBox:
@@ -204,10 +210,7 @@ def evaluate_strategy_5scr_proof(signal: Mapping[str, Any]) -> Strategy5SCREvalu
     if symbol != proof.pressure.selected_pair:
         block.append("STRATEGY_5SCR_PRESSURE_PAIR_MISMATCH")
     lifecycle_id = str(
-        signal.get("lifecycle_id")
-        or signal.get("terminal_decision_id")
-        or signal.get("source_clean_block_id")
-        or ""
+        signal.get("lifecycle_id") or signal.get("terminal_decision_id") or signal.get("source_clean_block_id") or ""
     )
     if lifecycle_id != proof.pressure.lifecycle_id:
         block.append("STRATEGY_5SCR_LIFECYCLE_MISMATCH")
@@ -222,9 +225,7 @@ def evaluate_strategy_5scr_proof(signal: Mapping[str, Any]) -> Strategy5SCREvalu
     if target is None or not _same_price(target, proof.h4.structural_tp1):
         block.append("STRATEGY_5SCR_STRUCTURAL_TP1_MISMATCH")
     if entry is not None and stop is not None and target is not None:
-        price_geometry_valid = (
-            stop < entry < target if direction == "BUY" else target < entry < stop
-        )
+        price_geometry_valid = stop < entry < target if direction == "BUY" else target < entry < stop
         if not price_geometry_valid:
             block.append("STRATEGY_5SCR_PRICE_GEOMETRY_INVALID")
 

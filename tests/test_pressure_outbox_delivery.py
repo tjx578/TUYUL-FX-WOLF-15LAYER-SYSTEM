@@ -79,6 +79,8 @@ class _InboxConnection:
                     "last_error": None,
                 },
             )
+        elif "INSERT INTO strategy_5scr_lifecycles" in normalized:
+            pass
         elif "INTEGRITY_VIOLATION" in normalized:
             self.rows[event_id]["status"] = "INTEGRITY_VIOLATION"
             self.rows[event_id]["last_error"] = "EVENT_ID_REUSED_WITH_DIFFERENT_PAYLOAD_HASH"

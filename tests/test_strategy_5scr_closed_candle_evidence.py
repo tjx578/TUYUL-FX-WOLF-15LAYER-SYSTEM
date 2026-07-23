@@ -185,9 +185,67 @@ async def test_provider_builds_frozen_asof_shadow_evidence() -> None:
     assert evidence.evidence_snapshot_id is not None
     assert evidence.execution_cost_authority == "ESTIMATED_NOT_BROKER"
     assert evidence.source_candle_count == len(candles)
+    assert len(evidence.source_candles) == len(candles)
+    assert all(candle.provider_timestamp_semantics != "UNSPECIFIED" for candle in evidence.source_candles)
     assert max(evidence.source_candle_close_times) <= DECISION_AT
     assert evidence.h1 is not None and evidence.h1.structure_confirmed is True
     assert evidence.m15 is not None and evidence.m15.structural_break is True
+
+
+@pytest.mark.asyncio
+async def test_ordered_resolver_requires_m15_proof_after_lifecycle_anchor() -> None:
+    candles = [candle for batch in _snapshot().values() for candle in batch]
+    provider = Strategy5SCRClosedCandleEvidenceProvider(FrozenClosedCandleStore(candles))
+
+    evidence = await provider.provide(
+        symbol="NZDUSD",
+        decision_at_utc=DECISION_AT,
+        lifecycle_anchor_utc=datetime(2026, 7, 20, 6, 31, tzinfo=UTC),
+    )
+
+    assert evidence is not None
+    assert evidence.lifecycle_anchor_utc == datetime(2026, 7, 20, 6, 31, tzinfo=UTC)
+    assert evidence.m15 is not None
+    assert evidence.m15.structural_break is True
+    assert evidence.m15.acceptance_confirmed is False
+    assert evidence.m1 is None
+
+
+@pytest.mark.asyncio
+async def test_ordered_resolver_builds_m1_only_after_m15_acceptance() -> None:
+    candles = [candle for batch in _snapshot().values() for candle in batch]
+    provider = Strategy5SCRClosedCandleEvidenceProvider(FrozenClosedCandleStore(candles))
+
+    evidence = await provider.provide(
+        symbol="NZDUSD",
+        decision_at_utc=DECISION_AT,
+        lifecycle_anchor_utc=datetime(2026, 7, 20, 6, 0, tzinfo=UTC),
+    )
+
+    assert evidence is not None
+    assert evidence.m15 is not None and evidence.m15.acceptance_confirmed is True
+    assert evidence.m1 is not None and evidence.m1.formed_at_utc is not None
+    assert evidence.m1.formed_at_utc > evidence.m15.confirmed_at_utc
+
+
+@pytest.mark.asyncio
+async def test_snapshot_identity_includes_lifecycle_anchor() -> None:
+    candles = [candle for batch in _snapshot().values() for candle in batch]
+    provider = Strategy5SCRClosedCandleEvidenceProvider(FrozenClosedCandleStore(candles))
+
+    first = await provider.provide(
+        symbol="NZDUSD",
+        decision_at_utc=DECISION_AT,
+        lifecycle_anchor_utc=datetime(2026, 7, 20, 6, 0, tzinfo=UTC),
+    )
+    second = await provider.provide(
+        symbol="NZDUSD",
+        decision_at_utc=DECISION_AT,
+        lifecycle_anchor_utc=datetime(2026, 7, 20, 6, 1, tzinfo=UTC),
+    )
+
+    assert first is not None and second is not None
+    assert first.evidence_snapshot_id != second.evidence_snapshot_id
 
 
 @pytest.mark.parametrize(
@@ -227,7 +285,9 @@ async def test_replay_keeps_post_decision_outcome_out_of_evidence() -> None:
     snapshot = _snapshot()
     future = _candle(
         "M1",
-        datetime(2026, 7, 20, 6, 52, tzinfo=UTC),
+        # The 06:51 candle straddles the 06:51:26 decision and is not a legal
+        # post-decision outcome bar.  Start with the next complete M1 window.
+        datetime(2026, 7, 20, 6, 53, tzinfo=UTC),
         open_price=1.102,
         high=1.103,
         low=1.101,
