@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 from collections import deque
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -40,6 +42,72 @@ ON CONFLICT (symbol, timeframe, open_time) DO UPDATE SET
     complete   = EXCLUDED.complete,
     provider   = EXCLUDED.provider,
     provider_timestamp_semantics = EXCLUDED.provider_timestamp_semantics
+"""
+
+_PROVIDER_AWARE_UPSERT_SQL = """
+WITH raw AS (
+    INSERT INTO raw_provider_candles (
+        provider, feed, symbol, timeframe, provider_timestamp,
+        provider_timestamp_semantics, open_time, close_time,
+        open, high, low, close, volume, tick_count, complete,
+        payload_hash, metadata, last_observed_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+            $13, $14, $15, $16, '{}'::jsonb, NOW())
+    ON CONFLICT (provider, feed, symbol, timeframe, provider_timestamp)
+    DO UPDATE SET
+        open_time = EXCLUDED.open_time,
+        close_time = EXCLUDED.close_time,
+        open = EXCLUDED.open,
+        high = EXCLUDED.high,
+        low = EXCLUDED.low,
+        close = EXCLUDED.close,
+        volume = EXCLUDED.volume,
+        tick_count = EXCLUDED.tick_count,
+        complete = EXCLUDED.complete,
+        provider_timestamp_semantics = EXCLUDED.provider_timestamp_semantics,
+        payload_hash = EXCLUDED.payload_hash,
+        last_observed_at = NOW()
+    RETURNING *
+)
+INSERT INTO canonical_candles (
+    symbol, timeframe, open_time, close_time, open, high, low, close,
+    volume, tick_count, complete, selected_provider, selected_feed,
+    provider_timestamp_semantics, selected_raw_candle_id,
+    selection_policy, selection_rank, content_hash, selected_at
+)
+SELECT symbol, timeframe, open_time, close_time, open, high, low, close,
+       volume, tick_count, complete, provider, feed,
+       provider_timestamp_semantics, id, '5scr.provider-priority.v1',
+       $17, payload_hash, NOW()
+FROM raw
+WHERE provider_timestamp_semantics <> 'UNSPECIFIED'
+ON CONFLICT (symbol, timeframe, open_time) DO UPDATE SET
+    close_time = EXCLUDED.close_time,
+    open = EXCLUDED.open,
+    high = EXCLUDED.high,
+    low = EXCLUDED.low,
+    close = EXCLUDED.close,
+    volume = EXCLUDED.volume,
+    tick_count = EXCLUDED.tick_count,
+    complete = EXCLUDED.complete,
+    selected_provider = EXCLUDED.selected_provider,
+    selected_feed = EXCLUDED.selected_feed,
+    provider_timestamp_semantics = EXCLUDED.provider_timestamp_semantics,
+    selected_raw_candle_id = EXCLUDED.selected_raw_candle_id,
+    selection_policy = EXCLUDED.selection_policy,
+    selection_rank = EXCLUDED.selection_rank,
+    content_hash = EXCLUDED.content_hash,
+    selected_at = NOW()
+WHERE EXCLUDED.selection_rank > canonical_candles.selection_rank
+   OR (
+       EXCLUDED.selection_rank = canonical_candles.selection_rank
+       AND (
+           EXCLUDED.selected_raw_candle_id = canonical_candles.selected_raw_candle_id
+           OR (EXCLUDED.selected_provider, EXCLUDED.selected_feed)
+              < (canonical_candles.selected_provider, canonical_candles.selected_feed)
+       )
+   )
 """
 
 # ---------------------------------------------------------------------------
@@ -127,11 +195,7 @@ def enqueue_candle_dict(candle_dict: dict[str, object]) -> None:
         if not semantics:
             semantics = "CANONICAL_WINDOW"
         complete = candle_dict.get("complete") is True and semantics != "UNSPECIFIED"
-        provider = str(
-            candle_dict.get("provider")
-            or candle_dict.get("source")
-            or "legacy_unknown"
-        ).strip()
+        provider = str(candle_dict.get("provider") or candle_dict.get("source") or "legacy_unknown").strip()
         if not provider:
             provider = "legacy_unknown"
 
@@ -149,6 +213,8 @@ def enqueue_candle_dict(candle_dict: dict[str, object]) -> None:
             complete=complete,
             provider=provider,
             provider_timestamp_semantics=semantics,
+            provider_timestamp=provider_timestamp,
+            provider_feed=str(candle_dict.get("provider_feed") or candle_dict.get("source") or "default"),
         )
         enqueue_candle(candle)
     except Exception:
@@ -173,6 +239,10 @@ async def _flush_batch() -> int:
 
     try:
         async with pool.acquire() as conn:
+            await conn.executemany(
+                _PROVIDER_AWARE_UPSERT_SQL,
+                [_provider_aware_args(c) for c in batch],
+            )
             await conn.executemany(
                 _UPSERT_SQL,
                 [
@@ -201,6 +271,65 @@ async def _flush_batch() -> int:
             _buffer.appendleft(c)
         logger.exception("ohlc_persist flush failed; %d candles re-queued", len(batch))
         return 0
+
+
+def _provider_priority(provider: str) -> int:
+    value = provider.strip().lower()
+    if value.startswith(("mt5", "broker")):
+        return 300
+    if value in {"wolf15_tick_builder", "tick_builder"}:
+        return 200
+    if value == "finnhub":
+        return 100
+    return 50
+
+
+def _provider_aware_args(candle: Candle) -> tuple[object, ...]:
+    semantics = candle.provider_timestamp_semantics
+    provider_timestamp = candle.provider_timestamp
+    if provider_timestamp is None:
+        provider_timestamp = candle.close_time if semantics == "PERIOD_END" else candle.open_time
+    material = json.dumps(
+        {
+            "provider": candle.provider,
+            "feed": candle.provider_feed,
+            "symbol": candle.symbol,
+            "timeframe": candle.timeframe,
+            "provider_timestamp": provider_timestamp.isoformat(),
+            "open_time": candle.open_time.isoformat(),
+            "close_time": candle.close_time.isoformat(),
+            "open": candle.open,
+            "high": candle.high,
+            "low": candle.low,
+            "close": candle.close,
+            "volume": candle.volume,
+            "tick_count": candle.tick_count,
+            "complete": candle.complete,
+            "semantics": semantics,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    rank = _provider_priority(candle.provider) + (1000 if candle.complete else 0)
+    return (
+        candle.provider,
+        candle.provider_feed,
+        candle.symbol,
+        candle.timeframe,
+        provider_timestamp,
+        semantics,
+        candle.open_time,
+        candle.close_time,
+        candle.open,
+        candle.high,
+        candle.low,
+        candle.close,
+        candle.volume,
+        candle.tick_count,
+        candle.complete,
+        hashlib.sha256(material).hexdigest(),
+        rank,
+    )
 
 
 async def _flush_loop() -> None:

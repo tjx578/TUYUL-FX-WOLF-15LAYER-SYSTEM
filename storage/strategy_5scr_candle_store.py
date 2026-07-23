@@ -23,7 +23,7 @@ _REQUIRED_COLUMNS = frozenset(
         "volume",
         "tick_count",
         "complete",
-        "provider",
+        "selected_provider",
         "provider_timestamp_semantics",
     }
 )
@@ -65,7 +65,7 @@ class PostgresClosedCandleStore:
             SELECT column_name
             FROM information_schema.columns
             WHERE table_schema = current_schema()
-              AND table_name = 'ohlc_candles'
+              AND table_name = 'canonical_candles'
             """
         )
         index_rows = await self._pg.fetch(
@@ -73,21 +73,15 @@ class PostgresClosedCandleStore:
             SELECT indexname
             FROM pg_catalog.pg_indexes
             WHERE schemaname = current_schema()
-              AND tablename = 'ohlc_candles'
-              AND indexname = 'ix_ohlc_candles_closed_asof'
+              AND tablename = 'canonical_candles'
+              AND indexname = 'ix_canonical_candles_closed_asof'
             """
         )
-        present = {
-            str(_row_value(row, "column_name") or "")
-            for row in column_rows
-        }
-        indexes = {
-            str(_row_value(row, "indexname") or "")
-            for row in index_rows
-        }
+        present = {str(_row_value(row, "column_name") or "") for row in column_rows}
+        indexes = {str(_row_value(row, "indexname") or "") for row in index_rows}
         return ClosedCandleSchemaStatus(
             missing_columns=tuple(sorted(_REQUIRED_COLUMNS - present)),
-            closed_asof_index_present="ix_ohlc_candles_closed_asof" in indexes,
+            closed_asof_index_present="ix_canonical_candles_closed_asof" in indexes,
         )
 
     async def load_closed_candles(
@@ -105,8 +99,9 @@ class PostgresClosedCandleStore:
             """
             SELECT symbol, timeframe, open_time, close_time,
                    open, high, low, close, volume, tick_count,
-                   complete, provider, provider_timestamp_semantics
-            FROM ohlc_candles
+                   complete, selected_provider AS provider,
+                   provider_timestamp_semantics
+            FROM canonical_candles
             WHERE symbol = $1
               AND timeframe = $2
               AND complete = TRUE

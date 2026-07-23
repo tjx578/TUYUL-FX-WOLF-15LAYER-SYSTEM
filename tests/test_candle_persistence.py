@@ -12,6 +12,7 @@ from storage.candle_persistence import (
     BATCH_SIZE,
     _buffer,
     _flush_batch,
+    _provider_aware_args,
     enqueue_candle,
     enqueue_candle_dict,
 )
@@ -101,29 +102,53 @@ class TestEnqueueCandle:
         assert _buffer[0].provider_timestamp_semantics == "UNSPECIFIED"
         _buffer.clear()
 
-    def test_enqueue_canonical_closed_candle_preserves_authority(self) -> None:
-        _buffer.clear()
-        payload = {
-            "symbol": "EURUSD",
-            "timeframe": "H1",
-            "open_time": "2026-03-15T12:00:00+00:00",
-            "close_time": "2026-03-15T13:00:00+00:00",
-            "open": 1.1,
-            "high": 1.2,
-            "low": 1.0,
-            "close": 1.15,
-            "complete": True,
-            "provider": "finnhub",
-            "provider_timestamp_semantics": "PERIOD_END",
-        }
 
-        enqueue_candle_dict(payload)
+def test_provider_aware_identity_and_rank_do_not_mix_feeds() -> None:
+    finnhub = _make_candle()
+    finnhub.provider = "finnhub"
+    finnhub.provider_feed = "oanda_rest"
+    finnhub.provider_timestamp_semantics = "PERIOD_OPEN"
+    finnhub.provider_timestamp = finnhub.open_time
 
-        assert len(_buffer) == 1
-        assert _buffer[0].complete is True
-        assert _buffer[0].provider == "finnhub"
-        assert _buffer[0].provider_timestamp_semantics == "PERIOD_END"
-        _buffer.clear()
+    broker = _make_candle()
+    broker.provider = "mt5"
+    broker.provider_feed = "demo_account_1"
+    broker.provider_timestamp_semantics = "PERIOD_OPEN"
+    broker.provider_timestamp = broker.open_time
+
+    finnhub_args = _provider_aware_args(finnhub)
+    broker_args = _provider_aware_args(broker)
+
+    assert finnhub_args[:2] == ("finnhub", "oanda_rest")
+    assert broker_args[:2] == ("mt5", "demo_account_1")
+    assert finnhub_args[4] == finnhub.open_time
+    assert len(str(finnhub_args[15])) == 64
+    assert int(broker_args[16]) > int(finnhub_args[16])
+
+
+def test_enqueue_canonical_closed_candle_preserves_authority() -> None:
+    _buffer.clear()
+    payload = {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "open_time": "2026-03-15T12:00:00+00:00",
+        "close_time": "2026-03-15T13:00:00+00:00",
+        "open": 1.1,
+        "high": 1.2,
+        "low": 1.0,
+        "close": 1.15,
+        "complete": True,
+        "provider": "finnhub",
+        "provider_timestamp_semantics": "PERIOD_END",
+    }
+
+    enqueue_candle_dict(payload)
+
+    assert len(_buffer) == 1
+    assert _buffer[0].complete is True
+    assert _buffer[0].provider == "finnhub"
+    assert _buffer[0].provider_timestamp_semantics == "PERIOD_END"
+    _buffer.clear()
 
 
 class TestFlushBatch:
@@ -162,8 +187,8 @@ class TestFlushBatch:
             written = await _flush_batch()
 
         assert written == 3
-        assert mock_conn.executemany.await_count == 1
-        args = mock_conn.executemany.call_args
+        assert mock_conn.executemany.await_count == 2
+        args = mock_conn.executemany.call_args_list[1]
         assert len(args[0][1]) == 3  # 3 rows
         assert len(_buffer) == 0
         _buffer.clear()

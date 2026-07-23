@@ -49,6 +49,8 @@ def _enabled(value: str | None) -> bool:
 @dataclass(frozen=True)
 class EvidenceRuntimeConfig:
     enabled: bool = False
+    live_allowed: bool = False
+    activation_requested: bool = False
     mode: str = "SHADOW"
     provider: str = "finnhub"
     execution_enabled: bool = False
@@ -58,12 +60,16 @@ class EvidenceRuntimeConfig:
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> EvidenceRuntimeConfig:
         source = os.environ if environ is None else environ
+        requested_enabled = _enabled(source.get("STRATEGY_5SCR_EVIDENCE_ENABLED"))
+        live_allowed = _enabled(source.get("STRATEGY_5SCR_EVIDENCE_LIVE_ALLOWED"))
         config = cls(
-            enabled=_enabled(source.get("STRATEGY_5SCR_EVIDENCE_ENABLED")),
+            # Two-key activation prevents a stale Railway flag from reviving
+            # live evidence while canonical storage/lifecycle work is pending.
+            enabled=requested_enabled and live_allowed,
+            live_allowed=live_allowed,
+            activation_requested=requested_enabled,
             mode=str(source.get("STRATEGY_5SCR_EVIDENCE_MODE") or "SHADOW").strip().upper(),
-            provider=str(
-                source.get("STRATEGY_5SCR_EVIDENCE_PROVIDER") or "finnhub"
-            ).strip().lower(),
+            provider=str(source.get("STRATEGY_5SCR_EVIDENCE_PROVIDER") or "finnhub").strip().lower(),
             execution_enabled=_enabled(source.get("STRATEGY_5SCR_EXECUTION_ENABLED")),
             poll_seconds=max(
                 0.1,
@@ -81,12 +87,10 @@ class EvidenceRuntimeConfig:
         if self.mode not in {"SHADOW", "REPLAY"}:
             raise RuntimeError(f"STRATEGY_5SCR_EVIDENCE_MODE_INVALID:{self.mode}")
         if self.provider != "finnhub":
-            raise RuntimeError(
-                f"STRATEGY_5SCR_EVIDENCE_PROVIDER_UNSUPPORTED:{self.provider}"
-            )
+            raise RuntimeError(f"STRATEGY_5SCR_EVIDENCE_PROVIDER_UNSUPPORTED:{self.provider}")
         if self.enabled and self.mode != "SHADOW":
             raise RuntimeError("LIVE_EVIDENCE_WORKER_REQUIRES_SHADOW_MODE")
-        if self.enabled and self.execution_enabled:
+        if self.activation_requested and self.execution_enabled:
             raise RuntimeError("STRATEGY_5SCR_EVIDENCE_REQUIRES_EXECUTION_OFF")
 
 

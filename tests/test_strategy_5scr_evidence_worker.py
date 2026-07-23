@@ -120,6 +120,31 @@ def test_enabled_shadow_refuses_execution_flag() -> None:
         )
 
 
+def test_stale_enabled_flag_cannot_activate_live_evidence_without_second_key() -> None:
+    config = EvidenceRuntimeConfig.from_env(
+        {
+            "STRATEGY_5SCR_EVIDENCE_ENABLED": "true",
+            "STRATEGY_5SCR_EVIDENCE_MODE": "SHADOW",
+        }
+    )
+
+    assert config.activation_requested is True
+    assert config.live_allowed is False
+    assert config.enabled is False
+
+
+def test_live_evidence_requires_explicit_two_key_activation() -> None:
+    config = EvidenceRuntimeConfig.from_env(
+        {
+            "STRATEGY_5SCR_EVIDENCE_ENABLED": "true",
+            "STRATEGY_5SCR_EVIDENCE_LIVE_ALLOWED": "true",
+            "STRATEGY_5SCR_EVIDENCE_MODE": "SHADOW",
+        }
+    )
+
+    assert config.enabled is True
+
+
 @pytest.mark.asyncio
 async def test_crash_before_outcome_commit_replays_deterministically() -> None:
     envelope = _envelope()
