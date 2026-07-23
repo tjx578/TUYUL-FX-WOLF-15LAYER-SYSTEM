@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 from collections import deque
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -27,15 +29,85 @@ if TYPE_CHECKING:
 
 _UPSERT_SQL = """
 INSERT INTO ohlc_candles (symbol, timeframe, open_time, close_time,
-                          open, high, low, close, volume, tick_count)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                          open, high, low, close, volume, tick_count,
+                          complete, provider, provider_timestamp_semantics)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 ON CONFLICT (symbol, timeframe, open_time) DO UPDATE SET
     close_time = EXCLUDED.close_time,
     high       = GREATEST(ohlc_candles.high, EXCLUDED.high),
     low        = LEAST(ohlc_candles.low, EXCLUDED.low),
     close      = EXCLUDED.close,
     volume     = EXCLUDED.volume,
-    tick_count = EXCLUDED.tick_count
+    tick_count = EXCLUDED.tick_count,
+    complete   = EXCLUDED.complete,
+    provider   = EXCLUDED.provider,
+    provider_timestamp_semantics = EXCLUDED.provider_timestamp_semantics
+"""
+
+_PROVIDER_AWARE_UPSERT_SQL = """
+WITH raw AS (
+    INSERT INTO raw_provider_candles (
+        provider, feed, symbol, timeframe, provider_timestamp,
+        provider_timestamp_semantics, open_time, close_time,
+        open, high, low, close, volume, tick_count, complete,
+        payload_hash, metadata, last_observed_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+            $13, $14, $15, $16, '{}'::jsonb, NOW())
+    ON CONFLICT (provider, feed, symbol, timeframe, provider_timestamp)
+    DO UPDATE SET
+        open_time = EXCLUDED.open_time,
+        close_time = EXCLUDED.close_time,
+        open = EXCLUDED.open,
+        high = EXCLUDED.high,
+        low = EXCLUDED.low,
+        close = EXCLUDED.close,
+        volume = EXCLUDED.volume,
+        tick_count = EXCLUDED.tick_count,
+        complete = EXCLUDED.complete,
+        provider_timestamp_semantics = EXCLUDED.provider_timestamp_semantics,
+        payload_hash = EXCLUDED.payload_hash,
+        last_observed_at = NOW()
+    RETURNING *
+)
+INSERT INTO canonical_candles (
+    symbol, timeframe, open_time, close_time, open, high, low, close,
+    volume, tick_count, complete, selected_provider, selected_feed,
+    provider_timestamp_semantics, selected_raw_candle_id,
+    selection_policy, selection_rank, content_hash, selected_at
+)
+SELECT symbol, timeframe, open_time, close_time, open, high, low, close,
+       volume, tick_count, complete, provider, feed,
+       provider_timestamp_semantics, id, '5scr.provider-priority.v1',
+       $17, payload_hash, NOW()
+FROM raw
+WHERE provider_timestamp_semantics <> 'UNSPECIFIED'
+ON CONFLICT (symbol, timeframe, open_time) DO UPDATE SET
+    close_time = EXCLUDED.close_time,
+    open = EXCLUDED.open,
+    high = EXCLUDED.high,
+    low = EXCLUDED.low,
+    close = EXCLUDED.close,
+    volume = EXCLUDED.volume,
+    tick_count = EXCLUDED.tick_count,
+    complete = EXCLUDED.complete,
+    selected_provider = EXCLUDED.selected_provider,
+    selected_feed = EXCLUDED.selected_feed,
+    provider_timestamp_semantics = EXCLUDED.provider_timestamp_semantics,
+    selected_raw_candle_id = EXCLUDED.selected_raw_candle_id,
+    selection_policy = EXCLUDED.selection_policy,
+    selection_rank = EXCLUDED.selection_rank,
+    content_hash = EXCLUDED.content_hash,
+    selected_at = NOW()
+WHERE EXCLUDED.selection_rank > canonical_candles.selection_rank
+   OR (
+       EXCLUDED.selection_rank = canonical_candles.selection_rank
+       AND (
+           EXCLUDED.selected_raw_candle_id = canonical_candles.selected_raw_candle_id
+           OR (EXCLUDED.selected_provider, EXCLUDED.selected_feed)
+              < (canonical_candles.selected_provider, canonical_candles.selected_feed)
+       )
+   )
 """
 
 # ---------------------------------------------------------------------------
@@ -57,11 +129,13 @@ def enqueue_candle(candle: Candle) -> None:
 
 def _parse_dt(value: object) -> datetime | None:
     if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        parsed = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
     if isinstance(value, str):
         with contextlib.suppress(ValueError):
-            parsed = datetime.fromisoformat(value)
-            return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            resolved = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+            return resolved.astimezone(UTC)
     return None
 
 
@@ -100,17 +174,30 @@ def enqueue_candle_dict(candle_dict: dict[str, object]) -> None:
 
         open_time = _parse_dt(candle_dict.get("open_time"))
         close_time = _parse_dt(candle_dict.get("close_time"))
+        provider_timestamp = _parse_dt(candle_dict.get("timestamp"))
+        semantics = str(candle_dict.get("provider_timestamp_semantics") or "").strip().upper()
+        tf_delta = _timeframe_to_delta(timeframe)
 
-        if open_time is None:
-            open_time = _parse_dt(candle_dict.get("timestamp"))
-        if open_time is None:
-            return
-
-        if close_time is None:
-            tf_delta = _timeframe_to_delta(timeframe)
-            if tf_delta is None:
+        if open_time is None or close_time is None:
+            if provider_timestamp is None or tf_delta is None:
                 return
-            close_time = open_time + tf_delta
+            if semantics == "PERIOD_END":
+                open_time = provider_timestamp - tf_delta
+                close_time = provider_timestamp
+            else:
+                # Preserve legacy diagnostics using the historical PERIOD_OPEN
+                # interpretation, but do not grant closed-candle authority.
+                open_time = provider_timestamp
+                close_time = provider_timestamp + tf_delta
+                if not semantics:
+                    semantics = "UNSPECIFIED"
+
+        if not semantics:
+            semantics = "CANONICAL_WINDOW"
+        complete = candle_dict.get("complete") is True and semantics != "UNSPECIFIED"
+        provider = str(candle_dict.get("provider") or candle_dict.get("source") or "legacy_unknown").strip()
+        if not provider:
+            provider = "legacy_unknown"
 
         candle = Candle(
             symbol=symbol,
@@ -123,7 +210,11 @@ def enqueue_candle_dict(candle_dict: dict[str, object]) -> None:
             close=_to_float(candle_dict.get("close")),
             volume=_to_float(candle_dict.get("volume")),
             tick_count=_to_int(candle_dict.get("tick_count")),
-            complete=True,
+            complete=complete,
+            provider=provider,
+            provider_timestamp_semantics=semantics,
+            provider_timestamp=provider_timestamp,
+            provider_feed=str(candle_dict.get("provider_feed") or candle_dict.get("source") or "default"),
         )
         enqueue_candle(candle)
     except Exception:
@@ -149,6 +240,10 @@ async def _flush_batch() -> int:
     try:
         async with pool.acquire() as conn:
             await conn.executemany(
+                _PROVIDER_AWARE_UPSERT_SQL,
+                [_provider_aware_args(c) for c in batch],
+            )
+            await conn.executemany(
                 _UPSERT_SQL,
                 [
                     (
@@ -162,6 +257,9 @@ async def _flush_batch() -> int:
                         c.close,
                         c.volume,
                         c.tick_count,
+                        c.complete,
+                        c.provider,
+                        c.provider_timestamp_semantics,
                     )
                     for c in batch
                 ],
@@ -173,6 +271,65 @@ async def _flush_batch() -> int:
             _buffer.appendleft(c)
         logger.exception("ohlc_persist flush failed; %d candles re-queued", len(batch))
         return 0
+
+
+def _provider_priority(provider: str) -> int:
+    value = provider.strip().lower()
+    if value.startswith(("mt5", "broker")):
+        return 300
+    if value in {"wolf15_tick_builder", "tick_builder"}:
+        return 200
+    if value == "finnhub":
+        return 100
+    return 50
+
+
+def _provider_aware_args(candle: Candle) -> tuple[object, ...]:
+    semantics = candle.provider_timestamp_semantics
+    provider_timestamp = candle.provider_timestamp
+    if provider_timestamp is None:
+        provider_timestamp = candle.close_time if semantics == "PERIOD_END" else candle.open_time
+    material = json.dumps(
+        {
+            "provider": candle.provider,
+            "feed": candle.provider_feed,
+            "symbol": candle.symbol,
+            "timeframe": candle.timeframe,
+            "provider_timestamp": provider_timestamp.isoformat(),
+            "open_time": candle.open_time.isoformat(),
+            "close_time": candle.close_time.isoformat(),
+            "open": candle.open,
+            "high": candle.high,
+            "low": candle.low,
+            "close": candle.close,
+            "volume": candle.volume,
+            "tick_count": candle.tick_count,
+            "complete": candle.complete,
+            "semantics": semantics,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    rank = _provider_priority(candle.provider) + (1000 if candle.complete else 0)
+    return (
+        candle.provider,
+        candle.provider_feed,
+        candle.symbol,
+        candle.timeframe,
+        provider_timestamp,
+        semantics,
+        candle.open_time,
+        candle.close_time,
+        candle.open,
+        candle.high,
+        candle.low,
+        candle.close,
+        candle.volume,
+        candle.tick_count,
+        candle.complete,
+        hashlib.sha256(material).hexdigest(),
+        rank,
+    )
 
 
 async def _flush_loop() -> None:

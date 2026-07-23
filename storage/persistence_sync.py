@@ -345,7 +345,8 @@ class PersistenceSync:
             rows = await self._pg.fetch(
                 """
                 SELECT symbol, timeframe, open_time, close_time,
-                       open, high, low, close, volume, tick_count
+                       open, high, low, close, volume, tick_count,
+                       complete, provider, provider_timestamp_semantics
                 FROM ohlc_candles
                 WHERE open_time > NOW() - INTERVAL '7 days'
                 ORDER BY symbol, timeframe, open_time ASC
@@ -363,6 +364,16 @@ class PersistenceSync:
         for row in rows:
             sym = row["symbol"]
             tf = row["timeframe"]
+            try:
+                complete = row["complete"] is True
+                provider = str(row["provider"])
+                timestamp_semantics = str(row["provider_timestamp_semantics"])
+            except KeyError:
+                # Pre-migration/test rows have ambiguous timestamp authority.
+                # Recover them for diagnostics but never mark them closed.
+                complete = False
+                provider = "legacy_unknown"
+                timestamp_semantics = "UNSPECIFIED"
             candle_dict = {
                 "symbol": sym,
                 "timeframe": tf,
@@ -372,9 +383,23 @@ class PersistenceSync:
                 "close": row["close"],
                 "volume": row["volume"],
                 "tick_count": row["tick_count"],
-                "timestamp": row["open_time"].isoformat()
+                "open_time": row["open_time"].isoformat()
                 if isinstance(row["open_time"], datetime)
                 else str(row["open_time"]),
+                "close_time": row["close_time"].isoformat()
+                if isinstance(row["close_time"], datetime)
+                else str(row["close_time"]),
+                "timestamp": (
+                    row["close_time"].isoformat()
+                    if timestamp_semantics == "PERIOD_END"
+                    and isinstance(row["close_time"], datetime)
+                    else row["open_time"].isoformat()
+                    if isinstance(row["open_time"], datetime)
+                    else str(row["open_time"])
+                ),
+                "complete": complete,
+                "provider": provider,
+                "provider_timestamp_semantics": timestamp_semantics,
             }
             grouped.setdefault((sym, tf), []).append(json.dumps(candle_dict))
 

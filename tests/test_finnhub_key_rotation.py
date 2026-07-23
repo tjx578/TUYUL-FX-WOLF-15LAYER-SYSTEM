@@ -164,6 +164,31 @@ class TestFinnhubKeyManager:
         mgr.report_failure("k1", 500)  # Should NOT trigger suspension
         assert mgr.current_key() == "k1"  # Still on k1
 
+    def test_next_available_in_blocks_single_suspended_key(self):
+        mgr = self._make_manager(
+            {
+                "FINNHUB_API_KEY": "solo",
+                "FINNHUB_API_KEY_SECONDARY": "",
+                "FINNHUB_API_KEYS": "",
+            }
+        )
+        mgr.report_failure("solo", 429)
+
+        assert mgr.next_available_in() > 0
+
+    def test_next_available_in_allows_healthy_rotated_key(self):
+        mgr = self._make_manager(
+            {
+                "FINNHUB_API_KEY": "primary",
+                "FINNHUB_API_KEY_SECONDARY": "secondary",
+                "FINNHUB_API_KEYS": "",
+            }
+        )
+        mgr.report_failure("primary", 429)
+
+        assert mgr.current_key() == "secondary"
+        assert mgr.next_available_in() == 0
+
     # ── Diagnostics ────────────────────────────────────────────────
 
     def test_status_masks_keys(self):

@@ -55,6 +55,12 @@ _SELECT_COLUMNS = """
 """
 
 
+def _qualified_select_columns(alias: str) -> str:
+    """Qualify the canonical projection for UPDATE ... FROM statements."""
+    columns = (column.strip() for column in _SELECT_COLUMNS.split(","))
+    return ", ".join(f"{alias}.{column}" for column in columns if column)
+
+
 class PressureOutboxError(RuntimeError):
     """Base error for durable pressure transport."""
 
@@ -463,7 +469,7 @@ class PressureOutboxRepository:
                 updated_at = NOW()
             FROM candidates
             WHERE target.id = candidates.id
-            RETURNING {_SELECT_COLUMNS}
+            RETURNING {_qualified_select_columns("target")}
             """,
             max(1, int(batch_size)),
             worker_id,

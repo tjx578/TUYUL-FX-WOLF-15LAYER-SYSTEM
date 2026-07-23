@@ -8,9 +8,11 @@ import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 
+from services.pressure_outbox.evidence_worker import EvidenceRuntimeConfig
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_radar_manifest import PressureRadarManifestRepository
+from storage.strategy_5scr_candle_store import PostgresClosedCandleStore
 
 
 def _enabled(value: str | None) -> bool:
@@ -57,6 +59,9 @@ async def run_preflight() -> dict[str, object]:
     expected_phase = os.getenv("PRESSURE_OUTBOX_EXPECTED_PHASE", "dark").strip().lower()
     flags = rollout_flags()
     validate_rollout_phase(flags, expected_phase)
+    evidence_config = EvidenceRuntimeConfig.from_env()
+    if evidence_config.enabled and not (flags.master and flags.consumer):
+        raise RuntimeError("STRATEGY_5SCR_EVIDENCE_REQUIRES_PRESSURE_CONSUMER")
     await pg_client.initialize()
     if not pg_client.is_available:
         raise RuntimeError("PRESSURE_OUTBOX_DATABASE_UNAVAILABLE")
@@ -75,6 +80,13 @@ async def run_preflight() -> dict[str, object]:
                 f"tables={','.join(radar_schema.missing_tables) or 'none'}:"
                 f"indexes={','.join(radar_schema.missing_indexes) or 'none'}"
             )
+        candle_schema = await PostgresClosedCandleStore(pg=pg_client).schema_status()
+        if evidence_config.enabled and not candle_schema.ready:
+            raise RuntimeError(
+                "STRATEGY_5SCR_CANDLE_SCHEMA_NOT_READY:"
+                f"columns={','.join(candle_schema.missing_columns) or 'none'}:"
+                f"closed_asof_index={candle_schema.closed_asof_index_present}"
+            )
         return {
             "event": "pressure_outbox_preflight",
             "ready": True,
@@ -84,6 +96,8 @@ async def run_preflight() -> dict[str, object]:
             "schema_indexes": sorted(schema.present_indexes),
             "radar_schema_tables": sorted(radar_schema.present_tables),
             "radar_schema_indexes": sorted(radar_schema.present_indexes),
+            "evidence": asdict(evidence_config),
+            "candle_schema_ready": candle_schema.ready,
         }
     finally:
         await pg_client.close()

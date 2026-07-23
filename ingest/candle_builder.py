@@ -56,6 +56,10 @@ class Candle:
     volume: float = 0.0
     tick_count: int = 0
     complete: bool = False
+    provider: str = "wolf15_tick_builder"
+    provider_timestamp_semantics: str = "CANONICAL_WINDOW"
+    provider_timestamp: datetime | None = None
+    provider_feed: str = "default"
 
     def to_dict(self) -> dict:
         return {
@@ -70,6 +74,12 @@ class Candle:
             "volume": self.volume,
             "tick_count": self.tick_count,
             "complete": self.complete,
+            "provider": self.provider,
+            "provider_timestamp_semantics": self.provider_timestamp_semantics,
+            "provider_timestamp": (
+                self.provider_timestamp.isoformat() if self.provider_timestamp is not None else None
+            ),
+            "provider_feed": self.provider_feed,
         }
 
 
@@ -262,8 +272,7 @@ class CandleBuilder:
 
         if self._acc.open_time is None or period_start != self._acc.open_time:
             _log.debug(
-                "[%sBuilder] Period rollover detected for %s "
-                "(acc.open_time=%s → new period_start=%s), emitting candle",
+                "[%sBuilder] Period rollover detected for %s (acc.open_time=%s → new period_start=%s), emitting candle",
                 self.timeframe.label,
                 candle.symbol,
                 self._acc.open_time,
@@ -273,8 +282,7 @@ class CandleBuilder:
             self._acc.reset(period_start)
             self._acc.update_from_candle(candle)
             _log.debug(
-                "[%sBuilder] Accumulator update after rollover: "
-                "open=%s, high=%s, low=%s, close=%s",
+                "[%sBuilder] Accumulator update after rollover: open=%s, high=%s, low=%s, close=%s",
                 self.timeframe.label,
                 self._acc.open,
                 self._acc.high,
