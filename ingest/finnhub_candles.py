@@ -282,12 +282,14 @@ class FinnhubCandleFetcher:
                 skipped += 1
                 continue
 
-            # Finnhub REST timestamps are treated as provider period-end
-            # timestamps in this adapter.  Both sides of the canonical window
-            # are persisted so downstream code never has to guess semantics.
+            # Finnhub's OANDA candle timestamp is the start of the period.
+            # Live parity confirms that the current H1 candle is returned with
+            # ``t`` equal to the current hour, before that hour has closed.
+            # Both sides of the canonical window are persisted so downstream
+            # code never has to guess the provider timestamp semantics.
             provider_timestamp = datetime.fromtimestamp(timestamps[i], tz=UTC)
-            close_time = provider_timestamp
-            open_time = close_time - period
+            open_time = provider_timestamp
+            close_time = open_time + period
 
             candle = {
                 "symbol": symbol,
@@ -302,7 +304,7 @@ class FinnhubCandleFetcher:
                 "close_time": close_time,
                 "complete": close_time <= cutoff,
                 "provider": "finnhub",
-                "provider_timestamp_semantics": "PERIOD_END",
+                "provider_timestamp_semantics": "PERIOD_OPEN",
                 "source": "rest_api",
             }
             candles.append(candle)

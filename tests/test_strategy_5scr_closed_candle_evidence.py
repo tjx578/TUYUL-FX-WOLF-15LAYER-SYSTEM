@@ -201,9 +201,7 @@ async def test_provider_supports_shadow_validation_symbols(
 ) -> None:
     snapshot = _snapshot(symbol=symbol)
     provider = Strategy5SCRClosedCandleEvidenceProvider(
-        FrozenClosedCandleStore(
-            [candle for batch in snapshot.values() for candle in batch]
-        )
+        FrozenClosedCandleStore([candle for batch in snapshot.values() for candle in batch])
     )
 
     evidence = await provider.provide(symbol=symbol, decision_at_utc=DECISION_AT)
@@ -236,9 +234,7 @@ async def test_replay_keeps_post_decision_outcome_out_of_evidence() -> None:
         close=1.1025,
         provider="finnhub_ws_tick_builder",
     )
-    replay = Strategy5SCRReplay(
-        [candle for batch in snapshot.values() for candle in batch] + [future]
-    )
+    replay = Strategy5SCRReplay([candle for batch in snapshot.values() for candle in batch] + [future])
 
     evidence = await replay.build_evidence(symbol="NZDUSD", decision_at_utc=DECISION_AT)
     outcomes = replay.load_outcome_candles(
@@ -286,8 +282,9 @@ def test_h4_is_authoritative_only_for_four_complete_contiguous_h1() -> None:
 
 
 def test_finnhub_normalization_marks_forming_candle_incomplete() -> None:
-    cutoff = datetime(2026, 7, 20, 6, tzinfo=UTC)
-    forming_close = cutoff + timedelta(hours=1)
+    forming_open = datetime(2026, 7, 20, 6, tzinfo=UTC)
+    cutoff = forming_open + timedelta(minutes=30)
+    forming_close = forming_open + timedelta(hours=1)
     response = {
         "s": "ok",
         "o": [1.10],
@@ -295,7 +292,7 @@ def test_finnhub_normalization_marks_forming_candle_incomplete() -> None:
         "l": [1.09],
         "c": [1.105],
         "v": [100],
-        "t": [int(forming_close.timestamp())],
+        "t": [int(forming_open.timestamp())],
     }
 
     candle = FinnhubCandleFetcher().normalize_response(
@@ -305,9 +302,10 @@ def test_finnhub_normalization_marks_forming_candle_incomplete() -> None:
         as_of_utc=cutoff,
     )[0]
 
-    assert candle["open_time"] == cutoff
+    assert candle["open_time"] == forming_open
     assert candle["close_time"] == forming_close
     assert candle["complete"] is False
+    assert candle["provider_timestamp_semantics"] == "PERIOD_OPEN"
 
 
 @pytest.mark.asyncio
@@ -332,7 +330,7 @@ async def test_fetch_range_uses_historical_cutoff_and_returns_canonical_window()
                 "l": [1.09],
                 "c": [1.105],
                 "v": [100],
-                "t": [int(end.timestamp())],
+                "t": [int(start.timestamp())],
             }
 
     class _Client:
@@ -360,4 +358,4 @@ async def test_fetch_range_uses_historical_cutoff_and_returns_canonical_window()
     assert candles[0]["open_time"] == start
     assert candles[0]["close_time"] == end
     assert candles[0]["complete"] is True
-    assert candles[0]["provider_timestamp_semantics"] == "PERIOD_END"
+    assert candles[0]["provider_timestamp_semantics"] == "PERIOD_OPEN"
