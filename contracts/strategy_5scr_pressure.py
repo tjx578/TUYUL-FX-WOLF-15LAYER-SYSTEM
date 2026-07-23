@@ -136,6 +136,15 @@ class Strategy5SCRMarketEvidence(FrozenContract):
     """Already-resolved closed-candle evidence supplied by Wolf15 analysis."""
 
     decision_at_utc: datetime
+    evidence_mode: Literal["SHADOW", "REPLAY"] = "SHADOW"
+    evidence_snapshot_id: str | None = Field(
+        default=None,
+        pattern=r"^5scr-evidence:[0-9a-f]{32}$",
+    )
+    market_data_provider: str = Field(default="unspecified", min_length=2, max_length=200)
+    execution_cost_authority: Literal["ESTIMATED_NOT_BROKER", "BROKER_SNAPSHOT"] = (
+        "ESTIMATED_NOT_BROKER"
+    )
     context_resolution: ContextResolution | None = None
     h4: H4StructuralTarget | None = None
     h1: H1Confirmation | None = None
@@ -145,6 +154,7 @@ class Strategy5SCRMarketEvidence(FrozenContract):
     pip_size: float | None = Field(default=None, gt=0)
     spread_price: float | None = Field(default=None, ge=0)
     source_candle_close_times: tuple[datetime, ...] = ()
+    source_candle_count: int = Field(default=0, ge=0)
 
     @field_validator("decision_at_utc")
     @classmethod
