@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import pytest
 
+from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
 from contracts.strategy_5scr_pressure_outbox import PressureInboxOutcome, PressureOutboxEnvelope
 from storage.pressure_outbox import prepare_pressure_event
 from storage.pressure_outbox_worker import PressureOutboxWorker
@@ -133,6 +134,18 @@ def test_inbox_delivery_decision_detects_duplicate_and_hash_conflict() -> None:
         decide_inbox_delivery(existing_hash="a", existing_status="RECEIVED", incoming_hash="b") == "INTEGRITY_VIOLATION"
     )
     assert decide_inbox_delivery(existing_hash="a", existing_status="RECEIVED", incoming_hash="a") == "PROCESS"
+
+
+def test_resolved_evidence_defer_is_a_frozen_processed_no_trade() -> None:
+    event = _envelope()
+    outcome = Strategy5SCRPressureProcessor().process(
+        event,
+        evidence=Strategy5SCRMarketEvidence(decision_at_utc=event.signal_valid_at),
+    )
+
+    assert outcome.status == "PROCESSED"
+    assert outcome.decision == "DEFER"
+    assert outcome.result_id == f"5scr-defer:{event.event_id}"
 
 
 @pytest.mark.asyncio
