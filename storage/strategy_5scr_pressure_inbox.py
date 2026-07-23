@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any, Literal, cast
 
 from analysis.strategy_5scr_pressure_to_tradeplan import (
@@ -10,6 +11,7 @@ from analysis.strategy_5scr_pressure_to_tradeplan import (
     PressureLifecycleAccumulator,
     PressureToTradePlanBuilder,
 )
+from contracts.canonical_candle import as_utc
 from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
 from contracts.strategy_5scr_pressure_outbox import PressureInboxOutcome, PressureOutboxEnvelope
 from core.metrics import PRESSURE_INBOX_DELIVERY_TOTAL
@@ -41,6 +43,27 @@ def _row_value(row: Any, key: str, default: Any = None) -> Any:
         return row[key]
     except (KeyError, TypeError):
         return default
+
+
+def pressure_lifecycle_anchor_at(envelope: PressureOutboxEnvelope) -> datetime:
+    """Resolve the immutable setup anchor separately from evaluation time."""
+
+    raw = envelope.payload.get("lifecycle_anchor_at_utc")
+    if raw is None:
+        return cast(datetime, envelope.signal_valid_at)
+    if isinstance(raw, datetime):
+        parsed = raw
+    elif isinstance(raw, str):
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise PressureOutboxIntegrityError("PRESSURE_LIFECYCLE_ANCHOR_INVALID") from exc
+    else:
+        raise PressureOutboxIntegrityError("PRESSURE_LIFECYCLE_ANCHOR_INVALID")
+    anchor = as_utc(parsed, "lifecycle_anchor_at_utc")
+    if anchor > envelope.signal_valid_at:
+        raise PressureOutboxIntegrityError("PRESSURE_LIFECYCLE_ANCHOR_AFTER_SIGNAL")
+    return cast(datetime, anchor)
 
 
 class Strategy5SCRPressureProcessor:
@@ -244,7 +267,7 @@ class Strategy5SCRInboxConsumer:
                 """,
                 envelope.lifecycle_id,
                 envelope.symbol,
-                envelope.signal_valid_at,
+                pressure_lifecycle_anchor_at(envelope),
                 envelope.event_id,
                 envelope.lifecycle_sequence,
             )
@@ -277,4 +300,5 @@ __all__ = [
     "Strategy5SCRInboxConsumer",
     "Strategy5SCRPressureProcessor",
     "decide_inbox_delivery",
+    "pressure_lifecycle_anchor_at",
 ]

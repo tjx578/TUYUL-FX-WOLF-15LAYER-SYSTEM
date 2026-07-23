@@ -242,6 +242,9 @@ async def test_waiting_manifest_then_lineage_atomically_enqueues_non_executable_
     assert ready.manifest.status == "ANALYSIS_READY"
     assert ready.envelope is not None
     assert ready.envelope.payload["radar_manifest_id"] == ready.manifest.manifest_id
+    assert ready.envelope.payload["pressure_selection_confirmed"] is True
+    assert ready.envelope.payload["lifecycle_anchor_at_utc"] == START.isoformat()
+    assert ready.envelope.signal_valid_at == START + timedelta(minutes=6, seconds=1)
     assert ready.envelope.payload["final_direction"] == "WAIT"
     assert ready.envelope.payload["valid_for_execution"] is False
     assert ready.envelope.payload["is_final_signal"] is False

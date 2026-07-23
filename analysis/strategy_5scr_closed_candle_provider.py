@@ -24,7 +24,7 @@ from contracts.strategy_5scr import (
 )
 from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
 
-EvidenceMode = Literal["SHADOW", "REPLAY"]
+EvidenceMode = Literal["SHADOW", "REPLAY", "PRODUCTION_OBSERVE"]
 
 _LOOKBACKS = {
     "D1": 30,

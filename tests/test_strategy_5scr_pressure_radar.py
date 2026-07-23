@@ -12,6 +12,11 @@ from analysis.strategy_5scr_pressure_radar import (
     parse_clean_block_interval,
     replay_pressure_radar_manifests,
 )
+from analysis.strategy_5scr_pressure_to_tradeplan import (
+    PressureEventNormalizer,
+    PressureInputError,
+    PressureLifecycleAccumulator,
+)
 from services.pressure_outbox.radar_replay import build_radar_replay_report
 from storage.pressure_outbox import prepare_pressure_event
 
@@ -160,12 +165,29 @@ def test_assembler_latches_qualification_then_associates_later_lineage() -> None
     assert canonical["qualifying_stage"] == "PRESSURE_BLOCK"
     assert canonical["current_block_effective_ticks"] == 3
     assert canonical["analysis_ready_at_utc"] == ready.manifest.lineage_finalized_at_utc.isoformat()
+    assert canonical["lifecycle_anchor_at_utc"] == ready.manifest.qualifying_time_utc.isoformat()
+    assert canonical["signal_valid_time_utc"] == ready.manifest.lineage_finalized_at_utc.isoformat()
+    assert canonical["pressure_selection_confirmed"] is True
     assert canonical["lineage_context_version"] == "pressure-context-v2:lineage"
     assert canonical["final_direction"] == "WAIT"
     assert canonical["valid_for_execution"] is False
     prepared = prepare_pressure_event(canonical)
     assert prepared.source_clean_block_id == lineage["source_clean_block_id"]
     assert prepared.payload["radar_manifest_id"] == ready.manifest.manifest_id
+    event = PressureEventNormalizer(input_mode="LIVE").normalize(prepared.payload)
+    lifecycle = PressureLifecycleAccumulator().ingest(event)[0]
+    assert event.pressure_selection_confirmed is True
+    assert lifecycle.selected_by_pressure is True
+    assert lifecycle.started_at_utc == ready.manifest.qualifying_time_utc
+    assert lifecycle.updated_at_utc == ready.manifest.lineage_finalized_at_utc
+
+
+def test_forged_selection_without_ready_radar_proof_is_rejected() -> None:
+    payload = _payload(clean_id="AUDUSD_clean")
+    payload["pressure_selection_confirmed"] = True
+
+    with pytest.raises(PressureInputError, match="PRESSURE_SELECTION_PROOF_INVALID"):
+        PressureEventNormalizer(input_mode="LIVE").normalize(payload)
 
 
 def test_later_latest_row_cannot_erase_latched_ticks_or_stage() -> None:

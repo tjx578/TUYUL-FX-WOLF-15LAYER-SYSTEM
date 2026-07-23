@@ -140,5 +140,61 @@ class PostgresClosedCandleStore:
         candles.sort(key=lambda candle: candle.open_time)
         return tuple(candles)
 
+    async def load_outcome_candles(
+        self,
+        *,
+        symbol: str,
+        after_utc: datetime,
+        until_utc: datetime,
+        limit: int,
+    ) -> Sequence[CanonicalCandle]:
+        after = as_utc(after_utc, "after_utc")
+        until = as_utc(until_utc, "until_utc")
+        if until <= after or not self._pg.is_available:
+            return ()
+        rows = await self._pg.fetch(
+            """
+            SELECT symbol, timeframe, open_time, close_time,
+                   open, high, low, close, volume, tick_count,
+                   complete, selected_provider AS provider,
+                   provider_timestamp_semantics
+            FROM canonical_candles
+            WHERE symbol = $1
+              AND timeframe = 'M1'
+              AND complete = TRUE
+              AND provider_timestamp_semantics <> 'UNSPECIFIED'
+              AND open_time >= $2
+              AND close_time <= $3
+            ORDER BY open_time
+            LIMIT $4
+            """,
+            symbol.upper(),
+            after,
+            until,
+            max(1, int(limit)),
+        )
+        return tuple(
+            CanonicalCandle.model_validate(
+                {
+                    "symbol": str(_row_value(row, "symbol")).upper(),
+                    "timeframe": "M1",
+                    "open_time": _row_value(row, "open_time"),
+                    "close_time": _row_value(row, "close_time"),
+                    "open": float(_row_value(row, "open")),
+                    "high": float(_row_value(row, "high")),
+                    "low": float(_row_value(row, "low")),
+                    "close": float(_row_value(row, "close")),
+                    "volume": float(_row_value(row, "volume", 0.0) or 0.0),
+                    "tick_count": int(_row_value(row, "tick_count", 0) or 0),
+                    "complete": _row_value(row, "complete") is True,
+                    "provider": str(_row_value(row, "provider") or "unknown"),
+                    "provider_timestamp_semantics": str(
+                        _row_value(row, "provider_timestamp_semantics") or "UNSPECIFIED"
+                    ).upper(),
+                }
+            )
+            for row in rows
+        )
+
 
 __all__ = ["ClosedCandleSchemaStatus", "PostgresClosedCandleStore"]

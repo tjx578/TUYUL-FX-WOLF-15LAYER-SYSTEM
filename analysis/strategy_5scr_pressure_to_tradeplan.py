@@ -193,6 +193,14 @@ class PressureEventNormalizer:
             campaign_anchor = None
             anchor_source = "UNRESOLVED"
             anchor_execution_grade = False
+        anchor_at = _parse_datetime(payload.get("lifecycle_anchor_at_utc"))
+        selection_confirmed = payload.get("pressure_selection_confirmed") is True
+        if selection_confirmed and not (
+            str(payload.get("radar_status") or "").upper() == "ANALYSIS_READY"
+            and _text(payload.get("radar_manifest_id")) is not None
+            and clean_block_id is not None
+        ):
+            raise PressureInputError("PRESSURE_SELECTION_PROOF_INVALID")
 
         raw_direction_text = str(payload.get("raw_direction") or "").upper()
         raw_direction: TradeDirection | None = (
@@ -225,12 +233,14 @@ class PressureEventNormalizer:
             event_time_source=event_time_source,
             cluster_id=cluster_id,
             campaign_anchor=campaign_anchor,
+            campaign_anchor_at_utc=anchor_at,
             campaign_anchor_source=anchor_source,
             campaign_anchor_execution_grade=anchor_execution_grade,
             raw_direction=raw_direction,
             pressure_seen=payload.get("pressure_seen") is not False,
             pair_eligible_for_analysis=payload.get("pair_eligible_for_analysis") is True,
             allowed_quorum_reached=allowed_quorum_reached,
+            pressure_selection_confirmed=selection_confirmed,
             pressure_event_count=_non_negative_int(payload.get("pressure_event_count")),
             pressure_level=_text(payload.get("pressure_level")),
             pressure_strength=_text(payload.get("pressure_strength")),
@@ -304,6 +314,7 @@ class PressureLifecycleAccumulator:
             raise PressureLifecycleOrderError("PRESSURE_EVENT_OUT_OF_ORDER")
 
         if current is None:
+            started_at = event.campaign_anchor_at_utc or event.event_time_utc
             lifecycle = PressureLifecycle(
                 campaign_id=campaign_id,
                 campaign_anchor_source=anchor_source,
@@ -311,11 +322,15 @@ class PressureLifecycleAccumulator:
                 input_mode=event.input_mode,
                 symbol=event.symbol,
                 raw_direction=event.raw_direction,
-                started_at_utc=event.event_time_utc,
+                started_at_utc=started_at,
                 updated_at_utc=event.event_time_utc,
                 event_ids=(event.event_id,),
                 latest_cluster_id=event.cluster_id,
-                selected_by_pressure=event.pair_eligible_for_analysis or event.allowed_quorum_reached,
+                selected_by_pressure=(
+                    event.pair_eligible_for_analysis
+                    or event.allowed_quorum_reached
+                    or event.pressure_selection_confirmed
+                ),
                 max_reported_pressure_count=event.pressure_event_count,
                 latest_pressure_level=event.pressure_level,
                 latest_pressure_strength=event.pressure_strength,
@@ -334,7 +349,10 @@ class PressureLifecycleAccumulator:
                     "event_ids": (*current.event_ids, event.event_id),
                     "latest_cluster_id": event.cluster_id,
                     "selected_by_pressure": (
-                        current.selected_by_pressure or event.pair_eligible_for_analysis or event.allowed_quorum_reached
+                        current.selected_by_pressure
+                        or event.pair_eligible_for_analysis
+                        or event.allowed_quorum_reached
+                        or event.pressure_selection_confirmed
                     ),
                     "max_reported_pressure_count": max(
                         current.max_reported_pressure_count,

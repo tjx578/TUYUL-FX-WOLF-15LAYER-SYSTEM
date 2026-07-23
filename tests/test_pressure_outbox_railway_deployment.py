@@ -32,6 +32,10 @@ def test_rollout_phase_contract_is_fail_closed() -> None:
     validate_rollout_phase(dark, "dark")
     validate_rollout_phase(PressureOutboxRolloutFlags(True, False, True, False), "dispatcher")
     validate_rollout_phase(PressureOutboxRolloutFlags(True, False, True, True), "consumer")
+    validate_rollout_phase(
+        PressureOutboxRolloutFlags(True, True, True, True),
+        "production-observe",
+    )
 
     with pytest.raises(RuntimeError, match="PRESSURE_OUTBOX_ROLLOUT_FLAG_MISMATCH"):
         validate_rollout_phase(PressureOutboxRolloutFlags(True, True, True, False), "dispatcher")

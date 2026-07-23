@@ -320,8 +320,8 @@ class PressureRadarAssembler:
         evaluation = evaluate_pressure_radar(payload)
         dedup_key = (evaluation.deployment_id, evaluation.event_id)
         if dedup_key in self._seen_event_ids:
-            manifest = self._manifest_for_event(evaluation.deployment_id, evaluation.event_id)
-            return PressureRadarIngestResult(evaluation, manifest, "DUPLICATE", duplicate=True)
+            duplicate_manifest = self._manifest_for_event(evaluation.deployment_id, evaluation.event_id)
+            return PressureRadarIngestResult(evaluation, duplicate_manifest, "DUPLICATE", duplicate=True)
 
         self.advance_time(evaluation.observed_at_utc)
         transition = "RADAR_OBSERVED"
@@ -414,7 +414,7 @@ class PressureRadarAssembler:
                 )
 
     def snapshots(self, *, deployment_id: str | None = None) -> list[PressureRadarManifest]:
-        manifests = self._manifests.values()
+        manifests: Iterable[PressureRadarManifest] = self._manifests.values()
         if deployment_id is not None:
             manifests = (item for item in manifests if item.deployment_id == deployment_id)
         return sorted(manifests, key=lambda item: (item.qualifying_time_utc, item.manifest_id))
@@ -467,6 +467,12 @@ def canonical_radar_payload(
     if manifest.status != "ANALYSIS_READY" or manifest.source_clean_block_id is None:
         raise PressureRadarError("PRESSURE_RADAR_MANIFEST_NOT_ANALYSIS_READY")
     data = {key: value for key, value in qualifying_payload.items() if key not in (_RUNTIME_FIELDS | _TRANSPORT_FIELDS)}
+    lifecycle_anchor_at = manifest.qualifying_time_utc.isoformat()
+    analysis_ready_at = (
+        manifest.lineage_finalized_at_utc.isoformat()
+        if manifest.lineage_finalized_at_utc
+        else manifest.qualifying_time_utc.isoformat()
+    )
     data.update(
         {
             "event": "signal_pressure_state_json",
@@ -475,17 +481,21 @@ def canonical_radar_payload(
             "radar_manifest_id": manifest.manifest_id,
             "radar_status": manifest.status,
             "source_clean_block_id": manifest.source_clean_block_id,
-            "analysis_ready_at_utc": manifest.lineage_finalized_at_utc.isoformat()
-            if manifest.lineage_finalized_at_utc
-            else None,
+            "analysis_ready_at_utc": analysis_ready_at,
             "lineage_finalized_at_utc": manifest.lineage_finalized_at_utc.isoformat()
             if manifest.lineage_finalized_at_utc
             else None,
+            "lifecycle_anchor_at_utc": lifecycle_anchor_at,
+            # The durable event becomes valid when canonical lineage is
+            # finalized, not at the earlier provisional qualification.
+            "signal_valid_at": analysis_ready_at,
+            "signal_valid_time_utc": analysis_ready_at,
             "lineage_context_version": manifest.lineage_context_version,
             "qualifying_event_id": manifest.qualifying_event_id,
             "qualifying_time_utc": manifest.qualifying_time_utc.isoformat(),
             "qualifying_stage": manifest.qualifying_stage,
             "max_effective_ticks": manifest.max_effective_ticks,
+            "pressure_selection_confirmed": True,
             "raw_direction": manifest.raw_direction,
             "final_direction": "WAIT",
             "valid_for_execution": False,
