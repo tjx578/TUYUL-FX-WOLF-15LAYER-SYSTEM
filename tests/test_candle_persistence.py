@@ -78,6 +78,7 @@ class TestEnqueueCandle:
         assert len(_buffer) == 1
         assert _buffer[0].symbol == "EURUSD"
         assert _buffer[0].timeframe == "M15"
+        assert _buffer[0].complete is False
         _buffer.clear()
 
     def test_enqueue_candle_dict_with_timestamp_fallback(self) -> None:
@@ -96,6 +97,32 @@ class TestEnqueueCandle:
 
         assert len(_buffer) == 1
         assert _buffer[0].close_time == datetime(2026, 3, 15, 13, 0, tzinfo=UTC)
+        assert _buffer[0].complete is False
+        assert _buffer[0].provider_timestamp_semantics == "UNSPECIFIED"
+        _buffer.clear()
+
+    def test_enqueue_canonical_closed_candle_preserves_authority(self) -> None:
+        _buffer.clear()
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "open_time": "2026-03-15T12:00:00+00:00",
+            "close_time": "2026-03-15T13:00:00+00:00",
+            "open": 1.1,
+            "high": 1.2,
+            "low": 1.0,
+            "close": 1.15,
+            "complete": True,
+            "provider": "finnhub",
+            "provider_timestamp_semantics": "PERIOD_END",
+        }
+
+        enqueue_candle_dict(payload)
+
+        assert len(_buffer) == 1
+        assert _buffer[0].complete is True
+        assert _buffer[0].provider == "finnhub"
+        assert _buffer[0].provider_timestamp_semantics == "PERIOD_END"
         _buffer.clear()
 
 
