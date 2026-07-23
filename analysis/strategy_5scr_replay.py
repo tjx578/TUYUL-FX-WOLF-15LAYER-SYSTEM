@@ -13,17 +13,17 @@ from datetime import datetime
 from analysis.strategy_5scr_closed_candle_provider import (
     Strategy5SCRClosedCandleEvidenceProvider,
 )
+from analysis.strategy_5scr_m1_outcome import classify_strategy_5scr_m1_outcome
 from contracts.canonical_candle import CanonicalCandle, as_utc
-from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
+from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence, Strategy5SCRTradePlan
+from contracts.strategy_5scr_replay import Strategy5SCRM1Outcome
 
 
 class FrozenClosedCandleStore:
     """In-memory immutable store used by deterministic replay tests/tools."""
 
     def __init__(self, candles: Iterable[CanonicalCandle]) -> None:
-        self._candles = tuple(
-            sorted(candles, key=lambda candle: (candle.symbol, candle.timeframe, candle.open_time))
-        )
+        self._candles = tuple(sorted(candles, key=lambda candle: (candle.symbol, candle.timeframe, candle.open_time)))
 
     async def load_closed_candles(
         self,
@@ -59,7 +59,8 @@ class FrozenClosedCandleStore:
             if candle.symbol == symbol.upper()
             and candle.timeframe == timeframe.upper()
             and candle.complete
-            and candle.close_time > after
+            and candle.provider_timestamp_semantics != "UNSPECIFIED"
+            and candle.open_time >= after
             and (until is None or candle.close_time <= until)
         )
 
@@ -98,6 +99,28 @@ class Strategy5SCRReplay:
             timeframe=timeframe,
             after_utc=decision_at_utc,
             until_utc=until_utc,
+        )
+
+    def classify_m1_outcome(
+        self,
+        *,
+        tradeplan: Strategy5SCRTradePlan,
+        until_utc: datetime | None = None,
+        max_bars: int = 240,
+    ) -> Strategy5SCRM1Outcome:
+        """Evaluate post-decision M1 bars without reopening frozen evidence."""
+
+        candles = self.load_outcome_candles(
+            symbol=tradeplan.symbol,
+            timeframe="M1",
+            decision_at_utc=tradeplan.decision_at_utc,
+            until_utc=until_utc,
+        )
+        return classify_strategy_5scr_m1_outcome(
+            tradeplan,
+            candles,
+            until_utc=until_utc,
+            max_bars=max_bars,
         )
 
 

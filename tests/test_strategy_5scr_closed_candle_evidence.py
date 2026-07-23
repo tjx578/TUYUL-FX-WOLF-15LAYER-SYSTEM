@@ -285,7 +285,9 @@ async def test_replay_keeps_post_decision_outcome_out_of_evidence() -> None:
     snapshot = _snapshot()
     future = _candle(
         "M1",
-        datetime(2026, 7, 20, 6, 52, tzinfo=UTC),
+        # The 06:51 candle straddles the 06:51:26 decision and is not a legal
+        # post-decision outcome bar.  Start with the next complete M1 window.
+        datetime(2026, 7, 20, 6, 53, tzinfo=UTC),
         open_price=1.102,
         high=1.103,
         low=1.101,
