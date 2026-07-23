@@ -248,6 +248,27 @@ class FinnhubKeyManager:
                 )
         return result
 
+    def next_available_in(self) -> float:
+        """Return zero when a key is usable, otherwise the shortest cooldown.
+
+        Unlike :meth:`current_key`, this method never returns a suspended key.
+        Callers can therefore short-circuit network I/O in single-key mode or
+        when every configured key has been rate-limited.
+        """
+        if not self._keys:
+            return 0.0
+
+        now = time.monotonic()
+        with self._lock:
+            remaining: list[float] = []
+            for state in self._keys:
+                if not state.suspended or now >= state.suspend_until:
+                    if state.suspended:
+                        state.suspended = False
+                    return 0.0
+                remaining.append(max(0.0, state.suspend_until - now))
+        return min(remaining, default=0.0)
+
     # ── Internal ───────────────────────────────────────────────────
 
     def _find_key_index(self, key: str) -> int | None:
