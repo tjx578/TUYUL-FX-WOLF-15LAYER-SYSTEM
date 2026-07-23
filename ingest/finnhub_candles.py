@@ -19,6 +19,7 @@ from loguru import logger
 
 from config_loader import CONFIG, get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
+from contracts.canonical_candle import TIMEFRAME_DELTAS, as_utc
 from core.metrics import WARMUP_FAILURES
 
 
@@ -213,7 +214,14 @@ class FinnhubCandleFetcher:
         from_dt = now - delta
         return int(from_dt.timestamp())
 
-    def normalize_response(self, data: dict[str, Any], symbol: str, timeframe: str) -> list[dict[str, Any]]:
+    def normalize_response(
+        self,
+        data: dict[str, Any],
+        symbol: str,
+        timeframe: str,
+        *,
+        as_of_utc: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Normalize Finnhub parallel arrays to list of candle dicts.
 
@@ -246,6 +254,13 @@ class FinnhubCandleFetcher:
             logger.error(f"Mismatched array lengths in Finnhub response for {symbol} {timeframe}")
             return []
 
+        period = TIMEFRAME_DELTAS.get(timeframe)
+        if period is None:
+            period = timedelta(days=30) if timeframe == "MN" else None
+        if period is None:
+            raise FinnhubCandleError(f"Unsupported timeframe: {timeframe}")
+        cutoff = as_utc(as_of_utc or datetime.now(UTC), "as_of_utc")
+
         candles: list[dict[str, Any]] = []
         skipped = 0
         for i in range(length):
@@ -263,8 +278,12 @@ class FinnhubCandleFetcher:
                 skipped += 1
                 continue
 
-            # Convert Unix timestamp to datetime
-            timestamp = datetime.fromtimestamp(timestamps[i], tz=UTC)
+            # Finnhub REST timestamps are treated as provider period-end
+            # timestamps in this adapter.  Both sides of the canonical window
+            # are persisted so downstream code never has to guess semantics.
+            provider_timestamp = datetime.fromtimestamp(timestamps[i], tz=UTC)
+            close_time = provider_timestamp
+            open_time = close_time - period
 
             candle = {
                 "symbol": symbol,
@@ -274,7 +293,12 @@ class FinnhubCandleFetcher:
                 "low": lows[i],
                 "close": closes[i],
                 "volume": volumes[i],
-                "timestamp": timestamp,
+                "timestamp": provider_timestamp,
+                "open_time": open_time,
+                "close_time": close_time,
+                "complete": close_time <= cutoff,
+                "provider": "finnhub",
+                "provider_timestamp_semantics": "PERIOD_END",
                 "source": "rest_api",
             }
             candles.append(candle)
@@ -288,6 +312,95 @@ class FinnhubCandleFetcher:
                 length,
             )
         return candles
+
+    async def fetch_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        from_utc: datetime,
+        to_utc: datetime,
+    ) -> list[dict[str, Any]]:
+        """Fetch an exact historical window without consulting current time.
+
+        This path is intended for replay and as-of evidence snapshots.  It does
+        not use a latest-bars fallback because substituting a provider response
+        with an unbounded current-time query would invalidate replay isolation.
+        """
+
+        start = as_utc(from_utc, "from_utc")
+        end = as_utc(to_utc, "to_utc")
+        if end <= start:
+            raise FinnhubCandleError("to_utc must be after from_utc")
+        timeframe = timeframe.upper()
+
+        if timeframe == "H4":
+            h1_candles = await self.fetch_range(symbol, "H1", start, end)
+            return [
+                candle
+                for candle in self.aggregate_h4(h1_candles)
+                if candle.get("complete") is True
+                and candle["open_time"] >= start
+                and candle["close_time"] <= end
+            ]
+        if timeframe not in self.RESOLUTION_MAP:
+            raise FinnhubCandleError(f"Unsupported timeframe: {timeframe}")
+
+        finnhub_symbol = self.convert_symbol(symbol)
+        resolution = self.RESOLUTION_MAP[timeframe]
+        url = f"{self.base_url}/forex/candle"
+        active_key = self._key_manager.current_key() or self.api_key
+        params = {
+            "symbol": finnhub_symbol,
+            "resolution": resolution,
+            "from": int(start.timestamp()),
+            "to": int(end.timestamp()),
+            "token": active_key,
+        }
+        self.api_key = active_key
+
+        async with self.semaphore:
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    active_key = self._key_manager.current_key() or self.api_key
+                    self.api_key = active_key
+                    params["token"] = active_key
+                    await self._wait_for_request_slot()
+                    response = await client.get(url, params=params)
+                    if response.status_code == 429:
+                        self._key_manager.report_failure(active_key, 429)
+                        raise FinnhubCandleError(f"[429] Rate limited for {symbol} {timeframe}")
+                    if response.status_code == 403:
+                        self._key_manager.report_failure(active_key, 403)
+                        raise FinnhubCandlePremiumError(
+                            f"Premium access required for {symbol} {timeframe}"
+                        )
+                    response.raise_for_status()
+                    self._key_manager.report_success(active_key)
+                    candles = self.normalize_response(
+                        response.json(),
+                        symbol,
+                        timeframe,
+                        as_of_utc=end,
+                    )
+                    return [
+                        candle
+                        for candle in candles
+                        if candle.get("complete") is True
+                        and candle["open_time"] >= start
+                        and candle["close_time"] <= end
+                    ]
+            except (FinnhubCandleError, FinnhubCandlePremiumError):
+                raise
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                self._key_manager.report_failure(active_key, status_code)
+                raise FinnhubCandleError(
+                    f"HTTP {status_code} for {symbol} {timeframe}"
+                ) from exc
+            except Exception as exc:
+                raise FinnhubCandleError(
+                    f"Error fetching range for {symbol} {timeframe}: {exc}"
+                ) from exc
 
     async def fetch(self, symbol: str, timeframe: str, bars: int = 100) -> list[dict[str, Any]]:
         """
@@ -420,7 +533,9 @@ class FinnhubCandleFetcher:
         Aggregate H1 bars into H4 bars (4:1).
 
         H4 alignment: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC.
-        H1 timestamps represent the END of the period.
+        An authoritative H4 candle contains exactly four complete, contiguous
+        H1 candles.  Partial or ambiguous groups are retained as diagnostics
+        with ``complete=False`` and therefore cannot enter 5S-CR evidence.
 
         Args:
             h1_candles: List of H1 candles
@@ -431,99 +546,117 @@ class FinnhubCandleFetcher:
         if not h1_candles:
             return []
 
-        # Filter out invalid H1 bars before aggregation (sentinel -1 / OHLC violation)
-        valid_h1 = [
-            c
-            for c in h1_candles
-            if c.get("close", -1) > 0
-            and c.get("open", -1) > 0
-            and c.get("high", -1) > 0
-            and c.get("low", -1) > 0
-            and c["high"] >= c["low"]
-        ]
+        valid_h1: list[dict[str, Any]] = []
+        for raw in h1_candles:
+            if not (
+                raw.get("close", -1) > 0
+                and raw.get("open", -1) > 0
+                and raw.get("high", -1) > 0
+                and raw.get("low", -1) > 0
+                and raw["high"] >= max(raw["low"], raw["open"], raw["close"])
+                and raw["low"] <= min(raw["high"], raw["open"], raw["close"])
+            ):
+                continue
+            normalized = self._canonical_h1_for_aggregation(raw)
+            if normalized is not None:
+                valid_h1.append(normalized)
         dropped = len(h1_candles) - len(valid_h1)
         if dropped:
             logger.warning("aggregate_h4: dropped {}/{} invalid H1 bars before aggregation", dropped, len(h1_candles))
         if not valid_h1:
             return []
-        h1_candles = valid_h1
+        groups: dict[datetime, list[dict[str, Any]]] = {}
+        for h1 in sorted(valid_h1, key=lambda item: item["open_time"]):
+            open_time = h1["open_time"]
+            group_start = open_time.replace(
+                hour=(open_time.hour // 4) * 4,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+            groups.setdefault(group_start, []).append(h1)
 
-        h4_candles: list[dict[str, Any]] = []
-        current_group: list[dict[str, Any]] = []
+        h4_candles = [
+            self._build_h4_candle(group, group_start=group_start)
+            for group_start, group in sorted(groups.items())
+        ]
 
-        for h1 in h1_candles:
-            timestamp = h1["timestamp"]
-            ts = timestamp if isinstance(timestamp, datetime) else datetime.fromtimestamp(timestamp, tz=UTC)
-
-            # Determine H4 period start for this H1 bar
-            # H1 timestamp is the END of the period (e.g., 01:00 means 00:00-01:00)
-            # So the H1 bar start time is timestamp - 1 hour
-            h1_start_hour = ts.hour - 1
-            if h1_start_hour < 0:
-                h1_start_hour = 23
-
-            # H4 periods: 00-04, 04-08, 08-12, 12-16, 16-20, 20-00
-            h4_period_start_hour = (h1_start_hour // 4) * 4
-
-            # Create H4 period start timestamp
-            h4_period_start = ts.replace(hour=h4_period_start_hour, minute=0, second=0, microsecond=0)
-            if h1_start_hour < ts.hour - 1:  # Wrapped around midnight
-                h4_period_start = h4_period_start - timedelta(days=1)
-
-            # Check if this H1 belongs to current group
-            if current_group:
-                first_ts = current_group[0]["timestamp"]
-                first_dt = first_ts if isinstance(first_ts, datetime) else datetime.fromtimestamp(first_ts, tz=UTC)
-
-                first_h1_start_hour = first_dt.hour - 1
-                if first_h1_start_hour < 0:
-                    first_h1_start_hour = 23
-
-                first_h4_period_start_hour = (first_h1_start_hour // 4) * 4
-                first_h4_period_start = first_dt.replace(
-                    hour=first_h4_period_start_hour, minute=0, second=0, microsecond=0
-                )
-                if first_h1_start_hour < first_dt.hour - 1:
-                    first_h4_period_start = first_h4_period_start - timedelta(days=1)
-
-                if h4_period_start != first_h4_period_start:
-                    # Complete the previous H4 candle
-                    h4_candles.append(self._build_h4_candle(current_group))
-                    current_group = []
-
-            current_group.append(h1)
-
-        # Don't forget the last group
-        if current_group:
-            h4_candles.append(self._build_h4_candle(current_group))
-
-        logger.debug(f"Aggregated {len(h1_candles)} H1 bars into {len(h4_candles)} H4 bars")
+        logger.debug(f"Aggregated {len(valid_h1)} H1 bars into {len(h4_candles)} H4 bars")
         return h4_candles
 
-    def _build_h4_candle(self, h1_group: list[dict[str, Any]]) -> dict[str, Any]:
+    @staticmethod
+    def _canonical_h1_for_aggregation(candle: dict[str, Any]) -> dict[str, Any] | None:
+        def _dt(value: Any) -> datetime | None:
+            if isinstance(value, datetime):
+                return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return datetime.fromtimestamp(float(value), tz=UTC)
+            if isinstance(value, str):
+                try:
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    return None
+                return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+            return None
+
+        open_time = _dt(candle.get("open_time"))
+        close_time = _dt(candle.get("close_time"))
+        provider_timestamp = _dt(candle.get("timestamp"))
+        semantics = str(candle.get("provider_timestamp_semantics") or "UNSPECIFIED").upper()
+        if open_time is None or close_time is None:
+            if provider_timestamp is None:
+                return None
+            # Historical H1 payloads in this module used period-end timestamps.
+            open_time = provider_timestamp - timedelta(hours=1)
+            close_time = provider_timestamp
+            semantics = "UNSPECIFIED"
+
+        return {
+            **candle,
+            "open_time": open_time,
+            "close_time": close_time,
+            "complete": candle.get("complete") is True and semantics != "UNSPECIFIED",
+            "provider": str(candle.get("provider") or candle.get("source") or "legacy_unknown"),
+            "provider_timestamp_semantics": semantics,
+        }
+
+    def _build_h4_candle(
+        self,
+        h1_group: list[dict[str, Any]],
+        *,
+        group_start: datetime,
+    ) -> dict[str, Any]:
         """
         Build a single H4 candle from a group of H1 candles.
 
         Args:
-            h1_group: List of H1 candles (up to 4)
+            h1_group: List of H1 candles in one aligned UTC H4 bucket.
 
         Returns:
             H4 candle dict
         """
-        first = h1_group[0]
-        last = h1_group[-1]
+        ordered = sorted(h1_group, key=lambda item: item["open_time"])
+        first = ordered[0]
+        expected_opens = [group_start + timedelta(hours=index) for index in range(4)]
+        actual_opens = [item["open_time"] for item in ordered]
+        authoritative = (
+            len(ordered) == 4
+            and actual_opens == expected_opens
+            and all(
+                item.get("complete") is True
+                and item["close_time"] == item["open_time"] + timedelta(hours=1)
+                for item in ordered
+            )
+        )
 
         # Aggregate OHLCV
-        opens = [c["open"] for c in h1_group]
-        highs = [c["high"] for c in h1_group]
-        lows = [c["low"] for c in h1_group]
-        closes = [c["close"] for c in h1_group]
-        volumes = [c["volume"] for c in h1_group]
-
-        # H4 timestamp is the close time of the last H1 in the group
-        timestamp = last["timestamp"]
-        if not isinstance(timestamp, datetime):
-            timestamp = datetime.fromtimestamp(timestamp, tz=UTC)
+        opens = [c["open"] for c in ordered]
+        highs = [c["high"] for c in ordered]
+        lows = [c["low"] for c in ordered]
+        closes = [c["close"] for c in ordered]
+        volumes = [c.get("volume", 0.0) for c in ordered]
+        group_close = group_start + timedelta(hours=4)
+        providers = sorted({str(item.get("provider") or "legacy_unknown") for item in ordered})
 
         return {
             "symbol": first["symbol"],
@@ -533,7 +666,16 @@ class FinnhubCandleFetcher:
             "low": min(lows),
             "close": closes[-1],
             "volume": sum(volumes),
-            "timestamp": timestamp,
+            "timestamp": group_close,
+            "open_time": group_start,
+            "close_time": group_close,
+            "complete": authoritative,
+            "provider": "+".join(providers),
+            "provider_timestamp_semantics": "CANONICAL_WINDOW",
+            "aggregation_component_count": len(ordered),
+            "aggregation_diagnostic": (
+                "AUTHORITATIVE_4X_H1" if authoritative else "INCOMPLETE_OR_GAPPED_H1_GROUP"
+            ),
             "source": "h1_aggregated",
         }
 
