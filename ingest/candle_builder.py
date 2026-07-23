@@ -56,6 +56,8 @@ class Candle:
     volume: float = 0.0
     tick_count: int = 0
     complete: bool = False
+    provider: str = "wolf15_tick_builder"
+    provider_timestamp_semantics: str = "CANONICAL_WINDOW"
 
     def to_dict(self) -> dict:
         return {
@@ -70,6 +72,8 @@ class Candle:
             "volume": self.volume,
             "tick_count": self.tick_count,
             "complete": self.complete,
+            "provider": self.provider,
+            "provider_timestamp_semantics": self.provider_timestamp_semantics,
         }
 
 
