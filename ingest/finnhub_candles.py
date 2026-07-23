@@ -10,7 +10,6 @@ for cold-start recovery via ``FinnhubCandleFetcher.cold_start_m15()``.
 from __future__ import annotations
 
 import asyncio
-import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -21,6 +20,10 @@ from config_loader import CONFIG, get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
 from contracts.canonical_candle import TIMEFRAME_DELTAS, as_utc
 from core.metrics import WARMUP_FAILURES
+from ingest.finnhub_rest_budget import (
+    FinnhubRestCooldownError,
+    finnhub_rest_budget,
+)
 
 
 class FinnhubCandleError(Exception):
@@ -76,21 +79,20 @@ class FinnhubCandleFetcher:
         self.max_backoff_sec = float(self.rest_config.get("max_backoff_sec", 30.0))
         self.backoff_jitter_sec = float(self.rest_config.get("backoff_jitter_sec", 0.25))
 
-        # Process-local request pacing to reduce bursty warmup traffic.
-        self._pace_lock = asyncio.Lock()
-        self._next_request_at = 0.0
-
     async def _wait_for_request_slot(self) -> None:
-        """Serialize outgoing request pacing across concurrent warmup tasks."""
-        if self.request_delay <= 0:
-            return
+        """Reserve a process-wide Finnhub REST request slot."""
+        key_cooldown = self._key_manager.next_available_in()
+        if isinstance(key_cooldown, (int, float)) and key_cooldown > 0:
+            finnhub_rest_budget.defer_for(key_cooldown)
+        await finnhub_rest_budget.wait_for_slot(self.request_delay)
 
-        async with self._pace_lock:
-            now = time.monotonic()
-            wait_for = self._next_request_at - now
-            if wait_for > 0:
-                await asyncio.sleep(wait_for)
-            self._next_request_at = max(self._next_request_at, time.monotonic()) + self.request_delay
+    @staticmethod
+    def _register_rate_limit(retry_after: str | None) -> None:
+        """Propagate a provider 429 into the shared process cooldown."""
+        parsed = FinnhubCandleFetcher._retry_after_seconds(retry_after)
+        # Finnhub's key manager defaults to 65 seconds.  A missing or zero
+        # Retry-After must not permit another worker to immediately retry.
+        finnhub_rest_budget.defer_for(max(parsed, 65.0))
 
     async def _fallback_or_raise(
         self,
@@ -368,6 +370,7 @@ class FinnhubCandleFetcher:
                     response = await client.get(url, params=params)
                     if response.status_code == 429:
                         self._key_manager.report_failure(active_key, 429)
+                        self._register_rate_limit(response.headers.get("Retry-After"))
                         raise FinnhubCandleError(f"[429] Rate limited for {symbol} {timeframe}")
                     if response.status_code == 403:
                         self._key_manager.report_failure(active_key, 403)
@@ -389,6 +392,11 @@ class FinnhubCandleFetcher:
                         and candle["open_time"] >= start
                         and candle["close_time"] <= end
                     ]
+            except FinnhubRestCooldownError as exc:
+                raise FinnhubCandleError(
+                    f"Finnhub cooldown active for {symbol} {timeframe}; "
+                    f"retry_in={exc.retry_after_sec:.1f}s"
+                ) from exc
             except (FinnhubCandleError, FinnhubCandlePremiumError):
                 raise
             except httpx.HTTPStatusError as exc:
@@ -471,6 +479,7 @@ class FinnhubCandleFetcher:
 
                     if response.status_code == 429:
                         self._key_manager.report_failure(active_key, 429)
+                        self._register_rate_limit(response.headers.get("Retry-After"))
                         raise FinnhubCandleError(
                             f"[429] Rate limited for {symbol} {timeframe} — "
                             "warmup akan skip, WS akan feed data secara live"
@@ -503,6 +512,16 @@ class FinnhubCandleFetcher:
                     logger.info("Fetched {} {} bars for {}", len(candles), timeframe, symbol)
                     return candles
 
+            except FinnhubRestCooldownError as exc:
+                return await self._fallback_or_raise(
+                    symbol,
+                    timeframe,
+                    bars,
+                    FinnhubCandleError(
+                        f"Finnhub cooldown active for {symbol} {timeframe}; "
+                        f"retry_in={exc.retry_after_sec:.1f}s"
+                    ),
+                )
             except httpx.HTTPStatusError as exc:
                 status_code = exc.response.status_code
                 self._key_manager.report_failure(active_key, status_code)
