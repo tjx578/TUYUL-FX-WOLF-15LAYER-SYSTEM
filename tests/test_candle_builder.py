@@ -181,6 +181,60 @@ class TestH1FromM15:
         assert b.on_candle(incomplete) is None
         assert len(b.completed_candles) == 0
 
+    def test_strict_h1_drops_a_gapped_m15_hour(self):
+        b = CandleBuilder("EURUSD", Timeframe.H1, require_full_coverage=True)
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+        for minute in (0, 15, 45):
+            b.on_candle(
+                self._make_m15_candle(
+                    base + timedelta(minutes=minute),
+                    1.10,
+                    1.12,
+                    1.09,
+                    1.11,
+                )
+            )
+
+        next_hour = self._make_m15_candle(
+            base + timedelta(hours=1),
+            1.11,
+            1.13,
+            1.10,
+            1.12,
+        )
+        assert b.on_candle(next_hour) is None
+        assert b.completed_candles == []
+
+    def test_strict_h1_requires_four_contiguous_m15_windows(self):
+        b = CandleBuilder("EURUSD", Timeframe.H1, require_full_coverage=True)
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+        for minute in (0, 15, 30, 45):
+            b.on_candle(
+                self._make_m15_candle(
+                    base + timedelta(minutes=minute),
+                    1.10,
+                    1.12,
+                    1.09,
+                    1.11,
+                )
+            )
+
+        closed = b.on_candle(
+            self._make_m15_candle(
+                base + timedelta(hours=1),
+                1.11,
+                1.13,
+                1.10,
+                1.12,
+            )
+        )
+
+        assert closed is not None
+        assert closed.complete is True
+        assert closed.open_time == base
+        assert closed.close_time == base + timedelta(hours=1)
+
 
 # ── MultiTimeframeCandleBuilder ─────────────────────────────────────
 
@@ -218,13 +272,11 @@ class TestMultiTimeframe:
 
         # H1 candles:
         # - 10:00 period completes on rollover
-        # - 11:00 period is force-closed by flush_all
-        assert len(results["H1"]) == 2
+        # - 11:00 period is partial and strict aggregation refuses to close it
+        assert len(results["H1"]) == 1
         first_h1 = results["H1"][0]
-        second_h1 = results["H1"][1]
         assert first_h1.open_time == base
         assert first_h1.timeframe == "H1"
-        assert second_h1.open_time == base + timedelta(hours=1)
 
     def test_default_timeframes(self):
         mtf = MultiTimeframeCandleBuilder("GBPUSD")

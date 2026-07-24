@@ -40,6 +40,10 @@ class TestPeriodicRefresh:
                 "close": 1.1005,
                 "volume": 100,
                 "timestamp": datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+                "open_time": datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+                "close_time": datetime(2024, 1, 15, 11, 0, 0, tzinfo=UTC),
+                "complete": True,
+                "provider_timestamp_semantics": "PERIOD_OPEN",
             }
         ]
         h4_test_candles = [
@@ -52,6 +56,10 @@ class TestPeriodicRefresh:
                 "close": 1.1005,
                 "volume": 100,
                 "timestamp": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+                "open_time": datetime(2024, 1, 15, 8, 0, 0, tzinfo=UTC),
+                "close_time": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+                "complete": True,
+                "provider_timestamp_semantics": "CANONICAL_WINDOW",
             }
         ]
 
@@ -118,6 +126,10 @@ class TestPriceDriftDetection:
                 "close": 1.1005,
                 "volume": 100,
                 "timestamp": datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+                "open_time": datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+                "close_time": datetime(2024, 1, 15, 11, 0, 0, tzinfo=UTC),
+                "complete": True,
+                "provider_timestamp_semantics": "PERIOD_OPEN",
             }
         ]
 
@@ -174,6 +186,10 @@ class TestPriceDriftDetection:
                 "close": 1.1005,
                 "volume": 100,
                 "timestamp": datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+                "open_time": datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+                "close_time": datetime(2024, 1, 15, 11, 0, 0, tzinfo=UTC),
+                "complete": True,
+                "provider_timestamp_semantics": "PERIOD_OPEN",
             }
         ]
 
@@ -225,11 +241,11 @@ class TestRefreshConfiguration:
             assert scheduler.interval_sec == 1800
 
     def test_default_h1_bars(self) -> None:
-        """Test default H1 bars to fetch is 5."""
+        """Test refresh always fetches enough H1 bars for aligned H4 closure."""
         with patch("ingest.h1_refresh_scheduler.load_finnhub") as mock_load:
             mock_load.return_value = {"candles": {"refresh": {}}}
             scheduler = H1RefreshScheduler()
-            assert scheduler.h1_bars == 5
+            assert scheduler.h1_bars == 8
 
     def test_custom_max_drift(self) -> None:
         """Test custom max drift from config."""

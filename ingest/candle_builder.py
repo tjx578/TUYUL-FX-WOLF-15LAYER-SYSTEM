@@ -194,16 +194,24 @@ class CandleBuilder:
         symbol: str,
         timeframe: Timeframe,
         on_complete: OnCandleComplete | None = None,
+        *,
+        require_full_coverage: bool = False,
     ) -> None:
         self.symbol = symbol
         self.timeframe = timeframe
         self.on_complete = on_complete
+        self.require_full_coverage = require_full_coverage
         self._acc = _CandleAccumulator(
             symbol=symbol,
             timeframe=timeframe.label,
             period_minutes=timeframe.minutes,
         )
         self._completed: list[Candle] = []
+        self._component_windows: list[tuple[datetime, datetime]] = []
+
+    def _reset_period(self, period_start: datetime) -> None:
+        self._acc.reset(period_start)
+        self._component_windows.clear()
 
     # ------------------------------------------------------------------
     # Public API — Tick feeding (build candles from raw prices)
@@ -227,7 +235,7 @@ class CandleBuilder:
         # First tick ever or new period
         if self._acc.open_time is None or period_start != self._acc.open_time:
             completed = self._maybe_close()
-            self._acc.reset(period_start)
+            self._reset_period(period_start)
             self._acc.update(price, volume)
             return completed
 
@@ -261,8 +269,35 @@ class CandleBuilder:
                 candle.symbol,
             )
             return None  # only aggregate finalized candles
+        if candle.symbol != self.symbol:
+            _log.warning(
+                "[%sBuilder] Ignoring candle for wrong symbol %s (expected %s)",
+                self.timeframe.label,
+                candle.symbol,
+                self.symbol,
+            )
+            return None
 
         period_start = _align_to_period(candle.open_time, self.timeframe.minutes)
+        period_end = period_start + timedelta(minutes=self.timeframe.minutes)
+        if candle.open_time < period_start or candle.close_time > period_end:
+            _log.warning(
+                "[%sBuilder] Ignoring component outside target window: %s..%s target=%s..%s",
+                self.timeframe.label,
+                candle.open_time,
+                candle.close_time,
+                period_start,
+                period_end,
+            )
+            return None
+        if candle.close_time <= candle.open_time:
+            _log.warning(
+                "[%sBuilder] Ignoring component with invalid window: %s..%s",
+                self.timeframe.label,
+                candle.open_time,
+                candle.close_time,
+            )
+            return None
         _log.debug(
             "[%sBuilder] Period alignment: open_time=%s, period_start=%s",
             self.timeframe.label,
@@ -279,7 +314,8 @@ class CandleBuilder:
                 period_start,
             )
             completed = self._maybe_close()
-            self._acc.reset(period_start)
+            self._reset_period(period_start)
+            self._component_windows.append((candle.open_time, candle.close_time))
             self._acc.update_from_candle(candle)
             _log.debug(
                 "[%sBuilder] Accumulator update after rollover: open=%s, high=%s, low=%s, close=%s",
@@ -291,6 +327,17 @@ class CandleBuilder:
             )
             return completed
 
+        if self.require_full_coverage and any(
+            existing_open == candle.open_time for existing_open, _existing_close in self._component_windows
+        ):
+            _log.warning(
+                "[%sBuilder] Ignoring duplicate component window for %s at %s",
+                self.timeframe.label,
+                candle.symbol,
+                candle.open_time,
+            )
+            return None
+        self._component_windows.append((candle.open_time, candle.close_time))
         self._acc.update_from_candle(candle)
         _log.debug(
             "[%sBuilder] Accumulator update: open=%s, high=%s, low=%s, close=%s",
@@ -347,6 +394,16 @@ class CandleBuilder:
                 self.symbol,
             )
             return None
+        if self.require_full_coverage and not self._has_full_component_coverage():
+            _log.warning(
+                "[%sBuilder] Dropping incomplete aggregate for %s window=%s..%s components=%s",
+                self.timeframe.label,
+                self.symbol,
+                self._acc.open_time,
+                self._acc.close_time,
+                self._component_windows,
+            )
+            return None
         candle = self._acc.emit()
         _log.debug(
             "[%sBuilder] Emitting candle for %s: O=%s H=%s L=%s C=%s ticks=%s",
@@ -380,6 +437,21 @@ class CandleBuilder:
                     exc,
                 )
         return candle
+
+    def _has_full_component_coverage(self) -> bool:
+        """Return whether completed sub-candles exactly cover the target window."""
+
+        if self._acc.open_time is None or self._acc.close_time is None:
+            return False
+        windows = sorted(set(self._component_windows))
+        if len(windows) != len(self._component_windows) or not windows:
+            return False
+        cursor = self._acc.open_time
+        for open_time, close_time in windows:
+            if open_time != cursor or close_time <= open_time:
+                return False
+            cursor = close_time
+        return cursor == self._acc.close_time
 
 
 class MultiTimeframeCandleBuilder:
@@ -434,6 +506,7 @@ class MultiTimeframeCandleBuilder:
                 symbol=symbol,
                 timeframe=tf,
                 on_complete=_make_callback(label, i + 1, timeframes),
+                require_full_coverage=i > 0,
             )
             self._builders[label] = builder
             self._chain.append(label)

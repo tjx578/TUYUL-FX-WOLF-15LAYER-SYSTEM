@@ -33,7 +33,7 @@ candles:
       H1: 50                           # 1-hour
   refresh:
     h1_interval_sec: 3600             # Refresh H1 every 1 hour
-    h1_bars: 5                        # Fetch last 5 bars on refresh
+    h1_bars: 8                        # Covers an aligned closed H4 plus forming window
     htf_interval_sec: 14400           # Refresh D1/W1 every 4 hours
     d1_bars: 10                       # D1 bars per symbol per cycle
     w1_bars: 8                        # W1 bars per symbol per cycle

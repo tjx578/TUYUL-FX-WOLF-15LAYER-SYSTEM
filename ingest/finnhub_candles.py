@@ -435,7 +435,7 @@ class FinnhubCandleFetcher:
         if timeframe == "H4":
             h1_bars = bars * 4  # Need 4× H1 bars to make H4 bars
             h1_candles = await self.fetch(symbol, "H1", h1_bars)
-            return self.aggregate_h4(h1_candles)
+            return [candle for candle in self.aggregate_h4(h1_candles) if candle.get("complete") is True]
 
         if timeframe not in self.RESOLUTION_MAP:
             raise FinnhubCandleError(f"Unsupported timeframe: {timeframe}")

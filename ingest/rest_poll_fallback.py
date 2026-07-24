@@ -21,6 +21,7 @@ from loguru import logger
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
 from core.redis_keys import candle_history, channel_candle, latest_candle
+
 from .finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 from .finnhub_ws import is_forex_market_open
 from .hybrid_candle_provider import HybridCandleProvider
@@ -353,8 +354,7 @@ class RestPollFallback:
                 )
                 return
             logger.warning(
-                "[RestPoll] Finnhub key suspended (%.0fs cooldown) — "
-                "using %s REST substitute for %s",
+                "[RestPoll] Finnhub key suspended (%.0fs cooldown) — using %s REST substitute for %s",
                 remaining,
                 fallback_provider.available_providers,
                 symbol,
@@ -500,6 +500,9 @@ class RestPollFallback:
                 )
                 continue
             key = candle_history(symbol, timeframe)
+            # Persist every provider revision before Redis duplicate checks so
+            # the canonical row can promote forming→closed for the same window.
+            enqueue_candle_dict(candle)
 
             try:
                 if await is_duplicate_candle(self._redis, key, candle):
@@ -551,8 +554,7 @@ class RestPollFallback:
                 await self._redis.rpush(key, *[item[0] for item in items])
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
                 await self._redis.expire(key, self._HISTORY_TTL_SEC)
-                for candle_json, pub_channel, candle in items:
-                    enqueue_candle_dict(candle)
+                for candle_json, pub_channel, _candle in items:
                     # Notify engine-side RedisConsumer via Pub/Sub
                     await self._redis.publish(pub_channel, candle_json)
                 # Update latest_candle hash so pipeline staleness check

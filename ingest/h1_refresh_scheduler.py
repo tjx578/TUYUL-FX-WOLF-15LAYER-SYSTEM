@@ -57,7 +57,9 @@ class H1RefreshScheduler:
         self.refresh_config = self.config.get("candles", {}).get("refresh", {})
 
         self.interval_sec = self.refresh_config.get("h1_interval_sec", 3600)
-        self.h1_bars = self.refresh_config.get("h1_bars", 5)
+        # At least eight H1 bars are required so an arbitrary refresh boundary
+        # contains one complete aligned H4 group plus the currently forming group.
+        self.h1_bars = max(8, int(self.refresh_config.get("h1_bars", 8)))
         self.max_drift_pips = self.refresh_config.get("price_drift_max_pips", 50.0)
         self.m15_min_bars = self.refresh_config.get("m15_cold_start_min_bars", 10)
         self.m15_recovery_bars = self.refresh_config.get("m15_recovery_bars", 100)
@@ -170,13 +172,25 @@ class H1RefreshScheduler:
                     repair_result.reason,
                 )
 
-                # Seed LiveContextBus
+                # Retain forming provider observations durably, but expose only
+                # explicitly closed bars to analysis/history consumers.
                 for candle in h1_candles:
+                    if candle.get("complete") is not True:
+                        enqueue_candle_dict(candle)
+                closed_h1 = [candle for candle in h1_candles if candle.get("complete") is True]
+                if not closed_h1:
+                    logger.info(
+                        "[H1Refresh] {} returned only forming H1 bars; waiting for close refresh",
+                        symbol,
+                    )
+                    return
+                for candle in closed_h1:
                     self.context_bus.update_candle(candle)
-                await self._push_candles_to_redis(h1_candles)
+                await self._push_candles_to_redis(closed_h1)
 
                 # Re-aggregate H4
-                h4_candles = self.fetcher.aggregate_h4(h1_candles)
+                h4_observations = self.fetcher.aggregate_h4(closed_h1)
+                h4_candles = [candle for candle in h4_observations if candle.get("complete") is True]
                 for candle in h4_candles:
                     self.context_bus.update_candle(candle)
                 await self._push_candles_to_redis(h4_candles)
@@ -196,7 +210,7 @@ class H1RefreshScheduler:
                     # Check if symbol was degraded and can be recovered
                     self.system_state.mark_symbol_recovered(symbol)
 
-                logger.debug(f"Refreshed {symbol}: {len(h1_candles)} H1, {len(h4_candles)} H4")
+                logger.debug(f"Refreshed {symbol}: {len(closed_h1)} H1, {len(h4_candles)} H4")
 
             except Exception as exc:
                 logger.error(f"Error refreshing {symbol}: {exc}")
@@ -236,11 +250,20 @@ class H1RefreshScheduler:
 
     async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
         """RPUSH candle dicts to Redis history lists (best-effort, deduplicated)."""
-        if not self._redis or not candles:
+        if not candles:
+            return
+        # Database observations are independent from Redis availability and
+        # list-level duplicate suppression. This is what permits a later REST
+        # refresh to promote the same provider window from forming to closed.
+        for candle in candles:
+            enqueue_candle_dict(candle)
+        if not self._redis:
             return
         import time as _time  # noqa: PLC0415
 
-        is_duplicate_candle = import_module("core.candle_bridge_fix").is_duplicate_candle
+        candle_bridge = import_module("core.candle_bridge_fix")
+        is_duplicate_candle = candle_bridge.is_duplicate_candle
+        replace_candle_history_entry = candle_bridge.replace_candle_history_entry
 
         for candle in candles:
             symbol = candle.get("symbol")
@@ -251,13 +274,24 @@ class H1RefreshScheduler:
             try:
                 # ── Dedup: skip candles whose open_time already in Redis tail ──
                 if await is_duplicate_candle(self._redis, key, candle):
-                    logger.debug("[H1Refresh] Dedup skip {} {}", symbol, timeframe)
+                    replaced = await replace_candle_history_entry(self._redis, key, candle)
+                    if not replaced:
+                        logger.debug("[H1Refresh] Dedup skip {} {}", symbol, timeframe)
+                        continue
+                    candle_json = orjson.dumps(candle).decode("utf-8")
+                    await self._redis.publish(channel_candle(symbol, timeframe), candle_json)
+                    await self._redis.hset(
+                        latest_candle(symbol, timeframe),
+                        mapping={
+                            "data": candle_json,
+                            "last_seen_ts": str(_time.time()),
+                        },
+                    )
                     continue
 
                 candle_json = orjson.dumps(candle).decode("utf-8")
                 await self._redis.rpush(key, candle_json)
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
-                enqueue_candle_dict(candle)
                 # PUBLISH so engine RedisConsumer picks up refresh in real-time
                 pub_channel = channel_candle(symbol, timeframe)
                 await self._redis.publish(pub_channel, candle_json)

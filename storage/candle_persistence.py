@@ -273,6 +273,18 @@ async def _flush_batch() -> int:
         return 0
 
 
+async def drain_candle_persistence() -> int:
+    """Flush the current buffer completely for bounded backfill commands."""
+
+    written_total = 0
+    while _buffer:
+        written = await _flush_batch()
+        if written <= 0:
+            break
+        written_total += written
+    return written_total
+
+
 def _provider_priority(provider: str) -> int:
     value = provider.strip().lower()
     if value.startswith(("mt5", "broker")):
