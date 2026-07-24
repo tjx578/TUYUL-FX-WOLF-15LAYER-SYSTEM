@@ -1,0 +1,39 @@
+{
+  "event": "strategy_5scr_authoritative_candle_coverage_audit",
+  "queried_at_utc": "2026-07-24T02:32:05.9980252+00:00",
+  "source": {
+    "database": "Railway PostgreSQL",
+    "table": "canonical_candles",
+    "policy": "complete=true, provider_timestamp_semantics!=UNSPECIFIED, close_time<=decision_at_utc",
+    "outcome_policy": "M1 complete candles after decision_at_utc through decision_at_utc+4h"
+  },
+  "population": {
+    "analysis_ready_manifests": 15,
+    "unique_symbols": 13,
+    "decision_date_min_utc": "2026-07-17",
+    "decision_date_max_utc": "2026-07-23"
+  },
+  "coverage": {
+    "evidence_eligible_manifests": 0,
+    "manifests_with_any_m1_outcome_data": 3,
+    "d1_bars_per_manifest_min": 5,
+    "d1_bars_per_manifest_max": 10,
+    "h4_bars_per_manifest_min": 0,
+    "h4_bars_per_manifest_max": 0,
+    "h1_bars_per_manifest_min": 0,
+    "h1_bars_per_manifest_max": 0,
+    "m15_bars_per_manifest_min": 0,
+    "m15_bars_per_manifest_max": 17,
+    "m1_evidence_bars_per_manifest_min": 0,
+    "m1_evidence_bars_per_manifest_max": 290,
+    "m1_outcome_bars_per_manifest_min": 0,
+    "m1_outcome_bars_per_manifest_max": 230
+  },
+  "validation": {
+    "tradeplans_evaluable": 0,
+    "outcomes_classifiable": 0,
+    "precision_denominator": 0,
+    "status": "BLOCKED_MISSING_AUTHORITATIVE_H1_H4",
+    "interpretation": "Precision is not 0%; it is not estimable from the currently eligible population."
+  }
+}

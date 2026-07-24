@@ -1,0 +1,114 @@
+{
+  "distributions": {
+    "deployments": {
+      "13f59399-df23-4045-aa24-9899675b6055": 14,
+      "2247e628-372c-4a27-95af-fe4b32724b11": 502,
+      "307002de-eb87-4883-a72a-6ffc40bd8e20": 3,
+      "43ce34d6-5b5d-40ec-93a1-b03f0118052d": 111,
+      "4b3da522-6093-4741-a8a3-5a510e57330f": 131,
+      "65a456bf-2a57-49f9-af86-aadb92a7d430": 13,
+      "71d0c053-c585-447a-b9dd-dc9ad5cc8157": 235,
+      "916abb83-e85e-4ff8-a110-beedcac619b8": 302,
+      "None": 570,
+      "ad2094d4-4975-4de7-92f4-821aea188906": 104
+    },
+    "pressure_levels": {
+      "MICROBOOST_WATCH": 1725,
+      "PRESSURE_CANARY": 260
+    },
+    "raw_directions": {
+      "BUY": 1321,
+      "SELL": 664
+    },
+    "symbols": {
+      "AUDCAD": 39,
+      "AUDCHF": 44,
+      "AUDJPY": 78,
+      "AUDNZD": 78,
+      "AUDUSD": 23,
+      "CADCHF": 150,
+      "CADJPY": 98,
+      "CHFJPY": 225,
+      "EURAUD": 26,
+      "EURCAD": 30,
+      "EURCHF": 69,
+      "EURGBP": 50,
+      "EURJPY": 37,
+      "EURNZD": 48,
+      "EURUSD": 62,
+      "GBPAUD": 39,
+      "GBPCAD": 27,
+      "GBPCHF": 30,
+      "GBPJPY": 53,
+      "GBPNZD": 61,
+      "GBPUSD": 39,
+      "NZDCAD": 106,
+      "NZDCHF": 139,
+      "NZDJPY": 92,
+      "NZDUSD": 77,
+      "USDCAD": 37,
+      "USDCHF": 96,
+      "USDJPY": 32,
+      "XAGUSD": 16,
+      "XAUUSD": 84
+    }
+  },
+  "errors": {
+    "normalization": {},
+    "radar": {}
+  },
+  "event": "strategy_5scr_log_archive_audit",
+  "generated_at_utc": "2026-07-24T02:26:57.577512+00:00",
+  "lifecycles": {
+    "radar_analysis_ready": 15,
+    "radar_canonical_lifecycles": 15,
+    "radar_manifest_statuses": {
+      "ANALYSIS_READY": 15,
+      "EXPIRED": 27,
+      "WAITING_CANONICAL_LINEAGE": 8
+    },
+    "radar_manifests": 50,
+    "raw_execution_grade_anchor": 360,
+    "raw_pressure_selected": 30,
+    "raw_replay": 556
+  },
+  "pressure_events": {
+    "canonical_lineage_events": 1124,
+    "deployments": 9,
+    "first_event_utc": "2026-07-09T15:15:13.958356+00:00",
+    "last_event_utc": "2026-07-23T21:34:15.135133+00:00",
+    "normalization_errors": 0,
+    "overlap_duplicate_occurrences": 1697,
+    "overlap_duplicate_rate": 0.460891,
+    "parsed_occurrences_after_byte_file_dedup": 3682,
+    "pressure_selected_events": 116,
+    "symbols": 30,
+    "unique_events": 1985
+  },
+  "scope": {
+    "archive_bytes": 849232475,
+    "archive_date_max_utc": "2026-07-24T00:24:39.712255+00:00",
+    "archive_date_min_utc": "2026-04-21T05:39:41.071714+00:00",
+    "archive_files": 262,
+    "byte_duplicate_files": 12,
+    "file_pattern": "logs.*.{json,csv}",
+    "files_with_pressure_marker": 11,
+    "input_directory": "Downloads",
+    "unique_file_hashes": 250
+  },
+  "tradeplan_validation": {
+    "closed_candle_dataset_attached": false,
+    "m1_outcomes_classified": 0,
+    "precision_denominator": 0,
+    "required_timeframes": [
+      "D1",
+      "H4",
+      "H1",
+      "M15",
+      "M1"
+    ],
+    "status": "BLOCKED_AUTHORITATIVE_AS_OF_CANDLES_REQUIRED",
+    "tradeplans_evaluated": 0,
+    "tradeplans_ready": 0
+  }
+}
