@@ -38,6 +38,42 @@ Historical replay uses `FinnhubCandleFetcher.fetch_range(from_utc, to_utc)`.
 The evidence cutoff must be the decision timestamp. Outcome candles are read
 through a separate replay method after the evidence snapshot is frozen.
 
+## Canonical H1/H4 recovery
+
+Provider revisions are persisted before Redis duplicate suppression. A Finnhub
+period may therefore be observed first as forming and later promoted to
+`complete=true` after its canonical close time. Closed observations are the
+only revisions exposed to evidence consumers.
+
+Live rollups fail closed:
+
+- H1 requires four complete, contiguous M15 windows;
+- H4 requires four complete, contiguous H1 windows;
+- duplicate, partial, gapped, mixed-duration, or future windows are dropped;
+- a forming observation can never replace a closed canonical observation.
+
+After deploying a candle-normalization change, run a dry backfill first:
+
+```bash
+python -m scripts.backfill_strategy_5scr_h1_h4 \
+  --from-utc 2026-07-20T00:00:00Z \
+  --to-utc 2026-07-25T00:00:00Z \
+  --dry-run
+```
+
+Remove `--dry-run` only after the candidate counts are plausible. Then verify
+all 30 enabled symbols and the five evidence timeframes:
+
+```bash
+python -m scripts.validate_strategy_5scr_candle_coverage \
+  --as-of-utc 2026-07-25T00:00:00Z
+```
+
+The validator exits `0` only when every enabled symbol has the minimum
+D1/H4/H1/M15/M1 evidence and no complete candle closes after the supplied
+cutoff. It exits `2` for an incomplete readiness gate. Both commands require
+the same `DATABASE_URL` used by the candle persistence service.
+
 ## Runtime flags
 
 Keep these defaults after merge:

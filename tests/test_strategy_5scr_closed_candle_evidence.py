@@ -368,6 +368,39 @@ def test_finnhub_normalization_marks_forming_candle_incomplete() -> None:
     assert candle["provider_timestamp_semantics"] == "PERIOD_OPEN"
 
 
+def test_finnhub_refresh_promotes_the_same_period_from_forming_to_closed() -> None:
+    open_time = datetime(2026, 7, 20, 6, tzinfo=UTC)
+    close_time = open_time + timedelta(hours=1)
+    response = {
+        "s": "ok",
+        "o": [1.10],
+        "h": [1.11],
+        "l": [1.09],
+        "c": [1.105],
+        "v": [100],
+        "t": [int(open_time.timestamp())],
+    }
+    fetcher = FinnhubCandleFetcher()
+
+    forming = fetcher.normalize_response(
+        response,
+        "NZDUSD",
+        "H1",
+        as_of_utc=open_time + timedelta(minutes=30),
+    )[0]
+    closed = fetcher.normalize_response(
+        response,
+        "NZDUSD",
+        "H1",
+        as_of_utc=close_time,
+    )[0]
+
+    assert forming["open_time"] == closed["open_time"] == open_time
+    assert forming["close_time"] == closed["close_time"] == close_time
+    assert forming["complete"] is False
+    assert closed["complete"] is True
+
+
 @pytest.mark.asyncio
 async def test_fetch_range_uses_historical_cutoff_and_returns_canonical_window() -> None:
     start = datetime(2026, 7, 20, 5, tzinfo=UTC)

@@ -107,6 +107,50 @@ async def is_duplicate_candle(
     return False
 
 
+async def replace_candle_history_entry(
+    redis: Any,
+    history_key: str,
+    candle_dict: dict[str, Any],
+    *,
+    tail_size: int = 500,
+) -> bool:
+    """Replace an existing candle window without allowing closed→forming regression.
+
+    REST providers legitimately return the same period first as forming and
+    later as closed. Redis history is list-backed, so a plain duplicate skip
+    would leave the forming observation in place forever. This helper updates
+    the matching tail entry in-place and returns ``True`` when it changed.
+    """
+
+    new_epoch = _candle_open_epoch(candle_dict)
+    if new_epoch is None:
+        return False
+    try:
+        tail: list[bytes] = await redis.lrange(history_key, -tail_size, -1)
+    except Exception:
+        return False
+    incoming_complete = candle_dict.get("complete") is True
+    replacement = orjson.dumps(candle_dict).decode("utf-8")
+    for offset, raw in enumerate(tail):
+        try:
+            existing = orjson.loads(raw)
+            existing_epoch = _candle_open_epoch(existing)
+        except Exception:
+            continue
+        if existing_epoch is None or abs(existing_epoch - new_epoch) >= 1.0:
+            continue
+        if existing.get("complete") is True and not incoming_complete:
+            return False
+        if existing == candle_dict:
+            return False
+        try:
+            await redis.lset(history_key, offset - len(tail), replacement)
+        except Exception:
+            return False
+        return True
+    return False
+
+
 # Maximum consecutive bars with identical OHLC before we consider the feed stale.
 # In live forex even the most illiquid cross will not produce 3 consecutive H1
 # bars with exactly the same open/high/low/close to 8 decimal places.
@@ -186,16 +230,27 @@ async def _push_candle_to_redis_safe(
     symbol = str(symbol).strip().upper()
     timeframe = str(timeframe).strip().upper()
 
+    # Persistence is authoritative and must observe every lifecycle revision.
+    # Redis duplicate suppression must never hide forming→closed promotion.
+    try:
+        enqueue_candle_dict = import_module("storage.candle_persistence").enqueue_candle_dict
+        enqueue_candle_dict(candle_dict)
+    except Exception:
+        pass
+
     try:
         key = candle_history(symbol, timeframe)
+        replaced_existing = False
 
         # ── Dedup: skip if this candle's open_time already exists in tail ──
         if rpush_fn is None and await is_duplicate_candle(redis, key, candle_dict):
-            logger.debug("[CandleBridgeFix] Dedup skip %s:%s — same open_time in tail", symbol, timeframe)
-            return
+            replaced_existing = await replace_candle_history_entry(redis, key, candle_dict)
+            if not replaced_existing:
+                logger.debug("[CandleBridgeFix] Dedup skip %s:%s — same open_time in tail", symbol, timeframe)
+                return
 
         # ── Stale-OHLC guard: skip if last N bars have identical prices ──
-        if rpush_fn is None and await is_ohlc_stale(redis, key, candle_dict):
+        if rpush_fn is None and not replaced_existing and await is_ohlc_stale(redis, key, candle_dict):
             logger.warning(
                 "[CandleBridgeFix] Stale OHLC skip %s:%s — last %d bars have identical prices",
                 symbol,
@@ -209,8 +264,9 @@ async def _push_candle_to_redis_safe(
         if rpush_fn is not None:
             await rpush_fn(key, candle_json)
         else:
-            await redis.rpush(key, candle_json)
-            await redis.ltrim(key, -500, -1)
+            if not replaced_existing:
+                await redis.rpush(key, candle_json)
+                await redis.ltrim(key, -500, -1)
 
             # Write latest_candle hash so pipeline gets last_seen_ts
             lc_key = latest_candle(symbol, timeframe)
@@ -227,13 +283,6 @@ async def _push_candle_to_redis_safe(
             # Notify engine-side consumers via Pub/Sub
             pub_channel = channel_candle(symbol, timeframe)
             await redis.publish(pub_channel, candle_json)
-
-        # Best-effort persistence for restart recovery
-        try:
-            enqueue_candle_dict = import_module("storage.candle_persistence").enqueue_candle_dict
-            enqueue_candle_dict(candle_dict)
-        except Exception:
-            pass
     except Exception as exc:
         logger.warning("[CandleBridgeFix] Redis push failed for %s:%s — %s", symbol, timeframe, exc)
 

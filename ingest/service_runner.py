@@ -275,6 +275,7 @@ async def run_ingest_services(
                 symbol=_sym,
                 timeframe=Timeframe.H1,
                 on_complete=_h1_on_complete,
+                require_full_coverage=True,
             )
             logger.debug(
                 "[H1Builder] Created H1 builder for {} with on_complete=_h1_on_complete",

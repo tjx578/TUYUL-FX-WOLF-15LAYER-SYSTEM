@@ -126,6 +126,28 @@ def test_provider_aware_identity_and_rank_do_not_mix_feeds() -> None:
     assert int(broker_args[16]) > int(finnhub_args[16])
 
 
+def test_forming_to_closed_revision_increases_canonical_selection_rank() -> None:
+    forming = _make_candle(timeframe="H1")
+    forming.complete = False
+    forming.provider = "finnhub"
+    forming.provider_feed = "oanda_rest"
+    forming.provider_timestamp_semantics = "PERIOD_OPEN"
+    forming.provider_timestamp = forming.open_time
+
+    closed = _make_candle(timeframe="H1")
+    closed.provider = forming.provider
+    closed.provider_feed = forming.provider_feed
+    closed.provider_timestamp_semantics = forming.provider_timestamp_semantics
+    closed.provider_timestamp = forming.provider_timestamp
+
+    forming_args = _provider_aware_args(forming)
+    closed_args = _provider_aware_args(closed)
+
+    assert forming_args[:6] == closed_args[:6]
+    assert forming_args[15] != closed_args[15]
+    assert int(closed_args[16]) > int(forming_args[16])
+
+
 def test_enqueue_canonical_closed_candle_preserves_authority() -> None:
     _buffer.clear()
     payload = {
