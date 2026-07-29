@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -28,6 +29,12 @@ from contracts.strategy_5scr import (
     Strategy5SCRProof,
     evaluate_strategy_5scr_proof,
 )
+from contracts.strategy_5scr_execution_policy import (
+    EXECUTION_POLICY_MISSING_REASON,
+    LEGACY_REPLAY_EXECUTION_POLICY,
+    ExecutionPolicy,
+    resolve_execution_policy,
+)
 from contracts.strategy_5scr_pressure import (
     CampaignAnchorSource,
     LegacyEpisodePolicy,
@@ -43,8 +50,6 @@ from contracts.strategy_5scr_pressure_outbox import PressureOutboxEnvelope
 
 PRESSURE_LOG_PREFIX = "[SignalPressureStateJSON]"
 MIN_RR = 1.5
-MIN_FX_TARGET_PIPS = 6.0
-MIN_XAU_TARGET_PRICE = 5.0
 
 _RUNTIME_IDENTITY_FIELDS = frozenset(
     {
@@ -419,6 +424,11 @@ class PressureLifecycleAccumulator:
 class PressureToTradePlanBuilder:
     """Assemble a frozen 5S-CR proof and non-executable tradeplan candidate."""
 
+    def __init__(self, *, execution_policy: ExecutionPolicy | None = None) -> None:
+        # Explicit policy wins, then env.  Never a silent default: an unresolved
+        # policy fails closed in build() rather than inheriting a hidden floor.
+        self.execution_policy = execution_policy or resolve_execution_policy()
+
     def build(
         self,
         lifecycle: PressureLifecycle,
@@ -429,6 +439,10 @@ class PressureToTradePlanBuilder:
         selected = lifecycle.selected_by_pressure if selection_confirmed is None else selection_confirmed
         defer: list[str] = []
         block: list[str] = []
+
+        if self.execution_policy is None:
+            # A target floor is a strategy rule.  Refuse to invent one.
+            return self._not_ready("BLOCK", lifecycle, [EXECUTION_POLICY_MISSING_REASON])
 
         if not selected:
             defer.append("STRATEGY_5SCR_PRESSURE_SELECTION_REQUIRED")
@@ -502,10 +516,17 @@ class PressureToTradePlanBuilder:
         target_distance = abs(target - entry)
         risk_distance = abs(entry - stop)
         rr = target_distance / risk_distance if risk_distance > 0 else 0.0
-        execution_floor = self._execution_floor(lifecycle.symbol, evidence.pip_size, evidence.spread_price)
+        policy = self.execution_policy
+        execution_floor = policy.execution_floor(lifecycle.symbol, evidence.pip_size, evidence.spread_price)
+        floor_assessment = policy.assess_target(
+            lifecycle.symbol,
+            target_distance_price=target_distance,
+            pip_size=evidence.pip_size,
+            spread_price=evidence.spread_price,
+        )
         if target_distance + self._price_tolerance(entry) < execution_floor:
             block.append("STRATEGY_5SCR_TARGET_BELOW_EXECUTION_FLOOR")
-        if rr + 1e-12 < MIN_RR:
+        if rr + 1e-12 < policy.minimum_rr:
             block.append("STRATEGY_5SCR_RR_BELOW_1_5")
         if block:
             return self._not_ready("BLOCK", lifecycle, block)
@@ -559,6 +580,13 @@ class PressureToTradePlanBuilder:
             rr=rr,
             target_distance_price=target_distance,
             execution_floor_price=execution_floor,
+            execution_policy_id=floor_assessment.execution_policy_id,
+            execution_policy_version=floor_assessment.execution_policy_version,
+            target_distance_pips=floor_assessment.target_distance_pips,
+            minimum_target_pips=floor_assessment.minimum_target_pips,
+            broker_cost_floor_pips=floor_assessment.broker_cost_floor_pips,
+            required_target_pips=floor_assessment.required_target_pips,
+            target_floor_status=floor_assessment.target_floor_status,
             pip_size=evidence.pip_size,
             spread_price=evidence.spread_price,
             source_pressure_event_ids=lifecycle.event_ids,
@@ -619,12 +647,6 @@ class PressureToTradePlanBuilder:
     @staticmethod
     def _geometry_valid(direction: str, entry: float, stop: float, target: float) -> bool:
         return stop < entry < target if direction == "BUY" else target < entry < stop
-
-    @staticmethod
-    def _execution_floor(symbol: str, pip_size: float, spread_price: float) -> float:
-        if symbol.upper().startswith("XAU"):
-            return max(MIN_XAU_TARGET_PRICE, 5.0 * spread_price)
-        return max(MIN_FX_TARGET_PIPS * pip_size, 5.0 * spread_price)
 
     @staticmethod
     def _price_tolerance(reference: float) -> float:
@@ -693,9 +715,7 @@ def replay_pressure_outbox_events(
 
 
 __all__ = [
-    "MIN_FX_TARGET_PIPS",
     "MIN_RR",
-    "MIN_XAU_TARGET_PRICE",
     "PRESSURE_LOG_PREFIX",
     "PressureEventNormalizer",
     "PressureInputError",

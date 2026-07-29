@@ -215,6 +215,16 @@ class Strategy5SCRTradePlan(FrozenContract):
     min_rr: float = Field(default=1.5, ge=1.5, le=1.5)
     target_distance_price: float = Field(..., gt=0)
     execution_floor_price: float = Field(..., gt=0)
+    # Target-floor provenance.  Optional so plans persisted before policy
+    # versioning stay loadable; the builder always populates them, so a plan
+    # without a policy id was not produced by the current solver.
+    execution_policy_id: str | None = Field(default=None, max_length=100)
+    execution_policy_version: int | None = Field(default=None, ge=1)
+    target_distance_pips: float | None = Field(default=None, ge=0)
+    minimum_target_pips: float | None = Field(default=None, ge=0)
+    broker_cost_floor_pips: float | None = Field(default=None, ge=0)
+    required_target_pips: float | None = Field(default=None, ge=0)
+    target_floor_status: Literal["PASS", "BELOW_STRUCTURAL_FLOOR", "BELOW_COST_FLOOR"] | None = None
     pip_size: float = Field(..., gt=0)
     spread_price: float = Field(..., ge=0)
     source_pressure_event_ids: tuple[str, ...] = Field(..., min_length=1)

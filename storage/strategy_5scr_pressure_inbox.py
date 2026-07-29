@@ -12,6 +12,10 @@ from analysis.strategy_5scr_pressure_to_tradeplan import (
     PressureToTradePlanBuilder,
 )
 from contracts.canonical_candle import as_utc
+from contracts.strategy_5scr_execution_policy import (
+    HYBRID_V3_EXECUTION_POLICY,
+    ExecutionPolicy,
+)
 from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
 from contracts.strategy_5scr_pressure_outbox import PressureInboxOutcome, PressureOutboxEnvelope
 from core.metrics import PRESSURE_INBOX_DELIVERY_TOTAL
@@ -75,10 +79,14 @@ class Strategy5SCRPressureProcessor:
     outside this transaction.  No execution signal is emitted.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, execution_policy: ExecutionPolicy | None = None) -> None:
         self._normalizer = PressureEventNormalizer(input_mode="LIVE")
         self._accumulator = PressureLifecycleAccumulator()
-        self._builder = PressureToTradePlanBuilder()
+        # Hybrid V3 is the canonical policy for live pressure; stated
+        # explicitly rather than inherited from the environment.
+        self._builder = PressureToTradePlanBuilder(
+            execution_policy=execution_policy or HYBRID_V3_EXECUTION_POLICY
+        )
 
     def process(
         self,
