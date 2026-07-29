@@ -13,6 +13,10 @@ from services.pressure_outbox.evidence_worker import (
     EvidenceRuntimeConfig,
     build_evidence_worker,
 )
+from services.pressure_outbox.lifecycle_shadow_worker import (
+    LifecycleV2RuntimeConfig,
+    build_lifecycle_v2_shadow_runner,
+)
 from services.pressure_outbox.outcome_worker import (
     OutcomeRuntimeConfig,
     build_outcome_worker,
@@ -43,6 +47,15 @@ async def _main() -> None:
     evidence_worker = build_evidence_worker(pg=pg_client, config=evidence_config) if evidence_config.enabled else None
     outcome_config = OutcomeRuntimeConfig.from_env()
     outcome_worker = build_outcome_worker(pg=pg_client, config=outcome_config) if outcome_config.enabled else None
+    # Shadow episode-lifecycle observer.  A peer worker: it reads delivered
+    # events and writes only its own V2 tables, so the existing path above is
+    # byte-identical whether this is on or off.
+    lifecycle_v2_config = LifecycleV2RuntimeConfig.from_env()
+    lifecycle_v2_worker = (
+        build_lifecycle_v2_shadow_runner(pg=pg_client, config=lifecycle_v2_config)
+        if lifecycle_v2_config.enabled
+        else None
+    )
 
     async def _stop_workers() -> None:
         await worker.stop()
@@ -50,6 +63,8 @@ async def _main() -> None:
             await evidence_worker.stop()
         if outcome_worker is not None:
             await outcome_worker.stop()
+        if lifecycle_v2_worker is not None:
+            await lifecycle_v2_worker.stop()
 
     loop = asyncio.get_running_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):
@@ -71,6 +86,15 @@ async def _main() -> None:
                 outcome_config.horizon_minutes,
             )
             tasks.append(outcome_worker.run())
+        if lifecycle_v2_worker is not None:
+            logger.info(
+                "Starting Strategy 5S-CR lifecycle V2 shadow worker "
+                "shadow_only={} dual_write={} continuity_gap={}s",
+                lifecycle_v2_config.shadow_only,
+                lifecycle_v2_config.dual_write_enabled,
+                lifecycle_v2_config.max_continuity_gap_seconds,
+            )
+            tasks.append(lifecycle_v2_worker.run())
         await asyncio.gather(*tasks)
     finally:
         await pg_client.close()

@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 
 from services.pressure_outbox.evidence_worker import EvidenceRuntimeConfig
+from services.pressure_outbox.lifecycle_shadow_worker import LifecycleV2RuntimeConfig
 from services.pressure_outbox.outcome_worker import (
     OutcomeRuntimeConfig,
     PostgresOutcomeRepository,
@@ -17,6 +18,7 @@ from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_radar_manifest import PressureRadarManifestRepository
 from storage.strategy_5scr_candle_store import PostgresClosedCandleStore
+from storage.strategy_5scr_lifecycle_v2_repository import StrategyLifecycleV2Repository
 
 
 def _enabled(value: str | None) -> bool:
@@ -70,6 +72,11 @@ async def run_preflight() -> dict[str, object]:
         raise RuntimeError("STRATEGY_5SCR_EVIDENCE_REQUIRES_PRESSURE_CONSUMER")
     if outcome_config.enabled and not evidence_config.enabled:
         raise RuntimeError("STRATEGY_5SCR_OUTCOME_REQUIRES_EVIDENCE_WORKER")
+    lifecycle_v2_config = LifecycleV2RuntimeConfig.from_env()
+    # Phase one has no non-shadow mode.  Refuse at startup rather than trust
+    # every call site to re-check.
+    if lifecycle_v2_config.enabled and not lifecycle_v2_config.shadow_only:
+        raise RuntimeError("STRATEGY_5SCR_LIFECYCLE_V2_SHADOW_ONLY_REQUIRED")
     await pg_client.initialize()
     if not pg_client.is_available:
         raise RuntimeError("PRESSURE_OUTBOX_DATABASE_UNAVAILABLE")
@@ -102,6 +109,18 @@ async def run_preflight() -> dict[str, object]:
                 f"tables={','.join(outcome_schema.missing_tables) or 'none'}:"
                 f"indexes={','.join(outcome_schema.missing_indexes) or 'none'}"
             )
+        lifecycle_v2_schema = await StrategyLifecycleV2Repository(pg=pg_client).schema_status()
+        lifecycle_v2_ready = not (
+            lifecycle_v2_schema["missing_tables"] or lifecycle_v2_schema["missing_indexes"]
+        )
+        # Enabling the worker before migration 20260729_01 has run would fail on
+        # every poll; fail closed at startup instead.
+        if lifecycle_v2_config.enabled and not lifecycle_v2_ready:
+            raise RuntimeError(
+                "STRATEGY_5SCR_LIFECYCLE_V2_SCHEMA_NOT_READY:"
+                f"tables={','.join(lifecycle_v2_schema['missing_tables']) or 'none'}:"
+                f"indexes={','.join(lifecycle_v2_schema['missing_indexes']) or 'none'}"
+            )
         return {
             "event": "pressure_outbox_preflight",
             "ready": True,
@@ -124,6 +143,8 @@ async def run_preflight() -> dict[str, object]:
             ),
             "candle_schema_ready": candle_schema.ready,
             "outcome_schema_ready": outcome_schema.ready,
+            "lifecycle_v2": asdict(lifecycle_v2_config),
+            "lifecycle_v2_schema_ready": lifecycle_v2_ready,
         }
     finally:
         await pg_client.close()

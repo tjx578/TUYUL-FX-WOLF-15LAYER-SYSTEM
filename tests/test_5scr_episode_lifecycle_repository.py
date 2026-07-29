@@ -1,0 +1,312 @@
+"""Durability rules for the Strategy Lifecycle V2 repository.
+
+The properties that matter: an episode survives restart, a redelivered event
+cannot inflate it, and the episode and its link are written together or not at
+all.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import pytest
+
+from analysis.strategy_5scr_v3.episode_hash import (
+    build_material_state_hash,
+    build_strategy_lifecycle_id,
+)
+from contracts.strategy_5scr_lifecycle_v2 import (
+    StrategyLifecycleEventLink,
+    StrategyLifecycleV2,
+)
+from storage.strategy_5scr_lifecycle_v2_repository import (
+    LIFECYCLE_TABLE,
+    LINK_TABLE,
+    StrategyLifecycleV2Repository,
+    lifecycle_from_row,
+)
+
+START = datetime(2026, 7, 17, 13, 0, 0, tzinfo=UTC)
+
+
+class _FakePostgres:
+    """Minimal in-memory stand-in for the queries this repository issues."""
+
+    def __init__(self, *, available: bool = True) -> None:
+        self.is_available = available
+        self.lifecycles: dict[str, dict[str, Any]] = {}
+        self.links: dict[str, dict[str, Any]] = {}
+        self.transactions = 0
+        self.fail_link = False
+
+    async def execute(self, query: str, *args: Any) -> str:
+        normalized = " ".join(query.split())
+        if f"INSERT INTO {LIFECYCLE_TABLE}" in normalized:
+            existing = self.lifecycles.get(args[0])
+            row = {
+                "strategy_lifecycle_id": args[0],
+                "symbol": args[1],
+                "state": args[2],
+                "direction_state": args[3],
+                "opened_at": args[4],
+                "last_event_at": args[5],
+                "last_continuity_event_at": args[6],
+                "last_material_event_at": args[7],
+                "rule_version": args[8],
+                "material_state_hash": args[9],
+                "event_count": args[10],
+                "clean_block_count": args[11],
+                "watch_count": args[12],
+            }
+            if existing:
+                row["last_event_at"] = max(existing["last_event_at"], args[5])
+                row["last_continuity_event_at"] = max(
+                    existing["last_continuity_event_at"], args[6]
+                )
+                row["last_material_event_at"] = max(existing["last_material_event_at"], args[7])
+            self.lifecycles[args[0]] = row
+            return "INSERT 0 1"
+        if f"INSERT INTO {LINK_TABLE}" in normalized:
+            if self.fail_link:
+                raise ConnectionError("crash before commit")
+            if args[0] in self.links:
+                return "INSERT 0 0"
+            self.links[args[0]] = {
+                "pressure_event_id": args[0],
+                "strategy_lifecycle_id": args[1],
+                "transport_lifecycle_id": args[2],
+                "source_clean_block_id": args[3],
+                "source_watch_id": args[4],
+                "linked_at": args[5],
+                "link_reason": args[6],
+            }
+            return "INSERT 0 1"
+        return "UPDATE 1"
+
+    async def fetchrow(self, query: str, *args: Any) -> dict[str, Any] | None:
+        normalized = " ".join(query.split())
+        if f"FROM {LIFECYCLE_TABLE}" in normalized:
+            candidates = [
+                row
+                for row in self.lifecycles.values()
+                if row["symbol"] == args[0] and row["state"] in set(args[1])
+            ]
+            if not candidates:
+                return None
+            return max(candidates, key=lambda row: row["last_continuity_event_at"])
+        if f"FROM {LINK_TABLE}" in normalized:
+            rows = list(self.links.values())
+            return {
+                "events": len(rows),
+                "transport_lifecycles": len({r["transport_lifecycle_id"] for r in rows}),
+                "strategy_lifecycles": len({r["strategy_lifecycle_id"] for r in rows}),
+                "events_without_canonical_anchor": sum(
+                    1
+                    for r in rows
+                    if not r["source_clean_block_id"] and not r["source_watch_id"]
+                ),
+            }
+        return None
+
+    async def fetch(self, query: str, *args: Any) -> list[Any]:
+        return []
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]:
+        self.transactions += 1
+        snapshot_lifecycles = dict(self.lifecycles)
+        snapshot_links = dict(self.links)
+        try:
+            yield self
+        except Exception:
+            self.lifecycles = snapshot_lifecycles
+            self.links = snapshot_links
+            raise
+
+
+def _lifecycle(*, symbol="CHFJPY", direction="BUY", offset=0, event_count=1, state="ANALYSIS_OPEN"):
+    opened = START
+    material = START + timedelta(seconds=offset)
+    return StrategyLifecycleV2(
+        strategy_lifecycle_id=build_strategy_lifecycle_id(
+            symbol=symbol, opened_at_utc=opened, opening_direction_state=direction
+        ),
+        symbol=symbol,
+        state=state,
+        direction_state=direction,
+        opened_at_utc=opened,
+        last_event_at_utc=material,
+        last_continuity_event_at_utc=material,
+        last_material_event_at_utc=material,
+        material_state_hash=build_material_state_hash(
+            symbol=symbol,
+            state=state,
+            direction_state=direction,
+            opened_at_utc=opened,
+            last_material_event_at_utc=material,
+        ),
+        event_count=event_count,
+    )
+
+
+def _link(lifecycle, *, event_id="evt-1", clean_block=None):
+    return StrategyLifecycleEventLink(
+        strategy_lifecycle_id=lifecycle.strategy_lifecycle_id,
+        pressure_event_id=event_id,
+        transport_lifecycle_id=f"transport-{event_id}",
+        source_clean_block_id=clean_block,
+        linked_at_utc=lifecycle.last_event_at_utc,
+        link_reason="EPISODE_OPENED",
+    )
+
+
+@pytest.fixture
+def repo():
+    pg = _FakePostgres()
+    return StrategyLifecycleV2Repository(pg=pg), pg
+
+
+@pytest.mark.asyncio
+async def test_upsert_then_recover_active_lifecycle(repo):
+    repository, _pg = repo
+    lifecycle = _lifecycle()
+
+    await repository.upsert_lifecycle(lifecycle)
+    recovered = await repository.active_lifecycle("CHFJPY")
+
+    assert recovered is not None
+    assert recovered.strategy_lifecycle_id == lifecycle.strategy_lifecycle_id
+    assert recovered.direction_state == "BUY"
+
+
+@pytest.mark.asyncio
+async def test_upsert_is_idempotent_on_lifecycle_id(repo):
+    repository, pg = repo
+    lifecycle = _lifecycle()
+
+    await repository.upsert_lifecycle(lifecycle)
+    await repository.upsert_lifecycle(lifecycle.model_copy(update={"event_count": 5}))
+
+    assert len(pg.lifecycles) == 1
+    assert pg.lifecycles[lifecycle.strategy_lifecycle_id]["event_count"] == 5
+
+
+@pytest.mark.asyncio
+async def test_redelivered_event_is_not_linked_twice(repo):
+    repository, pg = repo
+    lifecycle = _lifecycle()
+    await repository.upsert_lifecycle(lifecycle)
+    link = _link(lifecycle)
+
+    assert await repository.link_event(link) is True
+    assert await repository.link_event(link) is False
+    assert len(pg.links) == 1
+
+
+@pytest.mark.asyncio
+async def test_persist_writes_lifecycle_and_link_together(repo):
+    repository, pg = repo
+    lifecycle = _lifecycle()
+
+    inserted = await repository.persist(lifecycle, _link(lifecycle))
+
+    assert inserted is True
+    assert pg.transactions == 1
+    assert len(pg.lifecycles) == 1 and len(pg.links) == 1
+
+
+@pytest.mark.asyncio
+async def test_persist_rolls_back_when_the_link_fails(repo):
+    """A lifecycle whose counters advanced without a link would double-count."""
+    repository, pg = repo
+    pg.fail_link = True
+
+    with pytest.raises(ConnectionError):
+        await repository.persist(_lifecycle(), _link(_lifecycle()))
+
+    assert pg.lifecycles == {}
+    assert pg.links == {}
+
+
+@pytest.mark.asyncio
+async def test_terminal_lifecycle_is_not_recovered_as_active(repo):
+    repository, _pg = repo
+    await repository.upsert_lifecycle(_lifecycle(state="TERMINAL_NO_TRADE"))
+
+    assert await repository.active_lifecycle("CHFJPY") is None
+
+
+@pytest.mark.asyncio
+async def test_transition_pending_is_still_active(repo):
+    repository, _pg = repo
+    lifecycle = _lifecycle(direction="CONFLICT", state="TRANSITION_PENDING")
+    await repository.upsert_lifecycle(lifecycle)
+
+    recovered = await repository.active_lifecycle("CHFJPY")
+
+    assert recovered is not None
+    assert recovered.state == "TRANSITION_PENDING"
+
+
+@pytest.mark.asyncio
+async def test_other_symbols_do_not_leak_into_recovery(repo):
+    repository, _pg = repo
+    await repository.upsert_lifecycle(_lifecycle(symbol="CHFJPY"))
+
+    assert await repository.active_lifecycle("NZDCAD") is None
+
+
+@pytest.mark.asyncio
+async def test_compression_snapshot_contrasts_transport_and_episode(repo):
+    repository, _pg = repo
+    lifecycle = _lifecycle()
+    await repository.upsert_lifecycle(lifecycle)
+    for index in range(9):
+        await repository.link_event(_link(lifecycle, event_id=f"evt-{index}"))
+
+    snapshot = await repository.compression_snapshot()
+
+    assert snapshot["pressure_events_total"] == 9
+    assert snapshot["strategy_lifecycles_v2_total"] == 1
+    assert snapshot["legacy_transport_lifecycles_total"] == 9
+    assert snapshot["lifecycle_v2_compression_ratio"] == pytest.approx(9.0)
+    assert snapshot["legacy_compression_ratio"] == pytest.approx(1.0)
+    assert snapshot["events_without_canonical_anchor_total"] == 9
+
+
+@pytest.mark.asyncio
+async def test_schema_status_reports_missing_when_unavailable():
+    repository = StrategyLifecycleV2Repository(pg=_FakePostgres(available=False))
+
+    status = await repository.schema_status()
+
+    assert LIFECYCLE_TABLE in status["missing_tables"]
+    assert LINK_TABLE in status["missing_tables"]
+
+
+def test_lifecycle_from_row_round_trips():
+    lifecycle = _lifecycle()
+    row = {
+        "strategy_lifecycle_id": lifecycle.strategy_lifecycle_id,
+        "symbol": lifecycle.symbol,
+        "state": lifecycle.state,
+        "direction_state": lifecycle.direction_state,
+        "opened_at": lifecycle.opened_at_utc,
+        "last_event_at": lifecycle.last_event_at_utc,
+        "last_continuity_event_at": lifecycle.last_continuity_event_at_utc,
+        "last_material_event_at": lifecycle.last_material_event_at_utc,
+        "rule_version": lifecycle.rule_version,
+        "material_state_hash": lifecycle.material_state_hash,
+        "event_count": lifecycle.event_count,
+        "clean_block_count": lifecycle.clean_block_count,
+        "watch_count": lifecycle.watch_count,
+    }
+
+    assert lifecycle_from_row(row) == lifecycle
+
+
+def test_persisted_lifecycle_never_claims_execution_authority():
+    assert _lifecycle().execution_authority is False
