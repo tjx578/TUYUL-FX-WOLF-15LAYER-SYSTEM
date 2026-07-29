@@ -133,9 +133,7 @@ class TestFeatureFlagEvaluation:
     def test_rollout_varies_by_context(self, ff):
         """Different context_keys produce different buckets (with high rollout, most are enabled)."""
         ff.set_flag("engine", "gradual", enabled=True, rollout_pct=80)
-        results = [
-            ff.is_enabled("engine", "gradual", context_key=f"ACC-{i:04d}") for i in range(200)
-        ]
+        results = [ff.is_enabled("engine", "gradual", context_key=f"ACC-{i:04d}") for i in range(200)]
         enabled = sum(results)
         # Should be roughly 80% — allow generous margin
         assert 100 < enabled < 200

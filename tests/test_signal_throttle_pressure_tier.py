@@ -393,9 +393,7 @@ def test_pressure_tier_caps_visible_tier_1_and_moves_overflow_to_radar():
 
     assert len(snapshot["tiers"]["tier_1"]) == 2
     assert len(snapshot["tiers"]["tier_1_overflow_radar"]) == 2
-    overflow = [
-        row for row in snapshot["symbols"] if row["effective_pressure_tier"] == TIER_1_OVERFLOW_RADAR
-    ]
+    overflow = [row for row in snapshot["symbols"] if row["effective_pressure_tier"] == TIER_1_OVERFLOW_RADAR]
     assert len(overflow) == 2
     assert all(row["original_effective_pressure_tier"] == TIER_1_PRIMARY_ANALYSIS for row in overflow)
     assert all(row["tier_action"] == "TIER_1_OVERFLOW_RADAR_ONLY" for row in overflow)

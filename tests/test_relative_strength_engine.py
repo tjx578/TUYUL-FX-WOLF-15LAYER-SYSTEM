@@ -18,6 +18,7 @@ from engines.relative_strength_engine import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_candles(closes: list[float]) -> list[dict[str, Any]]:
     """Build a minimal candle list from close prices."""
     return [{"close": c, "open": c, "high": c, "low": c} for c in closes]
@@ -43,6 +44,7 @@ def _make_context_bus(pair_candles: dict[str, list[dict[str, Any]]]) -> MagicMoc
 # ---------------------------------------------------------------------------
 # Tests: _decompose_pair
 # ---------------------------------------------------------------------------
+
 
 class TestDecomposePair:
     def test_valid_major(self) -> None:
@@ -72,18 +74,61 @@ class TestDecomposePair:
 # Tests: _weighted_roc
 # ---------------------------------------------------------------------------
 
+
 class TestWeightedRoc:
     def test_uptrend(self) -> None:
         """Steadily rising closes should produce positive ROC."""
-        closes = [1.0, 1.01, 1.02, 1.03, 1.04, 1.05, 1.06, 1.07, 1.08, 1.09, 1.10,
-                  1.11, 1.12, 1.13, 1.14, 1.15, 1.16, 1.17, 1.18, 1.19, 1.20]
+        closes = [
+            1.0,
+            1.01,
+            1.02,
+            1.03,
+            1.04,
+            1.05,
+            1.06,
+            1.07,
+            1.08,
+            1.09,
+            1.10,
+            1.11,
+            1.12,
+            1.13,
+            1.14,
+            1.15,
+            1.16,
+            1.17,
+            1.18,
+            1.19,
+            1.20,
+        ]
         roc = _weighted_roc(closes)
         assert roc > 0.0
 
     def test_downtrend(self) -> None:
         """Steadily falling closes should produce negative ROC."""
-        closes = [1.20, 1.19, 1.18, 1.17, 1.16, 1.15, 1.14, 1.13, 1.12, 1.11, 1.10,
-                  1.09, 1.08, 1.07, 1.06, 1.05, 1.04, 1.03, 1.02, 1.01, 1.00]
+        closes = [
+            1.20,
+            1.19,
+            1.18,
+            1.17,
+            1.16,
+            1.15,
+            1.14,
+            1.13,
+            1.12,
+            1.11,
+            1.10,
+            1.09,
+            1.08,
+            1.07,
+            1.06,
+            1.05,
+            1.04,
+            1.03,
+            1.02,
+            1.01,
+            1.00,
+        ]
         roc = _weighted_roc(closes)
         assert roc < 0.0
 
@@ -114,6 +159,7 @@ class TestWeightedRoc:
 # ---------------------------------------------------------------------------
 # Tests: RelativeStrengthEngine.analyze
 # ---------------------------------------------------------------------------
+
 
 class TestRelativeStrengthEngine:
     """Integration tests for the full engine."""
@@ -226,9 +272,22 @@ class TestRelativeStrengthEngine:
         }
         many_pairs = {
             pair: self._build_trending_candles(1.0, 0.01)
-            for pair in ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD",
-                         "AUDUSD", "NZDUSD", "EURGBP", "EURJPY", "GBPJPY",
-                         "AUDJPY", "NZDCAD", "CADJPY", "AUDNZD")
+            for pair in (
+                "EURUSD",
+                "GBPUSD",
+                "USDJPY",
+                "USDCHF",
+                "USDCAD",
+                "AUDUSD",
+                "NZDUSD",
+                "EURGBP",
+                "EURJPY",
+                "GBPJPY",
+                "AUDJPY",
+                "NZDCAD",
+                "CADJPY",
+                "AUDNZD",
+            )
         }
 
         rse = RelativeStrengthEngine()
@@ -264,20 +323,25 @@ class TestRelativeStrengthEngine:
         result = CurrencyStrengthResult()
         d = result.to_dict()
         expected_keys = {
-            "currency_scores", "currency_ranks", "base_currency",
-            "quote_currency", "base_strength", "quote_strength",
-            "relative_strength_delta", "alignment", "confidence",
-            "pairs_analyzed", "pairs_available", "errors",
+            "currency_scores",
+            "currency_ranks",
+            "base_currency",
+            "quote_currency",
+            "base_strength",
+            "quote_strength",
+            "relative_strength_delta",
+            "alignment",
+            "confidence",
+            "pairs_analyzed",
+            "pairs_available",
+            "errors",
         }
         assert set(d.keys()) == expected_keys
 
     def test_custom_pair_universe(self) -> None:
         """Engine can be configured with a smaller pair universe."""
         small_universe = ("EURUSD", "GBPUSD", "USDJPY")
-        pair_candles = {
-            pair: _make_candles([1.0 + 0.001 * i for i in range(25)])
-            for pair in small_universe
-        }
+        pair_candles = {pair: _make_candles([1.0 + 0.001 * i for i in range(25)]) for pair in small_universe}
         bus = _make_context_bus(pair_candles)
         rse = RelativeStrengthEngine(pair_universe=small_universe)
         result = rse.analyze(bus, symbol="EURUSD")

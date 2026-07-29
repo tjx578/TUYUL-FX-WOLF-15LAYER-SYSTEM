@@ -12,6 +12,7 @@ Guardrails locked here:
 - never fires when a watch/signal candidate exists, or under cooldown
 - the existing priced NO_TRADE_REASONED path is untouched
 """
+
 from __future__ import annotations
 
 import logging

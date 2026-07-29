@@ -3,6 +3,7 @@
 Production context keeps count/confirmed/supporting patterns; the full matched-pattern
 ledger is debug-only so SignalWatchJSON stays readable.
 """
+
 from __future__ import annotations
 
 from analysis.signal_json_emitter import SignalJsonEvent, build_signal_json_event

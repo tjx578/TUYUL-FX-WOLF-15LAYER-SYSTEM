@@ -5,6 +5,7 @@ direction MUST still emit a SignalWatchJSON (CLEAN_BLOCK_*_WATCH) + a PENDING ma
 the microboost direction is MISSING. An OPPOSITE microboost direction stays a conflict (no fallback).
 Watch-only: final_direction=WAIT, valid_for_execution=false, never a SignalJSON. Threshold unchanged.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

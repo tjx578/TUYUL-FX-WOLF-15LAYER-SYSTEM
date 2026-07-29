@@ -93,8 +93,7 @@ class Strategy5SCRPressureProcessor:
         self._execution_policy = execution_policy or LEGACY_REPLAY_EXECUTION_POLICY
         self._builder = PressureToTradePlanBuilder(execution_policy=self._execution_policy)
         logger.info(
-            "Strategy 5S-CR pressure processor active execution_policy_id={} "
-            "minimum_fx_target_pips={} minimum_rr={}",
+            "Strategy 5S-CR pressure processor active execution_policy_id={} minimum_fx_target_pips={} minimum_rr={}",
             self._execution_policy.policy_id,
             self._execution_policy.minimum_fx_target_pips,
             self._execution_policy.minimum_rr,

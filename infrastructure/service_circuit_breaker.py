@@ -151,9 +151,7 @@ class ServiceCircuitBreaker:
             last_failure_at=datetime.fromtimestamp(self._last_failure_at, tz=UTC).isoformat()
             if self._last_failure_at
             else None,
-            opened_at=datetime.fromtimestamp(self._opened_at, tz=UTC).isoformat()
-            if self._opened_at
-            else None,
+            opened_at=datetime.fromtimestamp(self._opened_at, tz=UTC).isoformat() if self._opened_at else None,
             reason=self._reason,
             updated_at=datetime.now(UTC).isoformat(),
         )
@@ -256,7 +254,9 @@ class ServiceCircuitBreaker:
                 return
             data = json.loads(raw if isinstance(raw, str) else raw.decode())
             state_str = data.get("state", "CLOSED")
-            self._state = ServiceCBState(state_str) if state_str in ServiceCBState.__members__ else ServiceCBState.CLOSED
+            self._state = (
+                ServiceCBState(state_str) if state_str in ServiceCBState.__members__ else ServiceCBState.CLOSED
+            )
             self._failure_count = data.get("failure_count", 0)
             self._success_count = data.get("success_count", 0)
             self._reason = data.get("reason", "")

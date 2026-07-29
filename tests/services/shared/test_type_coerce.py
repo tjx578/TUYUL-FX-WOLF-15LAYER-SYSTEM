@@ -8,14 +8,17 @@ from services.shared.type_coerce import to_bool, to_float, to_int
 
 
 class TestToFloat:
-    @pytest.mark.parametrize("value, expected", [
-        (1, 1.0),
-        (0, 0.0),
-        (3.14, 3.14),
-        ("2.5", 2.5),
-        ("-1.0", -1.0),
-        ("0", 0.0),
-    ])
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (1, 1.0),
+            (0, 0.0),
+            (3.14, 3.14),
+            ("2.5", 2.5),
+            ("-1.0", -1.0),
+            ("0", 0.0),
+        ],
+    )
     def test_valid(self, value: object, expected: float) -> None:
         assert to_float(value) == expected
 
@@ -28,14 +31,17 @@ class TestToFloat:
 
 
 class TestToInt:
-    @pytest.mark.parametrize("value, expected", [
-        (5, 5),
-        (3.9, 3),
-        ("7", 7),
-        ("3.5", 3),
-        (True, 1),
-        (False, 0),
-    ])
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (5, 5),
+            (3.9, 3),
+            ("7", 7),
+            ("3.5", 3),
+            (True, 1),
+            (False, 0),
+        ],
+    )
     def test_valid(self, value: object, expected: int) -> None:
         assert to_int(value) == expected
 

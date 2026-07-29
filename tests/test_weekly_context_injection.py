@@ -10,6 +10,7 @@ from analysis.layers.L4_session_scoring import L4ScoringEngine, L4SessionScoring
 # Helper builders
 # ---------------------------------------------------------------------------
 
+
 def _l1(bias: str = "BULLISH", confidence: float = 0.8) -> dict[str, Any]:
     return {
         "bias": bias,
@@ -63,8 +64,8 @@ def _macro_context(
 # Tests: L4SessionScoring macro narrative
 # ---------------------------------------------------------------------------
 
-class TestL4MacroNarrative:
 
+class TestL4MacroNarrative:
     def test_no_macro_context_returns_unavailable(self) -> None:
         """Without macro injection, macro_narrative.available is False."""
         engine = L4SessionScoring()
@@ -77,10 +78,12 @@ class TestL4MacroNarrative:
     def test_macro_context_available_after_injection(self) -> None:
         """After set_macro_context(), macro_narrative is available."""
         engine = L4SessionScoring()
-        engine.set_macro_context(_macro_context(
-            weekly_bias={"EUR": "BULLISH", "USD": "BEARISH"},
-            risk_sentiment="RISK_ON",
-        ))
+        engine.set_macro_context(
+            _macro_context(
+                weekly_bias={"EUR": "BULLISH", "USD": "BEARISH"},
+                risk_sentiment="RISK_ON",
+            )
+        )
         result = engine.analyze(l1=_l1(), l2=_l2(), l3=_l3(), pair="EURUSD")
         mn = result["macro_narrative"]
         assert mn["available"] is True
@@ -89,36 +92,44 @@ class TestL4MacroNarrative:
     def test_aligned_buy_when_base_bullish_quote_bearish(self) -> None:
         """Base BULLISH + Quote BEARISH → ALIGNED_BUY."""
         engine = L4SessionScoring()
-        engine.set_macro_context(_macro_context(
-            weekly_bias={"EUR": "BULLISH", "USD": "BEARISH"},
-        ))
+        engine.set_macro_context(
+            _macro_context(
+                weekly_bias={"EUR": "BULLISH", "USD": "BEARISH"},
+            )
+        )
         result = engine.analyze(l1=_l1(), l2=_l2(), l3=_l3(), pair="EURUSD")
         assert result["macro_narrative"]["bias_alignment"] == "ALIGNED_BUY"
 
     def test_aligned_sell_when_base_bearish_quote_bullish(self) -> None:
         """Base BEARISH + Quote BULLISH → ALIGNED_SELL."""
         engine = L4SessionScoring()
-        engine.set_macro_context(_macro_context(
-            weekly_bias={"NZD": "BEARISH", "CAD": "BULLISH"},
-        ))
+        engine.set_macro_context(
+            _macro_context(
+                weekly_bias={"NZD": "BEARISH", "CAD": "BULLISH"},
+            )
+        )
         result = engine.analyze(l1=_l1(), l2=_l2(), l3=_l3(), pair="NZDCAD")
         assert result["macro_narrative"]["bias_alignment"] == "ALIGNED_SELL"
 
     def test_neutral_when_same_bias(self) -> None:
         """Both currencies same bias → NEUTRAL."""
         engine = L4SessionScoring()
-        engine.set_macro_context(_macro_context(
-            weekly_bias={"GBP": "BULLISH", "JPY": "BULLISH"},
-        ))
+        engine.set_macro_context(
+            _macro_context(
+                weekly_bias={"GBP": "BULLISH", "JPY": "BULLISH"},
+            )
+        )
         result = engine.analyze(l1=_l1(), l2=_l2(), l3=_l3(), pair="GBPJPY")
         assert result["macro_narrative"]["bias_alignment"] == "NEUTRAL"
 
     def test_mixed_when_partial_bias(self) -> None:
         """One BULLISH, one NEUTRAL → MIXED."""
         engine = L4SessionScoring()
-        engine.set_macro_context(_macro_context(
-            weekly_bias={"AUD": "BULLISH", "USD": "NEUTRAL"},
-        ))
+        engine.set_macro_context(
+            _macro_context(
+                weekly_bias={"AUD": "BULLISH", "USD": "NEUTRAL"},
+            )
+        )
         result = engine.analyze(l1=_l1(), l2=_l2(), l3=_l3(), pair="AUDUSD")
         assert result["macro_narrative"]["bias_alignment"] == "MIXED"
 
@@ -147,10 +158,12 @@ class TestL4MacroNarrative:
         wolf_no = result_no_macro["wolf_30_point"]["total"]
 
         # With macro
-        engine.set_macro_context(_macro_context(
-            weekly_bias={"EUR": "BULLISH", "USD": "BEARISH"},
-            risk_sentiment="RISK_ON",
-        ))
+        engine.set_macro_context(
+            _macro_context(
+                weekly_bias={"EUR": "BULLISH", "USD": "BEARISH"},
+                risk_sentiment="RISK_ON",
+            )
+        )
         result_macro = engine.analyze(l1=_l1(), l2=_l2(), l3=_l3(), pair="EURUSD")
         wolf_macro = result_macro["wolf_30_point"]["total"]
 
@@ -168,16 +181,19 @@ class TestL4MacroNarrative:
 # Tests: L4ScoringEngine wrapper propagation
 # ---------------------------------------------------------------------------
 
-class TestL4ScoringEngineWrapper:
 
+class TestL4ScoringEngineWrapper:
     def test_set_macro_context_propagates(self) -> None:
         """L4ScoringEngine.set_macro_context() reaches inner engine."""
         wrapper = L4ScoringEngine()
-        wrapper.set_macro_context(_macro_context(
-            weekly_bias={"EUR": "BULLISH", "USD": "BEARISH"},
-        ))
+        wrapper.set_macro_context(
+            _macro_context(
+                weekly_bias={"EUR": "BULLISH", "USD": "BEARISH"},
+            )
+        )
         assert wrapper._inner._macro_context.get("weekly_bias") == {
-            "EUR": "BULLISH", "USD": "BEARISH",
+            "EUR": "BULLISH",
+            "USD": "BEARISH",
         }
 
 
@@ -185,8 +201,8 @@ class TestL4ScoringEngineWrapper:
 # Tests: LiveContextBus macro narrative storage
 # ---------------------------------------------------------------------------
 
-class TestLiveContextBusMacroNarrative:
 
+class TestLiveContextBusMacroNarrative:
     def _make_bus(self) -> Any:
         """Create a fresh LiveContextBus instance (bypassing singleton)."""
         from context.live_context_bus import LiveContextBus

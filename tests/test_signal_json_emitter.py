@@ -1138,9 +1138,15 @@ def test_chfjpy_reference_pattern_emits_as_universal_context_not_pair_lock(caplo
     assert '"reference_cases":[{"symbol":"CHFJPY"' in caplog.text
     assert '"pair_calibration":{"symbol":"EURJPY"' in caplog.text
     assert '"pair_specific_logic_locked":false' in caplog.text
-    assert '"pair_specific_calibration":["JPY_BASKET_MEMBER_REFERENCE","MFE_MAE_VALIDATION_REQUIRED","NOT_PAIR_LOCKED"]' in caplog.text
+    assert (
+        '"pair_specific_calibration":["JPY_BASKET_MEMBER_REFERENCE","MFE_MAE_VALIDATION_REQUIRED","NOT_PAIR_LOCKED"]'
+        in caplog.text
+    )
     assert '"pattern_context":{"selected_pattern_id":"JPY_BASKET_THEME_FOLLOWTHROUGH"' in caplog.text
-    assert '"pattern_bottlenecks":["PATTERN_CONTEXT_ONLY_NOT_FINAL_SIGNAL","THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER"]' in caplog.text
+    assert (
+        '"pattern_bottlenecks":["PATTERN_CONTEXT_ONLY_NOT_FINAL_SIGNAL","THEME_FOLLOWTHROUGH_REQUIRES_OWN_TRIGGER"]'
+        in caplog.text
+    )
     assert '"golden_references"' not in caplog.text
     assert '"pair_role"' not in caplog.text
 

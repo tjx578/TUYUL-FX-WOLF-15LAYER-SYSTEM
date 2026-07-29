@@ -76,7 +76,9 @@ def label_outcome(
     )
     close_delta_pips = _first_float(_get(event, "forward_close_delta_pips"), _get(event, "close_delta_pips"))
 
-    future_high = _first_float(_get(event, "future_high"), _get(event, "high_after_signal"), _get(event, "forward_high"))
+    future_high = _first_float(
+        _get(event, "future_high"), _get(event, "high_after_signal"), _get(event, "forward_high")
+    )
     future_low = _first_float(_get(event, "future_low"), _get(event, "low_after_signal"), _get(event, "forward_low"))
     future_close = _first_float(
         _get(event, "future_close"),
@@ -157,11 +159,7 @@ def summarize_outcome_memory(
         "min_samples_for_memory": int(min_samples_for_memory),
         "lookback": int(lookback),
         "by_symbol_direction": by_symbol_direction,
-        "recent_failures": [
-            record.to_dict()
-            for record in records
-            if record.outcome in FAILURE_OUTCOMES
-        ][-10:],
+        "recent_failures": [record.to_dict() for record in records if record.outcome in FAILURE_OUTCOMES][-10:],
     }
 
 

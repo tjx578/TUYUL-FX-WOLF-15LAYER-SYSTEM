@@ -950,7 +950,7 @@ def _normalized_pending_decision_id(symbol: str, raw: str, cluster_id: str | Non
     text = str(raw or "").upper()
     duplicate_prefix = f"{normalized_symbol}_{normalized_symbol}_"
     if normalized_symbol and text.startswith(duplicate_prefix):
-        text = f"{normalized_symbol}_{text[len(duplicate_prefix):]}"
+        text = f"{normalized_symbol}_{text[len(duplicate_prefix) :]}"
     if text.endswith("_M15_DECISION"):
         return text
     if normalized_symbol and text.startswith(f"{normalized_symbol}_"):

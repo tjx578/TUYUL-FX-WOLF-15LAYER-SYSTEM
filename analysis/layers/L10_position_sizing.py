@@ -671,7 +671,8 @@ class L10PositionAnalyzer:
 
             raw_result["constitutional"] = envelope
             raw_result["continuation_allowed"] = envelope.get(
-                "continuation_allowed", True,
+                "continuation_allowed",
+                True,
             )
 
             status = envelope.get("status", "PASS")

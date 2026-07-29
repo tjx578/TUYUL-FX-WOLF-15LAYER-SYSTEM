@@ -16,6 +16,7 @@ Strict guardrails (this is a live trading verdict path):
 - opposite direction is carried by counter_scenario/counter_watch_direction only
 - ``latest["direction"]`` is never overwritten
 """
+
 from __future__ import annotations
 
 from typing import Any

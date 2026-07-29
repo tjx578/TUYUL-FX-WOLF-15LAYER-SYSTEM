@@ -12,6 +12,7 @@ it, it must keep producing these directional watches. See the direction-propagat
 regression (Jun 8-9) where blocks reached the engine directionless and collapsed to
 raw_direction_missing MICROBOOST_WATCH fallbacks.
 """
+
 from __future__ import annotations
 
 from analysis.microboost_counter_entry import MicroboostCounterEntryEngine

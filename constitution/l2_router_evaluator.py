@@ -179,7 +179,9 @@ class L2RouterEvaluator:
         return deduped
 
     @staticmethod
-    def _confidence_penalty(payload: L2Input, band: CoherenceBand, partial_coverage: bool, blockers: list[BlockerCode]) -> float:
+    def _confidence_penalty(
+        payload: L2Input, band: CoherenceBand, partial_coverage: bool, blockers: list[BlockerCode]
+    ) -> float:
         if blockers:
             return 1.0
 
@@ -243,7 +245,8 @@ class L2RouterEvaluator:
                 and payload.hierarchy_followed
                 and payload.aligned
                 and not partial_coverage
-                and payload.fallback_class in (
+                and payload.fallback_class
+                in (
                     FallbackClass.NO_FALLBACK,
                     FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
                 )
@@ -359,7 +362,9 @@ def build_l2_input_from_dict(payload: dict[str, Any]) -> L2Input:
         timestamp=str(payload["timestamp"]),
         structure_sources_used=[str(x) for x in payload["structure_sources_used"]],
         required_timeframes=[str(x) for x in payload["required_timeframes"]],
-        coverage_target_timeframes=[str(x) for x in payload.get("coverage_target_timeframes", payload["required_timeframes"])],
+        coverage_target_timeframes=[
+            str(x) for x in payload.get("coverage_target_timeframes", payload["required_timeframes"])
+        ],
         available_timeframes=[str(x) for x in payload["available_timeframes"]],
         alignment_score=float(payload["alignment_score"]),
         hierarchy_followed=bool(payload["hierarchy_followed"]),

@@ -22,9 +22,11 @@ def test_pressure_canary_alone_does_not_auto_promote_to_microboost():
     # Pressure tercatat sebagai radar...
     assert report["counts"]["total_events"] == 3
     # ...tetapi TIDAK auto-promote ke entry microboost yang executable.
-    assert report.get("microboost_continuation_entry") in (None, {}) or report[
-        "microboost_continuation_entry"
-    ].get("status") == "NONE"
-    assert report.get("microboost_counter_entry") in (None, {}) or report["microboost_counter_entry"].get(
-        "status"
-    ) == "NONE"
+    assert (
+        report.get("microboost_continuation_entry") in (None, {})
+        or report["microboost_continuation_entry"].get("status") == "NONE"
+    )
+    assert (
+        report.get("microboost_counter_entry") in (None, {})
+        or report["microboost_counter_entry"].get("status") == "NONE"
+    )

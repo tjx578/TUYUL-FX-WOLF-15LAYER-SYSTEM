@@ -922,4 +922,3 @@ class TestIsForexMarketOpen:
         dt = base_monday.replace(day=5 + dow, hour=hour, minute=0, second=0)
         assert dt.weekday() == dow
         assert is_forex_market_open(dt) is expected
-

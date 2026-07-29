@@ -12,6 +12,7 @@ duplicate EMIT; the first watch and any material change always pass, decision
 updates / final signals are never touched, and finalizer lifecycle tracking is
 unaffected (the first watch already established the pending decision).
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -96,12 +97,14 @@ def test_identical_material_is_duplicate():
 def test_setup_change_is_not_duplicate():
     """Guardrail #6 — a setup transition re-emits."""
     em = _fresh_emitter()
-    assert em._is_cluster_watch_duplicate(
-        _watch_payload(tradeplan_preview={"setup_type": "SELL_REJECTION_WATCH"})
-    ) is False
-    assert em._is_cluster_watch_duplicate(
-        _watch_payload(tradeplan_preview={"setup_type": "SELL_BREAKDOWN_WATCH"})
-    ) is False
+    assert (
+        em._is_cluster_watch_duplicate(_watch_payload(tradeplan_preview={"setup_type": "SELL_REJECTION_WATCH"}))
+        is False
+    )
+    assert (
+        em._is_cluster_watch_duplicate(_watch_payload(tradeplan_preview={"setup_type": "SELL_BREAKDOWN_WATCH"}))
+        is False
+    )
 
 
 def test_direction_change_is_not_duplicate():

@@ -176,7 +176,8 @@ def score_signal_throttle_followthrough(
         "late_move_penalty": round(late_penalty, 2),
         "microboost_penalty": round(microboost_penalty, 2),
         "htf_daily_bias": _text(_field(market_context, "htf_daily_bias") or _field(market_context, "d1_phase")) or None,
-        "htf_h4_structure": _text(_field(market_context, "htf_h4_structure") or _field(market_context, "h4_phase")) or None,
+        "htf_h4_structure": _text(_field(market_context, "htf_h4_structure") or _field(market_context, "h4_phase"))
+        or None,
         "htf_price_location": _text(_field(market_context, "htf_price_location")) or None,
         "htf_allowed_playbook": _text(_field(market_context, "htf_allowed_playbook")) or None,
         "htf_blocked_playbook": _string_list(_field(market_context, "htf_blocked_playbook")) or None,
@@ -200,7 +201,8 @@ def score_signal_throttle_followthrough(
         pre_move_pips=room["pre_move_pips"],
         structure_alignment_score=round(structure_score, 2),
         htf_daily_bias=_text(_field(market_context, "htf_daily_bias") or _field(market_context, "d1_phase")) or None,
-        htf_h4_structure=_text(_field(market_context, "htf_h4_structure") or _field(market_context, "h4_phase")) or None,
+        htf_h4_structure=_text(_field(market_context, "htf_h4_structure") or _field(market_context, "h4_phase"))
+        or None,
         htf_price_location=_text(_field(market_context, "htf_price_location")) or None,
         htf_allowed_playbook=_text(_field(market_context, "htf_allowed_playbook")) or None,
         htf_blocked_playbook=_string_list(_field(market_context, "htf_blocked_playbook")) or None,
@@ -308,11 +310,14 @@ def _compact_score(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _display_line(rows: Sequence[Mapping[str, Any]], *, total: int) -> str:
-    labels = ", ".join(
-        f"{row.get('symbol')}:{row.get('direction') or 'WAIT'}:{row.get('followthrough_score')}"
-        f":{row.get('followthrough_bucket')}"
-        for row in rows
-    ) or "-"
+    labels = (
+        ", ".join(
+            f"{row.get('symbol')}:{row.get('direction') or 'WAIT'}:{row.get('followthrough_score')}"
+            f":{row.get('followthrough_bucket')}"
+            for row in rows
+        )
+        or "-"
+    )
     return f"followthrough_scores total={total} top={len(rows)}[{labels}] execution_impact=false"
 
 
@@ -576,7 +581,9 @@ def _microboost_role(
     return "MICROBOOST_CONTEXT_PRESENT", 4.0, ["MICROBOOST_CONTEXT_PRESENT"], [], 0.0
 
 
-def _late_move_penalty(*, direction: str | None, context: Any | None, room: Mapping[str, Any]) -> tuple[float, list[str]]:
+def _late_move_penalty(
+    *, direction: str | None, context: Any | None, room: Mapping[str, Any]
+) -> tuple[float, list[str]]:
     if context is None:
         return 0.0, []
     price_position = _text(_field(context, "price_position")).upper()
@@ -671,7 +678,9 @@ def _microboost_for_symbol(summary: Mapping[str, Any] | None, symbol: str) -> Ma
         return latest
     blocks = summary.get("blocks")
     if isinstance(blocks, Sequence):
-        matches = [block for block in blocks if isinstance(block, Mapping) and str(block.get("symbol") or "").upper() == symbol]
+        matches = [
+            block for block in blocks if isinstance(block, Mapping) and str(block.get("symbol") or "").upper() == symbol
+        ]
         if matches:
             return matches[-1]
     return None

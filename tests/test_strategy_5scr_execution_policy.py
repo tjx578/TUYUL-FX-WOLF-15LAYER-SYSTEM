@@ -190,6 +190,4 @@ def test_fx_floor_differs_across_policies():
 
 def test_assess_target_rejects_non_positive_pip_size():
     with pytest.raises(ValueError, match="pip_size must be positive"):
-        FX_MIN_TARGET_10P_V1.assess_target(
-            "CHFJPY", target_distance_price=0.1, pip_size=0.0, spread_price=0.001
-        )
+        FX_MIN_TARGET_10P_V1.assess_target("CHFJPY", target_distance_price=0.1, pip_size=0.0, spread_price=0.001)

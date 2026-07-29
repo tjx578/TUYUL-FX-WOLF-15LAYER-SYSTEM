@@ -49,8 +49,12 @@ def enrich_signal_json_payload(payload: dict[str, Any]) -> dict[str, Any]:
     tp1 = _rr_target(direction, entry, selected_sl, TP1_RR_FLOOR)
 
     zones = dict(enriched["structure_zones"])
-    key_resistance = _first_float(zones.get("key_resistance"), enriched.get("key_resistance"), enriched.get("breakout_reclaim_level"))
-    key_support = _first_float(zones.get("key_support"), enriched.get("key_support"), enriched.get("support_reclaim_level"))
+    key_resistance = _first_float(
+        zones.get("key_resistance"), enriched.get("key_resistance"), enriched.get("breakout_reclaim_level")
+    )
+    key_support = _first_float(
+        zones.get("key_support"), enriched.get("key_support"), enriched.get("support_reclaim_level")
+    )
     zones.update(
         {
             "price_position": enriched.get("price_position"),
@@ -178,9 +182,7 @@ def _normalize_nested_output(payload: dict[str, Any]) -> None:
     payload["structure_zones"] = (
         dict(payload["structure_zones"]) if isinstance(payload.get("structure_zones"), dict) else {}
     )
-    payload["risk_reward"] = (
-        dict(payload["risk_reward"]) if isinstance(payload.get("risk_reward"), dict) else {}
-    )
+    payload["risk_reward"] = dict(payload["risk_reward"]) if isinstance(payload.get("risk_reward"), dict) else {}
     payload["invalidation_rules"] = (
         dict(payload["invalidation_rules"]) if isinstance(payload.get("invalidation_rules"), dict) else {}
     )
@@ -190,9 +192,7 @@ def _normalize_nested_output(payload: dict[str, Any]) -> None:
     payload["phase_coherence"] = (
         dict(payload["phase_coherence"]) if isinstance(payload.get("phase_coherence"), dict) else {}
     )
-    payload["signal_expiry"] = (
-        dict(payload["signal_expiry"]) if isinstance(payload.get("signal_expiry"), dict) else {}
-    )
+    payload["signal_expiry"] = dict(payload["signal_expiry"]) if isinstance(payload.get("signal_expiry"), dict) else {}
     payload["audit_block_reasons"] = (
         [str(reason) for reason in payload["audit_block_reasons"]]
         if isinstance(payload.get("audit_block_reasons"), list)
@@ -232,9 +232,7 @@ def _targets(
                     candidates.append(level)
     else:
         candidates.extend(
-            level
-            for key in ("tp1", "tp2", "tp3", "tp4")
-            if (level := _optional_float(payload.get(key))) is not None
+            level for key in ("tp1", "tp2", "tp3", "tp4") if (level := _optional_float(payload.get(key))) is not None
         )
     for level in sorted(set(candidates), reverse=direction == "SELL"):
         rr = _rr(direction, entry, selected_sl, level)
@@ -258,7 +256,9 @@ def _phase_coherence(payload: dict[str, Any], direction: str) -> dict[str, Any]:
     m15 = existing.get("m15") or payload.get("m15_phase")
     h1 = existing.get("h1") or payload.get("h1_phase")
     aligned = _phase_direction(m15) == direction and _phase_direction(h1) == direction
-    existing.update({"m15": m15, "h1": h1, "status": "EXECUTION_COMPATIBLE" if aligned else "EXECUTION_REVIEW_REQUIRED"})
+    existing.update(
+        {"m15": m15, "h1": h1, "status": "EXECUTION_COMPATIBLE" if aligned else "EXECUTION_REVIEW_REQUIRED"}
+    )
     return existing
 
 

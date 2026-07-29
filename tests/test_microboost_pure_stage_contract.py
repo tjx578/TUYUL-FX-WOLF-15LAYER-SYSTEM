@@ -156,9 +156,7 @@ def test_clean_block_gate_required():
     ],
 )
 def test_core_event_never_executable(phase_priced):
-    event = to_microboost_core_event(
-        {"symbol": "USDCAD", "direction": "BUY", "phase_priced": phase_priced}
-    )
+    event = to_microboost_core_event({"symbol": "USDCAD", "direction": "BUY", "phase_priced": phase_priced})
     assert event["valid_for_execution"] is False
     assert event["direction"] == "UNRESOLVED"
     assert event["next_stage"] == "SIGNAL_WATCH"

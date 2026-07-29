@@ -88,7 +88,11 @@ def _base_upstream(l7_layer: dict, l8_layer: dict, l9_layer: dict, *, phase3_sta
         "phase4_result": {
             "chain_status": "PASS",
             "summary_status": {"L11": "PASS", "L6": "PASS", "L10": "PASS"},
-            "layer_results": {"L11": {"score_numeric": 0.85}, "L6": {"score_numeric": 0.90}, "L10": {"score_numeric": 0.80}},
+            "layer_results": {
+                "L11": {"score_numeric": 0.85},
+                "L6": {"score_numeric": 0.90},
+                "L10": {"score_numeric": 0.80},
+            },
         },
         "upstream_result": {
             "upstream_result": {

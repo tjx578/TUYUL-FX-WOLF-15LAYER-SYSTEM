@@ -304,7 +304,8 @@ class TestPipelineDecomposition:
 
     def test_pipeline_methods_exist(self):
         coord = OrchestratorCoordinator(
-            take_signal_service=AsyncMock(), risk_firewall=AsyncMock(),
+            take_signal_service=AsyncMock(),
+            risk_firewall=AsyncMock(),
         )
         assert callable(getattr(coord, "_validate_take", None))
         assert callable(getattr(coord, "_evaluate_firewall", None))
@@ -317,7 +318,11 @@ class TestPipelineDecomposition:
         import textwrap
 
         source = inspect.getsource(OrchestratorCoordinator.process_take_signal)
-        lines = [l for l in textwrap.dedent(source).splitlines() if l.strip() and not l.strip().startswith(("#", '"""', "\'\'\'"))]  # noqa: E741
+        lines = [
+            line
+            for line in textwrap.dedent(source).splitlines()
+            if line.strip() and not line.strip().startswith(("#", '"""', "'''"))
+        ]
         assert len(lines) <= 30, f"process_take_signal still too long: {len(lines)} lines"
 
     async def test_validate_take_not_found(self, coordinator, mock_take_service):
@@ -331,9 +336,14 @@ class TestPipelineDecomposition:
         from execution.take_signal_models import TakeSignalResponse, TakeSignalStatus
 
         resp = TakeSignalResponse(
-            take_id="t", request_id="r", signal_id="s", account_id="a",
-            ea_instance_id="e", status=TakeSignalStatus.EXECUTED,
-            created_at="x", updated_at="x",
+            take_id="t",
+            request_id="r",
+            signal_id="s",
+            account_id="a",
+            ea_instance_id="e",
+            status=TakeSignalStatus.EXECUTED,
+            created_at="x",
+            updated_at="x",
         )
         mock_take_service.get.return_value = resp
         result = await coordinator._validate_take("t")
@@ -341,7 +351,10 @@ class TestPipelineDecomposition:
         assert result.verdict == "NOOP"
 
     async def test_validate_take_pending_returns_response(
-        self, coordinator, mock_take_service, pending_take_response,
+        self,
+        coordinator,
+        mock_take_service,
+        pending_take_response,
     ):
         mock_take_service.get.return_value = pending_take_response
         result = await coordinator._validate_take("take_001")
@@ -349,7 +362,9 @@ class TestPipelineDecomposition:
         assert result.signal_id == "SIG-001"
 
     async def test_evaluate_firewall_error_returns_result(
-        self, coordinator, mock_firewall,
+        self,
+        coordinator,
+        mock_firewall,
     ):
         mock_firewall.evaluate.side_effect = RuntimeError("boom")
         result = await coordinator._evaluate_firewall("t", {}, {})
@@ -358,7 +373,10 @@ class TestPipelineDecomposition:
         assert "Firewall error" in result.reason
 
     async def test_evaluate_firewall_success_returns_fw_result(
-        self, coordinator, mock_firewall, approved_firewall_result,
+        self,
+        coordinator,
+        mock_firewall,
+        approved_firewall_result,
     ):
         mock_firewall.evaluate.return_value = approved_firewall_result
         result = await coordinator._evaluate_firewall("t", {}, {})
@@ -366,7 +384,9 @@ class TestPipelineDecomposition:
         assert result.firewall_id == "fw_001"
 
     async def test_handle_rejection(
-        self, coordinator, rejected_firewall_result,
+        self,
+        coordinator,
+        rejected_firewall_result,
     ):
         result = await coordinator._handle_rejection("take_001", rejected_firewall_result)
         assert isinstance(result, OrchestrationResult)

@@ -142,9 +142,7 @@ class _Observation:
     def __init__(self, payload: Mapping[str, Any], *, fallback_time: datetime | None) -> None:
         self.detected = bool(payload.get("microboost_detected"))
         self.direction = _direction(
-            payload.get("block_direction")
-            or payload.get("raw_direction")
-            or payload.get("candidate_direction")
+            payload.get("block_direction") or payload.get("raw_direction") or payload.get("candidate_direction")
         )
         occurred = (
             _parse_datetime(payload.get("block_latest_end_utc"))
@@ -406,9 +404,7 @@ class MicroboostPulseEngine:
                 "observed_snapshot_count": state.observed_snapshot_count + 1,
             }
         )
-        if STRENGTH_RANK.get((strength or "").upper(), 0) >= STRENGTH_RANK.get(
-            (state.peak_strength or "").upper(), 0
-        ):
+        if STRENGTH_RANK.get((strength or "").upper(), 0) >= STRENGTH_RANK.get((state.peak_strength or "").upper(), 0):
             updates["peak_strength"] = strength
 
         if transition == "FORMED":

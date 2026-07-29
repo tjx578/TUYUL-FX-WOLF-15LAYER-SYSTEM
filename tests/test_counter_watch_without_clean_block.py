@@ -8,6 +8,7 @@ throttle-block candidate, surfacing MICROBOOST_COUNTER_ENTRY / EARLY_SELL_WATCH
 the vetted ignition-watch thresholds (>=18s, >=5 ticks, density >=8); sub-18s noise
 is intentionally NOT promoted.
 """
+
 from __future__ import annotations
 
 from typing import Any

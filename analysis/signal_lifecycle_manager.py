@@ -54,9 +54,7 @@ ACTIVE_LIFECYCLE_STATUSES = frozenset(
     | {f"ACTIVE_{direction}_REVERSED_TO_{OPPOSITE_DIRECTION[direction]}_WATCH" for direction in ("BUY", "SELL")}
 )
 
-_PROTECT_PROFIT_PHASES = frozenset(
-    {"EXHAUSTION_AT_RESISTANCE", "EXHAUSTION_AT_SUPPORT", "LATE_DENSE_PRESSURE"}
-)
+_PROTECT_PROFIT_PHASES = frozenset({"EXHAUSTION_AT_RESISTANCE", "EXHAUSTION_AT_SUPPORT", "LATE_DENSE_PRESSURE"})
 
 
 @dataclass(frozen=True)
@@ -562,8 +560,10 @@ def _is_opposite_setup_valid_not_executable(payload: dict[str, Any], opposite: s
         return False
     status = str(payload.get("status") or "").upper()
     rr_status = str(payload.get("rr_status") or "").upper()
-    return status.endswith("_VALID") or rr_status in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"} or _truthy(
-        payload.get("tradeplan_valid")
+    return (
+        status.endswith("_VALID")
+        or rr_status in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}
+        or _truthy(payload.get("tradeplan_valid"))
     )
 
 
@@ -617,7 +617,9 @@ def payload_signal_direction(payload: dict[str, Any]) -> str | None:
     return _direction(payload)
 
 
-def build_lifecycle_preview(active_signal_direction: str | None, counter_payload: dict[str, Any]) -> dict[str, Any] | None:
+def build_lifecycle_preview(
+    active_signal_direction: str | None, counter_payload: dict[str, Any]
+) -> dict[str, Any] | None:
     """Pure shadow preview: what the active-signal lifecycle WOULD say. ``live_applied``
     is always False — this never changes a live decision or marks anything executable."""
     active = str(active_signal_direction or "").upper()

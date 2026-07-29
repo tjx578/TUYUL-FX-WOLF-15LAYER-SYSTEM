@@ -8,6 +8,7 @@ materially changes. Default OFF -> behavior unchanged.
 The tests neutralize the other two dedup layers (transition state + TTL key store)
 between emits so only the content-dedup can suppress, isolating Increment B.
 """
+
 from __future__ import annotations
 
 from analysis.signal_json_emitter import SignalJsonEmitter, SignalJsonEvent, build_signal_json_event

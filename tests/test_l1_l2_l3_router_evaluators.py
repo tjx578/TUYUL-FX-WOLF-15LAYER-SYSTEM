@@ -235,9 +235,19 @@ class TestL1RouterEvaluator:
     def test_to_dict_contains_required_keys(self):
         ev = L1RouterEvaluator()
         d = ev.evaluate(self._clean_pass_input()).to_dict()
-        for key in ("layer", "layer_version", "status", "continuation_allowed",
-                     "blocker_codes", "warning_codes", "coherence_band",
-                     "coherence_score", "features", "routing", "audit"):
+        for key in (
+            "layer",
+            "layer_version",
+            "status",
+            "continuation_allowed",
+            "blocker_codes",
+            "warning_codes",
+            "coherence_band",
+            "coherence_score",
+            "features",
+            "routing",
+            "audit",
+        ):
             assert key in d
 
     def test_build_from_dict(self):

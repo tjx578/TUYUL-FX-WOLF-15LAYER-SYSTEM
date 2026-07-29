@@ -140,8 +140,7 @@ def emit_signal_throttle_fusion_v3_diagnostic(
     data["signal_valid"] = False
     data["advisory_only"] = True
     logging.getLogger(
-        logger_name
-        or os.getenv("SIGNAL_THROTTLE_FUSION_V3_LOGGER", DEFAULT_SIGNAL_THROTTLE_FUSION_V3_LOGGER)
+        logger_name or os.getenv("SIGNAL_THROTTLE_FUSION_V3_LOGGER", DEFAULT_SIGNAL_THROTTLE_FUSION_V3_LOGGER)
     ).warning(
         "%s %s",
         prefix or os.getenv("SIGNAL_THROTTLE_FUSION_V3_LOG_PREFIX", DEFAULT_SIGNAL_THROTTLE_FUSION_V3_PREFIX),
@@ -170,7 +169,11 @@ def _route_status(
     if not execution_ready:
         next_stage = "SIGNAL_WATCH" if microboost_detected else "WAIT_MICROBOOST_OR_STRUCTURE"
         return ("CLEAN_BLOCK_WATCH_PENDING_STRUCTURE", "execution_context_not_ready", next_stage)
-    return ("CLEAN_BLOCK_WATCH_PENDING_EXECUTION_FIREWALL", "execution_context_ready_but_firewall_required", "SIGNALJSON_GATE")
+    return (
+        "CLEAN_BLOCK_WATCH_PENDING_EXECUTION_FIREWALL",
+        "execution_context_ready_but_firewall_required",
+        "SIGNALJSON_GATE",
+    )
 
 
 def _direction_conflict(raw_direction: str, validation: Mapping[str, Any] | None) -> bool:
@@ -212,7 +215,10 @@ def _market_structure_status(
         return "CONFLICT"
     if execution_ready:
         return "ALIGNED"
-    if isinstance(execution_context_validation, Mapping) and execution_context_validation.get("requires_market_context") is False:
+    if (
+        isinstance(execution_context_validation, Mapping)
+        and execution_context_validation.get("requires_market_context") is False
+    ):
         return "PARTIAL"
     return "PENDING"
 

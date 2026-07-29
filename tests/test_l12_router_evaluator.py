@@ -18,24 +18,42 @@ from constitution.l12_router_evaluator import (
 
 class TestL12RouterEvaluator(unittest.TestCase):
     HIGH_SCORES: dict[str, float] = {
-        "L1": 0.91, "L2": 0.88, "L3": 0.87,
-        "L4": 0.82, "L5": 0.78,
-        "L7": 0.75, "L8": 0.92, "L9": 0.80,
-        "L11": 0.85, "L6": 0.90,
+        "L1": 0.91,
+        "L2": 0.88,
+        "L3": 0.87,
+        "L4": 0.82,
+        "L5": 0.78,
+        "L7": 0.75,
+        "L8": 0.92,
+        "L9": 0.80,
+        "L11": 0.85,
+        "L6": 0.90,
     }
 
     MID_SCORES: dict[str, float] = {
-        "L1": 0.62, "L2": 0.62, "L3": 0.62,
-        "L4": 0.62, "L5": 0.62,
-        "L7": 0.62, "L8": 0.62, "L9": 0.62,
-        "L11": 0.62, "L6": 0.62,
+        "L1": 0.62,
+        "L2": 0.62,
+        "L3": 0.62,
+        "L4": 0.62,
+        "L5": 0.62,
+        "L7": 0.62,
+        "L8": 0.62,
+        "L9": 0.62,
+        "L11": 0.62,
+        "L6": 0.62,
     }
 
     LOW_SCORES: dict[str, float] = {
-        "L1": 0.30, "L2": 0.30, "L3": 0.30,
-        "L4": 0.30, "L5": 0.30,
-        "L7": 0.30, "L8": 0.30, "L9": 0.30,
-        "L11": 0.30, "L6": 0.30,
+        "L1": 0.30,
+        "L2": 0.30,
+        "L3": 0.30,
+        "L4": 0.30,
+        "L5": 0.30,
+        "L7": 0.30,
+        "L8": 0.30,
+        "L9": 0.30,
+        "L11": 0.30,
+        "L6": 0.30,
     }
 
     def setUp(self) -> None:
@@ -440,10 +458,12 @@ class TestL12RouterEvaluator(unittest.TestCase):
 
 class TestBuildL12InputFromUpstream(unittest.TestCase):
     def test_empty_upstream_defaults(self) -> None:
-        result = build_l12_input_from_upstream({
-            "input_ref": "TEST_REF",
-            "timestamp": "2026-04-02T10:00:00+07:00",
-        })
+        result = build_l12_input_from_upstream(
+            {
+                "input_ref": "TEST_REF",
+                "timestamp": "2026-04-02T10:00:00+07:00",
+            }
+        )
         self.assertEqual(result.input_ref, "TEST_REF")
         self.assertFalse(result.upstream_continuation_allowed)
         self.assertEqual(result.foundation_status, "FAIL")
@@ -518,7 +538,11 @@ class TestBuildL12InputFromUpstream(unittest.TestCase):
             "phase4_result": {
                 "chain_status": "PASS",
                 "summary_status": {"L11": "PASS", "L6": "PASS", "L10": "PASS"},
-                "layer_results": {"L11": {"score_numeric": 0.85}, "L6": {"score_numeric": 0.90}, "L10": {"score_numeric": 0.80}},
+                "layer_results": {
+                    "L11": {"score_numeric": 0.85},
+                    "L6": {"score_numeric": 0.90},
+                    "L10": {"score_numeric": 0.80},
+                },
             },
             "upstream_result": {
                 "upstream_result": {
@@ -555,7 +579,11 @@ class TestBuildL12InputFromUpstream(unittest.TestCase):
                 "phase3_result": {
                     "chain_status": "PASS",
                     "summary_status": {"L7": "PASS", "L8": "PASS", "L9": "PASS"},
-                    "layer_results": {"L7": {"score_numeric": 0.75}, "L8": {"score_numeric": 0.92}, "L9": {"score_numeric": 0.80}},
+                    "layer_results": {
+                        "L7": {"score_numeric": 0.75},
+                        "L8": {"score_numeric": 0.92},
+                        "L9": {"score_numeric": 0.80},
+                    },
                 },
             },
         }
@@ -577,7 +605,11 @@ class TestBuildL12InputFromUpstream(unittest.TestCase):
             "phase4_result": {
                 "chain_status": "PASS",
                 "summary_status": {"L11": "PASS", "L6": "PASS", "L10": "PASS"},
-                "layer_results": {"L11": {"score_numeric": 0.85}, "L6": {"score_numeric": 0.90}, "L10": {"score_numeric": 0.80}},
+                "layer_results": {
+                    "L11": {"score_numeric": 0.85},
+                    "L6": {"score_numeric": 0.90},
+                    "L10": {"score_numeric": 0.80},
+                },
             },
             "upstream_result": {
                 "upstream_result": {
@@ -640,7 +672,11 @@ class TestBuildL12InputFromUpstream(unittest.TestCase):
             "phase4_result": {
                 "chain_status": "PASS",
                 "summary_status": {"L11": "PASS", "L6": "PASS", "L10": "PASS"},
-                "layer_results": {"L11": {"score_numeric": 0.85}, "L6": {"score_numeric": 0.90}, "L10": {"score_numeric": 0.80}},
+                "layer_results": {
+                    "L11": {"score_numeric": 0.85},
+                    "L6": {"score_numeric": 0.90},
+                    "L10": {"score_numeric": 0.80},
+                },
             },
             "upstream_result": {
                 "upstream_result": {
@@ -699,10 +735,16 @@ class TestL12V2SoftPenalty(unittest.TestCase):
     """Tests for v2.0 soft penalty + adaptive sizing + navigation-weighted confidence."""
 
     HIGH_SCORES: dict[str, float] = {
-        "L1": 0.91, "L2": 0.88, "L3": 0.87,
-        "L4": 0.82, "L5": 0.78,
-        "L7": 0.75, "L8": 0.92, "L9": 0.80,
-        "L11": 0.85, "L6": 0.90,
+        "L1": 0.91,
+        "L2": 0.88,
+        "L3": 0.87,
+        "L4": 0.82,
+        "L5": 0.78,
+        "L7": 0.75,
+        "L8": 0.92,
+        "L9": 0.80,
+        "L11": 0.85,
+        "L6": 0.90,
     }
 
     def setUp(self) -> None:
@@ -937,27 +979,29 @@ class TestL12V2SoftPenalty(unittest.TestCase):
 
     def test_to_dict_includes_v2_fields(self) -> None:
         """to_dict() should include v2 fields."""
-        result = self.evaluator.evaluate(L12Input(
-            input_ref="TEST_V2_DICT",
-            timestamp="2026-04-02T10:00:00+07:00",
-            upstream_continuation_allowed=True,
-            upstream_next_legal_targets=["PHASE_5"],
-            foundation_status="PASS",
-            scoring_status="PASS",
-            enrichment_status="PASS",
-            structure_status="PASS",
-            risk_chain_status="PASS",
-            layer_scores=dict(self.HIGH_SCORES),
-            phase1_available=True,
-            phase2_available=True,
-            phase3_available=True,
-            phase4_available=True,
-            synthesis_score=0.80,
-            integrity_status="PASS",
-            probability_status="PASS",
-            firewall_status="PASS",
-            governance_status="PASS",
-        ))
+        result = self.evaluator.evaluate(
+            L12Input(
+                input_ref="TEST_V2_DICT",
+                timestamp="2026-04-02T10:00:00+07:00",
+                upstream_continuation_allowed=True,
+                upstream_next_legal_targets=["PHASE_5"],
+                foundation_status="PASS",
+                scoring_status="PASS",
+                enrichment_status="PASS",
+                structure_status="PASS",
+                risk_chain_status="PASS",
+                layer_scores=dict(self.HIGH_SCORES),
+                phase1_available=True,
+                phase2_available=True,
+                phase3_available=True,
+                phase4_available=True,
+                synthesis_score=0.80,
+                integrity_status="PASS",
+                probability_status="PASS",
+                firewall_status="PASS",
+                governance_status="PASS",
+            )
+        )
         d = result.to_dict()
         self.assertIn("raw_confidence", d)
         self.assertIn("penalized_confidence", d)

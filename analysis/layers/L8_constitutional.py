@@ -834,8 +834,10 @@ class L8ConstitutionalGovernor:
             L8BlockerCode.FALLBACK_DECLARED_BUT_NOT_ALLOWED,
             L8BlockerCode.INVALID_INTEGRITY_STATE,
         }
-        if _ENABLE_L8_LFS_RESCUE and status == L8Status.FAIL and any(
-            blocker in terminal_rescue_blockers for blocker in blockers
+        if (
+            _ENABLE_L8_LFS_RESCUE
+            and status == L8Status.FAIL
+            and any(blocker in terminal_rescue_blockers for blocker in blockers)
         ):
             continuation_allowed = False
             next_targets = []

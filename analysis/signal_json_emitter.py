@@ -684,9 +684,7 @@ class SignalJsonEmitter:
         self.production_watch_require_decision_grade = production_watch_require_decision_grade
         self.price_integrity_gate = price_integrity_gate
         self.internal_watch_summary_enabled = (
-            production_watch_gate
-            if internal_watch_summary_enabled is None
-            else bool(internal_watch_summary_enabled)
+            production_watch_gate if internal_watch_summary_enabled is None else bool(internal_watch_summary_enabled)
         )
         self.internal_watch_summary_prefix = internal_watch_summary_prefix
         self.internal_watch_summary_log_level = _log_level(internal_watch_summary_log_level, logging.INFO)
@@ -768,9 +766,13 @@ class SignalJsonEmitter:
                 payload = _price_integrity_as_decision_update(payload, price_integrity_reason)
                 is_watch = False
                 is_decision_update = True
-            if is_watch and self.production_watch_gate and not _is_promotable_signal_watch(
-                payload,
-                require_decision_grade_context=self.production_watch_require_decision_grade,
+            if (
+                is_watch
+                and self.production_watch_gate
+                and not _is_promotable_signal_watch(
+                    payload,
+                    require_decision_grade_context=self.production_watch_require_decision_grade,
+                )
             ):
                 suppress_reason = _signal_watch_suppress_reason(
                     payload,
@@ -824,11 +826,7 @@ class SignalJsonEmitter:
         # through B because each tick carried a slightly different price). Suppresses only
         # the duplicate EMIT; the first watch + any material change always pass, and
         # finalizer lifecycle tracking is untouched.
-        if (
-            is_watch
-            and self.watch_cluster_dedup_enabled
-            and self._is_cluster_watch_duplicate(payload)
-        ):
+        if is_watch and self.watch_cluster_dedup_enabled and self._is_cluster_watch_duplicate(payload):
             return False
 
         key = self._payload_key(payload, watch_revision=watch_revision)
@@ -1283,8 +1281,7 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
             else _optional_bool(allowed_quorum_raw)
         ),
         allowed_quorum_streak=_optional_int(
-            counter_entry.get("allowed_quorum_streak")
-            or (allowed_quorum_context or {}).get("streak")
+            counter_entry.get("allowed_quorum_streak") or (allowed_quorum_context or {}).get("streak")
         ),
         reclaim_trigger=_optional_float(counter_entry.get("reclaim_trigger")),
         risk_pips=_optional_float(counter_entry.get("risk_pips")),
@@ -1470,15 +1467,9 @@ def build_signal_json_event(counter_entry: dict[str, Any] | None) -> SignalJsonE
         market_structure=_dict_value(counter_entry.get("market_structure")),
         execution_gate=_dict_value(counter_entry.get("execution_gate")) or _execution_gate_context(counter_entry),
         lifecycle=_merged_lifecycle_context(counter_entry),
-        pair_memory_context=(
-            _dict_value(counter_entry.get("pair_memory_context")) if is_watch else None
-        ),
-        pressure_priority_context=(
-            _dict_value(counter_entry.get("pressure_priority_context")) if is_watch else None
-        ),
-        followthrough_context=(
-            _dict_value(counter_entry.get("followthrough_context")) if is_watch else None
-        ),
+        pair_memory_context=(_dict_value(counter_entry.get("pair_memory_context")) if is_watch else None),
+        pressure_priority_context=(_dict_value(counter_entry.get("pressure_priority_context")) if is_watch else None),
+        followthrough_context=(_dict_value(counter_entry.get("followthrough_context")) if is_watch else None),
         htf_structure_context=(
             _dict_value(counter_entry.get("htf_structure_context")) if (is_watch or is_decision_update) else None
         ),
@@ -1518,15 +1509,12 @@ def should_emit_signal_json(
         if status == "PENDING_WATCH_EXPIRED":
             return bool(_optional_str(payload.get("signal_valid_time_utc")))
         return (
-            (
-                _optional_float(payload.get("signal_valid_price")) is not None
-                or (
-                    _optional_bool(payload.get("price_integrity_evaluated")) is True
-                    and _optional_bool(payload.get("price_integrity_valid")) is not True
-                )
+            _optional_float(payload.get("signal_valid_price")) is not None
+            or (
+                _optional_bool(payload.get("price_integrity_evaluated")) is True
+                and _optional_bool(payload.get("price_integrity_valid")) is not True
             )
-            and _optional_float(payload.get("entry_reference_price")) is not None
-        )
+        ) and _optional_float(payload.get("entry_reference_price")) is not None
     is_conditional = status in CONDITIONAL_SIGNAL_STATUSES
     if is_conditional and not emit_conditional:
         return False
@@ -1971,8 +1959,7 @@ def _is_directional_final_candidate(payload: dict[str, Any]) -> bool:
     status = str(payload.get("status") or "")
     return bool(
         (status in TERMINAL_EXECUTION_READY_STATUSES or status in VALID_SIGNAL_STATUSES or status.endswith("_VALID"))
-        and str(payload.get("final_direction") or payload.get("validated_direction") or "").upper()
-        in {"BUY", "SELL"}
+        and str(payload.get("final_direction") or payload.get("validated_direction") or "").upper() in {"BUY", "SELL"}
     )
 
 
@@ -2073,7 +2060,9 @@ def _terminal_non_execution_as_decision_update(payload: dict[str, Any]) -> dict[
             "terminal_status": terminal_status,
             "final_direction": "WAIT",
             "validated_direction": source_direction if direction_valid else None,
-            "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("watch_direction"),
+            "watch_direction": source_direction
+            if source_direction in {"BUY", "SELL"}
+            else payload.get("watch_direction"),
             "is_final_signal": False,
             "signal_valid": direction_valid,
             "direction_valid": direction_valid,
@@ -2412,9 +2401,13 @@ def _apply_signal_watch_microboost_role_fields(payload: dict[str, Any]) -> None:
         payload.get("microboost_followthrough_context_ready")
     )
     payload["signal_watch_microboost_price_behavior"] = _optional_str(payload.get("microboost_price_behavior"))
-    payload["signal_watch_microboost_room_to_move_status"] = _optional_str(payload.get("microboost_room_to_move_status"))
+    payload["signal_watch_microboost_room_to_move_status"] = _optional_str(
+        payload.get("microboost_room_to_move_status")
+    )
     payload["signal_watch_microboost_stall_pips"] = _optional_float(payload.get("microboost_stall_pips"))
-    payload["signal_watch_microboost_room_to_target_pips"] = _optional_float(payload.get("microboost_room_to_target_pips"))
+    payload["signal_watch_microboost_room_to_target_pips"] = _optional_float(
+        payload.get("microboost_room_to_target_pips")
+    )
     payload["signal_watch_microboost_expected_horizon"] = _optional_str(payload.get("microboost_expected_horizon"))
     payload["signal_watch_microboost_outcome_tracking_required"] = _optional_bool(
         payload.get("microboost_outcome_tracking_required")
@@ -2892,10 +2885,7 @@ def _normalize_tradeplan_preview(
             normalized["point_size"] = point_size
 
     direction = str(
-        payload.get("candidate_direction")
-        or payload.get("watch_direction")
-        or payload.get("raw_direction")
-        or ""
+        payload.get("candidate_direction") or payload.get("watch_direction") or payload.get("raw_direction") or ""
     ).upper()
     tp1 = _optional_float(normalized.get("tp1"))
     entry_zone = _float_list(normalized.get("entry_zone")) or _float_list(payload.get("entry_zone"))
@@ -2952,10 +2942,7 @@ def _apply_htf_led_watch_context(payload: dict[str, Any]) -> None:
     if not htf:
         return
     direction = str(
-        payload.get("candidate_direction")
-        or payload.get("watch_direction")
-        or payload.get("raw_direction")
-        or ""
+        payload.get("candidate_direction") or payload.get("watch_direction") or payload.get("raw_direction") or ""
     ).upper()
     if direction not in {"BUY", "SELL"}:
         return
@@ -3154,9 +3141,7 @@ def _htf_led_tradeplan_preview(
 
     zone = _float_list(htf.get("h4_demand_zone")) if direction == "BUY" else _float_list(htf.get("h4_supply_zone"))
     structural_sl = (
-        _optional_float(htf.get("h4_swing_low"))
-        if direction == "BUY"
-        else _optional_float(htf.get("h4_swing_high"))
+        _optional_float(htf.get("h4_swing_low")) if direction == "BUY" else _optional_float(htf.get("h4_swing_high"))
     )
     sl, sl_buffer, sl_buffer_sources = _volatility_aware_structural_stop(
         payload=payload,
@@ -3186,10 +3171,14 @@ def _htf_led_tradeplan_preview(
         plan["invalidation_level"] = sl
     if tp1 is not None:
         plan["tp1"] = tp1
-        plan["tp_source"] = "H4_RESISTANCE_OR_DAILY_KEY_LEVEL" if direction == "BUY" else "H4_SUPPORT_OR_DAILY_KEY_LEVEL"
+        plan["tp_source"] = (
+            "H4_RESISTANCE_OR_DAILY_KEY_LEVEL" if direction == "BUY" else "H4_SUPPORT_OR_DAILY_KEY_LEVEL"
+        )
     if tp2 is not None:
         plan["tp2"] = tp2
-    plan["target_mode"] = "HTF_STRUCTURE_PREVIEW" if zone and sl is not None and tp1 is not None else "PREVIEW_CONTEXT_INCOMPLETE"
+    plan["target_mode"] = (
+        "HTF_STRUCTURE_PREVIEW" if zone and sl is not None and tp1 is not None else "PREVIEW_CONTEXT_INCOMPLETE"
+    )
     plan["trade_location_status"] = _htf_trade_location_status(direction, htf)
     _apply_tradeplan_rr(plan, payload, direction)
     return plan
@@ -3235,9 +3224,7 @@ def _volatility_aware_structural_stop(
     if tick_size is not None:
         scaled = buffered_sl / tick_size
         buffered_sl = (
-            math.floor(scaled + 1e-12) * tick_size
-            if direction == "BUY"
-            else math.ceil(scaled - 1e-12) * tick_size
+            math.floor(scaled + 1e-12) * tick_size if direction == "BUY" else math.ceil(scaled - 1e-12) * tick_size
         )
         buffered_sl = round(buffered_sl, 12)
         buffer = round(abs(structural_sl - buffered_sl), 12)
@@ -3294,7 +3281,11 @@ def _htf_target_1(direction: str, htf: dict[str, Any]) -> float | None:
 
 
 def _htf_target_2(direction: str, htf: dict[str, Any], tp1: float | None) -> float | None:
-    candidate = _optional_float(htf.get("daily_range_high")) if direction == "BUY" else _optional_float(htf.get("daily_range_low"))
+    candidate = (
+        _optional_float(htf.get("daily_range_high"))
+        if direction == "BUY"
+        else _optional_float(htf.get("daily_range_low"))
+    )
     if candidate is None or tp1 is None or candidate == tp1:
         return None
     return candidate
@@ -3367,10 +3358,7 @@ def _ensure_canonical_operator_tradeplan(payload: dict[str, Any]) -> None:
         return
 
     direction = str(
-        payload.get("candidate_direction")
-        or payload.get("watch_direction")
-        or payload.get("raw_direction")
-        or "WAIT"
+        payload.get("candidate_direction") or payload.get("watch_direction") or payload.get("raw_direction") or "WAIT"
     ).upper()
     if not operator:
         operator = {
@@ -3580,9 +3568,7 @@ def _operator_h4_context(htf: dict[str, Any], direction: str) -> dict[str, Any] 
             if direction == "BUY"
             else "H4_SUPPLY_OR_H4_PULLBACK_STRUCTURE",
             "sl_source": "H4_SWING_LOW" if direction == "BUY" else "H4_SWING_HIGH",
-            "tp_source": "H4_RESISTANCE_OR_DAILY_KEY_LEVEL"
-            if direction == "BUY"
-            else "H4_SUPPORT_OR_DAILY_KEY_LEVEL",
+            "tp_source": "H4_RESISTANCE_OR_DAILY_KEY_LEVEL" if direction == "BUY" else "H4_SUPPORT_OR_DAILY_KEY_LEVEL",
             "swing_high": _optional_float(htf.get("h4_swing_high")),
             "swing_low": _optional_float(htf.get("h4_swing_low")),
             "demand_zone": _float_list(htf.get("h4_demand_zone")) or None,

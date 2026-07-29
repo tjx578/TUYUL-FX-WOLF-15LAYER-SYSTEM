@@ -39,7 +39,11 @@ def _build_upstream(l9_layer: dict) -> dict:
         "phase4_result": {
             "chain_status": "PASS",
             "summary_status": {"L11": "PASS", "L6": "PASS", "L10": "PASS"},
-            "layer_results": {"L11": {"score_numeric": 0.85}, "L6": {"score_numeric": 0.90}, "L10": {"score_numeric": 0.80}},
+            "layer_results": {
+                "L11": {"score_numeric": 0.85},
+                "L6": {"score_numeric": 0.90},
+                "L10": {"score_numeric": 0.80},
+            },
         },
         "upstream_result": {
             "upstream_result": {
@@ -48,7 +52,11 @@ def _build_upstream(l9_layer: dict) -> dict:
                         "PHASE_1": {
                             "chain_status": "PASS",
                             "summary_status": {"L1": "PASS", "L2": "PASS", "L3": "PASS"},
-                            "layer_results": {"L1": {"score_numeric": 0.91}, "L2": {"score_numeric": 0.88}, "L3": {"score_numeric": 0.87}},
+                            "layer_results": {
+                                "L1": {"score_numeric": 0.91},
+                                "L2": {"score_numeric": 0.88},
+                                "L3": {"score_numeric": 0.87},
+                            },
                         },
                         "PHASE_2": {
                             "chain_status": "PASS",

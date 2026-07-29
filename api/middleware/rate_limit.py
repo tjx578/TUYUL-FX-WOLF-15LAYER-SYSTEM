@@ -166,20 +166,22 @@ if _extra_exempt:
 
 # Known WebSocket paths for diagnostics — unmatched WS upgrades get 403 from
 # Starlette and surface as "connection rejected (403 Forbidden)" in logs.
-_KNOWN_WS_PATHS: frozenset[str] = frozenset({
-    "/ws",
-    "/ws/prices",
-    "/ws/trades",
-    "/ws/candles",
-    "/ws/risk",
-    "/ws/equity",
-    "/ws/verdict",
-    "/ws/signals",
-    "/ws/pipeline",
-    "/ws/live",
-    "/ws/alerts",
-    "/ws/trq",
-})
+_KNOWN_WS_PATHS: frozenset[str] = frozenset(
+    {
+        "/ws",
+        "/ws/prices",
+        "/ws/trades",
+        "/ws/candles",
+        "/ws/risk",
+        "/ws/equity",
+        "/ws/verdict",
+        "/ws/signals",
+        "/ws/pipeline",
+        "/ws/live",
+        "/ws/alerts",
+        "/ws/trq",
+    }
+)
 
 
 # ---------------------------------------------------------------------------

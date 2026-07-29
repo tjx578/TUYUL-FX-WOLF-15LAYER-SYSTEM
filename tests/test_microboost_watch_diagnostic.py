@@ -5,6 +5,7 @@ microboost block fell below the watch threshold (effective_ticks>=5, density>=8.
 duration>=18s), and whether it WOULD have qualified under the looser shadow thresholds.
 Diagnostic-only: never executable, never a SignalJSON.
 """
+
 from __future__ import annotations
 
 import logging
@@ -189,7 +190,9 @@ def test_recovery_off_is_byte_identical(monkeypatch, caplog):
     monkeypatch.delenv(_RECOV, raising=False)
     p = _pipeline()
     with caplog.at_level(logging.WARNING):
-        p._emit_microboost_watch_miss_diagnostic(_report_q({"symbol": "GBPAUD", "direction": "BUY"}, raw_direction=None))
+        p._emit_microboost_watch_miss_diagnostic(
+            _report_q({"symbol": "GBPAUD", "direction": "BUY"}, raw_direction=None)
+        )
     assert "[MicroboostWatchDiagnostic]" in caplog.text
     assert "direction_recovery_source" not in caplog.text
     assert '"raw_direction":null' in caplog.text
@@ -200,7 +203,9 @@ def test_recovery_stamps_symbol_matched_quorum_direction(monkeypatch, caplog):
     monkeypatch.setenv(_RECOV, "true")
     p = _pipeline()
     with caplog.at_level(logging.WARNING):
-        p._emit_microboost_watch_miss_diagnostic(_report_q({"symbol": "GBPAUD", "direction": "BUY"}, raw_direction=None))
+        p._emit_microboost_watch_miss_diagnostic(
+            _report_q({"symbol": "GBPAUD", "direction": "BUY"}, raw_direction=None)
+        )
     assert '"raw_direction":"BUY"' in caplog.text
     assert '"direction_recovery_source":"ALLOWED_QUORUM_REPORT"' in caplog.text
 
@@ -211,7 +216,9 @@ def test_recovery_symbol_mismatch_does_not_stamp(monkeypatch, caplog):
     monkeypatch.setenv(_RECOV, "true")
     p = _pipeline()
     with caplog.at_level(logging.WARNING):
-        p._emit_microboost_watch_miss_diagnostic(_report_q({"symbol": "EURUSD", "direction": "BUY"}, raw_direction=None))
+        p._emit_microboost_watch_miss_diagnostic(
+            _report_q({"symbol": "EURUSD", "direction": "BUY"}, raw_direction=None)
+        )
     assert '"raw_direction":null' in caplog.text
     assert '"direction_recovery_source":null' in caplog.text
 
@@ -222,7 +229,9 @@ def test_recovery_block_direct_never_overwritten_by_quorum(monkeypatch, caplog):
     monkeypatch.setenv(_RECOV, "true")
     p = _pipeline()
     with caplog.at_level(logging.WARNING):
-        p._emit_microboost_watch_miss_diagnostic(_report_q({"symbol": "GBPAUD", "direction": "SELL"}, raw_direction="BUY"))
+        p._emit_microboost_watch_miss_diagnostic(
+            _report_q({"symbol": "GBPAUD", "direction": "SELL"}, raw_direction="BUY")
+        )
     assert '"raw_direction":"BUY"' in caplog.text
     assert '"direction_recovery_source":"BLOCK_DIRECT"' in caplog.text
 
@@ -232,7 +241,9 @@ def test_recovery_stays_non_executable(monkeypatch, caplog):
     monkeypatch.setenv(_RECOV, "true")
     p = _pipeline()
     with caplog.at_level(logging.WARNING):
-        p._emit_microboost_watch_miss_diagnostic(_report_q({"symbol": "GBPAUD", "direction": "BUY"}, raw_direction=None))
+        p._emit_microboost_watch_miss_diagnostic(
+            _report_q({"symbol": "GBPAUD", "direction": "BUY"}, raw_direction=None)
+        )
     assert '"valid_for_execution":false' in caplog.text
     assert '"is_final_signal":false' in caplog.text
     assert '"eligible_for_watch":false' in caplog.text

@@ -391,8 +391,7 @@ class PersistenceSync:
                 else str(row["close_time"]),
                 "timestamp": (
                     row["close_time"].isoformat()
-                    if timestamp_semantics == "PERIOD_END"
-                    and isinstance(row["close_time"], datetime)
+                    if timestamp_semantics == "PERIOD_END" and isinstance(row["close_time"], datetime)
                     else row["open_time"].isoformat()
                     if isinstance(row["open_time"], datetime)
                     else str(row["open_time"])

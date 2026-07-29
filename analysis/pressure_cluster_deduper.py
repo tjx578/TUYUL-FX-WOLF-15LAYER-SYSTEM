@@ -85,7 +85,9 @@ def dedupe_pressure_clusters(
 
     clusters: list[PressureCluster] = []
     for key, members in grouped.items():
-        timestamps = [_coerce_datetime(_get(member, "timestamp") or _get(member, "signal_valid_time_utc")) for member in members]
+        timestamps = [
+            _coerce_datetime(_get(member, "timestamp") or _get(member, "signal_valid_time_utc")) for member in members
+        ]
         timestamps = [timestamp for timestamp in timestamps if timestamp is not None]
         first = min(timestamps).isoformat() if timestamps else None
         last = max(timestamps).isoformat() if timestamps else None

@@ -100,7 +100,9 @@ class OrchestratorCoordinator:
 
     # ── Public entry point ────────────────────────────────────────────────
 
-    async def process_take_signal(self, take_id: str, signal: dict[str, Any], account_state: dict[str, Any]) -> OrchestrationResult:
+    async def process_take_signal(
+        self, take_id: str, signal: dict[str, Any], account_state: dict[str, Any]
+    ) -> OrchestrationResult:
         take_response = await self._validate_take(take_id)
         if isinstance(take_response, OrchestrationResult):
             return take_response

@@ -59,9 +59,7 @@ def test_decision_update_bumps_pressure_decision():
 
 def test_watch_without_direction_bumps_direction_missing():
     p = _pipeline()
-    p._bump_family_counters(
-        {"signal_family": "MICROBOOST_WATCH", "status": "MICROBOOST_WATCH", "raw_direction": None}
-    )
+    p._bump_family_counters({"signal_family": "MICROBOOST_WATCH", "status": "MICROBOOST_WATCH", "raw_direction": None})
     snap = p.family_counters_snapshot()
     assert snap["microboost_watch_count"] == 1
     assert snap["direction_missing_count"] == 1

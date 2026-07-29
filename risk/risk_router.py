@@ -175,6 +175,8 @@ def _publish_account_state_to_redis(state: AccountRiskState) -> None:
         _router_redis_set(ACCOUNT_STATE, payload)
     except Exception:
         logger.warning("Failed to publish account state to Redis")
+
+
 _account_repo = AccountRepository.get_default()
 _account_risk_engine = AccountScopedRiskEngine()
 _audit = AuditTrail()

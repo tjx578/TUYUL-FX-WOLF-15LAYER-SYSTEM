@@ -178,17 +178,14 @@ def test_genuine_chase_still_blocks():
     payload.update({"bid": 160.095, "ask": 160.105})  # ~46 pips above entry
     decision = evaluate_signal_execution_gates(payload)
     assert decision.decision == "BLOCK"
-    assert (
-        "PRICE_CHASE_TOO_FAR_FROM_ENTRY_REFERENCE" in decision.reasons
-        or "LIVE_RR_BELOW_MINIMUM" in decision.reasons
-    )
+    assert "PRICE_CHASE_TOO_FAR_FROM_ENTRY_REFERENCE" in decision.reasons or "LIVE_RR_BELOW_MINIMUM" in decision.reasons
 
 
 def _nzdjpy_single_stop_sell() -> dict:
     """A confirmed SELL breakdown-continuation (NZDJPY), single stop, TP1=1.5R."""
     entry = 94.0785
     sl_safe = 94.2785  # 20 pips above entry for a SELL
-    tp1 = 93.7785      # 30 pips below entry -> 1.5R
+    tp1 = 93.7785  # 30 pips below entry -> 1.5R
     return {
         "symbol": "NZDJPY",
         "signal_family": "MICROBOOST_COUNTER_ENTRY",

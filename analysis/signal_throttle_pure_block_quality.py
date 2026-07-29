@@ -50,9 +50,7 @@ def score_pure_pressure_block(
     effective_ticks = max(0, int(_number(_get(block, "effective_ticks")) or events))
     density = max(
         0.0,
-        _number(_get(block, "effective_density_per_minute"))
-        or _number(_get(block, "density_per_minute"))
-        or 0.0,
+        _number(_get(block, "effective_density_per_minute")) or _number(_get(block, "density_per_minute")) or 0.0,
     )
     max_gap_seconds = max(0.0, _number(_get(block, "max_gap_seconds")) or 0.0)
 
@@ -62,28 +60,13 @@ def score_pure_pressure_block(
     gap_quality_score = _gap_quality_score(max_gap_seconds)
     source_purity_score = _source_purity_score(block)
 
-    sequence_score = _round(
-        duration_score * 0.45
-        + event_count_score * 0.35
-        + source_purity_score * 0.20
-    )
+    sequence_score = _round(duration_score * 0.45 + event_count_score * 0.35 + source_purity_score * 0.20)
     pure_pressure_score = _round(
-        duration_score * 0.40
-        + event_count_score * 0.40
-        + density_score * 0.10
-        + source_purity_score * 0.10
+        duration_score * 0.40 + event_count_score * 0.40 + density_score * 0.10 + source_purity_score * 0.10
     )
     timing_compression_score = _timing_compression_score(duration_seconds, clean_block_seconds)
-    heat_score = _round(
-        density_score * 0.50
-        + gap_quality_score * 0.35
-        + timing_compression_score * 0.15
-    )
-    block_quality_score = _round(
-        pure_pressure_score * 0.55
-        + heat_score * 0.30
-        + gap_quality_score * 0.15
-    )
+    heat_score = _round(density_score * 0.50 + gap_quality_score * 0.35 + timing_compression_score * 0.15)
+    block_quality_score = _round(pure_pressure_score * 0.55 + heat_score * 0.30 + gap_quality_score * 0.15)
     pressure_class = _pressure_class(
         pure_pressure_score=pure_pressure_score,
         heat_score=heat_score,

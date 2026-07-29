@@ -315,9 +315,7 @@ def test_read_json_artifact_reads_from_redis(monkeypatch: MonkeyPatch) -> None:
     import json
 
     fake_redis = _FakeArtifactRedis()
-    fake_redis.store["WOLF15:ARTIFACT:config/thresholds.auto.json"] = json.dumps(
-        {"sigma_VR": 0.12, "k": 0.55}
-    )
+    fake_redis.store["WOLF15:ARTIFACT:config/thresholds.auto.json"] = json.dumps({"sigma_VR": 0.12, "k": 0.55})
     from services.worker import _job_utils
 
     monkeypatch.setattr(_job_utils, "get_redis_client", lambda: fake_redis)

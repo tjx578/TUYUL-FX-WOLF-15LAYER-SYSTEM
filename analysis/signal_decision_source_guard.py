@@ -313,9 +313,9 @@ def _apply_direction_scope_contract(payload: dict[str, Any]) -> None:
 
     htf = payload.get("htf_structure_context")
     htf_context = htf if isinstance(htf, dict) else {}
-    liquidity_resolution = _text_value(
-        payload.get("liquidity_resolution") or htf_context.get("liquidity_resolution")
-    ) or "NONE"
+    liquidity_resolution = (
+        _text_value(payload.get("liquidity_resolution") or htf_context.get("liquidity_resolution")) or "NONE"
+    )
     resolution = "UNRESOLVED"
     resolved_direction: str | None = None
     if raw_direction == "BUY" and liquidity_resolution == "BUY_SIDE_ACCEPTED":
@@ -417,11 +417,7 @@ def _text_value(value: Any) -> str | None:
 
 def _stable_htf_context(context: dict[str, Any]) -> dict[str, Any]:
     volatile = {"generated_at_utc", "daily_bias_snapshot_time"}
-    return {
-        key: value
-        for key, value in context.items()
-        if key not in volatile and not key.endswith("_age_seconds")
-    }
+    return {key: value for key, value in context.items() if key not in volatile and not key.endswith("_age_seconds")}
 
 
 def _source_stage(payload: Mapping[str, Any]) -> str | None:

@@ -393,7 +393,9 @@ class MicroboostContinuationEngine:
             "direction_validation_status",
             "VALIDATED_EXECUTION"
             if final_direction in {"BUY", "SELL"} and execution_valid
-            else ("CONTINUATION_TIMING_STRUCTURE_PENDING" if candidate in {"BUY", "SELL"} else "NO_DIRECTION_CANDIDATE"),
+            else (
+                "CONTINUATION_TIMING_STRUCTURE_PENDING" if candidate in {"BUY", "SELL"} else "NO_DIRECTION_CANDIDATE"
+            ),
         )
         if final_direction in {"BUY", "SELL"} and execution_valid:
             kwargs["validated_direction"] = kwargs.get("validated_direction") or final_direction
@@ -861,9 +863,7 @@ def _target_ladder_with_fixed_tp1(
 ) -> list[float | None]:
     fixed_tp1 = _rr_target(direction, entry, sl, tp1_rr)
     eligible_extensions = [
-        target
-        for target in structure_targets
-        if (_rr(direction, entry, sl, target) or 0.0) > tp1_rr
+        target for target in structure_targets if (_rr(direction, entry, sl, target) or 0.0) > tp1_rr
     ]
     canonical_targets = ([] if fixed_tp1 is None else [fixed_tp1]) + eligible_extensions
     return _pad_targets(canonical_targets)

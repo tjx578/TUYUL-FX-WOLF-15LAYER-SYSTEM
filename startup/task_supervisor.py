@@ -76,8 +76,7 @@ async def supervised_task(
             # If task survived long enough, treat crash as transient → reset counter
             if elapsed >= _SUCCESS_WINDOW:
                 logger.info(
-                    "[SUPERVISOR] Task '{}' ran for {:.0f}s before crash — "
-                    "resetting restart counter (was {})",
+                    "[SUPERVISOR] Task '{}' ran for {:.0f}s before crash — resetting restart counter (was {})",
                     name,
                     elapsed,
                     restarts,
@@ -88,8 +87,7 @@ async def supervised_task(
             delay = _exp_cooldown(restarts, cooldown, _RESTART_COOLDOWN_MAX)
 
             logger.error(
-                "[SUPERVISOR] Task '{}' crashed: {} (restart {}/{}, "
-                "next cooldown {:.1f}s, ran {:.1f}s)",
+                "[SUPERVISOR] Task '{}' crashed: {} (restart {}/{}, next cooldown {:.1f}s, ran {:.1f}s)",
                 name,
                 exc,
                 restarts,

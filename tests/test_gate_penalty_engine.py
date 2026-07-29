@@ -83,17 +83,29 @@ class TestNavigationConfidence(unittest.TestCase):
     def test_structural_layers_dominate(self) -> None:
         # High structural (L2,L3,L7,L9 = 0.12 each) + low support
         high_structural = {
-            "L1": 0.50, "L2": 0.95, "L3": 0.95,
-            "L4": 0.50, "L5": 0.50,
-            "L7": 0.95, "L8": 0.50, "L9": 0.95,
-            "L11": 0.50, "L6": 0.50,
+            "L1": 0.50,
+            "L2": 0.95,
+            "L3": 0.95,
+            "L4": 0.50,
+            "L5": 0.50,
+            "L7": 0.95,
+            "L8": 0.50,
+            "L9": 0.95,
+            "L11": 0.50,
+            "L6": 0.50,
         }
         # Same average but structural layers are low
         low_structural = {
-            "L1": 0.95, "L2": 0.50, "L3": 0.50,
-            "L4": 0.95, "L5": 0.95,
-            "L7": 0.50, "L8": 0.95, "L9": 0.50,
-            "L11": 0.95, "L6": 0.95,
+            "L1": 0.95,
+            "L2": 0.50,
+            "L3": 0.50,
+            "L4": 0.95,
+            "L5": 0.95,
+            "L7": 0.50,
+            "L8": 0.95,
+            "L9": 0.50,
+            "L11": 0.95,
+            "L6": 0.95,
         }
         c_high = self.engine.compute_navigation_confidence(high_structural)
         c_low = self.engine.compute_navigation_confidence(low_structural)
@@ -109,9 +121,15 @@ class TestGatePenalties(unittest.TestCase):
         self.engine = GatePenaltyEngine()
 
     ALL_PASS = {
-        "FOUNDATION_OK": "PASS", "SCORING_OK": "PASS", "ENRICHMENT_OK": "PASS",
-        "STRUCTURE_OK": "PASS", "RISK_CHAIN_OK": "PASS", "INTEGRITY_OK": "PASS",
-        "PROBABILITY_OK": "PASS", "FIREWALL_OK": "PASS", "GOVERNANCE_OK": "PASS",
+        "FOUNDATION_OK": "PASS",
+        "SCORING_OK": "PASS",
+        "ENRICHMENT_OK": "PASS",
+        "STRUCTURE_OK": "PASS",
+        "RISK_CHAIN_OK": "PASS",
+        "INTEGRITY_OK": "PASS",
+        "PROBABILITY_OK": "PASS",
+        "FIREWALL_OK": "PASS",
+        "GOVERNANCE_OK": "PASS",
     }
 
     def test_all_pass_no_penalty(self) -> None:
@@ -155,8 +173,8 @@ class TestGatePenalties(unittest.TestCase):
 
     def test_multiple_soft_fails_stack(self) -> None:
         gates = dict(self.ALL_PASS)
-        gates["SCORING_OK"] = "FAIL"       # -0.12, ×0.60
-        gates["INTEGRITY_OK"] = "FAIL"     # -0.15, ×0.50
+        gates["SCORING_OK"] = "FAIL"  # -0.12, ×0.60
+        gates["INTEGRITY_OK"] = "FAIL"  # -0.15, ×0.50
         penalty, sizing, _, _ = self.engine.evaluate_gate_penalties(gates)
         self.assertAlmostEqual(penalty, 0.27, places=2)
         self.assertAlmostEqual(sizing, 0.30, places=2)  # 0.60 × 0.50
@@ -182,15 +200,27 @@ class TestPenaltyEngineFullEvaluation(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = GatePenaltyEngine()
         self.all_pass_gates = {
-            "FOUNDATION_OK": "PASS", "SCORING_OK": "PASS", "ENRICHMENT_OK": "PASS",
-            "STRUCTURE_OK": "PASS", "RISK_CHAIN_OK": "PASS", "INTEGRITY_OK": "PASS",
-            "PROBABILITY_OK": "PASS", "FIREWALL_OK": "PASS", "GOVERNANCE_OK": "PASS",
+            "FOUNDATION_OK": "PASS",
+            "SCORING_OK": "PASS",
+            "ENRICHMENT_OK": "PASS",
+            "STRUCTURE_OK": "PASS",
+            "RISK_CHAIN_OK": "PASS",
+            "INTEGRITY_OK": "PASS",
+            "PROBABILITY_OK": "PASS",
+            "FIREWALL_OK": "PASS",
+            "GOVERNANCE_OK": "PASS",
         }
         self.high_scores = {
-            "L1": 0.91, "L2": 0.88, "L3": 0.87,
-            "L4": 0.82, "L5": 0.78,
-            "L7": 0.75, "L8": 0.92, "L9": 0.80,
-            "L11": 0.85, "L6": 0.90,
+            "L1": 0.91,
+            "L2": 0.88,
+            "L3": 0.87,
+            "L4": 0.82,
+            "L5": 0.78,
+            "L7": 0.75,
+            "L8": 0.92,
+            "L9": 0.80,
+            "L11": 0.85,
+            "L6": 0.90,
         }
 
     def test_all_pass_returns_healthy(self) -> None:
@@ -278,12 +308,28 @@ class TestAdaptiveSizingBoundary(unittest.TestCase):
     def test_sizing_is_advisory_only(self) -> None:
         """Sizing multiplier must not contain account state (lot, equity, balance)."""
         gates = {
-            "FOUNDATION_OK": "PASS", "SCORING_OK": "FAIL", "ENRICHMENT_OK": "FAIL",
-            "STRUCTURE_OK": "PASS", "RISK_CHAIN_OK": "PASS", "INTEGRITY_OK": "FAIL",
-            "PROBABILITY_OK": "FAIL", "FIREWALL_OK": "PASS", "GOVERNANCE_OK": "FAIL",
+            "FOUNDATION_OK": "PASS",
+            "SCORING_OK": "FAIL",
+            "ENRICHMENT_OK": "FAIL",
+            "STRUCTURE_OK": "PASS",
+            "RISK_CHAIN_OK": "PASS",
+            "INTEGRITY_OK": "FAIL",
+            "PROBABILITY_OK": "FAIL",
+            "FIREWALL_OK": "PASS",
+            "GOVERNANCE_OK": "FAIL",
         }
-        scores = {"L1": 0.80, "L2": 0.80, "L3": 0.80, "L4": 0.70, "L5": 0.70,
-                  "L7": 0.70, "L8": 0.70, "L9": 0.70, "L11": 0.70, "L6": 0.70}
+        scores = {
+            "L1": 0.80,
+            "L2": 0.80,
+            "L3": 0.80,
+            "L4": 0.70,
+            "L5": 0.70,
+            "L7": 0.70,
+            "L8": 0.70,
+            "L9": 0.70,
+            "L11": 0.70,
+            "L6": 0.70,
+        }
         result = self.engine.evaluate(gates, scores)
         # Sizing multiplier is a pure ratio [0, 1] — no account state
         self.assertGreaterEqual(result.sizing_multiplier, 0.0)
@@ -291,9 +337,15 @@ class TestAdaptiveSizingBoundary(unittest.TestCase):
 
     def test_max_degradation_all_soft_fail(self) -> None:
         gates = {
-            "FOUNDATION_OK": "PASS", "SCORING_OK": "FAIL", "ENRICHMENT_OK": "FAIL",
-            "STRUCTURE_OK": "PASS", "RISK_CHAIN_OK": "PASS", "INTEGRITY_OK": "FAIL",
-            "PROBABILITY_OK": "FAIL", "FIREWALL_OK": "PASS", "GOVERNANCE_OK": "FAIL",
+            "FOUNDATION_OK": "PASS",
+            "SCORING_OK": "FAIL",
+            "ENRICHMENT_OK": "FAIL",
+            "STRUCTURE_OK": "PASS",
+            "RISK_CHAIN_OK": "PASS",
+            "INTEGRITY_OK": "FAIL",
+            "PROBABILITY_OK": "FAIL",
+            "FIREWALL_OK": "PASS",
+            "GOVERNANCE_OK": "FAIL",
         }
         scores = {layer: 0.90 for layer in NAVIGATION_WEIGHTS}
         result = self.engine.evaluate(gates, scores)

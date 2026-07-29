@@ -198,7 +198,8 @@ class L3RouterEvaluator:
                 low_warn_legal = (
                     payload.trend_confirmed
                     and not payload.structure_conflict
-                    and payload.freshness_state in (
+                    and payload.freshness_state
+                    in (
                         FreshnessState.FRESH,
                         FreshnessState.STALE_PRESERVED,
                         FreshnessState.DEGRADED,
@@ -219,7 +220,8 @@ class L3RouterEvaluator:
                 and band in (CoherenceBand.HIGH, CoherenceBand.MID)
                 and payload.trend_confirmed
                 and not payload.structure_conflict
-                and payload.fallback_class in (
+                and payload.fallback_class
+                in (
                     FallbackClass.NO_FALLBACK,
                     FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
                 )
@@ -231,7 +233,8 @@ class L3RouterEvaluator:
             else:
                 legal_warn = (
                     payload.upstream_l2_continuation_allowed
-                    and payload.freshness_state in (
+                    and payload.freshness_state
+                    in (
                         FreshnessState.FRESH,
                         FreshnessState.STALE_PRESERVED,
                         FreshnessState.DEGRADED,
@@ -240,7 +243,8 @@ class L3RouterEvaluator:
                     and band in (CoherenceBand.HIGH, CoherenceBand.MID)
                     and payload.trend_confirmed
                     and not payload.structure_conflict
-                    and payload.fallback_class in (
+                    and payload.fallback_class
+                    in (
                         FallbackClass.NO_FALLBACK,
                         FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
                         FallbackClass.LEGAL_EMERGENCY_PRESERVE,

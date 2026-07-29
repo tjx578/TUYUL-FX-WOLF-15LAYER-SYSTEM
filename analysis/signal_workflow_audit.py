@@ -154,7 +154,9 @@ def parse_signal_workflow_row(row: Mapping[str, Any]) -> SignalWorkflowAuditEven
         pending_decision_id=_optional_text(payload.get("pending_decision_id")),
         signal_family=_optional_text(payload.get("signal_family") or payload.get("resolved_family")),
         status=_optional_text(payload.get("status") or payload.get("phase") or payload.get("phase_priced")),
-        raw_direction=normalize_direction(_optional_text(payload.get("raw_direction") or payload.get("direction")), None),
+        raw_direction=normalize_direction(
+            _optional_text(payload.get("raw_direction") or payload.get("direction")), None
+        ),
         candidate_direction=normalize_direction(_optional_text(payload.get("candidate_direction")), None),
         watch_direction=normalize_direction(_optional_text(payload.get("watch_direction")), None),
         final_direction=normalize_direction(_optional_text(payload.get("final_direction")), None),
@@ -206,9 +208,7 @@ def summarize_signal_workflow(
         "valid_for_execution_true": sum(event.valid_for_execution is True for event in ordered),
         "direction_conflicts_by_symbol": dict(conflict_counts.most_common()),
         "raw_buy_candidate_sell_by_symbol": dict(raw_buy_candidate_sell.most_common()),
-        "pressure_tier_snapshot_count": sum(
-            event.channel == "SignalThrottlePressureTierSnapshot" for event in ordered
-        ),
+        "pressure_tier_snapshot_count": sum(event.channel == "SignalThrottlePressureTierSnapshot" for event in ordered),
         "latest_pressure_tier_snapshot": _latest_pressure_tier_snapshot(ordered),
         "watch_pressure_priority_context_count": len(watch_tier_contexts),
         "watch_pressure_priority_context_by_symbol": dict(
@@ -265,11 +265,7 @@ def _accuracy_scope_gate(
             if unknown_present or deployment_count == 0
             else "SINGLE_DEPLOYMENT_VALID"
         ),
-        "reason": (
-            None
-            if allowed
-            else "Accuracy evidence requires one deployment and one runtime configuration."
-        ),
+        "reason": (None if allowed else "Accuracy evidence requires one deployment and one runtime configuration."),
     }
 
 
@@ -354,10 +350,7 @@ def _tier_leakage_guard(events: list[SignalWorkflowAuditEvent]) -> dict[str, Any
         "decision_or_signal_with_effective_pressure_tier": len(direct_tier),
         "decision_or_signal_reason_mentions_tier": len(reason_mentions),
         "leaking_symbols": sorted(
-            {
-                str(event.symbol or "UNKNOWN")
-                for event in [*pressure_context, *direct_tier, *reason_mentions]
-            }
+            {str(event.symbol or "UNKNOWN") for event in [*pressure_context, *direct_tier, *reason_mentions]}
         ),
     }
 

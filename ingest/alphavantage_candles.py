@@ -95,9 +95,7 @@ def _reserve_av_credit() -> None:
     with _AV_RATE_LOCK:
         if now < _AV_BLOCKED_UNTIL:
             retry_in = _AV_BLOCKED_UNTIL - now
-            raise ProviderQuotaDeferredError(
-                f"[AlphaVantage] Rate-limit cooldown active; retry in {retry_in:.1f}s"
-            )
+            raise ProviderQuotaDeferredError(f"[AlphaVantage] Rate-limit cooldown active; retry in {retry_in:.1f}s")
 
         # Evict timestamps outside the current window
         while _AV_REQUEST_TIMES and now - _AV_REQUEST_TIMES[0] >= window:
@@ -106,8 +104,7 @@ def _reserve_av_credit() -> None:
         if len(_AV_REQUEST_TIMES) >= limit:
             retry_in = window - (now - _AV_REQUEST_TIMES[0])
             raise ProviderQuotaDeferredError(
-                f"[AlphaVantage] Credit budget exhausted ({limit}/{window:.0f}s); "
-                f"retry in {retry_in:.1f}s"
+                f"[AlphaVantage] Credit budget exhausted ({limit}/{window:.0f}s); retry in {retry_in:.1f}s"
             )
 
         _AV_REQUEST_TIMES.append(now)
@@ -189,10 +186,7 @@ class AlphaVantageCandleFetcher:
             return []
 
         if not self.is_configured:
-            logger.warning(
-                "[AlphaVantage] No API key configured "
-                "(set ALPHAVANTAGE_API_KEY or ALPHA_VANTAGE_API_KEY)"
-            )
+            logger.warning("[AlphaVantage] No API key configured (set ALPHAVANTAGE_API_KEY or ALPHA_VANTAGE_API_KEY)")
             return []
 
         if timeframe not in self.SUPPORTED_TIMEFRAMES:
@@ -219,9 +213,7 @@ class AlphaVantageCandleFetcher:
                     last_ts.strftime("%Y-%m-%d") if isinstance(last_ts, datetime) else last_ts,
                 )
             else:
-                logger.warning(
-                    "[AlphaVantage] Returned 0 {} bars for {}", timeframe, symbol
-                )
+                logger.warning("[AlphaVantage] Returned 0 {} bars for {}", timeframe, symbol)
             return candles
 
         except ProviderQuotaDeferredError as exc:

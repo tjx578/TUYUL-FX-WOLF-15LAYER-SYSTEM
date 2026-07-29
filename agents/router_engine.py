@@ -272,9 +272,7 @@ class ObjectiveNormalizer:
 
         normalized = str(payload.get("normalized_objective") or user_request).strip()
         domain_tags = [str(v).strip() for v in payload.get("domain_tags", []) if str(v).strip()]
-        deliverable_types = [
-            str(v).strip() for v in payload.get("deliverable_types", []) if str(v).strip()
-        ]
+        deliverable_types = [str(v).strip() for v in payload.get("deliverable_types", []) if str(v).strip()]
 
         constraints_payload = payload.get("constraints", {})
         context_payload = payload.get("context", {})
@@ -292,13 +290,9 @@ class ObjectiveNormalizer:
         context = ObjectiveContext(
             repo_available=bool(context_payload.get("repo_available", False)),
             artifacts_available=bool(context_payload.get("artifacts_available", False)),
-            historical_memory_available=bool(
-                context_payload.get("historical_memory_available", False)
-            ),
+            historical_memory_available=bool(context_payload.get("historical_memory_available", False)),
             external_systems_involved=[
-                str(v).strip()
-                for v in context_payload.get("external_systems_involved", [])
-                if str(v).strip()
+                str(v).strip() for v in context_payload.get("external_systems_involved", []) if str(v).strip()
             ],
         )
         preferences = ObjectivePreferences(
@@ -363,10 +357,7 @@ class DimensionScorer:
 
     @classmethod
     def score(cls, objective: Objective) -> RoutingDimensions:
-        text = (
-            f"{objective.user_request} {objective.normalized_objective} "
-            f"{' '.join(objective.domain_tags)}"
-        ).lower()
+        text = (f"{objective.user_request} {objective.normalized_objective} {' '.join(objective.domain_tags)}").lower()
         external_count = len(objective.context.external_systems_involved)
         deliverable_count = len(objective.deliverable_types)
         domain_count = len(objective.domain_tags)
@@ -393,17 +384,13 @@ class DimensionScorer:
             security_risk + (1 if any(k in text for k in cls.SECURITY_KEYWORDS) else 0),
         )
 
-        performance_risk = SENSITIVITY_MAP.get(
-            objective.constraints.performance_sensitivity, 1
-        )
+        performance_risk = SENSITIVITY_MAP.get(objective.constraints.performance_sensitivity, 1)
         performance_risk = min(
             5,
             performance_risk + (1 if any(k in text for k in cls.PERFORMANCE_KEYWORDS) else 0),
         )
 
-        architecture_impact = ARCH_IMPACT_MAP.get(
-            objective.constraints.architecture_impact, 0
-        )
+        architecture_impact = ARCH_IMPACT_MAP.get(objective.constraints.architecture_impact, 0)
         if "architecture" in text or "cross-module" in text or "cross system" in text:
             architecture_impact = min(5, max(architecture_impact, 3))
 
@@ -494,10 +481,14 @@ class RouterEngine:
                 matched_rules.append(str(rule["name"]))
                 select = rule["select"]
                 candidate_topology = str(select["topology"])
-                if candidate_topology in {
-                    "parallel_swarm",
-                    "hierarchical_swarm",
-                } and not objective.preferences.allow_swarm:
+                if (
+                    candidate_topology
+                    in {
+                        "parallel_swarm",
+                        "hierarchical_swarm",
+                    }
+                    and not objective.preferences.allow_swarm
+                ):
                     continue
                 chosen_topology = candidate_topology
                 chosen_modes = list(select["modes"])
@@ -517,8 +508,8 @@ class RouterEngine:
                 matched_rules.append("default_pipeline")
 
         chosen_modes, injected_gates = self._inject_gates(chosen_modes, objective, dims)
-        chosen_topology, chosen_modes, compatibility_reason = (
-            self._resolve_topology_compatibility(chosen_topology, chosen_modes)
+        chosen_topology, chosen_modes, compatibility_reason = self._resolve_topology_compatibility(
+            chosen_topology, chosen_modes
         )
         if compatibility_reason:
             matched_rules.append(compatibility_reason)
@@ -569,17 +560,12 @@ class RouterEngine:
         topology: str,
         modes: list[str],
     ) -> tuple[str, list[str], str | None]:
-        topology_specific_modes = {
-            "swarm_coordination": {"parallel_swarm", "hierarchical_swarm"}
-        }
+        topology_specific_modes = {"swarm_coordination": {"parallel_swarm", "hierarchical_swarm"}}
 
         def normalize_modes_for_candidate(candidate_topology: str) -> list[str]:
             normalized_modes: list[str] = []
             for mode in modes:
-                if (
-                    mode in topology_specific_modes
-                    and candidate_topology not in topology_specific_modes[mode]
-                ):
+                if mode in topology_specific_modes and candidate_topology not in topology_specific_modes[mode]:
                     continue
                 normalized_modes.append(mode)
             return normalized_modes
@@ -609,10 +595,7 @@ class RouterEngine:
                     f"topology_downgrade_to_{candidate}",
                 )
 
-        raise RoutingError(
-            f"No compatible topology found for modes {modes!r} "
-            f"starting from topology {topology!r}"
-        )
+        raise RoutingError(f"No compatible topology found for modes {modes!r} starting from topology {topology!r}")
 
     def _validate_modes(self, modes: list[str], topology: str) -> list[str]:
         validated: list[str] = []
@@ -712,10 +695,7 @@ class DefaultModeRunner:
         route: RouteDecision,
         prior_results: Sequence[ModeResult],
     ) -> ModeResult:
-        summary = (
-            f"{mode_id} completed in skeleton mode "
-            f"for objective '{objective.objective_id}'."
-        )
+        summary = f"{mode_id} completed in skeleton mode for objective '{objective.objective_id}'."
         findings = [f"{mode_id}: placeholder output generated"]
         decisions: list[str] = []
         blockers: list[str] = []
@@ -732,17 +712,10 @@ class DefaultModeRunner:
             decisions = ["Scope should remain aligned to normalized objective."]
         elif mode_id == "architecture":
             findings = ["Architecture review suggested for cross-module impacts."]
-            decisions = [
-                "Component contracts should be finalized before deep implementation."
-            ]
+            decisions = ["Component contracts should be finalized before deep implementation."]
         elif mode_id == "implementation":
-            findings = [
-                "Implementation skeleton executed; "
-                "no file mutation performed by default runner."
-            ]
-            decisions = [
-                "Replace DefaultModeRunner with project-specific implementation runner."
-            ]
+            findings = ["Implementation skeleton executed; no file mutation performed by default runner."]
+            decisions = ["Replace DefaultModeRunner with project-specific implementation runner."]
         elif mode_id == "review":
             findings = ["Review skeleton found no concrete artifacts to inspect."]
         elif mode_id == "test":
@@ -758,22 +731,13 @@ class DefaultModeRunner:
         elif mode_id == "memory_learning":
             findings = ["Memory writeback requested."]
         elif mode_id == "verification":
-            findings = [
-                "Verification should be executed by VerificationSink, "
-                "not DefaultModeRunner."
-            ]
+            findings = ["Verification should be executed by VerificationSink, not DefaultModeRunner."]
         elif mode_id == "swarm_coordination":
-            findings = [
-                "Swarm topology should assign specialists and synthesis path."
-            ]
+            findings = ["Swarm topology should assign specialists and synthesis path."]
         elif mode_id == "github_release":
-            findings = [
-                "Release checklist should be derived from review/test/verification outputs."
-            ]
+            findings = ["Release checklist should be derived from review/test/verification outputs."]
         elif mode_id == "platform_ops":
-            findings = [
-                "Operational runbook should be prepared for affected environments."
-            ]
+            findings = ["Operational runbook should be prepared for affected environments."]
 
         return ModeResult(
             mode=mode_id,
@@ -823,9 +787,7 @@ class VerificationSink:
 
         for result in results:
             if result.status in {"blocked", "failed"}:
-                blockers.extend(
-                    result.blockers or [f"{result.mode} reported {result.status}"]
-                )
+                blockers.extend(result.blockers or [f"{result.mode} reported {result.status}"])
 
         overall = "pass"
         if blockers or any(v == "fail" for v in checks.values()):
@@ -833,16 +795,8 @@ class VerificationSink:
         elif any(v == "warn" for v in checks.values()):
             overall = "warn"
 
-        confidence = (
-            0.92 if overall == "pass" else 0.75 if overall == "warn" else 0.35
-        )
-        ship = (
-            "ship"
-            if overall == "pass"
-            else "ship_with_caveats"
-            if overall == "warn"
-            else "do_not_ship"
-        )
+        confidence = 0.92 if overall == "pass" else 0.75 if overall == "warn" else 0.35
+        ship = "ship" if overall == "pass" else "ship_with_caveats" if overall == "warn" else "do_not_ship"
         return VerificationResult(
             checks=checks,
             overall_verdict=overall,
@@ -972,9 +926,7 @@ class OrchestrationEngine:
             )
 
         sm.transition("persistence")
-        memory_payload = self.memory_adapter.writeback(
-            objective, route, results, verification
-        )
+        memory_payload = self.memory_adapter.writeback(objective, route, results, verification)
         sm.transition("completed")
         return self._build_result(
             objective,
@@ -983,9 +935,7 @@ class OrchestrationEngine:
             verification,
             memory_payload,
             sm.history,
-            execution_status=(
-                "success" if verification.overall_verdict == "pass" else "partial"
-            ),
+            execution_status=("success" if verification.overall_verdict == "pass" else "partial"),
         )
 
     @staticmethod
@@ -1018,15 +968,11 @@ class OrchestrationEngine:
 
         next_actions: list[str] = []
         if verification.overall_verdict == "warn":
-            next_actions.append(
-                "Resolve verification warnings before production rollout."
-            )
+            next_actions.append("Resolve verification warnings before production rollout.")
         elif verification.overall_verdict == "fail":
             next_actions.append("Resolve blockers before re-routing or publish.")
         else:
-            next_actions.append(
-                "Swap skeleton runners with real project-specific mode runners."
-            )
+            next_actions.append("Swap skeleton runners with real project-specific mode runners.")
 
         return OrchestrationResult(
             objective_id=objective.objective_id,
@@ -1056,24 +1002,16 @@ class OrchestrationEngine:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Ultimate Agent Router Engine skeleton."
-    )
-    parser.add_argument(
-        "--registry", type=Path, required=True, help="Path to registry.json"
-    )
-    parser.add_argument(
-        "--objective", type=Path, required=True, help="Path to objective JSON"
-    )
+    parser = argparse.ArgumentParser(description="Ultimate Agent Router Engine skeleton.")
+    parser.add_argument("--registry", type=Path, required=True, help="Path to registry.json")
+    parser.add_argument("--objective", type=Path, required=True, help="Path to objective JSON")
     parser.add_argument("--out", type=Path, help="Optional output JSON path")
     parser.add_argument(
         "--route-only",
         action="store_true",
         help="Emit route decision without execution",
     )
-    parser.add_argument(
-        "--pretty", action="store_true", help="Pretty-print JSON output"
-    )
+    parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
     return parser.parse_args()
 
 

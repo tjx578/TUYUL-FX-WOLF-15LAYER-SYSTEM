@@ -317,7 +317,7 @@ def _normalized_watch_pending_decision_id(symbol: str, raw: str, *, cluster_id: 
 
     duplicate_prefix = f"{symbol_key}_{symbol_key}_"
     if token.upper().startswith(duplicate_prefix):
-        token = f"{symbol_key}_{token[len(duplicate_prefix):]}"
+        token = f"{symbol_key}_{token[len(duplicate_prefix) :]}"
     elif not token.upper().startswith(f"{symbol_key}_"):
         token = f"{symbol_key}_{token or 'WATCH'}"
     return f"{token}_M15_DECISION"
@@ -3446,9 +3446,7 @@ class WolfConstitutionalPipeline:
         tick_mid = (bid + ask) / 2.0 if bid is not None and ask is not None else bid or ask
         latest_m15_close = self._latest_candle_close(symbol, "M15")
         latest_h1_close = self._latest_candle_close(symbol, "H1")
-        entry_price = (
-            self._coerce_positive_float(execution.get("entry_price")) if allow_execution_entry_price else None
-        )
+        entry_price = self._coerce_positive_float(execution.get("entry_price")) if allow_execution_entry_price else None
         pip_value = self._pip_value(symbol)
         structure = self._derive_price_structure(
             symbol=symbol,
@@ -3499,22 +3497,16 @@ class WolfConstitutionalPipeline:
                 htf_context, "daily_bias_freshness_status"
             ),
             htf_daily_bias_rule_version=self._optional_int_from_mapping(htf_context, "daily_bias_rule_version"),
-            htf_location_reference_price=self._optional_float_from_mapping(
-                htf_context, "location_reference_price"
-            ),
+            htf_location_reference_price=self._optional_float_from_mapping(htf_context, "location_reference_price"),
             htf_location_reference_time=self._optional_text_from_mapping(htf_context, "location_reference_time"),
-            htf_location_reference_source=self._optional_text_from_mapping(
-                htf_context, "location_reference_source"
-            ),
+            htf_location_reference_source=self._optional_text_from_mapping(htf_context, "location_reference_source"),
             htf_location_reference_age_seconds=self._optional_float_from_mapping(
                 htf_context, "location_reference_age_seconds"
             ),
             htf_location_ratio=self._optional_float_from_mapping(htf_context, "location_ratio"),
             htf_dealing_range_source=self._optional_text_from_mapping(htf_context, "dealing_range_source"),
             htf_liquidity_resolution=self._optional_text_from_mapping(htf_context, "liquidity_resolution"),
-            htf_liquidity_resolution_time=self._optional_text_from_mapping(
-                htf_context, "liquidity_resolution_time"
-            ),
+            htf_liquidity_resolution_time=self._optional_text_from_mapping(htf_context, "liquidity_resolution_time"),
             htf_liquidity_resolution_age_seconds=self._optional_float_from_mapping(
                 htf_context, "liquidity_resolution_age_seconds"
             ),
@@ -4082,6 +4074,7 @@ class WolfConstitutionalPipeline:
     def _htf_structure_context_from_market_context(context: Any | None) -> dict[str, Any] | None:
         if context is None:
             return None
+
         def _field(name: str) -> Any:
             if isinstance(context, dict):
                 return context.get(name)
@@ -4127,9 +4120,7 @@ class WolfConstitutionalPipeline:
             "liquidity_resolution": _field("htf_liquidity_resolution"),
             "liquidity_resolution_time": _field("htf_liquidity_resolution_time"),
             "liquidity_resolution_age_seconds": _field("htf_liquidity_resolution_age_seconds"),
-            "liquidity_resolution_freshness_status": _field(
-                "htf_liquidity_resolution_freshness_status"
-            ),
+            "liquidity_resolution_freshness_status": _field("htf_liquidity_resolution_freshness_status"),
             "liquidity_resolution_rule_version": _field("htf_liquidity_resolution_rule_version"),
             "reason": _field("htf_structure_reason"),
             "valid_for_execution": False,
@@ -4542,11 +4533,7 @@ class WolfConstitutionalPipeline:
         scope_config = report.get("scope_config") if isinstance(report.get("scope_config"), dict) else {}
         clean_block_seconds = max(
             1.0,
-            _number(
-                report.get("clean_block_seconds")
-                or scope_config.get("clean_block_seconds")
-                or 300.0
-            ),
+            _number(report.get("clean_block_seconds") or scope_config.get("clean_block_seconds") or 300.0),
         )
         fresh_maturity_window = max(60.0, clean_block_seconds)
 
@@ -5019,11 +5006,7 @@ class WolfConstitutionalPipeline:
             and not validation_only
             and direction in {"BUY", "SELL"}
             and source_clean_block_ok
-            and (
-                status.endswith("_WATCH")
-                or status.endswith("_VALID")
-                or status.endswith("_BY_DIRECT_ABSORPTION")
-            )
+            and (status.endswith("_WATCH") or status.endswith("_VALID") or status.endswith("_BY_DIRECT_ABSORPTION"))
         )
 
     @staticmethod
@@ -5102,10 +5085,7 @@ class WolfConstitutionalPipeline:
                 else f"{symbol}_{lifecycle_anchor}"
             )
             token = str(
-                payload.get("pending_decision_id")
-                or cluster_id
-                or payload.get("signal_valid_time_utc")
-                or "WATCH"
+                payload.get("pending_decision_id") or cluster_id or payload.get("signal_valid_time_utc") or "WATCH"
             )
             payload["pending_decision_id"] = _normalized_watch_pending_decision_id(
                 symbol,
@@ -5118,10 +5098,7 @@ class WolfConstitutionalPipeline:
     def _prepare_lifecycle_tracking_metadata(self, payload: dict[str, Any]) -> None:
         if not isinstance(payload, dict):
             return
-        if (
-            payload.get("price_integrity_evaluated") is True
-            and payload.get("price_integrity_valid") is not True
-        ):
+        if payload.get("price_integrity_evaluated") is True and payload.get("price_integrity_valid") is not True:
             return
         status = str(payload.get("status") or "")
         is_lifecycle_status = (
@@ -5153,10 +5130,7 @@ class WolfConstitutionalPipeline:
             return
         if not isinstance(payload, dict):
             return
-        if (
-            payload.get("price_integrity_evaluated") is True
-            and payload.get("price_integrity_valid") is not True
-        ):
+        if payload.get("price_integrity_evaluated") is True and payload.get("price_integrity_valid") is not True:
             return
         status = str(payload.get("status") or "")
         is_lifecycle_status = (
@@ -5620,7 +5594,9 @@ class WolfConstitutionalPipeline:
         raw = contexts.get(symbol.upper()) or contexts.get(symbol.lower()) or contexts.get(symbol)
         return dict(raw) if isinstance(raw, dict) else None
 
-    def _htf_structure_contexts_from_market_contexts(self, market_contexts: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    def _htf_structure_contexts_from_market_contexts(
+        self, market_contexts: dict[str, Any]
+    ) -> dict[str, dict[str, Any]]:
         contexts: dict[str, dict[str, Any]] = {}
         if os.getenv("HTF_STRUCTURE_CONTEXT_ENABLED", "true").strip().lower() != "true":
             return contexts
@@ -5723,9 +5699,7 @@ class WolfConstitutionalPipeline:
 
         expected_direction = self._lineage_direction(payload)
         deployment_id = self._lineage_deployment_id(payload)
-        clean_block_seconds = int(
-            self._parse_env_float("SIGNAL_THROTTLE_INTEL_MIN_CLEAN_BLOCK_MINUTES", 5.0) * 60.0
-        )
+        clean_block_seconds = int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_MIN_CLEAN_BLOCK_MINUTES", 5.0) * 60.0)
         max_distance = self._parse_env_float("SIGNAL_WATCH_LINEAGE_BACKFILL_MAX_TIME_DISTANCE_SECONDS", 300.0)
         matches: list[tuple[float, float, dict[str, Any], dict[str, Any]]] = []
 
@@ -6178,8 +6152,7 @@ class WolfConstitutionalPipeline:
                 return True
         clean_watch_entries = report.get("clean_block_watch_entries")
         if isinstance(clean_watch_entries, list) and any(
-            isinstance(entry, dict) and str(entry.get("status") or "NONE") != "NONE"
-            for entry in clean_watch_entries
+            isinstance(entry, dict) and str(entry.get("status") or "NONE") != "NONE" for entry in clean_watch_entries
         ):
             return True
         updates = report.get("signal_block_finalizer_updates")
@@ -7201,9 +7174,7 @@ class WolfConstitutionalPipeline:
             _bump("price_phase_conflict_count")
         elif direction_source == "DIRECTION_STALE_INTEL":
             _bump("stale_intel_count")
-        elif direction_source == "DIRECTION_MISSING" or (
-            status.endswith("_WATCH") and raw_direction in {"", "NONE"}
-        ):
+        elif direction_source == "DIRECTION_MISSING" or (status.endswith("_WATCH") and raw_direction in {"", "NONE"}):
             _bump("direction_missing_count")
         if final_direction in {"BUY", "SELL"}:
             _bump("pattern_resolved_count")
@@ -7356,9 +7327,7 @@ class WolfConstitutionalPipeline:
         range_low, range_high, range_source = observed_range
         entry_zone = payload.get("entry_zone")
         entry_zone_values = (
-            [self._coerce_positive_float(value) for value in entry_zone]
-            if isinstance(entry_zone, list | tuple)
-            else []
+            [self._coerce_positive_float(value) for value in entry_zone] if isinstance(entry_zone, list | tuple) else []
         )
         entry_zone_values = [value for value in entry_zone_values if value is not None]
         references = ReferencePriceLevels(
@@ -7473,10 +7442,7 @@ class WolfConstitutionalPipeline:
     ) -> bool:
         if os.getenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true").strip().lower() != "true":
             return False
-        if (
-            os.getenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true").strip().lower()
-            != "true"
-        ):
+        if os.getenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true").strip().lower() != "true":
             return False
         route = route_decision_or_pressure(
             payload,
@@ -7517,9 +7483,7 @@ class WolfConstitutionalPipeline:
         write_enabled = os.getenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "false").strip().lower() == "true"
         if outbox_enabled and write_enabled:
             prepared_payload = build_signal_pressure_state_payload(payload)
-            radar_write_enabled = (
-                os.getenv("SIGNAL_PRESSURE_RADAR_WRITE_ENABLED", "false").strip().lower() == "true"
-            )
+            radar_write_enabled = os.getenv("SIGNAL_PRESSURE_RADAR_WRITE_ENABLED", "false").strip().lower() == "true"
             if radar_write_enabled:
                 from storage.pressure_radar_manifest import (  # noqa: PLC0415
                     persist_pressure_radar_payload_sync,
@@ -8091,11 +8055,7 @@ class WolfConstitutionalPipeline:
         if not cluster_key.strip("|"):
             return False
 
-        cache_name = (
-            "_downgraded_microboost_clusters"
-            if within_lineage_grace
-            else "_terminalized_microboost_clusters"
-        )
+        cache_name = "_downgraded_microboost_clusters" if within_lineage_grace else "_terminalized_microboost_clusters"
         transition_cache = getattr(self, cache_name, None)
         if not isinstance(transition_cache, dict):
             transition_cache = {}
@@ -8237,10 +8197,7 @@ class WolfConstitutionalPipeline:
         event_time = str(latest.get("end_utc") or datetime.now(UTC).isoformat())
         pending_id = f"{cluster_id or symbol}:PREWATCH"
         direction = str(
-            latest.get("raw_direction")
-            or latest.get("candidate_direction")
-            or latest.get("direction")
-            or ""
+            latest.get("raw_direction") or latest.get("candidate_direction") or latest.get("direction") or ""
         ).upper()
         watch_direction = direction if direction in {"BUY", "SELL"} else None
         return {
@@ -8672,9 +8629,7 @@ class WolfConstitutionalPipeline:
             "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_MAX_SYMBOLS": _f(
                 "SIGNAL_THROTTLE_FOLLOWTHROUGH_SCORE_MAX_SYMBOLS", "8"
             ),
-            "SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED": _b(
-                "SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED", "true"
-            ),
+            "SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED": _b("SIGNAL_WATCH_FOLLOWTHROUGH_CONTEXT_ENABLED", "true"),
             "SIGNAL_WATCH_PAIR_MEMORY_ENABLED": _b("SIGNAL_WATCH_PAIR_MEMORY_ENABLED", "true"),
             "SIGNAL_WATCH_PHASE_STRUCTURE_VALIDATION_ENABLED": _b(
                 "SIGNAL_WATCH_PHASE_STRUCTURE_VALIDATION_ENABLED",
@@ -8701,22 +8656,14 @@ class WolfConstitutionalPipeline:
             "SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK": _b(
                 "SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK", "false"
             ),
-            "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED": _b(
-                "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true"
-            ),
+            "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED": _b("SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED", "true"),
             "MICROBOOST_SOURCE_GUARD_ENABLED": _b("MICROBOOST_SOURCE_GUARD_ENABLED", "true"),
             "MICROBOOST_STALE_CLUSTER_TERMINALIZATION_ENABLED": _b(
                 "MICROBOOST_STALE_CLUSTER_TERMINALIZATION_ENABLED", "true"
             ),
-            "MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE": _f(
-                "MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE", "512"
-            ),
-            "MICROBOOST_ACTIVE_TIMING_MAX_AGE_SECONDS": _f(
-                "MICROBOOST_ACTIVE_TIMING_MAX_AGE_SECONDS", "120"
-            ),
-            "MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS": _f(
-                "MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS", "420"
-            ),
+            "MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE": _f("MICROBOOST_STALE_CLUSTER_TERMINAL_CACHE_SIZE", "512"),
+            "MICROBOOST_ACTIVE_TIMING_MAX_AGE_SECONDS": _f("MICROBOOST_ACTIVE_TIMING_MAX_AGE_SECONDS", "120"),
+            "MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS": _f("MICROBOOST_LINEAGE_WAIT_GRACE_SECONDS", "420"),
             "SIGNAL_WATCH_SOURCE_GUARD_ENABLED": _b("SIGNAL_WATCH_SOURCE_GUARD_ENABLED", "true"),
             "SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED": _b("SIGNAL_THROTTLE_STATE_SNAPSHOT_ENABLED", "true"),
             "SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS": _f("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", "300"),
@@ -8740,9 +8687,7 @@ class WolfConstitutionalPipeline:
             ),
             "SIGNAL_JSON_EXEC_GATES_ENFORCE": _b("SIGNAL_JSON_EXEC_GATES_ENFORCE", "true"),
             "SIGNAL_JSON_FINAL_BARRIER_ENABLED": _b("SIGNAL_JSON_FINAL_BARRIER_ENABLED", "true"),
-            "SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE": _b(
-                "SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "true"
-            ),
+            "SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE": _b("SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE", "true"),
             "SIGNAL_DECISION_SOURCE_GUARD_ENABLED": _b("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true"),
             "SIGNAL_PRESSURE_STATE_JSON_ENABLED": _b("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true"),
             "SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED": _b(
@@ -8797,9 +8742,7 @@ class WolfConstitutionalPipeline:
         # Surface that context here using the very ``allowed_quorum.direction`` the decision
         # lane already trusts -- symbol-matched, so another pair's direction is never stamped.
         # Payload-only: never changes the block, eligibility, the watch path, or execution.
-        recovery_on = (
-            os.getenv("MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false").strip().lower() == "true"
-        )
+        recovery_on = os.getenv("MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED", "false").strip().lower() == "true"
         raw_direction = diag.get("raw_direction")
         direction_recovery_source = None
         if recovery_on:
