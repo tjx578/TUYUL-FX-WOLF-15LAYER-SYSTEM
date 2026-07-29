@@ -35,7 +35,11 @@ jobs:
           cache: pip
 
       - name: Install ruff
-        run: pip install ruff
+        # Pinned: an unpinned lint gate re-baselines itself on every ruff
+        # release, so a green PR can turn red with no code change. The cleanup
+        # in this branch is only meaningful against a fixed version. Bump
+        # deliberately, in its own change.
+        run: pip install ruff==0.15.7
 
       - name: Ruff check (lint — hard fail)
         run: ruff check . --config pyproject.toml
