@@ -66,9 +66,7 @@ def _heartbeat(index, *, symbol="CHFJPY", offset_seconds=0):
 
 
 def _reduce(events, *, max_gap_seconds=900):
-    reducer = MarketEpisodeReducer(
-        policy=MarketEpisodePolicyV1(max_continuity_gap_seconds=max_gap_seconds)
-    )
+    reducer = MarketEpisodeReducer(policy=MarketEpisodePolicyV1(max_continuity_gap_seconds=max_gap_seconds))
     return reducer.ingest_many(events)
 
 

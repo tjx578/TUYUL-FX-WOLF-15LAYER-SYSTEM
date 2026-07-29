@@ -46,9 +46,7 @@ class MarketEpisodePolicyV1(BaseModel):
     #: An episode splits when no *continuity* evidence arrives for this long.
     #: Measured against last_continuity_event_at, not the material clock:
     #: unchanged pressure still proves the story is running.
-    max_continuity_gap_seconds: int = Field(
-        default=DEFAULT_EPISODE_MAX_CONTINUITY_GAP_SECONDS, ge=60, le=86_400
-    )
+    max_continuity_gap_seconds: int = Field(default=DEFAULT_EPISODE_MAX_CONTINUITY_GAP_SECONDS, ge=60, le=86_400)
 
 
 def _flag(name: str, default: str) -> bool:
@@ -90,8 +88,7 @@ def assert_episode_rollout_is_safe(*, execution_enabled: bool) -> None:
     """
     if episode_lifecycle_v2_enabled() and not episode_shadow_only() and execution_enabled:
         raise EpisodePreflightError(
-            "STRATEGY_5SCR_LIFECYCLE_V2_ENABLED with shadow_only=false is not "
-            "permitted while execution is enabled"
+            "STRATEGY_5SCR_LIFECYCLE_V2_ENABLED with shadow_only=false is not permitted while execution is enabled"
         )
 
 

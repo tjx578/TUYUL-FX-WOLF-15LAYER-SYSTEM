@@ -38,9 +38,7 @@ LifecycleState = Literal[
 DirectionState = Literal["BUY", "SELL", "INCOMPLETE", "CONFLICT"]
 
 #: A terminal lifecycle is never reopened; later evidence starts a new episode.
-TERMINAL_LIFECYCLE_STATES: frozenset[str] = frozenset(
-    {"TERMINAL_NO_TRADE", "INVALIDATED", "SUPERSEDED"}
-)
+TERMINAL_LIFECYCLE_STATES: frozenset[str] = frozenset({"TERMINAL_NO_TRADE", "INVALIDATED", "SUPERSEDED"})
 ACTIVE_LIFECYCLE_STATES: frozenset[str] = frozenset({"ANALYSIS_OPEN", "TRANSITION_PENDING"})
 
 LinkReason = Literal[

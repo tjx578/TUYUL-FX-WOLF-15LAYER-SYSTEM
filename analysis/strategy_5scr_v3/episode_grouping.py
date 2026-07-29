@@ -188,9 +188,7 @@ def decide_grouping(
     incoming = event.direction
     current = active.direction_state
     other_material = (
-        event.microboost_transition in MATERIAL_MICROBOOST_TRANSITIONS
-        or context_changed
-        or lineage_newly_attached
+        event.microboost_transition in MATERIAL_MICROBOOST_TRANSITIONS or context_changed or lineage_newly_attached
     )
 
     if current == "CONFLICT":

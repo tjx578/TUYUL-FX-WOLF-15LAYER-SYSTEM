@@ -121,9 +121,7 @@ def test_config_reads_all_flags():
 
 def test_config_rejects_a_non_integer_gap():
     with pytest.raises(ValueError, match="MAX_CONTINUITY_GAP_SECONDS"):
-        LifecycleV2RuntimeConfig.from_env(
-            {"STRATEGY_5SCR_LIFECYCLE_V2_MAX_CONTINUITY_GAP_SECONDS": "nine hundred"}
-        )
+        LifecycleV2RuntimeConfig.from_env({"STRATEGY_5SCR_LIFECYCLE_V2_MAX_CONTINUITY_GAP_SECONDS": "nine hundred"})
 
 
 # --------------------------------------------------------------------------
@@ -144,9 +142,7 @@ async def test_disabled_runner_does_not_read_anything():
 
 @pytest.mark.asyncio
 async def test_runner_refuses_to_start_when_not_shadow_only():
-    runner = LifecycleV2ShadowRunner(
-        repository=_FakeRepository(), config=_config(shadow_only=False)
-    )
+    runner = LifecycleV2ShadowRunner(repository=_FakeRepository(), config=_config(shadow_only=False))
 
     with pytest.raises(RuntimeError, match="SHADOW_ONLY_REQUIRED"):
         await runner.run()
@@ -169,9 +165,7 @@ async def test_poll_folds_a_batch_into_one_episode():
 @pytest.mark.asyncio
 async def test_poll_with_dual_write_off_reads_but_does_not_write():
     repository = _FakeRepository(rows=[_row(1)])
-    runner = LifecycleV2ShadowRunner(
-        repository=repository, config=_config(dual_write_enabled=False)
-    )
+    runner = LifecycleV2ShadowRunner(repository=repository, config=_config(dual_write_enabled=False))
 
     processed = await runner.poll_once()
 
@@ -250,13 +244,8 @@ async def test_restart_midway_matches_a_continuous_run():
     assert restarted_final.strategy_lifecycle_id == continuous_final.strategy_lifecycle_id
     assert restarted_final.event_count == continuous_final.event_count
     assert restarted_final.last_event_at_utc == continuous_final.last_event_at_utc
-    assert (
-        restarted_final.last_continuity_event_at_utc
-        == continuous_final.last_continuity_event_at_utc
-    )
-    assert (
-        restarted_final.last_material_event_at_utc == continuous_final.last_material_event_at_utc
-    )
+    assert restarted_final.last_continuity_event_at_utc == continuous_final.last_continuity_event_at_utc
+    assert restarted_final.last_material_event_at_utc == continuous_final.last_material_event_at_utc
     assert restarted_final.direction_state == continuous_final.direction_state
 
 
@@ -275,9 +264,7 @@ async def test_runner_never_leases_or_mutates_transport_rows():
 
     # The only repository surface used is read + V2 write.
     assert not hasattr(repository, "claimed")
-    assert all(
-        link.transport_lifecycle_id == "transport-1" for _lifecycle, link in repository.persisted
-    )
+    assert all(link.transport_lifecycle_id == "transport-1" for _lifecycle, link in repository.persisted)
 
 
 def test_builder_returns_a_runner():
@@ -289,8 +276,6 @@ def test_builder_returns_a_runner():
 def test_runner_is_not_constructed_when_disabled():
     """Mirrors the runner.py wiring condition."""
     config = LifecycleV2RuntimeConfig.from_env({})
-    worker: Any = (
-        build_lifecycle_v2_shadow_runner(pg=object(), config=config) if config.enabled else None
-    )
+    worker: Any = build_lifecycle_v2_shadow_runner(pg=object(), config=config) if config.enabled else None
 
     assert worker is None

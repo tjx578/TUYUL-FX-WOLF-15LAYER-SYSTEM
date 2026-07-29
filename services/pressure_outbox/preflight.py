@@ -110,9 +110,7 @@ async def run_preflight() -> dict[str, object]:
                 f"indexes={','.join(outcome_schema.missing_indexes) or 'none'}"
             )
         lifecycle_v2_schema = await StrategyLifecycleV2Repository(pg=pg_client).schema_status()
-        lifecycle_v2_ready = not (
-            lifecycle_v2_schema["missing_tables"] or lifecycle_v2_schema["missing_indexes"]
-        )
+        lifecycle_v2_ready = not (lifecycle_v2_schema["missing_tables"] or lifecycle_v2_schema["missing_indexes"])
         # Enabling the worker before migration 20260729_01 has run would fail on
         # every poll; fail closed at startup instead.
         if lifecycle_v2_config.enabled and not lifecycle_v2_ready:

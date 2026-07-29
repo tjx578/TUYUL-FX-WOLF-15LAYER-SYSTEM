@@ -74,20 +74,13 @@ class LifecycleV2RuntimeConfig:
         try:
             gap = int(raw_gap)
         except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "STRATEGY_5SCR_LIFECYCLE_V2_MAX_CONTINUITY_GAP_SECONDS must be an integer"
-            ) from exc
+            raise ValueError("STRATEGY_5SCR_LIFECYCLE_V2_MAX_CONTINUITY_GAP_SECONDS must be an integer") from exc
         return cls(
             enabled=_flag(source.get("STRATEGY_5SCR_LIFECYCLE_V2_ENABLED")),
             # Shadow-only is the safe default, so it defaults ON.
-            shadow_only=str(
-                source.get("STRATEGY_5SCR_LIFECYCLE_V2_SHADOW_ONLY") or "true"
-            ).strip().lower()
-            == "true",
+            shadow_only=str(source.get("STRATEGY_5SCR_LIFECYCLE_V2_SHADOW_ONLY") or "true").strip().lower() == "true",
             dual_write_enabled=_flag(source.get("STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED")),
-            metrics_enabled=str(
-                source.get("STRATEGY_5SCR_LIFECYCLE_V2_METRICS_ENABLED") or "true"
-            ).strip().lower()
+            metrics_enabled=str(source.get("STRATEGY_5SCR_LIFECYCLE_V2_METRICS_ENABLED") or "true").strip().lower()
             == "true",
             max_continuity_gap_seconds=gap,
             poll_seconds=float(source.get("STRATEGY_5SCR_LIFECYCLE_V2_POLL_SECONDS") or "5"),
@@ -165,9 +158,7 @@ class LifecycleShadowWorker:
                 round(reduction.compression_ratio, 4) if reduction.compression_ratio else None
             ),
             "duplicate_event_total": reduction.duplicate_event_count,
-            "continuity_gap_split_total": reduction.split_reasons.get(
-                "CONTINUITY_GAP_EXCEEDED", 0
-            ),
+            "continuity_gap_split_total": reduction.split_reasons.get("CONTINUITY_GAP_EXCEEDED", 0),
             "hard_reset_split_total": reduction.split_reasons.get("HARD_CONTEXT_RESET", 0),
             "terminal_split_total": reduction.split_reasons.get("TERMINAL_LIFECYCLE", 0),
             "direction_conflict_total": sum(
@@ -229,9 +220,7 @@ class LifecycleV2ShadowRunner:
     ) -> None:
         self._repository = repository
         self._config = config
-        self._policy = MarketEpisodePolicyV1(
-            max_continuity_gap_seconds=config.max_continuity_gap_seconds
-        )
+        self._policy = MarketEpisodePolicyV1(max_continuity_gap_seconds=config.max_continuity_gap_seconds)
         self._running = False
         #: Episodes already recovered from the database this run.
         self._recovered_symbols: set[str] = set()

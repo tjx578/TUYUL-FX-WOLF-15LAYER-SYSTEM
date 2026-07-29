@@ -88,8 +88,7 @@ async def _main() -> None:
             tasks.append(outcome_worker.run())
         if lifecycle_v2_worker is not None:
             logger.info(
-                "Starting Strategy 5S-CR lifecycle V2 shadow worker "
-                "shadow_only={} dual_write={} continuity_gap={}s",
+                "Starting Strategy 5S-CR lifecycle V2 shadow worker shadow_only={} dual_write={} continuity_gap={}s",
                 lifecycle_v2_config.shadow_only,
                 lifecycle_v2_config.dual_write_enabled,
                 lifecycle_v2_config.max_continuity_gap_seconds,

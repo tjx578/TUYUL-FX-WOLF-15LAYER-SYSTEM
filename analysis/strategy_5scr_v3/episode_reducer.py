@@ -197,13 +197,9 @@ class MarketEpisodeReducer:
         # Three clocks advance independently.  A material change is always also
         # continuity evidence, so the material clock can never outrun it.
         continuity_at = (
-            event.event_time_utc
-            if (decision.continuity or decision.material)
-            else active.last_continuity_event_at_utc
+            event.event_time_utc if (decision.continuity or decision.material) else active.last_continuity_event_at_utc
         )
-        material_at = (
-            event.event_time_utc if decision.material else active.last_material_event_at_utc
-        )
+        material_at = event.event_time_utc if decision.material else active.last_material_event_at_utc
         direction_state = decision.next_direction_state
 
         return active.model_copy(
@@ -241,11 +237,7 @@ class MarketEpisodeReducer:
         """
         if active_id is None:
             return False
-        lineage = {
-            value
-            for value in (event.source_clean_block_id, event.source_watch_id)
-            if value is not None
-        }
+        lineage = {value for value in (event.source_clean_block_id, event.source_watch_id) if value is not None}
         if not lineage:
             return False
         known = self._known_lineage.get(active_id, set())
@@ -254,11 +246,7 @@ class MarketEpisodeReducer:
     def _remember(self, lifecycle_id: str, event: EpisodeEvent) -> None:
         if event.context_hash is not None:
             self._context_fingerprint[lifecycle_id] = event.context_hash
-        lineage = {
-            value
-            for value in (event.source_clean_block_id, event.source_watch_id)
-            if value is not None
-        }
+        lineage = {value for value in (event.source_clean_block_id, event.source_watch_id) if value is not None}
         if lineage:
             self._known_lineage.setdefault(lifecycle_id, set()).update(lineage)
 

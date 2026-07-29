@@ -29,9 +29,7 @@ COHORT = (
     / "unique_pressure_events.csv"
 )
 
-pytestmark = pytest.mark.skipif(
-    not COHORT.exists(), reason="archive cohort artifact is not present"
-)
+pytestmark = pytest.mark.skipif(not COHORT.exists(), reason="archive cohort artifact is not present")
 
 
 def _load_events() -> list[EpisodeEvent]:
@@ -42,18 +40,12 @@ def _load_events() -> list[EpisodeEvent]:
             execution_grade = row.get("campaign_anchor_execution_grade") == "True"
             cluster_id = row.get("cluster_id") or ""
             # Reconstruct the transport identity these events resolve to today.
-            transport = (
-                clean_block
-                if execution_grade and clean_block
-                else f"unresolved:{row['symbol']}:{cluster_id}"
-            )
+            transport = clean_block if execution_grade and clean_block else f"unresolved:{row['symbol']}:{cluster_id}"
             events.append(
                 EpisodeEvent(
                     pressure_event_id=row["event_id"],
                     symbol=row["symbol"],
-                    event_time_utc=datetime.fromisoformat(
-                        row["event_time_utc"].replace("Z", "+00:00")
-                    ),
+                    event_time_utc=datetime.fromisoformat(row["event_time_utc"].replace("Z", "+00:00")),
                     transport_lifecycle_id=transport,
                     raw_direction=(row.get("raw_direction") or "").strip() or None,
                     source_clean_block_id=clean_block,
@@ -61,8 +53,7 @@ def _load_events() -> list[EpisodeEvent]:
                     pair_eligible_for_analysis=row.get("pair_eligible_for_analysis") == "True",
                     allowed_quorum_reached=row.get("allowed_quorum_reached") == "True",
                     pressure_event_count=int(row.get("pressure_event_count") or 0),
-                    microboost_detected=(row.get("pressure_level") or "")
-                    == "MICROBOOST_WATCH",
+                    microboost_detected=(row.get("pressure_level") or "") == "MICROBOOST_WATCH",
                 )
             )
     return events
@@ -90,9 +81,7 @@ def test_linked_event_count_equals_unique_input_event_count(cohort, reduction):
     unique_input_event_count = len({event.pressure_event_id for event in cohort})
 
     assert linked_event_count == unique_input_event_count
-    assert {link.pressure_event_id for link in reduction.links} == {
-        event.pressure_event_id for event in cohort
-    }
+    assert {link.pressure_event_id for link in reduction.links} == {event.pressure_event_id for event in cohort}
 
 
 def test_no_orphan_events(cohort, reduction):
@@ -136,9 +125,7 @@ def test_episode_count_is_in_the_expected_neighbourhood(reduction):
 def test_duplicate_events_have_no_side_effect(cohort):
     """Redelivering the whole cohort must change nothing."""
     once = MarketEpisodeReducer(policy=MarketEpisodePolicyV1()).ingest_many(cohort)
-    twice = MarketEpisodeReducer(policy=MarketEpisodePolicyV1()).ingest_many(
-        list(cohort) + list(cohort)
-    )
+    twice = MarketEpisodeReducer(policy=MarketEpisodePolicyV1()).ingest_many(list(cohort) + list(cohort))
 
     assert len(twice.lifecycles) == len(once.lifecycles)
     assert len(twice.links) == len(once.links)
@@ -149,9 +136,7 @@ def test_no_episode_spans_more_than_one_symbol(cohort, reduction):
     by_lifecycle: dict[str, set[str]] = {}
     symbols = {event.pressure_event_id: event.symbol for event in cohort}
     for link in reduction.links:
-        by_lifecycle.setdefault(link.strategy_lifecycle_id, set()).add(
-            symbols[link.pressure_event_id]
-        )
+        by_lifecycle.setdefault(link.strategy_lifecycle_id, set()).add(symbols[link.pressure_event_id])
 
     assert all(len(found) == 1 for found in by_lifecycle.values())
 
@@ -166,9 +151,7 @@ def test_canonical_anchors_are_retained_not_discarded(cohort, reduction):
 
 def test_multiple_clean_blocks_collapse_into_shared_episodes(reduction):
     """Canonical lineage becomes evidence inside an episode, not its identity."""
-    multi_block = [
-        item for item in reduction.lifecycles.values() if item.clean_block_count > 1
-    ]
+    multi_block = [item for item in reduction.lifecycles.values() if item.clean_block_count > 1]
 
     assert multi_block, "expected at least one episode spanning several clean blocks"
 
@@ -182,12 +165,8 @@ def test_reduction_is_deterministic(cohort):
 
 
 def test_tighter_gap_yields_more_episodes(cohort):
-    tight = MarketEpisodeReducer(policy=MarketEpisodePolicyV1(max_continuity_gap_seconds=300)).ingest_many(
-        cohort
-    )
-    wide = MarketEpisodeReducer(policy=MarketEpisodePolicyV1(max_continuity_gap_seconds=1800)).ingest_many(
-        cohort
-    )
+    tight = MarketEpisodeReducer(policy=MarketEpisodePolicyV1(max_continuity_gap_seconds=300)).ingest_many(cohort)
+    wide = MarketEpisodeReducer(policy=MarketEpisodePolicyV1(max_continuity_gap_seconds=1800)).ingest_many(cohort)
 
     assert len(tight.lifecycles) > len(wide.lifecycles)
 
