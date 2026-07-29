@@ -44,12 +44,25 @@ from contracts.strategy_5scr_pressure import (
     PressureTradePlanBuildResult,
     Strategy5SCRMarketEvidence,
     Strategy5SCRTradePlan,
+    SymbolEpisodePolicy,
     TradeDirection,
 )
 from contracts.strategy_5scr_pressure_outbox import PressureOutboxEnvelope
 
 PRESSURE_LOG_PREFIX = "[SignalPressureStateJSON]"
 MIN_RR = 1.5
+SYMBOL_EPISODE_FLAG = "STRATEGY_5SCR_SYMBOL_EPISODE_ENABLED"
+
+
+class _Unset:
+    """Sentinel distinguishing 'not specified' from an explicit ``None``."""
+
+
+UNSET = _Unset()
+
+
+def symbol_episode_enabled() -> bool:
+    return os.getenv(SYMBOL_EPISODE_FLAG, "false").strip().lower() == "true"
 
 _RUNTIME_IDENTITY_FIELDS = frozenset(
     {
@@ -300,11 +313,23 @@ class PressureEventNormalizer:
 class PressureLifecycleAccumulator:
     """Deduplicate pressure events and build stable campaign lifecycles."""
 
-    def __init__(self, *, legacy_policy: LegacyEpisodePolicy | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        legacy_policy: LegacyEpisodePolicy | None = None,
+        episode_policy: SymbolEpisodePolicy | None | _Unset = UNSET,
+    ) -> None:
         self.legacy_policy = legacy_policy or LegacyEpisodePolicy()
+        # An explicit policy -- including an explicit ``None`` to force grouping
+        # off -- always wins, so callers that must reproduce an existing
+        # lifecycle id never inherit grouping from the environment.
+        if isinstance(episode_policy, _Unset):
+            episode_policy = SymbolEpisodePolicy() if symbol_episode_enabled() else None
+        self.episode_policy = episode_policy
         self._seen_event_ids: set[str] = set()
         self._lifecycles: dict[str, PressureLifecycle] = {}
         self._active_legacy: dict[tuple[str, str], str] = {}
+        self._active_episode: dict[tuple[str, str], str] = {}
 
     def ingest(self, event: PressureEvent) -> tuple[PressureLifecycle, bool]:
         if event.event_id in self._seen_event_ids:
@@ -395,6 +420,10 @@ class PressureLifecycleAccumulator:
                 None,
             )
         if event.input_mode == "LIVE":
+            if self.episode_policy is not None:
+                return self._resolve_symbol_episode(event)
+            # Without episode grouping every LIVE emission keys on its own
+            # transport cluster_id and becomes a separate pseudo-lifecycle.
             return f"unresolved:{event.symbol}:{event.cluster_id}", "UNRESOLVED", False, None
 
         direction_key = event.raw_direction or "WAIT"
@@ -413,6 +442,36 @@ class PressureLifecycleAccumulator:
         campaign_id = f"legacy:{event.symbol}:{start_token}:{digest}"
         self._active_legacy[active_key] = campaign_id
         return campaign_id, "LEGACY_EPISODE", False, self.legacy_policy.rule_version
+
+    def _resolve_symbol_episode(
+        self,
+        event: PressureEvent,
+    ) -> tuple[str, CampaignAnchorSource, bool, str | None]:
+        """Group consecutive same-symbol pressure into one durable episode.
+
+        Never execution-grade: the tradeplan builder still defers a LIVE
+        lifecycle until canonical clean-block lineage arrives.
+        """
+        policy = self.episode_policy
+        assert policy is not None  # guarded by the caller
+        direction_key = (event.raw_direction or "WAIT") if policy.split_on_direction_flip else "ANY"
+        active_key = (event.symbol, direction_key)
+
+        active_campaign = self._active_episode.get(active_key)
+        if active_campaign is not None:
+            active = self._lifecycles.get(active_campaign)
+            if active is not None:
+                gap = (event.event_time_utc - active.updated_at_utc).total_seconds()
+                if 0 <= gap <= policy.max_gap_seconds:
+                    return active.campaign_id, "SYMBOL_EPISODE", False, policy.rule_version
+
+        start_token = event.event_time_utc.strftime("%Y%m%dT%H%M%S.%fZ")
+        digest = hashlib.sha256(
+            f"{event.symbol}|{direction_key}|{start_token}|{policy.rule_version}".encode()
+        ).hexdigest()[:16]
+        campaign_id = f"episode:{event.symbol}:{start_token}:{digest}"
+        self._active_episode[active_key] = campaign_id
+        return campaign_id, "SYMBOL_EPISODE", False, policy.rule_version
 
     def _find_lifecycle_for_event(self, event_id: str) -> PressureLifecycle | None:
         for lifecycle in self._lifecycles.values():
@@ -701,7 +760,9 @@ def replay_pressure_outbox_events(
     envelopes.sort(key=lambda item: (item.lifecycle_id, item.lifecycle_sequence))
     expected_by_lifecycle: dict[str, int] = {}
     normalizer = PressureEventNormalizer(input_mode="LIVE")
-    accumulator = PressureLifecycleAccumulator()
+    # The outbox is the lifecycle authority here: campaign_id must equal the
+    # persisted lifecycle_id, so episode grouping is explicitly off.
+    accumulator = PressureLifecycleAccumulator(episode_policy=None)
     for envelope in envelopes:
         expected = expected_by_lifecycle.get(envelope.lifecycle_id, 0) + 1
         if envelope.lifecycle_sequence != expected:
@@ -717,6 +778,8 @@ def replay_pressure_outbox_events(
 __all__ = [
     "MIN_RR",
     "PRESSURE_LOG_PREFIX",
+    "SYMBOL_EPISODE_FLAG",
+    "symbol_episode_enabled",
     "PressureEventNormalizer",
     "PressureInputError",
     "PressureLifecycleAccumulator",

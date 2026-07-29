@@ -81,7 +81,9 @@ class Strategy5SCRPressureProcessor:
 
     def __init__(self, *, execution_policy: ExecutionPolicy | None = None) -> None:
         self._normalizer = PressureEventNormalizer(input_mode="LIVE")
-        self._accumulator = PressureLifecycleAccumulator()
+        # The outbox owns lifecycle identity here -- campaign_id must equal the
+        # persisted lifecycle_id -- so episode grouping is explicitly off.
+        self._accumulator = PressureLifecycleAccumulator(episode_policy=None)
         # Hybrid V3 is the canonical policy for live pressure; stated
         # explicitly rather than inherited from the environment.
         self._builder = PressureToTradePlanBuilder(

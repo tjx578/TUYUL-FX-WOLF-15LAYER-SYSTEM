@@ -28,6 +28,7 @@ CampaignAnchorSource = Literal[
     "SOURCE_CLEAN_BLOCK_ID",
     "SOURCE_WATCH_ID",
     "LEGACY_EPISODE",
+    "SYMBOL_EPISODE",
     "UNRESOLVED",
 ]
 TradeDirection = Literal["BUY", "SELL"]
@@ -53,6 +54,27 @@ class LegacyEpisodePolicy(FrozenContract):
 
     rule_version: Literal["5scr.legacy-m15-gap.v1"] = "5scr.legacy-m15-gap.v1"
     max_gap_seconds: int = Field(default=900, ge=60, le=86_400)
+
+
+class SymbolEpisodePolicy(FrozenContract):
+    """Durable market-episode grouping for emissions without canonical lineage.
+
+    ``cluster_id`` is a per-emission transport identifier -- on the repo's own
+    archive cohort it is unique in every single record -- so keying a lifecycle
+    on it splits one market story into as many pseudo-lifecycles as there were
+    emissions.  This policy instead groups consecutive same-symbol pressure into
+    one analysis episode.
+
+    An episode is an *analysis* grouping, never an execution grant: lifecycles
+    anchored this way stay ``campaign_anchor_execution_grade=False`` and are
+    still deferred by the tradeplan builder until canonical lineage arrives.
+    """
+
+    rule_version: Literal["5scr.symbol-episode.v1"] = "5scr.symbol-episode.v1"
+    max_gap_seconds: int = Field(default=900, ge=60, le=86_400)
+    #: A confirmed direction flip starts a new episode rather than silently
+    #: merging opposing pressure into one story.
+    split_on_direction_flip: bool = True
 
 
 class PressureEvent(FrozenContract):
@@ -137,6 +159,8 @@ class PressureLifecycle(FrozenContract):
             raise ValueError("event_ids must be unique")
         if self.input_mode == "LIVE" and self.campaign_anchor_source == "LEGACY_EPISODE":
             raise ValueError("LIVE lifecycle cannot use a legacy synthetic anchor")
+        if self.campaign_anchor_source == "SYMBOL_EPISODE" and self.campaign_anchor_execution_grade:
+            raise ValueError("symbol-episode grouping is analysis-only and never execution-grade")
         return self
 
 
@@ -270,5 +294,6 @@ __all__ = [
     "PressureTradePlanBuildResult",
     "Strategy5SCRMarketEvidence",
     "Strategy5SCRTradePlan",
+    "SymbolEpisodePolicy",
     "TradeDirection",
 ]
