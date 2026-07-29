@@ -35,6 +35,22 @@ _REQUIRED_INDEXES = frozenset(
         "ix_5scr_lifecycle_v2_links_transport",
     }
 )
+#: Columns whose absence would silently weaken a guarantee rather than crash.
+_REQUIRED_COLUMNS: frozenset[tuple[str, str]] = frozenset(
+    {
+        (LIFECYCLE_TABLE, "execution_authority"),
+        (LINK_TABLE, "transport_lifecycle_id"),
+    }
+)
+#: Constraints that *are* the guarantees. A database missing the shadow-only
+#: CHECK or the event-link FK must never be reported ready: the code would run
+#: happily while the invariant it depends on no longer exists.
+_REQUIRED_CONSTRAINTS = frozenset(
+    {
+        "ck_5scr_lifecycle_v2_shadow_only",
+        "fk_5scr_lifecycle_v2_event_link",
+    }
+)
 
 
 class LifecycleV2PersistenceError(RuntimeError):
@@ -83,11 +99,19 @@ class StrategyLifecycleV2Repository:
         return self._pg.is_available
 
     async def schema_status(self) -> dict[str, tuple[str, ...]]:
-        """Non-secret readiness snapshot for migration ``20260729_01``."""
+        """Non-secret readiness snapshot for migration ``20260729_01``.
+
+        Reports columns and constraints as well as tables and indexes: the
+        shadow-only CHECK and the event-link FK *are* the guarantees this layer
+        relies on, so a database missing them must not be reported ready.
+        """
+        expected_columns = tuple(sorted(f"{table}.{column}" for table, column in _REQUIRED_COLUMNS))
         if not self._pg.is_available:
             return {
                 "missing_tables": tuple(sorted(_REQUIRED_TABLES)),
                 "missing_indexes": tuple(sorted(_REQUIRED_INDEXES)),
+                "missing_columns": expected_columns,
+                "missing_constraints": tuple(sorted(_REQUIRED_CONSTRAINTS)),
             }
         table_rows = await self._pg.fetch(
             """
@@ -103,11 +127,30 @@ class StrategyLifecycleV2Repository:
             """,
             sorted(_REQUIRED_INDEXES),
         )
+        column_rows = await self._pg.fetch(
+            """
+            SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = ANY($1::text[])
+            """,
+            sorted(_REQUIRED_TABLES),
+        )
+        constraint_rows = await self._pg.fetch(
+            """
+            SELECT conname FROM pg_catalog.pg_constraint
+            WHERE connamespace = current_schema()::regnamespace
+              AND conname = ANY($1::text[])
+            """,
+            sorted(_REQUIRED_CONSTRAINTS),
+        )
         present_tables = {str(_row_value(row, "tablename") or "") for row in table_rows}
         present_indexes = {str(_row_value(row, "indexname") or "") for row in index_rows}
+        present_columns = {f"{_row_value(row, 'table_name')}.{_row_value(row, 'column_name')}" for row in column_rows}
+        present_constraints = {str(_row_value(row, "conname") or "") for row in constraint_rows}
         return {
             "missing_tables": tuple(sorted(_REQUIRED_TABLES - present_tables)),
             "missing_indexes": tuple(sorted(_REQUIRED_INDEXES - present_indexes)),
+            "missing_columns": tuple(sorted(set(expected_columns) - present_columns)),
+            "missing_constraints": tuple(sorted(_REQUIRED_CONSTRAINTS - present_constraints)),
         }
 
     async def active_lifecycle(self, symbol: str) -> StrategyLifecycleV2 | None:

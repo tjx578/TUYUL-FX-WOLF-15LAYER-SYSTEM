@@ -110,14 +110,18 @@ async def run_preflight() -> dict[str, object]:
                 f"indexes={','.join(outcome_schema.missing_indexes) or 'none'}"
             )
         lifecycle_v2_schema = await StrategyLifecycleV2Repository(pg=pg_client).schema_status()
-        lifecycle_v2_ready = not (lifecycle_v2_schema["missing_tables"] or lifecycle_v2_schema["missing_indexes"])
+        lifecycle_v2_ready = not any(lifecycle_v2_schema.values())
         # Enabling the worker before migration 20260729_01 has run would fail on
-        # every poll; fail closed at startup instead.
+        # every poll; fail closed at startup instead. Columns and constraints
+        # count: a database without the shadow-only CHECK is not ready, however
+        # complete its tables look.
         if lifecycle_v2_config.enabled and not lifecycle_v2_ready:
             raise RuntimeError(
                 "STRATEGY_5SCR_LIFECYCLE_V2_SCHEMA_NOT_READY:"
                 f"tables={','.join(lifecycle_v2_schema['missing_tables']) or 'none'}:"
-                f"indexes={','.join(lifecycle_v2_schema['missing_indexes']) or 'none'}"
+                f"indexes={','.join(lifecycle_v2_schema['missing_indexes']) or 'none'}:"
+                f"columns={','.join(lifecycle_v2_schema['missing_columns']) or 'none'}:"
+                f"constraints={','.join(lifecycle_v2_schema['missing_constraints']) or 'none'}"
             )
         return {
             "event": "pressure_outbox_preflight",

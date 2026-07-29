@@ -42,6 +42,8 @@ class _PoolBackedPostgres:
     def __init__(self, pool: Any, foreign_key_violation_error: type[Exception]) -> None:
         self._pool = pool
         self.foreign_key_violation_error = foreign_key_violation_error
+        #: Set by the fixture once asyncpg is imported.
+        self.check_violation_error: type[Exception] = Exception
 
     @property
     def is_available(self) -> bool:
@@ -81,7 +83,9 @@ async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
 
     pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=4, command_timeout=10)
     try:
-        yield _PoolBackedPostgres(pool, asyncpg.ForeignKeyViolationError)
+        backend = _PoolBackedPostgres(pool, asyncpg.ForeignKeyViolationError)
+        backend.check_violation_error = asyncpg.CheckViolationError
+        yield backend
     finally:
         await pool.close()
 
@@ -145,6 +149,8 @@ async def test_uuid_and_replay_ids_round_trip_through_real_postgres(
         assert await repository.schema_status() == {
             "missing_tables": (),
             "missing_indexes": (),
+            "missing_columns": (),
+            "missing_constraints": (),
         }
         assert await repository.persist(
             lifecycle,
@@ -256,74 +262,157 @@ async def test_shadow_only_is_enforced_by_the_database(
         assert stored is not None and stored["execution_authority"] is False
 
         # The database itself must refuse to grant execution authority.
-        with pytest.raises(Exception) as granted:
+        with pytest.raises(postgres.check_violation_error) as granted:
             await postgres.execute(
-                f"UPDATE {LIFECYCLE_TABLE} SET execution_authority = true "
-                "WHERE strategy_lifecycle_id = $1",
+                f"UPDATE {LIFECYCLE_TABLE} SET execution_authority = true WHERE strategy_lifecycle_id = $1",
                 lifecycle_id,
             )
-        assert "ck_5scr_lifecycle_v2_shadow_only" in str(granted.value)
+        assert getattr(granted.value, "constraint_name", None) == "ck_5scr_lifecycle_v2_shadow_only"
     finally:
         await _cleanup(postgres, lifecycle_id)
+
+
+async def _seed_pressure_event(
+    postgres: _PoolBackedPostgres,
+    *,
+    symbol: str,
+    at: datetime,
+    direction: str = "BUY",
+) -> None:
+    """Insert one delivered pressure event the shadow worker will pick up."""
+    event_id = uuid4()
+    transport_lifecycle_id = f"transport-{symbol}-{uuid4().hex[:8]}"
+    payload = {
+        "event": "signal_pressure_state_json",
+        "symbol": symbol,
+        "raw_direction": direction,
+        "pressure_seen": True,
+        "pressure_event_count": 3,
+        "valid_for_execution": False,
+        "is_final_signal": False,
+        "final_direction": "WAIT",
+        "promotion_stage": "PRESSURE_ONLY",
+    }
+    await postgres.execute(
+        """
+        INSERT INTO pressure_outbox (
+            id, event_id, event_type, schema_version, symbol,
+            lifecycle_id, lifecycle_sequence, source_clean_block_id,
+            signal_valid_at, payload, payload_hash, status
+        )
+        VALUES ($1, $2, 'signal_pressure_state_json', '1.0.0', $3,
+                $4, 1, NULL, $5, $6::jsonb, $7, 'PUBLISHED')
+        """,
+        uuid4(),
+        event_id,
+        symbol,
+        transport_lifecycle_id,
+        at,
+        dumps(payload),
+        uuid4().hex + uuid4().hex[:32],
+    )
+    await postgres.execute(
+        "INSERT INTO strategy_5scr_inbox (event_id, payload_hash, status) VALUES ($1, $2, 'RECEIVED')",
+        event_id,
+        uuid4().hex + uuid4().hex[:32],
+    )
+
+
+async def _episode_state(postgres: _PoolBackedPostgres, symbol: str) -> dict[str, Any]:
+    row = await postgres.fetchrow(
+        f"""
+        SELECT state, direction_state, opened_at, last_event_at,
+               last_continuity_event_at, last_material_event_at,
+               event_count, clean_block_count, watch_count, execution_authority
+        FROM {LIFECYCLE_TABLE}
+        WHERE symbol = $1
+        """,
+        symbol,
+    )
+    assert row is not None, f"no episode persisted for {symbol}"
+    return dict(row)
+
+
+async def _purge_symbol(postgres: _PoolBackedPostgres, symbol: str) -> None:
+    await postgres.execute(
+        f"DELETE FROM {LINK_TABLE} WHERE strategy_lifecycle_id IN "
+        f"(SELECT strategy_lifecycle_id FROM {LIFECYCLE_TABLE} WHERE symbol = $1)",
+        symbol,
+    )
+    await postgres.execute(f"DELETE FROM {LIFECYCLE_TABLE} WHERE symbol = $1", symbol)
+    await postgres.execute(
+        "DELETE FROM strategy_5scr_inbox WHERE event_id IN (SELECT event_id FROM pressure_outbox WHERE symbol = $1)",
+        symbol,
+    )
+    await postgres.execute("DELETE FROM pressure_outbox WHERE symbol = $1", symbol)
 
 
 async def test_restart_recovery_matches_a_continuous_run_on_real_postgres(
     postgres: _PoolBackedPostgres,
 ) -> None:
-    """Durable recovery must reproduce all three clocks after a restart.
+    """Drive the real worker down both paths and compare the resulting episodes.
 
-    The equivalent unit test uses a fake pool, and fakes have already hidden two
-    real transaction bugs here, so this is asserted against real storage.
+    Persisting a hand-built snapshot and reading it back would only prove a
+    round-trip. This folds the same event sequence twice through
+    ``LifecycleV2ShadowRunner``: once continuously, once split across a fresh
+    runner that must recover from the database. Only the symbol and the derived
+    lifecycle id may differ.
     """
-    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
-    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
-    opened = _lifecycle(lifecycle_id)
+    runtime = import_module("services.pressure_outbox.lifecycle_shadow_worker")
+    config = runtime.LifecycleV2RuntimeConfig(
+        enabled=True,
+        shadow_only=True,
+        dual_write_enabled=True,
+        metrics_enabled=False,
+        max_continuity_gap_seconds=900,
+        batch_size=100,
+    )
+    continuous_symbol = "EURCHF"
+    restarted_symbol = "EURNZD"
+    offsets = (0, 120, 240, 360)
+
+    def _runner() -> Any:
+        return runtime.LifecycleV2ShadowRunner(
+            repository=StrategyLifecycleV2Repository(pg=postgres),  # type: ignore[arg-type]
+            config=config,
+        )
 
     try:
-        assert await repository.persist(
-            opened,
-            _link(
-                lifecycle_id,
-                pressure_event_id=str(uuid4()),
-                transport_lifecycle_id="transport-restart-1",
-            ),
-        )
+        await _purge_symbol(postgres, continuous_symbol)
+        await _purge_symbol(postgres, restarted_symbol)
 
-        advanced = opened.model_copy(
-            update={
-                "last_event_at_utc": opened.last_event_at_utc + timedelta(seconds=120),
-                "last_continuity_event_at_utc": (
-                    opened.last_continuity_event_at_utc + timedelta(seconds=120)
-                ),
-                "last_material_event_at_utc": opened.last_material_event_at_utc,
-                "event_count": opened.event_count + 1,
-            }
-        )
-        assert await repository.persist(
-            advanced,
-            _link(
-                lifecycle_id,
-                pressure_event_id=str(uuid4()),
-                transport_lifecycle_id="transport-restart-2",
-            ),
-        )
+        # Continuous: one runner folds every event.
+        for offset in offsets:
+            await _seed_pressure_event(postgres, symbol=continuous_symbol, at=_OPENED_AT + timedelta(seconds=offset))
+        assert await _runner().poll_once() == len(offsets)
+        continuous = await _episode_state(postgres, continuous_symbol)
 
-        # A fresh repository stands in for a restarted worker.
-        restarted = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
-        recovered = await restarted.active_lifecycle("CHFJPY")
+        # Restarted: first half, then a brand-new runner for the second half.
+        for offset in offsets[:2]:
+            await _seed_pressure_event(postgres, symbol=restarted_symbol, at=_OPENED_AT + timedelta(seconds=offset))
+        assert await _runner().poll_once() == 2
 
-        assert recovered is not None
-        assert recovered.strategy_lifecycle_id == advanced.strategy_lifecycle_id
-        assert recovered.last_event_at_utc == advanced.last_event_at_utc
-        assert recovered.last_continuity_event_at_utc == advanced.last_continuity_event_at_utc
-        # Continuity advanced while material deliberately did not.
-        assert recovered.last_material_event_at_utc == opened.last_material_event_at_utc
-        assert recovered.last_material_event_at_utc < recovered.last_continuity_event_at_utc
-        assert recovered.direction_state == advanced.direction_state
-        assert recovered.event_count == advanced.event_count
-        assert recovered.execution_authority is False
+        for offset in offsets[2:]:
+            await _seed_pressure_event(postgres, symbol=restarted_symbol, at=_OPENED_AT + timedelta(seconds=offset))
+        # A fresh instance holds no in-process state; it must recover from
+        # PostgreSQL before folding, or it would open a duplicate episode.
+        assert await _runner().poll_once() == 2
+        restarted = await _episode_state(postgres, restarted_symbol)
+
+        assert restarted == continuous, "restarted run diverged from the continuous run"
+        assert continuous["event_count"] == len(offsets)
+        assert continuous["execution_authority"] is False
+        # Continuity tracked every event; nothing material changed after opening.
+        assert continuous["last_continuity_event_at"] == _OPENED_AT + timedelta(seconds=offsets[-1])
+        assert continuous["last_material_event_at"] == _OPENED_AT
+
+        # Exactly one episode per symbol -- no duplicate opened on restart.
+        for symbol in (continuous_symbol, restarted_symbol):
+            count = await postgres.fetchrow(f"SELECT count(*) AS n FROM {LIFECYCLE_TABLE} WHERE symbol = $1", symbol)
+            assert count["n"] == 1, f"{symbol} produced {count['n']} episodes"
     finally:
-        await _cleanup(postgres, lifecycle_id)
+        await _purge_symbol(postgres, continuous_symbol)
+        await _purge_symbol(postgres, restarted_symbol)
 
 
 async def test_persist_rolls_back_lifecycle_when_real_postgres_rejects_link(
