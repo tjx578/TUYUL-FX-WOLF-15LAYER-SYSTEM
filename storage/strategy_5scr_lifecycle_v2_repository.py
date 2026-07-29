@@ -120,9 +120,15 @@ class StrategyLifecycleV2Repository:
         )
         return None if row is None else lifecycle_from_row(row)
 
-    async def upsert_lifecycle(self, lifecycle: StrategyLifecycleV2) -> None:
+    async def upsert_lifecycle(
+        self,
+        lifecycle: StrategyLifecycleV2,
+        *,
+        _executor: Any | None = None,
+    ) -> None:
         """Persist an episode.  Idempotent on ``strategy_lifecycle_id``."""
-        await self._pg.execute(
+        executor = self._pg if _executor is None else _executor
+        await executor.execute(
             f"""
             INSERT INTO {LIFECYCLE_TABLE} (
                 strategy_lifecycle_id, symbol, state, direction_state,
@@ -166,13 +172,19 @@ class StrategyLifecycleV2Repository:
             lifecycle.watch_count,
         )
 
-    async def link_event(self, link: StrategyLifecycleEventLink) -> bool:
+    async def link_event(
+        self,
+        link: StrategyLifecycleEventLink,
+        *,
+        _executor: Any | None = None,
+    ) -> bool:
         """Attach a pressure event to an episode.
 
         Returns ``False`` when the event was already linked, so an at-least-once
         redelivery cannot inflate an episode's event count.
         """
-        result = await self._pg.execute(
+        executor = self._pg if _executor is None else _executor
+        result = await executor.execute(
             f"""
             INSERT INTO {LINK_TABLE} (
                 pressure_event_id, strategy_lifecycle_id, transport_lifecycle_id,
@@ -201,9 +213,9 @@ class StrategyLifecycleV2Repository:
         A link without its lifecycle would violate the foreign key; a lifecycle
         whose counters advanced without a link would double-count on retry.
         """
-        async with self._pg.transaction():
-            await self.upsert_lifecycle(lifecycle)
-            return await self.link_event(link)
+        async with self._pg.transaction() as connection:
+            await self.upsert_lifecycle(lifecycle, _executor=connection)
+            return await self.link_event(link, _executor=connection)
 
     async def fetch_unlinked_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """Read delivered pressure events that have no episode link yet.
@@ -255,9 +267,7 @@ class StrategyLifecycleV2Repository:
             "strategy_lifecycles_v2_total": strategy,
             "legacy_compression_ratio": round(events / transport, 4) if transport else None,
             "lifecycle_v2_compression_ratio": round(events / strategy, 4) if strategy else None,
-            "events_without_canonical_anchor_total": int(
-                _row_value(row, "events_without_canonical_anchor", 0) or 0
-            ),
+            "events_without_canonical_anchor_total": int(_row_value(row, "events_without_canonical_anchor", 0) or 0),
         }
 
 

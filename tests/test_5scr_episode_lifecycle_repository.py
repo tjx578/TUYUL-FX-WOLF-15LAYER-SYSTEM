@@ -32,6 +32,15 @@ from storage.strategy_5scr_lifecycle_v2_repository import (
 START = datetime(2026, 7, 17, 13, 0, 0, tzinfo=UTC)
 
 
+class _FakeTransactionConnection:
+    def __init__(self, postgres: _FakePostgres) -> None:
+        self._postgres = postgres
+
+    async def execute(self, query: str, *args: Any) -> str:
+        self._postgres.transaction_execute_calls += 1
+        return await self._postgres.execute(query, *args)
+
+
 class _FakePostgres:
     """Minimal in-memory stand-in for the queries this repository issues."""
 
@@ -40,6 +49,7 @@ class _FakePostgres:
         self.lifecycles: dict[str, dict[str, Any]] = {}
         self.links: dict[str, dict[str, Any]] = {}
         self.transactions = 0
+        self.transaction_execute_calls = 0
         self.fail_link = False
 
     async def execute(self, query: str, *args: Any) -> str:
@@ -63,9 +73,7 @@ class _FakePostgres:
             }
             if existing:
                 row["last_event_at"] = max(existing["last_event_at"], args[5])
-                row["last_continuity_event_at"] = max(
-                    existing["last_continuity_event_at"], args[6]
-                )
+                row["last_continuity_event_at"] = max(existing["last_continuity_event_at"], args[6])
                 row["last_material_event_at"] = max(existing["last_material_event_at"], args[7])
             self.lifecycles[args[0]] = row
             return "INSERT 0 1"
@@ -90,9 +98,7 @@ class _FakePostgres:
         normalized = " ".join(query.split())
         if f"FROM {LIFECYCLE_TABLE}" in normalized:
             candidates = [
-                row
-                for row in self.lifecycles.values()
-                if row["symbol"] == args[0] and row["state"] in set(args[1])
+                row for row in self.lifecycles.values() if row["symbol"] == args[0] and row["state"] in set(args[1])
             ]
             if not candidates:
                 return None
@@ -104,9 +110,7 @@ class _FakePostgres:
                 "transport_lifecycles": len({r["transport_lifecycle_id"] for r in rows}),
                 "strategy_lifecycles": len({r["strategy_lifecycle_id"] for r in rows}),
                 "events_without_canonical_anchor": sum(
-                    1
-                    for r in rows
-                    if not r["source_clean_block_id"] and not r["source_watch_id"]
+                    1 for r in rows if not r["source_clean_block_id"] and not r["source_watch_id"]
                 ),
             }
         return None
@@ -120,7 +124,7 @@ class _FakePostgres:
         snapshot_lifecycles = dict(self.lifecycles)
         snapshot_links = dict(self.links)
         try:
-            yield self
+            yield _FakeTransactionConnection(self)
         except Exception:
             self.lifecycles = snapshot_lifecycles
             self.links = snapshot_links
@@ -215,6 +219,7 @@ async def test_persist_writes_lifecycle_and_link_together(repo):
 
     assert inserted is True
     assert pg.transactions == 1
+    assert pg.transaction_execute_calls == 2
     assert len(pg.lifecycles) == 1 and len(pg.links) == 1
 
 
