@@ -50,8 +50,7 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
         sa.CheckConstraint(
-            "state IN ('ANALYSIS_OPEN','TRANSITION_PENDING','TERMINAL_NO_TRADE',"
-            "'INVALIDATED','SUPERSEDED')",
+            "state IN ('ANALYSIS_OPEN','TRANSITION_PENDING','TERMINAL_NO_TRADE','INVALIDATED','SUPERSEDED')",
             name="ck_5scr_lifecycle_v2_state",
         ),
         sa.CheckConstraint(
