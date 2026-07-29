@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -289,5 +290,5 @@ class TestNoAuthorityDrift:
 
     def test_projection_failure_record_is_frozen(self):
         failure = ProjectionFailure(layer_id="L2", error_type="ValueError", error_message="x")
-        with pytest.raises(Exception):  # dataclass(frozen=True) → FrozenInstanceError
+        with pytest.raises(dataclasses.FrozenInstanceError):
             failure.layer_id = "L3"  # type: ignore[misc]

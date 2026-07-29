@@ -31,8 +31,8 @@ compatibility with the existing ``fallback_provider.py`` configuration.
 from __future__ import annotations
 
 import os
-import time
 import threading
+import time
 from collections import deque
 from datetime import datetime
 from typing import Any
@@ -44,7 +44,6 @@ from ingest.fallback_provider import (
     FallbackCandleProvider,
     ProviderQuotaDeferredError,
 )
-
 
 # ── Process-shared rate-limit state ──────────────────────────────────────────
 # Mirrors the pattern used in fallback_provider.py so both modules share the

@@ -443,7 +443,7 @@ class AdaptiveTIIThresholds(TIIThresholds):
         repr=False,
     )
 
-    def adapt(self, regime: str) -> "AdaptiveTIIThresholds":
+    def adapt(self, regime: str) -> AdaptiveTIIThresholds:
         """Return a new instance with thresholds adjusted for *regime*."""
         adj = self._REGIME_ADJUSTMENTS.get(regime, {})
         return AdaptiveTIIThresholds(

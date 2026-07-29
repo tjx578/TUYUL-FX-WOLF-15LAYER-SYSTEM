@@ -169,10 +169,7 @@ class ShadowCaptureSession:
     def _extract_layer(chain_result: Any, key: str) -> Mapping[str, Any] | None:
         if chain_result is None:
             return None
-        if isinstance(chain_result, Mapping):
-            val = chain_result.get(key)
-        else:
-            val = getattr(chain_result, key, None)
+        val = chain_result.get(key) if isinstance(chain_result, Mapping) else getattr(chain_result, key, None)
         return val if isinstance(val, Mapping) and val else None
 
     # ── introspection ─────────────────────────────────────────────────

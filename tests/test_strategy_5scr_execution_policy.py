@@ -8,6 +8,7 @@ both stay reproducible, and neither silently inherits the other's numbers.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from contracts.strategy_5scr_execution_policy import (
     EXECUTION_POLICIES,
@@ -69,7 +70,7 @@ def test_explicit_policy_id_overrides_env(monkeypatch):
 
 
 def test_policies_are_frozen_so_a_floor_cannot_be_mutated_in_place():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         FX_MIN_TARGET_10P_V1.minimum_fx_target_pips = 4.0  # type: ignore[misc]
 
 

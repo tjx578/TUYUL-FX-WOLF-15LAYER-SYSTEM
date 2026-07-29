@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -31,7 +30,6 @@ from contracts.strategy_5scr import (
 )
 from contracts.strategy_5scr_execution_policy import (
     EXECUTION_POLICY_MISSING_REASON,
-    LEGACY_REPLAY_EXECUTION_POLICY,
     ExecutionPolicy,
     resolve_execution_policy,
 )

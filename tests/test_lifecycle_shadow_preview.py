@@ -7,7 +7,7 @@ from importlib import import_module
 
 
 def _pipeline_cls():
-    return getattr(import_module("pipeline.wolf_constitutional_pipeline"), "WolfConstitutionalPipeline")
+    return import_module("pipeline.wolf_constitutional_pipeline").WolfConstitutionalPipeline
 
 
 def _bare_pipeline():

@@ -116,7 +116,16 @@ line-length = 120
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
 # UP038 ("Use X | Y in isinstance") was dropped in ruff 0.6 then re-added in 0.8+;
 # explicitly ignored to prevent CI churn across ruff versions.
-ignore = ["E501", "UP038"]
+#
+# UP042 ("inherits from both str and Enum -> use StrEnum") is NOT a mechanical
+# rewrite here. StrEnum changes what str() and f-strings produce:
+#     class A(str, Enum): X = "hot"   ->  f"{A.X}" == "A.X"
+#     class A(StrEnum):   X = "hot"   ->  f"{A.X}" == "hot"
+# JSON output is identical, but these are BlockerCode/GateStatus/L*Status
+# values that appear in log lines and messages, so converting them would
+# silently change emitted text. Migrating is a deliberate change with its own
+# review, not lint cleanup.
+ignore = ["E501", "UP038", "UP042"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N806"]  # PascalCase mock aliases (MockRedis) are conventional in tests

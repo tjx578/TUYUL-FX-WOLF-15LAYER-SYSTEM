@@ -27,7 +27,7 @@ import uuid  # noqa: E402
 from collections.abc import Sequence  # noqa: E402
 from dataclasses import asdict, dataclass, field  # noqa: E402
 from pathlib import Path  # noqa: E402
-from typing import Any, Dict, List, Optional, Protocol, Tuple  # noqa: E402, UP035
+from typing import Any, Protocol  # noqa: E402, UP035
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -72,9 +72,9 @@ def _safe_json_load(path: Path) -> dict[str, Any]:
     return data
 
 
-def _unique_preserve_order(items: Sequence[str]) -> List[str]:
+def _unique_preserve_order(items: Sequence[str]) -> list[str]:
     seen: set[str] = set()
-    result: List[str] = []
+    result: list[str] = []
     for item in items:
         if item not in seen:
             seen.add(item)
@@ -82,7 +82,7 @@ def _unique_preserve_order(items: Sequence[str]) -> List[str]:
     return result
 
 
-def _insert_after(items: List[str], anchor: str, value: str) -> List[str]:
+def _insert_after(items: list[str], anchor: str, value: str) -> list[str]:
     items = list(items)
     if value in items:
         return items
@@ -94,7 +94,7 @@ def _insert_after(items: List[str], anchor: str, value: str) -> List[str]:
     return items
 
 
-def _insert_before(items: List[str], anchor: str, value: str) -> List[str]:
+def _insert_before(items: list[str], anchor: str, value: str) -> list[str]:
     items = list(items)
     if value in items:
         return items
@@ -131,7 +131,7 @@ class ObjectiveContext:
     repo_available: bool = False
     artifacts_available: bool = False
     historical_memory_available: bool = False
-    external_systems_involved: List[str] = field(default_factory=list)
+    external_systems_involved: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -146,8 +146,8 @@ class Objective:
     objective_id: str
     user_request: str
     normalized_objective: str
-    domain_tags: List[str] = field(default_factory=list)
-    deliverable_types: List[str] = field(default_factory=list)
+    domain_tags: list[str] = field(default_factory=list)
+    deliverable_types: list[str] = field(default_factory=list)
     constraints: ObjectiveConstraints = field(default_factory=ObjectiveConstraints)
     context: ObjectiveContext = field(default_factory=ObjectiveContext)
     preferences: ObjectivePreferences = field(default_factory=ObjectivePreferences)
@@ -169,11 +169,11 @@ class RouteDecision:
     objective_id: str
     route_id: str
     selected_topology: str
-    selected_modes: List[str]
-    injected_gates: List[str]
-    matched_rules: List[str]
-    routing_reason: List[str]
-    dimensions: Dict[str, int]
+    selected_modes: list[str]
+    injected_gates: list[str]
+    matched_rules: list[str]
+    routing_reason: list[str]
+    dimensions: dict[str, int]
 
 
 @dataclass
@@ -181,18 +181,18 @@ class ModeResult:
     mode: str
     status: str  # success | warn | blocked | failed
     summary: str
-    artifacts: List[str] = field(default_factory=list)
-    findings: List[str] = field(default_factory=list)
-    decisions: List[str] = field(default_factory=list)
-    blockers: List[str] = field(default_factory=list)
-    outputs: Dict[str, Any] = field(default_factory=dict)
+    artifacts: list[str] = field(default_factory=list)
+    findings: list[str] = field(default_factory=list)
+    decisions: list[str] = field(default_factory=list)
+    blockers: list[str] = field(default_factory=list)
+    outputs: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class VerificationResult:
-    checks: Dict[str, str]
+    checks: dict[str, str]
     overall_verdict: str
-    blockers: List[str]
+    blockers: list[str]
     confidence: float
     ship_recommendation: str
 
@@ -202,15 +202,15 @@ class OrchestrationResult:
     objective_id: str
     route_id: str
     selected_topology: str
-    selected_modes: List[str]
+    selected_modes: list[str]
     execution_status: str
-    deliverables: Dict[str, List[str]]
-    governance: Dict[str, Any]
-    memory: Dict[str, Any]
-    next_actions: List[str]
-    mode_results: List[Dict[str, Any]]
-    verification: Dict[str, Any]
-    state_history: List[str]
+    deliverables: dict[str, list[str]]
+    governance: dict[str, Any]
+    memory: dict[str, Any]
+    next_actions: list[str]
+    mode_results: list[dict[str, Any]]
+    verification: dict[str, Any]
+    state_history: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ class OrchestrationResult:
 
 
 class Registry:
-    def __init__(self, raw: Dict[str, Any]) -> None:
+    def __init__(self, raw: dict[str, Any]) -> None:
         self.raw = raw
         self.meta = raw.get("meta", {})
         self.registry_items = raw.get("registry", [])
@@ -241,10 +241,10 @@ class Registry:
             raise RegistryError("Registry item IDs must be unique.")
 
     @classmethod
-    def from_path(cls, path: Path) -> "Registry":
+    def from_path(cls, path: Path) -> Registry:
         return cls(_safe_json_load(path))
 
-    def get_mode(self, mode_id: str) -> Dict[str, Any]:
+    def get_mode(self, mode_id: str) -> dict[str, Any]:
         for item in self.registry_items:
             if item["id"] == mode_id:
                 return item
@@ -261,7 +261,7 @@ class Registry:
 
 class ObjectiveNormalizer:
     @staticmethod
-    def from_payload(payload: Dict[str, Any]) -> Objective:
+    def from_payload(payload: dict[str, Any]) -> Objective:
         if "user_request" not in payload:
             raise ObjectiveValidationError("Missing required field: user_request")
 
@@ -484,9 +484,9 @@ class RouterEngine:
     def route(self, objective: Objective) -> RouteDecision:
         dims = DimensionScorer.score(objective)
 
-        matched_rules: List[str] = []
+        matched_rules: list[str] = []
         chosen_topology = None
-        chosen_modes: List[str] = []
+        chosen_modes: list[str] = []
 
         for rule in self.registry.topology_rules:
             conditions = rule.get("if_all", [])
@@ -538,11 +538,11 @@ class RouterEngine:
 
     def _inject_gates(
         self,
-        modes: List[str],
+        modes: list[str],
         objective: Objective,
         dims: RoutingDimensions,
-    ) -> Tuple[List[str], List[str]]:
-        injected: List[str] = []
+    ) -> tuple[list[str], list[str]]:
+        injected: list[str] = []
         for gate_name, config in self.registry.gate_injection.items():
             condition = str(config.get("inject_if", ""))
             if not RuleEvaluator.evaluate(condition, objective, dims):
@@ -567,14 +567,14 @@ class RouterEngine:
     def _resolve_topology_compatibility(
         self,
         topology: str,
-        modes: List[str],
-    ) -> Tuple[str, List[str], Optional[str]]:
+        modes: list[str],
+    ) -> tuple[str, list[str], str | None]:
         topology_specific_modes = {
             "swarm_coordination": {"parallel_swarm", "hierarchical_swarm"}
         }
 
-        def normalize_modes_for_candidate(candidate_topology: str) -> List[str]:
-            normalized_modes: List[str] = []
+        def normalize_modes_for_candidate(candidate_topology: str) -> list[str]:
+            normalized_modes: list[str] = []
             for mode in modes:
                 if (
                     mode in topology_specific_modes
@@ -584,7 +584,7 @@ class RouterEngine:
                 normalized_modes.append(mode)
             return normalized_modes
 
-        def supports(candidate_topology: str, candidate_modes: List[str]) -> bool:
+        def supports(candidate_topology: str, candidate_modes: list[str]) -> bool:
             return all(
                 candidate_topology in self.registry.get_mode(mode).get("topology_support", [])
                 for mode in candidate_modes
@@ -594,7 +594,7 @@ class RouterEngine:
         if supports(topology, current_modes):
             return topology, current_modes, None
 
-        fallback_order: List[str] = []
+        fallback_order: list[str] = []
         if topology in {"parallel_swarm", "hierarchical_swarm"}:
             fallback_order = ["pipeline", "single"]
         elif topology == "pipeline":
@@ -614,8 +614,8 @@ class RouterEngine:
             f"starting from topology {topology!r}"
         )
 
-    def _validate_modes(self, modes: List[str], topology: str) -> List[str]:
-        validated: List[str] = []
+    def _validate_modes(self, modes: list[str], topology: str) -> list[str]:
+        validated: list[str] = []
         for mode in modes:
             if not self.registry.has_mode(mode):
                 raise RoutingError(f"Route selected unknown mode: {mode}")
@@ -629,9 +629,9 @@ class RouterEngine:
     def _build_reasons(
         objective: Objective,
         dims: RoutingDimensions,
-        matched_rules: List[str],
-        injected_gates: List[str],
-    ) -> List[str]:
+        matched_rules: list[str],
+        injected_gates: list[str],
+    ) -> list[str]:
         reasons = [
             f"complexity={dims.complexity}",
             f"ambiguity={dims.ambiguity}",
@@ -718,8 +718,8 @@ class DefaultModeRunner:
         )
         findings = [f"{mode_id}: placeholder output generated"]
         decisions: list[str] = []
-        blockers: List[str] = []
-        artifacts: List[str] = []
+        blockers: list[str] = []
+        artifacts: list[str] = []
 
         if mode_id == "research":
             findings = [
@@ -803,7 +803,7 @@ class VerificationSink:
         route: RouteDecision,
         results: Sequence[ModeResult],
     ) -> VerificationResult:
-        blockers: List[str] = []
+        blockers: list[str] = []
         statuses = {result.mode: result.status for result in results}
         has_code = "code" in objective.deliverable_types
 
@@ -859,7 +859,7 @@ class MemoryAdapter:
         route: RouteDecision,
         results: Sequence[ModeResult],
         verification: VerificationResult,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         namespaces = [
             f"coordination/{route.route_id}",
             f"verification/{route.route_id}",
@@ -888,10 +888,10 @@ class OrchestrationEngine:
     def __init__(
         self,
         registry: Registry,
-        router: Optional[RouterEngine] = None,
-        mode_runner: Optional[ModeRunner] = None,
-        verification_sink: Optional[VerificationSink] = None,
-        memory_adapter: Optional[MemoryAdapter] = None,
+        router: RouterEngine | None = None,
+        mode_runner: ModeRunner | None = None,
+        verification_sink: VerificationSink | None = None,
+        memory_adapter: MemoryAdapter | None = None,
     ) -> None:
         self.registry = registry
         self.router = router or RouterEngine(registry)
@@ -910,9 +910,9 @@ class OrchestrationEngine:
         sm.transition("routed")
         sm.transition("executing")
 
-        results: List[ModeResult] = []
-        verification: Optional[VerificationResult] = None
-        memory_payload: Dict[str, Any] = {
+        results: list[ModeResult] = []
+        verification: VerificationResult | None = None
+        memory_payload: dict[str, Any] = {
             "writeback_status": "pending",
             "namespaces": [],
             "stored_items": [],
@@ -994,14 +994,14 @@ class OrchestrationEngine:
         route: RouteDecision,
         results: Sequence[ModeResult],
         verification: VerificationResult,
-        memory_payload: Dict[str, Any],
+        memory_payload: dict[str, Any],
         state_history: Sequence[str],
         execution_status: str,
     ) -> OrchestrationResult:
-        artifacts: List[str] = []
-        tests: List[str] = []
-        issues: List[str] = []
-        changed_files: List[str] = []
+        artifacts: list[str] = []
+        tests: list[str] = []
+        issues: list[str] = []
+        changed_files: list[str] = []
 
         for result in results:
             artifacts.extend(result.artifacts)
@@ -1016,7 +1016,7 @@ class OrchestrationEngine:
             "blockers": _unique_preserve_order(verification.blockers + issues),
         }
 
-        next_actions: List[str] = []
+        next_actions: list[str] = []
         if verification.overall_verdict == "warn":
             next_actions.append(
                 "Resolve verification warnings before production rollout."
@@ -1091,10 +1091,7 @@ def main() -> None:
 
     engine = OrchestrationEngine(registry=registry)
 
-    if args.route_only:
-        result = asdict(engine.route_only(objective))
-    else:
-        result = asdict(engine.execute(objective))
+    result = asdict(engine.route_only(objective)) if args.route_only else asdict(engine.execute(objective))
 
     serialized = _serialize(result, pretty=args.pretty)
     if args.out:
