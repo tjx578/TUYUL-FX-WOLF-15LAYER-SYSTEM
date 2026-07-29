@@ -12,7 +12,26 @@ from analysis.strategy_5scr_pressure_to_tradeplan import (
     PressureToTradePlanBuilder,
     replay_pressure_records,
 )
+from contracts.strategy_5scr_execution_policy import (
+    FX_LEGACY_6P_V1,
+    FX_MIN_TARGET_10P_V1,
+)
 from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
+
+
+def _legacy_builder() -> PressureToTradePlanBuilder:
+    """Builder pinned to the pre-Hybrid-V3 6-pip rule.
+
+    These cases record what the *legacy* policy decided.  They are kept as-is so
+    the older rule stays reproducible on replay; they are not a claim about what
+    Hybrid V3 should do.
+    """
+    return PressureToTradePlanBuilder(execution_policy=FX_LEGACY_6P_V1)
+
+
+def _v3_builder() -> PressureToTradePlanBuilder:
+    """Builder pinned to the canonical Hybrid V3 10-pip rule."""
+    return PressureToTradePlanBuilder(execution_policy=FX_MIN_TARGET_10P_V1)
 
 
 def _pressure_payload(**overrides):
@@ -190,14 +209,14 @@ def test_live_event_uses_canonical_clean_block_anchor():
 
 
 def test_live_event_without_canonical_anchor_defers_tradeplan():
-    result = PressureToTradePlanBuilder().build(_lifecycle(mode="LIVE"), _evidence())
+    result = _legacy_builder().build(_lifecycle(mode="LIVE"), _evidence())
 
     assert result.decision == "DEFER"
     assert "STRATEGY_5SCR_CANONICAL_LIFECYCLE_REQUIRED" in result.reasons
 
 
 def test_context_unresolved_and_rejection_only_remain_no_trade():
-    result = PressureToTradePlanBuilder().build(
+    result = _legacy_builder().build(
         _lifecycle(),
         _evidence(
             context_status="WAIT_FOR_CONFIRMATION",
@@ -213,14 +232,18 @@ def test_context_unresolved_and_rejection_only_remain_no_trade():
     assert "NO_TRADE_REJECTION_CANDLE_ONLY" in result.reasons
 
 
-def test_valid_9_2_pip_structural_target_builds_non_executable_tradeplan():
-    result = PressureToTradePlanBuilder().build(_lifecycle(), _evidence())
+def test_valid_9_2_pip_structural_target_builds_non_executable_tradeplan_under_legacy_policy():
+    result = _legacy_builder().build(_lifecycle(), _evidence())
 
     assert result.decision == "READY"
     assert result.tradeplan is not None
     assert result.tradeplan.rr == pytest.approx(1.84)
     assert result.tradeplan.target_distance_price == pytest.approx(0.092)
     assert result.tradeplan.execution_floor_price == pytest.approx(0.06)
+    assert result.tradeplan.execution_policy_id == "FX_LEGACY_6P_V1"
+    assert result.tradeplan.target_distance_pips == pytest.approx(9.2)
+    assert result.tradeplan.required_target_pips == pytest.approx(6.0)
+    assert result.tradeplan.target_floor_status == "PASS"
     assert result.tradeplan.valid_for_execution is False
     assert result.candidate_payload is not None
     assert result.candidate_payload["event"] == "strategy_5scr_tradeplan_candidate"
@@ -230,8 +253,13 @@ def test_valid_9_2_pip_structural_target_builds_non_executable_tradeplan():
     assert result.candidate_payload["strategy_5scr"]["h1"]["direction"] == "SELL"
 
 
-def test_micro_target_is_blocked_by_broker_aware_execution_floor_not_fixed_ten_pips():
-    result = PressureToTradePlanBuilder().build(
+def test_micro_target_is_blocked_by_broker_aware_execution_floor_under_legacy_policy():
+    """Legacy floor is broker-aware, not a fixed pip count.
+
+    Preserved from the pre-V3 rule: even at 6 pips the spread-derived floor
+    still applies, so the two floors are independent gates.
+    """
+    result = _legacy_builder().build(
         _lifecycle(),
         _evidence(target=189.965, stop=190.02),
     )
@@ -240,9 +268,64 @@ def test_micro_target_is_blocked_by_broker_aware_execution_floor_not_fixed_ten_p
     assert "STRATEGY_5SCR_TARGET_BELOW_EXECUTION_FLOOR" in result.reasons
 
 
+# --------------------------------------------------------------------------
+# Hybrid V3 canonical policy: FX_MIN_TARGET_10P_V1
+# --------------------------------------------------------------------------
+
+
+def test_v3_blocks_target_below_ten_pips():
+    """The same 9.2-pip setup the legacy rule accepted is NO_TRADE under V3."""
+    result = _v3_builder().build(_lifecycle(), _evidence())
+
+    assert result.decision == "BLOCK"
+    assert "STRATEGY_5SCR_TARGET_BELOW_EXECUTION_FLOOR" in result.reasons
+
+
+def test_v3_accepts_target_above_ten_pips():
+    # 190.0 -> 189.88 = 12 pips on a JPY pair, stop 190.05 keeps RR >= 1.5.
+    result = _v3_builder().build(_lifecycle(), _evidence(target=189.88, stop=190.05))
+
+    assert result.decision == "READY"
+    assert result.tradeplan is not None
+    assert result.tradeplan.execution_policy_id == "FX_MIN_TARGET_10P_V1"
+    assert result.tradeplan.target_distance_pips == pytest.approx(12.0)
+    assert result.tradeplan.minimum_target_pips == pytest.approx(10.0)
+    assert result.tradeplan.required_target_pips == pytest.approx(10.0)
+    assert result.tradeplan.target_floor_status == "PASS"
+    assert result.tradeplan.valid_for_execution is False
+
+
+def test_v3_still_applies_broker_cost_floor_above_ten_pips():
+    """A 12-pip target is refused when spread pushes the cost floor past it."""
+    evidence = _evidence(target=189.88, stop=190.05).model_copy(update={"spread_price": 0.026})
+    result = _v3_builder().build(_lifecycle(), evidence)
+
+    assert result.decision == "BLOCK"
+    assert "STRATEGY_5SCR_TARGET_BELOW_EXECUTION_FLOOR" in result.reasons
+
+
+def test_v3_records_floor_provenance_on_every_plan():
+    result = _v3_builder().build(_lifecycle(), _evidence(target=189.88, stop=190.05))
+
+    assert result.tradeplan is not None
+    plan = result.tradeplan
+    assert plan.execution_policy_version == 1
+    assert plan.broker_cost_floor_pips == pytest.approx(5.0)
+    assert plan.required_target_pips >= plan.minimum_target_pips
+
+
+def test_builder_without_policy_fails_closed(monkeypatch):
+    """A target floor is a strategy rule; the builder must never invent one."""
+    monkeypatch.delenv("STRATEGY_5SCR_EXECUTION_POLICY_ID", raising=False)
+    result = PressureToTradePlanBuilder().build(_lifecycle(), _evidence())
+
+    assert result.decision == "BLOCK"
+    assert "STRATEGY_5SCR_EXECUTION_POLICY_MISSING" in result.reasons
+
+
 def test_future_candle_leakage_fails_closed():
     evidence = _evidence(source_candle_close_times=("2026-07-17T13:30:00+00:00",))
-    result = PressureToTradePlanBuilder().build(_lifecycle(), evidence)
+    result = _legacy_builder().build(_lifecycle(), evidence)
 
     assert result.decision == "BLOCK"
     assert "STRATEGY_5SCR_FUTURE_CANDLE_LEAKAGE" in result.reasons
@@ -252,7 +335,7 @@ def test_raw_pressure_direction_does_not_override_h1_and_m15_authority():
     payload = _pressure_payload(raw_direction="BUY")
     event = PressureEventNormalizer(input_mode="REPLAY").normalize(payload)
     lifecycle = PressureLifecycleAccumulator().ingest(event)[0]
-    result = PressureToTradePlanBuilder().build(lifecycle, _evidence())
+    result = _legacy_builder().build(lifecycle, _evidence())
 
     assert lifecycle.raw_direction == "BUY"
     assert result.decision == "READY"
@@ -263,8 +346,8 @@ def test_raw_pressure_direction_does_not_override_h1_and_m15_authority():
 def test_tradeplan_id_is_deterministic():
     lifecycle = _lifecycle()
     evidence = _evidence()
-    first = PressureToTradePlanBuilder().build(lifecycle, evidence)
-    second = PressureToTradePlanBuilder().build(lifecycle, deepcopy(evidence))
+    first = _legacy_builder().build(lifecycle, evidence)
+    second = _legacy_builder().build(lifecycle, deepcopy(evidence))
 
     assert first.tradeplan is not None and second.tradeplan is not None
     assert first.tradeplan.tradeplan_id == second.tradeplan.tradeplan_id
