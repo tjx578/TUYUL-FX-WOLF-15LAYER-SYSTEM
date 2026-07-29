@@ -37,6 +37,15 @@ def upgrade() -> None:
         sa.Column("event_count", sa.BigInteger(), nullable=False, server_default=sa.text("0")),
         sa.Column("clean_block_count", sa.BigInteger(), nullable=False, server_default=sa.text("0")),
         sa.Column("watch_count", sa.BigInteger(), nullable=False, server_default=sa.text("0")),
+        # Shadow-only enforced by the database, not merely by the Python
+        # contract. A future writer cannot grant execution authority to an
+        # episode by forgetting a default -- the CHECK refuses the row.
+        sa.Column(
+            "execution_authority",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -67,6 +76,10 @@ def upgrade() -> None:
             name="ck_5scr_lifecycle_v2_material_not_future",
         ),
         sa.CheckConstraint("event_count >= 0", name="ck_5scr_lifecycle_v2_event_count"),
+        sa.CheckConstraint(
+            "execution_authority = false",
+            name="ck_5scr_lifecycle_v2_shadow_only",
+        ),
     )
 
     # Active-episode lookup during folding.  Deliberately NOT unique per symbol:

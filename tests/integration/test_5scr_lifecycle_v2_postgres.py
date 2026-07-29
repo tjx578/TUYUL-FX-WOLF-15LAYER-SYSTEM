@@ -221,6 +221,111 @@ async def test_uuid_and_replay_ids_round_trip_through_real_postgres(
         await _cleanup(postgres, lifecycle_id)
 
 
+async def test_shadow_only_is_enforced_by_the_database(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    """execution_authority must be a schema invariant, not a Python default.
+
+    A Python-only default can be bypassed by any future writer; a CHECK cannot.
+    """
+    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+
+    try:
+        await repository.upsert_lifecycle(_lifecycle(lifecycle_id))
+
+        column = await postgres.fetchrow(
+            """
+            SELECT column_default, is_nullable, data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = $1
+              AND column_name = 'execution_authority'
+            """,
+            LIFECYCLE_TABLE,
+        )
+        assert column is not None, "execution_authority column is missing"
+        assert column["data_type"] == "boolean"
+        assert column["is_nullable"] == "NO"
+        assert "false" in str(column["column_default"]).lower()
+
+        stored = await postgres.fetchrow(
+            f"SELECT execution_authority FROM {LIFECYCLE_TABLE} WHERE strategy_lifecycle_id = $1",
+            lifecycle_id,
+        )
+        assert stored is not None and stored["execution_authority"] is False
+
+        # The database itself must refuse to grant execution authority.
+        with pytest.raises(Exception) as granted:
+            await postgres.execute(
+                f"UPDATE {LIFECYCLE_TABLE} SET execution_authority = true "
+                "WHERE strategy_lifecycle_id = $1",
+                lifecycle_id,
+            )
+        assert "ck_5scr_lifecycle_v2_shadow_only" in str(granted.value)
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+async def test_restart_recovery_matches_a_continuous_run_on_real_postgres(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    """Durable recovery must reproduce all three clocks after a restart.
+
+    The equivalent unit test uses a fake pool, and fakes have already hidden two
+    real transaction bugs here, so this is asserted against real storage.
+    """
+    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+    opened = _lifecycle(lifecycle_id)
+
+    try:
+        assert await repository.persist(
+            opened,
+            _link(
+                lifecycle_id,
+                pressure_event_id=str(uuid4()),
+                transport_lifecycle_id="transport-restart-1",
+            ),
+        )
+
+        advanced = opened.model_copy(
+            update={
+                "last_event_at_utc": opened.last_event_at_utc + timedelta(seconds=120),
+                "last_continuity_event_at_utc": (
+                    opened.last_continuity_event_at_utc + timedelta(seconds=120)
+                ),
+                "last_material_event_at_utc": opened.last_material_event_at_utc,
+                "event_count": opened.event_count + 1,
+            }
+        )
+        assert await repository.persist(
+            advanced,
+            _link(
+                lifecycle_id,
+                pressure_event_id=str(uuid4()),
+                transport_lifecycle_id="transport-restart-2",
+            ),
+        )
+
+        # A fresh repository stands in for a restarted worker.
+        restarted = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+        recovered = await restarted.active_lifecycle("CHFJPY")
+
+        assert recovered is not None
+        assert recovered.strategy_lifecycle_id == advanced.strategy_lifecycle_id
+        assert recovered.last_event_at_utc == advanced.last_event_at_utc
+        assert recovered.last_continuity_event_at_utc == advanced.last_continuity_event_at_utc
+        # Continuity advanced while material deliberately did not.
+        assert recovered.last_material_event_at_utc == opened.last_material_event_at_utc
+        assert recovered.last_material_event_at_utc < recovered.last_continuity_event_at_utc
+        assert recovered.direction_state == advanced.direction_state
+        assert recovered.event_count == advanced.event_count
+        assert recovered.execution_authority is False
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
 async def test_persist_rolls_back_lifecycle_when_real_postgres_rejects_link(
     postgres: _PoolBackedPostgres,
 ) -> None:
