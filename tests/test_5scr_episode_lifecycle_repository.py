@@ -298,6 +298,158 @@ async def test_compression_snapshot_contrasts_transport_and_episode(repo):
     assert snapshot["events_without_canonical_anchor_total"] == 9
 
 
+class _SchemaProbePostgres:
+    """Fake whose catalog answers can be bent into wrong shapes."""
+
+    is_available = True
+
+    def __init__(self, *, columns=None, constraints=None):
+        self.columns = columns if columns is not None else _good_columns()
+        self.constraints = constraints if constraints is not None else _good_constraints()
+
+    async def fetch(self, query: str, *args):
+        normalized = " ".join(query.split())
+        if "pg_tables" in normalized:
+            return [{"tablename": name} for name in (LIFECYCLE_TABLE, LINK_TABLE)]
+        if "pg_indexes" in normalized:
+            return [
+                {"indexname": name}
+                for name in (
+                    "ix_5scr_lifecycle_v2_active_symbol",
+                    "ix_5scr_lifecycle_v2_links_lifecycle",
+                    "ix_5scr_lifecycle_v2_links_transport",
+                )
+            ]
+        if "information_schema.columns" in normalized:
+            return self.columns
+        if "pg_constraint" in normalized:
+            return self.constraints
+        return []
+
+    async def fetchrow(self, query: str, *args):
+        return None
+
+    async def execute(self, query: str, *args):
+        return "UPDATE 1"
+
+
+def _good_columns():
+    return [
+        {
+            "table_name": LIFECYCLE_TABLE,
+            "column_name": "execution_authority",
+            "data_type": "boolean",
+            "is_nullable": "NO",
+            "column_default": "false",
+        },
+        {
+            "table_name": LINK_TABLE,
+            "column_name": "transport_lifecycle_id",
+            "data_type": "text",
+            "is_nullable": "NO",
+            "column_default": None,
+        },
+        {
+            "table_name": LINK_TABLE,
+            "column_name": "pressure_event_id",
+            "data_type": "text",
+            "is_nullable": "NO",
+            "column_default": None,
+        },
+    ]
+
+
+def _good_constraints():
+    return [
+        {
+            "conname": "ck_5scr_lifecycle_v2_shadow_only",
+            "table_name": LIFECYCLE_TABLE,
+            "contype": "c",
+            "definition": "CHECK ((execution_authority = false))",
+        },
+        {
+            "conname": "fk_5scr_lifecycle_v2_event_link",
+            "table_name": LINK_TABLE,
+            "contype": "f",
+            "definition": f"FOREIGN KEY (strategy_lifecycle_id) REFERENCES {LIFECYCLE_TABLE}(strategy_lifecycle_id)",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_schema_status_is_ready_when_everything_matches():
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres()).schema_status()
+
+    assert not any(status.values())
+
+
+@pytest.mark.asyncio
+async def test_same_named_constraint_on_another_table_is_not_accepted():
+    """Name alone must not satisfy a guarantee."""
+    wrong = _good_constraints()
+    wrong[0]["table_name"] = "some_other_table"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+
+    assert "ck_5scr_lifecycle_v2_shadow_only" in status["missing_constraints"]
+
+
+@pytest.mark.asyncio
+async def test_altered_check_definition_is_not_accepted():
+    """A CHECK that no longer forbids execution authority is not the guarantee."""
+    wrong = _good_constraints()
+    wrong[0]["definition"] = "CHECK ((execution_authority = true))"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+
+    assert "ck_5scr_lifecycle_v2_shadow_only" in status["missing_constraints"]
+
+
+@pytest.mark.asyncio
+async def test_check_downgraded_to_another_constraint_type_is_not_accepted():
+    wrong = _good_constraints()
+    wrong[0]["contype"] = "u"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+
+    assert "ck_5scr_lifecycle_v2_shadow_only" in status["missing_constraints"]
+
+
+@pytest.mark.asyncio
+async def test_foreign_key_pointing_elsewhere_is_not_accepted():
+    wrong = _good_constraints()
+    wrong[1]["definition"] = "FOREIGN KEY (strategy_lifecycle_id) REFERENCES unrelated_table(id)"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+
+    assert "fk_5scr_lifecycle_v2_event_link" in status["missing_constraints"]
+
+
+@pytest.mark.asyncio
+async def test_nullable_execution_authority_is_not_accepted():
+    """A nullable flag defeats the CHECK it exists to support."""
+    wrong = _good_columns()
+    wrong[0]["is_nullable"] = "YES"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(columns=wrong)).schema_status()
+
+    assert f"{LIFECYCLE_TABLE}.execution_authority" in status["missing_columns"]
+
+
+@pytest.mark.asyncio
+async def test_execution_authority_without_false_default_is_not_accepted():
+    wrong = _good_columns()
+    wrong[0]["column_default"] = "true"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(columns=wrong)).schema_status()
+
+    assert f"{LIFECYCLE_TABLE}.execution_authority" in status["missing_columns"]
+
+
+@pytest.mark.asyncio
+async def test_wrong_column_type_is_not_accepted():
+    """pressure_event_id as UUID would reject replay ids at insert time."""
+    wrong = _good_columns()
+    wrong[2]["data_type"] = "uuid"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(columns=wrong)).schema_status()
+
+    assert f"{LINK_TABLE}.pressure_event_id" in status["missing_columns"]
+
+
 @pytest.mark.asyncio
 async def test_schema_status_reports_missing_when_unavailable():
     repository = StrategyLifecycleV2Repository(pg=_FakePostgres(available=False))

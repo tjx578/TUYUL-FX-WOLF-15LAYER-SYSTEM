@@ -347,6 +347,57 @@ async def _purge_symbol(postgres: _PoolBackedPostgres, symbol: str) -> None:
     await postgres.execute("DELETE FROM pressure_outbox WHERE symbol = $1", symbol)
 
 
+async def test_readiness_turns_red_when_the_shadow_check_is_dropped(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    """A database that lost the guarantee must not report ready.
+
+    Asserted by removing the constraint on a real database and restoring it,
+    so the negative path is proven rather than assumed.
+    """
+    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    assert not any((await repository.schema_status()).values())
+
+    await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT ck_5scr_lifecycle_v2_shadow_only")
+    try:
+        degraded = await repository.schema_status()
+        assert degraded["missing_constraints"] == ("ck_5scr_lifecycle_v2_shadow_only",)
+        assert degraded["missing_tables"] == ()
+        assert degraded["missing_indexes"] == ()
+    finally:
+        await postgres.execute(
+            f"ALTER TABLE {LIFECYCLE_TABLE} ADD CONSTRAINT ck_5scr_lifecycle_v2_shadow_only "
+            "CHECK (execution_authority = false)"
+        )
+
+    assert not any((await repository.schema_status()).values())
+
+
+async def test_readiness_rejects_a_same_named_check_with_a_weakened_definition(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    """Restoring the name but not the meaning must still read as missing."""
+    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+
+    await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT ck_5scr_lifecycle_v2_shadow_only")
+    try:
+        # Same name, same table, but it no longer forbids anything.
+        await postgres.execute(
+            f"ALTER TABLE {LIFECYCLE_TABLE} ADD CONSTRAINT ck_5scr_lifecycle_v2_shadow_only "
+            "CHECK (execution_authority IS NOT NULL)"
+        )
+        degraded = await repository.schema_status()
+        assert degraded["missing_constraints"] == ("ck_5scr_lifecycle_v2_shadow_only",)
+    finally:
+        await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT ck_5scr_lifecycle_v2_shadow_only")
+        await postgres.execute(
+            f"ALTER TABLE {LIFECYCLE_TABLE} ADD CONSTRAINT ck_5scr_lifecycle_v2_shadow_only "
+            "CHECK (execution_authority = false)"
+        )
+
+    assert not any((await repository.schema_status()).values())
+
+
 async def test_restart_recovery_matches_a_continuous_run_on_real_postgres(
     postgres: _PoolBackedPostgres,
 ) -> None:

@@ -41,6 +41,26 @@ _EXPECTED_PHASES = {
 }
 
 
+def lifecycle_v2_schema_ready(status: Mapping[str, tuple[str, ...]]) -> bool:
+    """Ready only when nothing is missing on any dimension.
+
+    Tables and indexes are not enough: a database that kept the tables but lost
+    the shadow-only CHECK would run the worker while the invariant it depends
+    on no longer exists.
+    """
+    return not any(status.values())
+
+
+def lifecycle_v2_schema_error(status: Mapping[str, tuple[str, ...]]) -> str:
+    return (
+        "STRATEGY_5SCR_LIFECYCLE_V2_SCHEMA_NOT_READY:"
+        f"tables={','.join(status.get('missing_tables', ())) or 'none'}:"
+        f"indexes={','.join(status.get('missing_indexes', ())) or 'none'}:"
+        f"columns={','.join(status.get('missing_columns', ())) or 'none'}:"
+        f"constraints={','.join(status.get('missing_constraints', ())) or 'none'}"
+    )
+
+
 def rollout_flags(environ: Mapping[str, str] | None = None) -> PressureOutboxRolloutFlags:
     source = os.environ if environ is None else environ
     return PressureOutboxRolloutFlags(
@@ -110,19 +130,11 @@ async def run_preflight() -> dict[str, object]:
                 f"indexes={','.join(outcome_schema.missing_indexes) or 'none'}"
             )
         lifecycle_v2_schema = await StrategyLifecycleV2Repository(pg=pg_client).schema_status()
-        lifecycle_v2_ready = not any(lifecycle_v2_schema.values())
+        lifecycle_v2_ready = lifecycle_v2_schema_ready(lifecycle_v2_schema)
         # Enabling the worker before migration 20260729_01 has run would fail on
-        # every poll; fail closed at startup instead. Columns and constraints
-        # count: a database without the shadow-only CHECK is not ready, however
-        # complete its tables look.
+        # every poll; fail closed at startup instead.
         if lifecycle_v2_config.enabled and not lifecycle_v2_ready:
-            raise RuntimeError(
-                "STRATEGY_5SCR_LIFECYCLE_V2_SCHEMA_NOT_READY:"
-                f"tables={','.join(lifecycle_v2_schema['missing_tables']) or 'none'}:"
-                f"indexes={','.join(lifecycle_v2_schema['missing_indexes']) or 'none'}:"
-                f"columns={','.join(lifecycle_v2_schema['missing_columns']) or 'none'}:"
-                f"constraints={','.join(lifecycle_v2_schema['missing_constraints']) or 'none'}"
-            )
+            raise RuntimeError(lifecycle_v2_schema_error(lifecycle_v2_schema))
         return {
             "event": "pressure_outbox_preflight",
             "ready": True,

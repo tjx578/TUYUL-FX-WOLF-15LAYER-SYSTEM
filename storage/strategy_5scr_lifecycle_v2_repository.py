@@ -35,22 +35,23 @@ _REQUIRED_INDEXES = frozenset(
         "ix_5scr_lifecycle_v2_links_transport",
     }
 )
-#: Columns whose absence would silently weaken a guarantee rather than crash.
-_REQUIRED_COLUMNS: frozenset[tuple[str, str]] = frozenset(
-    {
-        (LIFECYCLE_TABLE, "execution_authority"),
-        (LINK_TABLE, "transport_lifecycle_id"),
-    }
-)
-#: Constraints that *are* the guarantees. A database missing the shadow-only
-#: CHECK or the event-link FK must never be reported ready: the code would run
-#: happily while the invariant it depends on no longer exists.
-_REQUIRED_CONSTRAINTS = frozenset(
-    {
-        "ck_5scr_lifecycle_v2_shadow_only",
-        "fk_5scr_lifecycle_v2_event_link",
-    }
-)
+#: Columns whose *shape* is a guarantee, not just their presence.  A nullable
+#: ``execution_authority`` with no default would satisfy an existence check
+#: while silently permitting the row the CHECK exists to forbid.
+#: ``(table, column) -> (data_type, is_nullable, default_fragment | None)``
+_REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, str, str | None]] = {
+    (LIFECYCLE_TABLE, "execution_authority"): ("boolean", "NO", "false"),
+    (LINK_TABLE, "transport_lifecycle_id"): ("text", "NO", None),
+    (LINK_TABLE, "pressure_event_id"): ("text", "NO", None),
+}
+#: Constraints that *are* the guarantees.  Matching on name alone is not
+#: enough: a same-named constraint on another table, or one whose definition
+#: was altered, would report ready while the invariant no longer holds.
+#: ``name -> (table, contype, definition_fragment)``
+_REQUIRED_CONSTRAINTS: dict[str, tuple[str, str, str]] = {
+    "ck_5scr_lifecycle_v2_shadow_only": (LIFECYCLE_TABLE, "c", "execution_authority = false"),
+    "fk_5scr_lifecycle_v2_event_link": (LINK_TABLE, "f", LIFECYCLE_TABLE),
+}
 
 
 class LifecycleV2PersistenceError(RuntimeError):
@@ -127,16 +128,25 @@ class StrategyLifecycleV2Repository:
             """,
             sorted(_REQUIRED_INDEXES),
         )
+        # Column *shape*, not just presence.
         column_rows = await self._pg.fetch(
             """
-            SELECT table_name, column_name FROM information_schema.columns
+            SELECT table_name, column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
             WHERE table_schema = current_schema() AND table_name = ANY($1::text[])
             """,
             sorted(_REQUIRED_TABLES),
         )
+        # Constraint identity is (table, type, definition), never the name
+        # alone: a same-named constraint elsewhere, or one whose definition was
+        # altered, must not read as satisfied.
         constraint_rows = await self._pg.fetch(
             """
-            SELECT conname FROM pg_catalog.pg_constraint
+            SELECT conname,
+                   conrelid::regclass::text AS table_name,
+                   contype::text AS contype,
+                   pg_get_constraintdef(oid) AS definition
+            FROM pg_catalog.pg_constraint
             WHERE connamespace = current_schema()::regnamespace
               AND conname = ANY($1::text[])
             """,
@@ -144,13 +154,45 @@ class StrategyLifecycleV2Repository:
         )
         present_tables = {str(_row_value(row, "tablename") or "") for row in table_rows}
         present_indexes = {str(_row_value(row, "indexname") or "") for row in index_rows}
-        present_columns = {f"{_row_value(row, 'table_name')}.{_row_value(row, 'column_name')}" for row in column_rows}
-        present_constraints = {str(_row_value(row, "conname") or "") for row in constraint_rows}
+
+        satisfied_columns: set[str] = set()
+        for row in column_rows:
+            key = (str(_row_value(row, "table_name")), str(_row_value(row, "column_name")))
+            expected = _REQUIRED_COLUMNS.get(key)
+            if expected is None:
+                continue
+            data_type, nullable, default_fragment = expected
+            if str(_row_value(row, "data_type")) != data_type:
+                continue
+            if str(_row_value(row, "is_nullable")) != nullable:
+                continue
+            if default_fragment is not None:
+                default = str(_row_value(row, "column_default") or "").lower()
+                if default_fragment not in default:
+                    continue
+            satisfied_columns.add(f"{key[0]}.{key[1]}")
+
+        satisfied_constraints: set[str] = set()
+        for row in constraint_rows:
+            name = str(_row_value(row, "conname") or "")
+            expected_constraint = _REQUIRED_CONSTRAINTS.get(name)
+            if expected_constraint is None:
+                continue
+            table, contype, definition_fragment = expected_constraint
+            if str(_row_value(row, "table_name")) != table:
+                continue
+            if str(_row_value(row, "contype")) != contype:
+                continue
+            definition = str(_row_value(row, "definition") or "")
+            if definition_fragment.lower() not in definition.lower():
+                continue
+            satisfied_constraints.add(name)
+
         return {
             "missing_tables": tuple(sorted(_REQUIRED_TABLES - present_tables)),
             "missing_indexes": tuple(sorted(_REQUIRED_INDEXES - present_indexes)),
-            "missing_columns": tuple(sorted(set(expected_columns) - present_columns)),
-            "missing_constraints": tuple(sorted(_REQUIRED_CONSTRAINTS - present_constraints)),
+            "missing_columns": tuple(sorted(set(expected_columns) - satisfied_columns)),
+            "missing_constraints": tuple(sorted(set(_REQUIRED_CONSTRAINTS) - satisfied_constraints)),
         }
 
     async def active_lifecycle(self, symbol: str) -> StrategyLifecycleV2 | None:

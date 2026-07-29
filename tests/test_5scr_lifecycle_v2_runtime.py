@@ -267,6 +267,49 @@ async def test_runner_never_leases_or_mutates_transport_rows():
     assert all(link.transport_lifecycle_id == "transport-1" for _lifecycle, link in repository.persisted)
 
 
+# --------------------------------------------------------------------------
+# preflight readiness
+# --------------------------------------------------------------------------
+
+
+def _status(**overrides):
+    base = {
+        "missing_tables": (),
+        "missing_indexes": (),
+        "missing_columns": (),
+        "missing_constraints": (),
+    }
+    base.update(overrides)
+    return base
+
+
+def test_preflight_is_ready_only_when_nothing_is_missing():
+    from services.pressure_outbox.preflight import lifecycle_v2_schema_ready
+
+    assert lifecycle_v2_schema_ready(_status()) is True
+
+
+@pytest.mark.parametrize(
+    "dimension",
+    ["missing_tables", "missing_indexes", "missing_columns", "missing_constraints"],
+)
+def test_preflight_fails_closed_on_every_dimension(dimension):
+    """Complete tables must not excuse a missing column or constraint."""
+    from services.pressure_outbox.preflight import lifecycle_v2_schema_ready
+
+    assert lifecycle_v2_schema_ready(_status(**{dimension: ("something",)})) is False
+
+
+def test_preflight_error_names_the_missing_guarantee():
+    from services.pressure_outbox.preflight import lifecycle_v2_schema_error
+
+    message = lifecycle_v2_schema_error(_status(missing_constraints=("ck_5scr_lifecycle_v2_shadow_only",)))
+
+    assert message.startswith("STRATEGY_5SCR_LIFECYCLE_V2_SCHEMA_NOT_READY:")
+    assert "constraints=ck_5scr_lifecycle_v2_shadow_only" in message
+    assert "tables=none" in message
+
+
 def test_builder_returns_a_runner():
     runner = build_lifecycle_v2_shadow_runner(pg=object(), config=_config())
 
