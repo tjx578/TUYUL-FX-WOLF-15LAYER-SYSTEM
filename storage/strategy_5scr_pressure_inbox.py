@@ -11,9 +11,11 @@ from analysis.strategy_5scr_pressure_to_tradeplan import (
     PressureLifecycleAccumulator,
     PressureToTradePlanBuilder,
 )
+from loguru import logger
+
 from contracts.canonical_candle import as_utc
 from contracts.strategy_5scr_execution_policy import (
-    HYBRID_V3_EXECUTION_POLICY,
+    LEGACY_REPLAY_EXECUTION_POLICY,
     ExecutionPolicy,
 )
 from contracts.strategy_5scr_pressure import Strategy5SCRMarketEvidence
@@ -81,14 +83,27 @@ class Strategy5SCRPressureProcessor:
 
     def __init__(self, *, execution_policy: ExecutionPolicy | None = None) -> None:
         self._normalizer = PressureEventNormalizer(input_mode="LIVE")
-        # The outbox owns lifecycle identity here -- campaign_id must equal the
-        # persisted lifecycle_id -- so episode grouping is explicitly off.
-        self._accumulator = PressureLifecycleAccumulator(episode_policy=None)
-        # Hybrid V3 is the canonical policy for live pressure; stated
-        # explicitly rather than inherited from the environment.
-        self._builder = PressureToTradePlanBuilder(
-            execution_policy=execution_policy or HYBRID_V3_EXECUTION_POLICY
+        self._accumulator = PressureLifecycleAccumulator()
+        # This is the *existing* pressure runtime, not the Hybrid V3 entrypoint:
+        # episode lifecycle, context epoch and ordered structural proof are not
+        # in place here yet. It therefore stays on the legacy floor, and the
+        # canonical 10-pip policy is selected explicitly by the Hybrid V3
+        # entrypoint when that exists. Silently promoting this path would change
+        # which tradeplans exist before the machinery that justifies it lands.
+        self._execution_policy = execution_policy or LEGACY_REPLAY_EXECUTION_POLICY
+        self._builder = PressureToTradePlanBuilder(execution_policy=self._execution_policy)
+        logger.info(
+            "Strategy 5S-CR pressure processor active execution_policy_id={} "
+            "minimum_fx_target_pips={} minimum_rr={}",
+            self._execution_policy.policy_id,
+            self._execution_policy.minimum_fx_target_pips,
+            self._execution_policy.minimum_rr,
         )
+
+    @property
+    def execution_policy(self) -> ExecutionPolicy:
+        """Active target-floor policy, exposed so callers can assert on it."""
+        return self._execution_policy
 
     def process(
         self,
