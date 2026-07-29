@@ -154,6 +154,25 @@ async def test_uuid_and_replay_ids_round_trip_through_real_postgres(
                 transport_lifecycle_id="transport-live",
             ),
         )
+        stale_lifecycle = lifecycle.model_copy(
+            update={
+                "state": "TRANSITION_PENDING",
+                "direction_state": "CONFLICT",
+                "last_event_at_utc": lifecycle.last_event_at_utc + timedelta(seconds=30),
+                "last_continuity_event_at_utc": lifecycle.last_continuity_event_at_utc + timedelta(seconds=30),
+                "last_material_event_at_utc": lifecycle.last_material_event_at_utc + timedelta(seconds=30),
+                "material_state_hash": "c" * 64,
+                "event_count": 999,
+            }
+        )
+        assert not await repository.persist(
+            stale_lifecycle,
+            _link(
+                lifecycle_id,
+                pressure_event_id=uuid_event_id,
+                transport_lifecycle_id="transport-live",
+            ),
+        )
         assert not await repository.link_event(
             _link(
                 lifecycle_id,

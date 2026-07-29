@@ -237,6 +237,22 @@ async def test_persist_rolls_back_when_the_link_fails(repo):
 
 
 @pytest.mark.asyncio
+async def test_duplicate_persist_rolls_back_a_stale_lifecycle_snapshot(repo):
+    repository, pg = repo
+    current = _lifecycle(offset=5, event_count=5)
+    link = _link(current)
+    assert await repository.persist(current, link) is True
+
+    stale = _lifecycle(offset=1, event_count=1)
+    assert stale.strategy_lifecycle_id == current.strategy_lifecycle_id
+    assert await repository.persist(stale, link) is False
+
+    stored = pg.lifecycles[current.strategy_lifecycle_id]
+    assert stored["event_count"] == current.event_count
+    assert stored["last_event_at"] == current.last_event_at_utc
+
+
+@pytest.mark.asyncio
 async def test_terminal_lifecycle_is_not_recovered_as_active(repo):
     repository, _pg = repo
     await repository.upsert_lifecycle(_lifecycle(state="TERMINAL_NO_TRADE"))

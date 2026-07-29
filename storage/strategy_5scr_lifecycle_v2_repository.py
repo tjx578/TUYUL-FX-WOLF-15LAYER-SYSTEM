@@ -41,6 +41,10 @@ class LifecycleV2PersistenceError(RuntimeError):
     """Base error for durable lifecycle V2 persistence."""
 
 
+class _DuplicateEventLinkRollbackError(Exception):
+    """Abort a transaction whose event link already exists."""
+
+
 def _row_value(row: Any, key: str, default: Any = None) -> Any:
     if isinstance(row, Mapping):
         return row.get(key, default)
@@ -213,9 +217,18 @@ class StrategyLifecycleV2Repository:
         A link without its lifecycle would violate the foreign key; a lifecycle
         whose counters advanced without a link would double-count on retry.
         """
-        async with self._pg.transaction() as connection:
-            await self.upsert_lifecycle(lifecycle, _executor=connection)
-            return await self.link_event(link, _executor=connection)
+        try:
+            async with self._pg.transaction() as connection:
+                await self.upsert_lifecycle(lifecycle, _executor=connection)
+                if not await self.link_event(link, _executor=connection):
+                    # The lifecycle upsert happened first to satisfy the FK.
+                    # Roll it back when another worker already linked this
+                    # event, otherwise a lagging worker could overwrite newer
+                    # counters or state with its stale snapshot.
+                    raise _DuplicateEventLinkRollbackError
+        except _DuplicateEventLinkRollbackError:
+            return False
+        return True
 
     async def fetch_unlinked_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """Read delivered pressure events that have no episode link yet.
