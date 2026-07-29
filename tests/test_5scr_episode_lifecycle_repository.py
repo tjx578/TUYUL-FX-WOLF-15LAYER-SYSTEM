@@ -371,7 +371,7 @@ def _good_constraints():
             "conname": "fk_5scr_lifecycle_v2_event_link",
             "table_name": LINK_TABLE,
             "contype": "f",
-            "definition": f"FOREIGN KEY (strategy_lifecycle_id) REFERENCES {LIFECYCLE_TABLE}(strategy_lifecycle_id)",
+            "definition": (f"FOREIGN KEY (strategy_lifecycle_id) REFERENCES {LIFECYCLE_TABLE}(strategy_lifecycle_id)"),
         },
     ]
 
@@ -419,6 +419,36 @@ async def test_foreign_key_pointing_elsewhere_is_not_accepted():
     status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
 
     assert "fk_5scr_lifecycle_v2_event_link" in status["missing_constraints"]
+
+
+@pytest.mark.asyncio
+async def test_check_widened_with_or_true_is_not_accepted():
+    """Contains the expected fragment, forbids nothing."""
+    wrong = _good_constraints()
+    wrong[0]["definition"] = "CHECK (((execution_authority = false) OR true))"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+
+    assert "ck_5scr_lifecycle_v2_shadow_only" in status["missing_constraints"]
+
+
+@pytest.mark.asyncio
+async def test_foreign_key_on_the_wrong_source_column_is_not_accepted():
+    """Mentions the right target table, constrains the wrong column."""
+    wrong = _good_constraints()
+    wrong[1]["definition"] = f"FOREIGN KEY (transport_lifecycle_id) REFERENCES {LIFECYCLE_TABLE}(strategy_lifecycle_id)"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(constraints=wrong)).schema_status()
+
+    assert "fk_5scr_lifecycle_v2_event_link" in status["missing_constraints"]
+
+
+@pytest.mark.asyncio
+async def test_default_not_false_is_not_accepted():
+    """``(NOT false)`` contains "false" while meaning true."""
+    wrong = _good_columns()
+    wrong[0]["column_default"] = "(NOT false)"
+    status = await StrategyLifecycleV2Repository(pg=_SchemaProbePostgres(columns=wrong)).schema_status()
+
+    assert f"{LIFECYCLE_TABLE}.execution_authority" in status["missing_columns"]
 
 
 @pytest.mark.asyncio

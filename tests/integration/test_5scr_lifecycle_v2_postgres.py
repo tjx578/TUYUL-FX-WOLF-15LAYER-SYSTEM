@@ -347,6 +347,20 @@ async def _purge_symbol(postgres: _PoolBackedPostgres, symbol: str) -> None:
     await postgres.execute("DELETE FROM pressure_outbox WHERE symbol = $1", symbol)
 
 
+async def _restore_shadow_check(postgres: _PoolBackedPostgres) -> None:
+    """Put the real CHECK back, whatever state the test left behind.
+
+    ``DROP ... IF EXISTS`` first: if installing a weakened CHECK failed, an
+    unconditional DROP in a ``finally`` would raise and leave the table with no
+    shadow-only constraint at all, silently poisoning every later test.
+    """
+    await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT IF EXISTS ck_5scr_lifecycle_v2_shadow_only")
+    await postgres.execute(
+        f"ALTER TABLE {LIFECYCLE_TABLE} ADD CONSTRAINT ck_5scr_lifecycle_v2_shadow_only "
+        "CHECK (execution_authority = false)"
+    )
+
+
 async def test_readiness_turns_red_when_the_shadow_check_is_dropped(
     postgres: _PoolBackedPostgres,
 ) -> None:
@@ -358,17 +372,14 @@ async def test_readiness_turns_red_when_the_shadow_check_is_dropped(
     repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
     assert not any((await repository.schema_status()).values())
 
-    await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT ck_5scr_lifecycle_v2_shadow_only")
+    await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT IF EXISTS ck_5scr_lifecycle_v2_shadow_only")
     try:
         degraded = await repository.schema_status()
         assert degraded["missing_constraints"] == ("ck_5scr_lifecycle_v2_shadow_only",)
         assert degraded["missing_tables"] == ()
         assert degraded["missing_indexes"] == ()
     finally:
-        await postgres.execute(
-            f"ALTER TABLE {LIFECYCLE_TABLE} ADD CONSTRAINT ck_5scr_lifecycle_v2_shadow_only "
-            "CHECK (execution_authority = false)"
-        )
+        await _restore_shadow_check(postgres)
 
     assert not any((await repository.schema_status()).values())
 
@@ -379,7 +390,7 @@ async def test_readiness_rejects_a_same_named_check_with_a_weakened_definition(
     """Restoring the name but not the meaning must still read as missing."""
     repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
 
-    await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT ck_5scr_lifecycle_v2_shadow_only")
+    await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT IF EXISTS ck_5scr_lifecycle_v2_shadow_only")
     try:
         # Same name, same table, but it no longer forbids anything.
         await postgres.execute(
@@ -389,11 +400,44 @@ async def test_readiness_rejects_a_same_named_check_with_a_weakened_definition(
         degraded = await repository.schema_status()
         assert degraded["missing_constraints"] == ("ck_5scr_lifecycle_v2_shadow_only",)
     finally:
-        await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT ck_5scr_lifecycle_v2_shadow_only")
+        await _restore_shadow_check(postgres)
+
+    assert not any((await repository.schema_status()).values())
+
+
+async def test_readiness_rejects_a_check_widened_with_or_true(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    """The definition still contains the fragment but forbids nothing.
+
+    This also pins the expected normalized definition against what this
+    PostgreSQL actually renders: if the two ever disagree, the assertion that
+    readiness is green *before* the tampering fails first.
+    """
+    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    assert not any((await repository.schema_status()).values())
+
+    try:
+        await postgres.execute(
+            f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT IF EXISTS ck_5scr_lifecycle_v2_shadow_only"
+        )
         await postgres.execute(
             f"ALTER TABLE {LIFECYCLE_TABLE} ADD CONSTRAINT ck_5scr_lifecycle_v2_shadow_only "
-            "CHECK (execution_authority = false)"
+            "CHECK ((execution_authority = false) OR true)"
         )
+        degraded = await repository.schema_status()
+        assert degraded["missing_constraints"] == ("ck_5scr_lifecycle_v2_shadow_only",)
+
+        # Prove it really was toothless: the row the real CHECK forbids inserts.
+        lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+        await repository.upsert_lifecycle(_lifecycle(lifecycle_id))
+        await postgres.execute(
+            f"UPDATE {LIFECYCLE_TABLE} SET execution_authority = true WHERE strategy_lifecycle_id = $1",
+            lifecycle_id,
+        )
+        await _cleanup(postgres, lifecycle_id)
+    finally:
+        await _restore_shadow_check(postgres)
 
     assert not any((await repository.schema_status()).values())
 

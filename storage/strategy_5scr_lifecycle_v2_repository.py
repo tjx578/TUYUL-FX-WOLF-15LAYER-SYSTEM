@@ -38,20 +38,47 @@ _REQUIRED_INDEXES = frozenset(
 #: Columns whose *shape* is a guarantee, not just their presence.  A nullable
 #: ``execution_authority`` with no default would satisfy an existence check
 #: while silently permitting the row the CHECK exists to forbid.
-#: ``(table, column) -> (data_type, is_nullable, default_fragment | None)``
+#: ``(table, column) -> (data_type, is_nullable, exact_normalized_default | None)``
 _REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, str, str | None]] = {
+    # Exact, not a substring: ``(NOT false)`` also contains "false" while
+    # meaning the opposite.
     (LIFECYCLE_TABLE, "execution_authority"): ("boolean", "NO", "false"),
     (LINK_TABLE, "transport_lifecycle_id"): ("text", "NO", None),
     (LINK_TABLE, "pressure_event_id"): ("text", "NO", None),
 }
-#: Constraints that *are* the guarantees.  Matching on name alone is not
-#: enough: a same-named constraint on another table, or one whose definition
-#: was altered, would report ready while the invariant no longer holds.
-#: ``name -> (table, contype, definition_fragment)``
+#: Constraints that *are* the guarantees.  Neither the name nor a fragment of
+#: the definition is sufficient evidence:
+#:
+#:   * a same-named constraint on another table proves nothing;
+#:   * ``CHECK ((execution_authority = false) OR true)`` *contains* the
+#:     expected fragment while forbidding nothing;
+#:   * an FK declared on the wrong source column still mentions the right
+#:     target table.
+#:
+#: So the full definition is compared, normalized, against what PostgreSQL
+#: renders for the migration's own DDL.
+#: ``name -> (table, contype, exact_normalized_definition)``
 _REQUIRED_CONSTRAINTS: dict[str, tuple[str, str, str]] = {
-    "ck_5scr_lifecycle_v2_shadow_only": (LIFECYCLE_TABLE, "c", "execution_authority = false"),
-    "fk_5scr_lifecycle_v2_event_link": (LINK_TABLE, "f", LIFECYCLE_TABLE),
+    "ck_5scr_lifecycle_v2_shadow_only": (
+        LIFECYCLE_TABLE,
+        "c",
+        "check ((execution_authority = false))",
+    ),
+    "fk_5scr_lifecycle_v2_event_link": (
+        LINK_TABLE,
+        "f",
+        f"foreign key (strategy_lifecycle_id) references {LIFECYCLE_TABLE}(strategy_lifecycle_id)",
+    ),
 }
+
+
+def _normalize_sql(value: Any) -> str:
+    """Collapse whitespace and case so definitions compare exactly.
+
+    Deliberately does not strip parentheses: ``(a = false)`` and
+    ``((a = false) OR true)`` must not normalize to the same thing.
+    """
+    return " ".join(str(value or "").split()).lower()
 
 
 class LifecycleV2PersistenceError(RuntimeError):
@@ -161,15 +188,13 @@ class StrategyLifecycleV2Repository:
             expected = _REQUIRED_COLUMNS.get(key)
             if expected is None:
                 continue
-            data_type, nullable, default_fragment = expected
+            data_type, nullable, expected_default = expected
             if str(_row_value(row, "data_type")) != data_type:
                 continue
             if str(_row_value(row, "is_nullable")) != nullable:
                 continue
-            if default_fragment is not None:
-                default = str(_row_value(row, "column_default") or "").lower()
-                if default_fragment not in default:
-                    continue
+            if expected_default is not None and _normalize_sql(_row_value(row, "column_default")) != expected_default:
+                continue
             satisfied_columns.add(f"{key[0]}.{key[1]}")
 
         satisfied_constraints: set[str] = set()
@@ -178,13 +203,14 @@ class StrategyLifecycleV2Repository:
             expected_constraint = _REQUIRED_CONSTRAINTS.get(name)
             if expected_constraint is None:
                 continue
-            table, contype, definition_fragment = expected_constraint
+            table, contype, expected_definition = expected_constraint
             if str(_row_value(row, "table_name")) != table:
                 continue
             if str(_row_value(row, "contype")) != contype:
                 continue
-            definition = str(_row_value(row, "definition") or "")
-            if definition_fragment.lower() not in definition.lower():
+            # Exact match on the whole normalized definition. A fragment check
+            # would accept "(execution_authority = false) OR true".
+            if _normalize_sql(_row_value(row, "definition")) != expected_definition:
                 continue
             satisfied_constraints.add(name)
 
