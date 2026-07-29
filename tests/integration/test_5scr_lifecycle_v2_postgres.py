@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
+from json import dumps, loads
 from typing import Any
 from uuid import uuid4
 
@@ -229,3 +230,100 @@ async def test_persist_rolls_back_lifecycle_when_real_postgres_rejects_link(
         assert row is None
     finally:
         await _cleanup(postgres, lifecycle_id, missing_lifecycle_id)
+
+
+async def test_unlinked_inbox_read_preserves_transport_ownership(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    outbox_id = uuid4()
+    event_id = uuid4()
+    transport_lifecycle_id = f"transport-integration-{uuid4().hex}"
+    payload = {
+        "event": "signal_pressure_state_json",
+        "event_id": str(event_id),
+        "lifecycle_id": transport_lifecycle_id,
+        "lifecycle_sequence": 1,
+        "symbol": "CHFJPY",
+        "raw_direction": "BUY",
+        "valid_for_execution": False,
+        "execution_valid_now": False,
+        "is_final_signal": False,
+        "final_direction": "WAIT",
+        "promotion_stage": "PRESSURE_ONLY",
+    }
+
+    try:
+        await postgres.execute(
+            """
+            INSERT INTO pressure_outbox (
+                id, event_id, event_type, schema_version, symbol,
+                lifecycle_id, lifecycle_sequence, source_clean_block_id,
+                signal_valid_at, payload, payload_hash, status
+            )
+            VALUES (
+                $1, $2, 'signal_pressure_state_json', '1.0.0', 'CHFJPY',
+                $3, 1, 'clean-block-integration', $4, $5::jsonb, $6, 'PUBLISHED'
+            )
+            """,
+            outbox_id,
+            event_id,
+            transport_lifecycle_id,
+            _OPENED_AT,
+            dumps(payload),
+            "b" * 64,
+        )
+        await postgres.execute(
+            """
+            INSERT INTO strategy_5scr_inbox (event_id, payload_hash, status)
+            VALUES ($1, $2, 'RECEIVED')
+            """,
+            event_id,
+            "b" * 64,
+        )
+
+        rows = await repository.fetch_unlinked_events(limit=10)
+        row = next(item for item in rows if item["event_id"] == event_id)
+        stored_payload = row["payload"]
+        normalized_payload = loads(stored_payload) if isinstance(stored_payload, str) else stored_payload
+        assert normalized_payload == payload
+        assert row["lifecycle_id"] == transport_lifecycle_id
+
+        transport_state = await postgres.fetchrow(
+            """
+            SELECT
+                o.status AS outbox_status,
+                o.locked_at,
+                o.locked_by,
+                o.lease_expires_at,
+                i.status AS inbox_status,
+                i.processed_at,
+                i.result_id,
+                i.last_error
+            FROM pressure_outbox o
+            JOIN strategy_5scr_inbox i ON i.event_id = o.event_id
+            WHERE o.event_id = $1
+            """,
+            event_id,
+        )
+        assert transport_state is not None
+        assert dict(transport_state) == {
+            "outbox_status": "PUBLISHED",
+            "locked_at": None,
+            "locked_by": None,
+            "lease_expires_at": None,
+            "inbox_status": "RECEIVED",
+            "processed_at": None,
+            "result_id": None,
+            "last_error": None,
+        }
+        assert (
+            await postgres.fetchrow(
+                f"SELECT pressure_event_id FROM {LINK_TABLE} WHERE pressure_event_id = $1",
+                str(event_id),
+            )
+            is None
+        )
+    finally:
+        await postgres.execute("DELETE FROM strategy_5scr_inbox WHERE event_id = $1", event_id)
+        await postgres.execute("DELETE FROM pressure_outbox WHERE event_id = $1", event_id)
