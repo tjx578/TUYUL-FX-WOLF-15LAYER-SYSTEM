@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -305,14 +306,29 @@ def build_lifecycle_v2_shadow_runner(
 def episode_event_from_outbox_row(
     row: Mapping[str, Any],
     *,
-    payload: Mapping[str, Any] | None = None,
+    payload: Mapping[str, Any] | str | bytes | bytearray | memoryview | None = None,
 ) -> EpisodeEvent:
     """Adapt one ``pressure_outbox`` row into an episode event.
 
     Transport identity is carried through untouched; it is lineage, not
     identity, for the episode layer.
     """
-    body: Mapping[str, Any] = payload if payload is not None else (row.get("payload") or {})
+    raw_body = payload if payload is not None else row.get("payload")
+    if raw_body is None:
+        body: Mapping[str, Any] = {}
+    elif isinstance(raw_body, Mapping):
+        body = raw_body
+    else:
+        serialized = raw_body.tobytes() if isinstance(raw_body, memoryview) else raw_body
+        if not isinstance(serialized, (str, bytes, bytearray)):
+            raise ValueError("pressure outbox row payload must be a JSON object")
+        try:
+            decoded = json.loads(serialized)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError("pressure outbox row payload must be valid JSON") from exc
+        if not isinstance(decoded, Mapping):
+            raise ValueError("pressure outbox row payload must decode to a JSON object")
+        body = decoded
 
     def _text(key: str) -> str | None:
         value = body.get(key) if key in body else row.get(key)

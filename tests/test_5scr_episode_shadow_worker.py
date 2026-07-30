@@ -233,6 +233,40 @@ def test_outbox_row_preserves_transport_identity():
     assert event.is_continuity_evidence is True
 
 
+def test_outbox_row_accepts_postgres_json_payload_as_text():
+    row = {
+        "event_id": "0f9d3b1e-4c2a-4f6b-9c1d-2a5e7b8c9d03",
+        "symbol": "CHFJPY",
+        "lifecycle_id": "transport-json-text",
+        "signal_valid_at": START,
+        "payload": (
+            '{"raw_direction":"BUY","source_clean_block_id":"clean-json-text",'
+            '"pressure_seen":true,"pressure_event_count":4}'
+        ),
+    }
+
+    event = episode_event_from_outbox_row(row)
+
+    assert event.transport_lifecycle_id == "transport-json-text"
+    assert event.source_clean_block_id == "clean-json-text"
+    assert event.direction == "BUY"
+    assert event.is_continuity_evidence is True
+
+
+@pytest.mark.parametrize("payload", ["not-json", "[]", "42"])
+def test_outbox_row_rejects_payload_that_is_not_a_json_object(payload):
+    row = {
+        "event_id": "0f9d3b1e-4c2a-4f6b-9c1d-2a5e7b8c9d04",
+        "symbol": "CHFJPY",
+        "lifecycle_id": "transport-invalid-json",
+        "signal_valid_at": START,
+        "payload": payload,
+    }
+
+    with pytest.raises(ValueError, match="payload"):
+        episode_event_from_outbox_row(row)
+
+
 def test_outbox_row_without_pressure_evidence_is_not_continuity():
     row = {
         "event_id": "0f9d3b1e-4c2a-4f6b-9c1d-2a5e7b8c9d02",
