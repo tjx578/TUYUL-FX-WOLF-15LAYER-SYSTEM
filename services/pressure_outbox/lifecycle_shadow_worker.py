@@ -245,13 +245,13 @@ class LifecycleV2ShadowRunner:
         )
         while self._running:
             try:
-                processed = await self.poll_once()
+                await self.poll_once()
             except Exception as exc:  # pragma: no cover - defensive worker loop
                 logger.warning("{} poll failed: {}", SHADOW_LOG_PREFIX, exc)
-                processed = 0
-            if processed == 0:
-                with contextlib.suppress(asyncio.CancelledError):
-                    await asyncio.sleep(self._config.poll_seconds)
+            if not self._running:
+                break
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.sleep(self._config.poll_seconds)
 
     async def poll_once(self) -> int:
         """Fold one batch of not-yet-linked events.  Returns the count."""

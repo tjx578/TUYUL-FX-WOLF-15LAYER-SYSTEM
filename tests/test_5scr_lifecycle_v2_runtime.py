@@ -150,6 +150,31 @@ async def test_runner_refuses_to_start_when_not_shadow_only():
 
 
 @pytest.mark.asyncio
+async def test_runner_paces_a_successful_nonempty_poll(monkeypatch):
+    repository = _FakeRepository(rows=[_row(1)])
+    runner = LifecycleV2ShadowRunner(
+        repository=repository,
+        config=_config(dual_write_enabled=False, poll_seconds=2.5),
+    )
+    sleeps = []
+
+    async def _sleep(seconds):
+        sleeps.append(seconds)
+        await runner.stop()
+
+    monkeypatch.setattr(
+        "services.pressure_outbox.lifecycle_shadow_worker.asyncio.sleep",
+        _sleep,
+    )
+
+    await runner.run()
+
+    assert sleeps == [2.5]
+    assert repository.fetch_calls == 1
+    assert repository.persisted == []
+
+
+@pytest.mark.asyncio
 async def test_poll_folds_a_batch_into_one_episode():
     rows = [_row(i, offset_seconds=i * 60) for i in range(5)]
     repository = _FakeRepository(rows=rows)
