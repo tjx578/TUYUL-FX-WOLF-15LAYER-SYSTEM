@@ -92,10 +92,7 @@ def summarize_decision_updates(events: Iterable[DecisionUpdateAuditEvent]) -> di
     ordered = list(events)
     family_counts = Counter(event.signal_family or "UNKNOWN" for event in ordered)
     status_counts = Counter(event.status or "UNKNOWN" for event in ordered)
-    symbol_direction_counts = Counter(
-        (event.symbol, event.direction or "NONE")
-        for event in ordered
-    )
+    symbol_direction_counts = Counter((event.symbol, event.direction or "NONE") for event in ordered)
     valid_for_execution_true = sum(event.valid_for_execution is True for event in ordered)
     return {
         "total_events": len(ordered),
@@ -104,8 +101,7 @@ def summarize_decision_updates(events: Iterable[DecisionUpdateAuditEvent]) -> di
         "family_counts": dict(family_counts.most_common()),
         "status_counts": dict(status_counts.most_common()),
         "symbol_direction_counts": {
-            f"{symbol}:{direction}": count
-            for (symbol, direction), count in symbol_direction_counts.most_common()
+            f"{symbol}:{direction}": count for (symbol, direction), count in symbol_direction_counts.most_common()
         },
         "event_flood": detect_event_flood(ordered),
     }

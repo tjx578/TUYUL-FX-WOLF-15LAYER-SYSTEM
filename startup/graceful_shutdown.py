@@ -64,9 +64,7 @@ class GracefulShutdown:
                 task.cancel()
 
         if tasks:
-            done, pending = await asyncio.wait(
-                tasks, timeout=self._drain_timeout, return_when=asyncio.ALL_COMPLETED
-            )
+            done, pending = await asyncio.wait(tasks, timeout=self._drain_timeout, return_when=asyncio.ALL_COMPLETED)
             if pending:
                 logger.warning(
                     "[GracefulShutdown] {} task(s) did not finish within {}s drain timeout",
@@ -101,9 +99,7 @@ class GracefulShutdown:
 
         logger.info("[GracefulShutdown] Shutdown sequence complete")
 
-    async def drain_worker_tasks(
-        self, in_flight: list[asyncio.Task[None]], label: str = "worker"
-    ) -> None:
+    async def drain_worker_tasks(self, in_flight: list[asyncio.Task[None]], label: str = "worker") -> None:
         """Wait for in-flight message-processing tasks to complete.
 
         Used by stream consumers (execution/allocation workers) to finish
@@ -123,9 +119,7 @@ class GracefulShutdown:
             self._drain_timeout,
         )
 
-        done, pending = await asyncio.wait(
-            active, timeout=self._drain_timeout, return_when=asyncio.ALL_COMPLETED
-        )
+        done, pending = await asyncio.wait(active, timeout=self._drain_timeout, return_when=asyncio.ALL_COMPLETED)
         if pending:
             logger.warning(
                 "[GracefulShutdown] {} {} task(s) did not complete — cancelling",

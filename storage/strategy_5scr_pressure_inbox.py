@@ -6,13 +6,13 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Literal, cast
 
+from loguru import logger
+
 from analysis.strategy_5scr_pressure_to_tradeplan import (
     PressureEventNormalizer,
     PressureLifecycleAccumulator,
     PressureToTradePlanBuilder,
 )
-from loguru import logger
-
 from contracts.canonical_candle import as_utc
 from contracts.strategy_5scr_execution_policy import (
     LEGACY_REPLAY_EXECUTION_POLICY,
@@ -93,8 +93,7 @@ class Strategy5SCRPressureProcessor:
         self._execution_policy = execution_policy or LEGACY_REPLAY_EXECUTION_POLICY
         self._builder = PressureToTradePlanBuilder(execution_policy=self._execution_policy)
         logger.info(
-            "Strategy 5S-CR pressure processor active execution_policy_id={} "
-            "minimum_fx_target_pips={} minimum_rr={}",
+            "Strategy 5S-CR pressure processor active execution_policy_id={} minimum_fx_target_pips={} minimum_rr={}",
             self._execution_policy.policy_id,
             self._execution_policy.minimum_fx_target_pips,
             self._execution_policy.minimum_rr,

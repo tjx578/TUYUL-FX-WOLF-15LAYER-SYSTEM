@@ -10,6 +10,7 @@ Contract: restore direction propagation, NOT execution permission. The recovered
 direction only seeds raw_direction on the pressure canary; it never sets
 final_direction / valid_for_execution and never emits a SignalJSON.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -91,10 +92,7 @@ def test_resolver_returns_none_on_conflict():
 
 def test_resolver_returns_none_when_absent():
     pipe, _ = _pipeline()
-    assert (
-        pipe._resolve_pressure_observation_direction(l12_verdict={}, synthesis=None, source_verdict=None)
-        is None
-    )
+    assert pipe._resolve_pressure_observation_direction(l12_verdict={}, synthesis=None, source_verdict=None) is None
 
 
 def test_resolver_disabled_by_kill_switch(monkeypatch):
@@ -174,10 +172,7 @@ def test_diagnostics_recovery_no_l3_lower_layers_agree(monkeypatch):
     pipe, _ = _pipeline()
     synthesis = _hold_with_sources({"l1": "SELL", "l2": "SELL", "l3": None, "l9": None})
     assert (
-        pipe._resolve_pressure_observation_direction(
-            l12_verdict={}, synthesis=synthesis, source_verdict=None
-        )
-        == "SELL"
+        pipe._resolve_pressure_observation_direction(l12_verdict={}, synthesis=synthesis, source_verdict=None) == "SELL"
     )
 
 
@@ -186,10 +181,7 @@ def test_diagnostics_recovery_conflict_returns_none(monkeypatch):
     pipe, _ = _pipeline()
     synthesis = _hold_with_sources({"l1": None, "l2": "SELL", "l3": "BUY", "l9": None})
     assert (
-        pipe._resolve_pressure_observation_direction(
-            l12_verdict={}, synthesis=synthesis, source_verdict=None
-        )
-        is None
+        pipe._resolve_pressure_observation_direction(l12_verdict={}, synthesis=synthesis, source_verdict=None) is None
     )
 
 
@@ -197,14 +189,9 @@ def test_diagnostics_recovery_bails_on_recorded_conflicts(monkeypatch):
     """Even if sources are unanimous, a pre-recorded resolver conflict blocks recovery."""
     monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS", "true")
     pipe, _ = _pipeline()
-    synthesis = _hold_with_sources(
-        {"l1": "BUY", "l2": "BUY", "l3": "BUY", "l9": "BUY"}, conflicts=["L2_HTF_MTA"]
-    )
+    synthesis = _hold_with_sources({"l1": "BUY", "l2": "BUY", "l3": "BUY", "l9": "BUY"}, conflicts=["L2_HTF_MTA"])
     assert (
-        pipe._resolve_pressure_observation_direction(
-            l12_verdict={}, synthesis=synthesis, source_verdict=None
-        )
-        is None
+        pipe._resolve_pressure_observation_direction(l12_verdict={}, synthesis=synthesis, source_verdict=None) is None
     )
 
 
@@ -213,10 +200,7 @@ def test_diagnostics_recovery_disabled_by_subflag_default_off(monkeypatch):
     pipe, _ = _pipeline()
     synthesis = _hold_with_sources({"l1": None, "l2": None, "l3": "BUY", "l9": None})
     assert (
-        pipe._resolve_pressure_observation_direction(
-            l12_verdict={}, synthesis=synthesis, source_verdict=None
-        )
-        is None
+        pipe._resolve_pressure_observation_direction(l12_verdict={}, synthesis=synthesis, source_verdict=None) is None
     )
 
 
@@ -226,10 +210,7 @@ def test_diagnostics_recovery_respects_c2_master_kill_switch(monkeypatch):
     pipe, _ = _pipeline()
     synthesis = _hold_with_sources({"l1": None, "l2": None, "l3": "BUY", "l9": None})
     assert (
-        pipe._resolve_pressure_observation_direction(
-            l12_verdict={}, synthesis=synthesis, source_verdict=None
-        )
-        is None
+        pipe._resolve_pressure_observation_direction(l12_verdict={}, synthesis=synthesis, source_verdict=None) is None
     )
 
 

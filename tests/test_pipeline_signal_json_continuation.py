@@ -587,7 +587,10 @@ def test_pipeline_emits_pressure_tier_snapshot_log(caplog):
         '"radar_breakdown":{"tier_1_overflow_radar":0,"tier_3_theme_radar":2,'
         '"fragmented_pressure_radar":1,"pressure_memory_radar":0,"theme_rotation_radar":1}'
     ) in caplog.text
-    assert '"display_line":"pressure_tiers tier1=1[XAGUSD:SELL:88.0] tier2=0[-] tier3_hidden=4 radar_breakdown[tier3=2 fragmented=1 memory=0 theme_rotation=1] stale=0 unsafe_mixed=0 execution_impact=false"' in caplog.text
+    assert (
+        '"display_line":"pressure_tiers tier1=1[XAGUSD:SELL:88.0] tier2=0[-] tier3_hidden=4 radar_breakdown[tier3=2 fragmented=1 memory=0 theme_rotation=1] stale=0 unsafe_mixed=0 execution_impact=false"'
+        in caplog.text
+    )
     assert '"decision_update_tier_context_allowed":false' in caplog.text
 
 
@@ -623,7 +626,10 @@ def test_pipeline_emits_followthrough_score_log(caplog):
     assert not any("SignalThrottleFollowthroughScore" in record.getMessage() for record in signal_json_records)
     assert "[SignalThrottleFollowthroughScore]" in caplog.text
     assert '"event":"signal_throttle_followthrough_score_snapshot"' in caplog.text
-    assert '"display_line":"followthrough_scores total=1 top=1[XAGUSD:SELL:82:HIGH_FOLLOWTHROUGH_CANDIDATE] execution_impact=false"' in caplog.text
+    assert (
+        '"display_line":"followthrough_scores total=1 top=1[XAGUSD:SELL:82:HIGH_FOLLOWTHROUGH_CANDIDATE] execution_impact=false"'
+        in caplog.text
+    )
     assert '"valid_for_execution":false' in caplog.text
 
 
@@ -1282,9 +1288,7 @@ def test_pipeline_downgrades_old_microboost_within_lineage_grace(monkeypatch):
                 "microboost_validation_status": "NOT_REQUIRED_CLEAN_BLOCK_ROUTER",
             }
         ],
-        "signal_watch_promotion_diagnostics": [
-            {"symbol": "XAGUSD", "event": "signal_throttle_clean_block_radar"}
-        ],
+        "signal_watch_promotion_diagnostics": [{"symbol": "XAGUSD", "event": "signal_throttle_clean_block_radar"}],
     }
     monkeypatch.setattr(pipeline, "_source_lineage_max_age_seconds", lambda: 300.0)
     monkeypatch.setattr(pipeline, "_microboost_active_timing_max_age_seconds", lambda: 120.0)
@@ -1308,9 +1312,7 @@ def test_pipeline_downgrades_old_microboost_within_lineage_grace(monkeypatch):
     assert "microboost_stale_terminalization" not in report
     assert "microboost_terminal_decision_update" not in report
     assert report["microboost_timing_downgrade"]["lineage_waiting"] is True
-    assert report["microboost_timing_downgrade"]["timing_status"] == (
-        "CLEAN_BLOCK_WATCH_PENDING_CURRENT_TIMING"
-    )
+    assert report["microboost_timing_downgrade"]["timing_status"] == ("CLEAN_BLOCK_WATCH_PENDING_CURRENT_TIMING")
     watch = report["clean_block_watch_entries"][0]
     assert watch["status"] == "CLEAN_BLOCK_BUY_WATCH"
     assert watch["clean_block_outcome_status"] == "CLEAN_BLOCK_WATCH_PENDING_CURRENT_TIMING"
@@ -1390,7 +1392,9 @@ def test_shadow_microboost_watch_is_marked_observability_only(monkeypatch):
     pipeline._signal_throttle_live_analyzer = _Analyzer()
 
     verdict: dict = {}
-    pipeline._emit_microboost_watch_shadow(symbol="XAUUSD", synthesis={}, l12_verdict=verdict, source_verdict="NO_TRADE")
+    pipeline._emit_microboost_watch_shadow(
+        symbol="XAUUSD", synthesis={}, l12_verdict=verdict, source_verdict="NO_TRADE"
+    )
 
     assert emitted
     assert emitted[0]["shadow_only"] is True
@@ -1456,7 +1460,9 @@ def test_shadow_clean_block_watch_is_marked_observability_only(monkeypatch):
     pipeline._signal_throttle_live_analyzer = _Analyzer()
 
     verdict: dict = {}
-    pipeline._emit_microboost_watch_shadow(symbol="EURNZD", synthesis={}, l12_verdict=verdict, source_verdict="NO_TRADE")
+    pipeline._emit_microboost_watch_shadow(
+        symbol="EURNZD", synthesis={}, l12_verdict=verdict, source_verdict="NO_TRADE"
+    )
 
     assert emitted
     assert emitted[0]["status"] == "CLEAN_BLOCK_SELL_WATCH"
@@ -2087,14 +2093,17 @@ def test_pipeline_emits_rolling_pressure_state_summary(monkeypatch, caplog):
     )
     pipeline._pressure_state_summary_tracker = tracker
 
-    assert pipeline._emit_signal_pressure_state_payload(
-        {
-            "symbol": "USDCAD",
-            "source_stage": "SIGNAL_THROTTLE_INTEL",
-            "signal_family": "SIGNAL_THROTTLE_PRESSURE",
-            "status": "PRESSURE_CANARY",
-        }
-    ) is True
+    assert (
+        pipeline._emit_signal_pressure_state_payload(
+            {
+                "symbol": "USDCAD",
+                "source_stage": "SIGNAL_THROTTLE_INTEL",
+                "signal_family": "SIGNAL_THROTTLE_PRESSURE",
+                "status": "PRESSURE_CANARY",
+            }
+        )
+        is True
+    )
 
     summary_message = next(
         record.message for record in caplog.records if "[SignalPressureStateSummary]" in record.message

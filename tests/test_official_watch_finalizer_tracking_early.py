@@ -18,6 +18,7 @@ Guardrails locked here:
 - existing clean-block lifecycle tracking does not regress
 - adoption never flips valid_for_execution / final_direction
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

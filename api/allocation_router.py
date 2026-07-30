@@ -120,6 +120,7 @@ def _get_journal_service() -> _TradeJournalAutomationServiceProtocol:
     _journal_service = trade_journal_automation_service
     return trade_journal_automation_service
 
+
 ALLOC_REQUEST_STREAM = "allocation:request"
 IDEMPOTENCY_KEY_PREFIX = "idempotency:confirm:"
 IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
@@ -579,9 +580,7 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
                 if last_seen_raw:
                     try:
                         candle_ts = float(
-                            last_seen_raw
-                            if isinstance(last_seen_raw, str)
-                            else last_seen_raw.decode("utf-8")
+                            last_seen_raw if isinstance(last_seen_raw, str) else last_seen_raw.decode("utf-8")
                         )
                     except (TypeError, ValueError):
                         candle_ts = 0.0

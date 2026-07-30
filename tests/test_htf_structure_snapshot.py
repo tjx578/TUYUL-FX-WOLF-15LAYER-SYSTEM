@@ -179,18 +179,10 @@ def test_liquidity_sell_side_near_low():
 def test_liquidity_resolution_distinguishes_acceptance_and_rejection():
     daily_range = (120.0, 100.0)
 
-    assert classify_liquidity_resolution(_c(121.0, 119.0, close=120.8), daily_range, atr=1.0) == (
-        "BUY_SIDE_ACCEPTED"
-    )
-    assert classify_liquidity_resolution(_c(121.0, 118.5, close=119.0), daily_range, atr=1.0) == (
-        "BUY_SIDE_REJECTED"
-    )
-    assert classify_liquidity_resolution(_c(101.0, 99.0, close=99.2), daily_range, atr=1.0) == (
-        "SELL_SIDE_ACCEPTED"
-    )
-    assert classify_liquidity_resolution(_c(101.5, 99.0, close=101.0), daily_range, atr=1.0) == (
-        "SELL_SIDE_REJECTED"
-    )
+    assert classify_liquidity_resolution(_c(121.0, 119.0, close=120.8), daily_range, atr=1.0) == ("BUY_SIDE_ACCEPTED")
+    assert classify_liquidity_resolution(_c(121.0, 118.5, close=119.0), daily_range, atr=1.0) == ("BUY_SIDE_REJECTED")
+    assert classify_liquidity_resolution(_c(101.0, 99.0, close=99.2), daily_range, atr=1.0) == ("SELL_SIDE_ACCEPTED")
+    assert classify_liquidity_resolution(_c(101.5, 99.0, close=101.0), daily_range, atr=1.0) == ("SELL_SIDE_REJECTED")
 
 
 # --------------------------------------------------------------------------- #

@@ -4,6 +4,7 @@ Emits one [SignalIntelligenceFlagSnapshot] line per deployment with the effectiv
 intelligence/canary flag state so a capture can tell "flag OFF" from "logic failing".
 Observability-only: never touches execution.
 """
+
 from __future__ import annotations
 
 import json

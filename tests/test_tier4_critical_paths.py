@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -91,7 +91,10 @@ class TestL7WalkForwardDegradation:
         probe = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42, wf_validator=None)
         returns = _make_returns(200, win_rate=0.58, seed=11)
         probe_result = probe.analyze(
-            "EURUSD", trade_returns=returns, prior_wins=15, prior_losses=15,
+            "EURUSD",
+            trade_returns=returns,
+            prior_wins=15,
+            prior_losses=15,
         )
         mc_tier = probe_result["validation"]
 

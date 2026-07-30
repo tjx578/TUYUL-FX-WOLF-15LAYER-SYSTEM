@@ -514,8 +514,11 @@ def test_mapper_ignores_unknown_active_direction():
 def test_mapper_never_marks_executable_and_uses_known_status(active, opposite):
     # Every condition that yields a status must yield one from the closed taxonomy.
     payloads = [
-        {"validated_direction": opposite, "status": f"{opposite}_TIMING_WATCH",
-         "phase_priced": "RESISTANCE_PRESSURE_WARNING" if active == "BUY" else "SUPPORT_PRESSURE_WARNING"},
+        {
+            "validated_direction": opposite,
+            "status": f"{opposite}_TIMING_WATCH",
+            "phase_priced": "RESISTANCE_PRESSURE_WARNING" if active == "BUY" else "SUPPORT_PRESSURE_WARNING",
+        },
         {"phase_priced": "EXHAUSTION_AT_RESISTANCE" if active == "BUY" else "EXHAUSTION_AT_SUPPORT"},
         {"structure_flip": True},
         {"structure_flip": True, "validated_direction": opposite, "status": f"{opposite}_TIMING_VALID"},

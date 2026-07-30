@@ -177,7 +177,11 @@ def _classify_role(
         reasons.append(f"PHASE_PRICED_{phase_priced}")
 
     if phase_priced in _ABSORPTION_PHASES:
-        bias = "NO_CHASE" if phase_priced.startswith("EXHAUSTION") or _room_exhausted(room_to_move_pips) else "COUNTER_WATCH"
+        bias = (
+            "NO_CHASE"
+            if phase_priced.startswith("EXHAUSTION") or _room_exhausted(room_to_move_pips)
+            else "COUNTER_WATCH"
+        )
         return "ABSORPTION_WARNING", bias, [*reasons, "PRICE_EXTREME_ABSORPTION_WARNING"]
 
     if phase_priced == "LATE_DENSE_PRESSURE" or action == "PROTECT_PROFIT":
@@ -258,7 +262,12 @@ def _late_move_penalty(
         return 16.0
     if role == "ABSORPTION_WARNING":
         return 10.0
-    if pre_move_pips is not None and room_to_move_pips is not None and pre_move_pips >= 25.0 and room_to_move_pips <= 10.0:
+    if (
+        pre_move_pips is not None
+        and room_to_move_pips is not None
+        and pre_move_pips >= 25.0
+        and room_to_move_pips <= 10.0
+    ):
         return 10.0
     return 0.0
 

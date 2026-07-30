@@ -205,14 +205,10 @@ def pressure_tier_snapshot_log_payload(
         return None
     symbols = [row for row in snapshot.get("symbols") or [] if isinstance(row, Mapping)]
     tier_1 = [
-        _compact_tier_row(row)
-        for row in symbols
-        if row.get("effective_pressure_tier") == TIER_1_PRIMARY_ANALYSIS
+        _compact_tier_row(row) for row in symbols if row.get("effective_pressure_tier") == TIER_1_PRIMARY_ANALYSIS
     ][:max_symbols_per_tier]
     tier_2 = [
-        _compact_tier_row(row)
-        for row in symbols
-        if row.get("effective_pressure_tier") == TIER_2_CONFIRMATION_SUPPORT
+        _compact_tier_row(row) for row in symbols if row.get("effective_pressure_tier") == TIER_2_CONFIRMATION_SUPPORT
     ][:max_symbols_per_tier]
     radar_breakdown = _radar_hidden_breakdown(snapshot)
     radar_hidden_count = sum(radar_breakdown.values())
@@ -311,9 +307,7 @@ def _snapshot_payload(
     source_block_count: int | None = None,
 ) -> dict[str, Any]:
     tiers = {
-        "tier_1": [
-            row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_1_PRIMARY_ANALYSIS
-        ],
+        "tier_1": [row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_1_PRIMARY_ANALYSIS],
         "tier_2": [
             row["symbol"] for row in symbols if row.get("effective_pressure_tier") == TIER_2_CONFIRMATION_SUPPORT
         ],
@@ -518,10 +512,7 @@ def _tier_count(snapshot: Mapping[str, Any], key: str) -> int:
 
 
 def _radar_hidden_breakdown(snapshot: Mapping[str, Any]) -> dict[str, int]:
-    breakdown = {
-        output_key: _tier_count(snapshot, tier_key)
-        for tier_key, output_key in _RADAR_HIDDEN_TIER_KEYS
-    }
+    breakdown = {output_key: _tier_count(snapshot, tier_key) for tier_key, output_key in _RADAR_HIDDEN_TIER_KEYS}
     if not any(breakdown.values()):
         breakdown["tier_3_theme_radar"] = _tier_count(snapshot, "tier_3_hidden")
     return breakdown
@@ -572,7 +563,9 @@ def _fragmented_memory_payload(metrics: _ScopeMetrics) -> dict[str, Any]:
         "same_symbol_reentry_count": metrics.same_symbol_reentry_count,
         "run_count": metrics.run_count,
         "interrupted_by_other_symbols": metrics.interrupted_by_other_symbols,
-        "pure_clean_block_interrupted": False if metrics.clean_block_count > 0 else metrics.interrupted_by_other_symbols,
+        "pure_clean_block_interrupted": False
+        if metrics.clean_block_count > 0
+        else metrics.interrupted_by_other_symbols,
         "live_scope_fragmented_interrupted": metrics.interrupted_by_other_symbols,
         "pressure_memory_score": round(metrics.pressure_memory_score, 3),
     }
@@ -716,7 +709,9 @@ def _scope_metrics(
     direction_purity = (max(directions.values()) / directional_total) if directional_total else 0.0
     latest_event_age = _latest_event_age(symbol_events, now)
     latest_pressure_block = max(symbol_blocks, key=_block_end, default=None)
-    latest_pressure_block_duration = _block_duration(latest_pressure_block) if latest_pressure_block is not None else 0.0
+    latest_pressure_block_duration = (
+        _block_duration(latest_pressure_block) if latest_pressure_block is not None else 0.0
+    )
     clean_blocks = [block for block in symbol_blocks if _block_duration(block) >= clean_block_seconds]
     latest_clean_block = max(clean_blocks, key=_block_end, default=None)
     clean_block_duration = _block_duration(latest_clean_block) if latest_clean_block is not None else 0.0
@@ -1161,9 +1156,7 @@ def _block_duration(block: Any) -> float:
 
 def _block_effective_density(block: Any) -> float:
     return _safe_float(
-        getattr(block, "effective_density_per_minute", None)
-        or getattr(block, "density_per_minute", None)
-        or 0.0
+        getattr(block, "effective_density_per_minute", None) or getattr(block, "density_per_minute", None) or 0.0
     )
 
 

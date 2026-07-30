@@ -197,9 +197,7 @@ class TestDimensionScorer:
             assert 0 <= val <= 5, f"{name}={val} out of bounds"
 
     def test_performance_keywords(self) -> None:
-        obj = ObjectiveNormalizer.from_payload(
-            {"user_request": "Optimize latency for the hot path"}
-        )
+        obj = ObjectiveNormalizer.from_payload({"user_request": "Optimize latency for the hot path"})
         dims = DimensionScorer.score(obj)
         assert dims.performance_risk >= 2  # keyword boost
 
@@ -224,16 +222,12 @@ class TestRuleEvaluator:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         dims = DimensionScorer.score(obj)
         assert RuleEvaluator.evaluate("deliverable_types contains code", obj, dims)
-        assert not RuleEvaluator.evaluate(
-            "deliverable_types contains nonexistent", obj, dims
-        )
+        assert not RuleEvaluator.evaluate("deliverable_types contains nonexistent", obj, dims)
 
     def test_memory_required(self, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         dims = DimensionScorer.score(obj)
-        assert RuleEvaluator.evaluate(
-            "constraints.memory_required == true", obj, dims
-        )
+        assert RuleEvaluator.evaluate("constraints.memory_required == true", obj, dims)
 
     def test_invalid_expression_raises(self) -> None:
         obj = ObjectiveNormalizer.from_payload({"user_request": "x"})
@@ -248,9 +242,7 @@ class TestRuleEvaluator:
 
 
 class TestRouterEngine:
-    def test_route_returns_decision(
-        self, router: RouterEngine, sample_payload: dict
-    ) -> None:
+    def test_route_returns_decision(self, router: RouterEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         decision = router.route(obj)
         assert isinstance(decision, RouteDecision)
@@ -259,23 +251,17 @@ class TestRouterEngine:
         assert decision.selected_topology
         assert decision.selected_modes
 
-    def test_route_sample_includes_security_gate(
-        self, router: RouterEngine, sample_payload: dict
-    ) -> None:
+    def test_route_sample_includes_security_gate(self, router: RouterEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         decision = router.route(obj)
         assert "security" in decision.selected_modes
 
-    def test_route_sample_includes_verification(
-        self, router: RouterEngine, sample_payload: dict
-    ) -> None:
+    def test_route_sample_includes_verification(self, router: RouterEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         decision = router.route(obj)
         assert "verification" in decision.selected_modes
 
-    def test_route_spec_first_injects_specification(
-        self, router: RouterEngine, sample_payload: dict
-    ) -> None:
+    def test_route_spec_first_injects_specification(self, router: RouterEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         decision = router.route(obj)
         if "specification" in decision.selected_modes:
@@ -292,25 +278,19 @@ class TestRouterEngine:
         for mode in decision.selected_modes:
             assert registry.has_mode(mode), f"Routed mode '{mode}' missing in registry"
 
-    def test_route_dimensions_present(
-        self, router: RouterEngine, sample_payload: dict
-    ) -> None:
+    def test_route_dimensions_present(self, router: RouterEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         decision = router.route(obj)
         assert "complexity" in decision.dimensions
         assert "security_risk" in decision.dimensions
 
-    def test_minimal_objective_gets_fast_path(
-        self, router: RouterEngine, minimal_payload: dict
-    ) -> None:
+    def test_minimal_objective_gets_fast_path(self, router: RouterEngine, minimal_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(minimal_payload)
         decision = router.route(obj)
         # minimal + prefer_fast_path=True => likely single topology
         assert decision.selected_topology in {"single", "pipeline"}
 
-    def test_swarm_disabled_blocks_swarm_topology(
-        self, router: RouterEngine
-    ) -> None:
+    def test_swarm_disabled_blocks_swarm_topology(self, router: RouterEngine) -> None:
         obj = ObjectiveNormalizer.from_payload(
             {
                 "user_request": "Complex multi-step integration",
@@ -417,9 +397,7 @@ class TestVerificationSink:
         assert v.confidence >= 0.9
         assert v.ship_recommendation == "ship"
 
-    def test_blocked_result_causes_fail(
-        self, sample_payload: dict, router: RouterEngine
-    ) -> None:
+    def test_blocked_result_causes_fail(self, sample_payload: dict, router: RouterEngine) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         route = router.route(obj)
         from agents.router_engine import ModeResult
@@ -466,17 +444,13 @@ class TestMemoryAdapter:
 
 
 class TestOrchestrationRouteOnly:
-    def test_route_only_returns_decision(
-        self, engine: OrchestrationEngine, sample_payload: dict
-    ) -> None:
+    def test_route_only_returns_decision(self, engine: OrchestrationEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         decision = engine.route_only(obj)
         assert isinstance(decision, RouteDecision)
         assert decision.selected_modes
 
-    def test_route_only_minimal(
-        self, engine: OrchestrationEngine, minimal_payload: dict
-    ) -> None:
+    def test_route_only_minimal(self, engine: OrchestrationEngine, minimal_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(minimal_payload)
         decision = engine.route_only(obj)
         assert decision.selected_topology in {"single", "pipeline"}
@@ -488,9 +462,7 @@ class TestOrchestrationRouteOnly:
 
 
 class TestOrchestrationExecution:
-    def test_execute_success(
-        self, engine: OrchestrationEngine, sample_payload: dict
-    ) -> None:
+    def test_execute_success(self, engine: OrchestrationEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         result = engine.execute(obj)
         assert result.objective_id
@@ -501,25 +473,19 @@ class TestOrchestrationExecution:
         assert result.state_history[0] == "intake"
         assert result.state_history[-1] in {"completed", "failed"}
 
-    def test_execute_has_verification(
-        self, engine: OrchestrationEngine, sample_payload: dict
-    ) -> None:
+    def test_execute_has_verification(self, engine: OrchestrationEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         result = engine.execute(obj)
         assert result.verification
         assert "overall_verdict" in result.verification
 
-    def test_execute_has_memory_writeback(
-        self, engine: OrchestrationEngine, sample_payload: dict
-    ) -> None:
+    def test_execute_has_memory_writeback(self, engine: OrchestrationEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         result = engine.execute(obj)
         if result.execution_status in {"success", "partial"}:
             assert result.memory["writeback_status"] == "written"
 
-    def test_execute_minimal(
-        self, engine: OrchestrationEngine, minimal_payload: dict
-    ) -> None:
+    def test_execute_minimal(self, engine: OrchestrationEngine, minimal_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(minimal_payload)
         result = engine.execute(obj)
         assert result.execution_status in {"success", "partial"}
@@ -537,13 +503,9 @@ class TestOrchestrationExecution:
                         summary="Cannot proceed",
                         blockers=["Missing dependency"],
                     )
-                return ModeResult(
-                    mode=mode_id, status="success", summary=f"{mode_id} ok"
-                )
+                return ModeResult(mode=mode_id, status="success", summary=f"{mode_id} ok")
 
-        engine = OrchestrationEngine(
-            registry=registry, mode_runner=BlockingRunner()
-        )
+        engine = OrchestrationEngine(registry=registry, mode_runner=BlockingRunner())
         obj = ObjectiveNormalizer.from_payload(
             {"user_request": "Build something", "preferences": {"prefer_fast_path": True}}
         )
@@ -551,23 +513,17 @@ class TestOrchestrationExecution:
         assert result.execution_status == "blocked"
         assert "Missing dependency" in result.verification["blockers"]
 
-    def test_execute_state_history_valid(
-        self, engine: OrchestrationEngine, sample_payload: dict
-    ) -> None:
+    def test_execute_state_history_valid(self, engine: OrchestrationEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         result = engine.execute(obj)
         # All transitions must be legal
         legal = OrchestrationStateMachine.LEGAL
-        for prev_state, next_state in zip(
-            result.state_history[:-1], result.state_history[1:], strict=False
-        ):
+        for prev_state, next_state in zip(result.state_history[:-1], result.state_history[1:], strict=False):
             assert next_state in legal.get(prev_state, set()), (
                 f"Illegal transition in history: {prev_state} -> {next_state}"
             )
 
-    def test_execute_governance_present(
-        self, engine: OrchestrationEngine, sample_payload: dict
-    ) -> None:
+    def test_execute_governance_present(self, engine: OrchestrationEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         result = engine.execute(obj)
         assert "verification_status" in result.governance
@@ -588,18 +544,14 @@ class TestDefaultModeRunner:
         assert result.mode == "research"
         assert result.findings
 
-    def test_security_high_decision(
-        self, router: RouterEngine, sample_payload: dict
-    ) -> None:
+    def test_security_high_decision(self, router: RouterEngine, sample_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(sample_payload)
         route = router.route(obj)
         runner = DefaultModeRunner()
         result = runner.run("security", obj, route, [])
         assert any("specialist" in d.lower() for d in result.decisions)
 
-    def test_unknown_mode_still_works(
-        self, router: RouterEngine, minimal_payload: dict
-    ) -> None:
+    def test_unknown_mode_still_works(self, router: RouterEngine, minimal_payload: dict) -> None:
         obj = ObjectiveNormalizer.from_payload(minimal_payload)
         route = router.route(obj)
         runner = DefaultModeRunner()

@@ -115,9 +115,7 @@ def test_nzdchf_remains_a_valid_strategy_trade_independent_of_loss_outcome() -> 
 def test_blocked_playbook_fails_closed() -> None:
     signal = _signal()
     proof = deepcopy(signal["strategy_5scr"])
-    proof["context_resolution"]["blocked_playbook"] = [
-        proof["context_resolution"]["selected_playbook"]
-    ]
+    proof["context_resolution"]["blocked_playbook"] = [proof["context_resolution"]["selected_playbook"]]
     signal["strategy_5scr"] = proof
 
     evaluation = evaluate_strategy_5scr_proof(signal)

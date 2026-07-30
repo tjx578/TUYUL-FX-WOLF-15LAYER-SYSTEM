@@ -157,11 +157,7 @@ def _tradeplan_gate(
     gates: list[str],
     reasons: list[str],
 ) -> None:
-    target_mode = str(
-        _nested(payload, "tradeplan_preview", "target_mode")
-        or payload.get("target_mode")
-        or ""
-    ).upper()
+    target_mode = str(_nested(payload, "tradeplan_preview", "target_mode") or payload.get("target_mode") or "").upper()
     if target_mode == "PROVISIONAL_RR_FALLBACK":
         _add(gates, reasons, "TradePlanCompletenessGate", "PROVISIONAL_RR_FALLBACK_NOT_EXECUTION_GRADE")
     if target_mode not in _STRUCTURE_TARGET_MODES:
@@ -268,11 +264,7 @@ def _provisional_rr_fallback_gate(payload: dict[str, Any], gates: list[str], rea
     """
     if os.getenv("SIGNAL_EXEC_PROVISIONAL_RR_HARD_BLOCK_ENABLED", "true").strip().lower() != "true":
         return
-    target_mode = str(
-        _nested(payload, "tradeplan_preview", "target_mode")
-        or payload.get("target_mode")
-        or ""
-    ).upper()
+    target_mode = str(_nested(payload, "tradeplan_preview", "target_mode") or payload.get("target_mode") or "").upper()
     if target_mode == "PROVISIONAL_RR_FALLBACK":
         _add(gates, reasons, "ProvisionalRRFallbackGate", "PROVISIONAL_RR_FALLBACK_NOT_EXECUTABLE")
 
@@ -300,9 +292,7 @@ def _pattern_permission_gate(payload: dict[str, Any], gates: list[str], reasons:
     elif permission in {"NO_NEW_ENTRY", "BLOCK_NEW_ENTRY"}:
         _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_NEW_ENTRY")
     elif direction == "BUY" and (
-        permission in {"NO_NEW_BUY", "NO_BUY"}
-        or permission.startswith("NO_NEW_BUY")
-        or permission.startswith("NO_BUY")
+        permission in {"NO_NEW_BUY", "NO_BUY"} or permission.startswith("NO_NEW_BUY") or permission.startswith("NO_BUY")
     ):
         _add(gates, reasons, "PatternPermissionGate", "PATTERN_PERMISSION_NO_NEW_BUY")
     elif direction == "SELL" and (
@@ -421,9 +411,7 @@ def _live_rr_gate(
         stop_breached = (direction == "BUY" and exit_price <= selected_sl) or (
             direction == "SELL" and exit_price >= selected_sl
         )
-        target_reached = (direction == "BUY" and exit_price >= target) or (
-            direction == "SELL" and exit_price <= target
-        )
+        target_reached = (direction == "BUY" and exit_price >= target) or (direction == "SELL" and exit_price <= target)
         if stop_breached or target_reached:
             reason = "LIVE_PRICE_AT_OR_BEYOND_STOP" if stop_breached else "TARGET_ALREADY_REACHED_NO_NEW_ENTRY"
             _add(block_gates, block_reasons, "LivePriceValidityGate", reason)
@@ -558,8 +546,12 @@ def _has_structure_target(payload: dict[str, Any], enriched: dict[str, Any], min
 
 
 def _live_price(payload: dict[str, Any]) -> float | None:
-    bid = _first_float(payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid"))
-    ask = _first_float(payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask"))
+    bid = _first_float(
+        payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid")
+    )
+    ask = _first_float(
+        payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask")
+    )
     if bid is not None and ask is not None:
         return round((bid + ask) / 2.0, _price_digits(payload))
     return _first_float(
@@ -576,18 +568,34 @@ def _live_price(payload: dict[str, Any]) -> float | None:
 
 
 def _live_entry_price(payload: dict[str, Any], direction: str | None) -> float | None:
-    bid = _first_float(payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid"))
-    ask = _first_float(payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask"))
+    bid = _first_float(
+        payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid")
+    )
+    ask = _first_float(
+        payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask")
+    )
     if bid is not None and ask is not None:
-        return ask if direction == "BUY" else (bid if direction == "SELL" else round((bid + ask) / 2.0, _price_digits(payload)))
+        return (
+            ask
+            if direction == "BUY"
+            else (bid if direction == "SELL" else round((bid + ask) / 2.0, _price_digits(payload)))
+        )
     return _live_price(payload)
 
 
 def _live_exit_price(payload: dict[str, Any], direction: str | None) -> float | None:
-    bid = _first_float(payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid"))
-    ask = _first_float(payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask"))
+    bid = _first_float(
+        payload.get("observed_bid"), payload.get("bid"), _nested(payload, "market_context_snapshot", "bid")
+    )
+    ask = _first_float(
+        payload.get("observed_ask"), payload.get("ask"), _nested(payload, "market_context_snapshot", "ask")
+    )
     if bid is not None and ask is not None:
-        return bid if direction == "BUY" else (ask if direction == "SELL" else round((bid + ask) / 2.0, _price_digits(payload)))
+        return (
+            bid
+            if direction == "BUY"
+            else (ask if direction == "SELL" else round((bid + ask) / 2.0, _price_digits(payload)))
+        )
     return _live_price(payload)
 
 

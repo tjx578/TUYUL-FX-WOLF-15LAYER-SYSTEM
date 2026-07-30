@@ -172,7 +172,9 @@ def classify_market_pattern(
     pressure = str(pressure_grade or "").upper()
 
     if raw_direction == "BUY" and at_upper and not (close_above_resistance or breakout_retest_held):
-        pattern = "UPPER_RANGE_EXHAUSTION" if rejection_from_resistance or extension <= 0 else "UPPER_ABSORPTION_WARNING"
+        pattern = (
+            "UPPER_RANGE_EXHAUSTION" if rejection_from_resistance or extension <= 0 else "UPPER_ABSORPTION_WARNING"
+        )
         return MarketPatternDecision(
             strategy_pattern=pattern,
             phase_grade="EXHAUSTION_OR_ABSORPTION",

@@ -120,12 +120,14 @@ def validate_basket_direction(
     else:
         if base not in _COMMODITY_BASES and base_score > -min_base_strength:
             blockers.append(
-                f"BASE_{base}_BASKET_STRONG"
-                if base_score >= min_base_strength
-                else f"BASE_{base}_BASKET_NOT_WEAK"
+                f"BASE_{base}_BASKET_STRONG" if base_score >= min_base_strength else f"BASE_{base}_BASKET_NOT_WEAK"
             )
         if quote_score < min_quote_strength:
-            blockers.append(f"QUOTE_{quote}_BASKET_WEAK" if quote_score <= -min_quote_strength else f"QUOTE_{quote}_BASKET_NOT_STRONG")
+            blockers.append(
+                f"QUOTE_{quote}_BASKET_WEAK"
+                if quote_score <= -min_quote_strength
+                else f"QUOTE_{quote}_BASKET_NOT_STRONG"
+            )
         if pair_alignment > -min_pair_alignment:
             blockers.append("PAIR_BASKET_NOT_ALIGNED_SELL")
     basket_bias = _basket_bias(pair_alignment, min_pair_alignment)

@@ -243,6 +243,7 @@ def _synthesize_mn_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
     This mirrors the H4-from-H1 aggregation pattern already used in the fetcher.
     """
     from collections import defaultdict
+
     for pair in pairs:
         mn_candles = bus.get_candles(pair, "MN")
         if mn_candles:
@@ -534,9 +535,7 @@ async def _seed_from_redis(
                     and (not pg_recovery_enabled or pg_recovery_attempted)
                 ):
                     blocked_pairs = [
-                        pair
-                        for pair in pairs
-                        if not bus.check_warmup(pair, readiness_min_bars).get("ready")
+                        pair for pair in pairs if not bus.check_warmup(pair, readiness_min_bars).get("ready")
                     ]
                     logger.warning(
                         "[SEED] Redis warmup quorum reached after attempt {}/{} "
@@ -784,13 +783,11 @@ async def _try_restore_from_postgres(
                                 "low": float(r["low"]),
                                 "close": float(r["close"]),
                                 "volume": float(r["volume"]) if r["volume"] else 0.0,
-                                 "tick_count": int(r["tick_count"]) if r["tick_count"] else 0,
-                                 "complete": r["complete"] is True,
-                                 "provider": str(r["provider"]),
-                                 "provider_timestamp_semantics": str(
-                                     r["provider_timestamp_semantics"]
-                                 ),
-                                 "_source": "postgres_recovery",
+                                "tick_count": int(r["tick_count"]) if r["tick_count"] else 0,
+                                "complete": r["complete"] is True,
+                                "provider": str(r["provider"]),
+                                "provider_timestamp_semantics": str(r["provider_timestamp_semantics"]),
+                                "_source": "postgres_recovery",
                             }
                             for r in reversed(rows)  # oldest first
                         ]

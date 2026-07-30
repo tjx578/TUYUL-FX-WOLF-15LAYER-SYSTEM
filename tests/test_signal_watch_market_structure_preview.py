@@ -10,6 +10,7 @@ valid structural invalidation exists, ``sl=None`` and the preview is incomplete.
 changes status / final_direction / requires_m15_close / valid_for_execution and never
 emits a SignalJSON. Flag OFF must be byte-for-byte identical.
 """
+
 from __future__ import annotations
 
 import copy

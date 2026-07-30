@@ -140,10 +140,7 @@ def test_signal_workflow_audit_summarizes_pressure_tier_snapshot_and_watch_conte
     assert summary["latest_pressure_tier_snapshot"]["schema_version"] == "1.1-pressure-tier"
     assert summary["latest_pressure_tier_snapshot"]["display_line"].startswith("pressure_tiers tier1=1")
     assert summary["latest_pressure_tier_snapshot"]["summary"]["tier_3_hidden"] == 2
-    assert (
-        summary["latest_pressure_tier_snapshot"]["visibility_policy"]["tier_3"]
-        == "HIDDEN_FROM_SNAPSHOT_ROWS"
-    )
+    assert summary["latest_pressure_tier_snapshot"]["visibility_policy"]["tier_3"] == "HIDDEN_FROM_SNAPSHOT_ROWS"
     assert summary["latest_pressure_tier_snapshot"]["execution_guard"] == {
         "decision_update_tier_context_allowed": False
     }

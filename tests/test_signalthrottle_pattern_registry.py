@@ -167,6 +167,7 @@ def test_runtime_scoring_and_routing_load_yaml_database():
     assert REGISTRY_SOURCE["scoring_model"] == "yaml"
     assert REGISTRY_SOURCE["routing_logic"] == "yaml"
     assert SCORING_MODEL["penalties"]["incomplete_tradeplan_penalty"] == -40
-    assert "Pattern IDs are universal; pairs are golden references and calibration sources only" in ROUTING_LOGIC[
-        "step_5_decision_router"
-    ]
+    assert (
+        "Pattern IDs are universal; pairs are golden references and calibration sources only"
+        in ROUTING_LOGIC["step_5_decision_router"]
+    )

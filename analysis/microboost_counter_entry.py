@@ -509,11 +509,15 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        direct_absorption = False if watch_only else self._direct_absorption_valid(
-            direction="SELL",
-            market=market,
-            target_result=target_result,
-            absorption_valid=absorption_valid,
+        direct_absorption = (
+            False
+            if watch_only
+            else self._direct_absorption_valid(
+                direction="SELL",
+                market=market,
+                target_result=target_result,
+                absorption_valid=absorption_valid,
+            )
         )
         tradeplan_valid = bool(target_result["structure_rr_valid"])
         phase_ready = _counter_entry_phase_allows_execution("SELL", market)
@@ -770,11 +774,15 @@ class MicroboostCounterEntryEngine:
             duration_seconds=observed_duration_seconds,
             price_delta_pips=observed_price_delta_pips,
         )
-        direct_absorption = False if watch_only else self._direct_absorption_valid(
-            direction="BUY",
-            market=market,
-            target_result=target_result,
-            absorption_valid=absorption_valid,
+        direct_absorption = (
+            False
+            if watch_only
+            else self._direct_absorption_valid(
+                direction="BUY",
+                market=market,
+                target_result=target_result,
+                absorption_valid=absorption_valid,
+            )
         )
         tradeplan_valid = bool(target_result["structure_rr_valid"])
         phase_ready = _counter_entry_phase_allows_execution("BUY", market)
@@ -1770,9 +1778,19 @@ def _maybe_emit_structure_ladder_diagnostic(
     side = "support" if candidate_direction == "SELL" else "resistance"
     ladder_fields = (f"tp1_{side}", f"tp2_{side}", f"tp3_{side}", f"tp4_{side}", f"minor_{side}", f"major_{side}")
     inspected = (
-        "price_position", "m15_phase", "h1_phase", "h4_phase", "d1_phase",
-        "key_support", "key_resistance", "main_support", "main_resistance",
-        "tp1_support", "tp1_resistance", "major_support", "major_resistance",
+        "price_position",
+        "m15_phase",
+        "h1_phase",
+        "h4_phase",
+        "d1_phase",
+        "key_support",
+        "key_resistance",
+        "main_support",
+        "main_resistance",
+        "tp1_support",
+        "tp1_resistance",
+        "major_support",
+        "major_resistance",
     )
     payload = {
         "event": "structure_ladder_diagnostic",
@@ -2055,9 +2073,7 @@ def _structure_target_result(
 ) -> dict[str, Any]:
     target_source = str(levels.get("target_source") or "support_resistance_ladder")
     target_mode = (
-        "KEY_LEVEL_STRUCTURE_TARGET"
-        if target_source == "key_support_or_key_resistance"
-        else "STRUCTURE_LADDER_TARGET"
+        "KEY_LEVEL_STRUCTURE_TARGET" if target_source == "key_support_or_key_resistance" else "STRUCTURE_LADDER_TARGET"
     )
     padded = [*targets[:4], None, None, None, None]
     tp1, tp2, tp3, tp4 = padded[:4]

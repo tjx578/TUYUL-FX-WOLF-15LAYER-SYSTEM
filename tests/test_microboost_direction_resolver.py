@@ -103,7 +103,11 @@ def test_other_symbol_intel_is_ignored():
 def test_price_phase_buy_conflict_at_resistance():
     assert (
         _price_phase_consistency(
-            "BUY", m15_phase=None, h1_phase=None, price_position="MAIN_RESISTANCE", phase_priced="RESISTANCE_PRESSURE_WARNING"
+            "BUY",
+            m15_phase=None,
+            h1_phase=None,
+            price_position="MAIN_RESISTANCE",
+            phase_priced="RESISTANCE_PRESSURE_WARNING",
         )
         == "CONFLICT"
     )
@@ -120,7 +124,9 @@ def test_price_phase_sell_conflict_at_support():
 
 def test_price_phase_buy_consistent_with_bullish_h1():
     assert (
-        _price_phase_consistency("BUY", m15_phase=None, h1_phase="BULLISH", price_position="MID_RANGE", phase_priced=None)
+        _price_phase_consistency(
+            "BUY", m15_phase=None, h1_phase="BULLISH", price_position="MID_RANGE", phase_priced=None
+        )
         == "CONSISTENT"
     )
 

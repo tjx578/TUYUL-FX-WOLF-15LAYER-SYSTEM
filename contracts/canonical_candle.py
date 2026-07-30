@@ -92,11 +92,7 @@ class CanonicalCandle(BaseModel):
         """Return whether this candle is legal evidence at ``as_of_utc``."""
 
         cutoff = as_utc(as_of_utc, "as_of_utc")
-        return (
-            self.complete
-            and self.provider_timestamp_semantics != "UNSPECIFIED"
-            and self.close_time <= cutoff
-        )
+        return self.complete and self.provider_timestamp_semantics != "UNSPECIFIED" and self.close_time <= cutoff
 
 
 __all__ = [

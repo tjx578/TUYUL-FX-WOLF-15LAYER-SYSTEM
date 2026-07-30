@@ -211,7 +211,9 @@ class TestEnforceFtaConflictVeto:
         with patch(
             "analysis.layers.L4_constitutional._load_wolf_constitution",
             return_value=_mock_wolf_constitution(
-                veto_enabled=True, veto_mode="ADVISORY", hard_fail=False,
+                veto_enabled=True,
+                veto_mode="ADVISORY",
+                hard_fail=False,
             ),
         ):
             _enforce_wolf_sub_thresholds(wolf, {}, blockers, warnings, rules)
@@ -228,7 +230,9 @@ class TestEnforceFtaConflictVeto:
         with patch(
             "analysis.layers.L4_constitutional._load_wolf_constitution",
             return_value=_mock_wolf_constitution(
-                veto_enabled=True, veto_mode="HARD", hard_fail=True,
+                veto_enabled=True,
+                veto_mode="HARD",
+                hard_fail=True,
             ),
         ):
             _enforce_wolf_sub_thresholds(wolf, {}, blockers, warnings, rules)
@@ -245,7 +249,9 @@ class TestEnforceFtaConflictVeto:
         with patch(
             "analysis.layers.L4_constitutional._load_wolf_constitution",
             return_value=_mock_wolf_constitution(
-                veto_enabled=True, veto_mode="HARD", hard_fail=True,
+                veto_enabled=True,
+                veto_mode="HARD",
+                hard_fail=True,
             ),
         ):
             _enforce_wolf_sub_thresholds(wolf, {}, blockers, warnings, rules)
@@ -263,7 +269,9 @@ class TestEnforceFtaConflictVeto:
         with patch(
             "analysis.layers.L4_constitutional._load_wolf_constitution",
             return_value=_mock_wolf_constitution(
-                veto_enabled=True, veto_mode="ADVISORY", hard_fail=True,
+                veto_enabled=True,
+                veto_mode="ADVISORY",
+                hard_fail=True,
             ),
         ):
             _enforce_wolf_sub_thresholds(wolf, {}, blockers, warnings, rules)

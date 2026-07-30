@@ -598,9 +598,7 @@ def analyze_signal_throttle_events(
     currency_pressure = compute_currency_pressure(ordered)
     theme_scores = classify_themes(pair_counts=pair_counts, currency_pressure=currency_pressure)
     pressure_cluster_summary = (
-        summarize_pressure_clusters(ordered)
-        if _env_bool("SIGNAL_PRESSURE_CLUSTER_DEDUP_ENABLED", False)
-        else None
+        summarize_pressure_clusters(ordered) if _env_bool("SIGNAL_PRESSURE_CLUSTER_DEDUP_ENABLED", False) else None
     )
     dominant_themes = theme_scores[:5]
     main_watchlist = [symbol for symbol, _ in latest_pair_counts.most_common(8)]
@@ -625,8 +623,7 @@ def analyze_signal_throttle_events(
         v1_clean_block_ledger,
     )
     pure_top_blocks = [
-        _pure_pressure_block_payload(block, clean_block_seconds)
-        for block in rank_pressure_blocks(pure_blocks)[:10]
+        _pure_pressure_block_payload(block, clean_block_seconds) for block in rank_pressure_blocks(pure_blocks)[:10]
     ]
     pure_active_candidate = _pure_active_candidate(pure_blocks, clean_block_seconds=clean_block_seconds)
     v1_active_clean_block = _v1_active_clean_block(v1_clean_block_ledger)
@@ -646,9 +643,7 @@ def analyze_signal_throttle_events(
         clean_block_seconds=clean_block_seconds,
     )
     clean_block_watch_entries = [route.payload for route in clean_block_watch_routes if route.emit_as_watch]
-    signal_watch_promotion_diagnostics = [
-        route.payload for route in clean_block_watch_routes if route.diagnostic
-    ]
+    signal_watch_promotion_diagnostics = [route.payload for route in clean_block_watch_routes if route.diagnostic]
     lifecycle_candidate = candidate_lifecycle.get("active_candidate")
     latest_ignition_watch = candidate_lifecycle.get("latest_ignition_watch")
 
@@ -676,9 +671,7 @@ def analyze_signal_throttle_events(
         (validation_source or {}).get("symbol") or (main_watchlist[0] if main_watchlist else "UNKNOWN")
     )
     validation_direction = (
-        _candidate_raw_pressure_direction(validation_source)
-        if isinstance(validation_source, dict)
-        else None
+        _candidate_raw_pressure_direction(validation_source) if isinstance(validation_source, dict) else None
     ) or _latest_direction_for_symbol(ordered, validation_symbol)
     market_context = _market_context_for_report(market_contexts, validation_symbol)
     market_context_validation = (
@@ -1900,11 +1893,7 @@ def _resolve_clean_block_source(
         resolution["reason"] = "SYMBOL_MISSING"
         return None, resolution
 
-    symbol_matches = [
-        candidate
-        for candidate in candidates
-        if str(candidate.get("symbol") or "").upper() == symbol
-    ]
+    symbol_matches = [candidate for candidate in candidates if str(candidate.get("symbol") or "").upper() == symbol]
     resolution["lineage_symbol_match_count"] = len(symbol_matches)
     if not symbol_matches:
         return None, resolution
@@ -1951,7 +1940,9 @@ def _resolve_clean_block_source(
     recent_matches: list[dict[str, Any]] = []
     max_age_seconds = max(0.0, _env_float("SIGNAL_THROTTLE_SOURCE_MAX_AGE_SECONDS", 300.0))
     for candidate in direction_matches:
-        clean_start = _parse_timestamp(str(candidate.get("clean_block_start_utc") or candidate.get("block_start_utc") or ""))
+        clean_start = _parse_timestamp(
+            str(candidate.get("clean_block_start_utc") or candidate.get("block_start_utc") or "")
+        )
         clean_end = _parse_timestamp(str(candidate.get("clean_block_end_utc") or candidate.get("block_end_utc") or ""))
         if clean_start is None or clean_end is None:
             continue
@@ -2103,8 +2094,8 @@ def _pure_pressure_block_payload(block: PressureBlock, clean_block_seconds: int)
     payload["gap_policy"] = "QUALITY_ONLY"
     payload["clean_block_min_duration_seconds"] = int(clean_block_seconds)
     payload.update(clean_block_lineage_fields(payload, clean_block_seconds=clean_block_seconds))
-    payload["source_pressure_block_id"] = (
-        payload.get("source_pressure_block_id") or payload.get("source_clean_block_id")
+    payload["source_pressure_block_id"] = payload.get("source_pressure_block_id") or payload.get(
+        "source_clean_block_id"
     )
     return payload
 
@@ -2218,9 +2209,7 @@ def _microboost_watch_miss_diagnostic(
     shadow_density = _env_float("MICROBOOST_SHADOW_MIN_DENSITY", 5.0)
     shadow_duration = _env_float("MICROBOOST_SHADOW_MIN_DURATION_SECONDS", 10.0)
     shadow_watch_candidate = (
-        effective_ticks >= shadow_ticks
-        and effective_density >= shadow_density
-        and duration >= shadow_duration
+        effective_ticks >= shadow_ticks and effective_density >= shadow_density and duration >= shadow_duration
     )
     return {
         "symbol": block.symbol,
@@ -2535,9 +2524,7 @@ def resolve_signal_watch_headline_from_pattern(
     permission = str(entry_permission or "").upper()
     mgmt = str(management_action or "").upper()
     pattern_absorption = (
-        "ABSORPTION" in pattern
-        or "EXHAUSTION" in pattern
-        or "EXHAUSTION" in str(pattern_family or "").upper()
+        "ABSORPTION" in pattern or "EXHAUSTION" in pattern or "EXHAUSTION" in str(pattern_family or "").upper()
     )
 
     resistance_scenario = (
@@ -2710,12 +2697,14 @@ def _microboost_watch_payload(
         **_golden_pattern_fields(latest),
         **_signal_watch_source_fields(signal_watch_gate, bool(signal_watch_gate.get("eligible")), latest),
     }
-    if candidate_direction and not clean_block_fallback and _env_bool("SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED", False):
+    if (
+        candidate_direction
+        and not clean_block_fallback
+        and _env_bool("SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED", False)
+    ):
         duration_minutes = latest.get("duration_minutes")
         duration_seconds = (
-            float(duration_minutes) * 60.0
-            if duration_minutes
-            else float(latest.get("duration_seconds") or 0.0)
+            float(duration_minutes) * 60.0 if duration_minutes else float(latest.get("duration_seconds") or 0.0)
         )
         headline = resolve_signal_watch_headline_from_pattern(
             raw_direction=candidate_direction,
@@ -2949,7 +2938,9 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
         )
         tp_raw = (snap.get("tp1_resistance"), snap.get("tp2_resistance"), snap.get("tp3_resistance"))
         key_level = _first_number(snap.get("key_support"), snap.get("main_support"), snap.get("support_low"))
-        nearest_level = _first_number(snap.get("key_resistance"), snap.get("main_resistance"), snap.get("resistance_high"))
+        nearest_level = _first_number(
+            snap.get("key_resistance"), snap.get("main_resistance"), snap.get("resistance_high")
+        )
         key_name, nearest_name = "key_support", "nearest_resistance"
 
     sl = None
@@ -3003,8 +2994,14 @@ def _directional_structure_preview(payload: dict[str, Any], snap: dict[str, Any]
     # Minimum structural SL distance: a real invalidation must clear noise/volatility, not sit a
     # tick from entry. Volatility proxy = M15 candle range; backstopped by an absolute pip floor.
     m15_hi, m15_lo = _first_number(snap.get("m15_high")), _first_number(snap.get("m15_low"))
-    m15_range_pips = (m15_hi - m15_lo) / pip if (m15_hi is not None and m15_lo is not None and m15_hi > m15_lo) else None
-    min_sl_pips = max(PREVIEW_MIN_SL_PIPS, PREVIEW_MIN_SL_M15_RANGE_FRAC * m15_range_pips) if m15_range_pips else PREVIEW_MIN_SL_PIPS
+    m15_range_pips = (
+        (m15_hi - m15_lo) / pip if (m15_hi is not None and m15_lo is not None and m15_hi > m15_lo) else None
+    )
+    min_sl_pips = (
+        max(PREVIEW_MIN_SL_PIPS, PREVIEW_MIN_SL_M15_RANGE_FRAC * m15_range_pips)
+        if m15_range_pips
+        else PREVIEW_MIN_SL_PIPS
+    )
     sl_too_tight = risk_pips is not None and risk_pips < min_sl_pips
     structure_ready = bool(
         sl is not None
@@ -3994,16 +3991,8 @@ def _scanner_lineage_for_block(events: list[SignalThrottleLogEvent]) -> dict[str
     scanner_cycle_ids = tuple(
         sorted({str(event.scanner_cycle_id).strip() for event in events if str(event.scanner_cycle_id or "").strip()})
     )
-    scanner_epochs = [
-        str(event.scanner_epoch).strip()
-        for event in events
-        if str(event.scanner_epoch or "").strip()
-    ]
-    observed_indexes = [
-        int(event.observed_cycle_index)
-        for event in events
-        if event.observed_cycle_index is not None
-    ]
+    scanner_epochs = [str(event.scanner_epoch).strip() for event in events if str(event.scanner_epoch or "").strip()]
+    observed_indexes = [int(event.observed_cycle_index) for event in events if event.observed_cycle_index is not None]
     return {
         "deployment_ids": deployment_ids,
         "scanner_cycle_ids": scanner_cycle_ids,
@@ -4183,7 +4172,9 @@ def _state_metadata_from_events(events: list[SignalThrottleLogEvent]) -> dict[st
         "suppressed": first.suppressed,
     }
     metadata = _state_metadata_payload(state)
-    deployment_ids = sorted({str(event.deployment_id).strip() for event in events if str(event.deployment_id or "").strip()})
+    deployment_ids = sorted(
+        {str(event.deployment_id).strip() for event in events if str(event.deployment_id or "").strip()}
+    )
     scanner_cycle_ids = sorted(
         {str(event.scanner_cycle_id).strip() for event in events if str(event.scanner_cycle_id or "").strip()}
     )

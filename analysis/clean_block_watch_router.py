@@ -291,9 +291,7 @@ def _watch_payload(
         "final_direction": "WAIT",
         "direction_status": "SCANNER_MEMORY_WATCH_ONLY" if is_scanner_advisory else "CLEAN_BLOCK_WATCH_ONLY",
         "direction_validation_status": (
-            "SCANNER_MEMORY_WATCH_PENDING_STRUCTURE"
-            if is_scanner_advisory
-            else "CLEAN_BLOCK_WATCH_PENDING_STRUCTURE"
+            "SCANNER_MEMORY_WATCH_PENDING_STRUCTURE" if is_scanner_advisory else "CLEAN_BLOCK_WATCH_PENDING_STRUCTURE"
         ),
         "action": "WAIT_PRICE_THEME_STRUCTURE",
         "reason": (
@@ -322,9 +320,7 @@ def _watch_payload(
         "eligible_for_primary_watch": bool(authority.get("eligible_for_primary_watch")),
         "confidence_bucket": "SCANNER_CYCLE_MEMORY_WATCH_ONLY" if is_scanner_advisory else "CLEAN_BLOCK_WATCH_ONLY",
         "emit_reason": (
-            "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
-            if is_scanner_advisory
-            else "CLEAN_BLOCK_TO_SIGNAL_WATCH"
+            "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH" if is_scanner_advisory else "CLEAN_BLOCK_TO_SIGNAL_WATCH"
         ),
         "signal_quality": "WATCH_ONLY",
         "signal_watch_source": "SIGNAL_THROTTLE_CLEAN_BLOCK",
@@ -336,22 +332,16 @@ def _watch_payload(
         "clean_block_outcome_status": "CLEAN_BLOCK_WATCH_PENDING",
         "microboost_lineage_status": "NOT_REQUIRED_FOR_CLEAN_BLOCK_ELIGIBILITY",
         "promotion_path": (
-            "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH"
-            if is_scanner_advisory
-            else "CLEAN_BLOCK_TO_SIGNAL_WATCH"
+            "SCANNER_CYCLE_MEMORY_TO_SIGNAL_WATCH" if is_scanner_advisory else "CLEAN_BLOCK_TO_SIGNAL_WATCH"
         ),
         "promotion_trigger": (
-            "SCANNER_CYCLE_CLEAN_BLOCK_MATURE_WITH_CONTEXT"
-            if is_scanner_advisory
-            else "CLEAN_BLOCK_VALID"
+            "SCANNER_CYCLE_CLEAN_BLOCK_MATURE_WITH_CONTEXT" if is_scanner_advisory else "CLEAN_BLOCK_VALID"
         ),
         "watch_promotion_source": "SCANNER_CYCLE_MEMORY_ROUTER" if is_scanner_advisory else "CLEAN_BLOCK_ROUTER",
         "watch_scope": "SCANNER_CYCLE_MEMORY_ADVISORY" if is_scanner_advisory else "PAIR_ROTATION_PRIMARY",
         "scanner_cycle_advisory_watch": is_scanner_advisory,
         "advisory_watch_authority_rule": (
-            "SCANNER_CYCLE_MEMORY_MATURE_WITH_CONTEXT_NON_EXECUTABLE"
-            if is_scanner_advisory
-            else None
+            "SCANNER_CYCLE_MEMORY_MATURE_WITH_CONTEXT_NON_EXECUTABLE" if is_scanner_advisory else None
         ),
         "primary_watch_authority": authority.get("primary_watch_authority"),
         "primary_watch_authority_rule": authority.get("primary_watch_authority_rule"),
@@ -510,10 +500,7 @@ def _requires_m15_close_policy(*, direction: str, market_context: Any) -> tuple[
     if direction == "SELL" and price_position in {"MAIN_SUPPORT", "KEY_SUPPORT", "SUPPORT"}:
         return True, "REQUIRED_KEY_LEVEL_OR_REJECTION_RISK"
 
-    htf_aligned = any(
-        _phase_aligned(direction, phase)
-        for phase in (h1_phase, market_bias, trend_direction)
-    )
+    htf_aligned = any(_phase_aligned(direction, phase) for phase in (h1_phase, market_bias, trend_direction))
     ltf_aligned = _phase_aligned(direction, m15_phase)
     if htf_aligned and ltf_aligned:
         return False, "OPTIONAL_HTF_ALIGNED_CONTINUATION"
@@ -617,9 +604,7 @@ def _primary_watch_authority(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "eligible_for_primary_watch": eligible,
         "primary_watch_authority": authority,
         "primary_watch_authority_rule": (
-            "PAIR_ROTATION_ONLY_PRIMARY_WATCH"
-            if eligible
-            else "SCANNER_CYCLE_AWARE_MEMORY_RADAR_ONLY"
+            "PAIR_ROTATION_ONLY_PRIMARY_WATCH" if eligible else "SCANNER_CYCLE_AWARE_MEMORY_RADAR_ONLY"
         ),
         "scanner_cycle_memory_only": not eligible and (scanner_cycle_aware or "SCANNER_CYCLE" in split_rule),
     }

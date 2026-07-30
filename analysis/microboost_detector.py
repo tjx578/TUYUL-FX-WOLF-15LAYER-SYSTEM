@@ -760,43 +760,105 @@ def _priced_state_payload(
 ) -> dict[str, Any]:
     return {
         "phase_priced": phase_priced,
-        "strategy_pattern": None if market_context_validation is None else market_context_validation.get("strategy_pattern"),
+        "strategy_pattern": None
+        if market_context_validation is None
+        else market_context_validation.get("strategy_pattern"),
         "phase_grade": None if market_context_validation is None else market_context_validation.get("phase_grade"),
-        "execution_side": None if market_context_validation is None else market_context_validation.get("execution_side"),
+        "execution_side": None
+        if market_context_validation is None
+        else market_context_validation.get("execution_side"),
         "strategy_priority": None if market_context_validation is None else market_context_validation.get("priority"),
         "waiting_for": None if market_context_validation is None else market_context_validation.get("waiting_for"),
         "requires_confirmation": (
             None if market_context_validation is None else market_context_validation.get("requires_confirmation")
         ),
-        "matched_patterns": None if market_context_validation is None else _string_list(market_context_validation.get("matched_patterns")),
-        "selected_pattern_id": None if market_context_validation is None else _optional_str(market_context_validation.get("selected_pattern_id")),
-        "pattern_tier": None if market_context_validation is None else _optional_str(market_context_validation.get("pattern_tier")),
-        "pattern_family": None if market_context_validation is None else _optional_str(market_context_validation.get("pattern_family")),
-        "pattern_score": None if market_context_validation is None else _optional_int(market_context_validation.get("pattern_score")),
-        "pattern_match_score": None if market_context_validation is None else _optional_int(market_context_validation.get("pattern_match_score")),
-        "execution_readiness_score": None if market_context_validation is None else _optional_int(market_context_validation.get("execution_readiness_score")),
-        "golden_reference": None if market_context_validation is None else _optional_str(market_context_validation.get("golden_reference")),
-        "pattern_scope": None if market_context_validation is None else _optional_str(market_context_validation.get("pattern_scope")),
-        "applies_to": None if market_context_validation is None else _optional_str(market_context_validation.get("applies_to")),
-        "golden_references": None if market_context_validation is None else _string_list(market_context_validation.get("golden_references")),
-        "pair_specific_calibration": None if market_context_validation is None else _string_list(market_context_validation.get("pair_specific_calibration")),
-        "pair_role": None if market_context_validation is None else _optional_str(market_context_validation.get("pair_role")),
-        "entry_permission": None if market_context_validation is None else _optional_str(market_context_validation.get("entry_permission")),
-        "management_action": None if market_context_validation is None else _optional_str(market_context_validation.get("management_action")),
-        "hold_policy": None if market_context_validation is None else _optional_str(market_context_validation.get("hold_policy")),
-        "chase_allowed": None if market_context_validation is None else _optional_bool(market_context_validation.get("chase_allowed")),
-        "block_reason": None if market_context_validation is None else _optional_str(market_context_validation.get("block_reason")),
-        "pattern_evidence": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_evidence")),
-        "jpy_alignment_status": None if market_context_validation is None else _optional_str(market_context_validation.get("jpy_alignment_status")),
-        "theme_alignment_status": None if market_context_validation is None else _optional_str(market_context_validation.get("theme_alignment_status")),
-        "dual_theme_status": None if market_context_validation is None else _optional_str(market_context_validation.get("dual_theme_status")),
-        "alignment_missing_reason": None if market_context_validation is None else _optional_str(market_context_validation.get("alignment_missing_reason")),
-        "pattern_search_space": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_search_space")),
-        "pattern_db_candidates_scanned": None if market_context_validation is None else _optional_int(market_context_validation.get("pattern_db_candidates_scanned")),
-        "pattern_db_exact_matches": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_db_exact_matches")),
-        "pattern_db_fuzzy_matches": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_db_fuzzy_matches")),
-        "pattern_bottlenecks": None if market_context_validation is None else _string_list(market_context_validation.get("pattern_bottlenecks")),
-        "pattern_match_diagnostics": None if market_context_validation is None else _dict_value(market_context_validation.get("pattern_match_diagnostics")),
+        "matched_patterns": None
+        if market_context_validation is None
+        else _string_list(market_context_validation.get("matched_patterns")),
+        "selected_pattern_id": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("selected_pattern_id")),
+        "pattern_tier": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("pattern_tier")),
+        "pattern_family": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("pattern_family")),
+        "pattern_score": None
+        if market_context_validation is None
+        else _optional_int(market_context_validation.get("pattern_score")),
+        "pattern_match_score": None
+        if market_context_validation is None
+        else _optional_int(market_context_validation.get("pattern_match_score")),
+        "execution_readiness_score": None
+        if market_context_validation is None
+        else _optional_int(market_context_validation.get("execution_readiness_score")),
+        "golden_reference": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("golden_reference")),
+        "pattern_scope": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("pattern_scope")),
+        "applies_to": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("applies_to")),
+        "golden_references": None
+        if market_context_validation is None
+        else _string_list(market_context_validation.get("golden_references")),
+        "pair_specific_calibration": None
+        if market_context_validation is None
+        else _string_list(market_context_validation.get("pair_specific_calibration")),
+        "pair_role": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("pair_role")),
+        "entry_permission": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("entry_permission")),
+        "management_action": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("management_action")),
+        "hold_policy": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("hold_policy")),
+        "chase_allowed": None
+        if market_context_validation is None
+        else _optional_bool(market_context_validation.get("chase_allowed")),
+        "block_reason": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("block_reason")),
+        "pattern_evidence": None
+        if market_context_validation is None
+        else _string_list(market_context_validation.get("pattern_evidence")),
+        "jpy_alignment_status": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("jpy_alignment_status")),
+        "theme_alignment_status": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("theme_alignment_status")),
+        "dual_theme_status": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("dual_theme_status")),
+        "alignment_missing_reason": None
+        if market_context_validation is None
+        else _optional_str(market_context_validation.get("alignment_missing_reason")),
+        "pattern_search_space": None
+        if market_context_validation is None
+        else _string_list(market_context_validation.get("pattern_search_space")),
+        "pattern_db_candidates_scanned": None
+        if market_context_validation is None
+        else _optional_int(market_context_validation.get("pattern_db_candidates_scanned")),
+        "pattern_db_exact_matches": None
+        if market_context_validation is None
+        else _string_list(market_context_validation.get("pattern_db_exact_matches")),
+        "pattern_db_fuzzy_matches": None
+        if market_context_validation is None
+        else _string_list(market_context_validation.get("pattern_db_fuzzy_matches")),
+        "pattern_bottlenecks": None
+        if market_context_validation is None
+        else _string_list(market_context_validation.get("pattern_bottlenecks")),
+        "pattern_match_diagnostics": None
+        if market_context_validation is None
+        else _dict_value(market_context_validation.get("pattern_match_diagnostics")),
         "action": action,
         "requires_market_context": requires_market_context,
         "market_context_validation": market_context_validation,

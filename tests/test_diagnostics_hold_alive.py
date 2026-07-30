@@ -128,8 +128,7 @@ class TestNoInlineCopyPaste:
         # followed by shutdown.wait or asyncio.wait_for inside the same function scope.
         # After refactor, each file should import hold_alive_sync/hold_alive_async instead.
         assert "DEGRADED_HOLD_TIMEOUT_SEC" not in src, (
-            f"{rel_path} still reads DEGRADED_HOLD_TIMEOUT_SEC inline — "
-            "should delegate to services.shared.diagnostics"
+            f"{rel_path} still reads DEGRADED_HOLD_TIMEOUT_SEC inline — should delegate to services.shared.diagnostics"
         )
 
     @pytest.mark.parametrize(
@@ -143,6 +142,4 @@ class TestNoInlineCopyPaste:
     def test_imports_shared_diagnostics(self, rel_path, expected_import):
         """Each call site must import the correct hold_alive variant from shared."""
         src = (Path(__file__).resolve().parent.parent / rel_path).read_text(encoding="utf-8")
-        assert expected_import in src, (
-            f"{rel_path} does not import {expected_import} from services.shared.diagnostics"
-        )
+        assert expected_import in src, f"{rel_path} does not import {expected_import} from services.shared.diagnostics"

@@ -271,6 +271,32 @@ class TestL5AnalysisLayerBasic:
         assert result["risk_event_active"] is True
         assert "risk_event" in result["recommendation"].lower()
 
+    def test_output_is_wrapped_by_constitutional_governor(self, layer, fixed_now):
+        result = layer.analyze(
+            pair="GBPUSD",
+            news_sentiment=_good_sentiment(),
+            session_hours=2.0,
+            now=fixed_now,
+        )
+
+        assert result["constitutional"]["layer"] == "L5"
+        assert result["constitutional"]["input_ref"] == "GBPUSD_L5"
+        assert result["continuation_allowed"] is result["constitutional"]["continuation_allowed"]
+
+    def test_upstream_l4_failure_is_preserved_in_constitutional_envelope(self, layer, fixed_now):
+        layer.set_l4_output({"continuation_allowed": False})
+
+        result = layer.analyze(
+            pair="GBPUSD",
+            news_sentiment=_good_sentiment(),
+            session_hours=2.0,
+            now=fixed_now,
+        )
+
+        assert result["constitutional"]["status"] == "FAIL"
+        assert "UPSTREAM_L4_NOT_CONTINUABLE" in result["constitutional"]["blocker_codes"]
+        assert result["valid"] is False
+
 
 class TestL5StatefulBehavior:
     def test_losses_degrade_score(self, layer, fixed_now):

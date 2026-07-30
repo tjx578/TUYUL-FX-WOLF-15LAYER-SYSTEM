@@ -144,20 +144,14 @@ class SignalJsonGateAdapter:
         source_direction = str(payload.get("final_direction") or "WAIT")
         reasons = ", ".join(decision.reasons) or decision.execution_status
         reinforcement_management_only = "REINFORCEMENT_MANAGEMENT_ONLY" in decision.reasons
-        action = (
-            "HOLD_TRAIL_OR_ADD_ONLY_ON_RETEST"
-            if reinforcement_management_only
-            else "WAIT_EXECUTION_GATE_RECHECK"
-        )
+        action = "HOLD_TRAIL_OR_ADD_ONLY_ON_RETEST" if reinforcement_management_only else "WAIT_EXECUTION_GATE_RECHECK"
         next_action = (
             "MANAGE_ACTIVE_SIGNAL_WAIT_ADD_ON_RETEST"
             if reinforcement_management_only
             else "WAIT_EXECUTION_GATE_RECHECK"
         )
         execution_status = (
-            "REINFORCEMENT_MANAGEMENT_ONLY"
-            if reinforcement_management_only
-            else decision.execution_status
+            "REINFORCEMENT_MANAGEMENT_ONLY" if reinforcement_management_only else decision.execution_status
         )
         blocked.update(
             {
@@ -169,7 +163,9 @@ class SignalJsonGateAdapter:
                 "new_status": "WAIT_STRUCTURE_OR_NEXT_M15",
                 "final_direction": "WAIT",
                 "validated_direction": None,
-                "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("watch_direction"),
+                "watch_direction": source_direction
+                if source_direction in {"BUY", "SELL"}
+                else payload.get("watch_direction"),
                 "direction_validation_status": "FINAL_CANDIDATE_BLOCKED_BY_EXECUTION_GATE",
                 "action": action,
                 "next_action": next_action,
@@ -220,7 +216,9 @@ class SignalJsonGateAdapter:
                 "terminal_status": terminal_status,
                 "final_direction": "WAIT",
                 "validated_direction": source_direction,
-                "watch_direction": source_direction if source_direction in {"BUY", "SELL"} else payload.get("watch_direction"),
+                "watch_direction": source_direction
+                if source_direction in {"BUY", "SELL"}
+                else payload.get("watch_direction"),
                 "direction_validation_status": "FINAL_DIRECTION_VALID_EXECUTION_DEFERRED",
                 "action": action,
                 "next_action": next_action,
@@ -244,8 +242,7 @@ class SignalJsonGateAdapter:
                 "exec_gate_decision": decision.decision,
                 "exec_gate_defer_reasons": list(decision.reasons),
                 "reason": (
-                    f"{payload.get('reason') or 'signal_candidate'} "
-                    f"Direction valid; execution deferred: {reasons}."
+                    f"{payload.get('reason') or 'signal_candidate'} Direction valid; execution deferred: {reasons}."
                 ),
             }
         )
@@ -389,6 +386,7 @@ class SignalJsonGateAdapter:
             }
         )
         return terminal
+
 
 _MANAGEMENT_DEFER_REASONS = frozenset(
     {

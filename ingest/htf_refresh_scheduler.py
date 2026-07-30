@@ -263,11 +263,7 @@ class HTFRefreshScheduler:
         retained = merged[-cap:] if cap > 0 else merged
         latest = retained[-1] if retained else None
 
-        retained_ts = {
-            candle_ts
-            for candle in retained
-            if (candle_ts := cls._candle_timestamp(candle)) is not None
-        }
+        retained_ts = {candle_ts for candle in retained if (candle_ts := cls._candle_timestamp(candle)) is not None}
         written_count = sum(1 for candle_ts in incoming_ts if candle_ts in retained_ts)
         dedup_skipped = max(0, len(incoming) - written_count)
 
@@ -382,11 +378,11 @@ class HTFRefreshScheduler:
         if after_dt is not None:
             latest_age_seconds_after = max(0.0, (datetime.now(tz=UTC) - after_dt).total_seconds())
 
-        effective_written_count = 0 if write_error is not None else (written_count if written_count is not None else len(candles))
+        effective_written_count = (
+            0 if write_error is not None else (written_count if written_count is not None else len(candles))
+        )
         effective_dedup_skipped = (
-            dedup_skipped
-            if dedup_skipped is not None
-            else max(0, len(candles) - effective_written_count)
+            dedup_skipped if dedup_skipped is not None else max(0, len(candles) - effective_written_count)
         )
         telemetry = {
             "event": "htf_refresh_write_result",

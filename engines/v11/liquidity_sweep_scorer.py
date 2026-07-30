@@ -176,7 +176,6 @@ class LiquiditySweepScorer:
         highs = np.array([float(c["high"]) for c in candles])
         lows = np.array([float(c["low"]) for c in candles])
         closes = np.array([float(c["close"]) for c in candles])
-        opens = np.array([float(c["open"]) for c in candles])
         volumes = np.array([float(c.get("volume", 0)) for c in candles])
 
         lookback = min(self.lookback_period, len(candles))

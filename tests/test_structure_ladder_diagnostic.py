@@ -5,6 +5,7 @@ When counter-entry is about to fall back to PROVISIONAL_RR_FALLBACK, emit a read
 It must NEVER mutate execution (execution_mutation=false), and must not emit when OFF or when
 the target is not a provisional fallback.
 """
+
 from __future__ import annotations
 
 import json

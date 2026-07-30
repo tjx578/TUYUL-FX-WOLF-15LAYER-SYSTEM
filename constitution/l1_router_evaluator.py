@@ -196,9 +196,9 @@ class L1RouterEvaluator:
         if payload.session_state_invalid:
             blockers.append(BlockerCode.SESSION_STATE_INVALID.value)
 
-        if (
-            payload.regime_service_unavailable
-            and payload.fallback_class in (FallbackClass.NO_FALLBACK, FallbackClass.ILLEGAL_FALLBACK)
+        if payload.regime_service_unavailable and payload.fallback_class in (
+            FallbackClass.NO_FALLBACK,
+            FallbackClass.ILLEGAL_FALLBACK,
         ):
             blockers.append(BlockerCode.REGIME_SERVICE_UNAVAILABLE_NO_LEGAL_FALLBACK.value)
 
@@ -260,14 +260,16 @@ class L1RouterEvaluator:
             return L1Status.PASS
 
         legal_warn = (
-            payload.freshness_state in (
+            payload.freshness_state
+            in (
                 FreshnessState.STALE_PRESERVED,
                 FreshnessState.DEGRADED,
                 FreshnessState.FRESH,
             )
             and payload.warmup_state in (WarmupState.READY, WarmupState.PARTIAL)
             and coherence_band in (CoherenceBand.HIGH, CoherenceBand.MID, CoherenceBand.LOW)
-            and payload.fallback_class in (
+            and payload.fallback_class
+            in (
                 FallbackClass.NO_FALLBACK,
                 FallbackClass.LEGAL_PRIMARY_SUBSTITUTE,
                 FallbackClass.LEGAL_EMERGENCY_PRESERVE,

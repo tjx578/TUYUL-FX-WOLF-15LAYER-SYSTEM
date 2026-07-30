@@ -215,9 +215,7 @@ class TestSignalThrottle:
 
         assert t.is_throttled("XAUUSD") is True
         captured = capsys.readouterr()
-        assert captured.out.splitlines() == [
-            "[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"
-        ]
+        assert captured.out.splitlines() == ["[SignalThrottle] XAUUSD THROTTLED — 1 signals in last 300s (max 1)"]
         assert captured.err == ""
 
         now = 1010.0  # within 15s -> suppressed
@@ -806,7 +804,14 @@ class TestPipelineSignalThrottle:
             }
         )
         for candle in (
-            {"symbol": "CADJPY", "timeframe": "M15", "open": 115.560, "high": 115.570, "low": 115.520, "close": 115.529},
+            {
+                "symbol": "CADJPY",
+                "timeframe": "M15",
+                "open": 115.560,
+                "high": 115.570,
+                "low": 115.520,
+                "close": 115.529,
+            },
             {"symbol": "CADJPY", "timeframe": "H1", "open": 115.100, "high": 115.900, "low": 115.050, "close": 115.620},
         ):
             pipe._context_bus.update_candle(candle)

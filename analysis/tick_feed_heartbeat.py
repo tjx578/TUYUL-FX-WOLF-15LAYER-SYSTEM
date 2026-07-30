@@ -75,15 +75,10 @@ class TickFeedHeartbeat:
             self._market_open_since = current
 
         silence_baseline = max(
-            value
-            for value in (freshest_tick_epoch, self._started_at, self._market_open_since)
-            if value is not None
+            value for value in (freshest_tick_epoch, self._started_at, self._market_open_since) if value is not None
         )
         silence_seconds = max(0.0, current - silence_baseline)
-        tick_is_fresh = (
-            freshest_tick_epoch is not None
-            and current - freshest_tick_epoch <= self.max_silence_seconds
-        )
+        tick_is_fresh = freshest_tick_epoch is not None and current - freshest_tick_epoch <= self.max_silence_seconds
 
         if tick_is_fresh:
             if self._alarm_started_at is None:
@@ -114,10 +109,7 @@ class TickFeedHeartbeat:
 
         if self._alarm_started_at is None:
             self._alarm_started_at = current
-        if (
-            self._last_alert_at is not None
-            and current - self._last_alert_at < self.alert_interval_seconds
-        ):
+        if self._last_alert_at is not None and current - self._last_alert_at < self.alert_interval_seconds:
             return None
         self._last_alert_at = current
         self._alert_count += 1

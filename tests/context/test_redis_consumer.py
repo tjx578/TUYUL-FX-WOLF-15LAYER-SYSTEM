@@ -481,9 +481,7 @@ def test_handle_tick_dict_preserves_payload_feed_timestamp() -> None:
     consumer = RedisConsumer(["EURUSD"], redis, bus)
     payload_ts = 1714302222.75
 
-    consumer._handle_tick_dict(
-        {"symbol": "EURUSD", "bid": 1.08, "ask": 1.0802, "last_seen_ts": payload_ts}
-    )
+    consumer._handle_tick_dict({"symbol": "EURUSD", "bid": 1.08, "ask": 1.0802, "last_seen_ts": payload_ts})
 
     assert bus.get_feed_timestamp("EURUSD") == _approx(payload_ts)
     assert bus.get_latest_tick("EURUSD")["last_seen_ts"] == _approx(payload_ts)
@@ -495,9 +493,7 @@ def test_handle_tick_dict_normalizes_epoch_milliseconds() -> None:
     bus.reset_state()
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
-    consumer._handle_tick_dict(
-        {"symbol": "EURUSD", "bid": 1.08, "ask": 1.0802, "last_seen_ts": 1_714_302_222_750}
-    )
+    consumer._handle_tick_dict({"symbol": "EURUSD", "bid": 1.08, "ask": 1.0802, "last_seen_ts": 1_714_302_222_750})
 
     assert bus.get_feed_timestamp("EURUSD") == _approx(1_714_302_222.75)
     assert bus.get_latest_tick("EURUSD")["last_seen_ts"] == _approx(1_714_302_222.75)

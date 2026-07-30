@@ -301,9 +301,9 @@ def _compress_status(
 ) -> L3Status:
     """Step 6: Compress sub-gate outputs into final status.
 
-        Hard blockers still fail closed, but low confirmation and structure
-        conflict are now handled as degradations when the contract is otherwise
-        usable and the pipeline can keep forwarding evidence to L12.
+    Hard blockers still fail closed, but low confirmation and structure
+    conflict are now handled as degradations when the contract is otherwise
+    usable and the pipeline can keep forwarding evidence to L12.
     """
     if blockers:
         return L3Status.FAIL

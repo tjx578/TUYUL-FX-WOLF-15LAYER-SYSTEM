@@ -32,9 +32,7 @@ __all__ = [
 ]
 
 # Orchestrator state staleness: beyond this, consider orchestrator dead.
-_ORCHESTRATOR_STATE_MAX_AGE_SEC = float(
-    os.getenv("ORCHESTRATOR_STATE_MAX_AGE_SEC", "120")
-)
+_ORCHESTRATOR_STATE_MAX_AGE_SEC = float(os.getenv("ORCHESTRATOR_STATE_MAX_AGE_SEC", "120"))
 
 
 class PeerHealth(StrEnum):
@@ -93,9 +91,7 @@ async def validate_peer_health(
     for peer_name in required_peers:
         config = SERVICE_HEARTBEAT_CONFIG.get(peer_name)
         if config is None:
-            logger.warning(
-                "[CrossServiceValidator] Unknown peer '{}' — skipping", peer_name
-            )
+            logger.warning("[CrossServiceValidator] Unknown peer '{}' — skipping", peer_name)
             continue
         key, max_age = config
         status = await read_heartbeat(redis, key, max_age, service=peer_name)
@@ -151,9 +147,7 @@ def validate_peer_health_sync(
         try:
             raw = redis_client.get(key)
         except Exception as exc:
-            logger.debug(
-                "[CrossServiceValidator] Redis read failed for {}: {}", peer_name, exc
-            )
+            logger.debug("[CrossServiceValidator] Redis read failed for {}: {}", peer_name, exc)
             raw = None
 
         status = classify_heartbeat(raw, max_age, service=peer_name, now_ts=now_ts)

@@ -18,6 +18,7 @@ from services.orchestrator.compliance_guard import evaluate_compliance
 # Shared fixture: healthy account state that passes all existing checks
 # ---------------------------------------------------------------------------
 
+
 def _healthy_state(**overrides: object) -> dict:
     base = {
         "balance": 100_000,
@@ -299,6 +300,7 @@ class TestStateManagerComplianceSignals:
     @pytest.fixture
     def _import_sm(self):
         from services.orchestrator.state_manager import StateManager
+
         return StateManager
 
     def _make_manager(self, StateManager, store: dict[str, str] | None = None):  # noqa: N803
@@ -341,6 +343,7 @@ class TestStateManagerComplianceSignals:
 
     def test_data_fresh_with_recent_heartbeat(self, _import_sm):
         from core.redis_keys import HEARTBEAT_INGEST
+
         store = {
             HEARTBEAT_INGEST: json.dumps({"producer": "ingest", "ts": time.time()}),
         }
@@ -351,6 +354,7 @@ class TestStateManagerComplianceSignals:
 
     def test_data_stale_with_old_heartbeat(self, _import_sm):
         from core.redis_keys import HEARTBEAT_INGEST
+
         store = {
             HEARTBEAT_INGEST: json.dumps({"producer": "ingest", "ts": time.time() - 300}),
         }
@@ -362,6 +366,7 @@ class TestStateManagerComplianceSignals:
 
     def test_data_stale_with_zero_ts_heartbeat(self, _import_sm):
         from core.redis_keys import HEARTBEAT_INGEST
+
         store = {
             HEARTBEAT_INGEST: json.dumps({"producer": "ingest", "ts": 0}),
         }
@@ -400,16 +405,20 @@ class TestEndToEndComplianceFlow:
     @pytest.fixture
     def _import_sm(self):
         from services.orchestrator.state_manager import StateManager
+
         return StateManager
 
     def test_news_lock_blocks_via_state_manager(self, _import_sm):
         from core.redis_keys import ACCOUNT_STATE, TRADE_RISK
+
         store = {
-            ACCOUNT_STATE: json.dumps({
-                "balance": 100_000,
-                "equity": 99_500,
-                "compliance_mode": True,
-            }),
+            ACCOUNT_STATE: json.dumps(
+                {
+                    "balance": 100_000,
+                    "equity": 99_500,
+                    "compliance_mode": True,
+                }
+            ),
             TRADE_RISK: json.dumps({"risk_percent": 1.0}),
             "NEWS_LOCK:STATE": json.dumps({"locked": True, "reason": "FOMC"}),
         }
@@ -422,12 +431,15 @@ class TestEndToEndComplianceFlow:
 
     def test_market_closed_blocks_via_state_manager(self, _import_sm):
         from core.redis_keys import ACCOUNT_STATE, HEARTBEAT_INGEST, TRADE_RISK
+
         store = {
-            ACCOUNT_STATE: json.dumps({
-                "balance": 100_000,
-                "equity": 99_500,
-                "compliance_mode": True,
-            }),
+            ACCOUNT_STATE: json.dumps(
+                {
+                    "balance": 100_000,
+                    "equity": 99_500,
+                    "compliance_mode": True,
+                }
+            ),
             TRADE_RISK: json.dumps({"risk_percent": 1.0}),
             HEARTBEAT_INGEST: json.dumps({"producer": "ingest", "ts": time.time()}),
         }
@@ -440,12 +452,15 @@ class TestEndToEndComplianceFlow:
 
     def test_all_clear_passes_via_state_manager(self, _import_sm):
         from core.redis_keys import ACCOUNT_STATE, HEARTBEAT_INGEST, TRADE_RISK
+
         store = {
-            ACCOUNT_STATE: json.dumps({
-                "balance": 100_000,
-                "equity": 99_500,
-                "compliance_mode": True,
-            }),
+            ACCOUNT_STATE: json.dumps(
+                {
+                    "balance": 100_000,
+                    "equity": 99_500,
+                    "compliance_mode": True,
+                }
+            ),
             TRADE_RISK: json.dumps({"risk_percent": 1.0}),
             HEARTBEAT_INGEST: json.dumps({"producer": "ingest", "ts": time.time()}),
         }

@@ -228,15 +228,18 @@ def test_signal_throttle_freshness_diagnostic_emits_on_observability_logger(capl
     caplog.set_level(logging.WARNING, logger="signal_json")
     caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
 
-    assert emit_source_guard_diagnostic(
-        {
-            "event": "signal_throttle_freshness_diagnostic",
-            "symbol": "XAGUSD",
-            "blocked_stage": "MICROBOOST",
-            "reason": "STALE_SIGNAL_THROTTLE_SOURCE",
-        },
-        prefix="[SignalThrottleFreshnessDiagnostic]",
-    ) is True
+    assert (
+        emit_source_guard_diagnostic(
+            {
+                "event": "signal_throttle_freshness_diagnostic",
+                "symbol": "XAGUSD",
+                "blocked_stage": "MICROBOOST",
+                "reason": "STALE_SIGNAL_THROTTLE_SOURCE",
+            },
+            prefix="[SignalThrottleFreshnessDiagnostic]",
+        )
+        is True
+    )
 
     observability_records = [record for record in caplog.records if record.name == "signal_throttle_observability"]
     signal_json_records = [record for record in caplog.records if record.name == "signal_json"]
@@ -250,15 +253,18 @@ def test_microboost_source_diagnostic_emits_on_microboost_observability_logger(c
     caplog.set_level(logging.WARNING, logger="signal_throttle_observability")
     caplog.set_level(logging.WARNING, logger="microboost_observability")
 
-    assert emit_source_guard_diagnostic(
-        {
-            "event": "microboost_source_diagnostic",
-            "symbol": "XAGUSD",
-            "blocked_stage": "MICROBOOST",
-            "reason": "MICROBOOST_REQUIRES_SOURCE_CLEAN_BLOCK_ID",
-        },
-        prefix="[MicroboostSourceDiagnostic]",
-    ) is True
+    assert (
+        emit_source_guard_diagnostic(
+            {
+                "event": "microboost_source_diagnostic",
+                "symbol": "XAGUSD",
+                "blocked_stage": "MICROBOOST",
+                "reason": "MICROBOOST_REQUIRES_SOURCE_CLEAN_BLOCK_ID",
+            },
+            prefix="[MicroboostSourceDiagnostic]",
+        )
+        is True
+    )
 
     microboost_records = [record for record in caplog.records if record.name == "microboost_observability"]
     signal_throttle_records = [record for record in caplog.records if record.name == "signal_throttle_observability"]

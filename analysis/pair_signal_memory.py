@@ -175,7 +175,9 @@ def _classify_lifecycle(
         )
 
     previous_state = _text(previous.get("material_state"))
-    same_cluster = _text(previous.get("cluster_id")) and _text(previous.get("cluster_id")) == _text(current.get("cluster_id"))
+    same_cluster = _text(previous.get("cluster_id")) and _text(previous.get("cluster_id")) == _text(
+        current.get("cluster_id")
+    )
     if same_cluster and material_state and previous_state == material_state:
         return (
             "SAME_CLEAN_BLOCK_STILL_PENDING",
@@ -315,8 +317,7 @@ def _memory_expired(
 
 def _cluster_key(payload: Mapping[str, Any]) -> str:
     return _text(payload.get("cluster_id")) or "|".join(
-        _text(payload.get(key))
-        for key in ("symbol", "signal_family", "entry_reference_price")
+        _text(payload.get(key)) for key in ("symbol", "signal_family", "entry_reference_price")
     )
 
 

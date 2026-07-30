@@ -19,6 +19,7 @@ from startup.graceful_shutdown import GracefulShutdown
 
 # ── Helpers ────────────────────────────────────────────────────────
 
+
 async def _slow_task(seconds: float = 60.0) -> None:
     """Simulates a long-running task that can be cancelled."""
     await asyncio.sleep(seconds)
@@ -39,6 +40,7 @@ async def _cancel_aware_task() -> None:
 
 
 # ── GracefulShutdown.shutdown() ───────────────────────────────────
+
 
 class TestShutdownSequence:
     async def test_shutdown_cancels_running_tasks(self) -> None:
@@ -110,6 +112,7 @@ class TestShutdownSequence:
 
 # ── GracefulShutdown.drain_worker_tasks() ─────────────────────────
 
+
 class TestDrainWorkerTasks:
     async def test_drain_completes_finished_tasks(self) -> None:
         gs = GracefulShutdown(drain_timeout=2.0)
@@ -161,6 +164,7 @@ class TestDrainWorkerTasks:
 
 # ── Orchestrator SHUTDOWN state publication ───────────────────────
 
+
 class TestOrchestratorShutdownState:
     def test_run_forever_publishes_shutdown_on_exit(self) -> None:
         """StateManager.run_forever() should publish SHUTDOWN event before closing."""
@@ -193,13 +197,9 @@ class TestOrchestratorShutdownState:
             sm.run_forever()
 
         # Verify SHUTDOWN was published (last pipeline call before close)
-        publish_calls = [
-            c for c in mock_redis.pipeline.return_value.publish.call_args_list
-        ]
+        publish_calls = [c for c in mock_redis.pipeline.return_value.publish.call_args_list]
         # At least one publish should contain "SHUTDOWN"
-        shutdown_published = any(
-            "SHUTDOWN" in str(args) for args in publish_calls
-        )
+        shutdown_published = any("SHUTDOWN" in str(args) for args in publish_calls)
         assert shutdown_published, f"Expected SHUTDOWN publish, got: {publish_calls}"
 
     def test_run_forever_closes_pubsub_after_shutdown(self) -> None:

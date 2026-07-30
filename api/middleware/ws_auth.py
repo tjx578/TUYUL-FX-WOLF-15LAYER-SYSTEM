@@ -202,7 +202,10 @@ async def ws_authenticate(websocket: WebSocket) -> bool:
 
 
 async def _ws_reject(
-    websocket: WebSocket, code: int, reason: str, log_msg: str,
+    websocket: WebSocket,
+    code: int,
+    reason: str,
+    log_msg: str,
 ) -> None:
     """Log a warning and close the WebSocket.  Swallows close errors."""
     logger.warning(log_msg)

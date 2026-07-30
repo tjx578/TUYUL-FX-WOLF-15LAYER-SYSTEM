@@ -558,11 +558,7 @@ def _add_new_universal_pattern_candidates(
     pressure_temp = _text(data.get("pressure_temperature")).upper()
     block_delta_pips = _num(data.get("block_delta_pips"))
     range_position = _num(data.get("range_position"))
-    close_pos_raw = (
-        data.get("m15_close_pos")
-        if data.get("m15_close_pos") is not None
-        else data.get("close_pos")
-    )
+    close_pos_raw = data.get("m15_close_pos") if data.get("m15_close_pos") is not None else data.get("close_pos")
     close_pos = _num(close_pos_raw)
     jpy_alignment = _text(data.get("jpy_alignment") or data.get("jpy_alignment_status")).upper()
     dual_theme_status = _text(data.get("dual_theme_status")).upper()
@@ -617,19 +613,15 @@ def _add_new_universal_pattern_candidates(
         and (events >= 15 or timing_valid)
         and not near_resistance
         and (open_lane_context or timing_valid)
-        and (
-            (direction == "BUY" and bullish_phase)
-            or (direction == "SELL" and bearish_phase)
-        )
+        and ((direction == "BUY" and bullish_phase) or (direction == "SELL" and bearish_phase))
     ):
         _bump(candidates, "LOW_DENSITY_OPEN_LANE_TIMING_BLOCK", 62)
         evidence.append("low_density_open_lane_continuation_block_5_10min")
 
     mfe = abs(_num(data.get("forward_mfe_pips") or data.get("mfe_pips") or data.get("max_favorable_excursion_pips")))
     mae = abs(_num(data.get("forward_mae_pips") or data.get("mae_pips") or data.get("max_adverse_excursion_pips")))
-    zero_drawdown = (
-        _optional_bool(data.get("zero_drawdown_followthrough")) is True
-        or (mfe >= 10.0 and mae <= 1.0 and price_followthrough)
+    zero_drawdown = _optional_bool(data.get("zero_drawdown_followthrough")) is True or (
+        mfe >= 10.0 and mae <= 1.0 and price_followthrough
     )
     if zero_drawdown:
         _bump(candidates, "ZERO_DRAWDOWN_FOLLOWTHROUGH", 64)
@@ -668,17 +660,17 @@ def _add_new_universal_pattern_candidates(
 
     # 4. HIGH_DENSITY_ACCELERATION_CONTINUATION
     # High density (8+), price following through, structure not near exhaustion.
-    exhaustion_phase = phase_priced_raw in {"RESISTANCE_PRESSURE_WARNING", "EXHAUSTION_AT_RESISTANCE", "LATE_DENSE_PRESSURE"}
+    exhaustion_phase = phase_priced_raw in {
+        "RESISTANCE_PRESSURE_WARNING",
+        "EXHAUSTION_AT_RESISTANCE",
+        "LATE_DENSE_PRESSURE",
+    }
     if (
         density >= 8.0
         and duration >= 300.0
         and not exhaustion_phase
         and not near_extreme
-        and (
-            (direction == "BUY" and bullish_phase)
-            or (direction == "SELL" and bearish_phase)
-            or price_followthrough
-        )
+        and ((direction == "BUY" and bullish_phase) or (direction == "SELL" and bearish_phase) or price_followthrough)
     ):
         _bump(candidates, "HIGH_DENSITY_ACCELERATION_CONTINUATION", 44)
         evidence.append("high_density_acceleration_continuation_room_available")
@@ -745,14 +737,10 @@ def _add_new_universal_pattern_candidates(
     )
     mfe_mae_validated = mfe >= 10.0 and (mae <= 1.0 or (mae > 0.0 and mfe / mae >= 2.0))
     own_pair_events = _num(
-        data.get("own_pair_event_count")
-        or data.get("own_event_count")
-        or data.get("pair_event_count")
-        or events
+        data.get("own_pair_event_count") or data.get("own_event_count") or data.get("pair_event_count") or events
     )
     moderate_own_pair_events = (
-        _optional_bool(data.get("own_pair_event_count_moderate")) is True
-        or 20.0 <= own_pair_events <= 120.0
+        _optional_bool(data.get("own_pair_event_count_moderate")) is True or 20.0 <= own_pair_events <= 120.0
     )
     mae_controlled = _optional_bool(data.get("mae_controlled")) is True or (mae > 0.0 and mae <= 10.0)
     post_window_mfe_positive = _optional_bool(data.get("post_window_mfe_positive")) is True or mfe >= 10.0
@@ -774,7 +762,12 @@ def _add_new_universal_pattern_candidates(
         or (post_window_mfe_positive and mae_controlled and immediate_followthrough_weak)
     )
 
-    if fragmented_rotation and broad_rotation_active and not same_pair_clean_block and not basket_followthrough_confirmed:
+    if (
+        fragmented_rotation
+        and broad_rotation_active
+        and not same_pair_clean_block
+        and not basket_followthrough_confirmed
+    ):
         _bump(candidates, "FRAGMENTED_BASKET_ROTATION_NOT_ENTRY", 96)
         evidence.append("fragmented_basket_rotation_watchlist_only")
 
@@ -839,10 +832,11 @@ def _add_new_universal_pattern_candidates(
         or "LATE" in session_phase
         or session_phase in {"NY_CLOSE", "SESSION_CLOSE", "END_SESSION", "ASIA_CLOSE"}
     )
-    expansion_attempt = (
-        _optional_bool(data.get("expansion_attempt")) is True
-        or phase_priced_raw in {"EXPANSION_ATTEMPT", "LATE_EXPANSION", "FAILED_EXPANSION"}
-    )
+    expansion_attempt = _optional_bool(data.get("expansion_attempt")) is True or phase_priced_raw in {
+        "EXPANSION_ATTEMPT",
+        "LATE_EXPANSION",
+        "FAILED_EXPANSION",
+    }
     expansion_failed = (
         _optional_bool(data.get("expansion_failed")) is True
         or phase_priced_raw in {"FAILED_EXPANSION", "EXPANSION_FAIL"}
@@ -903,10 +897,9 @@ def _add_new_universal_pattern_candidates(
     )
     high_event_count = events >= 200.0 or _num(data.get("total_event_count") or data.get("source_event_count")) >= 500.0
     many_pairs_active = multiple_pairs_active or _num(data.get("active_pair_count")) >= 4.0
-    net_flat_range_large = (
-        (net_delta_pips <= 5.0 and intrawindow_range_pips >= 30.0)
-        or _optional_bool(data.get("net_delta_small_range_large")) is True
-    )
+    net_flat_range_large = (net_delta_pips <= 5.0 and intrawindow_range_pips >= 30.0) or _optional_bool(
+        data.get("net_delta_small_range_large")
+    ) is True
     if high_event_count and many_pairs_active and broad_rotation_phase and net_flat_range_large:
         _bump(candidates, "BROAD_ROTATION_HIGH_EVENT_NOT_ENTRY", 99)
         evidence.append("broad_rotation_high_event_count_not_single_pair_entry")
@@ -917,7 +910,12 @@ def _add_new_universal_pattern_candidates(
         or symbol.endswith("GBP")
         or _phase(data.get("theme_family") or data.get("theme_name")) in {"GBP", "GBP_THEME", "GBP_STRENGTH"}
     )
-    if delayed_gbp_context and final_direction_text == "WAIT" and immediate_followthrough_weak and later_reclaim_or_recovery:
+    if (
+        delayed_gbp_context
+        and final_direction_text == "WAIT"
+        and immediate_followthrough_weak
+        and later_reclaim_or_recovery
+    ):
         _bump(candidates, "DELAYED_GBP_CONTINUATION_AFTER_WAIT", 93)
         evidence.append("delayed_gbp_continuation_after_wait_requires_reclaim")
 
@@ -925,21 +923,58 @@ def _add_new_universal_pattern_candidates(
         _optional_bool(data.get("prior_d1_expansion")) is True
         or _num(data.get("prior_d1_range_atr_ratio") or data.get("d1_range_atr_ratio")) >= 1.5
     )
-    late_signal_block = _optional_bool(data.get("late_signal_block")) is True or _optional_bool(data.get("late_block")) is True
-    expanded_major_location = _optional_bool(data.get("price_already_expanded")) is True or price_extended or near_resistance
+    late_signal_block = (
+        _optional_bool(data.get("late_signal_block")) is True or _optional_bool(data.get("late_block")) is True
+    )
+    expanded_major_location = (
+        _optional_bool(data.get("price_already_expanded")) is True or price_extended or near_resistance
+    )
     cooling_risk = (
         _optional_bool(data.get("next_day_rejection_or_cooling_risk")) is True
         or _optional_bool(data.get("next_day_rejection")) is True
         or _optional_bool(data.get("cooling_risk")) is True
     )
-    if major_or_high_liquidity and prior_d1_expansion and (late_signal_block or expanded_major_location) and cooling_risk:
+    if (
+        major_or_high_liquidity
+        and prior_d1_expansion
+        and (late_signal_block or expanded_major_location)
+        and cooling_risk
+    ):
         _bump(candidates, "MAJOR_PAIR_POST_EXPANSION_NO_CHASE", 100)
         evidence.append("major_pair_post_expansion_no_chase_hold_or_trail")
 
-    buy_mfe = abs(_num(data.get("mfe_buy_15m_pips") or data.get("mfe_buy_1h_pips") or data.get("mfe_buy_4h_pips") or data.get("buy_mfe_pips")))
-    buy_mae = abs(_num(data.get("mae_buy_15m_pips") or data.get("mae_buy_1h_pips") or data.get("mae_buy_4h_pips") or data.get("buy_mae_pips")))
-    sell_mfe = abs(_num(data.get("mfe_sell_15m_pips") or data.get("mfe_sell_1h_pips") or data.get("mfe_sell_4h_pips") or data.get("sell_mfe_pips")))
-    sell_mae = abs(_num(data.get("mae_sell_15m_pips") or data.get("mae_sell_1h_pips") or data.get("mae_sell_4h_pips") or data.get("sell_mae_pips")))
+    buy_mfe = abs(
+        _num(
+            data.get("mfe_buy_15m_pips")
+            or data.get("mfe_buy_1h_pips")
+            or data.get("mfe_buy_4h_pips")
+            or data.get("buy_mfe_pips")
+        )
+    )
+    buy_mae = abs(
+        _num(
+            data.get("mae_buy_15m_pips")
+            or data.get("mae_buy_1h_pips")
+            or data.get("mae_buy_4h_pips")
+            or data.get("buy_mae_pips")
+        )
+    )
+    sell_mfe = abs(
+        _num(
+            data.get("mfe_sell_15m_pips")
+            or data.get("mfe_sell_1h_pips")
+            or data.get("mfe_sell_4h_pips")
+            or data.get("sell_mfe_pips")
+        )
+    )
+    sell_mae = abs(
+        _num(
+            data.get("mae_sell_15m_pips")
+            or data.get("mae_sell_1h_pips")
+            or data.get("mae_sell_4h_pips")
+            or data.get("sell_mae_pips")
+        )
+    )
     buy_followthrough_failed = (
         _optional_bool(data.get("buy_followthrough_failed")) is True
         or _phase(data.get("buy_followthrough_status")) in {"FAILED", "WEAK", "FALSE_CONTINUATION"}
@@ -957,13 +992,10 @@ def _add_new_universal_pattern_candidates(
         or _num(data.get("supporting_event_count")) > 0.0
         or (bool(leader_pair) and leader_pair != symbol)
     )
-    eur_cross_pressure = (
-        symbol.startswith("EUR")
-        and (
-            _optional_bool(data.get("eur_cross_pressure")) is True
-            or leader_pair.startswith("EUR")
-            or _phase(data.get("theme_family") or data.get("theme_name")) in {"EUR", "EUR_CROSS", "EUR_CROSS_ROTATION"}
-        )
+    eur_cross_pressure = symbol.startswith("EUR") and (
+        _optional_bool(data.get("eur_cross_pressure")) is True
+        or leader_pair.startswith("EUR")
+        or _phase(data.get("theme_family") or data.get("theme_name")) in {"EUR", "EUR_CROSS", "EUR_CROSS_ROTATION"}
     )
     upper_fade_context = (
         _optional_bool(data.get("upper_fade_candidate")) is True
@@ -988,7 +1020,9 @@ def _add_new_universal_pattern_candidates(
         _bump(candidates, "LOW_DENSITY_BLOCK_FALSE_CONTINUATION", 110)
         evidence.append("audnzd_low_density_block_false_continuation_validated")
 
-    if symbol == "AUDNZD" and (supporting_cross or _optional_bool(data.get("aud_nzd_relative_strength_decision")) is True):
+    if symbol == "AUDNZD" and (
+        supporting_cross or _optional_bool(data.get("aud_nzd_relative_strength_decision")) is True
+    ):
         _bump(candidates, "AUDNZD_RELATIVE_STRENGTH_DECISION_PAIR", 92)
         evidence.append("audnzd_relative_strength_decision_requires_own_phase")
 
@@ -1009,15 +1043,12 @@ def _add_new_universal_pattern_candidates(
         _bump(candidates, "BULLISH_REPAIR_UPPER_DECISION_NO_CHASE", 112)
         evidence.append("audnzd_bullish_repair_upper_decision_no_chase")
 
-    chf_weakness_context = (
-        symbol.endswith("CHF")
-        and (
-            _optional_bool(data.get("chf_weakness_context")) is True
-            or _optional_bool(data.get("chf_weakness")) is True
-            or _phase(data.get("basket_context") or data.get("theme_family") or data.get("theme_name"))
-            in {"CHF_WEAKNESS", "WEAK_CHF", "CHF_SELL_THEME"}
-            or leader_pair in {"USDCHF", "CADCHF", "GBPCHF", "NZDCHF"}
-        )
+    chf_weakness_context = symbol.endswith("CHF") and (
+        _optional_bool(data.get("chf_weakness_context")) is True
+        or _optional_bool(data.get("chf_weakness")) is True
+        or _phase(data.get("basket_context") or data.get("theme_family") or data.get("theme_name"))
+        in {"CHF_WEAKNESS", "WEAK_CHF", "CHF_SELL_THEME"}
+        or leader_pair in {"USDCHF", "CADCHF", "GBPCHF", "NZDCHF"}
     )
     clean_chf_confirmation = (
         symbol == "AUDCHF"
@@ -1033,16 +1064,13 @@ def _add_new_universal_pattern_candidates(
         _bump(candidates, "CHF_WEAKNESS_SUPPORTING_PAIR_CLEAN_FOLLOWTHROUGH", 110)
         evidence.append("audchf_clean_chf_weakness_confirmation_followthrough")
 
-    audchf_bullish_alignment = (
-        symbol == "AUDCHF"
-        and (
-            _optional_bool(data.get("audchf_bullish_alignment_upper_no_chase")) is True
-            or _optional_bool(data.get("bullish_alignment_upper_no_chase")) is True
-            or (
-                _optional_bool(data.get("d1_above_ema50")) is True
-                and _optional_bool(data.get("h4_above_ema50")) is True
-                and _optional_bool(data.get("h1_above_ema50")) is True
-            )
+    audchf_bullish_alignment = symbol == "AUDCHF" and (
+        _optional_bool(data.get("audchf_bullish_alignment_upper_no_chase")) is True
+        or _optional_bool(data.get("bullish_alignment_upper_no_chase")) is True
+        or (
+            _optional_bool(data.get("d1_above_ema50")) is True
+            and _optional_bool(data.get("h4_above_ema50")) is True
+            and _optional_bool(data.get("h1_above_ema50")) is True
         )
     )
     audchf_near_high = (
@@ -1067,11 +1095,7 @@ def _add_new_universal_pattern_candidates(
             or _optional_bool(data.get("range_compression")) is True
             or _optional_bool(data.get("low_atr")) is True
             or _optional_bool(data.get("mfe_mae_not_decisive")) is True
-            or (
-                0.0 < events <= 20.0
-                and intrawindow_range_pips <= 10.0
-                and net_delta_pips <= 6.0
-            )
+            or (0.0 < events <= 20.0 and intrawindow_range_pips <= 10.0 and net_delta_pips <= 6.0)
             or (
                 _optional_bool(data.get("d1_below_ema50")) is True
                 and _optional_bool(data.get("h4_below_ema50")) is True
@@ -1092,13 +1116,7 @@ def _add_new_universal_pattern_candidates(
         _bump(candidates, "EURNZD_UPPER_FADE_AFTER_EUR_CROSS_PRESSURE", 116)
         evidence.append("eurnzd_upper_fade_after_eur_cross_pressure")
 
-    if (
-        symbol == "EURNZD"
-        and leader_pair
-        and leader_pair != symbol
-        and supporting_cross
-        and not own_phase_confirmed
-    ):
+    if symbol == "EURNZD" and leader_pair and leader_pair != symbol and supporting_cross and not own_phase_confirmed:
         _bump(candidates, "CROSS_THEME_LEADER_DIVERGENCE", 100)
         evidence.append("cross_theme_leader_divergence_do_not_copy_leader_direction")
 
@@ -1121,15 +1139,12 @@ def _add_new_universal_pattern_candidates(
         evidence.append("eurnzd_macro_bearish_intraday_repair_no_buy_chase")
 
     audusd_daily_close = _num(data.get("d1_close_position") or data.get("d1_close_pos"))
-    audusd_bullish_expansion = (
-        symbol == "AUDUSD"
-        and (
-            _optional_bool(data.get("audusd_low_drawdown_bullish_followthrough")) is True
-            or _optional_bool(data.get("d1_bullish_expansion")) is True
-            or _optional_bool(data.get("bullish_expansion")) is True
-            or _num(data.get("d1_body_pips")) >= 50.0
-            or audusd_daily_close >= 0.90
-        )
+    audusd_bullish_expansion = symbol == "AUDUSD" and (
+        _optional_bool(data.get("audusd_low_drawdown_bullish_followthrough")) is True
+        or _optional_bool(data.get("d1_bullish_expansion")) is True
+        or _optional_bool(data.get("bullish_expansion")) is True
+        or _num(data.get("d1_body_pips")) >= 50.0
+        or audusd_daily_close >= 0.90
     )
     audusd_low_drawdown_followthrough = (
         _optional_bool(data.get("low_drawdown_followthrough")) is True
@@ -1152,16 +1167,13 @@ def _add_new_universal_pattern_candidates(
         if not audusd_pullback_or_reclaim or near_resistance:
             evidence.append("audusd_buy_requires_pullback_or_reclaim_no_chase")
 
-    audusd_post_rejection_recovery = (
-        symbol == "AUDUSD"
-        and (
-            _optional_bool(data.get("audusd_post_rejection_recovery")) is True
-            or _optional_bool(data.get("post_rejection_recovery")) is True
-            or (
-                _num(data.get("d1_20260507_close_position")) > 0.0
-                and _num(data.get("d1_20260507_close_position")) <= 0.15
-                and _num(data.get("d1_20260508_close_position")) >= 0.85
-            )
+    audusd_post_rejection_recovery = symbol == "AUDUSD" and (
+        _optional_bool(data.get("audusd_post_rejection_recovery")) is True
+        or _optional_bool(data.get("post_rejection_recovery")) is True
+        or (
+            _num(data.get("d1_20260507_close_position")) > 0.0
+            and _num(data.get("d1_20260507_close_position")) <= 0.15
+            and _num(data.get("d1_20260508_close_position")) >= 0.85
         )
     )
     if audusd_post_rejection_recovery:
@@ -1223,20 +1235,16 @@ def _add_metal_candidate(
     ):
         _bump(candidates, "METAL_PRESSURE_BROAD_FOLLOWTHROUGH_BUT_BLOCK_WHIPSAW", 108)
         evidence.append("xagusd_broad_followthrough_intraday_block_whipsaw")
-    xag_repair_below_ema = (
-        symbol == "XAGUSD"
-        and (
-            _optional_bool(data.get("xagusd_no_chase_below_ema_reclaim")) is True
-            or _optional_bool(data.get("m15_recovery_below_key_ema")) is True
-            or _optional_bool(data.get("reclaim_required")) is True
-            or _phase(data.get("latest_phase")) == "XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM"
-            or (
-                _optional_bool(data.get("d1_above_ema200")) is True
-                and _optional_bool(data.get("d1_below_ema50")) is True
-                and (
-                    _optional_bool(data.get("h4_below_ema50")) is True
-                    or _optional_bool(data.get("h1_below_ema50")) is True
-                )
+    xag_repair_below_ema = symbol == "XAGUSD" and (
+        _optional_bool(data.get("xagusd_no_chase_below_ema_reclaim")) is True
+        or _optional_bool(data.get("m15_recovery_below_key_ema")) is True
+        or _optional_bool(data.get("reclaim_required")) is True
+        or _phase(data.get("latest_phase")) == "XAGUSD_NO_CHASE_BELOW_EMA_RECLAIM"
+        or (
+            _optional_bool(data.get("d1_above_ema200")) is True
+            and _optional_bool(data.get("d1_below_ema50")) is True
+            and (
+                _optional_bool(data.get("h4_below_ema50")) is True or _optional_bool(data.get("h1_below_ema50")) is True
             )
         )
     )

@@ -36,6 +36,7 @@ def enqueue_candle_dict(candle: dict[str, Any]) -> None:
     except Exception as exc:
         logger.debug("[Seed] candle persistence enqueue skipped: {}", exc)
 
+
 MAX_RETRIES = 10
 BASE_DELAY = 1.0
 

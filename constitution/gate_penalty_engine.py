@@ -110,16 +110,16 @@ GATE_PENALTY_REGISTRY: dict[str, GatePenaltyConfig] = {
 
 
 NAVIGATION_WEIGHTS: dict[str, float] = {
-    "L1": 0.10,   # Context / regime
-    "L2": 0.12,   # Multi-timeframe alignment
-    "L3": 0.12,   # Trend confirmation
-    "L4": 0.08,   # Session scoring
-    "L5": 0.06,   # Psychology / discipline
-    "L7": 0.12,   # Probability / Monte Carlo
-    "L8": 0.10,   # Integrity / TII
-    "L9": 0.12,   # SMC / entry timing
+    "L1": 0.10,  # Context / regime
+    "L2": 0.12,  # Multi-timeframe alignment
+    "L3": 0.12,  # Trend confirmation
+    "L4": 0.08,  # Session scoring
+    "L5": 0.06,  # Psychology / discipline
+    "L7": 0.12,  # Probability / Monte Carlo
+    "L8": 0.10,  # Integrity / TII
+    "L9": 0.12,  # SMC / entry timing
     "L11": 0.10,  # Risk-reward structure
-    "L6": 0.08,   # Risk firewall
+    "L6": 0.08,  # Risk firewall
 }
 
 
@@ -253,16 +253,12 @@ class GatePenaltyEngine:
                 else:
                     penalty = config.fail_penalty
                     sizing = config.fail_sizing_factor
-                    breakdown.append(
-                        f"{gate_name}=FAIL -> penalty={penalty:.2f}, sizing×{sizing:.2f}"
-                    )
+                    breakdown.append(f"{gate_name}=FAIL -> penalty={penalty:.2f}, sizing×{sizing:.2f}")
             elif status == "WARN":
                 penalty = config.warn_penalty
                 sizing = config.warn_sizing_factor
                 if penalty > 0.0:
-                    breakdown.append(
-                        f"{gate_name}=WARN -> penalty={penalty:.2f}, sizing×{sizing:.2f}"
-                    )
+                    breakdown.append(f"{gate_name}=WARN -> penalty={penalty:.2f}, sizing×{sizing:.2f}")
 
             total_penalty += penalty
             sizing_multiplier *= sizing
@@ -299,21 +295,13 @@ class GatePenaltyEngine:
         """
         raw_confidence = self.compute_navigation_confidence(layer_scores)
 
-        total_penalty, sizing_multiplier, gate_results, breakdown = (
-            self.evaluate_gate_penalties(gate_summary)
-        )
+        total_penalty, sizing_multiplier, gate_results, breakdown = self.evaluate_gate_penalties(gate_summary)
 
         penalized = round(max(raw_confidence - total_penalty, 0.0), 6)
 
         hard_veto_gates = [g.gate for g in gate_results if g.is_hard_veto]
-        soft_fail_count = sum(
-            1 for g in gate_results
-            if g.tier == GateTier.SOFT.value and g.status == "FAIL"
-        )
-        soft_warn_count = sum(
-            1 for g in gate_results
-            if g.tier == GateTier.SOFT.value and g.status == "WARN"
-        )
+        soft_fail_count = sum(1 for g in gate_results if g.tier == GateTier.SOFT.value and g.status == "FAIL")
+        soft_warn_count = sum(1 for g in gate_results if g.tier == GateTier.SOFT.value and g.status == "WARN")
 
         return PenaltyEngineResult(
             raw_confidence=raw_confidence,

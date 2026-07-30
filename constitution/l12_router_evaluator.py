@@ -195,6 +195,7 @@ class L12RouterEvaluator:
 
     def __init__(self) -> None:
         from constitution.gate_penalty_engine import GatePenaltyEngine
+
         self._penalty_engine = GatePenaltyEngine()
 
     @staticmethod
@@ -247,9 +248,7 @@ class L12RouterEvaluator:
 
         if payload.l2_hard_stop and payload.l2_hard_blockers:
             blockers.append(L12BlockerCode.L2_HARD_ILLEGALITY.value)
-            rule_hits.append(
-                "L2 hard illegality -> " + ",".join(sorted(dict.fromkeys(payload.l2_hard_blockers)))
-            )
+            rule_hits.append("L2 hard illegality -> " + ",".join(sorted(dict.fromkeys(payload.l2_hard_blockers))))
         elif payload.l2_soft_blockers:
             warnings.append("L2_WEAK_EVIDENCE")
             rule_hits.append(
@@ -321,8 +320,7 @@ class L12RouterEvaluator:
                 warning_label = soft_gate_warning_map.get(gp.gate, f"{gp.gate}_DEGRADED")
                 warnings.append(warning_label)
                 rule_hits.append(
-                    f"{gp.gate}=FAIL -> soft penalty={gp.confidence_penalty:.2f}, "
-                    f"sizing×{gp.sizing_factor:.2f}"
+                    f"{gp.gate}=FAIL -> soft penalty={gp.confidence_penalty:.2f}, sizing×{gp.sizing_factor:.2f}"
                 )
             elif gp.status == "FAIL" and gp.tier == "ADVISORY":
                 warnings.append("ENRICHMENT_DEGRADED")
@@ -339,9 +337,7 @@ class L12RouterEvaluator:
         # ── Synthesis score check (on penalized confidence) ──
         if penalized_score < self.HOLD_MIN_SCORE and not blockers:
             blockers.append(L12BlockerCode.SYNTHESIS_SCORE_TOO_LOW.value)
-            rule_hits.append(
-                f"penalized_confidence={penalized_score:.4f} < {self.HOLD_MIN_SCORE}"
-            )
+            rule_hits.append(f"penalized_confidence={penalized_score:.4f} < {self.HOLD_MIN_SCORE}")
 
         # ── Verdict determination ──
         if blockers or penalty_result.hard_veto:
@@ -350,17 +346,13 @@ class L12RouterEvaluator:
             continuation_allowed = False
             next_targets: list[str] = []
             notes.append("Hard blocker or gate FAIL detected -> NO_TRADE")
-        elif (
-            penalized_score >= self.EXECUTE_MIN_SCORE
-            and penalty_result.soft_fail_count == 0
-        ):
+        elif penalized_score >= self.EXECUTE_MIN_SCORE and penalty_result.soft_fail_count == 0:
             verdict = L12Verdict.EXECUTE
             verdict_status = L12Status.WARN if warnings else L12Status.PASS
             continuation_allowed = True
             next_targets = ["PHASE_6"]
             notes.append(
-                f"Penalized confidence={penalized_score:.4f} >= {self.EXECUTE_MIN_SCORE}, "
-                f"no soft fails -> EXECUTE"
+                f"Penalized confidence={penalized_score:.4f} >= {self.EXECUTE_MIN_SCORE}, no soft fails -> EXECUTE"
             )
         elif penalized_score >= self.EXECUTE_REDUCED_MIN_SCORE:
             verdict = L12Verdict.EXECUTE_REDUCED_RISK
@@ -377,17 +369,13 @@ class L12RouterEvaluator:
             verdict_status = L12Status.WARN
             continuation_allowed = True
             next_targets = ["PHASE_6"]
-            notes.append(
-                f"Penalized confidence={penalized_score:.4f} in HOLD band -> HOLD"
-            )
+            notes.append(f"Penalized confidence={penalized_score:.4f} in HOLD band -> HOLD")
         else:
             verdict = L12Verdict.NO_TRADE
             verdict_status = L12Status.FAIL
             continuation_allowed = False
             next_targets = []
-            notes.append(
-                f"Penalized confidence={penalized_score:.4f} < {self.HOLD_MIN_SCORE} -> NO_TRADE"
-            )
+            notes.append(f"Penalized confidence={penalized_score:.4f} < {self.HOLD_MIN_SCORE} -> NO_TRADE")
 
         audit: dict[str, Any] = {
             "rule_hits": rule_hits,
@@ -553,11 +541,17 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
 
     l2_evidence_score = l2_layer.get("evidence_score")
     if not isinstance(l2_evidence_score, (int, float)):
-        l2_evidence_score = l2_layer.get("features", {}).get("evidence_score") if isinstance(l2_layer.get("features"), dict) else None
+        l2_evidence_score = (
+            l2_layer.get("features", {}).get("evidence_score") if isinstance(l2_layer.get("features"), dict) else None
+        )
 
     l2_confidence_penalty = l2_layer.get("confidence_penalty")
     if not isinstance(l2_confidence_penalty, (int, float)):
-        l2_confidence_penalty = l2_layer.get("features", {}).get("confidence_penalty") if isinstance(l2_layer.get("features"), dict) else 0.0
+        l2_confidence_penalty = (
+            l2_layer.get("features", {}).get("confidence_penalty")
+            if isinstance(l2_layer.get("features"), dict)
+            else 0.0
+        )
 
     l2_hard_blockers = l2_layer.get("hard_blockers", l2_layer.get("blocker_codes", []))
     if not isinstance(l2_hard_blockers, list):
@@ -574,11 +568,17 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
 
     l7_evidence_score = l7_layer.get("evidence_score")
     if not isinstance(l7_evidence_score, (int, float)):
-        l7_evidence_score = l7_layer.get("features", {}).get("evidence_score") if isinstance(l7_layer.get("features"), dict) else None
+        l7_evidence_score = (
+            l7_layer.get("features", {}).get("evidence_score") if isinstance(l7_layer.get("features"), dict) else None
+        )
 
     l7_confidence_penalty = l7_layer.get("confidence_penalty")
     if not isinstance(l7_confidence_penalty, (int, float)):
-        l7_confidence_penalty = l7_layer.get("features", {}).get("confidence_penalty") if isinstance(l7_layer.get("features"), dict) else 0.0
+        l7_confidence_penalty = (
+            l7_layer.get("features", {}).get("confidence_penalty")
+            if isinstance(l7_layer.get("features"), dict)
+            else 0.0
+        )
 
     l7_hard_blockers = l7_layer.get("hard_blockers", l7_layer.get("blocker_codes", []))
     if not isinstance(l7_hard_blockers, list):
@@ -589,11 +589,17 @@ def build_l12_input_from_upstream(upstream_result: dict[str, Any]) -> L12Input:
 
     l9_evidence_score = l9_layer.get("evidence_score")
     if not isinstance(l9_evidence_score, (int, float)):
-        l9_evidence_score = l9_layer.get("features", {}).get("evidence_score") if isinstance(l9_layer.get("features"), dict) else None
+        l9_evidence_score = (
+            l9_layer.get("features", {}).get("evidence_score") if isinstance(l9_layer.get("features"), dict) else None
+        )
 
     l9_confidence_penalty = l9_layer.get("confidence_penalty")
     if not isinstance(l9_confidence_penalty, (int, float)):
-        l9_confidence_penalty = l9_layer.get("features", {}).get("confidence_penalty") if isinstance(l9_layer.get("features"), dict) else 0.0
+        l9_confidence_penalty = (
+            l9_layer.get("features", {}).get("confidence_penalty")
+            if isinstance(l9_layer.get("features"), dict)
+            else 0.0
+        )
 
     l9_hard_blockers = l9_layer.get("hard_blockers", l9_layer.get("blocker_codes", []))
     if not isinstance(l9_hard_blockers, list):

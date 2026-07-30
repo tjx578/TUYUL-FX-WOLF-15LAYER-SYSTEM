@@ -620,7 +620,7 @@ class L5AnalysisLayer:
             all_reasons or "none",
         )
 
-        return {
+        raw_result = {
             # ── Psychology (EAF-based) ──
             "psychology_score": psychology_score,
             "eaf_score": round(eaf, 4),
@@ -685,9 +685,7 @@ class L5AnalysisLayer:
         return self._apply_constitutional(raw_result, pair)
 
     # ── Constitutional Governance Wrapper ────────────────────────────
-    def _apply_constitutional(
-        self, raw_result: dict[str, Any], symbol: str
-    ) -> dict[str, Any]:
+    def _apply_constitutional(self, raw_result: dict[str, Any], symbol: str) -> dict[str, Any]:
         """Wrap raw L5 output with constitutional governance envelope.
 
         Follows the same pattern as L4 constitutional wrapper:
@@ -707,9 +705,7 @@ class L5AnalysisLayer:
             )
 
             raw_result["constitutional"] = envelope
-            raw_result["continuation_allowed"] = envelope.get(
-                "continuation_allowed", True
-            )
+            raw_result["continuation_allowed"] = envelope.get("continuation_allowed", True)
 
             # Map constitutional status → valid flag
             status = envelope.get("status", "PASS")

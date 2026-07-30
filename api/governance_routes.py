@@ -123,11 +123,7 @@ async def get_all_flags() -> dict[str, Any]:
     """Get feature flags across all known services."""
     ff = _get_ff()
     all_flags = ff.get_all_services()
-    return {
-        "services": {
-            svc: {k: v.to_dict() for k, v in flags.items()} for svc, flags in all_flags.items()
-        }
-    }
+    return {"services": {svc: {k: v.to_dict() for k, v in flags.items()} for svc, flags in all_flags.items()}}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

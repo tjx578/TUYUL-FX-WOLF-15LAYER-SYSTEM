@@ -1038,8 +1038,7 @@ def test_all_lifecycle_clean_blocks_get_watch_or_diagnostic_routes():
         candidate["source_clean_block_id"] for candidate in candidates
     }
     assert all(
-        entry["status"].startswith(("CLEAN_BLOCK_", "SCANNER_MEMORY_"))
-        for entry in report["clean_block_watch_entries"]
+        entry["status"].startswith(("CLEAN_BLOCK_", "SCANNER_MEMORY_")) for entry in report["clean_block_watch_entries"]
     )
     for entry in report["clean_block_watch_entries"]:
         if entry["status"].startswith("SCANNER_MEMORY_"):
@@ -1076,9 +1075,7 @@ def test_scanner_cycle_clean_blocks_become_advisory_watch_when_context_is_availa
 
     assert report["primary_clean_watch_candidates"] == []
     assert {item["symbol"] for item in report["clean_block_watch_entries"]} == {"USDCAD", "GBPNZD"}
-    assert {
-        item["watch_scope"] for item in report["clean_block_watch_entries"]
-    } == {"SCANNER_CYCLE_MEMORY_ADVISORY"}
+    assert {item["watch_scope"] for item in report["clean_block_watch_entries"]} == {"SCANNER_CYCLE_MEMORY_ADVISORY"}
     assert all(item["valid_for_execution"] is False for item in report["clean_block_watch_entries"])
     assert all(item["eligible_for_primary_watch"] is False for item in report["clean_block_watch_entries"])
     assert all(item["scanner_cycle_advisory_watch"] is True for item in report["clean_block_watch_entries"])
@@ -1750,9 +1747,7 @@ def test_live_analyzer_emits_parseable_raw_signal_throttle_lane(caplog):
     assert raw_records[0].levelno == logging.WARNING
     message = raw_records[0].getMessage()
     assert message.startswith("[SignalThrottle] event=signal_throttle_check symbol=GBPJPY")
-    parsed = parse_signal_throttle_rows(
-        [{"timestamp": "2026-07-08T00:00:00Z", "severity": "info", "message": message}]
-    )
+    parsed = parse_signal_throttle_rows([{"timestamp": "2026-07-08T00:00:00Z", "severity": "info", "message": message}])
     assert len(parsed) == 1
     assert parsed[0].symbol == "GBPJPY"
     assert parsed[0].source_stream == "CANARY"
@@ -1804,16 +1799,10 @@ def test_recent_clean_block_lineage_attaches_to_later_microboost_same_symbol():
 
 
 def test_microboost_lineage_resolution_explains_direction_mismatch():
-    events = [
-        _event(index * 30, "GBPCAD", event_type="ALLOWED", direction="BUY")
-        for index in range(11)
-    ]
+    events = [_event(index * 30, "GBPCAD", event_type="ALLOWED", direction="BUY") for index in range(11)]
     # The scanner-cycle ledger remains a single BUY clean block, while the later
     # dense cluster is SELL.  Lineage must fail closed and identify the stage.
-    events.extend(
-        _event(390 + index * 5, "GBPCAD", event_type="ALLOWED", direction="SELL")
-        for index in range(10)
-    )
+    events.extend(_event(390 + index * 5, "GBPCAD", event_type="ALLOWED", direction="SELL") for index in range(10))
 
     report = analyze_signal_throttle_events(events)
     latest = report["microboost_summary"]["latest"]

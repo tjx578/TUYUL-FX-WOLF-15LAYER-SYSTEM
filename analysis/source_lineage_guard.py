@@ -255,19 +255,29 @@ def signal_throttle_state_snapshot_payload(
     candidates_list = _clean_block_candidates(report)
     latest_clean = max(
         candidates_list,
-        key=lambda item: _parse_time(_text(item.get("clean_block_end_utc") or item.get("block_end_utc"))) or datetime.min.replace(tzinfo=UTC),
+        key=lambda item: (
+            _parse_time(_text(item.get("clean_block_end_utc") or item.get("block_end_utc")))
+            or datetime.min.replace(tzinfo=UTC)
+        ),
         default=None,
     )
-    last_clean_block_id = _text(latest_clean.get("source_clean_block_id")) if isinstance(latest_clean, Mapping) else None
+    last_clean_block_id = (
+        _text(latest_clean.get("source_clean_block_id")) if isinstance(latest_clean, Mapping) else None
+    )
     active_candidates = [
         item
         for item in candidates_list
-        if _is_fresh_time(_text(item.get("clean_block_end_utc") or item.get("block_end_utc")), reference, max_age_seconds)
+        if _is_fresh_time(
+            _text(item.get("clean_block_end_utc") or item.get("block_end_utc")), reference, max_age_seconds
+        )
     ]
     active_clean_blocks = len(active_candidates)
     active_clean = max(
         active_candidates,
-        key=lambda item: _parse_time(_text(item.get("clean_block_end_utc") or item.get("block_end_utc"))) or datetime.min.replace(tzinfo=UTC),
+        key=lambda item: (
+            _parse_time(_text(item.get("clean_block_end_utc") or item.get("block_end_utc")))
+            or datetime.min.replace(tzinfo=UTC)
+        ),
         default=None,
     )
     active_clean_block_id = (

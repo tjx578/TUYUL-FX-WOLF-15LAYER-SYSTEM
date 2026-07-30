@@ -118,7 +118,9 @@ def update_redis_metrics(report: Mapping[str, object]) -> None:
     REDIS_INSTANTANEOUS_OUTPUT_KBPS.labels().set(_as_float(report, "instantaneous_output_kbps"))
     REDIS_CLIENT_RECENT_MAX_INPUT_BUFFER_BYTES.labels().set(_as_float(report, "client_recent_max_input_buffer"))
     REDIS_CLIENT_RECENT_MAX_OUTPUT_BUFFER_BYTES.labels().set(_as_float(report, "client_recent_max_output_buffer"))
-    REDIS_RDB_LAST_BGSAVE_STATUS.labels().set(1.0 if str(report.get("rdb_last_bgsave_status", "")).lower() == "ok" else 0.0)
+    REDIS_RDB_LAST_BGSAVE_STATUS.labels().set(
+        1.0 if str(report.get("rdb_last_bgsave_status", "")).lower() == "ok" else 0.0
+    )
     REDIS_RDB_LAST_BGSAVE_DURATION_SECONDS.labels().set(_as_float(report, "rdb_last_bgsave_time_sec"))
     REDIS_CHANGES_SINCE_LAST_SAVE.labels().set(_as_float(report, "rdb_changes_since_last_save"))
     REDIS_TOTAL_KEYS.labels().set(_as_float(report, "total_keys"))
