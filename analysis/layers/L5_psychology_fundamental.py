@@ -620,7 +620,7 @@ class L5AnalysisLayer:
             all_reasons or "none",
         )
 
-        return {
+        raw_result = {
             # ── Psychology (EAF-based) ──
             "psychology_score": psychology_score,
             "eaf_score": round(eaf, 4),
