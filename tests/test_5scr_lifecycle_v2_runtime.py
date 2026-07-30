@@ -7,6 +7,7 @@ the non-leasing read, and restart ordering.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -160,6 +161,22 @@ async def test_poll_folds_a_batch_into_one_episode():
     assert len(repository.persisted) == 5
     lifecycle_ids = {lifecycle.strategy_lifecycle_id for lifecycle, _ in repository.persisted}
     assert len(lifecycle_ids) == 1
+
+
+@pytest.mark.asyncio
+async def test_poll_accepts_json_text_payload_from_postgres():
+    row = _row(1)
+    row["payload"] = json.dumps(row["payload"])
+    repository = _FakeRepository(rows=[row])
+    runner = LifecycleV2ShadowRunner(repository=repository, config=_config())
+
+    processed = await runner.poll_once()
+
+    assert processed == 1
+    assert len(repository.persisted) == 1
+    lifecycle, link = repository.persisted[0]
+    assert lifecycle.symbol == "CHFJPY"
+    assert link.pressure_event_id == row["event_id"]
 
 
 @pytest.mark.asyncio
