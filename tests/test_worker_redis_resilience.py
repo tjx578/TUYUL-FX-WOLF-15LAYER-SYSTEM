@@ -18,6 +18,22 @@ import pytest
 import redis.asyncio as aioredis
 from prometheus_client import REGISTRY as _REG
 
+
+@pytest.fixture(autouse=True)
+def _legacy_execution_plane_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These exercise the legacy execution worker, so the plane must be open.
+
+    The worker now refuses to exist unless LEGACY_PUSH_EXECUTION_ENABLED is set
+    and a bridge address is configured; that gate is covered by
+    tests/test_execution_plane_fail_closed.py. Here we are testing Redis
+    resilience, not the gate, so we open it deliberately and explicitly.
+    """
+    monkeypatch.setenv("EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("LEGACY_PUSH_EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("EA_BRIDGE_URL", "http://ea-bridge.test:8081")
+    monkeypatch.delenv("SIGNED_COMMAND_BRIDGE_ENABLED", raising=False)
+
+
 # Both allocation/ and execution/ workers define identically-named Prometheus
 # metrics at module level.  In production they run in separate processes; in
 # tests they coexist.  Force-import allocation first, then clear shared metric
