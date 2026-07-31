@@ -33,6 +33,12 @@ def _get_or_create_metric(metric_cls: type, name: str, *args: Any, **kwargs: Any
 from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
 from contracts.execution_queue_contract import ExecutionQueuePayload  # noqa: E402
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction  # noqa: E402
+from execution.execution_plane_flags import (  # noqa: E402
+    ExecutionPlaneConfigError,
+    ExecutionPlaneFlags,
+    log_execution_plane,
+    validate_execution_plane,
+)
 from infrastructure.redis_client import RedisConfig, close_pool, get_client  # noqa: E402
 from infrastructure.tracing import (  # noqa: E402
     extract_trace_carrier,
@@ -91,9 +97,17 @@ class AsyncExecutionWorker:
         super().__init__()
         self._cfg = config or WorkerConfig()
         self._sem = asyncio.Semaphore(self._cfg.max_concurrency)
-        self._executor = BrokerExecutor(
-            ea_url=os.getenv("EA_BRIDGE_URL", "http://localhost:8081"),
-        )
+        flags = ExecutionPlaneFlags.from_env()
+        if not flags.legacy_push_execution_enabled:
+            # Constructing this worker at all means something intends to drain
+            # the legacy execution queue; refuse rather than start a consumer
+            # the operator did not ask for.
+            raise ExecutionPlaneConfigError("LEGACY_PUSH_EXECUTION_DISABLED:worker_not_permitted")
+        validate_execution_plane(flags)
+        # No implicit http://localhost:8081. That default made a production
+        # deployment able to reach a bridge nobody configured; the address is
+        # now required and validated above.
+        self._executor = BrokerExecutor(ea_url=str(flags.ea_bridge_url))
         self._in_flight: list[asyncio.Task[None]] = []
         self._orchestrator_alive: bool = True
 
@@ -321,6 +335,18 @@ _RESTART_COOLDOWN = float(os.getenv("EXEC_RESTART_COOLDOWN_SEC", "5.0"))
 
 
 async def _main() -> None:
+    flags = ExecutionPlaneFlags.from_env()
+    log_execution_plane(flags, service="execution")
+    if not flags.legacy_push_execution_enabled:
+        # Return, do not raise: the trade service supervises this coroutine and
+        # a disabled plane is a valid deployment state, not a crash. Nothing
+        # subscribes to execution:queue in this mode.
+        logger.info(
+            "[ExecutionPlane] legacy push execution disabled — worker not started, execution:queue not consumed"
+        )
+        return
+    validate_execution_plane(flags)
+
     start_http_server(int(os.getenv("EXEC_METRICS_PORT", "9103")))
 
     health_port = int(os.getenv("PORT", os.getenv("EXEC_HEALTH_PORT", "8084")))

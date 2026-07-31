@@ -57,6 +57,10 @@ from enum import StrEnum  # noqa: E402
 import httpx  # noqa: E402
 from loguru import logger as _loguru_logger  # noqa: E402
 
+from execution.execution_plane_flags import (  # noqa: E402
+    EXECUTION_ENABLED,
+    execution_flag,
+)
 from execution.resilience import (  # noqa: E402
     RetryPolicy,
     SimpleCircuitBreaker,
@@ -122,12 +126,16 @@ class BrokerExecutor:  # noqa: F811
 
     def __init__(
         self,
-        ea_url: str = "http://localhost:8081",
+        ea_url: str | None = None,
         timeout: float = 10.0,
         retry_policy: RetryPolicy | None = None,
         circuit_breaker: SimpleCircuitBreaker | None = None,
     ) -> None:
-        self._ea_url = ea_url.rstrip("/")
+        # No implicit http://localhost:8081. An unconfigured executor must not
+        # quietly acquire a plausible-looking production address; it resolves
+        # from EA_BRIDGE_URL or stays unset and refuses to send.
+        resolved = ea_url if ea_url is not None else os.getenv("EA_BRIDGE_URL")
+        self._ea_url = resolved.rstrip("/") if resolved else ""
         self._timeout = timeout
         self._retry_policy = retry_policy or RetryPolicy(
             max_attempts=4,
@@ -143,15 +151,22 @@ class BrokerExecutor:  # noqa: F811
 
     @staticmethod
     def _execution_enabled() -> bool:
-        raw = str(os.getenv("EXECUTION_ENABLED", "1")).strip().lower()
-        return raw not in {"0", "false", "off", "no"}
+        """Fail closed.
+
+        This previously defaulted to ``"1"`` and asked only whether the value
+        was in a deny-list, so a service with the variable absent -- or with a
+        typo like ``flase`` -- would send orders. Absent is now off, and only
+        an explicit affirmative enables the adapter.
+        """
+        return execution_flag(EXECUTION_ENABLED)
 
     def _log_runtime_mode(self) -> None:
         if self._execution_enabled():
             logger.info("BrokerExecutor: execution adapter enabled ea_url={}", self._ea_url)
             return
         logger.info(
-            "BrokerExecutor: execution adapter disabled via EXECUTION_ENABLED=0 ea_url={} broker_calls_suppressed=true",
+            "BrokerExecutor: execution adapter disabled (EXECUTION_ENABLED not affirmatively set) "
+            "ea_url={} broker_calls_suppressed=true",
             self._ea_url,
         )
 
@@ -175,6 +190,21 @@ class BrokerExecutor:  # noqa: F811
                 raw={
                     "sent": False,
                     "reason": "execution_disabled",
+                    "request_id": req.request_id,
+                },
+            )
+
+        if not self._ea_url:
+            # Execution was enabled without an address. Refuse rather than fall
+            # back to a guessed endpoint.
+            self._record_broker_latency(_broker_start, "ea_bridge_url_not_configured")
+            return ExecutionResult(
+                success=False,
+                request_id=req.request_id,
+                error_msg="ea_bridge_url_not_configured",
+                raw={
+                    "sent": False,
+                    "reason": "ea_bridge_url_not_configured",
                     "request_id": req.request_id,
                 },
             )

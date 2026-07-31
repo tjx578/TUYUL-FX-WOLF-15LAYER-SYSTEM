@@ -47,7 +47,8 @@ def test_broker_executor_logs_disabled_mode_on_init() -> None:
         BrokerExecutor(ea_url="http://ea-bridge:8081")
 
     mock_logger.info.assert_called_with(
-        "BrokerExecutor: execution adapter disabled via EXECUTION_ENABLED=0 ea_url={} broker_calls_suppressed=true",
+        "BrokerExecutor: execution adapter disabled (EXECUTION_ENABLED not affirmatively set) "
+        "ea_url={} broker_calls_suppressed=true",
         "http://ea-bridge:8081",
     )
 

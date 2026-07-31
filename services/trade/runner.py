@@ -46,20 +46,40 @@ async def _main() -> None:
         task_name="TradeHealthProbe",
     )
 
+    # Resolve and validate the execution plane before any worker exists.
+    # Starting a broker-capable consumer and only then checking whether it was
+    # wanted is the wrong order.
+    from execution.execution_plane_flags import (  # noqa: PLC0415
+        ExecutionPlaneFlags,
+        log_execution_plane,
+        validate_execution_plane,
+    )
+
+    execution_flags = ExecutionPlaneFlags.from_env(strict=True)
+    validate_execution_plane(execution_flags)
+    log_execution_plane(execution_flags, service="trade")
+
     # Import workers lazily to avoid import-time side effects until we're ready.
     from allocation.async_worker import _main as alloc_main  # noqa: PLC0415
-    from execution.async_worker import _main as exec_main  # noqa: PLC0415
 
     alloc_task = asyncio.create_task(alloc_main(), name="AllocationWorker")
-    exec_task = asyncio.create_task(exec_main(), name="ExecutionWorker")
-    logger.info("Trade service running allocation + execution workers")
+    worker_tasks: list[asyncio.Task[object]] = [alloc_task]
+
+    if execution_flags.legacy_push_execution_enabled:
+        from execution.async_worker import _main as exec_main  # noqa: PLC0415
+
+        worker_tasks.append(asyncio.create_task(exec_main(), name="ExecutionWorker"))
+        logger.info("Trade service running allocation + execution workers")
+    else:
+        logger.info(
+            "Trade service running allocation only — legacy push execution disabled, execution:queue has no consumer"
+        )
 
     from startup.graceful_shutdown import GracefulShutdown  # noqa: PLC0415
 
     gs = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")))
     gs.register_cleanup("trade health probe", probe.stop)
 
-    worker_tasks: list[asyncio.Task[object]] = [alloc_task, exec_task]
     try:
         await asyncio.gather(*worker_tasks)
     except Exception:
@@ -68,7 +88,7 @@ async def _main() -> None:
         raise
     finally:
         _workers_alive = False
-        await gs.shutdown([alloc_task, exec_task, probe_task])
+        await gs.shutdown([*worker_tasks, probe_task])
 
 
 if __name__ == "__main__":
