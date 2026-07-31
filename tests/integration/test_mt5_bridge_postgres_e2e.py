@@ -39,7 +39,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from api.executor_bridge_router import router
 from api.middleware.executor_auth import derive_executor_token
@@ -92,6 +92,17 @@ class _PoolBackedPostgres:
         async with self._pool.acquire() as connection:
             return await connection.fetchrow(query, *args)
 
+    async def execute_in_transaction(
+        self,
+        operations: list[tuple[str, tuple[Any, ...]]],
+    ) -> list[str]:
+        results: list[str] = []
+        async with self._pool.acquire() as connection, connection.transaction():
+            for query, args in operations:
+                result = await connection.execute(query, *args)
+                results.append(str(result))
+        return results
+
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
         async with self._pool.acquire() as connection, connection.transaction():
@@ -117,9 +128,39 @@ async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
         await pool.close()
 
 
-@pytest.fixture
-def executor_id() -> UUID:
-    return uuid4()
+@pytest_asyncio.fixture
+async def executor_id(postgres: _PoolBackedPostgres) -> AsyncIterator[UUID]:
+    value = uuid4()
+    await postgres.execute(
+        """
+        INSERT INTO ea_agents (
+            id,
+            agent_name,
+            ea_class,
+            ea_subtype,
+            execution_mode,
+            reporter_mode,
+            status,
+            locked
+        ) VALUES (
+            $1::uuid,
+            $2,
+            'PRIMARY',
+            'EDUMB',
+            'SHADOW',
+            'FULL',
+            'OFFLINE',
+            false
+        )
+        """,
+        str(value),
+        f"MT5 Bridge E2E {value}",
+    )
+    try:
+        yield value
+    finally:
+        await _cleanup(postgres, value)
+        await postgres.execute("DELETE FROM ea_agents WHERE id = $1::uuid", str(value))
 
 
 @pytest_asyncio.fixture
@@ -127,20 +168,23 @@ async def client(
     postgres: _PoolBackedPostgres,
     executor_id: UUID,
     monkeypatch: pytest.MonkeyPatch,
-) -> AsyncIterator[TestClient]:
+) -> AsyncIterator[AsyncClient]:
     """A client that authenticates for real and persists for real.
 
     Only the database handle is injected. Authentication is *not* overridden --
     every request below carries a token the middleware actually verifies.
     """
     monkeypatch.setenv("EXECUTOR_BRIDGE_AUTH_SECRET", AUTH_SECRET)
+    monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_SECRET", SIGNING_SECRET)
     monkeypatch.delenv("EXECUTOR_BRIDGE_AUTH_SECRET_PREVIOUS", raising=False)
+    monkeypatch.delenv("EXECUTOR_COMMAND_SIGNING_SECRET_PREVIOUS", raising=False)
 
     repository = MT5CommandRepository(pg=postgres)  # type: ignore[arg-type]
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_mt5_command_repository] = lambda: repository
-    with TestClient(app) as test_client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as test_client:
         yield test_client
 
 
@@ -300,29 +344,25 @@ async def _cleanup(postgres: _PoolBackedPostgres, executor_id: UUID) -> None:
 
 @pytest_asyncio.fixture
 async def registered(
-    client: TestClient,
-    postgres: _PoolBackedPostgres,
+    client: AsyncClient,
     executor_id: UUID,
 ) -> AsyncIterator[UUID]:
     """A SHADOW executor that exists in the database, cleaned up afterwards."""
-    response = client.post(
+    response = await client.post(
         "/api/v1/executors/register",
         json=_registration(executor_id),
         headers=_auth_headers(executor_id),
     )
     assert response.status_code == 201, response.text
-    try:
-        yield executor_id
-    finally:
-        await _cleanup(postgres, executor_id)
+    yield executor_id
 
 
 def _repo(postgres: _PoolBackedPostgres) -> MT5CommandRepository:
     return MT5CommandRepository(pg=postgres)  # type: ignore[arg-type]
 
 
-async def _claim(client: TestClient, executor_id: UUID, command: ExecutionCommandV1) -> str:
-    response = client.post(
+async def _claim(client: AsyncClient, executor_id: UUID, command: ExecutionCommandV1) -> str:
+    response = await client.post(
         f"/api/v1/commands/{command.command_id}/claim",
         json={"lease_seconds": 60},
         headers=_auth_headers(executor_id),
@@ -347,11 +387,11 @@ async def _command_state(postgres: _PoolBackedPostgres, command: ExecutionComman
 
 @pytest.mark.asyncio
 async def test_registration_persists_a_shadow_executor(
-    client: TestClient, postgres: _PoolBackedPostgres, executor_id: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, executor_id: UUID
 ) -> None:
     """Registration must create a SHADOW executor and never a privileged one."""
     try:
-        response = client.post(
+        response = await client.post(
             "/api/v1/executors/register",
             json=_registration(executor_id),
             headers=_auth_headers(executor_id),
@@ -373,8 +413,8 @@ async def test_registration_persists_a_shadow_executor(
 
 
 @pytest.mark.asyncio
-async def test_registration_is_idempotent(client: TestClient, postgres: _PoolBackedPostgres, registered: UUID) -> None:
-    second = client.post(
+async def test_registration_is_idempotent(client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID) -> None:
+    second = await client.post(
         "/api/v1/executors/register",
         json=_registration(registered),
         headers=_auth_headers(registered),
@@ -389,9 +429,9 @@ async def test_registration_is_idempotent(client: TestClient, postgres: _PoolBac
 
 @pytest.mark.asyncio
 async def test_heartbeat_persists_a_durable_account_snapshot(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
-    response = client.post(
+    response = await client.post(
         f"/api/v1/executors/{registered}/heartbeat",
         json=_heartbeat(registered),
         headers=_auth_headers(registered),
@@ -415,11 +455,11 @@ async def test_heartbeat_persists_a_durable_account_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_body_must_match_the_path(client: TestClient, registered: UUID) -> None:
+async def test_heartbeat_body_must_match_the_path(client: AsyncClient, registered: UUID) -> None:
     body = _heartbeat(registered)
     body["executor_id"] = str(uuid4())
 
-    response = client.post(
+    response = await client.post(
         f"/api/v1/executors/{registered}/heartbeat",
         json=body,
         headers=_auth_headers(registered),
@@ -434,8 +474,8 @@ async def test_heartbeat_body_must_match_the_path(client: TestClient, registered
 
 
 @pytest.mark.asyncio
-async def test_empty_poll_returns_204(client: TestClient, registered: UUID) -> None:
-    response = client.get(
+async def test_empty_poll_returns_204(client: AsyncClient, registered: UUID) -> None:
+    response = await client.get(
         f"/api/v1/executors/{registered}/commands/next",
         headers=_auth_headers(registered),
     )
@@ -446,12 +486,12 @@ async def test_empty_poll_returns_204(client: TestClient, registered: UUID) -> N
 
 @pytest.mark.asyncio
 async def test_queued_command_is_returned_by_poll(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
 
-    response = client.get(
+    response = await client.get(
         f"/api/v1/executors/{registered}/commands/next",
         headers=_auth_headers(registered),
     )
@@ -471,12 +511,12 @@ async def test_queued_command_is_returned_by_poll(
 
 @pytest.mark.asyncio
 async def test_claim_binds_a_lease_and_request_hash(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
 
-    response = client.post(
+    response = await client.post(
         f"/api/v1/commands/{command.command_id}/claim",
         json={"lease_seconds": 30},
         headers=_auth_headers(registered),
@@ -498,14 +538,14 @@ async def test_claim_binds_a_lease_and_request_hash(
 
 @pytest.mark.asyncio
 async def test_claimed_command_is_not_offered_to_the_next_poll(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     """A live lease must not hand the same work to a second poller."""
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
     await _claim(client, registered, command)
 
-    response = client.get(
+    response = await client.get(
         f"/api/v1/executors/{registered}/commands/next",
         headers=_auth_headers(registered),
     )
@@ -515,7 +555,7 @@ async def test_claimed_command_is_not_offered_to_the_next_poll(
 
 @pytest.mark.asyncio
 async def test_expired_lease_makes_the_command_reclaimable(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     """Reclaim after expiry, so a crashed executor cannot strand work."""
     command = _shadow_command(registered)
@@ -527,7 +567,7 @@ async def test_expired_lease_makes_the_command_reclaimable(
         str(command.command_id),
     )
 
-    response = client.get(
+    response = await client.get(
         f"/api/v1/executors/{registered}/commands/next",
         headers=_auth_headers(registered),
     )
@@ -543,13 +583,13 @@ async def test_expired_lease_makes_the_command_reclaimable(
 
 @pytest.mark.asyncio
 async def test_shadow_terminal_report_is_persisted(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
     claim_token = await _claim(client, registered, command)
 
-    response = client.post(
+    response = await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=_report(command=command, executor_id=registered, state="WOULD_EXECUTE"),
         headers={**_auth_headers(registered), "X-Claim-Token": claim_token},
@@ -562,13 +602,13 @@ async def test_shadow_terminal_report_is_persisted(
 
 @pytest.mark.asyncio
 async def test_would_reject_is_also_terminal(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
     claim_token = await _claim(client, registered, command)
 
-    response = client.post(
+    response = await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=_report(
             command=command,
@@ -585,7 +625,7 @@ async def test_would_reject_is_also_terminal(
 
 @pytest.mark.asyncio
 async def test_identical_duplicate_report_is_idempotent(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     """At-least-once delivery must not produce a second logical effect."""
     command = _shadow_command(registered)
@@ -594,8 +634,8 @@ async def test_identical_duplicate_report_is_idempotent(
     body = _report(command=command, executor_id=registered, state="WOULD_EXECUTE")
     headers = {**_auth_headers(registered), "X-Claim-Token": claim_token}
 
-    first = client.post(f"/api/v1/commands/{command.command_id}/reports", json=body, headers=headers)
-    second = client.post(f"/api/v1/commands/{command.command_id}/reports", json=body, headers=headers)
+    first = await client.post(f"/api/v1/commands/{command.command_id}/reports", json=body, headers=headers)
+    second = await client.post(f"/api/v1/commands/{command.command_id}/reports", json=body, headers=headers)
 
     assert first.status_code == 202, first.text
     assert second.status_code == 202, second.text
@@ -607,7 +647,7 @@ async def test_identical_duplicate_report_is_idempotent(
 
 @pytest.mark.asyncio
 async def test_conflicting_report_on_the_same_sequence_is_rejected(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     """A contradicting report must not overwrite recorded history."""
     command = _shadow_command(registered)
@@ -615,14 +655,14 @@ async def test_conflicting_report_on_the_same_sequence_is_rejected(
     claim_token = await _claim(client, registered, command)
     headers = {**_auth_headers(registered), "X-Claim-Token": claim_token}
 
-    accepted = client.post(
+    accepted = await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=_report(command=command, executor_id=registered, state="WOULD_EXECUTE"),
         headers=headers,
     )
     assert accepted.status_code == 202, accepted.text
 
-    conflicting = client.post(
+    conflicting = await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=_report(
             command=command,
@@ -638,18 +678,20 @@ async def test_conflicting_report_on_the_same_sequence_is_rejected(
 
 
 @pytest.mark.asyncio
-async def test_terminal_state_is_immutable(client: TestClient, postgres: _PoolBackedPostgres, registered: UUID) -> None:
+async def test_terminal_state_is_immutable(
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
+) -> None:
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
     claim_token = await _claim(client, registered, command)
     headers = {**_auth_headers(registered), "X-Claim-Token": claim_token}
-    client.post(
+    await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=_report(command=command, executor_id=registered, state="WOULD_EXECUTE"),
         headers=headers,
     )
 
-    later = client.post(
+    later = await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=_report(command=command, executor_id=registered, state="WOULD_REJECT", sequence=2),
         headers=headers,
@@ -661,13 +703,13 @@ async def test_terminal_state_is_immutable(client: TestClient, postgres: _PoolBa
 
 @pytest.mark.asyncio
 async def test_report_without_a_valid_claim_token_is_refused(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
     await _claim(client, registered, command)
 
-    response = client.post(
+    response = await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=_report(command=command, executor_id=registered, state="WOULD_EXECUTE"),
         headers={**_auth_headers(registered), "X-Claim-Token": "not-the-real-token"},
@@ -678,7 +720,7 @@ async def test_report_without_a_valid_claim_token_is_refused(
 
 @pytest.mark.asyncio
 async def test_report_with_a_mismatched_request_hash_is_refused(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     """The report must be about the command the bridge actually issued."""
     command = _shadow_command(registered)
@@ -687,7 +729,7 @@ async def test_report_with_a_mismatched_request_hash_is_refused(
     body = _report(command=command, executor_id=registered, state="WOULD_EXECUTE")
     body["request_hash"] = "sha256:" + "f" * 64
 
-    response = client.post(
+    response = await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=body,
         headers={**_auth_headers(registered), "X-Claim-Token": claim_token},
@@ -702,15 +744,15 @@ async def test_report_with_a_mismatched_request_hash_is_refused(
 
 
 @pytest.mark.asyncio
-async def test_missing_credentials_are_refused(client: TestClient, registered: UUID) -> None:
-    response = client.get(f"/api/v1/executors/{registered}/commands/next")
+async def test_missing_credentials_are_refused(client: AsyncClient, registered: UUID) -> None:
+    response = await client.get(f"/api/v1/executors/{registered}/commands/next")
 
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_wrong_token_is_refused(client: TestClient, registered: UUID) -> None:
-    response = client.get(
+async def test_wrong_token_is_refused(client: AsyncClient, registered: UUID) -> None:
+    response = await client.get(
         f"/api/v1/executors/{registered}/commands/next",
         headers=_auth_headers(registered, token="not-a-valid-token"),
     )
@@ -719,10 +761,10 @@ async def test_wrong_token_is_refused(client: TestClient, registered: UUID) -> N
 
 
 @pytest.mark.asyncio
-async def test_token_derived_for_another_executor_is_refused(client: TestClient, registered: UUID) -> None:
+async def test_token_derived_for_another_executor_is_refused(client: AsyncClient, registered: UUID) -> None:
     """A valid token still only speaks for the executor it was derived for."""
     other = uuid4()
-    response = client.get(
+    response = await client.get(
         f"/api/v1/executors/{registered}/commands/next",
         headers={
             "Authorization": f"Bearer {derive_executor_token(str(other), secret=AUTH_SECRET)}",
@@ -734,9 +776,9 @@ async def test_token_derived_for_another_executor_is_refused(client: TestClient,
 
 
 @pytest.mark.asyncio
-async def test_credential_cannot_reach_another_executors_resource(client: TestClient, registered: UUID) -> None:
+async def test_credential_cannot_reach_another_executors_resource(client: AsyncClient, registered: UUID) -> None:
     other = uuid4()
-    response = client.get(
+    response = await client.get(
         f"/api/v1/executors/{other}/commands/next",
         headers=_auth_headers(registered),
     )
@@ -746,13 +788,13 @@ async def test_credential_cannot_reach_another_executors_resource(client: TestCl
 
 @pytest.mark.asyncio
 async def test_another_executor_cannot_claim_this_command(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
     intruder = uuid4()
 
-    response = client.post(
+    response = await client.post(
         f"/api/v1/commands/{command.command_id}/claim",
         json={"lease_seconds": 30},
         headers=_auth_headers(intruder),
@@ -764,7 +806,7 @@ async def test_another_executor_cannot_claim_this_command(
 
 @pytest.mark.asyncio
 async def test_report_for_a_mismatched_account_is_refused(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
@@ -772,7 +814,7 @@ async def test_report_for_a_mismatched_account_is_refused(
     body = _report(command=command, executor_id=registered, state="WOULD_EXECUTE")
     body["account_id"] = "acct-someone-else"
 
-    response = client.post(
+    response = await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=body,
         headers={**_auth_headers(registered), "X-Claim-Token": claim_token},
@@ -783,7 +825,7 @@ async def test_report_for_a_mismatched_account_is_refused(
 
 @pytest.mark.asyncio
 async def test_revoked_executor_cannot_receive_commands(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     """Revocation is enforced by the query, not by a caller remembering to check."""
     await _repo(postgres).enqueue_command(_shadow_command(registered))
@@ -792,7 +834,7 @@ async def test_revoked_executor_cannot_receive_commands(
         str(registered),
     )
 
-    response = client.get(
+    response = await client.get(
         f"/api/v1/executors/{registered}/commands/next",
         headers=_auth_headers(registered),
     )
@@ -807,13 +849,13 @@ async def test_revoked_executor_cannot_receive_commands(
 
 @pytest.mark.asyncio
 async def test_nothing_here_leaves_shadow_mode(
-    client: TestClient, postgres: _PoolBackedPostgres, registered: UUID
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
 ) -> None:
     """PR B1 proves transport only: no DEMO, no LIVE, no broker terminal."""
     command = _shadow_command(registered)
     await _repo(postgres).enqueue_command(command)
     claim_token = await _claim(client, registered, command)
-    client.post(
+    await client.post(
         f"/api/v1/commands/{command.command_id}/reports",
         json=_report(command=command, executor_id=registered, state="WOULD_EXECUTE"),
         headers={**_auth_headers(registered), "X-Claim-Token": claim_token},
