@@ -68,6 +68,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.ea_router", "router", "EA bridge controls (deprecated shim — use agent_manager_router)"),
     # Agent Manager CRUD + lifecycle (canonical ea_agents table)
     RouterEntry("api.agent_manager_router", "router", "Agent Manager CRUD + lifecycle"),
+    # Operator-only mode transitions and durable bridge kill switch
+    RouterEntry("api.executor_governance_router", "router", "MT5 executor governance"),
     # Agent Ingest — MT5 EA → backend heartbeat/status/portfolio
     RouterEntry("api.agent_ingest_router", "router", "Agent Ingest — MT5 EA data ingestion"),
     # Risk evaluation + preview + kill-switch

@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 
 from api.executor_bridge_router import router as executor_router
 from contracts.mt5_execution_protocol import PROTOCOL_VERSION
+from execution.mt5_executor_governance import MT5ExecutorGovernanceRepository
 from storage.postgres_client import pg_client
 
 
@@ -52,11 +53,20 @@ async def health_ready() -> dict[str, Any]:
     table = await pg_client.fetchrow("SELECT to_regclass('public.execution_commands') AS name")
     if not table or table["name"] is None:
         raise HTTPException(status_code=503, detail="executor bridge migration is not applied")
+    governance_repository = MT5ExecutorGovernanceRepository(pg=pg_client)
+    schema = await governance_repository.schema_status()
+    if not schema.get("ready"):
+        raise HTTPException(status_code=503, detail={"executor_governance_schema": schema})
+    governance = await governance_repository.global_snapshot()
     return {
         "status": "ready",
         "service": "ea-bridge",
         "protocol_version": PROTOCOL_VERSION,
         "database": "connected",
+        "executor_governance": {
+            **schema,
+            **governance.to_dict(),
+        },
     }
 
 
