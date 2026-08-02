@@ -12,6 +12,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from contracts.mt5_execution_protocol import (
+    SIGNED_WIRE_VERSION,
     AccountSnapshotV1,
     ExecutionCommandV1,
     ExecutionReportState,
@@ -19,8 +20,11 @@ from contracts.mt5_execution_protocol import (
     ExecutorHeartbeatV1,
     ExecutorMode,
     ExecutorRegistrationV1,
+    SignedExecutionEnvelopeV2,
+    build_signed_execution_envelope,
     sha256_tag,
     verify_execution_command,
+    verify_signed_execution_envelope_with_root,
 )
 from execution.mt5_executor_governance import (
     ExecutorGovernanceError,
@@ -46,11 +50,22 @@ class CommandConflictError(ExecutorRepositoryError):
     pass
 
 
+class CommandNotFoundError(ExecutorRepositoryError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class CommandDelivery:
+    command: ExecutionCommandV1
+    signed_envelope: SignedExecutionEnvelopeV2 | None
+
+
 @dataclass(frozen=True, slots=True)
 class CommandClaim:
     command: ExecutionCommandV1
     claim_token: str
     lease_expires_at: datetime
+    signed_envelope: SignedExecutionEnvelopeV2 | None = None
 
 
 _REPORT_TO_COMMAND_STATE: dict[ExecutionReportState, str] = {
@@ -111,6 +126,36 @@ def _claim_token_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _command_signing_secrets() -> tuple[str, ...]:
+    current = os.getenv("EXECUTOR_COMMAND_SIGNING_SECRET", "").strip()
+    previous = os.getenv("EXECUTOR_COMMAND_SIGNING_SECRET_PREVIOUS", "").strip()
+    return tuple(secret for secret in (current, previous) if len(secret.encode("utf-8")) >= 32)
+
+
+def _stored_envelope(row: Any) -> SignedExecutionEnvelopeV2 | None:
+    values = dict(row)
+    wire_format = str(values.get("wire_format") or "legacy-json-v1")
+    if wire_format == "legacy-json-v1":
+        return None
+    if wire_format != SIGNED_WIRE_VERSION:
+        raise CommandConflictError(f"unsupported stored command wire format: {wire_format}")
+    try:
+        return SignedExecutionEnvelopeV2.model_validate(
+            {
+                "wire_version": wire_format,
+                "payload_encoding": values.get("payload_encoding"),
+                "payload_b64": values.get("signed_payload_b64"),
+                "payload_sha256": values.get("signed_payload_sha256"),
+                "algorithm": values.get("signature_algorithm"),
+                "key_id": values.get("signature_key_id"),
+                "executor_id": values.get("executor_id"),
+                "signature": values.get("signature_value"),
+            }
+        )
+    except ValueError as exc:
+        raise CommandConflictError("stored signed command envelope is malformed") from exc
+
+
 class MT5CommandRepository:
     def __init__(self, pg: PostgresClient | None = None) -> None:
         self._pg = pg or pg_client
@@ -119,6 +164,30 @@ class MT5CommandRepository:
     def _require_database(self) -> None:
         if not self._pg.is_available:
             raise ExecutorRepositoryError("PostgreSQL is required for the executor bridge")
+
+    def _delivery_from_row(self, row: Any) -> CommandDelivery:
+        values = dict(row)
+        payload = values["payload"]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        command = cast(ExecutionCommandV1, ExecutionCommandV1.model_validate(payload))
+        envelope = _stored_envelope(values)
+        secrets_to_try = _command_signing_secrets()
+        if envelope is None:
+            if not any(verify_execution_command(command, secret=secret) for secret in secrets_to_try):
+                raise CommandConflictError("stored legacy command signature is invalid")
+            return CommandDelivery(command=command, signed_envelope=None)
+
+        if str(values.get("payload_hash") or "") != envelope.payload_sha256:
+            raise CommandConflictError("stored command payload hash does not match signed wire bytes")
+        for secret in secrets_to_try:
+            envelope_command = verify_signed_execution_envelope_with_root(envelope, root_secret=secret)
+            if envelope_command is None or not verify_execution_command(envelope_command, secret=secret):
+                continue
+            if envelope_command.model_dump(mode="json") != command.model_dump(mode="json"):
+                raise CommandConflictError("stored JSON command differs from signed wire bytes")
+            return CommandDelivery(command=envelope_command, signed_envelope=envelope)
+        raise CommandConflictError("stored signed command envelope is invalid")
 
     async def register_executor(self, request: ExecutorRegistrationV1) -> dict[str, Any]:
         """Register a pre-provisioned EDUMB agent; new registrations are shadow-only."""
@@ -266,6 +335,81 @@ class MT5CommandRepository:
         except ExecutorGovernanceError as exc:
             raise ExecutorRepositoryError(str(exc)) from exc
 
+    async def signed_wire_schema_status(self) -> dict[str, Any]:
+        """Prove that PostgreSQL enforces the immutable signed-wire contract."""
+
+        self._require_database()
+        row = await self._pg.fetchrow(
+            """
+            SELECT
+                EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'execution_commands'
+                      AND column_name = 'wire_format'
+                      AND data_type = 'character varying'
+                      AND is_nullable = 'NO'
+                      AND column_default LIKE '%wolf15.mt5.exec.signed-bytes.v2%'
+                ) AS wire_format_column,
+                (
+                    SELECT count(*) = 6
+                       AND bool_and(is_nullable = 'YES')
+                       AND bool_and(
+                           data_type = CASE column_name
+                               WHEN 'signed_payload_b64' THEN 'text'
+                               ELSE 'character varying'
+                           END
+                       )
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'execution_commands'
+                      AND column_name IN (
+                          'payload_encoding', 'signed_payload_b64',
+                          'signed_payload_sha256', 'signature_algorithm',
+                          'signature_key_id', 'signature_value'
+                      )
+                ) AS envelope_columns,
+                EXISTS (
+                    SELECT 1
+                    FROM pg_constraint AS constraint_row
+                    JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
+                    JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+                    WHERE namespace_row.nspname = 'public'
+                      AND table_row.relname = 'execution_commands'
+                      AND constraint_row.conname = 'ck_execution_command_signed_wire_complete'
+                      AND constraint_row.contype = 'c'
+                      AND constraint_row.convalidated
+                      AND pg_get_constraintdef(constraint_row.oid) ~ 'signed_payload_sha256.*=.*payload_hash'
+                      AND pg_get_constraintdef(constraint_row.oid) LIKE '%signature_value IS NOT NULL%'
+                      AND pg_get_constraintdef(constraint_row.oid) LIKE '%signature_key_id IS NOT NULL%'
+                      AND pg_get_constraintdef(constraint_row.oid) LIKE '%signed_payload_b64 IS NOT NULL%'
+                      AND pg_get_constraintdef(constraint_row.oid) LIKE '%HMAC-SHA256%'
+                      AND pg_get_constraintdef(constraint_row.oid) LIKE '%base64url%'
+                ) AS signed_wire_constraint,
+                EXISTS (
+                    SELECT 1
+                    FROM pg_trigger AS trigger_row
+                    JOIN pg_class AS table_row ON table_row.oid = trigger_row.tgrelid
+                    JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+                    JOIN pg_proc AS function_row ON function_row.oid = trigger_row.tgfoid
+                    WHERE namespace_row.nspname = 'public'
+                      AND table_row.relname = 'execution_commands'
+                      AND trigger_row.tgname = 'trg_execution_command_require_signed_wire'
+                      AND trigger_row.tgenabled <> 'D'
+                      AND NOT trigger_row.tgisinternal
+                      AND function_row.proname = 'reject_new_legacy_execution_command'
+                      AND pg_get_triggerdef(trigger_row.oid) LIKE '%BEFORE INSERT ON public.execution_commands%'
+                      AND pg_get_functiondef(function_row.oid) LIKE '%new execution commands require signed wire v2%'
+                      AND pg_get_functiondef(function_row.oid) LIKE '%legacy-json-v1%'
+                ) AS legacy_insert_guard
+            """
+        )
+        if not row:
+            return {"ready": False, "reason": "signed-wire schema status query returned no row"}
+        details = dict(row)
+        return {"ready": all(bool(value) for value in details.values()), **details}
+
     async def latest_snapshot(self, executor_id: UUID | str) -> AccountSnapshotV1 | None:
         self._require_database()
         row = await self._pg.fetchrow(
@@ -304,15 +448,23 @@ class MT5CommandRepository:
             raise CommandConflictError("command signature is missing or invalid")
         payload = command.model_dump(mode="json")
         payload_hash = sha256_tag(payload)
+        envelope_key_id = os.getenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", "").strip() or command.signature.key_id
+        envelope = build_signed_execution_envelope(
+            command,
+            root_secret=secret,
+            key_id=envelope_key_id,
+        )
         row = await self._pg.fetchrow(
             """
             INSERT INTO execution_commands (
                 command_id, executor_id, account_id, source_signal_id, source_signal_hash,
                 idempotency_key, revision, action, payload, payload_hash, state,
-                issued_at, not_before, expires_at
+                issued_at, not_before, expires_at, wire_format, payload_encoding,
+                signed_payload_b64, signed_payload_sha256, signature_algorithm,
+                signature_key_id, signature_value
             ) VALUES (
                 $1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10,
-                'QUEUED', $11, $12, $13
+                'QUEUED', $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
             )
             ON CONFLICT (account_id, idempotency_key) DO NOTHING
             RETURNING payload
@@ -330,23 +482,33 @@ class MT5CommandRepository:
             command.issued_at_utc,
             command.not_before_utc,
             command.expires_at_utc,
+            envelope.wire_version,
+            envelope.payload_encoding,
+            envelope.payload_b64,
+            envelope.payload_sha256,
+            envelope.algorithm,
+            envelope.key_id,
+            envelope.signature,
         )
         if row:
             return command
 
         existing = await self._pg.fetchrow(
-            "SELECT payload, payload_hash FROM execution_commands WHERE account_id = $1 AND idempotency_key = $2",
+            """
+            SELECT command_id, executor_id, payload, payload_hash, wire_format,
+                   payload_encoding, signed_payload_b64, signed_payload_sha256,
+                   signature_algorithm, signature_key_id, signature_value
+            FROM execution_commands
+            WHERE account_id = $1 AND idempotency_key = $2
+            """,
             command.executor_binding.account_id,
             command.idempotency_key,
         )
         if not existing or existing["payload_hash"] != payload_hash:
             raise CommandConflictError("idempotency key already exists with a different payload")
-        existing_payload = existing["payload"]
-        if isinstance(existing_payload, str):
-            existing_payload = json.loads(existing_payload)
-        return cast(ExecutionCommandV1, ExecutionCommandV1.model_validate(existing_payload))
+        return self._delivery_from_row(existing).command
 
-    async def next_command(self, executor_id: UUID | str) -> ExecutionCommandV1 | None:
+    async def next_command(self, executor_id: UUID | str) -> CommandDelivery | None:
         executor = await self.get_executor(executor_id)
         governance = await self.governance_snapshot(executor_id)
         if governance.execution_mode == ExecutorMode.LIVE.value:
@@ -365,7 +527,9 @@ class MT5CommandRepository:
         )
         row = await self._pg.fetchrow(
             """
-            SELECT payload
+            SELECT command_id, executor_id, payload, payload_hash, wire_format,
+                   payload_encoding, signed_payload_b64, signed_payload_sha256,
+                   signature_algorithm, signature_key_id, signature_value
             FROM execution_commands
             WHERE executor_id = $1::uuid
               AND account_id = $2
@@ -385,20 +549,7 @@ class MT5CommandRepository:
         )
         if not row:
             return None
-        payload = row["payload"]
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-        command = cast(ExecutionCommandV1, ExecutionCommandV1.model_validate(payload))
-        current_secret = os.getenv("EXECUTOR_COMMAND_SIGNING_SECRET", "").strip()
-        previous_secret = os.getenv("EXECUTOR_COMMAND_SIGNING_SECRET_PREVIOUS", "").strip()
-        valid_signature = any(
-            len(secret.encode("utf-8")) >= 32 and verify_execution_command(command, secret=secret)
-            for secret in (current_secret, previous_secret)
-            if secret
-        )
-        if not valid_signature:
-            raise CommandConflictError("stored command signature is invalid")
-        return command
+        return self._delivery_from_row(row)
 
     async def claim_command(
         self,
@@ -436,7 +587,9 @@ class MT5CommandRepository:
                     state = 'QUEUED'
                     OR (state = 'CLAIMED' AND lease_expires_at < now())
                   )
-            RETURNING payload
+            RETURNING command_id, executor_id, payload, payload_hash, wire_format,
+                      payload_encoding, signed_payload_b64, signed_payload_sha256,
+                      signature_algorithm, signature_key_id, signature_value
             """,
             str(executor_id),
             str(command_id),
@@ -445,14 +598,67 @@ class MT5CommandRepository:
         )
         if not row:
             raise CommandConflictError("command is unavailable, expired, terminal, or leased")
-        payload = row["payload"]
-        if isinstance(payload, str):
-            payload = json.loads(payload)
+        delivery = self._delivery_from_row(row)
         return CommandClaim(
-            command=ExecutionCommandV1.model_validate(payload),
+            command=delivery.command,
             claim_token=raw_token,
             lease_expires_at=lease_expires,
+            signed_envelope=delivery.signed_envelope,
         )
+
+    async def command_status(
+        self,
+        *,
+        executor_id: UUID | str,
+        command_id: UUID | str,
+    ) -> dict[str, Any]:
+        """Return read-only reconciliation state without exposing a claim token."""
+
+        await self.get_executor(executor_id)
+        row = await self._pg.fetchrow(
+            """
+            SELECT c.command_id, c.state, c.payload_hash, c.signed_payload_sha256,
+                   c.wire_format, c.last_report_sequence, c.terminal_at,
+                   r.report_id, r.sequence AS report_sequence,
+                   r.state AS report_state, r.payload_hash AS report_payload_hash,
+                   r.payload #>> '{request_hash}' AS report_request_hash
+            FROM execution_commands AS c
+            LEFT JOIN LATERAL (
+                SELECT report_id, sequence, state, payload_hash, payload
+                FROM execution_reports
+                WHERE command_id = c.command_id
+                ORDER BY sequence DESC
+                LIMIT 1
+            ) AS r ON true
+            WHERE c.command_id = $1::uuid
+              AND c.executor_id = $2::uuid
+            """,
+            str(command_id),
+            str(executor_id),
+        )
+        if not row:
+            raise CommandNotFoundError("command is not available to this executor")
+        latest_report = None
+        if row["report_id"] is not None:
+            latest_report = {
+                "report_id": str(row["report_id"]),
+                "sequence": int(row["report_sequence"]),
+                "state": str(row["report_state"]),
+                "payload_hash": str(row["report_payload_hash"]),
+                "request_hash": str(row["report_request_hash"]),
+            }
+        state = str(row["state"])
+        return {
+            "command_id": str(row["command_id"]),
+            "command_state": state,
+            "terminal": state in _TERMINAL_COMMAND_STATES,
+            "request_hash": str(row["signed_payload_sha256"] or row["payload_hash"]),
+            "wire_format": str(row["wire_format"]),
+            "last_report_sequence": int(row["last_report_sequence"]),
+            "terminal_at_utc": row["terminal_at"].isoformat() if row["terminal_at"] else None,
+            "latest_report": latest_report,
+            "server_time_utc": datetime.now(UTC).isoformat(),
+        }
 
     async def append_report(self, report: ExecutionReportV1, *, claim_token: str) -> dict[str, Any]:
         await self.get_executor(report.executor_id)
@@ -579,6 +785,8 @@ __all__ = [
     "ExecutorNotFoundError",
     "ExecutorBindingMismatchError",
     "CommandConflictError",
+    "CommandNotFoundError",
+    "CommandDelivery",
     "CommandClaim",
     "MT5CommandRepository",
     "get_mt5_command_repository",

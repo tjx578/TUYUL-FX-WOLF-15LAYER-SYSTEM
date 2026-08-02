@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -11,8 +16,15 @@ from contracts.mt5_execution_protocol import (
     ExecutionCommandV1,
     ExecutorMode,
     MarginMode,
+    build_signed_execution_envelope,
+    canonical_json_bytes,
+    derive_executor_command_verification_key,
+    sha256_bytes_tag,
+    sha256_tag,
     sign_execution_command,
+    signed_execution_envelope_preimage,
     verify_execution_command,
+    verify_signed_execution_envelope,
 )
 from execution.mt5_command_promotion import (
     PromotionContext,
@@ -21,6 +33,9 @@ from execution.mt5_command_promotion import (
 )
 
 SECRET = "s" * 64
+GOLDEN_VECTOR_PATH = (
+    Path(__file__).parents[1] / "ea_interface" / "wolf15_executor" / "test_vectors" / "signed_envelope_v2.json"
+)
 
 
 def _strategy_5scr_proof() -> dict:
@@ -223,6 +238,101 @@ def test_command_tampering_breaks_signature() -> None:
         update={"order": command.order.model_copy(update={"volume": 0.2}) if command.order else None}
     )
     assert not verify_execution_command(tampered, secret=SECRET)
+
+
+def test_signed_wire_envelope_round_trips_exact_frozen_bytes() -> None:
+    command = sign_execution_command(_unsigned_command(), secret=SECRET, key_id="exec-key-test")
+    envelope = build_signed_execution_envelope(
+        command,
+        root_secret=SECRET,
+        key_id="exec-key-test.v2",
+    )
+    verification_key = derive_executor_command_verification_key(
+        command.executor_binding.executor_id,
+        root_secret=SECRET,
+    )
+
+    verified = verify_signed_execution_envelope(envelope, verification_key=verification_key)
+
+    assert verified == command
+    assert envelope.payload_sha256 == sha256_tag(command.model_dump(mode="json"))
+    assert envelope.payload_b64.endswith("=") is False
+
+
+def test_signed_wire_envelope_rejects_a_key_scoped_to_another_executor() -> None:
+    command = sign_execution_command(_unsigned_command(), secret=SECRET, key_id="exec-key-test")
+    envelope = build_signed_execution_envelope(
+        command,
+        root_secret=SECRET,
+        key_id="exec-key-test.v2",
+    )
+    wrong_executor_key = derive_executor_command_verification_key(
+        uuid4(),
+        root_secret=SECRET,
+    )
+
+    assert verify_signed_execution_envelope(envelope, verification_key=wrong_executor_key) is None
+
+
+@pytest.mark.parametrize("field", ["payload_b64", "payload_sha256", "signature", "key_id", "executor_id"])
+def test_signed_wire_envelope_rejects_every_bound_field_tamper(field: str) -> None:
+    command = sign_execution_command(_unsigned_command(), secret=SECRET, key_id="exec-key-test")
+    envelope = build_signed_execution_envelope(
+        command,
+        root_secret=SECRET,
+        key_id="exec-key-test.v2",
+    )
+    verification_key = derive_executor_command_verification_key(
+        command.executor_binding.executor_id,
+        root_secret=SECRET,
+    )
+    replacements = {
+        "payload_b64": ("A" if envelope.payload_b64[0] != "A" else "B") + envelope.payload_b64[1:],
+        "payload_sha256": "sha256:" + "0" * 64,
+        "signature": "base64url:" + "A" * 43,
+        "key_id": "wrong-key.v2",
+        "executor_id": uuid4(),
+    }
+
+    tampered = envelope.model_copy(update={field: replacements[field]})
+
+    assert verify_signed_execution_envelope(tampered, verification_key=verification_key) is None
+
+
+def test_signed_wire_payload_is_python_canonical_json_not_a_reconstructed_object() -> None:
+    payload = _unsigned_command()
+    payload["guards"]["max_balance_drift_pct"] = 0.30000000000000004
+    command = sign_execution_command(payload, secret=SECRET, key_id="exec-key-test")
+    envelope = build_signed_execution_envelope(command, root_secret=SECRET, key_id="exec-key-test.v2")
+
+    decoded = base64.urlsafe_b64decode(envelope.payload_b64 + "=" * (-len(envelope.payload_b64) % 4))
+
+    assert decoded == canonical_json_bytes(command.model_dump(mode="json"))
+    assert b"0.30000000000000004" in decoded
+
+
+def test_signed_wire_golden_vector_is_stable_for_the_mql5_verifier() -> None:
+    vector = json.loads(GOLDEN_VECTOR_PATH.read_text(encoding="utf-8"))
+    payload = vector["payload_ascii"].encode("ascii")
+    verification_key = derive_executor_command_verification_key(
+        vector["executor_id"],
+        root_secret=vector["root_secret_utf8"],
+    )
+    preimage = signed_execution_envelope_preimage(
+        key_id=vector["key_id"],
+        executor_id=vector["executor_id"],
+        payload_sha256=vector["payload_sha256"],
+        payload_b64=vector["payload_b64"],
+    )
+    signature = "base64url:" + base64.urlsafe_b64encode(
+        hmac.new(verification_key, preimage, hashlib.sha256).digest()
+    ).decode("ascii").rstrip("=")
+
+    assert base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=") == vector["payload_b64"]
+    assert sha256_bytes_tag(payload) == vector["payload_sha256"]
+    assert verification_key.hex() == vector["verification_key_hex"]
+    assert preimage.decode("ascii") == vector["preimage_ascii"]
+    assert signature == vector["signature"]
 
 
 def test_buy_price_order_is_fail_closed() -> None:

@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 
 from api.executor_bridge_router import router as executor_router
 from contracts.mt5_execution_protocol import PROTOCOL_VERSION
+from execution.mt5_command_repository import MT5CommandRepository
 from execution.mt5_executor_governance import MT5ExecutorGovernanceRepository
 from storage.postgres_client import pg_client
 
@@ -57,6 +58,10 @@ async def health_ready() -> dict[str, Any]:
     schema = await governance_repository.schema_status()
     if not schema.get("ready"):
         raise HTTPException(status_code=503, detail={"executor_governance_schema": schema})
+    command_repository = MT5CommandRepository(pg=pg_client)
+    signed_wire_schema = await command_repository.signed_wire_schema_status()
+    if not signed_wire_schema.get("ready"):
+        raise HTTPException(status_code=503, detail={"executor_signed_wire_schema": signed_wire_schema})
     governance = await governance_repository.global_snapshot()
     return {
         "status": "ready",
@@ -67,6 +72,7 @@ async def health_ready() -> dict[str, Any]:
             **schema,
             **governance.to_dict(),
         },
+        "executor_signed_wire": signed_wire_schema,
     }
 
 
