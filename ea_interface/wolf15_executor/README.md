@@ -8,7 +8,7 @@ when `InpExecutionEnabled=true`.
 
 Current scope:
 
-- exact account and broker-server binding;
+- exact runtime `ACCOUNT_LOGIN` and broker-server binding;
 - fresh account, position, and broker symbol capability snapshots;
 - one-command polling and atomic claim;
 - fail-closed source, mode, expiry, price, symbol, and volume validation;

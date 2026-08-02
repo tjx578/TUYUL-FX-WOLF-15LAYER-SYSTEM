@@ -511,6 +511,12 @@ int OnInit()
       Print("[W15] Invalid HTTPS endpoint or executor credentials.");
       return INIT_PARAMETERS_INCORRECT;
    }
+   const string actual_account_id = (string)AccountInfoInteger(ACCOUNT_LOGIN);
+   if(actual_account_id != InpExpectedAccountId)
+   {
+      Print("[W15] MT5 account binding mismatch.");
+      return INIT_FAILED;
+   }
    if(AccountInfoString(ACCOUNT_SERVER) != InpExpectedBrokerServer)
    {
       Print("[W15] Broker server binding mismatch.");
