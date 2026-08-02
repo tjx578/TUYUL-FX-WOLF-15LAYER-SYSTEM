@@ -50,3 +50,14 @@ def test_shadow_executor_rejects_execution_enabled() -> None:
     assert "input bool   InpExecutionEnabled    = false;" in source
     assert re.search(r"if\s*\(\s*InpExecutionEnabled\s*\)", on_init)
     assert "return INIT_PARAMETERS_INCORRECT;" in on_init
+
+
+def test_invalid_credentials_are_diagnosed_without_printing_values() -> None:
+    on_init = _on_init(_source())
+
+    assert "executor_id_length = StringLen(InpExecutorId)" in on_init
+    assert "executor_token_length = StringLen(InpExecutorToken)" in on_init
+    assert "login_hash_length = StringLen(InpLoginHash)" in on_init
+    assert "executor_id_length=%d token_length=%d login_hash_length=%d" in on_init
+    assert 'PrintFormat("%s", InpExecutorToken)' not in on_init
+    assert 'PrintFormat("%s", InpLoginHash)' not in on_init

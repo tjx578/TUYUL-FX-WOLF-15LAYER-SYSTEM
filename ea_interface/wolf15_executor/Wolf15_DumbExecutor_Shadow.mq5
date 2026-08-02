@@ -503,12 +503,23 @@ int OnInit()
       Print("[W15] This build is SHADOW ONLY. Set InpExecutionEnabled=false.");
       return INIT_PARAMETERS_INCORRECT;
    }
-   if(StringFind(InpBaseUrl, "https://") != 0 ||
-      StringLen(InpExecutorId) < 30 ||
-      StringLen(InpExecutorToken) < 32 ||
-      StringLen(InpLoginHash) != 71)
+   const bool https_endpoint = (StringFind(InpBaseUrl, "https://") == 0);
+   const int executor_id_length = StringLen(InpExecutorId);
+   const int executor_token_length = StringLen(InpExecutorToken);
+   const int login_hash_length = StringLen(InpLoginHash);
+   if(!https_endpoint ||
+      executor_id_length < 30 ||
+      executor_token_length < 32 ||
+      login_hash_length != 71)
    {
-      Print("[W15] Invalid HTTPS endpoint or executor credentials.");
+      PrintFormat(
+         "[W15] Invalid endpoint/credential shape: https=%s "
+         "executor_id_length=%d token_length=%d login_hash_length=%d",
+         https_endpoint ? "true" : "false",
+         executor_id_length,
+         executor_token_length,
+         login_hash_length
+      );
       return INIT_PARAMETERS_INCORRECT;
    }
    const string actual_account_id = (string)AccountInfoInteger(ACCOUNT_LOGIN);
