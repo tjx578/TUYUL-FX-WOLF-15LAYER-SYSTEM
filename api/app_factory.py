@@ -309,9 +309,12 @@ def _add_cors(app: FastAPI) -> None:
         "CORS_ORIGINS",
         "http://localhost:3000,http://localhost:3001,http://localhost:8000,https://tuyul-fx-dashboard.vercel.app,https://tuyul-fx-wolf-15-layer-system.vercel.app",
     )
-    if "CORS_ORIGINS" not in os.environ:
+    _app_env = os.getenv("ENV", "development").strip().lower()
+    if "CORS_ORIGINS" not in os.environ and _app_env == "production":
         logger.warning(
-            "CORS_ORIGINS not set; using fallback origins. Set CORS_ORIGINS explicitly in deployed services."
+            "CORS_ORIGINS not set in production — using fallback origins. "
+            "Set CORS_ORIGINS in Railway service env vars to include the current "
+            "Railway deployment URL (Railway subdomains change on every redeploy)."
         )
     # Support both comma and newline separators (common in Vercel env var editor)
     raw_normalized = raw.replace("\n", ",").replace("\r", "")
