@@ -3,7 +3,7 @@
 //| No signal logic. No risk calculation. No broker side effect.     |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.13"
+#property version   "1.14"
 #property description "Wolf15 pull/claim/report client. SHADOW ONLY."
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
@@ -22,9 +22,10 @@ input int    InpHeartbeatSeconds    = 10;
 input int    InpHttpTimeoutMs       = 1500;
 input int    InpRecoveryRetrySeconds= 5;
 input bool   InpExecutionEnabled    = false;
+input bool   InpRestartDrillHoldAfterDurableSave = false;
 
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
-#define W15_VERSION  "0.13-shadow-durable-retry"
+#define W15_VERSION  "0.14-shadow-restart-drill"
 #define W15_SIGNED_WIRE "wolf15.mt5.exec.signed-bytes.v2"
 #define W15_SIGNED_DOMAIN "WOLF15-MT5-COMMAND-V2"
 #define W15_PENDING_MAGIC "WOLF15-PENDING-REPORT-V2"
@@ -1322,6 +1323,15 @@ bool SendShadowReport(const string command_json,
       return false;
    }
    AppendLedger(command_id, "REPORT_DURABLE", state + ":" + reason);
+   if(InpRestartDrillHoldAfterDurableSave)
+   {
+      g_recovery_blocked = true;
+      AppendLedger(command_id, "RESTART_DRILL_ARMED",
+                   "PENDING_REPORT_PERSISTED_BEFORE_POST");
+      Print("[W15] Restart drill armed: pending report is durable and has not "
+            "been posted. Restart this EA to reconcile it.");
+      return false;
+   }
    string response;
    int code = PostPendingReport(pending, response);
    return HandlePendingPostResult(pending, code, response);

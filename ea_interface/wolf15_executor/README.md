@@ -64,3 +64,32 @@ The backend independently validates command signatures and remains SHADOW by
 default. This EA still has no broker mutation calls. Runtime restart drills on
 the demo terminal, durable risk reservation, and a separately governed DEMO
 execution implementation remain required before any broker order test.
+
+## Deterministic restart drill
+
+Run this only against a bridge that already has the signed-wire-v2 migration
+and backend from this branch. Keep the global kill switch engaged and the
+executor in `SHADOW`.
+
+1. Compile and attach this EA with its normal account-bound inputs and
+   `InpRestartDrillHoldAfterDurableSave=true`.
+2. Enqueue exactly one synthetic, signed `SHADOW` command through an audited
+   operator session. This repository intentionally does not ship a production
+   command-producer shortcut.
+3. Wait for `REPORT_DURABLE` followed by `RESTART_DRILL_ARMED` in
+   `MQL5/Files/Wolf15Executor/shadow-ledger.csv`. At this point the pending
+   binary record exists and no report POST has occurred.
+4. Restart the EA (remove and reattach it, or restart the terminal) without
+   deleting anything under `MQL5/Files/Wolf15Executor/`. Recovery is not held
+   by the drill input: it checks server status first and then submits the exact
+   persisted report if the command is still non-terminal.
+5. Require one terminal `SHADOW_COMPLETED` or `SHADOW_REJECTED` command, one
+   terminal report id, removal of the pending binary, `filled_volume=0`, null
+   broker order/deal/position identifiers, and zero broker positions/orders
+   created by Wolf15.
+6. Set `InpRestartDrillHoldAfterDurableSave=false` after the single drill so
+   later SHADOW reports use their normal immediate delivery path.
+
+The drill input defaults to `false`. It acts only after the exact report has
+been atomically persisted and before the first report request; it never alters
+signature validation, command validation, recovery, or broker state.

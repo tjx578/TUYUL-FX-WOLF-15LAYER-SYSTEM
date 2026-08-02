@@ -178,6 +178,20 @@ def test_pending_report_is_atomically_persisted_before_transport() -> None:
     assert "pending.report_body = StringFormat(" in send
 
 
+def test_restart_drill_holds_only_after_the_pending_report_is_durable() -> None:
+    source = _source()
+    send = _between_functions(source, "SendShadowReport", "PollOneCommand")
+
+    assert "input bool   InpRestartDrillHoldAfterDurableSave = false;" in source
+    save = send.index("SavePendingReport(pending, storage_error)")
+    hold = send.index("if(InpRestartDrillHoldAfterDurableSave)")
+    post = send.index("PostPendingReport(pending, response)")
+    assert save < hold < post
+    assert 'AppendLedger(command_id, "RESTART_DRILL_ARMED",' in send
+    assert "g_recovery_blocked = true;" in send
+    assert "ClearPendingReport" not in send[hold:post]
+
+
 def test_restart_reconciles_server_truth_before_resending() -> None:
     source = _source()
     recover = _between_functions(source, "RecoverPendingReport", "SendShadowReport")
