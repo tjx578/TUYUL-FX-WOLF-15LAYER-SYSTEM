@@ -61,6 +61,17 @@ def _response_envelope(*, request_id: str, data: Any) -> dict[str, Any]:
     }
 
 
+def _governance_headers(snapshot: Any) -> dict[str, str]:
+    return {
+        "Cache-Control": "no-store",
+        "X-Protocol-Version": PROTOCOL_VERSION,
+        "X-Execution-Mode": str(snapshot.execution_mode or ""),
+        "X-Mode-Version": str(snapshot.mode_version or ""),
+        "X-Kill-Switch-Active": str(snapshot.kill_switch_active).lower(),
+        "X-Governance-Version": str(snapshot.governance_version),
+    }
+
+
 def _translate_repository_error(exc: ExecutorRepositoryError) -> HTTPException:
     if isinstance(exc, ExecutorNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
@@ -88,6 +99,10 @@ async def register_executor(
         "account_id": executor["account_id"],
         "execution_mode": str(executor["execution_mode"]),
         "status": str(executor["status"]),
+        "mode_version": int(executor["mode_version"]),
+        "kill_switch_active": bool(executor["kill_switch_active"]),
+        "kill_switch_reason": str(executor["kill_switch_reason"]),
+        "governance_version": int(executor["governance_version"]),
     }
     return _response_envelope(request_id=_request_id(x_request_id), data=data)
 
@@ -120,16 +135,35 @@ async def next_executor_command(
 ) -> Any:
     _assert_executor(auth, executor_id)
     try:
+        governance = await repository.governance_snapshot(executor_id)
         command = await repository.next_command(executor_id)
     except ExecutorRepositoryError as exc:
         raise _translate_repository_error(exc) from exc
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["X-Protocol-Version"] = PROTOCOL_VERSION
+    for header, value in _governance_headers(governance).items():
+        response.headers[header] = value
     if command is None:
-        return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})
+        return Response(status_code=status.HTTP_204_NO_CONTENT, headers=_governance_headers(governance))
     return _response_envelope(
         request_id=_request_id(x_request_id),
         data={"command": command.model_dump(mode="json")},
+    )
+
+
+@router.get("/api/v1/executors/{executor_id}/governance")
+async def get_executor_governance(
+    executor_id: UUID,
+    repository: RepositoryDep,
+    auth: AuthDep,
+    x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+) -> dict[str, Any]:
+    _assert_executor(auth, executor_id)
+    try:
+        governance = await repository.governance_snapshot(executor_id)
+    except ExecutorRepositoryError as exc:
+        raise _translate_repository_error(exc) from exc
+    return _response_envelope(
+        request_id=_request_id(x_request_id),
+        data=governance.to_dict(),
     )
 
 
@@ -148,6 +182,7 @@ async def claim_executor_command(
             command_id=command_id,
             lease_seconds=body.lease_seconds,
         )
+        governance = await repository.governance_snapshot(executor_id)
     except ExecutorRepositoryError as exc:
         raise _translate_repository_error(exc) from exc
     return _response_envelope(
@@ -157,6 +192,7 @@ async def claim_executor_command(
             "request_hash": sha256_tag(claim.command.model_dump(mode="json")),
             "claim_token": claim.claim_token,
             "lease_expires_at_utc": claim.lease_expires_at.isoformat(),
+            "governance": governance.to_dict(),
         },
     )
 

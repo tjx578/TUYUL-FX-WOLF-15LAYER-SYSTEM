@@ -17,9 +17,15 @@ from contracts.mt5_execution_protocol import (
     ExecutionReportState,
     ExecutionReportV1,
     ExecutorHeartbeatV1,
+    ExecutorMode,
     ExecutorRegistrationV1,
     sha256_tag,
     verify_execution_command,
+)
+from execution.mt5_executor_governance import (
+    ExecutorGovernanceError,
+    GovernanceSnapshot,
+    MT5ExecutorGovernanceRepository,
 )
 from storage.postgres_client import PostgresClient, pg_client
 
@@ -108,6 +114,7 @@ def _claim_token_hash(value: str) -> str:
 class MT5CommandRepository:
     def __init__(self, pg: PostgresClient | None = None) -> None:
         self._pg = pg or pg_client
+        self._governance = MT5ExecutorGovernanceRepository(pg=self._pg)
 
     def _require_database(self) -> None:
         if not self._pg.is_available:
@@ -117,47 +124,74 @@ class MT5CommandRepository:
         """Register a pre-provisioned EDUMB agent; new registrations are shadow-only."""
 
         self._require_database()
-        agent = await self._pg.fetchrow(
-            """
-            SELECT id, ea_subtype::text AS ea_subtype, locked
-            FROM ea_agents
-            WHERE id = $1::uuid
-            """,
-            str(request.executor_id),
-        )
-        if not agent:
-            raise ExecutorNotFoundError("executor must be pre-provisioned in Agent Manager")
-        if str(agent["ea_subtype"]) != "EDUMB" or bool(agent["locked"]):
-            raise ExecutorBindingMismatchError("executor must be an unlocked EDUMB agent")
+        async with self._pg.transaction() as connection:
+            agent = await connection.fetchrow(
+                """
+                SELECT id, ea_subtype::text AS ea_subtype, locked,
+                       execution_mode::text AS execution_mode
+                FROM ea_agents
+                WHERE id = $1::uuid
+                FOR UPDATE
+                """,
+                str(request.executor_id),
+            )
+            if not agent:
+                raise ExecutorNotFoundError("executor must be pre-provisioned in Agent Manager")
+            if str(agent["ea_subtype"]) != "EDUMB" or bool(agent["locked"]):
+                raise ExecutorBindingMismatchError("executor must be an unlocked EDUMB agent")
 
-        row = await self._pg.fetchrow(
-            """
-            INSERT INTO executor_instances (
-                executor_id, account_id, login_hash, broker_server, terminal_build,
-                ea_version, protocol_version, execution_mode, status, last_heartbeat_at
-            ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'SHADOW', 'REGISTERED', now())
-            ON CONFLICT (executor_id) DO UPDATE SET
-                terminal_build = EXCLUDED.terminal_build,
-                ea_version = EXCLUDED.ea_version,
-                protocol_version = EXCLUDED.protocol_version,
-                updated_at = now()
-            WHERE executor_instances.account_id = EXCLUDED.account_id
-              AND executor_instances.login_hash = EXCLUDED.login_hash
-              AND executor_instances.broker_server = EXCLUDED.broker_server
-              AND executor_instances.revoked_at IS NULL
-            RETURNING *
-            """,
-            str(request.executor_id),
-            request.account_id,
-            request.login_hash,
-            request.broker_server,
-            request.terminal_build,
-            request.ea_version,
-            request.protocol_version,
-        )
+            existing = await connection.fetchrow(
+                """
+                SELECT execution_mode
+                FROM executor_instances
+                WHERE executor_id = $1::uuid
+                FOR UPDATE
+                """,
+                str(request.executor_id),
+            )
+            if existing and str(existing["execution_mode"]) != str(agent["execution_mode"]):
+                raise ExecutorBindingMismatchError("executor mode drift detected during registration")
+            if not existing:
+                await connection.execute(
+                    """
+                    UPDATE ea_agents
+                    SET execution_mode = 'SHADOW'::execution_mode_enum, updated_at = now()
+                    WHERE id = $1::uuid
+                    """,
+                    str(request.executor_id),
+                )
+            row = await connection.fetchrow(
+                """
+                INSERT INTO executor_instances (
+                    executor_id, account_id, login_hash, broker_server, terminal_build,
+                    ea_version, protocol_version, execution_mode, status, last_heartbeat_at
+                ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'SHADOW', 'REGISTERED', now())
+                ON CONFLICT (executor_id) DO UPDATE SET
+                    terminal_build = EXCLUDED.terminal_build,
+                    ea_version = EXCLUDED.ea_version,
+                    protocol_version = EXCLUDED.protocol_version,
+                    updated_at = now()
+                WHERE executor_instances.account_id = EXCLUDED.account_id
+                  AND executor_instances.login_hash = EXCLUDED.login_hash
+                  AND executor_instances.broker_server = EXCLUDED.broker_server
+                  AND executor_instances.revoked_at IS NULL
+                RETURNING *
+                """,
+                str(request.executor_id),
+                request.account_id,
+                request.login_hash,
+                request.broker_server,
+                request.terminal_build,
+                request.ea_version,
+                request.protocol_version,
+            )
         if not row:
             raise ExecutorBindingMismatchError("existing executor binding does not match registration")
-        return dict(row)
+        try:
+            governance = await self._governance.executor_snapshot(request.executor_id)
+        except ExecutorGovernanceError as exc:
+            raise ExecutorRepositoryError(str(exc)) from exc
+        return {**dict(row), **governance.to_dict()}
 
     async def get_executor(self, executor_id: UUID | str) -> dict[str, Any]:
         self._require_database()
@@ -214,13 +248,23 @@ class MT5CommandRepository:
             ),
         ]
         await self._pg.execute_in_transaction(operations)
+        try:
+            governance = await self._governance.executor_snapshot(heartbeat.executor_id)
+        except ExecutorGovernanceError as exc:
+            raise ExecutorRepositoryError(str(exc)) from exc
         return {
             "executor_id": str(heartbeat.executor_id),
             "status": status,
             "snapshot_id": snapshot.snapshot_id,
-            "execution_mode": str(executor["execution_mode"]),
             "server_time_utc": datetime.now(UTC).isoformat(),
+            **governance.to_dict(),
         }
+
+    async def governance_snapshot(self, executor_id: UUID | str) -> GovernanceSnapshot:
+        try:
+            return await self._governance.executor_snapshot(executor_id)
+        except ExecutorGovernanceError as exc:
+            raise ExecutorRepositoryError(str(exc)) from exc
 
     async def latest_snapshot(self, executor_id: UUID | str) -> AccountSnapshotV1 | None:
         self._require_database()
@@ -250,6 +294,11 @@ class MT5CommandRepository:
             raise ExecutorBindingMismatchError("command account does not match executor binding")
         if str(executor["execution_mode"]) != command.executor_binding.execution_mode.value:
             raise ExecutorBindingMismatchError("command mode does not match governed executor mode")
+        if command.executor_binding.execution_mode is ExecutorMode.LIVE:
+            raise CommandConflictError("LIVE command delivery is blocked by the B2 rollout contract")
+        governance = await self.governance_snapshot(command.executor_binding.executor_id)
+        if command.executor_binding.execution_mode is not ExecutorMode.SHADOW and governance.kill_switch_active:
+            raise CommandConflictError("global executor kill switch blocks non-SHADOW commands")
         secret = os.getenv("EXECUTOR_COMMAND_SIGNING_SECRET", "").strip()
         if len(secret.encode("utf-8")) < 32 or not verify_execution_command(command, secret=secret):
             raise CommandConflictError("command signature is missing or invalid")
@@ -299,6 +348,11 @@ class MT5CommandRepository:
 
     async def next_command(self, executor_id: UUID | str) -> ExecutionCommandV1 | None:
         executor = await self.get_executor(executor_id)
+        governance = await self.governance_snapshot(executor_id)
+        if governance.execution_mode == ExecutorMode.LIVE.value:
+            return None
+        if governance.execution_mode != ExecutorMode.SHADOW.value and governance.kill_switch_active:
+            return None
         await self._pg.execute(
             """
             UPDATE execution_commands
@@ -315,6 +369,7 @@ class MT5CommandRepository:
             FROM execution_commands
             WHERE executor_id = $1::uuid
               AND account_id = $2
+              AND payload #>> '{executor_binding,execution_mode}' = $3
               AND not_before <= now()
               AND expires_at > now()
               AND (
@@ -326,6 +381,7 @@ class MT5CommandRepository:
             """,
             str(executor_id),
             executor["account_id"],
+            str(executor["execution_mode"]),
         )
         if not row:
             return None
@@ -366,8 +422,15 @@ class MT5CommandRepository:
               AND expires_at > now()
               AND EXISTS (
                     SELECT 1
-                    FROM executor_instances
-                    WHERE executor_id = $1::uuid AND revoked_at IS NULL
+                    FROM executor_instances AS e
+                    JOIN executor_bridge_governance AS g ON g.singleton_id = 1
+                    WHERE e.executor_id = $1::uuid
+                      AND e.revoked_at IS NULL
+                      AND execution_commands.payload #>> '{executor_binding,execution_mode}' = e.execution_mode
+                      AND (
+                            e.execution_mode = 'SHADOW'
+                            OR (e.execution_mode = 'DEMO' AND g.kill_switch_active = false)
+                          )
                   )
               AND (
                     state = 'QUEUED'

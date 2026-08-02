@@ -16,6 +16,7 @@ from .auth import decode_token, validate_api_key
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CRITICAL_PATH_PARTS = (
     "/kill-switch",
+    "/execution-mode",
     "/close-all",
     "/ea/restart",
     "/ea/safe-mode",
@@ -210,6 +211,8 @@ def _required_scope(path: str, method: str) -> str:
 
 def _admin_only_path(path: str) -> bool:
     lowered = path.lower()
+    if "/ea/executor-governance" in lowered:
+        return True
     if "/config/" in lowered:
         return True
     if "/risk/" in lowered and (

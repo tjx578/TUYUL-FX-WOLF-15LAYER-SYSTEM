@@ -197,6 +197,10 @@ class AgentManagerService:
         previous = await self._repo.get_agent(agent_id)
         if previous is None:
             raise AgentNotFoundError(f"Agent {agent_id!r} not found")
+        if str(previous.get("ea_subtype")) == "EDUMB" and request.execution_mode is not None:
+            raise AgentValidationError(
+                "EDUMB execution_mode is governed by /api/v1/ea/executor-governance and cannot be updated here"
+            )
 
         updates: dict[str, Any] = {}
         for field, value in request.model_dump(exclude_none=True).items():

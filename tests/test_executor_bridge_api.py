@@ -11,6 +11,7 @@ from api.executor_bridge_router import router
 from api.middleware.executor_auth import verify_executor_auth
 from contracts.mt5_execution_protocol import ExecutionCommandV1, sha256_tag, sign_execution_command
 from execution.mt5_command_repository import CommandClaim, get_mt5_command_repository
+from execution.mt5_executor_governance import GovernanceSnapshot
 
 SECRET = "z" * 64
 
@@ -92,6 +93,16 @@ class FakeRepository:
 
     async def next_command(self, executor_id: UUID) -> ExecutionCommandV1 | None:
         return self.command
+
+    async def governance_snapshot(self, executor_id: UUID) -> GovernanceSnapshot:
+        return GovernanceSnapshot(
+            executor_id=str(executor_id),
+            execution_mode="SHADOW",
+            mode_version=1,
+            kill_switch_active=True,
+            kill_switch_reason="TEST_ENGAGED",
+            governance_version=1,
+        )
 
     async def claim_command(self, *, executor_id: UUID, command_id: UUID, lease_seconds: int) -> CommandClaim:
         assert self.command is not None
