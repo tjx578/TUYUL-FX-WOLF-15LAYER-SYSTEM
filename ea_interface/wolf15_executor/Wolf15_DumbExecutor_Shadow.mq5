@@ -3,12 +3,14 @@
 //| No signal logic. No risk calculation. No broker side effect.     |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "0.11"
+#property version   "1.12"
 #property description "Wolf15 pull/claim/report client. SHADOW ONLY."
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
 input string InpExecutorId          = "";
 input string InpExecutorToken       = "";
+input string InpCommandVerificationKeyId = "";
+input string InpCommandVerificationKey   = "";
 input string InpExpectedAccountId   = "";
 input string InpLoginHash           = "";
 input string InpExpectedBrokerServer= "";
@@ -21,14 +23,23 @@ input int    InpHttpTimeoutMs       = 1500;
 input bool   InpExecutionEnabled    = false;
 
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
-#define W15_VERSION  "0.11-shadow"
+#define W15_VERSION  "0.12-shadow-signed-wire"
+#define W15_SIGNED_WIRE "wolf15.mt5.exec.signed-bytes.v2"
+#define W15_SIGNED_DOMAIN "WOLF15-MT5-COMMAND-V2"
 #define W15_STRATEGY "STRATEGY_5S_CR_FINAL"
 #define W15_CONFIRMATION_POLICY "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"
+#define W15_GOLDEN_EXECUTOR_ID "12345678-1234-5678-9234-567812345678"
+#define W15_GOLDEN_KEY_ID "exec-test-2026-08.v2"
+#define W15_GOLDEN_KEY_HEX "c6f28f7e3e483b947780d0f1d9a3e50ab10976facb989c582d353457cae282d7"
+#define W15_GOLDEN_PAYLOAD_B64 "eyJhcnJheSI6WzEuMCwxZS0wNywwLjMwMDAwMDAwMDAwMDAwMDA0XSwidW5pY29kZSI6Ilx1MjBhYyJ9"
+#define W15_GOLDEN_PAYLOAD_SHA256 "sha256:18ed07b452adbec6fc29ec9fd6d347dc342216de60a24d009828a4fa69aaca7a"
+#define W15_GOLDEN_SIGNATURE "base64url:TYmshMY5I9eQhq7Qyi-UlIl7Q0j4e3ZfkribNBwxKIg"
 
 datetime g_last_poll = 0;
 datetime g_last_heartbeat = 0;
 bool     g_registered = false;
 string   g_last_command_id = "";
+string   g_quarantined_command_id = "";
 
 //+------------------------------------------------------------------+
 string EscapeJson(const string value)
@@ -145,6 +156,398 @@ bool JsonBool(const string json, const string key)
 {
    string value = JsonValue(json, key, "false");
    return (value == "true" || value == "1");
+}
+
+//+------------------------------------------------------------------+
+string JsonObject(const string json, const string key)
+{
+   string marker = "\"" + key + "\"";
+   int pos = StringFind(json, marker);
+   if(pos < 0)
+      return "";
+   pos = StringFind(json, ":", pos + StringLen(marker));
+   if(pos < 0)
+      return "";
+   pos++;
+   while(pos < StringLen(json) &&
+         (StringGetCharacter(json, pos) == ' ' ||
+          StringGetCharacter(json, pos) == '\r' ||
+          StringGetCharacter(json, pos) == '\n' ||
+          StringGetCharacter(json, pos) == '\t'))
+      pos++;
+   if(pos >= StringLen(json) || StringGetCharacter(json, pos) != '{')
+      return "";
+
+   int depth = 0;
+   bool in_string = false;
+   bool escaped = false;
+   for(int index = pos; index < StringLen(json); index++)
+   {
+      ushort ch = StringGetCharacter(json, index);
+      if(in_string)
+      {
+         if(escaped)
+            escaped = false;
+         else if(ch == '\\')
+            escaped = true;
+         else if(ch == '"')
+            in_string = false;
+         continue;
+      }
+      if(ch == '"')
+      {
+         in_string = true;
+         continue;
+      }
+      if(ch == '{')
+         depth++;
+      else if(ch == '}')
+      {
+         depth--;
+         if(depth == 0)
+            return StringSubstr(json, pos, index - pos + 1);
+         if(depth < 0)
+            return "";
+      }
+   }
+   return "";
+}
+
+//+------------------------------------------------------------------+
+bool AsciiToBytes(const string value, uchar &result[])
+{
+   ArrayResize(result, 0);
+   for(int index = 0; index < StringLen(value); index++)
+   {
+      if(StringGetCharacter(value, index) > 127)
+         return false;
+   }
+   int copied = StringToCharArray(value, result, 0, WHOLE_ARRAY, CP_UTF8);
+   if(copied <= 0)
+      return (StringLen(value) == 0);
+   if(ArraySize(result) > 0 && result[ArraySize(result) - 1] == 0)
+      ArrayResize(result, ArraySize(result) - 1);
+   return (ArraySize(result) == StringLen(value));
+}
+
+//+------------------------------------------------------------------+
+int HexNibble(const ushort ch)
+{
+   if(ch >= '0' && ch <= '9')
+      return (int)(ch - '0');
+   if(ch >= 'a' && ch <= 'f')
+      return (int)(ch - 'a' + 10);
+   if(ch >= 'A' && ch <= 'F')
+      return (int)(ch - 'A' + 10);
+   return -1;
+}
+
+//+------------------------------------------------------------------+
+bool HexToBytes(const string hex, uchar &result[])
+{
+   int length = StringLen(hex);
+   if(length == 0 || (length % 2) != 0)
+      return false;
+   ArrayResize(result, length / 2);
+   for(int index = 0; index < length; index += 2)
+   {
+      int high = HexNibble(StringGetCharacter(hex, index));
+      int low = HexNibble(StringGetCharacter(hex, index + 1));
+      if(high < 0 || low < 0)
+      {
+         ArrayResize(result, 0);
+         return false;
+      }
+      result[index / 2] = (uchar)((high << 4) | low);
+   }
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool TaggedHexToBytes(const string value,
+                      const string prefix,
+                      const int expected_size,
+                      uchar &result[])
+{
+   if(StringFind(value, prefix) != 0 || !HexToBytes(StringSubstr(value, StringLen(prefix)), result))
+      return false;
+   return (ArraySize(result) == expected_size);
+}
+
+//+------------------------------------------------------------------+
+bool Base64UrlToBytes(const string value, uchar &result[])
+{
+   int length = StringLen(value);
+   if(length == 0 || (length % 4) == 1)
+      return false;
+   for(int index = 0; index < length; index++)
+   {
+      ushort ch = StringGetCharacter(value, index);
+      bool valid = ((ch >= 'A' && ch <= 'Z') ||
+                    (ch >= 'a' && ch <= 'z') ||
+                    (ch >= '0' && ch <= '9') || ch == '-' || ch == '_');
+      if(!valid)
+         return false;
+   }
+   string encoded = value;
+   StringReplace(encoded, "-", "+");
+   StringReplace(encoded, "_", "/");
+   while((StringLen(encoded) % 4) != 0)
+      encoded += "=";
+
+   uchar encoded_bytes[];
+   uchar empty_key[];
+   if(!AsciiToBytes(encoded, encoded_bytes))
+      return false;
+   ResetLastError();
+   int decoded = CryptDecode(CRYPT_BASE64, encoded_bytes, empty_key, result);
+   if(decoded <= 0)
+   {
+      ArrayResize(result, 0);
+      return false;
+   }
+   ArrayResize(result, decoded);
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool Sha256Bytes(const uchar &data[], uchar &digest[])
+{
+   uchar empty_key[];
+   ResetLastError();
+   int produced = CryptEncode(CRYPT_HASH_SHA256, data, empty_key, digest);
+   if(produced != 32)
+   {
+      ArrayResize(digest, 0);
+      return false;
+   }
+   ArrayResize(digest, produced);
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool HmacSha256Bytes(const uchar &key[], const uchar &message[], uchar &digest[])
+{
+   if(ArraySize(key) != 32)
+      return false;
+
+   uchar inner_pad[];
+   uchar outer_pad[];
+   ArrayResize(inner_pad, 64);
+   ArrayResize(outer_pad, 64);
+   for(int index = 0; index < 64; index++)
+   {
+      uchar key_byte = (index < ArraySize(key)) ? key[index] : (uchar)0;
+      inner_pad[index] = (uchar)(key_byte ^ 0x36);
+      outer_pad[index] = (uchar)(key_byte ^ 0x5c);
+   }
+
+   uchar inner_source[];
+   ArrayResize(inner_source, 64 + ArraySize(message));
+   for(int index = 0; index < 64; index++)
+      inner_source[index] = inner_pad[index];
+   for(int index = 0; index < ArraySize(message); index++)
+      inner_source[64 + index] = message[index];
+
+   uchar inner_digest[];
+   if(!Sha256Bytes(inner_source, inner_digest))
+      return false;
+
+   uchar outer_source[];
+   ArrayResize(outer_source, 64 + ArraySize(inner_digest));
+   for(int index = 0; index < 64; index++)
+      outer_source[index] = outer_pad[index];
+   for(int index = 0; index < ArraySize(inner_digest); index++)
+      outer_source[64 + index] = inner_digest[index];
+   return Sha256Bytes(outer_source, digest);
+}
+
+//+------------------------------------------------------------------+
+bool ConstantTimeBytesEqual(const uchar &left[], const uchar &right[])
+{
+   if(ArraySize(left) != ArraySize(right))
+      return false;
+   uint difference = 0;
+   for(int index = 0; index < ArraySize(left); index++)
+      difference |= (uint)(left[index] ^ right[index]);
+   return (difference == 0);
+}
+
+//+------------------------------------------------------------------+
+bool IsSafeWireIdentifier(const string value)
+{
+   int length = StringLen(value);
+   if(length < 1 || length > 100)
+      return false;
+   for(int index = 0; index < length; index++)
+   {
+      ushort ch = StringGetCharacter(value, index);
+      bool valid = ((ch >= 'A' && ch <= 'Z') ||
+                    (ch >= 'a' && ch <= 'z') ||
+                    (ch >= '0' && ch <= '9') ||
+                    ch == '.' || ch == '_' || ch == ':' || ch == '-');
+      if(!valid)
+         return false;
+   }
+   return true;
+}
+
+//+------------------------------------------------------------------+
+string SignedEnvelopePreimage(const string key_id,
+                              const string executor_id,
+                              const string payload_sha256,
+                              const string payload_b64)
+{
+   return W15_SIGNED_DOMAIN + "\n" +
+          "key_id=" + key_id + "\n" +
+          "executor_id=" + executor_id + "\n" +
+          "payload_sha256=" + payload_sha256 + "\n" +
+          "payload_b64=" + payload_b64;
+}
+
+//+------------------------------------------------------------------+
+bool RunSignedWireCryptoSelfTest()
+{
+   uchar key[];
+   uchar payload[];
+   uchar expected_payload_hash[];
+   uchar actual_payload_hash[];
+   uchar expected_signature[];
+   uchar actual_signature[];
+   uchar preimage_bytes[];
+   if(!HexToBytes(W15_GOLDEN_KEY_HEX, key) || ArraySize(key) != 32)
+      return false;
+   if(!Base64UrlToBytes(W15_GOLDEN_PAYLOAD_B64, payload))
+      return false;
+   if(!TaggedHexToBytes(W15_GOLDEN_PAYLOAD_SHA256, "sha256:", 32, expected_payload_hash))
+      return false;
+   if(!Sha256Bytes(payload, actual_payload_hash) ||
+      !ConstantTimeBytesEqual(expected_payload_hash, actual_payload_hash))
+      return false;
+   if(StringFind(W15_GOLDEN_SIGNATURE, "base64url:") != 0 ||
+      !Base64UrlToBytes(StringSubstr(W15_GOLDEN_SIGNATURE, 10), expected_signature) ||
+      ArraySize(expected_signature) != 32)
+      return false;
+
+   string preimage = SignedEnvelopePreimage(
+      W15_GOLDEN_KEY_ID,
+      W15_GOLDEN_EXECUTOR_ID,
+      W15_GOLDEN_PAYLOAD_SHA256,
+      W15_GOLDEN_PAYLOAD_B64
+   );
+   if(!AsciiToBytes(preimage, preimage_bytes) ||
+      !HmacSha256Bytes(key, preimage_bytes, actual_signature) ||
+      !ConstantTimeBytesEqual(expected_signature, actual_signature))
+      return false;
+
+   uchar tampered_bytes[];
+   uchar tampered_signature[];
+   if(!AsciiToBytes(preimage + "x", tampered_bytes) ||
+      !HmacSha256Bytes(key, tampered_bytes, tampered_signature))
+      return false;
+   return !ConstantTimeBytesEqual(expected_signature, tampered_signature);
+}
+
+//+------------------------------------------------------------------+
+bool VerifySignedEnvelope(const string response_json,
+                          const string expected_command_id,
+                          const string request_hash,
+                          string &command_json,
+                          string &reason)
+{
+   command_json = "";
+   string envelope = JsonObject(response_json, "signed_envelope");
+   if(StringLen(envelope) == 0)
+   {
+      reason = "SIGNED_ENVELOPE_MISSING";
+      return false;
+   }
+
+   string wire_version = JsonValue(envelope, "wire_version");
+   string payload_encoding = JsonValue(envelope, "payload_encoding");
+   string payload_b64 = JsonValue(envelope, "payload_b64");
+   string payload_sha256 = JsonValue(envelope, "payload_sha256");
+   string algorithm = JsonValue(envelope, "algorithm");
+   string key_id = JsonValue(envelope, "key_id");
+   string executor_id = JsonValue(envelope, "executor_id");
+   string signature = JsonValue(envelope, "signature");
+
+   if(wire_version != W15_SIGNED_WIRE || payload_encoding != "base64url" ||
+      algorithm != "HMAC-SHA256")
+   {
+      reason = "SIGNED_WIRE_VERSION_REJECTED";
+      return false;
+   }
+   if(key_id != InpCommandVerificationKeyId || !IsSafeWireIdentifier(key_id))
+   {
+      reason = "SIGNED_WIRE_KEY_ID_REJECTED";
+      return false;
+   }
+   if(executor_id != InpExecutorId)
+   {
+      reason = "SIGNED_WIRE_EXECUTOR_REJECTED";
+      return false;
+   }
+   if(StringLen(payload_b64) < 1 || StringLen(payload_b64) > 262144 ||
+      StringLen(payload_sha256) != 71 || StringLen(signature) != 53 ||
+      request_hash != payload_sha256)
+   {
+      reason = "SIGNED_WIRE_SHAPE_REJECTED";
+      return false;
+   }
+
+   uchar verification_key[];
+   uchar signature_bytes[];
+   uchar preimage_bytes[];
+   uchar calculated_signature[];
+   if(!TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key) ||
+      StringFind(signature, "base64url:") != 0 ||
+      !Base64UrlToBytes(StringSubstr(signature, 10), signature_bytes) ||
+      ArraySize(signature_bytes) != 32)
+   {
+      reason = "SIGNED_WIRE_SIGNATURE_MALFORMED";
+      return false;
+   }
+   string preimage = SignedEnvelopePreimage(key_id, executor_id, payload_sha256, payload_b64);
+   if(!AsciiToBytes(preimage, preimage_bytes) ||
+      !HmacSha256Bytes(verification_key, preimage_bytes, calculated_signature) ||
+      !ConstantTimeBytesEqual(signature_bytes, calculated_signature))
+   {
+      reason = "SIGNED_WIRE_SIGNATURE_INVALID";
+      return false;
+   }
+
+   uchar payload_bytes[];
+   uchar expected_payload_hash[];
+   uchar calculated_payload_hash[];
+   if(!Base64UrlToBytes(payload_b64, payload_bytes))
+   {
+      reason = "SIGNED_WIRE_PAYLOAD_DECODE_FAILED";
+      return false;
+   }
+   if(!TaggedHexToBytes(payload_sha256, "sha256:", 32, expected_payload_hash) ||
+      !Sha256Bytes(payload_bytes, calculated_payload_hash) ||
+      !ConstantTimeBytesEqual(expected_payload_hash, calculated_payload_hash))
+   {
+      reason = "SIGNED_WIRE_PAYLOAD_HASH_MISMATCH";
+      return false;
+   }
+
+   command_json = CharArrayToString(payload_bytes, 0, ArraySize(payload_bytes), CP_UTF8);
+   if(JsonValue(command_json, "command_id") != expected_command_id)
+   {
+      reason = "SIGNED_WIRE_COMMAND_ID_MISMATCH";
+      command_json = "";
+      return false;
+   }
+   if(JsonValue(command_json, "executor_id") != InpExecutorId)
+   {
+      reason = "SIGNED_WIRE_COMMAND_BINDING_MISMATCH";
+      command_json = "";
+      return false;
+   }
+   reason = "SIGNED_WIRE_VERIFIED";
+   return true;
 }
 
 //+------------------------------------------------------------------+
@@ -384,11 +787,6 @@ bool ValidateShadowCommand(const string json, string &reason)
       reason = "SYMBOL_BINDING_MISMATCH";
       return false;
    }
-   if(StringLen(JsonValue(json, "value")) < 20)
-   {
-      reason = "SIGNATURE_MISSING";
-      return false;
-   }
    datetime expiry = ParseUtc(JsonValue(json, "expires_at_utc"));
    if(expiry <= 0 || TimeGMT() >= expiry)
    {
@@ -421,7 +819,7 @@ bool ValidateShadowCommand(const string json, string &reason)
       reason = "VOLUME_NOT_EXACTLY_REPRESENTABLE";
       return false;
    }
-   reason = "SHADOW_PREFLIGHT_PASSED_SIGNATURE_PRESENT_NOT_YET_LOCALLY_VERIFIED";
+   reason = "SHADOW_PREFLIGHT_PASSED_SIGNATURE_VERIFIED";
    return true;
 }
 
@@ -476,7 +874,9 @@ void PollOneCommand()
       return;
    }
    string command_id = JsonValue(response, "command_id");
-   if(StringLen(command_id) == 0 || command_id == g_last_command_id)
+   if(StringLen(command_id) == 0 ||
+      command_id == g_last_command_id ||
+      command_id == g_quarantined_command_id)
       return;
 
    string claim_response;
@@ -489,9 +889,18 @@ void PollOneCommand()
    if(StringLen(claim_token) == 0 || StringLen(request_hash) == 0)
       return;
 
+   string command_json = "";
    string reason = "";
-   bool accepted = ValidateShadowCommand(claim_response, reason);
-   if(SendShadowReport(claim_response, claim_token, request_hash, accepted, reason))
+   if(!VerifySignedEnvelope(claim_response, command_id, request_hash, command_json, reason))
+   {
+      g_quarantined_command_id = command_id;
+      AppendLedger(command_id, "QUARANTINED", reason);
+      PrintFormat("[W15] Command quarantined reason=%s", reason);
+      return;
+   }
+
+   bool accepted = ValidateShadowCommand(command_json, reason);
+   if(SendShadowReport(command_json, claim_token, request_hash, accepted, reason))
       g_last_command_id = command_id;
 }
 
@@ -506,21 +915,34 @@ int OnInit()
    const bool https_endpoint = (StringFind(InpBaseUrl, "https://") == 0);
    const int executor_id_length = StringLen(InpExecutorId);
    const int executor_token_length = StringLen(InpExecutorToken);
+   const int verification_key_id_length = StringLen(InpCommandVerificationKeyId);
+   const int verification_key_length = StringLen(InpCommandVerificationKey);
    const int login_hash_length = StringLen(InpLoginHash);
+   uchar verification_key[];
    if(!https_endpoint ||
       executor_id_length < 30 ||
       executor_token_length < 32 ||
+      !IsSafeWireIdentifier(InpCommandVerificationKeyId) ||
+      !TaggedHexToBytes(InpCommandVerificationKey, "hex:", 32, verification_key) ||
       login_hash_length != 71)
    {
       PrintFormat(
          "[W15] Invalid endpoint/credential shape: https=%s "
-         "executor_id_length=%d token_length=%d login_hash_length=%d",
+         "executor_id_length=%d token_length=%d verification_key_id_length=%d "
+         "verification_key_length=%d login_hash_length=%d",
          https_endpoint ? "true" : "false",
          executor_id_length,
          executor_token_length,
+         verification_key_id_length,
+         verification_key_length,
          login_hash_length
       );
       return INIT_PARAMETERS_INCORRECT;
+   }
+   if(!RunSignedWireCryptoSelfTest())
+   {
+      Print("[W15] Signed-wire cryptographic self-test failed.");
+      return INIT_FAILED;
    }
    const string actual_account_id = (string)AccountInfoInteger(ACCOUNT_LOGIN);
    if(actual_account_id != InpExpectedAccountId)
@@ -535,7 +957,7 @@ int OnInit()
    }
    FolderCreate("Wolf15Executor", FILE_COMMON);
    EventSetTimer(1);
-   Print("[W15] Shadow dumb executor initialized. No broker side effects are compiled in.");
+   Print("[W15] Shadow executor initialized with signed-wire verification. No broker side effects are compiled in.");
    return INIT_SUCCEEDED;
 }
 
