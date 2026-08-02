@@ -19,6 +19,7 @@ from contracts.mt5_execution_protocol import (
 )
 from execution.mt5_command_repository import (
     CommandConflictError,
+    CommandNotFoundError,
     ExecutorBindingMismatchError,
     ExecutorNotFoundError,
     ExecutorRepositoryError,
@@ -73,7 +74,7 @@ def _governance_headers(snapshot: Any) -> dict[str, str]:
 
 
 def _translate_repository_error(exc: ExecutorRepositoryError) -> HTTPException:
-    if isinstance(exc, ExecutorNotFoundError):
+    if isinstance(exc, (ExecutorNotFoundError, CommandNotFoundError)):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, ExecutorBindingMismatchError):
         return HTTPException(status_code=403, detail=str(exc))
@@ -136,16 +137,19 @@ async def next_executor_command(
     _assert_executor(auth, executor_id)
     try:
         governance = await repository.governance_snapshot(executor_id)
-        command = await repository.next_command(executor_id)
+        delivery = await repository.next_command(executor_id)
     except ExecutorRepositoryError as exc:
         raise _translate_repository_error(exc) from exc
     for header, value in _governance_headers(governance).items():
         response.headers[header] = value
-    if command is None:
+    if delivery is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT, headers=_governance_headers(governance))
+    data: dict[str, Any] = {"command": delivery.command.model_dump(mode="json")}
+    if delivery.signed_envelope is not None:
+        data["signed_envelope"] = delivery.signed_envelope.model_dump(mode="json")
     return _response_envelope(
         request_id=_request_id(x_request_id),
-        data={"command": command.model_dump(mode="json")},
+        data=data,
     )
 
 
@@ -171,10 +175,12 @@ async def get_executor_governance(
 async def claim_executor_command(
     command_id: UUID,
     body: ClaimRequest,
+    response: Response,
     repository: RepositoryDep,
     auth: AuthDep,
     x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
 ) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
     try:
         executor_id = UUID(str(auth["executor_id"]))
         claim = await repository.claim_command(
@@ -185,16 +191,44 @@ async def claim_executor_command(
         governance = await repository.governance_snapshot(executor_id)
     except ExecutorRepositoryError as exc:
         raise _translate_repository_error(exc) from exc
+    data: dict[str, Any] = {
+        "command": claim.command.model_dump(mode="json"),
+        "request_hash": (
+            claim.signed_envelope.payload_sha256
+            if claim.signed_envelope is not None
+            else sha256_tag(claim.command.model_dump(mode="json"))
+        ),
+        "claim_token": claim.claim_token,
+        "lease_expires_at_utc": claim.lease_expires_at.isoformat(),
+        "governance": governance.to_dict(),
+    }
+    if claim.signed_envelope is not None:
+        data["signed_envelope"] = claim.signed_envelope.model_dump(mode="json")
     return _response_envelope(
         request_id=_request_id(x_request_id),
-        data={
-            "command": claim.command.model_dump(mode="json"),
-            "request_hash": sha256_tag(claim.command.model_dump(mode="json")),
-            "claim_token": claim.claim_token,
-            "lease_expires_at_utc": claim.lease_expires_at.isoformat(),
-            "governance": governance.to_dict(),
-        },
+        data=data,
     )
+
+
+@router.get("/api/v1/executors/{executor_id}/commands/{command_id}/status")
+async def get_executor_command_status(
+    executor_id: UUID,
+    command_id: UUID,
+    response: Response,
+    repository: RepositoryDep,
+    auth: AuthDep,
+    x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+) -> dict[str, Any]:
+    _assert_executor(auth, executor_id)
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        result = await repository.command_status(
+            executor_id=executor_id,
+            command_id=command_id,
+        )
+    except ExecutorRepositoryError as exc:
+        raise _translate_repository_error(exc) from exc
+    return _response_envelope(request_id=_request_id(x_request_id), data=result)
 
 
 @router.post("/api/v1/commands/{command_id}/reports", status_code=status.HTTP_202_ACCEPTED)

@@ -24,7 +24,9 @@ Before compiling:
 4. Set the exact account id, `sha256:<64 hex>` login hash, broker server,
    canonical symbol, and broker symbol.
 
-This scaffold only checks that a signed command is present. Local HMAC
-verification and durable command/report retry storage must be completed and
-compiled before DEMO promotion. The backend independently validates command
-signatures and remains SHADOW by default.
+The backend now freezes and stores a `wolf15.mt5.exec.signed-bytes.v2` envelope
+and exposes read-only command-status reconciliation. The current EA still only
+checks that a signed command is present: local HMAC verification against the
+frozen bytes and durable command/report retry storage are 3A-1/3A-2 work and
+must be completed and compiled before DEMO promotion. The backend independently
+validates command signatures and remains SHADOW by default.

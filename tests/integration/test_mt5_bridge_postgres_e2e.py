@@ -28,6 +28,7 @@ Opt-in, like the lifecycle V2 suite: set
 
 from __future__ import annotations
 
+import base64
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -45,8 +46,12 @@ from api.executor_bridge_router import router
 from api.middleware.executor_auth import derive_executor_token
 from contracts.mt5_execution_protocol import (
     ExecutionCommandV1,
+    SignedExecutionEnvelopeV2,
+    canonical_json_bytes,
+    derive_executor_command_verification_key,
     sha256_tag,
     sign_execution_command,
+    verify_signed_execution_envelope,
 )
 from execution.mt5_command_repository import MT5CommandRepository, get_mt5_command_repository
 
@@ -504,6 +509,178 @@ async def test_queued_command_is_returned_by_poll(
     assert returned["signature"]["key_id"] == SIGNING_KEY_ID
 
 
+@pytest.mark.asyncio
+async def test_signed_wire_bytes_are_frozen_in_postgres_and_delivered_unchanged(
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
+) -> None:
+    command = _shadow_command(registered)
+    await _repo(postgres).enqueue_command(command)
+
+    response = await client.get(
+        f"/api/v1/executors/{registered}/commands/next",
+        headers=_auth_headers(registered),
+    )
+    assert response.status_code == 200, response.text
+    envelope = SignedExecutionEnvelopeV2.model_validate(response.json()["data"]["signed_envelope"])
+    verification_key = derive_executor_command_verification_key(
+        registered,
+        root_secret=SIGNING_SECRET,
+    )
+    assert verify_signed_execution_envelope(envelope, verification_key=verification_key) == command
+
+    row = await postgres.fetchrow(
+        """
+        SELECT wire_format, payload_encoding, signed_payload_b64,
+               signed_payload_sha256, signature_algorithm,
+               signature_key_id, signature_value
+        FROM execution_commands
+        WHERE command_id = $1::uuid
+        """,
+        str(command.command_id),
+    )
+    assert row is not None
+    assert dict(row) == {
+        "wire_format": envelope.wire_version,
+        "payload_encoding": envelope.payload_encoding,
+        "signed_payload_b64": envelope.payload_b64,
+        "signed_payload_sha256": envelope.payload_sha256,
+        "signature_algorithm": envelope.algorithm,
+        "signature_key_id": envelope.key_id,
+        "signature_value": envelope.signature,
+    }
+    decoded = base64.urlsafe_b64decode(envelope.payload_b64 + "=" * (-len(envelope.payload_b64) % 4))
+    assert decoded == canonical_json_bytes(command.model_dump(mode="json"))
+
+
+@pytest.mark.asyncio
+async def test_postgres_rejects_an_incomplete_signed_wire_row(postgres: _PoolBackedPostgres, registered: UUID) -> None:
+    command = _shadow_command(registered)
+    await _repo(postgres).enqueue_command(command)
+    asyncpg = import_module("asyncpg")
+
+    with pytest.raises(asyncpg.CheckViolationError) as raised:
+        await postgres.execute(
+            "UPDATE execution_commands SET signature_value = NULL WHERE command_id = $1::uuid",
+            str(command.command_id),
+        )
+
+    assert raised.value.constraint_name == "ck_execution_command_signed_wire_complete"
+
+
+@pytest.mark.asyncio
+async def test_postgres_rejects_a_new_command_explicitly_downgraded_to_legacy_wire(
+    postgres: _PoolBackedPostgres, registered: UUID
+) -> None:
+    command = _shadow_command(registered)
+    await _repo(postgres).enqueue_command(command)
+    asyncpg = import_module("asyncpg")
+
+    with pytest.raises(asyncpg.CheckViolationError) as raised:
+        await postgres.execute(
+            """
+            INSERT INTO execution_commands (
+                command_id, executor_id, account_id, source_signal_id,
+                source_signal_hash, idempotency_key, revision, action,
+                payload, payload_hash, state, issued_at, not_before,
+                expires_at, wire_format
+            )
+            SELECT $2::uuid, executor_id, account_id, source_signal_id,
+                   source_signal_hash, idempotency_key || ':legacy', revision,
+                   action, payload, payload_hash, state, issued_at, not_before,
+                   expires_at, 'legacy-json-v1'
+            FROM execution_commands
+            WHERE command_id = $1::uuid
+            """,
+            str(command.command_id),
+            str(uuid4()),
+        )
+
+    assert raised.value.constraint_name == "ck_execution_command_signed_wire_new_rows"
+
+
+@pytest.mark.asyncio
+async def test_signed_wire_readiness_fails_when_the_constraint_is_missing(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    repository = _repo(postgres)
+    assert (await repository.signed_wire_schema_status())["ready"] is True
+    original = await postgres.fetchrow(
+        """
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conname = 'ck_execution_command_signed_wire_complete'
+          AND conrelid = 'execution_commands'::regclass
+        """
+    )
+    assert original is not None
+    await postgres.execute("ALTER TABLE execution_commands DROP CONSTRAINT ck_execution_command_signed_wire_complete")
+    try:
+        status = await repository.signed_wire_schema_status()
+        assert status["ready"] is False
+        assert status["signed_wire_constraint"] is False
+    finally:
+        await postgres.execute(
+            "ALTER TABLE execution_commands "
+            "ADD CONSTRAINT ck_execution_command_signed_wire_complete " + str(original["definition"])
+        )
+
+
+@pytest.mark.asyncio
+async def test_signed_wire_readiness_rejects_a_weak_constraint_with_the_right_name(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    repository = _repo(postgres)
+    original = await postgres.fetchrow(
+        """
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE conname = 'ck_execution_command_signed_wire_complete'
+          AND conrelid = 'execution_commands'::regclass
+        """
+    )
+    assert original is not None
+    await postgres.execute("ALTER TABLE execution_commands DROP CONSTRAINT ck_execution_command_signed_wire_complete")
+    await postgres.execute(
+        "ALTER TABLE execution_commands "
+        "ADD CONSTRAINT ck_execution_command_signed_wire_complete CHECK (wire_format IS NOT NULL)"
+    )
+    try:
+        status = await repository.signed_wire_schema_status()
+        assert status["ready"] is False
+        assert status["signed_wire_constraint"] is False
+    finally:
+        await postgres.execute(
+            "ALTER TABLE execution_commands DROP CONSTRAINT ck_execution_command_signed_wire_complete"
+        )
+        await postgres.execute(
+            "ALTER TABLE execution_commands "
+            "ADD CONSTRAINT ck_execution_command_signed_wire_complete " + str(original["definition"])
+        )
+
+
+@pytest.mark.asyncio
+async def test_signed_wire_readiness_fails_when_the_legacy_insert_guard_is_missing(
+    postgres: _PoolBackedPostgres,
+) -> None:
+    repository = _repo(postgres)
+    original = await postgres.fetchrow(
+        """
+        SELECT pg_get_triggerdef(oid) AS definition
+        FROM pg_trigger
+        WHERE tgname = 'trg_execution_command_require_signed_wire'
+          AND tgrelid = 'execution_commands'::regclass
+        """
+    )
+    assert original is not None
+    await postgres.execute("DROP TRIGGER trg_execution_command_require_signed_wire ON execution_commands")
+    try:
+        status = await repository.signed_wire_schema_status()
+        assert status["ready"] is False
+        assert status["legacy_insert_guard"] is False
+    finally:
+        await postgres.execute(str(original["definition"]))
+
+
 # --------------------------------------------------------------------------
 # claim and lease
 # --------------------------------------------------------------------------
@@ -598,6 +775,46 @@ async def test_shadow_terminal_report_is_persisted(
     assert response.status_code == 202, response.text
     # SHADOW terminals only. No FILLED, no broker side effect.
     assert await _command_state(postgres, command) == "SHADOW_COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_terminal_command_can_be_reconciled_without_a_claim_token(
+    client: AsyncClient, postgres: _PoolBackedPostgres, registered: UUID
+) -> None:
+    command = _shadow_command(registered)
+    await _repo(postgres).enqueue_command(command)
+    claim_token = await _claim(client, registered, command)
+    report = _report(command=command, executor_id=registered, state="WOULD_EXECUTE")
+    accepted = await client.post(
+        f"/api/v1/commands/{command.command_id}/reports",
+        json=report,
+        headers={**_auth_headers(registered), "X-Claim-Token": claim_token},
+    )
+    assert accepted.status_code == 202, accepted.text
+
+    response = await client.get(
+        f"/api/v1/executors/{registered}/commands/{command.command_id}/status",
+        headers=_auth_headers(registered),
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["command_state"] == "SHADOW_COMPLETED"
+    assert data["terminal"] is True
+    assert data["request_hash"] == report["request_hash"]
+    assert data["latest_report"]["report_id"] == report["report_id"]
+    assert data["latest_report"]["request_hash"] == report["request_hash"]
+    assert "claim_token" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_command_status_does_not_disclose_an_unknown_command(client: AsyncClient, registered: UUID) -> None:
+    response = await client.get(
+        f"/api/v1/executors/{registered}/commands/{uuid4()}/status",
+        headers=_auth_headers(registered),
+    )
+
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

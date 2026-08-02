@@ -8,6 +8,7 @@ The EA may reject a command mechanically, but it must never reinterpret it.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -19,6 +20,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 PROTOCOL_VERSION: Final = "wolf15.mt5.exec.v1"
+SIGNED_WIRE_VERSION: Final = "wolf15.mt5.exec.signed-bytes.v2"
+SIGNED_WIRE_PAYLOAD_ENCODING: Final = "base64url"
+SIGNED_WIRE_ALGORITHM: Final = "HMAC-SHA256"
+_SIGNED_WIRE_DOMAIN: Final = "WOLF15-MT5-COMMAND-V2"
+_EXECUTOR_KEY_CONTEXT: Final = "wolf15-command-verify-v2"
 
 
 class ExecutionAction(StrEnum):
@@ -215,6 +221,21 @@ class ExecutionCommandV1(StrictModel):
         return self.not_before_utc <= current < self.expires_at_utc
 
 
+class SignedExecutionEnvelopeV2(StrictModel):
+    """Immutable wire bytes signed without reserializing JSON in the EA."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    wire_version: Literal["wolf15.mt5.exec.signed-bytes.v2"] = SIGNED_WIRE_VERSION
+    payload_encoding: Literal["base64url"] = SIGNED_WIRE_PAYLOAD_ENCODING
+    payload_b64: str = Field(..., min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
+    payload_sha256: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    algorithm: Literal["HMAC-SHA256"] = SIGNED_WIRE_ALGORITHM
+    key_id: str = Field(..., min_length=1, max_length=100, pattern=r"^[A-Za-z0-9._:-]+$")
+    executor_id: UUID
+    signature: str = Field(..., pattern=r"^base64url:[A-Za-z0-9_-]{43}$")
+
+
 class BrokerReport(StrictModel):
     order_ticket: int | None = Field(default=None, ge=1)
     deal_ticket: int | None = Field(default=None, ge=1)
@@ -353,14 +374,160 @@ def canonical_json_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
 
+def sha256_bytes_tag(payload: bytes) -> str:
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
 def sha256_tag(payload: dict[str, Any]) -> str:
-    return "sha256:" + hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+    return sha256_bytes_tag(canonical_json_bytes(payload))
+
+
+def _require_secret_bytes(secret: str | bytes, *, name: str) -> bytes:
+    key = secret.encode("utf-8") if isinstance(secret, str) else secret
+    if len(key) < 32:
+        raise ValueError(f"{name} must be at least 32 bytes")
+    return key
+
+
+def _base64url_no_padding(payload: bytes) -> str:
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_base64url_no_padding(payload: str) -> bytes:
+    padding = "=" * (-len(payload) % 4)
+    return base64.b64decode(payload + padding, altchars=b"-_", validate=True)
+
+
+def derive_executor_command_verification_key(
+    executor_id: UUID | str,
+    *,
+    root_secret: str | bytes,
+) -> bytes:
+    """Derive one command-verification key scoped to a single executor."""
+
+    key = _require_secret_bytes(root_secret, name="command signing root secret")
+    canonical_executor_id = str(UUID(str(executor_id)))
+    context = f"{_EXECUTOR_KEY_CONTEXT}:{canonical_executor_id}".encode("ascii")
+    return hmac.new(key, context, hashlib.sha256).digest()
+
+
+def signed_execution_envelope_preimage(
+    *,
+    key_id: str,
+    executor_id: UUID | str,
+    payload_sha256: str,
+    payload_b64: str,
+) -> bytes:
+    """Return the exact ASCII preimage consumed by Python and MQL5."""
+
+    if (
+        not key_id
+        or len(key_id) > 100
+        or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:-" for ch in key_id)
+    ):
+        raise ValueError("key_id contains unsupported wire characters")
+    canonical_executor_id = str(UUID(str(executor_id)))
+    if (
+        len(payload_sha256) != 71
+        or not payload_sha256.startswith("sha256:")
+        or any(ch not in "0123456789abcdef" for ch in payload_sha256[7:])
+    ):
+        raise ValueError("payload_sha256 is malformed")
+    if not payload_b64 or any(
+        ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-" for ch in payload_b64
+    ):
+        raise ValueError("payload_b64 is malformed")
+    return "\n".join(
+        (
+            _SIGNED_WIRE_DOMAIN,
+            f"key_id={key_id}",
+            f"executor_id={canonical_executor_id}",
+            f"payload_sha256={payload_sha256}",
+            f"payload_b64={payload_b64}",
+        )
+    ).encode("ascii")
+
+
+def build_signed_execution_envelope(
+    command: ExecutionCommandV1,
+    *,
+    root_secret: str | bytes,
+    key_id: str,
+) -> SignedExecutionEnvelopeV2:
+    """Freeze canonical command bytes and sign their versioned wire envelope."""
+
+    payload_bytes = canonical_json_bytes(command.model_dump(mode="json"))
+    payload_b64 = _base64url_no_padding(payload_bytes)
+    payload_sha256 = sha256_bytes_tag(payload_bytes)
+    executor_id = command.executor_binding.executor_id
+    verification_key = derive_executor_command_verification_key(executor_id, root_secret=root_secret)
+    preimage = signed_execution_envelope_preimage(
+        key_id=key_id,
+        executor_id=executor_id,
+        payload_sha256=payload_sha256,
+        payload_b64=payload_b64,
+    )
+    signature = "base64url:" + _base64url_no_padding(hmac.new(verification_key, preimage, hashlib.sha256).digest())
+    return SignedExecutionEnvelopeV2(
+        payload_b64=payload_b64,
+        payload_sha256=payload_sha256,
+        key_id=key_id,
+        executor_id=executor_id,
+        signature=signature,
+    )
+
+
+def verify_signed_execution_envelope(
+    envelope: SignedExecutionEnvelopeV2,
+    *,
+    verification_key: bytes,
+) -> ExecutionCommandV1 | None:
+    """Verify exact wire bytes and return the bound command, or fail closed."""
+
+    if len(verification_key) != hashlib.sha256().digest_size:
+        raise ValueError("executor command verification key must be exactly 32 bytes")
+    try:
+        preimage = signed_execution_envelope_preimage(
+            key_id=envelope.key_id,
+            executor_id=envelope.executor_id,
+            payload_sha256=envelope.payload_sha256,
+            payload_b64=envelope.payload_b64,
+        )
+        expected_signature = "base64url:" + _base64url_no_padding(
+            hmac.new(verification_key, preimage, hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(expected_signature, envelope.signature):
+            return None
+        payload_bytes = _decode_base64url_no_padding(envelope.payload_b64)
+        if not hmac.compare_digest(sha256_bytes_tag(payload_bytes), envelope.payload_sha256):
+            return None
+        raw_payload = json.loads(payload_bytes.decode("ascii"))
+        if not isinstance(raw_payload, dict):
+            return None
+        if canonical_json_bytes(raw_payload) != payload_bytes:
+            return None
+        command = ExecutionCommandV1.model_validate(raw_payload)
+        if command.executor_binding.executor_id != envelope.executor_id:
+            return None
+        return command
+    except (ValueError, binascii.Error):
+        return None
+
+
+def verify_signed_execution_envelope_with_root(
+    envelope: SignedExecutionEnvelopeV2,
+    *,
+    root_secret: str | bytes,
+) -> ExecutionCommandV1 | None:
+    verification_key = derive_executor_command_verification_key(
+        envelope.executor_id,
+        root_secret=root_secret,
+    )
+    return verify_signed_execution_envelope(envelope, verification_key=verification_key)
 
 
 def _signature_value(payload: dict[str, Any], secret: str | bytes) -> str:
-    key = secret.encode("utf-8") if isinstance(secret, str) else secret
-    if len(key) < 32:
-        raise ValueError("command signing secret must be at least 32 bytes")
+    key = _require_secret_bytes(secret, name="command signing secret")
     digest = hmac.new(key, canonical_json_bytes(payload), hashlib.sha256).digest()
     encoded = base64.urlsafe_b64encode(digest).decode("ascii")
     return f"base64:{encoded}"
@@ -389,6 +556,7 @@ def verify_execution_command(command: ExecutionCommandV1, *, secret: str | bytes
 
 __all__ = [
     "PROTOCOL_VERSION",
+    "SIGNED_WIRE_VERSION",
     "ExecutionAction",
     "ExecutionReportState",
     "MarginMode",
@@ -399,6 +567,7 @@ __all__ = [
     "CommandGuards",
     "CommandSignature",
     "ExecutionCommandV1",
+    "SignedExecutionEnvelopeV2",
     "BrokerReport",
     "ExecutionReportDetail",
     "ExecutionReportV1",
@@ -408,7 +577,13 @@ __all__ = [
     "ExecutorRegistrationV1",
     "ExecutorHeartbeatV1",
     "canonical_json_bytes",
+    "sha256_bytes_tag",
     "sha256_tag",
+    "derive_executor_command_verification_key",
+    "signed_execution_envelope_preimage",
+    "build_signed_execution_envelope",
+    "verify_signed_execution_envelope",
+    "verify_signed_execution_envelope_with_root",
     "sign_execution_command",
     "verify_execution_command",
 ]
