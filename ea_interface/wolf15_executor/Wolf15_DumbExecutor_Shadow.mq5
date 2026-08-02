@@ -3,7 +3,7 @@
 //| No signal logic. No risk calculation. No broker side effect.     |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.12"
+#property version   "1.13"
 #property description "Wolf15 pull/claim/report client. SHADOW ONLY."
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
@@ -20,12 +20,14 @@ input int    InpMagic               = 150015;
 input int    InpPollIntervalSeconds = 2;
 input int    InpHeartbeatSeconds    = 10;
 input int    InpHttpTimeoutMs       = 1500;
+input int    InpRecoveryRetrySeconds= 5;
 input bool   InpExecutionEnabled    = false;
 
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
-#define W15_VERSION  "0.12-shadow-signed-wire"
+#define W15_VERSION  "0.13-shadow-durable-retry"
 #define W15_SIGNED_WIRE "wolf15.mt5.exec.signed-bytes.v2"
 #define W15_SIGNED_DOMAIN "WOLF15-MT5-COMMAND-V2"
+#define W15_PENDING_MAGIC "WOLF15-PENDING-REPORT-V2"
 #define W15_STRATEGY "STRATEGY_5S_CR_FINAL"
 #define W15_CONFIRMATION_POLICY "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"
 #define W15_GOLDEN_EXECUTOR_ID "12345678-1234-5678-9234-567812345678"
@@ -40,6 +42,20 @@ datetime g_last_heartbeat = 0;
 bool     g_registered = false;
 string   g_last_command_id = "";
 string   g_quarantined_command_id = "";
+datetime g_last_recovery = 0;
+bool     g_recovery_blocked = false;
+
+struct PendingReportState
+{
+   string executor_id;
+   string account_id;
+   string command_id;
+   string report_id;
+   string request_hash;
+   string claim_token;
+   string report_body;
+   string integrity_tag;
+};
 
 //+------------------------------------------------------------------+
 string EscapeJson(const string value)
@@ -264,6 +280,15 @@ bool HexToBytes(const string hex, uchar &result[])
 }
 
 //+------------------------------------------------------------------+
+string BytesToHex(const uchar &value[])
+{
+   string result = "";
+   for(int index = 0; index < ArraySize(value); index++)
+      result += StringFormat("%02x", (uint)value[index]);
+   return result;
+}
+
+//+------------------------------------------------------------------+
 bool TaggedHexToBytes(const string value,
                       const string prefix,
                       const int expected_size,
@@ -374,10 +399,12 @@ bool ConstantTimeBytesEqual(const uchar &left[], const uchar &right[])
 }
 
 //+------------------------------------------------------------------+
-bool IsSafeWireIdentifier(const string value)
+bool IsSafeAsciiToken(const string value,
+                      const int minimum_length,
+                      const int maximum_length)
 {
    int length = StringLen(value);
-   if(length < 1 || length > 100)
+   if(length < minimum_length || length > maximum_length)
       return false;
    for(int index = 0; index < length; index++)
    {
@@ -390,6 +417,12 @@ bool IsSafeWireIdentifier(const string value)
          return false;
    }
    return true;
+}
+
+//+------------------------------------------------------------------+
+bool IsSafeWireIdentifier(const string value)
+{
+   return IsSafeAsciiToken(value, 1, 100);
 }
 
 //+------------------------------------------------------------------+
@@ -601,6 +634,268 @@ void AppendLedger(const string command_id, const string state, const string deta
 }
 
 //+------------------------------------------------------------------+
+string PendingReportPath()
+{
+   return "Wolf15Executor\\pending-report-" + InpExecutorId + ".bin";
+}
+
+//+------------------------------------------------------------------+
+string PendingReportTempPath()
+{
+   return PendingReportPath() + ".tmp";
+}
+
+//+------------------------------------------------------------------+
+void ResetPendingReport(PendingReportState &pending)
+{
+   pending.executor_id = "";
+   pending.account_id = "";
+   pending.command_id = "";
+   pending.report_id = "";
+   pending.request_hash = "";
+   pending.claim_token = "";
+   pending.report_body = "";
+   pending.integrity_tag = "";
+}
+
+//+------------------------------------------------------------------+
+bool PendingReportExists()
+{
+   return (FileIsExist(PendingReportPath(), 0) ||
+           FileIsExist(PendingReportTempPath(), 0));
+}
+
+//+------------------------------------------------------------------+
+bool WriteSizedAscii(const int handle, const string value, const int maximum_length)
+{
+   int length = StringLen(value);
+   uchar ascii[];
+   if(length < 1 || length > maximum_length || !AsciiToBytes(value, ascii))
+      return false;
+   if(FileWriteInteger(handle, length, INT_VALUE) != 4)
+      return false;
+   return (FileWriteString(handle, value, length) == (uint)length);
+}
+
+//+------------------------------------------------------------------+
+bool ReadSizedAscii(const int handle,
+                    const int maximum_length,
+                    string &value)
+{
+   int length = FileReadInteger(handle, INT_VALUE);
+   if(length < 1 || length > maximum_length)
+      return false;
+   value = FileReadString(handle, length);
+   if(StringLen(value) != length)
+      return false;
+   uchar ascii[];
+   return AsciiToBytes(value, ascii);
+}
+
+//+------------------------------------------------------------------+
+bool ComputePendingIntegrityTag(const PendingReportState &pending,
+                                string &integrity_tag)
+{
+   uchar verification_key[];
+   uchar material_bytes[];
+   uchar digest[];
+   string material = W15_PENDING_MAGIC + "\n" +
+                     "executor_id=" + pending.executor_id + "\n" +
+                     "account_id=" + pending.account_id + "\n" +
+                     "command_id=" + pending.command_id + "\n" +
+                     "report_id=" + pending.report_id + "\n" +
+                     "request_hash=" + pending.request_hash + "\n" +
+                     "claim_token=" + pending.claim_token + "\n" +
+                     "report_body=" + pending.report_body;
+   if(!TaggedHexToBytes(InpCommandVerificationKey,
+                        "hex:",
+                        32,
+                        verification_key) ||
+      !AsciiToBytes(material, material_bytes) ||
+      !HmacSha256Bytes(verification_key, material_bytes, digest))
+      return false;
+   integrity_tag = "hmac-sha256:" + BytesToHex(digest);
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool ValidatePendingReportState(const PendingReportState &pending,
+                                string &error)
+{
+   uchar request_digest[];
+   uchar report_bytes[];
+   uchar stored_integrity[];
+   uchar expected_integrity[];
+   if(pending.executor_id != InpExecutorId ||
+      pending.account_id != InpExpectedAccountId)
+   {
+      error = "PENDING_REPORT_BINDING_MISMATCH";
+      return false;
+   }
+   if(StringLen(pending.command_id) != 36 ||
+      StringLen(pending.report_id) != 36 ||
+      !IsSafeWireIdentifier(pending.command_id) ||
+      !IsSafeWireIdentifier(pending.report_id) ||
+      !TaggedHexToBytes(pending.request_hash, "sha256:", 32, request_digest) ||
+      !IsSafeAsciiToken(pending.claim_token, 32, 512))
+   {
+      error = "PENDING_REPORT_SHAPE_INVALID";
+      return false;
+   }
+   if(StringLen(pending.report_body) > 131072 ||
+      !AsciiToBytes(pending.report_body, report_bytes))
+   {
+      error = "PENDING_REPORT_BODY_INVALID";
+      return false;
+   }
+   if(JsonValue(pending.report_body, "protocol_version") != W15_PROTOCOL ||
+      JsonValue(pending.report_body, "report_id") != pending.report_id ||
+      JsonValue(pending.report_body, "command_id") != pending.command_id ||
+      JsonValue(pending.report_body, "executor_id") != pending.executor_id ||
+      JsonValue(pending.report_body, "account_id") != pending.account_id ||
+      JsonValue(pending.report_body, "request_hash") != pending.request_hash ||
+      JsonValue(pending.report_body, "sequence") != "1" ||
+      JsonValue(pending.report_body, "filled_volume") != "0")
+   {
+      error = "PENDING_REPORT_CONTENT_MISMATCH";
+      return false;
+   }
+   string state = JsonValue(pending.report_body, "state");
+   if(state != "WOULD_EXECUTE" && state != "WOULD_REJECT")
+   {
+      error = "PENDING_REPORT_STATE_INVALID";
+      return false;
+   }
+   string expected_integrity_tag = "";
+   if(!ComputePendingIntegrityTag(pending, expected_integrity_tag) ||
+      !TaggedHexToBytes(pending.integrity_tag,
+                        "hmac-sha256:",
+                        32,
+                        stored_integrity) ||
+      !TaggedHexToBytes(expected_integrity_tag,
+                        "hmac-sha256:",
+                        32,
+                        expected_integrity) ||
+      !ConstantTimeBytesEqual(stored_integrity, expected_integrity))
+   {
+      error = "PENDING_REPORT_INTEGRITY_INVALID";
+      return false;
+   }
+   error = "";
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool SavePendingReport(PendingReportState &pending, string &error)
+{
+   if(!ComputePendingIntegrityTag(pending, pending.integrity_tag))
+   {
+      error = "PENDING_REPORT_INTEGRITY_FAILED";
+      return false;
+   }
+   if(!ValidatePendingReportState(pending, error))
+      return false;
+   string temporary_path = PendingReportTempPath();
+   int handle = FileOpen(temporary_path,
+                         FILE_WRITE | FILE_BIN | FILE_ANSI,
+                         0,
+                         CP_UTF8);
+   if(handle == INVALID_HANDLE)
+   {
+      error = "PENDING_REPORT_TEMP_OPEN_FAILED";
+      return false;
+   }
+   bool written = (
+      WriteSizedAscii(handle, W15_PENDING_MAGIC, 64) &&
+      WriteSizedAscii(handle, pending.executor_id, 100) &&
+      WriteSizedAscii(handle, pending.account_id, 100) &&
+      WriteSizedAscii(handle, pending.command_id, 100) &&
+      WriteSizedAscii(handle, pending.report_id, 100) &&
+      WriteSizedAscii(handle, pending.request_hash, 100) &&
+      WriteSizedAscii(handle, pending.claim_token, 512) &&
+      WriteSizedAscii(handle, pending.report_body, 131072) &&
+      WriteSizedAscii(handle, pending.integrity_tag, 100)
+   );
+   FileFlush(handle);
+   FileClose(handle);
+   if(!written)
+   {
+      error = "PENDING_REPORT_TEMP_WRITE_FAILED";
+      return false;
+   }
+   ResetLastError();
+   if(!FileMove(temporary_path, 0, PendingReportPath(), FILE_REWRITE))
+   {
+      error = "PENDING_REPORT_ATOMIC_RENAME_FAILED";
+      return false;
+   }
+   error = "";
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool LoadPendingReport(PendingReportState &pending, string &error)
+{
+   ResetPendingReport(pending);
+   string path = PendingReportPath();
+   string temporary_path = PendingReportTempPath();
+   if(!FileIsExist(path, 0) && FileIsExist(temporary_path, 0))
+   {
+      ResetLastError();
+      if(!FileMove(temporary_path, 0, path, FILE_REWRITE))
+      {
+         error = "PENDING_REPORT_TEMP_RECOVERY_FAILED";
+         return false;
+      }
+   }
+   if(!FileIsExist(path, 0))
+   {
+      error = "";
+      return true;
+   }
+
+   int handle = FileOpen(path, FILE_READ | FILE_BIN | FILE_ANSI, 0, CP_UTF8);
+   if(handle == INVALID_HANDLE)
+   {
+      error = "PENDING_REPORT_OPEN_FAILED";
+      return false;
+   }
+   string magic = "";
+   bool read = (
+      ReadSizedAscii(handle, 64, magic) &&
+      ReadSizedAscii(handle, 100, pending.executor_id) &&
+      ReadSizedAscii(handle, 100, pending.account_id) &&
+      ReadSizedAscii(handle, 100, pending.command_id) &&
+      ReadSizedAscii(handle, 100, pending.report_id) &&
+      ReadSizedAscii(handle, 100, pending.request_hash) &&
+      ReadSizedAscii(handle, 512, pending.claim_token) &&
+      ReadSizedAscii(handle, 131072, pending.report_body) &&
+      ReadSizedAscii(handle, 100, pending.integrity_tag)
+   );
+   bool exact_size = (FileTell(handle) == FileSize(handle));
+   FileClose(handle);
+   if(!read || !exact_size || magic != W15_PENDING_MAGIC)
+   {
+      error = "PENDING_REPORT_FILE_CORRUPT";
+      return false;
+   }
+   return ValidatePendingReportState(pending, error);
+}
+
+//+------------------------------------------------------------------+
+bool ClearPendingReport()
+{
+   bool cleared = true;
+   if(FileIsExist(PendingReportPath(), 0) &&
+      !FileDelete(PendingReportPath(), 0))
+      cleared = false;
+   if(FileIsExist(PendingReportTempPath(), 0) &&
+      !FileDelete(PendingReportTempPath(), 0))
+      cleared = false;
+   return cleared;
+}
+
+//+------------------------------------------------------------------+
 string MarginModeName()
 {
    long mode = AccountInfoInteger(ACCOUNT_MARGIN_MODE);
@@ -787,6 +1082,11 @@ bool ValidateShadowCommand(const string json, string &reason)
       reason = "SYMBOL_BINDING_MISMATCH";
       return false;
    }
+   if(!IsSafeAsciiToken(JsonValue(json, "idempotency_key"), 8, 250))
+   {
+      reason = "IDEMPOTENCY_KEY_UNSAFE";
+      return false;
+   }
    datetime expiry = ParseUtc(JsonValue(json, "expires_at_utc"));
    if(expiry <= 0 || TimeGMT() >= expiry)
    {
@@ -824,6 +1124,162 @@ bool ValidateShadowCommand(const string json, string &reason)
 }
 
 //+------------------------------------------------------------------+
+void BlockPendingRecovery(const string command_id, const string reason)
+{
+   g_recovery_blocked = true;
+   AppendLedger(command_id, "PENDING_REPORT_BLOCKED", reason);
+   PrintFormat("[W15] Pending report recovery blocked reason=%s", reason);
+}
+
+//+------------------------------------------------------------------+
+int PostPendingReport(const PendingReportState &pending,
+                      string &response)
+{
+   return HttpRequest("POST",
+                      "/api/v1/commands/" + pending.command_id + "/reports",
+                      pending.report_body,
+                      pending.claim_token,
+                      response);
+}
+
+//+------------------------------------------------------------------+
+bool FinalizePendingReport(const PendingReportState &pending,
+                           const string outcome)
+{
+   AppendLedger(pending.command_id, "REPORT_RECONCILED", outcome);
+   if(!ClearPendingReport())
+   {
+      BlockPendingRecovery(pending.command_id, "PENDING_REPORT_CLEAR_FAILED");
+      return false;
+   }
+   g_last_command_id = pending.command_id;
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool HandlePendingPostResult(const PendingReportState &pending,
+                             const int code,
+                             const string response)
+{
+   if(code >= 200 && code <= 299)
+   {
+      if(!JsonBool(response, "accepted") ||
+         JsonValue(response, "command_id") != pending.command_id)
+      {
+         BlockPendingRecovery(pending.command_id, "PENDING_REPORT_ACK_INVALID");
+         return false;
+      }
+      return FinalizePendingReport(pending, "REPORT_ACKNOWLEDGED");
+   }
+   if(code >= 400 && code <= 499 && code != 403 && code != 409)
+      BlockPendingRecovery(pending.command_id,
+                           "PENDING_REPORT_HTTP_" + IntegerToString(code));
+   return false;
+}
+
+//+------------------------------------------------------------------+
+bool ReclaimPendingReport(PendingReportState &pending)
+{
+   string claim_response;
+   int code = HttpRequest("POST",
+                          "/api/v1/commands/" + pending.command_id + "/claim",
+                          "{\"lease_seconds\":30}",
+                          "",
+                          claim_response);
+   if(code != 200)
+      return false;
+
+   string response_hash = JsonValue(claim_response, "request_hash");
+   string new_claim_token = JsonValue(claim_response, "claim_token");
+   string command_json = "";
+   string reason = "";
+   if(response_hash != pending.request_hash ||
+      StringLen(new_claim_token) < 32 ||
+      !VerifySignedEnvelope(claim_response,
+                            pending.command_id,
+                            pending.request_hash,
+                            command_json,
+                            reason) ||
+      JsonValue(command_json, "idempotency_key") !=
+         JsonValue(pending.report_body, "idempotency_key"))
+   {
+      BlockPendingRecovery(pending.command_id,
+                           "PENDING_REPORT_RECLAIM_BINDING_FAILED");
+      return false;
+   }
+
+   pending.claim_token = new_claim_token;
+   if(!SavePendingReport(pending, reason))
+   {
+      BlockPendingRecovery(pending.command_id, reason);
+      return false;
+   }
+   AppendLedger(pending.command_id, "PENDING_REPORT_RECLAIMED", "TOKEN_ROTATED_DURABLY");
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool RecoverPendingReport()
+{
+   PendingReportState pending;
+   string error = "";
+   if(!LoadPendingReport(pending, error))
+   {
+      BlockPendingRecovery("-", error);
+      return false;
+   }
+   if(StringLen(pending.command_id) == 0)
+      return true;
+
+   string status_response;
+   int status_code = HttpRequest(
+      "GET",
+      "/api/v1/executors/" + InpExecutorId +
+         "/commands/" + pending.command_id + "/status",
+      "",
+      "",
+      status_response
+   );
+   if(status_code != 200)
+   {
+      if(status_code >= 400 && status_code <= 499)
+         BlockPendingRecovery(pending.command_id,
+                              "PENDING_STATUS_HTTP_" + IntegerToString(status_code));
+      return false;
+   }
+   if(JsonValue(status_response, "request_hash") != pending.request_hash)
+   {
+      BlockPendingRecovery(pending.command_id, "PENDING_STATUS_HASH_MISMATCH");
+      return false;
+   }
+   if(JsonBool(status_response, "terminal"))
+   {
+      string latest_report = JsonObject(status_response, "latest_report");
+      if(StringLen(latest_report) == 0 ||
+         JsonValue(latest_report, "request_hash") != pending.request_hash)
+      {
+         BlockPendingRecovery(pending.command_id, "PENDING_STATUS_TERMINAL_AMBIGUOUS");
+         return false;
+      }
+      string outcome = (JsonValue(latest_report, "report_id") == pending.report_id)
+         ? "REPORT_CONFIRMED_AFTER_RESTART"
+         : "TERMINAL_REPORT_CONFIRMED_BY_SERVER";
+      return FinalizePendingReport(pending, outcome);
+   }
+
+   string report_response;
+   int report_code = PostPendingReport(pending, report_response);
+   if(HandlePendingPostResult(pending, report_code, report_response))
+      return true;
+   if(g_recovery_blocked || (report_code != 403 && report_code != 409))
+      return false;
+   if(!ReclaimPendingReport(pending))
+      return false;
+   report_code = PostPendingReport(pending, report_response);
+   return HandlePendingPostResult(pending, report_code, report_response);
+}
+
+//+------------------------------------------------------------------+
 bool SendShadowReport(const string command_json,
                       const string claim_token,
                       const string request_hash,
@@ -838,8 +1294,14 @@ bool SendShadowReport(const string command_json,
    double entry = StringToDouble(JsonValue(command_json, "entry_price"));
    double stop = StringToDouble(JsonValue(command_json, "stop_loss"));
    double target = StringToDouble(JsonValue(command_json, "take_profit"));
-   string report_id = MakeUuid();
-   string body = StringFormat(
+   PendingReportState pending;
+   pending.executor_id = InpExecutorId;
+   pending.account_id = InpExpectedAccountId;
+   pending.command_id = command_id;
+   pending.report_id = MakeUuid();
+   pending.request_hash = request_hash;
+   pending.claim_token = claim_token;
+   pending.report_body = StringFormat(
       "{\"event\":\"execution_report\",\"protocol_version\":\"%s\","
       "\"report_id\":\"%s\",\"command_id\":\"%s\","
       "\"idempotency_key\":\"%s\",\"sequence\":1,\"state\":\"%s\","
@@ -849,15 +1311,20 @@ bool SendShadowReport(const string command_json,
       "\"filled_volume\":0,\"requested_price\":%.10f,\"filled_price\":null,"
       "\"stop_loss\":%.10f,\"take_profit\":%.10f,\"observed_spread_points\":null},"
       "\"reason_code\":\"%s\",\"reason_detail\":\"%s\"}",
-      W15_PROTOCOL, report_id, command_id, EscapeJson(idempotency_key), state,
+      W15_PROTOCOL, pending.report_id, command_id, EscapeJson(idempotency_key), state,
       UtcTimestamp(), InpExecutorId, EscapeJson(InpExpectedAccountId), request_hash,
       volume, entry, stop, target, reason_code, EscapeJson(reason));
 
-   AppendLedger(command_id, state, reason);
+   string storage_error = "";
+   if(!SavePendingReport(pending, storage_error))
+   {
+      BlockPendingRecovery(command_id, storage_error);
+      return false;
+   }
+   AppendLedger(command_id, "REPORT_DURABLE", state + ":" + reason);
    string response;
-   int code = HttpRequest("POST", "/api/v1/commands/" + command_id + "/reports",
-                          body, claim_token, response);
-   return (code >= 200 && code <= 299);
+   int code = PostPendingReport(pending, response);
+   return HandlePendingPostResult(pending, code, response);
 }
 
 //+------------------------------------------------------------------+
@@ -912,6 +1379,11 @@ int OnInit()
       Print("[W15] This build is SHADOW ONLY. Set InpExecutionEnabled=false.");
       return INIT_PARAMETERS_INCORRECT;
    }
+   if(InpRecoveryRetrySeconds < 1)
+   {
+      Print("[W15] Recovery retry interval must be positive.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
    const bool https_endpoint = (StringFind(InpBaseUrl, "https://") == 0);
    const int executor_id_length = StringLen(InpExecutorId);
    const int executor_token_length = StringLen(InpExecutorToken);
@@ -955,9 +1427,19 @@ int OnInit()
       Print("[W15] Broker server binding mismatch.");
       return INIT_FAILED;
    }
+   FolderCreate("Wolf15Executor", 0);
    FolderCreate("Wolf15Executor", FILE_COMMON);
+   PendingReportState pending;
+   string pending_error = "";
+   if(!LoadPendingReport(pending, pending_error))
+   {
+      PrintFormat("[W15] Durable pending state rejected reason=%s", pending_error);
+      return INIT_FAILED;
+   }
+   if(StringLen(pending.command_id) > 0)
+      Print("[W15] Durable pending report found; reconciliation required before polling.");
    EventSetTimer(1);
-   Print("[W15] Shadow executor initialized with signed-wire verification. No broker side effects are compiled in.");
+   Print("[W15] Shadow executor initialized with signed-wire verification and durable report recovery. No broker side effects are compiled in.");
    return INIT_SUCCEEDED;
 }
 
@@ -974,6 +1456,18 @@ void OnTimer()
    {
       SendHeartbeat();
       g_last_heartbeat = now;
+   }
+   if(g_recovery_blocked)
+      return;
+   if(PendingReportExists())
+   {
+      if(now - g_last_recovery >= InpRecoveryRetrySeconds)
+      {
+         RecoverPendingReport();
+         g_last_recovery = now;
+      }
+      if(g_recovery_blocked || PendingReportExists())
+         return;
    }
    if(now - g_last_poll >= InpPollIntervalSeconds)
    {

@@ -26,6 +26,13 @@ def _poll_one_command(source: str) -> str:
     return match.group(1)
 
 
+def _between_functions(source: str, start: str, end: str) -> str:
+    pattern = rf"\b(?:bool|int|void|string)\s+{re.escape(start)}\s*\(.*?(?=\b(?:bool|int|void|string)\s+{re.escape(end)}\s*\()"
+    match = re.search(pattern, source, re.DOTALL)
+    assert match is not None, f"EA source must define {start} before {end}"
+    return match.group(0)
+
+
 def test_shadow_executor_binds_the_runtime_mt5_login() -> None:
     on_init = _on_init(_source())
 
@@ -154,3 +161,79 @@ def test_signed_envelope_verifier_binds_hash_command_and_executor() -> None:
     payload_decode = source.index("CharArrayToString(payload_bytes")
     command_parse = source.index('JsonValue(command_json, "command_id")')
     assert signature_check < payload_decode < command_parse
+
+
+def test_pending_report_is_atomically_persisted_before_transport() -> None:
+    source = _source()
+    save = _between_functions(source, "SavePendingReport", "LoadPendingReport")
+    send = _between_functions(source, "SendShadowReport", "PollOneCommand")
+
+    assert "FILE_WRITE | FILE_BIN | FILE_ANSI" in save
+    assert "FileFlush(handle);" in save
+    assert "FileClose(handle);" in save
+    assert "FileMove(temporary_path, 0, PendingReportPath(), FILE_REWRITE)" in save
+    assert "ComputePendingIntegrityTag(pending, pending.integrity_tag)" in save
+    assert send.index("SavePendingReport(pending, storage_error)") < send.index("PostPendingReport(pending, response)")
+    assert "pending.report_id = MakeUuid();" in send
+    assert "pending.report_body = StringFormat(" in send
+
+
+def test_restart_reconciles_server_truth_before_resending() -> None:
+    source = _source()
+    recover = _between_functions(source, "RecoverPendingReport", "SendShadowReport")
+    acknowledgement = _between_functions(source, "HandlePendingPostResult", "ReclaimPendingReport")
+
+    status = recover.index('"/api/v1/executors/" + InpExecutorId +')
+    post = recover.index("PostPendingReport(pending, report_response)")
+    assert status < post
+    assert 'JsonBool(status_response, "terminal")' in recover
+    assert 'JsonObject(status_response, "latest_report")' in recover
+    assert 'JsonValue(latest_report, "request_hash") != pending.request_hash' in recover
+    assert "FinalizePendingReport(pending, outcome)" in recover
+    assert '!JsonBool(response, "accepted")' in acknowledgement
+    assert 'JsonValue(response, "command_id") != pending.command_id' in acknowledgement
+
+
+def test_reclaim_rotates_the_token_durably_before_resend() -> None:
+    source = _source()
+    reclaim = _between_functions(source, "ReclaimPendingReport", "RecoverPendingReport")
+    recover = _between_functions(source, "RecoverPendingReport", "SendShadowReport")
+
+    token_update = reclaim.index("pending.claim_token = new_claim_token;")
+    durable_update = reclaim.index("SavePendingReport(pending, reason)")
+    assert token_update < durable_update
+    assert "VerifySignedEnvelope(claim_response" in reclaim
+    reclaim_call = recover.index("ReclaimPendingReport(pending)")
+    retry_post = recover.rindex("PostPendingReport(pending, report_response)")
+    assert reclaim_call < retry_post
+
+
+def test_pending_state_is_bound_and_blocks_new_command_polling() -> None:
+    source = _source()
+    on_init = _on_init(source)
+    validation = _between_functions(source, "ValidateShadowCommand", "BlockPendingRecovery")
+    timer = re.search(r"\bvoid\s+OnTimer\s*\(\s*\)(.*?)\bvoid\s+OnDeinit\s*\(", source, re.DOTALL)
+    assert timer is not None
+    on_timer = timer.group(1)
+
+    assert "pending.executor_id != InpExecutorId" in source
+    assert "pending.account_id != InpExpectedAccountId" in source
+    assert 'JsonValue(pending.report_body, "filled_volume") != "0"' in source
+    assert 'IsSafeAsciiToken(JsonValue(json, "idempotency_key"), 8, 250)' in validation
+    assert '"PENDING_REPORT_INTEGRITY_INVALID"' in source
+    assert "ConstantTimeBytesEqual(stored_integrity, expected_integrity)" in source
+    assert "LoadPendingReport(pending, pending_error)" in on_init
+    assert "return INIT_FAILED;" in on_init
+    recovery = on_timer.index("RecoverPendingReport();")
+    pending_return = on_timer.index("if(g_recovery_blocked || PendingReportExists())")
+    poll = on_timer.index("PollOneCommand();")
+    assert recovery < pending_return < poll
+
+
+def test_pending_file_does_not_persist_long_lived_executor_secrets() -> None:
+    source = _source()
+    save = _between_functions(source, "SavePendingReport", "LoadPendingReport")
+
+    assert "InpExecutorToken" not in save
+    assert "InpCommandVerificationKey" not in save
+    assert "FILE_COMMON" not in save

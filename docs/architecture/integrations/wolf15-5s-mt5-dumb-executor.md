@@ -368,6 +368,9 @@ The next increments are:
 3. persist the resulting non-executable tradeplan candidate;
 4. persist campaign risk locks and reservations atomically with final-signal
    outbox rows;
-5. add local cryptographic verification and durable restart/retry storage to
-   the MQL5 scaffold, then compile it in MetaEditor;
-6. run SHADOW, DEMO, then a symbol-limited LIVE canary.
+5. run the signed-wire golden-vector and durable report restart drills in the
+   actual MT5 terminal; the MQL5 scaffold now implements both gates and
+   compiles without broker mutation calls;
+6. persist campaign risk locks and reservations and implement the separately
+   governed DEMO executor path;
+7. run SHADOW, DEMO, then a symbol-limited LIVE canary.

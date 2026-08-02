@@ -16,6 +16,10 @@ Current scope:
 - startup golden-vector verification of the MQL5 SHA-256, base64url, and HMAC
   implementation;
 - fail-closed source, mode, expiry, price, symbol, and volume validation;
+- atomic local persistence of the exact report body and current claim token
+  before the first report request;
+- restart recovery that reconciles server status before any resend, reuses the
+  original report id/body, and durably stores a rotated claim token before use;
 - local append-only shadow ledger;
 - idempotent `WOULD_EXECUTE` / `WOULD_REJECT` report.
 
@@ -43,6 +47,20 @@ The backend now freezes and stores a `wolf15.mt5.exec.signed-bytes.v2` envelope
 and exposes read-only command-status reconciliation. This EA authenticates the
 exact frozen bytes locally, verifies their SHA-256 digest, and only then parses
 the command. A failed envelope is quarantined without sending a report derived
-from untrusted command fields. Durable claim/report retry storage remains 3A-2
-work and must be completed before DEMO promotion. The backend independently
-validates command signatures and remains SHADOW by default.
+from untrusted command fields.
+
+Before a report is sent, the EA writes one binary pending record to its local
+MT5 file sandbox under `MQL5/Files/Wolf15Executor/`. The record contains the
+short-lived claim token and exact report body, but never the executor bearer
+token, verification key, or signing root secret. Its content is protected by
+an HMAC made with the executor-scoped verification key. Do not upload or share
+this file. A restart reconciles the command-status endpoint before retrying the
+same body. Corrupt, modified, key-mismatched, or account-mismatched local state
+blocks initialization/polling instead of being discarded. If the verification
+key is rotated while a report is pending, restore the previous scoped key long
+enough to reconcile that record rather than deleting it.
+
+The backend independently validates command signatures and remains SHADOW by
+default. This EA still has no broker mutation calls. Runtime restart drills on
+the demo terminal, durable risk reservation, and a separately governed DEMO
+execution implementation remain required before any broker order test.
