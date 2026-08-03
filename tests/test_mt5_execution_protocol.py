@@ -169,11 +169,14 @@ def _unsigned_command() -> dict:
 
 
 def _final_signal() -> dict:
+    now = datetime.now(UTC)
     return {
         "event": "signal_json",
-        "schema_version": "2.0-universal-pattern",
+        "schema_version": "wolf15.strategy-5scr.final-signal.v1",
         "symbol": "EURUSD",
+        "broker_symbol": "EURUSD.a",
         "signal_id": "signal-001",
+        "tradeplan_id": "5scr-plan:" + "a" * 32,
         "lifecycle_id": "lifecycle-001",
         "is_final_signal": True,
         "valid_for_execution": True,
@@ -188,6 +191,27 @@ def _final_signal() -> dict:
         "selected_sl": 1.095,
         "tp1": 1.11,
         "strategy_5scr": _strategy_5scr_proof(),
+        "risk_reservation_id": "11111111-1111-4111-8111-111111111111",
+        "risk_snapshot_id": "snapshot-001",
+        "reserved_volume": 0.1,
+        "risk_reservation": {
+            "schema_version": "wolf15.strategy-5scr.risk-reservation.v1",
+            "reservation_id": "11111111-1111-4111-8111-111111111111",
+            "campaign_id": "lifecycle-001",
+            "tradeplan_id": "5scr-plan:" + "a" * 32,
+            "canonical_symbol": "EURUSD",
+            "broker_symbol": "EURUSD.a",
+            "direction": "BUY",
+            "policy_id": "5scr.production-adjusted.parent-only.v1",
+            "state": "HELD",
+            "risk_snapshot_id": "snapshot-001",
+            "entry_role": "PARENT",
+            "risk_unit_usd": 50.0,
+            "reserved_risk_usd": 49.0,
+            "reserved_volume": 0.1,
+            "reserved_at_utc": now.isoformat(),
+            "expires_at_utc": (now + timedelta(minutes=5)).isoformat(),
+        },
     }
 
 
@@ -199,8 +223,8 @@ def _promotion_context() -> PromotionContext:
         login_hash="sha256:" + "a" * 64,
         broker_server="Broker-Demo",
         execution_mode=ExecutorMode.SHADOW,
-        campaign_id="EURUSD-CAMPAIGN-001",
-        block_id="EURUSD-PARENT-001",
+        campaign_id="lifecycle-001",
+        block_id="5scr-plan:" + "a" * 32,
         block_role="PARENT",
         action=ExecutionAction.PLACE_PENDING,
         canonical_symbol="EURUSD",
@@ -213,13 +237,13 @@ def _promotion_context() -> PromotionContext:
         magic=150015,
         issued_at_utc=now,
         not_before_utc=now,
-        expires_at_utc=now + timedelta(minutes=30),
-        broker_expiration_utc=now + timedelta(minutes=30),
+        expires_at_utc=now + timedelta(minutes=4),
+        broker_expiration_utc=now + timedelta(minutes=4),
         expected_margin_mode=MarginMode.HEDGING,
         max_spread_points=25,
         max_price_drift_points=15,
         risk_snapshot_id="snapshot-001",
-        risk_reservation_id="reservation-001",
+        risk_reservation_id="11111111-1111-4111-8111-111111111111",
         balance_snapshot=1000,
         equity_snapshot=1000,
     )
@@ -378,6 +402,33 @@ def test_final_signal_promotes_to_shadow_command() -> None:
     assert command.source.strategy_model == "STRATEGY_5S_CR_FINAL"
     assert command.source.context_resolution_status == "RESOLVED"
     assert verify_execution_command(command, secret=SECRET)
+
+
+@pytest.mark.parametrize(
+    ("update", "reason_code"),
+    [
+        ({"execution_mode": ExecutorMode.DEMO}, "PROMOTION_RISK_AUTHORITY_SHADOW_ONLY"),
+        ({"block_role": "CHILD"}, "PROMOTION_RISK_AUTHORITY_PARENT_ONLY"),
+        ({"volume": 0.2}, "PROMOTION_RESERVED_VOLUME_MISMATCH"),
+        ({"risk_snapshot_id": "snapshot-other"}, "PROMOTION_RISK_SNAPSHOT_MISMATCH"),
+        ({"risk_reservation_id": "22222222-2222-4222-8222-222222222222"}, "PROMOTION_RISK_RESERVATION_MISMATCH"),
+        ({"broker_symbol": "EURUSD.other"}, "PROMOTION_RESERVED_SYMBOL_MISMATCH"),
+    ],
+)
+def test_final_signal_promotion_is_bound_to_exact_parent_reservation(
+    update: dict[str, object],
+    reason_code: str,
+) -> None:
+    context = _promotion_context().model_copy(update=update)
+
+    with pytest.raises(PromotionRejectedError) as caught:
+        promote_final_signal_to_command(
+            _final_signal(),
+            context=context,
+            signing_secret=SECRET,
+            signing_key_id="exec-key-test",
+        )
+    assert caught.value.reason_code == reason_code
 
 
 def test_final_signal_without_5scr_proof_cannot_be_promoted() -> None:
