@@ -21,6 +21,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 PROTOCOL_VERSION: Final = "wolf15.mt5.exec.v1"
 SIGNED_WIRE_VERSION: Final = "wolf15.mt5.exec.signed-bytes.v2"
+SHADOW_ACCEPTANCE_SCHEMA_VERSION: Final = "wolf15.mt5.shadow-acceptance.v1"
+SHADOW_ACCEPTANCE_OPERATOR_AUTHORITY: Final = "WOLF15_SHADOW_ACCEPTANCE_OPERATOR_V1"
+SHADOW_ACCEPTANCE_PURPOSE: Final = "BROKER_CONNECTED_SHADOW_VALIDATION"
+SHADOW_ACCEPTANCE_EA_VERSION: Final = "0.22-shadow-acceptance-v1"
 SIGNED_WIRE_PAYLOAD_ENCODING: Final = "base64url"
 SIGNED_WIRE_ALGORITHM: Final = "HMAC-SHA256"
 _SIGNED_WIRE_DOMAIN: Final = "WOLF15-MT5-COMMAND-V2"
@@ -107,6 +111,21 @@ class CommandSource(StrictModel):
     confirmation_policy: Literal["H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"]
 
 
+class ShadowAcceptanceSource(StrictModel):
+    """Non-production lineage for broker-connected SHADOW acceptance only."""
+
+    source_event: Literal["SHADOW_ACCEPTANCE"] = "SHADOW_ACCEPTANCE"
+    source_schema_version: Literal["wolf15.mt5.shadow-acceptance.v1"] = SHADOW_ACCEPTANCE_SCHEMA_VERSION
+    acceptance_run_id: str = Field(..., min_length=3, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]+$")
+    operator_authority: Literal["WOLF15_SHADOW_ACCEPTANCE_OPERATOR_V1"] = SHADOW_ACCEPTANCE_OPERATOR_AUTHORITY
+    purpose: Literal["BROKER_CONNECTED_SHADOW_VALIDATION"] = SHADOW_ACCEPTANCE_PURPOSE
+    phase: Literal["A1", "A2"]
+    canonical_symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
+    broker_symbol: str = Field(..., min_length=1, max_length=64)
+    execution_authority: Literal[False] = False
+    broker_execution: Literal["FORBIDDEN"] = "FORBIDDEN"
+
+
 class OrderInstruction(StrictModel):
     canonical_symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
     broker_symbol: str = Field(..., min_length=1, max_length=64)
@@ -162,6 +181,18 @@ class CommandGuards(StrictModel):
     max_equity_drift_pct: float = Field(default=1.0, ge=0, le=10)
 
 
+class ShadowAcceptanceGuards(StrictModel):
+    """Mechanical SHADOW guards with deliberately no risk reservation."""
+
+    guard_type: Literal["SHADOW_ACCEPTANCE"] = "SHADOW_ACCEPTANCE"
+    kill_switch_required: Literal[True] = True
+    expected_margin_mode: MarginMode
+    account_snapshot_id: str = Field(..., min_length=3, max_length=200)
+    balance_snapshot: float = Field(..., gt=0)
+    equity_snapshot: float = Field(..., gt=0)
+    broker_execution: Literal["FORBIDDEN"] = "FORBIDDEN"
+
+
 class CommandSignature(StrictModel):
     algorithm: Literal["HMAC-SHA256"] = "HMAC-SHA256"
     key_id: str = Field(..., min_length=1, max_length=100)
@@ -180,10 +211,10 @@ class ExecutionCommandV1(StrictModel):
     not_before_utc: datetime
     expires_at_utc: datetime
     executor_binding: ExecutorBinding
-    source: CommandSource
+    source: CommandSource | ShadowAcceptanceSource
     action: ExecutionAction
     order: OrderInstruction | None
-    guards: CommandGuards
+    guards: CommandGuards | ShadowAcceptanceGuards
     signature: CommandSignature
 
     @field_validator("issued_at_utc", "not_before_utc", "expires_at_utc")
@@ -214,6 +245,15 @@ class ExecutionCommandV1(StrictModel):
             and self.order.order_type not in {"BUY_LIMIT", "SELL_LIMIT", "BUY_STOP", "SELL_STOP"}
         ):
             raise ValueError("PLACE_PENDING requires a pending order_type")
+        if isinstance(self.source, ShadowAcceptanceSource):
+            if self.executor_binding.execution_mode is not ExecutorMode.SHADOW:
+                raise ValueError("SHADOW_ACCEPTANCE requires SHADOW execution mode")
+            if self.action is not ExecutionAction.RECONCILE_ONLY or self.order is not None:
+                raise ValueError("SHADOW_ACCEPTANCE requires RECONCILE_ONLY without an order")
+            if not isinstance(self.guards, ShadowAcceptanceGuards):
+                raise ValueError("SHADOW_ACCEPTANCE requires dedicated acceptance guards")
+        elif not isinstance(self.guards, CommandGuards):
+            raise ValueError("signal_json requires production command guards")
         return self
 
     def is_active(self, *, now: datetime | None = None) -> bool:
@@ -557,14 +597,20 @@ def verify_execution_command(command: ExecutionCommandV1, *, secret: str | bytes
 __all__ = [
     "PROTOCOL_VERSION",
     "SIGNED_WIRE_VERSION",
+    "SHADOW_ACCEPTANCE_SCHEMA_VERSION",
+    "SHADOW_ACCEPTANCE_OPERATOR_AUTHORITY",
+    "SHADOW_ACCEPTANCE_PURPOSE",
+    "SHADOW_ACCEPTANCE_EA_VERSION",
     "ExecutionAction",
     "ExecutionReportState",
     "MarginMode",
     "ExecutorMode",
     "ExecutorBinding",
     "CommandSource",
+    "ShadowAcceptanceSource",
     "OrderInstruction",
     "CommandGuards",
+    "ShadowAcceptanceGuards",
     "CommandSignature",
     "ExecutionCommandV1",
     "SignedExecutionEnvelopeV2",

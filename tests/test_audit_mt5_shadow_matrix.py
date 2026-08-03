@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
@@ -15,16 +15,20 @@ import scripts.audit_mt5_shadow_matrix as matrix
 def _manifest_payload(*, phase: str = "A1") -> dict[str, object]:
     pairs = matrix.load_symbol_universe()
     selected = pairs[:1] if phase == "A1" else pairs
+    started_at = datetime.now(UTC)
     return {
         "schema_version": matrix.MANIFEST_VERSION,
-        "run_id": "audit-20260803-a1",
+        "acceptance_run_id": "audit-20260803-a1",
+        "operator_authority": matrix.REQUIRED_OPERATOR_AUTHORITY,
+        "purpose": matrix.REQUIRED_PURPOSE,
         "phase": phase,
         "symbol_universe": matrix.REQUIRED_UNIVERSE,
         "executor_id": "11111111-1111-4111-8111-111111111111",
         "broker_server": "XMGlobal-MT5 10",
         "expected_ea_version": matrix.EXPECTED_EA_VERSION,
         "expected_protocol_version": matrix.PROTOCOL_VERSION,
-        "started_at_utc": datetime.now(UTC).isoformat(),
+        "started_at_utc": started_at.isoformat(),
+        "expires_at_utc": (started_at + timedelta(minutes=5)).isoformat(),
         "commands": [
             {
                 "canonical_symbol": canonical,
@@ -59,7 +63,10 @@ def test_a2_manifest_requires_the_exact_frozen_universe(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("field", ["account_id", "executor_token", "signing_secret", "verification_key"])
+@pytest.mark.parametrize(
+    "field",
+    ["account_id", "account_number", "login_hash", "executor_token", "signing_secret", "verification_key"],
+)
 def test_manifest_rejects_credentials_and_account_identifiers(tmp_path: Path, field: str) -> None:
     payload = _manifest_payload()
     payload[field] = "must-not-be-here"
@@ -72,7 +79,7 @@ def test_manifest_rejects_credentials_and_account_identifiers(tmp_path: Path, fi
 
 def test_manifest_rejects_unsafe_run_id(tmp_path: Path) -> None:
     payload = _manifest_payload()
-    payload["run_id"] = "../../unsafe"
+    payload["acceptance_run_id"] = "../../unsafe"
 
     with pytest.raises(matrix.MatrixAbortError) as raised:
         matrix.load_manifest(_write_manifest(tmp_path / "manifest.json", payload))
@@ -123,8 +130,10 @@ def test_source_has_no_signing_or_enqueue_authority() -> None:
     assert "sign_execution_command" not in source
     assert "enqueue_command" not in source
     assert "EXECUTOR_COMMAND_SIGNING_SECRET" not in source
-    assert "risk_reservation_id" not in source
-    assert '"source_event"' not in source
+    assert "EXECUTOR_COMMAND_SIGNING_KEY_ID" not in source
+    assert "INSERT INTO" not in source.upper()
+    assert "UPDATE " not in source.upper()
+    assert "DELETE FROM" not in source.upper()
 
 
 def test_main_writes_fail_closed_artifact_for_unexpected_error(

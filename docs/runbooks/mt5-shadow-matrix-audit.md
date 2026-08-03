@@ -1,17 +1,18 @@
 # MT5 SHADOW matrix audit
 
-`scripts/audit_mt5_shadow_matrix.py` is a read-only verifier. It cannot build,
-sign, or enqueue an execution command. This preserves the execution authority
-boundary: commands must originate from a separately audited operator session,
-and the repository does not ship a reusable command-producer shortcut.
+`scripts/issue_mt5_shadow_acceptance.py` is the narrowly scoped operator
+authority. It can only create signed `SHADOW_ACCEPTANCE` commands with action
+`RECONCILE_ONLY`, no order, no risk reservation, and broker execution marked
+`FORBIDDEN`. `scripts/audit_mt5_shadow_matrix.py` remains a separate read-only
+verifier: it cannot build, sign, or enqueue a command.
 
 ## Preconditions
 
 - executor mode is exactly `SHADOW`;
 - global executor kill switch is active;
-- EA version is exactly `0.21-shadow-xm30-diag`;
+- EA version is exactly `0.22-shadow-acceptance-v1`;
 - protocol is exactly `wolf15.mt5.exec.v1`;
-- signed-wire-v2 database guarantees are ready;
+- signed-wire-v2 and acceptance-lineage database guarantees are ready;
 - heartbeat and account snapshot are fresh;
 - the account has zero open positions;
 - the snapshot publishes the exact `WOLF15_XM_30_V1` mapping;
@@ -23,19 +24,22 @@ token, verification key, login hash, or broker account number to this script.
 
 ## Manifest
 
-The operator session exports identities only:
+The authority exports identities and lineage only:
 
 ```json
 {
-  "schema_version": "wolf15.mt5.shadow-matrix-manifest.v1",
-  "run_id": "xm30-acceptance-20260803-a1",
+  "schema_version": "wolf15.mt5.shadow-acceptance-manifest.v1",
+  "acceptance_run_id": "xm30-acceptance-20260803-a1",
+  "operator_authority": "WOLF15_SHADOW_ACCEPTANCE_OPERATOR_V1",
+  "purpose": "BROKER_CONNECTED_SHADOW_VALIDATION",
   "phase": "A1",
   "symbol_universe": "WOLF15_XM_30_V1",
   "executor_id": "00000000-0000-4000-8000-000000000000",
   "broker_server": "XMGlobal-MT5 10",
-  "expected_ea_version": "0.21-shadow-xm30-diag",
+  "expected_ea_version": "0.22-shadow-acceptance-v1",
   "expected_protocol_version": "wolf15.mt5.exec.v1",
   "started_at_utc": "2026-08-03T08:00:00+00:00",
+  "expires_at_utc": "2026-08-03T08:05:00+00:00",
   "commands": [
     {
       "canonical_symbol": "EURUSD",
@@ -46,9 +50,31 @@ The operator session exports identities only:
 }
 ```
 
-`A1` requires exactly one command. `A2` requires all 30 audited pairs exactly
-once. Unknown manifest fields are rejected so credentials cannot be added by
+`A1` requires exactly one EURUSD command. `A2` requires all 30 audited pairs
+exactly once. Unknown manifest fields are rejected so account identifiers,
+login hashes, tokens, secrets, and verification keys cannot be added by
 accident.
+
+## Issue A1
+
+The bridge signing secret and key ID must already be present in the operator
+environment. Never pass either value on the command line or write them into the
+manifest.
+
+```bash
+python scripts/issue_mt5_shadow_acceptance.py \
+  --executor-id 00000000-0000-4000-8000-000000000000 \
+  --acceptance-run-id xm30-acceptance-20260803-a1 \
+  --phase A1 \
+  --ttl-seconds 300 \
+  --out local/operator-manifest.json
+```
+
+Issuance fails closed unless the executor is SHADOW, the kill switch is
+engaged, heartbeat and account snapshot are fresh, open positions are zero,
+the exact XM30 map is present, the acceptance-capable EA is registered, and
+both database safety schemas are ready. A2 uses the same command with
+`--phase A2`, but only after A1 passes.
 
 ## Run
 
@@ -59,9 +85,11 @@ python scripts/audit_mt5_shadow_matrix.py \
 ```
 
 The output is always written, including fail-closed and unexpected failures.
-The audit passes only when every command has exactly one `WOULD_EXECUTE` report,
-`filled_volume=0`, null broker identifiers, no `broker_entities`, no unexpected
-reports, no remaining active commands, and zero final open positions.
+The audit passes only when every command has exactly one `WOULD_EXECUTE` or
+`WOULD_REJECT` report bound to the acceptance lineage, `filled_volume=0`, null
+broker identifiers, no `broker_entities`, no unexpected reports, no remaining
+active commands, and zero final open positions. A `WOULD_EXECUTE` must carry
+reason `SHADOW_ACCEPTANCE_VALIDATED`.
 
 The audit proves transport and mechanical SHADOW validation only. It does not
 prove durable risk reservation, final-signal authority, DEMO execution, or
