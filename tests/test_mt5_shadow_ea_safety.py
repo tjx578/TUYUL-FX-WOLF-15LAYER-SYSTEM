@@ -306,3 +306,66 @@ def test_pending_file_does_not_persist_long_lived_executor_secrets() -> None:
     assert "InpExecutorToken" not in save
     assert "InpCommandVerificationKey" not in save
     assert "FILE_COMMON" not in save
+
+
+def test_http_diagnostics_log_only_bounded_metadata() -> None:
+    source = _source()
+    safe = _between_functions(source, "SafeLogValue", "ResponseHeaderValue")
+    http = _between_functions(source, "HttpRequest", "AppendLedger")
+
+    assert "character < 32" in safe
+    assert "character == 0x2028" in safe
+    assert "character >= 0x202A && character <= 0x202E" in safe
+    assert "character >= 0x2066 && character <= 0x2069" in safe
+    assert "StringLen(value) > max_length" in safe
+    assert "response_sha256=%s" in http
+    assert "response_bytes=%d" in http
+    assert "looks_like_html=%s" in http
+    assert "looks_like_json=%s" in http
+    assert 'ResponseHeaderValue(response_headers, "Content-Type")' in http
+    assert 'ResponseHeaderValue(response_headers, "X-Request-Id")' in http
+    assert "response=%s" not in source
+    assert "response_headers=%s" not in source
+    assert 'PrintFormat("%s", InpExecutorToken)' not in source
+    assert 'PrintFormat("%s", claim_token)' not in source
+
+
+def test_http_diagnostics_correlate_requests_and_leave_success_path_quiet() -> None:
+    http = _between_functions(_source(), "HttpRequest", "AppendLedger")
+
+    request_id = http.index("string request_id = MakeUuid();")
+    request_header = http.index('"X-Request-Id: " + request_id')
+    request_log = http.index('"cf_ray=%s response_request_id=%s request_id=%s"')
+    healthy_return = http.index('if(outcome == "HTTP_RESPONSE" && (code == 200 || code == 201 || code == 204))')
+    response_classification = http.index("ClassifyResponseShape(")
+
+    assert request_id < request_header < request_log
+    assert healthy_return < response_classification
+    assert '"Authorization: Bearer " + InpExecutorToken' in http
+    assert "InpExecutorToken" not in http[http.index("if(code == -1)") :]
+
+
+def test_http_diagnostics_distinguish_transport_non_http_and_http_results() -> None:
+    source = _source()
+    outcome = _between_functions(source, "WebRequestOutcome", "ClassifyResponseShape")
+    http = _between_functions(source, "HttpRequest", "AppendLedger")
+
+    assert "if(code == -1)" in outcome
+    assert 'return "WEBREQUEST_TRANSPORT_ERROR"' in outcome
+    assert "if(code >= 100 && code <= 599)" in outcome
+    assert 'return "HTTP_RESPONSE"' in outcome
+    assert 'return "WEBREQUEST_NON_HTTP_RETURN"' in outcome
+    assert "if(code == -1)" in http
+    assert 'if(outcome == "WEBREQUEST_NON_HTTP_RETURN")' in http
+    assert "if(code < 0)" not in http
+    assert "HTTP transport error outcome=%s" in http
+    assert "WebRequest non-HTTP return outcome=%s" in http
+    assert http.index("if(code == -1)") < http.index('if(outcome == "WEBREQUEST_NON_HTTP_RETURN")')
+    assert http.index('if(outcome == "WEBREQUEST_NON_HTTP_RETURN")') < http.index("CharArrayToString")
+
+
+def test_diagnostic_build_has_a_distinct_runtime_version() -> None:
+    source = _source()
+
+    assert '#property version   "1.21"' in source
+    assert '#define W15_VERSION  "0.21-shadow-xm30-diag"' in source
