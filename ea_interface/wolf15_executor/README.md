@@ -9,7 +9,10 @@ when `InpExecutionEnabled=true`.
 Current scope:
 
 - exact runtime `ACCOUNT_LOGIN` and broker-server binding;
-- fresh account, position, and broker symbol capability snapshots;
+- fresh account, position, and 30-symbol broker capability snapshots from one
+  EA instance;
+- an audited XM mapping with `XAUUSD -> GOLD` and `XAGUSD -> SILVER` while the
+  other 28 canonical symbols map directly;
 - one-command polling and atomic claim;
 - local HMAC-SHA256 verification of the immutable signed-wire payload before
   command JSON is parsed;
@@ -40,8 +43,14 @@ Before compiling:
    `EXECUTOR_COMMAND_SIGNING_KEY_ID`, and set
    `InpCommandVerificationKey` to the script's `hex:<64 hex>` output. Never put
    the root signing secret in MT5.
-6. Set the exact account id, `sha256:<64 hex>` login hash, broker server,
-   canonical symbol, and broker symbol.
+6. Set the exact account id, `sha256:<64 hex>` login hash, and broker server.
+   The compiled `WOLF15_XM_30_V1` universe is recorded in
+   `broker_maps/xmglobal-mt5-10.csv` and must match the target broker probe.
+
+Attach exactly one EA instance for an executor id. Do not attach one copy per
+chart: all instances would poll the same executor queue, and the wrong instance
+could claim a command intended for another symbol. The single EA can inspect
+and validate all 30 mapped symbols regardless of its host chart.
 
 The backend now freezes and stores a `wolf15.mt5.exec.signed-bytes.v2` envelope
 and exposes read-only command-status reconciliation. This EA authenticates the

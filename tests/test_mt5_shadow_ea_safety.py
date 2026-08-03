@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import re
 from pathlib import Path
 
 EA_SOURCE = Path(__file__).resolve().parents[1] / "ea_interface" / "wolf15_executor" / "Wolf15_DumbExecutor_Shadow.mq5"
+PROBE_SOURCE = EA_SOURCE.parent / "Wolf15_Step1B_SymbolProbe.mq5"
 SIGNED_VECTOR = EA_SOURCE.parent / "test_vectors" / "signed_envelope_v2.json"
+BROKER_MAP = EA_SOURCE.parent / "broker_maps" / "xmglobal-mt5-10.csv"
+PAIR_CONFIG = EA_SOURCE.parents[2] / "config" / "pairs.yaml"
 
 
 def _source() -> str:
@@ -33,6 +37,16 @@ def _between_functions(source: str, start: str, end: str) -> str:
     return match.group(0)
 
 
+def _mql_string_array(source: str, name: str) -> list[str]:
+    match = re.search(
+        rf"string\s+{re.escape(name)}\s*\[[^]]+\]\s*=\s*\{{(.*?)\}};",
+        source,
+        re.DOTALL,
+    )
+    assert match is not None, f"EA source must define {name}"
+    return re.findall(r'"([A-Z0-9._-]+)"', match.group(1))
+
+
 def test_shadow_executor_binds_the_runtime_mt5_login() -> None:
     on_init = _on_init(_source())
 
@@ -56,6 +70,47 @@ def test_shadow_executor_has_no_broker_mutation_calls() -> None:
     )
     for function in forbidden_calls:
         assert re.search(rf"\b{function}\s*\(", source) is None
+
+
+def test_shadow_executor_uses_one_audited_30_symbol_universe() -> None:
+    source = _source()
+    with BROKER_MAP.open(newline="", encoding="utf-8") as handle:
+        broker_rows = list(csv.DictReader(handle))
+    configured = re.findall(r'symbol:\s*"([A-Z0-9._-]+)"', PAIR_CONFIG.read_text(encoding="utf-8"))
+    canonical = _mql_string_array(source, "W15_CANONICAL_SYMBOLS")
+    broker = _mql_string_array(source, "W15_BROKER_SYMBOLS")
+
+    assert len(broker_rows) == 30
+    assert len(canonical) == len(set(canonical)) == 30
+    assert len(broker) == len(set(broker)) == 30
+    assert canonical == configured
+    assert list(zip(canonical, broker, strict=True)) == [
+        (row["canonical_symbol"], row["broker_symbol"]) for row in broker_rows
+    ]
+    assert _mql_string_array(PROBE_SOURCE.read_text(encoding="utf-8"), "CanonicalSymbols") == canonical
+    assert ("XAUUSD", "GOLD") in zip(canonical, broker, strict=True)
+    assert ("XAGUSD", "SILVER") in zip(canonical, broker, strict=True)
+    assert "InpCanonicalSymbol" not in source
+    assert "InpBrokerSymbol" not in source
+
+
+def test_multi_symbol_commands_are_bound_before_capability_lookup() -> None:
+    source = _source()
+    validation = _between_functions(source, "ValidateShadowCommand", "BlockPendingRecovery")
+    heartbeat = _between_functions(source, "SendHeartbeat", "IsStepCompatible")
+    initialization = _between_functions(source, "InitializeSymbolUniverse", "BuildSymbolsJson")
+
+    pair_check = validation.index("SymbolPairIndex(canonical_symbol, broker_symbol)")
+    select = validation.index("SymbolSelect(broker_symbol, true)")
+    volume = validation.index("SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MIN)")
+    assert pair_check < select < volume
+    assert "SYMBOL_BINDING_MISMATCH" in validation
+    assert "SYMBOL_RUNTIME_NOT_READY" in validation
+    assert "for(int index = 0; index < W15_SYMBOL_COUNT; index++)" in initialization
+    assert "SYMBOL_UNIVERSE_DUPLICATE" in initialization
+    assert "SYMBOL_TRADE_MODE_FULL" in initialization
+    assert "string symbols_json = BuildSymbolsJson();" in heartbeat
+    assert "if(StringLen(symbols_json) == 0)" in heartbeat
 
 
 def test_shadow_executor_rejects_execution_enabled() -> None:

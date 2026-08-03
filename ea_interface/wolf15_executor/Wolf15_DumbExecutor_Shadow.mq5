@@ -3,7 +3,7 @@
 //| No signal logic. No risk calculation. No broker side effect.     |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.14"
+#property version   "1.20"
 #property description "Wolf15 pull/claim/report client. SHADOW ONLY."
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
@@ -14,8 +14,6 @@ input string InpCommandVerificationKey   = "";
 input string InpExpectedAccountId   = "";
 input string InpLoginHash           = "";
 input string InpExpectedBrokerServer= "";
-input string InpCanonicalSymbol     = "EURUSD";
-input string InpBrokerSymbol        = "EURUSD";
 input int    InpMagic               = 150015;
 input int    InpPollIntervalSeconds = 2;
 input int    InpHeartbeatSeconds    = 10;
@@ -25,7 +23,7 @@ input bool   InpExecutionEnabled    = false;
 input bool   InpRestartDrillHoldAfterDurableSave = false;
 
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
-#define W15_VERSION  "0.14-shadow-restart-drill"
+#define W15_VERSION  "0.20-shadow-xm30"
 #define W15_SIGNED_WIRE "wolf15.mt5.exec.signed-bytes.v2"
 #define W15_SIGNED_DOMAIN "WOLF15-MT5-COMMAND-V2"
 #define W15_PENDING_MAGIC "WOLF15-PENDING-REPORT-V2"
@@ -37,6 +35,28 @@ input bool   InpRestartDrillHoldAfterDurableSave = false;
 #define W15_GOLDEN_PAYLOAD_B64 "eyJhcnJheSI6WzEuMCwxZS0wNywwLjMwMDAwMDAwMDAwMDAwMDA0XSwidW5pY29kZSI6Ilx1MjBhYyJ9"
 #define W15_GOLDEN_PAYLOAD_SHA256 "sha256:18ed07b452adbec6fc29ec9fd6d347dc342216de60a24d009828a4fa69aaca7a"
 #define W15_GOLDEN_SIGNATURE "base64url:TYmshMY5I9eQhq7Qyi-UlIl7Q0j4e3ZfkribNBwxKIg"
+#define W15_SYMBOL_COUNT 30
+#define W15_SYMBOL_UNIVERSE "WOLF15_XM_30_V1"
+
+string W15_CANONICAL_SYMBOLS[W15_SYMBOL_COUNT] =
+{
+   "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD",
+   "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
+   "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
+   "AUDJPY", "AUDNZD", "AUDCAD", "AUDCHF",
+   "NZDJPY", "NZDCHF", "NZDCAD",
+   "CADJPY", "CADCHF", "CHFJPY", "XAUUSD", "XAGUSD"
+};
+
+string W15_BROKER_SYMBOLS[W15_SYMBOL_COUNT] =
+{
+   "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD",
+   "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
+   "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
+   "AUDJPY", "AUDNZD", "AUDCAD", "AUDCHF",
+   "NZDJPY", "NZDCHF", "NZDCAD",
+   "CADJPY", "CADCHF", "CHFJPY", "GOLD", "SILVER"
+};
 
 datetime g_last_poll = 0;
 datetime g_last_heartbeat = 0;
@@ -941,28 +961,116 @@ string BuildPositionsJson()
 }
 
 //+------------------------------------------------------------------+
+int SymbolPairIndex(const string canonical_symbol,
+                    const string broker_symbol)
+{
+   for(int index = 0; index < W15_SYMBOL_COUNT; index++)
+   {
+      if(W15_CANONICAL_SYMBOLS[index] == canonical_symbol &&
+         W15_BROKER_SYMBOLS[index] == broker_symbol)
+      {
+         return index;
+      }
+   }
+   return -1;
+}
+
+//+------------------------------------------------------------------+
+bool InitializeSymbolUniverse(string &reason)
+{
+   for(int index = 0; index < W15_SYMBOL_COUNT; index++)
+   {
+      for(int previous = 0; previous < index; previous++)
+      {
+         if(W15_CANONICAL_SYMBOLS[index] == W15_CANONICAL_SYMBOLS[previous] ||
+            W15_BROKER_SYMBOLS[index] == W15_BROKER_SYMBOLS[previous])
+         {
+            reason = "SYMBOL_UNIVERSE_DUPLICATE";
+            return false;
+         }
+      }
+      string broker_symbol = W15_BROKER_SYMBOLS[index];
+      if(!SymbolSelect(broker_symbol, true))
+      {
+         reason = "SYMBOL_SELECT_FAILED:" + broker_symbol;
+         return false;
+      }
+      if((ENUM_SYMBOL_TRADE_MODE)SymbolInfoInteger(
+            broker_symbol, SYMBOL_TRADE_MODE) != SYMBOL_TRADE_MODE_FULL)
+      {
+         reason = "SYMBOL_NOT_FULL_TRADE_MODE:" + broker_symbol;
+         return false;
+      }
+      if(SymbolInfoDouble(broker_symbol, SYMBOL_POINT) <= 0.0 ||
+         SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_SIZE) <= 0.0 ||
+         SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_VALUE_PROFIT) <= 0.0 ||
+         SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_VALUE_LOSS) <= 0.0 ||
+         SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MIN) <= 0.0 ||
+         SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_STEP) <= 0.0)
+      {
+         reason = "SYMBOL_CAPABILITY_INVALID:" + broker_symbol;
+         return false;
+      }
+   }
+
+   for(int attempt = 0; attempt < 30; attempt++)
+   {
+      bool all_synchronized = true;
+      for(int index = 0; index < W15_SYMBOL_COUNT; index++)
+      {
+         if(!SymbolIsSynchronized(W15_BROKER_SYMBOLS[index]))
+         {
+            all_synchronized = false;
+            break;
+         }
+      }
+      if(all_synchronized)
+      {
+         reason = "READY";
+         return true;
+      }
+      Sleep(100);
+   }
+   reason = "SYMBOL_UNIVERSE_NOT_SYNCHRONIZED";
+   return false;
+}
+
+//+------------------------------------------------------------------+
 string BuildSymbolsJson()
 {
-   if(!SymbolSelect(InpBrokerSymbol, true))
-      return "[]";
-   return StringFormat(
-      "[{\"canonical_symbol\":\"%s\",\"broker_symbol\":\"%s\","
-      "\"digits\":%d,\"point\":%.10f,\"tick_size\":%.10f,"
-      "\"tick_value_profit\":%.8f,\"tick_value_loss\":%.8f,"
-      "\"volume_min\":%.8f,\"volume_max\":%.8f,\"volume_step\":%.8f,"
-      "\"stops_level_points\":%d,\"freeze_level_points\":%d,"
-      "\"expiration_modes\":[\"SPECIFIED\"]}]",
-      EscapeJson(InpCanonicalSymbol), EscapeJson(InpBrokerSymbol),
-      (int)SymbolInfoInteger(InpBrokerSymbol, SYMBOL_DIGITS),
-      SymbolInfoDouble(InpBrokerSymbol, SYMBOL_POINT),
-      SymbolInfoDouble(InpBrokerSymbol, SYMBOL_TRADE_TICK_SIZE),
-      SymbolInfoDouble(InpBrokerSymbol, SYMBOL_TRADE_TICK_VALUE_PROFIT),
-      SymbolInfoDouble(InpBrokerSymbol, SYMBOL_TRADE_TICK_VALUE_LOSS),
-      SymbolInfoDouble(InpBrokerSymbol, SYMBOL_VOLUME_MIN),
-      SymbolInfoDouble(InpBrokerSymbol, SYMBOL_VOLUME_MAX),
-      SymbolInfoDouble(InpBrokerSymbol, SYMBOL_VOLUME_STEP),
-      (int)SymbolInfoInteger(InpBrokerSymbol, SYMBOL_TRADE_STOPS_LEVEL),
-      (int)SymbolInfoInteger(InpBrokerSymbol, SYMBOL_TRADE_FREEZE_LEVEL));
+   string out = "[";
+   for(int index = 0; index < W15_SYMBOL_COUNT; index++)
+   {
+      string canonical_symbol = W15_CANONICAL_SYMBOLS[index];
+      string broker_symbol = W15_BROKER_SYMBOLS[index];
+      if(!SymbolSelect(broker_symbol, true) || !SymbolIsSynchronized(broker_symbol))
+      {
+         PrintFormat("[W15] Symbol capability unavailable symbol=%s", broker_symbol);
+         return "";
+      }
+      if(index > 0)
+         out += ",";
+      out += StringFormat(
+         "{\"canonical_symbol\":\"%s\",\"broker_symbol\":\"%s\","
+         "\"digits\":%d,\"point\":%.10f,\"tick_size\":%.10f,"
+         "\"tick_value_profit\":%.8f,\"tick_value_loss\":%.8f,"
+         "\"volume_min\":%.8f,\"volume_max\":%.8f,\"volume_step\":%.8f,"
+         "\"stops_level_points\":%d,\"freeze_level_points\":%d,"
+         "\"expiration_modes\":[\"SPECIFIED\"]}",
+         EscapeJson(canonical_symbol), EscapeJson(broker_symbol),
+         (int)SymbolInfoInteger(broker_symbol, SYMBOL_DIGITS),
+         SymbolInfoDouble(broker_symbol, SYMBOL_POINT),
+         SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_SIZE),
+         SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_VALUE_PROFIT),
+         SymbolInfoDouble(broker_symbol, SYMBOL_TRADE_TICK_VALUE_LOSS),
+         SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MIN),
+         SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MAX),
+         SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_STEP),
+         (int)SymbolInfoInteger(broker_symbol, SYMBOL_TRADE_STOPS_LEVEL),
+         (int)SymbolInfoInteger(broker_symbol, SYMBOL_TRADE_FREEZE_LEVEL));
+   }
+   out += "]";
+   return out;
 }
 
 //+------------------------------------------------------------------+
@@ -1007,6 +1115,9 @@ bool SendHeartbeat()
    string bool_trade = trade_allowed ? "true" : "false";
    string bool_auto = auto_enabled ? "true" : "false";
 
+   string symbols_json = BuildSymbolsJson();
+   if(StringLen(symbols_json) == 0)
+      return false;
    string snapshot = StringFormat(
       "{\"snapshot_id\":\"%s\",\"captured_at_utc\":\"%s\","
       "\"executor_id\":\"%s\",\"account_id\":\"%s\",\"currency\":\"%s\","
@@ -1018,7 +1129,7 @@ bool SendHeartbeat()
       EscapeJson(AccountInfoString(ACCOUNT_CURRENCY)), balance, equity, floating,
       AccountInfoDouble(ACCOUNT_MARGIN), AccountInfoDouble(ACCOUNT_MARGIN_FREE),
       margin_level, MarginModeName(), bool_trade, bool_auto,
-      BuildPositionsJson(), BuildSymbolsJson());
+      BuildPositionsJson(), symbols_json);
    string body = StringFormat(
       "{\"protocol_version\":\"%s\",\"executor_id\":\"%s\","
       "\"sent_at_utc\":\"%s\",\"terminal_connected\":%s,"
@@ -1077,10 +1188,18 @@ bool ValidateShadowCommand(const string json, string &reason)
       reason = "ACCOUNT_BINDING_MISMATCH";
       return false;
    }
-   if(JsonValue(json, "broker_symbol") != InpBrokerSymbol ||
-      JsonValue(json, "canonical_symbol") != InpCanonicalSymbol)
+   string broker_symbol = JsonValue(json, "broker_symbol");
+   string canonical_symbol = JsonValue(json, "canonical_symbol");
+   if(SymbolPairIndex(canonical_symbol, broker_symbol) < 0)
    {
       reason = "SYMBOL_BINDING_MISMATCH";
+      return false;
+   }
+   if(!SymbolSelect(broker_symbol, true) || !SymbolIsSynchronized(broker_symbol) ||
+      (ENUM_SYMBOL_TRADE_MODE)SymbolInfoInteger(
+         broker_symbol, SYMBOL_TRADE_MODE) != SYMBOL_TRADE_MODE_FULL)
+   {
+      reason = "SYMBOL_RUNTIME_NOT_READY";
       return false;
    }
    if(!IsSafeAsciiToken(JsonValue(json, "idempotency_key"), 8, 250))
@@ -1112,9 +1231,9 @@ bool ValidateShadowCommand(const string json, string &reason)
       reason = "PRICE_RELATION_INVALID";
       return false;
    }
-   double min_volume = SymbolInfoDouble(InpBrokerSymbol, SYMBOL_VOLUME_MIN);
-   double max_volume = SymbolInfoDouble(InpBrokerSymbol, SYMBOL_VOLUME_MAX);
-   double step = SymbolInfoDouble(InpBrokerSymbol, SYMBOL_VOLUME_STEP);
+   double min_volume = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MIN);
+   double max_volume = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_MAX);
+   double step = SymbolInfoDouble(broker_symbol, SYMBOL_VOLUME_STEP);
    if(volume < min_volume || volume > max_volume || !IsStepCompatible(volume, step))
    {
       reason = "VOLUME_NOT_EXACTLY_REPRESENTABLE";
@@ -1437,6 +1556,13 @@ int OnInit()
       Print("[W15] Broker server binding mismatch.");
       return INIT_FAILED;
    }
+   string symbol_universe_reason = "";
+   if(!InitializeSymbolUniverse(symbol_universe_reason))
+   {
+      PrintFormat("[W15] 30-symbol universe rejected reason=%s",
+                  symbol_universe_reason);
+      return INIT_FAILED;
+   }
    FolderCreate("Wolf15Executor", 0);
    FolderCreate("Wolf15Executor", FILE_COMMON);
    PendingReportState pending;
@@ -1449,7 +1575,10 @@ int OnInit()
    if(StringLen(pending.command_id) > 0)
       Print("[W15] Durable pending report found; reconciliation required before polling.");
    EventSetTimer(1);
-   Print("[W15] Shadow executor initialized with signed-wire verification and durable report recovery. No broker side effects are compiled in.");
+   PrintFormat("[W15] Shadow executor initialized with signed-wire verification, "
+               "durable recovery, and symbol_universe=%s count=%d. No broker "
+               "side effects are compiled in.",
+               W15_SYMBOL_UNIVERSE, W15_SYMBOL_COUNT);
    return INIT_SUCCEEDED;
 }
 
