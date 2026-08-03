@@ -403,7 +403,13 @@ def test_allowed_quorum_without_five_minute_admission_stays_ineligible():
 
 def test_five_minute_global_raw_ledger_block_grants_pair_admission():
     events = [
-        _event(offset, "AUDUSD", direction="BUY", deployment_id="deployment-a")
+        _event(
+            offset,
+            "AUDUSD",
+            direction="BUY",
+            deployment_id="deployment-a",
+            scanner_cycle_id=f"scan-{offset // 60}",
+        )
         for offset in range(0, 301, 60)
     ]
 

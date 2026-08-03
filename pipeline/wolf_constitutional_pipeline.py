@@ -7051,16 +7051,45 @@ class WolfConstitutionalPipeline:
     def _pair_admission_candidate(*, symbol: str, report: dict[str, Any]) -> dict[str, Any]:
         raw_grants = report.get("pair_admission_grants")
         grants = raw_grants if isinstance(raw_grants, list) else []
+        data_quality_raw = report.get("data_quality")
+        data_quality = data_quality_raw if isinstance(data_quality_raw, dict) else {}
+        as_of = WolfConstitutionalPipeline._parse_pair_admission_time(data_quality.get("end_utc"))
+        if as_of is None:
+            return {}
         matching = [
             item
             for item in grants
             if isinstance(item, dict)
             and str(item.get("symbol") or "").upper() == symbol
             and str(item.get("status") or "").upper() == "GRANTED"
+            and (
+                (granted_at := WolfConstitutionalPipeline._parse_pair_admission_time(item.get("granted_at_utc")))
+                is not None
+            )
+            and (
+                (expires_at := WolfConstitutionalPipeline._parse_pair_admission_time(item.get("expires_at_utc")))
+                is not None
+            )
+            and granted_at <= as_of < expires_at
         ]
         if not matching:
             return {}
         return max(matching, key=lambda item: str(item.get("granted_at_utc") or ""))
+
+    @staticmethod
+    def _parse_pair_admission_time(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str) and value.strip():
+            try:
+                parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        else:
+            return None
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(UTC)
 
     @staticmethod
     def _pressure_lineage_candidate(*, symbol: str, report: dict[str, Any]) -> dict[str, Any]:

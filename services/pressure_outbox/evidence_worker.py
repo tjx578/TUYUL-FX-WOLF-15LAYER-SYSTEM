@@ -428,6 +428,29 @@ class Strategy5SCREvidenceWorker:
                 attempt=work_item.evidence_attempt_count,
             )
             try:
+                pair_expiry_raw = envelope.payload.get("pair_admission_expires_at_utc")
+                if not isinstance(pair_expiry_raw, str):
+                    await self._repository.record_failure(
+                        envelope,
+                        error="STRATEGY_5SCR_PAIR_ADMISSION_EXPIRY_MISSING",
+                        retry_delay_seconds=retry_delay,
+                        max_attempts=1,
+                    )
+                    processed += 1
+                    continue
+                pair_expiry = as_utc(
+                    datetime.fromisoformat(pair_expiry_raw.replace("Z", "+00:00")),
+                    "pair_admission_expires_at_utc",
+                )
+                if evaluation_at >= pair_expiry:
+                    await self._repository.record_failure(
+                        envelope,
+                        error="STRATEGY_5SCR_PAIR_ADMISSION_EXPIRED_BEFORE_EVIDENCE",
+                        retry_delay_seconds=retry_delay,
+                        max_attempts=1,
+                    )
+                    processed += 1
+                    continue
                 expiry_raw = envelope.payload.get("raw_direction_expires_at_utc")
                 if isinstance(expiry_raw, str):
                     expiry = as_utc(

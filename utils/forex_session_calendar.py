@@ -12,13 +12,14 @@ supplied as local New-York dates without changing the default 24/5 calendar.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 FOREX_ROLLOVER_TIMEZONE = "America/New_York"
 FOREX_ROLLOVER_HOUR_LOCAL = 17
-FOREX_DAILY_FRESHNESS_BASIS = "FOREX_17NY_EXPECTED_CLOSED_BAR_V1"
+FOREX_DAILY_FRESHNESS_BASIS = "FOREX_17NY_EXPECTED_CLOSED_BAR_V2_PROVIDER_CALENDAR"
 
 _NEW_YORK = ZoneInfo(FOREX_ROLLOVER_TIMEZONE)
 _MAX_CALENDAR_SEARCH_DAYS = 370
@@ -30,6 +31,30 @@ class ForexDailyPeriod:
 
     open_at_utc: datetime
     close_at_utc: datetime
+
+
+def parse_forex_closed_dates(value: str | Iterable[str] | None) -> frozenset[date]:
+    """Parse provider-closure dates expressed in New-York calendar dates.
+
+    Invalid values raise instead of being ignored: silently dropping a provider
+    holiday could mark a valid prior Daily candle stale, while accepting an
+    ambiguous date could mark genuinely missing data fresh.
+    """
+
+    if value is None:
+        return frozenset()
+    raw_values = value.split(",") if isinstance(value, str) else list(value)
+    resolved: set[date] = set()
+    for raw in raw_values:
+        text = str(raw).strip()
+        if not text:
+            continue
+        try:
+            parsed = date.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError(f"invalid forex provider closed date: {text!r}") from exc
+        resolved.add(parsed)
+    return frozenset(resolved)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -163,5 +188,6 @@ __all__ = [
     "latest_expected_forex_daily_period",
     "missed_expected_forex_daily_bars",
     "next_forex_daily_close",
+    "parse_forex_closed_dates",
     "previous_forex_daily_close",
 ]

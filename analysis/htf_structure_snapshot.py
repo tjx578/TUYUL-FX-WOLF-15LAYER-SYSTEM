@@ -55,7 +55,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from analysis.candle_freshness import candle_age_seconds, parse_candle_timestamp
@@ -65,6 +65,7 @@ from utils.forex_session_calendar import (
     forex_daily_period_from_open,
     latest_expected_forex_daily_period,
     missed_expected_forex_daily_bars,
+    parse_forex_closed_dates,
 )
 
 __all__ = [
@@ -564,10 +565,11 @@ def _daily_freshness_evidence(
     now: datetime,
     fallback_age_seconds: float | None,
     fallback_max_age_seconds: float,
+    closed_dates: frozenset[date],
 ) -> _DailyFreshnessEvidence:
     """Resolve Daily freshness from closed trading periods, not wall time."""
 
-    expected = latest_expected_forex_daily_period(now)
+    expected = latest_expected_forex_daily_period(now, closed_dates=closed_dates)
     if not isinstance(candle, dict):
         return _DailyFreshnessEvidence(
             status=_freshness_status(fallback_age_seconds, fallback_max_age_seconds),
@@ -590,12 +592,15 @@ def _daily_freshness_evidence(
 
     period = None
     if explicit_close is not None:
-        period = forex_daily_period_from_close(explicit_close)
+        period = forex_daily_period_from_close(explicit_close, closed_dates=closed_dates)
         if explicit_open is not None:
             period = period.__class__(open_at_utc=explicit_open, close_at_utc=explicit_close)
         resolved_semantics = semantics if semantics != "UNSPECIFIED" else "EXPLICIT_PERIOD_BOUNDS"
     elif semantics == "PERIOD_END" and (provider_time or generic_time) is not None:
-        period = forex_daily_period_from_close(provider_time or generic_time)  # type: ignore[arg-type]
+        period = forex_daily_period_from_close(
+            provider_time or generic_time,  # type: ignore[arg-type]
+            closed_dates=closed_dates,
+        )
         resolved_semantics = semantics
     else:
         # The live Finnhub provider and the legacy HTF snapshots use period-open
@@ -603,7 +608,7 @@ def _daily_freshness_evidence(
         # a compatibility assumption instead of silently pretending PERIOD_END.
         open_at = explicit_open or provider_time or generic_time
         if open_at is not None:
-            period = forex_daily_period_from_open(open_at)
+            period = forex_daily_period_from_open(open_at, closed_dates=closed_dates)
         resolved_semantics = semantics if semantics != "UNSPECIFIED" else "ASSUMED_PERIOD_OPEN"
 
     if period is None:
@@ -618,7 +623,11 @@ def _daily_freshness_evidence(
             provider_timestamp_semantics=resolved_semantics,
         )
 
-    missed = missed_expected_forex_daily_bars(period.close_at_utc, expected.close_at_utc)
+    missed = missed_expected_forex_daily_bars(
+        period.close_at_utc,
+        expected.close_at_utc,
+        closed_dates=closed_dates,
+    )
     return _DailyFreshnessEvidence(
         status="FRESH" if missed == 0 else "STALE",
         basis=FOREX_DAILY_FRESHNESS_BASIS,
@@ -901,6 +910,7 @@ class HTFStructureSnapshotResolver:
     h4_lookback: int = _H4_LOOKBACK
     daily_bias_max_age_seconds: float | None = None
     liquidity_max_age_seconds: float | None = None
+    daily_closed_dates: frozenset[date] | None = None
 
     def _bind_source(self) -> Any:
         if self.candle_source is not None:
@@ -941,6 +951,7 @@ class HTFStructureSnapshotResolver:
             swing_window=self.swing_window,
             daily_bias_max_age_seconds=self.daily_bias_max_age_seconds,
             liquidity_max_age_seconds=self.liquidity_max_age_seconds,
+            daily_closed_dates=self.daily_closed_dates,
         )
 
 
@@ -953,9 +964,15 @@ def build_snapshot(
     now: datetime | None = None,
     daily_bias_max_age_seconds: float | None = None,
     liquidity_max_age_seconds: float | None = None,
+    daily_closed_dates: frozenset[date] | None = None,
 ) -> HTFStructureSnapshot:
     """Pure snapshot builder over already-fetched Daily + H4 candle lists."""
     now_utc = (now or datetime.now(UTC)).astimezone(UTC)
+    provider_closed_dates = (
+        parse_forex_closed_dates(os.getenv("HTF_DAILY_PROVIDER_CLOSED_DATES_NY"))
+        if daily_closed_dates is None
+        else frozenset(daily_closed_dates)
+    )
     daily_closed = _closed_candles(daily)
     h4_closed = _closed_candles(h4)
     daily_bars = len(daily_closed)
@@ -979,6 +996,7 @@ def build_snapshot(
         now=now_utc,
         fallback_age_seconds=daily_age,
         fallback_max_age_seconds=daily_max_age,
+        closed_dates=provider_closed_dates,
     )
     daily_freshness = daily_freshness_evidence.status
 

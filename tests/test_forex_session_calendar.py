@@ -7,6 +7,7 @@ from utils.forex_session_calendar import (
     latest_expected_forex_daily_period,
     missed_expected_forex_daily_bars,
     next_forex_daily_close,
+    parse_forex_closed_dates,
 )
 
 
@@ -48,3 +49,18 @@ def test_missed_bar_count_ignores_weekend() -> None:
     expected_close = datetime(2026, 8, 3, 21, 0, tzinfo=UTC)
 
     assert missed_expected_forex_daily_bars(source_close, expected_close) == 2
+
+
+def test_provider_closed_dates_parser_is_strict_and_deduplicated() -> None:
+    assert parse_forex_closed_dates("2026-12-25, 2026-12-25,2027-01-01") == frozenset(
+        {date(2026, 12, 25), date(2027, 1, 1)}
+    )
+
+
+def test_invalid_provider_closed_date_fails_closed() -> None:
+    try:
+        parse_forex_closed_dates("25-12-2026")
+    except ValueError as exc:
+        assert "invalid forex provider closed date" in str(exc)
+    else:  # pragma: no cover - documents the fail-closed requirement
+        raise AssertionError("invalid provider calendar value was accepted")

@@ -22,6 +22,10 @@ from uuid import UUID, uuid5
 
 from loguru import logger
 
+from contracts.strategy_5scr_pair_admission import (
+    PAIR_ADMISSION_MAX_TTL_SECONDS,
+    PAIR_ADMISSION_RULE_VERSION,
+)
 from contracts.strategy_5scr_pressure_outbox import PressureOutboxEnvelope
 from core.metrics import (
     PRESSURE_OUTBOX_BACKLOG,
@@ -207,12 +211,21 @@ def prepare_pressure_event(payload: Mapping[str, Any]) -> _PreparedPressureEvent
     pair_admission_id = _text(data.get("pair_admission_id"))
     pair_admission_status = str(data.get("pair_admission_status") or "").strip().upper()
     pair_admission_hash = _text(data.get("pair_admission_source_ledger_hash"))
+    pair_admission_rule = _text(data.get("pair_admission_rule_version"))
+    pair_admission_granted_at = _parse_datetime(data.get("pair_admission_granted_at_utc"))
+    pair_admission_expires_at = _parse_datetime(data.get("pair_admission_expires_at_utc"))
+    signal_valid_at = _signal_valid_at(data)
     if (
         pair_admission_id is None
         or _PAIR_ADMISSION_ID_RE.fullmatch(pair_admission_id) is None
         or pair_admission_status != "GRANTED"
         or pair_admission_hash is None
         or _SHA256_TAG_RE.fullmatch(pair_admission_hash) is None
+        or pair_admission_rule != PAIR_ADMISSION_RULE_VERSION
+        or pair_admission_granted_at is None
+        or pair_admission_expires_at is None
+        or not (pair_admission_granted_at <= signal_valid_at < pair_admission_expires_at)
+        or (pair_admission_expires_at - pair_admission_granted_at).total_seconds() > PAIR_ADMISSION_MAX_TTL_SECONDS
     ):
         raise PressureOutboxContractError("PRESSURE_PAIR_ADMISSION_REQUIRED")
     radar_manifest_id = _text(data.get("radar_manifest_id"))
@@ -256,7 +269,7 @@ def prepare_pressure_event(payload: Mapping[str, Any]) -> _PreparedPressureEvent
         lifecycle_id=lifecycle_id,
         source_clean_block_id=source_clean_block_id,
         source_watch_id=source_watch_id,
-        signal_valid_at=_signal_valid_at(data),
+        signal_valid_at=signal_valid_at,
         payload=data,
         payload_hash=payload_hash,
     )

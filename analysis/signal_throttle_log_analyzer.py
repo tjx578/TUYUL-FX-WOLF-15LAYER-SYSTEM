@@ -465,7 +465,7 @@ def analyze_signal_throttle_events(
             "v1_clean_block_ledger": [],
             "pair_admission_grants": [],
             "pair_admission_summary": {
-                "rule_version": "5scr.pair-admission.raw-ledger.v1",
+                "rule_version": "5scr.pair-admission.raw-ledger.v2",
                 "evaluated_blocks": 0,
                 "granted_blocks": 0,
                 "rejected_blocks": 0,
@@ -643,6 +643,7 @@ def analyze_signal_throttle_events(
         raw_events=ordered,
         clean_block_ids=clean_block_ids,
         min_duration_seconds=float(clean_block_seconds),
+        max_gap_seconds=min(300.0, float(scanner_cycle_gap_seconds)),
     )
     pair_admission_grants = pair_admission_audit.grants
     clean_watch_candidates = v1_clean_block_ledger
@@ -751,6 +752,7 @@ def analyze_signal_throttle_events(
     )
     pair_eligible_for_analysis = _pair_eligible_for_analysis(
         pair_admission_grants=pair_admission_grants,
+        as_of_utc=ordered[-1].timestamp,
     )
     watch_promotion_blockers = _watch_promotion_blockers(
         allowed_quorum=allowed_quorum,
@@ -3634,10 +3636,16 @@ def _signal_watch_source_fields(
 def _pair_eligible_for_analysis(
     *,
     pair_admission_grants: Iterable[Any],
+    as_of_utc: datetime,
 ) -> bool:
     """Eligibility is granted only by canonical raw-ledger admission."""
 
-    return any(getattr(grant, "status", None) == "GRANTED" for grant in pair_admission_grants)
+    return any(
+        getattr(grant, "status", None) == "GRANTED"
+        and callable(getattr(grant, "is_active_at", None))
+        and grant.is_active_at(as_of_utc)
+        for grant in pair_admission_grants
+    )
 
 
 def _watch_promotion_blockers(
