@@ -18,6 +18,7 @@ import pytest
 import pytest_asyncio
 
 import execution.mt5_risk_command_producer as producer_module
+import scripts.audit_mt5_risk_shadow_command as c3_audit_module
 from contracts.mt5_execution_protocol import (
     AccountSnapshotV1,
     CommandGuards,
@@ -28,8 +29,10 @@ from contracts.mt5_execution_protocol import (
     canonical_json_bytes,
     verify_signed_execution_envelope_with_root,
 )
+from contracts.mt5_operator_shadow import OperatorShadowRequest
 from contracts.strategy_5scr_risk_reservation import RiskReservationRequest
 from execution.execution_plane_flags import ExecutionPlaneFlags
+from execution.mt5_operator_shadow_wiring import OperatorControlledShadowAuthorityV1
 from execution.mt5_risk_command_producer import (
     MT5RiskCommandProducer,
     RiskCommandProducerRejectedError,
@@ -71,6 +74,12 @@ class _PoolBackedPostgres:
     @property
     def is_available(self) -> bool:
         return True
+
+    async def initialize(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
 
     async def execute(self, query: str, *args: Any) -> str:
         async with self._pool.acquire() as connection:
@@ -245,6 +254,21 @@ async def _cleanup(postgres: _PoolBackedPostgres, seeded: _SeededAuthority) -> N
         "DELETE FROM executor_account_snapshots WHERE executor_id = $1::uuid",
         str(seeded.executor_id),
     )
+    # C3 uses the append-only governance ledger.  This fixture is guarded to a
+    # loopback DISPOSABLE_TEST database, so cleanup may temporarily disable the
+    # immutability trigger and must restore it before yielding the lock.
+    await postgres.execute(
+        "ALTER TABLE executor_governance_audit DISABLE TRIGGER trg_executor_governance_audit_immutable"
+    )
+    try:
+        await postgres.execute(
+            "DELETE FROM executor_governance_audit WHERE executor_id = $1::uuid",
+            str(seeded.executor_id),
+        )
+    finally:
+        await postgres.execute(
+            "ALTER TABLE executor_governance_audit ENABLE TRIGGER trg_executor_governance_audit_immutable"
+        )
     await postgres.execute("DELETE FROM executor_instances WHERE executor_id = $1::uuid", str(seeded.executor_id))
     await postgres.execute("DELETE FROM ea_agents WHERE id = $1::uuid", str(seeded.executor_id))
 
@@ -676,6 +700,170 @@ async def test_risk_command_production_is_atomic_signed_shadow_and_idempotent(
         str(produced.command.command_id),
     )
     assert unchanged is not None and unchanged["risk_snapshot_id"] == reservation.reservation.account_snapshot_id
+
+
+async def test_reservation_selector_cannot_consume_a_different_pending_outbox(
+    postgres: _PoolBackedPostgres,
+    seeded: _SeededAuthority,
+) -> None:
+    authority = await _repository(postgres).reserve_parent(seeded.request)
+
+    assert await _command_producer(postgres).produce_next(reservation_id=uuid4()) is None
+
+    row = await postgres.fetchrow(
+        """
+        SELECT r.state AS reservation_state, r.command_id,
+               o.status AS outbox_status,
+               (SELECT count(*) FROM execution_commands WHERE account_id = $2) AS commands
+        FROM strategy_5scr_risk_reservations r
+        JOIN strategy_5scr_final_signal_outbox o ON o.reservation_id = r.reservation_id
+        WHERE r.reservation_id = $1::uuid
+        """,
+        str(authority.reservation.reservation_id),
+        seeded.account_id,
+    )
+    assert row is not None
+    assert dict(row) == {
+        "reservation_state": "HELD",
+        "command_id": None,
+        "outbox_status": "PENDING",
+        "commands": 0,
+    }
+
+
+async def test_operator_controlled_c3_writes_one_audited_shadow_command(
+    postgres: _PoolBackedPostgres,
+    seeded: _SeededAuthority,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    governance = await postgres.fetchrow(
+        "SELECT governance_version FROM executor_bridge_governance WHERE singleton_id = 1"
+    )
+    assert governance is not None
+    flags = ExecutionPlaneFlags(
+        execution_enabled=True,
+        signed_command_bridge_enabled=True,
+        execution_command_producer_enabled=True,
+        risk_reservation_enabled=True,
+        trade_outbox_write_enabled=True,
+        ea_command_delivery_enabled=True,
+        mt5_order_send_enabled=False,
+    )
+    reservations = _repository(postgres)
+    commands = MT5RiskCommandProducer(
+        pg=cast(Any, postgres),
+        flags=flags,
+        environ={
+            "EXECUTOR_COMMAND_SIGNING_SECRET": _COMMAND_SECRET,
+            "EXECUTOR_COMMAND_SIGNING_KEY_ID": _COMMAND_KEY_ID,
+        },
+        clock=lambda: _AUTHORITY_NOW,
+    )
+    request = OperatorShadowRequest(
+        operator_run_id=f"c3-{seeded.executor_id.hex[:16]}",
+        confirm_run_id=f"c3-{seeded.executor_id.hex[:16]}",
+        actor="operator:postgres-test",
+        reason="prove one operator-controlled C3 SHADOW command",
+        tradeplan_id=seeded.tradeplan_id,
+        executor_id=seeded.executor_id,
+        broker_symbol=seeded.broker_symbol,
+        expected_governance_version=int(governance["governance_version"]),
+        requested_at_utc=_AUTHORITY_NOW,
+        expires_at_utc=_AUTHORITY_NOW + timedelta(minutes=5),
+    )
+    authority = OperatorControlledShadowAuthorityV1(
+        pg=cast(Any, postgres),
+        flags=flags,
+        reservations=reservations,
+        commands=commands,
+        clock=lambda: _AUTHORITY_NOW,
+    )
+
+    manifest = await authority.issue(request)
+    replay = await OperatorControlledShadowAuthorityV1(
+        pg=cast(Any, postgres),
+        flags=ExecutionPlaneFlags(),
+        reservations=reservations,
+        commands=commands,
+        clock=lambda: _AUTHORITY_NOW,
+    ).issue(request)
+
+    assert replay == manifest
+    assert manifest.executor_id == seeded.executor_id
+    assert manifest.tradeplan_id == seeded.tradeplan_id
+    assert manifest.execution_mode == "SHADOW"
+    assert manifest.broker_execution == "FORBIDDEN"
+    rows = await postgres.fetch(
+        """
+        SELECT action, new_state
+        FROM executor_governance_audit
+        WHERE executor_id = $1::uuid AND action LIKE 'C3_SHADOW_%'
+        ORDER BY created_at
+        """,
+        str(seeded.executor_id),
+    )
+    assert [row["action"] for row in rows] == ["C3_SHADOW_REQUESTED", "C3_SHADOW_QUEUED"]
+    raw_queued = rows[-1]["new_state"]
+    queued = json.loads(raw_queued) if isinstance(raw_queued, str) else dict(raw_queued)
+    assert queued["operator_run_id"] == request.operator_run_id
+    assert queued["command_id"] == str(manifest.command_id)
+    assert not {
+        "account_id",
+        "account_number",
+        "login_hash",
+        "token",
+        "secret",
+        "verification_key",
+    }.intersection(queued)
+
+    command_hash = await postgres.fetchrow(
+        "SELECT payload_hash FROM execution_commands WHERE command_id = $1::uuid",
+        str(manifest.command_id),
+    )
+    assert command_hash is not None
+    terminal_report = {
+        "state": "WOULD_EXECUTE",
+        "command_id": str(manifest.command_id),
+        "executor_id": str(seeded.executor_id),
+        "request_hash": str(command_hash["payload_hash"]),
+        "execution": {"filled_volume": 0},
+        "broker": {"order_ticket": None, "deal_ticket": None, "position_id": None},
+        "reason_code": "SHADOW_PREFLIGHT_PASSED",
+    }
+    async with postgres.transaction() as connection:
+        await connection.execute(
+            """
+            INSERT INTO execution_reports (
+                report_id, command_id, executor_id, sequence, state, payload, payload_hash, event_time
+            ) VALUES ($1::uuid,$2::uuid,$3::uuid,1,'WOULD_EXECUTE',$4::jsonb,$5,$6)
+            """,
+            str(uuid4()),
+            str(manifest.command_id),
+            str(seeded.executor_id),
+            json.dumps(terminal_report, sort_keys=True, separators=(",", ":")),
+            "sha256:" + "e" * 64,
+            _AUTHORITY_NOW,
+        )
+        await connection.execute(
+            """
+            UPDATE execution_commands
+            SET state = 'SHADOW_COMPLETED', last_report_sequence = 1,
+                terminal_at = $2, updated_at = $2
+            WHERE command_id = $1::uuid
+            """,
+            str(manifest.command_id),
+            _AUTHORITY_NOW,
+        )
+    monkeypatch.setattr(c3_audit_module, "pg_client", postgres)
+
+    audited = await c3_audit_module.audit(manifest, timeout_seconds=1, poll_seconds=0.01)
+
+    assert audited["status"] == "PASS"
+    assert audited["command_state"] == "SHADOW_COMPLETED"
+    assert audited["report_state"] == "WOULD_EXECUTE"
+    assert audited["filled_volume"] == 0
+    assert audited["broker_entities"] == 0
+    assert audited["final_open_positions"] == 0
 
 
 async def test_command_producer_readiness_fails_closed_without_relational_binding(

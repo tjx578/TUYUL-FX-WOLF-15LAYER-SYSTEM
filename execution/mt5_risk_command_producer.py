@@ -341,7 +341,19 @@ class MT5RiskCommandProducer:
             raise RiskCommandProducerRejectedError("COMMAND_VOLUME_MISMATCH", "reserved volume drifted")
         return signal, snapshot
 
-    async def produce_next(self) -> RiskCommandProductionResult | None:
+    async def produce_next(
+        self,
+        *,
+        reservation_id: UUID | str | None = None,
+    ) -> RiskCommandProductionResult | None:
+        """Produce one command, optionally constrained to an operator-selected reservation.
+
+        The unconstrained form is retained for a future supervised worker.  C3
+        operator wiring must always pass ``reservation_id`` so an older pending
+        outbox row cannot be consumed in place of the operator's explicit
+        target.
+        """
+
         secret, signing_key_id = self._require_ready()
         now = cast(datetime, self._clock()).astimezone(UTC)
         async with self._pg.transaction() as connection:
@@ -372,10 +384,12 @@ class MT5RiskCommandProducer:
                 ) latest ON TRUE
                 CROSS JOIN executor_bridge_governance g
                 WHERE o.status = 'PENDING' AND r.state = 'HELD' AND g.singleton_id = 1
+                  AND ($1::uuid IS NULL OR o.reservation_id = $1::uuid)
                 ORDER BY o.created_at, o.outbox_id
                 LIMIT 1
                 FOR UPDATE OF o, r, e, s, g SKIP LOCKED
-                """
+                """,
+                str(reservation_id) if reservation_id is not None else None,
             )
             if row is None:
                 return None
