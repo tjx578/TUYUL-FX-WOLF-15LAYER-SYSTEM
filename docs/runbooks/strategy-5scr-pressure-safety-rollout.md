@@ -125,6 +125,11 @@ The in-process quote detector fails closed after every restart as
 sample count and elapsed warm-up window before becoming `LIVE`. Persistence of
 quote history remains a separate data-quality PR.
 
+Every Pair Admission evaluation, including rejection, is copied into the
+corresponding pressure payload with a deterministic SHA-256 hash. With the
+existing radar write gate enabled, `pressure_radar_events.payload` is the
+durable audit record. A rejected admission never creates an outbox row.
+
 ## Phase 2 — Lifecycle V2 shadow validation
 
 Before live outbox rows exist, validate Lifecycle V2 through deterministic replay. Once published pressure rows exist in later phases, the same observer can run in the worker.

@@ -6996,6 +6996,26 @@ class WolfConstitutionalPipeline:
             ),
             {},
         )
+        admission_evaluation_payload = (
+            dict(admission_evaluation)
+            if isinstance(admission_evaluation, dict) and admission_evaluation
+            else None
+        )
+        admission_evaluation_hash = None
+        if admission_evaluation_payload is not None:
+            import hashlib as _hashlib  # noqa: PLC0415 -- local audit hashing only
+            import json as _json  # noqa: PLC0415 -- local audit serialization only
+
+            canonical_evaluation = _json.dumps(
+                admission_evaluation_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                default=str,
+            )
+            admission_evaluation_hash = "sha256:" + _hashlib.sha256(
+                canonical_evaluation.encode("utf-8")
+            ).hexdigest()
         current_block_events = self._coerce_non_negative_int(
             activity.get("latest_block_events")
             if activity.get("latest_block_events") is not None
@@ -7036,6 +7056,15 @@ class WolfConstitutionalPipeline:
             "pair_admission_grant": dict(admission) if admission else None,
             "pair_admission_decision": admission_evaluation.get("decision") or "NOT_EVALUATED",
             "pair_admission_rejection_reason": admission_evaluation.get("rejection_reason"),
+            # The complete deterministic evaluation is carried into the
+            # pressure payload. When radar persistence is enabled, the
+            # existing pressure_radar_events.payload JSONB is its durable
+            # record. Rejections never create a pressure outbox row.
+            "pair_admission_evaluation": admission_evaluation_payload,
+            "pair_admission_evaluation_hash": admission_evaluation_hash,
+            "pair_admission_audit_persistence_target": (
+                "pressure_radar_events.payload" if admission_evaluation_payload is not None else None
+            ),
             "pair_admission_monitoring": {
                 "rule_version": admission_summary.get("rule_version"),
                 "evaluated_blocks": admission_summary.get("evaluated_blocks", 0),
