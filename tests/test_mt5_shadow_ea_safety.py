@@ -342,4 +342,30 @@ def test_http_diagnostics_correlate_requests_and_leave_success_path_quiet() -> N
     assert request_id < request_header < request_log
     assert healthy_return < response_classification
     assert '"Authorization: Bearer " + InpExecutorToken' in http
-    assert "InpExecutorToken" not in http[http.index("if(code < 0)") :]
+    assert "InpExecutorToken" not in http[http.index("if(code == -1)") :]
+
+
+def test_http_diagnostics_distinguish_transport_non_http_and_http_results() -> None:
+    source = _source()
+    outcome = _between_functions(source, "WebRequestOutcome", "ClassifyResponseShape")
+    http = _between_functions(source, "HttpRequest", "AppendLedger")
+
+    assert "if(code == -1)" in outcome
+    assert 'return "WEBREQUEST_TRANSPORT_ERROR"' in outcome
+    assert "if(code >= 100 && code <= 599)" in outcome
+    assert 'return "HTTP_RESPONSE"' in outcome
+    assert 'return "WEBREQUEST_NON_HTTP_RETURN"' in outcome
+    assert "if(code == -1)" in http
+    assert 'if(outcome == "WEBREQUEST_NON_HTTP_RETURN")' in http
+    assert "if(code < 0)" not in http
+    assert "HTTP transport error outcome=%s" in http
+    assert "WebRequest non-HTTP return outcome=%s" in http
+    assert http.index("if(code == -1)") < http.index('if(outcome == "WEBREQUEST_NON_HTTP_RETURN")')
+    assert http.index('if(outcome == "WEBREQUEST_NON_HTTP_RETURN")') < http.index("CharArrayToString")
+
+
+def test_diagnostic_build_has_a_distinct_runtime_version() -> None:
+    source = _source()
+
+    assert '#property version   "1.21"' in source
+    assert '#define W15_VERSION  "0.21-shadow-xm30-diag"' in source

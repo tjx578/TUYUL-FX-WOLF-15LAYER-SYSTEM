@@ -3,7 +3,7 @@
 //| No signal logic. No risk calculation. No broker side effect.     |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.20"
+#property version   "1.21"
 #property description "Wolf15 pull/claim/report client. SHADOW ONLY."
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
@@ -23,7 +23,7 @@ input bool   InpExecutionEnabled    = false;
 input bool   InpRestartDrillHoldAfterDurableSave = false;
 
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
-#define W15_VERSION  "0.20-shadow-xm30"
+#define W15_VERSION  "0.21-shadow-xm30-diag"
 #define W15_SIGNED_WIRE "wolf15.mt5.exec.signed-bytes.v2"
 #define W15_SIGNED_DOMAIN "WOLF15-MT5-COMMAND-V2"
 #define W15_PENDING_MAGIC "WOLF15-PENDING-REPORT-V2"
@@ -736,9 +736,18 @@ int HttpRequest(const string method,
    uint elapsed_ms = GetTickCount() - started_ms;
    string outcome = WebRequestOutcome(code);
 
-   if(code < 0)
+   if(code == -1)
    {
       PrintFormat("[W15] HTTP transport error outcome=%s method=%s endpoint=%s code=%d "
+                  "last_error=%d elapsed_ms=%u request_id=%s",
+                  outcome, method, endpoint, code, last_error, elapsed_ms, request_id);
+      response = "";
+      return code;
+   }
+
+   if(outcome == "WEBREQUEST_NON_HTTP_RETURN")
+   {
+      PrintFormat("[W15] WebRequest non-HTTP return outcome=%s method=%s endpoint=%s code=%d "
                   "last_error=%d elapsed_ms=%u request_id=%s",
                   outcome, method, endpoint, code, last_error, elapsed_ms, request_id);
       response = "";
