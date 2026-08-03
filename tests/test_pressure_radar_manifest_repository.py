@@ -97,6 +97,7 @@ def _lineage_payload(qualifying: dict[str, Any]) -> dict[str, Any]:
         "effective_ticks": 3,
         "source_event_count": 3,
         "max_observed_gap_seconds": 150.0,
+        "maximum_allowed_gap_seconds": 300.0,
         "source_ledger_event_ids": ["raw:AUDUSD:1", "raw:AUDUSD:2", "raw:AUDUSD:3"],
         "source_scanner_cycle_ids": ["SCAN_20260803T090000Z_300S"],
         "source_ledger_hash": f"sha256:{admission_digest}",

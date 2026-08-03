@@ -386,6 +386,14 @@ class WolfConstitutionalPipeline:
                 2,
                 int(self._parse_env_float("SIGNAL_PRESSURE_FROZEN_QUOTE_MIN_OBSERVATIONS", 3.0)),
             ),
+            warmup_seconds=self._parse_env_float(
+                "SIGNAL_PRESSURE_QUOTE_WARMUP_SECONDS",
+                30.0,
+            ),
+            min_warmup_observations=max(
+                2,
+                int(self._parse_env_float("SIGNAL_PRESSURE_QUOTE_WARMUP_MIN_OBSERVATIONS", 3.0)),
+            ),
         )
 
         # Layer analyzers (lazy-loaded)
@@ -6550,6 +6558,14 @@ class WolfConstitutionalPipeline:
                     2,
                     int(self._parse_env_float("SIGNAL_PRESSURE_FROZEN_QUOTE_MIN_OBSERVATIONS", 3.0)),
                 ),
+                warmup_seconds=self._parse_env_float(
+                    "SIGNAL_PRESSURE_QUOTE_WARMUP_SECONDS",
+                    30.0,
+                ),
+                min_warmup_observations=max(
+                    2,
+                    int(self._parse_env_float("SIGNAL_PRESSURE_QUOTE_WARMUP_MIN_OBSERVATIONS", 3.0)),
+                ),
             )
             self._frozen_quote_detector = detector
         quote_health = detector.observe(
@@ -6565,6 +6581,10 @@ class WolfConstitutionalPipeline:
         elif quote_health.status == "MARKET_CLOSED":
             reference_status = "MARKET_CLOSED"
             reference_is_live = False
+        elif quote_health.status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
+            reference_status = quote_health.status
+            reference_is_live = False
+            freshness = quote_health.status
         payload = {
             "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "reference_price_used_for_decision_update": price,

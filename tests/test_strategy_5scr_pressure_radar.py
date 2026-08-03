@@ -123,6 +123,7 @@ def _lineage_payload(
             "effective_ticks": 3,
             "source_event_count": 3,
             "max_observed_gap_seconds": 150.0,
+            "maximum_allowed_gap_seconds": 300.0,
             "source_ledger_event_ids": [f"raw:{symbol}:1", f"raw:{symbol}:2", f"raw:{symbol}:3"],
             "source_scanner_cycle_ids": ["SCAN_20260803T090000Z_300S"],
             "source_ledger_hash": f"sha256:{admission_digest}",
@@ -180,6 +181,17 @@ def test_frozen_quote_fails_pressure_radar_closed() -> None:
 
     assert result.provisional_candidate is False
     assert "OBSERVED_PRICE_FROZEN" in result.failed_predicates
+
+
+def test_restart_quote_warmup_fails_pressure_radar_closed() -> None:
+    payload = _payload()
+    payload["quote_health_status"] = "PRICE_QUALITY_WARMING_UP"
+    payload["quote_health_execution_blocked"] = True
+
+    result = evaluate_pressure_radar(payload)
+
+    assert result.provisional_candidate is False
+    assert "OBSERVED_PRICE_QUALITY_WARMING_UP" in result.failed_predicates
 
 
 def test_assembler_latches_qualification_then_associates_later_lineage() -> None:

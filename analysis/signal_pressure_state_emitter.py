@@ -76,7 +76,13 @@ def _pressure_event_severity(payload: Mapping[str, Any]) -> str:
         and htf.get("daily_bias_execution_impact") is not False
     )
     if (
-        quote_health in {"PRICE_FROZEN", "OUT_OF_ORDER"}
+        quote_health
+        in {
+            "PRICE_FROZEN",
+            "PRICE_QUALITY_WARMING_UP",
+            "INSUFFICIENT_HISTORY",
+            "OUT_OF_ORDER",
+        }
         or daily_stale
         or payload.get("schema_contract_complete") is False
     ):

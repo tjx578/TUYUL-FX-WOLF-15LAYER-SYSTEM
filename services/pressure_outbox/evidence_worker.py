@@ -442,10 +442,17 @@ class Strategy5SCREvidenceWorker:
                     datetime.fromisoformat(pair_expiry_raw.replace("Z", "+00:00")),
                     "pair_admission_expires_at_utc",
                 )
-                if evaluation_at >= pair_expiry:
+                # PairAdmission TTL is an authority-to-open freshness token,
+                # not the lifetime of an evaluation that was opened while the
+                # grant was active.  A delayed/restarted evidence worker may
+                # therefore continue an existing lifecycle after grant expiry.
+                # The immutable envelope time proves when the evaluation was
+                # opened; using the worker clock here would incorrectly kill
+                # WAITING_H1/WAITING_M15 work after a restart or queue delay.
+                if envelope.signal_valid_at >= pair_expiry:
                     await self._repository.record_failure(
                         envelope,
-                        error="STRATEGY_5SCR_PAIR_ADMISSION_EXPIRED_BEFORE_EVIDENCE",
+                        error="STRATEGY_5SCR_PAIR_ADMISSION_EXPIRED_BEFORE_LIFECYCLE_OPEN",
                         retry_delay_seconds=retry_delay,
                         max_attempts=1,
                     )

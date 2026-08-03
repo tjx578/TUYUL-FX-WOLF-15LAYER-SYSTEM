@@ -243,7 +243,13 @@ def _apply_price_lineage_contract(payload: dict[str, Any]) -> None:
             # as anything better than an unverified reference.
             reference_status = "UNVERIFIED"
     quote_health_status = _text_value(payload.get("quote_health_status"))
-    if quote_health_status in {"PRICE_FROZEN", "MARKET_CLOSED", "OUT_OF_ORDER"}:
+    if quote_health_status in {
+        "PRICE_FROZEN",
+        "PRICE_QUALITY_WARMING_UP",
+        "INSUFFICIENT_HISTORY",
+        "MARKET_CLOSED",
+        "OUT_OF_ORDER",
+    }:
         reference_status = quote_health_status
 
     payload.update(

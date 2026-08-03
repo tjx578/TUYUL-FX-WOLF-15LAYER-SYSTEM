@@ -194,8 +194,11 @@ def evaluate_pressure_radar(record: Mapping[str, Any] | str) -> PressureRadarEva
         failures.append("SOURCE_STAGE_NOT_ALLOWED")
     if htf.get("daily_bias_freshness_status") != "FRESH":
         failures.append("DAILY_BIAS_NOT_FRESH")
-    if str(payload.get("quote_health_status") or "").upper() == "PRICE_FROZEN":
+    quote_health_status = str(payload.get("quote_health_status") or "").upper()
+    if quote_health_status == "PRICE_FROZEN":
         failures.append("OBSERVED_PRICE_FROZEN")
+    elif quote_health_status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
+        failures.append("OBSERVED_PRICE_QUALITY_WARMING_UP")
     if _text(htf.get("allowed_playbook")) in {None, "NONE"}:
         failures.append("PLAYBOOK_NOT_ALLOWED")
     if payload.get("direction_next_required_stage") != "LIQUIDITY_ACCEPTANCE_OR_REJECTION":

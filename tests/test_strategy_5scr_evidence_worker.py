@@ -20,7 +20,7 @@ from services.pressure_outbox.evidence_worker import (
 from storage.pressure_outbox import prepare_pressure_event
 
 
-def _envelope() -> PressureOutboxEnvelope:
+def _envelope(*, signal_valid_time_utc: str = "2026-07-20T06:00:00+00:00") -> PressureOutboxEnvelope:
     prepared = prepare_pressure_event(
         {
             "symbol": "EURGBP",
@@ -35,7 +35,7 @@ def _envelope() -> PressureOutboxEnvelope:
             "radar_status": "ANALYSIS_READY",
             "pressure_selection_confirmed": True,
             "cluster_id": "EURGBP:20260720T060000Z",
-            "signal_valid_time_utc": "2026-07-20T06:00:00+00:00",
+            "signal_valid_time_utc": signal_valid_time_utc,
             "promotion_stage": "PRESSURE_ONLY",
             "final_direction": "WAIT",
             "valid_for_execution": False,
@@ -349,8 +349,8 @@ async def test_live_evaluation_time_advances_beyond_anchor_and_defer_retries() -
 
 
 @pytest.mark.asyncio
-async def test_expired_pair_admission_never_reaches_evidence_provider() -> None:
-    envelope = _envelope()
+async def test_admission_expiry_does_not_kill_an_evaluation_opened_while_fresh() -> None:
+    envelope = _envelope(signal_valid_time_utc="2026-07-20T06:10:00+00:00")
     repository = _CrashWindowRepository(envelope)
     provider = _Provider()
     worker = Strategy5SCREvidenceWorker(
@@ -366,10 +366,11 @@ async def test_expired_pair_admission_never_reaches_evidence_provider() -> None:
             poll_seconds=5,
             batch_size=1,
         ),
-        clock=lambda: datetime(2026, 7, 20, 6, 15, tzinfo=UTC),
+        clock=lambda: datetime(2026, 7, 20, 6, 16, tzinfo=UTC),
     )
 
     assert await worker.process_once() == 1
-    assert provider.calls == 0
-    assert repository.failure_errors == ["STRATEGY_5SCR_PAIR_ADMISSION_EXPIRED_BEFORE_EVIDENCE"]
+    assert envelope.signal_valid_at == datetime(2026, 7, 20, 6, 10, tzinfo=UTC)
+    assert provider.calls == 1
+    assert repository.failure_errors == ["STRATEGY_5SCR_M15_CLOSED_STRUCTURAL_BREAK_REQUIRED"]
     assert repository.outcome_attempts == 0

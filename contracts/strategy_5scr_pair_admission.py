@@ -38,10 +38,17 @@ class PairAdmissionGrant(BaseModel):
     effective_ticks: int = Field(..., ge=3)
     source_event_count: int = Field(..., ge=2)
     max_observed_gap_seconds: float = Field(..., ge=0, le=300)
+    maximum_allowed_gap_seconds: float = Field(..., gt=0, le=300)
     source_ledger_event_ids: tuple[str, ...] = Field(..., min_length=2)
     source_scanner_cycle_ids: tuple[str, ...] = Field(..., min_length=1)
     source_ledger_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
     source_ledger_ordering: Literal["EVENT_TIME_ASC_RAW_ID_TIEBREAK"] = "EVENT_TIME_ASC_RAW_ID_TIEBREAK"
+    source_event_authority: Literal["RAW_SIGNAL_THROTTLE_LOG_EVENT"] = "RAW_SIGNAL_THROTTLE_LOG_EVENT"
+    cross_symbol_interruption_policy: Literal["SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL"] = (
+        "SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL"
+    )
+    duplicate_event_policy: Literal["REJECT_DUPLICATE_STABLE_RAW_ID"] = "REJECT_DUPLICATE_STABLE_RAW_ID"
+    deployment_boundary_policy: Literal["SINGLE_DEPLOYMENT_REQUIRED"] = "SINGLE_DEPLOYMENT_REQUIRED"
     lineage_complete: Literal[True] = True
     source_clean_block_ids: tuple[str, ...] = ()
     pair_eligible_for_analysis: Literal[True] = True
@@ -76,6 +83,8 @@ class PairAdmissionGrant(BaseModel):
             raise ValueError("source event count must match the ordered raw-ledger IDs")
         if self.effective_ticks < self.source_event_count:
             raise ValueError("effective ticks cannot be below the raw source-event count")
+        if self.max_observed_gap_seconds > self.maximum_allowed_gap_seconds:
+            raise ValueError("observed raw-ledger gap exceeds the recorded admission policy")
         if len(set(self.source_ledger_event_ids)) != len(self.source_ledger_event_ids):
             raise ValueError("source ledger event IDs must be unique")
         if len(set(self.source_scanner_cycle_ids)) != len(self.source_scanner_cycle_ids):

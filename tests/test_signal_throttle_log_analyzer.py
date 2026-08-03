@@ -34,6 +34,11 @@ def _event(
     **overrides,
 ) -> SignalThrottleLogEvent:
     verdict = "EXECUTE_REDUCED_RISK_BUY" if event_type != "THROTTLED" else None
+    source_stream = {
+        "THROTTLED": "RAW_THROTTLED",
+        "ALLOWED": "ALLOWED",
+        "DOWNGRADED_TO_HOLD": "DOWNGRADED",
+    }.get(event_type)
     payload = {
         "timestamp": datetime(2026, 5, 8, 12, 0, tzinfo=UTC) + timedelta(seconds=offset_seconds),
         "severity": "error" if event_type == "THROTTLED" else "info",
@@ -42,6 +47,8 @@ def _event(
         "event_type": event_type,
         "verdict": verdict,
         "direction": "BUY" if verdict else None,
+        "pressure_source": "SignalThrottle",
+        "source_stream": source_stream,
     }
     payload.update(overrides)
     return SignalThrottleLogEvent(**payload)
@@ -129,6 +136,7 @@ def test_parse_signal_throttle_rows_ignores_signal_json_decision_updates():
     assert [event.event_type for event in events] == ["INTEL"]
     assert all("[SignalDecisionUpdateJSON]" not in event.message for event in events)
     assert events[0].symbol == "EURUSD"
+    assert events[0].eligible_for_pressure_block is False
 
 
 def test_parse_signal_throttle_rows_ignores_signal_json_lifecycle_channels():
@@ -190,6 +198,7 @@ def test_parse_signal_throttle_check_as_pressure_canary():
     assert event.direction == "BUY"
     assert event.effective_action == "OBSERVE"
     assert event.is_downgraded is False
+    assert event.eligible_for_pressure_block is False
 
 
 def test_parse_downgraded_hold_preserves_raw_verdict_and_effective_action():

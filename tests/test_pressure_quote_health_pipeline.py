@@ -51,3 +51,30 @@ def test_pipeline_marks_advancing_but_unchanged_live_tick_as_frozen() -> None:
     )
     assert pressure["observed_price_status"] == "PRICE_FROZEN"
     assert pressure["reference_price_status"] == "PRICE_FROZEN"
+
+
+def test_pipeline_blocks_structural_authority_during_restart_quote_warmup() -> None:
+    pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
+    pipeline._frozen_quote_detector = FrozenQuoteDetector(
+        warmup_seconds=30,
+        min_warmup_observations=3,
+    )
+    at = datetime(2026, 8, 3, 8, 0, tzinfo=UTC)
+
+    warming = pipeline._decision_price_lineage_payload(
+        {
+            "price": 1.155,
+            "price_source": "LIVE_TICK_MID",
+            "price_snapshot_time_utc": at.isoformat(),
+            "price_age_seconds": 0.0,
+            "price_freshness_status": "LIVE",
+            "reference_price_is_live": True,
+        },
+        symbol="EURUSD",
+    )
+
+    assert warming["quote_health_status"] == "PRICE_QUALITY_WARMING_UP"
+    assert warming["quote_health_execution_blocked"] is True
+    assert warming["observed_price_status"] == "PRICE_QUALITY_WARMING_UP"
+    assert warming["reference_price_status"] == "PRICE_QUALITY_WARMING_UP"
+    assert warming["reference_price_is_live"] is False

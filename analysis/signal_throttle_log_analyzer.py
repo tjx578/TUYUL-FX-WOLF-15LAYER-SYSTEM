@@ -287,6 +287,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         direction_inherited = _extract_kv_text(message, "direction_inherited").lower() == "true"
         inherited_direction = normalize_direction(_extract_kv_text(message, "inherited_direction"), None)
         inherited_direction_age_seconds = _extract_kv_float(message, "inherited_direction_age_seconds")
+        eligible_for_pressure_block = False
     elif intel:
         symbol = intel.group("symbol").upper()
         verdict_text = _extract_kv_text(message, "verdict").upper()
@@ -305,6 +306,7 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         execution_block_reason = _extract_kv_text(message, "reason") or "signal_throttle_intel"
         direction_source = "SIGNAL_THROTTLE_INTEL_LOG"
         direction_confidence = "HIGH" if direction in {"BUY", "SELL"} else None
+        eligible_for_pressure_block = False
     elif downgraded:
         symbol = downgraded.group("symbol").upper()
         verdict = downgraded.group("verdict").upper()

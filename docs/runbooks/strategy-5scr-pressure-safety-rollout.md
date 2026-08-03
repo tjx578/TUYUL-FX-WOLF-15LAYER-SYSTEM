@@ -8,10 +8,10 @@ Execution boundary: `WAIT`; no risk reservation, command delivery, or `OrderSend
 
 - Clean-block and watch IDs are lineage only. They cannot grant pair admission or become an execution-grade campaign anchor.
 - `pair_eligible_for_analysis=true` requires a canonical Pair Admission V2 grant from one deployment's global raw ledger. Duration, event count, effective ticks, maximum gap, ordering, deployment, and scanner-cycle lineage are recomputed from raw rows rather than trusted from a block summary.
-- Pair Admission expires after at most 15 minutes. Expired grants cannot be selected, persisted to the pressure outbox, or passed to the closed-candle evidence provider.
+- Pair Admission expires after at most 15 minutes as an authority-to-open token. An expired grant cannot start a new evaluation, but expiry does not kill a lifecycle/evidence job that was opened while the grant was fresh.
 - Durable pressure writes require the atomic radar path and a valid `ANALYSIS_READY` radar-selection proof. The direct writer is forbidden.
 - Material strategy identity excludes `cluster_id`, producer stage, replica, deployment, and status churn.
-- `PRICE_FROZEN`, stale D1 context, direction reversal, expired admission, or missing closed-candle evidence fail closed.
+- `PRICE_FROZEN`, `PRICE_QUALITY_WARMING_UP`, stale D1 context, direction reversal, admission expired before opening, or missing closed-candle evidence fail closed.
 - Every pressure/outbox/evidence artifact remains `final_direction=WAIT` and `valid_for_execution=false`.
 - All execution-plane flags remain false throughout this runbook.
 
@@ -80,7 +80,8 @@ Release gate:
 - zero missing-deployment or missing-scanner-cycle admissions;
 - zero block-summary/raw-evidence duration, event-count, or tick mismatches;
 - zero admissions with a raw same-symbol observation gap above 300 seconds;
-- expired grants disappear from runtime eligibility and never reach evidence collection;
+- expired grants disappear from runtime eligibility and cannot open new evidence collection;
+- evaluations opened under a fresh grant survive queue delay/restart after the grant TTL;
 - cluster/stage churn does not change `material_context_hash`;
 - genuine HTF structure changes do change `material_context_hash`;
 - weekend closure never produces `PRICE_FROZEN`.
@@ -118,6 +119,11 @@ entire Hybrid V3 path authoritative:
 Do not describe `pressure_outbox.lifecycle_id` as `strategy_lifecycle_id`.
 The former is currently the Pair Admission transport/campaign anchor; the
 latter is the separate Lifecycle V2 market-episode identity.
+
+The in-process quote detector fails closed after every restart as
+`PRICE_QUALITY_WARMING_UP`. Moving prices still require the configured minimum
+sample count and elapsed warm-up window before becoming `LIVE`. Persistence of
+quote history remains a separate data-quality PR.
 
 ## Phase 2 — Lifecycle V2 shadow validation
 

@@ -24,8 +24,8 @@ def test_advancing_live_timestamps_with_unchanged_price_become_frozen() -> None:
         source="LIVE_TICK_MID",
     )
 
-    assert first.status == "INSUFFICIENT_HISTORY"
-    assert second.status == "INSUFFICIENT_HISTORY"
+    assert first.status == "PRICE_QUALITY_WARMING_UP"
+    assert second.status == "PRICE_QUALITY_WARMING_UP"
     assert third.status == "PRICE_FROZEN"
     assert third.unchanged_seconds == 120
     assert third.execution_blocked is True
@@ -68,7 +68,7 @@ def test_weekend_is_market_closed_and_does_not_accumulate_frozen_time() -> None:
     )
 
     assert closed.status == "MARKET_CLOSED"
-    assert reopened.status == "INSUFFICIENT_HISTORY"
+    assert reopened.status == "PRICE_QUALITY_WARMING_UP"
     assert reopened.unchanged_seconds == 0
 
 
@@ -79,3 +79,34 @@ def test_closed_candle_source_is_not_subject_to_tick_freeze_detection() -> None:
 
     assert result.status == "NOT_APPLICABLE"
     assert result.execution_blocked is False
+
+
+def test_restart_requires_minimum_time_and_samples_even_when_price_moves() -> None:
+    detector = FrozenQuoteDetector(
+        frozen_after_seconds=120,
+        min_unchanged_observations=3,
+        warmup_seconds=30,
+        min_warmup_observations=3,
+    )
+
+    first = detector.observe(symbol="EURUSD", price=1.1000, observed_at=MONDAY, source="LIVE_TICK_MID")
+    second = detector.observe(
+        symbol="EURUSD",
+        price=1.1001,
+        observed_at=MONDAY + timedelta(seconds=10),
+        source="LIVE_TICK_MID",
+    )
+    third = detector.observe(
+        symbol="EURUSD",
+        price=1.1002,
+        observed_at=MONDAY + timedelta(seconds=30),
+        source="LIVE_TICK_MID",
+    )
+
+    assert first.status == "PRICE_QUALITY_WARMING_UP"
+    assert second.status == "PRICE_QUALITY_WARMING_UP"
+    assert second.execution_blocked is True
+    assert third.status == "LIVE"
+    assert third.execution_blocked is False
+    assert third.observation_count == 3
+    assert third.warmup_elapsed_seconds == 30

@@ -15,6 +15,7 @@ START = datetime(2026, 8, 3, 11, 0, tzinfo=UTC)
 def _event(
     seconds: int,
     *,
+    symbol: str = "AUDJPY",
     deployment: str | None = "deploy-A",
     scanner_cycle_id: str | None = None,
     suppressed: int = 2,
@@ -23,8 +24,10 @@ def _event(
         timestamp=START + timedelta(seconds=seconds),
         severity="WARNING",
         message="raw",
-        symbol="AUDJPY",
+        symbol=symbol,
         event_type="THROTTLED",
+        source_stream="RAW_THROTTLED",
+        pressure_source="SignalThrottle",
         direction="SELL",
         suppressed=suppressed,
         deployment_id=deployment,
@@ -63,7 +66,12 @@ def test_raw_global_ledger_produces_non_executable_analysis_grant() -> None:
     assert grant.effective_ticks == 9
     assert grant.source_event_count == 3
     assert grant.max_observed_gap_seconds == 150
+    assert grant.maximum_allowed_gap_seconds == 300
     assert grant.source_scanner_cycle_ids == ("cycle-0", "cycle-150", "cycle-300")
+    assert grant.source_event_authority == "RAW_SIGNAL_THROTTLE_LOG_EVENT"
+    assert grant.cross_symbol_interruption_policy == "SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL"
+    assert grant.duplicate_event_policy == "REJECT_DUPLICATE_STABLE_RAW_ID"
+    assert grant.deployment_boundary_policy == "SINGLE_DEPLOYMENT_REQUIRED"
     assert grant.lineage_complete is True
     assert grant.source_clean_block_ids == ("AUDJPY_20260803T110000Z_20260803T110500Z",)
 
@@ -151,6 +159,76 @@ def test_raw_ledger_ids_are_deterministic_in_event_time_order() -> None:
     assert reversed_input is not None
     assert forward.source_ledger_event_ids == reversed_input.source_ledger_event_ids
     assert forward.source_ledger_hash == reversed_input.source_ledger_hash
+
+
+def test_scanner_cross_symbol_interleaving_is_proven_but_does_not_interrupt_pair() -> None:
+    grant = build_pair_admission_grant(
+        _block(),
+        raw_events=[
+            _event(0),
+            _event(75, symbol="EURUSD"),
+            _event(150),
+            _event(225, symbol="GBPUSD"),
+            _event(300),
+        ],
+    )
+
+    assert grant is not None
+    assert grant.source_event_count == 3
+    assert grant.cross_symbol_interruption_policy == "SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL"
+
+
+def test_duplicate_stable_raw_identity_fails_closed() -> None:
+    duplicate = _event(150)
+    audit = build_pair_admission_audit(
+        [replace(_block(), events=4, effective_ticks=12)],
+        raw_events=[_event(0), duplicate, duplicate, _event(300)],
+    )
+
+    assert audit.grants == ()
+    assert audit.rejection_counts == {"RAW_LEDGER_EVENT_ID_DUPLICATE": 1}
+
+
+def test_derived_pressure_state_cannot_impersonate_raw_admission_authority() -> None:
+    derived_events = [
+        {
+            "timestamp": (START + timedelta(seconds=seconds)).isoformat(),
+            "symbol": "AUDJPY",
+            "event_type": "SIGNAL_PRESSURE_STATE_JSON",
+            "source_stream": "DERIVED_PRESSURE_STATE",
+            "pressure_source": "SignalPressureStateJSON",
+            "direction": "SELL",
+            "suppressed": 2,
+            "deployment_id": "deploy-A",
+            "scanner_cycle_id": f"cycle-{seconds}",
+            "eligible_for_pressure_block": True,
+        }
+        for seconds in (0, 150, 300)
+    ]
+
+    audit = build_pair_admission_audit([_block()], raw_events=derived_events)
+
+    assert audit.grants == ()
+    assert audit.rejection_counts == {"RAW_SIGNAL_THROTTLE_AUTHORITY_MISSING": 1}
+
+
+def test_rejection_audit_retains_deterministic_raw_metrics_and_reason() -> None:
+    audit = build_pair_admission_audit(
+        [_block()],
+        raw_events=[_event(0), _event(300), _event(601)],
+    )
+
+    evaluation = audit.to_payload()["evaluations"][0]
+    assert evaluation["event"] == "pair_admission_evaluated"
+    assert evaluation["evaluation_id"].startswith("5scr-admission-evaluation:")
+    assert evaluation["rule_version"] == "5scr.pair-admission.raw-ledger.v2"
+    assert evaluation["decision"] == "REJECTED"
+    assert evaluation["reason_codes"] == ["BLOCK_EVENT_COUNT_EVIDENCE_MISMATCH"]
+    assert evaluation["rejected_at_utc"] is not None
+    assert evaluation["source_event_count"] == 2
+    assert evaluation["calculated_duration_seconds"] == 300
+    assert evaluation["calculated_max_gap_seconds"] == 300
+    assert evaluation["execution_authority"] is False
 
 
 def test_expired_grant_is_not_active() -> None:
