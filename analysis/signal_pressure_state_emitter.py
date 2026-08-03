@@ -16,6 +16,12 @@ from typing import Any
 DEFAULT_SIGNAL_PRESSURE_STATE_PREFIX = "[SignalPressureStateJSON]"
 DEFAULT_SIGNAL_PRESSURE_STATE_SUMMARY_PREFIX = "[SignalPressureStateSummary]"
 
+_STRATEGY_STAGE_RANK = {
+    "PRESSURE_OBSERVED": 10,
+    "PRESSURE_QUALIFIED": 20,
+    "PAIR_ADMISSION_GRANTED": 30,
+}
+
 
 def signal_pressure_runtime_identity(*, generated_at: datetime | None = None) -> dict[str, str]:
     timestamp = generated_at or datetime.now(UTC)
@@ -43,7 +49,39 @@ def build_signal_pressure_state_payload(payload: Mapping[str, Any]) -> dict[str,
     data["is_final_signal"] = False
     data["final_direction"] = "WAIT"
     data["eligible_for_signal_decision"] = False
+    data.setdefault("source_stage_role", "PRODUCER_METADATA_NON_MONOTONIC")
+    strategy_stage = str(data.get("strategy_stage") or "").upper()
+    if strategy_stage not in _STRATEGY_STAGE_RANK:
+        if str(data.get("pair_admission_status") or "").upper() == "GRANTED":
+            strategy_stage = "PAIR_ADMISSION_GRANTED"
+        else:
+            try:
+                effective_ticks = int(data.get("current_block_effective_ticks") or 0)
+            except (TypeError, ValueError):
+                effective_ticks = 0
+            strategy_stage = "PRESSURE_QUALIFIED" if effective_ticks >= 3 else "PRESSURE_OBSERVED"
+    data["strategy_stage"] = strategy_stage
+    data["strategy_stage_rank"] = _STRATEGY_STAGE_RANK[strategy_stage]
+    data["strategy_stage_role"] = "MONOTONIC_STRATEGY_LIFECYCLE_STAGE"
+    data.setdefault("event_severity", _pressure_event_severity(data))
     return data
+
+
+def _pressure_event_severity(payload: Mapping[str, Any]) -> str:
+    quote_health = str(payload.get("quote_health_status") or "").upper()
+    htf_raw = payload.get("htf_structure_context")
+    htf = htf_raw if isinstance(htf_raw, Mapping) else {}
+    daily_stale = (
+        str(htf.get("daily_bias_freshness_status") or "").upper() == "STALE"
+        and htf.get("daily_bias_execution_impact") is not False
+    )
+    if (
+        quote_health in {"PRICE_FROZEN", "OUT_OF_ORDER"}
+        or daily_stale
+        or payload.get("schema_contract_complete") is False
+    ):
+        return "WARNING"
+    return "INFO"
 
 
 def emit_signal_pressure_state(
@@ -55,7 +93,9 @@ def emit_signal_pressure_state(
     if not enabled:
         return False
     data = build_signal_pressure_state_payload(payload)
-    logging.getLogger("signal_json").warning(
+    level = logging.WARNING if data["event_severity"] == "WARNING" else logging.INFO
+    logging.getLogger("signal_json").log(
+        level,
         "%s %s",
         prefix,
         json.dumps(data, separators=(",", ":"), ensure_ascii=False),
@@ -81,7 +121,10 @@ def emit_signal_pressure_state_summary(
     data["is_final_signal"] = False
     data["final_direction"] = "WAIT"
     data["eligible_for_signal_decision"] = False
-    logging.getLogger("signal_json").warning(
+    data.setdefault("event_severity", "INFO")
+    level = logging.WARNING if data["event_severity"] == "WARNING" else logging.INFO
+    logging.getLogger("signal_json").log(
+        level,
         "%s %s",
         prefix,
         json.dumps(data, separators=(",", ":"), ensure_ascii=False),

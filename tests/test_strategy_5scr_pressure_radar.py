@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -78,7 +79,12 @@ def _payload(
     return payload
 
 
-def _lineage_payload(qualifying: dict[str, Any], *, delay_seconds: int = 360) -> dict[str, Any]:
+def _lineage_payload(
+    qualifying: dict[str, Any],
+    *,
+    delay_seconds: int = 360,
+    include_admission: bool = True,
+) -> dict[str, Any]:
     at = datetime.fromisoformat(str(qualifying["signal_valid_time_utc"]))
     symbol = str(qualifying["symbol"])
     start = at.replace(microsecond=0)
@@ -97,6 +103,30 @@ def _lineage_payload(qualifying: dict[str, Any], *, delay_seconds: int = 360) ->
             "context_version": "pressure-context-v2:lineage",
         }
     )
+    if include_admission:
+        admission_digest = hashlib.sha256(clean_id.encode("utf-8")).hexdigest()
+        later["pair_admission_grant"] = {
+            "event": "pair_admission_granted",
+            "schema_version": "1.0",
+            "rule_version": "5scr.pair-admission.raw-ledger.v1",
+            "pair_admission_id": f"5scr-admission:{admission_digest[:32]}",
+            "status": "GRANTED",
+            "ledger_scope": "GLOBAL_SIGNAL_THROTTLE_RAW_LEDGER",
+            "deployment_id": qualifying["deployment_id"],
+            "symbol": symbol,
+            "direction": qualifying["raw_direction"],
+            "episode_started_at_utc": start.isoformat(),
+            "episode_observed_through_utc": end.isoformat(),
+            "granted_at_utc": end.isoformat(),
+            "expires_at_utc": (end + timedelta(minutes=15)).isoformat(),
+            "duration_seconds": 300.0,
+            "effective_ticks": 3,
+            "source_ledger_event_ids": [f"raw:{symbol}:1", f"raw:{symbol}:2", f"raw:{symbol}:3"],
+            "source_ledger_hash": f"sha256:{admission_digest}",
+            "source_clean_block_ids": [clean_id],
+            "pair_eligible_for_analysis": True,
+            "execution_authority": False,
+        }
     later.pop("pair_eligible_for_analysis", None)
     return later
 
@@ -137,6 +167,16 @@ def test_stage_only_failure_is_reserve_near_qualified() -> None:
     assert result.failed_predicates == ("SOURCE_STAGE_NOT_ALLOWED",)
 
 
+def test_frozen_quote_fails_pressure_radar_closed() -> None:
+    payload = _payload()
+    payload["quote_health_status"] = "PRICE_FROZEN"
+
+    result = evaluate_pressure_radar(payload)
+
+    assert result.provisional_candidate is False
+    assert "OBSERVED_PRICE_FROZEN" in result.failed_predicates
+
+
 def test_assembler_latches_qualification_then_associates_later_lineage() -> None:
     qualifying = _payload()
     lineage = _lineage_payload(qualifying)
@@ -164,9 +204,11 @@ def test_assembler_latches_qualification_then_associates_later_lineage() -> None
     assert canonical["source_clean_block_id"] == lineage["source_clean_block_id"]
     assert canonical["qualifying_stage"] == "PRESSURE_BLOCK"
     assert canonical["current_block_effective_ticks"] == 3
-    assert canonical["analysis_ready_at_utc"] == ready.manifest.lineage_finalized_at_utc.isoformat()
+    assert canonical["analysis_ready_at_utc"] == ready.manifest.pair_admission_granted_at_utc.isoformat()
+    assert canonical["pair_admission_status"] == "GRANTED"
+    assert canonical["source_clean_block_role"] == "LINEAGE_ONLY_NOT_ADMISSION_AUTHORITY"
     assert canonical["lifecycle_anchor_at_utc"] == ready.manifest.qualifying_time_utc.isoformat()
-    assert canonical["signal_valid_time_utc"] == ready.manifest.lineage_finalized_at_utc.isoformat()
+    assert canonical["signal_valid_time_utc"] == ready.manifest.pair_admission_granted_at_utc.isoformat()
     assert canonical["pressure_selection_confirmed"] is True
     assert canonical["lineage_context_version"] == "pressure-context-v2:lineage"
     assert canonical["final_direction"] == "WAIT"
@@ -179,7 +221,23 @@ def test_assembler_latches_qualification_then_associates_later_lineage() -> None
     assert event.pressure_selection_confirmed is True
     assert lifecycle.selected_by_pressure is True
     assert lifecycle.started_at_utc == ready.manifest.qualifying_time_utc
-    assert lifecycle.updated_at_utc == ready.manifest.lineage_finalized_at_utc
+    assert lifecycle.updated_at_utc == ready.manifest.pair_admission_granted_at_utc
+
+
+def test_clean_block_lineage_alone_cannot_make_manifest_analysis_ready() -> None:
+    qualifying = _payload()
+    lineage_only = _lineage_payload(qualifying, include_admission=False)
+    assembler = PressureRadarAssembler()
+
+    assembler.ingest(qualifying)
+    result = assembler.ingest(lineage_only)
+
+    assert result.transition == "CANONICAL_LINEAGE_ATTACHED"
+    assert result.manifest is not None
+    assert result.manifest.status == "WAITING_CANONICAL_LINEAGE"
+    assert result.manifest.source_clean_block_id == lineage_only["source_clean_block_id"]
+    assert result.manifest.pair_admission_id is None
+    assert result.manifest.next_required_stage == "PAIR_ADMISSION"
 
 
 def test_forged_selection_without_ready_radar_proof_is_rejected() -> None:
@@ -210,7 +268,7 @@ def test_later_latest_row_cannot_erase_latched_ticks_or_stage() -> None:
     assert result.manifest.qualifying_event_id == first_result.evaluation.event_id
     assert result.manifest.qualifying_stage == "CANDIDATE_LIFECYCLE"
     assert result.manifest.max_effective_ticks == 5
-    assert len(result.manifest.observed_event_ids) == 3
+    assert len(result.manifest.observed_event_ids) == 4
 
 
 def test_context_mismatch_direction_reversal_and_expiry_fail_closed() -> None:
@@ -218,7 +276,7 @@ def test_context_mismatch_direction_reversal_and_expiry_fail_closed() -> None:
 
     context_assembler = PressureRadarAssembler()
     context_assembler.ingest(qualifying)
-    mismatch = _lineage_payload(qualifying)
+    mismatch = _lineage_payload(qualifying, include_admission=False)
     mismatch["htf_structure_context"] = {
         **mismatch["htf_structure_context"],
         "allowed_playbook": "WAIT_FOR_CONFIRMATION",

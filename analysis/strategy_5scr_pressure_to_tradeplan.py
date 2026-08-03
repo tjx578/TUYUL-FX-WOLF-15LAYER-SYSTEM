@@ -181,27 +181,27 @@ class PressureEventNormalizer:
         if cluster_id is None:
             cluster_id = f"legacy:{symbol}:{event_time.isoformat()}"
 
-        clean_block_id = _text(payload.get("source_clean_block_id"))
-        source_watch_id = _text(payload.get("source_watch_id"))
-        canonical_lifecycle_id = _text(payload.get("lifecycle_id"))
-        if clean_block_id:
-            campaign_anchor = canonical_lifecycle_id or clean_block_id
-            anchor_source: CampaignAnchorSource = "SOURCE_CLEAN_BLOCK_ID"
-            anchor_execution_grade = True
-        elif source_watch_id:
-            campaign_anchor = canonical_lifecycle_id or source_watch_id
-            anchor_source = "SOURCE_WATCH_ID"
+        pair_admission_id = _text(payload.get("pair_admission_id"))
+        pair_admission_granted = str(payload.get("pair_admission_status") or "").upper() == "GRANTED"
+        if pair_admission_id and pair_admission_granted:
+            campaign_anchor = pair_admission_id
+            anchor_source: CampaignAnchorSource = "PAIR_ADMISSION_ID"
             anchor_execution_grade = True
         else:
             campaign_anchor = None
             anchor_source = "UNRESOLVED"
             anchor_execution_grade = False
-        anchor_at = _parse_datetime(payload.get("lifecycle_anchor_at_utc"))
+        anchor_at = (
+            _parse_datetime(payload.get("lifecycle_anchor_at_utc"))
+            if anchor_execution_grade
+            else None
+        )
         selection_confirmed = payload.get("pressure_selection_confirmed") is True
         if selection_confirmed and not (
             str(payload.get("radar_status") or "").upper() == "ANALYSIS_READY"
             and _text(payload.get("radar_manifest_id")) is not None
-            and clean_block_id is not None
+            and pair_admission_id is not None
+            and pair_admission_granted
         ):
             raise PressureInputError("PRESSURE_SELECTION_PROOF_INVALID")
 

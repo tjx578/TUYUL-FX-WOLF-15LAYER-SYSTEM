@@ -16,6 +16,12 @@ def _payload(**updates: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "symbol": "GBPUSD",
         "source_watch_id": "GBPUSD:watch:canonical-1",
+        "pair_admission_id": "5scr-admission:11111111111111111111111111111111",
+        "pair_admission_status": "GRANTED",
+        "pair_admission_source_ledger_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "radar_manifest_id": "5scr-radar:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "radar_status": "ANALYSIS_READY",
+        "pressure_selection_confirmed": True,
         "cluster_id": "GBPUSD_CLUSTER",
         "signal_valid_time_utc": "2026-07-20T02:00:00+00:00",
         "promotion_stage": "PRESSURE_ONLY",

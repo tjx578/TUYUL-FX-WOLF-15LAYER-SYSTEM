@@ -25,6 +25,12 @@ def _envelope() -> PressureOutboxEnvelope:
         {
             "symbol": "EURGBP",
             "source_clean_block_id": "clean-eurgbp-1",
+            "pair_admission_id": "5scr-admission:55555555555555555555555555555555",
+            "pair_admission_status": "GRANTED",
+            "pair_admission_source_ledger_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "radar_manifest_id": "5scr-radar:ffffffffffffffffffffffffffffffff",
+            "radar_status": "ANALYSIS_READY",
+            "pressure_selection_confirmed": True,
             "cluster_id": "EURGBP:20260720T060000Z",
             "signal_valid_time_utc": "2026-07-20T06:00:00+00:00",
             "promotion_stage": "PRESSURE_ONLY",

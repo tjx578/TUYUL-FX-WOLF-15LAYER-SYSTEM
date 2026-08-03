@@ -94,15 +94,17 @@ stores qualifying and lineage context versions separately.
 RADAR_OBSERVED
 → RADAR_QUALIFIED_PROVISIONAL
 → WAITING_CANONICAL_LINEAGE
+→ PAIR_ADMISSION_GRANTED
 → ANALYSIS_READY
 → CLOSED_CANDLE_EVIDENCE
 ```
 
 The assembler latches the first qualification, maximum effective ticks, and
-highest allowed stage. A later one-tick row cannot erase that history. It only
-attaches lineage when deployment, symbol, direction, clean-block interval, TTL,
-and stable structural context agree. Direction reversal or TTL expiry closes
-the provisional lifecycle.
+highest allowed stage. A later one-tick row cannot erase that history. Clean
+lineage may attach when deployment, symbol, direction, interval, TTL, and stable
+structural context agree, but lineage alone cannot produce `ANALYSIS_READY`.
+Promotion additionally requires canonical Pair Admission from the global raw
+ledger. Direction reversal or TTL expiry closes the provisional lifecycle.
 
 Every manifest remains:
 
@@ -123,17 +125,20 @@ a PostgreSQL advisory transaction lock, reloads active manifests `FOR UPDATE`,
 and retains the original qualifying payload across restarts.
 
 The canonical outbox event is prepared only on the
-`WAITING_CANONICAL_LINEAGE -> ANALYSIS_READY` transition. Outbox sequence
+`PAIR_ADMISSION_GRANTED -> ANALYSIS_READY` transition. Outbox sequence
 allocation, outbox insertion, manifest update, and event dedup insertion occur
 inside the same transaction. Tests cover failure during outbox insertion,
 failure after outbox insertion but before manifest update, connection loss
 after commit but before acknowledgement, duplicate delivery, and two concurrent
 workers processing the same event.
 
-A repository-level replay of all 302 target records produces the same ten
-`ANALYSIS_READY` manifests and exactly ten outbox events (7 BUY, 3 SELL). Every
-outbox payload remains non-executable and every new clean-block lifecycle starts
-at sequence 1.
+Under the original lineage-only v1 rule, repository replay of all 302 target
+records produced ten `ANALYSIS_READY` manifests and ten outbox events. That is
+now retained only as a provisional-selection regression baseline. The archived
+records do not contain canonical Pair Admission grants, so the current
+fail-closed rule produces ten provisional/lineage-associated manifests and
+zero `ANALYSIS_READY` outbox events. Fresh shadow capture containing global raw
+ledger admission evidence is required before Phase 3 activation.
 
 This runtime route additionally requires
 `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=true`. It remains `false` by default and
@@ -150,8 +155,8 @@ python -m services.pressure_outbox.radar_replay `
 
 ## Limits
 
-All ten qualifications occur during the first 19.360 seconds of the target
-deployment. This window validates deterministic selection and lineage recovery,
-but does not establish precision/recall, H1/M15 setup quality, trade outcome, or
-behavior outside a cold-start burst. The gate requires validation on a
-no-restart window before production activation.
+All ten provisional qualifications occur during the first 19.360 seconds of
+the target deployment. This window validates deterministic selection and
+lineage recovery only; it does not validate Pair Admission, precision/recall,
+H1/M15 setup quality, trade outcome, or behavior outside a cold-start burst.
+The gate requires a new no-restart shadow window before production activation.

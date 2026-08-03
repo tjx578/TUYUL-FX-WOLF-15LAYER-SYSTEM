@@ -277,8 +277,8 @@ next_required_stage=RISK_RESERVATION
 ```
 
 Only a later transaction may reserve risk and write the final `signal_json`
-outbox row atomically. A LIVE pressure event without `source_clean_block_id` or
-a stable `source_watch_id` defers with
+outbox row atomically. A LIVE pressure event without canonical Pair Admission
+and an `ANALYSIS_READY` radar-selection proof defers with
 `STRATEGY_5SCR_CANONICAL_LIFECYCLE_REQUIRED`. Legacy synthetic anchors are
 limited to deterministic replay and cannot become production lineage.
 
@@ -309,7 +309,8 @@ then associates a later clean-block interval without allowing the latest
 one-tick row to erase the latched qualification. Exact `context_version` is not
 a join key because it changes across otherwise stable structural snapshots.
 See [Pressure Radar Gate v1 validation](pressure-radar-gate-v1-validation.md)
-for the frozen predicate and the 10-pair replay evidence.
+for the frozen provisional predicate and legacy 10-pair baseline. That archive
+does not contain the newer Pair Admission authority and cannot approve rollout.
 
 Migration `20260720_02` makes that deferred association durable:
 
@@ -328,10 +329,10 @@ Migration `20260720_02` makes that deferred association durable:
   `valid_for_execution=false`, and `is_final_signal=false`.
 
 The engine uses this path only when `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED=true`
-in addition to both existing outbox master/write flags. The new flag defaults
-to `false`; without it, the previously deployed canonical direct-writer path is
-unchanged. This permits schema deployment and shadow validation before routing
-live pressure through the durable radar.
+in addition to both existing outbox master/write flags. All three flags default
+to `false`. The legacy direct-writer fallback is forbidden: engine preflight
+rejects master+write without radar, and the pipeline will not invoke the direct
+writer when radar authority is absent.
 
 Apply the migration, create the dedicated Railway service from
 `railway-pressure-outbox.toml`, and set its service variables before enabling
@@ -343,7 +344,7 @@ The fail-closed rollout order is:
 
 1. dark: engine master/write are `false`; worker
    `PRESSURE_OUTBOX_EXPECTED_PHASE=dark` and all four feature flags are `false`;
-2. radar capture: after migration and replay parity checks, engine
+2. radar capture: after migration plus fresh Pair Admission shadow checks, engine
    master/write/radar-write become `true`; worker remains in the dark phase so
    no row can be claimed;
 3. dispatch: worker phase becomes `dispatcher`, with master/dispatch `true` and
@@ -360,7 +361,9 @@ provider is supplied, and pressure is never routed to the EA.
 The next increments are:
 
 1. apply migration `20260720_02`, validate radar schema preflight, and shadow
-   compare the atomic durable path against the frozen 10-pair replay before
+   compare the atomic durable path against fresh global-raw-ledger Pair
+   Admission capture (using the frozen 10-pair set only as a provisional
+   selection regression baseline) before
    enabling `SIGNAL_PRESSURE_RADAR_WRITE_ENABLED`;
 2. connect the implemented pressure-to-tradeplan assembler to the live closed-
    candle evidence provider and lifecycle repository, then replay-validate its

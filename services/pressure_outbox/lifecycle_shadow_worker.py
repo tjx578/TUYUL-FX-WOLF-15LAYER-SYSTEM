@@ -275,6 +275,15 @@ class LifecycleV2ShadowRunner:
                     "event": "strategy_5scr_lifecycle_v2_batch",
                     "processed": len(rows),
                     "strategy_lifecycles_v2_total": len(self._reducer.result.lifecycles),
+                    "lifecycle_split_reasons": dict(sorted(self._reducer.result.split_reasons.items())),
+                    "material_context_transition_count": (
+                        self._reducer.result.material_context_transition_count
+                    ),
+                    "transport_identity_churn_ignored_count": (
+                        self._reducer.result.transport_identity_churn_ignored_count
+                    ),
+                    "duplicate_event_count": self._reducer.result.duplicate_event_count,
+                    "event_to_lifecycle_compression_ratio": self._reducer.result.compression_ratio,
                     "dual_write": self._config.dual_write_enabled,
                     "execution_impact": False,
                     "advisory_only": True,
@@ -365,7 +374,7 @@ def episode_event_from_outbox_row(
         allowed_quorum_reached=bool(body.get("allowed_quorum_reached")),
         microboost_detected=bool(body.get("microboost_detected")),
         pressure_event_count=_int("pressure_event_count"),
-        context_hash=_text("context_version"),
+        context_hash=_text("material_context_hash") or _text("context_version"),
     )
 
 

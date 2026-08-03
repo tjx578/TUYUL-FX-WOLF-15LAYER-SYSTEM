@@ -25,6 +25,12 @@ def _envelope(*, anchor: str = "clean-1", count: int = 3) -> PressureOutboxEnvel
         {
             "symbol": "USDJPY",
             "source_clean_block_id": anchor,
+            "pair_admission_id": "5scr-admission:22222222222222222222222222222222",
+            "pair_admission_status": "GRANTED",
+            "pair_admission_source_ledger_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "radar_manifest_id": "5scr-radar:cccccccccccccccccccccccccccccccc",
+            "radar_status": "ANALYSIS_READY",
+            "pressure_selection_confirmed": True,
             "cluster_id": f"USDJPY:{anchor}:{count}",
             "signal_valid_time_utc": "2026-07-20T03:00:00+00:00",
             "promotion_stage": "PRESSURE_ONLY",

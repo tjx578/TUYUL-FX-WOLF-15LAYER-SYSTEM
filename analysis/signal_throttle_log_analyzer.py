@@ -50,6 +50,7 @@ from .signal_throttle_fusion_router import build_signal_throttle_fusion_v3_diagn
 from .signal_throttle_pattern_detector import classify_pressure_block
 from .signal_throttle_pressure_tier import build_pressure_tier_snapshot
 from .signal_throttle_pure_block_quality import score_pure_pressure_block
+from .strategy_5scr_pair_admission import build_pair_admission_audit
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -462,6 +463,17 @@ def analyze_signal_throttle_events(
             "pure_block_ledger": [],
             "pure_block_count": 0,
             "v1_clean_block_ledger": [],
+            "pair_admission_grants": [],
+            "pair_admission_summary": {
+                "rule_version": "5scr.pair-admission.raw-ledger.v1",
+                "evaluated_blocks": 0,
+                "granted_blocks": 0,
+                "rejected_blocks": 0,
+                "grant_rate": 0.0,
+                "rejection_counts": {},
+                "evaluations": [],
+                "execution_authority": False,
+            },
             "v1_clean_block_count": 0,
             "v1_active_clean_block": None,
             "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
@@ -617,6 +629,22 @@ def analyze_signal_throttle_events(
         lifecycle_blocks,
         clean_block_seconds=clean_block_seconds,
     )
+    clean_block_ids = {
+        (
+            str(item.get("symbol") or "").upper(),
+            str(item.get("block_start_utc") or item.get("clean_block_start_utc") or ""),
+            str(item.get("block_end_utc") or item.get("clean_block_end_utc") or ""),
+        ): str(item.get("source_clean_block_id"))
+        for item in v1_clean_block_ledger
+        if item.get("source_clean_block_id")
+    }
+    pair_admission_audit = build_pair_admission_audit(
+        lifecycle_blocks,
+        raw_events=ordered,
+        clean_block_ids=clean_block_ids,
+        min_duration_seconds=float(clean_block_seconds),
+    )
+    pair_admission_grants = pair_admission_audit.grants
     clean_watch_candidates = v1_clean_block_ledger
     clean_block_watch_route_candidates = _clean_block_watch_route_candidates(
         primary_clean_watch_candidates,
@@ -722,9 +750,7 @@ def analyze_signal_throttle_events(
         counter_entry=microboost_counter_entry,
     )
     pair_eligible_for_analysis = _pair_eligible_for_analysis(
-        allowed_quorum=allowed_quorum,
-        candidate=candidate,
-        main_watchlist=main_watchlist,
+        pair_admission_grants=pair_admission_grants,
     )
     watch_promotion_blockers = _watch_promotion_blockers(
         allowed_quorum=allowed_quorum,
@@ -828,6 +854,8 @@ def analyze_signal_throttle_events(
         "signal_watch_gate": signal_watch_gate,
         "allowed_quorum": allowed_quorum,
         "pair_eligible_for_analysis": pair_eligible_for_analysis,
+        "pair_admission_grants": [grant.to_payload() for grant in pair_admission_grants],
+        "pair_admission_summary": pair_admission_audit.to_payload(),
         "watch_promotion_blockers": watch_promotion_blockers,
         "event_counts": event_type_counts,
         "symbol_activity": symbol_activity,
@@ -3605,21 +3633,11 @@ def _signal_watch_source_fields(
 
 def _pair_eligible_for_analysis(
     *,
-    allowed_quorum: dict[str, Any],
-    candidate: dict[str, Any] | None,
-    main_watchlist: list[str],
+    pair_admission_grants: Iterable[Any],
 ) -> bool:
-    """SignalThrottle presence makes a pair eligible for analysis.
+    """Eligibility is granted only by canonical raw-ledger admission."""
 
-    Theme and structure are confidence/context inputs.  They must not erase a
-    pressure candidate before diagnostics or terminal no-trade output can be
-    emitted.
-    """
-    if isinstance(candidate, dict) and str(candidate.get("symbol") or "").strip():
-        return True
-    if str(allowed_quorum.get("symbol") or "").strip():
-        return True
-    return bool(main_watchlist)
+    return any(getattr(grant, "status", None) == "GRANTED" for grant in pair_admission_grants)
 
 
 def _watch_promotion_blockers(

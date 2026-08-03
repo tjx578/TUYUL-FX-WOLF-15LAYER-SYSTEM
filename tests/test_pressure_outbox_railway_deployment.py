@@ -9,6 +9,7 @@ import pytest
 from services.pressure_outbox.preflight import (
     PressureOutboxRolloutFlags,
     rollout_flags,
+    validate_analysis_worker_phase,
     validate_rollout_phase,
 )
 from storage.pressure_outbox import PressureOutboxRepository
@@ -33,7 +34,7 @@ def test_rollout_phase_contract_is_fail_closed() -> None:
     validate_rollout_phase(PressureOutboxRolloutFlags(True, False, True, False), "dispatcher")
     validate_rollout_phase(PressureOutboxRolloutFlags(True, False, True, True), "consumer")
     validate_rollout_phase(
-        PressureOutboxRolloutFlags(True, True, True, True),
+        PressureOutboxRolloutFlags(True, False, True, True),
         "production-observe",
     )
 
@@ -84,3 +85,30 @@ async def test_schema_preflight_reports_missing_and_complete_contracts() -> None
     assert ready.ready is True
     assert ready.missing_tables == ()
     assert ready.missing_indexes == ()
+
+
+def test_evidence_and_outcome_workers_are_confined_to_production_observe() -> None:
+    validate_analysis_worker_phase(
+        expected_phase="production-observe",
+        evidence_enabled=True,
+        outcome_enabled=True,
+    )
+
+    with pytest.raises(RuntimeError, match="PRODUCTION_OBSERVE_REQUIRES_EVIDENCE_WORKER"):
+        validate_analysis_worker_phase(
+            expected_phase="production-observe",
+            evidence_enabled=False,
+            outcome_enabled=False,
+        )
+    with pytest.raises(RuntimeError, match="EVIDENCE_WORKER_REQUIRES_PRODUCTION_OBSERVE_PHASE"):
+        validate_analysis_worker_phase(
+            expected_phase="consumer",
+            evidence_enabled=True,
+            outcome_enabled=False,
+        )
+    with pytest.raises(RuntimeError, match="STRATEGY_5SCR_OUTCOME_REQUIRES_EVIDENCE_WORKER"):
+        validate_analysis_worker_phase(
+            expected_phase="consumer",
+            evidence_enabled=False,
+            outcome_enabled=True,
+        )

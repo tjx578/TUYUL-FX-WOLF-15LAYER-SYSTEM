@@ -20,6 +20,7 @@ from analysis.strategy_5scr_pressure_to_tradeplan import (
     PressureEventNormalizer,
     PressureInputError,
 )
+from contracts.strategy_5scr_pair_admission import PairAdmissionGrant
 from contracts.strategy_5scr_pressure_radar import (
     PressureRadarDirection,
     PressureRadarEvaluation,
@@ -193,6 +194,8 @@ def evaluate_pressure_radar(record: Mapping[str, Any] | str) -> PressureRadarEva
         failures.append("SOURCE_STAGE_NOT_ALLOWED")
     if htf.get("daily_bias_freshness_status") != "FRESH":
         failures.append("DAILY_BIAS_NOT_FRESH")
+    if str(payload.get("quote_health_status") or "").upper() == "PRICE_FROZEN":
+        failures.append("OBSERVED_PRICE_FROZEN")
     if _text(htf.get("allowed_playbook")) in {None, "NONE"}:
         failures.append("PLAYBOOK_NOT_ALLOWED")
     if payload.get("direction_next_required_stage") != "LIQUIDITY_ACCEPTANCE_OR_REJECTION":
@@ -261,7 +264,7 @@ def _new_manifest(evaluation: PressureRadarEvaluation) -> PressureRadarManifest:
             "WAITING_CANONICAL_LINEAGE",
         ),
         observed_event_ids=(evaluation.event_id,),
-        next_required_stage="CANONICAL_LINEAGE",
+        next_required_stage="PAIR_ADMISSION",
     )
 
 
@@ -286,8 +289,8 @@ def associate_canonical_lineage(
     interval = parse_clean_block_interval(source_id, symbol=manifest.symbol)
     if interval is None or not (interval[0] <= manifest.qualifying_time_utc <= interval[1]):
         return None
-    finalized_at = _parse_datetime(payload.get("generated_at_utc")) or evaluation.observed_at_utc
-    if finalized_at > manifest.raw_direction_expires_at_utc:
+    attached_at = _parse_datetime(payload.get("generated_at_utc")) or evaluation.observed_at_utc
+    if attached_at > manifest.raw_direction_expires_at_utc:
         return None
     event_ids = manifest.observed_event_ids
     if evaluation.event_id not in event_ids:
@@ -295,11 +298,70 @@ def associate_canonical_lineage(
     return manifest.model_copy(
         update={
             "source_clean_block_id": source_id,
-            "lineage_finalized_at_utc": finalized_at,
+            "lineage_finalized_at_utc": attached_at,
             "lineage_context_version": evaluation.context_version,
-            "status": "ANALYSIS_READY",
-            "state_history": (*manifest.state_history, "ANALYSIS_READY"),
             "observed_event_ids": event_ids,
+            "next_required_stage": "PAIR_ADMISSION",
+        }
+    )
+
+
+def _pair_admission_grant(payload: Mapping[str, Any]) -> PairAdmissionGrant | None:
+    raw = payload.get("pair_admission_grant")
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        return PairAdmissionGrant.model_validate(raw)
+    except ValueError:
+        return None
+
+
+def associate_pair_admission(
+    manifest: PressureRadarManifest,
+    record: Mapping[str, Any] | str,
+) -> PressureRadarManifest | None:
+    """Promote only from a canonical raw-ledger pair-admission grant."""
+
+    payload = _extract_payload(record)
+    grant = _pair_admission_grant(payload)
+    if manifest.status != "WAITING_CANONICAL_LINEAGE" or grant is None:
+        return None
+    if (
+        grant.deployment_id != manifest.deployment_id
+        or grant.symbol != manifest.symbol
+        or grant.direction != manifest.raw_direction
+        or not (grant.episode_started_at_utc <= manifest.qualifying_time_utc <= grant.expires_at_utc)
+        or grant.granted_at_utc > manifest.raw_direction_expires_at_utc
+    ):
+        return None
+    observed_at = (
+        _parse_datetime(payload.get("generated_at_utc"))
+        or _parse_datetime(payload.get("signal_valid_time_utc"))
+        or grant.granted_at_utc
+    )
+    if observed_at > grant.expires_at_utc:
+        return None
+
+    source_id = manifest.source_clean_block_id
+    if source_id is None and grant.source_clean_block_ids:
+        source_id = grant.source_clean_block_ids[0]
+    observed_ids = manifest.observed_event_ids
+    if grant.pair_admission_id not in observed_ids:
+        observed_ids = (*observed_ids, grant.pair_admission_id)
+    return manifest.model_copy(
+        update={
+            "source_clean_block_id": source_id,
+            "lineage_finalized_at_utc": manifest.lineage_finalized_at_utc
+            or (grant.granted_at_utc if source_id else None),
+            "pair_admission_id": grant.pair_admission_id,
+            "pair_admission_status": "GRANTED",
+            "pair_admission_rule_version": grant.rule_version,
+            "pair_admission_granted_at_utc": grant.granted_at_utc,
+            "pair_admission_expires_at_utc": grant.expires_at_utc,
+            "pair_admission_source_ledger_hash": grant.source_ledger_hash,
+            "status": "ANALYSIS_READY",
+            "state_history": (*manifest.state_history, "PAIR_ADMISSION_GRANTED", "ANALYSIS_READY"),
+            "observed_event_ids": observed_ids,
             "next_required_stage": "CLOSED_CANDLE_EVIDENCE",
         }
     )
@@ -383,7 +445,14 @@ class PressureRadarAssembler:
                 if associated is not None:
                     self._manifests[current.manifest_id] = associated
                     manifest = associated
-                    transition = "ANALYSIS_READY"
+                    transition = "CANONICAL_LINEAGE_ATTACHED"
+
+        for current in self._active_for(evaluation.deployment_id, evaluation.symbol):
+            admitted = associate_pair_admission(current, payload)
+            if admitted is not None:
+                self._manifests[current.manifest_id] = admitted
+                manifest = admitted
+                transition = "ANALYSIS_READY"
 
         self._seen_event_ids.add(dedup_key)
         return PressureRadarIngestResult(evaluation, manifest, transition)
@@ -464,13 +533,13 @@ def canonical_radar_payload(
 ) -> dict[str, Any]:
     """Assemble the canonical non-executable payload after lineage recovery."""
 
-    if manifest.status != "ANALYSIS_READY" or manifest.source_clean_block_id is None:
+    if manifest.status != "ANALYSIS_READY" or manifest.pair_admission_id is None:
         raise PressureRadarError("PRESSURE_RADAR_MANIFEST_NOT_ANALYSIS_READY")
     data = {key: value for key, value in qualifying_payload.items() if key not in (_RUNTIME_FIELDS | _TRANSPORT_FIELDS)}
     lifecycle_anchor_at = manifest.qualifying_time_utc.isoformat()
     analysis_ready_at = (
-        manifest.lineage_finalized_at_utc.isoformat()
-        if manifest.lineage_finalized_at_utc
+        manifest.pair_admission_granted_at_utc.isoformat()
+        if manifest.pair_admission_granted_at_utc
         else manifest.qualifying_time_utc.isoformat()
     )
     data.update(
@@ -481,13 +550,24 @@ def canonical_radar_payload(
             "radar_manifest_id": manifest.manifest_id,
             "radar_status": manifest.status,
             "source_clean_block_id": manifest.source_clean_block_id,
+            "source_clean_block_role": "LINEAGE_ONLY_NOT_ADMISSION_AUTHORITY",
+            "pair_admission_id": manifest.pair_admission_id,
+            "pair_admission_status": manifest.pair_admission_status,
+            "pair_admission_rule_version": manifest.pair_admission_rule_version,
+            "pair_admission_granted_at_utc": manifest.pair_admission_granted_at_utc.isoformat()
+            if manifest.pair_admission_granted_at_utc
+            else None,
+            "pair_admission_expires_at_utc": manifest.pair_admission_expires_at_utc.isoformat()
+            if manifest.pair_admission_expires_at_utc
+            else None,
+            "pair_admission_source_ledger_hash": manifest.pair_admission_source_ledger_hash,
             "analysis_ready_at_utc": analysis_ready_at,
             "lineage_finalized_at_utc": manifest.lineage_finalized_at_utc.isoformat()
             if manifest.lineage_finalized_at_utc
             else None,
             "lifecycle_anchor_at_utc": lifecycle_anchor_at,
-            # The durable event becomes valid when canonical lineage is
-            # finalized, not at the earlier provisional qualification.
+            # The durable event becomes valid when pair admission is granted,
+            # not at the earlier provisional qualification or clean lineage.
             "signal_valid_at": analysis_ready_at,
             "signal_valid_time_utc": analysis_ready_at,
             "lineage_context_version": manifest.lineage_context_version,
@@ -496,6 +576,11 @@ def canonical_radar_payload(
             "qualifying_stage": manifest.qualifying_stage,
             "max_effective_ticks": manifest.max_effective_ticks,
             "pressure_selection_confirmed": True,
+            "lifecycle_id": manifest.pair_admission_id,
+            "strategy_stage": "PAIR_ADMISSION_GRANTED",
+            "strategy_stage_rank": 30,
+            "strategy_stage_role": "MONOTONIC_STRATEGY_LIFECYCLE_STAGE",
+            "source_stage_role": "PRODUCER_METADATA_NON_MONOTONIC",
             "raw_direction": manifest.raw_direction,
             "final_direction": "WAIT",
             "valid_for_execution": False,
@@ -512,6 +597,7 @@ __all__ = [
     "PressureRadarAssembler",
     "PressureRadarError",
     "PressureRadarIngestResult",
+    "associate_pair_admission",
     "associate_canonical_lineage",
     "canonical_radar_payload",
     "evaluate_pressure_radar",

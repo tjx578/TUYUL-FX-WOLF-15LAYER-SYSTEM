@@ -26,6 +26,12 @@ def _raw_payload(**updates: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "symbol": "EURUSD",
         "source_clean_block_id": "EURUSD:clean:20260720T010000Z",
+        "pair_admission_id": "5scr-admission:0123456789abcdef0123456789abcdef",
+        "pair_admission_status": "GRANTED",
+        "pair_admission_source_ledger_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "radar_manifest_id": "5scr-radar:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "radar_status": "ANALYSIS_READY",
+        "pressure_selection_confirmed": True,
         "cluster_id": "EURUSD_CLUSTER_1",
         "signal_valid_time_utc": "2026-07-20T01:05:00+00:00",
         "promotion_stage": "PRESSURE_ONLY",
@@ -72,7 +78,7 @@ def test_pressure_identity_is_deterministic_and_non_executable() -> None:
     assert first.event_id == second.event_id
     assert first.outbox_id == second.outbox_id
     assert first.payload_hash == second.payload_hash
-    assert first.lifecycle_id.startswith("pressure:EURUSD:clean-block:")
+    assert first.lifecycle_id == "5scr-admission:0123456789abcdef0123456789abcdef"
     assert first.payload["final_direction"] == "WAIT"
     assert first.payload["valid_for_execution"] is False
     assert first.payload["execution_valid_now"] is False
@@ -100,6 +106,10 @@ def test_pressure_hash_ignores_runtime_and_transport_but_not_semantics() -> None
     "updates,reason",
     [
         ({"source_clean_block_id": None}, "PRESSURE_CANONICAL_LINEAGE_MISSING"),
+        ({"pair_admission_status": "NOT_GRANTED"}, "PRESSURE_PAIR_ADMISSION_REQUIRED"),
+        ({"pair_admission_id": "forged-admission"}, "PRESSURE_PAIR_ADMISSION_REQUIRED"),
+        ({"pair_admission_source_ledger_hash": "sha256:forged"}, "PRESSURE_PAIR_ADMISSION_REQUIRED"),
+        ({"pressure_selection_confirmed": False}, "PRESSURE_RADAR_SELECTION_PROOF_REQUIRED"),
         ({"valid_for_execution": True}, "PRESSURE_EXECUTION_FLAG_TRUE"),
         ({"final_direction": "BUY"}, "PRESSURE_FINAL_DIRECTION_NOT_WAIT"),
         ({"signal_valid_time_utc": None}, "PRESSURE_SIGNAL_VALID_AT_MISSING"),
@@ -120,7 +130,7 @@ def test_outbox_payload_and_observability_log_are_byte_semantically_identical(
     canonical = build_signal_pressure_state_payload(_raw_payload())
     envelope = _envelope(canonical)
 
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     assert emit_signal_pressure_state(envelope.payload)
     message = next(record.message for record in caplog.records if "[SignalPressureStateJSON]" in record.message)
     logged = json.loads(message.split("[SignalPressureStateJSON]", 1)[1].strip())

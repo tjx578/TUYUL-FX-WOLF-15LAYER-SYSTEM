@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -76,6 +77,30 @@ def _lineage_payload(qualifying: dict[str, Any]) -> dict[str, Any]:
             "context_version": "pressure-context-v2:lineage",
         }
     )
+    clean_id = str(payload["source_clean_block_id"])
+    admission_digest = hashlib.sha256(clean_id.encode("utf-8")).hexdigest()
+    payload["pair_admission_grant"] = {
+        "event": "pair_admission_granted",
+        "schema_version": "1.0",
+        "rule_version": "5scr.pair-admission.raw-ledger.v1",
+        "pair_admission_id": f"5scr-admission:{admission_digest[:32]}",
+        "status": "GRANTED",
+        "ledger_scope": "GLOBAL_SIGNAL_THROTTLE_RAW_LEDGER",
+        "deployment_id": qualifying["deployment_id"],
+        "symbol": "AUDUSD",
+        "direction": "BUY",
+        "episode_started_at_utc": start.isoformat(),
+        "episode_observed_through_utc": end.isoformat(),
+        "granted_at_utc": end.isoformat(),
+        "expires_at_utc": (end + timedelta(minutes=15)).isoformat(),
+        "duration_seconds": 300.0,
+        "effective_ticks": 3,
+        "source_ledger_event_ids": ["raw:AUDUSD:1", "raw:AUDUSD:2", "raw:AUDUSD:3"],
+        "source_ledger_hash": f"sha256:{admission_digest}",
+        "source_clean_block_ids": [clean_id],
+        "pair_eligible_for_analysis": True,
+        "execution_authority": False,
+    }
     return payload
 
 
@@ -244,7 +269,7 @@ async def test_waiting_manifest_then_lineage_atomically_enqueues_non_executable_
     assert ready.envelope.payload["radar_manifest_id"] == ready.manifest.manifest_id
     assert ready.envelope.payload["pressure_selection_confirmed"] is True
     assert ready.envelope.payload["lifecycle_anchor_at_utc"] == START.isoformat()
-    assert ready.envelope.signal_valid_at == START + timedelta(minutes=6, seconds=1)
+    assert ready.envelope.signal_valid_at == START + timedelta(minutes=5)
     assert ready.envelope.payload["final_direction"] == "WAIT"
     assert ready.envelope.payload["valid_for_execution"] is False
     assert ready.envelope.payload["is_final_signal"] is False

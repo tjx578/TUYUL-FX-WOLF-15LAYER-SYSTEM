@@ -48,6 +48,9 @@ def test_signal_throttle_pressure_routes_to_pressure_state(monkeypatch):
     assert routed.payload["raw_direction_swing_eligible"] is False
     assert routed.payload["strategy_5scr_required"] is True
     assert routed.payload["context_version"].startswith("pressure-context-v2:")
+    assert routed.payload["transport_context_version"] == routed.payload["context_version"]
+    assert routed.payload["material_context_hash"].startswith("sha256:")
+    assert routed.payload["context_epoch_id"].startswith("5scr-context:")
 
 
 def test_pressure_contract_resolves_direction_but_never_promotes_raw_pressure():
@@ -132,6 +135,62 @@ def test_pressure_context_version_ignores_age_only_changes():
     second = convert_to_signal_pressure_state(later)
 
     assert first["context_version"] == second["context_version"]
+    assert first["material_context_hash"] == second["material_context_hash"]
+    assert first["context_epoch_id"] == second["context_epoch_id"]
+
+
+def test_material_context_epoch_ignores_transport_cluster_and_stage_churn():
+    base = {
+        "source_stage": "PRESSURE_BLOCK",
+        "symbol": "NZDCAD",
+        "cluster_id": "NZDCAD_CLUSTER_A",
+        "raw_direction": "BUY",
+        "htf_structure_context": {
+            "daily_bias": "BULLISH",
+            "h4_structure": "BEARISH_PULLBACK",
+            "price_location": "PREMIUM",
+            "liquidity_resolution": "BUY_SIDE_TESTING",
+        },
+    }
+    transport_revision = {
+        **base,
+        "source_stage": "CANDIDATE_LIFECYCLE",
+        "cluster_id": "NZDCAD_CLUSTER_B",
+        "status": "REVISED_PRODUCER_STATUS",
+    }
+
+    first = convert_to_signal_pressure_state(base)
+    second = convert_to_signal_pressure_state(transport_revision)
+
+    assert first["context_version"] != second["context_version"]
+    assert first["pressure_lifecycle_key"] != second["pressure_lifecycle_key"]
+    assert first["material_context_hash"] == second["material_context_hash"]
+    assert first["context_epoch_id"] == second["context_epoch_id"]
+
+
+def test_material_context_epoch_changes_on_structural_context_change():
+    base = {
+        "source_stage": "PRESSURE_BLOCK",
+        "symbol": "NZDCAD",
+        "cluster_id": "NZDCAD_CLUSTER_A",
+        "raw_direction": "BUY",
+        "htf_structure_context": {
+            "daily_bias": "BULLISH",
+            "h4_structure": "BEARISH_PULLBACK",
+            "price_location": "PREMIUM",
+            "liquidity_resolution": "BUY_SIDE_TESTING",
+        },
+    }
+    changed = {
+        **base,
+        "htf_structure_context": {**base["htf_structure_context"], "daily_bias": "BEARISH"},
+    }
+
+    first = convert_to_signal_pressure_state(base)
+    second = convert_to_signal_pressure_state(changed)
+
+    assert first["material_context_hash"] != second["material_context_hash"]
+    assert first["context_epoch_id"] != second["context_epoch_id"]
 
 
 def test_signal_watch_can_emit_signal_decision():

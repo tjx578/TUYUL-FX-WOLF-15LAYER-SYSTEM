@@ -1577,7 +1577,7 @@ def test_pipeline_logs_block_finalizer_update_as_signal_decision_update_json(cap
 
 
 def test_pipeline_logs_no_trade_pressure_as_pressure_state_by_default(caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
     pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
@@ -1650,7 +1650,7 @@ def test_pipeline_logs_no_trade_pressure_as_pressure_state_by_default(caplog):
 
 
 def test_no_trade_pressure_payload_carries_price_lineage(caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
     pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
@@ -1696,7 +1696,7 @@ def test_no_trade_pressure_payload_carries_price_lineage(caplog):
 
 
 def test_pipeline_routes_no_trade_pressure_to_pressure_state_when_guard_enabled(monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true")
@@ -1743,7 +1743,7 @@ def test_pipeline_routes_no_trade_pressure_to_pressure_state_when_guard_enabled(
 
 
 def test_pipeline_logs_allowed_quorum_context_gap_as_pressure_state_by_default(caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     pipeline = WolfConstitutionalPipeline.__new__(WolfConstitutionalPipeline)
     pipeline._signal_json_gate_adapter = SignalJsonGateAdapter.from_env({})
     pipeline._signal_json_emitter = SignalJsonEmitter(enabled=True)
@@ -1805,7 +1805,8 @@ def test_pipeline_logs_allowed_quorum_context_gap_as_pressure_state_by_default(c
     assert state["terminal_status"] == "PRESSURE_ONLY"
     assert state["pressure_source"] == "SIGNAL_THROTTLE"
     assert state["allowed_quorum_seen"] is True
-    assert state["pair_eligible_for_analysis"] is True
+    assert state["pair_eligible_for_analysis"] is False
+    assert state["pair_admission_status"] == "NOT_GRANTED"
     assert state["watch_promotion_blockers"]["LOW_CONTEXT_COHERENCE"] == 1
     assert state["signal_pressure_state_emit_result"] is True
     emitted = next(rec.message for rec in caplog.records if "[SignalPressureStateJSON]" in rec.message)
@@ -1819,7 +1820,7 @@ def test_pipeline_logs_allowed_quorum_context_gap_as_pressure_state_by_default(c
 
 
 def test_pipeline_routes_allowed_quorum_to_pressure_state_when_guard_enabled(monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true")
@@ -1883,7 +1884,7 @@ def test_pipeline_routes_allowed_quorum_to_pressure_state_when_guard_enabled(mon
 
 
 def test_allowed_quorum_contextless_l1_blocker_emits_pressure_state(monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true")
@@ -1949,7 +1950,7 @@ def test_allowed_quorum_contextless_l1_blocker_emits_pressure_state(monkeypatch,
 
 
 def test_no_trade_contextless_pressure_emits_pressure_state(monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     monkeypatch.setenv("SIGNAL_DECISION_SOURCE_GUARD_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED", "true")
@@ -2047,7 +2048,7 @@ def test_pipeline_suppresses_single_no_trade_pressure_canary(monkeypatch, caplog
 
 
 def test_pipeline_counts_semantic_pressure_state_rate_limit(monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS", "60")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_SUMMARY_ENABLED", "false")
@@ -2079,7 +2080,7 @@ def test_pipeline_counts_semantic_pressure_state_rate_limit(monkeypatch, caplog)
 
 
 def test_pipeline_emits_rolling_pressure_state_summary(monkeypatch, caplog):
-    caplog.set_level(logging.WARNING, logger="signal_json")
+    caplog.set_level(logging.INFO, logger="signal_json")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_JSON_ENABLED", "true")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS", "0")
     monkeypatch.setenv("SIGNAL_PRESSURE_STATE_SUMMARY_ENABLED", "true")

@@ -232,7 +232,7 @@ def test_snapshot_is_never_executable():
     assert d["event"] == EVENT_NAME
 
 
-def test_snapshot_marks_stale_daily_bias_advisory_only():
+def test_snapshot_marks_genuinely_stale_daily_bias_as_execution_blocking():
     now = datetime(2026, 7, 10, 12, 0, tzinfo=UTC)
     daily = _staircase_down(n=30, base=1.60)
     h4 = _staircase_down(n=30, base=1.55)
@@ -254,9 +254,38 @@ def test_snapshot_marks_stale_daily_bias_advisory_only():
     assert snapshot.daily_bias_freshness_status == "STALE"
     assert snapshot.daily_bias_source_candle is not None
     assert snapshot.daily_bias_snapshot_time == now.isoformat()
-    assert snapshot.daily_bias_rule_version == 2
+    assert snapshot.daily_bias_rule_version == 3
     assert snapshot.allowed_playbook == "NONE"
+    assert snapshot.daily_bias_advisory_only is False
+    assert snapshot.daily_bias_execution_impact is True
+    assert snapshot.daily_bias_execution_block_reason == "DAILY_CONTEXT_STALE"
+    assert snapshot.reason == "daily_bias_stale_execution_block"
+    assert snapshot.daily_bias_missed_expected_closed_bars is not None
+    assert snapshot.daily_bias_missed_expected_closed_bars > 0
     assert snapshot.valid_for_execution is False
+
+
+def test_snapshot_does_not_mark_period_open_daily_stale_over_weekend():
+    now = datetime(2026, 8, 3, 12, 51, tzinfo=UTC)
+    daily = _staircase_down(n=30, base=1.60)
+    h4 = _staircase_down(n=30, base=1.55)
+    latest_daily_open = datetime(2026, 7, 30, 21, 0, tzinfo=UTC)
+    for index, candle in enumerate(daily):
+        candle["timestamp"] = (latest_daily_open - timedelta(days=len(daily) - index - 1)).isoformat()
+        candle["provider_timestamp_semantics"] = "PERIOD_OPEN"
+    for index, candle in enumerate(h4):
+        candle["timestamp"] = (now - timedelta(hours=(len(h4) - index) * 4)).isoformat()
+
+    snapshot = build_snapshot("AUDJPY", daily, h4, now=now)
+
+    assert snapshot.daily_bias_freshness_status == "FRESH"
+    assert snapshot.daily_bias_source_period_open == latest_daily_open.isoformat()
+    assert snapshot.daily_bias_source_period_close == datetime(2026, 7, 31, 21, 0, tzinfo=UTC).isoformat()
+    assert snapshot.daily_bias_latest_expected_period_close == datetime(
+        2026, 7, 31, 21, 0, tzinfo=UTC
+    ).isoformat()
+    assert snapshot.daily_bias_missed_expected_closed_bars == 0
+    assert snapshot.allowed_playbook != "NONE"
 
 
 def test_snapshot_carries_auditable_location_price_lineage():

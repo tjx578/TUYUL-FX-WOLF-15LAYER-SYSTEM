@@ -386,16 +386,38 @@ def test_csv_state_warmup_detects_first_intel_continuation(tmp_path):
     }
 
 
-def test_allowed_quorum_without_microboost_exposes_watch_promotion_blockers():
+def test_allowed_quorum_without_five_minute_admission_stays_ineligible():
     events = [_event(index * 10, "AUDUSD", "ALLOWED") for index in range(3)]
 
     report = analyze_signal_throttle_events(events)
 
     assert report["allowed_quorum"]["quorum_reached"] is True
-    assert report["pair_eligible_for_analysis"] is True
+    assert report["pair_eligible_for_analysis"] is False
+    assert report["pair_admission_grants"] == []
+    assert report["pair_admission_summary"]["granted_blocks"] == 0
+    assert report["pair_admission_summary"]["rejection_counts"]["DURATION_BELOW_MINIMUM"] >= 1
     assert report["microboost_summary"]["count_total"] == 0
     assert report["watch_promotion_blockers"]["ALLOWED_QUORUM_PENDING_VALIDATION"] == 3
     assert report["watch_promotion_blockers"]["MICROBOOST_NOT_FORMED"] == 3
+
+
+def test_five_minute_global_raw_ledger_block_grants_pair_admission():
+    events = [
+        _event(offset, "AUDUSD", direction="BUY", deployment_id="deployment-a")
+        for offset in range(0, 301, 60)
+    ]
+
+    report = analyze_signal_throttle_events(events)
+
+    assert report["pair_eligible_for_analysis"] is True
+    assert len(report["pair_admission_grants"]) == 1
+    grant = report["pair_admission_grants"][0]
+    assert grant["status"] == "GRANTED"
+    assert grant["duration_seconds"] == 300
+    assert grant["effective_ticks"] >= 3
+    assert grant["execution_authority"] is False
+    assert report["pair_admission_summary"]["grant_rate"] == 1.0
+    assert report["pair_admission_summary"]["rejection_counts"] == {}
 
 
 def test_pressure_cluster_summary_is_flag_guarded(monkeypatch):
