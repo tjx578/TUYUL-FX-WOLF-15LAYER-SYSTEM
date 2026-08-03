@@ -79,6 +79,7 @@ jobs:
       DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_RUN_POSTGRES_INTEGRATION: "1"
       WOLF15_POSTGRES_TEST_DATABASE: wolf15_ci_test
+      WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS: YES_I_UNDERSTAND
       DASHBOARD_JWT_SECRET: ci-test-secret-do-not-use-in-prod
       JWT_SECRET: ci-test-secret-do-not-use-in-prod
     steps:
@@ -99,6 +100,44 @@ jobs:
 
       - name: Apply database migrations
         run: python -m alembic upgrade head
+
+      - name: Mark PostgreSQL as a disposable test environment
+        run: |
+          python - <<'PYEOF'
+          import asyncio
+          import os
+
+          import asyncpg
+
+
+          async def main() -> None:
+              connection = await asyncpg.connect(os.environ["DATABASE_URL"])
+              try:
+                  await connection.execute(
+                      "ALTER DATABASE wolf15_ci_test "
+                      "SET wolf15.environment_class = 'DISPOSABLE_TEST'"
+                  )
+                  await connection.execute(
+                      "ALTER DATABASE wolf15_ci_test "
+                      "SET wolf15.destructive_tests_allowed = 'true'"
+                  )
+              finally:
+                  await connection.close()
+
+              verification = await asyncpg.connect(os.environ["DATABASE_URL"])
+              try:
+                  assert await verification.fetchval(
+                      "SELECT current_setting('wolf15.environment_class', true)"
+                  ) == "DISPOSABLE_TEST"
+                  assert await verification.fetchval(
+                      "SELECT current_setting('wolf15.destructive_tests_allowed', true)"
+                  ) == "true"
+              finally:
+                  await verification.close()
+
+
+          asyncio.run(main())
+          PYEOF
 
       - name: Run pytest with coverage
         run: |

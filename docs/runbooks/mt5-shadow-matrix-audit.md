@@ -9,7 +9,7 @@ and the repository does not ship a reusable command-producer shortcut.
 
 - executor mode is exactly `SHADOW`;
 - global executor kill switch is active;
-- EA version is exactly `0.20-shadow-xm30`;
+- EA version is exactly `0.21-shadow-xm30-diag`;
 - protocol is exactly `wolf15.mt5.exec.v1`;
 - signed-wire-v2 database guarantees are ready;
 - heartbeat and account snapshot are fresh;
@@ -33,7 +33,7 @@ The operator session exports identities only:
   "symbol_universe": "WOLF15_XM_30_V1",
   "executor_id": "00000000-0000-4000-8000-000000000000",
   "broker_server": "XMGlobal-MT5 10",
-  "expected_ea_version": "0.20-shadow-xm30",
+  "expected_ea_version": "0.21-shadow-xm30-diag",
   "expected_protocol_version": "wolf15.mt5.exec.v1",
   "started_at_utc": "2026-08-03T08:00:00+00:00",
   "commands": [
@@ -69,15 +69,29 @@ broker order correctness.
 
 ## PostgreSQL integration-test safety
 
-Destructive integration fixtures require all three values:
+Destructive integration fixtures require all four values:
 
 ```text
 WOLF15_RUN_POSTGRES_INTEGRATION=1
+WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS=YES_I_UNDERSTAND
 DATABASE_URL=postgresql://...@127.0.0.1/...test...
 WOLF15_POSTGRES_TEST_DATABASE=<exact database name from DATABASE_URL>
 ```
 
 The target must be loopback, its name must contain `test` or `audit`, the
 explicit guard must match it, and `SELECT current_database()` must confirm the
-same name after connection. The fixture snapshots and restores the complete
-global kill-switch row before releasing its advisory lock.
+same name after connection. New connections must also return:
+
+```sql
+SELECT current_setting('wolf15.environment_class', true);
+-- DISPOSABLE_TEST
+
+SELECT current_setting('wolf15.destructive_tests_allowed', true);
+-- true
+```
+
+After taking its advisory lock, the fixture rejects any pre-existing rows in
+the bridge executor, snapshot, command, report, broker-entity, or governance
+audit tables. It snapshots and restores the complete global kill-switch row,
+verifies exact restoration, and requires all operational tables to be empty
+again before releasing the lock.

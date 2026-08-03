@@ -40,14 +40,17 @@ from scripts.audit_mt5_shadow_matrix import (
     load_symbol_universe,
 )
 from tests.integration.postgres_test_guard import (
+    require_destructive_postgres_opt_in,
     require_disposable_postgres_target,
     verify_connected_database,
+    verify_operational_tables_empty,
 )
 
 pytestmark = [pytest.mark.integration]
 
 _RUN_FLAG = "WOLF15_RUN_POSTGRES_INTEGRATION"
 _DATABASE_GUARD = "WOLF15_POSTGRES_TEST_DATABASE"
+_DESTRUCTIVE_FLAG = "WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS"
 _LOCK_KEY = 0x5701_1504
 _LOCK_TIMEOUT_SECONDS = 120
 ACCOUNT_ID = "acct-matrix-audit"
@@ -102,6 +105,10 @@ class _PoolBackedPostgres:
 async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
     if os.getenv(_RUN_FLAG) != "1":
         pytest.skip(f"set {_RUN_FLAG}=1 for disposable PostgreSQL integration tests")
+    try:
+        require_destructive_postgres_opt_in(os.getenv(_DESTRUCTIVE_FLAG, ""))
+    except ValueError as exc:
+        pytest.fail(str(exc))
     dsn = os.getenv("DATABASE_URL", "")
     expected_database = os.getenv(_DATABASE_GUARD, "")
     if not dsn or not expected_database:
@@ -117,6 +124,7 @@ async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
 
     pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=4, command_timeout=10)
     lock_connection = await pool.acquire()
+    lock_acquired = False
     try:
         await verify_connected_database(lock_connection, expected_database=expected_database)
         deadline = asyncio.get_running_loop().time() + _LOCK_TIMEOUT_SECONDS
@@ -124,6 +132,8 @@ async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
             if asyncio.get_running_loop().time() >= deadline:
                 pytest.fail("timed out waiting for the matrix-audit PostgreSQL lock")
             await asyncio.sleep(0.25)
+        lock_acquired = True
+        await verify_operational_tables_empty(lock_connection)
         original = await lock_connection.fetchrow(
             """
             SELECT kill_switch_active, kill_switch_reason, governance_version, updated_by, updated_at
@@ -152,8 +162,19 @@ async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
                 original["updated_by"],
                 original["updated_at"],
             )
-            await lock_connection.execute("SELECT pg_advisory_unlock($1)", _LOCK_KEY)
+            restored = await lock_connection.fetchrow(
+                """
+                SELECT kill_switch_active, kill_switch_reason, governance_version, updated_by, updated_at
+                FROM executor_bridge_governance
+                WHERE singleton_id = 1
+                """
+            )
+            if restored is None or dict(restored) != dict(original):
+                pytest.fail("executor_bridge_governance was not restored exactly")
+            await verify_operational_tables_empty(lock_connection)
     finally:
+        if lock_acquired:
+            await lock_connection.execute("SELECT pg_advisory_unlock($1)", _LOCK_KEY)
         await pool.release(lock_connection)
         await pool.close()
 

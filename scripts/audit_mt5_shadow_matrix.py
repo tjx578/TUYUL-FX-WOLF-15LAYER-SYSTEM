@@ -25,7 +25,7 @@ from contracts.mt5_execution_protocol import PROTOCOL_VERSION, SIGNED_WIRE_VERSI
 
 MANIFEST_VERSION: Final = "wolf15.mt5.shadow-matrix-manifest.v1"
 REQUIRED_UNIVERSE: Final = "WOLF15_XM_30_V1"
-EXPECTED_EA_VERSION: Final = "0.20-shadow-xm30"
+EXPECTED_EA_VERSION: Final = "0.21-shadow-xm30-diag"
 EXPECTED_SYMBOL_COUNT: Final = 30
 DEFAULT_HEARTBEAT_MAX_AGE_SECONDS: Final = 30.0
 DEFAULT_SNAPSHOT_MAX_AGE_SECONDS: Final = 30.0
