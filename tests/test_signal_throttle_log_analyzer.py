@@ -34,6 +34,11 @@ def _event(
     **overrides,
 ) -> SignalThrottleLogEvent:
     verdict = "EXECUTE_REDUCED_RISK_BUY" if event_type != "THROTTLED" else None
+    source_stream = {
+        "THROTTLED": "RAW_THROTTLED",
+        "ALLOWED": "ALLOWED",
+        "DOWNGRADED_TO_HOLD": "DOWNGRADED",
+    }.get(event_type)
     payload = {
         "timestamp": datetime(2026, 5, 8, 12, 0, tzinfo=UTC) + timedelta(seconds=offset_seconds),
         "severity": "error" if event_type == "THROTTLED" else "info",
@@ -42,6 +47,8 @@ def _event(
         "event_type": event_type,
         "verdict": verdict,
         "direction": "BUY" if verdict else None,
+        "pressure_source": "SignalThrottle",
+        "source_stream": source_stream,
     }
     payload.update(overrides)
     return SignalThrottleLogEvent(**payload)
@@ -129,6 +136,7 @@ def test_parse_signal_throttle_rows_ignores_signal_json_decision_updates():
     assert [event.event_type for event in events] == ["INTEL"]
     assert all("[SignalDecisionUpdateJSON]" not in event.message for event in events)
     assert events[0].symbol == "EURUSD"
+    assert events[0].eligible_for_pressure_block is False
 
 
 def test_parse_signal_throttle_rows_ignores_signal_json_lifecycle_channels():
@@ -190,6 +198,7 @@ def test_parse_signal_throttle_check_as_pressure_canary():
     assert event.direction == "BUY"
     assert event.effective_action == "OBSERVE"
     assert event.is_downgraded is False
+    assert event.eligible_for_pressure_block is False
 
 
 def test_parse_downgraded_hold_preserves_raw_verdict_and_effective_action():
@@ -386,16 +395,44 @@ def test_csv_state_warmup_detects_first_intel_continuation(tmp_path):
     }
 
 
-def test_allowed_quorum_without_microboost_exposes_watch_promotion_blockers():
+def test_allowed_quorum_without_five_minute_admission_stays_ineligible():
     events = [_event(index * 10, "AUDUSD", "ALLOWED") for index in range(3)]
 
     report = analyze_signal_throttle_events(events)
 
     assert report["allowed_quorum"]["quorum_reached"] is True
-    assert report["pair_eligible_for_analysis"] is True
+    assert report["pair_eligible_for_analysis"] is False
+    assert report["pair_admission_grants"] == []
+    assert report["pair_admission_summary"]["granted_blocks"] == 0
+    assert report["pair_admission_summary"]["rejection_counts"]["DURATION_BELOW_MINIMUM"] >= 1
     assert report["microboost_summary"]["count_total"] == 0
     assert report["watch_promotion_blockers"]["ALLOWED_QUORUM_PENDING_VALIDATION"] == 3
     assert report["watch_promotion_blockers"]["MICROBOOST_NOT_FORMED"] == 3
+
+
+def test_five_minute_global_raw_ledger_block_grants_pair_admission():
+    events = [
+        _event(
+            offset,
+            "AUDUSD",
+            direction="BUY",
+            deployment_id="deployment-a",
+            scanner_cycle_id=f"scan-{offset // 60}",
+        )
+        for offset in range(0, 301, 60)
+    ]
+
+    report = analyze_signal_throttle_events(events)
+
+    assert report["pair_eligible_for_analysis"] is True
+    assert len(report["pair_admission_grants"]) == 1
+    grant = report["pair_admission_grants"][0]
+    assert grant["status"] == "GRANTED"
+    assert grant["duration_seconds"] == 300
+    assert grant["effective_ticks"] >= 3
+    assert grant["execution_authority"] is False
+    assert report["pair_admission_summary"]["grant_rate"] == 1.0
+    assert report["pair_admission_summary"]["rejection_counts"] == {}
 
 
 def test_pressure_cluster_summary_is_flag_guarded(monkeypatch):

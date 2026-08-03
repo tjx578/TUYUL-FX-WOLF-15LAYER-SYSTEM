@@ -71,6 +71,7 @@ from typing import Any, TypedDict, cast
 
 from analysis.basket_direction_validator import validate_basket_direction
 from analysis.clean_block_watch_router import clean_block_lineage_fields, emit_signal_watch_promotion_diagnostic
+from analysis.frozen_quote_detector import FrozenQuoteDetector
 from analysis.htf_structure_snapshot import (
     HTFStructureSnapshotResolver,
     emit_htf_structure_snapshot,
@@ -376,6 +377,24 @@ class WolfConstitutionalPipeline:
 
         # Shared context bus (singleton) for warmup checks & vault health
         self._context_bus = LiveContextBus()
+        self._frozen_quote_detector = FrozenQuoteDetector(
+            frozen_after_seconds=self._parse_env_float(
+                "SIGNAL_PRESSURE_FROZEN_QUOTE_SECONDS",
+                120.0,
+            ),
+            min_unchanged_observations=max(
+                2,
+                int(self._parse_env_float("SIGNAL_PRESSURE_FROZEN_QUOTE_MIN_OBSERVATIONS", 3.0)),
+            ),
+            warmup_seconds=self._parse_env_float(
+                "SIGNAL_PRESSURE_QUOTE_WARMUP_SECONDS",
+                30.0,
+            ),
+            min_warmup_observations=max(
+                2,
+                int(self._parse_env_float("SIGNAL_PRESSURE_QUOTE_WARMUP_MIN_OBSERVATIONS", 3.0)),
+            ),
+        )
 
         # Layer analyzers (lazy-loaded)
         self._l1 = None
@@ -3496,6 +3515,36 @@ class WolfConstitutionalPipeline:
             htf_daily_bias_freshness_status=self._optional_text_from_mapping(
                 htf_context, "daily_bias_freshness_status"
             ),
+            htf_daily_bias_freshness_basis=self._optional_text_from_mapping(
+                htf_context, "daily_bias_freshness_basis"
+            ),
+            htf_daily_bias_source_period_open=self._optional_text_from_mapping(
+                htf_context, "daily_bias_source_period_open"
+            ),
+            htf_daily_bias_source_period_close=self._optional_text_from_mapping(
+                htf_context, "daily_bias_source_period_close"
+            ),
+            htf_daily_bias_latest_expected_period_open=self._optional_text_from_mapping(
+                htf_context, "daily_bias_latest_expected_period_open"
+            ),
+            htf_daily_bias_latest_expected_period_close=self._optional_text_from_mapping(
+                htf_context, "daily_bias_latest_expected_period_close"
+            ),
+            htf_daily_bias_missed_expected_closed_bars=self._optional_int_from_mapping(
+                htf_context, "daily_bias_missed_expected_closed_bars"
+            ),
+            htf_daily_bias_provider_timestamp_semantics=self._optional_text_from_mapping(
+                htf_context, "daily_bias_provider_timestamp_semantics"
+            ),
+            htf_daily_bias_advisory_only=self._optional_bool_from_mapping(
+                htf_context, "daily_bias_advisory_only"
+            ),
+            htf_daily_bias_execution_impact=self._optional_bool_from_mapping(
+                htf_context, "daily_bias_execution_impact"
+            ),
+            htf_daily_bias_execution_block_reason=self._optional_text_from_mapping(
+                htf_context, "daily_bias_execution_block_reason"
+            ),
             htf_daily_bias_rule_version=self._optional_int_from_mapping(htf_context, "daily_bias_rule_version"),
             htf_location_reference_price=self._optional_float_from_mapping(htf_context, "location_reference_price"),
             htf_location_reference_time=self._optional_text_from_mapping(htf_context, "location_reference_time"),
@@ -4020,11 +4069,39 @@ class WolfConstitutionalPipeline:
             "daily_bias_freshness_status": WolfConstitutionalPipeline._optional_text_from_mapping(
                 snapshot, "daily_bias_freshness_status"
             ),
+            "daily_bias_freshness_basis": WolfConstitutionalPipeline._optional_text_from_mapping(
+                snapshot, "daily_bias_freshness_basis"
+            ),
+            "daily_bias_source_period_open": WolfConstitutionalPipeline._optional_text_from_mapping(
+                snapshot, "daily_bias_source_period_open"
+            ),
+            "daily_bias_source_period_close": WolfConstitutionalPipeline._optional_text_from_mapping(
+                snapshot, "daily_bias_source_period_close"
+            ),
+            "daily_bias_latest_expected_period_open": WolfConstitutionalPipeline._optional_text_from_mapping(
+                snapshot, "daily_bias_latest_expected_period_open"
+            ),
+            "daily_bias_latest_expected_period_close": WolfConstitutionalPipeline._optional_text_from_mapping(
+                snapshot, "daily_bias_latest_expected_period_close"
+            ),
+            "daily_bias_missed_expected_closed_bars": WolfConstitutionalPipeline._optional_int_from_mapping(
+                snapshot, "daily_bias_missed_expected_closed_bars"
+            ),
+            "daily_bias_provider_timestamp_semantics": WolfConstitutionalPipeline._optional_text_from_mapping(
+                snapshot, "daily_bias_provider_timestamp_semantics"
+            ),
             "daily_bias_rule_version": WolfConstitutionalPipeline._optional_int_from_mapping(
                 snapshot, "daily_bias_rule_version"
             ),
-            "daily_bias_advisory_only": True,
-            "daily_bias_execution_impact": False,
+            "daily_bias_advisory_only": WolfConstitutionalPipeline._optional_bool_from_mapping(
+                snapshot, "daily_bias_advisory_only"
+            ),
+            "daily_bias_execution_impact": WolfConstitutionalPipeline._optional_bool_from_mapping(
+                snapshot, "daily_bias_execution_impact"
+            ),
+            "daily_bias_execution_block_reason": WolfConstitutionalPipeline._optional_text_from_mapping(
+                snapshot, "daily_bias_execution_block_reason"
+            ),
             "location_reference_price": WolfConstitutionalPipeline._optional_float_from_mapping(
                 snapshot, "location_reference_price"
             ),
@@ -4108,9 +4185,17 @@ class WolfConstitutionalPipeline:
             "daily_bias_snapshot_time": _field("htf_daily_bias_snapshot_time"),
             "daily_bias_age_seconds": _field("htf_daily_bias_age_seconds"),
             "daily_bias_freshness_status": _field("htf_daily_bias_freshness_status"),
+            "daily_bias_freshness_basis": _field("htf_daily_bias_freshness_basis"),
+            "daily_bias_source_period_open": _field("htf_daily_bias_source_period_open"),
+            "daily_bias_source_period_close": _field("htf_daily_bias_source_period_close"),
+            "daily_bias_latest_expected_period_open": _field("htf_daily_bias_latest_expected_period_open"),
+            "daily_bias_latest_expected_period_close": _field("htf_daily_bias_latest_expected_period_close"),
+            "daily_bias_missed_expected_closed_bars": _field("htf_daily_bias_missed_expected_closed_bars"),
+            "daily_bias_provider_timestamp_semantics": _field("htf_daily_bias_provider_timestamp_semantics"),
             "daily_bias_rule_version": _field("htf_daily_bias_rule_version"),
-            "daily_bias_advisory_only": True,
-            "daily_bias_execution_impact": False,
+            "daily_bias_advisory_only": _field("htf_daily_bias_advisory_only"),
+            "daily_bias_execution_impact": _field("htf_daily_bias_execution_impact"),
+            "daily_bias_execution_block_reason": _field("htf_daily_bias_execution_block_reason"),
             "location_reference_price": _field("htf_location_reference_price"),
             "location_reference_time": _field("htf_location_reference_time"),
             "location_reference_source": _field("htf_location_reference_source"),
@@ -6250,7 +6335,7 @@ class WolfConstitutionalPipeline:
             "signal_valid_price": price,
             "entry_reference_price": price,
             "entry_zone": [price, price],
-            **self._decision_price_lineage_payload(price_lineage),
+            **self._decision_price_lineage_payload(price_lineage, symbol=symbol),
             "rr_status": "UNVALIDATED",
             "market_context_applied": context is not None,
             "valid_for_execution": False,
@@ -6410,7 +6495,12 @@ class WolfConstitutionalPipeline:
                 }
         return None
 
-    def _decision_price_lineage_payload(self, lineage: dict[str, Any] | None) -> dict[str, Any]:
+    def _decision_price_lineage_payload(
+        self,
+        lineage: dict[str, Any] | None,
+        *,
+        symbol: str | None = None,
+    ) -> dict[str, Any]:
         if not isinstance(lineage, dict):
             return {
                 "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
@@ -6431,6 +6521,10 @@ class WolfConstitutionalPipeline:
                 "price_freshness_status": "UNKNOWN",
                 "reference_price_is_live": False,
                 "price_lineage_version": 1,
+                "quote_health_status": "MISSING",
+                "quote_health_execution_blocked": True,
+                "quote_health_reason": "QUOTE_LINEAGE_MISSING",
+                "quote_health_rule_version": "frozen-quote.v1",
             }
         price = self._coerce_positive_float(lineage.get("price"))
         source = str(lineage.get("price_source") or "UNKNOWN").upper()
@@ -6447,6 +6541,50 @@ class WolfConstitutionalPipeline:
             reference_status = "STALE"
         else:
             reference_status = "AVAILABLE"
+        snapshot_epoch = _coerce_timestamp_to_epoch(snapshot_time)
+        quote_observed_at = (
+            datetime.fromtimestamp(snapshot_epoch, tz=UTC)
+            if snapshot_epoch is not None
+            else datetime.now(UTC)
+        )
+        detector = getattr(self, "_frozen_quote_detector", None)
+        if detector is None:
+            detector = FrozenQuoteDetector(
+                frozen_after_seconds=self._parse_env_float(
+                    "SIGNAL_PRESSURE_FROZEN_QUOTE_SECONDS",
+                    120.0,
+                ),
+                min_unchanged_observations=max(
+                    2,
+                    int(self._parse_env_float("SIGNAL_PRESSURE_FROZEN_QUOTE_MIN_OBSERVATIONS", 3.0)),
+                ),
+                warmup_seconds=self._parse_env_float(
+                    "SIGNAL_PRESSURE_QUOTE_WARMUP_SECONDS",
+                    30.0,
+                ),
+                min_warmup_observations=max(
+                    2,
+                    int(self._parse_env_float("SIGNAL_PRESSURE_QUOTE_WARMUP_MIN_OBSERVATIONS", 3.0)),
+                ),
+            )
+            self._frozen_quote_detector = detector
+        quote_health = detector.observe(
+            symbol=symbol or str(lineage.get("symbol") or "UNKNOWN"),
+            price=price,
+            observed_at=quote_observed_at,
+            source=source,
+        )
+        if quote_health.status == "PRICE_FROZEN":
+            reference_status = "PRICE_FROZEN"
+            reference_is_live = False
+            freshness = "PRICE_FROZEN"
+        elif quote_health.status == "MARKET_CLOSED":
+            reference_status = "MARKET_CLOSED"
+            reference_is_live = False
+        elif quote_health.status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
+            reference_status = quote_health.status
+            reference_is_live = False
+            freshness = quote_health.status
         payload = {
             "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "reference_price_used_for_decision_update": price,
@@ -6468,6 +6606,7 @@ class WolfConstitutionalPipeline:
             "price_freshness_status": freshness,
             "reference_price_is_live": reference_is_live,
             "price_lineage_version": 2,
+            **quote_health.to_payload(),
         }
         return payload
 
@@ -6844,6 +6983,39 @@ class WolfConstitutionalPipeline:
         session_symbol_events = self._coerce_non_negative_int(pair_counts.get(symbol_key))
 
         lineage = self._pressure_lineage_candidate(symbol=symbol_key, report=report)
+        admission = self._pair_admission_candidate(symbol=symbol_key, report=report)
+        admission_summary_raw = report.get("pair_admission_summary")
+        admission_summary = admission_summary_raw if isinstance(admission_summary_raw, dict) else {}
+        evaluations_raw = admission_summary.get("evaluations")
+        evaluations = evaluations_raw if isinstance(evaluations_raw, list) else []
+        admission_evaluation = next(
+            (
+                item
+                for item in reversed(evaluations)
+                if isinstance(item, dict) and str(item.get("symbol") or "").upper() == symbol_key
+            ),
+            {},
+        )
+        admission_evaluation_payload = (
+            dict(admission_evaluation)
+            if isinstance(admission_evaluation, dict) and admission_evaluation
+            else None
+        )
+        admission_evaluation_hash = None
+        if admission_evaluation_payload is not None:
+            import hashlib as _hashlib  # noqa: PLC0415 -- local audit hashing only
+            import json as _json  # noqa: PLC0415 -- local audit serialization only
+
+            canonical_evaluation = _json.dumps(
+                admission_evaluation_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                default=str,
+            )
+            admission_evaluation_hash = "sha256:" + _hashlib.sha256(
+                canonical_evaluation.encode("utf-8")
+            ).hexdigest()
         current_block_events = self._coerce_non_negative_int(
             activity.get("latest_block_events")
             if activity.get("latest_block_events") is not None
@@ -6874,6 +7046,34 @@ class WolfConstitutionalPipeline:
             pressure_count_scope = "ANALYZER_WINDOW_SYMBOL_EVENTS"
 
         return {
+            "pair_eligible_for_analysis": bool(admission),
+            "pair_admission_id": admission.get("pair_admission_id"),
+            "pair_admission_status": admission.get("status") if admission else "NOT_GRANTED",
+            "pair_admission_rule_version": admission.get("rule_version"),
+            "pair_admission_granted_at_utc": admission.get("granted_at_utc"),
+            "pair_admission_expires_at_utc": admission.get("expires_at_utc"),
+            "pair_admission_source_ledger_hash": admission.get("source_ledger_hash"),
+            "pair_admission_grant": dict(admission) if admission else None,
+            "pair_admission_decision": admission_evaluation.get("decision") or "NOT_EVALUATED",
+            "pair_admission_rejection_reason": admission_evaluation.get("rejection_reason"),
+            # The complete deterministic evaluation is carried into the
+            # pressure payload. When radar persistence is enabled, the
+            # existing pressure_radar_events.payload JSONB is its durable
+            # record. Rejections never create a pressure outbox row.
+            "pair_admission_evaluation": admission_evaluation_payload,
+            "pair_admission_evaluation_hash": admission_evaluation_hash,
+            "pair_admission_audit_persistence_target": (
+                "pressure_radar_events.payload" if admission_evaluation_payload is not None else None
+            ),
+            "pair_admission_monitoring": {
+                "rule_version": admission_summary.get("rule_version"),
+                "evaluated_blocks": admission_summary.get("evaluated_blocks", 0),
+                "granted_blocks": admission_summary.get("granted_blocks", 0),
+                "rejected_blocks": admission_summary.get("rejected_blocks", 0),
+                "grant_rate": admission_summary.get("grant_rate", 0.0),
+                "rejection_counts": admission_summary.get("rejection_counts", {}),
+                "execution_authority": False,
+            },
             "pressure_event_count_scope": pressure_count_scope,
             "current_snapshot_events": session_symbol_events,
             "current_block_events": current_block_events,
@@ -6895,6 +7095,50 @@ class WolfConstitutionalPipeline:
             or "ANALYZER_RETENTION_WINDOW",
             "legacy_pressure_event_count": pressure_event_count,
         }
+
+    @staticmethod
+    def _pair_admission_candidate(*, symbol: str, report: dict[str, Any]) -> dict[str, Any]:
+        raw_grants = report.get("pair_admission_grants")
+        grants = raw_grants if isinstance(raw_grants, list) else []
+        data_quality_raw = report.get("data_quality")
+        data_quality = data_quality_raw if isinstance(data_quality_raw, dict) else {}
+        as_of = WolfConstitutionalPipeline._parse_pair_admission_time(data_quality.get("end_utc"))
+        if as_of is None:
+            return {}
+        matching = [
+            item
+            for item in grants
+            if isinstance(item, dict)
+            and str(item.get("symbol") or "").upper() == symbol
+            and str(item.get("status") or "").upper() == "GRANTED"
+            and (
+                (granted_at := WolfConstitutionalPipeline._parse_pair_admission_time(item.get("granted_at_utc")))
+                is not None
+            )
+            and (
+                (expires_at := WolfConstitutionalPipeline._parse_pair_admission_time(item.get("expires_at_utc")))
+                is not None
+            )
+            and granted_at <= as_of < expires_at
+        ]
+        if not matching:
+            return {}
+        return max(matching, key=lambda item: str(item.get("granted_at_utc") or ""))
+
+    @staticmethod
+    def _parse_pair_admission_time(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str) and value.strip():
+            try:
+                parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        else:
+            return None
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(UTC)
 
     @staticmethod
     def _pressure_lineage_candidate(*, symbol: str, report: dict[str, Any]) -> dict[str, Any]:
@@ -7089,7 +7333,7 @@ class WolfConstitutionalPipeline:
             "signal_valid_price": price,
             "entry_reference_price": price,
             "entry_zone": [price, price],
-            **self._decision_price_lineage_payload(price_lineage),
+            **self._decision_price_lineage_payload(price_lineage, symbol=symbol),
             "rr_status": "UNVALIDATED",
             "market_context_applied": context is not None,
             "valid_for_execution": False,
@@ -7491,10 +7735,17 @@ class WolfConstitutionalPipeline:
 
                 persistence = persist_pressure_radar_payload_sync(prepared_payload)
             else:
-                from storage.pressure_outbox import persist_pressure_payload_sync  # noqa: PLC0415
-
-                persistence = persist_pressure_payload_sync(prepared_payload)
-            if persistence.envelope is not None:
+                # Canonical pressure persistence is authority-gated by the
+                # atomic radar repository.  Never fall back to the legacy
+                # direct writer when radar proof is absent.
+                prepared_payload["pressure_persistence_status"] = "BLOCKED"
+                prepared_payload["pressure_persistence_block_reason"] = (
+                    "SIGNAL_PRESSURE_RADAR_WRITE_REQUIRED"
+                )
+                payload.clear()
+                payload.update(prepared_payload)
+                persistence = None
+            if persistence is not None and persistence.envelope is not None:
                 prepared_payload = dict(persistence.envelope.payload)
             payload.clear()
             payload.update(prepared_payload)

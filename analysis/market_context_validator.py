@@ -83,6 +83,16 @@ class MarketContext:
     htf_daily_bias_snapshot_time: str | None = None
     htf_daily_bias_age_seconds: float | None = None
     htf_daily_bias_freshness_status: str | None = None
+    htf_daily_bias_freshness_basis: str | None = None
+    htf_daily_bias_source_period_open: str | None = None
+    htf_daily_bias_source_period_close: str | None = None
+    htf_daily_bias_latest_expected_period_open: str | None = None
+    htf_daily_bias_latest_expected_period_close: str | None = None
+    htf_daily_bias_missed_expected_closed_bars: int | None = None
+    htf_daily_bias_provider_timestamp_semantics: str | None = None
+    htf_daily_bias_advisory_only: bool | None = None
+    htf_daily_bias_execution_impact: bool | None = None
+    htf_daily_bias_execution_block_reason: str | None = None
     htf_daily_bias_rule_version: int | None = None
     htf_location_reference_price: float | None = None
     htf_location_reference_time: str | None = None

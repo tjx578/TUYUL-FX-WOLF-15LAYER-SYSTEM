@@ -55,10 +55,18 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from analysis.candle_freshness import candle_age_seconds, parse_candle_timestamp
+from utils.forex_session_calendar import (
+    FOREX_DAILY_FRESHNESS_BASIS,
+    forex_daily_period_from_close,
+    forex_daily_period_from_open,
+    latest_expected_forex_daily_period,
+    missed_expected_forex_daily_bars,
+    parse_forex_closed_dates,
+)
 
 __all__ = [
     "HTFStructureSnapshot",
@@ -75,7 +83,7 @@ __all__ = [
 # ═══════════════════════════════════════════════════════════════════════════
 
 EVENT_NAME = "htf_structure_snapshot_json"
-SCHEMA_VERSION = "2.0"
+SCHEMA_VERSION = "2.1"
 LOG_PREFIX = "[HTFStructureSnapshot]"
 
 # Env flag — default ON.  HTF structure is now a first-class map/context feed;
@@ -93,7 +101,7 @@ _SWING_WINDOW = 2
 # Minimum bars required for a timeframe to be considered analysable.
 _MIN_DAILY_BARS = 10
 _MIN_H4_BARS = 12
-_DAILY_BIAS_RULE_VERSION = 2
+_DAILY_BIAS_RULE_VERSION = 3
 _LIQUIDITY_RESOLUTION_RULE_VERSION = 1
 _DEFAULT_DAILY_BIAS_MAX_AGE_SECONDS = 259_200.0
 _DEFAULT_LIQUIDITY_MAX_AGE_SECONDS = 21_600.0
@@ -539,6 +547,99 @@ def _candle_source_time(candle: dict[str, Any] | None) -> str | None:
     return None if parsed is None else parsed.isoformat()
 
 
+@dataclass(frozen=True)
+class _DailyFreshnessEvidence:
+    status: str
+    basis: str
+    source_period_open: str | None
+    source_period_close: str | None
+    latest_expected_period_open: str | None
+    latest_expected_period_close: str | None
+    missed_expected_closed_bars: int | None
+    provider_timestamp_semantics: str
+
+
+def _daily_freshness_evidence(
+    candle: dict[str, Any] | None,
+    *,
+    now: datetime,
+    fallback_age_seconds: float | None,
+    fallback_max_age_seconds: float,
+    closed_dates: frozenset[date],
+) -> _DailyFreshnessEvidence:
+    """Resolve Daily freshness from closed trading periods, not wall time."""
+
+    expected = latest_expected_forex_daily_period(now, closed_dates=closed_dates)
+    if not isinstance(candle, dict):
+        return _DailyFreshnessEvidence(
+            status=_freshness_status(fallback_age_seconds, fallback_max_age_seconds),
+            basis="WALL_CLOCK_FALLBACK_NO_D1_PERIOD",
+            source_period_open=None,
+            source_period_close=None,
+            latest_expected_period_open=expected.open_at_utc.isoformat(),
+            latest_expected_period_close=expected.close_at_utc.isoformat(),
+            missed_expected_closed_bars=None,
+            provider_timestamp_semantics="UNKNOWN",
+        )
+
+    semantics = str(candle.get("provider_timestamp_semantics") or "UNSPECIFIED").strip().upper()
+    explicit_open = parse_candle_timestamp(candle.get("open_time"))
+    explicit_close = parse_candle_timestamp(candle.get("close_time"))
+    provider_time = parse_candle_timestamp(candle.get("provider_timestamp"))
+    generic_time = parse_candle_timestamp(
+        candle.get("timestamp") or candle.get("time") or candle.get("datetime")
+    )
+
+    period = None
+    if explicit_close is not None:
+        period = forex_daily_period_from_close(explicit_close, closed_dates=closed_dates)
+        if explicit_open is not None:
+            period = period.__class__(open_at_utc=explicit_open, close_at_utc=explicit_close)
+        resolved_semantics = semantics if semantics != "UNSPECIFIED" else "EXPLICIT_PERIOD_BOUNDS"
+    elif semantics == "PERIOD_END" and (provider_time or generic_time) is not None:
+        period = forex_daily_period_from_close(
+            provider_time or generic_time,  # type: ignore[arg-type]
+            closed_dates=closed_dates,
+        )
+        resolved_semantics = semantics
+    else:
+        # The live Finnhub provider and the legacy HTF snapshots use period-open
+        # timestamps.  Explicit semantics win; UNSPECIFIED remains auditable as
+        # a compatibility assumption instead of silently pretending PERIOD_END.
+        open_at = explicit_open or provider_time or generic_time
+        if open_at is not None:
+            period = forex_daily_period_from_open(open_at, closed_dates=closed_dates)
+        resolved_semantics = semantics if semantics != "UNSPECIFIED" else "ASSUMED_PERIOD_OPEN"
+
+    if period is None:
+        return _DailyFreshnessEvidence(
+            status=_freshness_status(fallback_age_seconds, fallback_max_age_seconds),
+            basis="WALL_CLOCK_FALLBACK_UNRESOLVED_D1_PERIOD",
+            source_period_open=None,
+            source_period_close=None,
+            latest_expected_period_open=expected.open_at_utc.isoformat(),
+            latest_expected_period_close=expected.close_at_utc.isoformat(),
+            missed_expected_closed_bars=None,
+            provider_timestamp_semantics=resolved_semantics,
+        )
+
+    missed = missed_expected_forex_daily_bars(
+        period.close_at_utc,
+        expected.close_at_utc,
+        closed_dates=closed_dates,
+    )
+    return _DailyFreshnessEvidence(
+        status="FRESH" if missed == 0 else "STALE",
+        basis=FOREX_DAILY_FRESHNESS_BASIS,
+        source_period_open=period.open_at_utc.isoformat(),
+        source_period_close=period.close_at_utc.isoformat(),
+        latest_expected_period_open=expected.open_at_utc.isoformat(),
+        latest_expected_period_close=expected.close_at_utc.isoformat(),
+        missed_expected_closed_bars=missed,
+        provider_timestamp_semantics=resolved_semantics,
+    )
+
+
 def _env_max_age(name: str, default: float) -> float:
     try:
         return max(0.0, float(os.getenv(name, str(default))))
@@ -669,10 +770,18 @@ class HTFStructureSnapshot:
     daily_bias_snapshot_time: str | None = None
     daily_bias_age_seconds: float | None = None
     daily_bias_freshness_status: str = "UNKNOWN"
+    daily_bias_freshness_basis: str = "UNKNOWN"
+    daily_bias_source_period_open: str | None = None
+    daily_bias_source_period_close: str | None = None
+    daily_bias_latest_expected_period_open: str | None = None
+    daily_bias_latest_expected_period_close: str | None = None
+    daily_bias_missed_expected_closed_bars: int | None = None
+    daily_bias_provider_timestamp_semantics: str = "UNKNOWN"
     daily_bias_max_age_seconds: float = _DEFAULT_DAILY_BIAS_MAX_AGE_SECONDS
     daily_bias_rule_version: int = _DAILY_BIAS_RULE_VERSION
-    daily_bias_advisory_only: bool = True
-    daily_bias_execution_impact: bool = False
+    daily_bias_advisory_only: bool = False
+    daily_bias_execution_impact: bool = True
+    daily_bias_execution_block_reason: str | None = None
     location_reference_price: float | None = None
     location_reference_time: str | None = None
     location_reference_source: str | None = None
@@ -720,10 +829,18 @@ class HTFStructureSnapshot:
             "daily_bias_snapshot_time": self.daily_bias_snapshot_time,
             "daily_bias_age_seconds": self.daily_bias_age_seconds,
             "daily_bias_freshness_status": self.daily_bias_freshness_status,
+            "daily_bias_freshness_basis": self.daily_bias_freshness_basis,
+            "daily_bias_source_period_open": self.daily_bias_source_period_open,
+            "daily_bias_source_period_close": self.daily_bias_source_period_close,
+            "daily_bias_latest_expected_period_open": self.daily_bias_latest_expected_period_open,
+            "daily_bias_latest_expected_period_close": self.daily_bias_latest_expected_period_close,
+            "daily_bias_missed_expected_closed_bars": self.daily_bias_missed_expected_closed_bars,
+            "daily_bias_provider_timestamp_semantics": self.daily_bias_provider_timestamp_semantics,
             "daily_bias_max_age_seconds": self.daily_bias_max_age_seconds,
             "daily_bias_rule_version": self.daily_bias_rule_version,
-            "daily_bias_advisory_only": True,
-            "daily_bias_execution_impact": False,
+            "daily_bias_advisory_only": self.daily_bias_advisory_only,
+            "daily_bias_execution_impact": self.daily_bias_execution_impact,
+            "daily_bias_execution_block_reason": self.daily_bias_execution_block_reason,
             "location_reference_price": self.location_reference_price,
             "location_reference_time": self.location_reference_time,
             "location_reference_source": self.location_reference_source,
@@ -762,6 +879,9 @@ class HTFStructureSnapshot:
             self.daily_range_low,
             self.daily_bias_source_candle,
             self.daily_bias_freshness_status,
+            self.daily_bias_source_period_close,
+            self.daily_bias_latest_expected_period_close,
+            self.daily_bias_missed_expected_closed_bars,
             self.location_reference_price,
             self.location_reference_time,
             self.liquidity_resolution,
@@ -790,6 +910,7 @@ class HTFStructureSnapshotResolver:
     h4_lookback: int = _H4_LOOKBACK
     daily_bias_max_age_seconds: float | None = None
     liquidity_max_age_seconds: float | None = None
+    daily_closed_dates: frozenset[date] | None = None
 
     def _bind_source(self) -> Any:
         if self.candle_source is not None:
@@ -830,6 +951,7 @@ class HTFStructureSnapshotResolver:
             swing_window=self.swing_window,
             daily_bias_max_age_seconds=self.daily_bias_max_age_seconds,
             liquidity_max_age_seconds=self.liquidity_max_age_seconds,
+            daily_closed_dates=self.daily_closed_dates,
         )
 
 
@@ -842,9 +964,15 @@ def build_snapshot(
     now: datetime | None = None,
     daily_bias_max_age_seconds: float | None = None,
     liquidity_max_age_seconds: float | None = None,
+    daily_closed_dates: frozenset[date] | None = None,
 ) -> HTFStructureSnapshot:
     """Pure snapshot builder over already-fetched Daily + H4 candle lists."""
     now_utc = (now or datetime.now(UTC)).astimezone(UTC)
+    provider_closed_dates = (
+        parse_forex_closed_dates(os.getenv("HTF_DAILY_PROVIDER_CLOSED_DATES_NY"))
+        if daily_closed_dates is None
+        else frozenset(daily_closed_dates)
+    )
     daily_closed = _closed_candles(daily)
     h4_closed = _closed_candles(h4)
     daily_bars = len(daily_closed)
@@ -863,7 +991,14 @@ def build_snapshot(
     daily_source_candle = daily_closed[-1] if daily_closed else None
     daily_source_time = _candle_source_time(daily_source_candle)
     daily_age = None if daily_source_candle is None else candle_age_seconds(daily_source_candle, now_utc)
-    daily_freshness = _freshness_status(daily_age, daily_max_age)
+    daily_freshness_evidence = _daily_freshness_evidence(
+        daily_source_candle,
+        now=now_utc,
+        fallback_age_seconds=daily_age,
+        fallback_max_age_seconds=daily_max_age,
+        closed_dates=provider_closed_dates,
+    )
+    daily_freshness = daily_freshness_evidence.status
 
     daily_ok = daily_bars >= _MIN_DAILY_BARS
     h4_ok = h4_bars >= _MIN_H4_BARS
@@ -888,6 +1023,13 @@ def build_snapshot(
             daily_bias_snapshot_time=snapshot_time,
             daily_bias_age_seconds=None if daily_age is None else round(daily_age, 3),
             daily_bias_freshness_status=daily_freshness,
+            daily_bias_freshness_basis=daily_freshness_evidence.basis,
+            daily_bias_source_period_open=daily_freshness_evidence.source_period_open,
+            daily_bias_source_period_close=daily_freshness_evidence.source_period_close,
+            daily_bias_latest_expected_period_open=daily_freshness_evidence.latest_expected_period_open,
+            daily_bias_latest_expected_period_close=daily_freshness_evidence.latest_expected_period_close,
+            daily_bias_missed_expected_closed_bars=daily_freshness_evidence.missed_expected_closed_bars,
+            daily_bias_provider_timestamp_semantics=daily_freshness_evidence.provider_timestamp_semantics,
             daily_bias_max_age_seconds=daily_max_age,
         )
 
@@ -937,7 +1079,7 @@ def build_snapshot(
     allowed, blocked = resolve_playbook(daily_bias, price_location)
 
     if daily_freshness == "STALE":
-        reason = "daily_bias_stale_advisory_only"
+        reason = "daily_bias_stale_execution_block"
     else:
         reason = "htf_structure_snapshot" if data_sufficient else f"degraded_h4_bars:{h4_bars}<{_MIN_H4_BARS}"
 
@@ -968,7 +1110,15 @@ def build_snapshot(
         daily_bias_snapshot_time=snapshot_time,
         daily_bias_age_seconds=None if daily_age is None else round(daily_age, 3),
         daily_bias_freshness_status=daily_freshness,
+        daily_bias_freshness_basis=daily_freshness_evidence.basis,
+        daily_bias_source_period_open=daily_freshness_evidence.source_period_open,
+        daily_bias_source_period_close=daily_freshness_evidence.source_period_close,
+        daily_bias_latest_expected_period_open=daily_freshness_evidence.latest_expected_period_open,
+        daily_bias_latest_expected_period_close=daily_freshness_evidence.latest_expected_period_close,
+        daily_bias_missed_expected_closed_bars=daily_freshness_evidence.missed_expected_closed_bars,
+        daily_bias_provider_timestamp_semantics=daily_freshness_evidence.provider_timestamp_semantics,
         daily_bias_max_age_seconds=daily_max_age,
+        daily_bias_execution_block_reason="DAILY_CONTEXT_STALE" if daily_freshness == "STALE" else None,
         location_reference_price=location_price,
         location_reference_time=location_time,
         location_reference_source=location_source,

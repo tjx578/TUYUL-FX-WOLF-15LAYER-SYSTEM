@@ -20,6 +20,7 @@ PressureRadarState = Literal[
     "RADAR_OBSERVED",
     "RADAR_QUALIFIED_PROVISIONAL",
     "WAITING_CANONICAL_LINEAGE",
+    "PAIR_ADMISSION_GRANTED",
     "ANALYSIS_READY",
     "EXPIRED",
     "INVALIDATED_DIRECTION_REVERSAL",
@@ -79,7 +80,12 @@ class PressureRadarEvaluation(FrozenContract):
 
 
 class PressureRadarManifest(FrozenContract):
-    """Latched pressure qualification joined to later canonical lineage."""
+    """Latched pressure qualification awaiting canonical pair admission.
+
+    ``WAITING_CANONICAL_LINEAGE`` remains the persisted v1 status label for
+    database compatibility.  Its v2 meaning is made explicit by
+    ``next_required_stage=PAIR_ADMISSION``; lineage alone cannot promote it.
+    """
 
     manifest_id: str = Field(..., pattern=r"^5scr-radar:[0-9a-f]{32}$")
     deployment_id: str = Field(..., min_length=1, max_length=200)
@@ -95,6 +101,12 @@ class PressureRadarManifest(FrozenContract):
     max_effective_ticks: int = Field(..., ge=3)
     source_clean_block_id: str | None = Field(default=None, max_length=500)
     lineage_finalized_at_utc: datetime | None = None
+    pair_admission_id: str | None = Field(default=None, pattern=r"^5scr-admission:[0-9a-f]{32}$")
+    pair_admission_status: Literal["NOT_GRANTED", "GRANTED"] = "NOT_GRANTED"
+    pair_admission_rule_version: str | None = Field(default=None, max_length=100)
+    pair_admission_granted_at_utc: datetime | None = None
+    pair_admission_expires_at_utc: datetime | None = None
+    pair_admission_source_ledger_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     context_version: str = Field(..., min_length=1, max_length=200)
     lineage_context_version: str | None = Field(default=None, max_length=200)
     context_signature: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
@@ -105,11 +117,13 @@ class PressureRadarManifest(FrozenContract):
     final_direction: Literal["WAIT"] = "WAIT"
     valid_for_execution: Literal[False] = False
     is_final_signal: Literal[False] = False
-    next_required_stage: Literal["CANONICAL_LINEAGE", "CLOSED_CANDLE_EVIDENCE", "NONE"]
+    next_required_stage: Literal["PAIR_ADMISSION", "CLOSED_CANDLE_EVIDENCE", "NONE"]
 
     @field_validator(
         "qualifying_time_utc",
         "lineage_finalized_at_utc",
+        "pair_admission_granted_at_utc",
+        "pair_admission_expires_at_utc",
         "raw_direction_expires_at_utc",
     )
     @classmethod
@@ -131,15 +145,23 @@ class PressureRadarManifest(FrozenContract):
         if self.state_history[-1] != self.status:
             raise ValueError("last state must equal manifest status")
         if self.status == "ANALYSIS_READY":
-            if not self.source_clean_block_id or self.lineage_finalized_at_utc is None:
-                raise ValueError("analysis-ready manifest requires canonical lineage")
+            if (
+                self.pair_admission_status != "GRANTED"
+                or not self.pair_admission_id
+                or self.pair_admission_granted_at_utc is None
+                or self.pair_admission_expires_at_utc is None
+                or not self.pair_admission_source_ledger_hash
+            ):
+                raise ValueError("analysis-ready manifest requires canonical pair admission")
+            if self.pair_admission_expires_at_utc <= self.pair_admission_granted_at_utc:
+                raise ValueError("pair admission expiry must follow grant time")
             if self.next_required_stage != "CLOSED_CANDLE_EVIDENCE":
                 raise ValueError("analysis-ready manifest must request closed-candle evidence")
         elif self.status == "WAITING_CANONICAL_LINEAGE":
-            if self.source_clean_block_id is not None or self.lineage_finalized_at_utc is not None:
-                raise ValueError("waiting manifest cannot carry finalized lineage")
-            if self.next_required_stage != "CANONICAL_LINEAGE":
-                raise ValueError("waiting manifest must request canonical lineage")
+            if self.pair_admission_id is not None or self.pair_admission_status != "NOT_GRANTED":
+                raise ValueError("waiting manifest cannot carry pair-admission authority")
+            if self.next_required_stage != "PAIR_ADMISSION":
+                raise ValueError("waiting manifest must request pair admission")
         elif self.next_required_stage != "NONE":
             raise ValueError("terminal manifest cannot request another stage")
         return self

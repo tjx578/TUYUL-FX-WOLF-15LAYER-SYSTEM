@@ -37,7 +37,9 @@ _EXPECTED_PHASES = {
     "dark": PressureOutboxRolloutFlags(False, False, False, False),
     "dispatcher": PressureOutboxRolloutFlags(True, False, True, False),
     "consumer": PressureOutboxRolloutFlags(True, False, True, True),
-    "production-observe": PressureOutboxRolloutFlags(True, True, True, True),
+    # Writer authority belongs to the engine.  The worker dispatches and
+    # consumes but must never carry SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED.
+    "production-observe": PressureOutboxRolloutFlags(True, False, True, True),
 }
 
 
@@ -82,16 +84,35 @@ def validate_rollout_phase(flags: PressureOutboxRolloutFlags, expected_phase: st
         )
 
 
+def validate_analysis_worker_phase(
+    *,
+    expected_phase: str,
+    evidence_enabled: bool,
+    outcome_enabled: bool,
+) -> None:
+    """Keep live evidence/outcomes confined to production-observe."""
+
+    if expected_phase == "production-observe" and not evidence_enabled:
+        raise RuntimeError("PRODUCTION_OBSERVE_REQUIRES_EVIDENCE_WORKER")
+    if expected_phase != "production-observe" and evidence_enabled:
+        raise RuntimeError("EVIDENCE_WORKER_REQUIRES_PRODUCTION_OBSERVE_PHASE")
+    if outcome_enabled and not evidence_enabled:
+        raise RuntimeError("STRATEGY_5SCR_OUTCOME_REQUIRES_EVIDENCE_WORKER")
+
+
 async def run_preflight() -> dict[str, object]:
     expected_phase = os.getenv("PRESSURE_OUTBOX_EXPECTED_PHASE", "dark").strip().lower()
     flags = rollout_flags()
     validate_rollout_phase(flags, expected_phase)
     evidence_config = EvidenceRuntimeConfig.from_env()
     outcome_config = OutcomeRuntimeConfig.from_env()
+    validate_analysis_worker_phase(
+        expected_phase=expected_phase,
+        evidence_enabled=evidence_config.enabled,
+        outcome_enabled=outcome_config.enabled,
+    )
     if evidence_config.enabled and not (flags.master and flags.consumer):
         raise RuntimeError("STRATEGY_5SCR_EVIDENCE_REQUIRES_PRESSURE_CONSUMER")
-    if outcome_config.enabled and not evidence_config.enabled:
-        raise RuntimeError("STRATEGY_5SCR_OUTCOME_REQUIRES_EVIDENCE_WORKER")
     lifecycle_v2_config = LifecycleV2RuntimeConfig.from_env()
     # Phase one has no non-shadow mode.  Refuse at startup rather than trust
     # every call site to re-check.
@@ -177,5 +198,6 @@ __all__ = [
     "PressureOutboxRolloutFlags",
     "rollout_flags",
     "run_preflight",
+    "validate_analysis_worker_phase",
     "validate_rollout_phase",
 ]

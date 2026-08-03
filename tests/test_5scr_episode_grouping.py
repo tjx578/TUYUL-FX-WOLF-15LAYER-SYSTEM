@@ -106,6 +106,7 @@ def test_new_deployment_does_not_change_the_lifecycle():
     )
 
     assert len(result.lifecycles) == 1
+    assert result.transport_identity_churn_ignored_count == 1
 
 
 def test_new_clean_block_attaches_instead_of_forking():
@@ -264,6 +265,7 @@ def test_context_hash_change_is_material_but_keeps_the_lifecycle():
 
     assert len(result.lifecycles) == 1
     assert lifecycle.last_material_event_at_utc == START + timedelta(seconds=120)
+    assert result.material_context_transition_count == 1
 
 
 def test_first_canonical_lineage_is_material_but_restating_it_is_not():
