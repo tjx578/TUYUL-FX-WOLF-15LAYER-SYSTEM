@@ -605,16 +605,119 @@ bool VerifySignedEnvelope(const string response_json,
 }
 
 //+------------------------------------------------------------------+
+//| Diagnostics helpers.                                             |
+//|                                                                  |
+//| These exist to explain transport failures without ever printing   |
+//| anything that could authenticate a request or reveal an order.    |
+//| Nothing here changes claim, report or recovery behaviour.         |
+//+------------------------------------------------------------------+
+
+//| Strip control characters and cap length before printing a value   |
+//| that arrived from the network.                                    |
+string SafeLogValue(const string value, const int max_length = 120)
+{
+   string out = "";
+   int limit = MathMin(StringLen(value), max_length);
+   for(int index = 0; index < limit; index++)
+   {
+      ushort character = StringGetCharacter(value, index);
+      bool unsafe_control = (character < 32 || character == 127 || character == 0x0085 ||
+                             character == 0x2028 || character == 0x2029 ||
+                             (character >= 0x202A && character <= 0x202E) ||
+                             (character >= 0x2066 && character <= 0x2069));
+      out += unsafe_control ? " " : ShortToString(character);
+   }
+   if(StringLen(value) > max_length)
+      out += "...";
+   return out;
+}
+
+//| Read one response header by name. Only whitelisted names are ever  |
+//| requested by the caller; the full header block is never printed.   |
+string ResponseHeaderValue(const string response_headers, const string name)
+{
+   string lines[];
+   int count = StringSplit(response_headers, StringGetCharacter("\n", 0), lines);
+   string wanted = name;
+   StringToLower(wanted);
+   for(int index = 0; index < count; index++)
+   {
+      string line = lines[index];
+      StringTrimLeft(line);
+      StringTrimRight(line);
+      int separator = StringFind(line, ":");
+      if(separator <= 0)
+         continue;
+      string key = StringSubstr(line, 0, separator);
+      StringTrimLeft(key);
+      StringTrimRight(key);
+      StringToLower(key);
+      if(key != wanted)
+         continue;
+      string value = StringSubstr(line, separator + 1);
+      StringTrimLeft(value);
+      StringTrimRight(value);
+      return SafeLogValue(value);
+   }
+   return "";
+}
+
+//| Classify what WebRequest actually returned.                       |
+//| MQL5 documents the return as an HTTP status code, or -1 on error;  |
+//| anything else is outside the documented contract and is the case   |
+//| we most need named rather than guessed at.                        |
+string WebRequestOutcome(const int code)
+{
+   if(code == -1)
+      return "WEBREQUEST_TRANSPORT_ERROR";
+   if(code >= 100 && code <= 599)
+      return "HTTP_RESPONSE";
+   return "WEBREQUEST_NON_HTTP_RETURN";
+}
+
+//| Shape of the body, never its content: enough to tell a proxy or    |
+//| challenge page from an API response without logging either.        |
+void ClassifyResponseShape(const uchar &payload[],
+                           string &digest_hex,
+                           bool &looks_like_html,
+                           bool &looks_like_json)
+{
+   digest_hex = "";
+   looks_like_html = false;
+   looks_like_json = false;
+   int size = ArraySize(payload);
+   if(size <= 0)
+      return;
+
+   uchar digest[];
+   if(Sha256Bytes(payload, digest))
+      digest_hex = BytesToHex(digest);
+
+   int index = 0;
+   while(index < size && (payload[index] == ' ' || payload[index] == '\t' ||
+                          payload[index] == '\r' || payload[index] == '\n' ||
+                          payload[index] == 0xEF || payload[index] == 0xBB || payload[index] == 0xBF))
+      index++;
+   if(index >= size)
+      return;
+
+   uchar first = payload[index];
+   looks_like_json = (first == '{' || first == '[');
+   looks_like_html = (first == '<');
+}
+
+//+------------------------------------------------------------------+
 int HttpRequest(const string method,
                 const string endpoint,
                 const string body,
                 const string claim_token,
                 string &response)
 {
+   string request_id = MakeUuid();
    string headers = "Content-Type: application/json\r\n"
                     "Authorization: Bearer " + InpExecutorToken + "\r\n"
                     "X-Executor-Id: " + InpExecutorId + "\r\n"
-                    "X-Request-Id: " + MakeUuid() + "\r\n";
+                    "X-Request-Id: " + request_id + "\r\n";
    if(StringLen(claim_token) > 0)
       headers += "X-Claim-Token: " + claim_token + "\r\n";
 
@@ -623,17 +726,56 @@ int HttpRequest(const string method,
    string response_headers;
    if(StringLen(body) > 0)
       StringToCharArray(body, request_data, 0, StringLen(body), CP_UTF8);
+
    ResetLastError();
+   uint started_ms = GetTickCount();
    int code = WebRequest(method, InpBaseUrl + endpoint, headers,
                          InpHttpTimeoutMs, request_data,
                          response_data, response_headers);
+   int last_error = GetLastError();
+   uint elapsed_ms = GetTickCount() - started_ms;
+   string outcome = WebRequestOutcome(code);
+
    if(code < 0)
    {
-      PrintFormat("[W15] HTTP transport error=%d endpoint=%s", GetLastError(), endpoint);
+      PrintFormat("[W15] HTTP transport error outcome=%s method=%s endpoint=%s code=%d "
+                  "last_error=%d elapsed_ms=%u request_id=%s",
+                  outcome, method, endpoint, code, last_error, elapsed_ms, request_id);
       response = "";
       return code;
    }
-   response = CharArrayToString(response_data, 0, ArraySize(response_data), CP_UTF8);
+
+   int response_bytes = ArraySize(response_data);
+   response = CharArrayToString(response_data, 0, response_bytes, CP_UTF8);
+
+   // Silence on the healthy path: successes stay as quiet as before, so this
+   // patch adds diagnosis without adding noise to a working poll loop.
+   if(outcome == "HTTP_RESPONSE" && (code == 200 || code == 201 || code == 204))
+      return code;
+
+   string digest_hex;
+   bool looks_like_html = false;
+   bool looks_like_json = false;
+   uchar payload[];
+   ArrayResize(payload, response_bytes);
+   for(int index = 0; index < response_bytes; index++)
+      payload[index] = (uchar)response_data[index];
+   ClassifyResponseShape(payload, digest_hex, looks_like_html, looks_like_json);
+
+   PrintFormat("[W15] HTTP anomaly outcome=%s method=%s endpoint=%s code=%d last_error=%d "
+               "elapsed_ms=%u response_bytes=%d response_sha256=%s looks_like_html=%s "
+               "looks_like_json=%s content_type=%s server=%s date=%s retry_after=%s "
+               "cf_ray=%s response_request_id=%s request_id=%s",
+               outcome, method, endpoint, code, last_error, elapsed_ms, response_bytes,
+               digest_hex, looks_like_html ? "true" : "false",
+               looks_like_json ? "true" : "false",
+               ResponseHeaderValue(response_headers, "Content-Type"),
+               ResponseHeaderValue(response_headers, "Server"),
+               ResponseHeaderValue(response_headers, "Date"),
+               ResponseHeaderValue(response_headers, "Retry-After"),
+               ResponseHeaderValue(response_headers, "CF-Ray"),
+               ResponseHeaderValue(response_headers, "X-Request-Id"),
+               request_id);
    return code;
 }
 
@@ -1088,7 +1230,7 @@ bool RegisterExecutor()
    int code = HttpRequest("POST", "/api/v1/executors/register", body, "", response);
    if(code != 200 && code != 201)
    {
-      PrintFormat("[W15] Registration rejected code=%d response=%s", code, response);
+      PrintFormat("[W15] Registration rejected code=%d", code);
       return false;
    }
    if(JsonValue(response, "execution_mode") != "SHADOW")
