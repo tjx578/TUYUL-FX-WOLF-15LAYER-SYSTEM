@@ -997,7 +997,7 @@ class MT5CommandRepository:
                 """
                 SELECT c.payload, c.account_id, c.executor_id, c.idempotency_key,
                        c.claim_token_hash, c.last_report_sequence, c.state,
-                       c.source_event, g.kill_switch_active
+                       c.source_event, e.execution_mode, g.kill_switch_active
                 FROM execution_commands AS c
                 JOIN executor_instances AS e ON e.executor_id = c.executor_id
                 CROSS JOIN executor_bridge_governance AS g
@@ -1016,23 +1016,23 @@ class MT5CommandRepository:
                 raise ExecutorBindingMismatchError("report binding does not match command")
             if command_row["idempotency_key"] != report.idempotency_key:
                 raise CommandConflictError("report idempotency key does not match command")
-            if command_row["source_event"] == "SHADOW_ACCEPTANCE" and not bool(command_row["kill_switch_active"]):
-                raise CommandConflictError("acceptance report requires the kill switch to remain engaged")
-            if command_row["source_event"] == "SHADOW_ACCEPTANCE":
+            if str(command_row["execution_mode"]) == "SHADOW":
+                if not bool(command_row["kill_switch_active"]):
+                    raise CommandConflictError("SHADOW report requires the kill switch to remain engaged")
                 broker = report.broker
                 execution = report.execution
                 if report.state not in {
                     ExecutionReportState.WOULD_EXECUTE,
                     ExecutionReportState.WOULD_REJECT,
                 }:
-                    raise CommandConflictError("acceptance report must be WOULD_EXECUTE or WOULD_REJECT")
+                    raise CommandConflictError("SHADOW report must be WOULD_EXECUTE or WOULD_REJECT")
                 if (
                     broker.order_ticket is not None
                     or broker.deal_ticket is not None
                     or broker.position_id is not None
-                    or execution.filled_volume != 0
+                    or execution.filled_volume not in {None, 0}
                 ):
-                    raise CommandConflictError("acceptance report must prove zero broker effects")
+                    raise CommandConflictError("SHADOW report must prove zero broker effects")
             expected_claim_hash = str(command_row["claim_token_hash"] or "")
             if not expected_claim_hash or not hmac_compare(expected_claim_hash, _claim_token_hash(claim_token)):
                 raise ExecutorBindingMismatchError("invalid or missing command claim token")
