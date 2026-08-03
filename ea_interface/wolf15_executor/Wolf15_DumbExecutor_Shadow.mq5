@@ -3,7 +3,7 @@
 //| No signal logic. No risk calculation. No broker side effect.     |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.21"
+#property version   "1.22"
 #property description "Wolf15 pull/claim/report client. SHADOW ONLY."
 
 input string InpBaseUrl             = "https://replace-me.up.railway.app";
@@ -23,12 +23,15 @@ input bool   InpExecutionEnabled    = false;
 input bool   InpRestartDrillHoldAfterDurableSave = false;
 
 #define W15_PROTOCOL "wolf15.mt5.exec.v1"
-#define W15_VERSION  "0.21-shadow-xm30-diag"
+#define W15_VERSION  "0.22-shadow-acceptance-v1"
 #define W15_SIGNED_WIRE "wolf15.mt5.exec.signed-bytes.v2"
 #define W15_SIGNED_DOMAIN "WOLF15-MT5-COMMAND-V2"
 #define W15_PENDING_MAGIC "WOLF15-PENDING-REPORT-V2"
 #define W15_STRATEGY "STRATEGY_5S_CR_FINAL"
 #define W15_CONFIRMATION_POLICY "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"
+#define W15_ACCEPTANCE_SCHEMA "wolf15.mt5.shadow-acceptance.v1"
+#define W15_ACCEPTANCE_AUTHORITY "WOLF15_SHADOW_ACCEPTANCE_OPERATOR_V1"
+#define W15_ACCEPTANCE_PURPOSE "BROKER_CONNECTED_SHADOW_VALIDATION"
 #define W15_GOLDEN_EXECUTOR_ID "12345678-1234-5678-9234-567812345678"
 #define W15_GOLDEN_KEY_ID "exec-test-2026-08.v2"
 #define W15_GOLDEN_KEY_HEX "c6f28f7e3e483b947780d0f1d9a3e50ab10976facb989c582d353457cae282d7"
@@ -1305,6 +1308,79 @@ bool IsStepCompatible(const double value, const double step)
 }
 
 //+------------------------------------------------------------------+
+bool ValidateShadowAcceptanceCommand(const string json, string &reason)
+{
+   if(JsonValue(json, "source_schema_version") != W15_ACCEPTANCE_SCHEMA ||
+      JsonValue(json, "operator_authority") != W15_ACCEPTANCE_AUTHORITY ||
+      JsonValue(json, "purpose") != W15_ACCEPTANCE_PURPOSE)
+   {
+      reason = "SHADOW_ACCEPTANCE_AUTHORITY_REJECTED";
+      return false;
+   }
+   string phase = JsonValue(json, "phase");
+   if((phase != "A1" && phase != "A2") ||
+      !IsSafeAsciiToken(JsonValue(json, "acceptance_run_id"), 3, 64))
+   {
+      reason = "SHADOW_ACCEPTANCE_LINEAGE_REJECTED";
+      return false;
+   }
+   if(JsonValue(json, "execution_authority", "missing") != "false" ||
+      JsonValue(json, "broker_execution") != "FORBIDDEN" ||
+      JsonValue(json, "guard_type") != "SHADOW_ACCEPTANCE" ||
+      !JsonBool(json, "kill_switch_required") ||
+      StringFind(json, "\"risk_reservation_id\"") >= 0 ||
+      StringFind(json, "\"risk_snapshot_id\"") >= 0)
+   {
+      reason = "SHADOW_ACCEPTANCE_GUARD_REJECTED";
+      return false;
+   }
+   if(JsonValue(json, "account_id") != InpExpectedAccountId ||
+      JsonValue(json, "broker_server") != InpExpectedBrokerServer)
+   {
+      reason = "ACCOUNT_BINDING_MISMATCH";
+      return false;
+   }
+   string broker_symbol = JsonValue(json, "broker_symbol");
+   string canonical_symbol = JsonValue(json, "canonical_symbol");
+   if(phase == "A1" && canonical_symbol != "EURUSD")
+   {
+      reason = "SHADOW_ACCEPTANCE_A1_SYMBOL_REJECTED";
+      return false;
+   }
+   if(SymbolPairIndex(canonical_symbol, broker_symbol) < 0)
+   {
+      reason = "SYMBOL_BINDING_MISMATCH";
+      return false;
+   }
+   if(!SymbolSelect(broker_symbol, true) || !SymbolIsSynchronized(broker_symbol) ||
+      (ENUM_SYMBOL_TRADE_MODE)SymbolInfoInteger(
+         broker_symbol, SYMBOL_TRADE_MODE) != SYMBOL_TRADE_MODE_FULL)
+   {
+      reason = "SYMBOL_RUNTIME_NOT_READY";
+      return false;
+   }
+   if(!IsSafeAsciiToken(JsonValue(json, "idempotency_key"), 8, 250))
+   {
+      reason = "IDEMPOTENCY_KEY_UNSAFE";
+      return false;
+   }
+   datetime expiry = ParseUtc(JsonValue(json, "expires_at_utc"));
+   if(expiry <= 0 || TimeGMT() >= expiry)
+   {
+      reason = "SHADOW_ACCEPTANCE_EXPIRED";
+      return false;
+   }
+   if(JsonValue(json, "action") != "RECONCILE_ONLY" ||
+      JsonValue(json, "order", "missing") != "null")
+   {
+      reason = "SHADOW_ACCEPTANCE_ACTION_REJECTED";
+      return false;
+   }
+   reason = "SHADOW_ACCEPTANCE_VALIDATED_SIGNATURE_VERIFIED";
+   return true;
+}
+
+//+------------------------------------------------------------------+
 bool ValidateShadowCommand(const string json, string &reason)
 {
    if(JsonValue(json, "protocol_version") != W15_PROTOCOL)
@@ -1317,6 +1393,8 @@ bool ValidateShadowCommand(const string json, string &reason)
       reason = "SHADOW_ONLY_BUILD";
       return false;
    }
+   if(JsonValue(json, "source_event") == "SHADOW_ACCEPTANCE")
+      return ValidateShadowAcceptanceCommand(json, reason);
    if(JsonValue(json, "source_event") != "signal_json" ||
       !JsonBool(json, "valid_for_execution") ||
       !JsonBool(json, "execution_gate_passed") ||
@@ -1560,7 +1638,10 @@ bool SendShadowReport(const string command_json,
    string command_id = JsonValue(command_json, "command_id");
    string idempotency_key = JsonValue(command_json, "idempotency_key");
    string state = accepted ? "WOULD_EXECUTE" : "WOULD_REJECT";
-   string reason_code = accepted ? "SHADOW_PREFLIGHT_PASSED" : reason;
+   bool acceptance = (JsonValue(command_json, "source_event") == "SHADOW_ACCEPTANCE");
+   string reason_code = accepted
+                        ? (acceptance ? "SHADOW_ACCEPTANCE_VALIDATED" : "SHADOW_PREFLIGHT_PASSED")
+                        : reason;
    double volume = StringToDouble(JsonValue(command_json, "volume"));
    double entry = StringToDouble(JsonValue(command_json, "entry_price"));
    double stop = StringToDouble(JsonValue(command_json, "stop_loss"));
@@ -1572,19 +1653,32 @@ bool SendShadowReport(const string command_json,
    pending.report_id = MakeUuid();
    pending.request_hash = request_hash;
    pending.claim_token = claim_token;
-   pending.report_body = StringFormat(
-      "{\"event\":\"execution_report\",\"protocol_version\":\"%s\","
-      "\"report_id\":\"%s\",\"command_id\":\"%s\","
-      "\"idempotency_key\":\"%s\",\"sequence\":1,\"state\":\"%s\","
-      "\"event_time_utc\":\"%s\",\"executor_id\":\"%s\","
-      "\"account_id\":\"%s\",\"request_hash\":\"%s\","
-      "\"broker\":{},\"execution\":{\"requested_volume\":%.8f,"
-      "\"filled_volume\":0,\"requested_price\":%.10f,\"filled_price\":null,"
-      "\"stop_loss\":%.10f,\"take_profit\":%.10f,\"observed_spread_points\":null},"
-      "\"reason_code\":\"%s\",\"reason_detail\":\"%s\"}",
-      W15_PROTOCOL, pending.report_id, command_id, EscapeJson(idempotency_key), state,
-      UtcTimestamp(), InpExecutorId, EscapeJson(InpExpectedAccountId), request_hash,
-      volume, entry, stop, target, reason_code, EscapeJson(reason));
+   if(acceptance)
+      pending.report_body = StringFormat(
+         "{\"event\":\"execution_report\",\"protocol_version\":\"%s\","
+         "\"report_id\":\"%s\",\"command_id\":\"%s\","
+         "\"idempotency_key\":\"%s\",\"sequence\":1,\"state\":\"%s\","
+         "\"event_time_utc\":\"%s\",\"executor_id\":\"%s\","
+         "\"account_id\":\"%s\",\"request_hash\":\"%s\","
+         "\"broker\":{},\"execution\":{\"filled_volume\":0},"
+         "\"reason_code\":\"%s\",\"reason_detail\":\"%s\"}",
+         W15_PROTOCOL, pending.report_id, command_id, EscapeJson(idempotency_key), state,
+         UtcTimestamp(), InpExecutorId, EscapeJson(InpExpectedAccountId), request_hash,
+         reason_code, EscapeJson(reason));
+   else
+      pending.report_body = StringFormat(
+         "{\"event\":\"execution_report\",\"protocol_version\":\"%s\","
+         "\"report_id\":\"%s\",\"command_id\":\"%s\","
+         "\"idempotency_key\":\"%s\",\"sequence\":1,\"state\":\"%s\","
+         "\"event_time_utc\":\"%s\",\"executor_id\":\"%s\","
+         "\"account_id\":\"%s\",\"request_hash\":\"%s\","
+         "\"broker\":{},\"execution\":{\"requested_volume\":%.8f,"
+         "\"filled_volume\":0,\"requested_price\":%.10f,\"filled_price\":null,"
+         "\"stop_loss\":%.10f,\"take_profit\":%.10f,\"observed_spread_points\":null},"
+         "\"reason_code\":\"%s\",\"reason_detail\":\"%s\"}",
+         W15_PROTOCOL, pending.report_id, command_id, EscapeJson(idempotency_key), state,
+         UtcTimestamp(), InpExecutorId, EscapeJson(InpExpectedAccountId), request_hash,
+         volume, entry, stop, target, reason_code, EscapeJson(reason));
 
    string storage_error = "";
    if(!SavePendingReport(pending, storage_error))

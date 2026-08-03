@@ -23,12 +23,30 @@ from uuid import UUID
 
 from contracts.mt5_execution_protocol import PROTOCOL_VERSION, SIGNED_WIRE_VERSION, ExecutorMode
 
-MANIFEST_VERSION: Final = "wolf15.mt5.shadow-matrix-manifest.v1"
+MANIFEST_VERSION: Final = "wolf15.mt5.shadow-acceptance-manifest.v1"
 REQUIRED_UNIVERSE: Final = "WOLF15_XM_30_V1"
-EXPECTED_EA_VERSION: Final = "0.21-shadow-xm30-diag"
+EXPECTED_EA_VERSION: Final = "0.22-shadow-acceptance-v1"
+REQUIRED_OPERATOR_AUTHORITY: Final = "WOLF15_SHADOW_ACCEPTANCE_OPERATOR_V1"
+REQUIRED_PURPOSE: Final = "BROKER_CONNECTED_SHADOW_VALIDATION"
 EXPECTED_SYMBOL_COUNT: Final = 30
 DEFAULT_HEARTBEAT_MAX_AGE_SECONDS: Final = 30.0
 DEFAULT_SNAPSHOT_MAX_AGE_SECONDS: Final = 30.0
+ACCEPTANCE_REJECTION_REASONS: Final = frozenset(
+    {
+        "PROTOCOL_MISMATCH",
+        "SHADOW_ONLY_BUILD",
+        "SHADOW_ACCEPTANCE_AUTHORITY_REJECTED",
+        "SHADOW_ACCEPTANCE_LINEAGE_REJECTED",
+        "SHADOW_ACCEPTANCE_GUARD_REJECTED",
+        "ACCOUNT_BINDING_MISMATCH",
+        "SHADOW_ACCEPTANCE_A1_SYMBOL_REJECTED",
+        "SYMBOL_BINDING_MISMATCH",
+        "SYMBOL_RUNTIME_NOT_READY",
+        "IDEMPOTENCY_KEY_UNSAFE",
+        "SHADOW_ACCEPTANCE_EXPIRED",
+        "SHADOW_ACCEPTANCE_ACTION_REJECTED",
+    }
+)
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$")
 _ROOT = Path(__file__).resolve().parents[1]
 _BROKER_MAP = _ROOT / "ea_interface" / "wolf15_executor" / "broker_maps" / "xmglobal-mt5-10.csv"
@@ -54,7 +72,9 @@ class ManifestCommand:
 @dataclass(frozen=True)
 class MatrixManifest:
     schema_version: str
-    run_id: str
+    acceptance_run_id: str
+    operator_authority: str
+    purpose: str
     phase: str
     symbol_universe: str
     executor_id: UUID
@@ -62,6 +82,7 @@ class MatrixManifest:
     expected_ea_version: str
     expected_protocol_version: str
     started_at_utc: datetime
+    expires_at_utc: datetime
     commands: tuple[ManifestCommand, ...]
 
 
@@ -181,7 +202,9 @@ def load_manifest(path: Path, pairs: tuple[tuple[str, str], ...] | None = None) 
         frozenset(
             {
                 "schema_version",
-                "run_id",
+                "acceptance_run_id",
+                "operator_authority",
+                "purpose",
                 "phase",
                 "symbol_universe",
                 "executor_id",
@@ -189,6 +212,7 @@ def load_manifest(path: Path, pairs: tuple[tuple[str, str], ...] | None = None) 
                 "expected_ea_version",
                 "expected_protocol_version",
                 "started_at_utc",
+                "expires_at_utc",
                 "commands",
             }
         ),
@@ -197,9 +221,15 @@ def load_manifest(path: Path, pairs: tuple[tuple[str, str], ...] | None = None) 
     schema_version = _required_string(payload["schema_version"], "schema_version")
     if schema_version != MANIFEST_VERSION:
         raise MatrixAbortError("MANIFEST", "manifest schema is unsupported", code="MANIFEST_VERSION_MISMATCH")
-    run_id = _required_string(payload["run_id"], "run_id")
+    run_id = _required_string(payload["acceptance_run_id"], "acceptance_run_id")
     if _RUN_ID.fullmatch(run_id) is None:
         raise MatrixAbortError("MANIFEST", "run_id has an unsafe shape", code="RUN_ID_INVALID")
+    operator_authority = _required_string(payload["operator_authority"], "operator_authority")
+    if operator_authority != REQUIRED_OPERATOR_AUTHORITY:
+        raise MatrixAbortError("MANIFEST", "operator authority is not accepted", code="AUTHORITY_MISMATCH")
+    purpose = _required_string(payload["purpose"], "purpose")
+    if purpose != REQUIRED_PURPOSE:
+        raise MatrixAbortError("MANIFEST", "acceptance purpose is not accepted", code="PURPOSE_MISMATCH")
     phase = _required_string(payload["phase"], "phase").upper()
     if phase not in {"A1", "A2"}:
         raise MatrixAbortError("MANIFEST", "phase must be A1 or A2", code="PHASE_INVALID")
@@ -240,18 +270,26 @@ def load_manifest(path: Path, pairs: tuple[tuple[str, str], ...] | None = None) 
     universe_pairs = pairs or load_symbol_universe()
     allowed = set(universe_pairs)
     actual = {(command.canonical_symbol, command.broker_symbol) for command in commands}
-    if not actual <= allowed or (phase == "A2" and actual != allowed):
+    eurusd = {pair for pair in allowed if pair[0] == "EURUSD"}
+    if (phase == "A1" and actual != eurusd) or (phase == "A2" and actual != allowed):
         raise MatrixAbortError("MANIFEST", "manifest pairs do not match the audited map", code="SYMBOL_PAIR_MISMATCH")
+    started_at = _utc_datetime(payload["started_at_utc"], "started_at_utc")
+    expires_at = _utc_datetime(payload["expires_at_utc"], "expires_at_utc")
+    if expires_at <= started_at or (expires_at - started_at).total_seconds() > 900:
+        raise MatrixAbortError("MANIFEST", "acceptance validity window is invalid", code="ACCEPTANCE_WINDOW_INVALID")
     return MatrixManifest(
         schema_version=schema_version,
-        run_id=run_id,
+        acceptance_run_id=run_id,
+        operator_authority=operator_authority,
+        purpose=purpose,
         phase=phase,
         symbol_universe=universe,
         executor_id=executor_id,
         broker_server=_required_string(payload["broker_server"], "broker_server"),
         expected_ea_version=_required_string(payload["expected_ea_version"], "expected_ea_version"),
         expected_protocol_version=_required_string(payload["expected_protocol_version"], "expected_protocol_version"),
-        started_at_utc=_utc_datetime(payload["started_at_utc"], "started_at_utc"),
+        started_at_utc=started_at,
+        expires_at_utc=expires_at,
         commands=tuple(commands),
     )
 
@@ -263,7 +301,7 @@ def _aware_utc(value: object, field_name: str) -> datetime:
 
 
 def _age_seconds(value: object, field_name: str) -> float:
-    return max((datetime.now(UTC) - _aware_utc(value, field_name)).total_seconds(), 0.0)
+    return (datetime.now(UTC) - _aware_utc(value, field_name)).total_seconds()
 
 
 def _json_object(value: object, field_name: str) -> dict[str, Any]:
@@ -319,7 +357,7 @@ async def audit_manifest(
     from storage.postgres_client import pg_client  # noqa: PLC0415
 
     summary = AuditSummary(
-        run_id=manifest.run_id,
+        run_id=manifest.acceptance_run_id,
         phase=manifest.phase,
         universe=manifest.symbol_universe,
         symbols_planned=len(manifest.commands),
@@ -333,6 +371,9 @@ async def audit_manifest(
         signed_wire = await repository.signed_wire_schema_status()
         if not signed_wire.get("ready"):
             raise MatrixAbortError("PREFLIGHT", "signed-wire schema is not ready", code="SIGNED_WIRE_NOT_READY")
+        acceptance_schema = await repository.shadow_acceptance_schema_status()
+        if not acceptance_schema.get("ready"):
+            raise MatrixAbortError("PREFLIGHT", "acceptance schema is not ready", code="ACCEPTANCE_SCHEMA_NOT_READY")
 
         executor = await repository.get_executor(manifest.executor_id)
         summary.execution_mode = str(executor["execution_mode"])
@@ -349,7 +390,8 @@ async def audit_manifest(
             or summary.protocol_version != PROTOCOL_VERSION
         ):
             raise MatrixAbortError("PREFLIGHT", "protocol version does not match", code="PROTOCOL_VERSION_MISMATCH")
-        if _age_seconds(executor["last_heartbeat_at"], "last_heartbeat_at") > heartbeat_max_age_seconds:
+        heartbeat_age = _age_seconds(executor["last_heartbeat_at"], "last_heartbeat_at")
+        if not -5 <= heartbeat_age <= heartbeat_max_age_seconds:
             raise MatrixAbortError("PREFLIGHT", "executor heartbeat is stale", code="HEARTBEAT_STALE")
 
         governance = await repository.governance_snapshot(manifest.executor_id)
@@ -360,7 +402,8 @@ async def audit_manifest(
         snapshot = await repository.latest_snapshot(manifest.executor_id)
         if snapshot is None:
             raise MatrixAbortError("PREFLIGHT", "account snapshot is missing", code="SNAPSHOT_MISSING")
-        if _age_seconds(snapshot.captured_at_utc, "snapshot.captured_at_utc") > snapshot_max_age_seconds:
+        snapshot_age = _age_seconds(snapshot.captured_at_utc, "snapshot.captured_at_utc")
+        if not -5 <= snapshot_age <= snapshot_max_age_seconds:
             raise MatrixAbortError("PREFLIGHT", "account snapshot is stale", code="SNAPSHOT_STALE")
         summary.baseline_open_positions = len(snapshot.open_positions)
         if snapshot.open_positions:
@@ -400,7 +443,7 @@ async def audit_manifest(
                 command_id=str(expected.command_id),
                 command_state=str(status.get("command_state") or "UNKNOWN"),
             )
-            if record.command_state != "SHADOW_COMPLETED":
+            if record.command_state not in {"SHADOW_COMPLETED", "SHADOW_REJECTED"}:
                 raise MatrixAbortError(
                     "COMMAND_AUDIT",
                     f"{expected.canonical_symbol} terminal state is {record.command_state}",
@@ -408,7 +451,10 @@ async def audit_manifest(
                 )
             command_row = await pg_client.fetchrow(
                 """
-                SELECT payload, payload_hash, wire_format, signed_payload_sha256
+                SELECT payload, payload_hash, wire_format, signed_payload_sha256,
+                       source_event, source_signal_id, source_signal_hash,
+                       acceptance_run_id, operator_authority, acceptance_purpose,
+                       issued_at, not_before, expires_at
                 FROM execution_commands
                 WHERE command_id = $1::uuid AND executor_id = $2::uuid
                 """,
@@ -419,15 +465,51 @@ async def audit_manifest(
                 raise MatrixAbortError("COMMAND_AUDIT", "manifest command is missing", code="COMMAND_MISSING")
             command_payload = _json_object(command_row["payload"], "execution_commands.payload")
             binding = _mapping(command_payload.get("executor_binding"), "executor_binding")
-            order = _mapping(command_payload.get("order"), "order")
+            source = _mapping(command_payload.get("source"), "source")
+            guards = _mapping(command_payload.get("guards"), "guards")
             if binding.get("execution_mode") != ExecutorMode.SHADOW.value:
                 raise MatrixAbortError("COMMAND_AUDIT", "command binding is not SHADOW", code="COMMAND_MODE_MISMATCH")
-            if (order.get("canonical_symbol"), order.get("broker_symbol")) != (
+            if (source.get("canonical_symbol"), source.get("broker_symbol")) != (
                 expected.canonical_symbol,
                 expected.broker_symbol,
             ):
                 raise MatrixAbortError(
                     "COMMAND_AUDIT", "command symbol binding differs", code="COMMAND_SYMBOL_MISMATCH"
+                )
+            if (
+                command_row["source_event"] != "SHADOW_ACCEPTANCE"
+                or command_row["source_signal_id"] is not None
+                or command_row["source_signal_hash"] is not None
+                or command_row["acceptance_run_id"] != manifest.acceptance_run_id
+                or command_row["operator_authority"] != manifest.operator_authority
+                or command_row["acceptance_purpose"] != manifest.purpose
+                or _aware_utc(command_row["issued_at"], "command.issued_at") < manifest.started_at_utc
+                or _aware_utc(command_row["not_before"], "command.not_before")
+                != _aware_utc(command_row["issued_at"], "command.issued_at")
+                or _aware_utc(command_row["expires_at"], "command.expires_at") > manifest.expires_at_utc
+                or source.get("source_event") != "SHADOW_ACCEPTANCE"
+                or source.get("source_schema_version") != "wolf15.mt5.shadow-acceptance.v1"
+                or source.get("acceptance_run_id") != manifest.acceptance_run_id
+                or source.get("operator_authority") != manifest.operator_authority
+                or source.get("purpose") != manifest.purpose
+                or source.get("phase") != manifest.phase
+                or source.get("execution_authority") is not False
+                or source.get("broker_execution") != "FORBIDDEN"
+            ):
+                raise MatrixAbortError(
+                    "COMMAND_AUDIT", "acceptance lineage differs from manifest", code="ACCEPTANCE_LINEAGE_MISMATCH"
+                )
+            if (
+                command_payload.get("action") != "RECONCILE_ONLY"
+                or command_payload.get("order") is not None
+                or guards.get("guard_type") != "SHADOW_ACCEPTANCE"
+                or guards.get("kill_switch_required") is not True
+                or guards.get("broker_execution") != "FORBIDDEN"
+                or "risk_reservation_id" in guards
+                or "risk_snapshot_id" in guards
+            ):
+                raise MatrixAbortError(
+                    "COMMAND_AUDIT", "acceptance guard boundary differs", code="ACCEPTANCE_GUARD_MISMATCH"
                 )
             if (
                 command_row["wire_format"] != SIGNED_WIRE_VERSION
@@ -454,22 +536,34 @@ async def audit_manifest(
             record.broker_order_id = broker.get("order_ticket")
             record.broker_deal_id = broker.get("deal_ticket")
             record.broker_position_id = broker.get("position_id")
-            if record.report_state != "WOULD_EXECUTE":
+            expected_command_state = "SHADOW_COMPLETED" if record.report_state == "WOULD_EXECUTE" else "SHADOW_REJECTED"
+            if record.report_state not in {"WOULD_EXECUTE", "WOULD_REJECT"}:
                 raise MatrixAbortError(
-                    "REPORT_AUDIT", "terminal report is not WOULD_EXECUTE", code="REPORT_STATE_MISMATCH"
+                    "REPORT_AUDIT", "terminal report is not a SHADOW result", code="REPORT_STATE_MISMATCH"
+                )
+            if record.command_state != expected_command_state:
+                raise MatrixAbortError(
+                    "REPORT_AUDIT", "command and report terminal states differ", code="REPORT_STATE_MISMATCH"
                 )
             if (
                 report_payload.get("command_id") != str(expected.command_id)
                 or report_payload.get("executor_id") != str(manifest.executor_id)
-                or report_payload.get("state") != "WOULD_EXECUTE"
+                or report_payload.get("state") != record.report_state
                 or report_payload.get("request_hash") != command_row["payload_hash"]
             ):
                 raise MatrixAbortError(
                     "REPORT_AUDIT", "report binding or request hash differs", code="REPORT_BINDING_MISMATCH"
                 )
-            if report_payload.get("reason_code") != "SHADOW_PREFLIGHT_PASSED":
+            reason_code = str(report_payload.get("reason_code") or "")
+            if record.report_state == "WOULD_EXECUTE" and reason_code != "SHADOW_ACCEPTANCE_VALIDATED":
                 raise MatrixAbortError(
-                    "REPORT_AUDIT", "report does not prove the verified SHADOW path", code="REPORT_REASON_MISMATCH"
+                    "REPORT_AUDIT", "report does not prove acceptance validation", code="REPORT_REASON_MISMATCH"
+                )
+            if record.report_state == "WOULD_REJECT" and reason_code not in ACCEPTANCE_REJECTION_REASONS:
+                raise MatrixAbortError(
+                    "REPORT_AUDIT",
+                    "rejection reason is not an acceptance validator code",
+                    code="REPORT_REASON_MISMATCH",
                 )
             if record.filled_volume != 0.0:
                 raise MatrixAbortError("REPORT_AUDIT", "filled volume is not zero", code="NONZERO_FILLED_VOLUME")
@@ -580,7 +674,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         manifest = load_manifest(args.manifest)
         fallback = AuditSummary(
-            run_id=manifest.run_id,
+            run_id=manifest.acceptance_run_id,
             phase=manifest.phase,
             universe=manifest.symbol_universe,
             symbols_planned=len(manifest.commands),

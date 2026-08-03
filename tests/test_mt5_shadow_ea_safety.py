@@ -187,6 +187,33 @@ def test_poll_verifies_frozen_wire_bytes_before_parsing_command() -> None:
     assert "SHADOW_PREFLIGHT_PASSED_SIGNATURE_VERIFIED" in source
 
 
+def test_shadow_acceptance_uses_a_separate_broker_forbidden_validator() -> None:
+    source = _source()
+    acceptance = _between_functions(source, "ValidateShadowAcceptanceCommand", "ValidateShadowCommand")
+    dispatch = _between_functions(source, "ValidateShadowCommand", "BlockPendingRecovery")
+    report = _between_functions(source, "SendShadowReport", "PollOneCommand")
+
+    assert 'JsonValue(json, "source_schema_version") != W15_ACCEPTANCE_SCHEMA' in acceptance
+    assert 'JsonValue(json, "operator_authority") != W15_ACCEPTANCE_AUTHORITY' in acceptance
+    assert 'JsonValue(json, "purpose") != W15_ACCEPTANCE_PURPOSE' in acceptance
+    assert 'JsonValue(json, "execution_authority", "missing") != "false"' in acceptance
+    assert 'JsonValue(json, "broker_execution") != "FORBIDDEN"' in acceptance
+    assert 'JsonValue(json, "guard_type") != "SHADOW_ACCEPTANCE"' in acceptance
+    assert '!JsonBool(json, "kill_switch_required")' in acceptance
+    assert 'StringFind(json, "\\"risk_reservation_id\\"") >= 0' in acceptance
+    assert 'JsonValue(json, "action") != "RECONCILE_ONLY"' in acceptance
+    assert 'JsonValue(json, "order", "missing") != "null"' in acceptance
+    assert 'JsonValue(json, "account_id") != InpExpectedAccountId' in acceptance
+    assert 'phase == "A1" && canonical_symbol != "EURUSD"' in acceptance
+    assert "SymbolPairIndex(canonical_symbol, broker_symbol)" in acceptance
+    assert "TimeGMT() >= expiry" in acceptance
+    assert 'JsonValue(json, "source_event") == "SHADOW_ACCEPTANCE"' in dispatch
+    assert "return ValidateShadowAcceptanceCommand(json, reason);" in dispatch
+    assert dispatch.index('source_event") == "SHADOW_ACCEPTANCE"') < dispatch.index('source_event") != "signal_json"')
+    assert '"SHADOW_ACCEPTANCE_VALIDATED"' in report
+    assert r"\"execution\":{\"filled_volume\":0}" in report
+
+
 def test_invalid_signed_wire_is_quarantined_without_reporting() -> None:
     poll = _poll_one_command(_source())
     failure = re.search(
@@ -364,8 +391,8 @@ def test_http_diagnostics_distinguish_transport_non_http_and_http_results() -> N
     assert http.index('if(outcome == "WEBREQUEST_NON_HTTP_RETURN")') < http.index("CharArrayToString")
 
 
-def test_diagnostic_build_has_a_distinct_runtime_version() -> None:
+def test_acceptance_build_has_a_distinct_runtime_version() -> None:
     source = _source()
 
-    assert '#property version   "1.21"' in source
-    assert '#define W15_VERSION  "0.21-shadow-xm30-diag"' in source
+    assert '#property version   "1.22"' in source
+    assert '#define W15_VERSION  "0.22-shadow-acceptance-v1"' in source
