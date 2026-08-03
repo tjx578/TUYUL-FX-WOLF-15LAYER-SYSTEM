@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,6 +28,10 @@ from contracts.mt5_execution_protocol import (
     sign_execution_command,
 )
 from contracts.strategy_5scr import Strategy5SCRProof, evaluate_strategy_5scr_proof
+from contracts.strategy_5scr_risk_reservation import (
+    FinalSignalRiskReservation,
+    validate_final_signal_reservation,
+)
 
 _DENIED_EVENTS = {
     "signal_pressure_state_json",
@@ -91,7 +95,9 @@ def _effective_bool(signal: Mapping[str, Any], field: str, nested: str) -> bool:
     return signal.get(field) is True
 
 
-def _validate_final_signal(signal: Mapping[str, Any]) -> tuple[str, str, str, Strategy5SCRProof]:
+def _validate_final_signal(
+    signal: Mapping[str, Any],
+) -> tuple[Literal["BUY", "SELL"], str, str, Strategy5SCRProof, FinalSignalRiskReservation]:
     event = str(signal.get("event") or "").lower()
     if event in _DENIED_EVENTS or event != "signal_json":
         raise PromotionRejectedError("PROMOTION_SOURCE_DENIED", f"event={event or 'missing'} is not final SignalJSON")
@@ -109,9 +115,10 @@ def _validate_final_signal(signal: Mapping[str, Any]) -> tuple[str, str, str, St
     if str(signal.get("rr_status") or "").upper() not in {"VALID", "ACCEPTABLE", "PROTECT_ONLY"}:
         raise PromotionRejectedError("PROMOTION_RR_INVALID", "RR must be final and execution-grade")
 
-    side = str(signal.get("final_direction") or "").upper()
-    if side not in {"BUY", "SELL"}:
+    resolved_side = str(signal.get("final_direction") or "").upper()
+    if resolved_side not in {"BUY", "SELL"}:
         raise PromotionRejectedError("PROMOTION_SIDE_INVALID", "final_direction must be BUY or SELL")
+    side = cast(Literal["BUY", "SELL"], resolved_side)
     signal_id = str(signal.get("signal_id") or "").strip()
     lifecycle_anchor = str(
         signal.get("lifecycle_id") or signal.get("terminal_decision_id") or signal.get("source_clean_block_id") or ""
@@ -127,7 +134,11 @@ def _validate_final_signal(signal: Mapping[str, Any]) -> tuple[str, str, str, St
             "PROMOTION_5SCR_GATE_REJECTED",
             ",".join(strategy_evaluation.reasons) or "strategy proof is not execution-ready",
         )
-    return side, signal_id, lifecycle_anchor, strategy_evaluation.proof
+    try:
+        reservation = validate_final_signal_reservation(dict(signal))
+    except ValueError as exc:
+        raise PromotionRejectedError("PROMOTION_RISK_RESERVATION_INVALID", str(exc)) from exc
+    return side, signal_id, lifecycle_anchor, strategy_evaluation.proof, reservation
 
 
 def promote_final_signal_to_command(
@@ -138,7 +149,7 @@ def promote_final_signal_to_command(
     signing_key_id: str,
     command_id: UUID | None = None,
 ) -> ExecutionCommandV1:
-    side, signal_id, lifecycle_anchor, strategy_proof = _validate_final_signal(signal)
+    side, signal_id, lifecycle_anchor, strategy_proof, reservation = _validate_final_signal(signal)
     if context.action not in {ExecutionAction.PLACE_MARKET, ExecutionAction.PLACE_PENDING}:
         raise PromotionRejectedError(
             "PROMOTION_ACTION_INVALID",
@@ -146,6 +157,61 @@ def promote_final_signal_to_command(
         )
     if context.canonical_symbol != str(signal.get("symbol") or "").upper():
         raise PromotionRejectedError("PROMOTION_SYMBOL_MISMATCH", "context symbol does not match final signal")
+    if context.execution_mode is not ExecutorMode.SHADOW:
+        raise PromotionRejectedError(
+            "PROMOTION_RISK_AUTHORITY_SHADOW_ONLY",
+            "durable parent risk authority V1 may only create SHADOW commands",
+        )
+    if context.block_role != "PARENT":
+        raise PromotionRejectedError(
+            "PROMOTION_RISK_AUTHORITY_PARENT_ONLY",
+            "durable risk reservation is bound to a parent entry",
+        )
+    if context.campaign_id != lifecycle_anchor or context.campaign_id != reservation.campaign_id:
+        raise PromotionRejectedError(
+            "PROMOTION_CAMPAIGN_MISMATCH",
+            "context campaign does not match final-signal lifecycle",
+        )
+    if context.block_id != reservation.tradeplan_id:
+        raise PromotionRejectedError(
+            "PROMOTION_TRADEPLAN_MISMATCH",
+            "command block identity does not match the reserved tradeplan",
+        )
+    if context.canonical_symbol != reservation.canonical_symbol or context.broker_symbol != reservation.broker_symbol:
+        raise PromotionRejectedError(
+            "PROMOTION_RESERVED_SYMBOL_MISMATCH",
+            "command symbol mapping does not match the durable reservation",
+        )
+    if side != reservation.direction:
+        raise PromotionRejectedError(
+            "PROMOTION_RESERVED_DIRECTION_MISMATCH",
+            "final signal direction does not match the durable reservation",
+        )
+    if context.risk_reservation_id != str(reservation.reservation_id):
+        raise PromotionRejectedError(
+            "PROMOTION_RISK_RESERVATION_MISMATCH",
+            "command context does not match the durable reservation",
+        )
+    if context.risk_snapshot_id != reservation.risk_snapshot_id:
+        raise PromotionRejectedError(
+            "PROMOTION_RISK_SNAPSHOT_MISMATCH",
+            "command context does not match the reserved account snapshot",
+        )
+    if not math.isclose(context.volume, reservation.reserved_volume, rel_tol=1e-9, abs_tol=1e-9):
+        raise PromotionRejectedError(
+            "PROMOTION_RESERVED_VOLUME_MISMATCH",
+            "command volume does not match the reserved volume",
+        )
+    if context.issued_at_utc < reservation.reserved_at_utc:
+        raise PromotionRejectedError(
+            "PROMOTION_RISK_RESERVATION_NOT_ACTIVE",
+            "command predates the durable reservation",
+        )
+    if context.not_before_utc >= reservation.expires_at_utc or context.expires_at_utc > reservation.expires_at_utc:
+        raise PromotionRejectedError(
+            "PROMOTION_RISK_RESERVATION_EXPIRED",
+            "command validity window exceeds the reservation",
+        )
     if not context.order_type.startswith(side):
         raise PromotionRejectedError("PROMOTION_ORDER_SIDE_MISMATCH", "order type does not match final side")
     if not math.isclose(context.entry_price, strategy_proof.m1.fill_price, rel_tol=1e-9, abs_tol=1e-9):
@@ -202,7 +268,7 @@ def promote_final_signal_to_command(
             strategy_rule_version=strategy_proof.rule_version,
             strategy_rule_status=strategy_proof.rule_status,
             strategy_proof_hash=sha256_tag(strategy_proof.model_dump(mode="json")),
-            context_resolution_status=strategy_proof.context_resolution.status,
+            context_resolution_status=cast(Literal["RESOLVED"], strategy_proof.context_resolution.status),
             confirmation_policy=strategy_proof.confirmation_policy,
         ),
         "action": context.action,
