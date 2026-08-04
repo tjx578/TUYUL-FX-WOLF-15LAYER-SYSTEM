@@ -13,12 +13,16 @@ restart continues an episode instead of forking it.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, cast
 
 from contracts.strategy_5scr_lifecycle_v2 import (
     ACTIVE_LIFECYCLE_STATES,
+    DirectionState,
+    LifecycleState,
     StrategyLifecycleEventLink,
     StrategyLifecycleV2,
 )
@@ -89,6 +93,14 @@ class _DuplicateEventLinkRollbackError(Exception):
     """Abort a transaction whose event link already exists."""
 
 
+@dataclass(frozen=True)
+class LifecycleV2RecoveryState:
+    lifecycle: StrategyLifecycleV2
+    known_lineage: tuple[str, ...] = ()
+    context_hash: str | None = None
+    transport_lifecycle_id: str | None = None
+
+
 def _row_value(row: Any, key: str, default: Any = None) -> Any:
     if isinstance(row, Mapping):
         return row.get(key, default)
@@ -102,13 +114,16 @@ def lifecycle_from_row(row: Any) -> StrategyLifecycleV2:
     return StrategyLifecycleV2(
         strategy_lifecycle_id=str(_row_value(row, "strategy_lifecycle_id")),
         symbol=str(_row_value(row, "symbol")),
-        state=str(_row_value(row, "state")),
-        direction_state=str(_row_value(row, "direction_state")),
+        state=cast(LifecycleState, str(_row_value(row, "state"))),
+        direction_state=cast(DirectionState, str(_row_value(row, "direction_state"))),
         opened_at_utc=_row_value(row, "opened_at"),
         last_event_at_utc=_row_value(row, "last_event_at"),
         last_continuity_event_at_utc=_row_value(row, "last_continuity_event_at"),
         last_material_event_at_utc=_row_value(row, "last_material_event_at"),
-        rule_version=str(_row_value(row, "rule_version")),
+        rule_version=cast(
+            Literal["5scr.market-episode.v1"],
+            str(_row_value(row, "rule_version")),
+        ),
         material_state_hash=str(_row_value(row, "material_state_hash")),
         event_count=int(_row_value(row, "event_count", 0) or 0),
         clean_block_count=int(_row_value(row, "clean_block_count", 0) or 0),
@@ -234,6 +249,52 @@ class StrategyLifecycleV2Repository:
             sorted(ACTIVE_LIFECYCLE_STATES),
         )
         return None if row is None else lifecycle_from_row(row)
+
+    async def active_recovery_state(self, symbol: str) -> LifecycleV2RecoveryState | None:
+        """Recover process-local reducer memory from durable event lineage."""
+
+        lifecycle = await self.active_lifecycle(symbol)
+        if lifecycle is None:
+            return None
+        rows = await self._pg.fetch(
+            f"""
+            SELECT link.transport_lifecycle_id, link.source_clean_block_id,
+                   link.source_watch_id, outbox.payload
+            FROM {LINK_TABLE} link
+            LEFT JOIN pressure_outbox outbox
+              ON outbox.event_id::text = link.pressure_event_id
+            WHERE link.strategy_lifecycle_id = $1
+            ORDER BY link.linked_at, link.pressure_event_id
+            """,
+            lifecycle.strategy_lifecycle_id,
+        )
+        known_lineage: set[str] = set()
+        context_hash: str | None = None
+        transport_lifecycle_id: str | None = None
+        for row in rows:
+            for key in ("source_clean_block_id", "source_watch_id"):
+                value = _row_value(row, key)
+                if value is not None and str(value).strip():
+                    known_lineage.add(str(value).strip())
+            transport_value = _row_value(row, "transport_lifecycle_id")
+            if transport_value is not None and str(transport_value).strip():
+                transport_lifecycle_id = str(transport_value).strip()
+            payload = _row_value(row, "payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except (TypeError, ValueError):
+                    payload = None
+            if isinstance(payload, Mapping):
+                raw_context = payload.get("material_context_hash") or payload.get("context_version")
+                if raw_context is not None and str(raw_context).strip():
+                    context_hash = str(raw_context).strip()
+        return LifecycleV2RecoveryState(
+            lifecycle=lifecycle,
+            known_lineage=tuple(sorted(known_lineage)),
+            context_hash=context_hash,
+            transport_lifecycle_id=transport_lifecycle_id,
+        )
 
     async def upsert_lifecycle(
         self,
@@ -405,6 +466,7 @@ def _inserted(result: Any) -> bool:
 __all__ = [
     "LIFECYCLE_TABLE",
     "LINK_TABLE",
+    "LifecycleV2RecoveryState",
     "LifecycleV2PersistenceError",
     "StrategyLifecycleV2Repository",
     "lifecycle_from_row",

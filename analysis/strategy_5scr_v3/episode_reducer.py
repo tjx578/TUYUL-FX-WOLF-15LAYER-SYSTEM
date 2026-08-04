@@ -31,6 +31,7 @@ from analysis.strategy_5scr_v3.episode_hash import (
 )
 from analysis.strategy_5scr_v3.episode_policy import MarketEpisodePolicyV1
 from contracts.strategy_5scr_lifecycle_v2 import (
+    DirectionState,
     StrategyLifecycleEventLink,
     StrategyLifecycleV2,
 )
@@ -86,7 +87,14 @@ class MarketEpisodeReducer:
     def result(self) -> EpisodeReduction:
         return self._result
 
-    def seed_active(self, lifecycle: StrategyLifecycleV2) -> None:
+    def seed_active(
+        self,
+        lifecycle: StrategyLifecycleV2,
+        *,
+        known_lineage: Iterable[str] = (),
+        context_hash: str | None = None,
+        transport_lifecycle_id: str | None = None,
+    ) -> None:
         """Resume a persisted episode so a restart continues it, not forks it.
 
         Used by the shadow worker after recovering the active episode from the
@@ -96,6 +104,13 @@ class MarketEpisodeReducer:
             return
         self._result.lifecycles[lifecycle.strategy_lifecycle_id] = lifecycle
         self._active_by_symbol[lifecycle.symbol] = lifecycle.strategy_lifecycle_id
+        restored_lineage = {str(value) for value in known_lineage if str(value)}
+        if restored_lineage:
+            self._known_lineage[lifecycle.strategy_lifecycle_id] = restored_lineage
+        if context_hash:
+            self._context_fingerprint[lifecycle.strategy_lifecycle_id] = context_hash
+        if transport_lifecycle_id:
+            self._transport_identity[lifecycle.strategy_lifecycle_id] = transport_lifecycle_id
 
     def ingest_many(self, events: Iterable[EpisodeEvent]) -> EpisodeReduction:
         # Deterministic order regardless of arrival order, so replay of an
@@ -170,7 +185,7 @@ class MarketEpisodeReducer:
 
     # ------------------------------------------------------------------
 
-    def _open(self, event: EpisodeEvent, direction_state: str) -> StrategyLifecycleV2:
+    def _open(self, event: EpisodeEvent, direction_state: DirectionState) -> StrategyLifecycleV2:
         lifecycle_id = build_strategy_lifecycle_id(
             symbol=event.symbol,
             opened_at_utc=event.event_time_utc,
