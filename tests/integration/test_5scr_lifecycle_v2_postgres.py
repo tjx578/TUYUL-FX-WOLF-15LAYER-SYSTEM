@@ -8,17 +8,13 @@ the Alembic migration chain.
 
 from __future__ import annotations
 
-import os
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from json import dumps, loads
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 
 from contracts.strategy_5scr_lifecycle_v2 import (
     StrategyLifecycleEventLink,
@@ -30,64 +26,19 @@ from storage.strategy_5scr_lifecycle_v2_repository import (
     StrategyLifecycleV2Repository,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+if TYPE_CHECKING:
+    from tests.integration.lifecycle_v2_postgres_plugin import PoolBackedPostgres
 
-_RUN_FLAG = "WOLF15_RUN_POSTGRES_INTEGRATION"
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+pytest_plugins = ("tests.integration.lifecycle_v2_postgres_plugin",)
+
 _OPENED_AT = datetime(2026, 7, 29, 15, 0, tzinfo=UTC)
 
 
-class _PoolBackedPostgres:
-    """Production-like pool semantics backed by disposable PostgreSQL."""
+def _repository(postgres: PoolBackedPostgres) -> StrategyLifecycleV2Repository:
+    """Adapt the production-like test pool at one explicit type boundary."""
 
-    def __init__(self, pool: Any, foreign_key_violation_error: type[Exception]) -> None:
-        self._pool = pool
-        self.foreign_key_violation_error = foreign_key_violation_error
-        #: Set by the fixture once asyncpg is imported.
-        self.check_violation_error: type[Exception] = Exception
-
-    @property
-    def is_available(self) -> bool:
-        return True
-
-    async def execute(self, query: str, *args: Any) -> str:
-        async with self._pool.acquire() as connection:
-            return str(await connection.execute(query, *args))
-
-    async def fetch(self, query: str, *args: Any) -> list[Any]:
-        async with self._pool.acquire() as connection:
-            return list(await connection.fetch(query, *args))
-
-    async def fetchrow(self, query: str, *args: Any) -> Any | None:
-        async with self._pool.acquire() as connection:
-            return await connection.fetchrow(query, *args)
-
-    @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[Any]:
-        async with self._pool.acquire() as connection, connection.transaction():
-            yield connection
-
-
-@pytest_asyncio.fixture
-async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
-    if os.getenv(_RUN_FLAG) != "1":
-        pytest.skip(f"set {_RUN_FLAG}=1 to use a disposable PostgreSQL database")
-
-    dsn = os.getenv("DATABASE_URL", "")
-    if not dsn:
-        pytest.fail(f"{_RUN_FLAG}=1 requires DATABASE_URL")
-
-    try:
-        asyncpg = import_module("asyncpg")
-    except ModuleNotFoundError:
-        pytest.fail(f"{_RUN_FLAG}=1 requires the asyncpg dependency")
-
-    pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=4, command_timeout=10)
-    try:
-        backend = _PoolBackedPostgres(pool, asyncpg.ForeignKeyViolationError)
-        backend.check_violation_error = asyncpg.CheckViolationError
-        yield backend
-    finally:
-        await pool.close()
+    return StrategyLifecycleV2Repository(pg=cast(Any, postgres))
 
 
 def _lifecycle(lifecycle_id: str) -> StrategyLifecycleV2:
@@ -124,7 +75,7 @@ def _link(
     )
 
 
-async def _cleanup(postgres: _PoolBackedPostgres, *lifecycle_ids: str) -> None:
+async def _cleanup(postgres: PoolBackedPostgres, *lifecycle_ids: str) -> None:
     ids = list(lifecycle_ids)
     await postgres.execute(
         f"DELETE FROM {LINK_TABLE} WHERE strategy_lifecycle_id = ANY($1::text[])",
@@ -137,9 +88,9 @@ async def _cleanup(postgres: _PoolBackedPostgres, *lifecycle_ids: str) -> None:
 
 
 async def test_uuid_and_replay_ids_round_trip_through_real_postgres(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
 ) -> None:
-    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    repository = _repository(postgres)
     lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
     lifecycle = _lifecycle(lifecycle_id)
     uuid_event_id = str(uuid4())
@@ -228,13 +179,13 @@ async def test_uuid_and_replay_ids_round_trip_through_real_postgres(
 
 
 async def test_shadow_only_is_enforced_by_the_database(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
 ) -> None:
     """execution_authority must be a schema invariant, not a Python default.
 
     A Python-only default can be bypassed by any future writer; a CHECK cannot.
     """
-    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    repository = _repository(postgres)
     lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
 
     try:
@@ -273,7 +224,7 @@ async def test_shadow_only_is_enforced_by_the_database(
 
 
 async def _seed_pressure_event(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
     *,
     symbol: str,
     at: datetime,
@@ -281,7 +232,11 @@ async def _seed_pressure_event(
 ) -> None:
     """Insert one delivered pressure event the shadow worker will pick up."""
     event_id = uuid4()
-    transport_lifecycle_id = f"transport-{symbol}-{uuid4().hex[:8]}"
+    transport_lifecycle_id = f"5scr-admission:{uuid4().hex}"
+    # Repeated transport emissions retain the same canonical anchor.  A new
+    # random clean-block id here would be a material lineage change and would
+    # invalidate the restart-parity scenario this helper exists to prove.
+    source_clean_block_id = f"clean-{symbol}-anchor"
     payload = {
         "event": "signal_pressure_state_json",
         "symbol": symbol,
@@ -292,6 +247,14 @@ async def _seed_pressure_event(
         "is_final_signal": False,
         "final_direction": "WAIT",
         "promotion_stage": "PRESSURE_ONLY",
+        "pair_admission_id": transport_lifecycle_id,
+        "pair_admission_status": "GRANTED",
+        "pair_admission_rule_version": "5scr.pair-admission.raw-ledger.v2",
+        "pair_admission_granted_at_utc": at.isoformat(),
+        "pair_admission_expires_at_utc": (at + timedelta(minutes=15)).isoformat(),
+        "pair_admission_source_ledger_hash": "sha256:" + uuid4().hex + uuid4().hex,
+        "source_clean_block_id": source_clean_block_id,
+        "lifecycle_id": transport_lifecycle_id,
     }
     await postgres.execute(
         """
@@ -301,12 +264,13 @@ async def _seed_pressure_event(
             signal_valid_at, payload, payload_hash, status
         )
         VALUES ($1, $2, 'signal_pressure_state_json', '1.0.0', $3,
-                $4, 1, NULL, $5, $6::jsonb, $7, 'PUBLISHED')
+                $4, 1, $5, $6, $7::jsonb, $8, 'PUBLISHED')
         """,
         uuid4(),
         event_id,
         symbol,
         transport_lifecycle_id,
+        source_clean_block_id,
         at,
         dumps(payload),
         uuid4().hex + uuid4().hex[:32],
@@ -318,7 +282,7 @@ async def _seed_pressure_event(
     )
 
 
-async def _episode_state(postgres: _PoolBackedPostgres, symbol: str) -> dict[str, Any]:
+async def _episode_state(postgres: PoolBackedPostgres, symbol: str) -> dict[str, Any]:
     row = await postgres.fetchrow(
         f"""
         SELECT state, direction_state, opened_at, last_event_at,
@@ -333,7 +297,7 @@ async def _episode_state(postgres: _PoolBackedPostgres, symbol: str) -> dict[str
     return dict(row)
 
 
-async def _purge_symbol(postgres: _PoolBackedPostgres, symbol: str) -> None:
+async def _purge_symbol(postgres: PoolBackedPostgres, symbol: str) -> None:
     await postgres.execute(
         f"DELETE FROM {LINK_TABLE} WHERE strategy_lifecycle_id IN "
         f"(SELECT strategy_lifecycle_id FROM {LIFECYCLE_TABLE} WHERE symbol = $1)",
@@ -347,7 +311,7 @@ async def _purge_symbol(postgres: _PoolBackedPostgres, symbol: str) -> None:
     await postgres.execute("DELETE FROM pressure_outbox WHERE symbol = $1", symbol)
 
 
-async def _restore_shadow_check(postgres: _PoolBackedPostgres) -> None:
+async def _restore_shadow_check(postgres: PoolBackedPostgres) -> None:
     """Put the real CHECK back, whatever state the test left behind.
 
     ``DROP ... IF EXISTS`` first: if installing a weakened CHECK failed, an
@@ -362,14 +326,14 @@ async def _restore_shadow_check(postgres: _PoolBackedPostgres) -> None:
 
 
 async def test_readiness_turns_red_when_the_shadow_check_is_dropped(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
 ) -> None:
     """A database that lost the guarantee must not report ready.
 
     Asserted by removing the constraint on a real database and restoring it,
     so the negative path is proven rather than assumed.
     """
-    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    repository = _repository(postgres)
     assert not any((await repository.schema_status()).values())
 
     await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT IF EXISTS ck_5scr_lifecycle_v2_shadow_only")
@@ -385,10 +349,10 @@ async def test_readiness_turns_red_when_the_shadow_check_is_dropped(
 
 
 async def test_readiness_rejects_a_same_named_check_with_a_weakened_definition(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
 ) -> None:
     """Restoring the name but not the meaning must still read as missing."""
-    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    repository = _repository(postgres)
 
     await postgres.execute(f"ALTER TABLE {LIFECYCLE_TABLE} DROP CONSTRAINT IF EXISTS ck_5scr_lifecycle_v2_shadow_only")
     try:
@@ -406,7 +370,7 @@ async def test_readiness_rejects_a_same_named_check_with_a_weakened_definition(
 
 
 async def test_readiness_rejects_a_check_widened_with_or_true(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
 ) -> None:
     """The definition still contains the fragment but forbids nothing.
 
@@ -414,7 +378,7 @@ async def test_readiness_rejects_a_check_widened_with_or_true(
     PostgreSQL actually renders: if the two ever disagree, the assertion that
     readiness is green *before* the tampering fails first.
     """
-    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    repository = _repository(postgres)
     assert not any((await repository.schema_status()).values())
 
     try:
@@ -443,7 +407,7 @@ async def test_readiness_rejects_a_check_widened_with_or_true(
 
 
 async def test_restart_recovery_matches_a_continuous_run_on_real_postgres(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
 ) -> None:
     """Drive the real worker down both paths and compare the resulting episodes.
 
@@ -468,7 +432,7 @@ async def test_restart_recovery_matches_a_continuous_run_on_real_postgres(
 
     def _runner() -> Any:
         return runtime.LifecycleV2ShadowRunner(
-            repository=StrategyLifecycleV2Repository(pg=postgres),  # type: ignore[arg-type]
+            repository=_repository(postgres),
             config=config,
         )
 
@@ -494,6 +458,8 @@ async def test_restart_recovery_matches_a_continuous_run_on_real_postgres(
         assert await _runner().poll_once() == 2
         restarted = await _episode_state(postgres, restarted_symbol)
 
+        assert continuous is not None
+        assert restarted is not None
         assert restarted == continuous, "restarted run diverged from the continuous run"
         assert continuous["event_count"] == len(offsets)
         assert continuous["execution_authority"] is False
@@ -504,6 +470,7 @@ async def test_restart_recovery_matches_a_continuous_run_on_real_postgres(
         # Exactly one episode per symbol -- no duplicate opened on restart.
         for symbol in (continuous_symbol, restarted_symbol):
             count = await postgres.fetchrow(f"SELECT count(*) AS n FROM {LIFECYCLE_TABLE} WHERE symbol = $1", symbol)
+            assert count is not None
             assert count["n"] == 1, f"{symbol} produced {count['n']} episodes"
     finally:
         await _purge_symbol(postgres, continuous_symbol)
@@ -511,9 +478,9 @@ async def test_restart_recovery_matches_a_continuous_run_on_real_postgres(
 
 
 async def test_persist_rolls_back_lifecycle_when_real_postgres_rejects_link(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
 ) -> None:
-    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    repository = _repository(postgres)
     lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
     missing_lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
     lifecycle = _lifecycle(lifecycle_id)
@@ -541,9 +508,9 @@ async def test_persist_rolls_back_lifecycle_when_real_postgres_rejects_link(
 
 
 async def test_unlinked_inbox_read_preserves_transport_ownership(
-    postgres: _PoolBackedPostgres,
+    postgres: PoolBackedPostgres,
 ) -> None:
-    repository = StrategyLifecycleV2Repository(pg=postgres)  # type: ignore[arg-type]
+    repository = _repository(postgres)
     outbox_id = uuid4()
     event_id = uuid4()
     transport_lifecycle_id = f"transport-integration-{uuid4().hex}"

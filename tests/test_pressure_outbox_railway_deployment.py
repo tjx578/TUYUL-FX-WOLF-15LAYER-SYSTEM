@@ -6,12 +6,14 @@ from typing import Any, cast
 
 import pytest
 
+from services.pressure_outbox.lifecycle_shadow_worker import LifecycleV2RuntimeConfig
 from services.pressure_outbox.preflight import (
     PressureOutboxRolloutFlags,
     rollout_flags,
     validate_analysis_worker_phase,
     validate_rollout_phase,
 )
+from services.pressure_outbox.shadow_evidence_v2_worker import ShadowEvidenceV2RuntimeConfig
 from storage.pressure_outbox import PressureOutboxRepository
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +27,16 @@ def test_railway_pressure_outbox_manifest_is_dark_by_default() -> None:
     assert manifest["deploy"]["restartPolicyType"] == "ON_FAILURE"
     assert manifest["deploy"]["restartPolicyMaxRetries"] == 5
     assert set(manifest) == {"build", "deploy"}
+
+
+def test_lifecycle_v2_evidence_owner_is_dark_by_default() -> None:
+    lifecycle = LifecycleV2RuntimeConfig.from_env({})
+    evidence = ShadowEvidenceV2RuntimeConfig.from_env({})
+
+    assert lifecycle.evidence_owner_writer_enabled is False
+    assert evidence.enabled is False
+    assert evidence.activation_requested is False
+    assert evidence.shadow_only is True
 
 
 def test_rollout_phase_contract_is_fail_closed() -> None:

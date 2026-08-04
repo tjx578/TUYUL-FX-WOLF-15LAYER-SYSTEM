@@ -20,10 +20,10 @@ import asyncio
 import contextlib
 import json
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 
@@ -47,9 +47,37 @@ from contracts.strategy_5scr_lifecycle_v2 import (
     StrategyLifecycleEventLink,
     StrategyLifecycleV2,
 )
+from services.pressure_outbox.shadow_evidence_v2_worker import admission_link_from_outbox_row
 from storage.strategy_5scr_lifecycle_v2_repository import StrategyLifecycleV2Repository
+from storage.strategy_5scr_shadow_evidence_v2_repository import StrategyShadowEvidenceV2Repository
 
 SHADOW_LOG_PREFIX = "[Strategy5SCRLifecycleV2Shadow]"
+
+
+@dataclass(frozen=True)
+class _RecoveredEpisode:
+    lifecycle: StrategyLifecycleV2
+    known_lineage: tuple[str, ...] = ()
+    context_hash: str | None = None
+    transport_lifecycle_id: str | None = None
+
+
+async def _recover_episode(repository: Any, symbol: str) -> _RecoveredEpisode | None:
+    recover = cast(
+        Callable[[str], Awaitable[Any]] | None,
+        getattr(repository, "active_recovery_state", None),
+    )
+    if callable(recover):
+        state = await recover(symbol)
+        if state is not None:
+            return _RecoveredEpisode(
+                lifecycle=state.lifecycle,
+                known_lineage=tuple(state.known_lineage),
+                context_hash=state.context_hash,
+                transport_lifecycle_id=state.transport_lifecycle_id,
+            )
+    active = await repository.active_lifecycle(symbol)
+    return None if active is None else _RecoveredEpisode(lifecycle=active)
 
 
 def _flag(value: str | None) -> bool:
@@ -63,6 +91,7 @@ class LifecycleV2RuntimeConfig:
     enabled: bool = False
     shadow_only: bool = True
     dual_write_enabled: bool = False
+    evidence_owner_writer_enabled: bool = False
     metrics_enabled: bool = True
     max_continuity_gap_seconds: int = 900
     poll_seconds: float = 5.0
@@ -81,6 +110,7 @@ class LifecycleV2RuntimeConfig:
             # Shadow-only is the safe default, so it defaults ON.
             shadow_only=str(source.get("STRATEGY_5SCR_LIFECYCLE_V2_SHADOW_ONLY") or "true").strip().lower() == "true",
             dual_write_enabled=_flag(source.get("STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED")),
+            evidence_owner_writer_enabled=_flag(source.get("STRATEGY_5SCR_LIFECYCLE_V2_EVIDENCE_OWNER_WRITER_ENABLED")),
             metrics_enabled=str(source.get("STRATEGY_5SCR_LIFECYCLE_V2_METRICS_ENABLED") or "true").strip().lower()
             == "true",
             max_continuity_gap_seconds=gap,
@@ -117,14 +147,20 @@ class LifecycleShadowWorker:
             )
             return None
 
-        active = await self._repository.active_lifecycle(event.symbol)
+        recovered = await _recover_episode(self._repository, event.symbol)
+        active = None if recovered is None else recovered.lifecycle
         decision = decide_grouping(event, active, self._policy)
 
         reducer = MarketEpisodeReducer(policy=self._policy)
         if active is not None and decision.action != OPEN_EPISODE:
             # Resume the recovered episode so a restart continues it rather
             # than opening a duplicate.
-            reducer.seed_active(active)
+            reducer.seed_active(
+                active,
+                known_lineage=() if recovered is None else recovered.known_lineage,
+                context_hash=None if recovered is None else recovered.context_hash,
+                transport_lifecycle_id=(None if recovered is None else recovered.transport_lifecycle_id),
+            )
         lifecycle = reducer.ingest(event)
         link = reducer.result.links[-1]
 
@@ -218,9 +254,11 @@ class LifecycleV2ShadowRunner:
         *,
         repository: StrategyLifecycleV2Repository,
         config: LifecycleV2RuntimeConfig,
+        owner_repository: StrategyShadowEvidenceV2Repository | None = None,
     ) -> None:
         self._repository = repository
         self._config = config
+        self._owner_repository = owner_repository
         self._policy = MarketEpisodePolicyV1(max_continuity_gap_seconds=config.max_continuity_gap_seconds)
         self._running = False
         #: Episodes already recovered from the database this run.
@@ -265,7 +303,17 @@ class LifecycleV2ShadowRunner:
             lifecycle = self._reducer.ingest(event)
             link = self._reducer.result.links[-1]
             if self._config.dual_write_enabled:
-                await self._repository.persist(lifecycle, link)
+                if self._config.evidence_owner_writer_enabled:
+                    if self._owner_repository is None:
+                        raise RuntimeError("STRATEGY_5SCR_EVIDENCE_OWNER_REPOSITORY_REQUIRED")
+                    admission_link = admission_link_from_outbox_row(row, link)
+                    await self._owner_repository.persist_owner_bundle(
+                        lifecycle,
+                        link,
+                        admission_link,
+                    )
+                else:
+                    await self._repository.persist(lifecycle, link)
 
         if self._config.metrics_enabled:
             logger.warning(
@@ -276,9 +324,7 @@ class LifecycleV2ShadowRunner:
                     "processed": len(rows),
                     "strategy_lifecycles_v2_total": len(self._reducer.result.lifecycles),
                     "lifecycle_split_reasons": dict(sorted(self._reducer.result.split_reasons.items())),
-                    "material_context_transition_count": (
-                        self._reducer.result.material_context_transition_count
-                    ),
+                    "material_context_transition_count": (self._reducer.result.material_context_transition_count),
                     "transport_identity_churn_ignored_count": (
                         self._reducer.result.transport_identity_churn_ignored_count
                     ),
@@ -296,9 +342,14 @@ class LifecycleV2ShadowRunner:
         if symbol in self._recovered_symbols:
             return
         self._recovered_symbols.add(symbol)
-        active = await self._repository.active_lifecycle(symbol)
-        if active is not None:
-            self._reducer.seed_active(active)
+        recovered = await _recover_episode(self._repository, symbol)
+        if recovered is not None:
+            self._reducer.seed_active(
+                recovered.lifecycle,
+                known_lineage=recovered.known_lineage,
+                context_hash=recovered.context_hash,
+                transport_lifecycle_id=recovered.transport_lifecycle_id,
+            )
 
 
 def build_lifecycle_v2_shadow_runner(
@@ -309,6 +360,7 @@ def build_lifecycle_v2_shadow_runner(
     return LifecycleV2ShadowRunner(
         repository=StrategyLifecycleV2Repository(pg=pg),
         config=config,
+        owner_repository=(StrategyShadowEvidenceV2Repository(pg=pg) if config.evidence_owner_writer_enabled else None),
     )
 
 
