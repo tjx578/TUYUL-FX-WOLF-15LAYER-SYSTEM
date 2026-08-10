@@ -62,7 +62,7 @@ class _Connection:
     async def fetchrow(self, query: str, *args: Any) -> dict[str, Any] | None:
         if "WHERE evaluation_id = $1" in query:
             return self.rows.get(str(args[0]))
-        if "decision = 'GRANTED'" in query:
+        if "logical_grant_created IS TRUE" in query:
             deployment_id, raw_block_id, rule_version = map(str, args[:3])
             return next(
                 (
@@ -71,7 +71,7 @@ class _Connection:
                     if row["deployment_id"] == deployment_id
                     and row["raw_block_id"] == raw_block_id
                     and row["rule_version"] == rule_version
-                    and row["decision"] == "GRANTED"
+                    and row["logical_grant_created"] is True
                 ),
                 None,
             )
@@ -89,7 +89,8 @@ class _Connection:
             "rule_version": str(args[3]),
             "decision": str(args[15]),
             "admission_event_id": args[17],
-            "payload_hash": str(args[18]),
+            "logical_grant_created": bool(args[18]),
+            "payload_hash": str(args[19]),
         }
         return "INSERT 0 1"
 
@@ -136,6 +137,7 @@ class _SchemaPostgres:
         if "information_schema.columns" in query:
             defaults = {
                 "cross_symbol_interruption_count": "0",
+                "logical_grant_created": "false",
                 "execution_authority": "false",
                 "created_at": "now()",
             }
@@ -189,11 +191,11 @@ class _SchemaPostgres:
             if self.wrong_index:
                 next(row for row in rows if row["indexname"] == "uq_pair_admission_one_grant_per_block")[
                     "predicate"
-                ] = "decision = 'NOT_GRANTED'"
+                ] = "logical_grant_created IS FALSE"
             if self.broadened_index:
                 next(row for row in rows if row["indexname"] == "uq_pair_admission_one_grant_per_block")[
                     "predicate"
-                ] = "decision = 'GRANTED' OR TRUE"
+                ] = "logical_grant_created IS TRUE OR TRUE"
             return rows
         raise AssertionError(query)
 
@@ -217,7 +219,7 @@ async def test_repository_persists_grant_once_without_outbox_or_broker_fields() 
 
 
 @pytest.mark.asyncio
-async def test_growing_granted_block_is_a_duplicate_not_an_integrity_conflict() -> None:
+async def test_growing_granted_block_appends_snapshot_without_a_second_logical_grant() -> None:
     postgres = _Postgres()
     repository = PairAdmissionEvaluationRepository(pg=postgres)  # type: ignore[arg-type]
     first_evaluation = _evaluation_for((0, 150, 300))
@@ -227,12 +229,13 @@ async def test_growing_granted_block_is_a_duplicate_not_an_integrity_conflict() 
     growing = await repository.ingest(growing_evaluation)
 
     assert first.duplicate is False
-    assert growing.duplicate is True
+    assert growing.duplicate is False
     assert first_evaluation["pair_admission_id"] == growing_evaluation["pair_admission_id"]
     assert (
         first_evaluation["pair_admission_source_ledger_hash"] == growing_evaluation["pair_admission_source_ledger_hash"]
     )
-    assert len(postgres.connection.rows) == 1
+    assert len(postgres.connection.rows) == 2
+    assert sum(bool(row["logical_grant_created"]) for row in postgres.connection.rows.values()) == 1
 
 
 @pytest.mark.asyncio
@@ -339,7 +342,7 @@ def test_snapshot_persistence_does_not_call_pressure_state_emitter(
     assert captured == [evaluation["evaluation_id"]]
 
 
-def test_migration_enforces_non_execution_and_one_grant_per_block() -> None:
+def test_migrations_enforce_non_execution_and_separate_snapshot_from_grant() -> None:
     migration = (
         Path(__file__).resolve().parents[1]
         / "storage"
@@ -353,3 +356,16 @@ def test_migration_enforces_non_execution_and_one_grant_per_block() -> None:
     assert "decision = 'GRANTED'" in migration
     assert "pressure_outbox" not in migration
     assert "execution_commands" not in migration
+
+    hotfix_migration = (
+        Path(__file__).resolve().parents[1]
+        / "storage"
+        / "migrations"
+        / "versions"
+        / "20260810_02_pair_admission_snapshot_grants.py"
+    ).read_text(encoding="utf-8")
+
+    assert "logical_grant_created" in hotfix_migration
+    assert "logical_grant_created IS TRUE" in hotfix_migration
+    assert "pressure_outbox" not in hotfix_migration
+    assert "execution_commands" not in hotfix_migration

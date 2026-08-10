@@ -52,6 +52,7 @@ _REQUIRED_COLUMNS = {
     "decision": _ColumnContract("character varying", False, 16),
     "reason_code": _ColumnContract("character varying", True, 100),
     "admission_event_id": _ColumnContract("text", True),
+    "logical_grant_created": _ColumnContract("boolean", False, default_kind="false"),
     "payload_hash": _ColumnContract("character varying", False, 64),
     "payload": _ColumnContract("jsonb", False),
     "execution_authority": _ColumnContract("boolean", False, default_kind="false"),
@@ -68,6 +69,7 @@ _REQUIRED_CONSTRAINTS = frozenset(
         "ck_pair_admission_interruptions_non_negative",
         "ck_pair_admission_non_executable",
         "ck_pair_admission_result_shape",
+        "ck_pair_admission_logical_grant_shape",
     }
 )
 _REQUIRED_CONSTRAINT_DEFINITIONS = {
@@ -90,6 +92,9 @@ _REQUIRED_CONSTRAINT_DEFINITIONS = {
         "AND (reason_code IS NULL)) OR (((decision)::text = 'NOT_GRANTED'::text) "
         "AND (admission_event_id IS NULL) AND (reason_code IS NOT NULL))))"
     ),
+    "ck_pair_admission_logical_grant_shape": (
+        "CHECK (((logical_grant_created IS FALSE) OR ((decision)::text = 'GRANTED'::text)))"
+    ),
 }
 _REQUIRED_INDEXES = {
     "ix_pair_admission_evaluated": (False, ("evaluated_at_utc", "decision"), None),
@@ -97,7 +102,7 @@ _REQUIRED_INDEXES = {
     "uq_pair_admission_one_grant_per_block": (
         True,
         ("deployment_id", "raw_block_id", "rule_version"),
-        "((decision)::text = 'GRANTED'::text)",
+        "(logical_grant_created IS TRUE)",
     ),
 }
 
@@ -484,22 +489,21 @@ class PairAdmissionEvaluationRepository:
                     SELECT evaluation_id, admission_event_id
                     FROM pair_admission_evaluations
                     WHERE deployment_id = $1 AND raw_block_id = $2 AND rule_version = $3
-                      AND decision = 'GRANTED'
+                      AND logical_grant_created IS TRUE
                     FOR UPDATE
                     """,
                     record["deployment_id"],
                     record["raw_block_id"],
                     record["rule_version"],
                 )
-                if prior_grant is not None:
-                    if str(_row_value(prior_grant, "admission_event_id")) != record["admission_event_id"]:
-                        raise PairAdmissionEvaluationIntegrityError("PAIR_ADMISSION_DUPLICATE_LOGICAL_GRANT")
-                    return DurablePairAdmissionEvaluation(
-                        evaluation_id=str(_row_value(prior_grant, "evaluation_id")),
-                        raw_block_id=record["raw_block_id"],
-                        decision="GRANTED",
-                        duplicate=True,
-                    )
+                if (
+                    prior_grant is not None
+                    and str(_row_value(prior_grant, "admission_event_id")) != record["admission_event_id"]
+                ):
+                    raise PairAdmissionEvaluationIntegrityError("PAIR_ADMISSION_DUPLICATE_LOGICAL_GRANT")
+                logical_grant_created = prior_grant is None
+            else:
+                logical_grant_created = False
             await conn.execute(
                 """
                 INSERT INTO pair_admission_evaluations (
@@ -508,10 +512,10 @@ class PairAdmissionEvaluationRepository:
                     block_latest_event_at_utc, duration_seconds, raw_event_count,
                     effective_ticks, max_gap_seconds, cross_symbol_interruption_count,
                     raw_lineage_hash, decision, reason_code, admission_event_id,
-                    payload_hash, payload, execution_authority, created_at
+                    logical_grant_created, payload_hash, payload, execution_authority, created_at
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                    $13, $14, $15, $16, $17, $18, $19, $20::jsonb, FALSE, NOW()
+                    $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, FALSE, NOW()
                 )
                 """,
                 record["evaluation_id"],
@@ -532,6 +536,7 @@ class PairAdmissionEvaluationRepository:
                 record["decision"],
                 record["reason"],
                 record["admission_event_id"],
+                logical_grant_created,
                 record["payload_hash"],
                 json.dumps(record["payload"], separators=(",", ":"), ensure_ascii=False, default=str),
             )

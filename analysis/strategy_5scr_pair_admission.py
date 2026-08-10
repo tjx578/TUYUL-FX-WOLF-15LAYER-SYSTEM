@@ -134,6 +134,24 @@ def _candidate_block_id(block: Any, source_clean_block_id: str | None) -> str:
     return f"5scr-admission-candidate:{digest}"
 
 
+def _evaluation_state(block: Any) -> str:
+    state = str(_value(block, "evaluation_state") or "").strip().upper()
+    if state in {"ACTIVE", "FINALIZED"}:
+        return state
+    if str(_value(block, "finalization_event_id") or "").strip():
+        return "FINALIZED"
+    try:
+        interrupted = int(_value(block, "cross_symbol_interruption_count", 0) or 0)
+    except (TypeError, ValueError):
+        interrupted = 0
+    return "FINALIZED" if interrupted > 0 else "ACTIVE"
+
+
+def _finalization_event_id(block: Any) -> str | None:
+    resolved = str(_value(block, "finalization_event_id") or "").strip()
+    return resolved or None
+
+
 def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, Any]:
     """Compute deterministic diagnostics retained for grants and rejections."""
 
@@ -142,6 +160,7 @@ def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, An
     end = _utc(_value(block, "end"))
     ordered: list[tuple[datetime, Any, str]] = []
     cross_symbol_events = 0
+    finalization_event_id = _finalization_event_id(block)
     for event in raw_events:
         timestamp = _utc(_value(event, "timestamp"))
         if timestamp is None:
@@ -152,11 +171,13 @@ def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, An
             continue
         if not is_raw_signal_throttle_authority(event):
             continue
+        event_id = raw_signal_throttle_event_id(event)
         event_symbol = str(_value(event, "symbol") or "").strip().upper()
         if event_symbol != symbol:
-            cross_symbol_events += 1
+            if event_id != finalization_event_id:
+                cross_symbol_events += 1
             continue
-        ordered.append((timestamp, event, raw_signal_throttle_event_id(event)))
+        ordered.append((timestamp, event, event_id))
     ordered.sort(key=lambda item: (item[0], item[2]))
     timestamps = tuple(item[0] for item in ordered)
     events = tuple(item[1] for item in ordered)
@@ -206,6 +227,12 @@ def _audit_evaluation(
     snapshot = _raw_audit_snapshot(block, raw_events)
     candidate_id = _candidate_block_id(block, source_clean_block_id)
     decision = "GRANTED" if grant is not None else "REJECTED"
+    evaluation_state = _evaluation_state(block)
+    finalization_event_id = _finalization_event_id(block)
+    evaluation_watermark = {
+        "episode_observed_through_utc": snapshot["raw_event_range_end_utc"],
+        "finalization_event_id": finalization_event_id if evaluation_state == "FINALIZED" else None,
+    }
     identity = {
         "rule_version": PAIR_ADMISSION_RULE_VERSION,
         "candidate_block_id": candidate_id,
@@ -213,6 +240,8 @@ def _audit_evaluation(
         "decision": decision,
         "rejection_reason": rejection_reason,
         "source_ledger_event_ids": snapshot["source_ledger_event_ids"],
+        "evaluation_state": evaluation_state,
+        "evaluation_watermark": evaluation_watermark,
     }
     evaluation_id = (
         "5scr-admission-evaluation:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()[:32]
@@ -232,6 +261,10 @@ def _audit_evaluation(
         "rejection_reason": rejection_reason,
         "reason_codes": [] if rejection_reason is None else [rejection_reason],
         "rejected_at_utc": snapshot["decision_at_utc"] if grant is None else None,
+        "evaluation_state": evaluation_state,
+        "evaluation_watermark": evaluation_watermark,
+        "finalization_reason": (str(_value(block, "finalization_reason") or "").strip() or None),
+        "finalization_event_id": finalization_event_id,
         "source_event_authority": "RAW_SIGNAL_THROTTLE_LOG_EVENT",
         "source_ledger_ordering": "EVENT_TIME_ASC_RAW_ID_TIEBREAK",
         "cross_symbol_interruption_policy": "CROSS_SYMBOL_EVENT_FINALIZES_BLOCK",
@@ -279,6 +312,7 @@ def _validate_raw_evidence(
     if any(
         is_raw_signal_throttle_authority(event)
         and str(_value(event, "symbol") or "").strip().upper() != symbol
+        and raw_signal_throttle_event_id(event) != _finalization_event_id(block)
         and (timestamp := _utc(_value(event, "timestamp"))) is not None
         and start <= timestamp <= end
         for event in raw_events
