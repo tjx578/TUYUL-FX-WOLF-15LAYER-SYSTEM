@@ -44,8 +44,8 @@ class PairAdmissionGrant(BaseModel):
     source_ledger_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
     source_ledger_ordering: Literal["EVENT_TIME_ASC_RAW_ID_TIEBREAK"] = "EVENT_TIME_ASC_RAW_ID_TIEBREAK"
     source_event_authority: Literal["RAW_SIGNAL_THROTTLE_LOG_EVENT"] = "RAW_SIGNAL_THROTTLE_LOG_EVENT"
-    cross_symbol_interruption_policy: Literal["SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL"] = (
-        "SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL"
+    cross_symbol_interruption_policy: Literal["CROSS_SYMBOL_EVENT_FINALIZES_BLOCK"] = (
+        "CROSS_SYMBOL_EVENT_FINALIZES_BLOCK"
     )
     duplicate_event_policy: Literal["REJECT_DUPLICATE_STABLE_RAW_ID"] = "REJECT_DUPLICATE_STABLE_RAW_ID"
     deployment_boundary_policy: Literal["SINGLE_DEPLOYMENT_REQUIRED"] = "SINGLE_DEPLOYMENT_REQUIRED"

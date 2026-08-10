@@ -51,6 +51,7 @@ from .signal_throttle_pattern_detector import classify_pressure_block
 from .signal_throttle_pressure_tier import build_pressure_tier_snapshot
 from .signal_throttle_pure_block_quality import score_pure_pressure_block
 from .strategy_5scr_pair_admission import build_pair_admission_audit
+from .strategy_5scr_raw_admission_blocks import build_raw_admission_population
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -465,6 +466,20 @@ def analyze_signal_throttle_events(
             "pure_block_ledger": [],
             "pure_block_count": 0,
             "v1_clean_block_ledger": [],
+            "raw_admission_blocks": [],
+            "raw_admission_population": {
+                "input_event_count": 0,
+                "raw_authority_event_count": 0,
+                "skipped_non_authority_event_count": 0,
+                "duplicate_raw_event_count": 0,
+                "raw_block_count": 0,
+                "population_status": "NO_RAW_AUTHORITY_CANDIDATE",
+                "authority_population": "RAW_SIGNAL_THROTTLE_ONLY",
+                "cross_symbol_policy": "CROSS_SYMBOL_EVENT_FINALIZES_BLOCK",
+                "gap_boundary_policy": "GAP_GT_MAX_FINALIZES_BLOCK",
+                "duplicate_event_policy": "IGNORE_DUPLICATE_STABLE_RAW_ID",
+                "execution_authority": False,
+            },
             "pair_admission_grants": [],
             "pair_admission_summary": {
                 "rule_version": "5scr.pair-admission.raw-ledger.v2",
@@ -578,6 +593,10 @@ def analyze_signal_throttle_events(
         ordered,
         max_symbol_gap_seconds=scanner_cycle_gap_seconds,
     )
+    raw_admission_population = build_raw_admission_population(
+        ordered,
+        max_gap_seconds=min(300.0, float(scanner_cycle_gap_seconds)),
+    )
     burst_blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
     symbol_activity = build_symbol_activity(
         ordered,
@@ -631,19 +650,9 @@ def analyze_signal_throttle_events(
         lifecycle_blocks,
         clean_block_seconds=clean_block_seconds,
     )
-    clean_block_ids = {
-        (
-            str(item.get("symbol") or "").upper(),
-            str(item.get("block_start_utc") or item.get("clean_block_start_utc") or ""),
-            str(item.get("block_end_utc") or item.get("clean_block_end_utc") or ""),
-        ): str(item.get("source_clean_block_id"))
-        for item in v1_clean_block_ledger
-        if item.get("source_clean_block_id")
-    }
     pair_admission_audit = build_pair_admission_audit(
-        lifecycle_blocks,
-        raw_events=ordered,
-        clean_block_ids=clean_block_ids,
+        raw_admission_population.blocks,
+        raw_events=raw_admission_population.events,
         min_duration_seconds=float(clean_block_seconds),
         max_gap_seconds=min(300.0, float(scanner_cycle_gap_seconds)),
     )
@@ -870,6 +879,8 @@ def analyze_signal_throttle_events(
         "pure_block_ledger": pure_block_ledger,
         "pure_block_count": len(pure_block_ledger),
         "v1_clean_block_ledger": v1_clean_block_ledger,
+        "raw_admission_blocks": [block.to_dict() for block in raw_admission_population.blocks],
+        "raw_admission_population": raw_admission_population.to_payload(),
         "v1_clean_block_count": len(v1_clean_block_ledger),
         "v1_active_clean_block": v1_active_clean_block,
         "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
@@ -1111,8 +1122,13 @@ class SignalThrottleLiveAnalyzer:
             self._purge_locked(event.timestamp)
 
     def _record_runtime_event(self, event: SignalThrottleLogEvent) -> None:
-        enriched = self._with_runtime_lineage(event)
-        self.record(enriched)
+        # Scanner-cycle metadata and the event deque form one lineage boundary.
+        # Mutate and snapshot them under the same lock so concurrent symbol
+        # workers cannot observe a partially rebuilt cycle-order map.
+        with self._lock:
+            enriched = self._with_runtime_lineage(event)
+            self._events.append(enriched)
+            self._purge_locked(enriched.timestamp)
         emit_signal_throttle_raw_event(enriched)
 
     def record_log_event(self, event: dict[str, Any]) -> bool:
@@ -1373,6 +1389,8 @@ class SignalThrottleLiveAnalyzer:
         return SignalThrottleLogEvent(**values)
 
     def _scanner_cycle_metadata(self, timestamp: datetime, symbol: str) -> tuple[str, str, int]:
+        """Resolve lineage while ``self._lock`` is held by the runtime writer."""
+
         window = max(1.0, float(self.scanner_cycle_window_seconds or 300.0))
         stamp = _coerce_timestamp(timestamp)
         epoch_seconds = int(stamp.timestamp() // window * window)
@@ -1383,9 +1401,13 @@ class SignalThrottleLiveAnalyzer:
         symbol_key = str(symbol or "").upper()
         if symbol_key not in order:
             order[symbol_key] = len(order) + 1
+        # Iterate over an immutable snapshot even though the writer lock is
+        # already held.  This keeps the pruning operation deterministic and
+        # prevents future refactors from reintroducing a live-dict iteration.
+        cycle_snapshot = tuple(self._scanner_cycle_symbol_order.items())
         self._scanner_cycle_symbol_order = {
             key: value
-            for key, value in self._scanner_cycle_symbol_order.items()
+            for key, value in cycle_snapshot
             if key == cycle_id or not _scanner_cycle_id_is_older_than(key, epoch, keep_windows=3, window_seconds=window)
         }
         return cycle_id, scanner_epoch, order[symbol_key]

@@ -10,6 +10,10 @@ from datetime import UTC, datetime, timedelta
 from math import isclose
 from typing import Any
 
+from analysis.strategy_5scr_raw_admission_blocks import (
+    is_raw_signal_throttle_authority,
+    raw_signal_throttle_event_id,
+)
 from contracts.strategy_5scr_pair_admission import (
     PAIR_ADMISSION_MAX_TTL_SECONDS,
     PAIR_ADMISSION_RULE_VERSION,
@@ -20,8 +24,6 @@ DEFAULT_PAIR_ADMISSION_MIN_DURATION_SECONDS = 300.0
 DEFAULT_PAIR_ADMISSION_MIN_EFFECTIVE_TICKS = 3
 DEFAULT_PAIR_ADMISSION_TTL_SECONDS = PAIR_ADMISSION_MAX_TTL_SECONDS
 DEFAULT_PAIR_ADMISSION_MAX_GAP_SECONDS = 300.0
-_RAW_AUTHORITY_STREAMS = frozenset({"RAW_THROTTLED", "ALLOWED", "DOWNGRADED"})
-_RAW_AUTHORITY_EVENT_TYPES = frozenset({"THROTTLED", "ALLOWED", "DOWNGRADED_TO_HOLD"})
 
 
 @dataclass(frozen=True)
@@ -87,32 +89,6 @@ def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def _raw_event_id(event: Any) -> str:
-    identity = {
-        "timestamp": _utc(_value(event, "timestamp")),
-        "symbol": str(_value(event, "symbol") or "").upper(),
-        "event_type": _value(event, "event_type"),
-        "source_stream": _value(event, "source_stream"),
-        "pressure_source": _value(event, "pressure_source"),
-        "verdict": _value(event, "verdict"),
-        "direction": _value(event, "direction"),
-        "suppressed": _value(event, "suppressed", 0),
-        "scanner_cycle_id": _value(event, "scanner_cycle_id"),
-        "deployment_id": _value(event, "deployment_id"),
-    }
-    return "sha256:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
-
-
-def _is_raw_signal_throttle_authority(event: Any) -> bool:
-    """Exclude derived pressure/intel payloads from admission authority."""
-
-    return (
-        str(_value(event, "pressure_source") or "").strip() == "SignalThrottle"
-        and str(_value(event, "source_stream") or "").strip().upper() in _RAW_AUTHORITY_STREAMS
-        and str(_value(event, "event_type") or "").strip().upper() in _RAW_AUTHORITY_EVENT_TYPES
-    )
-
-
 def _event_direction(event: Any) -> str | None:
     direction = str(_value(event, "direction") or "").strip().upper()
     if direction in {"BUY", "SELL"}:
@@ -154,6 +130,9 @@ def _integer(value: Any) -> int | None:
 def _candidate_block_id(block: Any, source_clean_block_id: str | None) -> str:
     """Return a stable audit identity without promoting clean-block lineage."""
 
+    raw_block_id = str(_value(block, "raw_block_id") or "").strip()
+    if raw_block_id:
+        return raw_block_id
     if source_clean_block_id:
         return source_clean_block_id
     identity = {
@@ -182,13 +161,13 @@ def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, An
             continue
         if end is not None and timestamp > end:
             continue
+        if not is_raw_signal_throttle_authority(event):
+            continue
         event_symbol = str(_value(event, "symbol") or "").strip().upper()
         if event_symbol != symbol:
             cross_symbol_events += 1
             continue
-        if _value(event, "eligible_for_pressure_block") is False or not _is_raw_signal_throttle_authority(event):
-            continue
-        ordered.append((timestamp, event, _raw_event_id(event)))
+        ordered.append((timestamp, event, raw_signal_throttle_event_id(event)))
     ordered.sort(key=lambda item: (item[0], item[2]))
     timestamps = tuple(item[0] for item in ordered)
     events = tuple(item[1] for item in ordered)
@@ -205,6 +184,9 @@ def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, An
         "calculated_effective_ticks": sum(_event_effective_ticks(event) for event in events),
         "source_event_count": len(events),
         "source_ledger_event_ids": list(event_ids),
+        "raw_lineage_hash": (
+            None if not event_ids else "sha256:" + hashlib.sha256("|".join(event_ids).encode("utf-8")).hexdigest()
+        ),
         "source_scanner_cycle_ids": list(
             dict.fromkeys(
                 str(_value(event, "scanner_cycle_id") or "").strip()
@@ -238,6 +220,7 @@ def _audit_evaluation(
     identity = {
         "rule_version": PAIR_ADMISSION_RULE_VERSION,
         "candidate_block_id": candidate_id,
+        "raw_block_id": candidate_id if candidate_id.startswith("5scr-raw-block:") else None,
         "decision": decision,
         "rejection_reason": rejection_reason,
         "source_ledger_event_ids": snapshot["source_ledger_event_ids"],
@@ -256,12 +239,14 @@ def _audit_evaluation(
         "episode_observed_through_utc": (None if (ended := _utc(_value(block, "end"))) is None else ended.isoformat()),
         "decision": decision,
         "pair_admission_id": None if grant is None else grant.pair_admission_id,
+        "pair_admission_source_ledger_hash": None if grant is None else grant.source_ledger_hash,
         "rejection_reason": rejection_reason,
         "reason_codes": [] if rejection_reason is None else [rejection_reason],
         "rejected_at_utc": snapshot["decision_at_utc"] if grant is None else None,
         "source_event_authority": "RAW_SIGNAL_THROTTLE_LOG_EVENT",
         "source_ledger_ordering": "EVENT_TIME_ASC_RAW_ID_TIEBREAK",
-        "cross_symbol_interruption_policy": "SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL",
+        "cross_symbol_interruption_policy": "CROSS_SYMBOL_EVENT_FINALIZES_BLOCK",
+        "cross_symbol_interruption_count": int(_value(block, "cross_symbol_interruption_count", 0) or 0),
         "duplicate_event_policy": "REJECT_DUPLICATE_STABLE_RAW_ID",
         "deployment_boundary_policy": "SINGLE_DEPLOYMENT_REQUIRED",
         "execution_authority": False,
@@ -302,12 +287,20 @@ def _validate_raw_evidence(
     if max_gap_seconds <= 0 or max_gap_seconds > DEFAULT_PAIR_ADMISSION_MAX_GAP_SECONDS:
         return None, "PAIR_ADMISSION_MAX_GAP_INVALID"
 
+    if any(
+        is_raw_signal_throttle_authority(event)
+        and str(_value(event, "symbol") or "").strip().upper() != symbol
+        and (timestamp := _utc(_value(event, "timestamp"))) is not None
+        and start <= timestamp <= end
+        for event in raw_events
+    ):
+        return None, "CROSS_SYMBOL_INTERRUPTION"
+
     evidence_with_time = [
-        (timestamp, event, _raw_event_id(event))
+        (timestamp, event, raw_signal_throttle_event_id(event))
         for event in raw_events
         if str(_value(event, "symbol") or "").strip().upper() == symbol
-        and _value(event, "eligible_for_pressure_block") is not False
-        and _is_raw_signal_throttle_authority(event)
+        and is_raw_signal_throttle_authority(event)
         and (timestamp := _utc(_value(event, "timestamp"))) is not None
         and start <= timestamp <= end
     ]

@@ -15,6 +15,7 @@ from services.pressure_outbox.outcome_worker import (
     PostgresOutcomeRepository,
 )
 from services.pressure_outbox.shadow_evidence_v2_worker import ShadowEvidenceV2RuntimeConfig
+from storage.pair_admission_evaluations import PairAdmissionEvaluationRepository
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_radar_manifest import PressureRadarManifestRepository
@@ -158,6 +159,13 @@ async def run_preflight() -> dict[str, object]:
                 f"tables={','.join(radar_schema.missing_tables) or 'none'}:"
                 f"indexes={','.join(radar_schema.missing_indexes) or 'none'}"
             )
+        admission_schema = await PairAdmissionEvaluationRepository(pg=pg_client).schema_status()
+        if not admission_schema.ready:
+            raise RuntimeError(
+                "PAIR_ADMISSION_EVALUATION_SCHEMA_NOT_READY:"
+                f"tables={','.join(admission_schema.missing_tables) or 'none'}:"
+                f"indexes={','.join(admission_schema.missing_indexes) or 'none'}"
+            )
         candle_schema = await PostgresClosedCandleStore(pg=pg_client).schema_status()
         if evidence_config.enabled and not candle_schema.ready:
             raise RuntimeError(
@@ -201,6 +209,8 @@ async def run_preflight() -> dict[str, object]:
             "schema_indexes": sorted(schema.present_indexes),
             "radar_schema_tables": sorted(radar_schema.present_tables),
             "radar_schema_indexes": sorted(radar_schema.present_indexes),
+            "pair_admission_schema_tables": sorted(admission_schema.present_tables),
+            "pair_admission_schema_indexes": sorted(admission_schema.present_indexes),
             "evidence": asdict(evidence_config),
             "outcome": asdict(outcome_config),
             "execution_isolated": not any(
