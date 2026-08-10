@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 
+import storage.pair_admission_evaluations as admission_storage
 from analysis.signal_throttle_log_analyzer import SignalThrottleLogEvent
 from analysis.strategy_5scr_pair_admission import build_pair_admission_audit
 from analysis.strategy_5scr_raw_admission_blocks import build_raw_admission_population
@@ -33,10 +34,14 @@ def _event(seconds: int) -> SignalThrottleLogEvent:
     )
 
 
-def _evaluation() -> dict[str, Any]:
-    population = build_raw_admission_population([_event(0), _event(150), _event(300)])
+def _evaluation_for(seconds: tuple[int, ...]) -> dict[str, Any]:
+    population = build_raw_admission_population([_event(second) for second in seconds])
     audit = build_pair_admission_audit(population.blocks, raw_events=population.events)
     return dict(audit.evaluations[0])
+
+
+def _evaluation() -> dict[str, Any]:
+    return _evaluation_for((0, 150, 300))
 
 
 class _Transaction:
@@ -102,19 +107,83 @@ class _Postgres:
 class _SchemaPostgres:
     is_available = True
 
-    def __init__(self, *, complete: bool) -> None:
+    def __init__(
+        self,
+        *,
+        complete: bool,
+        missing_constraint: str | None = None,
+        wrong_constraint: bool = False,
+        wrong_index: bool = False,
+        wrong_column: bool = False,
+    ) -> None:
         self.complete = complete
+        self.missing_constraint = missing_constraint
+        self.wrong_constraint = wrong_constraint
+        self.wrong_index = wrong_index
+        self.wrong_column = wrong_column
 
-    async def fetch(self, query: str, *_: Any) -> list[dict[str, str]]:
+    async def fetch(self, query: str, *_: Any) -> list[dict[str, Any]]:
         if "pg_catalog.pg_tables" in query:
             return [{"tablename": "pair_admission_evaluations"}] if self.complete else []
         if not self.complete:
             return []
-        return [
-            {"indexname": "ix_pair_admission_evaluated"},
-            {"indexname": "ix_pair_admission_symbol_block"},
-            {"indexname": "uq_pair_admission_one_grant_per_block"},
-        ]
+        if "information_schema.columns" in query:
+            defaults = {
+                "cross_symbol_interruption_count": "0",
+                "execution_authority": "false",
+                "created_at": "now()",
+            }
+            rows = [
+                {
+                    "column_name": name,
+                    "data_type": contract.data_type,
+                    "is_nullable": "YES" if contract.nullable else "NO",
+                    "column_default": defaults.get(name),
+                    "character_maximum_length": contract.max_length,
+                }
+                for name, contract in admission_storage._REQUIRED_COLUMNS.items()
+            ]
+            if self.wrong_column:
+                next(row for row in rows if row["column_name"] == "execution_authority")["column_default"] = "true"
+            return rows
+        if "pg_catalog.pg_constraint" in query:
+            rows = [
+                {
+                    "conname": name,
+                    "contype": "c",
+                    "table_name": "pair_admission_evaluations",
+                    "definition": (
+                        "CHECK (execution_authority IS FALSE)"
+                        if name == "ck_pair_admission_non_executable"
+                        else "CHECK (decision IN ('GRANTED', 'NOT_GRANTED') AND admission_event_id IS NOT NULL)"
+                        if name == "ck_pair_admission_result_shape"
+                        else "CHECK (TRUE)"
+                    ),
+                }
+                for name in admission_storage._REQUIRED_CONSTRAINTS
+                if name != self.missing_constraint
+            ]
+            if self.wrong_constraint:
+                next(row for row in rows if row["conname"] == "ck_pair_admission_non_executable")["definition"] = (
+                    "CHECK (execution_authority IS NOT NULL)"
+                )
+            return rows
+        if "pg_catalog.pg_index" in query:
+            rows = [
+                {
+                    "indexname": name,
+                    "indisunique": unique,
+                    "columns": list(columns),
+                    "predicate": None if predicate is None else "decision = 'GRANTED'",
+                }
+                for name, (unique, columns, predicate) in admission_storage._REQUIRED_INDEXES.items()
+            ]
+            if self.wrong_index:
+                next(row for row in rows if row["indexname"] == "uq_pair_admission_one_grant_per_block")[
+                    "predicate"
+                ] = "decision = 'NOT_GRANTED'"
+            return rows
+        raise AssertionError(query)
 
 
 @pytest.mark.asyncio
@@ -136,6 +205,25 @@ async def test_repository_persists_grant_once_without_outbox_or_broker_fields() 
 
 
 @pytest.mark.asyncio
+async def test_growing_granted_block_is_a_duplicate_not_an_integrity_conflict() -> None:
+    postgres = _Postgres()
+    repository = PairAdmissionEvaluationRepository(pg=postgres)  # type: ignore[arg-type]
+    first_evaluation = _evaluation_for((0, 150, 300))
+    growing_evaluation = _evaluation_for((0, 150, 300, 350, 500, 650))
+
+    first = await repository.ingest(first_evaluation)
+    growing = await repository.ingest(growing_evaluation)
+
+    assert first.duplicate is False
+    assert growing.duplicate is True
+    assert first_evaluation["pair_admission_id"] == growing_evaluation["pair_admission_id"]
+    assert (
+        first_evaluation["pair_admission_source_ledger_hash"] == growing_evaluation["pair_admission_source_ledger_hash"]
+    )
+    assert len(postgres.connection.rows) == 1
+
+
+@pytest.mark.asyncio
 async def test_schema_readiness_fails_closed_on_missing_table_or_index() -> None:
     missing = await PairAdmissionEvaluationRepository(
         pg=_SchemaPostgres(complete=False)  # type: ignore[arg-type]
@@ -148,6 +236,29 @@ async def test_schema_readiness_fails_closed_on_missing_table_or_index() -> None
     assert missing.missing_tables == ("pair_admission_evaluations",)
     assert "uq_pair_admission_one_grant_per_block" in missing.missing_indexes
     assert ready.ready is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("postgres", "dimension"),
+    [
+        (
+            _SchemaPostgres(complete=True, missing_constraint="ck_pair_admission_non_executable"),
+            "missing_constraints",
+        ),
+        (_SchemaPostgres(complete=True, wrong_constraint=True), "invalid_constraints"),
+        (_SchemaPostgres(complete=True, wrong_index=True), "invalid_indexes"),
+        (_SchemaPostgres(complete=True, wrong_column=True), "invalid_columns"),
+    ],
+)
+async def test_schema_readiness_fails_closed_on_contract_drift(
+    postgres: _SchemaPostgres,
+    dimension: str,
+) -> None:
+    status = await PairAdmissionEvaluationRepository(pg=postgres).schema_status()  # type: ignore[arg-type]
+
+    assert status.ready is False
+    assert getattr(status, dimension)
 
 
 def test_pipeline_persists_evaluation_before_any_observability_route(

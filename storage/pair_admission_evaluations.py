@@ -23,13 +23,62 @@ from loguru import logger
 from storage.postgres_client import PostgresClient, pg_client
 
 _REQUIRED_TABLES = frozenset({"pair_admission_evaluations"})
-_REQUIRED_INDEXES = frozenset(
+
+
+@dataclass(frozen=True)
+class _ColumnContract:
+    data_type: str
+    nullable: bool
+    max_length: int | None = None
+    default_kind: str | None = None
+
+
+_REQUIRED_COLUMNS = {
+    "evaluation_id": _ColumnContract("text", False),
+    "deployment_id": _ColumnContract("character varying", False, 200),
+    "raw_block_id": _ColumnContract("text", False),
+    "rule_version": _ColumnContract("character varying", False, 100),
+    "symbol": _ColumnContract("character varying", False, 32),
+    "direction": _ColumnContract("character varying", True, 4),
+    "evaluated_at_utc": _ColumnContract("timestamp with time zone", False),
+    "block_started_at_utc": _ColumnContract("timestamp with time zone", False),
+    "block_latest_event_at_utc": _ColumnContract("timestamp with time zone", False),
+    "duration_seconds": _ColumnContract("double precision", False),
+    "raw_event_count": _ColumnContract("integer", False),
+    "effective_ticks": _ColumnContract("integer", False),
+    "max_gap_seconds": _ColumnContract("double precision", False),
+    "cross_symbol_interruption_count": _ColumnContract("integer", False, default_kind="zero"),
+    "raw_lineage_hash": _ColumnContract("character varying", True, 71),
+    "decision": _ColumnContract("character varying", False, 16),
+    "reason_code": _ColumnContract("character varying", True, 100),
+    "admission_event_id": _ColumnContract("text", True),
+    "payload_hash": _ColumnContract("character varying", False, 64),
+    "payload": _ColumnContract("jsonb", False),
+    "execution_authority": _ColumnContract("boolean", False, default_kind="false"),
+    "created_at": _ColumnContract("timestamp with time zone", False, default_kind="now"),
+}
+_REQUIRED_CONSTRAINTS = frozenset(
     {
-        "ix_pair_admission_evaluated",
-        "ix_pair_admission_symbol_block",
-        "uq_pair_admission_one_grant_per_block",
+        "ck_pair_admission_decision",
+        "ck_pair_admission_direction",
+        "ck_pair_admission_duration_non_negative",
+        "ck_pair_admission_event_count_non_negative",
+        "ck_pair_admission_ticks_non_negative",
+        "ck_pair_admission_gap_non_negative",
+        "ck_pair_admission_interruptions_non_negative",
+        "ck_pair_admission_non_executable",
+        "ck_pair_admission_result_shape",
     }
 )
+_REQUIRED_INDEXES = {
+    "ix_pair_admission_evaluated": (False, ("evaluated_at_utc", "decision"), None),
+    "ix_pair_admission_symbol_block": (False, ("deployment_id", "symbol", "raw_block_id"), None),
+    "uq_pair_admission_one_grant_per_block": (
+        True,
+        ("deployment_id", "raw_block_id", "rule_version"),
+        "GRANTED",
+    ),
+}
 
 
 class PairAdmissionEvaluationError(RuntimeError):
@@ -65,13 +114,30 @@ class PairAdmissionPersistenceResult:
 @dataclass(frozen=True)
 class PairAdmissionEvaluationSchemaStatus:
     present_tables: frozenset[str]
+    present_columns: frozenset[str]
+    present_constraints: frozenset[str]
     present_indexes: frozenset[str]
     missing_tables: tuple[str, ...]
+    missing_columns: tuple[str, ...]
+    invalid_columns: tuple[str, ...]
+    missing_constraints: tuple[str, ...]
+    invalid_constraints: tuple[str, ...]
     missing_indexes: tuple[str, ...]
+    invalid_indexes: tuple[str, ...]
 
     @property
     def ready(self) -> bool:
-        return not self.missing_tables and not self.missing_indexes
+        return not any(
+            (
+                self.missing_tables,
+                self.missing_columns,
+                self.invalid_columns,
+                self.missing_constraints,
+                self.invalid_constraints,
+                self.missing_indexes,
+                self.invalid_indexes,
+            )
+        )
 
 
 def _row_value(row: Any, key: str, default: Any = None) -> Any:
@@ -81,6 +147,34 @@ def _row_value(row: Any, key: str, default: Any = None) -> Any:
         return row[key]
     except (KeyError, TypeError):
         return default
+
+
+def _normalized_sql(value: Any) -> str:
+    return " ".join(str(value or "").replace('"', "").lower().split())
+
+
+def _column_contract_error(name: str, row: Any) -> str | None:
+    contract = _REQUIRED_COLUMNS[name]
+    data_type = str(_row_value(row, "data_type") or "").lower()
+    nullable = str(_row_value(row, "is_nullable") or "").upper() == "YES"
+    length_raw = _row_value(row, "character_maximum_length")
+    length = None if length_raw is None else int(length_raw)
+    default = _normalized_sql(_row_value(row, "column_default"))
+    if data_type != contract.data_type:
+        return f"{name}:type={data_type or 'missing'}"
+    if nullable != contract.nullable:
+        return f"{name}:nullable={str(nullable).lower()}"
+    if length != contract.max_length:
+        return f"{name}:max_length={length}"
+    if contract.default_kind is None and default:
+        return f"{name}:default={default}"
+    if contract.default_kind == "false" and "false" not in default:
+        return f"{name}:default={default or 'missing'}"
+    if contract.default_kind == "zero" and not default.startswith("0"):
+        return f"{name}:default={default or 'missing'}"
+    if contract.default_kind == "now" and "now()" not in default:
+        return f"{name}:default={default or 'missing'}"
+    return None
 
 
 def _text(value: Any) -> str | None:
@@ -202,9 +296,16 @@ class PairAdmissionEvaluationRepository:
         if not self._pg.is_available:
             return PairAdmissionEvaluationSchemaStatus(
                 present_tables=frozenset(),
+                present_columns=frozenset(),
+                present_constraints=frozenset(),
                 present_indexes=frozenset(),
                 missing_tables=tuple(sorted(_REQUIRED_TABLES)),
+                missing_columns=tuple(sorted(_REQUIRED_COLUMNS)),
+                invalid_columns=(),
+                missing_constraints=tuple(sorted(_REQUIRED_CONSTRAINTS)),
+                invalid_constraints=(),
                 missing_indexes=tuple(sorted(_REQUIRED_INDEXES)),
+                invalid_indexes=(),
             )
         table_rows = await self._pg.fetch(
             """
@@ -215,22 +316,127 @@ class PairAdmissionEvaluationRepository:
             """,
             sorted(_REQUIRED_TABLES),
         )
+        column_rows = await self._pg.fetch(
+            """
+            SELECT column_name, data_type, is_nullable, column_default,
+                   character_maximum_length
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'pair_admission_evaluations'
+            """
+        )
+        constraint_rows = await self._pg.fetch(
+            """
+            SELECT con.conname, con.contype, cls.relname AS table_name,
+                   pg_get_constraintdef(con.oid) AS definition
+            FROM pg_catalog.pg_constraint AS con
+            JOIN pg_catalog.pg_class AS cls ON cls.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace AS ns ON ns.oid = cls.relnamespace
+            WHERE ns.nspname = current_schema()
+              AND cls.relname = 'pair_admission_evaluations'
+              AND con.conname = ANY($1::text[])
+            """,
+            sorted(_REQUIRED_CONSTRAINTS),
+        )
         index_rows = await self._pg.fetch(
             """
-            SELECT indexname
-            FROM pg_catalog.pg_indexes
-            WHERE schemaname = current_schema()
-              AND indexname = ANY($1::text[])
+            SELECT index_cls.relname AS indexname,
+                   idx.indisunique,
+                   ARRAY(
+                       SELECT attr.attname
+                       FROM unnest(idx.indkey) WITH ORDINALITY AS key(attnum, position)
+                       JOIN pg_catalog.pg_attribute AS attr
+                         ON attr.attrelid = idx.indrelid AND attr.attnum = key.attnum
+                       ORDER BY key.position
+                   ) AS columns,
+                   pg_get_expr(idx.indpred, idx.indrelid) AS predicate
+            FROM pg_catalog.pg_index AS idx
+            JOIN pg_catalog.pg_class AS table_cls ON table_cls.oid = idx.indrelid
+            JOIN pg_catalog.pg_class AS index_cls ON index_cls.oid = idx.indexrelid
+            JOIN pg_catalog.pg_namespace AS ns ON ns.oid = table_cls.relnamespace
+            WHERE ns.nspname = current_schema()
+              AND table_cls.relname = 'pair_admission_evaluations'
+              AND index_cls.relname = ANY($1::text[])
             """,
             sorted(_REQUIRED_INDEXES),
         )
         present_tables = frozenset(str(_row_value(row, "tablename") or "") for row in table_rows)
+        columns_by_name = {
+            str(_row_value(row, "column_name") or ""): row
+            for row in column_rows
+            if str(_row_value(row, "column_name") or "")
+        }
+        present_columns = frozenset(columns_by_name)
+        invalid_columns = tuple(
+            sorted(
+                error
+                for name, row in columns_by_name.items()
+                if name in _REQUIRED_COLUMNS and (error := _column_contract_error(name, row)) is not None
+            )
+        )
+        constraints_by_name = {
+            str(_row_value(row, "conname") or ""): row
+            for row in constraint_rows
+            if str(_row_value(row, "conname") or "")
+        }
+        present_constraints = frozenset(constraints_by_name)
+        invalid_constraints: list[str] = []
+        for name, row in constraints_by_name.items():
+            definition = _normalized_sql(_row_value(row, "definition"))
+            raw_constraint_type = _row_value(row, "contype")
+            constraint_type = (
+                raw_constraint_type.decode("ascii")
+                if isinstance(raw_constraint_type, bytes)
+                else str(raw_constraint_type or "")
+            )
+            if constraint_type != "c" or str(_row_value(row, "table_name") or "") != ("pair_admission_evaluations"):
+                invalid_constraints.append(f"{name}:shape")
+                continue
+            if name == "ck_pair_admission_non_executable" and not (
+                "execution_authority" in definition and "is false" in definition
+            ):
+                invalid_constraints.append(f"{name}:definition")
+            if name == "ck_pair_admission_result_shape" and not all(
+                fragment in definition for fragment in ("decision", "granted", "not_granted", "admission_event_id")
+            ):
+                invalid_constraints.append(f"{name}:definition")
+        indexes_by_name = {
+            str(_row_value(row, "indexname") or ""): row
+            for row in index_rows
+            if str(_row_value(row, "indexname") or "")
+        }
         present_indexes = frozenset(str(_row_value(row, "indexname") or "") for row in index_rows)
+        invalid_indexes: list[str] = []
+        for name, row in indexes_by_name.items():
+            expected_unique, expected_columns, expected_predicate = _REQUIRED_INDEXES[name]
+            actual_unique = bool(_row_value(row, "indisunique"))
+            actual_columns = tuple(str(value) for value in (_row_value(row, "columns") or ()))
+            predicate = _normalized_sql(_row_value(row, "predicate"))
+            if actual_unique != expected_unique or actual_columns != expected_columns:
+                invalid_indexes.append(f"{name}:shape")
+                continue
+            predicate_invalid = (expected_predicate is None and bool(predicate)) or (
+                expected_predicate is not None
+                and not (
+                    "decision" in predicate
+                    and expected_predicate.lower() in predicate
+                    and "not_granted" not in predicate
+                )
+            )
+            if predicate_invalid:
+                invalid_indexes.append(f"{name}:predicate")
         return PairAdmissionEvaluationSchemaStatus(
             present_tables=present_tables,
+            present_columns=present_columns,
+            present_constraints=present_constraints,
             present_indexes=present_indexes,
             missing_tables=tuple(sorted(_REQUIRED_TABLES - present_tables)),
-            missing_indexes=tuple(sorted(_REQUIRED_INDEXES - present_indexes)),
+            missing_columns=tuple(sorted(set(_REQUIRED_COLUMNS) - present_columns)),
+            invalid_columns=invalid_columns,
+            missing_constraints=tuple(sorted(_REQUIRED_CONSTRAINTS - present_constraints)),
+            invalid_constraints=tuple(sorted(invalid_constraints)),
+            missing_indexes=tuple(sorted(set(_REQUIRED_INDEXES) - present_indexes)),
+            invalid_indexes=tuple(sorted(invalid_indexes)),
         )
 
     async def ingest(self, evaluation: Mapping[str, Any]) -> DurablePairAdmissionEvaluation:

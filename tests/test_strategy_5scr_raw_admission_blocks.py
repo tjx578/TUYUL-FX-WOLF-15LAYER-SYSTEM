@@ -111,3 +111,17 @@ def test_replay_produces_stable_raw_block_and_lineage_hashes() -> None:
     assert first.blocks[0].raw_block_id == replay.blocks[0].raw_block_id
     assert first_audit.grants[0].source_ledger_hash == replay_audit.grants[0].source_ledger_hash
     assert first_audit.grants[0].pair_admission_id == replay_audit.grants[0].pair_admission_id
+
+
+def test_grant_identity_and_evidence_freeze_at_first_threshold_crossing() -> None:
+    first = build_raw_admission_population([_raw(0), _raw(150), _raw(300)])
+    growing = build_raw_admission_population([_raw(0), _raw(150), _raw(300), _raw(350), _raw(500), _raw(650)])
+    first_grant = build_pair_admission_audit(first.blocks, raw_events=first.events).grants[0]
+    growing_grant = build_pair_admission_audit(growing.blocks, raw_events=growing.events).grants[0]
+
+    assert first.blocks[0].raw_block_id == growing.blocks[0].raw_block_id
+    assert first_grant.pair_admission_id == growing_grant.pair_admission_id
+    assert first_grant.episode_observed_through_utc == growing_grant.episode_observed_through_utc
+    assert first_grant.duration_seconds == growing_grant.duration_seconds == 300
+    assert first_grant.source_event_count == growing_grant.source_event_count == 3
+    assert first_grant.source_ledger_hash == growing_grant.source_ledger_hash

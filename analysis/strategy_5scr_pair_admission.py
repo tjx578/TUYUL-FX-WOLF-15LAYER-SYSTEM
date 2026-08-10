@@ -349,19 +349,42 @@ def _validate_raw_evidence(
     scanner_values = tuple(str(_value(event, "scanner_cycle_id") or "").strip() for event in evidence)
     if any(not value for value in scanner_values):
         return None, "SCANNER_CYCLE_ID_MISSING"
-    scanner_cycle_ids = tuple(dict.fromkeys(scanner_values))
-    ledger_hash = "sha256:" + hashlib.sha256("|".join(source_event_ids).encode("utf-8")).hexdigest()
+
+    # Freeze the immutable grant evidence at the first observation point that
+    # crosses every admission gate.  The enclosing raw block may keep growing,
+    # but its logical grant and evidence-at-admission must not change.
+    admission_end_index: int | None = None
+    admission_effective_ticks = 0
+    for index, event in enumerate(evidence):
+        admission_effective_ticks += _event_effective_ticks(event)
+        prefix_duration = (timestamps[index] - timestamps[0]).total_seconds()
+        if index >= 1 and prefix_duration >= min_duration_seconds and admission_effective_ticks >= min_effective_ticks:
+            admission_end_index = index
+            break
+    if admission_end_index is None:
+        return None, "PAIR_ADMISSION_THRESHOLD_NOT_REACHED"
+
+    admission_events = evidence[: admission_end_index + 1]
+    admission_timestamps = timestamps[: admission_end_index + 1]
+    admission_event_ids = source_event_ids[: admission_end_index + 1]
+    admission_scanner_values = scanner_values[: admission_end_index + 1]
+    admission_gaps = tuple(
+        (admission_timestamps[index] - admission_timestamps[index - 1]).total_seconds()
+        for index in range(1, len(admission_timestamps))
+    )
+    scanner_cycle_ids = tuple(dict.fromkeys(admission_scanner_values))
+    ledger_hash = "sha256:" + hashlib.sha256("|".join(admission_event_ids).encode("utf-8")).hexdigest()
     return (
         _ValidatedRawEvidence(
-            events=evidence,
+            events=admission_events,
             deployment_id=next(iter(deployments)),
-            started_at_utc=timestamps[0],
-            observed_through_utc=timestamps[-1],
-            duration_seconds=observed_duration,
-            effective_ticks=effective_ticks,
-            max_gap_seconds=observed_max_gap,
+            started_at_utc=admission_timestamps[0],
+            observed_through_utc=admission_timestamps[-1],
+            duration_seconds=(admission_timestamps[-1] - admission_timestamps[0]).total_seconds(),
+            effective_ticks=sum(_event_effective_ticks(event) for event in admission_events),
+            max_gap_seconds=max(admission_gaps, default=0.0),
             maximum_allowed_gap_seconds=max_gap_seconds,
-            source_event_ids=source_event_ids,
+            source_event_ids=admission_event_ids,
             scanner_cycle_ids=scanner_cycle_ids,
             ledger_hash=ledger_hash,
         ),
@@ -394,11 +417,7 @@ def build_pair_admission_grant(
         return None
     identity = {
         "deployment_id": validated.deployment_id,
-        "symbol": symbol,
-        "direction": direction,
-        "episode_started_at_utc": validated.started_at_utc.isoformat(),
-        "episode_observed_through_utc": validated.observed_through_utc.isoformat(),
-        "source_ledger_hash": validated.ledger_hash,
+        "raw_block_id": _candidate_block_id(block, source_clean_block_id),
         "rule_version": PAIR_ADMISSION_RULE_VERSION,
     }
     admission_id = "5scr-admission:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()[:32]

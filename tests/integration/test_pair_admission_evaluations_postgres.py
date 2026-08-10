@@ -18,7 +18,7 @@ pytest_plugins = ("tests.integration.lifecycle_v2_postgres_plugin",)
 START = datetime(2026, 8, 10, 3, 0, tzinfo=UTC)
 
 
-def _evaluation() -> dict[str, Any]:
+def _evaluation_for(seconds_values: tuple[int, ...]) -> dict[str, Any]:
     events = tuple(
         SignalThrottleLogEvent(
             timestamp=START + timedelta(seconds=seconds),
@@ -35,11 +35,22 @@ def _evaluation() -> dict[str, Any]:
             eligible_for_pressure_block=True,
             eligible_for_execution=False,
         )
-        for seconds in (0, 150, 300)
+        for seconds in seconds_values
     )
     population = build_raw_admission_population(events)
     audit = build_pair_admission_audit(population.blocks, raw_events=population.events)
     return dict(audit.evaluations[0])
+
+
+def _evaluation() -> dict[str, Any]:
+    return _evaluation_for((0, 150, 300))
+
+
+@pytest.mark.asyncio
+async def test_pair_admission_schema_matches_the_full_migration_contract(postgres: Any) -> None:
+    status = await PairAdmissionEvaluationRepository(pg=postgres).schema_status()
+
+    assert status.ready is True
 
 
 @pytest.mark.asyncio
@@ -85,3 +96,105 @@ async def test_database_rejects_execution_authority(postgres: Any) -> None:
         )
 
     assert raised.value.constraint_name == "ck_pair_admission_non_executable"
+
+
+@pytest.mark.asyncio
+async def test_growing_block_remains_one_grant_across_repository_restart(postgres: Any) -> None:
+    await postgres.execute("TRUNCATE TABLE pair_admission_evaluations")
+    first_evaluation = _evaluation_for((0, 150, 300))
+    growing_evaluation = _evaluation_for((0, 150, 300, 350, 500, 650))
+
+    first = await PairAdmissionEvaluationRepository(pg=postgres).ingest(first_evaluation)
+    replay = await PairAdmissionEvaluationRepository(pg=postgres).ingest(growing_evaluation)
+    row = await postgres.fetchrow(
+        """
+        SELECT count(*) AS row_count, min(admission_event_id) AS admission_event_id
+        FROM pair_admission_evaluations
+        WHERE deployment_id = $1 AND raw_block_id = $2 AND rule_version = $3
+          AND decision = 'GRANTED'
+        """,
+        "integration-deployment",
+        growing_evaluation["candidate_block_id"],
+        growing_evaluation["rule_version"],
+    )
+
+    assert first.duplicate is False
+    assert replay.duplicate is True
+    assert first_evaluation["pair_admission_id"] == growing_evaluation["pair_admission_id"]
+    assert row is not None
+    assert row["row_count"] == 1
+    assert row["admission_event_id"] == first_evaluation["pair_admission_id"]
+
+
+@pytest.mark.asyncio
+async def test_schema_readiness_rejects_missing_and_weakened_non_execution_check(postgres: Any) -> None:
+    repository = PairAdmissionEvaluationRepository(pg=postgres)
+    await postgres.execute("ALTER TABLE pair_admission_evaluations DROP CONSTRAINT ck_pair_admission_non_executable")
+    try:
+        missing = await repository.schema_status()
+        assert missing.ready is False
+        assert "ck_pair_admission_non_executable" in missing.missing_constraints
+
+        await postgres.execute(
+            """
+            ALTER TABLE pair_admission_evaluations
+            ADD CONSTRAINT ck_pair_admission_non_executable CHECK (execution_authority IS NOT NULL)
+            """
+        )
+        weakened = await repository.schema_status()
+        assert weakened.ready is False
+        assert "ck_pair_admission_non_executable:definition" in weakened.invalid_constraints
+    finally:
+        await postgres.execute(
+            "ALTER TABLE pair_admission_evaluations DROP CONSTRAINT IF EXISTS ck_pair_admission_non_executable"
+        )
+        await postgres.execute(
+            """
+            ALTER TABLE pair_admission_evaluations
+            ADD CONSTRAINT ck_pair_admission_non_executable CHECK (execution_authority IS FALSE)
+            """
+        )
+    assert (await repository.schema_status()).ready is True
+
+
+@pytest.mark.asyncio
+async def test_schema_readiness_rejects_wrong_unique_predicate(postgres: Any) -> None:
+    repository = PairAdmissionEvaluationRepository(pg=postgres)
+    await postgres.execute("TRUNCATE TABLE pair_admission_evaluations")
+    await postgres.execute("DROP INDEX uq_pair_admission_one_grant_per_block")
+    try:
+        await postgres.execute(
+            """
+            CREATE UNIQUE INDEX uq_pair_admission_one_grant_per_block
+            ON pair_admission_evaluations (deployment_id, raw_block_id, rule_version)
+            WHERE decision = 'NOT_GRANTED'
+            """
+        )
+        status = await repository.schema_status()
+        assert status.ready is False
+        assert "uq_pair_admission_one_grant_per_block:predicate" in status.invalid_indexes
+    finally:
+        await postgres.execute("DROP INDEX IF EXISTS uq_pair_admission_one_grant_per_block")
+        await postgres.execute(
+            """
+            CREATE UNIQUE INDEX uq_pair_admission_one_grant_per_block
+            ON pair_admission_evaluations (deployment_id, raw_block_id, rule_version)
+            WHERE decision = 'GRANTED'
+            """
+        )
+    assert (await repository.schema_status()).ready is True
+
+
+@pytest.mark.asyncio
+async def test_schema_readiness_rejects_wrong_execution_authority_default(postgres: Any) -> None:
+    repository = PairAdmissionEvaluationRepository(pg=postgres)
+    await postgres.execute("ALTER TABLE pair_admission_evaluations ALTER COLUMN execution_authority SET DEFAULT TRUE")
+    try:
+        status = await repository.schema_status()
+        assert status.ready is False
+        assert any(item.startswith("execution_authority:default=") for item in status.invalid_columns)
+    finally:
+        await postgres.execute(
+            "ALTER TABLE pair_admission_evaluations ALTER COLUMN execution_authority SET DEFAULT FALSE"
+        )
+    assert (await repository.schema_status()).ready is True
