@@ -5,7 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 from analysis.signal_throttle_log_analyzer import SignalThrottleLogEvent
 from analysis.strategy_5scr_pair_admission import build_pair_admission_audit
-from analysis.strategy_5scr_raw_admission_blocks import build_raw_admission_population
+from analysis.strategy_5scr_raw_admission_blocks import (
+    build_raw_admission_population,
+    raw_signal_throttle_event_id,
+)
 
 START = datetime(2026, 8, 10, 0, 0, tzinfo=UTC)
 
@@ -35,6 +38,23 @@ def _canary(seconds: float, symbol: str = "EURUSD") -> SignalThrottleLogEvent:
         pressure_source="signal_throttle_check",
         source_stream="CANARY",
     )
+
+
+def _runtime_throttle_pair(seconds: float) -> tuple[SignalThrottleLogEvent, SignalThrottleLogEvent]:
+    throttled = replace(
+        _raw(seconds),
+        event_type="THROTTLED",
+        source_stream="RAW_THROTTLED",
+        verdict=None,
+        direction=None,
+        throttled_inferred_direction="BUY",
+    )
+    downgraded = replace(
+        _raw(seconds),
+        event_type="DOWNGRADED_TO_HOLD",
+        source_stream="DOWNGRADED",
+    )
+    return throttled, downgraded
 
 
 def test_canary_only_builds_no_raw_admission_block() -> None:
@@ -125,3 +145,53 @@ def test_grant_identity_and_evidence_freeze_at_first_threshold_crossing() -> Non
     assert first_grant.duration_seconds == growing_grant.duration_seconds == 300
     assert first_grant.source_event_count == growing_grant.source_event_count == 3
     assert first_grant.source_ledger_hash == growing_grant.source_ledger_hash
+
+
+def test_runtime_throttle_pair_can_grant_without_promoting_execution_authority() -> None:
+    events = [event for seconds in (0, 150, 300) for event in _runtime_throttle_pair(seconds)]
+
+    population = build_raw_admission_population(events)
+    audit = build_pair_admission_audit(population.blocks, raw_events=population.events)
+
+    assert len(population.blocks) == 1
+    assert population.blocks[0].direction == "BUY"
+    assert population.blocks[0].events == 6
+    assert len(audit.grants) == 1
+    assert audit.grants[0].execution_authority is False
+
+
+def test_true_unresolved_raw_event_still_fails_closed() -> None:
+    unresolved, _ = _runtime_throttle_pair(150)
+    unresolved = replace(unresolved, throttled_inferred_direction=None)
+    events = [_raw(0), unresolved, _raw(300)]
+
+    population = build_raw_admission_population(events)
+    audit = build_pair_admission_audit(population.blocks, raw_events=population.events)
+
+    assert audit.grants == ()
+    assert audit.rejection_counts == {"RAW_LEDGER_DIRECTION_UNRESOLVED": 1}
+
+
+def test_non_throttled_event_cannot_launder_inferred_direction() -> None:
+    spoofed = replace(
+        _raw(150),
+        verdict=None,
+        direction=None,
+        throttled_inferred_direction="BUY",
+    )
+    events = [_raw(0), spoofed, _raw(300)]
+
+    population = build_raw_admission_population(events)
+    audit = build_pair_admission_audit(population.blocks, raw_events=population.events)
+
+    assert audit.grants == ()
+    assert audit.rejection_counts == {"RAW_LEDGER_DIRECTION_UNRESOLVED": 1}
+
+
+def test_inferred_direction_is_part_of_stable_raw_identity() -> None:
+    throttled, _ = _runtime_throttle_pair(0)
+
+    buy_id = raw_signal_throttle_event_id(throttled)
+    sell_id = raw_signal_throttle_event_id(replace(throttled, throttled_inferred_direction="SELL"))
+
+    assert buy_id != sell_id

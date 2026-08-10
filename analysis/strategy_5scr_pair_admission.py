@@ -12,6 +12,7 @@ from typing import Any
 
 from analysis.strategy_5scr_raw_admission_blocks import (
     is_raw_signal_throttle_authority,
+    raw_signal_throttle_direction,
     raw_signal_throttle_event_id,
 )
 from contracts.strategy_5scr_pair_admission import (
@@ -87,18 +88,6 @@ def _utc(value: Any) -> datetime | None:
 
 def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-
-
-def _event_direction(event: Any) -> str | None:
-    direction = str(_value(event, "direction") or "").strip().upper()
-    if direction in {"BUY", "SELL"}:
-        return direction
-    verdict = str(_value(event, "verdict") or "").strip().upper()
-    if verdict.endswith("_BUY"):
-        return "BUY"
-    if verdict.endswith("_SELL"):
-        return "SELL"
-    return None
 
 
 def _event_effective_ticks(event: Any) -> int:
@@ -317,9 +306,9 @@ def _validate_raw_evidence(
         return None, "BLOCK_INTERVAL_EVIDENCE_MISMATCH"
     if declared_events is not None and declared_events != len(evidence):
         return None, "BLOCK_EVENT_COUNT_EVIDENCE_MISMATCH"
-    if any(_event_direction(event) is None for event in evidence):
+    if any(raw_signal_throttle_direction(event) is None for event in evidence):
         return None, "RAW_LEDGER_DIRECTION_UNRESOLVED"
-    if any(_event_direction(event) != direction for event in evidence):
+    if any(raw_signal_throttle_direction(event) != direction for event in evidence):
         return None, "RAW_LEDGER_DIRECTION_CONFLICT"
 
     observed_duration = (timestamps[-1] - timestamps[0]).total_seconds()

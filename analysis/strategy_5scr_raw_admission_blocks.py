@@ -58,6 +58,18 @@ def raw_signal_throttle_event_id(event: Any) -> str:
         "scanner_cycle_id": _value(event, "scanner_cycle_id"),
         "deployment_id": _value(event, "deployment_id"),
     }
+    event_type = str(_value(event, "event_type") or "").strip().upper()
+    source_stream = str(_value(event, "source_stream") or "").strip().upper()
+    inferred_direction = _value(event, "throttled_inferred_direction")
+    if (
+        event_type == "THROTTLED"
+        and source_stream == "RAW_THROTTLED"
+        and inferred_direction is not None
+        and str(inferred_direction).strip()
+    ):
+        # Preserve historical identities for every event that never carried
+        # this field; only newly authoritative inferred provenance changes ID.
+        identity["throttled_inferred_direction"] = inferred_direction
     return "sha256:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
 
 
@@ -73,10 +85,26 @@ def is_raw_signal_throttle_authority(event: Any) -> bool:
     )
 
 
-def _direction(event: Any) -> str | None:
+def raw_signal_throttle_direction(event: Any) -> str | None:
+    """Resolve analysis-only direction from fields emitted by SignalThrottle.
+
+    A throttled runtime decision is recorded as two raw events.  The first is
+    the pure THROTTLED fact and carries ``throttled_inferred_direction``; the
+    second is the directional DOWNGRADED_TO_HOLD fact.  Treating the inferred
+    field as analysis provenance keeps that pair replayable without promoting
+    either event to execution authority.
+    """
+
     direct = str(_value(event, "direction") or "").strip().upper()
     if direct in {"BUY", "SELL"}:
         return direct
+    if (
+        str(_value(event, "event_type") or "").strip().upper() == "THROTTLED"
+        and str(_value(event, "source_stream") or "").strip().upper() == "RAW_THROTTLED"
+    ):
+        inferred = str(_value(event, "throttled_inferred_direction") or "").strip().upper()
+        if inferred in {"BUY", "SELL"}:
+            return inferred
     verdict = str(_value(event, "verdict") or "").strip().upper()
     if verdict.endswith("_BUY"):
         return "BUY"
@@ -173,7 +201,9 @@ def _make_block(events: list[Any], *, interrupted: bool) -> RawAdmissionBlock:
     gaps = tuple(
         (concrete_times[index] - concrete_times[index - 1]).total_seconds() for index in range(1, len(concrete_times))
     )
-    directions = {_direction(event) for event in ordered if _direction(event) is not None}
+    directions = {
+        raw_signal_throttle_direction(event) for event in ordered if raw_signal_throttle_direction(event) is not None
+    }
     deployments = tuple(
         sorted(
             {
@@ -257,8 +287,8 @@ def build_raw_admission_population(
         current_time = _utc(_value(event, "timestamp"))
         assert previous_time is not None and current_time is not None
         symbol_changed = str(_value(previous, "symbol") or "").upper() != str(_value(event, "symbol") or "").upper()
-        prior_direction = _direction(previous)
-        next_direction = _direction(event)
+        prior_direction = raw_signal_throttle_direction(previous)
+        next_direction = raw_signal_throttle_direction(event)
         direction_changed = (
             prior_direction is not None and next_direction is not None and prior_direction != next_direction
         )
@@ -286,5 +316,6 @@ __all__ = [
     "RawAdmissionPopulation",
     "build_raw_admission_population",
     "is_raw_signal_throttle_authority",
+    "raw_signal_throttle_direction",
     "raw_signal_throttle_event_id",
 ]
