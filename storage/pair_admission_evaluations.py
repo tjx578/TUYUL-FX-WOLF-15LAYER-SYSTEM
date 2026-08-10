@@ -70,14 +70,41 @@ _REQUIRED_CONSTRAINTS = frozenset(
         "ck_pair_admission_result_shape",
     }
 )
+_REQUIRED_CONSTRAINT_DEFINITIONS = {
+    "ck_pair_admission_decision": (
+        "CHECK (((decision)::text = ANY ((ARRAY['GRANTED'::character varying, "
+        "'NOT_GRANTED'::character varying])::text[])))"
+    ),
+    "ck_pair_admission_direction": (
+        "CHECK (((direction IS NULL) OR ((direction)::text = ANY "
+        "((ARRAY['BUY'::character varying, 'SELL'::character varying])::text[]))))"
+    ),
+    "ck_pair_admission_duration_non_negative": "CHECK ((duration_seconds >= (0)::double precision))",
+    "ck_pair_admission_event_count_non_negative": "CHECK ((raw_event_count >= 0))",
+    "ck_pair_admission_ticks_non_negative": "CHECK ((effective_ticks >= 0))",
+    "ck_pair_admission_gap_non_negative": "CHECK ((max_gap_seconds >= (0)::double precision))",
+    "ck_pair_admission_interruptions_non_negative": "CHECK ((cross_symbol_interruption_count >= 0))",
+    "ck_pair_admission_non_executable": "CHECK ((execution_authority IS FALSE))",
+    "ck_pair_admission_result_shape": (
+        "CHECK (((((decision)::text = 'GRANTED'::text) AND (admission_event_id IS NOT NULL) "
+        "AND (reason_code IS NULL)) OR (((decision)::text = 'NOT_GRANTED'::text) "
+        "AND (admission_event_id IS NULL) AND (reason_code IS NOT NULL))))"
+    ),
+}
 _REQUIRED_INDEXES = {
     "ix_pair_admission_evaluated": (False, ("evaluated_at_utc", "decision"), None),
     "ix_pair_admission_symbol_block": (False, ("deployment_id", "symbol", "raw_block_id"), None),
     "uq_pair_admission_one_grant_per_block": (
         True,
         ("deployment_id", "raw_block_id", "rule_version"),
-        "GRANTED",
+        "((decision)::text = 'GRANTED'::text)",
     ),
+}
+
+_REQUIRED_COLUMN_DEFAULTS = {
+    "false": "false",
+    "zero": "0",
+    "now": "now()",
 }
 
 
@@ -168,11 +195,7 @@ def _column_contract_error(name: str, row: Any) -> str | None:
         return f"{name}:max_length={length}"
     if contract.default_kind is None and default:
         return f"{name}:default={default}"
-    if contract.default_kind == "false" and "false" not in default:
-        return f"{name}:default={default or 'missing'}"
-    if contract.default_kind == "zero" and not default.startswith("0"):
-        return f"{name}:default={default or 'missing'}"
-    if contract.default_kind == "now" and "now()" not in default:
+    if contract.default_kind is not None and default != _REQUIRED_COLUMN_DEFAULTS[contract.default_kind]:
         return f"{name}:default={default or 'missing'}"
     return None
 
@@ -392,13 +415,8 @@ class PairAdmissionEvaluationRepository:
             if constraint_type != "c" or str(_row_value(row, "table_name") or "") != ("pair_admission_evaluations"):
                 invalid_constraints.append(f"{name}:shape")
                 continue
-            if name == "ck_pair_admission_non_executable" and not (
-                "execution_authority" in definition and "is false" in definition
-            ):
-                invalid_constraints.append(f"{name}:definition")
-            if name == "ck_pair_admission_result_shape" and not all(
-                fragment in definition for fragment in ("decision", "granted", "not_granted", "admission_event_id")
-            ):
+            expected_definition = _normalized_sql(_REQUIRED_CONSTRAINT_DEFINITIONS[name])
+            if definition != expected_definition:
                 invalid_constraints.append(f"{name}:definition")
         indexes_by_name = {
             str(_row_value(row, "indexname") or ""): row
@@ -415,14 +433,8 @@ class PairAdmissionEvaluationRepository:
             if actual_unique != expected_unique or actual_columns != expected_columns:
                 invalid_indexes.append(f"{name}:shape")
                 continue
-            predicate_invalid = (expected_predicate is None and bool(predicate)) or (
-                expected_predicate is not None
-                and not (
-                    "decision" in predicate
-                    and expected_predicate.lower() in predicate
-                    and "not_granted" not in predicate
-                )
-            )
+            normalized_expected_predicate = _normalized_sql(expected_predicate)
+            predicate_invalid = predicate != normalized_expected_predicate
             if predicate_invalid:
                 invalid_indexes.append(f"{name}:predicate")
         return PairAdmissionEvaluationSchemaStatus(

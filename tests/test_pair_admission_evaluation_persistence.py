@@ -115,12 +115,18 @@ class _SchemaPostgres:
         wrong_constraint: bool = False,
         wrong_index: bool = False,
         wrong_column: bool = False,
+        broadened_constraint: bool = False,
+        broadened_index: bool = False,
+        inverted_default: bool = False,
     ) -> None:
         self.complete = complete
         self.missing_constraint = missing_constraint
         self.wrong_constraint = wrong_constraint
         self.wrong_index = wrong_index
         self.wrong_column = wrong_column
+        self.broadened_constraint = broadened_constraint
+        self.broadened_index = broadened_index
+        self.inverted_default = inverted_default
 
     async def fetch(self, query: str, *_: Any) -> list[dict[str, Any]]:
         if "pg_catalog.pg_tables" in query:
@@ -145,6 +151,10 @@ class _SchemaPostgres:
             ]
             if self.wrong_column:
                 next(row for row in rows if row["column_name"] == "execution_authority")["column_default"] = "true"
+            if self.inverted_default:
+                next(row for row in rows if row["column_name"] == "execution_authority")["column_default"] = (
+                    "(NOT FALSE)"
+                )
             return rows
         if "pg_catalog.pg_constraint" in query:
             rows = [
@@ -152,13 +162,7 @@ class _SchemaPostgres:
                     "conname": name,
                     "contype": "c",
                     "table_name": "pair_admission_evaluations",
-                    "definition": (
-                        "CHECK (execution_authority IS FALSE)"
-                        if name == "ck_pair_admission_non_executable"
-                        else "CHECK (decision IN ('GRANTED', 'NOT_GRANTED') AND admission_event_id IS NOT NULL)"
-                        if name == "ck_pair_admission_result_shape"
-                        else "CHECK (TRUE)"
-                    ),
+                    "definition": admission_storage._REQUIRED_CONSTRAINT_DEFINITIONS[name],
                 }
                 for name in admission_storage._REQUIRED_CONSTRAINTS
                 if name != self.missing_constraint
@@ -167,6 +171,10 @@ class _SchemaPostgres:
                 next(row for row in rows if row["conname"] == "ck_pair_admission_non_executable")["definition"] = (
                     "CHECK (execution_authority IS NOT NULL)"
                 )
+            if self.broadened_constraint:
+                next(row for row in rows if row["conname"] == "ck_pair_admission_non_executable")["definition"] = (
+                    "CHECK ((execution_authority IS FALSE) OR TRUE)"
+                )
             return rows
         if "pg_catalog.pg_index" in query:
             rows = [
@@ -174,7 +182,7 @@ class _SchemaPostgres:
                     "indexname": name,
                     "indisunique": unique,
                     "columns": list(columns),
-                    "predicate": None if predicate is None else "decision = 'GRANTED'",
+                    "predicate": predicate,
                 }
                 for name, (unique, columns, predicate) in admission_storage._REQUIRED_INDEXES.items()
             ]
@@ -182,6 +190,10 @@ class _SchemaPostgres:
                 next(row for row in rows if row["indexname"] == "uq_pair_admission_one_grant_per_block")[
                     "predicate"
                 ] = "decision = 'NOT_GRANTED'"
+            if self.broadened_index:
+                next(row for row in rows if row["indexname"] == "uq_pair_admission_one_grant_per_block")[
+                    "predicate"
+                ] = "decision = 'GRANTED' OR TRUE"
             return rows
         raise AssertionError(query)
 
@@ -249,6 +261,9 @@ async def test_schema_readiness_fails_closed_on_missing_table_or_index() -> None
         (_SchemaPostgres(complete=True, wrong_constraint=True), "invalid_constraints"),
         (_SchemaPostgres(complete=True, wrong_index=True), "invalid_indexes"),
         (_SchemaPostgres(complete=True, wrong_column=True), "invalid_columns"),
+        (_SchemaPostgres(complete=True, broadened_constraint=True), "invalid_constraints"),
+        (_SchemaPostgres(complete=True, broadened_index=True), "invalid_indexes"),
+        (_SchemaPostgres(complete=True, inverted_default=True), "invalid_columns"),
     ],
 )
 async def test_schema_readiness_fails_closed_on_contract_drift(

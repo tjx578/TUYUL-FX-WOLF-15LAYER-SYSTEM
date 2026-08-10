@@ -158,6 +158,34 @@ async def test_schema_readiness_rejects_missing_and_weakened_non_execution_check
 
 
 @pytest.mark.asyncio
+async def test_schema_readiness_rejects_broadened_non_execution_check(postgres: Any) -> None:
+    repository = PairAdmissionEvaluationRepository(pg=postgres)
+    await postgres.execute("ALTER TABLE pair_admission_evaluations DROP CONSTRAINT ck_pair_admission_non_executable")
+    try:
+        await postgres.execute(
+            """
+            ALTER TABLE pair_admission_evaluations
+            ADD CONSTRAINT ck_pair_admission_non_executable
+            CHECK (execution_authority IS FALSE OR TRUE)
+            """
+        )
+        status = await repository.schema_status()
+        assert status.ready is False
+        assert "ck_pair_admission_non_executable:definition" in status.invalid_constraints
+    finally:
+        await postgres.execute(
+            "ALTER TABLE pair_admission_evaluations DROP CONSTRAINT IF EXISTS ck_pair_admission_non_executable"
+        )
+        await postgres.execute(
+            """
+            ALTER TABLE pair_admission_evaluations
+            ADD CONSTRAINT ck_pair_admission_non_executable CHECK (execution_authority IS FALSE)
+            """
+        )
+    assert (await repository.schema_status()).ready is True
+
+
+@pytest.mark.asyncio
 async def test_schema_readiness_rejects_wrong_unique_predicate(postgres: Any) -> None:
     repository = PairAdmissionEvaluationRepository(pg=postgres)
     await postgres.execute("TRUNCATE TABLE pair_admission_evaluations")
@@ -186,9 +214,54 @@ async def test_schema_readiness_rejects_wrong_unique_predicate(postgres: Any) ->
 
 
 @pytest.mark.asyncio
+async def test_schema_readiness_rejects_broadened_unique_predicate(postgres: Any) -> None:
+    repository = PairAdmissionEvaluationRepository(pg=postgres)
+    await postgres.execute("TRUNCATE TABLE pair_admission_evaluations")
+    await postgres.execute("DROP INDEX uq_pair_admission_one_grant_per_block")
+    try:
+        await postgres.execute(
+            """
+            CREATE UNIQUE INDEX uq_pair_admission_one_grant_per_block
+            ON pair_admission_evaluations (deployment_id, raw_block_id, rule_version)
+            WHERE decision = 'GRANTED' OR TRUE
+            """
+        )
+        status = await repository.schema_status()
+        assert status.ready is False
+        assert "uq_pair_admission_one_grant_per_block:predicate" in status.invalid_indexes
+    finally:
+        await postgres.execute("DROP INDEX IF EXISTS uq_pair_admission_one_grant_per_block")
+        await postgres.execute(
+            """
+            CREATE UNIQUE INDEX uq_pair_admission_one_grant_per_block
+            ON pair_admission_evaluations (deployment_id, raw_block_id, rule_version)
+            WHERE decision = 'GRANTED'
+            """
+        )
+    assert (await repository.schema_status()).ready is True
+
+
+@pytest.mark.asyncio
 async def test_schema_readiness_rejects_wrong_execution_authority_default(postgres: Any) -> None:
     repository = PairAdmissionEvaluationRepository(pg=postgres)
     await postgres.execute("ALTER TABLE pair_admission_evaluations ALTER COLUMN execution_authority SET DEFAULT TRUE")
+    try:
+        status = await repository.schema_status()
+        assert status.ready is False
+        assert any(item.startswith("execution_authority:default=") for item in status.invalid_columns)
+    finally:
+        await postgres.execute(
+            "ALTER TABLE pair_admission_evaluations ALTER COLUMN execution_authority SET DEFAULT FALSE"
+        )
+    assert (await repository.schema_status()).ready is True
+
+
+@pytest.mark.asyncio
+async def test_schema_readiness_rejects_inverted_execution_authority_default(postgres: Any) -> None:
+    repository = PairAdmissionEvaluationRepository(pg=postgres)
+    await postgres.execute(
+        "ALTER TABLE pair_admission_evaluations ALTER COLUMN execution_authority SET DEFAULT (NOT FALSE)"
+    )
     try:
         status = await repository.schema_status()
         assert status.ready is False
