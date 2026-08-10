@@ -1042,6 +1042,7 @@ def _with_raw_lineage_metadata(message: str, event: SignalThrottleLogEvent) -> s
         ("scanner_cycle_id", event.scanner_cycle_id),
         ("scanner_epoch", event.scanner_epoch),
         ("observed_cycle_index", event.observed_cycle_index),
+        ("throttled_inferred_direction", event.throttled_inferred_direction),
     ):
         if value is None or f"{key}=" in message:
             continue

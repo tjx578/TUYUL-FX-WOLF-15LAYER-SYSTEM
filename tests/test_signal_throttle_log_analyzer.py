@@ -1791,6 +1791,32 @@ def test_live_analyzer_emits_parseable_raw_signal_throttle_lane(caplog):
     assert parsed[0].eligible_for_execution is False
 
 
+def test_throttled_raw_log_round_trip_preserves_inferred_direction(monkeypatch, caplog):
+    monkeypatch.setenv("SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS", "0")
+    caplog.set_level(logging.INFO, logger="signal_throttle_raw")
+    analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=3600)
+
+    analyzer.record_throttled(
+        symbol="XAUUSD",
+        verdict="EXECUTE_REDUCED_RISK_BUY",
+        count=3,
+        remaining=0,
+        max_signals=3,
+        window_seconds=300,
+    )
+
+    messages = [record.getMessage() for record in caplog.records if record.name == "signal_throttle_raw"]
+    throttled_message = next(message for message in messages if "THROTTLED - 3 signals" in message)
+    assert "throttled_inferred_direction=BUY" in throttled_message
+    parsed = parse_signal_throttle_rows(
+        [{"timestamp": "2026-08-10T10:40:23Z", "severity": "warning", "message": throttled_message}]
+    )
+    assert len(parsed) == 1
+    assert parsed[0].event_type == "THROTTLED"
+    assert parsed[0].direction is None
+    assert parsed[0].throttled_inferred_direction == "BUY"
+
+
 def test_recent_clean_block_lineage_attaches_to_later_microboost_same_symbol():
     analyzer = SignalThrottleLiveAnalyzer(latest_window_seconds=1800, microboost_window_minutes=15)
     base = datetime(2026, 7, 8, 0, 0, tzinfo=UTC)
