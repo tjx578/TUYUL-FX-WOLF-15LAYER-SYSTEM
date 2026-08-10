@@ -3515,9 +3515,7 @@ class WolfConstitutionalPipeline:
             htf_daily_bias_freshness_status=self._optional_text_from_mapping(
                 htf_context, "daily_bias_freshness_status"
             ),
-            htf_daily_bias_freshness_basis=self._optional_text_from_mapping(
-                htf_context, "daily_bias_freshness_basis"
-            ),
+            htf_daily_bias_freshness_basis=self._optional_text_from_mapping(htf_context, "daily_bias_freshness_basis"),
             htf_daily_bias_source_period_open=self._optional_text_from_mapping(
                 htf_context, "daily_bias_source_period_open"
             ),
@@ -3536,9 +3534,7 @@ class WolfConstitutionalPipeline:
             htf_daily_bias_provider_timestamp_semantics=self._optional_text_from_mapping(
                 htf_context, "daily_bias_provider_timestamp_semantics"
             ),
-            htf_daily_bias_advisory_only=self._optional_bool_from_mapping(
-                htf_context, "daily_bias_advisory_only"
-            ),
+            htf_daily_bias_advisory_only=self._optional_bool_from_mapping(htf_context, "daily_bias_advisory_only"),
             htf_daily_bias_execution_impact=self._optional_bool_from_mapping(
                 htf_context, "daily_bias_execution_impact"
             ),
@@ -4677,6 +4673,50 @@ class WolfConstitutionalPipeline:
         )
         return candidates
 
+    def _signal_throttle_snapshot(
+        self,
+        *,
+        market_contexts: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build analysis and persist admission decisions before output routing.
+
+        This boundary is intentionally upstream of SignalPressureStateJSON,
+        SignalDecisionUpdateJSON, and existing-candidate suppression.
+        """
+
+        report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        self._persist_pair_admission_evaluations(report)
+        return report
+
+    @staticmethod
+    def _persist_pair_admission_evaluations(report: dict[str, Any]) -> None:
+        summary_raw = report.get("pair_admission_summary")
+        summary = summary_raw if isinstance(summary_raw, dict) else {}
+        evaluations_raw = summary.get("evaluations")
+        evaluations = evaluations_raw if isinstance(evaluations_raw, list) else []
+        status_counts: dict[str, int] = {}
+        errors: list[str] = []
+        if evaluations:
+            from storage.pair_admission_evaluations import (  # noqa: PLC0415
+                persist_pair_admission_evaluation_sync,
+            )
+
+            for item in evaluations:
+                if not isinstance(item, dict):
+                    continue
+                result = persist_pair_admission_evaluation_sync(item)
+                status_counts[result.status] = status_counts.get(result.status, 0) + 1
+                if result.error:
+                    errors.append(result.error)
+        report["pair_admission_persistence"] = {
+            "evaluations_seen": len(evaluations),
+            "status_counts": dict(sorted(status_counts.items())),
+            "errors": sorted(set(errors)),
+            "persistence_boundary": "INDEPENDENT_PAIR_ADMISSION_LEDGER",
+            "observability_route_independent": True,
+            "execution_authority": False,
+        }
+
     def _process_signal_throttle_snapshot(
         self,
         *,
@@ -4691,9 +4731,7 @@ class WolfConstitutionalPipeline:
             l12_verdict=l12_verdict,
             source_verdict=source_verdict,
         )
-        report = self._signal_throttle_live_analyzer.snapshot(
-            market_contexts=market_contexts,
-        )
+        report = self._signal_throttle_snapshot(market_contexts=market_contexts)
         hydration = self._hydrate_signal_throttle_candidate_market_contexts(
             report=report,
             market_contexts=market_contexts,
@@ -4701,9 +4739,7 @@ class WolfConstitutionalPipeline:
             l12_verdict=l12_verdict,
         )
         if hydration.get("snapshot_rebuild_required") is True:
-            report = self._signal_throttle_live_analyzer.snapshot(
-                market_contexts=market_contexts,
-            )
+            report = self._signal_throttle_snapshot(market_contexts=market_contexts)
         if hydration.get("enabled") is True:
             report["candidate_market_context_hydration"] = hydration
         self._terminalize_stale_microboost_cluster(report)
@@ -6543,9 +6579,7 @@ class WolfConstitutionalPipeline:
             reference_status = "AVAILABLE"
         snapshot_epoch = _coerce_timestamp_to_epoch(snapshot_time)
         quote_observed_at = (
-            datetime.fromtimestamp(snapshot_epoch, tz=UTC)
-            if snapshot_epoch is not None
-            else datetime.now(UTC)
+            datetime.fromtimestamp(snapshot_epoch, tz=UTC) if snapshot_epoch is not None else datetime.now(UTC)
         )
         detector = getattr(self, "_frozen_quote_detector", None)
         if detector is None:
@@ -6997,9 +7031,7 @@ class WolfConstitutionalPipeline:
             {},
         )
         admission_evaluation_payload = (
-            dict(admission_evaluation)
-            if isinstance(admission_evaluation, dict) and admission_evaluation
-            else None
+            dict(admission_evaluation) if isinstance(admission_evaluation, dict) and admission_evaluation else None
         )
         admission_evaluation_hash = None
         if admission_evaluation_payload is not None:
@@ -7013,9 +7045,7 @@ class WolfConstitutionalPipeline:
                 ensure_ascii=False,
                 default=str,
             )
-            admission_evaluation_hash = "sha256:" + _hashlib.sha256(
-                canonical_evaluation.encode("utf-8")
-            ).hexdigest()
+            admission_evaluation_hash = "sha256:" + _hashlib.sha256(canonical_evaluation.encode("utf-8")).hexdigest()
         current_block_events = self._coerce_non_negative_int(
             activity.get("latest_block_events")
             if activity.get("latest_block_events") is not None
@@ -7739,9 +7769,7 @@ class WolfConstitutionalPipeline:
                 # atomic radar repository.  Never fall back to the legacy
                 # direct writer when radar proof is absent.
                 prepared_payload["pressure_persistence_status"] = "BLOCKED"
-                prepared_payload["pressure_persistence_block_reason"] = (
-                    "SIGNAL_PRESSURE_RADAR_WRITE_REQUIRED"
-                )
+                prepared_payload["pressure_persistence_block_reason"] = "SIGNAL_PRESSURE_RADAR_WRITE_REQUIRED"
                 payload.clear()
                 payload.update(prepared_payload)
                 persistence = None
@@ -7958,7 +7986,7 @@ class WolfConstitutionalPipeline:
             l12_verdict=shadow_verdict,
             source_verdict=source_verdict,
         )
-        report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        report = self._signal_throttle_snapshot(market_contexts=market_contexts)
         hydration = self._hydrate_signal_throttle_candidate_market_contexts(
             report=report,
             market_contexts=market_contexts,
@@ -7966,7 +7994,7 @@ class WolfConstitutionalPipeline:
             l12_verdict=shadow_verdict,
         )
         if hydration.get("snapshot_rebuild_required") is True:
-            report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+            report = self._signal_throttle_snapshot(market_contexts=market_contexts)
         if hydration.get("enabled") is True:
             report["candidate_market_context_hydration"] = hydration
         self._terminalize_stale_microboost_cluster(report)
@@ -8072,7 +8100,7 @@ class WolfConstitutionalPipeline:
             l12_verdict=l12_verdict,
             source_verdict=l12_verdict.get("verdict"),
         )
-        report = self._signal_throttle_live_analyzer.snapshot(market_contexts=current_contexts)
+        report = self._signal_throttle_snapshot(market_contexts=current_contexts)
         self._apply_signal_block_finalizer(
             l12_verdict=l12_verdict,
             report=report,
@@ -8170,7 +8198,7 @@ class WolfConstitutionalPipeline:
             l12_verdict=l12_verdict,
             source_verdict=l12_verdict.get("verdict"),
         )
-        report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+        report = self._signal_throttle_snapshot(market_contexts=market_contexts)
         hydration = self._hydrate_signal_throttle_candidate_market_contexts(
             report=report,
             market_contexts=market_contexts,
@@ -8178,7 +8206,7 @@ class WolfConstitutionalPipeline:
             l12_verdict=l12_verdict,
         )
         if hydration.get("snapshot_rebuild_required") is True:
-            report = self._signal_throttle_live_analyzer.snapshot(market_contexts=market_contexts)
+            report = self._signal_throttle_snapshot(market_contexts=market_contexts)
         self._apply_clean_block_watch_routes(l12_verdict=l12_verdict, report=report)
 
     def _emit_microboost_intel_if_new(self, report: dict[str, Any]) -> None:

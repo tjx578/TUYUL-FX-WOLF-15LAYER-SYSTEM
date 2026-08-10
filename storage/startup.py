@@ -56,9 +56,13 @@ async def init_persistent_storage() -> PersistenceSync | None:
 
     # Bind the synchronous analysis thread to the asyncpg owner loop.  The
     # feature remains inert unless both the master and granular write flags are true.
+    from storage.pair_admission_evaluations import (  # noqa: PLC0415
+        configure_pair_admission_evaluation_runtime,
+    )
     from storage.pressure_outbox import configure_pressure_outbox_runtime  # noqa: PLC0415
     from storage.pressure_radar_manifest import configure_pressure_radar_runtime  # noqa: PLC0415
 
+    configure_pair_admission_evaluation_runtime(loop=asyncio.get_running_loop())
     configure_pressure_outbox_runtime(loop=asyncio.get_running_loop())
     configure_pressure_radar_runtime(loop=asyncio.get_running_loop())
 
@@ -121,9 +125,11 @@ async def shutdown_persistent_storage() -> None:
     except Exception:
         pass
 
+    from storage.pair_admission_evaluations import pair_admission_evaluation_runtime  # noqa: PLC0415
     from storage.pressure_outbox import pressure_outbox_runtime  # noqa: PLC0415
     from storage.pressure_radar_manifest import pressure_radar_runtime  # noqa: PLC0415
 
+    pair_admission_evaluation_runtime.clear()
     pressure_outbox_runtime.clear()
     pressure_radar_runtime.clear()
     await pg_client.close()
