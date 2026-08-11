@@ -59,6 +59,7 @@ def test_executable_source_is_quarantined_while_output_stays_safe() -> None:
     assert emission.source_safety.final_direction == "WAIT"
     assert emission.source_safety.valid_for_execution is False
     assert emission.execution_authority is False
+    assert "PRESSURE_SOURCE_ATTEMPTED_EXECUTION_AUTHORITY" in emission.normalization.reason_codes
 
 
 def test_input_mapping_is_not_mutated() -> None:
@@ -68,6 +69,25 @@ def test_input_mapping_is_not_mutated() -> None:
     Legacy580PressureAdapter().normalize(payload)
 
     assert payload == before
+
+
+def test_nested_contracts_and_sequences_are_immutable() -> None:
+    emission = _legacy()
+
+    with pytest.raises(ValidationError):
+        emission.pressure.raw_direction = "BUY"
+    with pytest.raises(TypeError):
+        emission.normalization.missing_fields[0] = "changed"  # type: ignore[index]
+
+
+def test_wrong_event_family_and_unknown_pressure_stage_are_distinct_quarantines() -> None:
+    wrong_family = _legacy(event="signal_json")
+    unknown_stage = _legacy(source_stage="SOME_NEW_PRESSURE_STAGE")
+
+    assert wrong_family.normalization.status == "QUARANTINED"
+    assert "WRONG_EVENT_FAMILY" in wrong_family.normalization.reason_codes
+    assert unknown_stage.normalization.status == "QUARANTINED"
+    assert "UNKNOWN_PRESSURE_STAGE:SOME_NEW_PRESSURE_STAGE" in unknown_stage.normalization.reason_codes
 
 
 def test_legacy_authority_claims_are_not_promoted() -> None:

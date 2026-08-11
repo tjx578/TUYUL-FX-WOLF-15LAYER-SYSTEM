@@ -36,7 +36,7 @@ class Legacy580PressureAdapter:
         wrapper_timestamp: Any = None
         if isinstance(record, Mapping):
             wrapper_timestamp = record.get("timestamp")
-            if str(record.get("event") or "").lower() == "signal_pressure_state_json":
+            if record.get("event") is not None and record.get("message") is None:
                 return record, wrapper_timestamp
             raw = record.get("message")
             if not isinstance(raw, str):

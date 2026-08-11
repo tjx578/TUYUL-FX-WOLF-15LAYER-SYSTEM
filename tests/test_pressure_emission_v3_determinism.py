@@ -15,7 +15,7 @@ def test_repeated_normalization_is_byte_identical() -> None:
     assert len(serializations) == 1
 
 
-def test_representative_580_record_cohort_has_no_silent_drop_or_adapter_duplicate() -> None:
+def test_synthetic_580_semantic_cohort_has_no_silent_drop_or_adapter_duplicate() -> None:
     base = load_fixture("legacy_580", "equivalent_chfjpy.json")
     start = datetime(2026, 7, 17, 13, 5, tzinfo=UTC)
     records = []

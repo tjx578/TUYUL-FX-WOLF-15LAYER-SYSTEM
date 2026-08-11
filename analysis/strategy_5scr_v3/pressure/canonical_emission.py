@@ -39,6 +39,18 @@ _RAW_BLOCK_ID_RE = re.compile(r"^5scr-raw-block:[0-9a-f]{32}$")
 _MATERIAL_HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _CONTEXT_EPOCH_RE = re.compile(r"^5scr-context:[0-9a-f]{32}$")
 _ZERO_HASH = "sha256:" + ("0" * 64)
+_KNOWN_PRESSURE_SOURCE_STAGES = frozenset(
+    {
+        "BLOCK_FINALIZER",
+        "CANDIDATE_LIFECYCLE",
+        "EXECUTION_GATE",
+        "MICROBOOST",
+        "PRESSURE_BLOCK",
+        "SIGNAL_THROTTLE",
+        "SIGNAL_THROTTLE_INTEL",
+        "SIGNAL_WATCH",
+    }
+)
 
 
 def text(value: Any) -> str | None:
@@ -154,14 +166,14 @@ def build_canonical_emission(
 ) -> CanonicalPressureEmissionV3:
     """Normalize source facts without constructing any downstream identity."""
 
+    reasons: set[str] = set()
     if str(payload.get("event") or "").strip().lower() != "signal_pressure_state_json":
-        raise PressureEmissionNormalizationError("PRESSURE_EMISSION_EVENT_INVALID")
+        reasons.add("WRONG_EVENT_FAMILY")
 
     symbol = str(payload.get("symbol") or "").strip().upper()
     if _SYMBOL_RE.fullmatch(symbol) is None:
         raise PressureEmissionNormalizationError("PRESSURE_EMISSION_SYMBOL_INVALID")
 
-    reasons: set[str] = set()
     time_candidates = (
         payload.get("signal_valid_time_utc"),
         payload.get("observed_price_time"),
@@ -194,6 +206,9 @@ def build_canonical_emission(
     candidate_direction = _direction(payload, "candidate_direction", reasons=reasons)
     watch_direction = _direction(payload, "watch_direction", reasons=reasons)
     block_direction = _direction(payload, "block_direction", reasons=reasons)
+    source_stage = text(payload.get("source_stage"))
+    if source_stage is not None and source_stage.upper() not in _KNOWN_PRESSURE_SOURCE_STAGES:
+        reasons.add(f"UNKNOWN_PRESSURE_STAGE:{source_stage.upper()}")
 
     detected_raw = payload.get("microboost_detected")
     if detected_raw is None:
@@ -205,13 +220,19 @@ def build_canonical_emission(
         reasons.add("MICROBOOST_DETECTED_NOT_BOOLEAN")
 
     source_final = str(payload.get("final_direction") or "WAIT").strip().upper()
+    attempted_execution_authority = False
     if source_final != "WAIT":
         reasons.add("SOURCE_FINAL_DIRECTION_NOT_WAIT")
+        attempted_execution_authority = True
     for field in ("valid_for_execution", "tradeplan_valid", "execution_valid_now", "is_final_signal"):
         if payload.get(field) is True:
             reasons.add(f"SOURCE_{field.upper()}_TRUE")
+            attempted_execution_authority = True
     if str(payload.get("promotion_stage") or "PRESSURE_ONLY").upper() != "PRESSURE_ONLY":
         reasons.add("SOURCE_PROMOTION_STAGE_NOT_PRESSURE_ONLY")
+        attempted_execution_authority = True
+    if attempted_execution_authority:
+        reasons.add("PRESSURE_SOURCE_ATTEMPTED_EXECUTION_AUTHORITY")
 
     observed_price = finite_number(payload.get("observed_price"), minimum=1e-300)
     observed_time = parse_datetime(payload.get("observed_price_time"))
@@ -285,7 +306,7 @@ def build_canonical_emission(
             else None
         ),
         allowed_quorum_reached=allowed_quorum_reached,
-        source_stage=text(payload.get("source_stage")),
+        source_stage=source_stage,
         source_family=text(payload.get("source_family")),
         effective_ticks=non_negative_int(payload.get("effective_ticks")),
         event_count=non_negative_int(payload.get("pressure_event_count"), payload.get("event_count")),
