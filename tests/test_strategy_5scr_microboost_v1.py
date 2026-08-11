@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from analysis.strategy_5scr_microboost_pulse_engine import MicroboostPulseEngine
+from analysis.strategy_5scr_microboost_pulse_engine import MicroboostPulseEngine, MicroboostPulsePolicy
 from analysis.strategy_5scr_v3.pressure.legacy_580_adapter import Legacy580PressureAdapter
 from analysis.strategy_5scr_v3.pressure.live_outbox_adapter import LivePressureOutboxAdapter
 from contracts.strategy_5scr_microboost_pulse import MicroboostState
@@ -102,6 +102,32 @@ def test_broad_p1_semantic_hash_change_is_not_automatic_reinforcement() -> None:
     assert [item.transition for item in engine.ingest_canonical(first)] == ["FORMED"]
     assert engine.ingest_canonical(second) == ()
     assert engine.state.reinforcement_count == 0
+
+
+def test_context_only_change_after_expiry_does_not_rearm_sticky_pulse() -> None:
+    first = _emission(context_hash="sha256:" + "a" * 64)
+    context_changed = _emission(
+        at=START + timedelta(seconds=301),
+        context_hash="sha256:" + "c" * 64,
+    )
+    repeated = _emission(
+        at=START + timedelta(seconds=302),
+        context_hash="sha256:" + "d" * 64,
+    )
+    assert first.identity.semantic_projection_hash != context_changed.identity.semantic_projection_hash
+
+    engine = MicroboostPulseEngine(
+        LIFECYCLE,
+        "CHFJPY",
+        policy=MicroboostPulsePolicy(ttl_seconds=300.0),
+    )
+    engine.ingest_canonical(first)
+    boundary = engine.ingest_canonical(context_changed)
+
+    assert [item.transition for item in boundary] == ["EXPIRED"]
+    assert engine.ingest_canonical(repeated) == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.independent_pulse_count == 1
 
 
 def test_recovered_state_rejects_duplicate_and_continues_deterministically() -> None:

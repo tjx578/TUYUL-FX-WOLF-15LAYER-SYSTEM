@@ -232,6 +232,45 @@ async def test_concurrent_duplicate_delivery_is_serialized(
         await _cleanup(postgres, lifecycle_id)
 
 
+async def test_concurrent_ttl_boundary_emits_one_expiry_without_rearming(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+    formed = _emission()
+    first_boundary = _emission(at=START + timedelta(seconds=120))
+    second_boundary = _emission(at=START + timedelta(seconds=121))
+    repeated = _emission(at=START + timedelta(seconds=122))
+    await _seed(postgres, lifecycle_id, (formed, first_boundary, second_boundary, repeated))
+    try:
+        repository = _repository(postgres)
+        assert (await repository.process_emission(formed)).status == "PERSISTED"
+        await postgres.execute(
+            f"UPDATE {STATE_TABLE} SET expires_at = $2 WHERE strategy_lifecycle_id = $1",
+            lifecycle_id,
+            START + timedelta(seconds=60),
+        )
+
+        results = await asyncio.gather(
+            _repository(postgres).process_emission(first_boundary),
+            _repository(postgres).process_emission(second_boundary),
+        )
+        assert sum(item.status == "PERSISTED" for item in results) == 1
+        assert (await _repository(postgres).process_emission(repeated)).status == "NO_CHANGE"
+
+        rows = await postgres.fetch(
+            f"SELECT transition FROM {PULSE_EVENT_TABLE} "
+            "WHERE strategy_lifecycle_id = $1 ORDER BY occurred_at, pulse_event_id",
+            lifecycle_id,
+        )
+        assert [row["transition"] for row in rows] == ["FORMED", "EXPIRED"]
+        state = await repository.load_state(lifecycle_id)
+        assert state is not None
+        assert state.state == "EXPIRED"
+        assert state.independent_pulse_count == 1
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
 async def test_reordered_batch_matches_forward_replay(postgres: PoolBackedPostgres) -> None:
     lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
     emissions = (
@@ -336,4 +375,67 @@ async def test_readiness_rejects_weakened_shadow_constraint(
             f"ALTER TABLE {STATE_TABLE} ADD CONSTRAINT ck_5scr_microboost_state_shadow_only_v1 "
             "CHECK (execution_authority IS FALSE)"
         )
+    assert (await repository.schema_status()).ready
+
+
+async def test_readiness_rejects_required_column_shape_drift(
+    postgres: PoolBackedPostgres,
+) -> None:
+    repository = _repository(postgres)
+
+    await postgres.execute(f"ALTER TABLE {STATE_TABLE} DROP COLUMN active_block_id")
+    try:
+        missing = await repository.schema_status()
+        assert f"{STATE_TABLE}.active_block_id" in missing.missing_columns
+    finally:
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} ADD COLUMN active_block_id text")
+
+    await postgres.execute(f"ALTER TABLE {STATE_TABLE} ALTER COLUMN current_effective_ticks TYPE bigint")
+    try:
+        wrong_type = await repository.schema_status()
+        assert f"{STATE_TABLE}.current_effective_ticks:type=bigint" in wrong_type.invalid_columns
+    finally:
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} ALTER COLUMN current_effective_ticks TYPE integer")
+
+    await postgres.execute(f"ALTER TABLE {STATE_TABLE} ALTER COLUMN observed_snapshot_count DROP NOT NULL")
+    try:
+        nullable = await repository.schema_status()
+        assert f"{STATE_TABLE}.observed_snapshot_count:nullable=true" in nullable.invalid_columns
+    finally:
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} ALTER COLUMN observed_snapshot_count SET NOT NULL")
+
+    await postgres.execute(f"ALTER TABLE {STATE_TABLE} ALTER COLUMN execution_authority SET DEFAULT true")
+    try:
+        wrong_default = await repository.schema_status()
+        assert f"{STATE_TABLE}.execution_authority:default=true" in wrong_default.invalid_columns
+    finally:
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} ALTER COLUMN execution_authority SET DEFAULT false")
+
+    assert (await repository.schema_status()).ready
+
+
+async def test_readiness_rejects_missing_true_and_not_valid_constraint(
+    postgres: PoolBackedPostgres,
+) -> None:
+    repository = _repository(postgres)
+    constraint = "ck_5scr_microboost_state_name_v1"
+    canonical = "state IN ('NONE','ACTIVE','WEAKENING','INVALIDATED','EXPIRED')"
+
+    await postgres.execute(f"ALTER TABLE {STATE_TABLE} DROP CONSTRAINT {constraint}")
+    try:
+        missing = await repository.schema_status()
+        assert constraint in missing.missing_constraints
+
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} ADD CONSTRAINT {constraint} CHECK (TRUE)")
+        check_true = await repository.schema_status()
+        assert f"{constraint}:definition" in check_true.invalid_constraints
+
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} DROP CONSTRAINT {constraint}")
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} ADD CONSTRAINT {constraint} CHECK ({canonical}) NOT VALID")
+        not_valid = await repository.schema_status()
+        assert f"{constraint}:not_validated" in not_valid.invalid_constraints
+    finally:
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} DROP CONSTRAINT IF EXISTS {constraint}")
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} ADD CONSTRAINT {constraint} CHECK ({canonical})")
+
     assert (await repository.schema_status()).ready

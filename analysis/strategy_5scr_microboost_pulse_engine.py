@@ -174,22 +174,6 @@ class _Observation:
     def strength_rank(self) -> int:
         return STRENGTH_RANK.get((self.strength or "").upper(), 0)
 
-    @property
-    def evidence_hash(self) -> str:
-        """Hash only Microboost material evidence, never P1's broad hash."""
-
-        payload = {
-            "active_block_id": self.block_id,
-            "detected": self.detected,
-            "direction": self.direction,
-            "effective_ticks": self.effective_ticks,
-            "source_family": self.source_family,
-            "source_stage": self.source_stage,
-            "strength": self.strength,
-        }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
 
 class MicroboostPulseEngine:
     """Fold ordered pressure snapshots for one lifecycle into pulses + state.
@@ -255,6 +239,13 @@ class MicroboostPulseEngine:
         expiry = self._expire_if_due(observation.occurred_at, event_id, observation)
         if expiry is not None:
             emitted.append(expiry)
+            # The observation that crosses the TTL boundary belongs to the
+            # expiry transition.  It can never also re-arm the pulse, even if
+            # it carries materially different evidence.  A later observation
+            # must independently prove a new formation.
+            self._note_snapshot(observation, carried=observation.detected)
+            self._advance_cursor(observation, event_id)
+            return tuple(emitted)
 
         if not observation.detected:
             withdrawal = self._withdraw_if_active(observation, event_id)
@@ -305,6 +296,12 @@ class MicroboostPulseEngine:
 
     def _ingest_detected(self, observation: _Observation, event_id: str) -> list[MicroboostPulseEvent]:
         state = self._state
+        if state.state == "EXPIRED" and self._material_evidence_hash(observation) == state.evidence_hash:
+            # A latched true flag after expiry is still the old pulse.  The
+            # durable evidence hash intentionally tracks the last material
+            # pulse, not telemetry refreshes.
+            self._note_snapshot(observation, carried=True)
+            return []
         if not state.is_active:
             self._generation_signatures.clear()
             return [self._emit("FORMED", observation, event_id)]
@@ -365,6 +362,21 @@ class MicroboostPulseEngine:
             )
         )
 
+    def _material_evidence_hash(self, observation: _Observation) -> str:
+        """Fingerprint only pulse-forming evidence, never P1's broad hash."""
+
+        payload = {
+            "active_block_id": observation.block_id,
+            "detected": observation.detected,
+            "direction": observation.direction,
+            "effective_tick_bucket": self.policy.bucket(observation.effective_ticks),
+            "source_family": observation.source_family,
+            "source_stage": observation.source_stage,
+            "strength": (observation.strength or "").upper() or None,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
     def _already_observed(self, observation: _Observation, event_id: str) -> bool:
         state = self._state
         if state.last_observed_at_utc is None or state.last_source_event_id is None:
@@ -375,11 +387,15 @@ class MicroboostPulseEngine:
         )
 
     def _advance_cursor(self, observation: _Observation, event_id: str) -> None:
+        # ``evidence_hash`` is the last material pulse fingerprint.  Do not
+        # overwrite it with sticky observations: expiry recovery needs this
+        # value to distinguish the old pulse from genuinely new material.
+        evidence_hash = self._state.evidence_hash or self._material_evidence_hash(observation)
         self._state = self._state.model_copy(
             update={
                 "last_observed_at_utc": observation.occurred_at,
                 "last_source_event_id": event_id,
-                "evidence_hash": observation.evidence_hash,
+                "evidence_hash": evidence_hash,
             }
         )
 
@@ -420,10 +436,18 @@ class MicroboostPulseEngine:
         state = self._state
         resolved_direction = direction or (observation.direction if observation else None)
         moment = occurred_at or (observation.occurred_at if observation else datetime.now(UTC))
-        signature = self._signature(observation) if observation else f"{transition}|TTL"
+        signature = (
+            f"EXPIRED|{state.evidence_hash or 'NONE'}"
+            if transition == "EXPIRED"
+            else self._signature(observation)
+            if observation
+            else f"{transition}|TTL"
+        )
         dedupe_key = f"{state.strategy_lifecycle_id}|{transition}|{signature}|{state.state_version}"
         evidence_hash = (
-            observation.evidence_hash
+            state.evidence_hash
+            if transition == "EXPIRED" and state.evidence_hash is not None
+            else self._material_evidence_hash(observation)
             if observation is not None
             else state.evidence_hash
             or "sha256:"
@@ -486,6 +510,7 @@ class MicroboostPulseEngine:
                 "active_block_id": (observation.block_id if observation else None) or state.active_block_id,
                 "last_source_stage": observation.source_stage if observation else state.last_source_stage,
                 "observed_snapshot_count": state.observed_snapshot_count + 1,
+                "evidence_hash": pulse.evidence_hash,
             }
         )
         if STRENGTH_RANK.get((strength or "").upper(), 0) >= STRENGTH_RANK.get((state.peak_strength or "").upper(), 0):
@@ -507,7 +532,8 @@ class MicroboostPulseEngine:
         }
         if carried:
             updates["carried_snapshot_count"] = state.carried_snapshot_count + 1
-            updates["last_confirmed_at_utc"] = observation.occurred_at
+            if state.is_active:
+                updates["last_confirmed_at_utc"] = observation.occurred_at
             # A carried snapshot is *not* new evidence: it must never extend the
             # TTL, or a stale pulse would live forever on telemetry refresh.
         self._state = state.model_copy(update=updates)

@@ -3,6 +3,10 @@
 The repository accepts only pressure emissions already linked to a canonical
 Strategy Lifecycle V2 row.  Source block, cluster, watch, and transport IDs are
 lineage only; none may create a Microboost state by itself.
+
+Pulse rows are insert-only by this repository contract.  Database-role
+immutability is deliberately not claimed here; that privilege boundary is a
+separate deployment hardening concern.
 """
 
 from __future__ import annotations
@@ -33,28 +37,36 @@ MICROBOOST_V1_WRITER_FLAG = "STRATEGY_5SCR_MICROBOOST_V1_WRITER_ENABLED"
 MICROBOOST_V1_SHADOW_ONLY_FLAG = "STRATEGY_5SCR_MICROBOOST_V1_SHADOW_ONLY"
 
 _REQUIRED_TABLES = frozenset({PULSE_EVENT_TABLE, STATE_TABLE})
-_REQUIRED_CONSTRAINTS = frozenset(
-    {
-        "fk_5scr_microboost_pulse_lifecycle_v1",
-        "ck_5scr_microboost_pulse_identity_v1",
-        "ck_5scr_microboost_pulse_transition_v1",
-        "ck_5scr_microboost_pulse_direction_v1",
-        "ck_5scr_microboost_pulse_sources_v1",
-        "ck_5scr_microboost_pulse_shadow_only_v1",
-        "fk_5scr_microboost_state_lifecycle_v1",
-        "ck_5scr_microboost_state_name_v1",
-        "ck_5scr_microboost_state_direction_v1",
-        "ck_5scr_microboost_state_counters_v1",
-        "ck_5scr_microboost_state_evidence_v1",
-        "ck_5scr_microboost_state_shadow_only_v1",
-    }
-)
-_CRITICAL_CONSTRAINTS: dict[str, tuple[str, str, str]] = {
+_REQUIRED_CONSTRAINT_DEFINITIONS: dict[str, tuple[str, str, str]] = {
     "fk_5scr_microboost_pulse_lifecycle_v1": (
         PULSE_EVENT_TABLE,
         "f",
         "foreign key (strategy_lifecycle_id) references "
         "strategy_5scr_analysis_lifecycles_v2(strategy_lifecycle_id) on delete restrict",
+    ),
+    "ck_5scr_microboost_pulse_identity_v1": (
+        PULSE_EVENT_TABLE,
+        "c",
+        "check (((pulse_event_id ~ '^5scr-pulse:[0-9a-f]{32}$'::text) and "
+        "((evidence_hash)::text ~ '^sha256:[0-9a-f]{64}$'::text)))",
+    ),
+    "ck_5scr_microboost_pulse_transition_v1": (
+        PULSE_EVENT_TABLE,
+        "c",
+        "check (((transition)::text = any ((array['formed'::character varying, "
+        "'reinforced'::character varying, 'weakened'::character varying, "
+        "'invalidated'::character varying, 'expired'::character varying])::text[])))",
+    ),
+    "ck_5scr_microboost_pulse_direction_v1": (
+        PULSE_EVENT_TABLE,
+        "c",
+        "check (((direction is null) or ((direction)::text = any "
+        "((array['buy'::character varying, 'sell'::character varying])::text[]))))",
+    ),
+    "ck_5scr_microboost_pulse_sources_v1": (
+        PULSE_EVENT_TABLE,
+        "c",
+        "check (((jsonb_typeof(source_event_ids) = 'array'::text) and (jsonb_array_length(source_event_ids) > 0)))",
     ),
     "ck_5scr_microboost_pulse_shadow_only_v1": (
         PULSE_EVENT_TABLE,
@@ -67,12 +79,39 @@ _CRITICAL_CONSTRAINTS: dict[str, tuple[str, str, str]] = {
         "foreign key (strategy_lifecycle_id) references "
         "strategy_5scr_analysis_lifecycles_v2(strategy_lifecycle_id) on delete restrict",
     ),
+    "ck_5scr_microboost_state_name_v1": (
+        STATE_TABLE,
+        "c",
+        "check (((state)::text = any ((array['none'::character varying, "
+        "'active'::character varying, 'weakening'::character varying, "
+        "'invalidated'::character varying, 'expired'::character varying])::text[])))",
+    ),
+    "ck_5scr_microboost_state_direction_v1": (
+        STATE_TABLE,
+        "c",
+        "check (((direction is null) or ((direction)::text = any "
+        "((array['buy'::character varying, 'sell'::character varying])::text[]))))",
+    ),
+    "ck_5scr_microboost_state_counters_v1": (
+        STATE_TABLE,
+        "c",
+        "check (((independent_pulse_count >= 0) and (reinforcement_count >= 0) and "
+        "(carried_snapshot_count >= 0) and (observed_snapshot_count >= 0) and "
+        "(current_effective_ticks >= 0) and (peak_effective_ticks >= current_effective_ticks) and "
+        "(state_version >= 0)))",
+    ),
+    "ck_5scr_microboost_state_evidence_v1": (
+        STATE_TABLE,
+        "c",
+        "check (((evidence_hash)::text ~ '^sha256:[0-9a-f]{64}$'::text))",
+    ),
     "ck_5scr_microboost_state_shadow_only_v1": (
         STATE_TABLE,
         "c",
         "check ((execution_authority is false))",
     ),
 }
+_REQUIRED_CONSTRAINTS = frozenset(_REQUIRED_CONSTRAINT_DEFINITIONS)
 _REQUIRED_INDEXES: dict[str, tuple[str, bool, tuple[str, ...]]] = {
     "uq_5scr_microboost_pulse_dedupe_v1": (PULSE_EVENT_TABLE, True, ("dedupe_key",)),
     "ix_5scr_microboost_pulse_lifecycle_time_v1": (
@@ -93,7 +132,7 @@ class _ColumnContract:
     data_type: str
     nullable: bool
     max_length: int | None = None
-    default: str | None = None
+    default: str = ""
 
 
 _REQUIRED_COLUMNS: dict[tuple[str, str], _ColumnContract] = {
@@ -107,15 +146,39 @@ _REQUIRED_COLUMNS: dict[tuple[str, str], _ColumnContract] = {
     (PULSE_EVENT_TABLE, "dedupe_key"): _ColumnContract("text", False),
     (PULSE_EVENT_TABLE, "payload"): _ColumnContract("jsonb", False),
     (PULSE_EVENT_TABLE, "execution_authority"): _ColumnContract("boolean", False, default="false"),
+    (PULSE_EVENT_TABLE, "created_at"): _ColumnContract(
+        "timestamp with time zone",
+        False,
+        default="now()",
+    ),
     (STATE_TABLE, "strategy_lifecycle_id"): _ColumnContract("text", False),
     (STATE_TABLE, "symbol"): _ColumnContract("character varying", False, 32),
     (STATE_TABLE, "state"): _ColumnContract("character varying", False, 20),
     (STATE_TABLE, "direction"): _ColumnContract("character varying", True, 4),
+    (STATE_TABLE, "first_formed_at"): _ColumnContract("timestamp with time zone", True),
+    (STATE_TABLE, "last_pulse_at"): _ColumnContract("timestamp with time zone", True),
+    (STATE_TABLE, "last_confirmed_at"): _ColumnContract("timestamp with time zone", True),
+    (STATE_TABLE, "expires_at"): _ColumnContract("timestamp with time zone", True),
+    (STATE_TABLE, "independent_pulse_count"): _ColumnContract("integer", False, default="0"),
+    (STATE_TABLE, "reinforcement_count"): _ColumnContract("integer", False, default="0"),
+    (STATE_TABLE, "carried_snapshot_count"): _ColumnContract("integer", False, default="0"),
+    (STATE_TABLE, "observed_snapshot_count"): _ColumnContract("integer", False, default="0"),
+    (STATE_TABLE, "current_effective_ticks"): _ColumnContract("integer", False, default="0"),
+    (STATE_TABLE, "peak_effective_ticks"): _ColumnContract("integer", False, default="0"),
+    (STATE_TABLE, "current_strength"): _ColumnContract("character varying", True, 100),
+    (STATE_TABLE, "peak_strength"): _ColumnContract("character varying", True, 100),
+    (STATE_TABLE, "active_block_id"): _ColumnContract("text", True),
+    (STATE_TABLE, "last_source_stage"): _ColumnContract("character varying", True, 100),
     (STATE_TABLE, "last_observed_at"): _ColumnContract("timestamp with time zone", False),
     (STATE_TABLE, "last_source_event_id"): _ColumnContract("text", False),
     (STATE_TABLE, "state_version"): _ColumnContract("bigint", False),
     (STATE_TABLE, "evidence_hash"): _ColumnContract("character varying", False, 71),
     (STATE_TABLE, "execution_authority"): _ColumnContract("boolean", False, default="false"),
+    (STATE_TABLE, "updated_at"): _ColumnContract(
+        "timestamp with time zone",
+        False,
+        default="now()",
+    ),
 }
 
 
@@ -268,7 +331,7 @@ class StrategyMicroboostV1Repository:
         )
         constraint_rows = await self._pg.fetch(
             """
-            SELECT con.conname, con.contype::text AS contype,
+            SELECT con.conname, con.contype::text AS contype, con.convalidated,
                    cls.relname AS table_name,
                    pg_get_constraintdef(con.oid) AS definition
             FROM pg_catalog.pg_constraint con
@@ -323,14 +386,14 @@ class StrategyMicroboostV1Repository:
                 invalid_columns.append(f"{label}:nullable={str(nullable).lower()}")
             elif length != expected.max_length:
                 invalid_columns.append(f"{label}:max_length={length}")
-            elif expected.default is not None and default != expected.default:
+            elif default != expected.default:
                 invalid_columns.append(f"{label}:default={default or 'missing'}")
             else:
                 satisfied_columns.add(label)
 
         constraints = {str(_row_value(row, "conname") or ""): row for row in constraint_rows}
         invalid_constraints: list[str] = []
-        for name, expected in _CRITICAL_CONSTRAINTS.items():
+        for name, expected in _REQUIRED_CONSTRAINT_DEFINITIONS.items():
             row = constraints.get(name)
             if row is None:
                 continue
@@ -339,6 +402,8 @@ class StrategyMicroboostV1Repository:
                 invalid_constraints.append(f"{name}:table")
             elif str(_row_value(row, "contype")) != contype:
                 invalid_constraints.append(f"{name}:type")
+            elif not bool(_row_value(row, "convalidated")):
+                invalid_constraints.append(f"{name}:not_validated")
             elif _normalize_sql(_row_value(row, "definition")) != definition:
                 invalid_constraints.append(f"{name}:definition")
 

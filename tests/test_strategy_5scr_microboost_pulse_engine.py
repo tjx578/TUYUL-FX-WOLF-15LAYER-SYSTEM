@@ -174,6 +174,84 @@ def test_ttl_lapse_expires_the_pulse():
     assert engine.state.state == "EXPIRED"
 
 
+def test_sticky_snapshot_after_ttl_expires_without_rearming():
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(_payload(), event_id="evt-1")
+
+    boundary = engine.ingest(
+        _payload(at=START + timedelta(seconds=400)),
+        event_id="evt-expiry",
+    )
+    repeated = engine.ingest(
+        _payload(at=START + timedelta(seconds=401)),
+        event_id="evt-sticky",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert repeated == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.independent_pulse_count == 1
+
+
+def test_expiry_event_cannot_also_form_from_new_material():
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(_payload(ticks=10), event_id="evt-1")
+
+    boundary = engine.ingest(
+        _payload(ticks=40, at=START + timedelta(seconds=400)),
+        event_id="evt-expiry-new-material",
+    )
+    later = engine.ingest(
+        _payload(ticks=40, at=START + timedelta(seconds=401)),
+        event_id="evt-new-material-confirmed",
+    )
+    retry = engine.ingest(
+        _payload(ticks=40, at=START + timedelta(seconds=401)),
+        event_id="evt-new-material-confirmed",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert [pulse.transition for pulse in later] == ["FORMED"]
+    assert retry == ()
+    assert engine.state.independent_pulse_count == 2
+
+
+def test_nonmaterial_tick_change_after_expiry_stays_expired():
+    engine = _engine(ttl_seconds=300.0, tick_bucket=5)
+    engine.ingest(_payload(ticks=10), event_id="evt-1")
+
+    boundary = engine.ingest(
+        _payload(ticks=11, at=START + timedelta(seconds=400)),
+        event_id="evt-expiry-same-bucket",
+    )
+    repeated = engine.ingest(
+        _payload(ticks=11, at=START + timedelta(seconds=401)),
+        event_id="evt-same-bucket-repeated",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert repeated == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.independent_pulse_count == 1
+
+
+def test_explicit_false_reset_allows_later_formation():
+    engine = _engine()
+    engine.ingest(_payload(), event_id="evt-1")
+    invalidated = engine.ingest(
+        _payload(detected=False, at=START + timedelta(seconds=30)),
+        event_id="evt-reset",
+    )
+    reformed = engine.ingest(
+        _payload(at=START + timedelta(seconds=60)),
+        event_id="evt-after-reset",
+    )
+
+    assert [pulse.transition for pulse in invalidated] == ["INVALIDATED"]
+    assert [pulse.transition for pulse in reformed] == ["FORMED"]
+    assert engine.state.independent_pulse_count == 2
+
+
 def test_carried_snapshot_does_not_extend_ttl():
     """Telemetry refresh must not keep a stale pulse alive forever."""
     engine = _engine(ttl_seconds=300.0)
