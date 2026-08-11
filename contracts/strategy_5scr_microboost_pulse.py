@@ -66,12 +66,13 @@ class MicroboostPulseEvent(_FrozenPulseContract):
 
     pulse_event_id: str = Field(..., pattern=r"^5scr-pulse:[0-9a-f]{32}$")
     contract_version: Literal["microboost-pulse-state.v1"] = MICROBOOST_PULSE_CONTRACT_VERSION
-    strategy_lifecycle_id: str = Field(..., min_length=3, max_length=240)
+    strategy_lifecycle_id: str = Field(..., pattern=r"^5scr-lifecycle:[0-9a-f]{32}$")
     symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
     transition: MicroboostPulseTransition
     direction: PulseDirection | None = None
     occurred_at_utc: datetime
     source_event_ids: tuple[str, ...] = Field(..., min_length=1)
+    evidence_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
     source_deployment_id: str | None = Field(default=None, max_length=240)
     source_commit_sha: str | None = Field(default=None, max_length=240)
     source_stage: str | None = Field(default=None, max_length=100)
@@ -84,6 +85,7 @@ class MicroboostPulseEvent(_FrozenPulseContract):
     dedupe_key: str = Field(..., min_length=8, max_length=400)
     # Microboost never resolves direction or authorizes execution.
     valid_for_execution: Literal[False] = False
+    execution_authority: Literal[False] = False
 
     @field_validator("occurred_at_utc")
     @classmethod
@@ -103,7 +105,7 @@ class MicroboostState(_FrozenPulseContract):
     """Reduced Microboost state for one analysis lifecycle."""
 
     contract_version: Literal["microboost-pulse-state.v1"] = MICROBOOST_PULSE_CONTRACT_VERSION
-    strategy_lifecycle_id: str = Field(..., min_length=3, max_length=240)
+    strategy_lifecycle_id: str = Field(..., pattern=r"^5scr-lifecycle:[0-9a-f]{32}$")
     symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
     state: MicroboostStateName = "NONE"
     direction: PulseDirection | None = None
@@ -123,14 +125,21 @@ class MicroboostState(_FrozenPulseContract):
     peak_strength: str | None = Field(default=None, max_length=100)
     active_block_id: str | None = Field(default=None, max_length=240)
     last_source_stage: str | None = Field(default=None, max_length=100)
+    #: Durable replay cursor. Canonically ordered emissions at or before this
+    #: pair have already been folded and must not mutate counters on retry.
+    last_observed_at_utc: datetime | None = None
+    last_source_event_id: str | None = Field(default=None, max_length=240)
+    evidence_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     state_version: int = Field(default=0, ge=0)
     valid_for_execution: Literal[False] = False
+    execution_authority: Literal[False] = False
 
     @field_validator(
         "first_formed_at_utc",
         "last_pulse_at_utc",
         "last_confirmed_at_utc",
         "expires_at_utc",
+        "last_observed_at_utc",
     )
     @classmethod
     def _state_times_are_utc(cls, value: datetime | None) -> datetime | None:
@@ -144,6 +153,8 @@ class MicroboostState(_FrozenPulseContract):
             raise ValueError("a non-NONE Microboost state requires first_formed_at_utc")
         if self.independent_pulse_count == 0 and self.reinforcement_count:
             raise ValueError("reinforcement requires at least one formed pulse")
+        if (self.last_observed_at_utc is None) != (self.last_source_event_id is None):
+            raise ValueError("durable replay cursor requires both timestamp and source event ID")
         return self
 
     @property

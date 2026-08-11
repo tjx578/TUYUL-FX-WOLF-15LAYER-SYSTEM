@@ -38,7 +38,7 @@ def test_pressure_namespace_has_no_eager_imports() -> None:
     assert not any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in ast.walk(tree))
 
 
-def test_p1_has_no_runtime_consumer() -> None:
+def test_p1_has_only_the_explicit_p2_shadow_consumers() -> None:
     root = Path(__file__).parents[1]
     production = (root / "analysis", root / "services", root / "storage", root / "api", root / "execution")
     consumers: list[str] = []
@@ -50,4 +50,7 @@ def test_p1_has_no_runtime_consumer() -> None:
             if "strategy_5scr_v3.pressure" in text or "CanonicalPressureEmissionV3" in text:
                 consumers.append(str(source.relative_to(root)))
 
-    assert consumers == []
+    assert sorted(path.replace("\\", "/") for path in consumers) == [
+        "analysis/strategy_5scr_microboost_pulse_engine.py",
+        "storage/strategy_5scr_microboost_v1_repository.py",
+    ]

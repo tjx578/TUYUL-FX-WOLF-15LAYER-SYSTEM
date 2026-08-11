@@ -6,7 +6,7 @@ superseded. These tests pin the containment so a later change cannot quietly
 re-activate any of it:
 
 * the superseded SYMBOL_EPISODE grouping is gone, flag and all
-* the Microboost pulse engine exists but has no wiring and no consumer
+* the Microboost pulse engine is consumed only by inert P2 persistence
 * the 10-pip policy exists and is tested, but the *existing* runtime stays on
   the legacy floor until a real Hybrid V3 entrypoint selects it
 """
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -118,38 +119,28 @@ def test_microboost_pulse_flag_defaults_off(monkeypatch):
     assert microboost_pulse_enabled() is False
 
 
-def test_microboost_pulse_engine_has_no_downstream_consumer():
-    """Code may land early; wiring may not. PR2 is what activates it."""
-    import subprocess
+def test_microboost_pulse_engine_has_only_the_p2_persistence_consumer():
+    """P2 may persist pulses; no service/runtime activation may consume it."""
+    root = Path(__file__).parents[1]
+    importers: list[str] = []
+    for root_name in ("analysis", "api", "contracts", "pipeline", "services", "storage"):
+        production_root = root / root_name
+        if not production_root.exists():
+            continue
+        for source in production_root.rglob("*.py"):
+            if "strategy_5scr_microboost_pulse_engine" in source.read_text(encoding="utf-8"):
+                importers.append(source.relative_to(root).as_posix())
 
-    result = subprocess.run(
-        [
-            "git",
-            "grep",
-            "-l",
-            "strategy_5scr_microboost_pulse_engine",
-            "--",
-            "analysis",
-            "services",
-            "storage",
-            "contracts",
-            "api",
-            "pipeline",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    importers = [line for line in result.stdout.splitlines() if line.strip()]
-
-    # No production module may import it yet. Tests are excluded from the
-    # search above; PR2 is what adds the first real consumer.
-    assert importers == [], f"pulse engine gained a consumer before PR2: {importers}"
+    assert sorted(importers) == ["storage/strategy_5scr_microboost_v1_repository.py"]
 
 
 def test_pulse_engine_writes_nothing_and_is_not_executable():
     from analysis.strategy_5scr_microboost_pulse_engine import MicroboostPulseEngine
 
-    engine = MicroboostPulseEngine("lifecycle-1", "CHFJPY")
+    engine = MicroboostPulseEngine(
+        "5scr-lifecycle:22222222222222222222222222222222",
+        "CHFJPY",
+    )
     engine.ingest(
         {
             "microboost_detected": True,
@@ -163,7 +154,9 @@ def test_pulse_engine_writes_nothing_and_is_not_executable():
     )
 
     assert all(pulse.valid_for_execution is False for pulse in engine.pulses)
+    assert all(pulse.execution_authority is False for pulse in engine.pulses)
     assert engine.state.valid_for_execution is False
+    assert engine.state.execution_authority is False
 
 
 # --------------------------------------------------------------------------
