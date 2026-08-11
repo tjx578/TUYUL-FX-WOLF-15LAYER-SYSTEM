@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from threading import Event
 
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer, SignalThrottleLogEvent
+from analysis.strategy_5scr_pair_admission import build_pair_admission_audit
 from analysis.strategy_5scr_raw_admission_blocks import (
     build_raw_admission_population,
     raw_signal_throttle_event_id,
@@ -143,3 +144,60 @@ def test_concurrent_multi_symbol_stream_matches_sequential_reference_at_10k() ->
     assert [block.raw_block_id for block in concurrent_population.blocks] == [
         block.raw_block_id for block in sequential_population.blocks
     ]
+
+
+def _retention_event(seconds: int, symbol: str) -> SignalThrottleLogEvent:
+    return SignalThrottleLogEvent(
+        timestamp=START + timedelta(seconds=seconds),
+        severity="warning",
+        message="raw",
+        symbol=symbol,
+        event_type="ALLOWED",
+        verdict="EXECUTE_BUY",
+        direction="BUY",
+        pressure_source="SignalThrottle",
+        source_stream="ALLOWED",
+        deployment_id="deployment-A",
+        scanner_cycle_id=f"cycle-{seconds}",
+        eligible_for_pressure_block=True,
+        eligible_for_execution=False,
+    )
+
+
+def test_retention_never_truncates_a_finalized_raw_block_head() -> None:
+    analyzer = SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100)
+    for seconds in range(0, 701, 100):
+        analyzer.record(_retention_event(seconds, "EURUSD"))
+    analyzer.record(_retention_event(701, "GBPUSD"))
+
+    with analyzer._lock:
+        first_events = tuple(analyzer._events)
+    first_population = build_raw_admission_population(first_events)
+    first_audit = build_pair_admission_audit(first_population.blocks, raw_events=first_population.events)
+    first_block = first_population.blocks[0]
+    first_grant = first_audit.grants[0]
+
+    # Advancing the cutoff into the middle of EURUSD must retain that complete
+    # finalized block. Popping its head one event at a time changes both the
+    # raw block identity and the logical PairAdmission identity.
+    analyzer.record(_retention_event(1000, "GBPUSD"))
+    with analyzer._lock:
+        retained_events = tuple(analyzer._events)
+    retained_population = build_raw_admission_population(retained_events)
+    retained_audit = build_pair_admission_audit(retained_population.blocks, raw_events=retained_population.events)
+    retained_block = retained_population.blocks[0]
+    retained_grant = retained_audit.grants[0]
+
+    assert retained_block.source_event_ids == first_block.source_event_ids
+    assert retained_block.raw_block_id == first_block.raw_block_id
+    assert retained_grant.pair_admission_id == first_grant.pair_admission_id
+    assert retained_audit.evaluations[0] == first_audit.evaluations[0]
+
+    # Once the cutoff passes the block end, the block is removed atomically;
+    # no shortened suffix may survive and become a second logical grant.
+    analyzer.record(_retention_event(1502, "GBPUSD"))
+    with analyzer._lock:
+        expired_events = tuple(analyzer._events)
+    expired_population = build_raw_admission_population(expired_events)
+
+    assert all(block.symbol != "EURUSD" for block in expired_population.blocks)

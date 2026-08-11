@@ -51,7 +51,10 @@ from .signal_throttle_pattern_detector import classify_pressure_block
 from .signal_throttle_pressure_tier import build_pressure_tier_snapshot
 from .signal_throttle_pure_block_quality import score_pure_pressure_block
 from .strategy_5scr_pair_admission import build_pair_admission_audit
-from .strategy_5scr_raw_admission_blocks import build_raw_admission_population
+from .strategy_5scr_raw_admission_blocks import (
+    build_raw_admission_population,
+    is_raw_signal_throttle_authority,
+)
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -1115,6 +1118,7 @@ class SignalThrottleLiveAnalyzer:
         self.scanner_cycle_window_seconds = _env_float("SIGNAL_THROTTLE_SCANNER_CYCLE_MAX_GAP_SECONDS", 300.0)
         self._scanner_cycle_symbol_order: dict[str, dict[str, int]] = {}
         self._events: deque[SignalThrottleLogEvent] = deque()
+        self._retention_guard: tuple[datetime, datetime] | None = None
         self._lock = threading.Lock()
 
     def record(self, event: SignalThrottleLogEvent) -> None:
@@ -1415,10 +1419,70 @@ class SignalThrottleLiveAnalyzer:
 
     def _purge_locked(self, now: datetime) -> None:
         cutoff = now - timedelta(seconds=self.retention_seconds)
-        while self._events and self._events[0].timestamp < cutoff:
+        retention_floor = self._raw_block_safe_retention_floor_locked(cutoff)
+        while self._events and self._events[0].timestamp < retention_floor:
             self._events.popleft()
         while len(self._events) > self.max_events:
             self._events.popleft()
+            self._retention_guard = None
+
+    def _raw_block_safe_retention_floor_locked(self, cutoff: datetime) -> datetime:
+        """Do not let the time window retain only a suffix of one raw block.
+
+        PairAdmission identity is anchored to the first raw source event.  A
+        row-by-row time purge used to move that anchor forward while leaving
+        the same finalization event in memory, producing a new logical grant
+        on every snapshot.  Keep the complete block that straddles ``cutoff``
+        and remove it atomically once its own end is older than the cutoff.
+
+        Only the prefix through the first raw event at/after the cutoff is
+        inspected.  Events removed by this method are therefore scanned once,
+        while the guard avoids rebuilding a protected block until its end is
+        actually crossed.
+        """
+
+        guard = self._retention_guard
+        if guard is not None:
+            guarded_start, guarded_end = guard
+            if guarded_start < cutoff <= guarded_end:
+                return guarded_start
+
+        prefix: list[SignalThrottleLogEvent] = []
+        found_raw_at_or_after_cutoff = False
+        for event in self._events:
+            prefix.append(event)
+            if event.timestamp >= cutoff and is_raw_signal_throttle_authority(event):
+                found_raw_at_or_after_cutoff = True
+                break
+
+        if not found_raw_at_or_after_cutoff:
+            self._retention_guard = None
+            return cutoff
+
+        max_gap_seconds = min(300.0, float(self.scanner_cycle_window_seconds))
+        population = build_raw_admission_population(
+            prefix,
+            max_gap_seconds=max_gap_seconds,
+        )
+        for block in population.blocks:
+            if block.start < cutoff <= block.end:
+                # The prefix proves which block straddles the cutoff. Resolve
+                # its current tail once so a long active one-symbol block does
+                # not force an O(window) rebuild for every subsequent event.
+                protected_end = block.end
+                full_population = build_raw_admission_population(
+                    self._events,
+                    max_gap_seconds=max_gap_seconds,
+                )
+                for current in full_population.blocks:
+                    if current.raw_block_id == block.raw_block_id:
+                        protected_end = current.end
+                        break
+                self._retention_guard = (block.start, protected_end)
+                return block.start
+
+        self._retention_guard = None
+        return cutoff
 
 
 def build_pressure_blocks(
