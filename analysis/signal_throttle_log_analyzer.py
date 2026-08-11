@@ -15,6 +15,7 @@ import os
 import re
 import threading
 import time
+from bisect import bisect_right
 from collections import Counter, deque
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields
@@ -54,6 +55,7 @@ from .strategy_5scr_pair_admission import build_pair_admission_audit
 from .strategy_5scr_raw_admission_blocks import (
     build_raw_admission_population,
     is_raw_signal_throttle_authority,
+    raw_signal_throttle_event_id,
 )
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
@@ -1118,12 +1120,13 @@ class SignalThrottleLiveAnalyzer:
         self.scanner_cycle_window_seconds = _env_float("SIGNAL_THROTTLE_SCANNER_CYCLE_MAX_GAP_SECONDS", 300.0)
         self._scanner_cycle_symbol_order: dict[str, dict[str, int]] = {}
         self._events: deque[SignalThrottleLogEvent] = deque()
+        self._event_keys: deque[tuple[datetime, str]] = deque()
         self._retention_guard: tuple[datetime, datetime] | None = None
         self._lock = threading.Lock()
 
     def record(self, event: SignalThrottleLogEvent) -> None:
         with self._lock:
-            self._events.append(event)
+            self._insert_event_canonically_locked(event)
             self._purge_locked(event.timestamp)
 
     def _record_runtime_event(self, event: SignalThrottleLogEvent) -> None:
@@ -1132,7 +1135,7 @@ class SignalThrottleLiveAnalyzer:
         # workers cannot observe a partially rebuilt cycle-order map.
         with self._lock:
             enriched = self._with_runtime_lineage(event)
-            self._events.append(enriched)
+            self._insert_event_canonically_locked(enriched)
             self._purge_locked(enriched.timestamp)
         emit_signal_throttle_raw_event(enriched)
 
@@ -1417,14 +1420,56 @@ class SignalThrottleLiveAnalyzer:
         }
         return cycle_id, scanner_epoch, order[symbol_key]
 
+    @staticmethod
+    def _canonical_event_key(event: SignalThrottleLogEvent) -> tuple[datetime, str]:
+        """Match the raw ledger's EVENT_TIME_ASC_RAW_ID_TIEBREAK order."""
+
+        return event.timestamp, raw_signal_throttle_event_id(event)
+
+    def _insert_event_canonically_locked(self, event: SignalThrottleLogEvent) -> None:
+        """Insert one arrival without making physical arrival order authoritative."""
+
+        event_key = self._canonical_event_key(event)
+        if not self._event_keys or self._event_keys[-1] <= event_key:
+            self._events.append(event)
+            self._event_keys.append(event_key)
+            return
+
+        ordered = list(self._events)
+        ordered_keys = list(self._event_keys)
+        insert_at = bisect_right(ordered_keys, event_key)
+        ordered.insert(insert_at, event)
+        ordered_keys.insert(insert_at, event_key)
+        self._events = deque(ordered)
+        self._event_keys = deque(ordered_keys)
+        # A late event can change the block that straddles the cutoff. Never
+        # reuse a guard computed before that canonical insertion.
+        self._retention_guard = None
+
     def _purge_locked(self, now: datetime) -> None:
-        cutoff = now - timedelta(seconds=self.retention_seconds)
+        if not self._events:
+            self._event_keys = deque()
+            self._retention_guard = None
+            return
+
+        # A late/replayed event must not move the retention watermark backward.
+        # Canonical insertion guarantees the right edge is the newest event.
+        watermark = max(now, self._events[-1].timestamp)
+        cutoff = watermark - timedelta(seconds=self.retention_seconds)
         retention_floor = self._raw_block_safe_retention_floor_locked(cutoff)
+        if self._events[0].timestamp >= retention_floor and len(self._events) <= self.max_events:
+            return
+
         while self._events and self._events[0].timestamp < retention_floor:
             self._events.popleft()
-        while len(self._events) > self.max_events:
-            self._events.popleft()
+            self._event_keys.popleft()
+        if len(self._events) > self.max_events:
+            while len(self._events) > self.max_events:
+                self._events.popleft()
+                self._event_keys.popleft()
             self._retention_guard = None
+        # Both canonical deques are mutated under the same writer lock, so a
+        # reader can never observe a partially purged or count-trimmed state.
 
     def _raw_block_safe_retention_floor_locked(self, cutoff: datetime) -> datetime:
         """Do not let the time window retain only a suffix of one raw block.

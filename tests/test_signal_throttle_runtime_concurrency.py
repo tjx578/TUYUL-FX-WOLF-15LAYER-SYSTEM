@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from random import Random
 from threading import Event
 
 from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer, SignalThrottleLogEvent
@@ -127,6 +128,7 @@ def test_concurrent_multi_symbol_stream_matches_sequential_reference_at_10k() ->
         concurrent_events = tuple(concurrent._events)
 
     assert len(sequential_events) == len(concurrent_events) == 10_000
+    assert concurrent_events == tuple(sorted(concurrent_events, key=concurrent._canonical_event_key))
     assert _canonical_events(concurrent_events) == _canonical_events(sequential_events)
     assert {event.symbol: event.observed_cycle_index for event in concurrent_events[:2]} == {
         "EURUSD": 1,
@@ -200,6 +202,16 @@ def _retention_facts(
     }
 
 
+def _retention_state(
+    analyzer: SignalThrottleLiveAnalyzer,
+) -> tuple[tuple[str, ...], tuple[datetime, datetime] | None]:
+    with analyzer._lock:
+        return (
+            tuple(raw_signal_throttle_event_id(event) for event in analyzer._events),
+            analyzer._retention_guard,
+        )
+
+
 def test_retention_never_truncates_a_finalized_raw_block_head() -> None:
     analyzer = SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100)
     for seconds in range(0, 701, 100):
@@ -226,29 +238,110 @@ def test_retention_never_truncates_a_finalized_raw_block_head() -> None:
     assert all(block.symbol != "EURUSD" for block in expired_population.blocks)
 
 
-def test_retention_lineage_is_stable_across_duplicate_replay_and_restart() -> None:
+def test_retention_is_permutation_invariant_across_replay_and_restart() -> None:
+    expired_outside_guard = _retention_event(-400, "USDJPY")
     source = [_retention_event(seconds, "EURUSD") for seconds in range(0, 701, 100)]
     source.insert(4, source[3])
     source.append(_retention_event(701, "GBPUSD"))
 
-    continuous = SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100)
-    for event in source:
-        continuous.record(event)
-    expected = _retention_facts(continuous)
+    shuffled_source = list(source)
+    Random(405).shuffle(shuffled_source)
+    analyzers = [SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100) for _ in range(3)]
+    for analyzer, replay in zip(
+        analyzers,
+        (source, list(reversed(source)), shuffled_source),
+        strict=True,
+    ):
+        for event in replay:
+            analyzer.record(event)
 
-    # A restarted worker reconstructing from the same durable ledger may see
-    # replayed rows in a different delivery order. Canonical ordering and
-    # duplicate elimination must still produce the same immutable facts.
-    restarted = SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100)
-    for event in reversed(source):
-        restarted.record(event)
-    assert _retention_facts(restarted) == expected
+    expected = _retention_facts(analyzers[0])
+    expired_id = raw_signal_throttle_event_id(expired_outside_guard)
+    for analyzer in analyzers:
+        # Insert an already-expired row after every replay permutation has
+        # reconstructed the same topology. It must be removed immediately,
+        # even though its canonical location is the middle/front of the deque.
+        analyzer.record(expired_outside_guard)
+        retained_ids, _ = _retention_state(analyzer)
+        assert expired_id not in retained_ids
+        assert _retention_facts(analyzer) == expected
 
     for seconds in (900, 1000, 1200, 1499):
-        continuous.record(_retention_event(seconds, "GBPUSD"))
-        restarted.record(_retention_event(seconds, "GBPUSD"))
-        assert _retention_facts(continuous) == expected
-        assert _retention_facts(restarted) == expected
+        for analyzer in analyzers:
+            analyzer.record(_retention_event(seconds, "GBPUSD"))
+        states = [_retention_state(analyzer) for analyzer in analyzers]
+        assert states[0] == states[1] == states[2]
+        assert states[0][1] is not None
+        assert all(_retention_facts(analyzer) == expected for analyzer in analyzers)
+
+    # Passing the protected block end expires it atomically for every replay
+    # permutation. Equality cannot be satisfied merely by retaining stale rows.
+    for analyzer in analyzers:
+        analyzer.record(_retention_event(1501, "GBPUSD"))
+    states = [_retention_state(analyzer) for analyzer in analyzers]
+    assert states[0] == states[1] == states[2]
+    for analyzer in analyzers:
+        with analyzer._lock:
+            population = build_raw_admission_population(tuple(analyzer._events))
+        assert all(block.symbol != "EURUSD" for block in population.blocks)
+
+
+def test_max_events_trims_chronological_oldest_for_reversed_replay() -> None:
+    events = [_retention_event(seconds, "EURUSD") for seconds in range(10)]
+    forward = SignalThrottleLiveAnalyzer(retention_seconds=1000, max_events=5)
+    reverse = SignalThrottleLiveAnalyzer(retention_seconds=1000, max_events=5)
+
+    for event in events:
+        forward.record(event)
+    for event in reversed(events):
+        reverse.record(event)
+
+    with forward._lock:
+        forward_events = tuple(forward._events)
+    with reverse._lock:
+        reverse_events = tuple(reverse._events)
+    expected = tuple(events[-5:])
+
+    assert forward_events == reverse_events == expected
+    assert [event.timestamp for event in reverse_events] == sorted(event.timestamp for event in reverse_events)
+
+
+def test_concurrent_retention_matches_chronological_reference() -> None:
+    events = tuple(_retention_event(index, "EURUSD" if index % 2 == 0 else "GBPJPY") for index in range(200))
+    sequential = SignalThrottleLiveAnalyzer(retention_seconds=300, max_events=500)
+    concurrent = SignalThrottleLiveAnalyzer(retention_seconds=300, max_events=500)
+
+    for event in events:
+        sequential.record(event)
+
+    start = Event()
+
+    def write(event: SignalThrottleLogEvent) -> None:
+        start.wait()
+        concurrent.record(event)
+
+    with ThreadPoolExecutor(max_workers=32) as executor:
+        writers = [executor.submit(write, event) for event in reversed(events)]
+        start.set()
+        for future in writers:
+            future.result()
+
+    # Apply one common post-batch watermark only after the complete event set
+    # is present. Online retention cannot infer interruptions that have not
+    # arrived yet; the next canonical runtime observation closes that window.
+    watermark_event = _retention_event(399, "USDCHF")
+    sequential.record(watermark_event)
+    concurrent.record(watermark_event)
+
+    with sequential._lock:
+        sequential_events = tuple(sequential._events)
+    with concurrent._lock:
+        concurrent_events = tuple(concurrent._events)
+
+    assert concurrent_events == sequential_events
+    assert concurrent_events == tuple(sorted(concurrent_events, key=concurrent._canonical_event_key))
+    assert concurrent_events[0].timestamp == START + timedelta(seconds=99)
+    assert concurrent_events[-1].timestamp == START + timedelta(seconds=399)
 
 
 def test_retention_does_not_merge_distinct_same_symbol_episodes() -> None:
