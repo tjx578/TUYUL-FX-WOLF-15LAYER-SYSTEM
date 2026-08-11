@@ -31,6 +31,13 @@ def test_p1_modules_do_not_import_downstream_authority() -> None:
     assert not any(token in module for module in imported for token in forbidden)
 
 
+def test_pressure_namespace_has_no_eager_imports() -> None:
+    source = Path(__file__).parents[1] / "analysis" / "strategy_5scr_v3" / "pressure" / "__init__.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+
+    assert not any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in ast.walk(tree))
+
+
 def test_p1_has_no_runtime_consumer() -> None:
     root = Path(__file__).parents[1]
     production = (root / "analysis", root / "services", root / "storage", root / "api", root / "execution")

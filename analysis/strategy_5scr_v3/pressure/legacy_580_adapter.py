@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from analysis.strategy_5scr_v3.pressure.canonical_emission import (
-    build_canonical_emission,
+    _build_canonical_emission,
     parse_datetime,
 )
 from analysis.strategy_5scr_v3.pressure.normalization_errors import (
@@ -24,7 +24,7 @@ class Legacy580PressureAdapter:
     def normalize(self, record: Mapping[str, Any] | str) -> CanonicalPressureEmissionV3:
         payload, wrapper_timestamp = self._extract(record)
         received_at = parse_datetime(wrapper_timestamp)
-        return build_canonical_emission(
+        return _build_canonical_emission(
             payload,
             profile="LEGACY_580",
             received_at_utc=received_at,

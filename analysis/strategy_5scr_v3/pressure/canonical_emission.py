@@ -138,6 +138,7 @@ def _normalization(
 ) -> PressureNormalizationV3:
     non_quarantine_reasons = {
         "EVENT_TIME_FROM_RAILWAY_WRAPPER",
+        "LEGACY_AUTHORITY_REFERENCE_IGNORED",
         "TRANSPORT_EVENT_ID_DERIVED_FROM_SOURCE_HASH",
     }
     if reasons - non_quarantine_reasons:
@@ -155,7 +156,7 @@ def _normalization(
     )
 
 
-def build_canonical_emission(
+def _build_canonical_emission(
     payload: Mapping[str, Any],
     *,
     profile: NormalizationProfile,
@@ -225,9 +226,14 @@ def build_canonical_emission(
         reasons.add("SOURCE_FINAL_DIRECTION_NOT_WAIT")
         attempted_execution_authority = True
     for field in ("valid_for_execution", "tradeplan_valid", "execution_valid_now", "is_final_signal"):
-        if payload.get(field) is True:
+        if field not in payload:
+            continue
+        value = payload.get(field)
+        if value is True or value == 1 or (isinstance(value, str) and value.strip().lower() == "true"):
             reasons.add(f"SOURCE_{field.upper()}_TRUE")
             attempted_execution_authority = True
+        elif value is not False:
+            reasons.add(f"SOURCE_{field.upper()}_NOT_BOOLEAN_FALSE")
     if str(payload.get("promotion_stage") or "PRESSURE_ONLY").upper() != "PRESSURE_ONLY":
         reasons.add("SOURCE_PROMOTION_STAGE_NOT_PRESSURE_ONLY")
         attempted_execution_authority = True
@@ -271,6 +277,8 @@ def build_canonical_emission(
         admission_event_id = candidate_admission_id
     elif profile == "LIVE_PRESSURE_OUTBOX":
         reasons.add("LIVE_ADMISSION_REFERENCE_MISSING")
+    elif candidate_admission_id is not None or source_active_block is not None:
+        reasons.add("LEGACY_AUTHORITY_REFERENCE_IGNORED")
 
     envelope = envelope_lineage or {}
     source_clean_block_id = text(envelope.get("source_clean_block_id")) or text(payload.get("source_clean_block_id"))
@@ -385,4 +393,4 @@ def build_canonical_emission(
     return provisional.model_copy(update={"identity": identity})
 
 
-__all__ = ["build_canonical_emission", "finite_number", "non_negative_int", "parse_datetime", "text"]
+__all__ = ["finite_number", "non_negative_int", "parse_datetime", "text"]

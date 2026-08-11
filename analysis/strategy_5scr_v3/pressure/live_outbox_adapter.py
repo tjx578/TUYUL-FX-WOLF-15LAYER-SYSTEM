@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from analysis.strategy_5scr_v3.pressure.canonical_emission import build_canonical_emission
+from analysis.strategy_5scr_v3.pressure.canonical_emission import _build_canonical_emission
 from analysis.strategy_5scr_v3.pressure.normalization_errors import (
     PressureEmissionNormalizationError,
 )
@@ -26,7 +26,7 @@ class LivePressureOutboxAdapter:
         )
         if pressure_payload_hash(envelope.payload) != envelope.payload_hash:
             raise PressureEmissionNormalizationError("LIVE_PRESSURE_OUTBOX_PAYLOAD_HASH_MISMATCH")
-        return build_canonical_emission(
+        return _build_canonical_emission(
             envelope.payload,
             profile="LIVE_PRESSURE_OUTBOX",
             transport_event_id=str(envelope.event_id),

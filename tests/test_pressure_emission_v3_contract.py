@@ -62,6 +62,15 @@ def test_executable_source_is_quarantined_while_output_stays_safe() -> None:
     assert "PRESSURE_SOURCE_ATTEMPTED_EXECUTION_AUTHORITY" in emission.normalization.reason_codes
 
 
+@pytest.mark.parametrize("unsafe", (True, 1, "true", "TRUE"))
+def test_executable_looking_safety_values_are_not_silently_coerced(unsafe: object) -> None:
+    emission = _legacy(valid_for_execution=unsafe)
+
+    assert emission.normalization.status == "QUARANTINED"
+    assert "PRESSURE_SOURCE_ATTEMPTED_EXECUTION_AUTHORITY" in emission.normalization.reason_codes
+    assert emission.source_safety.valid_for_execution is False
+
+
 def test_input_mapping_is_not_mutated() -> None:
     payload = load_fixture("legacy_580", "equivalent_chfjpy.json")
     before = deepcopy(payload)
@@ -103,3 +112,4 @@ def test_legacy_authority_claims_are_not_promoted() -> None:
     assert emission.source_lineage.admission_event_id is None
     assert emission.source_lineage.active_block_id is None
     assert emission.execution_authority is False
+    assert "LEGACY_AUTHORITY_REFERENCE_IGNORED" in emission.normalization.reason_codes
