@@ -164,40 +164,126 @@ def _retention_event(seconds: int, symbol: str) -> SignalThrottleLogEvent:
     )
 
 
+def _retention_facts(
+    analyzer: SignalThrottleLiveAnalyzer,
+    *,
+    symbol: str = "EURUSD",
+) -> dict[str, object]:
+    with analyzer._lock:
+        events = tuple(analyzer._events)
+    population = build_raw_admission_population(events)
+    audit = build_pair_admission_audit(population.blocks, raw_events=population.events)
+    blocks = [block for block in population.blocks if block.symbol == symbol]
+    assert len(blocks) == 1
+    block = blocks[0]
+    evaluations = [
+        evaluation for evaluation in audit.evaluations if evaluation["candidate_block_id"] == block.raw_block_id
+    ]
+    assert len(evaluations) == 1
+    evaluation = evaluations[0]
+    grants = [grant for grant in audit.grants if grant.pair_admission_id == evaluation["pair_admission_id"]]
+    assert len(grants) == 1
+    grant = grants[0]
+    return {
+        "raw_block_id": block.raw_block_id,
+        "pair_admission_id": grant.pair_admission_id,
+        "logical_start": block.start,
+        "logical_end": block.end,
+        "finalization_event_id": block.finalization_event_id,
+        "source_event_ids": block.source_event_ids,
+        "source_event_count": evaluation["source_event_count"],
+        "duration_at_finalization": evaluation["calculated_duration_seconds"],
+        "raw_lineage_hash": evaluation["raw_lineage_hash"],
+        "source_ledger_event_ids": tuple(evaluation["source_ledger_event_ids"]),
+        "grant_source_ledger_hash": grant.source_ledger_hash,
+        "evaluation": evaluation,
+    }
+
+
 def test_retention_never_truncates_a_finalized_raw_block_head() -> None:
     analyzer = SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100)
     for seconds in range(0, 701, 100):
         analyzer.record(_retention_event(seconds, "EURUSD"))
     analyzer.record(_retention_event(701, "GBPUSD"))
 
-    with analyzer._lock:
-        first_events = tuple(analyzer._events)
-    first_population = build_raw_admission_population(first_events)
-    first_audit = build_pair_admission_audit(first_population.blocks, raw_events=first_population.events)
-    first_block = first_population.blocks[0]
-    first_grant = first_audit.grants[0]
+    first = _retention_facts(analyzer)
 
     # Advancing the cutoff into the middle of EURUSD must retain that complete
     # finalized block. Popping its head one event at a time changes both the
-    # raw block identity and the logical PairAdmission identity.
-    analyzer.record(_retention_event(1000, "GBPUSD"))
-    with analyzer._lock:
-        retained_events = tuple(analyzer._events)
-    retained_population = build_raw_admission_population(retained_events)
-    retained_audit = build_pair_admission_audit(retained_population.blocks, raw_events=retained_population.events)
-    retained_block = retained_population.blocks[0]
-    retained_grant = retained_audit.grants[0]
-
-    assert retained_block.source_event_ids == first_block.source_event_ids
-    assert retained_block.raw_block_id == first_block.raw_block_id
-    assert retained_grant.pair_admission_id == first_grant.pair_admission_id
-    assert retained_audit.evaluations[0] == first_audit.evaluations[0]
+    # raw block identity and the logical PairAdmission identity. Multiple
+    # cutoff shifts must preserve the canonical evidence, not just the IDs.
+    for seconds in (900, 1000, 1200, 1499):
+        analyzer.record(_retention_event(seconds, "GBPUSD"))
+        assert _retention_facts(analyzer) == first
 
     # Once the cutoff passes the block end, the block is removed atomically;
     # no shortened suffix may survive and become a second logical grant.
-    analyzer.record(_retention_event(1502, "GBPUSD"))
+    analyzer.record(_retention_event(1501, "GBPUSD"))
     with analyzer._lock:
         expired_events = tuple(analyzer._events)
     expired_population = build_raw_admission_population(expired_events)
 
     assert all(block.symbol != "EURUSD" for block in expired_population.blocks)
+
+
+def test_retention_lineage_is_stable_across_duplicate_replay_and_restart() -> None:
+    source = [_retention_event(seconds, "EURUSD") for seconds in range(0, 701, 100)]
+    source.insert(4, source[3])
+    source.append(_retention_event(701, "GBPUSD"))
+
+    continuous = SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100)
+    for event in source:
+        continuous.record(event)
+    expected = _retention_facts(continuous)
+
+    # A restarted worker reconstructing from the same durable ledger may see
+    # replayed rows in a different delivery order. Canonical ordering and
+    # duplicate elimination must still produce the same immutable facts.
+    restarted = SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100)
+    for event in reversed(source):
+        restarted.record(event)
+    assert _retention_facts(restarted) == expected
+
+    for seconds in (900, 1000, 1200, 1499):
+        continuous.record(_retention_event(seconds, "GBPUSD"))
+        restarted.record(_retention_event(seconds, "GBPUSD"))
+        assert _retention_facts(continuous) == expected
+        assert _retention_facts(restarted) == expected
+
+
+def test_retention_does_not_merge_distinct_same_symbol_episodes() -> None:
+    analyzer = SignalThrottleLiveAnalyzer(retention_seconds=800, max_events=100)
+    for seconds in (0, 150, 300, 601, 751, 901):
+        analyzer.record(_retention_event(seconds, "EURUSD"))
+    analyzer.record(_retention_event(902, "GBPUSD"))
+
+    with analyzer._lock:
+        initial_events = tuple(analyzer._events)
+    initial_population = build_raw_admission_population(initial_events)
+    eurusd_blocks = [block for block in initial_population.blocks if block.symbol == "EURUSD"]
+    assert len(eurusd_blocks) == 2
+    first, second = eurusd_blocks
+    assert first.raw_block_id != second.raw_block_id
+    assert first.finalization_event_id == raw_signal_throttle_event_id(_retention_event(601, "EURUSD"))
+    assert second.finalization_event_id == raw_signal_throttle_event_id(_retention_event(902, "GBPUSD"))
+
+    # The first logical episode expires as a unit while the second remains
+    # intact. The guard must not over-merge both EURUSD stories.
+    analyzer.record(_retention_event(1201, "GBPUSD"))
+    with analyzer._lock:
+        retained_events = tuple(analyzer._events)
+    retained_population = build_raw_admission_population(retained_events)
+    retained_eurusd = [block for block in retained_population.blocks if block.symbol == "EURUSD"]
+    assert len(retained_eurusd) == 1
+    assert retained_eurusd[0] == second
+
+    # After the second episode expires, a genuinely new same-symbol event
+    # receives a new identity instead of reviving either finalized block.
+    analyzer.record(_retention_event(1800, "GBPUSD"))
+    analyzer.record(_retention_event(2101, "EURUSD"))
+    with analyzer._lock:
+        fresh_events = tuple(analyzer._events)
+    fresh_population = build_raw_admission_population(fresh_events)
+    fresh_eurusd = [block for block in fresh_population.blocks if block.symbol == "EURUSD"]
+    assert len(fresh_eurusd) == 1
+    assert fresh_eurusd[0].raw_block_id not in {first.raw_block_id, second.raw_block_id}
