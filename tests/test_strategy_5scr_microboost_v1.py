@@ -28,6 +28,10 @@ def _emission(
     block: str = "CHFJPY:clean:block-a",
     direction: str = "SELL",
     context_hash: str = "sha256:" + "b" * 64,
+    stage: str = "MICROBOOST",
+    family: str = "REPEATED_MICROBOOST",
+    deployment_id: str = "deploy-a",
+    commit_sha: str = "a" * 40,
 ):
     payload = load_fixture("live_equivalents", "equivalent_chfjpy.json")
     payload.update(
@@ -41,6 +45,10 @@ def _emission(
             "watch_direction": direction,
             "block_direction": direction,
             "material_context_hash": context_hash,
+            "source_stage": stage,
+            "source_family": family,
+            "deployment_id": deployment_id,
+            "commit_sha": commit_sha,
         }
     )
     return LivePressureOutboxAdapter().normalize(live_envelope(payload))
@@ -128,6 +136,69 @@ def test_context_only_change_after_expiry_does_not_rearm_sticky_pulse() -> None:
     assert engine.ingest_canonical(repeated) == ()
     assert engine.state.state == "EXPIRED"
     assert engine.state.independent_pulse_count == 1
+
+
+def test_publisher_and_context_refresh_stay_expired_across_restart() -> None:
+    first = _emission(
+        stage="MICROBOOST",
+        family="REPEATED_MICROBOOST",
+        context_hash="sha256:" + "a" * 64,
+        deployment_id="deploy-a",
+        commit_sha="a" * 40,
+    )
+    boundary = _emission(
+        at=START + timedelta(seconds=301),
+        stage="SIGNAL_THROTTLE_INTEL",
+        family="PRESSURE_REFRESH",
+        context_hash="sha256:" + "b" * 64,
+        deployment_id="deploy-b",
+        commit_sha="b" * 40,
+    )
+    later_publishers = (
+        _emission(
+            at=START + timedelta(seconds=302),
+            stage="BLOCK_FINALIZER",
+            family="BLOCK_REFRESH",
+            context_hash="sha256:" + "c" * 64,
+            deployment_id="deploy-c",
+            commit_sha="c" * 40,
+        ),
+        _emission(
+            at=START + timedelta(seconds=303),
+            stage="EXECUTION_GATE",
+            family="GATE_REFRESH",
+            context_hash="sha256:" + "d" * 64,
+            deployment_id="deploy-d",
+            commit_sha="d" * 40,
+        ),
+    )
+
+    engine = MicroboostPulseEngine(
+        LIFECYCLE,
+        "CHFJPY",
+        policy=MicroboostPulsePolicy(ttl_seconds=300.0),
+    )
+    formed = engine.ingest_canonical(first)
+    expired = engine.ingest_canonical(boundary)
+    assert formed[0].source_deployment_id == "deploy-a"
+    assert formed[0].source_stage == "MICROBOOST"
+    assert formed[0].source_family == "REPEATED_MICROBOOST"
+    assert [item.transition for item in expired] == ["EXPIRED"]
+    assert expired[0].source_deployment_id == "deploy-b"
+    assert expired[0].source_stage == "SIGNAL_THROTTLE_INTEL"
+    assert expired[0].source_family == "PRESSURE_REFRESH"
+
+    restarted = MicroboostPulseEngine(
+        LIFECYCLE,
+        "CHFJPY",
+        policy=MicroboostPulsePolicy(ttl_seconds=300.0),
+        initial_state=engine.state,
+    )
+    for emission in later_publishers:
+        assert restarted.ingest_canonical(emission) == ()
+
+    assert restarted.state.state == "EXPIRED"
+    assert restarted.state.independent_pulse_count == 1
 
 
 def test_recovered_state_rejects_duplicate_and_continues_deterministically() -> None:

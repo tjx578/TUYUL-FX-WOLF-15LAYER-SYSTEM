@@ -43,6 +43,8 @@ def _emission(
     detected: bool = True,
     ticks: int = 7,
     block: str = "CHFJPY:clean:block-a",
+    stage: str = "MICROBOOST",
+    family: str = "REPEATED_MICROBOOST",
 ) -> CanonicalPressureEmissionV3:
     payload = load_fixture("live_equivalents", "equivalent_chfjpy.json")
     payload.update(
@@ -51,6 +53,8 @@ def _emission(
             "microboost_detected": detected,
             "effective_ticks": ticks,
             "source_clean_block_id": block,
+            "source_stage": stage,
+            "source_family": family,
             "pair_admission_granted_at_utc": START.isoformat(),
             "pair_admission_expires_at_utc": (START + timedelta(minutes=15)).isoformat(),
         }
@@ -237,9 +241,21 @@ async def test_concurrent_ttl_boundary_emits_one_expiry_without_rearming(
 ) -> None:
     lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
     formed = _emission()
-    first_boundary = _emission(at=START + timedelta(seconds=120))
-    second_boundary = _emission(at=START + timedelta(seconds=121))
-    repeated = _emission(at=START + timedelta(seconds=122))
+    first_boundary = _emission(
+        at=START + timedelta(seconds=120),
+        stage="SIGNAL_THROTTLE_INTEL",
+        family="PRESSURE_REFRESH",
+    )
+    second_boundary = _emission(
+        at=START + timedelta(seconds=121),
+        stage="BLOCK_FINALIZER",
+        family="BLOCK_REFRESH",
+    )
+    repeated = _emission(
+        at=START + timedelta(seconds=122),
+        stage="EXECUTION_GATE",
+        family="GATE_REFRESH",
+    )
     await _seed(postgres, lifecycle_id, (formed, first_boundary, second_boundary, repeated))
     try:
         repository = _repository(postgres)

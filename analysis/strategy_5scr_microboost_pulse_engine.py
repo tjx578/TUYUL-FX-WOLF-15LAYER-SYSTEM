@@ -363,15 +363,18 @@ class MicroboostPulseEngine:
         )
 
     def _material_evidence_hash(self, observation: _Observation) -> str:
-        """Fingerprint only pulse-forming evidence, never P1's broad hash."""
+        """Fingerprint a positive allowlist of pulse-forming evidence.
+
+        Publisher, deployment, transport, and wrapper provenance remain on the
+        pulse for audit but cannot create or re-arm a Microboost pulse.
+        """
 
         payload = {
             "active_block_id": observation.block_id,
             "detected": observation.detected,
             "direction": observation.direction,
             "effective_tick_bucket": self.policy.bucket(observation.effective_ticks),
-            "source_family": observation.source_family,
-            "source_stage": observation.source_stage,
+            "strategy_lifecycle_id": self._state.strategy_lifecycle_id,
             "strength": (observation.strength or "").upper() or None,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

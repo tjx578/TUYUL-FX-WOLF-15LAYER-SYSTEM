@@ -29,6 +29,7 @@ def _payload(
     ticks=10,
     strength="MICROBOOST",
     stage="MICROBOOST",
+    family="REPEATED_MICROBOOST",
     block="CHFJPY_20260717T130000Z_20260717T130500Z",
     at=START,
 ):
@@ -38,6 +39,7 @@ def _payload(
         "block_effective_ticks": ticks,
         "pressure_strength": strength,
         "source_stage": stage,
+        "source_family": family,
         "source_clean_block_id": block,
         "block_latest_end_utc": at.isoformat(),
     }
@@ -80,6 +82,59 @@ def test_sticky_ratio_exposes_carried_share():
     assert state.observed_snapshot_count == 10
     assert state.carried_snapshot_count == 9
     assert state.sticky_ratio == pytest.approx(0.9)
+
+
+def test_publisher_metadata_change_before_ttl_is_lineage_only():
+    engine = _engine(ttl_seconds=300.0)
+    formed = engine.ingest(
+        _payload(stage="MICROBOOST", family="REPEATED_MICROBOOST"),
+        event_id="evt-formed",
+    )
+    assert formed[0].source_stage == "MICROBOOST"
+    assert formed[0].source_family == "REPEATED_MICROBOOST"
+
+    changed = engine.ingest(
+        _payload(
+            stage="SIGNAL_THROTTLE_INTEL",
+            family="PRESSURE_REFRESH",
+            at=START + timedelta(seconds=120),
+        ),
+        event_id="evt-publisher-change",
+    )
+
+    assert changed == ()
+    assert engine.state.independent_pulse_count == 1
+    assert engine.state.reinforcement_count == 0
+
+
+@pytest.mark.parametrize(
+    ("stage", "family"),
+    (
+        ("SIGNAL_THROTTLE_INTEL", "REPEATED_MICROBOOST"),
+        ("MICROBOOST", "PRESSURE_REFRESH"),
+        ("SIGNAL_THROTTLE_INTEL", "PRESSURE_REFRESH"),
+    ),
+)
+def test_publisher_metadata_change_after_ttl_does_not_rearm(stage, family):
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(
+        _payload(stage="MICROBOOST", family="REPEATED_MICROBOOST"),
+        event_id="evt-formed",
+    )
+
+    boundary = engine.ingest(
+        _payload(stage=stage, family=family, at=START + timedelta(seconds=400)),
+        event_id="evt-expiry",
+    )
+    sticky = engine.ingest(
+        _payload(stage=stage, family=family, at=START + timedelta(seconds=401)),
+        event_id="evt-sticky",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert sticky == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.independent_pulse_count == 1
 
 
 def test_duplicate_emission_does_not_add_a_pulse():
