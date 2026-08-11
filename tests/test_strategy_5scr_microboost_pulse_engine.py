@@ -307,6 +307,66 @@ def test_explicit_false_reset_allows_later_formation():
     assert engine.state.independent_pulse_count == 2
 
 
+def test_explicit_false_reset_after_expiry_rearms_across_restart():
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(_payload(), event_id="evt-formed")
+    prior_evidence_hash = engine.state.evidence_hash
+    expired = engine.ingest(
+        _payload(at=START + timedelta(seconds=400)),
+        event_id="evt-expired",
+    )
+    reset = engine.ingest(
+        _payload(detected=False, at=START + timedelta(seconds=401)),
+        event_id="evt-reset",
+    )
+
+    assert [pulse.transition for pulse in expired] == ["EXPIRED"]
+    assert reset == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.evidence_hash != prior_evidence_hash
+
+    restarted = MicroboostPulseEngine(
+        LIFECYCLE,
+        "CHFJPY",
+        policy=MicroboostPulsePolicy(ttl_seconds=300.0),
+        initial_state=engine.state,
+    )
+    reformed = restarted.ingest(
+        _payload(at=START + timedelta(seconds=402)),
+        event_id="evt-reformed",
+    )
+
+    assert [pulse.transition for pulse in reformed] == ["FORMED"]
+    assert restarted.state.state == "ACTIVE"
+    assert restarted.state.independent_pulse_count == 2
+
+
+def test_false_snapshot_crossing_ttl_rearms_without_double_transition():
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(_payload(), event_id="evt-formed")
+    boundary = engine.ingest(
+        _payload(detected=False, at=START + timedelta(seconds=400)),
+        event_id="evt-expired-and-reset",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert engine.state.state == "EXPIRED"
+
+    restarted = MicroboostPulseEngine(
+        LIFECYCLE,
+        "CHFJPY",
+        policy=MicroboostPulsePolicy(ttl_seconds=300.0),
+        initial_state=engine.state,
+    )
+    reformed = restarted.ingest(
+        _payload(at=START + timedelta(seconds=401)),
+        event_id="evt-reformed",
+    )
+
+    assert [pulse.transition for pulse in reformed] == ["FORMED"]
+    assert restarted.state.independent_pulse_count == 2
+
+
 def test_carried_snapshot_does_not_extend_ttl():
     """Telemetry refresh must not keep a stale pulse alive forever."""
     engine = _engine(ttl_seconds=300.0)

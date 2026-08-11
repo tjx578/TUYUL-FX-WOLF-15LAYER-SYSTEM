@@ -244,6 +244,7 @@ class MicroboostPulseEngine:
             # it carries materially different evidence.  A later observation
             # must independently prove a new formation.
             self._note_snapshot(observation, carried=observation.detected)
+            self._record_explicit_reset(observation)
             self._advance_cursor(observation, event_id)
             return tuple(emitted)
 
@@ -252,6 +253,7 @@ class MicroboostPulseEngine:
             if withdrawal is not None:
                 emitted.append(withdrawal)
             self._note_snapshot(observation, carried=False)
+            self._record_explicit_reset(observation)
             self._advance_cursor(observation, event_id)
             return tuple(emitted)
 
@@ -401,6 +403,15 @@ class MicroboostPulseEngine:
                 "evidence_hash": evidence_hash,
             }
         )
+
+    def _record_explicit_reset(self, observation: _Observation) -> None:
+        if observation.detected or self._state.state != "EXPIRED":
+            return
+        # A durable false observation is an explicit re-arm boundary. Preserve
+        # the expired state for audit, but replace the old true fingerprint so
+        # a later true observation can prove a new independent formation,
+        # including after process restart.
+        self._state = self._state.model_copy(update={"evidence_hash": self._material_evidence_hash(observation)})
 
     def _expire_if_due(
         self,

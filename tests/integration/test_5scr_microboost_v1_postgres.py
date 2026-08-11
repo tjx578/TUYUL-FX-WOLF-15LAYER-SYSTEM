@@ -287,6 +287,46 @@ async def test_concurrent_ttl_boundary_emits_one_expiry_without_rearming(
         await _cleanup(postgres, lifecycle_id)
 
 
+async def test_explicit_false_ttl_boundary_rearms_durably(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+    formed = _emission()
+    boundary = _emission(at=START + timedelta(seconds=120), detected=False)
+    reformed = _emission(at=START + timedelta(seconds=121))
+    await _seed(postgres, lifecycle_id, (formed, boundary, reformed))
+    try:
+        repository = _repository(postgres)
+        assert (await repository.process_emission(formed)).status == "PERSISTED"
+        await postgres.execute(
+            f"UPDATE {STATE_TABLE} SET expires_at = $2 WHERE strategy_lifecycle_id = $1",
+            lifecycle_id,
+            START + timedelta(seconds=60),
+        )
+
+        boundary_result = await repository.process_emission(boundary)
+        assert boundary_result.status == "PERSISTED"
+        assert boundary_result.state is not None
+        assert boundary_result.state.state == "EXPIRED"
+
+        restarted = _repository(postgres)
+        reformed_result = await restarted.process_emission(reformed)
+        assert reformed_result.status == "PERSISTED"
+        assert reformed_result.state is not None
+        assert reformed_result.state.state == "ACTIVE"
+        assert reformed_result.state.independent_pulse_count == 2
+        assert (await restarted.process_emission(reformed)).status == "DUPLICATE"
+
+        rows = await postgres.fetch(
+            f"SELECT transition FROM {PULSE_EVENT_TABLE} "
+            "WHERE strategy_lifecycle_id = $1 ORDER BY occurred_at, pulse_event_id",
+            lifecycle_id,
+        )
+        assert [row["transition"] for row in rows] == ["FORMED", "EXPIRED", "FORMED"]
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
 async def test_reordered_batch_matches_forward_replay(postgres: PoolBackedPostgres) -> None:
     lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
     emissions = (
