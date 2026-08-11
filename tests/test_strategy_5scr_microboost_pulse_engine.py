@@ -19,7 +19,7 @@ from analysis.strategy_5scr_microboost_pulse_engine import (
 )
 
 START = datetime(2026, 7, 17, 13, 0, 0, tzinfo=UTC)
-LIFECYCLE = "episode:CHFJPY:20260717T130000.000000Z:abc123"
+LIFECYCLE = "5scr-lifecycle:0123456789abcdef0123456789abcdef"
 
 
 def _payload(

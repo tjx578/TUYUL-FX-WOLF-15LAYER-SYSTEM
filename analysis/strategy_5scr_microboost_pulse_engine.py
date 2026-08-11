@@ -22,17 +22,20 @@ before anything downstream consumes it.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from contracts.strategy_5scr_microboost_pulse import (
     MicroboostPulseEvent,
     MicroboostPulseTransition,
     MicroboostState,
+    PulseDirection,
 )
+from contracts.strategy_5scr_pressure_emission_v3 import CanonicalPressureEmissionV3
 
 MICROBOOST_PULSE_FLAG = "STRATEGY_5SCR_MICROBOOST_PULSE_ENABLED"
 
@@ -137,6 +140,8 @@ class _Observation:
         "source_stage",
         "source_family",
         "block_id",
+        "source_deployment_id",
+        "source_commit_sha",
     )
 
     def __init__(self, payload: Mapping[str, Any], *, fallback_time: datetime | None) -> None:
@@ -162,10 +167,28 @@ class _Observation:
         self.source_stage = _text(payload.get("source_stage"))
         self.source_family = _text(payload.get("source_family"))
         self.block_id = _text(payload.get("source_clean_block_id"))
+        self.source_deployment_id = _text(payload.get("source_deployment_id"))
+        self.source_commit_sha = _text(payload.get("source_commit_sha"))
 
     @property
     def strength_rank(self) -> int:
         return STRENGTH_RANK.get((self.strength or "").upper(), 0)
+
+    @property
+    def evidence_hash(self) -> str:
+        """Hash only Microboost material evidence, never P1's broad hash."""
+
+        payload = {
+            "active_block_id": self.block_id,
+            "detected": self.detected,
+            "direction": self.direction,
+            "effective_ticks": self.effective_ticks,
+            "source_family": self.source_family,
+            "source_stage": self.source_stage,
+            "strength": self.strength,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class MicroboostPulseEngine:
@@ -182,11 +205,17 @@ class MicroboostPulseEngine:
         symbol: str,
         *,
         policy: MicroboostPulsePolicy | None = None,
+        initial_state: MicroboostState | None = None,
     ) -> None:
         self.policy = policy or MicroboostPulsePolicy()
-        self._state = MicroboostState(
+        normalized_symbol = symbol.upper()
+        if initial_state is not None and (
+            initial_state.strategy_lifecycle_id != strategy_lifecycle_id or initial_state.symbol != normalized_symbol
+        ):
+            raise ValueError("MICROBOOST_RECOVERY_STATE_IDENTITY_MISMATCH")
+        self._state = initial_state or MicroboostState(
             strategy_lifecycle_id=strategy_lifecycle_id,
-            symbol=symbol.upper(),
+            symbol=normalized_symbol,
         )
         self._pulses: list[MicroboostPulseEvent] = []
         #: Signatures already pulsed within the *current* pulse generation.
@@ -215,14 +244,12 @@ class MicroboostPulseEngine:
         Returns an empty tuple for the common case: a sticky snapshot that
         carries the state forward without changing it.
         """
-        if event_id in self._seen_event_ids:
-            # A redelivered emission is not new evidence.
+        observation = _Observation(payload, fallback_time=event_time_utc)
+        if event_id in self._seen_event_ids or self._already_observed(observation, event_id):
+            # A redelivered emission is not new evidence, including after a
+            # process restart when only the durable cursor survives.
             return ()
         self._seen_event_ids.add(event_id)
-
-        observation = _Observation(payload, fallback_time=event_time_utc)
-        if self._state.last_pulse_at_utc is not None and observation.occurred_at < self._state.last_pulse_at_utc:
-            return ()
 
         emitted: list[MicroboostPulseEvent] = []
         expiry = self._expire_if_due(observation.occurred_at, event_id, observation)
@@ -234,10 +261,39 @@ class MicroboostPulseEngine:
             if withdrawal is not None:
                 emitted.append(withdrawal)
             self._note_snapshot(observation, carried=False)
+            self._advance_cursor(observation, event_id)
             return tuple(emitted)
 
         emitted.extend(self._ingest_detected(observation, event_id))
+        self._advance_cursor(observation, event_id)
         return tuple(emitted)
+
+    def ingest_canonical(self, emission: CanonicalPressureEmissionV3) -> tuple[MicroboostPulseEvent, ...]:
+        """Fold one canonical P1 emission without treating its hash as a pulse."""
+
+        direction = (
+            emission.pressure.block_direction
+            or emission.pressure.raw_direction
+            or emission.pressure.candidate_direction
+        )
+        snapshot = emission.microboost_snapshot
+        payload = {
+            "microboost_detected": snapshot.detected is True,
+            "block_direction": direction,
+            "block_effective_ticks": emission.pressure.effective_ticks,
+            "pressure_strength": snapshot.strength or snapshot.level,
+            "source_stage": emission.pressure.source_stage,
+            "source_family": emission.pressure.source_family,
+            "source_clean_block_id": emission.source_lineage.source_clean_block_id,
+            "block_latest_end_utc": emission.time.event_time_utc,
+            "source_deployment_id": emission.deployment.deployment_id,
+            "source_commit_sha": emission.deployment.commit_sha,
+        }
+        return self.ingest(
+            payload,
+            event_id=emission.identity.transport_event_id,
+            event_time_utc=emission.time.event_time_utc,
+        )
 
     def expire_due(self, as_of_utc: datetime, *, event_id: str = "ttl-sweep") -> MicroboostPulseEvent | None:
         """Expire an active pulse whose TTL lapsed with no new confirmation."""
@@ -309,6 +365,24 @@ class MicroboostPulseEngine:
             )
         )
 
+    def _already_observed(self, observation: _Observation, event_id: str) -> bool:
+        state = self._state
+        if state.last_observed_at_utc is None or state.last_source_event_id is None:
+            return False
+        return (observation.occurred_at, event_id) <= (
+            state.last_observed_at_utc,
+            state.last_source_event_id,
+        )
+
+    def _advance_cursor(self, observation: _Observation, event_id: str) -> None:
+        self._state = self._state.model_copy(
+            update={
+                "last_observed_at_utc": observation.occurred_at,
+                "last_source_event_id": event_id,
+                "evidence_hash": observation.evidence_hash,
+            }
+        )
+
     def _expire_if_due(
         self,
         as_of_utc: datetime,
@@ -348,15 +422,25 @@ class MicroboostPulseEngine:
         moment = occurred_at or (observation.occurred_at if observation else datetime.now(UTC))
         signature = self._signature(observation) if observation else f"{transition}|TTL"
         dedupe_key = f"{state.strategy_lifecycle_id}|{transition}|{signature}|{state.state_version}"
+        evidence_hash = (
+            observation.evidence_hash
+            if observation is not None
+            else state.evidence_hash
+            or "sha256:"
+            + hashlib.sha256(f"{state.strategy_lifecycle_id}|{transition}|{moment.isoformat()}".encode()).hexdigest()
+        )
         pulse = MicroboostPulseEvent(
             pulse_event_id="5scr-pulse:"
             + hashlib.sha256(f"{dedupe_key}|{moment.isoformat()}".encode()).hexdigest()[:32],
             strategy_lifecycle_id=state.strategy_lifecycle_id,
             symbol=state.symbol,
             transition=transition,
-            direction=resolved_direction if resolved_direction in {"BUY", "SELL"} else None,
+            direction=(cast(PulseDirection, resolved_direction) if resolved_direction in {"BUY", "SELL"} else None),
             occurred_at_utc=moment,
             source_event_ids=(event_id,),
+            evidence_hash=evidence_hash,
+            source_deployment_id=observation.source_deployment_id if observation else None,
+            source_commit_sha=observation.source_commit_sha if observation else None,
             source_stage=observation.source_stage if observation else None,
             source_family=observation.source_family if observation else None,
             active_block_id=observation.block_id if observation else state.active_block_id,
@@ -417,7 +501,10 @@ class MicroboostPulseEngine:
 
     def _note_snapshot(self, observation: _Observation, *, carried: bool) -> None:
         state = self._state
-        updates: dict[str, Any] = {"observed_snapshot_count": state.observed_snapshot_count + 1}
+        updates: dict[str, Any] = {
+            "observed_snapshot_count": state.observed_snapshot_count + 1,
+            "state_version": state.state_version + 1,
+        }
         if carried:
             updates["carried_snapshot_count"] = state.carried_snapshot_count + 1
             updates["last_confirmed_at_utc"] = observation.occurred_at
