@@ -38,6 +38,11 @@ MICROBOOST_V1_SHADOW_ONLY_FLAG = "STRATEGY_5SCR_MICROBOOST_V1_SHADOW_ONLY"
 
 _REQUIRED_TABLES = frozenset({PULSE_EVENT_TABLE, STATE_TABLE})
 _REQUIRED_CONSTRAINT_DEFINITIONS: dict[str, tuple[str, str, str]] = {
+    "strategy_5scr_microboost_pulse_events_v1_pkey": (
+        PULSE_EVENT_TABLE,
+        "p",
+        "primary key (pulse_event_id)",
+    ),
     "fk_5scr_microboost_pulse_lifecycle_v1": (
         PULSE_EVENT_TABLE,
         "f",
@@ -72,6 +77,11 @@ _REQUIRED_CONSTRAINT_DEFINITIONS: dict[str, tuple[str, str, str]] = {
         PULSE_EVENT_TABLE,
         "c",
         "check ((execution_authority is false))",
+    ),
+    "strategy_5scr_microboost_states_v1_pkey": (
+        STATE_TABLE,
+        "p",
+        "primary key (strategy_lifecycle_id)",
     ),
     "fk_5scr_microboost_state_lifecycle_v1": (
         STATE_TABLE,
@@ -112,17 +122,19 @@ _REQUIRED_CONSTRAINT_DEFINITIONS: dict[str, tuple[str, str, str]] = {
     ),
 }
 _REQUIRED_CONSTRAINTS = frozenset(_REQUIRED_CONSTRAINT_DEFINITIONS)
-_REQUIRED_INDEXES: dict[str, tuple[str, bool, tuple[str, ...]]] = {
-    "uq_5scr_microboost_pulse_dedupe_v1": (PULSE_EVENT_TABLE, True, ("dedupe_key",)),
+_REQUIRED_INDEXES: dict[str, tuple[str, bool, tuple[str, ...], str]] = {
+    "uq_5scr_microboost_pulse_dedupe_v1": (PULSE_EVENT_TABLE, True, ("dedupe_key",), ""),
     "ix_5scr_microboost_pulse_lifecycle_time_v1": (
         PULSE_EVENT_TABLE,
         False,
         ("strategy_lifecycle_id", "occurred_at", "pulse_event_id"),
+        "",
     ),
     "ix_5scr_microboost_state_status_v1": (
         STATE_TABLE,
         False,
         ("state", "last_observed_at", "strategy_lifecycle_id"),
+        "",
     ),
 }
 
@@ -346,7 +358,8 @@ class StrategyMicroboostV1Repository:
             """
             SELECT table_cls.relname AS table_name,
                    index_cls.relname AS index_name,
-                   idx.indisunique,
+                   idx.indisunique, idx.indisvalid, idx.indisready,
+                   pg_get_expr(idx.indpred, idx.indrelid) AS predicate,
                    ARRAY(
                        SELECT attr.attname
                        FROM unnest(idx.indkey) WITH ORDINALITY key(attnum, position)
@@ -413,14 +426,20 @@ class StrategyMicroboostV1Repository:
             row = indexes.get(name)
             if row is None:
                 continue
-            table, unique, columns_expected = expected
+            table, unique, columns_expected, predicate_expected = expected
             columns_actual = tuple(str(value) for value in (_row_value(row, "columns") or ()))
             if str(_row_value(row, "table_name")) != table:
                 invalid_indexes.append(f"{name}:table")
             elif bool(_row_value(row, "indisunique")) != unique:
                 invalid_indexes.append(f"{name}:unique")
+            elif not bool(_row_value(row, "indisvalid")):
+                invalid_indexes.append(f"{name}:not_valid")
+            elif not bool(_row_value(row, "indisready")):
+                invalid_indexes.append(f"{name}:not_ready")
             elif columns_actual != columns_expected:
                 invalid_indexes.append(f"{name}:columns")
+            elif _normalize_sql(_row_value(row, "predicate")) != predicate_expected:
+                invalid_indexes.append(f"{name}:predicate")
 
         return MicroboostV1SchemaStatus(
             missing_tables=tuple(sorted(_REQUIRED_TABLES - present_tables)),

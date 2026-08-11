@@ -439,3 +439,49 @@ async def test_readiness_rejects_missing_true_and_not_valid_constraint(
         await postgres.execute(f"ALTER TABLE {STATE_TABLE} ADD CONSTRAINT {constraint} CHECK ({canonical})")
 
     assert (await repository.schema_status()).ready
+
+
+async def test_readiness_rejects_missing_and_wrong_primary_key_type(
+    postgres: PoolBackedPostgres,
+) -> None:
+    repository = _repository(postgres)
+    constraint = "strategy_5scr_microboost_states_v1_pkey"
+
+    await postgres.execute(f"ALTER TABLE {STATE_TABLE} DROP CONSTRAINT {constraint}")
+    try:
+        missing = await repository.schema_status()
+        assert constraint in missing.missing_constraints
+
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} ADD CONSTRAINT {constraint} UNIQUE (strategy_lifecycle_id)")
+        wrong_type = await repository.schema_status()
+        assert f"{constraint}:type" in wrong_type.invalid_constraints
+    finally:
+        await postgres.execute(f"ALTER TABLE {STATE_TABLE} DROP CONSTRAINT IF EXISTS {constraint}")
+        await postgres.execute(
+            f"ALTER TABLE {STATE_TABLE} ADD CONSTRAINT {constraint} PRIMARY KEY (strategy_lifecycle_id)"
+        )
+
+    assert (await repository.schema_status()).ready
+
+
+async def test_readiness_rejects_missing_and_partial_dedupe_index(
+    postgres: PoolBackedPostgres,
+) -> None:
+    repository = _repository(postgres)
+    index = "uq_5scr_microboost_pulse_dedupe_v1"
+
+    await postgres.execute(f"DROP INDEX {index}")
+    try:
+        missing = await repository.schema_status()
+        assert index in missing.missing_indexes
+
+        await postgres.execute(
+            f"CREATE UNIQUE INDEX {index} ON {PULSE_EVENT_TABLE} (dedupe_key) WHERE transition = 'FORMED'"
+        )
+        partial = await repository.schema_status()
+        assert f"{index}:predicate" in partial.invalid_indexes
+    finally:
+        await postgres.execute(f"DROP INDEX IF EXISTS {index}")
+        await postgres.execute(f"CREATE UNIQUE INDEX {index} ON {PULSE_EVENT_TABLE} (dedupe_key)")
+
+    assert (await repository.schema_status()).ready
