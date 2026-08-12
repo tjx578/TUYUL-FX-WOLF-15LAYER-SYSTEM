@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from analysis.strategy_5scr_directional_thesis_v1 import (
     DirectionalThesisBuildArtifact,
+    active_structural_invalidation_reason,
     build_directional_thesis_proofs,
     candle_evidence_hash,
     candle_material_hash,
@@ -833,3 +834,521 @@ def test_closure_preserves_direction_and_later_opposite_uses_new_identity() -> N
     assert sell.semantic_identity_hash != buy.semantic_identity_hash
     with pytest.raises(ValidationError):
         buy.strategy_direction = "SELL"
+
+
+def test_latest_h1_material_break_is_authoritative_but_neutral_churn_is_not() -> None:
+    context = _context("BUY_ONLY")
+    h1, m15 = _candles("BUY")
+    neutral = (
+        _candle(
+            row_id=201,
+            timeframe="H1",
+            open_time=START + timedelta(hours=2),
+            open_price=1.1020,
+            high=1.1040,
+            low=1.0980,
+            close=1.1025,
+        ),
+        _candle(
+            row_id=202,
+            timeframe="H1",
+            open_time=START + timedelta(hours=3),
+            open_price=1.1025,
+            high=1.1045,
+            low=1.0985,
+            close=1.1020,
+        ),
+    )
+
+    baseline = _artifact(context, "BUY", h1=h1, m15=m15)
+    with_neutral = _artifact(
+        context,
+        "BUY",
+        h1=(*h1, *neutral),
+        m15=m15,
+        decision=START + timedelta(hours=4),
+    )
+
+    assert with_neutral.h1_proof.material_proof_hash == baseline.h1_proof.material_proof_hash
+    assert with_neutral.semantic_identity_hash == baseline.semantic_identity_hash
+
+
+def test_later_opposite_h1_break_supersedes_requested_direction() -> None:
+    context = _context("BUY_ONLY")
+    h1, m15 = _candles("BUY")
+    later_opposite = (
+        _candle(
+            row_id=211,
+            timeframe="H1",
+            open_time=START + timedelta(hours=2),
+            open_price=1.1020,
+            high=1.1040,
+            low=1.1010,
+            close=1.1025,
+        ),
+        _candle(
+            row_id=212,
+            timeframe="H1",
+            open_time=START + timedelta(hours=3),
+            open_price=1.1025,
+            high=1.1030,
+            low=1.0980,
+            close=1.0990,
+        ),
+    )
+
+    result = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(
+            context,
+            "BUY",
+            h1=(*h1, *later_opposite),
+            m15=m15,
+            decision=START + timedelta(hours=4),
+        ),
+    )
+
+    assert (result.status, result.reason_code, result.artifact) == (
+        "WAIT",
+        "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK",
+        None,
+    )
+
+
+def test_newer_same_direction_h1_break_cannot_reuse_older_m15_proof() -> None:
+    context = _context("BUY_ONLY")
+    h1, m15 = _candles("BUY")
+    later_buy = (
+        _candle(
+            row_id=221,
+            timeframe="H1",
+            open_time=START + timedelta(hours=2),
+            open_price=1.1020,
+            high=1.1040,
+            low=1.1010,
+            close=1.1025,
+        ),
+        _candle(
+            row_id=222,
+            timeframe="H1",
+            open_time=START + timedelta(hours=3),
+            open_price=1.1025,
+            high=1.1060,
+            low=1.1020,
+            close=1.1050,
+        ),
+    )
+
+    result = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(
+            context,
+            "BUY",
+            h1=(*h1, *later_buy),
+            m15=m15,
+            decision=START + timedelta(hours=4),
+        ),
+    )
+
+    assert (result.status, result.reason_code, result.artifact) == (
+        "WAIT",
+        "M15_ORDERED_BREAK_COMPLETION_MISSING",
+        None,
+    )
+
+
+def test_m15_proof_survives_neutral_closes_but_not_a_close_through_level() -> None:
+    context = _context("BUY_ONLY")
+    h1, m15 = _candles("BUY")
+    neutral = _candle(
+        row_id=231,
+        timeframe="M15",
+        open_time=START + timedelta(hours=2, minutes=30),
+        open_price=1.1016,
+        high=1.1020,
+        low=1.1011,
+        close=1.1014,
+    )
+    invalidator = _candle(
+        row_id=232,
+        timeframe="M15",
+        open_time=START + timedelta(hours=2, minutes=45),
+        open_price=1.1014,
+        high=1.1018,
+        low=1.1005,
+        close=1.1010,
+    )
+
+    baseline = _artifact(context, "BUY", h1=h1, m15=m15)
+    still_live = _artifact(context, "BUY", h1=h1, m15=(*m15, neutral))
+    invalidated = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(context, "BUY", h1=h1, m15=(*m15, neutral, invalidator)),
+    )
+
+    assert still_live.m15_proof.material_proof_hash == baseline.m15_proof.material_proof_hash
+    assert still_live.semantic_identity_hash == baseline.semantic_identity_hash
+    assert (invalidated.status, invalidated.reason_code, invalidated.artifact) == (
+        "WAIT",
+        "M15_STRUCTURAL_PROOF_INVALIDATED",
+        None,
+    )
+
+
+def test_fresh_m15_triple_after_failure_replaces_invalidated_proof() -> None:
+    context = _context("BUY_ONLY")
+    h1, old_m15 = _candles("BUY")
+    failed_old = _candle(
+        row_id=241,
+        timeframe="M15",
+        open_time=START + timedelta(hours=2, minutes=30),
+        open_price=1.1016,
+        high=1.1018,
+        low=1.0980,
+        close=1.0990,
+    )
+    fresh = (
+        _candle(
+            row_id=242,
+            timeframe="M15",
+            open_time=START + timedelta(hours=2, minutes=45),
+            open_price=1.0990,
+            high=1.1005,
+            low=1.0988,
+            close=1.1000,
+        ),
+        _candle(
+            row_id=243,
+            timeframe="M15",
+            open_time=START + timedelta(hours=3),
+            open_price=1.1000,
+            high=1.1015,
+            low=1.0998,
+            close=1.1010,
+        ),
+        _candle(
+            row_id=244,
+            timeframe="M15",
+            open_time=START + timedelta(hours=3, minutes=15),
+            open_price=1.1010,
+            high=1.1014,
+            low=1.1003,
+            close=1.1008,
+        ),
+    )
+
+    old = _artifact(context, "BUY", h1=h1, m15=old_m15)
+    rebuilt = _artifact(context, "BUY", h1=h1, m15=(*old_m15, failed_old, *fresh))
+
+    assert rebuilt.m15_proof.reference_candle == fresh[0]
+    assert rebuilt.m15_proof.break_candle == fresh[1]
+    assert rebuilt.m15_proof.completion_candle == fresh[2]
+    assert rebuilt.m15_proof.material_proof_hash != old.m15_proof.material_proof_hash
+    assert rebuilt.semantic_identity_hash != old.semantic_identity_hash
+
+
+def test_invalid_latest_m15_candidate_does_not_fall_back_to_older_live_level() -> None:
+    context = _context("BUY_ONLY")
+    h1, old_m15 = _candles("BUY")
+    newer = (
+        _candle(
+            row_id=251,
+            timeframe="M15",
+            open_time=START + timedelta(hours=2, minutes=30),
+            open_price=1.1016,
+            high=1.1020,
+            low=1.1012,
+            close=1.1017,
+        ),
+        _candle(
+            row_id=252,
+            timeframe="M15",
+            open_time=START + timedelta(hours=2, minutes=45),
+            open_price=1.1017,
+            high=1.1030,
+            low=1.1015,
+            close=1.1025,
+        ),
+        _candle(
+            row_id=253,
+            timeframe="M15",
+            open_time=START + timedelta(hours=3),
+            open_price=1.1025,
+            high=1.1028,
+            low=1.1018,
+            close=1.1024,
+        ),
+        _candle(
+            row_id=254,
+            timeframe="M15",
+            open_time=START + timedelta(hours=3, minutes=15),
+            open_price=1.1024,
+            high=1.1026,
+            low=1.1012,
+            close=1.1015,
+        ),
+    )
+
+    result = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(context, "BUY", h1=h1, m15=(*old_m15, *newer)),
+    )
+
+    # 1.1015 is still above the old 1.1010 break but below the newer
+    # 1.1020 break. Falling back to the old candidate would incorrectly READY.
+    assert (result.status, result.reason_code, result.artifact) == (
+        "WAIT",
+        "M15_STRUCTURAL_PROOF_INVALIDATED",
+        None,
+    )
+
+
+def test_active_liveness_uses_persisted_level_not_newer_candidate_level() -> None:
+    context = _context("BUY_ONLY")
+    h1, m15 = _candles("BUY")
+    persisted = _artifact(context, "BUY", h1=h1, m15=m15)
+    newer = (
+        _candle(
+            row_id=261,
+            timeframe="M15",
+            open_time=START + timedelta(hours=2, minutes=30),
+            open_price=1.1016,
+            high=1.1020,
+            low=1.1012,
+            close=1.1017,
+        ),
+        _candle(
+            row_id=262,
+            timeframe="M15",
+            open_time=START + timedelta(hours=2, minutes=45),
+            open_price=1.1017,
+            high=1.1030,
+            low=1.1015,
+            close=1.1025,
+        ),
+        _candle(
+            row_id=263,
+            timeframe="M15",
+            open_time=START + timedelta(hours=3),
+            open_price=1.1025,
+            high=1.1028,
+            low=1.1018,
+            close=1.1024,
+        ),
+        _candle(
+            row_id=264,
+            timeframe="M15",
+            open_time=START + timedelta(hours=3, minutes=15),
+            open_price=1.1024,
+            high=1.1026,
+            low=1.1012,
+            close=1.1015,
+        ),
+    )
+
+    candidate = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(context, "BUY", h1=h1, m15=(*m15, *newer)),
+    )
+    active_reason = active_structural_invalidation_reason(
+        h1_proof=persisted.h1_proof,
+        m15_proof=persisted.m15_proof,
+        h1_candles=h1,
+        m15_candles=(*m15, *newer),
+        decision_at_utc=DECISION,
+    )
+
+    assert (candidate.status, candidate.reason_code) == ("WAIT", "M15_STRUCTURAL_PROOF_INVALIDATED")
+    assert candidate.artifact is None
+    assert persisted.m15_proof.break_level == 1.1010
+    assert newer[-1].close == 1.1015
+    assert active_reason is None
+
+
+def test_active_liveness_cannot_be_masked_by_successor_pressure_or_direction() -> None:
+    context = _context("BOTH_CONDITIONAL")
+    h1, m15 = _candles("BUY")
+    persisted = _artifact(context, "BUY", route=_route(context, "BUY"))
+    opposite_h1 = (
+        _candle(
+            row_id=271,
+            timeframe="H1",
+            open_time=START + timedelta(hours=2),
+            open_price=1.1020,
+            high=1.1040,
+            low=1.1010,
+            close=1.1025,
+        ),
+        _candle(
+            row_id=272,
+            timeframe="H1",
+            open_time=START + timedelta(hours=3),
+            open_price=1.1025,
+            high=1.1030,
+            low=1.0980,
+            close=1.0990,
+        ),
+    )
+    successor = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(
+            context,
+            "SELL",
+            pressure=_pressure(raw_direction="SELL", valid_until=START + timedelta(minutes=1)),
+            route=_route(context, "SELL"),
+            decision=DECISION,
+        ),
+    )
+
+    reason = active_structural_invalidation_reason(
+        h1_proof=persisted.h1_proof,
+        m15_proof=persisted.m15_proof,
+        h1_candles=(*h1, *opposite_h1),
+        m15_candles=m15,
+        decision_at_utc=DECISION,
+    )
+
+    assert (successor.status, successor.reason_code) == ("REJECTED", "PRESSURE_AUTHORITY_EXPIRED")
+    assert reason == "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK"
+
+
+def test_active_liveness_a_to_b_to_a_does_not_resurrect_old_identity() -> None:
+    context = _context("BOTH_CONDITIONAL")
+    original_h1, original_m15 = _candles("BUY")
+    persisted = _artifact(context, "BUY", route=_route(context, "BUY"))
+    counter_then_return = (
+        _candle(
+            row_id=275,
+            timeframe="H1",
+            open_time=START + timedelta(hours=2),
+            open_price=1.1020,
+            high=1.1040,
+            low=1.1010,
+            close=1.1025,
+        ),
+        _candle(
+            row_id=276,
+            timeframe="H1",
+            open_time=START + timedelta(hours=3),
+            open_price=1.1025,
+            high=1.1030,
+            low=1.0980,
+            close=1.0990,
+        ),
+        _candle(
+            row_id=277,
+            timeframe="H1",
+            open_time=START + timedelta(hours=4),
+            open_price=1.0990,
+            high=1.1040,
+            low=1.0985,
+            close=1.1035,
+        ),
+    )
+
+    reason = active_structural_invalidation_reason(
+        h1_proof=persisted.h1_proof,
+        m15_proof=persisted.m15_proof,
+        h1_candles=(*original_h1, *counter_then_return),
+        m15_candles=original_m15,
+        decision_at_utc=START + timedelta(hours=5),
+    )
+
+    assert reason == "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK"
+
+
+def test_active_liveness_rejects_future_or_drifted_candle_authority() -> None:
+    context = _context("BUY_ONLY")
+    h1, m15 = _candles("BUY")
+    persisted = _artifact(context, "BUY")
+    future = _candle(
+        row_id=281,
+        timeframe="M15",
+        open_time=DECISION,
+        open_price=1.1016,
+        high=1.1020,
+        low=1.1010,
+        close=1.1015,
+    )
+    drifted_payload = future.model_dump(mode="python")
+    drifted_payload["close"] = 1.1017
+    drifted = ClosedCandleAuthorityRefV1.model_construct(**drifted_payload)
+
+    future_reason = active_structural_invalidation_reason(
+        h1_proof=persisted.h1_proof,
+        m15_proof=persisted.m15_proof,
+        h1_candles=h1,
+        m15_candles=(*m15, future),
+        decision_at_utc=DECISION,
+    )
+    drift_reason = active_structural_invalidation_reason(
+        h1_proof=persisted.h1_proof,
+        m15_proof=persisted.m15_proof,
+        h1_candles=h1,
+        m15_candles=(*m15, drifted),
+        decision_at_utc=DECISION + timedelta(minutes=15),
+    )
+
+    assert future_reason == "FUTURE_CANDLE_LEAKAGE"
+    assert drift_reason == "CANDLE_MATERIAL_HASH_DRIFT"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("reference_level", 1.0990),
+        ("confirmation_close", 1.1000),
+    ),
+)
+def test_h1_contract_rejects_self_consistent_false_structural_claim(field: str, value: float) -> None:
+    context = _context("BUY_ONLY")
+    proof = _artifact(context, "BUY").h1_proof
+    payload = proof.model_dump(mode="python")
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        type(proof).model_validate(payload)
+
+
+def test_h1_contract_rejects_direction_without_directional_break() -> None:
+    context = _context("BUY_ONLY")
+    proof = _artifact(context, "BUY").h1_proof
+    payload = proof.model_dump(mode="python")
+    payload["strategy_direction"] = "SELL"
+    payload["reference_level"] = proof.anchor_candle.low
+
+    with pytest.raises(ValidationError):
+        type(proof).model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "value"),
+    (
+        ("break_level", 1.0990),
+        ("completion_kind", "ACCEPTANCE"),
+    ),
+)
+def test_m15_contract_rejects_false_level_or_completion_claim(mutation: str, value: object) -> None:
+    context = _context("BUY_ONLY")
+    proof = _artifact(context, "BUY").m15_proof
+    payload = proof.model_dump(mode="python")
+    payload[mutation] = value
+
+    with pytest.raises(ValidationError):
+        type(proof).model_validate(payload)
+
+
+def test_m15_contract_rejects_break_or_completion_that_does_not_close_beyond_level() -> None:
+    context = _context("BUY_ONLY")
+    proof = _artifact(context, "BUY").m15_proof
+    break_payload = proof.break_candle.model_dump(mode="python")
+    break_payload["close"] = proof.break_level
+    break_candle = _rehash_candle(break_payload)
+    completion_payload = proof.completion_candle.model_dump(mode="python")
+    completion_payload["close"] = proof.break_level
+    completion = _rehash_candle(completion_payload)
+
+    with pytest.raises(ValidationError):
+        type(proof).model_validate({**proof.model_dump(mode="python"), "break_candle": break_candle})
+    with pytest.raises(ValidationError):
+        type(proof).model_validate({**proof.model_dump(mode="python"), "completion_candle": completion})

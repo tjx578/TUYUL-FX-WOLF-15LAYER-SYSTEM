@@ -16,10 +16,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
+from pydantic import ValidationError
+
 from analysis.strategy_5scr_context_epoch_v1 import context_evidence_hash, material_context_hash
 from analysis.strategy_5scr_directional_thesis_v1 import (
     DirectionalThesisBuildArtifact,
+    active_structural_invalidation_reason,
     build_directional_thesis_proofs,
+    candle_evidence_hash,
+    candle_material_hash,
     close_directional_thesis,
 )
 from analysis.strategy_5scr_structural_proof_provider_v1 import (
@@ -439,6 +444,7 @@ _REQUIRED_CONSTRAINTS: dict[str, _ConstraintContract] = {
         "pressure_reference_direction",
         "strategy_direction",
         "is not null",
+        "counter_pressure_proof_hash is null",
     ),
     "ck_5scr_thesis_pressure_direction_v1": _constraint(
         THESIS_TABLE, "c", "pressure_reference_direction is null", "buy", "sell"
@@ -490,7 +496,7 @@ _REQUIRED_CONSTRAINT_DEFINITION_HASHES = {
     "ck_5scr_thesis_domain_direction_v1": "026284cbe0cab5d988ef6db31825795800ca61609ad4a7d39291bd208e253480",
     "ck_5scr_thesis_domain_v1": "eb57c4dd498ab0485850810cd7273f1fa9622c145f997878c6c248efe61d883b",
     "ck_5scr_thesis_identity_v1": "c284f43f882dd039032a246e9f6cc857fdaa4a29cb3b8588d7076553f5032b04",
-    "ck_5scr_thesis_pressure_authority_v1": "7f560c9873d48925c1f7cc0ce6a8ed390b8d4eeac9287d09106c7289479c4320",
+    "ck_5scr_thesis_pressure_authority_v1": "adaffde060bc850640b977b1cc9420992f4f15ee021f2393c0ef17d64ece3d86",
     "ck_5scr_thesis_pressure_direction_v1": "667f474b25deb7f86f58c899702b4fbd06e3cc6d8019daa3bad6f7e358c75121",
     "ck_5scr_thesis_pressure_enum_v1": "b8ca4773ce10044a0712d8526df724d0b70f3602bb8177b0a14bf9e7402b0d63",
     "ck_5scr_thesis_route_hash_v1": "91fa91dc42c72e0b4d5a6124e494e1bc80c0fa913fca4dde0d468135b2693b1b",
@@ -765,11 +771,207 @@ def _context_from_row(row: Any) -> StrategyContextEpochV1:
     return epoch
 
 
+def _proof_hash(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        dict(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _verify_candle(candle: ClosedCandleAuthorityRefV1, *, proof_kind: str) -> None:
+    if candle.material_candle_hash != candle_material_hash(candle):
+        raise DirectionalThesisV1IntegrityError(f"{proof_kind}_PROOF_CANDLE_MATERIAL_HASH_DRIFT")
+    if candle.candle_evidence_id != candle_evidence_hash(candle):
+        raise DirectionalThesisV1IntegrityError(f"{proof_kind}_PROOF_CANDLE_EVIDENCE_ID_DRIFT")
+
+
+def _durable_value_matches(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, datetime):
+        return isinstance(actual, datetime) and _utc(actual, "durable_timestamp") == expected
+    if isinstance(expected, tuple):
+        return _json_tuple(actual) == expected
+    return actual == expected
+
+
+def _verify_durable_columns(row: Any, expected: Mapping[str, Any], *, proof_kind: str) -> None:
+    for column, value in expected.items():
+        if not _durable_value_matches(_row_value(row, column), value):
+            raise DirectionalThesisV1IntegrityError(f"{proof_kind}_PROOF_PAYLOAD_DRIFT:{column}")
+
+
+def _h1_from_row(row: Any) -> H1StructureProofV1:
+    payload = _json_value(_row_value(row, "evidence_payload"))
+    if not isinstance(payload, Mapping):
+        raise DirectionalThesisV1IntegrityError("H1_PROOF_PAYLOAD_INVALID")
+    try:
+        proof = H1StructureProofV1.model_validate(payload)
+    except ValidationError as exc:
+        raise DirectionalThesisV1IntegrityError("H1_PROOF_PAYLOAD_INVALID") from exc
+    _verify_candle(proof.anchor_candle, proof_kind="H1")
+    _verify_candle(proof.confirmation_candle, proof_kind="H1")
+    material_hash = _proof_hash(
+        {
+            "context_epoch_id": proof.context_epoch_id,
+            "strategy_direction": proof.strategy_direction,
+            "anchor_material_hash": proof.anchor_candle.material_candle_hash,
+            "confirmation_material_hash": proof.confirmation_candle.material_candle_hash,
+            "reference_level": proof.reference_level,
+            "structure_event": proof.structure_event,
+            "rule_version": proof.rule_version,
+        }
+    )
+    evidence_hash = _proof_hash(
+        {
+            "context_epoch_id": proof.context_epoch_id,
+            "strategy_direction": proof.strategy_direction,
+            "anchor_material_hash": proof.anchor_candle.material_candle_hash,
+            "confirmation_material_hash": proof.confirmation_candle.material_candle_hash,
+            "reference_level": proof.reference_level,
+            "structure_event": proof.structure_event,
+            "rule_version": proof.rule_version,
+            "anchor": proof.anchor_candle.model_dump(mode="json"),
+            "confirmation": proof.confirmation_candle.model_dump(mode="json"),
+            "decision_at_utc": proof.decision_at_utc,
+        }
+    )
+    expected_id = "5scr-h1-proof:" + material_hash.removeprefix("sha256:")[:32]
+    expected_dedupe = f"{proof.context_epoch_id}|{proof.strategy_direction}|H1|{material_hash}"
+    if proof.material_proof_hash != material_hash:
+        raise DirectionalThesisV1IntegrityError("H1_PROOF_MATERIAL_HASH_DRIFT")
+    if proof.evidence_hash != evidence_hash:
+        raise DirectionalThesisV1IntegrityError("H1_PROOF_EVIDENCE_HASH_DRIFT")
+    if proof.h1_proof_id != expected_id or proof.semantic_dedupe_key != expected_dedupe:
+        raise DirectionalThesisV1IntegrityError("H1_PROOF_IDENTITY_DRIFT")
+    if proof.confirmation_close != proof.confirmation_candle.close:
+        raise DirectionalThesisV1IntegrityError("H1_PROOF_CONFIRMATION_CLOSE_DRIFT")
+    _verify_durable_columns(
+        row,
+        {
+            "h1_proof_id": proof.h1_proof_id,
+            "strategy_lifecycle_id": proof.strategy_lifecycle_id,
+            "context_epoch_id": proof.context_epoch_id,
+            "symbol": proof.symbol,
+            "strategy_direction": proof.strategy_direction,
+            "structure_event": proof.structure_event,
+            "anchor_candle_id": proof.anchor_candle.candle_evidence_id,
+            "confirmation_candle_id": proof.confirmation_candle.candle_evidence_id,
+            "reference_level": proof.reference_level,
+            "confirmation_close": proof.confirmation_close,
+            "confirmed_at": proof.confirmed_at_utc,
+            "decision_at": proof.decision_at_utc,
+            "coverage_start_at": proof.coverage_start_at_utc,
+            "coverage_end_at": proof.coverage_end_at_utc,
+            "source_candle_ids": proof.source_candle_ids,
+            "source_content_hashes": proof.source_content_hashes,
+            "coverage_complete": proof.coverage_complete,
+            "structural_authority": proof.structural_authority,
+            "material_proof_hash": proof.material_proof_hash,
+            "evidence_hash": proof.evidence_hash,
+            "semantic_dedupe_key": proof.semantic_dedupe_key,
+            "rule_version": proof.rule_version,
+            "execution_authority": proof.execution_authority,
+        },
+        proof_kind="H1",
+    )
+    return proof
+
+
+def _m15_from_row(row: Any) -> M15StructuralProofV1:
+    payload = _json_value(_row_value(row, "evidence_payload"))
+    if not isinstance(payload, Mapping):
+        raise DirectionalThesisV1IntegrityError("M15_PROOF_PAYLOAD_INVALID")
+    try:
+        proof = M15StructuralProofV1.model_validate(payload)
+    except ValidationError as exc:
+        raise DirectionalThesisV1IntegrityError("M15_PROOF_PAYLOAD_INVALID") from exc
+    for candle in (proof.reference_candle, proof.break_candle, proof.completion_candle):
+        _verify_candle(candle, proof_kind="M15")
+    material_hash = _proof_hash(
+        {
+            "context_epoch_id": proof.context_epoch_id,
+            "h1_proof_id": proof.h1_proof_id,
+            "strategy_direction": proof.strategy_direction,
+            "reference_material_hash": proof.reference_candle.material_candle_hash,
+            "break_material_hash": proof.break_candle.material_candle_hash,
+            "completion_material_hash": proof.completion_candle.material_candle_hash,
+            "break_level": proof.break_level,
+            "completion_kind": proof.completion_kind,
+            "rule_version": proof.rule_version,
+        }
+    )
+    evidence_hash = _proof_hash(
+        {
+            "context_epoch_id": proof.context_epoch_id,
+            "h1_proof_id": proof.h1_proof_id,
+            "strategy_direction": proof.strategy_direction,
+            "reference_material_hash": proof.reference_candle.material_candle_hash,
+            "break_material_hash": proof.break_candle.material_candle_hash,
+            "completion_material_hash": proof.completion_candle.material_candle_hash,
+            "break_level": proof.break_level,
+            "completion_kind": proof.completion_kind,
+            "rule_version": proof.rule_version,
+            "reference": proof.reference_candle.model_dump(mode="json"),
+            "break": proof.break_candle.model_dump(mode="json"),
+            "completion": proof.completion_candle.model_dump(mode="json"),
+            "decision_at_utc": proof.decision_at_utc,
+        }
+    )
+    expected_id = "5scr-m15-proof:" + material_hash.removeprefix("sha256:")[:32]
+    expected_dedupe = f"{proof.context_epoch_id}|{proof.strategy_direction}|M15|{material_hash}"
+    if proof.material_proof_hash != material_hash:
+        raise DirectionalThesisV1IntegrityError("M15_PROOF_MATERIAL_HASH_DRIFT")
+    if proof.evidence_hash != evidence_hash:
+        raise DirectionalThesisV1IntegrityError("M15_PROOF_EVIDENCE_HASH_DRIFT")
+    if proof.m15_proof_id != expected_id or proof.semantic_dedupe_key != expected_dedupe:
+        raise DirectionalThesisV1IntegrityError("M15_PROOF_IDENTITY_DRIFT")
+    _verify_durable_columns(
+        row,
+        {
+            "m15_proof_id": proof.m15_proof_id,
+            "h1_proof_id": proof.h1_proof_id,
+            "strategy_lifecycle_id": proof.strategy_lifecycle_id,
+            "context_epoch_id": proof.context_epoch_id,
+            "symbol": proof.symbol,
+            "strategy_direction": proof.strategy_direction,
+            "reference_candle_id": proof.reference_candle.candle_evidence_id,
+            "break_candle_id": proof.break_candle.candle_evidence_id,
+            "completion_candle_id": proof.completion_candle.candle_evidence_id,
+            "break_level": proof.break_level,
+            "h1_confirmed_at": proof.h1_confirmed_at_utc,
+            "break_close_at": proof.break_close_at_utc,
+            "completed_at": proof.completed_at_utc,
+            "completion_kind": proof.completion_kind,
+            "decision_at": proof.decision_at_utc,
+            "coverage_start_at": proof.coverage_start_at_utc,
+            "coverage_end_at": proof.coverage_end_at_utc,
+            "source_candle_ids": proof.source_candle_ids,
+            "source_content_hashes": proof.source_content_hashes,
+            "coverage_complete": proof.coverage_complete,
+            "structural_authority": proof.structural_authority,
+            "ordering_valid": proof.ordering_valid,
+            "material_proof_hash": proof.material_proof_hash,
+            "evidence_hash": proof.evidence_hash,
+            "semantic_dedupe_key": proof.semantic_dedupe_key,
+            "rule_version": proof.rule_version,
+            "execution_authority": proof.execution_authority,
+        },
+        proof_kind="M15",
+    )
+    return proof
+
+
 def _thesis_from_row(row: Any) -> DirectionalThesisV1:
     payload = _json_value(_row_value(row, "payload"))
     if not isinstance(payload, Mapping):
         raise DirectionalThesisV1IntegrityError("DIRECTIONAL_THESIS_PAYLOAD_INVALID")
-    thesis = DirectionalThesisV1.model_validate(payload)
+    try:
+        thesis = DirectionalThesisV1.model_validate(payload)
+    except ValidationError as exc:
+        raise DirectionalThesisV1IntegrityError("DIRECTIONAL_THESIS_PAYLOAD_INVALID") from exc
     immutable = {
         "strategy_thesis_id": thesis.strategy_thesis_id,
         "strategy_lifecycle_id": thesis.strategy_lifecycle_id,
@@ -1195,17 +1397,71 @@ class Strategy5SCRDirectionalThesisV1Repository:
                     return self._result(status, evidence, thesis=closed)
                 return self._result("REJECTED", evidence, "CONTEXT_EPOCH_NOT_ACTIVE")
 
+            # Reconcile the immutable active proof chain only after the
+            # requested parent is proven to be this same active ContextEpoch,
+            # but before candidate pressure/route/direction gates.  A bogus
+            # context request must not gain authority to close the thesis.
+            if active is not None:
+                active_h1, active_m15 = await self._validate_thesis_proof_chain(
+                    connection,
+                    active,
+                )
+                liveness_reason = active_structural_invalidation_reason(
+                    h1_proof=active_h1,
+                    m15_proof=active_m15,
+                    h1_candles=evidence.h1_candles,
+                    m15_candles=evidence.m15_candles,
+                    decision_at_utc=evidence.decision_at_utc,
+                )
+                if liveness_reason in {
+                    "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK",
+                    "M15_STRUCTURAL_PROOF_INVALIDATED",
+                }:
+                    closed = await self._close_locked(
+                        connection,
+                        active,
+                        state="INVALIDATED",
+                        closed_at_utc=max(active.created_at_utc, evidence.decision_at_utc),
+                        reason=liveness_reason,
+                    )
+                    return self._result(
+                        "INVALIDATED",
+                        evidence,
+                        liveness_reason,
+                        thesis=closed,
+                    )
+                if liveness_reason is not None:
+                    status: DirectionalThesisPersistStatus = (
+                        "REJECTED" if liveness_reason == "ACTIVE_LIVENESS_DECISION_PRECEDES_PROOF" else "QUARANTINED"
+                    )
+                    return self._result(status, evidence, liveness_reason, thesis=active)
+
             build = build_directional_thesis_proofs(context=context, evidence=evidence)
             if build.status != "READY" or build.artifact is None:
                 return self._result(cast(DirectionalThesisPersistStatus, build.status), evidence, build.reason_code)
             artifact = build.artifact
 
             if active is not None:
+                await self._validate_thesis_proof_chain(
+                    connection,
+                    active,
+                    expected_artifact=(
+                        artifact if active.semantic_identity_hash == artifact.semantic_identity_hash else None
+                    ),
+                )
                 if active.semantic_identity_hash == artifact.semantic_identity_hash:
                     return self._result(
                         "DUPLICATE",
                         evidence,
                         "DIRECTIONAL_THESIS_ALREADY_PERSISTED",
+                        artifact=artifact,
+                        thesis=active,
+                    )
+                if active.strategy_direction == evidence.strategy_direction:
+                    return self._result(
+                        "NO_CHANGE",
+                        evidence,
+                        "ACTIVE_DIRECTIONAL_THESIS_RETAINED_ON_REINFORCEMENT",
                         artifact=artifact,
                         thesis=active,
                     )
@@ -1223,6 +1479,11 @@ class Strategy5SCRDirectionalThesisV1Repository:
             )
             if existing_row is not None:
                 existing = _thesis_from_row(existing_row)
+                await self._validate_thesis_proof_chain(
+                    connection,
+                    existing,
+                    expected_artifact=artifact,
+                )
                 return self._result(
                     "DUPLICATE",
                     evidence,
@@ -1407,6 +1668,97 @@ class Strategy5SCRDirectionalThesisV1Repository:
             thesis=thesis,
         )
 
+    @staticmethod
+    async def _validate_thesis_proof_chain(
+        connection: Any,
+        thesis: DirectionalThesisV1,
+        *,
+        expected_artifact: DirectionalThesisBuildArtifact | None = None,
+    ) -> tuple[H1StructureProofV1, M15StructuralProofV1]:
+        """Reconstruct every durable proof before treating a thesis as authority."""
+
+        h1_row = await connection.fetchrow(
+            f"SELECT * FROM {H1_PROOF_TABLE} WHERE h1_proof_id = $1 FOR UPDATE",
+            thesis.h1_proof_id,
+        )
+        if h1_row is None:
+            raise DirectionalThesisV1IntegrityError("H1_PROOF_DURABLE_ROW_MISSING")
+        m15_row = await connection.fetchrow(
+            f"SELECT * FROM {M15_PROOF_TABLE} WHERE m15_proof_id = $1 FOR UPDATE",
+            thesis.m15_proof_id,
+        )
+        if m15_row is None:
+            raise DirectionalThesisV1IntegrityError("M15_PROOF_DURABLE_ROW_MISSING")
+
+        h1 = _h1_from_row(h1_row)
+        m15 = _m15_from_row(m15_row)
+        expected_scope = (
+            thesis.strategy_lifecycle_id,
+            thesis.context_epoch_id,
+            thesis.symbol,
+            thesis.strategy_direction,
+            thesis.rule_version,
+        )
+        if (
+            h1.strategy_lifecycle_id,
+            h1.context_epoch_id,
+            h1.symbol,
+            h1.strategy_direction,
+            h1.rule_version,
+        ) != expected_scope:
+            raise DirectionalThesisV1IntegrityError("H1_PROOF_THESIS_SCOPE_DRIFT")
+        if (
+            m15.strategy_lifecycle_id,
+            m15.context_epoch_id,
+            m15.symbol,
+            m15.strategy_direction,
+            m15.rule_version,
+        ) != expected_scope:
+            raise DirectionalThesisV1IntegrityError("M15_PROOF_THESIS_SCOPE_DRIFT")
+        if m15.h1_proof_id != h1.h1_proof_id:
+            raise DirectionalThesisV1IntegrityError("M15_PROOF_H1_LINK_DRIFT")
+        if m15.h1_confirmed_at_utc != h1.confirmed_at_utc:
+            raise DirectionalThesisV1IntegrityError("M15_PROOF_H1_CONFIRMATION_CLOCK_DRIFT")
+
+        structural_hash = _proof_hash(
+            {
+                "context_epoch_id": thesis.context_epoch_id,
+                "direction": thesis.strategy_direction,
+                "h1_material_proof_hash": h1.material_proof_hash,
+                "m15_material_proof_hash": m15.material_proof_hash,
+                "rule_version": thesis.rule_version,
+            }
+        )
+        semantic_hash = _proof_hash(
+            {
+                "context_epoch_id": thesis.context_epoch_id,
+                "direction": thesis.strategy_direction,
+                "h1_proof_hash": h1.material_proof_hash,
+                "m15_proof_hash": m15.material_proof_hash,
+                "selected_route": thesis.selected_route,
+                "route_authorization_hash": thesis.route_authorization_hash,
+                "pressure_authority_hash": thesis.pressure_authority_hash,
+                "counter_pressure_proof_hash": thesis.counter_pressure_proof_hash,
+                "rule_version": thesis.rule_version,
+            }
+        )
+        if thesis.structural_proof_hash != structural_hash:
+            raise DirectionalThesisV1IntegrityError("DIRECTIONAL_THESIS_STRUCTURAL_PROOF_HASH_DRIFT")
+        if thesis.semantic_identity_hash != semantic_hash or thesis.strategy_thesis_id != _thesis_id(semantic_hash):
+            raise DirectionalThesisV1IntegrityError("DIRECTIONAL_THESIS_SEMANTIC_IDENTITY_DRIFT")
+
+        if expected_artifact is not None and (
+            expected_artifact.h1_proof.h1_proof_id != h1.h1_proof_id
+            or expected_artifact.h1_proof.material_proof_hash != h1.material_proof_hash
+            or expected_artifact.m15_proof.m15_proof_id != m15.m15_proof_id
+            or expected_artifact.m15_proof.h1_proof_id != h1.h1_proof_id
+            or expected_artifact.m15_proof.material_proof_hash != m15.material_proof_hash
+            or expected_artifact.structural_proof_hash != structural_hash
+            or expected_artifact.semantic_identity_hash != semantic_hash
+        ):
+            raise DirectionalThesisV1IntegrityError("DIRECTIONAL_THESIS_PROOF_CHAIN_DRIFT")
+        return h1, m15
+
     async def _insert_or_reuse_h1(self, connection: Any, proof: H1StructureProofV1) -> None:
         result = await connection.execute(
             f"""
@@ -1452,6 +1804,7 @@ class Strategy5SCRDirectionalThesisV1Repository:
             proof.semantic_dedupe_key,
             proof.h1_proof_id,
         )
+        stored = None if row is None else _h1_from_row(row)
         expected = (
             proof.h1_proof_id,
             proof.strategy_lifecycle_id,
@@ -1463,15 +1816,15 @@ class Strategy5SCRDirectionalThesisV1Repository:
         )
         actual = (
             None
-            if row is None
+            if stored is None
             else (
-                str(_row_value(row, "h1_proof_id")),
-                str(_row_value(row, "strategy_lifecycle_id")),
-                str(_row_value(row, "context_epoch_id")),
-                str(_row_value(row, "symbol")),
-                str(_row_value(row, "strategy_direction")),
-                str(_row_value(row, "material_proof_hash")),
-                str(_row_value(row, "semantic_dedupe_key")),
+                stored.h1_proof_id,
+                stored.strategy_lifecycle_id,
+                stored.context_epoch_id,
+                stored.symbol,
+                stored.strategy_direction,
+                stored.material_proof_hash,
+                stored.semantic_dedupe_key,
             )
         )
         if actual != expected:
@@ -1526,6 +1879,7 @@ class Strategy5SCRDirectionalThesisV1Repository:
             proof.semantic_dedupe_key,
             proof.m15_proof_id,
         )
+        stored = None if row is None else _m15_from_row(row)
         expected = (
             proof.m15_proof_id,
             proof.h1_proof_id,
@@ -1538,16 +1892,16 @@ class Strategy5SCRDirectionalThesisV1Repository:
         )
         actual = (
             None
-            if row is None
+            if stored is None
             else (
-                str(_row_value(row, "m15_proof_id")),
-                str(_row_value(row, "h1_proof_id")),
-                str(_row_value(row, "strategy_lifecycle_id")),
-                str(_row_value(row, "context_epoch_id")),
-                str(_row_value(row, "symbol")),
-                str(_row_value(row, "strategy_direction")),
-                str(_row_value(row, "material_proof_hash")),
-                str(_row_value(row, "semantic_dedupe_key")),
+                stored.m15_proof_id,
+                stored.h1_proof_id,
+                stored.strategy_lifecycle_id,
+                stored.context_epoch_id,
+                stored.symbol,
+                stored.strategy_direction,
+                stored.material_proof_hash,
+                stored.semantic_dedupe_key,
             )
         )
         if actual != expected:
@@ -1629,6 +1983,10 @@ class Strategy5SCRDirectionalThesisV1Repository:
         closed_at_utc: datetime,
         reason: str,
     ) -> DirectionalThesisV1:
+        await Strategy5SCRDirectionalThesisV1Repository._validate_thesis_proof_chain(
+            connection,
+            thesis,
+        )
         closed = close_directional_thesis(
             thesis,
             state=state,

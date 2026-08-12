@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from contracts.strategy_5scr_context_epoch_v1 import StrategyContextEpochV1
 from contracts.strategy_5scr_directional_thesis_v1 import (
     DIRECTIONAL_THESIS_RULE_VERSION,
     ClosedCandleAuthorityRefV1,
+    Direction,
     DirectionalThesisEvidenceV1,
     DirectionalThesisV1,
     H1StructureProofV1,
     M15StructuralProofV1,
+    classify_m15_completion,
     pressure_authority_material_hash,
     route_authorization_material_hash,
 )
@@ -57,6 +60,80 @@ def _validate_candle_identity(candle: ClosedCandleAuthorityRefV1) -> str | None:
     return None
 
 
+def active_structural_invalidation_reason(
+    *,
+    h1_proof: H1StructureProofV1,
+    m15_proof: M15StructuralProofV1,
+    h1_candles: Sequence[ClosedCandleAuthorityRefV1],
+    m15_candles: Sequence[ClosedCandleAuthorityRefV1],
+    decision_at_utc: datetime,
+) -> str | None:
+    """Evaluate persisted proof liveness independently of a successor request.
+
+    Candidate selection may move to a newer same-direction proof, but an active
+    immutable thesis remains governed by its own persisted H1/M15 levels.  This
+    helper therefore does not inspect pressure, route, or successor direction.
+    """
+
+    if decision_at_utc.tzinfo is None or decision_at_utc.utcoffset() is None:
+        raise ValueError("decision_at_utc must include a UTC offset")
+    decision_at = decision_at_utc.astimezone(UTC)
+    if decision_at < m15_proof.completed_at_utc:
+        return "ACTIVE_LIVENESS_DECISION_PRECEDES_PROOF"
+    if (
+        m15_proof.h1_proof_id != h1_proof.h1_proof_id
+        or m15_proof.strategy_lifecycle_id != h1_proof.strategy_lifecycle_id
+        or m15_proof.context_epoch_id != h1_proof.context_epoch_id
+        or m15_proof.symbol != h1_proof.symbol
+        or m15_proof.strategy_direction != h1_proof.strategy_direction
+    ):
+        return "ACTIVE_LIVENESS_PROOF_SCOPE_MISMATCH"
+
+    scoped: tuple[tuple[Sequence[ClosedCandleAuthorityRefV1], str], ...] = (
+        (h1_candles, "H1"),
+        (m15_candles, "M15"),
+    )
+    for candles, timeframe in scoped:
+        previous_close: datetime | None = None
+        for candle in candles:
+            failure = _validate_candle_identity(candle)
+            if failure is not None:
+                return failure
+            if candle.symbol != h1_proof.symbol or candle.timeframe != timeframe:
+                return "ACTIVE_LIVENESS_CANDLE_SCOPE_MISMATCH"
+            if candle.close_time_utc > decision_at:
+                return "FUTURE_CANDLE_LEAKAGE"
+            if previous_close is not None and candle.close_time_utc < previous_close:
+                return "ACTIVE_LIVENESS_CANDLE_ORDER_INVALID"
+            previous_close = candle.close_time_utc
+
+    for index in range(1, len(h1_candles)):
+        anchor, confirmation = h1_candles[index - 1 : index + 1]
+        if anchor.close_time_utc != confirmation.open_time_utc:
+            continue
+        if confirmation.close_time_utc <= h1_proof.confirmed_at_utc:
+            continue
+        break_direction: Direction | None = None
+        if confirmation.close > anchor.high:
+            break_direction = "BUY"
+        elif confirmation.close < anchor.low:
+            break_direction = "SELL"
+        # An immutable active thesis is terminally superseded at the first
+        # counter-break.  A later break back in the original direction is a
+        # fresh thesis opportunity, never resurrection of the old identity.
+        if break_direction is not None and break_direction != h1_proof.strategy_direction:
+            return "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK"
+
+    for candle in m15_candles:
+        if candle.close_time_utc <= m15_proof.completed_at_utc:
+            continue
+        if m15_proof.strategy_direction == "BUY" and candle.close <= m15_proof.break_level:
+            return "M15_STRUCTURAL_PROOF_INVALIDATED"
+        if m15_proof.strategy_direction == "SELL" and candle.close >= m15_proof.break_level:
+            return "M15_STRUCTURAL_PROOF_INVALIDATED"
+    return None
+
+
 @dataclass(frozen=True)
 class DirectionalThesisBuildArtifact:
     h1_proof: H1StructureProofV1
@@ -76,37 +153,52 @@ class DirectionalThesisBuildResult:
 def _h1_proof(
     context: StrategyContextEpochV1,
     evidence: DirectionalThesisEvidenceV1,
-) -> H1StructureProofV1 | None:
+) -> tuple[H1StructureProofV1 | None, str | None]:
     direction = evidence.strategy_direction
     candles = evidence.h1_candles
+    latest_pair: tuple[ClosedCandleAuthorityRefV1, ClosedCandleAuthorityRefV1] | None = None
+    latest_direction: Direction | None = None
     for index in range(1, len(candles)):
         anchor, confirmation = candles[index - 1 : index + 1]
         if anchor.close_time_utc != confirmation.open_time_utc:
             continue
         if confirmation.close_time_utc < context.opened_at_utc:
             continue
-        broke = confirmation.close > anchor.high if direction == "BUY" else confirmation.close < anchor.low
-        if not broke:
-            continue
-        reference_level = anchor.high if direction == "BUY" else anchor.low
-        material_payload = {
-            "context_epoch_id": context.context_epoch_id,
-            "strategy_direction": direction,
-            "anchor_material_hash": anchor.material_candle_hash,
-            "confirmation_material_hash": confirmation.material_candle_hash,
-            "reference_level": reference_level,
-            "structure_event": "BOS",
-            "rule_version": DIRECTIONAL_THESIS_RULE_VERSION,
-        }
-        material_hash = _sha256(material_payload)
-        evidence_payload = {
-            **material_payload,
-            "anchor": anchor.model_dump(mode="json"),
-            "confirmation": confirmation.model_dump(mode="json"),
-            "decision_at_utc": evidence.decision_at_utc,
-        }
-        evidence_hash = _sha256(evidence_payload)
-        return H1StructureProofV1(
+        break_direction: Direction | None = None
+        if confirmation.close > anchor.high:
+            break_direction = "BUY"
+        elif confirmation.close < anchor.low:
+            break_direction = "SELL"
+        if break_direction is not None:
+            latest_pair = (anchor, confirmation)
+            latest_direction = break_direction
+
+    if latest_pair is None or latest_direction is None:
+        return None, "H1_CLOSED_STRUCTURE_PROOF_MISSING"
+    if latest_direction != direction:
+        return None, "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK"
+
+    anchor, confirmation = latest_pair
+    reference_level = anchor.high if direction == "BUY" else anchor.low
+    material_payload = {
+        "context_epoch_id": context.context_epoch_id,
+        "strategy_direction": direction,
+        "anchor_material_hash": anchor.material_candle_hash,
+        "confirmation_material_hash": confirmation.material_candle_hash,
+        "reference_level": reference_level,
+        "structure_event": "BOS",
+        "rule_version": DIRECTIONAL_THESIS_RULE_VERSION,
+    }
+    material_hash = _sha256(material_payload)
+    evidence_payload = {
+        **material_payload,
+        "anchor": anchor.model_dump(mode="json"),
+        "confirmation": confirmation.model_dump(mode="json"),
+        "decision_at_utc": evidence.decision_at_utc,
+    }
+    evidence_hash = _sha256(evidence_payload)
+    return (
+        H1StructureProofV1(
             h1_proof_id="5scr-h1-proof:" + material_hash.removeprefix("sha256:")[:32],
             strategy_lifecycle_id=evidence.strategy_lifecycle_id,
             context_epoch_id=evidence.context_epoch_id,
@@ -126,17 +218,29 @@ def _h1_proof(
             material_proof_hash=material_hash,
             evidence_hash=evidence_hash,
             semantic_dedupe_key=f"{context.context_epoch_id}|{direction}|H1|{material_hash}",
-        )
-    return None
+        ),
+        None,
+    )
 
 
 def _m15_proof(
     context: StrategyContextEpochV1,
     evidence: DirectionalThesisEvidenceV1,
     h1: H1StructureProofV1,
-) -> M15StructuralProofV1 | None:
+) -> tuple[M15StructuralProofV1 | None, str | None]:
     direction = evidence.strategy_direction
     candles = evidence.m15_candles
+    latest_candidate: (
+        tuple[
+            ClosedCandleAuthorityRefV1,
+            ClosedCandleAuthorityRefV1,
+            ClosedCandleAuthorityRefV1,
+            float,
+            Literal["ACCEPTANCE", "FAILED_RECLAIM", "RETEST"],
+            int,
+        ]
+        | None
+    ) = None
     for index in range(1, len(candles) - 1):
         reference, breakout = candles[index - 1 : index + 1]
         if reference.close_time_utc != breakout.open_time_utc:
@@ -150,41 +254,44 @@ def _m15_proof(
         completion = candles[index + 1]
         if breakout.close_time_utc != completion.open_time_utc:
             continue
-        if direction == "BUY":
-            closes_beyond = completion.close > level
-            retest = completion.low <= level and closes_beyond
-        else:
-            closes_beyond = completion.close < level
-            retest = completion.high >= level and closes_beyond
-        if not closes_beyond:
+        completion_kind = classify_m15_completion(direction, completion, level)
+        if completion_kind is None:
             continue
-        failed_reclaim = (
-            completion.open <= level < completion.close
-            if direction == "BUY"
-            else completion.open >= level > completion.close
-        )
-        completion_kind = "FAILED_RECLAIM" if failed_reclaim else ("RETEST" if retest else "ACCEPTANCE")
-        material_payload = {
-            "context_epoch_id": context.context_epoch_id,
-            "h1_proof_id": h1.h1_proof_id,
-            "strategy_direction": direction,
-            "reference_material_hash": reference.material_candle_hash,
-            "break_material_hash": breakout.material_candle_hash,
-            "completion_material_hash": completion.material_candle_hash,
-            "break_level": level,
-            "completion_kind": completion_kind,
-            "rule_version": DIRECTIONAL_THESIS_RULE_VERSION,
-        }
-        material_hash = _sha256(material_payload)
-        evidence_payload = {
-            **material_payload,
-            "reference": reference.model_dump(mode="json"),
-            "break": breakout.model_dump(mode="json"),
-            "completion": completion.model_dump(mode="json"),
-            "decision_at_utc": evidence.decision_at_utc,
-        }
-        evidence_hash = _sha256(evidence_payload)
-        return M15StructuralProofV1(
+        latest_candidate = (reference, breakout, completion, level, completion_kind, index + 1)
+
+    if latest_candidate is None:
+        return None, "M15_ORDERED_BREAK_COMPLETION_MISSING"
+
+    reference, breakout, completion, level, completion_kind, completion_index = latest_candidate
+    invalidated = any(
+        later.close <= level if direction == "BUY" else later.close >= level
+        for later in candles[completion_index + 1 :]
+    )
+    if invalidated:
+        return None, "M15_STRUCTURAL_PROOF_INVALIDATED"
+
+    material_payload = {
+        "context_epoch_id": context.context_epoch_id,
+        "h1_proof_id": h1.h1_proof_id,
+        "strategy_direction": direction,
+        "reference_material_hash": reference.material_candle_hash,
+        "break_material_hash": breakout.material_candle_hash,
+        "completion_material_hash": completion.material_candle_hash,
+        "break_level": level,
+        "completion_kind": completion_kind,
+        "rule_version": DIRECTIONAL_THESIS_RULE_VERSION,
+    }
+    material_hash = _sha256(material_payload)
+    evidence_payload = {
+        **material_payload,
+        "reference": reference.model_dump(mode="json"),
+        "break": breakout.model_dump(mode="json"),
+        "completion": completion.model_dump(mode="json"),
+        "decision_at_utc": evidence.decision_at_utc,
+    }
+    evidence_hash = _sha256(evidence_payload)
+    return (
+        M15StructuralProofV1(
             m15_proof_id="5scr-m15-proof:" + material_hash.removeprefix("sha256:")[:32],
             h1_proof_id=h1.h1_proof_id,
             strategy_lifecycle_id=evidence.strategy_lifecycle_id,
@@ -215,8 +322,9 @@ def _m15_proof(
             material_proof_hash=material_hash,
             evidence_hash=evidence_hash,
             semantic_dedupe_key=f"{context.context_epoch_id}|{direction}|M15|{material_hash}",
-        )
-    return None
+        ),
+        None,
+    )
 
 
 def build_directional_thesis_proofs(
@@ -284,12 +392,12 @@ def build_directional_thesis_proofs(
         if failure is not None:
             return DirectionalThesisBuildResult("QUARANTINED", failure)
 
-    h1 = _h1_proof(context, evidence)
+    h1, h1_reason = _h1_proof(context, evidence)
     if h1 is None:
-        return DirectionalThesisBuildResult("WAIT", "H1_CLOSED_STRUCTURE_PROOF_MISSING")
-    m15 = _m15_proof(context, evidence, h1)
+        return DirectionalThesisBuildResult("WAIT", h1_reason)
+    m15, m15_reason = _m15_proof(context, evidence, h1)
     if m15 is None:
-        return DirectionalThesisBuildResult("WAIT", "M15_ORDERED_BREAK_COMPLETION_MISSING")
+        return DirectionalThesisBuildResult("WAIT", m15_reason)
 
     structural_hash = _sha256(
         {
@@ -372,6 +480,7 @@ __all__ = [
     "DirectionalThesisBuildResult",
     "ThesisBuildStatus",
     "build_directional_thesis_proofs",
+    "active_structural_invalidation_reason",
     "candle_evidence_hash",
     "candle_material_hash",
     "close_directional_thesis",

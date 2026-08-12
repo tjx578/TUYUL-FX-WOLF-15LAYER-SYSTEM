@@ -33,6 +33,26 @@ PressureContractStatus = Literal[
 M15CompletionKind = Literal["ACCEPTANCE", "FAILED_RECLAIM", "RETEST"]
 
 
+def classify_m15_completion(
+    direction: Direction,
+    completion: ClosedCandleAuthorityRefV1,
+    break_level: float,
+) -> M15CompletionKind | None:
+    """Classify one closed completion candle using the canonical P4 rule."""
+
+    if direction == "BUY":
+        closes_beyond = completion.close > break_level
+        retest = completion.low <= break_level and closes_beyond
+        failed_reclaim = completion.open <= break_level < completion.close
+    else:
+        closes_beyond = completion.close < break_level
+        retest = completion.high >= break_level and closes_beyond
+        failed_reclaim = completion.open >= break_level > completion.close
+    if not closes_beyond:
+        return None
+    return "FAILED_RECLAIM" if failed_reclaim else ("RETEST" if retest else "ACCEPTANCE")
+
+
 class FrozenThesisContract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -285,6 +305,18 @@ class H1StructureProofV1(FrozenThesisContract):
             raise ValueError("H1 proof coverage contains a candle gap")
         if self.confirmed_at_utc != self.confirmation_candle.close_time_utc:
             raise ValueError("H1 confirmed_at must equal confirmation close")
+        if self.confirmation_close != self.confirmation_candle.close:
+            raise ValueError("H1 confirmation_close must equal the frozen candle close")
+        expected_level = self.anchor_candle.high if self.strategy_direction == "BUY" else self.anchor_candle.low
+        if self.reference_level != expected_level:
+            raise ValueError("H1 reference_level does not match the directional anchor")
+        directional_break = (
+            self.confirmation_candle.close > self.reference_level
+            if self.strategy_direction == "BUY"
+            else self.confirmation_candle.close < self.reference_level
+        )
+        if not directional_break:
+            raise ValueError("H1 confirmation does not close through the directional reference")
         if self.coverage_start_at_utc != self.anchor_candle.open_time_utc:
             raise ValueError("H1 coverage must begin at the frozen anchor")
         if self.coverage_end_at_utc != self.confirmed_at_utc:
@@ -360,6 +392,25 @@ class M15StructuralProofV1(FrozenThesisContract):
             raise ValueError("M15 break clock mismatch")
         if self.completed_at_utc != self.completion_candle.close_time_utc:
             raise ValueError("M15 completion clock mismatch")
+        expected_level = self.reference_candle.high if self.strategy_direction == "BUY" else self.reference_candle.low
+        if self.break_level != expected_level:
+            raise ValueError("M15 break_level does not match the directional reference")
+        directional_break = (
+            self.break_candle.close > self.break_level
+            if self.strategy_direction == "BUY"
+            else self.break_candle.close < self.break_level
+        )
+        if not directional_break:
+            raise ValueError("M15 break candle does not close through the directional reference")
+        expected_kind = classify_m15_completion(
+            self.strategy_direction,
+            self.completion_candle,
+            self.break_level,
+        )
+        if expected_kind is None:
+            raise ValueError("M15 completion does not close beyond the break level")
+        if self.completion_kind != expected_kind:
+            raise ValueError("M15 completion_kind does not match frozen candle semantics")
         if self.coverage_start_at_utc != self.reference_candle.open_time_utc:
             raise ValueError("M15 coverage must begin at the frozen reference")
         if self.coverage_end_at_utc != self.completed_at_utc:
@@ -468,4 +519,5 @@ __all__ = [
     "ThesisState",
     "pressure_authority_material_hash",
     "route_authorization_material_hash",
+    "classify_m15_completion",
 ]

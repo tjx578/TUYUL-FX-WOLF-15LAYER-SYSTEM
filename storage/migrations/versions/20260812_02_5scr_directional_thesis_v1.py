@@ -330,7 +330,8 @@ def upgrade() -> None:
             "(pressure_authority_mode = 'CONSOLIDATED_DIRECTION_CONTRACT' "
             "AND pressure_contract_status = 'LOCKED' "
             "AND pressure_formal_transition_event_id IS NOT NULL "
-            "AND pressure_reference_direction = strategy_direction)",
+            "AND pressure_reference_direction = strategy_direction "
+            "AND counter_pressure_proof_hash IS NULL)",
             name="ck_5scr_thesis_pressure_authority_v1",
         ),
         sa.CheckConstraint(
