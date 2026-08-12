@@ -125,6 +125,9 @@ class ClosedCandleAuthorityRefV1(FrozenThesisContract):
 class PressureDirectionAuthorityV1(FrozenThesisContract):
     """Explicit pressure authority; Lifecycle V2 direction is never inferred as LOCKED."""
 
+    strategy_lifecycle_id: str = Field(..., pattern=r"^5scr-lifecycle:[0-9a-f]{32}$")
+    context_epoch_id: str = Field(..., pattern=r"^5scr-context:[0-9a-f]{32}$")
+    symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
     mode: PressureAuthorityMode
     contract_status: PressureContractStatus
     raw_pressure_direction: Direction | None = None
@@ -194,6 +197,9 @@ def pressure_authority_material_hash(authority: PressureDirectionAuthorityV1) ->
     """Fingerprint authority semantics without delivery or observation churn."""
 
     payload: dict[str, Any] = {
+        "strategy_lifecycle_id": authority.strategy_lifecycle_id,
+        "context_epoch_id": authority.context_epoch_id,
+        "symbol": authority.symbol,
         "mode": authority.mode,
         "contract_status": authority.contract_status,
         "rule_version": authority.rule_version,
@@ -384,6 +390,8 @@ class M15StructuralProofV1(FrozenThesisContract):
             raise ValueError("M15 proof candle scope mismatch")
         if not self.h1_confirmed_at_utc <= self.break_close_at_utc < self.completed_at_utc <= self.decision_at_utc:
             raise ValueError("ORDERED_PROOF_INVALID")
+        if self.break_candle.open_time_utc < self.h1_confirmed_at_utc:
+            raise ValueError("M15_BREAK_PRECEDES_H1_AUTHORITY")
         if self.reference_candle.close_time_utc != self.break_candle.open_time_utc:
             raise ValueError("M15 reference-to-break coverage contains a candle gap")
         if self.break_candle.close_time_utc != self.completion_candle.open_time_utc:
@@ -448,13 +456,14 @@ class DirectionalThesisV1(FrozenThesisContract):
     semantic_identity_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
     rule_version: Literal["5scr.directional-thesis.v1"] = DIRECTIONAL_THESIS_RULE_VERSION
     created_at_utc: datetime
+    liveness_checked_through_utc: datetime
     closed_at_utc: datetime | None = None
     closure_reason: str | None = Field(default=None, max_length=160)
     state_version: int = Field(default=1, ge=1)
     valid_for_execution: Literal[False] = False
     execution_authority: Literal[False] = False
 
-    @field_validator("created_at_utc", "closed_at_utc")
+    @field_validator("created_at_utc", "liveness_checked_through_utc", "closed_at_utc")
     @classmethod
     def _times_are_utc(cls, value: datetime | None, info: Any) -> datetime | None:
         return _utc(value, str(info.field_name))
@@ -499,6 +508,10 @@ class DirectionalThesisV1(FrozenThesisContract):
             raise ValueError("closed thesis requires time and reason")
         if self.closed_at_utc is not None and self.closed_at_utc < self.created_at_utc:
             raise ValueError("thesis closure cannot precede creation")
+        if self.liveness_checked_through_utc < self.created_at_utc:
+            raise ValueError("liveness watermark cannot precede thesis creation")
+        if self.closed_at_utc is not None and self.liveness_checked_through_utc > self.closed_at_utc:
+            raise ValueError("closed thesis liveness watermark cannot exceed closure")
         return self
 
 

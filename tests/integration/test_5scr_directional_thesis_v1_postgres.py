@@ -91,6 +91,9 @@ def _lineage_refresh(
 
 def _next_pressure_authority(evidence: DirectionalThesisEvidenceV1) -> PressureDirectionAuthorityV1:
     return PressureDirectionAuthorityV1(
+        strategy_lifecycle_id=evidence.strategy_lifecycle_id,
+        context_epoch_id=evidence.context_epoch_id,
+        symbol=evidence.symbol,
         mode="RADAR_ONLY",
         contract_status="RADAR_ONLY",
         raw_pressure_direction=evidence.strategy_direction,
@@ -290,6 +293,9 @@ def _thesis_evidence(lifecycle_id: str, context: StrategyContextEpochV1) -> Dire
         strategy_direction="BUY",
         selected_route=ROUTE,
         pressure_authority=PressureDirectionAuthorityV1(
+            strategy_lifecycle_id=lifecycle_id,
+            context_epoch_id=context.context_epoch_id,
+            symbol=SYMBOL,
             mode="RADAR_ONLY",
             contract_status="RADAR_ONLY",
             raw_pressure_direction="BUY",
@@ -360,6 +366,18 @@ def _sell_successor_evidence(
             close=1.0990,
         ),
     )
+    m15_bridge = tuple(
+        _closed_candle(
+            row_id=190 + index,
+            timeframe="M15",
+            open_at=START + timedelta(hours=2, minutes=45 + 15 * index),
+            open_price=1.1032,
+            high=1.1038,
+            low=1.1015,
+            close=1.1031,
+        )
+        for index in range(5)
+    )
     later_m15 = (
         _closed_candle(
             row_id=203,
@@ -408,6 +426,9 @@ def _sell_successor_evidence(
             "strategy_direction": "SELL",
             "selected_route": SELL_ROUTE,
             "pressure_authority": PressureDirectionAuthorityV1(
+                strategy_lifecycle_id=evidence.strategy_lifecycle_id,
+                context_epoch_id=evidence.context_epoch_id,
+                symbol=evidence.symbol,
                 mode="RADAR_ONLY",
                 contract_status="RADAR_ONLY",
                 raw_pressure_direction="SELL",
@@ -422,7 +443,7 @@ def _sell_successor_evidence(
                 selected_route=SELL_ROUTE,
             ),
             "h1_candles": (*evidence.h1_candles, *later_h1),
-            "m15_candles": (*evidence.m15_candles, *later_m15),
+            "m15_candles": (*evidence.m15_candles, *m15_bridge, *later_m15),
             "source_request_id": f"sell-successor-{uuid4().hex}",
         }
     )
@@ -559,6 +580,41 @@ async def test_schema_ready_shadow_only_and_direct_mutation_rejected(postgres: P
                 lifecycle_id,
             )
         assert getattr(thesis_mutation.value, "constraint_name", None) == "ck_5scr_thesis_immutable_v1"
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+@pytest.mark.parametrize(
+    "scope_update",
+    (
+        {"symbol": "USDJPY"},
+        {"strategy_lifecycle_id": "5scr-lifecycle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+        {"context_epoch_id": "5scr-context:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    ),
+)
+async def test_pressure_authority_scope_mismatch_never_persists_proofs_or_thesis(
+    postgres: PoolBackedPostgres,
+    scope_update: dict[str, str],
+) -> None:
+    lifecycle_id, _context_event, _context, evidence = await _seed_parent_chain(postgres)
+    try:
+        mismatched = DirectionalThesisEvidenceV1.model_validate(
+            {
+                **evidence.model_dump(exclude={"pressure_authority"}),
+                "pressure_authority": PressureDirectionAuthorityV1.model_validate(
+                    {
+                        **evidence.pressure_authority.model_dump(exclude={"authority_hash"}),
+                        **scope_update,
+                    }
+                ),
+            }
+        )
+        result = await _repository(postgres).process_evidence(mismatched)
+        assert (result.status, result.reason_code) == (
+            "REJECTED",
+            "PRESSURE_AUTHORITY_SCOPE_MISMATCH",
+        )
+        assert await _p4_counts(postgres, lifecycle_id) == {"h1": 0, "m15": 0, "theses": 0}
     finally:
         await _cleanup(postgres, lifecycle_id)
 
@@ -714,12 +770,12 @@ async def test_database_independently_rejects_shadow_authority_insertions(
                         pressure_authority_hash, counter_pressure_proof_hash,
                         h1_proof_id, m15_proof_id, structural_proof_hash,
                         semantic_identity_hash, rule_version, created_at,
-                        closed_at, closure_reason, state_version,
+                        liveness_checked_through, closed_at, closure_reason, state_version,
                         valid_for_execution, execution_authority, payload
                     ) VALUES (
                         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
                         $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,
-                        $27,$28,$29
+                        $27,$28,$29,$30
                     )
                     """,
                     candidate["strategy_thesis_id"],
@@ -745,6 +801,7 @@ async def test_database_independently_rejects_shadow_authority_insertions(
                     candidate["semantic_identity_hash"],
                     candidate["rule_version"],
                     candidate["created_at"],
+                    candidate["liveness_checked_through"],
                     candidate["closed_at"],
                     candidate["closure_reason"],
                     candidate["state_version"],
@@ -798,12 +855,12 @@ async def test_database_rejects_locked_pressure_with_counter_proof(
                     pressure_authority_hash, counter_pressure_proof_hash,
                     h1_proof_id, m15_proof_id, structural_proof_hash,
                     semantic_identity_hash, rule_version, created_at,
-                    closed_at, closure_reason, state_version,
+                    liveness_checked_through, closed_at, closure_reason, state_version,
                     valid_for_execution, execution_authority, payload
                 ) VALUES (
                     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
                     $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,
-                    $27,$28,$29
+                    $27,$28,$29,$30
                 )
                 """,
                 candidate["strategy_thesis_id"],
@@ -829,6 +886,7 @@ async def test_database_rejects_locked_pressure_with_counter_proof(
                 candidate["semantic_identity_hash"],
                 candidate["rule_version"],
                 candidate["created_at"],
+                candidate["liveness_checked_through"],
                 candidate["closed_at"],
                 candidate["closure_reason"],
                 candidate["state_version"],
@@ -866,12 +924,12 @@ async def test_database_rejects_locked_pressure_with_counter_proof(
                     pressure_authority_hash, counter_pressure_proof_hash,
                     h1_proof_id, m15_proof_id, structural_proof_hash,
                     semantic_identity_hash, rule_version, created_at,
-                    closed_at, closure_reason, state_version,
+                    liveness_checked_through, closed_at, closure_reason, state_version,
                     valid_for_execution, execution_authority, payload
                 ) VALUES (
                     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
                     $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,
-                    $27,$28,$29
+                    $27,$28,$29,$30
                 )
                     """,
                     positive["strategy_thesis_id"],
@@ -896,6 +954,7 @@ async def test_database_rejects_locked_pressure_with_counter_proof(
                     positive["structural_proof_hash"],
                     positive["semantic_identity_hash"],
                     positive["rule_version"],
+                    positive["created_at"],
                     positive["created_at"],
                     positive["created_at"],
                     "TEST_LOCKED_NULL_COUNTER_ALLOWED",
@@ -1289,12 +1348,12 @@ async def test_later_opposite_h1_break_invalidates_active_thesis_and_old_replay_
         invalidated = await repository.process_evidence(invalidating_evidence)
         assert (invalidated.status, invalidated.reason_code) == (
             "INVALIDATED",
-            "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK",
+            "THESIS_INVALIDATED_BY_COUNTER_H1",
         )
         assert invalidated.thesis is not None
         assert invalidated.thesis.strategy_thesis_id == opened.thesis.strategy_thesis_id
         assert invalidated.thesis.state == "INVALIDATED"
-        assert invalidated.thesis.closure_reason == "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK"
+        assert invalidated.thesis.closure_reason == "THESIS_INVALIDATED_BY_COUNTER_H1"
         assert await repository.load_active(lifecycle_id) is None
 
         replay = await Strategy5SCRDirectionalThesisV1Repository(cast(Any, postgres)).process_evidence(evidence)
@@ -1368,7 +1427,7 @@ async def test_opposite_h1_invalidates_active_even_when_successor_pressure_is_ex
         invalidated = await repository.process_evidence(expired)
         assert (invalidated.status, invalidated.reason_code) == (
             "INVALIDATED",
-            "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK",
+            "THESIS_INVALIDATED_BY_COUNTER_H1",
         )
         assert invalidated.thesis is not None
         assert invalidated.thesis.strategy_thesis_id == opened.thesis.strategy_thesis_id
@@ -1392,7 +1451,7 @@ async def test_opposite_request_closes_old_thesis_then_second_call_persists_fres
         invalidated = await repository.process_evidence(sell_evidence)
         assert (invalidated.status, invalidated.reason_code) == (
             "INVALIDATED",
-            "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK",
+            "THESIS_INVALIDATED_BY_COUNTER_H1",
         )
         assert invalidated.thesis is not None
         assert invalidated.thesis.strategy_thesis_id == opened.thesis.strategy_thesis_id
@@ -1518,7 +1577,7 @@ async def test_buy_sell_buy_single_snapshot_invalidates_old_once_then_persists_f
         invalidated = await repository.process_evidence(snapshot)
         assert (invalidated.status, invalidated.reason_code) == (
             "INVALIDATED",
-            "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK",
+            "THESIS_INVALIDATED_BY_COUNTER_H1",
         )
         assert invalidated.thesis is not None
         assert invalidated.thesis.strategy_thesis_id == opened.thesis.strategy_thesis_id
@@ -1535,7 +1594,10 @@ async def test_buy_sell_buy_single_snapshot_invalidates_old_once_then_persists_f
         assert duplicate.status == "DUPLICATE" and duplicate.thesis is not None
         assert duplicate.thesis.strategy_thesis_id == fresh.thesis.strategy_thesis_id
         stale_replay = await _repository(postgres).process_evidence(evidence)
-        assert stale_replay.status == "REJECTED"
+        assert (stale_replay.status, stale_replay.reason_code) == (
+            "QUARANTINED",
+            "ACTIVE_LIVENESS_DECISION_PRECEDES_WATERMARK",
+        )
         active = await repository.load_active(lifecycle_id)
         assert active is not None and active.strategy_thesis_id == fresh.thesis.strategy_thesis_id
         history = await repository.load_history(lifecycle_id)
@@ -1580,12 +1642,12 @@ async def test_later_m15_close_through_level_invalidates_active_thesis_and_old_r
         invalidated = await repository.process_evidence(invalidating_evidence)
         assert (invalidated.status, invalidated.reason_code) == (
             "INVALIDATED",
-            "M15_STRUCTURAL_PROOF_INVALIDATED",
+            "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE",
         )
         assert invalidated.thesis is not None
         assert invalidated.thesis.strategy_thesis_id == opened.thesis.strategy_thesis_id
         assert invalidated.thesis.state == "INVALIDATED"
-        assert invalidated.thesis.closure_reason == "M15_STRUCTURAL_PROOF_INVALIDATED"
+        assert invalidated.thesis.closure_reason == "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE"
         assert await repository.load_active(lifecycle_id) is None
 
         replay = await Strategy5SCRDirectionalThesisV1Repository(cast(Any, postgres)).process_evidence(evidence)
@@ -1712,7 +1774,7 @@ async def test_newer_reinforcement_level_does_not_replace_stored_active_m15_live
         result = await repository.process_evidence(candidate_invalidated)
         assert (result.status, result.reason_code) == (
             "INVALIDATED",
-            "M15_STRUCTURAL_PROOF_INVALIDATED",
+            "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE",
         )
         assert result.thesis is not None
         assert result.thesis.strategy_thesis_id == opened.thesis.strategy_thesis_id
@@ -1752,6 +1814,18 @@ async def test_same_direction_structural_reinforcement_retains_active_thesis_acr
                 low=1.1020,
                 close=1.1050,
             ),
+        )
+        m15_bridge = tuple(
+            _closed_candle(
+                row_id=110 + index,
+                timeframe="M15",
+                open_at=START + timedelta(hours=2, minutes=45 + 15 * index),
+                open_price=1.1032 + 0.0001 * index,
+                high=1.1040 + 0.0001 * index,
+                low=1.1015,
+                close=1.1033 + 0.0001 * index,
+            )
+            for index in range(5)
         )
         m15_reinforcement = (
             _closed_candle(
@@ -1799,7 +1873,7 @@ async def test_same_direction_structural_reinforcement_retains_active_thesis_acr
                 "decision_at_utc": START + timedelta(hours=4, minutes=45),
                 "pressure_authority": refreshed_pressure,
                 "h1_candles": (*evidence.h1_candles, *h1_reinforcement),
-                "m15_candles": (*evidence.m15_candles, *m15_reinforcement),
+                "m15_candles": (*evidence.m15_candles, *m15_bridge, *m15_reinforcement),
                 "source_request_id": f"same-direction-reinforcement-{uuid4().hex}",
             }
         )
@@ -2032,3 +2106,183 @@ async def test_readiness_rejects_weakened_shadow_constraint_and_active_index(
         await postgres.execute(original_function)
 
     assert (await repository.schema_status()).ready
+
+
+async def test_long_downtime_range_invalidates_beyond_old_fixed_tails_and_restart_cannot_resurrect(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id, _context_event, _context, evidence = await _seed_parent_chain(postgres)
+    repository = _repository(postgres)
+    try:
+        opened = await repository.process_evidence(evidence)
+        assert opened.status == "PERSISTED" and opened.thesis is not None
+
+        h1_tail: list[ClosedCandleAuthorityRefV1] = []
+        for index in range(31):
+            open_at = START + timedelta(hours=2 + index)
+            values = (
+                (1.1020, 1.1038, 1.1027, 1.1033)
+                if index == 0
+                else ((1.1033, 1.1036, 1.1008, 1.1010) if index == 1 else (1.1030, 1.1038, 1.1025, 1.1032))
+            )
+            values = (
+                values[0],
+                max(values[1], values[0], values[3]),
+                min(values[2], values[0], values[3]),
+                values[3],
+            )
+            h1_tail.append(
+                _closed_candle(
+                    row_id=5000 + index,
+                    timeframe="H1",
+                    open_at=open_at,
+                    open_price=values[0],
+                    high=values[1],
+                    low=values[2],
+                    close=values[3],
+                )
+            )
+
+        m15_tail = tuple(
+            _closed_candle(
+                row_id=6000 + index,
+                timeframe="M15",
+                open_at=START + timedelta(hours=2, minutes=45 + 15 * index),
+                open_price=1.1032,
+                high=1.1038,
+                low=1.1022,
+                close=1.1033,
+            )
+            for index in range(121)
+        )
+        decision_at = START + timedelta(hours=33)
+        snapshot = DirectionalThesisEvidenceV1.model_validate(
+            {
+                **evidence.model_dump(
+                    exclude={
+                        "decision_at_utc",
+                        "pressure_authority",
+                        "h1_candles",
+                        "m15_candles",
+                        "source_request_id",
+                    }
+                ),
+                "decision_at_utc": decision_at,
+                "pressure_authority": evidence.pressure_authority.model_copy(
+                    update={"valid_until_utc": decision_at + timedelta(hours=1)}
+                ),
+                "h1_candles": (*evidence.h1_candles, *h1_tail),
+                "m15_candles": (*evidence.m15_candles, *m15_tail),
+                "source_request_id": f"long-downtime-{uuid4().hex}",
+            }
+        )
+        invalidated = await repository.process_evidence(snapshot)
+        assert (invalidated.status, invalidated.reason_code) == (
+            "INVALIDATED",
+            "THESIS_INVALIDATED_BY_COUNTER_H1",
+        )
+        assert invalidated.thesis is not None
+        assert invalidated.thesis.closed_at_utc == START + timedelta(hours=4)
+        assert invalidated.thesis.liveness_checked_through_utc == START + timedelta(hours=4)
+
+        restarted = await Strategy5SCRDirectionalThesisV1Repository(cast(Any, postgres)).process_evidence(evidence)
+        assert restarted.status in {"DUPLICATE", "QUARANTINED", "REJECTED"}
+        history = await repository.load_history(lifecycle_id)
+        assert len(history) == 1 and history[0].state == "INVALIDATED"
+        assert await repository.load_active(lifecycle_id) is None
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+async def test_liveness_gap_quarantines_without_advancing_durable_watermark(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id, _context_event, _context, evidence = await _seed_parent_chain(postgres)
+    repository = _repository(postgres)
+    try:
+        opened = await repository.process_evidence(evidence)
+        assert opened.status == "PERSISTED" and opened.thesis is not None
+        original_watermark = opened.thesis.liveness_checked_through_utc
+
+        h1 = (
+            *evidence.h1_candles,
+            _closed_candle(
+                row_id=7001,
+                timeframe="H1",
+                open_at=START + timedelta(hours=2),
+                open_price=1.1020,
+                high=1.1030,
+                low=1.1015,
+                close=1.1025,
+            ),
+            _closed_candle(
+                row_id=7002,
+                timeframe="H1",
+                open_at=START + timedelta(hours=3),
+                open_price=1.1025,
+                high=1.1030,
+                low=1.1020,
+                close=1.1027,
+            ),
+        )
+        m15 = list(evidence.m15_candles)
+        for index in (0, 1, 3, 4):
+            m15.append(
+                _closed_candle(
+                    row_id=7100 + index,
+                    timeframe="M15",
+                    open_at=START + timedelta(hours=2, minutes=45 + 15 * index),
+                    open_price=1.1032,
+                    high=1.1038,
+                    low=1.1025,
+                    close=1.1033,
+                )
+            )
+        decision_at = START + timedelta(hours=4)
+        gap = DirectionalThesisEvidenceV1.model_validate(
+            {
+                **evidence.model_dump(exclude={"decision_at_utc", "pressure_authority", "h1_candles", "m15_candles"}),
+                "decision_at_utc": decision_at,
+                "pressure_authority": evidence.pressure_authority.model_copy(
+                    update={"valid_until_utc": decision_at + timedelta(hours=1)}
+                ),
+                "h1_candles": h1,
+                "m15_candles": tuple(m15),
+            }
+        )
+        result = await repository.process_evidence(gap)
+        assert (result.status, result.reason_code) == ("QUARANTINED", "LIVENESS_COVERAGE_INCOMPLETE")
+        active = await repository.load_active(lifecycle_id)
+        assert active is not None
+        assert active.liveness_checked_through_utc == original_watermark
+        assert active.state_version == opened.thesis.state_version
+        assert await _p4_counts(postgres, lifecycle_id) == {"h1": 1, "m15": 1, "theses": 1}
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+async def test_pre_h1_m15_break_is_wait_and_cannot_persist_any_p4_row(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id, _context_event, _context, evidence = await _seed_parent_chain(postgres)
+    try:
+        shifted = tuple(
+            _closed_candle(
+                row_id=7200 + index,
+                timeframe="M15",
+                open_at=candle.open_time_utc - timedelta(minutes=30),
+                open_price=candle.open,
+                high=candle.high,
+                low=candle.low,
+                close=candle.close,
+            )
+            for index, candle in enumerate(evidence.m15_candles)
+        )
+        old_break = DirectionalThesisEvidenceV1.model_validate(
+            {**evidence.model_dump(exclude={"m15_candles"}), "m15_candles": shifted}
+        )
+        result = await _repository(postgres).process_evidence(old_break)
+        assert (result.status, result.reason_code) == ("WAIT", "M15_BREAK_PRECEDES_H1_AUTHORITY")
+        assert await _p4_counts(postgres, lifecycle_id) == {"h1": 0, "m15": 0, "theses": 0}
+    finally:
+        await _cleanup(postgres, lifecycle_id)

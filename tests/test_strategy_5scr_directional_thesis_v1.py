@@ -11,12 +11,14 @@ import pytest
 from pydantic import ValidationError
 
 from analysis.strategy_5scr_directional_thesis_v1 import (
+    ActiveStructuralLivenessResult,
     DirectionalThesisBuildArtifact,
     active_structural_invalidation_reason,
     build_directional_thesis_proofs,
     candle_evidence_hash,
     candle_material_hash,
     close_directional_thesis,
+    evaluate_active_structural_liveness,
 )
 from analysis.strategy_5scr_structural_proof_provider_v1 import candle_authority_from_row
 from contracts.strategy_5scr_context_epoch_v1 import DirectionDomain, StrategyContextEpochV1
@@ -243,6 +245,9 @@ def _pressure(
     contract_direction: Direction | None = None,
     observed_at: datetime = START,
     valid_until: datetime | None = DECISION + timedelta(hours=1),
+    lifecycle_id: str = LIFECYCLE,
+    context_epoch_id: str = CONTEXT,
+    symbol: str = SYMBOL,
 ) -> PressureDirectionAuthorityV1:
     resolved_status: PressureContractStatus = status or ("RADAR_ONLY" if mode == "RADAR_ONLY" else "LOCKED")
     transition = (
@@ -252,6 +257,9 @@ def _pressure(
     )
     source_ids = ("pressure:authority",) if transition is None else ("pressure:authority", transition)
     return PressureDirectionAuthorityV1(
+        strategy_lifecycle_id=lifecycle_id,
+        context_epoch_id=context_epoch_id,
+        symbol=symbol,
         mode=mode,
         contract_status=resolved_status,
         raw_pressure_direction=raw_direction,
@@ -297,7 +305,13 @@ def _evidence(
         decision_at_utc=decision,
         strategy_direction=direction,
         selected_route=BUY_ROUTE if direction == "BUY" else SELL_ROUTE,
-        pressure_authority=pressure or _pressure(raw_direction=direction),
+        pressure_authority=pressure
+        or _pressure(
+            raw_direction=direction,
+            lifecycle_id=context.strategy_lifecycle_id,
+            context_epoch_id=context.context_epoch_id,
+            symbol=context.symbol,
+        ),
         route_authorization=route,
         h1_candles=default_h1 if h1 is None else h1,
         m15_candles=default_m15 if m15 is None else m15,
@@ -349,6 +363,7 @@ def _thesis(
         structural_proof_hash=artifact.structural_proof_hash,
         semantic_identity_hash=artifact.semantic_identity_hash,
         created_at_utc=DECISION,
+        liveness_checked_through_utc=DECISION,
     )
 
 
@@ -458,6 +473,9 @@ def test_pressure_authority_matrix_fails_closed() -> None:
 
 def test_lifecycle_direction_alone_cannot_fabricate_locked_authority() -> None:
     payload = {
+        "strategy_lifecycle_id": LIFECYCLE,
+        "context_epoch_id": CONTEXT,
+        "symbol": SYMBOL,
         "mode": "CONSOLIDATED_DIRECTION_CONTRACT",
         "contract_status": "LOCKED",
         "raw_pressure_direction": "BUY",
@@ -652,7 +670,7 @@ def test_h1_and_m15_ordering_are_recomputed_not_trusted() -> None:
     )
 
     assert (h1_result.status, h1_result.reason_code) == ("WAIT", "H1_CLOSED_STRUCTURE_PROOF_MISSING")
-    assert (order_result.status, order_result.reason_code) == ("WAIT", "M15_ORDERED_BREAK_COMPLETION_MISSING")
+    assert (order_result.status, order_result.reason_code) == ("WAIT", "M15_BREAK_PRECEDES_H1_AUTHORITY")
     assert (completion_result.status, completion_result.reason_code) == (
         "WAIT",
         "M15_ORDERED_BREAK_COMPLETION_MISSING",
@@ -952,7 +970,7 @@ def test_newer_same_direction_h1_break_cannot_reuse_older_m15_proof() -> None:
 
     assert (result.status, result.reason_code, result.artifact) == (
         "WAIT",
-        "M15_ORDERED_BREAK_COMPLETION_MISSING",
+        "M15_BREAK_PRECEDES_H1_AUTHORITY",
         None,
     )
 
@@ -1209,7 +1227,7 @@ def test_active_liveness_cannot_be_masked_by_successor_pressure_or_direction() -
     )
 
     assert (successor.status, successor.reason_code) == ("REJECTED", "PRESSURE_AUTHORITY_EXPIRED")
-    assert reason == "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK"
+    assert reason == "THESIS_INVALIDATED_BY_COUNTER_H1"
 
 
 def test_active_liveness_a_to_b_to_a_does_not_resurrect_old_identity() -> None:
@@ -1254,7 +1272,7 @@ def test_active_liveness_a_to_b_to_a_does_not_resurrect_old_identity() -> None:
         decision_at_utc=START + timedelta(hours=5),
     )
 
-    assert reason == "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK"
+    assert reason == "THESIS_INVALIDATED_BY_COUNTER_H1"
 
 
 def test_active_liveness_rejects_future_or_drifted_candle_authority() -> None:
@@ -1352,3 +1370,126 @@ def test_m15_contract_rejects_break_or_completion_that_does_not_close_beyond_lev
         type(proof).model_validate({**proof.model_dump(mode="python"), "break_candle": break_candle})
     with pytest.raises(ValidationError):
         type(proof).model_validate({**proof.model_dump(mode="python"), "completion_candle": completion})
+
+
+@pytest.mark.parametrize(
+    "pressure",
+    (
+        _pressure(symbol="USDJPY"),
+        _pressure(lifecycle_id="5scr-lifecycle:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        _pressure(context_epoch_id="5scr-context:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+    ),
+)
+def test_pressure_authority_is_bound_to_exact_market_scope(pressure: PressureDirectionAuthorityV1) -> None:
+    context = _context()
+    result = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(context, "BUY", pressure=pressure),
+    )
+    assert (result.status, result.reason_code, result.artifact) == (
+        "REJECTED",
+        "PRESSURE_AUTHORITY_SCOPE_MISMATCH",
+        None,
+    )
+
+
+def test_pressure_authority_lineage_refresh_preserves_scoped_material_identity() -> None:
+    original = _pressure()
+    refreshed = original.model_copy(
+        update={
+            "source_event_ids": ("pressure:lineage-refresh",),
+            "observed_at_utc": original.observed_at_utc + timedelta(minutes=1),
+        }
+    )
+    assert refreshed.authority_hash == original.authority_hash
+
+
+def test_m15_break_must_open_at_or_after_h1_authority() -> None:
+    context = _context()
+    h1, _ = _candles("BUY")
+    old = tuple(
+        candle_authority_from_row(
+            _row(
+                row_id=900 + index,
+                timeframe="M15",
+                open_time=START + timedelta(hours=1, minutes=30 + 15 * index),
+                open_price=(1.1000, 1.1005, 1.1015)[index],
+                high=(1.1010, 1.1020, 1.1022)[index],
+                low=(1.0995, 1.1000, 1.1008)[index],
+                close=(1.1005, 1.1015, 1.1016)[index],
+            )
+        )
+        for index in range(3)
+    )
+    rejected = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(context, "BUY", h1=h1, m15=old),
+    )
+    _, fresh = _candles("BUY")
+    accepted = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(context, "BUY", h1=h1, m15=fresh),
+    )
+    assert (rejected.status, rejected.reason_code) == ("WAIT", "M15_BREAK_PRECEDES_H1_AUTHORITY")
+    assert accepted.status == "READY"
+
+
+def test_complete_long_range_liveness_finds_old_invalidation_and_gaps_fail_closed() -> None:
+    context = _context()
+    artifact = _artifact(context, "BUY")
+    watermark = DECISION
+    h1 = [artifact.h1_proof.confirmation_candle]
+    for index in range(1, 33):
+        previous = h1[-1]
+        close = previous.low - 0.001 if index == 3 else previous.close + 0.0001
+        h1.append(
+            candle_authority_from_row(
+                _row(
+                    row_id=1100 + index,
+                    timeframe="H1",
+                    open_time=previous.close_time_utc,
+                    open_price=previous.close,
+                    high=max(previous.close + 0.0005, close),
+                    low=min(previous.close - 0.0005, close),
+                    close=close,
+                )
+            )
+        )
+    m15 = [artifact.m15_proof.completion_candle]
+    while m15[-1].close_time_utc < watermark + timedelta(hours=30):
+        previous = m15[-1]
+        close = max(artifact.m15_proof.break_level + 0.0002, previous.close)
+        m15.append(
+            candle_authority_from_row(
+                _row(
+                    row_id=2000 + len(m15),
+                    timeframe="M15",
+                    open_time=previous.close_time_utc,
+                    open_price=previous.close,
+                    high=close + 0.0002,
+                    low=min(previous.close, close) - 0.0001,
+                    close=close,
+                )
+            )
+        )
+    result = evaluate_active_structural_liveness(
+        h1_proof=artifact.h1_proof,
+        m15_proof=artifact.m15_proof,
+        h1_candles=tuple(h1),
+        m15_candles=tuple(m15),
+        liveness_checked_through_utc=watermark,
+        decision_at_utc=watermark + timedelta(hours=30),
+    )
+    assert isinstance(result, ActiveStructuralLivenessResult)
+    assert result.reason_code == "THESIS_INVALIDATED_BY_COUNTER_H1"
+    assert result.invalidated_at_utc == watermark + timedelta(hours=1)
+
+    gap = evaluate_active_structural_liveness(
+        h1_proof=artifact.h1_proof,
+        m15_proof=artifact.m15_proof,
+        h1_candles=tuple(h1[:2] + h1[3:]),
+        m15_candles=tuple(m15),
+        liveness_checked_through_utc=watermark,
+        decision_at_utc=watermark + timedelta(hours=30),
+    )
+    assert gap == ActiveStructuralLivenessResult("LIVENESS_COVERAGE_INCOMPLETE", None, watermark)

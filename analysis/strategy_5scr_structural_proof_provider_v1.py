@@ -78,23 +78,21 @@ def candle_authority_from_row(row: Mapping[str, Any]) -> ClosedCandleAuthorityRe
 
 
 class StructuralCandleAuthorityStoreV1(Protocol):
-    async def load_authoritative_candles(
+    async def load_authoritative_candle_range(
         self,
         *,
         symbol: str,
         timeframe: str,
+        start_exclusive_utc: datetime,
         as_of_utc: datetime,
-        limit: int,
     ) -> Sequence[ClosedCandleAuthorityRefV1]: ...
 
 
 class Strategy5SCRStructuralProofProviderV1:
     """Load only immutable H1/M15 authority needed by P4."""
 
-    def __init__(self, store: StructuralCandleAuthorityStoreV1, *, h1_limit: int = 24, m15_limit: int = 64) -> None:
+    def __init__(self, store: StructuralCandleAuthorityStoreV1) -> None:
         self._store = store
-        self._h1_limit = max(2, h1_limit)
-        self._m15_limit = max(3, m15_limit)
 
     async def provide(
         self,
@@ -106,15 +104,17 @@ class Strategy5SCRStructuralProofProviderV1:
         strategy_direction: Direction,
         selected_route: str,
         pressure_authority: PressureDirectionAuthorityV1,
+        coverage_start_at_utc: datetime,
         route_authorization: RouteDirectionAuthorizationV1 | None = None,
         source_request_id: str | None = None,
     ) -> DirectionalThesisEvidenceV1:
         cutoff = _utc(decision_at_utc)
-        h1 = await self._store.load_authoritative_candles(
-            symbol=symbol.upper(), timeframe="H1", as_of_utc=cutoff, limit=self._h1_limit
+        coverage_start = _utc(coverage_start_at_utc)
+        h1 = await self._store.load_authoritative_candle_range(
+            symbol=symbol.upper(), timeframe="H1", start_exclusive_utc=coverage_start, as_of_utc=cutoff
         )
-        m15 = await self._store.load_authoritative_candles(
-            symbol=symbol.upper(), timeframe="M15", as_of_utc=cutoff, limit=self._m15_limit
+        m15 = await self._store.load_authoritative_candle_range(
+            symbol=symbol.upper(), timeframe="M15", start_exclusive_utc=coverage_start, as_of_utc=cutoff
         )
         return DirectionalThesisEvidenceV1(
             strategy_lifecycle_id=strategy_lifecycle_id,

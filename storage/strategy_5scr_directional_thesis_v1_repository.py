@@ -21,11 +21,12 @@ from pydantic import ValidationError
 from analysis.strategy_5scr_context_epoch_v1 import context_evidence_hash, material_context_hash
 from analysis.strategy_5scr_directional_thesis_v1 import (
     DirectionalThesisBuildArtifact,
-    active_structural_invalidation_reason,
+    advance_directional_thesis_liveness,
     build_directional_thesis_proofs,
     candle_evidence_hash,
     candle_material_hash,
     close_directional_thesis,
+    evaluate_active_structural_liveness,
 )
 from analysis.strategy_5scr_structural_proof_provider_v1 import (
     Strategy5SCRStructuralProofProviderV1,
@@ -180,6 +181,7 @@ _REQUIRED_COLUMNS = {
             ("semantic_identity_hash", "character varying", False, 71, ""),
             ("rule_version", "character varying", False, 100, ""),
             ("created_at", "timestamp with time zone", False, None, ""),
+            ("liveness_checked_through", "timestamp with time zone", False, None, ""),
             ("closed_at", "timestamp with time zone", True, None, ""),
             ("closure_reason", "character varying", True, 160, ""),
             ("state_version", "bigint", False, None, ""),
@@ -462,9 +464,10 @@ _REQUIRED_CONSTRAINTS: dict[str, _ConstraintContract] = {
         "state",
         "active",
         "closed_at is null",
+        "liveness_checked_through >= created_at",
         "invalidated",
         "terminal",
-        "closed_at >= created_at",
+        "closed_at >= liveness_checked_through",
         "closure_reason is not null",
     ),
     "ck_5scr_thesis_shadow_only_v1": _constraint(
@@ -503,7 +506,7 @@ _REQUIRED_CONSTRAINT_DEFINITION_HASHES = {
     "ck_5scr_thesis_counter_pressure_hash_v1": "12e95e2cd4195f04d3a020ce66d3772cea7bc4bde51ded22d726f9fc7de20b55",
     "ck_5scr_thesis_shadow_only_v1": "784104188fe902a7efad1747bb0817529b629f1c8b61ba22a9ca0cfc74f91281",
     "ck_5scr_thesis_state_v1": "74adb602f04fb62b81164ea2ad69efcfa6d1f635452f77abb07c762223cca7a6",
-    "ck_5scr_thesis_temporal_v1": "6d58b72cffbc647c0d27a6374686f63434ad4eec7558a0dbfaf6a5dc2c274cf5",
+    "ck_5scr_thesis_temporal_v1": "708921543a4038a13210527352af3baa42f907f304eeb3894333dbeda2e06f5c",
     "fk_5scr_h1_proof_context_scope_v1": "8c5c3a15e4ab8adedb9a4021b0462181ddc80d35de4144f389e297d2929b4aca",
     "fk_5scr_h1_proof_lifecycle_v1": "b1761179c1b12af56f970536031e896d2cd42265aeec3e0c6923ca2144989230",
     "fk_5scr_m15_proof_context_scope_v1": "8c5c3a15e4ab8adedb9a4021b0462181ddc80d35de4144f389e297d2929b4aca",
@@ -590,6 +593,7 @@ _REQUIRED_TRIGGERS = {
             "strategy_5scr_thesis_delete_forbidden",
             "strategy_5scr_thesis_identity_immutable",
             "strategy_5scr_thesis_state_transition_invalid",
+            "strategy_5scr_thesis_liveness_transition_invalid",
             "old.state <> 'active'",
             "new.state_version <> old.state_version + 1",
         ),
@@ -599,7 +603,7 @@ _REQUIRED_TRIGGERS = {
 _REQUIRED_TRIGGER_DEFINITION_HASHES = {
     "trg_strategy_5scr_directional_theses_v1_guard": (
         "8e4d42286095d6c0ff3e282e79682b7cbb2fa65a2fd9237935488b7cc5b7a163",
-        "b94b25e41516d0dfa7fa21f93467acd6c041b3b3825dd90b10e79185d8c17737",
+        "e6ae01e362a3f076d20989dc69905f5fc196823e453ea03a22d5148ce5e6f037",
     ),
     "trg_strategy_5scr_h1_structure_proofs_v1_immutable": (
         "b6159d2a6e6529ba15b6b313c19e0c6738a0baa218ce96b05fd4c8e795dab41a",
@@ -1002,10 +1006,22 @@ def _thesis_from_row(row: Any) -> DirectionalThesisV1:
         actual = _row_value(row, column)
         if str(actual) != str(expected):
             raise DirectionalThesisV1IntegrityError(f"DIRECTIONAL_THESIS_PAYLOAD_DRIFT:{column}")
+    mutable = {
+        "state": thesis.state,
+        "liveness_checked_through": thesis.liveness_checked_through_utc,
+        "closed_at": thesis.closed_at_utc,
+        "closure_reason": thesis.closure_reason,
+        "state_version": thesis.state_version,
+    }
+    for column, expected in mutable.items():
+        actual = _row_value(row, column)
+        if str(actual) != str(expected):
+            raise DirectionalThesisV1IntegrityError(f"DIRECTIONAL_THESIS_PAYLOAD_DRIFT:{column}")
     return DirectionalThesisV1.model_validate(
         {
             **dict(payload),
             "state": str(_row_value(row, "state")),
+            "liveness_checked_through_utc": _row_value(row, "liveness_checked_through"),
             "closed_at_utc": _row_value(row, "closed_at"),
             "closure_reason": _row_value(row, "closure_reason"),
             "state_version": int(_row_value(row, "state_version")),
@@ -1191,23 +1207,26 @@ class Strategy5SCRDirectionalThesisV1Repository:
             invalid_triggers=tuple(sorted(invalid_triggers)),
         )
 
-    async def load_authoritative_candles(
+    async def load_authoritative_candle_range(
         self,
         *,
         symbol: str,
         timeframe: str,
+        start_exclusive_utc: datetime,
         as_of_utc: datetime,
-        limit: int,
     ) -> Sequence[ClosedCandleAuthorityRefV1]:
-        """Freeze the latest closed canonical H1/M15 selections as-of a cutoff."""
+        """Freeze complete range coverage plus one preceding candle for adjacency."""
 
         normalized_timeframe = timeframe.upper()
         if normalized_timeframe not in {"H1", "M15"}:
             raise ValueError("P4_CANDLE_TIMEFRAME_UNSUPPORTED")
         cutoff = _utc(as_of_utc, "as_of_utc")
+        start = _utc(start_exclusive_utc, "start_exclusive_utc")
+        if start > cutoff:
+            raise ValueError("P4_CANDLE_RANGE_INVALID")
         rows = await self._pg.fetch(
             f"""
-            SELECT * FROM (
+            WITH preceding AS (
                 SELECT id, symbol, timeframe, open_time, close_time,
                        open, high, low, close, volume, tick_count,
                        selected_provider, selected_feed, provider_timestamp_semantics,
@@ -1217,14 +1236,24 @@ class Strategy5SCRDirectionalThesisV1Repository:
                   AND provider_timestamp_semantics <> 'UNSPECIFIED'
                   AND close_time <= $3
                 ORDER BY close_time DESC, id DESC
-                LIMIT $4
-            ) selected
+                LIMIT 1
+            ), covered AS (
+                SELECT id, symbol, timeframe, open_time, close_time,
+                       open, high, low, close, volume, tick_count,
+                       selected_provider, selected_feed, provider_timestamp_semantics,
+                       selected_raw_candle_id, selection_policy, selection_rank, content_hash
+                FROM {CANONICAL_CANDLE_TABLE}
+                WHERE symbol = $1 AND timeframe = $2 AND complete IS TRUE
+                  AND provider_timestamp_semantics <> 'UNSPECIFIED'
+                  AND close_time > $3 AND close_time <= $4
+            )
+            SELECT * FROM (SELECT * FROM preceding UNION ALL SELECT * FROM covered) selected
             ORDER BY close_time, id
             """,
             symbol.upper(),
             normalized_timeframe,
+            start,
             cutoff,
-            max(1, int(limit)),
         )
         return tuple(candle_authority_from_row(dict(row)) for row in rows)
 
@@ -1241,6 +1270,20 @@ class Strategy5SCRDirectionalThesisV1Repository:
         route_authorization: RouteDirectionAuthorizationV1 | None = None,
         source_request_id: str | None = None,
     ) -> DirectionalThesisPersistResult:
+        context_row = await self._pg.fetchrow(
+            f"SELECT opened_at FROM {CONTEXT_TABLE} WHERE context_epoch_id = $1",
+            context_epoch_id,
+        )
+        if context_row is None:
+            return DirectionalThesisPersistResult(
+                status="REJECTED",
+                strategy_lifecycle_id=strategy_lifecycle_id,
+                context_epoch_id=context_epoch_id,
+                reason_code="CONTEXT_EPOCH_MISSING",
+            )
+        coverage_start = _row_value(context_row, "opened_at")
+        if not isinstance(coverage_start, datetime):
+            raise DirectionalThesisV1IntegrityError("CONTEXT_EPOCH_OPEN_CLOCK_MISSING")
         provider = Strategy5SCRStructuralProofProviderV1(self)
         evidence = await provider.provide(
             strategy_lifecycle_id=strategy_lifecycle_id,
@@ -1250,6 +1293,7 @@ class Strategy5SCRDirectionalThesisV1Repository:
             strategy_direction=strategy_direction,
             selected_route=selected_route,
             pressure_authority=pressure_authority,
+            coverage_start_at_utc=coverage_start,
             route_authorization=route_authorization,
             source_request_id=source_request_id,
         )
@@ -1406,22 +1450,27 @@ class Strategy5SCRDirectionalThesisV1Repository:
                     connection,
                     active,
                 )
-                liveness_reason = active_structural_invalidation_reason(
+                liveness = evaluate_active_structural_liveness(
                     h1_proof=active_h1,
                     m15_proof=active_m15,
                     h1_candles=evidence.h1_candles,
                     m15_candles=evidence.m15_candles,
+                    liveness_checked_through_utc=active.liveness_checked_through_utc,
                     decision_at_utc=evidence.decision_at_utc,
                 )
+                liveness_reason = liveness.reason_code
                 if liveness_reason in {
-                    "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK",
-                    "M15_STRUCTURAL_PROOF_INVALIDATED",
+                    "THESIS_INVALIDATED_BY_COUNTER_H1",
+                    "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE",
                 }:
                     closed = await self._close_locked(
                         connection,
                         active,
                         state="INVALIDATED",
-                        closed_at_utc=max(active.created_at_utc, evidence.decision_at_utc),
+                        closed_at_utc=max(
+                            active.created_at_utc,
+                            liveness.invalidated_at_utc or evidence.decision_at_utc,
+                        ),
                         reason=liveness_reason,
                     )
                     return self._result(
@@ -1435,6 +1484,12 @@ class Strategy5SCRDirectionalThesisV1Repository:
                         "REJECTED" if liveness_reason == "ACTIVE_LIVENESS_DECISION_PRECEDES_PROOF" else "QUARANTINED"
                     )
                     return self._result(status, evidence, liveness_reason, thesis=active)
+                if liveness.checked_through_utc > active.liveness_checked_through_utc:
+                    active = await self._advance_liveness_locked(
+                        connection,
+                        active,
+                        checked_through_utc=liveness.checked_through_utc,
+                    )
 
             build = build_directional_thesis_proofs(context=context, evidence=evidence)
             if build.status != "READY" or build.artifact is None:
@@ -1647,6 +1702,7 @@ class Strategy5SCRDirectionalThesisV1Repository:
             semantic_identity_hash=artifact.semantic_identity_hash,
             rule_version=DIRECTIONAL_THESIS_RULE_VERSION,
             created_at_utc=evidence.decision_at_utc,
+            liveness_checked_through_utc=evidence.decision_at_utc,
         )
 
     @staticmethod
@@ -1920,12 +1976,12 @@ class Strategy5SCRDirectionalThesisV1Repository:
                 pressure_formal_transition_event_id, pressure_authority_hash,
                 counter_pressure_proof_hash,
                 h1_proof_id, m15_proof_id, structural_proof_hash,
-                semantic_identity_hash, rule_version, created_at, closed_at,
+                semantic_identity_hash, rule_version, created_at, liveness_checked_through, closed_at,
                 closure_reason, state_version, valid_for_execution,
                 execution_authority, payload
             ) VALUES (
                 $1,$2,$3,$4,$5,$6,true,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-                $17,$18,$19,$20,$21,$22,$23,$24,$25,false,false,$26::jsonb
+                $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,false,false,$27::jsonb
             ) ON CONFLICT DO NOTHING
             """,
             thesis.strategy_thesis_id,
@@ -1950,6 +2006,7 @@ class Strategy5SCRDirectionalThesisV1Repository:
             thesis.semantic_identity_hash,
             thesis.rule_version,
             thesis.created_at_utc,
+            thesis.liveness_checked_through_utc,
             thesis.closed_at_utc,
             thesis.closure_reason,
             thesis.state_version,
@@ -1975,6 +2032,38 @@ class Strategy5SCRDirectionalThesisV1Repository:
             raise DirectionalThesisV1IntegrityError("DIRECTIONAL_THESIS_IDENTITY_DRIFT")
 
     @staticmethod
+    async def _advance_liveness_locked(
+        connection: Any,
+        thesis: DirectionalThesisV1,
+        *,
+        checked_through_utc: datetime,
+    ) -> DirectionalThesisV1:
+        await Strategy5SCRDirectionalThesisV1Repository._validate_thesis_proof_chain(connection, thesis)
+        advanced = advance_directional_thesis_liveness(
+            thesis,
+            checked_through_utc=checked_through_utc,
+        )
+        if advanced is thesis:
+            return thesis
+        payload = json.dumps(advanced.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        result = await connection.execute(
+            f"""
+            UPDATE {THESIS_TABLE}
+            SET liveness_checked_through = $2, state_version = $3,
+                payload = $4::jsonb, updated_at = now()
+            WHERE strategy_thesis_id = $1 AND state = 'ACTIVE' AND state_version = $5
+            """,
+            advanced.strategy_thesis_id,
+            advanced.liveness_checked_through_utc,
+            advanced.state_version,
+            payload,
+            thesis.state_version,
+        )
+        if not str(result).endswith(" 1"):
+            raise DirectionalThesisV1IntegrityError("DIRECTIONAL_THESIS_LIVENESS_VERSION_NOT_ADVANCED")
+        return advanced
+
+    @staticmethod
     async def _close_locked(
         connection: Any,
         thesis: DirectionalThesisV1,
@@ -1993,18 +2082,22 @@ class Strategy5SCRDirectionalThesisV1Repository:
             closed_at_utc=closed_at_utc,
             reason=reason,
         )
+        payload = json.dumps(closed.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         result = await connection.execute(
             f"""
             UPDATE {THESIS_TABLE}
             SET state = $2, closed_at = $3, closure_reason = $4,
-                state_version = $5, updated_at = now()
-            WHERE strategy_thesis_id = $1 AND state = 'ACTIVE' AND state_version = $6
+                state_version = $5, liveness_checked_through = $6,
+                payload = $7::jsonb, updated_at = now()
+            WHERE strategy_thesis_id = $1 AND state = 'ACTIVE' AND state_version = $8
             """,
             closed.strategy_thesis_id,
             closed.state,
             closed.closed_at_utc,
             closed.closure_reason,
             closed.state_version,
+            closed.liveness_checked_through_utc,
+            payload,
             thesis.state_version,
         )
         if not str(result).endswith(" 1"):

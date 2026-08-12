@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from contracts.strategy_5scr_context_epoch_v1 import StrategyContextEpochV1
@@ -24,6 +24,13 @@ from contracts.strategy_5scr_directional_thesis_v1 import (
 )
 
 ThesisBuildStatus = Literal["READY", "WAIT", "REJECTED", "QUARANTINED"]
+
+
+@dataclass(frozen=True)
+class ActiveStructuralLivenessResult:
+    reason_code: str | None
+    invalidated_at_utc: datetime | None
+    checked_through_utc: datetime
 
 
 def _sha256(payload: Any) -> str:
@@ -107,6 +114,7 @@ def active_structural_invalidation_reason(
                 return "ACTIVE_LIVENESS_CANDLE_ORDER_INVALID"
             previous_close = candle.close_time_utc
 
+    invalidations: list[tuple[datetime, str]] = []
     for index in range(1, len(h1_candles)):
         anchor, confirmation = h1_candles[index - 1 : index + 1]
         if anchor.close_time_utc != confirmation.open_time_utc:
@@ -122,16 +130,141 @@ def active_structural_invalidation_reason(
         # counter-break.  A later break back in the original direction is a
         # fresh thesis opportunity, never resurrection of the old identity.
         if break_direction is not None and break_direction != h1_proof.strategy_direction:
-            return "H1_STRUCTURE_SUPERSEDED_BY_OPPOSITE_BREAK"
+            invalidations.append((confirmation.close_time_utc, "THESIS_INVALIDATED_BY_COUNTER_H1"))
 
     for candle in m15_candles:
         if candle.close_time_utc <= m15_proof.completed_at_utc:
             continue
         if m15_proof.strategy_direction == "BUY" and candle.close <= m15_proof.break_level:
-            return "M15_STRUCTURAL_PROOF_INVALIDATED"
+            invalidations.append((candle.close_time_utc, "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE"))
         if m15_proof.strategy_direction == "SELL" and candle.close >= m15_proof.break_level:
-            return "M15_STRUCTURAL_PROOF_INVALIDATED"
-    return None
+            invalidations.append((candle.close_time_utc, "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE"))
+    return min(invalidations, default=(decision_at, None), key=lambda item: item[0])[1]
+
+
+def _expected_close_times(start_exclusive: datetime, through: datetime, step: timedelta) -> tuple[datetime, ...]:
+    if through <= start_exclusive:
+        return ()
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
+    elapsed = start_exclusive - epoch
+    completed_steps = elapsed // step
+    next_close = epoch + (completed_steps + 1) * step
+    if next_close <= start_exclusive:
+        next_close += step
+    expected: list[datetime] = []
+    while next_close <= through:
+        expected.append(next_close)
+        next_close += step
+    return tuple(expected)
+
+
+def evaluate_active_structural_liveness(
+    *,
+    h1_proof: H1StructureProofV1,
+    m15_proof: M15StructuralProofV1,
+    h1_candles: Sequence[ClosedCandleAuthorityRefV1],
+    m15_candles: Sequence[ClosedCandleAuthorityRefV1],
+    liveness_checked_through_utc: datetime,
+    decision_at_utc: datetime,
+) -> ActiveStructuralLivenessResult:
+    """Prove complete post-watermark liveness or fail closed on any candle gap."""
+
+    checked = liveness_checked_through_utc.astimezone(UTC)
+    decision_at = decision_at_utc.astimezone(UTC)
+    if decision_at < checked:
+        return ActiveStructuralLivenessResult("ACTIVE_LIVENESS_DECISION_PRECEDES_WATERMARK", None, checked)
+
+    reason = active_structural_invalidation_reason(
+        h1_proof=h1_proof,
+        m15_proof=m15_proof,
+        h1_candles=h1_candles,
+        m15_candles=m15_candles,
+        decision_at_utc=decision_at,
+    )
+    first_h1_invalidation_at: datetime | None = None
+    first_m15_invalidation_at: datetime | None = None
+    if reason is not None:
+        candidates: list[datetime] = []
+        if reason == "THESIS_INVALIDATED_BY_COUNTER_H1":
+            for index in range(1, len(h1_candles)):
+                anchor, confirmation = h1_candles[index - 1 : index + 1]
+                if not checked < confirmation.close_time_utc <= decision_at:
+                    continue
+                if anchor.close_time_utc != confirmation.open_time_utc:
+                    continue
+                opposite = (
+                    confirmation.close < anchor.low
+                    if h1_proof.strategy_direction == "BUY"
+                    else confirmation.close > anchor.high
+                )
+                if opposite:
+                    candidates.append(confirmation.close_time_utc)
+        elif reason == "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE":
+            for candle in m15_candles:
+                if not checked < candle.close_time_utc <= decision_at:
+                    continue
+                failed = (
+                    candle.close <= m15_proof.break_level
+                    if m15_proof.strategy_direction == "BUY"
+                    else candle.close >= m15_proof.break_level
+                )
+                if failed:
+                    candidates.append(candle.close_time_utc)
+        if candidates:
+            if reason == "THESIS_INVALIDATED_BY_COUNTER_H1":
+                first_h1_invalidation_at = min(candidates)
+            elif reason == "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE":
+                first_m15_invalidation_at = min(candidates)
+
+    invalidation_times = tuple(
+        item for item in (first_h1_invalidation_at, first_m15_invalidation_at) if item is not None
+    )
+    invalidated_at = min(invalidation_times) if invalidation_times else None
+    if invalidated_at is not None and invalidated_at == first_h1_invalidation_at:
+        reason = "THESIS_INVALIDATED_BY_COUNTER_H1"
+    elif invalidated_at is not None and invalidated_at == first_m15_invalidation_at:
+        reason = "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE"
+
+    expected_by_timeframe: dict[str, tuple[datetime, ...]] = {}
+    coverage_through = invalidated_at or decision_at
+    h1_coverage_through: datetime = coverage_through
+    m15_coverage_through: datetime = coverage_through
+    if reason == "THESIS_INVALIDATED_BY_COUNTER_H1" and invalidated_at is not None:
+        h1_coverage_through = invalidated_at
+        # H1 counter-structure is independently terminal authority.  M15 bars
+        # are not required to prove an H1 invalidation that already occurred.
+        m15_coverage_through = checked
+    elif reason == "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE" and invalidated_at is not None:
+        m15_coverage_through = invalidated_at
+    for candles, timeframe, step in (
+        (h1_candles, "H1", timedelta(hours=1)),
+        (m15_candles, "M15", timedelta(minutes=15)),
+    ):
+        timeframe_through = h1_coverage_through if timeframe == "H1" else m15_coverage_through
+        expected = _expected_close_times(checked, timeframe_through, step)
+        expected_by_timeframe[timeframe] = expected
+        actual = {
+            candle.close_time_utc
+            for candle in candles
+            if candle.timeframe == timeframe and checked < candle.close_time_utc <= timeframe_through
+        }
+        if any(close_time not in actual for close_time in expected):
+            return ActiveStructuralLivenessResult("LIVENESS_COVERAGE_INCOMPLETE", None, checked)
+        if timeframe == "H1" and expected:
+            first_open = expected[0] - step
+            if not any(candle.close_time_utc == first_open for candle in candles):
+                return ActiveStructuralLivenessResult("LIVENESS_COVERAGE_INCOMPLETE", None, checked)
+
+    if invalidated_at is not None:
+        return ActiveStructuralLivenessResult(reason, invalidated_at, invalidated_at)
+    if reason is None:
+        latest_proven = checked
+        for timeframe in ("H1", "M15"):
+            expected = expected_by_timeframe.get(timeframe, ())
+            if expected:
+                latest_proven = max(latest_proven, expected[-1])
+        return ActiveStructuralLivenessResult(None, None, min(decision_at, latest_proven))
+    return ActiveStructuralLivenessResult(reason, None, checked)
 
 
 @dataclass(frozen=True)
@@ -241,11 +374,21 @@ def _m15_proof(
         ]
         | None
     ) = None
+    break_preceded_h1 = False
     for index in range(1, len(candles) - 1):
         reference, breakout = candles[index - 1 : index + 1]
         if reference.close_time_utc != breakout.open_time_utc:
             continue
-        if breakout.close_time_utc < h1.confirmed_at_utc:
+        if breakout.open_time_utc < h1.confirmed_at_utc:
+            level = reference.high if direction == "BUY" else reference.low
+            broke = breakout.close > level if direction == "BUY" else breakout.close < level
+            completion = candles[index + 1]
+            if (
+                broke
+                and breakout.close_time_utc == completion.open_time_utc
+                and classify_m15_completion(direction, completion, level) is not None
+            ):
+                break_preceded_h1 = True
             continue
         level = reference.high if direction == "BUY" else reference.low
         broke = breakout.close > level if direction == "BUY" else breakout.close < level
@@ -260,7 +403,9 @@ def _m15_proof(
         latest_candidate = (reference, breakout, completion, level, completion_kind, index + 1)
 
     if latest_candidate is None:
-        return None, "M15_ORDERED_BREAK_COMPLETION_MISSING"
+        return None, (
+            "M15_BREAK_PRECEDES_H1_AUTHORITY" if break_preceded_h1 else "M15_ORDERED_BREAK_COMPLETION_MISSING"
+        )
 
     reference, breakout, completion, level, completion_kind, completion_index = latest_candidate
     invalidated = any(
@@ -342,6 +487,13 @@ def build_directional_thesis_proofs(
         return DirectionalThesisBuildResult("REJECTED", "THESIS_SYMBOL_MISMATCH")
     if context.state != "ACTIVE":
         return DirectionalThesisBuildResult("REJECTED", "CONTEXT_EPOCH_NOT_ACTIVE")
+    pressure_scope = evidence.pressure_authority
+    if (
+        pressure_scope.strategy_lifecycle_id != evidence.strategy_lifecycle_id
+        or pressure_scope.context_epoch_id != evidence.context_epoch_id
+        or pressure_scope.symbol != evidence.symbol
+    ):
+        return DirectionalThesisBuildResult("REJECTED", "PRESSURE_AUTHORITY_SCOPE_MISMATCH")
     if pressure_authority_material_hash(evidence.pressure_authority) != evidence.pressure_authority.authority_hash:
         return DirectionalThesisBuildResult("QUARANTINED", "PRESSURE_AUTHORITY_HASH_MISMATCH")
     if (
@@ -469,7 +621,26 @@ def close_directional_thesis(
             **thesis.model_dump(),
             "state": state,
             "closed_at_utc": closed_at_utc,
+            "liveness_checked_through_utc": closed_at_utc,
             "closure_reason": reason,
+            "state_version": thesis.state_version + 1,
+        }
+    )
+
+
+def advance_directional_thesis_liveness(
+    thesis: DirectionalThesisV1,
+    *,
+    checked_through_utc: datetime,
+) -> DirectionalThesisV1:
+    """Advance a durable ACTIVE liveness watermark without changing identity."""
+
+    if thesis.state != "ACTIVE" or checked_through_utc <= thesis.liveness_checked_through_utc:
+        return thesis
+    return DirectionalThesisV1.model_validate(
+        {
+            **thesis.model_dump(),
+            "liveness_checked_through_utc": checked_through_utc,
             "state_version": thesis.state_version + 1,
         }
     )
@@ -478,9 +649,12 @@ def close_directional_thesis(
 __all__ = [
     "DirectionalThesisBuildArtifact",
     "DirectionalThesisBuildResult",
+    "ActiveStructuralLivenessResult",
     "ThesisBuildStatus",
     "build_directional_thesis_proofs",
     "active_structural_invalidation_reason",
+    "advance_directional_thesis_liveness",
+    "evaluate_active_structural_liveness",
     "candle_evidence_hash",
     "candle_material_hash",
     "close_directional_thesis",

@@ -245,6 +245,7 @@ def upgrade() -> None:
         sa.Column("semantic_identity_hash", sa.String(length=71), nullable=False),
         sa.Column("rule_version", sa.String(length=100), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("liveness_checked_through", sa.DateTime(timezone=True), nullable=False),
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("closure_reason", sa.String(length=160), nullable=True),
         sa.Column("state_version", sa.BigInteger(), nullable=False),
@@ -351,8 +352,10 @@ def upgrade() -> None:
             name="ck_5scr_thesis_state_v1",
         ),
         sa.CheckConstraint(
-            "(state = 'ACTIVE' AND closed_at IS NULL AND closure_reason IS NULL) OR "
-            "(state IN ('INVALIDATED','TERMINAL') AND closed_at >= created_at AND closure_reason IS NOT NULL)",
+            "liveness_checked_through >= created_at AND "
+            "((state = 'ACTIVE' AND closed_at IS NULL AND closure_reason IS NULL) OR "
+            "(state IN ('INVALIDATED','TERMINAL') AND closed_at >= liveness_checked_through "
+            "AND closure_reason IS NOT NULL))",
             name="ck_5scr_thesis_temporal_v1",
         ),
         sa.CheckConstraint(
@@ -413,7 +416,7 @@ def upgrade() -> None:
                 NEW.counter_pressure_proof_hash, NEW.h1_proof_id, NEW.m15_proof_id,
                 NEW.structural_proof_hash, NEW.semantic_identity_hash,
                 NEW.rule_version, NEW.created_at, NEW.valid_for_execution,
-                NEW.execution_authority, NEW.payload
+                NEW.execution_authority
             ) IS DISTINCT FROM ROW(
                 OLD.strategy_thesis_id, OLD.strategy_lifecycle_id, OLD.context_epoch_id,
                 OLD.thesis_sequence, OLD.symbol, OLD.strategy_direction,
@@ -425,14 +428,37 @@ def upgrade() -> None:
                 OLD.counter_pressure_proof_hash, OLD.h1_proof_id, OLD.m15_proof_id,
                 OLD.structural_proof_hash, OLD.semantic_identity_hash,
                 OLD.rule_version, OLD.created_at, OLD.valid_for_execution,
-                OLD.execution_authority, OLD.payload
+                OLD.execution_authority
             ) THEN
                 RAISE EXCEPTION 'STRATEGY_5SCR_THESIS_IDENTITY_IMMUTABLE'
                     USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_thesis_immutable_v1';
             END IF;
-            IF OLD.state <> 'ACTIVE' OR NEW.state NOT IN ('INVALIDATED','TERMINAL')
-               OR NEW.state_version <> OLD.state_version + 1
-               OR NEW.closed_at IS NULL OR NEW.closure_reason IS NULL THEN
+            IF (NEW.payload - 'state' - 'closed_at_utc' - 'closure_reason'
+                    - 'state_version' - 'liveness_checked_through_utc')
+               IS DISTINCT FROM
+               (OLD.payload - 'state' - 'closed_at_utc' - 'closure_reason'
+                    - 'state_version' - 'liveness_checked_through_utc') THEN
+                RAISE EXCEPTION 'STRATEGY_5SCR_THESIS_PAYLOAD_IDENTITY_IMMUTABLE'
+                    USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_thesis_immutable_v1';
+            END IF;
+            IF OLD.state <> 'ACTIVE' OR NEW.state_version <> OLD.state_version + 1 THEN
+                RAISE EXCEPTION 'STRATEGY_5SCR_THESIS_STATE_TRANSITION_INVALID'
+                    USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_thesis_transition_v1';
+            END IF;
+            IF NEW.state = 'ACTIVE' THEN
+                IF NEW.closed_at IS NOT NULL OR NEW.closure_reason IS NOT NULL
+                   OR NEW.liveness_checked_through <= OLD.liveness_checked_through THEN
+                    RAISE EXCEPTION 'STRATEGY_5SCR_THESIS_LIVENESS_TRANSITION_INVALID'
+                        USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_thesis_transition_v1';
+                END IF;
+            ELSIF NEW.state IN ('INVALIDATED','TERMINAL') THEN
+                IF NEW.closed_at IS NULL OR NEW.closure_reason IS NULL
+                   OR NEW.liveness_checked_through < OLD.liveness_checked_through
+                   OR NEW.liveness_checked_through > NEW.closed_at THEN
+                    RAISE EXCEPTION 'STRATEGY_5SCR_THESIS_STATE_TRANSITION_INVALID'
+                        USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_thesis_transition_v1';
+                END IF;
+            ELSE
                 RAISE EXCEPTION 'STRATEGY_5SCR_THESIS_STATE_TRANSITION_INVALID'
                     USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_thesis_transition_v1';
             END IF;
