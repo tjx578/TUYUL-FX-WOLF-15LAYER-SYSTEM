@@ -2076,10 +2076,11 @@ class Strategy5SCRDirectionalThesisV1Repository:
             connection,
             thesis,
         )
+        effective_closed_at = max(closed_at_utc, thesis.liveness_checked_through_utc)
         closed = close_directional_thesis(
             thesis,
             state=state,
-            closed_at_utc=closed_at_utc,
+            closed_at_utc=effective_closed_at,
             reason=reason,
         )
         payload = json.dumps(closed.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))

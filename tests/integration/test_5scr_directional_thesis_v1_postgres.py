@@ -2261,6 +2261,61 @@ async def test_liveness_gap_quarantines_without_advancing_durable_watermark(
         await _cleanup(postgres, lifecycle_id)
 
 
+async def test_m15_failure_older_than_sixty_four_bars_survives_restart_and_closes_once(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id, _context_event, _context, evidence = await _seed_parent_chain(postgres)
+    repository = _repository(postgres)
+    try:
+        opened = await repository.process_evidence(evidence)
+        assert opened.status == "PERSISTED" and opened.thesis is not None
+        previous = evidence.m15_candles[-1]
+        appended: list[ClosedCandleAuthorityRefV1] = []
+        for index in range(70):
+            close = 1.1010 if index == 1 else 1.1033
+            appended.append(
+                _closed_candle(
+                    row_id=7300 + index,
+                    timeframe="M15",
+                    open_at=previous.close_time_utc,
+                    open_price=previous.close,
+                    high=max(previous.close, close) + 0.0003,
+                    low=min(previous.close, close) - 0.0003,
+                    close=close,
+                )
+            )
+            previous = appended[-1]
+        decision_at = appended[-1].close_time_utc
+        snapshot = DirectionalThesisEvidenceV1.model_validate(
+            {
+                **evidence.model_dump(
+                    exclude={"decision_at_utc", "pressure_authority", "m15_candles", "source_request_id"}
+                ),
+                "decision_at_utc": decision_at,
+                "pressure_authority": evidence.pressure_authority.model_copy(
+                    update={"valid_until_utc": decision_at + timedelta(hours=1)}
+                ),
+                "m15_candles": (*evidence.m15_candles, *appended),
+                "source_request_id": f"m15-long-downtime-{uuid4().hex}",
+            }
+        )
+        invalidated = await repository.process_evidence(snapshot)
+        assert (invalidated.status, invalidated.reason_code) == (
+            "INVALIDATED",
+            "THESIS_INVALIDATED_BY_M15_LEVEL_FAILURE",
+        )
+        assert invalidated.thesis is not None
+        assert invalidated.thesis.closed_at_utc == appended[1].close_time_utc
+
+        replay = await Strategy5SCRDirectionalThesisV1Repository(cast(Any, postgres)).process_evidence(evidence)
+        assert replay.status in {"DUPLICATE", "QUARANTINED", "REJECTED"}
+        history = await repository.load_history(lifecycle_id)
+        assert len(history) == 1 and history[0].state == "INVALIDATED"
+        assert await repository.load_active(lifecycle_id) is None
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
 async def test_pre_h1_m15_break_is_wait_and_cannot_persist_any_p4_row(
     postgres: PoolBackedPostgres,
 ) -> None:
