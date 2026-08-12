@@ -125,6 +125,20 @@ def test_p4_runtime_defaults_off_and_requires_shadow_mode() -> None:
 
 
 def test_p4_has_no_production_consumer_or_runtime_wiring() -> None:
+    allowed_p5_consumers = {
+        (
+            "analysis/strategy_5scr_execution_box_v1.py",
+            "contracts.strategy_5scr_directional_thesis_v1",
+        ),
+        (
+            "storage/strategy_5scr_execution_box_v1_repository.py",
+            "contracts.strategy_5scr_directional_thesis_v1",
+        ),
+        (
+            "storage/strategy_5scr_execution_box_v1_repository.py",
+            "storage.strategy_5scr_directional_thesis_v1_repository",
+        ),
+    }
     consumers: list[tuple[str, str]] = []
     runtime_paths = {path.resolve() for path in RUNTIME_FILES}
     for root_name in ("analysis", "api", "contracts", "core", "execution", "services", "storage"):
@@ -141,7 +155,7 @@ def test_p4_has_no_production_consumer_or_runtime_wiring() -> None:
             for module in sorted(P4_MODULES & imports):
                 consumers.append((path.relative_to(ROOT).as_posix(), module))
 
-    assert consumers == []
+    assert set(consumers) == allowed_p5_consumers
 
 
 def test_p4_does_not_change_railway_or_mql5_surface() -> None:
