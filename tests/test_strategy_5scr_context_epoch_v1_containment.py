@@ -30,11 +30,13 @@ def test_enabled_non_shadow_configuration_fails_closed() -> None:
         config.validate()
 
 
-def test_context_epoch_has_no_production_runtime_consumer() -> None:
+def test_context_epoch_has_only_the_audited_p4_analysis_consumer() -> None:
     allowed = {
         "analysis/strategy_5scr_context_epoch_v1.py",
+        "analysis/strategy_5scr_directional_thesis_v1.py",
         "contracts/strategy_5scr_context_epoch_v1.py",
         "storage/strategy_5scr_context_epoch_v1_repository.py",
+        "storage/strategy_5scr_directional_thesis_v1_repository.py",
         "storage/migrations/versions/20260812_01_5scr_context_epoch_v1.py",
     }
     result = subprocess.run(
