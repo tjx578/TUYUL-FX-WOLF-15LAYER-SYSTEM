@@ -157,6 +157,7 @@ def _transition(
     reason: ContextTransitionReason,
     evidence: MaterialContextEvidenceV1,
     material_hash: str | None = None,
+    occurred_at_utc: datetime | None = None,
 ) -> ContextTransitionV1:
     dedupe_key = "|".join(
         (
@@ -167,15 +168,16 @@ def _transition(
             evidence.source_pressure_event_id,
         )
     )
+    occurred_at = evidence.observed_at_utc if occurred_at_utc is None else occurred_at_utc
     return ContextTransitionV1(
-        transition_id=_transition_id(dedupe_key, evidence.observed_at_utc),
+        transition_id=_transition_id(dedupe_key, occurred_at),
         strategy_lifecycle_id=strategy_lifecycle_id,
         from_context_epoch_id=previous_id,
         to_context_epoch_id=next_id,
         reason=reason,
         source_pressure_event_id=evidence.source_pressure_event_id,
         source_event_ids=evidence.source_event_ids,
-        occurred_at_utc=evidence.observed_at_utc,
+        occurred_at_utc=occurred_at,
         material_context_hash=material_hash or material_context_hash(evidence),
         evidence_hash=context_evidence_hash(evidence),
         dedupe_key=dedupe_key,
@@ -224,18 +226,29 @@ class ContextEpochReducerV1:
         if current is not None:
             incoming_cursor = (evidence.observed_at_utc, evidence.source_pressure_event_id)
             durable_cursor = (current.last_observed_at_utc, current.last_source_event_id)
-            if incoming_cursor <= durable_cursor:
-                same_source = evidence.source_pressure_event_id == current.last_source_event_id
-                if same_source and material_context_hash(evidence) != current.material_context_hash:
+            same_source = evidence.source_pressure_event_id == current.last_source_event_id
+            if same_source:
+                if material_context_hash(evidence) != current.material_context_hash:
                     return ContextReductionResult(
                         status="QUARANTINED_CONTEXT_EVIDENCE",
                         reason_code="SOURCE_EVENT_MATERIAL_CONTEXT_DRIFT",
                         epoch=current,
                     )
-                reason = "SOURCE_EVENT_ALREADY_OBSERVED" if same_source else "NON_MONOTONIC_CONTEXT_ORDER"
+                if context_evidence_hash(evidence) != current.evidence_hash:
+                    return ContextReductionResult(
+                        status="QUARANTINED_CONTEXT_EVIDENCE",
+                        reason_code="SOURCE_EVENT_CONTEXT_EVIDENCE_DRIFT",
+                        epoch=current,
+                    )
                 return ContextReductionResult(
-                    status="DUPLICATE" if reason == "SOURCE_EVENT_ALREADY_OBSERVED" else "REJECTED",
-                    reason_code=reason,
+                    status="DUPLICATE",
+                    reason_code="SOURCE_EVENT_ALREADY_OBSERVED",
+                    epoch=current,
+                )
+            if incoming_cursor <= durable_cursor:
+                return ContextReductionResult(
+                    status="REJECTED",
+                    reason_code="NON_MONOTONIC_CONTEXT_ORDER",
                     epoch=current,
                 )
             if current.state == "TERMINAL":
@@ -293,38 +306,44 @@ class ContextEpochReducerV1:
         self._epoch = epoch
         return ContextReductionResult(status="TRANSITIONED", previous_epoch=closed, epoch=epoch, transition=transition)
 
-    def terminalize(self, evidence: MaterialContextEvidenceV1) -> ContextReductionResult:
+    def terminalize(
+        self,
+        evidence: MaterialContextEvidenceV1,
+        *,
+        terminal_at_utc: datetime | None = None,
+    ) -> ContextReductionResult:
         current = self._epoch
         if current is None:
             return ContextReductionResult(status="REJECTED", reason_code="NO_ACTIVE_CONTEXT_EPOCH")
-        incoming_cursor = (evidence.observed_at_utc, evidence.source_pressure_event_id)
-        durable_cursor = (current.last_observed_at_utc, current.last_source_event_id)
-        if incoming_cursor <= durable_cursor:
-            same_source = evidence.source_pressure_event_id == current.last_source_event_id
-            if same_source and material_context_hash(evidence) != current.material_context_hash:
-                return ContextReductionResult(
-                    status="QUARANTINED_CONTEXT_EVIDENCE",
-                    reason_code="SOURCE_EVENT_MATERIAL_CONTEXT_DRIFT",
-                    epoch=current,
-                )
-            reason = "SOURCE_EVENT_ALREADY_OBSERVED" if same_source else "NON_MONOTONIC_CONTEXT_ORDER"
-            return ContextReductionResult(
-                status="DUPLICATE" if reason == "SOURCE_EVENT_ALREADY_OBSERVED" else "REJECTED",
-                reason_code=reason,
-                epoch=current,
-            )
         if current.state == "TERMINAL":
             return ContextReductionResult(status="DUPLICATE", reason_code="CONTEXT_ALREADY_TERMINAL", epoch=current)
         if current.state != "ACTIVE":
             return ContextReductionResult(status="REJECTED", reason_code="CONTEXT_EPOCH_STATE_INVALID", epoch=current)
-        terminal = current.model_copy(
-            update={
-                "state": "TERMINAL",
-                "closed_at_utc": evidence.observed_at_utc,
+
+        # Parent lifecycle terminality is authoritative.  A duplicate or late
+        # observation must not leave its child ContextEpoch ACTIVE.  Preserve
+        # the durable context cursor/evidence unless the terminal observation
+        # itself advances them, and close on the authoritative parent clock.
+        incoming_cursor = (evidence.observed_at_utc, evidence.source_pressure_event_id)
+        durable_cursor = (current.last_observed_at_utc, current.last_source_event_id)
+        terminal_at = max(
+            terminal_at_utc or evidence.observed_at_utc,
+            evidence.observed_at_utc,
+            current.last_observed_at_utc,
+        )
+        cursor_update: dict[str, object] = {}
+        if incoming_cursor > durable_cursor:
+            cursor_update = {
                 "last_observed_at_utc": evidence.observed_at_utc,
                 "last_source_event_id": evidence.source_pressure_event_id,
                 "evidence_hash": context_evidence_hash(evidence),
+            }
+        terminal = current.model_copy(
+            update={
+                "state": "TERMINAL",
+                "closed_at_utc": terminal_at,
                 "state_version": current.state_version + 1,
+                **cursor_update,
             }
         )
         transition = _transition(
@@ -334,6 +353,7 @@ class ContextEpochReducerV1:
             reason="LIFECYCLE_TERMINAL",
             evidence=evidence,
             material_hash=current.material_context_hash,
+            occurred_at_utc=terminal_at,
         )
         self._epoch = terminal
         return ContextReductionResult(

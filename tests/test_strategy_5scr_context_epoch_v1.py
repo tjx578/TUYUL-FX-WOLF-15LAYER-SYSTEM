@@ -212,6 +212,25 @@ def test_same_source_event_with_changed_material_is_quarantined() -> None:
     assert reducer.epoch == opened.epoch
 
 
+@pytest.mark.parametrize("advance_timestamp", (False, True))
+def test_same_source_event_with_changed_lineage_is_quarantined(advance_timestamp: bool) -> None:
+    reducer = ContextEpochReducerV1(LIFECYCLE, SYMBOL)
+    evidence = _evidence()
+    opened = reducer.ingest(evidence)
+    updates: dict[str, object] = {"source_deployment_id": "deploy-drifted"}
+    if advance_timestamp:
+        updates["observed_at_utc"] = evidence.observed_at_utc + timedelta(seconds=1)
+    drifted_evidence = evidence.model_copy(update=updates)
+    drifted = reducer.ingest(drifted_evidence)
+
+    assert opened.epoch is not None
+    assert material_context_hash(evidence) == material_context_hash(drifted_evidence)
+    assert context_evidence_hash(evidence) != context_evidence_hash(drifted_evidence)
+    assert drifted.status == "QUARANTINED_CONTEXT_EVIDENCE"
+    assert drifted.reason_code == "SOURCE_EVENT_CONTEXT_EVIDENCE_DRIFT"
+    assert reducer.epoch == opened.epoch
+
+
 @pytest.mark.parametrize(
     ("evidence", "status", "reason"),
     (
@@ -287,6 +306,27 @@ def test_terminal_epoch_cannot_resurrect() -> None:
     assert terminal.epoch.evidence_hash == context_evidence_hash(_evidence(1))
     assert resurrect.status == "REJECTED"
     assert resurrect.reason_code == "TERMINAL_CONTEXT_EPOCH"
+
+
+@pytest.mark.parametrize("terminal_index", (5, 4), ids=("same-event", "late-event"))
+def test_parent_terminal_authority_closes_epoch_despite_nonadvancing_context_cursor(terminal_index: int) -> None:
+    reducer = ContextEpochReducerV1(LIFECYCLE, SYMBOL)
+    opened_evidence = _evidence(5)
+    opened = reducer.ingest(opened_evidence)
+    terminal_at = _evidence(6).observed_at_utc
+
+    terminal = reducer.terminalize(_evidence(terminal_index), terminal_at_utc=terminal_at)
+
+    assert opened.epoch is not None
+    assert terminal.status == "TERMINATED"
+    assert terminal.epoch is not None and terminal.epoch.state == "TERMINAL"
+    assert terminal.epoch.closed_at_utc == terminal_at
+    assert terminal.epoch.last_observed_at_utc == opened.epoch.last_observed_at_utc
+    assert terminal.epoch.last_source_event_id == opened.epoch.last_source_event_id
+    assert terminal.epoch.evidence_hash == opened.epoch.evidence_hash
+    assert terminal.transition is not None
+    assert terminal.transition.reason == "LIFECYCLE_TERMINAL"
+    assert terminal.transition.occurred_at_utc == terminal_at
 
 
 def test_execution_authority_cannot_be_enabled() -> None:

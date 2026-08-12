@@ -250,6 +250,44 @@ async def test_a_b_a_restart_and_duplicate_preserve_three_epoch_identities(postg
         await _cleanup(postgres, lifecycle_id)
 
 
+async def test_same_source_lineage_drift_is_quarantined_without_mutating_durable_evidence(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+    original = _evidence(1)
+    drifted = original.model_copy(
+        update={
+            "source_deployment_id": "deploy-drifted",
+            "observed_at_utc": original.observed_at_utc + timedelta(seconds=1),
+        }
+    )
+    await _seed(postgres, lifecycle_id, (original,))
+    try:
+        opened = await _repository(postgres).process_evidence(original)
+        assert opened.status == "PERSISTED" and opened.epoch is not None
+
+        rejected = await _repository(postgres).process_evidence(drifted)
+        assert (rejected.status, rejected.reason_code) == (
+            "QUARANTINED_CONTEXT_EVIDENCE",
+            "SOURCE_EVENT_CONTEXT_EVIDENCE_DRIFT",
+        )
+        row = await postgres.fetchrow(
+            f"SELECT evidence_hash, evidence_payload->>'source_deployment_id' AS deployment "
+            f"FROM {EPOCH_TABLE} WHERE strategy_lifecycle_id = $1",
+            lifecycle_id,
+        )
+        counts = await postgres.fetchrow(
+            f"SELECT (SELECT count(*) FROM {EPOCH_TABLE} WHERE strategy_lifecycle_id = $1) AS epochs, "
+            f"(SELECT count(*) FROM {TRANSITION_TABLE} WHERE strategy_lifecycle_id = $1) AS transitions",
+            lifecycle_id,
+        )
+        assert row is not None
+        assert dict(row) == {"evidence_hash": opened.epoch.evidence_hash, "deployment": "deploy-a"}
+        assert counts is not None and dict(counts) == {"epochs": 1, "transitions": 1}
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
 async def test_concurrent_same_transition_creates_one_successor(postgres: PoolBackedPostgres) -> None:
     lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
     initial = _evidence(1)
@@ -331,6 +369,44 @@ async def test_terminal_lifecycle_closes_active_epoch_and_cannot_resurrect(postg
             lifecycle_id,
         )
         assert [row["reason"] for row in rows] == ["OPENED", "LIFECYCLE_TERMINAL"]
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+@pytest.mark.parametrize("terminal_mode", ("same", "late"))
+async def test_terminal_lifecycle_closes_epoch_with_nonadvancing_context_cursor(
+    postgres: PoolBackedPostgres,
+    terminal_mode: str,
+) -> None:
+    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+    late = _evidence(1)
+    opened_evidence = _evidence(2)
+    later = _evidence(3, bias="BEARISH", variant="b")
+    terminal_evidence = opened_evidence if terminal_mode == "same" else late
+    await _seed(postgres, lifecycle_id, (late, opened_evidence, later))
+    try:
+        opened = await _repository(postgres).process_evidence(opened_evidence)
+        assert opened.status == "PERSISTED" and opened.epoch is not None
+        await postgres.execute(
+            "UPDATE strategy_5scr_analysis_lifecycles_v2 SET state = 'INVALIDATED' WHERE strategy_lifecycle_id = $1",
+            lifecycle_id,
+        )
+
+        terminal = await _repository(postgres).process_evidence(terminal_evidence)
+        assert terminal.status == "PERSISTED"
+        assert terminal.epoch is not None and terminal.epoch.state == "TERMINAL"
+        assert terminal.epoch.closed_at_utc == START + timedelta(hours=1)
+        assert terminal.epoch.last_source_event_id == opened.epoch.last_source_event_id
+        assert terminal.epoch.evidence_hash == opened.epoch.evidence_hash
+
+        rejected = await _repository(postgres).process_evidence(later)
+        assert (rejected.status, rejected.reason_code) == ("DUPLICATE", "CONTEXT_ALREADY_TERMINAL")
+        rows = await postgres.fetch(
+            f"SELECT reason, occurred_at FROM {TRANSITION_TABLE} WHERE strategy_lifecycle_id = $1 ORDER BY occurred_at",
+            lifecycle_id,
+        )
+        assert [row["reason"] for row in rows] == ["OPENED", "LIFECYCLE_TERMINAL"]
+        assert rows[-1]["occurred_at"] == START + timedelta(hours=1)
     finally:
         await _cleanup(postgres, lifecycle_id)
 

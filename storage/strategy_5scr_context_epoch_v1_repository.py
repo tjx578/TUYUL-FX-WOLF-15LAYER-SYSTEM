@@ -12,6 +12,7 @@ import json
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, cast
 
 from analysis.strategy_5scr_context_epoch_v1 import (
@@ -605,7 +606,8 @@ class StrategyContextEpochV1Repository:
         async with self._pg.transaction() as connection:
             lifecycle = await connection.fetchrow(
                 f"""
-                SELECT lifecycle.strategy_lifecycle_id, lifecycle.symbol, lifecycle.state
+                SELECT lifecycle.strategy_lifecycle_id, lifecycle.symbol,
+                       lifecycle.state, lifecycle.last_event_at
                 FROM {LIFECYCLE_LINK_TABLE} link
                 JOIN {LIFECYCLE_TABLE} lifecycle
                   ON lifecycle.strategy_lifecycle_id = link.strategy_lifecycle_id
@@ -639,7 +641,10 @@ class StrategyContextEpochV1Repository:
                 # material evidence must not open or supersede an epoch, but it
                 # must not leave an already-open epoch alive after its parent
                 # lifecycle has become terminal either.
-                reduction = reducer.terminalize(evidence)
+                lifecycle_terminal_at = _row_value(lifecycle, "last_event_at")
+                if not isinstance(lifecycle_terminal_at, datetime):
+                    raise ContextEpochV1IntegrityError("LIFECYCLE_TERMINAL_CLOCK_MISSING")
+                reduction = reducer.terminalize(evidence, terminal_at_utc=lifecycle_terminal_at)
             else:
                 failure = context_evidence_failure(evidence)
                 if failure is not None:
@@ -675,7 +680,12 @@ class StrategyContextEpochV1Repository:
                 await self._update_epoch(connection, reduction.previous_epoch, evidence, replace_evidence=False)
                 await self._insert_epoch(connection, reduction.epoch, evidence)
             elif reduction.status == "TERMINATED":
-                await self._update_epoch(connection, reduction.epoch, evidence, replace_evidence=True)
+                await self._update_epoch(
+                    connection,
+                    reduction.epoch,
+                    evidence,
+                    replace_evidence=reduction.epoch.evidence_hash == context_evidence_hash(evidence),
+                )
             else:
                 raise ContextEpochV1IntegrityError(f"CONTEXT_EPOCH_STATUS_UNHANDLED:{reduction.status}")
 
