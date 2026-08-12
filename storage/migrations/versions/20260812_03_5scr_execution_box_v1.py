@@ -37,6 +37,8 @@ def upgrade() -> None:
         sa.Column("box_sequence", sa.Integer(), nullable=False),
         sa.Column("box_version", sa.Integer(), nullable=False),
         sa.Column("previous_execution_box_id", sa.Text(), nullable=True),
+        sa.Column("previous_box_sequence", sa.Integer(), nullable=True),
+        sa.Column("previous_box_version", sa.Integer(), nullable=True),
         sa.Column("symbol", sa.String(length=32), nullable=False),
         sa.Column("strategy_direction", sa.String(length=4), nullable=False),
         sa.Column("route_type", sa.String(length=120), nullable=False),
@@ -51,6 +53,7 @@ def upgrade() -> None:
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expired_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("material_box_hash", sa.String(length=71), nullable=False),
+        sa.Column("formation_evidence_hash", sa.String(length=71), nullable=False),
         sa.Column("evidence_hash", sa.String(length=71), nullable=False),
         sa.Column("thesis_semantic_identity_hash", sa.String(length=71), nullable=False),
         sa.Column("source_m1_ids", JSONB(), nullable=False),
@@ -62,7 +65,11 @@ def upgrade() -> None:
         sa.Column("valid_for_execution", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("execution_authority", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("payload", JSONB(), nullable=False),
+        # The formation evidence is immutable.  The latest accepted observation
+        # advances independently so restart ordering never depends on process
+        # memory and the original material authority is never overwritten.
         sa.Column("evidence_payload", JSONB(), nullable=False),
+        sa.Column("latest_evidence_payload", JSONB(), nullable=False),
         sa.Column("freeze_evidence_payload", JSONB(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
@@ -101,10 +108,48 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.ForeignKeyConstraint(
-            ["previous_execution_box_id"],
-            ["strategy_5scr_execution_boxes_v1.execution_box_id"],
+            [
+                "previous_execution_box_id",
+                "strategy_lifecycle_id",
+                "context_epoch_id",
+                "strategy_thesis_id",
+                "symbol",
+                "strategy_direction",
+                "previous_box_sequence",
+                "previous_box_version",
+            ],
+            [
+                "strategy_5scr_execution_boxes_v1.execution_box_id",
+                "strategy_5scr_execution_boxes_v1.strategy_lifecycle_id",
+                "strategy_5scr_execution_boxes_v1.context_epoch_id",
+                "strategy_5scr_execution_boxes_v1.strategy_thesis_id",
+                "strategy_5scr_execution_boxes_v1.symbol",
+                "strategy_5scr_execution_boxes_v1.strategy_direction",
+                "strategy_5scr_execution_boxes_v1.box_sequence",
+                "strategy_5scr_execution_boxes_v1.box_version",
+            ],
             name="fk_5scr_execution_box_previous_v1",
             ondelete="RESTRICT",
+        ),
+        sa.UniqueConstraint(
+            "execution_box_id",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "strategy_thesis_id",
+            "symbol",
+            "strategy_direction",
+            "box_sequence",
+            "box_version",
+            name="uq_5scr_execution_box_predecessor_scope_v1",
+        ),
+        sa.UniqueConstraint(
+            "execution_box_id",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "strategy_thesis_id",
+            "symbol",
+            "material_box_hash",
+            name="uq_5scr_execution_box_observation_scope_v1",
         ),
         sa.UniqueConstraint(
             "strategy_thesis_id",
@@ -119,6 +164,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "execution_box_id ~ '^5scr-execution-box:[0-9a-f]{32}$' "
             "AND material_box_hash ~ '^sha256:[0-9a-f]{64}$' "
+            "AND formation_evidence_hash ~ '^sha256:[0-9a-f]{64}$' "
             "AND evidence_hash ~ '^sha256:[0-9a-f]{64}$' "
             "AND thesis_semantic_identity_hash ~ '^sha256:[0-9a-f]{64}$'",
             name="ck_5scr_execution_box_identity_v1",
@@ -139,8 +185,11 @@ def upgrade() -> None:
             name="ck_5scr_execution_box_sources_v1",
         ),
         sa.CheckConstraint(
-            "((box_version = 1 AND previous_execution_box_id IS NULL) OR "
-            "(box_version > 1 AND previous_execution_box_id IS NOT NULL))",
+            "((box_version = 1 AND previous_execution_box_id IS NULL "
+            "AND previous_box_sequence IS NULL AND previous_box_version IS NULL) OR "
+            "(box_version > 1 AND previous_execution_box_id IS NOT NULL "
+            "AND previous_box_sequence = box_sequence - 1 "
+            "AND previous_box_version = box_version - 1))",
             name="ck_5scr_execution_box_lineage_v1",
         ),
         sa.CheckConstraint(
@@ -199,6 +248,96 @@ def upgrade() -> None:
         ["strategy_lifecycle_id", "box_sequence", "execution_box_id"],
     )
 
+    op.create_table(
+        "strategy_5scr_execution_box_observations_v1",
+        sa.Column("observation_id", sa.Text(), primary_key=True),
+        sa.Column("execution_box_id", sa.Text(), nullable=False),
+        sa.Column("strategy_lifecycle_id", sa.Text(), nullable=False),
+        sa.Column("context_epoch_id", sa.Text(), nullable=False),
+        sa.Column("strategy_thesis_id", sa.Text(), nullable=False),
+        sa.Column("symbol", sa.String(length=32), nullable=False),
+        sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("source_request_id", sa.Text(), nullable=True),
+        sa.Column("evidence_hash", sa.String(length=71), nullable=False),
+        sa.Column("material_box_hash", sa.String(length=71), nullable=False),
+        sa.Column("outcome", sa.String(length=32), nullable=False),
+        sa.Column("evidence_payload", JSONB(), nullable=False),
+        sa.Column("execution_authority", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.ForeignKeyConstraint(
+            [
+                "execution_box_id",
+                "strategy_lifecycle_id",
+                "context_epoch_id",
+                "strategy_thesis_id",
+                "symbol",
+                "material_box_hash",
+            ],
+            [
+                "strategy_5scr_execution_boxes_v1.execution_box_id",
+                "strategy_5scr_execution_boxes_v1.strategy_lifecycle_id",
+                "strategy_5scr_execution_boxes_v1.context_epoch_id",
+                "strategy_5scr_execution_boxes_v1.strategy_thesis_id",
+                "strategy_5scr_execution_boxes_v1.symbol",
+                "strategy_5scr_execution_boxes_v1.material_box_hash",
+            ],
+            name="fk_5scr_execution_box_observation_box_v1",
+            ondelete="RESTRICT",
+        ),
+        sa.UniqueConstraint(
+            "strategy_thesis_id",
+            "observed_at",
+            name="uq_5scr_execution_box_observation_clock_v1",
+        ),
+        sa.CheckConstraint(
+            "observation_id ~ '^5scr-execution-box-observation:[0-9a-f]{32}$' "
+            "AND evidence_hash ~ '^sha256:[0-9a-f]{64}$' "
+            "AND material_box_hash ~ '^sha256:[0-9a-f]{64}$'",
+            name="ck_5scr_execution_box_observation_identity_v1",
+        ),
+        sa.CheckConstraint(
+            "outcome IN ('OPENED','DUPLICATE','NO_CHANGE','FROZEN','SUPERSEDED')",
+            name="ck_5scr_execution_box_observation_outcome_v1",
+        ),
+        sa.CheckConstraint(
+            "execution_authority IS FALSE",
+            name="ck_5scr_execution_box_observation_shadow_only_v1",
+        ),
+    )
+    op.create_index(
+        "uq_5scr_execution_box_observation_request_v1",
+        "strategy_5scr_execution_box_observations_v1",
+        ["strategy_thesis_id", "source_request_id"],
+        unique=True,
+        postgresql_where=sa.text("source_request_id IS NOT NULL"),
+    )
+    op.create_index(
+        "ix_5scr_execution_box_observation_history_v1",
+        "strategy_5scr_execution_box_observations_v1",
+        ["strategy_thesis_id", "observed_at", "observation_id"],
+    )
+
+    # The observation ledger is append-only authority evidence, not telemetry
+    # that may be rewritten after a restart.
+    op.execute(
+        """
+        CREATE FUNCTION strategy_5scr_reject_execution_box_observation_mutation_v1()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            RAISE EXCEPTION 'STRATEGY_5SCR_EXECUTION_BOX_OBSERVATION_IMMUTABLE'
+                USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_execution_box_observation_immutable_v1';
+        END
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_strategy_5scr_execution_box_observations_v1_immutable
+        BEFORE UPDATE OR DELETE ON strategy_5scr_execution_box_observations_v1
+        FOR EACH ROW EXECUTE FUNCTION strategy_5scr_reject_execution_box_observation_mutation_v1()
+        """
+    )
+
     op.execute(
         """
         CREATE FUNCTION strategy_5scr_guard_execution_box_v1()
@@ -211,18 +350,20 @@ def upgrade() -> None:
             IF ROW(
                 NEW.execution_box_id, NEW.strategy_lifecycle_id, NEW.context_epoch_id,
                 NEW.strategy_thesis_id, NEW.box_sequence, NEW.box_version,
-                NEW.previous_execution_box_id, NEW.symbol, NEW.strategy_direction,
+                NEW.previous_execution_box_id, NEW.previous_box_sequence, NEW.previous_box_version,
+                NEW.symbol, NEW.strategy_direction,
                 NEW.route_type, NEW.box_low, NEW.box_high, NEW.opened_at,
-                NEW.material_box_hash, NEW.evidence_hash, NEW.thesis_semantic_identity_hash,
-                NEW.source_m1_ids, NEW.source_m1_evidence_ids, NEW.rule_version,
+                NEW.material_box_hash, NEW.formation_evidence_hash, NEW.thesis_semantic_identity_hash,
+                NEW.source_m1_ids, NEW.rule_version,
                 NEW.valid_for_execution, NEW.execution_authority
             ) IS DISTINCT FROM ROW(
                 OLD.execution_box_id, OLD.strategy_lifecycle_id, OLD.context_epoch_id,
                 OLD.strategy_thesis_id, OLD.box_sequence, OLD.box_version,
-                OLD.previous_execution_box_id, OLD.symbol, OLD.strategy_direction,
+                OLD.previous_execution_box_id, OLD.previous_box_sequence, OLD.previous_box_version,
+                OLD.symbol, OLD.strategy_direction,
                 OLD.route_type, OLD.box_low, OLD.box_high, OLD.opened_at,
-                OLD.material_box_hash, OLD.evidence_hash, OLD.thesis_semantic_identity_hash,
-                OLD.source_m1_ids, OLD.source_m1_evidence_ids, OLD.rule_version,
+                OLD.material_box_hash, OLD.formation_evidence_hash, OLD.thesis_semantic_identity_hash,
+                OLD.source_m1_ids, OLD.rule_version,
                 OLD.valid_for_execution, OLD.execution_authority
             ) THEN
                 RAISE EXCEPTION 'STRATEGY_5SCR_EXECUTION_BOX_GEOMETRY_IMMUTABLE'
@@ -231,10 +372,12 @@ def upgrade() -> None:
             IF NEW.evidence_payload IS DISTINCT FROM OLD.evidence_payload OR
                (NEW.payload - 'state' - 'frozen_at_utc' - 'superseded_at_utc'
                     - 'freeze_authority_hash' - 'invalidated_at_utc' - 'consumed_at_utc' - 'expired_at_utc'
+                    - 'evidence_hash' - 'source_m1_evidence_ids'
                     - 'last_observed_at_utc' - 'last_source_request_id' - 'state_version')
                IS DISTINCT FROM
                (OLD.payload - 'state' - 'frozen_at_utc' - 'superseded_at_utc'
                     - 'freeze_authority_hash' - 'invalidated_at_utc' - 'consumed_at_utc' - 'expired_at_utc'
+                    - 'evidence_hash' - 'source_m1_evidence_ids'
                     - 'last_observed_at_utc' - 'last_source_request_id' - 'state_version') THEN
                 RAISE EXCEPTION 'STRATEGY_5SCR_EXECUTION_BOX_PAYLOAD_IMMUTABLE'
                     USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_execution_box_immutable_v1';
@@ -247,13 +390,32 @@ def upgrade() -> None:
                 RAISE EXCEPTION 'STRATEGY_5SCR_EXECUTION_BOX_FREEZE_EVIDENCE_IMMUTABLE'
                     USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_execution_box_immutable_v1';
             END IF;
+            IF ROW(NEW.evidence_hash, NEW.source_m1_evidence_ids, NEW.latest_evidence_payload)
+               IS DISTINCT FROM
+               ROW(OLD.evidence_hash, OLD.source_m1_evidence_ids, OLD.latest_evidence_payload)
+               AND NOT (
+                    (OLD.state = 'BUILDING' AND NEW.state = 'FROZEN') OR
+                    (OLD.state = NEW.state AND OLD.state IN ('BUILDING','FROZEN')
+                     AND NEW.last_observed_at > OLD.last_observed_at)
+               ) THEN
+                RAISE EXCEPTION 'STRATEGY_5SCR_EXECUTION_BOX_EVIDENCE_CURSOR_INVALID'
+                    USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_execution_box_transition_v1';
+            END IF;
             IF NEW.state_version <> OLD.state_version + 1 THEN
                 RAISE EXCEPTION 'STRATEGY_5SCR_EXECUTION_BOX_VERSION_INVALID'
                     USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_execution_box_transition_v1';
             END IF;
+            IF NEW.last_observed_at < OLD.last_observed_at THEN
+                RAISE EXCEPTION 'STRATEGY_5SCR_EXECUTION_BOX_CURSOR_REGRESSION'
+                    USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_execution_box_transition_v1';
+            END IF;
             IF NOT (
                 (OLD.state = 'BUILDING' AND NEW.state IN ('FROZEN','SUPERSEDED','INVALIDATED','EXPIRED')) OR
-                (OLD.state = 'FROZEN' AND NEW.state IN ('INVALIDATED','CONSUMED','EXPIRED'))
+                (OLD.state = 'FROZEN' AND NEW.state IN ('INVALIDATED','CONSUMED','EXPIRED')) OR
+                (OLD.state = NEW.state AND OLD.state IN ('BUILDING','FROZEN')
+                 AND NEW.last_observed_at > OLD.last_observed_at
+                 AND NEW.evidence_hash IS DISTINCT FROM OLD.evidence_hash
+                 AND NEW.latest_evidence_payload IS DISTINCT FROM OLD.latest_evidence_payload)
             ) THEN
                 RAISE EXCEPTION 'STRATEGY_5SCR_EXECUTION_BOX_TRANSITION_INVALID'
                     USING ERRCODE = '23514', CONSTRAINT = 'ck_5scr_execution_box_transition_v1';
@@ -274,6 +436,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_strategy_5scr_execution_box_observations_v1_immutable "
+        "ON strategy_5scr_execution_box_observations_v1"
+    )
+    op.execute("DROP FUNCTION IF EXISTS strategy_5scr_reject_execution_box_observation_mutation_v1()")
+    op.drop_index(
+        "ix_5scr_execution_box_observation_history_v1",
+        table_name="strategy_5scr_execution_box_observations_v1",
+    )
+    op.drop_index(
+        "uq_5scr_execution_box_observation_request_v1",
+        table_name="strategy_5scr_execution_box_observations_v1",
+    )
+    op.drop_table("strategy_5scr_execution_box_observations_v1")
     op.execute("DROP TRIGGER IF EXISTS trg_strategy_5scr_execution_boxes_v1_guard ON strategy_5scr_execution_boxes_v1")
     op.execute("DROP FUNCTION IF EXISTS strategy_5scr_guard_execution_box_v1()")
     op.drop_index(

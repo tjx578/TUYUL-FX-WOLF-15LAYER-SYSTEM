@@ -13,6 +13,7 @@ from contracts.strategy_5scr_execution_box_v1 import (
     EXECUTION_BOX_RULE_VERSION,
     ExecutionBoxEvidenceV1,
     ExecutionBoxV1,
+    execution_box_identity_v1,
 )
 
 ExecutionBoxReductionStatus = Literal[
@@ -50,8 +51,7 @@ def material_box_hash(evidence: ExecutionBoxEvidenceV1) -> str:
     telemetry count, and evidence ordering provenance do not version a box.
     """
 
-    box_low = min(item.low for item in evidence.material_m1_candles)
-    box_high = max(item.high for item in evidence.material_m1_candles)
+    box_low, box_high = route_geometry_bounds(evidence)
     return _sha256(
         {
             "strategy_lifecycle_id": evidence.strategy_lifecycle_id,
@@ -61,6 +61,7 @@ def material_box_hash(evidence: ExecutionBoxEvidenceV1) -> str:
             "symbol": evidence.symbol,
             "strategy_direction": evidence.strategy_direction,
             "route_type": evidence.route_type,
+            "route_geometry_authority_hash": evidence.route_geometry_authority.authority_hash,
             "box_low": box_low,
             "box_high": box_high,
             "source_m1_material_hashes": sorted(item.material_candle_hash for item in evidence.material_m1_candles),
@@ -71,11 +72,18 @@ def material_box_hash(evidence: ExecutionBoxEvidenceV1) -> str:
 
 def execution_box_id(
     strategy_thesis_id: str,
+    box_sequence: int,
     box_version: int,
     material_hash: str,
 ) -> str:
-    basis = f"{strategy_thesis_id}|{box_version}|{material_hash}"
-    return "5scr-execution-box:" + hashlib.sha256(basis.encode()).hexdigest()[:32]
+    return execution_box_identity_v1(strategy_thesis_id, box_sequence, box_version, material_hash)
+
+
+def route_geometry_bounds(evidence: ExecutionBoxEvidenceV1) -> tuple[float, float]:
+    """Return bounds proven by the typed route authority, never a universal origin range."""
+
+    authority = evidence.route_geometry_authority
+    return authority.route_low, authority.route_high
 
 
 def _terminal_clock_update(
@@ -156,22 +164,56 @@ def reduce_execution_box(
         return ExecutionBoxReductionResult("REJECTED", "EXECUTION_BOX_PARENT_SCOPE_MISMATCH")
     material_hash = material_box_hash(evidence)
     evidence_hash = execution_box_evidence_hash(evidence)
-    box_low = min(item.low for item in evidence.material_m1_candles)
-    box_high = max(item.high for item in evidence.material_m1_candles)
+    box_low, box_high = route_geometry_bounds(evidence)
 
     if current is not None:
-        if current.strategy_thesis_id != thesis.strategy_thesis_id:
+        current_scope = (
+            current.strategy_lifecycle_id,
+            current.context_epoch_id,
+            current.strategy_thesis_id,
+            current.thesis_semantic_identity_hash,
+            current.symbol,
+            current.strategy_direction,
+            current.route_type,
+        )
+        current_expected_id = execution_box_id(
+            current.strategy_thesis_id,
+            current.box_sequence,
+            current.box_version,
+            current.material_box_hash,
+        )
+        if current_scope != scope or current.execution_box_id != current_expected_id:
             return ExecutionBoxReductionResult("QUARANTINED", "ACTIVE_EXECUTION_BOX_PARENT_DRIFT")
+        if current.valid_for_execution or current.execution_authority:
+            return ExecutionBoxReductionResult("QUARANTINED", "ACTIVE_EXECUTION_BOX_AUTHORITY_DRIFT")
         if current.state not in {"BUILDING", "FROZEN"}:
             return ExecutionBoxReductionResult("REJECTED", "EXECUTION_BOX_TERMINAL_NO_RESURRECTION")
-        if evidence.observed_at_utc < current.last_observed_at_utc:
-            return ExecutionBoxReductionResult("REJECTED", "STALE_EXECUTION_BOX_EVIDENCE", current)
         if (
             evidence.source_request_id is not None
             and evidence.source_request_id == current.last_source_request_id
             and current.evidence_hash != evidence_hash
         ):
             return ExecutionBoxReductionResult("QUARANTINED", "EXECUTION_BOX_REQUEST_EVIDENCE_DRIFT", current)
+        if evidence_hash == current.evidence_hash:
+            return ExecutionBoxReductionResult(
+                "DUPLICATE",
+                "EXECUTION_BOX_FREEZE_ALREADY_PERSISTED"
+                if current.state == "FROZEN" and evidence.freeze_requested
+                else "EXECUTION_BOX_ALREADY_PERSISTED",
+                current,
+            )
+        if evidence.observed_at_utc < max(thesis.created_at_utc, thesis.liveness_checked_through_utc):
+            return ExecutionBoxReductionResult("REJECTED", "EXECUTION_BOX_PARENT_CLOCK_PRECEDES_THESIS", current)
+        if any(item.open_time_utc < thesis.created_at_utc for item in evidence.material_m1_candles):
+            return ExecutionBoxReductionResult("REJECTED", "EXECUTION_BOX_M1_PRECEDES_THESIS", current)
+        if evidence.observed_at_utc < current.last_observed_at_utc:
+            return ExecutionBoxReductionResult("REJECTED", "STALE_EXECUTION_BOX_EVIDENCE", current)
+        if evidence.observed_at_utc == current.last_observed_at_utc:
+            return ExecutionBoxReductionResult(
+                "QUARANTINED",
+                "AMBIGUOUS_EXECUTION_BOX_EVIDENCE_CLOCK",
+                current,
+            )
         if current.material_box_hash == material_hash:
             if current.state == "BUILDING" and evidence.freeze_requested:
                 frozen = ExecutionBoxV1.model_validate(
@@ -180,6 +222,13 @@ def reduce_execution_box(
                         "state": "FROZEN",
                         "frozen_at_utc": evidence.observed_at_utc,
                         "freeze_authority_hash": evidence.freeze_authority_hash,
+                        "evidence_hash": evidence_hash,
+                        "source_m1_ids": tuple(
+                            sorted(item.material_candle_hash for item in evidence.material_m1_candles)
+                        ),
+                        "source_m1_evidence_ids": tuple(
+                            sorted(item.candle_evidence_id for item in evidence.material_m1_candles)
+                        ),
                         "last_observed_at_utc": evidence.observed_at_utc,
                         "last_source_request_id": evidence.source_request_id,
                         "state_version": current.state_version + 1,
@@ -191,13 +240,44 @@ def reduce_execution_box(
                     frozen,
                     current,
                 )
+            if current.evidence_hash == evidence_hash:
+                return ExecutionBoxReductionResult(
+                    "DUPLICATE",
+                    "EXECUTION_BOX_ALREADY_PERSISTED",
+                    current,
+                )
+            if current.state == "FROZEN" and evidence.freeze_requested:
+                return ExecutionBoxReductionResult(
+                    "REJECTED",
+                    "FROZEN_EXECUTION_BOX_IMMUTABLE",
+                    current,
+                )
+            refreshed = ExecutionBoxV1.model_validate(
+                {
+                    **current.model_dump(mode="python"),
+                    "evidence_hash": evidence_hash,
+                    "source_m1_ids": tuple(sorted(item.material_candle_hash for item in evidence.material_m1_candles)),
+                    "source_m1_evidence_ids": tuple(
+                        sorted(item.candle_evidence_id for item in evidence.material_m1_candles)
+                    ),
+                    "last_observed_at_utc": evidence.observed_at_utc,
+                    "last_source_request_id": evidence.source_request_id,
+                    "state_version": current.state_version + 1,
+                }
+            )
             return ExecutionBoxReductionResult(
-                "DUPLICATE" if current.evidence_hash == evidence_hash else "NO_CHANGE",
-                "EXECUTION_BOX_ALREADY_PERSISTED"
-                if current.evidence_hash == evidence_hash
-                else "NON_MATERIAL_EXECUTION_BOX_REFRESH",
+                "NO_CHANGE",
+                "NON_MATERIAL_EXECUTION_BOX_REFRESH",
+                refreshed,
                 current,
             )
+    else:
+        if evidence.observed_at_utc < max(thesis.created_at_utc, thesis.liveness_checked_through_utc):
+            return ExecutionBoxReductionResult("REJECTED", "EXECUTION_BOX_PARENT_CLOCK_PRECEDES_THESIS")
+        if any(item.open_time_utc < thesis.created_at_utc for item in evidence.material_m1_candles):
+            return ExecutionBoxReductionResult("REJECTED", "EXECUTION_BOX_M1_PRECEDES_THESIS")
+
+    if current is not None:
         if current.state == "FROZEN":
             return ExecutionBoxReductionResult(
                 "REJECTED",
@@ -210,6 +290,8 @@ def reduce_execution_box(
             occurred_at_utc=evidence.observed_at_utc,
         )
         box_version = current.box_version + 1
+        if next_sequence != current.box_sequence + 1:
+            return ExecutionBoxReductionResult("QUARANTINED", "EXECUTION_BOX_SEQUENCE_DRIFT", current)
         previous_id = current.execution_box_id
         status: ExecutionBoxReductionStatus = "SUPERSEDED"
     else:
@@ -220,7 +302,7 @@ def reduce_execution_box(
 
     box_state = "FROZEN" if evidence.freeze_requested else "BUILDING"
     box = ExecutionBoxV1(
-        execution_box_id=execution_box_id(thesis.strategy_thesis_id, box_version, material_hash),
+        execution_box_id=execution_box_id(thesis.strategy_thesis_id, next_sequence, box_version, material_hash),
         strategy_lifecycle_id=thesis.strategy_lifecycle_id,
         context_epoch_id=thesis.context_epoch_id,
         strategy_thesis_id=thesis.strategy_thesis_id,
@@ -257,4 +339,5 @@ __all__ = [
     "execution_box_id",
     "material_box_hash",
     "reduce_execution_box",
+    "route_geometry_bounds",
 ]
