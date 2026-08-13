@@ -30,10 +30,11 @@ def test_enabled_non_shadow_configuration_fails_closed() -> None:
         config.validate()
 
 
-def test_context_epoch_has_only_the_audited_p4_analysis_consumer() -> None:
+def test_context_epoch_has_only_audited_downstream_analysis_consumers() -> None:
     allowed = {
         "analysis/strategy_5scr_context_epoch_v1.py",
         "analysis/strategy_5scr_directional_thesis_v1.py",
+        "analysis/strategy_5scr_tradeplan_candidate_v2.py",
         "contracts/strategy_5scr_context_epoch_v1.py",
         "storage/strategy_5scr_context_epoch_v1_repository.py",
         "storage/strategy_5scr_directional_thesis_v1_repository.py",

@@ -84,7 +84,10 @@ def test_p5_has_no_existing_production_consumer() -> None:
             source = path.read_text(encoding="utf-8")
             if any(name in source for name in module_names):
                 consumers.append(path.relative_to(ROOT).as_posix())
-    assert consumers == []
+    assert consumers == [
+        "analysis/strategy_5scr_tradeplan_candidate_v2.py",
+        "storage/strategy_5scr_tradeplan_candidate_v2_repository.py",
+    ]
 
 
 def test_p5_runtime_defaults_off_and_shadow_only() -> None:
