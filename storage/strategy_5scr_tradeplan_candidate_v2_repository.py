@@ -695,9 +695,12 @@ def _evaluation_from_row(row: Any) -> TradePlanEvaluationV2:
 async def _validate_candidate_formation_evaluation(connection: Any, candidate: TradePlanCandidateV2) -> None:
     """Bind a candidate occurrence to its immutable originating evaluation."""
 
+    # Candidate/parent rows define the repository lock order.  Evaluations are
+    # append-only under a database mutation-rejection trigger, so reading them
+    # must never acquire a row lock that can precede a candidate lock.
     rows = await connection.fetch(
         f"SELECT * FROM {EVALUATION_TABLE} WHERE tradeplan_id=$1 "
-        "AND decision='CANDIDATE' AND reason_code='TRADEPLAN_CANDIDATE_CREATED' FOR UPDATE",
+        "AND decision='CANDIDATE' AND reason_code='TRADEPLAN_CANDIDATE_CREATED'",
         candidate.tradeplan_id,
     )
     if len(rows) != 1:
@@ -1072,22 +1075,66 @@ class Strategy5SCRTradePlanCandidateV2Repository:
         async with self._pg.transaction() as connection:
             rows = await connection.fetch(
                 f"SELECT * FROM {CANDIDATE_TABLE} WHERE strategy_lifecycle_id=$1 "
-                "ORDER BY execution_box_id,candidate_sequence,tradeplan_id FOR UPDATE",
+                # Predecessor traversal always locks newest -> oldest.  Keep
+                # bulk history reads in that same per-box order so they cannot
+                # deadlock an active-candidate reconstruction.
+                "ORDER BY execution_box_id,candidate_sequence DESC,tradeplan_id DESC FOR UPDATE",
                 strategy_lifecycle_id,
             )
             candidates = tuple(_candidate_from_row(row) for row in rows)
             for candidate in candidates:
                 await _validate_candidate_predecessor_chain(connection, candidate)
-            return candidates
+            # Lock acquisition is newest -> oldest, while the public history
+            # contract remains deterministic chronological order.
+            return tuple(
+                sorted(
+                    candidates,
+                    key=lambda item: (item.execution_box_id, item.candidate_sequence, item.tradeplan_id),
+                )
+            )
 
     async def load_evaluations(self, execution_box_id: str) -> tuple[TradePlanEvaluationV2, ...]:
         async with self._pg.transaction() as connection:
+            # Capture the append-only evaluation snapshot before taking any
+            # candidate lock.  A successor committed after this statement is
+            # deliberately outside this read and cannot introduce a newer
+            # candidate link after the lock set has been chosen.
             rows = await connection.fetch(
                 f"SELECT * FROM {EVALUATION_TABLE} WHERE execution_box_id=$1 "
-                "ORDER BY evaluation_sequence,evaluation_id FOR UPDATE",
+                "ORDER BY evaluation_sequence,evaluation_id",
                 execution_box_id,
             )
             evaluations = tuple(_evaluation_from_row(row) for row in rows)
+            linked_candidate_ids = tuple(
+                dict.fromkeys(
+                    evaluation.result_tradeplan_id
+                    for evaluation in evaluations
+                    if evaluation.result_tradeplan_id is not None
+                )
+            )
+            if linked_candidate_ids:
+                # The evaluation read held no row locks.  Acquire every linked
+                # candidate newest -> oldest before reconstruction; traversal
+                # can now only revisit this set and its older predecessors.
+                locked_rows = await connection.fetch(
+                    f"SELECT tradeplan_id FROM {CANDIDATE_TABLE} "
+                    "WHERE execution_box_id=$1 AND tradeplan_id=ANY($2::text[]) "
+                    "ORDER BY candidate_sequence DESC,tradeplan_id DESC FOR UPDATE",
+                    execution_box_id,
+                    list(linked_candidate_ids),
+                )
+                expected_ids = set(linked_candidate_ids)
+                locked_ids = {str(_row_value(row, "tradeplan_id")) for row in locked_rows}
+                if locked_ids != expected_ids:
+                    unresolved_ids = expected_ids - locked_ids
+                    existing_rows = await connection.fetch(
+                        f"SELECT tradeplan_id FROM {CANDIDATE_TABLE} WHERE tradeplan_id=ANY($1::text[])",
+                        list(unresolved_ids),
+                    )
+                    existing_ids = {str(_row_value(row, "tradeplan_id")) for row in existing_rows}
+                    if existing_ids != unresolved_ids:
+                        raise TradePlanCandidateV2IntegrityError("TRADEPLAN_EVALUATION_CANDIDATE_MISSING")
+                    raise TradePlanCandidateV2IntegrityError("TRADEPLAN_EVALUATION_CANDIDATE_SCOPE_DRIFT")
             for row, evaluation in zip(rows, evaluations, strict=True):
                 await _candidate_for_evaluation(connection, row, evaluation)
             return evaluations
@@ -1447,7 +1494,7 @@ class Strategy5SCRTradePlanCandidateV2Repository:
 
             prior_eval = await connection.fetchrow(
                 f"SELECT * FROM {EVALUATION_TABLE} WHERE execution_box_id=$1 "
-                "AND (source_request_id=$2 OR evaluated_at=$3) FOR UPDATE",
+                "AND (source_request_id=$2 OR evaluated_at=$3)",
                 box.execution_box_id,
                 evidence.source_request_id,
                 evidence.decision_at_utc,

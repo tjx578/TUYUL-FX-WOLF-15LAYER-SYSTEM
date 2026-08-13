@@ -111,6 +111,87 @@ class _BarrierPostgres:
             yield wrapped
 
 
+class _TimedTransactionPostgres:
+    """Apply bounded PostgreSQL lock/statement timeouts to repository calls."""
+
+    def __init__(self, postgres: PoolBackedPostgres) -> None:
+        self._postgres = postgres
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]:
+        async with self._postgres.transaction() as connection:
+            await connection.execute("SET LOCAL lock_timeout = '2s'")
+            await connection.execute("SET LOCAL statement_timeout = '5s'")
+            yield connection
+
+
+class _EvaluationSnapshotBarrierConnection:
+    """Pause after the immutable evaluation snapshot and before candidate locks."""
+
+    def __init__(self, connection: Any, *, captured: asyncio.Event, release: asyncio.Event) -> None:
+        self._connection = connection
+        self._captured = captured
+        self._release = release
+        self._paused = False
+
+    async def fetch(self, query: str, *args: Any) -> Any:
+        rows = await self._connection.fetch(query, *args)
+        if (
+            not self._paused
+            and f"FROM {EVALUATION_TABLE}" in query
+            and "WHERE execution_box_id=$1" in query
+            and "ORDER BY evaluation_sequence,evaluation_id" in query
+        ):
+            self._paused = True
+            self._captured.set()
+            await asyncio.wait_for(self._release.wait(), timeout=5)
+        return rows
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+
+class _EvaluationSnapshotBarrierPostgres:
+    """Production transaction wrapper exposing the evaluation/candidate gap."""
+
+    def __init__(self, postgres: PoolBackedPostgres) -> None:
+        self._postgres = postgres
+        self.captured = asyncio.Event()
+        self.release = asyncio.Event()
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]:
+        async with self._postgres.transaction() as connection:
+            await connection.execute("SET LOCAL lock_timeout = '2s'")
+            await connection.execute("SET LOCAL statement_timeout = '5s'")
+            yield _EvaluationSnapshotBarrierConnection(
+                connection,
+                captured=self.captured,
+                release=self.release,
+            )
+
+
+async def _hold_candidate_lock(
+    postgres: PoolBackedPostgres,
+    tradeplan_id: str,
+    *,
+    acquired: asyncio.Event,
+    release: asyncio.Event,
+) -> None:
+    """Hold one real candidate row lock until the deterministic race is armed."""
+
+    async with postgres.transaction() as connection:
+        await connection.execute("SET LOCAL lock_timeout = '2s'")
+        await connection.execute("SET LOCAL statement_timeout = '5s'")
+        row = await connection.fetchrow(
+            f"SELECT tradeplan_id FROM {CANDIDATE_TABLE} WHERE tradeplan_id=$1 FOR UPDATE",
+            tradeplan_id,
+        )
+        assert row is not None
+        acquired.set()
+        await asyncio.wait_for(release.wait(), timeout=5)
+
+
 def _candle(
     timeframe: Literal["H4", "H1"],
     index: int,
@@ -426,6 +507,68 @@ def _later_evidence_with_h1(
             "broker_geometry": broker,
         }
     )
+
+
+async def _persist_three_candidate_occurrences(
+    postgres: PoolBackedPostgres,
+    repository: Strategy5SCRTradePlanCandidateV2Repository,
+    evidence: TradePlanCandidateBuildEvidenceV2,
+) -> tuple[Any, Any, Any, TradePlanCandidateBuildEvidenceV2]:
+    """Persist an A→B→A chain used by deterministic lock-order regressions."""
+
+    await _insert_target_cohort(postgres, evidence)
+    a1 = await repository.process_evidence(evidence)
+    assert a1.status == "PERSISTED" and a1.candidate is not None
+
+    h1_b = _candle(
+        "H1",
+        32,
+        opened_at=_DECISION,
+        open_price=Decimal("1.1020"),
+        high=Decimal("1.1021"),
+        low=Decimal("1.1019"),
+        close=Decimal("1.1020"),
+    )
+    await _insert_candle(postgres, h1_b)
+    b_evidence = _later_evidence_with_h1(evidence, h1_b, request="p6-lock-b")
+    b_broker = BrokerGeometryCostAuthorityV1.model_validate(
+        {
+            **b_evidence.broker_geometry.model_dump(mode="python"),
+            "authority_hash": "sha256:" + "0" * 64,
+            "spread_price": Decimal("0.00003"),
+        }
+    )
+    b_evidence = b_evidence.model_copy(update={"broker_geometry": b_broker})
+    b = await repository.process_evidence(b_evidence)
+    assert b.status == "PERSISTED" and b.candidate is not None
+
+    h1_a2 = _candle(
+        "H1",
+        33,
+        opened_at=h1_b.close_time_utc,
+        open_price=Decimal("1.1020"),
+        high=Decimal("1.1021"),
+        low=Decimal("1.1019"),
+        close=Decimal("1.1020"),
+    )
+    await _insert_candle(postgres, h1_a2)
+    a2_evidence = _later_evidence_with_h1(b_evidence, h1_a2, request="p6-lock-a2")
+    a2_broker = BrokerGeometryCostAuthorityV1.model_validate(
+        {
+            **a2_evidence.broker_geometry.model_dump(mode="python"),
+            "authority_hash": "sha256:" + "0" * 64,
+            "spread_price": Decimal("0.00002"),
+        }
+    )
+    a2_evidence = a2_evidence.model_copy(update={"broker_geometry": a2_broker})
+    a2 = await repository.process_evidence(a2_evidence)
+    assert a2.status == "PERSISTED" and a2.candidate is not None
+    assert [a1.candidate.candidate_sequence, b.candidate.candidate_sequence, a2.candidate.candidate_sequence] == [
+        1,
+        2,
+        3,
+    ]
+    return a1.candidate, b.candidate, a2.candidate, a2_evidence
 
 
 async def _cleanup(postgres: PoolBackedPostgres, lifecycle_id: str) -> None:
@@ -1075,6 +1218,211 @@ async def test_a_b_a_persists_distinct_occurrences_and_restart_does_not_resurrec
         assert len({a1.candidate.tradeplan_id, b.candidate.tradeplan_id, a2.candidate.tradeplan_id}) == 3
         history = await Strategy5SCRTradePlanCandidateV2Repository(cast(Any, postgres)).load_history(lifecycle_id)
         assert [item.lifecycle_state for item in history] == ["SUPERSEDED", "SUPERSEDED", "ACTIVE"]
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+@pytest.mark.parametrize("reader", ("active", "history", "evaluations"))
+async def test_three_occurrence_candidate_lock_order_has_no_cycle(
+    postgres: PoolBackedPostgres,
+    reader: Literal["active", "history", "evaluations"],
+) -> None:
+    """All linked-candidate readers wait at C3 without holding older locks."""
+
+    lifecycle_id, thesis, box, context = await _seed_parent(postgres)
+    evidence = _build_evidence(thesis, box, context, request="p6-lock-a1")
+    repository = Strategy5SCRTradePlanCandidateV2Repository(cast(Any, postgres))
+    timed = Strategy5SCRTradePlanCandidateV2Repository(cast(Any, _TimedTransactionPostgres(postgres)))
+    acquired, release = asyncio.Event(), asyncio.Event()
+    holder: asyncio.Task[None] | None = None
+    try:
+        c1, c2, c3, _latest_evidence = await _persist_three_candidate_occurrences(
+            postgres,
+            repository,
+            evidence,
+        )
+        holder = asyncio.create_task(
+            _hold_candidate_lock(postgres, c3.tradeplan_id, acquired=acquired, release=release)
+        )
+        await asyncio.wait_for(acquired.wait(), timeout=5)
+        pending: asyncio.Task[Any]
+        if reader == "active":
+            pending = asyncio.create_task(timed.load_active(box.execution_box_id))
+        elif reader == "history":
+            pending = asyncio.create_task(timed.load_history(lifecycle_id))
+        else:
+            pending = asyncio.create_task(timed.load_evaluations(box.execution_box_id))
+
+        # While the reader waits at newest C3, it must not hold C1/C2.  This
+        # reproduces the two old wait-for cycles without relying on pg_sleep.
+        async with postgres.transaction() as probe:
+            await probe.execute("SET LOCAL lock_timeout = '500ms'")
+            await probe.execute("SET LOCAL statement_timeout = '2s'")
+            locked = await probe.fetch(
+                f"SELECT tradeplan_id FROM {CANDIDATE_TABLE} WHERE tradeplan_id=ANY($1::text[]) "
+                "ORDER BY candidate_sequence FOR UPDATE NOWAIT",
+                [c1.tradeplan_id, c2.tradeplan_id],
+            )
+            assert {str(row["tradeplan_id"]) for row in locked} == {c1.tradeplan_id, c2.tradeplan_id}
+        release.set()
+        result = await asyncio.wait_for(pending, timeout=5)
+        if reader == "active":
+            assert result == c3
+        elif reader == "history":
+            assert [item.tradeplan_id for item in result] == [c1.tradeplan_id, c2.tradeplan_id, c3.tradeplan_id]
+        else:
+            assert len(result) == 3
+            assert {item.result_tradeplan_id for item in result} == {
+                c1.tradeplan_id,
+                c2.tradeplan_id,
+                c3.tradeplan_id,
+            }
+        await asyncio.wait_for(holder, timeout=5)
+    finally:
+        release.set()
+        if holder is not None:
+            await asyncio.gather(holder, return_exceptions=True)
+        await _cleanup(postgres, lifecycle_id)
+
+
+async def test_load_evaluations_reconstructs_one_snapshot_while_successor_commits(
+    postgres: PoolBackedPostgres,
+) -> None:
+    """A reader never combines its captured evaluation set with a later C4."""
+
+    lifecycle_id, thesis, box, context = await _seed_parent(postgres)
+    evidence = _build_evidence(thesis, box, context, request="p6-snapshot-a1")
+    repository = Strategy5SCRTradePlanCandidateV2Repository(cast(Any, postgres))
+    barrier_pg = _EvaluationSnapshotBarrierPostgres(postgres)
+    reader_repository = Strategy5SCRTradePlanCandidateV2Repository(cast(Any, barrier_pg))
+    writer_repository = Strategy5SCRTradePlanCandidateV2Repository(cast(Any, _TimedTransactionPostgres(postgres)))
+    reader: asyncio.Task[Any] | None = None
+    try:
+        c1, c2, c3, c3_evidence = await _persist_three_candidate_occurrences(
+            postgres,
+            repository,
+            evidence,
+        )
+        h1_c4 = _candle(
+            "H1",
+            34,
+            opened_at=c3_evidence.decision_at_utc,
+            open_price=Decimal("1.1020"),
+            high=Decimal("1.1021"),
+            low=Decimal("1.1019"),
+            close=Decimal("1.1020"),
+        )
+        await _insert_candle(postgres, h1_c4)
+        c4_evidence = _later_evidence_with_h1(c3_evidence, h1_c4, request="p6-snapshot-c4")
+        c4_broker = BrokerGeometryCostAuthorityV1.model_validate(
+            {
+                **c4_evidence.broker_geometry.model_dump(mode="python"),
+                "authority_hash": "sha256:" + "0" * 64,
+                "spread_price": Decimal("0.00003"),
+            }
+        )
+        c4_evidence = c4_evidence.model_copy(update={"broker_geometry": c4_broker})
+
+        reader = asyncio.create_task(reader_repository.load_evaluations(box.execution_box_id))
+        await asyncio.wait_for(barrier_pg.captured.wait(), timeout=5)
+
+        # The reader has captured E1-E3 but holds no candidate locks.  The
+        # successor transaction must therefore commit C4+E4 before the reader
+        # resumes and chooses locks for only the captured candidate IDs.
+        written = await asyncio.wait_for(writer_repository.process_evidence(c4_evidence), timeout=5)
+        assert written.status == "PERSISTED"
+        assert written.candidate is not None
+        assert written.candidate.candidate_sequence == 4
+
+        barrier_pg.release.set()
+        captured = await asyncio.wait_for(reader, timeout=5)
+        assert [item.result_tradeplan_id for item in captured] == [
+            c1.tradeplan_id,
+            c2.tradeplan_id,
+            c3.tradeplan_id,
+        ]
+
+        fresh = await asyncio.wait_for(
+            writer_repository.load_evaluations(box.execution_box_id),
+            timeout=5,
+        )
+        assert [item.result_tradeplan_id for item in fresh] == [
+            c1.tradeplan_id,
+            c2.tradeplan_id,
+            c3.tradeplan_id,
+            written.candidate.tradeplan_id,
+        ]
+        history = await asyncio.wait_for(writer_repository.load_history(lifecycle_id), timeout=5)
+        assert [item.candidate_sequence for item in history] == [1, 2, 3, 4]
+        assert [item.lifecycle_state for item in history] == [
+            "SUPERSEDED",
+            "SUPERSEDED",
+            "SUPERSEDED",
+            "ACTIVE",
+        ]
+    finally:
+        barrier_pg.release.set()
+        if reader is not None:
+            await asyncio.gather(reader, return_exceptions=True)
+        await _cleanup(postgres, lifecycle_id)
+
+
+async def test_bounded_concurrent_read_replay_and_terminal_retry_stress(
+    postgres: PoolBackedPostgres,
+) -> None:
+    """Bound repeated readers/replays and terminal retries with server timeouts."""
+
+    lifecycle_id, thesis, box, context = await _seed_parent(postgres)
+    evidence = _build_evidence(thesis, box, context, request="p6-lock-stress")
+    repository = Strategy5SCRTradePlanCandidateV2Repository(cast(Any, postgres))
+    timed = Strategy5SCRTradePlanCandidateV2Repository(cast(Any, _TimedTransactionPostgres(postgres)))
+    try:
+        await _insert_target_cohort(postgres, evidence)
+        opened = await repository.process_evidence(evidence)
+        assert opened.status == "PERSISTED" and opened.candidate is not None
+
+        for _ in range(20):
+            active, history, evaluations, replay = await asyncio.wait_for(
+                asyncio.gather(
+                    timed.load_active(box.execution_box_id),
+                    timed.load_history(lifecycle_id),
+                    timed.load_evaluations(box.execution_box_id),
+                    timed.process_evidence(evidence),
+                ),
+                timeout=5,
+            )
+            assert active == opened.candidate
+            assert history == (opened.candidate,)
+            assert len(evaluations) == 1 and evaluations[0].result_tradeplan_id == opened.candidate.tradeplan_id
+            assert replay.status == "DUPLICATE" and replay.candidate == opened.candidate
+
+        terminal_at = _DECISION + timedelta(minutes=1)
+        await postgres.execute(
+            "UPDATE strategy_5scr_analysis_lifecycles_v2 SET state='INVALIDATED',last_event_at=$2 "
+            "WHERE strategy_lifecycle_id=$1",
+            lifecycle_id,
+            terminal_at,
+        )
+        for _ in range(20):
+            history, terminal, replay = await asyncio.wait_for(
+                asyncio.gather(
+                    timed.load_history(lifecycle_id),
+                    timed.reconcile_terminal(lifecycle_id, terminal_at),
+                    timed.process_evidence(evidence),
+                ),
+                timeout=5,
+            )
+            assert len(history) == 1
+            assert terminal.status in {"INVALIDATED", "DUPLICATE"}
+            assert replay.status in {"INVALIDATED", "REJECTED"}
+
+        final_history = await timed.load_history(lifecycle_id)
+        final_evaluations = await timed.load_evaluations(box.execution_box_id)
+        assert len(final_history) == 1
+        assert final_history[0].tradeplan_id == opened.candidate.tradeplan_id
+        assert final_history[0].lifecycle_state == "INVALIDATED"
+        assert len(final_evaluations) == 1
+        assert await timed.load_active(box.execution_box_id) is None
     finally:
         await _cleanup(postgres, lifecycle_id)
 
