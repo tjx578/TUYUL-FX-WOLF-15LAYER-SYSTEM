@@ -146,6 +146,10 @@ def test_p4_has_no_production_consumer_or_runtime_wiring() -> None:
             "storage/strategy_5scr_tradeplan_candidate_v2_repository.py",
             "storage.strategy_5scr_directional_thesis_v1_repository",
         ),
+        (
+            "storage/strategy_5scr_candidate_c2_shadow_v2_repository.py",
+            "storage.strategy_5scr_directional_thesis_v1_repository",
+        ),
     }
     consumers: list[tuple[str, str]] = []
     runtime_paths = {path.resolve() for path in RUNTIME_FILES}
