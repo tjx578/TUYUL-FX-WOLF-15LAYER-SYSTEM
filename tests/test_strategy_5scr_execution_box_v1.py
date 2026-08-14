@@ -10,6 +10,7 @@ from typing import Any, Literal
 import pytest
 from pydantic import ValidationError
 
+import storage.strategy_5scr_execution_box_v1_repository as box_storage
 from analysis.strategy_5scr_execution_box_v1 import (
     close_execution_box,
     execution_box_evidence_hash,
@@ -31,6 +32,27 @@ START = datetime(2026, 8, 12, 9, 0, tzinfo=UTC)
 LIFECYCLE = "5scr-lifecycle:" + "1" * 32
 CONTEXT = "5scr-context:" + "2" * 32
 THESIS = "5scr-thesis:" + "3" * 32
+
+
+def test_p5_schema_fingerprint_binds_exact_catalog_bytes() -> None:
+    unquoted = "CREATE   INDEX box_idx ON box_table (state)"
+    formatting_only = "create index BOX_IDX on BOX_TABLE (STATE)"
+    literal = "CHECK (state = 'FROZEN')"
+    identifier = 'SELECT "AuthorityScope" FROM box_table'
+    dollar_quoted = "CREATE FUNCTION guard() RETURNS trigger AS $body$ RETURN NEW; $body$ LANGUAGE plpgsql"
+
+    assert box_storage._sql_fingerprint(unquoted) != box_storage._sql_fingerprint(formatting_only)
+    assert box_storage._sql_fingerprint(unquoted) == box_storage._sql_fingerprint(unquoted)
+    assert box_storage._sql_fingerprint(literal) != box_storage._sql_fingerprint(
+        literal.replace("'FROZEN'", "'frozen'")
+    )
+    assert box_storage._sql_fingerprint(identifier) != box_storage._sql_fingerprint(
+        identifier.replace('"AuthorityScope"', '"authorityscope"')
+    )
+    assert box_storage._sql_fingerprint(dollar_quoted) != box_storage._sql_fingerprint(
+        dollar_quoted.replace("RETURN NEW;", "RETURN OLD;")
+    )
+    assert box_storage._sql_fingerprint("-- guard\nRETURN NEW;") != box_storage._sql_fingerprint("-- guard RETURN NEW;")
 
 
 def _sha(payload: object) -> str:

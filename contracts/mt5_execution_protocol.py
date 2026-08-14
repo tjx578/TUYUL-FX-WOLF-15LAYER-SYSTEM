@@ -354,6 +354,25 @@ class OpenBrokerPosition(StrictModel):
     floating_pnl: float
 
 
+class OpenBrokerOrder(StrictModel):
+    order_ticket: int = Field(..., ge=1)
+    symbol: str = Field(..., min_length=1, max_length=64)
+    order_type: Literal[
+        "BUY_LIMIT",
+        "SELL_LIMIT",
+        "BUY_STOP",
+        "SELL_STOP",
+        "BUY_STOP_LIMIT",
+        "SELL_STOP_LIMIT",
+    ]
+    volume: float = Field(..., gt=0)
+    requested_price: float = Field(..., gt=0)
+    stop_loss: float | None = Field(default=None, gt=0)
+    take_profit: float | None = Field(default=None, gt=0)
+    magic: int = Field(..., ge=0)
+    comment: str = Field(default="", max_length=64)
+
+
 class AccountSnapshotV1(StrictModel):
     snapshot_id: str = Field(..., min_length=3, max_length=200)
     captured_at_utc: datetime
@@ -370,6 +389,8 @@ class AccountSnapshotV1(StrictModel):
     trade_allowed: bool
     autotrading_enabled: bool
     open_positions: list[OpenBrokerPosition] = Field(default_factory=list)
+    pending_orders: list[OpenBrokerOrder] = Field(default_factory=list)
+    broker_ledger_reconciled: bool = False
     symbols: list[SymbolCapability] = Field(default_factory=list)
 
     @field_validator("captured_at_utc")
@@ -619,6 +640,7 @@ __all__ = [
     "ExecutionReportV1",
     "SymbolCapability",
     "OpenBrokerPosition",
+    "OpenBrokerOrder",
     "AccountSnapshotV1",
     "ExecutorRegistrationV1",
     "ExecutorHeartbeatV1",

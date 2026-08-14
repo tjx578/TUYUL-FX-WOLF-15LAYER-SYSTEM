@@ -70,7 +70,9 @@ def _enabled(value: str | None, *, default: bool) -> bool:
 
 
 def _normalize_sql(value: Any) -> str:
-    return " ".join(str(value or "").replace('"', "").lower().split())
+    """Fingerprint the exact stable PostgreSQL catalog representation."""
+
+    return str(value or "")
 
 
 def _sql_fingerprint(value: Any) -> str:
@@ -113,6 +115,7 @@ class TradePlanCandidateV2RuntimeConfig:
 @dataclass(frozen=True)
 class TradePlanCandidateV2SchemaStatus:
     missing_tables: tuple[str, ...]
+    invalid_tables: tuple[str, ...]
     missing_columns: tuple[str, ...]
     invalid_columns: tuple[str, ...]
     missing_constraints: tuple[str, ...]
@@ -127,6 +130,7 @@ class TradePlanCandidateV2SchemaStatus:
         return not any(
             (
                 self.missing_tables,
+                self.invalid_tables,
                 self.missing_columns,
                 self.invalid_columns,
                 self.missing_constraints,
@@ -236,7 +240,7 @@ _REQUIRED_COLUMNS: dict[tuple[str, str], _ColumnContract] = {
                 "character varying",
                 False,
                 40,
-                "'risk_reservation'::character varying",
+                "'RISK_RESERVATION'::character varying",
             ),
             ("payload", "jsonb", False, None, ""),
             ("target_authority_payload", "jsonb", False, None, ""),
@@ -324,41 +328,41 @@ _REQUIRED_CONSTRAINTS: dict[str, _ConstraintContract] = {
 # Filled from pg_get_constraintdef() on disposable PostgreSQL 16.  Empty is
 # deliberate fail-closed behavior during development, never fragment matching.
 _REQUIRED_CONSTRAINT_DEFINITION_HASHES: dict[str, str] = {
-    "ck_5scr_tradeplan_candidate_evaluation_v2_candidate_link": "cef370ce4ba43f0663e7d584dd8febdbc2b2b5def2987a9bf10fa362fdf86402",
-    "ck_5scr_tradeplan_candidate_evaluation_v2_decision": "70cc03bd539856242761a0f5df454a957045cecd5a70ac96d701bd7165901941",
-    "ck_5scr_tradeplan_candidate_evaluation_v2_identity": "0f6b915affd125ce220600b1f2f6d5760292278d32acead44771b6428bd16c13",
-    "ck_5scr_tradeplan_candidate_evaluation_v2_payloads": "8c09a1cb9c170d8ce52ac92b69d6a5d41a3b161bd8b262229aa97733f8abb8ee",
-    "ck_5scr_tradeplan_candidate_evaluation_v2_shadow_only": "cac310316bbb0316d551cc61e37e45b2a78b4ae9a1c22cc489dcfcc7664a379a",
-    "ck_5scr_tradeplan_candidate_v2_geometry": "aef0d75f353b9a5f14aee5b0bc303029546f8a024cee91bef05418b4c13f39d3",
-    "ck_5scr_tradeplan_candidate_v2_identity": "0c00166633afd94b4eb1261a1273e62c3afea49e8e3b92438befe0f8b1b2e6c8",
-    "ck_5scr_tradeplan_candidate_v2_lineage": "b74203c4a048b8f5c233cc6baa1ce04421ed8712025067a71a9fa4c0bfd30850",
-    "ck_5scr_tradeplan_candidate_v2_numbers": "bc672f679e73fd25ed8410547a92cb64036cdce4cf40eaabb95411e7e44f6114",
-    "ck_5scr_tradeplan_candidate_v2_payloads": "1720e4088a582bbf8aff2a7199c7b210c7ffba07e8723010b5dba05c90981001",
-    "ck_5scr_tradeplan_candidate_v2_shadow_only": "27946660efbe8056b82ae2c375faceec562590a16f6645b54e401ddac6a6eefa",
-    "ck_5scr_tradeplan_candidate_v2_state": "28569f8821ef39e0abf63555d1b347d6c7235b0f99d536cf81e21684fab91db0",
-    "ck_5scr_tradeplan_candidate_v2_temporal": "695fc43264a87a6decb3b8f65bc9540dc4b72386a04e2e75e4a5b7bad1484a0b",
-    "fk_5scr_tradeplan_candidate_evaluation_v2_box_scope": "357c1d6f1666d928427c2dcdb187505a7d36af67377d31d4e7c6596e5ea4a712",
-    "fk_5scr_tradeplan_candidate_evaluation_v2_candidate_scope": "da3d2a98f032494be2087997b958fa572e7017fd5f2d1628323ae2826c36f4ad",
-    "fk_5scr_tradeplan_candidate_evaluation_v2_context_scope": "2ea3dd94515401f7af12cf208edd3ac0fc97f7d3de59a57b2e6b7f4e8f9cd21e",
-    "fk_5scr_tradeplan_candidate_evaluation_v2_thesis_scope": "1f6049348b10d0efadce7632c03b7688009b64669aaf17a766588d6bdef088ea",
-    "fk_5scr_tradeplan_candidate_v2_context_scope": "2ea3dd94515401f7af12cf208edd3ac0fc97f7d3de59a57b2e6b7f4e8f9cd21e",
-    "fk_5scr_tradeplan_candidate_v2_execution_box_scope": "fcfcda012c5b43fdbf02b69a7a1bf3c52a76b006c781db16ef3b7874a7a43f37",
-    "fk_5scr_tradeplan_candidate_v2_lifecycle": "b1761179c1b12af56f970536031e896d2cd42265aeec3e0c6923ca2144989230",
-    "fk_5scr_tradeplan_candidate_v2_previous_scope": "c28d7c1b631ce1fa2dedfe194122251c78bc2b5b4de0d5f2f590ef0aedf57674",
-    "fk_5scr_tradeplan_candidate_v2_thesis_scope": "1f6049348b10d0efadce7632c03b7688009b64669aaf17a766588d6bdef088ea",
-    "strategy_5scr_tradeplan_candidate_evaluations_v2_pkey": "1f236d24d7eee53a869d2120124a7cd847be9f31f30541ad8d16aab84ecc3ca6",
-    "strategy_5scr_tradeplan_candidates_v2_pkey": "7d77a6c9e545383104575e52c803377ea60f534c0a031d55f4b65c9e9479537f",
-    "uq_5scr_context_epoch_tradeplan_scope_v1": "41a5f8b5ad9ea3e75f2f5dc05967a1f6f06630963829feeaaed826d6994f7db2",
-    "uq_5scr_execution_box_tradeplan_scope_v1": "979e1fe5df82400e4ac6b6a708ec4bbc1d41233dffb95647ef9a4813032f0204",
-    "uq_5scr_execution_box_tradeplan_evaluation_scope_v1": "2397cf82542dbf20a9fb1ba673e80c4a3ad39124bac4f557d9af38c906a02b7a",
-    "uq_5scr_thesis_tradeplan_scope_v1": "224827f0a2f54e09ccddb918e4013cebe82b78da21e590a6e24a73a4a2d0fd9c",
-    "uq_5scr_tradeplan_candidate_evaluation_v2_clock": "7633e953f0be86501f2a91c6924794529c388a805977c9454f3408afc5c1f89b",
-    "uq_5scr_tradeplan_candidate_evaluation_v2_request": "68dd739c4141da00c7d1c8ca909e415a10f41aaacb21bb874cf94aaba5259043",
-    "uq_5scr_tradeplan_candidate_evaluation_v2_sequence": "6cd66d161dfcd4e68482a4f9bab149b64d675c5e910dc7c90f23a0c3cc9c73ad",
-    "uq_5scr_tradeplan_candidate_v2_evaluation_scope": "de2347253f96f3c36c1ae5b41a73bea107cc00c75e33062881b3c3fd21ba2088",
-    "uq_5scr_tradeplan_candidate_v2_predecessor_scope": "317bfbd1225ab8cde58141352d7f7de01a133b4b86d076f465e64e7f59749815",
-    "uq_5scr_tradeplan_candidate_v2_revision": "e17819f43da2238b3d6f01d8b2d4ad1351224e9ab5045865aa77d3cd801aea96",
-    "uq_5scr_tradeplan_candidate_v2_sequence": "1e4cfd361cb4d6d93d428b00d68e2c5c69188ffd9f82663c1d53b5b349196ece",
+    "ck_5scr_tradeplan_candidate_evaluation_v2_candidate_link": "9f41db0f955d90ec81bd30d5169ef903923dd2274d70f3ff754b67a50ae2a259",
+    "ck_5scr_tradeplan_candidate_evaluation_v2_decision": "77ff61d33fe328440f02cee2efadf01913db5bde470c96ceaaad8865cd9c542d",
+    "ck_5scr_tradeplan_candidate_evaluation_v2_identity": "064dd5d76843cf4c20219bbadc041b6915a167ae096633f67c4fa921255ca9f5",
+    "ck_5scr_tradeplan_candidate_evaluation_v2_payloads": "facf9c80a51023e4f3fc012f12589414fce13b43b942f81db8b1e473b83b7a2e",
+    "ck_5scr_tradeplan_candidate_evaluation_v2_shadow_only": "9b996154165a14a6f559155e6d2a0abc80105aeee0ea7383feb1cc9f7f940544",
+    "ck_5scr_tradeplan_candidate_v2_geometry": "0f9512e5185c37722ca3cde79271552f2b1058a8625fc6345c559f41e3503ea5",
+    "ck_5scr_tradeplan_candidate_v2_identity": "e2c1f6379bb9baee8b00f1511006dbcf69368a962573994819350540ace0a5fc",
+    "ck_5scr_tradeplan_candidate_v2_lineage": "5d80ef2f3d93f154f547d5e7c05c135528aeb7947a12f4fb964cf0c29500f044",
+    "ck_5scr_tradeplan_candidate_v2_numbers": "40618756125b391aee2639b88810b749a2ffa36c6f8b00dc685cc10441ec5de5",
+    "ck_5scr_tradeplan_candidate_v2_payloads": "b46f98595113c3863cbfb551617b46e38e75f86e22f16b84624f72f478f7d4eb",
+    "ck_5scr_tradeplan_candidate_v2_shadow_only": "305c9a16938a2618282af19a9a4d2c6fdc8589caf6bf837b0f0e270b1047e756",
+    "ck_5scr_tradeplan_candidate_v2_state": "6b13e5cac4c8497d41f9e0fc5dc2ea7b066b079012716bc427934b5922de2b30",
+    "ck_5scr_tradeplan_candidate_v2_temporal": "742b882e422f44e1a1a17032350209480d6437fcadb57d5ff4e25d3ef676c99c",
+    "fk_5scr_tradeplan_candidate_evaluation_v2_box_scope": "09f8b73a02c11afe2e7cb13d19f467bc8d7b7bfc7f1883040270f7d2e3216fef",
+    "fk_5scr_tradeplan_candidate_evaluation_v2_candidate_scope": "d99c23ddf449a3ccb085e78ce9e3442c72c3a6fea870ec503b15507e90372dba",
+    "fk_5scr_tradeplan_candidate_evaluation_v2_context_scope": "3630d8b88fc111dbced3c11f162593f259f4b06bde73983c2c6f12627fe4f309",
+    "fk_5scr_tradeplan_candidate_evaluation_v2_thesis_scope": "b0a5a5b3940d644501b2c3299ab7a068cb3adf55e3f0a5db34dbf6eae19b8d58",
+    "fk_5scr_tradeplan_candidate_v2_context_scope": "3630d8b88fc111dbced3c11f162593f259f4b06bde73983c2c6f12627fe4f309",
+    "fk_5scr_tradeplan_candidate_v2_execution_box_scope": "2f303213504e9effd308c11c8f9fa36212d5c4f8fb9b43f295c5839983f598d2",
+    "fk_5scr_tradeplan_candidate_v2_lifecycle": "31c316748300dbd4469cf8ccd91828fcdca520c4f93363bbcbb2f8a9411a7d32",
+    "fk_5scr_tradeplan_candidate_v2_previous_scope": "e60f1071b4b9a7d63d7b099f87999e4b3b963fe958d0d34668c2b46deb337e60",
+    "fk_5scr_tradeplan_candidate_v2_thesis_scope": "b0a5a5b3940d644501b2c3299ab7a068cb3adf55e3f0a5db34dbf6eae19b8d58",
+    "strategy_5scr_tradeplan_candidate_evaluations_v2_pkey": "cc5a2fb5a1764a7e8ea36189f516f34698cc47449df36eb8731d9d6017b85b65",
+    "strategy_5scr_tradeplan_candidates_v2_pkey": "e4d4e8f0b8679eee2573c889f013a6f3ad75b8ad9f69ab49711288b494eaed7e",
+    "uq_5scr_context_epoch_tradeplan_scope_v1": "c9d899c9cff5aa601f408cae55707f1ff4bda669ea0d9641e65156fde67a9446",
+    "uq_5scr_execution_box_tradeplan_scope_v1": "2f4b614dc03b602dc6a3cb1412fb4ad6192fb625c5802d1cad7d174daf46e7e7",
+    "uq_5scr_execution_box_tradeplan_evaluation_scope_v1": "69fcd6722cef13bf4ee1fd069afbea120896cf6773ba17efaf16149ea7d913c2",
+    "uq_5scr_thesis_tradeplan_scope_v1": "839b9daebd1f0fa74fc6c973b51d1c35fae90b508e1bdcf7fa9ad25043123825",
+    "uq_5scr_tradeplan_candidate_evaluation_v2_clock": "2ea5a29e7f6dba033d84545b16764155a534e7489e39ddaf821defc393f6cd26",
+    "uq_5scr_tradeplan_candidate_evaluation_v2_request": "747f8c55d146e497132c2310ee8d86a65ad1ff3a1bf6c8733171066595cb87e4",
+    "uq_5scr_tradeplan_candidate_evaluation_v2_sequence": "a6d1a52390ded5d78d051b7dd7c748f751bff119155586ea432870b26d99b35d",
+    "uq_5scr_tradeplan_candidate_v2_evaluation_scope": "6ee676151279427d9c48a04e7c57137f0215879a87b65c0380bfc14a73cb9793",
+    "uq_5scr_tradeplan_candidate_v2_predecessor_scope": "2b76c0b70c927b0bb2d37bf8fc234e09c7b052d40b3e7998c4c87960d4fe72c7",
+    "uq_5scr_tradeplan_candidate_v2_revision": "d38371d93b6fd500b80674fe7b1906de8277491972b1f5901b33349362c2318b",
+    "uq_5scr_tradeplan_candidate_v2_sequence": "c7e28d7a08c4543f052b96a94696f4735e3951984deef04ee548bde36e5a43fe",
 }
 
 _REQUIRED_INDEXES: dict[str, _IndexContract] = {
@@ -377,11 +381,11 @@ _REQUIRED_INDEXES: dict[str, _IndexContract] = {
     ),
 }
 _REQUIRED_INDEX_DEFINITION_HASHES: dict[str, str] = {
-    "ix_5scr_tradeplan_candidate_evaluation_v2_candidate": "311a80f3ba2618db0f3d4dfe7cb630cec5d18f12711ed75a4d28f26d80dd536e",
-    "ix_5scr_tradeplan_candidate_evaluation_v2_history": "0691ee6ba960888bcad13e9ff2ef22404eba5ae9d84c75668fe15a1cfde1ef69",
-    "ix_5scr_tradeplan_candidate_v2_lifecycle_history": "7c159ff17eb67a0c86082c1977361ead26e641ae7d6ac39eb607c46073deb2a0",
-    "uq_5scr_tradeplan_candidate_v2_active_box": "8989c7366058a114bdf5b2c14e2c4b624cca315024e090e8222abcf6b092f50d",
-    "uq_5scr_tradeplan_candidate_v2_active_lifecycle": "fd30e5c966bda09b302db1400e87d8c7184de4f279f6e220b35b455ee9d3ca55",
+    "ix_5scr_tradeplan_candidate_evaluation_v2_candidate": "ab28010f20b62df15c6197b7024c911a3020c9bbb9ccbc6b862d9c50eed6b4b5",
+    "ix_5scr_tradeplan_candidate_evaluation_v2_history": "5e73b1e4cdead8801a6de465860f1a44035245b8c16f856425ea102cb0809a01",
+    "ix_5scr_tradeplan_candidate_v2_lifecycle_history": "9af3185fdc5fa943025d94f70b1ed7530e2bf63e86b6dac0417a269911afa9d1",
+    "uq_5scr_tradeplan_candidate_v2_active_box": "cb363ca48466b04ba8d08a1e51b769bc029cf79766b099165ad4af9c95be0bdb",
+    "uq_5scr_tradeplan_candidate_v2_active_lifecycle": "fa35fcb8a71ea8ae1eb96370036de26c97bdf03b73d4f2a8ad24411fc514f767",
 }
 
 _REQUIRED_TRIGGERS: dict[str, _TriggerContract] = {
@@ -394,12 +398,12 @@ _REQUIRED_TRIGGERS: dict[str, _TriggerContract] = {
 }
 _REQUIRED_TRIGGER_DEFINITION_HASHES: dict[str, tuple[str, str]] = {
     "trg_strategy_5scr_tradeplan_candidate_evaluations_v2_immutable": (
-        "7bb044347d1f8f9a42df60bc94440fc6a6146af01ded6cbc637a9d306d6e9dda",
-        "9751c45b751811e25ac17b6a1cec558621da713291dd0ca5745243a946046451",
+        "4f8f73772476530864cb1970151e4b795486911ec4972ca465b3e3c6d5f5dd36",
+        "0a14ed1dae7d32f9435aeb718436c07fdfc165806925a1feb14e7a6d7b50074d",
     ),
     "trg_strategy_5scr_tradeplan_candidates_v2_guard": (
-        "ba5a7c74d246d82f499b7e5467906823e7b24dba396054129bbe8a155a1c3475",
-        "6de681003f1ff30ee7f849ef843664ec4624cd12ac2eee7f86a9fc9aa430db9a",
+        "ddf140919f6a1679f8c09822ee84b5a958c076e9e0c4921a95c937dab30be353",
+        "dd1f98e5314eb044928251923d13d05266b0b6614d4fee6b88a450a8625c99c9",
     ),
 }
 
@@ -904,19 +908,23 @@ class Strategy5SCRTradePlanCandidateV2Repository:
     async def schema_status(self) -> TradePlanCandidateV2SchemaStatus:
         if not self._pg.is_available:
             return TradePlanCandidateV2SchemaStatus(
-                tuple(sorted(_REQUIRED_TABLES)),
-                tuple(sorted(f"{table}.{column}" for table, column in _REQUIRED_COLUMNS)),
-                (),
-                tuple(sorted(_REQUIRED_CONSTRAINTS)),
-                (),
-                tuple(sorted(_REQUIRED_INDEXES)),
-                (),
-                tuple(sorted(_REQUIRED_TRIGGERS)),
-                (),
+                missing_tables=tuple(sorted(_REQUIRED_TABLES)),
+                invalid_tables=(),
+                missing_columns=tuple(sorted(f"{table}.{column}" for table, column in _REQUIRED_COLUMNS)),
+                invalid_columns=(),
+                missing_constraints=tuple(sorted(_REQUIRED_CONSTRAINTS)),
+                invalid_constraints=(),
+                missing_indexes=tuple(sorted(_REQUIRED_INDEXES)),
+                invalid_indexes=(),
+                missing_triggers=tuple(sorted(_REQUIRED_TRIGGERS)),
+                invalid_triggers=(),
             )
         table_rows = await self._pg.fetch(
-            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname=current_schema() "
-            "AND tablename=ANY($1::text[])",
+            """SELECT cls.relname AS tablename,cls.relkind::text AS relkind,
+                      cls.relpersistence::text AS relpersistence,cls.relispartition
+               FROM pg_catalog.pg_class cls
+               JOIN pg_catalog.pg_namespace ns ON ns.oid=cls.relnamespace
+               WHERE ns.nspname=current_schema() AND cls.relname=ANY($1::text[])""",
             sorted(_REQUIRED_TABLES),
         )
         column_rows = await self._pg.fetch(
@@ -969,7 +977,20 @@ class Strategy5SCRTradePlanCandidateV2Repository:
             """,
             sorted(_REQUIRED_TRIGGERS),
         )
-        present_tables = {str(_row_value(row, "tablename")) for row in table_rows}
+        table_map = {str(_row_value(row, "tablename")): row for row in table_rows}
+        present_tables = set(table_map)
+        invalid_tables = tuple(
+            sorted(
+                table
+                for table in _REQUIRED_TABLES
+                if (row := table_map.get(table)) is not None
+                and (
+                    str(_row_value(row, "relkind")) != "r"
+                    or str(_row_value(row, "relpersistence")) != "p"
+                    or bool(_row_value(row, "relispartition"))
+                )
+            )
+        )
         column_map = {
             (str(_row_value(row, "table_name")), str(_row_value(row, "column_name"))): row for row in column_rows
         }
@@ -1036,27 +1057,37 @@ class Strategy5SCRTradePlanCandidateV2Repository:
         invalid_labels = set(invalid_columns)
         expected_labels = {f"{table}.{column}" for table, column in _REQUIRED_COLUMNS}
         own = TradePlanCandidateV2SchemaStatus(
-            tuple(sorted(_REQUIRED_TABLES - present_tables)),
-            tuple(sorted(expected_labels - satisfied_columns - invalid_labels)),
-            tuple(sorted(invalid_columns)),
-            tuple(sorted(set(_REQUIRED_CONSTRAINTS) - set(constraint_map))),
-            tuple(sorted(invalid_constraints)),
-            tuple(sorted(set(_REQUIRED_INDEXES) - set(index_map))),
-            tuple(sorted(invalid_indexes)),
-            tuple(sorted(set(_REQUIRED_TRIGGERS) - set(trigger_map))),
-            tuple(sorted(invalid_triggers)),
+            missing_tables=tuple(sorted(_REQUIRED_TABLES - present_tables)),
+            invalid_tables=invalid_tables,
+            missing_columns=tuple(sorted(expected_labels - satisfied_columns - invalid_labels)),
+            invalid_columns=tuple(sorted(invalid_columns)),
+            missing_constraints=tuple(sorted(set(_REQUIRED_CONSTRAINTS) - set(constraint_map))),
+            invalid_constraints=tuple(sorted(invalid_constraints)),
+            missing_indexes=tuple(sorted(set(_REQUIRED_INDEXES) - set(index_map))),
+            invalid_indexes=tuple(sorted(invalid_indexes)),
+            missing_triggers=tuple(sorted(set(_REQUIRED_TRIGGERS) - set(trigger_map))),
+            invalid_triggers=tuple(sorted(invalid_triggers)),
         )
         parent = await Strategy5SCRExecutionBoxV1Repository(self._pg).schema_status()
         return TradePlanCandidateV2SchemaStatus(
-            tuple(sorted((*own.missing_tables, *(f"p5:{item}" for item in parent.missing_tables)))),
-            tuple(sorted((*own.missing_columns, *(f"p5:{item}" for item in parent.missing_columns)))),
-            tuple(sorted((*own.invalid_columns, *(f"p5:{item}" for item in parent.invalid_columns)))),
-            tuple(sorted((*own.missing_constraints, *(f"p5:{item}" for item in parent.missing_constraints)))),
-            tuple(sorted((*own.invalid_constraints, *(f"p5:{item}" for item in parent.invalid_constraints)))),
-            tuple(sorted((*own.missing_indexes, *(f"p5:{item}" for item in parent.missing_indexes)))),
-            tuple(sorted((*own.invalid_indexes, *(f"p5:{item}" for item in parent.invalid_indexes)))),
-            tuple(sorted((*own.missing_triggers, *(f"p5:{item}" for item in parent.missing_triggers)))),
-            tuple(sorted((*own.invalid_triggers, *(f"p5:{item}" for item in parent.invalid_triggers)))),
+            missing_tables=tuple(sorted((*own.missing_tables, *(f"p5:{item}" for item in parent.missing_tables)))),
+            invalid_tables=own.invalid_tables,
+            missing_columns=tuple(sorted((*own.missing_columns, *(f"p5:{item}" for item in parent.missing_columns)))),
+            invalid_columns=tuple(sorted((*own.invalid_columns, *(f"p5:{item}" for item in parent.invalid_columns)))),
+            missing_constraints=tuple(
+                sorted((*own.missing_constraints, *(f"p5:{item}" for item in parent.missing_constraints)))
+            ),
+            invalid_constraints=tuple(
+                sorted((*own.invalid_constraints, *(f"p5:{item}" for item in parent.invalid_constraints)))
+            ),
+            missing_indexes=tuple(sorted((*own.missing_indexes, *(f"p5:{item}" for item in parent.missing_indexes)))),
+            invalid_indexes=tuple(sorted((*own.invalid_indexes, *(f"p5:{item}" for item in parent.invalid_indexes)))),
+            missing_triggers=tuple(
+                sorted((*own.missing_triggers, *(f"p5:{item}" for item in parent.missing_triggers)))
+            ),
+            invalid_triggers=tuple(
+                sorted((*own.invalid_triggers, *(f"p5:{item}" for item in parent.invalid_triggers)))
+            ),
         )
 
     async def load_active(self, execution_box_id: str) -> TradePlanCandidateV2 | None:
