@@ -11,9 +11,8 @@ permissions:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   # Cancel superseded runs on feature branches to save minutes, but NEVER cancel on
-  # main -- a cancelled CI ends with conclusion 'cancelled', which fails the deploy
-  # gate (Railway Deploy requires CI conclusion == 'success' on main). Rapid auto-commit
-  # pushes were cancelling main CI before it finished, so deploys never fired.
+  # main. The controlled Railway deploy requires a successful CI run for the exact
+  # requested main SHA, so a cancelled main run cannot satisfy the release gate.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
