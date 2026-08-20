@@ -308,12 +308,27 @@ def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
     )
 
     events = list(analyzer._events)
+    throttled_events = [event for event in events if event.event_type == "THROTTLED"]
+    downgraded_events = [event for event in events if event.event_type == "DOWNGRADED_TO_HOLD"]
 
-    assert events[0].event_type == "THROTTLED"
-    assert events[0].direction is None
-    assert events[0].throttled_inferred_direction == "BUY"
-    assert events[1].event_type == "DOWNGRADED_TO_HOLD"
-    assert events[1].direction == "BUY"
+    assert len(throttled_events) == 1
+    assert len(downgraded_events) == 1
+    throttled_event = throttled_events[0]
+    downgraded_event = downgraded_events[0]
+
+    assert throttled_event.timestamp == downgraded_event.timestamp
+    assert list(analyzer._event_keys) == sorted(analyzer._event_keys)
+    assert throttled_event.direction is None
+    assert throttled_event.throttled_inferred_direction == "BUY"
+    assert throttled_event.effective_action == "HOLD"
+    assert throttled_event.is_downgraded is False
+    assert throttled_event.eligible_for_execution is False
+    assert throttled_event.execution_block_reason == "signal_throttled"
+    assert downgraded_event.direction == "BUY"
+    assert downgraded_event.effective_action == "HOLD"
+    assert downgraded_event.is_downgraded is True
+    assert downgraded_event.eligible_for_execution is False
+    assert downgraded_event.execution_block_reason == "signal_throttled"
 
 
 def test_csv_fixture_reports_data_quality_without_large_raw_export():
