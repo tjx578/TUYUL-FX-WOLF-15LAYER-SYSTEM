@@ -231,6 +231,7 @@ class TestBroadcastThroughput:
 
         assert elapsed_ms < 100, f"Broadcast to 50 clients took {elapsed_ms:.1f}ms (limit: 100ms)"
 
+    @pytest.mark.no_cover
     @pytest.mark.asyncio
     async def test_broadcast_1000_messages_to_10_clients(self):
         """1000 sequential broadcasts to 10 clients must stay under 1s total."""
