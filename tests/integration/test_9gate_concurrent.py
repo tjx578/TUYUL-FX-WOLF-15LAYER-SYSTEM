@@ -184,6 +184,7 @@ class TestNineGateConcurrentLoad:
                 f"Contamination: expected {symbol}, got {outcome['result']['symbol']}"
             )
 
+    @pytest.mark.performance
     def test_all_calls_within_per_call_latency_budget(self) -> None:
         """Each individual concurrent call must stay within the latency cap."""
         barrier = threading.Barrier(len(self._PAIRS))
@@ -213,6 +214,7 @@ class TestNineGateConcurrentLoad:
         result = generate_l12_verdict(synthesis)
         assert result["gates"]["gate_8_latency"] == "PASS", "Gate 8 (latency) should PASS for 200 ms synthesis latency"
 
+    @pytest.mark.performance
     def test_sustained_load_50_sequential_calls(self) -> None:
         """50 sequential calls must all complete; no degradation over time."""
         elapsed_ms_list: list[float] = []

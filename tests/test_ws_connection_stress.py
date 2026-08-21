@@ -217,6 +217,7 @@ class TestBroadcastThroughput:
             assert "seq" in sent
 
     @pytest.mark.asyncio
+    @pytest.mark.performance
     async def test_broadcast_50_clients_under_100ms(self):
         """Broadcast to 50 mock clients must complete in under 100ms."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415

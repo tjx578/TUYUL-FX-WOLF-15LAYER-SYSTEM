@@ -65,6 +65,7 @@ class TestFeedToVerdictLatency:
         assert elapsed < 2.0, f"E2E latency {elapsed:.3f}s exceeds 2s target"
         assert verdict["verdict"] in ("EXECUTE", "NO_TRADE")
 
+    @pytest.mark.performance
     @pytest.mark.parametrize("symbol", ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"])
     def test_multi_pair_latency(self, symbol):
         start = time.perf_counter()

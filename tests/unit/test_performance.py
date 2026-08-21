@@ -10,6 +10,7 @@ import pytest
 class TestPerformanceBaselines:
     """Ensure key operations stay within time budget."""
 
+    @pytest.mark.performance
     def test_verdict_computation_under_10ms(self):
         start = time.perf_counter()
         # Simulate verdict computation
@@ -18,6 +19,7 @@ class TestPerformanceBaselines:
         elapsed = (time.perf_counter() - start) * 1000
         assert elapsed < 10, f"Verdict computation took {elapsed:.1f}ms"
 
+    @pytest.mark.performance
     def test_risk_check_under_5ms(self):
         start = time.perf_counter()
         daily_pnl = -1500
@@ -37,6 +39,7 @@ class TestPerformanceBaselines:
         assert len(journal) == 100
 
     @pytest.mark.parametrize("n_pairs", [5, 10, 28])
+    @pytest.mark.performance
     def test_batch_scoring_scales_linearly(self, n_pairs):
         """Scoring N pairs should scale roughly linearly."""
         start = time.perf_counter()
