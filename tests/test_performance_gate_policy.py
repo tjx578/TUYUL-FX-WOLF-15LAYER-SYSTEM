@@ -114,8 +114,8 @@ def test_manifest_has_exact_reviewed_counts_and_no_duplicates() -> None:
     counts = payload["counts"]
 
     assert counts == {
-        "performance_definitions": 20,
-        "performance_instances": 26,
+        "performance_definitions": 22,
+        "performance_instances": 28,
         "explicit_hang_guard_definitions": 2,
     }
     assert len(definitions) == counts["performance_definitions"]
@@ -164,6 +164,34 @@ def test_mixed_tests_have_portable_correctness_companions() -> None:
         assert companion_pattern, f"missing correctness companion for {entry['node_pattern']}"
         companion = _function_node(companion_pattern)
         assert not _has_performance_marker(companion), companion_pattern
+
+
+def test_exact10k_contract_is_baseline_observe_without_performance_threshold() -> None:
+    definitions = _manifest()["definitions"]
+    contract_entries = [
+        entry for entry in definitions if entry.get("contract_id") == "wolf15.signal-throttle-exact10k/v1"
+    ]
+
+    assert len(contract_entries) == 2
+    assert {entry["node_pattern"] for entry in contract_entries} == {
+        "tests/test_signal_throttle_runtime_concurrency.py::TestSignalThrottleRuntimeConcurrency::"
+        "test_concurrent_scanner_metadata_is_lossless_and_deterministic_at_10k",
+        "tests/test_signal_throttle_runtime_concurrency.py::TestSignalThrottleRuntimeConcurrency::"
+        "test_concurrent_multi_symbol_stream_matches_sequential_reference_at_10k",
+    }
+    for entry in contract_entries:
+        assert entry["contract_status"] == "BASELINE_OBSERVE"
+        assert entry["semantic_authority"] == "BLOCKING"
+        assert entry["stress_completion_authority"] == "BLOCKING"
+        assert entry["performance_authority"] == "OBSERVATIONAL"
+        assert entry["threshold"] is None
+        assert entry["performance_threshold"] is None
+        assert entry["regression_limit"] is None
+        assert entry["watchdog_seconds"] == 300
+        assert entry["watchdog_role"] == "PROCESS_SAFETY_ONLY"
+        assert entry["qualification_summary_sha256"] == (
+            "9bfe785ff12454516cea50b49c5a8eed34a5fae78be04ed7e70c44a54252be43"
+        )
 
 
 def test_hang_guards_remain_portable_and_performance_marker_is_registered() -> None:

@@ -1,11 +1,53 @@
 schema_version: wolf15.performance-gates/v1
-source_sha: 404b542d5b5b1f5e22c79db88cd86c8341bc4858
+source_sha: 40f53edb279e782109a020694b3a84ea7e3c55d3
 counts:
-  performance_definitions: 20
-  performance_instances: 26
+  performance_definitions: 22
+  performance_instances: 28
   explicit_hang_guard_definitions: 2
 
 definitions:
+  - node_pattern: tests/test_signal_throttle_runtime_concurrency.py::TestSignalThrottleRuntimeConcurrency::test_concurrent_scanner_metadata_is_lossless_and_deterministic_at_10k
+    source_file: tests/test_signal_throttle_runtime_concurrency.py
+    instance_count: 1
+    classification: MIXED_CORRECTNESS_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: null
+    contract_id: wolf15.signal-throttle-exact10k/v1
+    contract_status: BASELINE_OBSERVE
+    semantic_authority: BLOCKING
+    stress_completion_authority: BLOCKING
+    performance_authority: OBSERVATIONAL
+    performance_threshold: null
+    regression_limit: null
+    watchdog_seconds: 300
+    watchdog_role: PROCESS_SAFETY_ONLY
+    qualification_summary_sha256: 9bfe785ff12454516cea50b49c5a8eed34a5fae78be04ed7e70c44a54252be43
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_signal_throttle_runtime_concurrency.py::TestSignalThrottleRuntimeConcurrency::test_portable_single_symbol_runtime_lineage_is_lossless_and_deterministic
+    notes: Preserve exact 10k workload and full population assertions in the coverage-off reference lane; runtime is descriptive only and the 300-second watchdog is process safety, while the portable companion forces two complete 32-worker waves.
+
+  - node_pattern: tests/test_signal_throttle_runtime_concurrency.py::TestSignalThrottleRuntimeConcurrency::test_concurrent_multi_symbol_stream_matches_sequential_reference_at_10k
+    source_file: tests/test_signal_throttle_runtime_concurrency.py
+    instance_count: 1
+    classification: MIXED_CORRECTNESS_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: null
+    contract_id: wolf15.signal-throttle-exact10k/v1
+    contract_status: BASELINE_OBSERVE
+    semantic_authority: BLOCKING
+    stress_completion_authority: BLOCKING
+    performance_authority: OBSERVATIONAL
+    performance_threshold: null
+    regression_limit: null
+    watchdog_seconds: 300
+    watchdog_role: PROCESS_SAFETY_ONLY
+    qualification_summary_sha256: 9bfe785ff12454516cea50b49c5a8eed34a5fae78be04ed7e70c44a54252be43
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_signal_throttle_runtime_concurrency.py::TestSignalThrottleRuntimeConcurrency::test_portable_multi_symbol_stream_matches_sequential_reference
+    notes: Preserve exact 10k sequential parity and full block identity assertions in the coverage-off reference lane; runtime is descriptive only and the 300-second watchdog is process safety, while the portable companion forces two complete 32-worker waves.
+
   - node_pattern: tests/integration/test_9gate_concurrent.py::TestNineGateConcurrentLoad::test_single_call_within_latency_budget
     source_file: tests/integration/test_9gate_concurrent.py
     instance_count: 1
