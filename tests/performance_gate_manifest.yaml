@@ -1,0 +1,250 @@
+schema_version: wolf15.performance-gates/v1
+source_sha: 404b542d5b5b1f5e22c79db88cd86c8341bc4858
+counts:
+  performance_definitions: 20
+  performance_instances: 26
+  explicit_hang_guard_definitions: 2
+
+definitions:
+  - node_pattern: tests/integration/test_9gate_concurrent.py::TestNineGateConcurrentLoad::test_single_call_within_latency_budget
+    source_file: tests/integration/test_9gate_concurrent.py
+    instance_count: 1
+    classification: MIXED_CORRECTNESS_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: elapsed_ms < 500
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/integration/test_9gate_concurrent.py::TestNineGateConcurrentLoad::test_single_call_returns_valid_verdict
+    notes: Preserve the valid-verdict assertion outside the timing gate.
+
+  - node_pattern: tests/integration/test_9gate_concurrent.py::TestNineGateConcurrentLoad::test_concurrent_calls_within_wall_clock_budget
+    source_file: tests/integration/test_9gate_concurrent.py
+    instance_count: 1
+    classification: MIXED_CORRECTNESS_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: elapsed < 5.0
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/integration/test_9gate_concurrent.py::TestNineGateConcurrentLoad::test_concurrent_calls_return_all_outcomes
+    notes: Preserve the eight-outcome assertion in the portable companion.
+
+  - node_pattern: tests/integration/test_9gate_concurrent.py::TestNineGateConcurrentLoad::test_all_calls_within_per_call_latency_budget
+    source_file: tests/integration/test_9gate_concurrent.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: elapsed_ms < 500 for every call
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/integration/test_9gate_concurrent.py::TestNineGateConcurrentLoad::test_no_cross_symbol_contamination
+    notes: Forced-contention per-call latency budget.
+
+  - node_pattern: tests/integration/test_9gate_concurrent.py::TestNineGateConcurrentLoad::test_sustained_load_50_sequential_calls
+    source_file: tests/integration/test_9gate_concurrent.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: p99 elapsed_ms < 500
+    current_marker: null
+    target_marker: performance
+    correctness_companion: null
+    notes: Fifty-call sequential latency distribution.
+
+  - node_pattern: tests/integration/test_concurrent_analysis.py::TestConcurrentMultiPairAnalysis::test_concurrent_throughput
+    source_file: tests/integration/test_concurrent_analysis.py
+    instance_count: 1
+    classification: MIXED_CORRECTNESS_PERFORMANCE
+    authority: DIAGNOSTIC_ONLY
+    threshold: elapsed < 5.0
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/integration/test_concurrent_analysis.py::TestConcurrentMultiPairAnalysis::test_eight_pairs_processed_under_concurrency
+    notes: Synthetic concurrency helper; not a production analysis SLA.
+
+  - node_pattern: tests/integration/test_feed_to_verdict_latency.py::TestFeedToVerdictLatency::test_single_pair_latency
+    source_file: tests/integration/test_feed_to_verdict_latency.py
+    instance_count: 1
+    classification: MIXED_CORRECTNESS_PERFORMANCE
+    authority: DIAGNOSTIC_ONLY
+    threshold: elapsed < 2.0
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/integration/test_feed_to_verdict_latency.py::TestFeedToVerdictLatency::test_single_pair_produces_valid_verdict
+    notes: Uses synthetic helpers and deliberate sleeps.
+
+  - node_pattern: tests/integration/test_feed_to_verdict_latency.py::TestFeedToVerdictLatency::test_multi_pair_latency[*]
+    source_file: tests/integration/test_feed_to_verdict_latency.py
+    instance_count: 5
+    classification: ABSOLUTE_PERFORMANCE
+    authority: DIAGNOSTIC_ONLY
+    threshold: elapsed < 2.0
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/integration/test_feed_to_verdict_latency.py::TestFeedToVerdictLatency::test_single_pair_produces_valid_verdict
+    notes: Five parametrized synthetic pair instances.
+
+  - node_pattern: tests/integration/test_feed_to_verdict_latency.py::TestFeedToVerdictLatency::test_concurrent_multi_pair_latency
+    source_file: tests/integration/test_feed_to_verdict_latency.py
+    instance_count: 1
+    classification: MIXED_CORRECTNESS_PERFORMANCE
+    authority: DIAGNOSTIC_ONLY
+    threshold: elapsed < 3.0
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/integration/test_feed_to_verdict_latency.py::TestFeedToVerdictLatency::test_concurrent_multi_pair_produces_five_verdicts
+    notes: Preserve count and verdict-shape assertions in the companion.
+
+  - node_pattern: tests/test_load_tick_stress.py::TestHighFrequencyTickBurst::test_process_10k_ticks_within_time_bound
+    source_file: tests/test_load_tick_stress.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: elapsed < 5.0
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_load_tick_stress.py::TestHighFrequencyTickBurst::test_no_tick_data_loss
+    notes: Ten-thousand-tick batch latency.
+
+  - node_pattern: tests/test_load_tick_stress.py::TestHighFrequencyTickBurst::test_throughput_meets_minimum
+    source_file: tests/test_load_tick_stress.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: throughput >= 5000 ticks/s
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_load_tick_stress.py::TestHighFrequencyTickBurst::test_no_tick_data_loss
+    notes: Single-symbol throughput floor.
+
+  - node_pattern: tests/test_load_tick_stress.py::TestMultiSymbolConcurrentLoad::test_multi_symbol_throughput
+    source_file: tests/test_load_tick_stress.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: throughput >= 2500 ticks/s
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_load_tick_stress.py::TestMultiSymbolConcurrentLoad::test_multi_symbol_isolation
+    notes: Six-symbol throughput floor.
+
+  - node_pattern: tests/test_load_tick_stress.py::TestSustainedLoad::test_processing_latency_per_cycle
+    source_file: tests/test_load_tick_stress.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: max_latency < 0.1
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_load_tick_stress.py::TestSustainedLoad::test_sustained_100_cycles_no_memory_leak
+    notes: Peak latency across the existing cycle workload.
+
+  - node_pattern: tests/test_pipeline_automated.py::TestPipelinePerformance::test_build_synthesis_under_50ms
+    source_file: tests/test_pipeline_automated.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: elapsed_ms < 50
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_pipeline_automated.py::TestPipelineSmoke::test_build_l12_synthesis_returns_dict
+    notes: Single synthesis-build latency.
+
+  - node_pattern: tests/test_pipeline_automated.py::TestPipelinePerformance::test_build_synthesis_100_iterations_mean_under_10ms
+    source_file: tests/test_pipeline_automated.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: mean_ms < 10
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_pipeline_automated.py::TestPipelineSmoke::test_build_l12_synthesis_returns_dict
+    notes: One-hundred-call warm-path mean.
+
+  - node_pattern: tests/test_ws_connection_stress.py::TestBroadcastThroughput::test_broadcast_50_clients_under_100ms
+    source_file: tests/test_ws_connection_stress.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: elapsed_ms < 100
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/test_ws_connection_stress.py::TestBroadcastThroughput::test_broadcast_reaches_50_clients
+    notes: Host and coverage sensitivity are empirically proven.
+
+  - node_pattern: tests/test_ws_connection_stress.py::TestBroadcastThroughput::test_broadcast_1000_messages_to_10_clients_performance
+    source_file: tests/test_ws_connection_stress.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: REFERENCE_RUNNER
+    threshold: median <= 1.0
+    current_marker: performance
+    target_marker: performance
+    correctness_companion: tests/test_ws_connection_stress.py::TestBroadcastThroughput::test_broadcast_1000_messages_to_10_clients
+    notes: Existing separated gate with five warmups and thirty measured rounds.
+
+  - node_pattern: tests/unit/test_performance.py::TestPerformanceBaselines::test_verdict_computation_under_10ms
+    source_file: tests/unit/test_performance.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: DIAGNOSTIC_ONLY
+    threshold: elapsed < 10 ms
+    current_marker: null
+    target_marker: performance
+    correctness_companion: null
+    notes: Synthetic arithmetic; does not call production verdict code.
+
+  - node_pattern: tests/unit/test_performance.py::TestPerformanceBaselines::test_risk_check_under_5ms
+    source_file: tests/unit/test_performance.py
+    instance_count: 1
+    classification: ABSOLUTE_PERFORMANCE
+    authority: DIAGNOSTIC_ONLY
+    threshold: elapsed < 5 ms
+    current_marker: null
+    target_marker: performance
+    correctness_companion: null
+    notes: Synthetic arithmetic; does not call production risk code.
+
+  - node_pattern: tests/unit/test_performance.py::TestPerformanceBaselines::test_journal_append_under_1ms
+    source_file: tests/unit/test_performance.py
+    instance_count: 1
+    classification: MIXED_CORRECTNESS_PERFORMANCE
+    authority: DIAGNOSTIC_ONLY
+    threshold: 100 appends elapsed < 50 ms
+    current_marker: null
+    target_marker: performance
+    correctness_companion: tests/unit/test_performance.py::TestPerformanceBaselines::test_journal_append_preserves_all_entries
+    notes: Existing test name says 1 ms while its unchanged assertion is 50 ms.
+
+  - node_pattern: tests/unit/test_performance.py::TestPerformanceBaselines::test_batch_scoring_scales_linearly[*]
+    source_file: tests/unit/test_performance.py
+    instance_count: 3
+    classification: ABSOLUTE_PERFORMANCE
+    authority: DIAGNOSTIC_ONLY
+    threshold: per_pair < 0.01
+    current_marker: null
+    target_marker: performance
+    correctness_companion: null
+    notes: Three parametrized synthetic scoring instances.
+
+hang_guards:
+  - node_pattern: tests/test_diagnostics_hold_alive.py::TestHoldAliveSync::test_respects_env_timeout
+    source_file: tests/test_diagnostics_hold_alive.py
+    instance_count: 1
+    classification: HANG_GUARD
+    authority: PORTABLE_BLOCKING
+    threshold: configured 1 second and elapsed < 5 seconds
+    current_marker: null
+    target_marker: null
+    correctness_companion: null
+    notes: Must remain in deterministic correctness.
+
+  - node_pattern: tests/test_diagnostics_hold_alive.py::TestHoldAliveAsync::test_respects_env_timeout
+    source_file: tests/test_diagnostics_hold_alive.py
+    instance_count: 1
+    classification: HANG_GUARD
+    authority: PORTABLE_BLOCKING
+    threshold: configured 1 second and elapsed < 5 seconds
+    current_marker: asyncio
+    target_marker: asyncio
+    correctness_companion: null
+    notes: Must remain in deterministic correctness.
