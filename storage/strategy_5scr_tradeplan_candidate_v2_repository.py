@@ -30,6 +30,8 @@ from contracts.strategy_5scr_tradeplan_candidate_v2 import (
     broker_geometry_material_hash_v1,
     canonical_hash_v1,
 )
+from storage.observer_export_outbox import ObserverExportOutboxRepository
+from storage.observer_strategy_events import canonical_tradeplan_decision_observer_draft
 from storage.postgres_client import PostgresClient, pg_client
 from storage.strategy_5scr_directional_thesis_v1_repository import (
     Strategy5SCRDirectionalThesisV1Repository,
@@ -902,8 +904,16 @@ class TradePlanCandidateV2PersistenceResult:
 class Strategy5SCRTradePlanCandidateV2Repository:
     """Persist P6 candidate occurrences under the canonical lifecycle lock."""
 
-    def __init__(self, pg: PostgresClient = pg_client) -> None:
-        self._pg = pg
+    def __init__(
+        self,
+        pg: PostgresClient | None = None,
+        *,
+        observer_export_repository: ObserverExportOutboxRepository | None = None,
+    ) -> None:
+        self._pg = pg or pg_client
+        self._observer_export = observer_export_repository
+        if pg is None and observer_export_repository is None:
+            self._observer_export = ObserverExportOutboxRepository(pg=self._pg)
 
     async def schema_status(self) -> TradePlanCandidateV2SchemaStatus:
         if not self._pg.is_available:
@@ -1794,8 +1804,8 @@ class Strategy5SCRTradePlanCandidateV2Repository:
         if not str(result).endswith(" 1"):
             raise TradePlanCandidateV2IntegrityError("TRADEPLAN_CANDIDATE_INSERT_FAILED")
 
-    @staticmethod
     async def _insert_evaluation(
+        self,
         connection: Any,
         evaluation: TradePlanEvaluationV2,
         evidence: TradePlanCandidateBuildEvidenceV2,
@@ -1854,6 +1864,11 @@ class Strategy5SCRTradePlanCandidateV2Repository:
         )
         if not str(result).endswith(" 1"):
             raise TradePlanCandidateV2IntegrityError("TRADEPLAN_EVALUATION_INSERT_FAILED")
+        if self._observer_export is not None:
+            await self._observer_export.append_in_transaction(
+                connection,
+                canonical_tradeplan_decision_observer_draft(evaluation, evidence),
+            )
 
 
 __all__ = [

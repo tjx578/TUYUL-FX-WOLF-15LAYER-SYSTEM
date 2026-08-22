@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from typing import Any
+from uuid import uuid4
 
 import pytest
 
 from analysis.signal_throttle_log_analyzer import SignalThrottleLogEvent
 from analysis.strategy_5scr_pair_admission import build_pair_admission_audit
 from analysis.strategy_5scr_raw_admission_blocks import build_raw_admission_population
+from storage.observer_export_outbox import ObserverExportOutboxRepository
 from storage.pair_admission_evaluations import PairAdmissionEvaluationRepository
 
 pytest_plugins = ("tests.integration.lifecycle_v2_postgres_plugin",)
@@ -18,7 +21,11 @@ pytest_plugins = ("tests.integration.lifecycle_v2_postgres_plugin",)
 START = datetime(2026, 8, 10, 3, 0, tzinfo=UTC)
 
 
-def _evaluation_for(seconds_values: tuple[int, ...]) -> dict[str, Any]:
+def _evaluation_for(
+    seconds_values: tuple[int, ...],
+    *,
+    deployment_id: str = "integration-deployment",
+) -> dict[str, Any]:
     events = tuple(
         SignalThrottleLogEvent(
             timestamp=START + timedelta(seconds=seconds),
@@ -30,7 +37,7 @@ def _evaluation_for(seconds_values: tuple[int, ...]) -> dict[str, Any]:
             direction="BUY",
             pressure_source="SignalThrottle",
             source_stream="ALLOWED",
-            deployment_id="integration-deployment",
+            deployment_id=deployment_id,
             scanner_cycle_id=f"cycle-{seconds}",
             eligible_for_pressure_block=True,
             eligible_for_execution=False,
@@ -44,6 +51,12 @@ def _evaluation_for(seconds_values: tuple[int, ...]) -> dict[str, Any]:
 
 def _evaluation() -> dict[str, Any]:
     return _evaluation_for((0, 150, 300))
+
+
+class _FailAfterObserverAppend(ObserverExportOutboxRepository):
+    async def append_in_transaction(self, connection: Any, draft: Any, **kwargs: Any) -> Any:
+        await super().append_in_transaction(connection, draft, **kwargs)
+        raise RuntimeError("injected failure after observer append")
 
 
 def _raw_event(seconds: int, symbol: str = "EURUSD") -> SignalThrottleLogEvent:
@@ -75,6 +88,58 @@ async def test_pair_admission_schema_matches_the_full_migration_contract(postgre
     status = await PairAdmissionEvaluationRepository(pg=postgres).schema_status()
 
     assert status.ready is True
+
+
+@pytest.mark.asyncio
+async def test_pair_admission_and_observer_export_share_one_transaction(postgres: Any) -> None:
+    deployment_id = f"observer-atomic-{uuid4().hex}"
+    evaluation = _evaluation_for((0, 150, 300), deployment_id=deployment_id)
+    evaluation_id = str(evaluation["evaluation_id"])
+    failing_export = _FailAfterObserverAppend(pg=postgres)
+    failing_repository = PairAdmissionEvaluationRepository(
+        pg=postgres,
+        observer_export_repository=failing_export,
+    )
+
+    with pytest.raises(RuntimeError, match="after observer append"):
+        await failing_repository.ingest(evaluation)
+
+    rolled_back = await postgres.fetchrow(
+        """
+        SELECT
+          (SELECT count(*) FROM pair_admission_evaluations WHERE evaluation_id=$1) AS canonical_rows,
+          (SELECT count(*) FROM observer_export.outbox
+             WHERE envelope->'payload'->'body'->>'evaluation_id'=$1) AS observer_rows
+        """,
+        evaluation_id,
+    )
+    assert rolled_back is not None
+    assert dict(rolled_back) == {"canonical_rows": 0, "observer_rows": 0}
+
+    export = ObserverExportOutboxRepository(pg=postgres)
+    repository = PairAdmissionEvaluationRepository(
+        pg=postgres,
+        observer_export_repository=export,
+    )
+    first = await repository.ingest(evaluation)
+    replay = await repository.ingest(evaluation)
+    rows = await postgres.fetch(
+        """
+        SELECT authority_class, payload_type, envelope
+        FROM observer_export.outbox
+        WHERE envelope->'payload'->'body'->>'evaluation_id'=$1
+        """,
+        evaluation_id,
+    )
+
+    assert first.duplicate is False
+    assert replay.duplicate is True
+    assert len(rows) == 1
+    assert rows[0]["authority_class"] == "CANONICAL_PAIR_ADMISSION"
+    assert rows[0]["payload_type"] == "PairAdmissionEvaluationV3_1"
+    envelope = json.loads(rows[0]["envelope"])
+    assert envelope["payload"]["body"]["execution_authority"] is False
+    assert envelope["safety"]["observer_can_mutate_source"] is False
 
 
 @pytest.mark.asyncio

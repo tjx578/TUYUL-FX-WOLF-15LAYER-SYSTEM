@@ -236,6 +236,7 @@ class CanonicalDecisionReasonV1(FrozenObserverContract):
     stage: str = Field(..., min_length=1, max_length=100)
     decision: str = Field(..., min_length=1, max_length=100)
     reason_code: str = Field(..., min_length=1, max_length=160)
+    reason_codes: tuple[str, ...] = ()
     next_required_stage: str | None = Field(default=None, max_length=100)
     evidence_refs: tuple[str, ...]
     decided_at_utc: datetime
@@ -250,6 +251,11 @@ class CanonicalDecisionReasonV1(FrozenObserverContract):
     def _evidence_is_stable(self) -> CanonicalDecisionReasonV1:
         if not self.evidence_refs or self.evidence_refs != tuple(sorted(set(self.evidence_refs))):
             raise ValueError("canonical decision evidence_refs must be non-empty, sorted, and unique")
+        if self.reason_codes:
+            if self.reason_codes != tuple(dict.fromkeys(self.reason_codes)):
+                raise ValueError("canonical decision reason_codes must be ordered and unique")
+            if self.reason_codes[0] != self.reason_code:
+                raise ValueError("reason_code must be the first canonical reason_codes item")
         return self
 
 
