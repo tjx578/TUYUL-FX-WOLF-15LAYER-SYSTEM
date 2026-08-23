@@ -22,11 +22,9 @@ from tests.integration.test_mt5_bridge_postgres_e2e import (
     SIGNING_KEY_ID,
     SIGNING_SECRET,
     _auth_headers,
-    _claim,
     _cleanup,
     _command_state,
     _registration,
-    _report,
     _shadow_command,
 )
 
@@ -129,7 +127,7 @@ async def test_shadow_is_usable_while_kill_switch_is_engaged(
 
 
 @pytest.mark.asyncio
-async def test_demo_delivery_requires_explicit_disarm_and_live_stays_blocked(
+async def test_generic_demo_delivery_stays_blocked_and_live_stays_blocked(
     client: AsyncClient,
     postgres: Any,
     registered: UUID,
@@ -177,27 +175,15 @@ async def test_demo_delivery_requires_explicit_disarm_and_live_stays_blocked(
             reason="bounded demo window",
             expected_version=global_state.governance_version,
         )
-        await commands.enqueue_command(demo)
+        with pytest.raises(CommandConflictError, match="dedicated engineering canary authority"):
+            await commands.enqueue_command(demo)
         poll = await client.get(
             f"/api/v1/executors/{registered}/commands/next",
             headers=_auth_headers(registered),
         )
-        assert poll.status_code == 200, poll.text
+        assert poll.status_code == 204
         assert poll.headers["X-Execution-Mode"] == "DEMO"
         assert poll.headers["X-Kill-Switch-Active"] == "false"
-
-        claim_token = await _claim(client, registered, demo)
-        assert claim_token
-        assert await _command_state(postgres, demo) == "CLAIMED"
-        broker_terminal = await postgres.fetchrow(
-            """
-            SELECT count(*) AS count FROM execution_commands
-            WHERE executor_id = $1::uuid
-              AND state IN ('BROKER_ACCEPTED', 'ACTIVE', 'FILLED', 'COMPLETED')
-            """,
-            str(registered),
-        )
-        assert broker_terminal["count"] == 0
     finally:
         await governance.set_kill_switch(
             active=True,
@@ -207,29 +193,34 @@ async def test_demo_delivery_requires_explicit_disarm_and_live_stays_blocked(
 
 
 @pytest.mark.asyncio
-async def test_engaging_switch_expires_queued_demo_but_preserves_claimed_reporting(
-    client: AsyncClient,
+async def test_engaging_switch_expires_legacy_nonshadow_queue_and_preserves_claimed_record(
     postgres: Any,
     registered: UUID,
 ) -> None:
     governance = _governance(postgres)
     commands = _commands(postgres)
-    await governance.transition_mode(
-        registered,
-        target_mode="DEMO",
-        actor="integration:test",
-        reason="prepare kill-switch drill",
+    claimed = _shadow_command(registered)
+    queued = _shadow_command(registered)
+    await commands.enqueue_command(claimed)
+    await commands.enqueue_command(queued)
+    await commands.claim_command(
+        executor_id=registered,
+        command_id=claimed.command_id,
+        lease_seconds=30,
+    )
+    await postgres.execute(
+        """
+        UPDATE execution_commands
+        SET payload = jsonb_set(payload, '{executor_binding,execution_mode}', '"DEMO"'::jsonb)
+        WHERE command_id = ANY($1::uuid[])
+        """,
+        [claimed.command_id, queued.command_id],
     )
     await governance.set_kill_switch(
         active=False,
         actor="integration:test",
-        reason="start kill-switch drill",
+        reason="start legacy nonshadow kill-switch drill",
     )
-    claimed = _demo_command(registered)
-    queued = _demo_command(registered)
-    await commands.enqueue_command(claimed)
-    await commands.enqueue_command(queued)
-    claim_token = await _claim(client, registered, claimed)
 
     engaged = await governance.set_kill_switch(
         active=True,
@@ -239,26 +230,6 @@ async def test_engaging_switch_expires_queued_demo_but_preserves_claimed_reporti
     assert engaged.kill_switch_active is True
     assert await _command_state(postgres, queued) == "EXPIRED"
     assert await _command_state(postgres, claimed) == "CLAIMED"
-
-    blocked_poll = await client.get(
-        f"/api/v1/executors/{registered}/commands/next",
-        headers=_auth_headers(registered),
-    )
-    assert blocked_poll.status_code == 204
-    assert blocked_poll.headers["X-Kill-Switch-Active"] == "true"
-
-    report = await client.post(
-        f"/api/v1/commands/{claimed.command_id}/reports",
-        json=_report(
-            command=claimed,
-            executor_id=registered,
-            state="PREFLIGHT_REJECTED",
-            reason_code="KILL_SWITCH_ACTIVE",
-        ),
-        headers={**_auth_headers(registered), "X-Claim-Token": claim_token},
-    )
-    assert report.status_code == 202, report.text
-    assert await _command_state(postgres, claimed) == "REJECTED"
 
     audit = await postgres.fetchrow(
         """
@@ -320,26 +291,20 @@ async def test_preexisting_live_mode_cannot_deliver_even_when_switch_is_disarmed
 ) -> None:
     governance = _governance(postgres)
     commands = _commands(postgres)
-    await governance.transition_mode(
-        registered,
-        target_mode="DEMO",
-        actor="integration:test",
-        reason="prepare legacy live defense proof",
-    )
     await governance.set_kill_switch(
         active=False,
         actor="integration:test",
         reason="prove live remains blocked after disarm",
     )
-    demo = _demo_command(registered)
-    await commands.enqueue_command(demo)
+    legacy = _shadow_command(registered)
+    await commands.enqueue_command(legacy)
     await postgres.execute(
         """
         UPDATE execution_commands
         SET payload = jsonb_set(payload, '{executor_binding,execution_mode}', '"LIVE"'::jsonb)
         WHERE command_id = $1::uuid
         """,
-        str(demo.command_id),
+        str(legacy.command_id),
     )
     await postgres.execute(
         "UPDATE executor_instances SET execution_mode = 'LIVE' WHERE executor_id = $1::uuid",
@@ -359,12 +324,12 @@ async def test_preexisting_live_mode_cannot_deliver_even_when_switch_is_disarmed
         )
         assert poll.status_code == 204
         claim = await client.post(
-            f"/api/v1/commands/{demo.command_id}/claim",
+            f"/api/v1/commands/{legacy.command_id}/claim",
             json={"lease_seconds": 30},
             headers=_auth_headers(registered),
         )
         assert claim.status_code == 409
-        assert await _command_state(postgres, demo) == "QUEUED"
+        assert await _command_state(postgres, legacy) == "QUEUED"
     finally:
         await governance.set_kill_switch(
             active=True,

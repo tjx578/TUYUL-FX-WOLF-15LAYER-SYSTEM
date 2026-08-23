@@ -337,6 +337,17 @@ def _report(
 
 
 async def _cleanup(postgres: _PoolBackedPostgres, executor_id: UUID) -> None:
+    canary_table = await postgres.fetchrow("SELECT to_regclass('public.engineering_demo_canary_windows') AS name")
+    if canary_table and canary_table["name"] is not None:
+        await postgres.execute(
+            "DELETE FROM engineering_demo_canary_windows WHERE executor_id = $1::uuid",
+            str(executor_id),
+        )
+    await postgres.execute(
+        "DELETE FROM broker_entities WHERE command_id IN "
+        "(SELECT command_id FROM execution_commands WHERE executor_id = $1::uuid)",
+        str(executor_id),
+    )
     await postgres.execute(
         "DELETE FROM execution_reports WHERE command_id IN "
         "(SELECT command_id FROM execution_commands WHERE executor_id = $1::uuid)",
@@ -345,11 +356,23 @@ async def _cleanup(postgres: _PoolBackedPostgres, executor_id: UUID) -> None:
     await postgres.execute("DELETE FROM execution_commands WHERE executor_id = $1::uuid", str(executor_id))
     await postgres.execute("DELETE FROM executor_account_snapshots WHERE executor_id = $1::uuid", str(executor_id))
     await postgres.execute("DELETE FROM executor_instances WHERE executor_id = $1::uuid", str(executor_id))
+    await postgres.execute(
+        """
+        UPDATE executor_bridge_governance
+        SET kill_switch_active = true,
+            kill_switch_reason = 'integration fixture cleanup',
+            governance_version = governance_version + 1,
+            updated_by = 'integration:fixture',
+            updated_at = now()
+        WHERE singleton_id = 1
+        """
+    )
 
 
 @pytest_asyncio.fixture
 async def registered(
     client: AsyncClient,
+    postgres: _PoolBackedPostgres,
     executor_id: UUID,
 ) -> AsyncIterator[UUID]:
     """A SHADOW executor that exists in the database, cleaned up afterwards."""
@@ -359,7 +382,10 @@ async def registered(
         headers=_auth_headers(executor_id),
     )
     assert response.status_code == 201, response.text
-    yield executor_id
+    try:
+        yield executor_id
+    finally:
+        await _cleanup(postgres, executor_id)
 
 
 def _repo(postgres: _PoolBackedPostgres) -> MT5CommandRepository:
