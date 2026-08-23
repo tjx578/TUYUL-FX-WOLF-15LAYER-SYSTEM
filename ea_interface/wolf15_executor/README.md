@@ -102,3 +102,26 @@ executor in `SHADOW`.
 The drill input defaults to `false`. It acts only after the exact report has
 been atomically persisted and before the first report request; it never alters
 signature validation, command validation, recovery, or broker state.
+
+## Separate engineering DEMO artifact
+
+`Wolf15_DumbExecutor_Demo.mq5` is the separately compiled, explicitly armed D0
+artifact. It is not a switch inside the SHADOW EA. Its only broker-capable
+lineage is `ENGINEERING_DEMO_CANARY`, with strategy, research, scorecard,
+real-money, and production authority all fixed to false.
+
+The DEMO artifact contains exactly one `OrderSend` call, preceded by signed
+command validation, two freshness-sensitive `OrderCheck` passes around the
+blocking submit acknowledgement, and a durable one-way submit marker. Restart
+recovery never calls `OrderSend`; it reconciles exact MT5 order/deal/position
+history and attached SL/TP first. An immediate fill remains ambiguous until
+that complete lineage is recovered, and missing, partial, or conflicting
+evidence never releases reconciliation authority.
+
+The EA's own heartbeat always reports `broker_ledger_reconciled=false`. A
+separate direct-broker reconciliation gate must establish that fact; the EA
+cannot self-promote. See
+[`docs/runbooks/mt5-d0-engineering-demo-canary.md`](../../docs/runbooks/mt5-d0-engineering-demo-canary.md).
+
+This source does not authorize compilation output deployment, executor
+promotion, kill-switch disarm, or broker submission.

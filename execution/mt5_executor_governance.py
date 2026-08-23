@@ -190,8 +190,14 @@ class MT5ExecutorGovernanceRepository:
                     WITH changed AS (
                         UPDATE execution_commands
                         SET state = 'EXPIRED', terminal_at = now(), updated_at = now()
-                        WHERE state = 'QUEUED'
-                          AND payload #>> '{executor_binding,execution_mode}' <> 'SHADOW'
+                        WHERE (
+                                state = 'QUEUED'
+                                AND payload #>> '{executor_binding,execution_mode}' <> 'SHADOW'
+                              )
+                           OR (
+                                state = 'CLAIMED'
+                                AND source_event = 'ENGINEERING_DEMO_CANARY'
+                              )
                         RETURNING 1
                     )
                     SELECT count(*) AS count FROM changed
@@ -205,15 +211,52 @@ class MT5ExecutorGovernanceRepository:
                       AND payload #>> '{executor_binding,execution_mode}' <> 'SHADOW'
                     """
                 )
+                canary_table = await connection.fetchval("SELECT to_regclass('public.engineering_demo_canary_windows')")
+                if canary_table is not None:
+                    reconciliation = await connection.fetchrow(
+                        """
+                        WITH changed AS (
+                            UPDATE engineering_demo_canary_windows AS w
+                            SET state='RECONCILIATION_REQUIRED', terminal_at=NULL, updated_at=now()
+                            FROM execution_commands AS c
+                            WHERE c.command_id=w.command_id
+                              AND c.state IN ('SUBMITTING','BROKER_ACCEPTED','ACTIVE','AMBIGUOUS')
+                              AND w.state IN ('ARMED','RECONCILIATION_REQUIRED')
+                            RETURNING 1
+                        )
+                        SELECT count(*) AS count FROM changed
+                        """
+                    )
+                    expired_windows = await connection.fetchrow(
+                        """
+                        WITH changed AS (
+                            UPDATE engineering_demo_canary_windows AS w
+                            SET state='EXPIRED', terminal_at=now(), updated_at=now()
+                            FROM execution_commands AS c
+                            WHERE c.command_id=w.command_id
+                              AND c.state IN ('QUEUED','CLAIMED','EXPIRED')
+                              AND w.state IN ('QUEUED','ARMED')
+                            RETURNING 1
+                        )
+                        SELECT count(*) AS count FROM changed
+                        """
+                    )
+                else:
+                    reconciliation = {"count": 0}
+                    expired_windows = {"count": 0}
             else:
                 expired = {"count": 0}
                 claimed = {"count": 0}
+                reconciliation = {"count": 0}
+                expired_windows = {"count": 0}
             new_state = {
                 "kill_switch_active": bool(updated["kill_switch_active"]),
                 "kill_switch_reason": str(updated["kill_switch_reason"]),
                 "governance_version": int(updated["governance_version"]),
                 "queued_commands_expired": int(expired["count"]),
                 "claimed_commands_outstanding": int(claimed["count"]),
+                "canary_windows_expired": int(expired_windows["count"]),
+                "canary_windows_requiring_reconciliation": int(reconciliation["count"]),
             }
             await connection.execute(
                 """
