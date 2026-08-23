@@ -25,6 +25,7 @@ SHADOW_ACCEPTANCE_SCHEMA_VERSION: Final = "wolf15.mt5.shadow-acceptance.v1"
 SHADOW_ACCEPTANCE_OPERATOR_AUTHORITY: Final = "WOLF15_SHADOW_ACCEPTANCE_OPERATOR_V1"
 SHADOW_ACCEPTANCE_PURPOSE: Final = "BROKER_CONNECTED_SHADOW_VALIDATION"
 SHADOW_ACCEPTANCE_EA_VERSION: Final = "0.22-shadow-acceptance-v1"
+SHADOW_PROJECTION_COMMAND_SCHEMA_VERSION: Final = "wolf15.strategy-5scr.shadow-projection-command.v1"
 SIGNED_WIRE_PAYLOAD_ENCODING: Final = "base64url"
 SIGNED_WIRE_ALGORITHM: Final = "HMAC-SHA256"
 _SIGNED_WIRE_DOMAIN: Final = "WOLF15-MT5-COMMAND-V2"
@@ -111,6 +112,59 @@ class CommandSource(StrictModel):
     confirmation_policy: Literal["H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"]
 
 
+class ShadowProjectionCommandSource(StrictModel):
+    """C2 projection lineage admitted only for mechanical SHADOW rehearsal.
+
+    ``source_event`` deliberately remains ``signal_json`` because the current
+    SHADOW EA treats that value as its generic strategy-command transport.
+    The schema discriminator and pinned false authority flags prevent this
+    compatibility choice from masquerading as a final executable signal.
+    """
+
+    source_event: Literal["signal_json"] = "signal_json"
+    source_schema_version: Literal["wolf15.strategy-5scr.shadow-projection-command.v1"] = (
+        SHADOW_PROJECTION_COMMAND_SCHEMA_VERSION
+    )
+    source_signal_id: str = Field(..., min_length=3, max_length=200)
+    source_signal_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    source_shadow_authority_id: str = Field(..., pattern=r"^5scr-shadow-authority-v1:[0-9a-f]{32}$")
+    source_shadow_authority_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    source_candidate_id: str = Field(..., pattern=r"^5scr-tradeplan-v2:[0-9a-f]{32}$")
+    source_candidate_sequence: int = Field(..., ge=1)
+    source_candidate_revision: int = Field(..., ge=1)
+    source_candidate_material_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    source_candidate_evidence_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    source_admission_class: Literal["CANONICAL_CANDIDATE_V2"] = "CANONICAL_CANDIDATE_V2"
+
+    # These three booleans are the current EA's mechanical SHADOW admission
+    # vocabulary.  They do not grant execution authority; the four explicit
+    # false flags below are the authoritative boundary.
+    valid_for_execution: Literal[True] = True
+    execution_gate_passed: Literal[True] = True
+    tradeplan_valid: Literal[True] = True
+    strategy_model: Literal["STRATEGY_5S_CR_FINAL"] = "STRATEGY_5S_CR_FINAL"
+    strategy_rule_version: Literal["5scr.c2-shadow-risk-projection.v1"] = "5scr.c2-shadow-risk-projection.v1"
+    strategy_rule_status: Literal["FROZEN"] = "FROZEN"
+    strategy_proof_hash: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    context_resolution_status: Literal["RESOLVED"] = "RESOLVED"
+    confirmation_policy: Literal["H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"] = (
+        "H1_CLOSED_PLUS_M15_BREAK_ACCEPTANCE_OR_FAILED_RECLAIM_RETEST"
+    )
+    execution_authority: Literal[False] = False
+    capital_reserved: Literal[False] = False
+    broker_side_effect_allowed: Literal[False] = False
+    order_send_eligible: Literal[False] = False
+    broker_execution: Literal["FORBIDDEN"] = "FORBIDDEN"
+
+    @model_validator(mode="after")
+    def _lineage_is_coherent(self) -> ShadowProjectionCommandSource:
+        if self.source_signal_id != self.source_shadow_authority_id:
+            raise ValueError("projection source_signal_id must identify its shadow authority")
+        if self.source_signal_hash != self.source_shadow_authority_hash:
+            raise ValueError("projection source_signal_hash must bind its shadow authority hash")
+        return self
+
+
 class ShadowAcceptanceSource(StrictModel):
     """Non-production lineage for broker-connected SHADOW acceptance only."""
 
@@ -193,6 +247,30 @@ class ShadowAcceptanceGuards(StrictModel):
     broker_execution: Literal["FORBIDDEN"] = "FORBIDDEN"
 
 
+class ShadowProjectionCommandGuards(StrictModel):
+    """Fail-closed guards for a projection, never a capital reservation."""
+
+    guard_type: Literal["C2_SHADOW_PROJECTION"] = "C2_SHADOW_PROJECTION"
+    kill_switch_required: Literal[True] = True
+    require_attached_sl: Literal[True] = True
+    require_attached_tp: Literal[True] = True
+    max_spread_points: int = Field(..., ge=0, le=100_000)
+    max_price_drift_points: int = Field(..., ge=0, le=100_000)
+    expected_margin_mode: MarginMode
+    max_submit_attempts: Literal[1] = 1
+    allow_volume_round_down: Literal[False] = False
+    allow_price_normalization: Literal[False] = False
+    account_snapshot_id: str = Field(..., min_length=3, max_length=200)
+    observed_governance_version: int = Field(..., ge=1)
+    balance_snapshot: float = Field(..., gt=0)
+    equity_snapshot: float = Field(..., gt=0)
+    execution_authority: Literal[False] = False
+    capital_reserved: Literal[False] = False
+    broker_side_effect_allowed: Literal[False] = False
+    order_send_eligible: Literal[False] = False
+    broker_execution: Literal["FORBIDDEN"] = "FORBIDDEN"
+
+
 class CommandSignature(StrictModel):
     algorithm: Literal["HMAC-SHA256"] = "HMAC-SHA256"
     key_id: str = Field(..., min_length=1, max_length=100)
@@ -211,10 +289,10 @@ class ExecutionCommandV1(StrictModel):
     not_before_utc: datetime
     expires_at_utc: datetime
     executor_binding: ExecutorBinding
-    source: CommandSource | ShadowAcceptanceSource
+    source: CommandSource | ShadowAcceptanceSource | ShadowProjectionCommandSource
     action: ExecutionAction
     order: OrderInstruction | None
-    guards: CommandGuards | ShadowAcceptanceGuards
+    guards: CommandGuards | ShadowAcceptanceGuards | ShadowProjectionCommandGuards
     signature: CommandSignature
 
     @field_validator("issued_at_utc", "not_before_utc", "expires_at_utc")
@@ -252,6 +330,13 @@ class ExecutionCommandV1(StrictModel):
                 raise ValueError("SHADOW_ACCEPTANCE requires RECONCILE_ONLY without an order")
             if not isinstance(self.guards, ShadowAcceptanceGuards):
                 raise ValueError("SHADOW_ACCEPTANCE requires dedicated acceptance guards")
+        elif isinstance(self.source, ShadowProjectionCommandSource):
+            if self.executor_binding.execution_mode is not ExecutorMode.SHADOW:
+                raise ValueError("C2 shadow projection requires SHADOW execution mode")
+            if self.action is not ExecutionAction.PLACE_MARKET or self.order is None:
+                raise ValueError("C2 shadow projection requires a PLACE_MARKET rehearsal order")
+            if not isinstance(self.guards, ShadowProjectionCommandGuards):
+                raise ValueError("C2 shadow projection requires dedicated projection guards")
         elif not isinstance(self.guards, CommandGuards):
             raise ValueError("signal_json requires production command guards")
         return self
@@ -622,6 +707,7 @@ __all__ = [
     "SHADOW_ACCEPTANCE_OPERATOR_AUTHORITY",
     "SHADOW_ACCEPTANCE_PURPOSE",
     "SHADOW_ACCEPTANCE_EA_VERSION",
+    "SHADOW_PROJECTION_COMMAND_SCHEMA_VERSION",
     "ExecutionAction",
     "ExecutionReportState",
     "MarginMode",
@@ -629,9 +715,11 @@ __all__ = [
     "ExecutorBinding",
     "CommandSource",
     "ShadowAcceptanceSource",
+    "ShadowProjectionCommandSource",
     "OrderInstruction",
     "CommandGuards",
     "ShadowAcceptanceGuards",
+    "ShadowProjectionCommandGuards",
     "CommandSignature",
     "ExecutionCommandV1",
     "SignedExecutionEnvelopeV2",
