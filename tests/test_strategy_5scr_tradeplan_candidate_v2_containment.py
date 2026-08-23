@@ -89,7 +89,8 @@ def test_p6_has_no_existing_production_consumer() -> None:
     # P6's own migration is allowed to name its tables; it is schema, not a
     # runtime consumer.  All other production call sites must remain absent.
     runtime.add((ROOT / "storage" / "migrations" / "versions" / "20260813_01_5scr_tradeplan_candidate_v2.py").resolve())
-    # P7 is the first reviewed downstream consumer of CandidateV2.  Keep this
+    # P7 is the first reviewed downstream consumer of CandidateV2; the C2
+    # inert projection is the only reviewed consumer after P7. Keep this
     # allowlist exact so no unrelated runtime path can silently acquire P6
     # strategy authority.
     runtime.update(
@@ -97,6 +98,9 @@ def test_p6_has_no_existing_production_consumer() -> None:
             (ROOT / "contracts" / "strategy_5scr_candidate_c2_shadow_v2.py").resolve(),
             (ROOT / "analysis" / "strategy_5scr_candidate_c2_shadow_v2.py").resolve(),
             (ROOT / "storage" / "strategy_5scr_candidate_c2_shadow_v2_repository.py").resolve(),
+            (ROOT / "contracts" / "strategy_5scr_shadow_risk_projection.py").resolve(),
+            (ROOT / "analysis" / "strategy_5scr_shadow_risk_projection.py").resolve(),
+            (ROOT / "storage" / "strategy_5scr_shadow_risk_projection_repository.py").resolve(),
         }
     )
     consumers: list[str] = []

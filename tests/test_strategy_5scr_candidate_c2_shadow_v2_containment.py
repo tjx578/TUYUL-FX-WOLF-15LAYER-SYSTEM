@@ -126,7 +126,7 @@ def test_p7_strategy_and_risk_authority_cannot_authorize_commands_or_broker() ->
     assert signal["next_required_stage"].default == "C3_MANUAL_SHADOW_PROMOTION"
 
 
-def test_p7_has_no_existing_production_consumer() -> None:
+def test_p7_is_consumed_only_by_the_explicit_inert_shadow_projection_path() -> None:
     module_names = (
         "contracts.strategy_5scr_candidate_c2_shadow_v2",
         "analysis.strategy_5scr_candidate_c2_shadow_v2",
@@ -140,7 +140,11 @@ def test_p7_has_no_existing_production_consumer() -> None:
         source = path.read_text(encoding="utf-8")
         if any(name in source for name in module_names):
             consumers.append(path.relative_to(ROOT).as_posix())
-    assert consumers == []
+    assert consumers == [
+        "analysis/strategy_5scr_shadow_risk_projection.py",
+        "execution/mt5_shadow_projection_command_promotion.py",
+        "storage/strategy_5scr_shadow_risk_projection_repository.py",
+    ]
 
 
 def test_p7_files_do_not_write_c3_runtime_tables_or_call_broker_effects() -> None:
