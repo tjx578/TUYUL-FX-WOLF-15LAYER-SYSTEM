@@ -621,6 +621,55 @@ bool PrepareDemoReport(DemoExecutionState &state,
 }
 
 //+------------------------------------------------------------------+
+string ExpectedDemoCommandStateForReport(const string report_state)
+{
+   if(report_state == "SUBMITTING")
+      return "SUBMITTING";
+   if(report_state == "BROKER_ACCEPTED")
+      return "BROKER_ACCEPTED";
+   if(report_state == "AMBIGUOUS_REQUIRES_RECONCILIATION")
+      return "AMBIGUOUS";
+   if(report_state == "FILLED")
+      return "FILLED";
+   if(report_state == "VALIDATION_REJECTED" ||
+      report_state == "PREFLIGHT_REJECTED" ||
+      report_state == "BROKER_REJECTED")
+      return "REJECTED";
+   return "";
+}
+
+//+------------------------------------------------------------------+
+bool ValidateDemoReportAcknowledgement(const DemoExecutionState &state,
+                                       const string response,
+                                       string &command_state,
+                                       string &reason)
+{
+   string report_state = JsonValue(state.pending_report_body, "state");
+   string expected_command_state = ExpectedDemoCommandStateForReport(report_state);
+   string acknowledged_command_state = JsonValue(response, "ack_command_state");
+   string current_command_state = JsonValue(response, "current_command_state");
+   command_state = current_command_state;
+   if(command_state == "")
+      command_state = JsonValue(response, "command_state");
+   if(JsonValue(response, "accepted", "missing") != "true" ||
+      expected_command_state == "" ||
+      JsonValue(response, "command_id") != state.command_id ||
+      JsonValue(response, "report_id") != state.pending_report_id ||
+      JsonValue(response, "sequence") != IntegerToString(state.pending_report_sequence) ||
+      JsonValue(response, "report_state") != report_state ||
+      JsonValue(response, "request_hash") != state.request_hash ||
+      acknowledged_command_state != expected_command_state ||
+      (report_state == "SUBMITTING" &&
+       current_command_state != "SUBMITTING"))
+   {
+      reason = "DEMO_REPORT_ACK_BINDING_MISMATCH";
+      return false;
+   }
+   reason = "DEMO_REPORT_ACK_VERIFIED";
+   return true;
+}
+
+//+------------------------------------------------------------------+
 bool PostPreparedDemoReport(DemoExecutionState &state)
 {
    if(state.pending_report_id == "-")
@@ -633,8 +682,15 @@ bool PostPreparedDemoReport(DemoExecutionState &state)
       AppendLedger(state.command_id, "REPORT_POST_PENDING", IntegerToString(code));
       return false;
    }
+   string command_state = "";
+   string acknowledgement_reason = "";
+   if(!ValidateDemoReportAcknowledgement(state, response,
+                                         command_state, acknowledgement_reason))
+   {
+      AppendLedger(state.command_id, "REPORT_ACK_REJECTED", acknowledgement_reason);
+      return false;
+   }
    state.last_ack_sequence = state.pending_report_sequence;
-   string command_state = JsonValue(response, "command_state");
    state.pending_report_id = "-";
    state.pending_report_body = "-";
    state.pending_report_sequence = state.last_ack_sequence;
@@ -1029,17 +1085,21 @@ bool RecoverDemoState()
       AppendLedger(state.command_id, "RECOVERY_BLOCKED", "STATUS_UNAVAILABLE_OR_HASH_MISMATCH");
       return false;
    }
-   if(JsonBool(status_response, "terminal"))
-   {
-      AppendLedger(state.command_id, "RECOVERY_TERMINAL_CONFIRMED", JsonValue(status_response, "command_state"));
-      g_last_command_id = state.command_id;
-      return ClearDemoState();
-   }
-   if(state.pending_report_id != "-")
-      return PostPreparedDemoReport(state);
+   bool server_terminal = JsonBool(status_response, "terminal");
+   string command_state = JsonValue(status_response, "command_state");
    if(!state.submit_attempted)
+   {
+      if(server_terminal)
+      {
+         AppendLedger(state.command_id, "RECOVERY_TERMINAL_CONFIRMED", command_state);
+         g_last_command_id = state.command_id;
+         return ClearDemoState();
+      }
+      if(state.pending_report_id != "-")
+         return PostPreparedDemoReport(state);
       return SendDemoReport(state, "PREFLIGHT_REJECTED", "DEMO_RESTART_BEFORE_SUBMIT",
                             "durable state proves OrderSend was not attempted");
+   }
 
    // submit_attempted=true is permanently one-way. Never call OrderSend from
    // recovery; reconcile exact broker artifacts first.
@@ -1051,8 +1111,31 @@ bool RecoverDemoState()
       AppendLedger(state.command_id, "RECOVERY_BLOCKED", reason);
       return false;
    }
-   string command_state = JsonValue(status_response, "command_state");
    double requested_volume = StringToDouble(JsonValue(state.command_json, "volume"));
+   if(server_terminal)
+   {
+      bool no_broker_effect = (state.order_ticket == 0 && state.deal_ticket == 0 &&
+                               state.position_id == 0 && filled_volume <= 0.0 &&
+                               filled_price <= 0.0);
+      bool complete_fill = (state.order_ticket > 0 && state.deal_ticket > 0 &&
+                            state.position_id > 0 && filled_volume > 0.0 &&
+                            filled_price > 0.0 &&
+                            MathAbs(filled_volume - requested_volume) <= 0.0000001);
+      if((command_state == "REJECTED" && no_broker_effect) ||
+         (command_state == "FILLED" && complete_fill))
+      {
+         AppendLedger(state.command_id, "RECOVERY_TERMINAL_BROKER_RECONCILED",
+                      command_state);
+         g_last_command_id = state.command_id;
+         return ClearDemoState();
+      }
+      g_demo_blocked = true;
+      AppendLedger(state.command_id, "RECOVERY_BLOCKED",
+                   "DEMO_TERMINAL_STATUS_BROKER_LINEAGE_UNRESOLVED");
+      return false;
+   }
+   if(state.pending_report_id != "-")
+      return PostPreparedDemoReport(state);
    if(state.deal_ticket > 0 && filled_volume > 0.0 && filled_price > 0.0)
    {
       if(MathAbs(filled_volume - requested_volume) > 0.0000001)

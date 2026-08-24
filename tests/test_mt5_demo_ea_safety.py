@@ -97,6 +97,71 @@ def test_ordercheck_and_durable_boundary_precede_the_only_ordersend() -> None:
     assert "request.tp" in checked
 
 
+def test_submit_requires_an_exact_nonterminal_durable_acknowledgement() -> None:
+    demo = _source(DEMO_EA)
+    validate_ack = _function(
+        demo,
+        "bool ValidateDemoReportAcknowledgement(",
+        "bool PostPreparedDemoReport(",
+    )
+    post = _function(demo, "bool PostPreparedDemoReport(", "bool SendDemoReport(")
+    execute = _function(demo, "bool ExecuteDemoCommand(", "void PollOneDemoCommand()")
+
+    assert 'report_state == "SUBMITTING"' in demo
+    assert 'return "SUBMITTING"' in demo
+    assert 'JsonValue(response, "accepted", "missing") != "true"' in validate_ack
+    assert 'JsonValue(response, "command_id") != state.command_id' in validate_ack
+    assert 'JsonValue(response, "report_id") != state.pending_report_id' in validate_ack
+    assert 'JsonValue(response, "sequence") != IntegerToString(state.pending_report_sequence)' in validate_ack
+    assert 'JsonValue(response, "report_state") != report_state' in validate_ack
+    assert 'JsonValue(response, "request_hash") != state.request_hash' in validate_ack
+    assert "acknowledged_command_state != expected_command_state" in validate_ack
+    assert 'current_command_state = JsonValue(response, "current_command_state")' in validate_ack
+    assert "command_state = current_command_state" in validate_ack
+    assert 'report_state == "SUBMITTING"' in validate_ack
+    assert 'current_command_state != "SUBMITTING"' in validate_ack
+    assert 'reason = "DEMO_REPORT_ACK_BINDING_MISMATCH"' in validate_ack
+    assert post.index("ValidateDemoReportAcknowledgement(") < post.index("state.last_ack_sequence =")
+    assert post.index("ValidateDemoReportAcknowledgement(") < post.index('state.pending_report_id = "-"')
+    assert execute.index('SendDemoReport(state, "SUBMITTING"') < execute.index("OrderSend(")
+
+
+def test_empty_mismatched_or_terminal_submit_ack_cannot_reach_ordersend() -> None:
+    demo = _source(DEMO_EA)
+    validate_ack = _function(
+        demo,
+        "bool ValidateDemoReportAcknowledgement(",
+        "bool PostPreparedDemoReport(",
+    )
+    post = _function(demo, "bool PostPreparedDemoReport(", "bool SendDemoReport(")
+
+    assert 'acknowledged_command_state = JsonValue(response, "ack_command_state")' in validate_ack
+    assert 'JsonValue(response, "accepted", "missing") != "true"' in validate_ack
+    assert 'expected_command_state == ""' in validate_ack
+    assert "acknowledged_command_state != expected_command_state" in validate_ack
+    assert 'return "REJECTED"' in demo
+    assert 'return "FILLED"' in demo
+    rejected = post.index('AppendLedger(state.command_id, "REPORT_ACK_REJECTED"')
+    assert rejected < post.index("state.last_ack_sequence =")
+    assert "return false;" in post[rejected : post.index("state.last_ack_sequence =")]
+
+
+def test_submit_ack_uses_raw_current_state_before_legacy_fallback() -> None:
+    validate_ack = _function(
+        _source(DEMO_EA),
+        "bool ValidateDemoReportAcknowledgement(",
+        "bool PostPreparedDemoReport(",
+    )
+
+    read_current = validate_ack.index('string current_command_state = JsonValue(response, "current_command_state")')
+    expose_current = validate_ack.index("command_state = current_command_state", read_current)
+    legacy_fallback = validate_ack.index('command_state = JsonValue(response, "command_state")', expose_current)
+    submit_guard = validate_ack.index('current_command_state != "SUBMITTING"', legacy_fallback)
+
+    assert read_current < expose_current < legacy_fallback < submit_guard
+    assert '\n       command_state != "SUBMITTING"' not in validate_ack
+
+
 def test_ordercheck_rejection_has_no_submit_path() -> None:
     checked = _function(_source(DEMO_EA), "bool BuildCheckedDemoRequest(", "bool ExecuteDemoCommand(")
     execute = _function(_source(DEMO_EA), "bool ExecuteDemoCommand(", "void PollOneDemoCommand()")
@@ -136,6 +201,19 @@ def test_restart_never_retries_ordersend_and_requires_reconciliation() -> None:
     assert "ReconcileDemoBrokerState" in recovery
     assert 'command_state == "BROKER_ACCEPTED" || command_state == "AMBIGUOUS"' in recovery
     assert "DEMO_RESTART_ORDER_WITHOUT_RETCODE" in recovery
+
+
+def test_submit_attempted_terminal_restart_reconciles_before_any_state_clear() -> None:
+    recovery = _function(_source(DEMO_EA), "bool RecoverDemoState()", "int OnInit()")
+    submit_attempted_branch = recovery.index("if(!state.submit_attempted)")
+    reconcile = recovery.index("ReconcileDemoBrokerState", submit_attempted_branch)
+    terminal_after_submit = recovery.index("if(server_terminal)", reconcile)
+    clear_after_submit = recovery.index("ClearDemoState()", terminal_after_submit)
+
+    assert reconcile < terminal_after_submit < clear_after_submit
+    unresolved = recovery.index("DEMO_TERMINAL_STATUS_BROKER_LINEAGE_UNRESOLVED", terminal_after_submit)
+    assert clear_after_submit < unresolved
+    assert "g_demo_blocked = true" in recovery[terminal_after_submit:unresolved]
 
 
 def test_demo_reconciles_exact_broker_history_before_resolving_ambiguity() -> None:

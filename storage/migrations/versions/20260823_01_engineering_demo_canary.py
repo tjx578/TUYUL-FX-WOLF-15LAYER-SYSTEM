@@ -1,7 +1,7 @@
 """Add fail-closed lineage and one-shot scope for D0 engineering DEMO.
 
 Revision ID: 20260823_01
-Revises: 20260813_02
+Revises: 20260822_01
 """
 
 from __future__ import annotations
