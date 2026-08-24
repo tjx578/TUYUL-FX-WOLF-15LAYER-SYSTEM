@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# G3 attestation tooling must be resolved and hashed with the application.
+pyright==1.1.408

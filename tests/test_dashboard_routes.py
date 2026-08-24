@@ -12,13 +12,16 @@ Tests cover:
 from __future__ import annotations
 
 import fnmatch
+import inspect
 import json
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from fastapi.testclient import TestClient
 
 from accounts.account_model import RiskCalculationResult, RiskSeverity
@@ -158,6 +161,7 @@ class _StableRiskEngine:
 
 # ── App setup with auth overrides ─────────────────────────────────────────────
 
+from api.allocation_router import write_router  # noqa: E402
 from api_server import app  # noqa: E402
 
 
@@ -169,28 +173,96 @@ async def _mock_write_policy() -> None:
     return None
 
 
+_TAKE_SIGNAL_PATH = "/api/v1/trades/take"
+_TAKE_SIGNAL_METHOD = "POST"
+
+
+def _assert_explicit_dependency_provider(provider: Any) -> None:
+    """Reject providers that expose variadic args/kwargs to FastAPI."""
+    parameters = inspect.signature(provider).parameters.values()
+    assert all(
+        parameter.kind not in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}
+        for parameter in parameters
+    ), "Dependency override providers must have an explicit, non-variadic signature"
+
+
+def _take_signal_route_context() -> RouteContext:
+    """Return the one effective POST /trades/take route or fail closed."""
+    matches = [
+        context
+        for context in iter_route_contexts(app.routes)
+        if isinstance(context.original_route, APIRoute)
+        and context.path == _TAKE_SIGNAL_PATH
+        and _TAKE_SIGNAL_METHOD in (context.methods or set())
+    ]
+    assert len(matches) == 1, (
+        f"Expected exactly one {_TAKE_SIGNAL_METHOD} {_TAKE_SIGNAL_PATH} route, got {len(matches)}"
+    )
+    return matches[0]
+
+
+def _take_signal_bound_governance_dependency() -> Any:
+    """Return the one governance dependency bound to the effective route."""
+    context = _take_signal_route_context()
+    route_dependencies = list(context.dependant.dependencies)
+    router_dependencies = list(write_router.dependencies)
+    assert len(route_dependencies) == 2, (
+        f"Expected two direct dependencies on {_TAKE_SIGNAL_PATH}, got {len(route_dependencies)}"
+    )
+    assert len(router_dependencies) == 2, (
+        f"Expected auth plus governance on write_router, got {len(router_dependencies)}"
+    )
+
+    auth_matches = [
+        dependency.dependency for dependency in router_dependencies if dependency.dependency is verify_token
+    ]
+    governance_targets = [
+        dependency.dependency for dependency in router_dependencies if dependency.dependency is not verify_token
+    ]
+    assert len(auth_matches) == 1, f"Expected exactly one write_router auth dependency, got {len(auth_matches)}"
+    assert len(governance_targets) == 1, (
+        f"Expected exactly one write_router governance dependency, got {len(governance_targets)}"
+    )
+
+    governance_target = governance_targets[0]
+    governance_matches = [dependency.call for dependency in route_dependencies if dependency.call is governance_target]
+    assert len(governance_matches) == 1, (
+        f"Expected exactly one route-bound governance dependency, got {len(governance_matches)}"
+    )
+    assert callable(governance_matches[0]), "The route-bound governance dependency must be callable"
+    return governance_matches[0]
+
+
+@contextmanager
+def _take_signal_dependency_overrides() -> Iterator[None]:
+    """Install exact route-bound providers and restore all prior overrides."""
+    _assert_explicit_dependency_provider(_mock_verify_token)
+    _assert_explicit_dependency_provider(_mock_write_policy)
+    governance_call = _take_signal_bound_governance_dependency()
+
+    previous = dict(app.dependency_overrides)
+    app.dependency_overrides[governance_call] = _mock_write_policy
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
 @pytest.fixture(autouse=True)
 def _override_auth_dependencies() -> Any:
     """Isolate dependency overrides to this test module's test scope."""
     previous = dict(app.dependency_overrides)
     app.dependency_overrides[verify_token] = _mock_verify_token
     app.dependency_overrides[enforce_write_policy] = _mock_write_policy
-
-    # Also override the exact route-bound dependency callables in case other
-    # tests reloaded/mocked modules and changed function object identity.
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
-            continue
-        if not str(route.path).startswith("/api/v1/"):
-            continue
-        for dep in route.dependant.dependencies:
-            call = getattr(dep, "call", None)
-            if callable(call):
-                app.dependency_overrides[call] = _mock_write_policy
-
-    yield
-    app.dependency_overrides.clear()
-    app.dependency_overrides.update(previous)
+    try:
+        # FastAPI >=0.137 keeps included routers nested. Bind only the exact
+        # target route's dependencies using the public traversal API.
+        with _take_signal_dependency_overrides():
+            yield
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -402,6 +474,39 @@ def test_get_account_not_found(client: TestClient) -> None:
 
 
 # ── Trade lifecycle tests ─────────────────────────────────────────────────────
+
+
+def test_take_signal_route_override_contract() -> None:
+    """Route discovery is unique, providers are explicit, and overrides restore."""
+    context = _take_signal_route_context()
+    assert context.path == _TAKE_SIGNAL_PATH
+    assert context.methods == {_TAKE_SIGNAL_METHOD}
+
+    governance_call = _take_signal_bound_governance_dependency()
+    baseline = dict(app.dependency_overrides)
+    with _take_signal_dependency_overrides():
+        assert app.dependency_overrides[governance_call] is _mock_write_policy
+        for provider in (_mock_verify_token, _mock_write_policy):
+            parameter_names = set(inspect.signature(provider).parameters)
+            assert not {"args", "kwargs"} & parameter_names
+    assert app.dependency_overrides == baseline
+
+
+def test_take_signal_rejects_variadic_override_provider() -> None:
+    """A bare MagicMock cannot be accepted as a dependency provider."""
+    with pytest.raises(AssertionError, match="explicit, non-variadic signature"):
+        _assert_explicit_dependency_provider(MagicMock())
+
+
+def test_take_signal_invalid_request_reports_contract_fields_only(client: TestClient) -> None:
+    """Invalid payloads may return 422 only for TakeSignalRequest fields."""
+    response = client.post(_TAKE_SIGNAL_PATH, json={})
+
+    assert response.status_code == 422
+    errors = response.json()["detail"]
+    fields = {str(error["loc"][-1]) for error in errors}
+    assert fields == {"signal_id", "account_id", "pair", "direction", "entry", "sl", "tp"}
+    assert not {"args", "kwargs"} & fields
 
 
 def test_take_signal(client: TestClient) -> None:
