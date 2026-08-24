@@ -1,0 +1,136 @@
+completion_receipt:
+  schema: "wolf15.wla02.completion-receipt.v1"
+  receipt_id: "WLA02-COMPLETE-20260824-001"
+  measured_at_utc: "2026-08-24T15:58:55.212Z"
+  published_at_utc: "2026-08-24T16:10:04.021Z"
+
+  publication:
+    evidence_branch: "codex/wla-01-contract-only"
+    implementation_commit_sha: "85260251e456ef1c7f0475b7a078fc95616ba86d"
+    receipt_commit_sha: "THIS_COMMIT"
+    push_mode: "FAST_FORWARD_ONLY"
+    pull_request_created: false
+    merge_performed: false
+    main_mutation: false
+
+  governance:
+    governance_mode: "SINGLE_OWNER_BOOTSTRAP"
+    exception_id: "WLA02-EXC-001"
+    ratification_id: "ad21aee4-857d-4643-b8c6-b46328888ea4"
+    governance_decision: "PASS"
+    authorized_scope: "WLA-02_GOLDEN_CORPUS_ONLY"
+    signed_owner_attestation_commit: "fd63f54fda29c243cfb3879e18e8c121f91c3b1d"
+    decision_record_commit: "97567f6070cfa6584dcbe32fb442498ee45382c2"
+    target_base_sha: "22ee9774930d2bf5d09a32851098a8dba8918167"
+    implementation_base_sha: "97567f6070cfa6584dcbe32fb442498ee45382c2"
+    local_origin_remote_head_match: true
+    target_base_drift: false
+
+  implementation_artifacts:
+    - path: "contracts/wla02_golden_corpus.py"
+      sha256: "b327ea646783c3d02ba33f1738cb28d35bc3df251b007858dcc5a3c8ec2301af"
+      role: "TYPED_DECISION_OUTCOME_MAPPING_AND_AUTHENTICATED_BITEMPORAL_REPLAY"
+    - path: "tests/wla02_golden/fixture_factory.py"
+      sha256: "d35d30bed396c4213845a1f252737832c5418d85ceb3dd1cd9b21f31be28f39c"
+      role: "DETERMINISTIC_TEST_ONLY_ENVELOPE_AND_CORPUS_FACTORY"
+    - path: "tests/test_wla02_golden_corpus.py"
+      sha256: "81231f31b4c551352dfb505bbdb1ad7edde284c1b63a137057eee38ce063e7e3"
+      role: "MAPPER_REPLAY_TEMPORAL_LINEAGE_MISSINGNESS_AUTH_AND_SCOPE_TESTS"
+    - path: "tests/fixtures/wla02/manifest.json"
+      sha256: "56d68988f580066e5dbc180ff9ba1b5b14b32ef28ed6a16064bc83033ed4f322"
+      role: "DETERMINISTIC_GOLDEN_HASH_MANIFEST"
+    - path: "docs/architecture/wla/wla-02-golden-corpus/IMPLEMENTATION-SPEC.md"
+      sha256: "6683ce95ccef984f04ed5c0f3f1b486cdedf1a9b59ed79563ac9e89cdb0e89eb"
+      role: "CLOSED_SCOPE_AND_TEMPORAL_AUTHORITY_SPECIFICATION"
+
+  corpus_evidence:
+    positive_entries: 13
+    total_json_artifacts: 17
+    case_coverage:
+      - "EXECUTED"
+      - "WAIT"
+      - "HOLD"
+      - "NO_TRADE"
+      - "REJECTED"
+      - "EXPIRED"
+      - "CONFLICT"
+    evidence_classes:
+      - "WOLF15_DECISION"
+      - "REALIZED_BROKER"
+      - "COUNTERFACTUAL_MARKET"
+    unavailable_inputs:
+      - "CENSORED"
+      - "MISSING"
+    realized_counterfactual_separation: "PASS"
+    unavailable_never_promoted_to_fact: "PASS"
+    history_hash: "sha256:9d99888db5851347b98652be19b6a6d12dc88c80b5b2ba5cb58d9dc4c5f5994b"
+    effective_hash: "sha256:faf56e0dc0a3b1db34702838d2f68b08ff507c611615fad724fa01a52e5c7e45"
+
+  temporal_and_lineage_gates:
+    raw_bytes_equal_typed_canonical_serialization: "PASS"
+    timestamp_alias_rejected: "PASS"
+    knowledge_after_source_publication: "PASS"
+    future_leakage_canary: "PASS_FAIL_CLOSED"
+    valid_and_knowledge_time_separated: "PASS"
+    correction_history_append_only: "PASS"
+    correction_requires_earlier_authenticated_target: "PASS"
+    correction_cross_class_rejected: "PASS"
+    correction_fork_rejected: "PASS"
+    duplicate_identity_ambiguity_rejected: "PASS"
+
+  verification_gates:
+    fixture_generation:
+      command: "python -m tests.wla02_golden.fixture_factory"
+      repeated_runs: 2
+      result: "PASS_IDENTICAL"
+    wla02_tests:
+      command: "python -m pytest -q tests/test_wla02_golden_corpus.py"
+      passed: 30
+      result: "PASS"
+    wla01_and_wla02_tests:
+      command: "python -m pytest -q tests/test_alpha_learning_envelope_v1.py tests/test_alpha_learning_envelope_v1_fuzz.py tests/test_wla02_golden_corpus.py"
+      passed: 67
+      result: "PASS"
+    observer_regressions:
+      command: "python -m pytest -q tests/test_observer_telemetry_export_v1.py tests/test_observer_export_outbox.py"
+      passed: 22
+      result: "PASS"
+    ruff:
+      result: "PASS"
+    pyright:
+      errors: 0
+      warnings: 0
+      result: "PASS"
+    full_repository_suite:
+      command: "python -m pytest -q"
+      reached_100_percent: true
+      exit_code: 1
+      result: "BASELINE_FAILURES_PRESENT"
+      observed_failures: 11
+      exact_base_failures: 11
+      identical_failure_nodes_and_messages: true
+      wla02_regressions: 0
+
+  scope_audit:
+    result: "PASS"
+    tracked_preexisting_files_modified: 0
+    runtime_registration: false
+    database_or_outbox: false
+    network_or_dispatcher: false
+    broker_or_ea: false
+    deployment: false
+    production_private_key: false
+    new_repository: false
+    main_mutation: false
+    wla03_authorized: false
+    gate_p0_a: "NOT_EVALUATED"
+    test_side_effects_detected_and_reversed: true
+
+  completion_status:
+    wla_02_implementation: "PASS"
+    wla_02_definition_of_done: "PASS"
+    canonical_publication: "COMPLETE"
+    exception_state: "EXPIRED_CONSUMED"
+    wla_03: "NOT_STARTED"
+    wla_03_authorized: false
+    next_gate: "HUMAN_RATIFICATION_WLA_03"
