@@ -1,0 +1,61 @@
+wla_01_owner_attestation:
+  schema: "wolf15.wla01.owner-attestation.v1"
+  decision_id: "df07182d-215c-4c49-ae49-f3c94d0c0951"
+  packet_id: "WLA01-DECISION-PACKET-20260824-001"
+  target_repository: "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM"
+  target_branch: "codex/wla-01-contract-only"
+  evidence_commit_sha: "87a3ba3338d2ff66b543051b8c8d8e76fdc247e1"
+  exact_base_sha: "7ff2a9194b22e185b35dc61574c61628ba404939"
+  core_bundle_sha256: "6704d174f55e9b03acafec22e51bc1cef187544f6ecc550d923c93139d040fd5"
+  fixture_tree_sha256: "6a86689d0ca96cf54c1d03d51062ac5706c2f0e1f7cee1ee404b704f455dbcce"
+  security_scan_id: "e01e3c8a-41c4-4613-8441-837410c0b151"
+  security_snapshot_digest: "codex-security-snapshot/v1:sha256:c1ff51ccdeb4128cea0cd312a744838bf59c69ce33bd57af6334f2948ea27551"
+  security_finding_state: "CLOSED_VERIFIED"
+  verdict: "APPROVED"
+  conditions: []
+  conditions_sha256_rfc8785: "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  decided_at_utc: "2026-08-24T14:42:27.780Z"
+  governance_mode: "SINGLE_OWNER_BOOTSTRAP"
+  exception_id: "WLA00-EXC-001"
+  role: "CONSTITUTIONAL_OWNER"
+  independent_concurrence_available: false
+  backup_assignments_available: false
+  principal:
+    name: "Dwi Kelana Putra"
+    alias: "KELANA TJX"
+    github_login: "tjx578"
+    github_numeric_id: "221953664"
+    github_node_id: "U_kgDODTq-gA"
+    authority_basis: "SYSTEM_OWNER_AND_REPOSITORY_OWNER"
+  decision_scope:
+    approved:
+      - "WLA-01 contract-only evidence at the bound commit and hashes"
+    forbidden:
+      - "WLA-02"
+      - "Runtime registration"
+      - "Database migration or outbox activation"
+      - "Dispatcher, broker, or EA access"
+      - "Deployment or production mutation"
+      - "Advisory activation or execution authority"
+      - "Creation of learning repositories"
+      - "Gate P0-A certification"
+    runtime_mutation: "NONE"
+    new_repository_authorized: false
+    wla_02_authorized: false
+  exception_effect:
+    expires_on: "WLA-01 completion or any scope expansion"
+    consumed_by_approved_wla_01_completion: true
+    reusable: false
+  authentication_reference: "https://github.com/tjx578"
+  signature_reference: "THIS_GITHUB_VERIFIED_COMMIT"
+  declaration: |-
+    Saya, Dwi Kelana Putra (KELANA TJX), menyetujui WLA-01 contract-only dengan verdict APPROVED.
+
+    Target evidence commit:
+    87a3ba3338d2ff66b543051b8c8d8e76fdc247e1
+
+    Conditions: []
+
+    Saya mengakui bahwa keputusan ini tidak mengizinkan WLA-02, runtime registration, database/outbox activation, deployment, broker/EA access, repo baru, Gate P0-A, atau production mutation.
+
+    Saya mengizinkan pembuatan owner attestation WLA-01 pada branch codex/wla-01-contract-only melalui akun GitHub tjx578.
