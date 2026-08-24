@@ -1,0 +1,1 @@
+{"assessed_at_utc":"2026-08-24T20:01:00Z","decision_id":"alpha-evaluation:eurusd:no-trade:001","evidence_class":"UNAVAILABLE","missing_fields":["market_observation","observed_price"],"reason_codes":["SOURCE_EVIDENCE_ABSENT"],"record_type":"UNAVAILABLE_OUTCOME","source_record_id":"unavailable:missing:001","symbol":"EURUSD","unavailable_kind":"MISSING"}
