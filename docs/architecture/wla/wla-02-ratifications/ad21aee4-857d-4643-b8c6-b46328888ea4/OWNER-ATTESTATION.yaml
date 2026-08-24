@@ -1,0 +1,84 @@
+wla_02_owner_attestation:
+  schema: "wolf15.wla02.owner-attestation.v1"
+  ratification_id: "ad21aee4-857d-4643-b8c6-b46328888ea4"
+  packet_id: "WLA02-RP-20260824-001"
+  exception_id: "WLA02-EXC-001"
+  packet_sha256: "56bf3a4f3dc1c7b2b125747d78d13add551c838391af63fc3615c948da39d9d3"
+  target_repository: "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM"
+  target_branch: "codex/wla-01-contract-only"
+  target_base_sha: "22ee9774930d2bf5d09a32851098a8dba8918167"
+  scope: "WLA-02_GOLDEN_CORPUS_ONLY"
+  submitted_verdict: "APPROVED"
+  canonical_status: "PENDING_VERIFIED_SIGNATURE"
+  wla_02_authorized: false
+  conditions: []
+  conditions_sha256_rfc8785: "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  decided_at_utc: "2026-08-24T15:17:44.948Z"
+  governance_mode: "SINGLE_OWNER_BOOTSTRAP"
+  role: "CONSTITUTIONAL_OWNER"
+  assumed_roles: ["ARO", "WAO", "JDS", "MRR", "SEC"]
+  independent_concurrence_available: false
+  backup_assignments_available: false
+
+  principal:
+    name: "Dwi Kelana Putra"
+    alias: "KELANA TJX"
+    github_login: "tjx578"
+    github_numeric_id: "221953664"
+    github_node_id: "U_kgDODTq-gA"
+    authority_basis: "SYSTEM_OWNER_AND_REPOSITORY_OWNER"
+
+  authorization:
+    allowed:
+      - "Decision mapper"
+      - "Outcome-evidence mapper"
+      - "Offline AlphaLearningEnvelopeV1 fixture factory"
+      - "Deterministic golden fixtures"
+      - "Realized versus counterfactual separation"
+      - "Future-leakage canary"
+      - "Bitemporal replay"
+      - "Golden-hash tests"
+      - "Correction-lineage tests"
+      - "Pure schemas and documentation required by WLA-02"
+    forbidden:
+      - "Runtime registration or runtime imports"
+      - "Transactional outbox, queue, scheduler, cursor, or dispatcher"
+      - "Database schema, role, migration, or data mutation"
+      - "Network delivery or external service access"
+      - "Broker, EA, order-router, risk-reservation, advisory, or execution access"
+      - "Deployment, production mutation, or production credentials"
+      - "Creation of a repository or learning service"
+      - "Modification or promotion of main"
+      - "WLA-03"
+      - "Gate P0-A certification"
+    expires_on: "WLA-02 completion or any scope expansion"
+    reusable: false
+
+  required_invariants:
+    realized_counterfactual_separation: true
+    future_leakage_fail_closed: true
+    bitemporal_cutoff_explicit: true
+    corrections_append_only: true
+    deterministic_bytes_and_hashes: true
+    source_authority_cannot_be_created: true
+    runtime_mutation: "NONE"
+    wla_03_authorized: false
+    new_repository_authorized: false
+    main_promotion_authorized: false
+    gate_p0_a_authorized: false
+
+  authentication_reference: "https://github.com/tjx578"
+  signature_reference: "THIS_GITHUB_VERIFIED_COMMIT"
+
+  declaration: |-
+    Saya, Dwi Kelana Putra (KELANA TJX), sebagai pemilik sistem dan repository,
+    menyetujui WLA02-EXC-001 untuk implementasi WLA-02 golden corpus only pada
+    target base SHA 22ee9774930d2bf5d09a32851098a8dba8918167.
+
+    Otorisasi hanya mencakup mapper, deterministic fixtures, replay, bitemporal,
+    future-leakage, correction-lineage, dan realized/counterfactual separation tests.
+
+    Otorisasi tidak mencakup runtime, outbox, database migration, deployment,
+    broker/EA, repo baru, main promotion, atau Gate P0-A.
+
+    Conditions: []
