@@ -37,6 +37,8 @@ from execution.mt5_executor_governance import (
     ExecutorGovernanceError,
     GovernanceSnapshot,
     MT5ExecutorGovernanceRepository,
+    acquire_canary_lifecycle_advisory_locks,
+    acquire_executor_advisory_locks,
 )
 from storage.postgres_client import PostgresClient, pg_client
 
@@ -829,6 +831,10 @@ class MT5CommandRepository:
         envelope = build_signed_execution_envelope(command, root_secret=secret, key_id=envelope_key_id)
 
         async with self._pg.transaction() as connection:
+            await acquire_canary_lifecycle_advisory_locks(
+                connection,
+                (command.executor_binding.executor_id,),
+            )
             governed = await connection.fetchrow(
                 """
                 SELECT e.account_id, e.login_hash, e.broker_server, e.execution_mode,
@@ -1025,6 +1031,16 @@ class MT5CommandRepository:
             raise CommandConflictError("canary actor and reason must not be blank")
         now = datetime.now(UTC)
         async with self._pg.transaction() as connection:
+            executor_row = await connection.fetchrow(
+                "SELECT executor_id FROM engineering_demo_canary_windows WHERE canary_id=$1",
+                canary_id,
+            )
+            if not executor_row:
+                raise CommandConflictError("engineering canary window does not exist")
+            await acquire_canary_lifecycle_advisory_locks(
+                connection,
+                (executor_row["executor_id"],),
+            )
             row = await connection.fetchrow(
                 """
                 SELECT w.canary_id, w.command_id, w.executor_id, w.account_id,
@@ -1264,6 +1280,20 @@ class MT5CommandRepository:
         self._require_database()
         now = datetime.now(UTC)
         async with self._pg.transaction() as connection:
+            await acquire_canary_lifecycle_advisory_locks(connection)
+            executor_rows = await connection.fetch(
+                """
+                SELECT DISTINCT executor_id
+                FROM engineering_demo_canary_windows
+                WHERE state IN ('QUEUED','ARMED') AND expires_at <= $1
+                ORDER BY executor_id
+                """,
+                now,
+            )
+            await acquire_executor_advisory_locks(
+                connection,
+                (executor_row["executor_id"] for executor_row in executor_rows),
+            )
             rows = await connection.fetch(
                 """
                 SELECT w.canary_id, w.command_id, w.executor_id,
@@ -1783,6 +1813,18 @@ class MT5CommandRepository:
         report_hash = sha256_tag(report_payload)
         target_state = _REPORT_TO_COMMAND_STATE[report.state]
         async with self._pg.transaction() as connection:
+            scope_row = await connection.fetchrow(
+                "SELECT executor_id, source_event FROM execution_commands WHERE command_id=$1::uuid",
+                str(report.command_id),
+            )
+            if not scope_row:
+                raise CommandConflictError("report references an unknown command")
+            if str(scope_row["executor_id"]) != str(report.executor_id):
+                raise ExecutorBindingMismatchError("report binding does not match command")
+            if str(scope_row["source_event"]) == "ENGINEERING_DEMO_CANARY":
+                await acquire_canary_lifecycle_advisory_locks(connection, (scope_row["executor_id"],))
+            else:
+                await acquire_executor_advisory_locks(connection, (scope_row["executor_id"],))
             command_row = await connection.fetchrow(
                 """
                 SELECT c.payload, c.account_id, c.executor_id, c.idempotency_key,
@@ -1806,7 +1848,8 @@ class MT5CommandRepository:
                 raise ExecutorBindingMismatchError("report binding does not match command")
             if command_row["idempotency_key"] != report.idempotency_key:
                 raise CommandConflictError("report idempotency key does not match command")
-            if str(command_row["execution_mode"]) == "SHADOW":
+            is_engineering_canary = str(command_row["source_event"]) == "ENGINEERING_DEMO_CANARY"
+            if str(command_row["execution_mode"]) == "SHADOW" and not is_engineering_canary:
                 if not bool(command_row["kill_switch_active"]):
                     raise CommandConflictError("SHADOW report requires the kill switch to remain engaged")
                 broker = report.broker
@@ -1835,7 +1878,7 @@ class MT5CommandRepository:
             current_state = str(command_row["state"])
             existing = await connection.fetchrow(
                 """
-                SELECT payload_hash
+                SELECT report_id, state, payload_hash
                 FROM execution_reports
                 WHERE command_id = $1::uuid AND sequence = $2
                 """,
@@ -1845,7 +1888,26 @@ class MT5CommandRepository:
             if existing and existing["payload_hash"] != report_hash:
                 raise CommandConflictError("report sequence already exists with a different payload")
 
-            is_engineering_canary = str(command_row["source_event"]) == "ENGINEERING_DEMO_CANARY"
+            if existing and not (
+                is_engineering_canary
+                and report.state is ExecutionReportState.SUBMITTING
+                and current_state == "SUBMITTING"
+            ):
+                acknowledged_state = _REPORT_TO_COMMAND_STATE[ExecutionReportState(str(existing["state"]))]
+                return {
+                    "accepted": True,
+                    "duplicate": True,
+                    "command_id": str(report.command_id),
+                    "report_id": str(existing["report_id"]),
+                    "sequence": report.sequence,
+                    "report_state": str(existing["state"]),
+                    "ack_command_state": acknowledged_state,
+                    "current_command_state": current_state,
+                    "command_state": current_state,
+                    "request_hash": report.request_hash,
+                    "server_time_utc": datetime.now(UTC).isoformat(),
+                }
+
             canary_command: ExecutionCommandV1 | None = None
             if is_engineering_canary:
                 try:
@@ -1894,12 +1956,18 @@ class MT5CommandRepository:
                         raise CommandConflictError("engineering canary attempted a second broker order")
 
             if existing:
+                acknowledged_state = _REPORT_TO_COMMAND_STATE[ExecutionReportState(str(existing["state"]))]
                 return {
                     "accepted": True,
                     "duplicate": True,
                     "command_id": str(report.command_id),
+                    "report_id": str(existing["report_id"]),
                     "sequence": report.sequence,
+                    "report_state": str(existing["state"]),
+                    "ack_command_state": acknowledged_state,
+                    "current_command_state": current_state,
                     "command_state": current_state,
+                    "request_hash": report.request_hash,
                     "server_time_utc": datetime.now(UTC).isoformat(),
                 }
             expected_sequence = int(command_row["last_report_sequence"]) + 1
@@ -2047,8 +2115,13 @@ class MT5CommandRepository:
             "accepted": True,
             "duplicate": False,
             "command_id": str(report.command_id),
+            "report_id": str(report.report_id),
             "sequence": report.sequence,
+            "report_state": report.state.value,
+            "ack_command_state": target_state,
+            "current_command_state": target_state,
             "command_state": target_state,
+            "request_hash": report.request_hash,
             "server_time_utc": datetime.now(UTC).isoformat(),
         }
 

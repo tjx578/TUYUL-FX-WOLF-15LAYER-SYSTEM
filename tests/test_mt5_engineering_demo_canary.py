@@ -198,7 +198,8 @@ def test_canary_migration_owns_lineage_and_the_global_unresolved_slot() -> None:
     migration = D0_MIGRATION.read_text(encoding="utf-8")
 
     assert 'revision = "20260823_01"' in migration
-    assert 'down_revision = "20260813_02"' in migration
+    assert "Revises: 20260822_01" in migration
+    assert 'down_revision = "20260822_01"' in migration
     assert "source_event = 'ENGINEERING_DEMO_CANARY'" in migration
     assert "payload #>> '{order,magic}' = '150016'" in migration
     assert "payload #>> '{order,time_in_force}' = 'GTC'" in migration
