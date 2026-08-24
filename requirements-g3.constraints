@@ -1,0 +1,2 @@
+# G3 attestation must reproduce the Starlette version validated with FastAPI.
+starlette==0.52.1
