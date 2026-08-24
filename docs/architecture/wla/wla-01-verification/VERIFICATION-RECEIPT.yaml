@@ -18,7 +18,7 @@ authority:
   github_principal: "tjx578"
 
 source:
-  repository: "tuyul-ai-agi/TUYUL-FX-WOLF-15LAYER-SYSTEM"
+  repository: "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM"
   branch: "codex/wla-01-contract-only"
   exact_base_sha: "7ff2a9194b22e185b35dc61574c61628ba404939"
   candidate_evidence_commit_sha: "TO_BE_BOUND_BY_OWNER_DECISION"

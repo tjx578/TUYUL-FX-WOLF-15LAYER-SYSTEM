@@ -11,7 +11,7 @@ It does not simulate independent WAO, JDS, MRR, or SEC concurrence.
 
 ## Candidate under review
 
-- Repository: `tuyul-ai-agi/TUYUL-FX-WOLF-15LAYER-SYSTEM`
+- Repository: `tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM`
 - Branch: `codex/wla-01-contract-only`
 - Approved base: `7ff2a9194b22e185b35dc61574c61628ba404939`
 - Candidate evidence commit: obtain the exact 40-character SHA after the evidence
@@ -72,7 +72,7 @@ wla_01_owner_decision:
     authority_basis: "SYSTEM_OWNER_AND_REPOSITORY_OWNER"
 
   target:
-    repository: "tuyul-ai-agi/TUYUL-FX-WOLF-15LAYER-SYSTEM"
+    repository: "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM"
     branch: "codex/wla-01-contract-only"
     evidence_commit_sha: "<40-character Git SHA>"
     exact_base_sha: "7ff2a9194b22e185b35dc61574c61628ba404939"
