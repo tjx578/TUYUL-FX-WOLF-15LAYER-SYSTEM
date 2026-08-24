@@ -59,3 +59,4 @@ wla_01_owner_attestation:
     Saya mengakui bahwa keputusan ini tidak mengizinkan WLA-02, runtime registration, database/outbox activation, deployment, broker/EA access, repo baru, Gate P0-A, atau production mutation.
 
     Saya mengizinkan pembuatan owner attestation WLA-01 pada branch codex/wla-01-contract-only melalui akun GitHub tjx578.
+# Web UI confirmation by tjx578
