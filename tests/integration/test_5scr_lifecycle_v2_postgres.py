@@ -20,6 +20,7 @@ from contracts.strategy_5scr_lifecycle_v2 import (
     StrategyLifecycleEventLink,
     StrategyLifecycleV2,
 )
+from storage.observer_export_outbox import ObserverExportOutboxRepository
 from storage.strategy_5scr_lifecycle_v2_repository import (
     LIFECYCLE_TABLE,
     LINK_TABLE,
@@ -174,6 +175,70 @@ async def test_uuid_and_replay_ids_round_trip_through_real_postgres(
             uuid_event_id,
             replay_event_id,
         }
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+async def test_lifecycle_state_changes_publish_one_shadow_observation_each(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+    export = ObserverExportOutboxRepository(pg=cast(Any, postgres))
+    repository = StrategyLifecycleV2Repository(
+        pg=cast(Any, postgres),
+        observer_export_repository=export,
+    )
+    opened = _lifecycle(lifecycle_id)
+    opening_link = _link(
+        lifecycle_id,
+        pressure_event_id=f"pressure:{uuid4().hex}",
+        transport_lifecycle_id="transport-observer-open",
+    )
+    transitioned = opened.model_copy(
+        update={
+            "state": "TRANSITION_PENDING",
+            "direction_state": "CONFLICT",
+            "last_event_at_utc": opened.last_event_at_utc + timedelta(seconds=5),
+            "last_continuity_event_at_utc": opened.last_continuity_event_at_utc + timedelta(seconds=5),
+            "last_material_event_at_utc": opened.last_material_event_at_utc + timedelta(seconds=5),
+            "material_state_hash": "b" * 64,
+            "event_count": 3,
+        }
+    )
+    transition_link = opening_link.model_copy(
+        update={
+            "pressure_event_id": f"pressure:{uuid4().hex}",
+            "linked_at_utc": opening_link.linked_at_utc + timedelta(seconds=5),
+            "link_reason": "DIRECTION_TRANSITION_PENDING",
+        }
+    )
+    continuation = transitioned.model_copy(
+        update={
+            "last_event_at_utc": transitioned.last_event_at_utc + timedelta(seconds=5),
+            "last_continuity_event_at_utc": transitioned.last_continuity_event_at_utc + timedelta(seconds=5),
+            "event_count": 4,
+        }
+    )
+    continuation_link = transition_link.model_copy(
+        update={
+            "pressure_event_id": f"pressure:{uuid4().hex}",
+            "linked_at_utc": transition_link.linked_at_utc + timedelta(seconds=5),
+            "link_reason": "EPISODE_CONTINUED",
+        }
+    )
+
+    try:
+        assert await repository.persist(opened, opening_link)
+        assert await repository.persist(transitioned, transition_link)
+        assert await repository.persist(continuation, continuation_link)
+        rows = await export.read_stream(f"analysis-lifecycle:{lifecycle_id}")
+
+        assert len(rows) == 2
+        bodies = [row.envelope.payload.body for row in rows]
+        assert [body["previous_state"] for body in bodies] == [None, "ANALYSIS_OPEN"]
+        assert [body["new_state"] for body in bodies] == ["ANALYSIS_OPEN", "TRANSITION_PENDING"]
+        assert all(row.envelope.source.service.endswith("-shadow") for row in rows)
+        assert all(row.envelope.safety.observer_can_mutate_source is False for row in rows)
     finally:
         await _cleanup(postgres, lifecycle_id)
 

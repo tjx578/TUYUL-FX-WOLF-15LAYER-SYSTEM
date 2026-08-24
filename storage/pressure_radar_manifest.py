@@ -16,6 +16,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, cast
 from uuid import UUID
 
@@ -29,6 +30,8 @@ from analysis.strategy_5scr_pressure_radar import (
 )
 from contracts.strategy_5scr_pressure_outbox import PressureOutboxEnvelope
 from contracts.strategy_5scr_pressure_radar import PressureRadarManifest
+from storage.observer_export_outbox import ObserverExportOutboxRepository
+from storage.observer_strategy_events import strategy_analysis_admission_observer_draft
 from storage.postgres_client import PostgresClient, pg_client
 from storage.pressure_outbox import (
     PressureOutboxContractError,
@@ -161,9 +164,13 @@ class PressureRadarManifestRepository:
         *,
         pg: PostgresClient | None = None,
         outbox_repository: PressureOutboxRepository | None = None,
+        observer_export_repository: ObserverExportOutboxRepository | None = None,
     ) -> None:
         self._pg = pg or pg_client
         self._outbox = outbox_repository or PressureOutboxRepository(pg=self._pg)
+        self._observer_export = observer_export_repository
+        if pg is None and observer_export_repository is None:
+            self._observer_export = ObserverExportOutboxRepository(pg=self._pg)
 
     @property
     def is_available(self) -> bool:
@@ -220,7 +227,8 @@ class PressureRadarManifestRepository:
             )
             existing_event = await conn.fetchrow(
                 """
-                SELECT payload_hash, transition, manifest_id, outbox_event_id
+                SELECT payload_hash, payload, transition, manifest_id,
+                       outbox_event_id, observed_at_utc
                 FROM pressure_radar_events
                 WHERE deployment_id = $1 AND event_id = $2
                 FOR UPDATE
@@ -299,6 +307,16 @@ class PressureRadarManifestRepository:
                 event_manifest_id,
                 envelope.event_id if envelope else None,
             )
+            if ready_manifest is not None and self._observer_export is not None:
+                source_commit_sha = str(data.get("commit_sha") or "").strip() or None
+                await self._observer_export.append_in_transaction(
+                    conn,
+                    strategy_analysis_admission_observer_draft(
+                        ready_manifest,
+                        occurred_at_utc=evaluation.observed_at_utc,
+                        source_commit_sha=source_commit_sha,
+                    ),
+                )
             return DurablePressureRadarResult(
                 transition=ingest_result.transition,
                 manifest=ingest_result.manifest,
@@ -324,6 +342,23 @@ class PressureRadarManifestRepository:
         )
         if outbox_event_id is not None and envelope is None:
             raise PressureRadarPersistenceIntegrityError("PRESSURE_RADAR_OUTBOX_REFERENCE_MISSING")
+        if manifest is not None and manifest.status == "ANALYSIS_READY" and self._observer_export is not None:
+            observed_at = _row_value(event_row, "observed_at_utc")
+            if not isinstance(observed_at, datetime):
+                raise PressureRadarPersistenceIntegrityError("PRESSURE_RADAR_EVENT_CLOCK_MISSING")
+            source_payload = _json_object(
+                _row_value(event_row, "payload"),
+                error="PRESSURE_RADAR_EVENT_PAYLOAD_INVALID",
+            )
+            source_commit_sha = str(source_payload.get("commit_sha") or "").strip() or None
+            await self._observer_export.append_in_transaction(
+                conn,
+                strategy_analysis_admission_observer_draft(
+                    manifest,
+                    occurred_at_utc=observed_at,
+                    source_commit_sha=source_commit_sha,
+                ),
+            )
         return DurablePressureRadarResult(
             transition=str(_row_value(event_row, "transition") or "RADAR_OBSERVED"),
             manifest=manifest,

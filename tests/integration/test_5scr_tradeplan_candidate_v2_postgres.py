@@ -22,6 +22,7 @@ from contracts.strategy_5scr_tradeplan_candidate_v2 import (
     TradePlanCandidateBuildEvidenceV2,
     canonical_hash_v1,
 )
+from storage.observer_export_outbox import ObserverExportOutboxRepository
 from storage.strategy_5scr_directional_thesis_v1_repository import _context_from_row
 from storage.strategy_5scr_execution_box_v1_repository import (
     BOX_TABLE as P5_BOX_TABLE,
@@ -66,6 +67,12 @@ _RAW_BASE = 600_000_000_000_000_000
 _DECISION = datetime(2026, 8, 13, 8, 0, tzinfo=UTC)
 _CANDIDATE_TRIGGER = "trg_strategy_5scr_tradeplan_candidates_v2_guard"
 _EVALUATION_TRIGGER = "trg_strategy_5scr_tradeplan_candidate_evaluations_v2_immutable"
+
+
+class _FailAfterObserverAppend(ObserverExportOutboxRepository):
+    async def append_in_transaction(self, connection: Any, draft: Any, **kwargs: Any) -> Any:
+        await super().append_in_transaction(connection, draft, **kwargs)
+        raise RuntimeError("injected failure after observer append")
 
 
 class _BarrierConnection:
@@ -658,6 +665,57 @@ async def test_buy_ready_retry_restart_concurrency_and_no_downstream_side_effect
         assert len(await restarted.load_history(lifecycle_id)) == 1
         assert len(await restarted.load_evaluations(box.execution_box_id)) == 1
         assert await _side_effect_counts(postgres) == before
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+async def test_tradeplan_evaluation_and_canonical_observation_are_atomic(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id, thesis, box, context = await _seed_parent(postgres)
+    evidence = _build_evidence(
+        thesis,
+        box,
+        context,
+        request=f"observer-export-{lifecycle_id}",
+    )
+    export = ObserverExportOutboxRepository(pg=cast(Any, postgres))
+    failing = Strategy5SCRTradePlanCandidateV2Repository(
+        cast(Any, postgres),
+        observer_export_repository=_FailAfterObserverAppend(pg=cast(Any, postgres)),
+    )
+    before = await _side_effect_counts(postgres)
+    try:
+        await _insert_target_cohort(postgres, evidence)
+        with pytest.raises(RuntimeError, match="after observer append"):
+            await failing.process_evidence(evidence)
+
+        assert await failing.load_active(box.execution_box_id) is None
+        assert await failing.load_evaluations(box.execution_box_id) == ()
+        assert await export.read_stream(f"analysis-lifecycle:{lifecycle_id}") == ()
+
+        repository = Strategy5SCRTradePlanCandidateV2Repository(
+            cast(Any, postgres),
+            observer_export_repository=export,
+        )
+        result = await repository.process_evidence(evidence)
+        replay = await repository.process_evidence(evidence)
+        evaluations = await repository.load_evaluations(box.execution_box_id)
+        rows = await export.read_stream(f"analysis-lifecycle:{lifecycle_id}")
+
+        assert result.status == "PERSISTED"
+        assert replay.status == "DUPLICATE"
+        assert len(evaluations) == 1
+        assert len(rows) == 1
+        body = rows[0].envelope.payload.body
+        assert body["decision_id"] == evaluations[0].evaluation_id
+        assert body["decision"] == evaluations[0].decision
+        assert tuple(body["reason_codes"]) == evaluations[0].reason_codes
+        assert body["reason_code"] == evaluations[0].reason_codes[0]
+        assert rows[0].envelope.authority.authority_class == "CANONICAL_DECISION"
+        assert rows[0].envelope.safety.observer_can_mutate_source is False
+        after = await _side_effect_counts(postgres)
+        assert after == before
     finally:
         await _cleanup(postgres, lifecycle_id)
 
