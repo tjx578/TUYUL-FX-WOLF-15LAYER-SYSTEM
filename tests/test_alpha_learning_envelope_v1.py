@@ -481,6 +481,24 @@ def test_reference_parser_rejects_noncanonical_or_unsafe_bytes() -> None:
         parse_alpha_learning_envelope_v1(valid[:-1] + b',"x":NaN}')
 
 
+@pytest.mark.parametrize(
+    "timestamp_alias",
+    [
+        b"2026-08-24T09:00:00.10000Z",
+        b"2026-08-24T09:00:00.100000+00:00",
+    ],
+)
+def test_reference_parser_rejects_datetime_aliases_of_signed_value(
+    timestamp_alias: bytes,
+) -> None:
+    valid = _stored_contract_bytes(FIXTURE_ROOT / "positive" / "alpha_decision.canonical.json")
+    mutated = valid.replace(b"2026-08-24T09:00:00.100000Z", timestamp_alias, 1)
+
+    assert mutated != valid
+    with pytest.raises(ValueError, match="typed canonical form"):
+        parse_alpha_learning_envelope_v1(mutated)
+
+
 def test_required_false_invariants_do_not_coerce_integer_zero() -> None:
     raw = json.loads(_stored_contract_bytes(FIXTURE_ROOT / "positive" / "alpha_decision.canonical.json"))
     raw["safety"]["can_execute"] = 0

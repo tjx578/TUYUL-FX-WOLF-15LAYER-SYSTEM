@@ -874,6 +874,8 @@ def parse_alpha_learning_envelope_v1(raw: bytes | str) -> UntrustedAlphaLearning
     if canonical_alpha_learning_json_bytes(parsed) != encoded:
         raise ValueError("learning envelope bytes are not canonical WLA-01 JSON")
     envelope = AlphaLearningEnvelopeV1.model_validate_json(encoded)
+    if canonical_alpha_learning_json_bytes(envelope) != encoded:
+        raise ValueError("learning envelope bytes do not match the typed canonical form")
     return UntrustedAlphaLearningEnvelopeV1(trust_status="UNTRUSTED", envelope=envelope)
 
 

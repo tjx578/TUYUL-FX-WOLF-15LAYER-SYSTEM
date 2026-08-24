@@ -1,0 +1,158 @@
+completion_receipt:
+  schema: "wolf15.wla01.completion-receipt.v1"
+  receipt_id: "WLA01-COMPLETE-20260824-001"
+  measured_at_utc: "2026-08-24T15:09:44.805Z"
+
+  evidence_class_separation:
+    wla_00_ratification: "PASS"
+    wla_01_governance_decision: "PASS"
+    governance_decision_meaning: "CONTRACT_ONLY_AUTHORIZATION"
+    implementation_completion_inferred_from_governance: false
+    implementation_completion_established_by_this_receipt: true
+
+  governance_evidence:
+    governance_mode: "SINGLE_OWNER_BOOTSTRAP"
+    wla_00_exception_id: "WLA00-EXC-001"
+    wla_01_decision_id: "df07182d-215c-4c49-ae49-f3c94d0c0951"
+    owner_attestation_commit: "a66cc3d068fe44296e301b3d4f4d661f8e8886da"
+    owner_attestation_verified: true
+    owner_attestation_reason: "valid"
+    authenticated_principal: "tjx578"
+    authenticated_principal_id: "221953664"
+    signed_evidence_commit: "87a3ba3338d2ff66b543051b8c8d8e76fdc247e1"
+    decision_record_commit: "d0f4487101604cded4ddce0e69c0cdaa36ae2b05"
+
+  authorization_timing:
+    contract_implementation_existed_at_signed_evidence_commit: true
+    post_decision_change: "TYPED_CANONICAL_SECURITY_FIX_AND_TEST_COVERAGE"
+    post_decision_change_within_contract_only_scope: true
+    scope_expansion_detected: false
+    replacement_wla_01_ratification_required: false
+    wla_00_exception_valid_through_completion: true
+    wla_00_exception_state_after_completion: "EXPIRED_CONSUMED"
+
+  completion_target:
+    repository: "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM"
+    branch: "codex/wla-01-contract-only"
+    exact_wolf15_base_sha: "7ff2a9194b22e185b35dc61574c61628ba404939"
+    verification_base_commit: "d0f4487101604cded4ddce0e69c0cdaa36ae2b05"
+    completion_commit_sha: "TO_BE_BOUND_BY_PUBLICATION_COMMIT"
+    security_snapshot_digest: "codex-security-snapshot/v1:sha256:77d92a6fed34cfd99512674e441d087c6c5f815fefc2d205aa67fde8a4d15f24"
+
+  implementation_artifacts:
+    - path: "contracts/alpha_learning_envelope_v1.py"
+      sha256: "02b81c7f80205710b2dc6b40674191210c98665ced664505ff0671a86f588a4d"
+      role: "TYPED_CONTRACT_CANONICALIZATION_SIGNATURE_AUTHORITY_POLICY"
+    - path: "schemas/alpha_learning_envelope_v1.schema.json"
+      sha256: "9d542372b7e8dbd01756110bbeb83833a7e2d1b630eb8fec54e4627ec87dfa6f"
+      role: "CLOSED_DRAFT_2020_12_SCHEMA"
+    - path: "tests/test_alpha_learning_envelope_v1.py"
+      sha256: "74567b3e574b8bdf576220cacfb1d8cb6467dbfe3d5cb9f207ccfdf1cb43a8df"
+      role: "CONTRACT_SERIALIZATION_SIGNATURE_AUTHORITY_NEGATIVE_TESTS"
+    - path: "tests/test_alpha_learning_envelope_v1_fuzz.py"
+      sha256: "d92e568aa47d8e1b1fa1a8d0cb0171e315c96f99f9865abb41de0c6d6e88c039"
+      role: "DETERMINISTIC_FAIL_CLOSED_FUZZ_TESTS"
+    - path: "tests/wla01_contract/fixture_factory.py"
+      sha256: "53b1af1ac97dba925e5ceb7b6b1146ba99965426cba31d30df1fbdfd68a33e91"
+      role: "DETERMINISTIC_FIXTURE_GENERATOR_TEST_KEYS_ONLY"
+    - path: "tests/fixtures/wla01/manifest.json"
+      sha256: "f8848e0a2b9a4b135e5f83d925dd4ff5be0702d25809e1e1e5ce2dfd7a5a9035"
+      role: "DETERMINISTIC_HASH_MANIFEST"
+
+  security_fix_closure:
+    outcome: "FIXED"
+    vulnerable_path: "SEMANTICALLY_EQUIVALENT_DATETIME_ALIAS_REUSED_VALID_SIGNATURE"
+    original_trigger: "2026-08-24T09:00:00.100000Z -> 2026-08-24T09:00:00.10000Z"
+    original_result: "ACCEPTED"
+    enforced_invariant: "RAW_BYTES_MUST_EQUAL_TYPED_MODEL_CANONICAL_BYTES_BEFORE_UNTRUSTED"
+    trigger_after_fix: "REJECTED_TYPED_CANONICAL_FORM"
+    alternate_trigger: "Z -> +00:00"
+    alternate_trigger_after_fix: "REJECTED_TYPED_CANONICAL_FORM"
+    legitimate_signed_control: "ACCEPTED"
+
+  verification_gates:
+    deterministic_fixture_generation:
+      command: "python -m tests.wla01_contract.fixture_factory"
+      result: "PASS"
+    contract_and_fuzz_tests:
+      command: "python -m pytest -q tests/test_alpha_learning_envelope_v1.py tests/test_alpha_learning_envelope_v1_fuzz.py"
+      result: "PASS"
+      passed: 37
+    prior_art_observer_regressions:
+      command: "python -m pytest -q tests/test_observer_telemetry_export_v1.py tests/test_observer_export_outbox.py"
+      result: "PASS"
+      passed: 22
+    ruff:
+      result: "PASS"
+    pyright:
+      result: "PASS"
+      errors: 0
+      warnings: 0
+    json_schema_draft_2020_12:
+      result: "PASS"
+    forbidden_scope:
+      result: "PASS"
+      runtime_registration: false
+      database_or_outbox: false
+      network_or_dispatcher: false
+      broker_or_ea: false
+      deployment: false
+      production_private_key: false
+      other_repository_mutation: false
+
+  deterministic_fuzz_evidence:
+    seed_decimal: 539363364
+    mutation_cases: 4096
+    mutation_outcomes:
+      structural_reject: 4084
+      authentication_reject: 12
+      accepted: 0
+    mutation_evidence_sha256: "8122eb71a174c5b745bb219b4ea274a62f2dbe4138b5e72086554901905e51e8"
+    arbitrary_byte_cases: 1024
+    arbitrary_byte_outcomes:
+      structural_reject: 1024
+      accepted: 0
+    arbitrary_byte_evidence_sha256: "ea6960fccf63bb86a76eaeb9d68072079b7c43f0abe3babb0e7b66eb0dde4614"
+
+  security_diff_scan:
+    scan_id: "2cf8ea68-42ff-49f0-abdc-f1d70bdb466b"
+    status: "complete"
+    coverage: "complete"
+    reportable_findings: 0
+    total_tokens: 3160743
+    input_tokens: 3153293
+    cached_input_tokens: 3124736
+    artifacts:
+      scan_manifest_sha256: "a0f7e7f5729189a949cd517d803a91032e88d2c35488d583204511703f876365"
+      findings_sha256: "a61169f3812a8337e986f9a34413aaa4a8bf9636c5477c4e691b00513d028f5c"
+      coverage_sha256: "d841aa76ceb453a9532f753144087a55efe1487a1490d05d4c2d90e15924bf21"
+      report_sha256: "9f62bc859378ef679d030206d6d2dd883236e181e4a39bfba0c2e5da0a59c3ee"
+    tac_advisory:
+      status: "not_granted"
+      grants: []
+      gated_scan: false
+
+  definition_of_done:
+    schema: "PASS"
+    typed_contract: "PASS"
+    canonicalization: "PASS"
+    signature_policy: "PASS"
+    authority_policy: "PASS"
+    forbidden_fields: "PASS"
+    negative_tests: "PASS"
+    deterministic_hash_tests: "PASS"
+    deterministic_fuzz_tests: "PASS"
+    security_gate: "PASS"
+    final: "PASS"
+
+  canonical_status_after_receipt:
+    wla_00_ratification: "PASS"
+    wla_01_governance_decision: "PASS"
+    wla_01_scope: "CONTRACT_ONLY"
+    wla_01_implementation: "PASS"
+    wla_01_definition_of_done: "PASS"
+    wla_02: "NOT_STARTED"
+    wla_02_authorized: false
+    runtime_mutation: "NONE"
+    new_repository_created: false
+    gate_p0_a: "NOT_EVALUATED"
