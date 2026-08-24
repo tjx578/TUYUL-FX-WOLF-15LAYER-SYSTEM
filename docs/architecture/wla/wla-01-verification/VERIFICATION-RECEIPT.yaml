@@ -1,0 +1,129 @@
+receipt_schema: "wolf15.wla01.verification-receipt.v1"
+receipt_id: "WLA01-VERIFY-20260824-001"
+measured_at_utc: "2026-08-24T13:25:39.564Z"
+
+stage:
+  name: "WLA-01"
+  status: "AWAITING_HUMAN_DECISION"
+  authorized_scope: "CONTRACT_ONLY"
+  runtime_mutation: "NONE"
+  wla_02_status: "NOT_STARTED"
+
+authority:
+  governance_mode: "SINGLE_OWNER_BOOTSTRAP"
+  wla_00_ratification_id: "de760418-7c42-4cfc-b1cf-a8f472aefba4"
+  wla_00_owner_attestation_commit: "726f368aaa5f549348674be8eac0a29578412b40"
+  single_owner_exception_id: "WLA00-EXC-001"
+  constitutional_owner: "Dwi Kelana Putra (KELANA TJX)"
+  github_principal: "tjx578"
+
+source:
+  repository: "tuyul-ai-agi/TUYUL-FX-WOLF-15LAYER-SYSTEM"
+  branch: "codex/wla-01-contract-only"
+  exact_base_sha: "7ff2a9194b22e185b35dc61574c61628ba404939"
+  candidate_evidence_commit_sha: "TO_BE_BOUND_BY_OWNER_DECISION"
+
+artifact_integrity:
+  canonicalization: "sorted path + NUL + lowercase sha256, joined by LF, UTF-8 without BOM"
+  core_bundle_sha256: "6704d174f55e9b03acafec22e51bc1cef187544f6ecc550d923c93139d040fd5"
+  fixture_tree_sha256: "6a86689d0ca96cf54c1d03d51062ac5706c2f0e1f7cee1ee404b704f455dbcce"
+  fixture_file_count: 28
+  core_artifacts:
+    - path: "requirements.txt"
+      sha256: "b502e615563b9983f2d08affd15f5f035284c21c2d089909381bc1c308c4e7de"
+    - path: "contracts/alpha_learning_envelope_v1.py"
+      sha256: "70212389befcf63dd194fdf129bf7a67b513cbb913c5e2c11646c354ff197cb6"
+    - path: "schemas/alpha_learning_envelope_v1.schema.json"
+      sha256: "9d542372b7e8dbd01756110bbeb83833a7e2d1b630eb8fec54e4627ec87dfa6f"
+    - path: "tests/wla01_contract/fixture_factory.py"
+      sha256: "53b1af1ac97dba925e5ceb7b6b1146ba99965426cba31d30df1fbdfd68a33e91"
+    - path: "tests/test_alpha_learning_envelope_v1.py"
+      sha256: "7c69e9a6d309d70d65c42c660ee0bb6de92b8214a80edb8e8ab61b22fe1e0290"
+    - path: "tests/fixtures/wla01/manifest.json"
+      sha256: "f8848e0a2b9a4b135e5f83d925dd4ff5be0702d25809e1e1e5ce2dfd7a5a9035"
+    - path: "docs/architecture/wla/WLA-01-CHARTER.md"
+      sha256: "ad25a273e98d873c37ebafb05bc580c2ad1231b6778b8b4314ef726ee6d852bc"
+
+security_closure:
+  original_scan_id: "1ca4fb0d-5982-47a3-99ac-a8905e43ada8"
+  original_finding_id: "csf_ddb609272cd160150e255020"
+  original_occurrence_id: "occ_0f4d233d0a20e78bdff11d40"
+  original_reproducer: "FORGED_ACCEPTED=true"
+  remediation_scan_id: "e01e3c8a-41c4-4613-8441-837410c0b151"
+  remediation_scan_status: "completed"
+  remediation_snapshot_digest: "codex-security-snapshot/v1:sha256:c1ff51ccdeb4128cea0cd312a744838bf59c69ce33bd57af6334f2948ea27551"
+  coverage: "complete"
+  reportable_findings: 0
+  finding_state: "CLOSED_VERIFIED"
+  scan_token_usage:
+    total_tokens: 2275768
+    input_tokens: 2270489
+    cached_input_tokens: 2254336
+  sealed_artifacts:
+    - name: "scan-manifest.json"
+      sha256: "4d86f6a701038c612ea8cd218111e8756cdc9a4b154cbb54a610db82f785e20d"
+    - name: "findings.json"
+      sha256: "97caf3befa414c2d89e2be5355b8cd92ae0c6a2f9702b9c0846b7fd62f26b4e3"
+    - name: "coverage.json"
+      sha256: "dbeb8337d785731b3e7d895229ed9404ee29222d665c3e6494466bb6697e141c"
+    - name: "report.md"
+      sha256: "68b94f6a428a23397a0e91f8e08793a6d201bf1d8c567cb00bfd233a297aeaa5"
+
+verification_gates:
+  wla01_contract_tests:
+    command: "python -m pytest -q tests/test_alpha_learning_envelope_v1.py"
+    result: "PASS"
+    passed: 33
+  prior_art_regression_tests:
+    command: "python -m pytest -q tests/test_observer_telemetry_export_v1.py tests/test_observer_export_outbox.py"
+    result: "PASS"
+    passed: 22
+  ruff:
+    result: "PASS"
+  pyright:
+    result: "PASS"
+    errors: 0
+    warnings: 0
+  json_schema_draft_2020_12:
+    result: "PASS"
+  fixture_reproduction:
+    command: "python -m tests.wla01_contract.fixture_factory"
+    result: "PASS"
+  exploit_reproduction:
+    structural_status: "UNTRUSTED"
+    forged_accepted: false
+    rejection_reason: "producer signature is invalid"
+  legitimate_control:
+    unauthenticated_status: "UNTRUSTED"
+    valid_signature: "ACCEPTED"
+  dependency_check:
+    cryptography_version: "46.0.7"
+    declared_range_satisfied: true
+    pip_check: "ADVISORY_PRE_EXISTING_ENVIRONMENT_CONFLICT"
+    advisory: "Unrelated pre-existing OpenTelemetry package version conflicts; no WLA-01 dependency conflict was reported."
+
+required_outcomes:
+  forged_accepted: false
+  unauthenticated_acceptance: "IMPOSSIBLE_WITHIN_PUBLIC_CONTRACT_API"
+  valid_signature: "ACCEPTED"
+  unknown_revoked_wrong_domain: "REJECTED"
+  reportable_findings: 0
+  runtime_mutation: "NONE"
+
+repository_boundary:
+  repository_mutated_by_this_stage:
+    - "TUYUL-FX-WOLF-15LAYER-SYSTEM-wla01 isolated worktree"
+  repositories_not_mutated_by_this_stage:
+    - "TUYUL-KARTEL-FX-AGI-HYBRID"
+    - "TUYUL-FX-KNOWLEDGE-VAULT-AGI"
+    - "TUYUL-KARTEL-FX-JOURNAL-VAULT-AGI"
+    - "TUYUL-KARTEL-FX-KNOWLEDGE-VAULT-AGI"
+  new_repository_created: false
+  network_or_runtime_path_added: false
+
+decision_gate:
+  evidence_ready_for_human_review: true
+  human_verdict_recorded: false
+  wla_01_pass: false
+  commit_push_gate: "SECURITY_REVERIFICATION_PASSED"
+  pull_request_authorized: false
