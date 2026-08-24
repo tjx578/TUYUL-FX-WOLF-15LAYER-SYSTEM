@@ -5,6 +5,9 @@ Tests for agents.router_engine — registry, routing, scoring, orchestration.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -572,7 +575,7 @@ class TestCLIRouteOnly:
         out_file = tmp_path / "route_result.json"
         result = subprocess.run(
             [
-                "python",
+                sys.executable,
                 "-m",
                 "agents.router_engine",
                 "--registry",
@@ -587,6 +590,7 @@ class TestCLIRouteOnly:
             capture_output=True,
             text=True,
             timeout=30,
+            shell=False,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         data = json.loads(out_file.read_text(encoding="utf-8"))
@@ -600,7 +604,7 @@ class TestCLIRouteOnly:
         out_file = tmp_path / "exec_result.json"
         result = subprocess.run(
             [
-                "python",
+                sys.executable,
                 "-m",
                 "agents.router_engine",
                 "--registry",
@@ -613,8 +617,48 @@ class TestCLIRouteOnly:
             capture_output=True,
             text=True,
             timeout=30,
+            shell=False,
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"
         data = json.loads(out_file.read_text(encoding="utf-8"))
         assert "execution_status" in data
         assert "state_history" in data
+
+    def test_cli_route_only_does_not_require_python_on_path(self, tmp_path: Path) -> None:
+        """Run the real CLI with no resolvable ``python`` command on PATH."""
+        import subprocess
+
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        env = os.environ.copy()
+        env["PATH"] = str(empty_bin)
+        assert shutil.which("python", path=env["PATH"]) is None
+
+        out_file = tmp_path / "route_result_without_python_alias.json"
+        argv = [
+            sys.executable,
+            "-m",
+            "agents.router_engine",
+            "--registry",
+            str(REGISTRY_PATH),
+            "--objective",
+            str(SAMPLE_OBJECTIVE_PATH),
+            "--route-only",
+            "--pretty",
+            "--out",
+            str(out_file),
+        ]
+        assert argv[0] == sys.executable
+
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            shell=False,
+            env=env,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        data = json.loads(out_file.read_text(encoding="utf-8"))
+        assert "selected_topology" in data
+        assert "selected_modes" in data
