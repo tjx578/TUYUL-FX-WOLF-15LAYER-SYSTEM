@@ -31,6 +31,11 @@ MAX_DATABASE_ROWS: Final = 1_000
 HISTORY_DAYS: Final = 7
 EXPECTED_AUDIT_ROLE: Final = "wolf15_auditor"
 MAX_RUNTIME_AGE_SECONDS: Final = 30
+EXIT_EXECUTED_PASS: Final = 0
+EXIT_EXECUTED_INCOMPLETE: Final = 2
+EXIT_EXECUTED_BLOCKED: Final = 3
+EXIT_EXECUTION_ERROR: Final = 4
+EXIT_CONFIGURATION_ERROR: Final = 5
 
 AUDIT_SESSION_SQL: Final = """
     SELECT current_user AS current_role,
@@ -163,6 +168,42 @@ def _ledger_holds(row: Mapping[str, Any] | None) -> bool:
     return True
 
 
+def _ledger_by_command(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    ledger: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        command_id = row.get("command_id")
+        if command_id is None:
+            continue
+        key = str(command_id)
+        if not key:
+            continue
+        ledger.setdefault(key, []).append(row)
+    return ledger
+
+
+def _exact_owner_holds(
+    mirror: Mapping[str, Any],
+    ledger: Mapping[str, list[Mapping[str, Any]]],
+) -> bool:
+    command_id = mirror.get("command_id")
+    if command_id is None:
+        return False
+    candidates = ledger.get(str(command_id), [])
+    return len(candidates) == 1 and _ledger_holds(candidates[0])
+
+
+def _is_current_entity(entity: Mapping[str, Any]) -> bool:
+    return "CURRENT" in entity.get("sources", set())
+
+
+def _matched_classification(*, entity: Mapping[str, Any], attributed: bool) -> str:
+    if _is_current_entity(entity):
+        return "ACTIVE_ATTRIBUTED" if attributed else "ACTIVE_AMBIGUOUS"
+    return "MATCHED" if attributed else "AMBIGUOUS"
+
+
 def _classify_entities(
     *,
     direct: Mapping[tuple[str, int], dict[str, Any]],
@@ -170,7 +211,7 @@ def _classify_entities(
     ledger_rows: Sequence[Mapping[str, Any]],
     window_from: datetime,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    ledger = {str(row.get("command_id")): row for row in ledger_rows}
+    ledger = _ledger_by_command(ledger_rows)
     broker_to_database: list[dict[str, Any]] = []
     database_to_broker: list[dict[str, Any]] = []
 
@@ -178,16 +219,18 @@ def _classify_entities(
         matches = mirrors.get(key, [])
         classification: str
         if len(matches) > 1:
-            classification = "AMBIGUOUS"
+            classification = _matched_classification(entity=entity, attributed=False)
         elif len(matches) == 1:
             mirror = matches[0]
             symbol_matches = _normalized_symbol(mirror.get("symbol")) == entity["symbol"]
-            command = ledger.get(str(mirror.get("command_id")))
-            classification = "MATCHED" if symbol_matches and _ledger_holds(command) else "AMBIGUOUS"
+            classification = _matched_classification(
+                entity=entity,
+                attributed=symbol_matches and _exact_owner_holds(mirror, ledger),
+            )
+        elif _is_current_entity(entity):
+            classification = "ACTIVE_UNATTRIBUTED"
         elif entity.get("observed_time") is not None and entity["observed_time"] < window_from:
-            classification = "PREEXISTING"
-        elif entity.get("magic") == 0:
-            classification = "MANUAL_OR_EXTERNAL"
+            classification = "HISTORICAL_PREEXISTING"
         else:
             classification = "UNATTRIBUTED"
         broker_to_database.append(
@@ -204,17 +247,22 @@ def _classify_entities(
         direct_entity = direct.get(key)
         for row in rows:
             if len(rows) > 1:
-                classification = "AMBIGUOUS"
+                classification = (
+                    _matched_classification(entity=direct_entity, attributed=False)
+                    if direct_entity is not None
+                    else "AMBIGUOUS"
+                )
             elif direct_entity is not None:
                 symbol_matches = _normalized_symbol(row.get("symbol")) == direct_entity["symbol"]
-                classification = "MATCHED" if symbol_matches and _ledger_holds(
-                    ledger.get(str(row.get("command_id")))
-                ) else "AMBIGUOUS"
+                classification = _matched_classification(
+                    entity=direct_entity,
+                    attributed=symbol_matches and _exact_owner_holds(row, ledger),
+                )
             else:
                 last_seen = row.get("last_seen_at")
                 terminal_at = row.get("command_terminal_at")
                 classification = (
-                    "PREEXISTING"
+                    "HISTORICAL_PREEXISTING"
                     if isinstance(last_seen, datetime) and last_seen < window_from and terminal_at is not None
                     else "ORPHAN"
                 )
@@ -458,13 +506,20 @@ def reconcile_snapshots(
     b2d_counts = Counter(item["classification"] for item in broker_to_database)
     d2b_counts = Counter(item["classification"] for item in database_to_broker)
     hard_mismatches = sum(
-        b2d_counts[name] + d2b_counts[name] for name in ("ORPHAN", "UNATTRIBUTED", "AMBIGUOUS")
+        b2d_counts[name] + d2b_counts[name]
+        for name in (
+            "ORPHAN",
+            "UNATTRIBUTED",
+            "AMBIGUOUS",
+            "ACTIVE_UNATTRIBUTED",
+            "ACTIVE_AMBIGUOUS",
+        )
     )
     review_items = b2d_counts["MANUAL_OR_EXTERNAL"] + d2b_counts["MANUAL_OR_EXTERNAL"]
 
     if not broker_measured or not database_measured or not zero_mutation:
         reconciliation = "NOT_MEASURED"
-        gate = "NOT_EXECUTED" if not broker_measured or not database_measured else "FAIL_CLOSED"
+        gate = "NOT_EXECUTED" if not broker_measured or not database_measured else "EXECUTION_ERROR"
     elif account_state == "MATCHED" and hard_mismatches:
         reconciliation = "ACCOUNT_BOUND_WITH_ENTITY_MISMATCH"
         gate = "EXECUTED_BLOCKED"
@@ -473,7 +528,7 @@ def reconcile_snapshots(
         gate = "EXECUTED_INCOMPLETE"
     elif account_state == "MATCHED":
         reconciliation = "MATCHED"
-        gate = "PASS"
+        gate = "EXECUTED_PASS"
     elif account_state == "INCOMPLETE_ACCOUNT_IDENTIFIER" and hard_mismatches:
         reconciliation = "INCOMPLETE_ACCOUNT_IDENTIFIER_WITH_ENTITY_MISMATCH"
         gate = "EXECUTED_BLOCKED"
@@ -647,6 +702,16 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) ->
     )
 
 
+def exit_code_for_gate(gate: object) -> int:
+    return {
+        "EXECUTED_PASS": EXIT_EXECUTED_PASS,
+        "EXECUTED_INCOMPLETE": EXIT_EXECUTED_INCOMPLETE,
+        "EXECUTED_BLOCKED": EXIT_EXECUTED_BLOCKED,
+        "EXECUTION_ERROR": EXIT_EXECUTION_ERROR,
+        "NOT_EXECUTED": EXIT_EXECUTION_ERROR,
+    }.get(str(gate), EXIT_EXECUTION_ERROR)
+
+
 def main(repo_root: Path | None = None) -> int:
     root = repo_root or Path(__file__).resolve().parents[2]
     dsn = os.getenv("AUDIT_DATABASE_URL", "")
@@ -663,7 +728,7 @@ def main(repo_root: Path | None = None) -> int:
             "error_type": "AUDIT_DATABASE_URL_NOT_PRESENT",
         }
         print(json.dumps(report, indent=2, sort_keys=True))
-        return 2
+        return EXIT_CONFIGURATION_ERROR
     try:
         account_binding.decode_secret_key(os.getenv(account_binding.KEY_ENV, ""))
         account_binding.validate_key_id(os.getenv(account_binding.KEY_ID_ENV, ""))
@@ -680,11 +745,24 @@ def main(repo_root: Path | None = None) -> int:
             "error_type": exc.code,
         }
         print(json.dumps(report, indent=2, sort_keys=True))
-        return 2
+        return EXIT_CONFIGURATION_ERROR
     config_path = Path.home() / ".codex" / "config.toml"
-    report = asyncio.run(run_reconciliation(dsn=dsn, repo_root=root, config_path=config_path))
+    try:
+        report = asyncio.run(run_reconciliation(dsn=dsn, repo_root=root, config_path=config_path))
+    except Exception as exc:  # noqa: BLE001
+        report = {
+            "schema_version": "wolf15.channel-b-reconciliation.v2",
+            "AUDIT_DATABASE_URL": "PRESENT",
+            "DATABASE_MIRROR_STATE": "NOT_MEASURED",
+            "DIRECT_BROKER_STATE": "NOT_MEASURED",
+            "BROKER_RECONCILIATION": "NOT_EXECUTED",
+            "B-B16": "EXECUTION_ERROR",
+            "EXECUTION_READY": False,
+            "PRODUCTION_READY": False,
+            "error_type": type(exc).__name__,
+        }
     print(json.dumps(report, default=str, indent=2, sort_keys=True))
-    return 0 if report["B-B16"] in {"PASS", "EXECUTED_INCOMPLETE", "EXECUTED_BLOCKED"} else 1
+    return exit_code_for_gate(report.get("B-B16"))
 
 
 if __name__ == "__main__":

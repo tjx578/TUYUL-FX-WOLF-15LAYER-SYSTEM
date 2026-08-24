@@ -9,7 +9,7 @@ CHANNEL_B_LOCAL_IMPLEMENTATION=PASS_REPORTED
 ACCOUNT_BINDING_CONTRACT=w15ab:v1
 DIRECT_IDENTIFIER=HMAC_SHA256_KEY_VERSIONED
 DATABASE_SIDE_IDENTIFIER=CONTRACT_ENFORCED_NOT_PROVISIONED
-B-B16_SYNTHETIC=PASS
+B-B16_SYNTHETIC=EXECUTED_PASS
 B-B16_LIVE=INCOMPLETE_ACCOUNT_IDENTIFIER
 EXECUTION_READY=FALSE
 PRODUCTION_READY=FALSE
@@ -342,8 +342,12 @@ read-only audit:
    commands, reports, campaigns, reservations, and broker mirror entities.
 4. Reconcile every deal and historical order in the UTC window against the
    execution ledger and expected correlation identifiers.
-5. Classify each broker entity as `MATCHED`, `MANUAL_OR_EXTERNAL`, `PREEXISTING`,
-   `ORPHAN`, `UNATTRIBUTED`, or `AMBIGUOUS`; do not drop unmatched entities.
+5. Classify current broker entities as `ACTIVE_ATTRIBUTED`,
+   `ACTIVE_UNATTRIBUTED`, or `ACTIVE_AMBIGUOUS`. Age never exempts a current
+   position or pending order from exact-one-owner correlation. Only a closed
+   historical entity outside the audit window may be `HISTORICAL_PREEXISTING`.
+   Preserve `MATCHED`, `ORPHAN`, `UNATTRIBUTED`, and `AMBIGUOUS` for historical
+   and database-to-broker evidence where current-state semantics do not apply.
 6. Compare both directions: database-to-broker and broker-to-database.
 7. Preserve `NOT_MEASURED` for any inaccessible/stale interval, and preserve
    `NOT_EXECUTED` until the comparison actually runs.
@@ -382,9 +386,27 @@ ACCOUNT/PATH/BUILD DRIFT ACROSS CALLS     -> EXECUTED_BLOCKED
 ROLE OR READ-ONLY TRANSACTION MISMATCH    -> STOP
 VIEW ACCESS DENIED OR QUERY TIMEOUT       -> RECORD + STOP
 TRUNCATED OR STALE EVIDENCE               -> NOT_MEASURED
+ACTIVE_UNATTRIBUTED/ACTIVE_AMBIGUOUS      -> EXECUTED_BLOCKED
 ORPHAN/UNATTRIBUTED/AMBIGUOUS ENTITY      -> EXECUTED_BLOCKED
 ANY MUTATION OR BROADER PRIVILEGE NEEDED  -> PROPOSAL ONLY
 ```
+
+### Process exit contract
+
+The JSON report is always written before a verdict exit. Exit code zero means
+only `B-B16=EXECUTED_PASS`; every other outcome is nonzero:
+
+| B-B16/process outcome | Exit code |
+| --- | ---: |
+| `EXECUTED_PASS` | 0 |
+| `EXECUTED_INCOMPLETE` | 2 |
+| `EXECUTED_BLOCKED` | 3 |
+| `EXECUTION_ERROR` or `NOT_EXECUTED` after collection starts | 4 |
+| configuration, usage, or secure-launcher error | 5 |
+
+The PowerShell launcher writes the sanitized child report and propagates the
+child exit code without translating a nonzero reconciliation verdict into
+success.
 
 Even a live B-B16 pass does not authorize Algo Trading, canary execution, EA
 changes, orders, deployment, database mutation, or Gate E approval.

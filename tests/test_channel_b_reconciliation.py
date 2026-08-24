@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import shutil
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from ops.mt5_mcp import account_binding, reconcile
 
@@ -32,13 +37,16 @@ def _payload(records: list[dict[str, object]]) -> dict[str, object]:
 def _broker(
     *,
     positions: list[dict[str, object]] | None = None,
+    orders: list[dict[str, object]] | None = None,
+    history_deals_records: list[dict[str, object]] | None = None,
+    history_orders_records: list[dict[str, object]] | None = None,
     identifier: str = DIRECT_IDENTIFIER,
     server: str = "Broker-Demo",
 ) -> dict[str, object]:
     account = _payload([{"server": "Broker-Demo"}])
-    history_deals = _payload([])
+    history_deals = _payload(history_deals_records or [])
     history_deals["window"] = {"from_utc": WINDOW_FROM.isoformat(), "to_utc": WINDOW_TO.isoformat()}
-    history_orders = _payload([])
+    history_orders = _payload(history_orders_records or [])
     history_orders["window"] = {"from_utc": WINDOW_FROM.isoformat(), "to_utc": WINDOW_TO.isoformat()}
     broker = {
         "tool_surface_exact": True,
@@ -46,7 +54,7 @@ def _broker(
         "snapshots": {
             "mt5_account_get": account,
             "mt5_positions_get": _payload(positions or []),
-            "mt5_orders_get": _payload([]),
+            "mt5_orders_get": _payload(orders or []),
             "mt5_history_deals_get": history_deals,
             "mt5_history_orders_get": history_orders,
         },
@@ -151,7 +159,7 @@ def test_trusted_matching_hmac_identifier_closes_account_binding_only() -> None:
     assert report["account_binding_evidence"]["direct_tool_identity_count"] == 5
     assert report["account_binding_evidence"]["direct_account_identifier_match"] is True
     assert report["BROKER_RECONCILIATION"] == "MATCHED"
-    assert report["B-B16"] == "PASS"
+    assert report["B-B16"] == "EXECUTED_PASS"
     assert report["EXECUTION_READY"] is False
     assert report["PRODUCTION_READY"] is False
 
@@ -280,9 +288,232 @@ def test_ticket_match_is_bidirectional_and_raw_ticket_is_not_reported() -> None:
         window_to=WINDOW_TO,
     )
 
-    assert report["comparison"]["broker_to_database"]["classification_counts"] == {"MATCHED": 1}
-    assert report["comparison"]["database_to_broker"]["classification_counts"] == {"MATCHED": 1}
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
+        "ACTIVE_ATTRIBUTED": 1
+    }
+    assert report["comparison"]["database_to_broker"]["classification_counts"] == {
+        "ACTIVE_ATTRIBUTED": 1
+    }
     assert str(ticket) not in json.dumps(report)
+
+
+@pytest.mark.parametrize(
+    ("broker_collection", "entity_type", "time_field"),
+    [
+        ("positions", "POSITION", "time_msc_utc"),
+        ("orders", "ORDER", "time_setup_msc_utc"),
+    ],
+)
+def test_old_unattributed_active_entity_blocks_regardless_of_age(
+    broker_collection: str,
+    entity_type: str,
+    time_field: str,
+) -> None:
+    entity = {
+        "ticket": 7001,
+        "symbol": "EURUSD",
+        "magic": 42,
+        time_field: (WINDOW_FROM - timedelta(days=30)).isoformat(),
+    }
+    report = reconcile.reconcile_snapshots(
+        database=_database(
+            account_identifier=DIRECT_IDENTIFIER,
+            account_identifier_source=account_binding.DATABASE_SOURCE,
+        ),
+        broker=_broker(**{broker_collection: [entity]}),
+        window_from=WINDOW_FROM,
+        window_to=WINDOW_TO,
+    )
+
+    entities = report["comparison"]["broker_to_database"]["entities"]
+    assert entities == [
+        {
+            "entity_type": entity_type,
+            "entity_fingerprint": reconcile._fingerprint(entity_type, 7001),
+            "symbol": "EURUSD",
+            "sources": ["CURRENT"],
+            "classification": "ACTIVE_UNATTRIBUTED",
+        }
+    ]
+    assert report["BROKER_RECONCILIATION"] == "ACCOUNT_BOUND_WITH_ENTITY_MISMATCH"
+    assert report["B-B16"] == "EXECUTED_BLOCKED"
+
+
+def test_active_entity_with_multiple_owners_is_ambiguous_and_blocked() -> None:
+    ticket = 7002
+    position = {
+        "ticket": ticket,
+        "symbol": "EURUSD",
+        "magic": 42,
+        "time_msc_utc": (WINDOW_TO - timedelta(hours=1)).isoformat(),
+    }
+    command_ids = [
+        "55555555-5555-5555-5555-555555555551",
+        "55555555-5555-5555-5555-555555555552",
+    ]
+    mirror = [
+        {
+            "command_id": command_id,
+            "entity_type": "POSITION",
+            "broker_ticket": ticket,
+            "symbol": "EURUSD",
+            "last_seen_at": WINDOW_TO - timedelta(minutes=5),
+            "command_terminal_at": None,
+        }
+        for command_id in command_ids
+    ]
+    ledger = [
+        {
+            "command_id": command_id,
+            "source_event": "signal_json",
+            "signed_wire_hash_matches": True,
+            "risk_binding_matches": True,
+            "final_signal_binding_matches": True,
+        }
+        for command_id in command_ids
+    ]
+
+    report = reconcile.reconcile_snapshots(
+        database=_database(
+            mirror=mirror,
+            ledger=ledger,
+            account_identifier=DIRECT_IDENTIFIER,
+            account_identifier_source=account_binding.DATABASE_SOURCE,
+        ),
+        broker=_broker(positions=[position]),
+        window_from=WINDOW_FROM,
+        window_to=WINDOW_TO,
+    )
+
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
+        "ACTIVE_AMBIGUOUS": 1
+    }
+    assert report["comparison"]["database_to_broker"]["classification_counts"] == {
+        "ACTIVE_AMBIGUOUS": 2
+    }
+    assert report["B-B16"] == "EXECUTED_BLOCKED"
+
+
+def test_active_entity_with_duplicate_ledger_owners_is_ambiguous_and_blocked() -> None:
+    ticket = 7005
+    command_id = "77777777-7777-7777-7777-777777777777"
+    position = {
+        "ticket": ticket,
+        "symbol": "EURUSD",
+        "magic": 42,
+        "time_msc_utc": (WINDOW_TO - timedelta(minutes=10)).isoformat(),
+    }
+    mirror = [
+        {
+            "command_id": command_id,
+            "entity_type": "POSITION",
+            "broker_ticket": ticket,
+            "symbol": "EURUSD",
+            "last_seen_at": WINDOW_TO - timedelta(minutes=1),
+            "command_terminal_at": None,
+        }
+    ]
+    ledger_owner = {
+        "command_id": command_id,
+        "source_event": "signal_json",
+        "signed_wire_hash_matches": True,
+        "risk_binding_matches": True,
+        "final_signal_binding_matches": True,
+    }
+
+    report = reconcile.reconcile_snapshots(
+        database=_database(
+            mirror=mirror,
+            ledger=[ledger_owner, dict(ledger_owner)],
+            account_identifier=DIRECT_IDENTIFIER,
+            account_identifier_source=account_binding.DATABASE_SOURCE,
+        ),
+        broker=_broker(positions=[position]),
+        window_from=WINDOW_FROM,
+        window_to=WINDOW_TO,
+    )
+
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
+        "ACTIVE_AMBIGUOUS": 1
+    }
+    assert report["B-B16"] == "EXECUTED_BLOCKED"
+
+
+def test_old_active_entity_with_one_valid_owner_is_attributed_once() -> None:
+    ticket = 7003
+    command_id = "66666666-6666-6666-6666-666666666666"
+    position = {
+        "ticket": ticket,
+        "symbol": "EURUSD",
+        "magic": 42,
+        "time_msc_utc": (WINDOW_FROM - timedelta(days=30)).isoformat(),
+    }
+    mirror = [
+        {
+            "command_id": command_id,
+            "entity_type": "POSITION",
+            "broker_ticket": ticket,
+            "symbol": "EURUSD",
+            "last_seen_at": WINDOW_TO - timedelta(minutes=1),
+            "command_terminal_at": None,
+        }
+    ]
+    ledger = [
+        {
+            "command_id": command_id,
+            "created_at": WINDOW_FROM - timedelta(days=30),
+            "terminal_at": WINDOW_TO - timedelta(minutes=1),
+            "source_event": "signal_json",
+            "signed_wire_hash_matches": True,
+            "risk_binding_matches": True,
+            "final_signal_binding_matches": True,
+        }
+    ]
+
+    report = reconcile.reconcile_snapshots(
+        database=_database(
+            mirror=mirror,
+            ledger=ledger,
+            account_identifier=DIRECT_IDENTIFIER,
+            account_identifier_source=account_binding.DATABASE_SOURCE,
+        ),
+        broker=_broker(positions=[position]),
+        window_from=WINDOW_FROM,
+        window_to=WINDOW_TO,
+    )
+
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
+        "ACTIVE_ATTRIBUTED": 1
+    }
+    assert report["comparison"]["database_to_broker"]["classification_counts"] == {
+        "ACTIVE_ATTRIBUTED": 1
+    }
+    assert report["B-B16"] == "EXECUTED_PASS"
+
+
+def test_closed_historical_entity_before_window_is_not_current_state() -> None:
+    ticket = 7004
+    history_order = {
+        "ticket": ticket,
+        "symbol": "EURUSD",
+        "magic": 42,
+        "time_setup_msc_utc": (WINDOW_FROM - timedelta(days=30)).isoformat(),
+    }
+
+    report = reconcile.reconcile_snapshots(
+        database=_database(
+            account_identifier=DIRECT_IDENTIFIER,
+            account_identifier_source=account_binding.DATABASE_SOURCE,
+        ),
+        broker=_broker(history_orders_records=[history_order]),
+        window_from=WINDOW_FROM,
+        window_to=WINDOW_TO,
+    )
+
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
+        "HISTORICAL_PREEXISTING": 1
+    }
+    assert report["B-B16"] == "EXECUTED_PASS"
 
 
 def test_unavailable_broker_evidence_never_becomes_measured_empty_or_zero() -> None:
@@ -333,7 +564,9 @@ def test_unmatched_entities_remain_explicit_and_block_the_gate() -> None:
         window_to=WINDOW_TO,
     )
 
-    assert report["comparison"]["broker_to_database"]["classification_counts"] == {"UNATTRIBUTED": 1}
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
+        "ACTIVE_UNATTRIBUTED": 1
+    }
     assert report["comparison"]["database_to_broker"]["classification_counts"] == {"ORPHAN": 1}
     assert report["BROKER_RECONCILIATION"] == "INCOMPLETE_ACCOUNT_IDENTIFIER_WITH_ENTITY_MISMATCH"
     assert report["B-B16"] == "EXECUTED_BLOCKED"
@@ -360,6 +593,41 @@ def test_ledger_query_uses_interval_overlap_not_created_at_only() -> None:
 
     assert "created_at < $2" in normalized
     assert "terminal_at IS NULL OR terminal_at >= $1" in normalized
+
+
+@pytest.mark.parametrize(
+    "payload_update",
+    [
+        {"record_count": 1_000, "source_record_count": 1_001, "truncated": True},
+        {
+            "measurement_state": "NOT_MEASURED",
+            "record_count": None,
+            "source_record_count": None,
+            "truncated": None,
+            "records": None,
+            "error_type": "BrokerReadError",
+        },
+    ],
+)
+def test_truncated_or_failed_broker_collection_never_executes_gate(
+    payload_update: dict[str, object],
+) -> None:
+    broker = _broker()
+    broker["snapshots"]["mt5_orders_get"].update(payload_update)
+
+    report = reconcile.reconcile_snapshots(
+        database=_database(
+            account_identifier=DIRECT_IDENTIFIER,
+            account_identifier_source=account_binding.DATABASE_SOURCE,
+        ),
+        broker=broker,
+        window_from=WINDOW_FROM,
+        window_to=WINDOW_TO,
+    )
+
+    assert report["DIRECT_BROKER_STATE"] == "NOT_MEASURED"
+    assert report["BROKER_RECONCILIATION"] == "NOT_MEASURED"
+    assert report["B-B16"] == "NOT_EXECUTED"
 
 
 def test_database_snapshot_stops_before_views_on_audit_session_mismatch(monkeypatch: object) -> None:
@@ -434,7 +702,7 @@ def test_cli_requires_local_hmac_environment_before_any_collection(
     result = reconcile.main(tmp_path)
     output = capsys.readouterr().out
 
-    assert result == 2
+    assert result == reconcile.EXIT_CONFIGURATION_ERROR
     assert "ACCOUNT_BINDING_KEY_ENCODING_INVALID" in output
     assert "postgresql://must-not-appear" not in output
     assert '"DIRECT_BROKER_STATE": "NOT_MEASURED"' in output
@@ -447,3 +715,94 @@ def test_secure_launcher_requires_local_key_environment_and_v2_report() -> None:
     assert "$env:WOLF15_ACCOUNT_BINDING_KEY_B64URL" in launcher
     assert "$env:WOLF15_ACCOUNT_BINDING_KEY_ID" in launcher
     assert 'schema_version = "wolf15.channel-b-reconciliation.v2"' in launcher
+
+
+@pytest.mark.parametrize(
+    ("gate", "expected"),
+    [
+        ("EXECUTED_PASS", 0),
+        ("EXECUTED_INCOMPLETE", 2),
+        ("EXECUTED_BLOCKED", 3),
+        ("EXECUTION_ERROR", 4),
+        ("NOT_EXECUTED", 4),
+        ("UNKNOWN", 4),
+    ],
+)
+def test_exit_code_contract_is_zero_only_for_executed_pass(gate: str, expected: int) -> None:
+    assert reconcile.exit_code_for_gate(gate) == expected
+
+
+def test_cli_uses_nonzero_exit_for_blocked_report(monkeypatch: object, capsys: object, tmp_path: Path) -> None:
+    async def fake_run_reconciliation(**_kwargs: object) -> dict[str, object]:
+        return {
+            "schema_version": "wolf15.channel-b-reconciliation.v2",
+            "B-B16": "EXECUTED_BLOCKED",
+            "EXECUTION_READY": False,
+            "PRODUCTION_READY": False,
+        }
+
+    encoded_key = base64.urlsafe_b64encode(TEST_KEY).rstrip(b"=").decode("ascii")
+    monkeypatch.setenv("AUDIT_DATABASE_URL", "postgresql://must-not-appear")
+    monkeypatch.setenv(account_binding.KEY_ENV, encoded_key)
+    monkeypatch.setenv(account_binding.KEY_ID_ENV, TEST_KEY_ID)
+    monkeypatch.setattr(reconcile, "run_reconciliation", fake_run_reconciliation)
+
+    result = reconcile.main(tmp_path)
+    output = capsys.readouterr().out
+
+    assert result == reconcile.EXIT_EXECUTED_BLOCKED
+    assert '"B-B16": "EXECUTED_BLOCKED"' in output
+    assert "postgresql://must-not-appear" not in output
+
+
+def test_powershell_process_helper_propagates_nonzero_and_keeps_report(tmp_path: Path) -> None:
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is required for launcher contract verification")
+
+    launcher = Path("scripts/run_channel_b_reconciliation.ps1").resolve()
+    fake_python = tmp_path / "fake-python.cmd"
+    fake_python.write_text(
+        '@echo off\r\necho {"B-B16":"EXECUTED_BLOCKED"}\r\nexit /b 3\r\n',
+        encoding="ascii",
+    )
+    report_path = tmp_path / "blocked-report.json"
+
+    def ps_literal(path: Path) -> str:
+        return str(path).replace("'", "''")
+
+    command = f"""
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+    '{ps_literal(launcher)}', [ref]$tokens, [ref]$errors
+)
+if ($errors.Count -ne 0) {{ exit 90 }}
+$functionAst = $ast.Find(
+    {{ param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Invoke-ChannelBReconciliationProcess'
+    }},
+    $true
+)
+if ($null -eq $functionAst) {{ exit 91 }}
+Invoke-Expression $functionAst.Extent.Text
+$code = Invoke-ChannelBReconciliationProcess `
+    -Python '{ps_literal(fake_python)}' `
+    -RepoRoot '{ps_literal(tmp_path)}' `
+    -OutputPath '{ps_literal(report_path)}'
+if ($code -ne 3) {{ exit 92 }}
+if (-not (Test-Path -LiteralPath '{ps_literal(report_path)}')) {{ exit 93 }}
+if ((Get-Content -LiteralPath '{ps_literal(report_path)}' -Raw) -notmatch 'EXECUTED_BLOCKED') {{ exit 94 }}
+exit 0
+"""
+    completed = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", command],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    assert "EXECUTED_BLOCKED" in report_path.read_text(encoding="utf-8-sig")

@@ -11,6 +11,30 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 $PasswordPointer = [IntPtr]::Zero
 
+function Invoke-ChannelBReconciliationProcess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Python,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputPath
+    )
+
+    Push-Location -LiteralPath $RepoRoot
+    try {
+        & $Python -m scripts.reconcile_channel_b |
+            Out-File -LiteralPath $OutputPath -Encoding utf8
+        return [int]$LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 try {
     if (-not (Test-Path -LiteralPath $Python)) {
         throw "RECONCILIATION_PYTHON_NOT_FOUND"
@@ -68,14 +92,10 @@ try {
     $env:AUDIT_DATABASE_URL = `
         "postgresql://wolf15_auditor:${EncodedAuditPassword}@${AuditHost}:${AuditPort}/${EncodedAuditDatabase}?sslmode=require"
 
-    Push-Location -LiteralPath $RepoRoot
-    & $Python -m scripts.reconcile_channel_b |
-        Out-File -LiteralPath $OutputPath -Encoding utf8
-    $AuditExitCode = $LASTEXITCODE
-    Pop-Location
-    if ($AuditExitCode -notin @(0, 1, 2)) {
-        throw "CHANNEL_B_RECONCILIATION_RUNTIME_FAILED"
-    }
+    $AuditExitCode = Invoke-ChannelBReconciliationProcess `
+        -Python $Python `
+        -RepoRoot $RepoRoot `
+        -OutputPath $OutputPath
     exit $AuditExitCode
 }
 catch {
@@ -87,8 +107,7 @@ catch {
         "DATABASE_PUBLIC_URL_ABSENT",
         "PGDATABASE_ABSENT",
         "DATABASE_PUBLIC_URL_INVALID",
-        "AUDITOR_PASSWORD_EMPTY",
-        "CHANNEL_B_RECONCILIATION_RUNTIME_FAILED"
+        "AUDITOR_PASSWORD_EMPTY"
     )
     $FailureCode = if ($_.Exception.Message -in $KnownFailureCodes) {
         $_.Exception.Message
@@ -108,7 +127,7 @@ catch {
         error_type = $FailureCode
     } | ConvertTo-Json
     $Failure | Out-File -LiteralPath $OutputPath -Encoding utf8
-    exit 2
+    exit 5
 }
 finally {
     Remove-Item Env:AUDIT_DATABASE_URL -ErrorAction SilentlyContinue
