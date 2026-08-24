@@ -15,6 +15,7 @@ from contracts.strategy_5scr_shadow_evidence_v2 import (
     StrategyLifecycleAdmissionLinkV2,
     StrategyShadowEvidenceSnapshotV2,
 )
+from storage.observer_export_outbox import ObserverExportOutboxRepository
 from storage.postgres_client import PostgresClient, pg_client
 from storage.strategy_5scr_lifecycle_v2_repository import StrategyLifecycleV2Repository
 
@@ -149,9 +150,20 @@ class ShadowEvidenceWorkItemV2:
 class StrategyShadowEvidenceV2Repository:
     """Own admission linkage, one job per episode, snapshots and comparisons."""
 
-    def __init__(self, *, pg: PostgresClient | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        pg: PostgresClient | None = None,
+        observer_export_repository: ObserverExportOutboxRepository | None = None,
+    ) -> None:
         self._pg = pg or pg_client
-        self._lifecycles = StrategyLifecycleV2Repository(pg=self._pg)
+        resolved_export = observer_export_repository
+        if pg is None and observer_export_repository is None:
+            resolved_export = ObserverExportOutboxRepository(pg=self._pg)
+        self._lifecycles = StrategyLifecycleV2Repository(
+            pg=self._pg,
+            observer_export_repository=resolved_export,
+        )
 
     @property
     def is_available(self) -> bool:
@@ -243,8 +255,7 @@ class StrategyShadowEvidenceV2Repository:
         job_id = shadow_evidence_job_id(lifecycle.strategy_lifecycle_id)
         try:
             async with self._pg.transaction() as connection:
-                await self._lifecycles.upsert_lifecycle(lifecycle, _executor=connection)
-                if not await self._lifecycles.link_event(event_link, _executor=connection):
+                if not await self._lifecycles.persist_in_transaction(connection, lifecycle, event_link):
                     raise _DuplicateOwnerEventError
                 await connection.execute(
                     f"""
