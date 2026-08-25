@@ -10,8 +10,12 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import atexit
 import hashlib
+import os
+import shutil
 import sys
+import tempfile
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -35,27 +39,51 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+_FORENSIC_ARTIFACTS_ENV = "WOLF15_FORENSIC_ARTIFACTS_PATH"
+_TRACKED_FORENSIC_ARTIFACT = ROOT / "storage" / "forensics" / "replay_artifacts.jsonl"
+_TRACKED_FORENSIC_SHA256 = _sha256_file(_TRACKED_FORENSIC_ARTIFACT)
+_ORIGINAL_FORENSIC_ARTIFACTS_ENV = os.environ.get(_FORENSIC_ARTIFACTS_ENV)
+_ISOLATED_FORENSIC_DIR = Path(tempfile.mkdtemp(prefix="wolf15-pytest-forensics-"))
+_ISOLATED_FORENSIC_ARTIFACT = (_ISOLATED_FORENSIC_DIR / "replay_artifacts.jsonl").resolve()
+if _ISOLATED_FORENSIC_ARTIFACT.is_relative_to(ROOT.resolve()):
+    raise RuntimeError("pytest forensic artifact isolation resolved inside the tracked source tree")
+
+
+def _cleanup_isolated_forensic_dir() -> None:
+    shutil.rmtree(_ISOLATED_FORENSIC_DIR, ignore_errors=True)
+
+
+atexit.register(_cleanup_isolated_forensic_dir)
+
+# Configure isolation while conftest is imported, before test modules are
+# collected.  Child processes inherit this absolute path automatically.
+os.environ[_FORENSIC_ARTIFACTS_ENV] = str(_ISOLATED_FORENSIC_ARTIFACT)
+
+
 @pytest.fixture(scope="session", autouse=True)
-def isolated_forensic_artifacts(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+def isolated_forensic_artifacts() -> Iterator[Path]:
     """Route all forensic test writes outside the tracked source tree.
 
-    The production default remains unchanged.  Tests receive one explicit,
-    session-owned path and the tracked artifact is hash-checked at teardown so
-    source mutation fails the test session instead of being silently cleaned.
+    The production default remains unchanged. Tests and child processes share
+    one session-owned path established before collection. The tracked artifact
+    is hash-checked at teardown so source mutation fails instead of being
+    silently cleaned.
     """
     from journal import forensic_replay
 
-    tracked_path = ROOT / "storage" / "forensics" / "replay_artifacts.jsonl"
-    tracked_sha256 = _sha256_file(tracked_path)
     original_path = forensic_replay.FORENSIC_ARTIFACTS_PATH
-    artifact_path = tmp_path_factory.mktemp("wolf15-forensic-artifacts") / "replay_artifacts.jsonl"
-    forensic_replay.FORENSIC_ARTIFACTS_PATH = artifact_path
+    forensic_replay.FORENSIC_ARTIFACTS_PATH = _ISOLATED_FORENSIC_ARTIFACT
 
     try:
-        yield artifact_path
+        yield _ISOLATED_FORENSIC_ARTIFACT
     finally:
         forensic_replay.FORENSIC_ARTIFACTS_PATH = original_path
-        assert _sha256_file(tracked_path) == tracked_sha256, (
+        if _ORIGINAL_FORENSIC_ARTIFACTS_ENV is None:
+            os.environ.pop(_FORENSIC_ARTIFACTS_ENV, None)
+        else:
+            os.environ[_FORENSIC_ARTIFACTS_ENV] = _ORIGINAL_FORENSIC_ARTIFACTS_ENV
+        _cleanup_isolated_forensic_dir()
+        assert _sha256_file(_TRACKED_FORENSIC_ARTIFACT) == _TRACKED_FORENSIC_SHA256, (
             "tests mutated tracked storage/forensics/replay_artifacts.jsonl"
         )
 

@@ -9,11 +9,7 @@ Validates:
 """
 
 from datetime import datetime
-from pathlib import Path
 from uuid import uuid4
-
-import pytest
-import yaml
 
 from accounts.account_model import (
     AccountState,
@@ -22,43 +18,6 @@ from accounts.account_model import (
     RiskSeverity,
 )
 from accounts.risk_engine import RiskEngine
-
-
-# Add test accounts to registry for testing
-@pytest.fixture(scope="module", autouse=True)
-def setup_test_accounts():
-    """
-    Add test accounts to account registry for testing.
-
-    NOTE: This temporarily modifies the production registry file.
-    In production, use a separate test registry or mock the loading.
-    """
-    registry_path = Path(__file__).parent.parent / "propfirm_manager" / "account_registry.yaml"
-
-    with open(registry_path) as f:
-        registry = yaml.safe_load(f) or {}
-
-    # Add test accounts
-    test_accounts = {
-        "TEST-001": "ftmo",
-        "TEST-003": "ftmo",
-        "TEST-004": "ftmo",
-        "TEST-005": "ftmo",
-        "TEST-006": "ftmo",
-        "TEST-007": "ftmo",
-    }
-
-    original_registry = registry.copy()
-    registry.update(test_accounts)
-
-    with open(registry_path, "w") as f:
-        yaml.safe_dump(registry, f)
-
-    yield
-
-    # Cleanup: restore original registry
-    with open(registry_path, "w") as f:
-        yaml.safe_dump(original_registry, f)
 
 
 class TestBasicLotCalculation:

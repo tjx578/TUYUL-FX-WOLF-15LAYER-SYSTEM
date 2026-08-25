@@ -6,6 +6,7 @@ Zone: journal. This module has no decision authority and only records facts.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from typing import Any
 
 from loguru import logger
 
+FORENSIC_ARTIFACTS_PATH_ENV = "WOLF15_FORENSIC_ARTIFACTS_PATH"
 FORENSIC_ARTIFACTS_PATH = Path("storage/forensics/replay_artifacts.jsonl")
 AUDIT_TRAIL_PATH = Path("storage/audit/audit_trail.jsonl")
 
@@ -23,6 +25,12 @@ MINIMUM_REPLAY_ARTIFACTS: tuple[str, ...] = (
     "execution_lifecycle",
     "freshness_snapshot",
 )
+
+
+def _default_forensic_artifacts_path() -> Path:
+    """Resolve the default forensic ledger, including process-safe overrides."""
+    configured = (os.getenv(FORENSIC_ARTIFACTS_PATH_ENV) or "").strip()
+    return Path(configured) if configured else FORENSIC_ARTIFACTS_PATH
 
 
 def append_replay_artifact(
@@ -37,7 +45,7 @@ def append_replay_artifact(
     The write path is append-only JSONL by design. Any failure is logged and
     should not affect caller flow.
     """
-    target = log_path or FORENSIC_ARTIFACTS_PATH
+    target = log_path or _default_forensic_artifacts_path()
     entry = {
         "artifact_id": f"rfa_{uuid.uuid4().hex[:16]}",
         "captured_at": datetime.now(UTC).isoformat(),
@@ -81,7 +89,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def load_replay_artifacts(*, log_path: Path | None = None) -> list[dict[str, Any]]:
     """Read immutable replay artifacts from JSONL store."""
-    return _load_jsonl(log_path or FORENSIC_ARTIFACTS_PATH)
+    return _load_jsonl(log_path or _default_forensic_artifacts_path())
 
 
 def load_audit_entries(*, log_path: Path | None = None) -> list[dict[str, Any]]:

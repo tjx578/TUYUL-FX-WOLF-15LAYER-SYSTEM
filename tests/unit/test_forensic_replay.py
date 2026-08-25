@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from journal.forensic_replay import (
@@ -8,6 +11,8 @@ from journal.forensic_replay import (
     append_replay_artifact,
     reconstruct_incident,
 )
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _append_audit_line(path: Path, payload: dict) -> None:
@@ -64,3 +69,26 @@ def test_reconstruct_incident_reports_missing_artifacts(tmp_path: Path) -> None:
     assert report["coverage"]["is_sufficient"] is False
     assert "event_history" in report["coverage"]["missing"]
     assert "execution_lifecycle" in report["coverage"]["missing"]
+
+
+def test_default_forensic_path_is_inherited_by_child_process(
+    isolated_forensic_artifacts: Path,
+) -> None:
+    correlation_id = "subprocess_isolation_001"
+    code = (
+        "from journal.forensic_replay import append_replay_artifact; "
+        f"append_replay_artifact('event_history', correlation_id={correlation_id!r}, payload={{'source': 'child'}})"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=ROOT,
+        env=os.environ.copy(),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert correlation_id in isolated_forensic_artifacts.read_text(encoding="utf-8")
