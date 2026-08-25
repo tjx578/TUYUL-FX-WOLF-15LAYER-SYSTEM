@@ -43,10 +43,15 @@ _FORENSIC_ARTIFACTS_ENV = "WOLF15_FORENSIC_ARTIFACTS_PATH"
 _TRACKED_FORENSIC_ARTIFACT = ROOT / "storage" / "forensics" / "replay_artifacts.jsonl"
 _TRACKED_FORENSIC_SHA256 = _sha256_file(_TRACKED_FORENSIC_ARTIFACT)
 _ORIGINAL_FORENSIC_ARTIFACTS_ENV = os.environ.get(_FORENSIC_ARTIFACTS_ENV)
-_ISOLATED_FORENSIC_DIR = Path(tempfile.mkdtemp(prefix="wolf15-pytest-forensics-"))
-_ISOLATED_FORENSIC_ARTIFACT = (_ISOLATED_FORENSIC_DIR / "replay_artifacts.jsonl").resolve()
+_ISOLATED_FORENSIC_DIR = Path(tempfile.mkdtemp(prefix="wolf15-pytest-forensics-")).resolve()
+_ISOLATED_FORENSIC_RELATIVE_PATH = Path("replay_artifacts.jsonl")
+_ISOLATED_FORENSIC_ARTIFACT = _ISOLATED_FORENSIC_DIR / _ISOLATED_FORENSIC_RELATIVE_PATH
 if _ISOLATED_FORENSIC_ARTIFACT.is_relative_to(ROOT.resolve()):
     raise RuntimeError("pytest forensic artifact isolation resolved inside the tracked source tree")
+
+from journal import forensic_replay as _forensic_replay  # noqa: E402
+
+_ORIGINAL_FORENSIC_TRUSTED_ROOT = _forensic_replay._set_forensic_artifacts_trusted_root(_ISOLATED_FORENSIC_DIR)
 
 
 def _cleanup_isolated_forensic_dir() -> None:
@@ -56,8 +61,9 @@ def _cleanup_isolated_forensic_dir() -> None:
 atexit.register(_cleanup_isolated_forensic_dir)
 
 # Configure isolation while conftest is imported, before test modules are
-# collected.  Child processes inherit this absolute path automatically.
-os.environ[_FORENSIC_ARTIFACTS_ENV] = str(_ISOLATED_FORENSIC_ARTIFACT)
+# collected. Child processes inherit only the untrusted relative component;
+# they must receive the session-owned root through the explicit test seam.
+os.environ[_FORENSIC_ARTIFACTS_ENV] = _ISOLATED_FORENSIC_RELATIVE_PATH.as_posix()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -69,15 +75,10 @@ def isolated_forensic_artifacts() -> Iterator[Path]:
     is hash-checked at teardown so source mutation fails instead of being
     silently cleaned.
     """
-    from journal import forensic_replay
-
-    original_path = forensic_replay.FORENSIC_ARTIFACTS_PATH
-    forensic_replay.FORENSIC_ARTIFACTS_PATH = _ISOLATED_FORENSIC_ARTIFACT
-
     try:
         yield _ISOLATED_FORENSIC_ARTIFACT
     finally:
-        forensic_replay.FORENSIC_ARTIFACTS_PATH = original_path
+        _forensic_replay._set_forensic_artifacts_trusted_root(_ORIGINAL_FORENSIC_TRUSTED_ROOT)
         if _ORIGINAL_FORENSIC_ARTIFACTS_ENV is None:
             os.environ.pop(_FORENSIC_ARTIFACTS_ENV, None)
         else:
