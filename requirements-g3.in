@@ -4,6 +4,13 @@
 # driver in the hashed attestation lock prevents a collection-level skip.
 aiosqlite==0.21.0
 
+# The Native MT5 MCP feature has its own isolated runtime profile, but its
+# synthetic repository test imports the server during full G3 collection.
+# Pin only the import-time dependencies needed by that test; MetaTrader5 is
+# lazy-loaded and replaced by a fake in the test suite.
+mcp==2.0.0
+psutil==7.2.2
+
 # G3 attestation tooling must be resolved and hashed with the application.
 pip==26.2.1
 pyright==1.1.408
