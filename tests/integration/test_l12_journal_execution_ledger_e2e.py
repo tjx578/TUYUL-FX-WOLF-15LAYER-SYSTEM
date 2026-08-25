@@ -42,19 +42,6 @@ class _KillSwitchOff:
         return self.snapshot()
 
 
-@pytest.fixture
-def isolated_forensic_artifacts(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> Path:
-    """Keep forensic writes inside the test-owned temporary directory."""
-    from journal import forensic_replay
-
-    artifact_path = tmp_path / "forensics" / "replay_artifacts.jsonl"
-    monkeypatch.setattr(forensic_replay, "FORENSIC_ARTIFACTS_PATH", artifact_path)
-    return artifact_path
-
-
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.slow

@@ -10,8 +10,10 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import sys
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,39 @@ ROOT = Path(__file__).resolve().parents[1]
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_forensic_artifacts(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """Route all forensic test writes outside the tracked source tree.
+
+    The production default remains unchanged.  Tests receive one explicit,
+    session-owned path and the tracked artifact is hash-checked at teardown so
+    source mutation fails the test session instead of being silently cleaned.
+    """
+    from journal import forensic_replay
+
+    tracked_path = ROOT / "storage" / "forensics" / "replay_artifacts.jsonl"
+    tracked_sha256 = _sha256_file(tracked_path)
+    original_path = forensic_replay.FORENSIC_ARTIFACTS_PATH
+    artifact_path = tmp_path_factory.mktemp("wolf15-forensic-artifacts") / "replay_artifacts.jsonl"
+    forensic_replay.FORENSIC_ARTIFACTS_PATH = artifact_path
+
+    try:
+        yield artifact_path
+    finally:
+        forensic_replay.FORENSIC_ARTIFACTS_PATH = original_path
+        assert _sha256_file(tracked_path) == tracked_sha256, (
+            "tests mutated tracked storage/forensics/replay_artifacts.jsonl"
+        )
 
 
 # ---------------------------------------------------------------------------
