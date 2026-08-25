@@ -3,6 +3,7 @@ Tests for analysis modules (L1-L11).
 Constitutional boundary: analysis must have NO execution side-effects.
 """
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,33 @@ import pytest
 
 class TestAnalysisBoundary:
     """Analysis modules must be pure -- no execution side effects."""
+
+    @staticmethod
+    def _execution_imports(source: str, *, filename: str) -> list[str]:
+        """Return absolute imports from the top-level execution namespace."""
+        try:
+            tree = ast.parse(source, filename=filename)
+        except SyntaxError as exc:
+            raise AssertionError(
+                f"{filename} cannot be parsed for the execution boundary audit: {exc.msg} at line {exc.lineno}"
+            ) from exc
+
+        imports: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.extend(
+                    alias.name
+                    for alias in node.names
+                    if alias.name == "execution" or alias.name.startswith("execution.")
+                )
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.level == 0
+                and node.module
+                and (node.module == "execution" or node.module.startswith("execution."))
+            ):
+                imports.append(node.module)
+        return imports
 
     def _get_analysis_modules(self):
         analysis_dir = Path(__file__).parents[2] / "analysis"
@@ -20,11 +48,37 @@ class TestAnalysisBoundary:
     def test_no_execution_imports_in_analysis(self):
         """Analysis modules must not import from execution/."""
         for py_file in self._get_analysis_modules():
-            if py_file.name.startswith("__"):
-                continue
             content = py_file.read_text(encoding="utf-8", errors="ignore")
-            for forbidden in ["from execution", "import execution"]:
-                assert forbidden not in content, f"{py_file.name} imports execution -- boundary violation"
+            imports = self._execution_imports(content, filename=str(py_file))
+            assert not imports, f"{py_file.name} imports {imports} -- boundary violation"
+
+    def test_execution_import_scanner_ignores_prose_comments_and_similar_names(self):
+        source = '''
+"""A target from execution remains analysis prose, not an import."""
+# import execution is documentation here, not executable syntax.
+import executioner
+from executioner.tools import helper
+from .execution import local_helper
+'''
+
+        assert self._execution_imports(source, filename="allowed_examples.py") == []
+
+    def test_execution_import_scanner_detects_absolute_namespace_imports(self):
+        source = """
+import execution
+import execution.submodule as executor
+from execution import command
+"""
+
+        assert self._execution_imports(source, filename="forbidden_examples.py") == [
+            "execution",
+            "execution.submodule",
+            "execution",
+        ]
+
+    def test_execution_import_scanner_fails_closed_on_parse_error(self):
+        with pytest.raises(AssertionError, match="cannot be parsed for the execution boundary audit"):
+            self._execution_imports("from execution import", filename="invalid.py")
 
     def test_no_order_placement_in_analysis(self):
         """Analysis must never place orders."""
