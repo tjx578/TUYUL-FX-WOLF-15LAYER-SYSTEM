@@ -1,5 +1,9 @@
 -r requirements.txt
 
+# The in-memory database revision guard is mandatory in G3.  Keeping its
+# driver in the hashed attestation lock prevents a collection-level skip.
+aiosqlite==0.21.0
+
 # G3 attestation tooling must be resolved and hashed with the application.
 pip==26.2.1
 pyright==1.1.408
