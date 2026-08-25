@@ -47,13 +47,13 @@ from analysis.htf_structure_snapshot import (
 # --------------------------------------------------------------------------- #
 
 
-def _c(high: float, low: float, close: float | None = None, open_: float | None = None) -> dict[str, float]:
+def _c(high: float, low: float, close: float | None = None, open_: float | None = None) -> dict[str, float | str]:
     close = close if close is not None else (high + low) / 2
     open_ = open_ if open_ is not None else close
     return {"open": open_, "high": high, "low": low, "close": close}
 
 
-def _zigzag(pivots: list[float], eps: float = 0.15, fill: int = 2) -> list[dict[str, float]]:
+def _zigzag(pivots: list[float], eps: float = 0.15, fill: int = 2) -> list[dict[str, float | str]]:
     """Build candles tracing a zig-zag through ``pivots``.
 
     ``fill`` ramp bars are inserted between consecutive pivots so each pivot is
@@ -69,7 +69,7 @@ def _zigzag(pivots: list[float], eps: float = 0.15, fill: int = 2) -> list[dict[
     return [_c(x + eps, x - eps, close=x) for x in closes]
 
 
-def _staircase_up(n: int = 24, step: float = 1.0, base: float = 100.0) -> list[dict[str, float]]:
+def _staircase_up(n: int = 24, step: float = 1.0, base: float = 100.0) -> list[dict[str, float | str]]:
     """Ascending zig-zag with Higher-Highs + Higher-Lows -> BULLISH."""
     lows = [base + i * 2 * step for i in range(4)]
     highs = [base + 3 * step + i * 2 * step for i in range(4)]
@@ -79,7 +79,7 @@ def _staircase_up(n: int = 24, step: float = 1.0, base: float = 100.0) -> list[d
     return _zigzag(pivots)
 
 
-def _staircase_down(n: int = 24, step: float = 1.0, base: float = 100.0) -> list[dict[str, float]]:
+def _staircase_down(n: int = 24, step: float = 1.0, base: float = 100.0) -> list[dict[str, float | str]]:
     """Descending zig-zag with Lower-Highs + Lower-Lows -> BEARISH."""
     highs = [base - i * 2 * step for i in range(4)]
     lows = [base - 3 * step - i * 2 * step for i in range(4)]
@@ -281,9 +281,7 @@ def test_snapshot_does_not_mark_period_open_daily_stale_over_weekend():
     assert snapshot.daily_bias_freshness_status == "FRESH"
     assert snapshot.daily_bias_source_period_open == latest_daily_open.isoformat()
     assert snapshot.daily_bias_source_period_close == datetime(2026, 7, 31, 21, 0, tzinfo=UTC).isoformat()
-    assert snapshot.daily_bias_latest_expected_period_close == datetime(
-        2026, 7, 31, 21, 0, tzinfo=UTC
-    ).isoformat()
+    assert snapshot.daily_bias_latest_expected_period_close == datetime(2026, 7, 31, 21, 0, tzinfo=UTC).isoformat()
     assert snapshot.daily_bias_missed_expected_closed_bars == 0
     assert snapshot.allowed_playbook != "NONE"
 
@@ -312,9 +310,9 @@ def test_snapshot_applies_provider_holiday_calendar_to_daily_freshness():
     assert standard.daily_bias_missed_expected_closed_bars == 1
     assert provider_aware.daily_bias_freshness_status == "FRESH"
     assert provider_aware.daily_bias_missed_expected_closed_bars == 0
-    assert provider_aware.daily_bias_latest_expected_period_close == datetime(
-        2026, 12, 24, 22, 0, tzinfo=UTC
-    ).isoformat()
+    assert (
+        provider_aware.daily_bias_latest_expected_period_close == datetime(2026, 12, 24, 22, 0, tzinfo=UTC).isoformat()
+    )
 
 
 def test_snapshot_carries_auditable_location_price_lineage():
@@ -392,7 +390,7 @@ def test_h4_structure_pullback_labels_present():
 
 
 class _FakeBus:
-    def __init__(self, data: dict[str, list[dict[str, float]]]):
+    def __init__(self, data: dict[str, list[dict[str, float | str]]]):
         self._data = data
 
     def get_candle_history(self, symbol, timeframe, count=None):
