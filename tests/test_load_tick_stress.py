@@ -12,12 +12,9 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
-from unittest.mock import MagicMock
+from typing import Any
 
-import pytest
-
-from ingest.candle_builder import CandleBuilder
+from ingest.candle_builder import Candle, CandleBuilder, Timeframe
 
 # Import the shared tick generator from conftest
 from tests.conftest import generate_ticks
@@ -36,17 +33,50 @@ MAX_PROCESS_TIME_S = 5.0  # Upper bound for full batch processing
 # ---------------------------------------------------------------------------
 
 
-def _setup_builder() -> tuple[Any, MagicMock]:
-    """Create a CandleBuilder with a mocked context bus."""
-    if not hasattr(CandleBuilder, "process_ticks"):
-        pytest.skip("Legacy CandleBuilder batch API (process_ticks) is not available")
+def _setup_builders(symbols: list[str]) -> tuple[dict[str, CandleBuilder], list[Candle]]:
+    """Create one authoritative M15 builder per symbol."""
+    completed: list[Candle] = []
+    builders = {symbol: CandleBuilder(symbol, Timeframe.M15, on_complete=completed.append) for symbol in symbols}
+    return builders, completed
 
-    builder = cast(Any, CandleBuilder())  # type: ignore[call-arg]
-    mock_bus = MagicMock()
-    mock_bus.update_candle = MagicMock()
-    mock_bus.consume_ticks = MagicMock(return_value=[])
-    builder.context_bus = mock_bus
-    return builder, mock_bus
+
+def _tick_price(tick: dict[str, Any]) -> float:
+    """Resolve the same mid-price preference used by the retired batch API."""
+    if tick.get("mid") is not None:
+        return float(tick["mid"])
+    if tick.get("bid") is not None and tick.get("ask") is not None:
+        return (float(tick["bid"]) + float(tick["ask"])) / 2.0
+    for field in ("bid", "ask", "last"):
+        if tick.get(field) is not None:
+            return float(tick[field])
+    raise ValueError("Tick has no usable price")
+
+
+def _tick_time(tick: dict[str, Any]) -> datetime:
+    """Normalize Unix or datetime tick timestamps for ``on_tick``."""
+    timestamp = tick["timestamp"]
+    if isinstance(timestamp, datetime):
+        return timestamp if timestamp.tzinfo is not None else timestamp.replace(tzinfo=UTC)
+    return datetime.fromtimestamp(float(timestamp), tz=UTC)
+
+
+def _feed_ticks(builders: dict[str, CandleBuilder], ticks: list[dict[str, Any]]) -> None:
+    """Feed a batch through the current synchronous per-tick API."""
+    for tick in ticks:
+        symbol = str(tick["symbol"])
+        builders[symbol].on_tick(
+            _tick_price(tick),
+            _tick_time(tick),
+            float(tick.get("volume", 0.0)),
+        )
+
+
+def _builder_candles(builder: CandleBuilder) -> list[Candle]:
+    """Return completed candles plus the current in-progress candle."""
+    candles = builder.completed_candles
+    if (partial := builder.current_partial) is not None:
+        candles.append(partial)
+    return candles
 
 
 # ---------------------------------------------------------------------------
@@ -57,65 +87,52 @@ def _setup_builder() -> tuple[Any, MagicMock]:
 class TestHighFrequencyTickBurst:
     """Simulate rapid-fire ticks on a single pair."""
 
-    @pytest.mark.asyncio
-    async def test_process_10k_ticks_within_time_bound(self) -> None:
+    def test_process_10k_ticks_within_time_bound(self) -> None:
         """10 000 ticks must be processed under MAX_PROCESS_TIME_S."""
-        builder, mock_bus = _setup_builder()
+        builders, _completed = _setup_builders(["EURUSD"])
 
         ticks = generate_ticks(
             symbol="EURUSD",
             count=HIGH_FREQ_TICK_COUNT,
             interval_ms=10,  # 100 ticks/sec simulated
         )
-        mock_bus.consume_ticks.return_value = ticks
-
         start = time.perf_counter()
-        await builder.process_ticks()
+        _feed_ticks(builders, ticks)
         elapsed = time.perf_counter() - start
 
         assert elapsed < MAX_PROCESS_TIME_S, (
             f"Processing {HIGH_FREQ_TICK_COUNT} ticks took {elapsed:.2f}s (limit: {MAX_PROCESS_TIME_S}s)"
         )
 
-    @pytest.mark.asyncio
-    async def test_throughput_meets_minimum(self) -> None:
+    def test_throughput_meets_minimum(self) -> None:
         """Measured throughput must exceed THROUGHPUT_FLOOR_TPS."""
-        builder, mock_bus = _setup_builder()
+        builders, _completed = _setup_builders(["GBPJPY"])
 
         ticks = generate_ticks(
             symbol="GBPJPY",
             count=HIGH_FREQ_TICK_COUNT,
             interval_ms=10,
         )
-        mock_bus.consume_ticks.return_value = ticks
-
         start = time.perf_counter()
-        await builder.process_ticks()
+        _feed_ticks(builders, ticks)
         elapsed = time.perf_counter() - start
 
         tps = HIGH_FREQ_TICK_COUNT / max(elapsed, 1e-9)
         assert tps >= THROUGHPUT_FLOOR_TPS, f"Throughput {tps:.0f} tps < required {THROUGHPUT_FLOOR_TPS} tps"
 
-    @pytest.mark.asyncio
-    async def test_no_tick_data_loss(self) -> None:
+    def test_no_tick_data_loss(self) -> None:
         """Every tick must be accounted for (buffered or consumed into candle)."""
-        builder, mock_bus = _setup_builder()
+        builders, completed = _setup_builders(["EURUSD"])
 
         tick_count = 1_000
         ticks = generate_ticks(symbol="EURUSD", count=tick_count, interval_ms=100)
-        mock_bus.consume_ticks.return_value = ticks
+        _feed_ticks(builders, ticks)
 
-        await builder.process_ticks()
-
-        # Count ticks still in buffer + ticks consumed by candles
-        remaining_in_buffer = sum(len(v) for v in builder.buffers.values())
-        candles_built = mock_bus.update_candle.call_count
-        # Each candle consumed at least 1 tick, so total accountability:
-        # remaining + candles_built * (at_least_1) >= tick_count is loose;
-        # verify that all ticks ended up in the buffer initially
-        assert remaining_in_buffer + candles_built >= 0  # sanity
-        # More precise: buffer should hold ticks for the tail period
-        assert remaining_in_buffer <= tick_count, "Buffer grew beyond input"
+        partial = builders["EURUSD"].current_partial
+        remaining_in_partial = partial.tick_count if partial is not None else 0
+        consumed_into_candles = sum(candle.tick_count for candle in completed)
+        assert remaining_in_partial + consumed_into_candles == tick_count
+        assert remaining_in_partial <= tick_count, "Partial candle grew beyond input"
 
 
 # ---------------------------------------------------------------------------
@@ -128,10 +145,9 @@ class TestMultiSymbolConcurrentLoad:
 
     SYMBOLS = ["EURUSD", "GBPJPY", "USDJPY", "GBPUSD", "AUDUSD", "XAUUSD"]
 
-    @pytest.mark.asyncio
-    async def test_multi_symbol_isolation(self) -> None:
+    def test_multi_symbol_isolation(self) -> None:
         """Ticks from different symbols must not leak into each other's buffers."""
-        builder, mock_bus = _setup_builder()
+        builders, _completed = _setup_builders(self.SYMBOLS)
 
         all_ticks: list[dict[str, Any]] = []
         per_symbol_count = 500
@@ -145,19 +161,16 @@ class TestMultiSymbolConcurrentLoad:
                 )
             )
 
-        mock_bus.consume_ticks.return_value = all_ticks
-        await builder.process_ticks()
+        _feed_ticks(builders, all_ticks)
 
-        # Each symbol should have its own buffer -- no cross-contamination
+        # Each symbol has its own builder -- no cross-contamination.
         for sym in self.SYMBOLS:
-            buffer = builder.buffers.get(sym, [])
-            for tick in buffer:
-                assert tick["symbol"] == sym, f"Tick for {tick['symbol']} found in {sym} buffer"
+            for candle in _builder_candles(builders[sym]):
+                assert candle.symbol == sym, f"Candle for {candle.symbol} found in {sym} builder"
 
-    @pytest.mark.asyncio
-    async def test_multi_symbol_throughput(self) -> None:
+    def test_multi_symbol_throughput(self) -> None:
         """Multi-symbol load must still meet throughput floor."""
-        builder, mock_bus = _setup_builder()
+        builders, _completed = _setup_builders(self.SYMBOLS)
 
         total_ticks = 0
         all_ticks: list[dict[str, Any]] = []
@@ -166,10 +179,8 @@ class TestMultiSymbolConcurrentLoad:
             all_ticks.extend(generate_ticks(symbol=sym, count=per_symbol, interval_ms=20))
             total_ticks += per_symbol
 
-        mock_bus.consume_ticks.return_value = all_ticks
-
         start = time.perf_counter()
-        await builder.process_ticks()
+        _feed_ticks(builders, all_ticks)
         elapsed = time.perf_counter() - start
 
         tps = total_ticks / max(elapsed, 1e-9)
@@ -177,10 +188,9 @@ class TestMultiSymbolConcurrentLoad:
             f"Multi-symbol throughput {tps:.0f} tps < required {THROUGHPUT_FLOOR_TPS // 2} tps"
         )
 
-    @pytest.mark.asyncio
-    async def test_candles_built_for_all_symbols(self) -> None:
+    def test_candles_built_for_all_symbols(self) -> None:
         """At least one candle should be built per symbol when enough ticks span a window."""
-        builder, mock_bus = _setup_builder()
+        builders, completed = _setup_builders(self.SYMBOLS)
 
         all_ticks: list[dict[str, Any]] = []
         # Generate enough ticks to span a full M15 candle (16 min worth)
@@ -193,11 +203,9 @@ class TestMultiSymbolConcurrentLoad:
                 )
             )
 
-        mock_bus.consume_ticks.return_value = all_ticks
-        await builder.process_ticks()
+        _feed_ticks(builders, all_ticks)
 
-        candle_calls = mock_bus.update_candle.call_args_list
-        symbols_with_candles = {call[0][0]["symbol"] for call in candle_calls}
+        symbols_with_candles = {candle.symbol for candle in completed}
 
         for sym in self.SYMBOLS:
             assert sym in symbols_with_candles, f"No candle built for {sym} despite full M15 span"
@@ -211,10 +219,9 @@ class TestMultiSymbolConcurrentLoad:
 class TestTickSpikeAndGap:
     """Edge cases: price spikes, gaps in timestamps, duplicate ticks."""
 
-    @pytest.mark.asyncio
-    async def test_price_spike_handled(self) -> None:
+    def test_price_spike_handled(self) -> None:
         """A sudden 5% price spike should still produce a valid candle."""
-        builder, mock_bus = _setup_builder()
+        builders, completed = _setup_builders(["XAUUSD"])
         base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
 
         ticks: list[dict[str, Any]] = []
@@ -254,23 +261,20 @@ class TestTickSpikeAndGap:
                 }
             )
 
-        mock_bus.consume_ticks.return_value = ticks
-        await builder.process_ticks()
+        _feed_ticks(builders, ticks)
 
         # Should still build candles (no crash)
-        assert mock_bus.update_candle.called, "Candle builder crashed on price spike"
+        assert completed, "Candle builder crashed on price spike"
 
         # Verify high captures the spike
-        candle_calls = mock_bus.update_candle.call_args_list
-        m15_candles = [c[0][0] for c in candle_calls if c[0][0].get("timeframe") == "M15"]
+        m15_candles = [candle for candle in completed if candle.timeframe == "M15"]
         if m15_candles:
-            highs = [c["high"] for c in m15_candles]
+            highs = [candle.high for candle in m15_candles]
             assert max(highs) >= 2100.0, "Spike not reflected in candle high"
 
-    @pytest.mark.asyncio
-    async def test_timestamp_gap_between_candles(self) -> None:
+    def test_timestamp_gap_between_candles(self) -> None:
         """A 30-minute gap between ticks should produce separate candles, not one giant candle."""
-        builder, mock_bus = _setup_builder()
+        builders, completed = _setup_builders(["EURUSD"])
         base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
 
         ticks: list[dict[str, Any]] = []
@@ -301,19 +305,17 @@ class TestTickSpikeAndGap:
                 }
             )
 
-        mock_bus.consume_ticks.return_value = ticks
-        await builder.process_ticks()
+        _feed_ticks(builders, ticks)
+        builders["EURUSD"].flush()
 
-        candle_calls = mock_bus.update_candle.call_args_list
-        m15_candles = [c[0][0] for c in candle_calls if c[0][0]["symbol"] == "EURUSD"]
+        m15_candles = [candle for candle in completed if candle.symbol == "EURUSD"]
 
         # Should have produced at least 2 separate candles
         assert len(m15_candles) >= 2, f"Expected >=2 candles across gap, got {len(m15_candles)}"
 
-    @pytest.mark.asyncio
-    async def test_duplicate_timestamps_handled(self) -> None:
+    def test_duplicate_timestamps_handled(self) -> None:
         """Multiple ticks with identical timestamps should be processed without error."""
-        builder, mock_bus = _setup_builder()
+        builders, _completed = _setup_builders(["EURUSD"])
         ts = datetime(2024, 1, 15, 10, 5, 0, tzinfo=UTC).timestamp()
 
         ticks = [
@@ -328,8 +330,7 @@ class TestTickSpikeAndGap:
             for i in range(100)
         ]
 
-        mock_bus.consume_ticks.return_value = ticks
-        await builder.process_ticks()
+        _feed_ticks(builders, ticks)
 
         # No crash -- candles may or may not be emitted depending on window
         assert True, "Duplicate timestamps caused crash"
@@ -341,12 +342,11 @@ class TestTickSpikeAndGap:
 
 
 class TestSustainedLoad:
-    """Simulate multiple process_ticks cycles to mimic sustained real-time feed."""
+    """Simulate multiple feed cycles to mimic sustained real-time input."""
 
-    @pytest.mark.asyncio
-    async def test_sustained_100_cycles_no_memory_leak(self) -> None:
+    def test_sustained_100_cycles_no_memory_leak(self) -> None:
         """Run 100 processing cycles and verify buffer size stays bounded."""
-        builder, mock_bus = _setup_builder()
+        builders, _completed = _setup_builders(["EURUSD"])
 
         base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
         max_buffer_size = 0
@@ -359,21 +359,20 @@ class TestSustainedLoad:
                 interval_ms=200,
                 base_time=cycle_time,
             )
-            mock_bus.consume_ticks.return_value = ticks
-            await builder.process_ticks()
+            _feed_ticks(builders, ticks)
 
-            current_buffer = sum(len(v) for v in builder.buffers.values())
-            max_buffer_size = max(max_buffer_size, current_buffer)
+            partial = builders["EURUSD"].current_partial
+            current_partial_size = partial.tick_count if partial is not None else 0
+            max_buffer_size = max(max_buffer_size, current_partial_size)
 
         # Buffer should never grow unboundedly -- cap at a reasonable multiple
         # of a single M15 window worth of ticks
         assert max_buffer_size < HIGH_FREQ_TICK_COUNT, f"Buffer grew to {max_buffer_size} -- possible memory leak"
 
-    @pytest.mark.asyncio
-    async def test_sustained_multi_symbol_cycles(self) -> None:
+    def test_sustained_multi_symbol_cycles(self) -> None:
         """Sustained load across 6 symbols, 50 cycles."""
-        builder, mock_bus = _setup_builder()
         symbols = ["EURUSD", "GBPJPY", "USDJPY", "GBPUSD", "AUDUSD", "XAUUSD"]
+        builders, completed = _setup_builders(symbols)
 
         base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
         total_candles = 0
@@ -391,18 +390,16 @@ class TestSustainedLoad:
                     )
                 )
 
-            mock_bus.consume_ticks.return_value = all_ticks
-            await builder.process_ticks()
-            total_candles += mock_bus.update_candle.call_count
-            mock_bus.update_candle.reset_mock()
+            completed_before = len(completed)
+            _feed_ticks(builders, all_ticks)
+            total_candles += len(completed) - completed_before
 
         # Over 50 cycles with 6 symbols we should have produced candles
         assert total_candles > 0, "No candles produced over 50 sustained cycles"
 
-    @pytest.mark.asyncio
-    async def test_processing_latency_per_cycle(self) -> None:
+    def test_processing_latency_per_cycle(self) -> None:
         """Each individual cycle must complete in <100ms for real-time viability."""
-        builder, mock_bus = _setup_builder()
+        builders, _completed = _setup_builders(["EURUSD"])
 
         base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
         max_latency = 0.0
@@ -415,10 +412,8 @@ class TestSustainedLoad:
                 interval_ms=50,
                 base_time=cycle_time,
             )
-            mock_bus.consume_ticks.return_value = ticks
-
             start = time.perf_counter()
-            await builder.process_ticks()
+            _feed_ticks(builders, ticks)
             latency = time.perf_counter() - start
             max_latency = max(max_latency, latency)
 

@@ -758,7 +758,7 @@ def test_cli_uses_nonzero_exit_for_blocked_report(monkeypatch: object, capsys: o
 def test_powershell_process_helper_propagates_nonzero_and_keeps_report(tmp_path: Path) -> None:
     powershell = shutil.which("pwsh") or shutil.which("powershell")
     if powershell is None:
-        pytest.skip("PowerShell is required for launcher contract verification")
+        pytest.skip("PLATFORM_TOOL_PWSH_UNAVAILABLE")
 
     launcher = Path("scripts/run_channel_b_reconciliation.ps1").resolve()
     fake_python = tmp_path / "fake-python.cmd"
