@@ -95,7 +95,7 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
         )
 
         _wait_until(
-            lambda: manager.process_once() or manager.snapshot().mode == ExecutionMode.SAFE,
+            lambda: manager.process_once(now=0.5) or manager.snapshot().mode == ExecutionMode.SAFE,
             timeout=2.0,
             interval=0.02,
         )

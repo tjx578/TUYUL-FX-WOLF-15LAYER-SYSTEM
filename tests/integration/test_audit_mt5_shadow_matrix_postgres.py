@@ -66,6 +66,7 @@ _LOCK_TIMEOUT_SECONDS = 120
 ACCOUNT_ID = "acct-matrix-audit"
 LOGIN_HASH = "sha256:" + "b" * 64
 BROKER_SERVER = "XMGlobal-MT5 10"
+_PAYLOAD_LINEAGE_CONSTRAINT = "ck_execution_command_payload_lineage_v2"
 
 
 class _PoolBackedPostgres:
@@ -493,7 +494,14 @@ async def test_acceptance_authority_persists_database_enforced_broker_forbidden_
             """,
             command_id,
         )
-    assert getattr(constraint_error.value, "constraint_name", None) == "ck_execution_command_payload_lineage_v1"
+    assert getattr(constraint_error.value, "constraint_name", None) == _PAYLOAD_LINEAGE_CONSTRAINT
+    assert (
+        await postgres.fetchval(
+            "SELECT payload -> 'guards' ? 'risk_reservation_id' FROM execution_commands WHERE command_id=$1::uuid",
+            command_id,
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -712,19 +720,22 @@ async def test_acceptance_readiness_rejects_a_same_named_weakened_payload_check(
         SELECT pg_get_constraintdef(oid)
         FROM pg_constraint
         WHERE conrelid = 'execution_commands'::regclass
-          AND conname = 'ck_execution_command_payload_lineage_v1'
-        """
+          AND conname = $1
+        """,
+        _PAYLOAD_LINEAGE_CONSTRAINT,
     )
     assert isinstance(original, str)
-    await postgres.execute("ALTER TABLE execution_commands DROP CONSTRAINT ck_execution_command_payload_lineage_v1")
     try:
+        await postgres.execute(
+            f"ALTER TABLE execution_commands DROP CONSTRAINT {_PAYLOAD_LINEAGE_CONSTRAINT}"
+        )
         status = await repository.shadow_acceptance_schema_status()
         assert status["ready"] is False
         assert status["payload_constraint"] is False
         await postgres.execute(
-            """
+            f"""
             ALTER TABLE execution_commands
-            ADD CONSTRAINT ck_execution_command_payload_lineage_v1
+            ADD CONSTRAINT {_PAYLOAD_LINEAGE_CONSTRAINT}
             CHECK (source_event IS NOT NULL)
             """
         )
@@ -733,12 +744,14 @@ async def test_acceptance_readiness_rejects_a_same_named_weakened_payload_check(
         assert status["payload_constraint"] is False
     finally:
         await postgres.execute(
-            "ALTER TABLE execution_commands DROP CONSTRAINT IF EXISTS ck_execution_command_payload_lineage_v1"
+            f"ALTER TABLE execution_commands DROP CONSTRAINT IF EXISTS {_PAYLOAD_LINEAGE_CONSTRAINT}"
         )
         await postgres.execute(
-            "ALTER TABLE execution_commands ADD CONSTRAINT ck_execution_command_payload_lineage_v1 " + original
+            f"ALTER TABLE execution_commands ADD CONSTRAINT {_PAYLOAD_LINEAGE_CONSTRAINT} " + original
         )
-    assert (await repository.shadow_acceptance_schema_status())["ready"] is True
+    restored = await repository.shadow_acceptance_schema_status()
+    assert restored["ready"] is True
+    assert restored["payload_constraint"] is True
 
 
 @pytest.mark.asyncio
