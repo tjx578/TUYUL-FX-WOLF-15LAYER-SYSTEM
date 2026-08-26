@@ -6566,14 +6566,16 @@ class WolfConstitutionalPipeline:
         source = str(lineage.get("price_source") or "UNKNOWN").upper()
         snapshot_time = lineage.get("price_snapshot_time_utc")
         age_seconds = lineage.get("price_age_seconds")
-        freshness = str(lineage.get("price_freshness_status") or "UNKNOWN").upper()
+        # Feed freshness and quote health are independent evidence streams; keep
+        # the canonical feed state intact while composing a fail-closed reference status.
+        feed_freshness = str(lineage.get("price_freshness_status") or "UNKNOWN").upper()
         is_observed_source = source.startswith("LIVE_TICK") or source.endswith("_CLOSE")
-        reference_is_live = bool(lineage.get("reference_price_is_live"))
+        reference_is_live = bool(lineage.get("reference_price_is_live")) and feed_freshness == "LIVE"
         if price is None:
             reference_status = "MISSING"
         elif reference_is_live:
             reference_status = "LIVE"
-        elif "STALE" in freshness or freshness == "NO_PRODUCER":
+        elif "STALE" in feed_freshness or feed_freshness in {"NO_PRODUCER", "NO_TRANSPORT", "CONFIG_ERROR"}:
             reference_status = "STALE"
         else:
             reference_status = "AVAILABLE"
@@ -6611,14 +6613,17 @@ class WolfConstitutionalPipeline:
         if quote_health.status == "PRICE_FROZEN":
             reference_status = "PRICE_FROZEN"
             reference_is_live = False
-            freshness = "PRICE_FROZEN"
         elif quote_health.status == "MARKET_CLOSED":
             reference_status = "MARKET_CLOSED"
             reference_is_live = False
         elif quote_health.status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
-            reference_status = quote_health.status
             reference_is_live = False
-            freshness = quote_health.status
+            if reference_status not in {"MISSING", "STALE"}:
+                reference_status = quote_health.status
+        elif quote_health.execution_blocked:
+            reference_is_live = False
+            if reference_status != "MISSING":
+                reference_status = quote_health.status
         payload = {
             "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "reference_price_used_for_decision_update": price,
@@ -6637,7 +6642,7 @@ class WolfConstitutionalPipeline:
             "price_context_field": lineage.get("price_context_field"),
             "price_snapshot_time_utc": snapshot_time,
             "price_age_seconds": age_seconds,
-            "price_freshness_status": freshness,
+            "price_freshness_status": feed_freshness,
             "reference_price_is_live": reference_is_live,
             "price_lineage_version": 2,
             **quote_health.to_payload(),
