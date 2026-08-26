@@ -232,7 +232,56 @@ class TestBroadcastThroughput:
         assert elapsed_ms < 100, f"Broadcast to 50 clients took {elapsed_ms:.1f}ms (limit: 100ms)"
 
     @pytest.mark.asyncio
-    async def test_broadcast_1000_messages_to_10_clients(self):
+    async def test_broadcast_1000_messages_to_10_clients_is_lossless(self):
+        """The deterministic lane proves exact fan-out without enforcing a latency SLA."""
+        from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+        mgr = ConnectionManager(name="sustained-correctness-test")
+        clients: list[MagicMock] = []
+        deliveries: dict[MagicMock, list[dict[str, int]]] = {}
+        for index in range(10):
+            client = _make_ws(f"ws-{index}")
+            received: list[dict[str, int]] = []
+
+            async def record(payload: dict[str, int], *, sink: list[dict[str, int]] = received) -> None:
+                sink.append(payload)
+
+            client.send_json = record
+            clients.append(client)
+            deliveries[client] = received
+            _register_connected_ws(mgr, client)
+
+        async def broadcast_all() -> None:
+            for message_id in range(1000):
+                await mgr.broadcast({"message_id": message_id})
+
+        await asyncio.wait_for(broadcast_all(), timeout=30.0)
+
+        expected_message_ids = list(range(1000))
+        expected_connection_sequence = list(range(1, 1001))
+        delivered_by_client: list[list[int]] = []
+        for client in clients:
+            delivered = deliveries[client]
+            assert len(delivered) == 1000
+            message_ids = [payload["message_id"] for payload in delivered]
+            connection_sequence = [payload["seq"] for payload in delivered]
+            assert message_ids == expected_message_ids
+            assert connection_sequence == expected_connection_sequence
+            assert len(message_ids) == len(set(message_ids))
+            delivered_by_client.append(message_ids)
+
+        assert delivered_by_client == [expected_message_ids] * len(clients)
+        assert mgr.active_connections == set(clients)
+        assert set(mgr._per_conn_seq) == set(clients)
+
+        for client in clients:
+            mgr.disconnect(client)
+        assert not mgr.active_connections
+        assert not mgr._per_conn_seq
+
+    @pytest.mark.asyncio
+    @pytest.mark.reference_performance
+    async def test_broadcast_1000_messages_to_10_clients_reference_sla(self):
         """1000 sequential broadcasts to 10 clients must stay under 1s total."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
 
