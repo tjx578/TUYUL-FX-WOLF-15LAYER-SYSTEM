@@ -297,23 +297,41 @@ def test_live_analyzer_assigns_runtime_scanner_cycle_metadata(monkeypatch):
 
 
 def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
-    analyzer = SignalThrottleLiveAnalyzer()
-    analyzer.record_throttled(
-        symbol="USDJPY",
-        verdict="EXECUTE_REDUCED_RISK_BUY",
-        count=3,
-        remaining=0,
-        max_signals=3,
-        window_seconds=300,
-    )
+    timestamp = datetime(2026, 8, 26, 7, 30, tzinfo=UTC)
 
-    events = list(analyzer._events)
+    def record_pair() -> tuple[SignalThrottleLiveAnalyzer, list[SignalThrottleLogEvent]]:
+        analyzer = SignalThrottleLiveAnalyzer()
+        analyzer.record_throttled(
+            symbol="USDJPY",
+            verdict="EXECUTE_REDUCED_RISK_BUY",
+            count=3,
+            remaining=0,
+            max_signals=3,
+            window_seconds=300,
+            timestamp=timestamp,
+        )
+        return analyzer, list(analyzer._events)
 
-    assert events[0].event_type == "THROTTLED"
-    assert events[0].direction is None
-    assert events[0].throttled_inferred_direction == "BUY"
-    assert events[1].event_type == "DOWNGRADED_TO_HOLD"
-    assert events[1].direction == "BUY"
+    analyzer, events = record_pair()
+    replay_analyzer, replay_events = record_pair()
+
+    throttled = [event for event in events if event.event_type == "THROTTLED"]
+    downgraded = [event for event in events if event.event_type == "DOWNGRADED_TO_HOLD"]
+
+    assert len(throttled) == 1
+    assert len(downgraded) == 1
+    assert throttled[0].direction is None
+    assert throttled[0].throttled_inferred_direction == "BUY"
+    assert throttled[0].eligible_for_execution is False
+    assert downgraded[0].direction == "BUY"
+    assert downgraded[0].effective_action == "HOLD"
+    assert downgraded[0].eligible_for_execution is False
+
+    assert len({event.timestamp for event in events}) == 1
+    assert events == sorted(events, key=analyzer._canonical_event_key)
+    assert [analyzer._canonical_event_key(event) for event in events] == [
+        replay_analyzer._canonical_event_key(event) for event in replay_events
+    ]
 
 
 def test_csv_fixture_reports_data_quality_without_large_raw_export():
