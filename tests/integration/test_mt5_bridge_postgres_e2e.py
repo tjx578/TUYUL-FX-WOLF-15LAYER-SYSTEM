@@ -29,6 +29,8 @@ Opt-in, like the lifecycle V2 suite: set
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -114,6 +116,77 @@ class _PoolBackedPostgres:
             yield connection
 
 
+def _canonical_governance_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    return value
+
+
+def _governance_snapshot(row: Any) -> dict[str, Any]:
+    if row is None:
+        raise RuntimeError("executor_bridge_governance singleton is missing")
+    return {str(key): value for key, value in dict(row).items()}
+
+
+def _governance_fingerprint(snapshot: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        {key: _canonical_governance_value(value) for key, value in snapshot.items()},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _assert_governance_restored_exactly(
+    baseline: dict[str, Any],
+    restored: dict[str, Any],
+) -> None:
+    if restored != baseline:
+        changed = {
+            key: {"baseline": baseline.get(key), "restored": restored.get(key)}
+            for key in sorted(set(baseline) | set(restored))
+            if baseline.get(key) != restored.get(key)
+        }
+        raise RuntimeError(f"executor_bridge_governance exact restoration failed: {changed}")
+    if _governance_fingerprint(restored) != _governance_fingerprint(baseline):
+        raise RuntimeError("executor_bridge_governance fingerprint restoration failed")
+
+
+def _quoted_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+async def _restore_governance_exactly(connection: Any, baseline: dict[str, Any]) -> dict[str, Any]:
+    primary_key = "singleton_id"
+    if primary_key not in baseline:
+        raise RuntimeError("executor_bridge_governance snapshot is missing singleton_id")
+    mutable_columns = tuple(column for column in baseline if column != primary_key)
+    if not mutable_columns:
+        raise RuntimeError("executor_bridge_governance snapshot has no restorable columns")
+    assignments = ", ".join(
+        f"{_quoted_identifier(column)} = ${index}" for index, column in enumerate(mutable_columns, start=1)
+    )
+    primary_key_position = len(mutable_columns) + 1
+    values = tuple(baseline[column] for column in mutable_columns) + (baseline[primary_key],)
+    async with connection.transaction():
+        await connection.execute(
+            f"UPDATE executor_bridge_governance SET {assignments} "
+            f"WHERE {_quoted_identifier(primary_key)} = ${primary_key_position}",
+            *values,
+        )
+        restored = _governance_snapshot(
+            await connection.fetchrow(
+                "SELECT * FROM executor_bridge_governance WHERE singleton_id = $1 FOR UPDATE",
+                baseline[primary_key],
+            )
+        )
+        _assert_governance_restored_exactly(baseline, restored)
+        return restored
+
+
 @pytest_asyncio.fixture
 async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
     if os.getenv(_RUN_FLAG) != "1":
@@ -127,9 +200,24 @@ async def postgres() -> AsyncIterator[_PoolBackedPostgres]:
         pytest.fail(f"{_RUN_FLAG}=1 requires the asyncpg dependency")
 
     pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=4, command_timeout=10)
+    baseline_connection = await pool.acquire()
     try:
-        yield _PoolBackedPostgres(pool)
+        governance_baseline = _governance_snapshot(
+            await baseline_connection.fetchrow("SELECT * FROM executor_bridge_governance WHERE singleton_id = 1")
+        )
+        await pool.release(baseline_connection)
+        baseline_connection = None
+        try:
+            yield _PoolBackedPostgres(pool)
+        finally:
+            restoration_connection = await pool.acquire()
+            try:
+                await _restore_governance_exactly(restoration_connection, governance_baseline)
+            finally:
+                await pool.release(restoration_connection)
     finally:
+        if baseline_connection is not None:
+            await pool.release(baseline_connection)
         await pool.close()
 
 
@@ -356,17 +444,6 @@ async def _cleanup(postgres: _PoolBackedPostgres, executor_id: UUID) -> None:
     await postgres.execute("DELETE FROM execution_commands WHERE executor_id = $1::uuid", str(executor_id))
     await postgres.execute("DELETE FROM executor_account_snapshots WHERE executor_id = $1::uuid", str(executor_id))
     await postgres.execute("DELETE FROM executor_instances WHERE executor_id = $1::uuid", str(executor_id))
-    await postgres.execute(
-        """
-        UPDATE executor_bridge_governance
-        SET kill_switch_active = true,
-            kill_switch_reason = 'integration fixture cleanup',
-            governance_version = governance_version + 1,
-            updated_by = 'integration:fixture',
-            updated_at = now()
-        WHERE singleton_id = 1
-        """
-    )
 
 
 @pytest_asyncio.fixture
