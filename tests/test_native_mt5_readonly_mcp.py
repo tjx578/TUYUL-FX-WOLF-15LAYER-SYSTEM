@@ -198,7 +198,9 @@ class FakeMT5:
         raise AssertionError("a write surface was invoked")
 
 
-def _bridge(tmp_path: Path, *, initialize_ok: bool = True, empty: bool = False) -> tuple[server.MT5ReadOnlyBridge, FakeMT5]:
+def _bridge(
+    tmp_path: Path, *, initialize_ok: bool = True, empty: bool = False
+) -> tuple[server.MT5ReadOnlyBridge, FakeMT5]:
     terminal = tmp_path / "terminal64.exe"
     terminal.parent.mkdir(parents=True, exist_ok=True)
     terminal.write_bytes(b"MZ")
@@ -352,9 +354,5 @@ def test_all_five_reads_emit_the_same_versioned_hmac_and_terminal_identity(tmp_p
     assert {report["account_binding"]["identifier"] for report in reports} == {expected_identifier}
     assert {report["account_binding"]["key_id"] for report in reports} == {TEST_KEY_ID}
     assert {report["account_binding"]["server"] for report in reports} == {"Broker-Demo"}
-    assert {report["terminal"]["path_sha256"] for report in reports} == {
-        reports[0]["terminal"]["path_sha256"]
-    }
-    assert {tuple(report["terminal"]["version"]) for report in reports} == {
-        tuple(reports[0]["terminal"]["version"])
-    }
+    assert {report["terminal"]["path_sha256"] for report in reports} == {reports[0]["terminal"]["path_sha256"]}
+    assert {tuple(report["terminal"]["version"]) for report in reports} == {tuple(reports[0]["terminal"]["version"])}

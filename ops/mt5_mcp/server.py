@@ -266,12 +266,8 @@ class MT5ReadOnlyBridge:
         binding_key_id: str | None = None
         binding_error: str | None = None
         try:
-            binding_key = account_binding.decode_secret_key(
-                os.environ.get(account_binding.KEY_ENV, "")
-            )
-            binding_key_id = account_binding.validate_key_id(
-                os.environ.get(account_binding.KEY_ID_ENV, "")
-            )
+            binding_key = account_binding.decode_secret_key(os.environ.get(account_binding.KEY_ENV, ""))
+            binding_key_id = account_binding.validate_key_id(os.environ.get(account_binding.KEY_ID_ENV, ""))
         except account_binding.AccountBindingError as exc:
             binding_error = exc.code
         return cls(
@@ -439,7 +435,9 @@ class MT5ReadOnlyBridge:
             "records": None,
         }
 
-    def _bounded_records(self, records: Sequence[Any], fields: Sequence[str], limit: int) -> tuple[list[dict[str, Any]], bool]:
+    def _bounded_records(
+        self, records: Sequence[Any], fields: Sequence[str], limit: int
+    ) -> tuple[list[dict[str, Any]], bool]:
         bounded = records[-limit:]
         return [_serialize_record(record, fields) for record in bounded], len(records) > len(bounded)
 

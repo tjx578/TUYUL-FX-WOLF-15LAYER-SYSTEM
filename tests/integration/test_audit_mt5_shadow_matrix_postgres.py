@@ -726,9 +726,7 @@ async def test_acceptance_readiness_rejects_a_same_named_weakened_payload_check(
     )
     assert isinstance(original, str)
     try:
-        await postgres.execute(
-            f"ALTER TABLE execution_commands DROP CONSTRAINT {_PAYLOAD_LINEAGE_CONSTRAINT}"
-        )
+        await postgres.execute(f"ALTER TABLE execution_commands DROP CONSTRAINT {_PAYLOAD_LINEAGE_CONSTRAINT}")
         status = await repository.shadow_acceptance_schema_status()
         assert status["ready"] is False
         assert status["payload_constraint"] is False

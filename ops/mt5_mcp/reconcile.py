@@ -386,9 +386,7 @@ def _direct_identity(
     return "MEASURED", evidence, direct
 
 
-def _account_binding(
-    broker: Mapping[str, Any], database: Mapping[str, Any]
-) -> tuple[str, dict[str, Any]]:
+def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     direct_state, direct_evidence, direct = _direct_identity(broker)
     if direct_state != "MEASURED" or direct is None:
         return direct_state, {**direct_evidence, "direct_account_identifier_match": "NOT_MEASURED"}
@@ -397,9 +395,7 @@ def _account_binding(
     freshness = database.get("executor_freshness", [])
     bindings = database.get("account_binding", [])
     active_ids = {
-        str(row.get("executor_id"))
-        for row in identities
-        if isinstance(row, Mapping) and row.get("revoked_at") is None
+        str(row.get("executor_id")) for row in identities if isinstance(row, Mapping) and row.get("revoked_at") is None
     }
     fresh_ids = {
         str(row.get("executor_id"))
@@ -611,9 +607,10 @@ async def _database_snapshot(dsn: str, *, window_from: datetime, window_to: date
         ledger = await connection.fetch(LEDGER_SQL, window_from, window_to, limit)
         mirror = await connection.fetch(MIRROR_SQL, window_from, window_to, limit)
         mutation = _mapping(await connection.fetchrow(MUTATION_SQL))
-        truncated = any(
-            len(rows) > MAX_DATABASE_ROWS for rows in (identity, freshness, binding, ledger, mirror)
-        ) or len(containment) > 1
+        truncated = (
+            any(len(rows) > MAX_DATABASE_ROWS for rows in (identity, freshness, binding, ledger, mirror))
+            or len(containment) > 1
+        )
         report = {
             "measured": True,
             "truncated": truncated,
