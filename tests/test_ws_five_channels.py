@@ -129,6 +129,42 @@ def _mock_create_task(coro: Any) -> MagicMock:
     return task
 
 
+@pytest.fixture(autouse=True)
+def _close_test_owned_connections(monkeypatch: pytest.MonkeyPatch):
+    """Finalise every accepted connection owned by the current test."""
+    from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+    original_connect = ConnectionManager.connect
+    original_disconnect = ConnectionManager.disconnect
+    active: dict[tuple[ConnectionManager, Any], None] = {}
+
+    async def tracked_connect(manager: ConnectionManager, websocket: Any) -> bool:
+        connected = await original_connect(manager, websocket)
+        if connected:
+            active[(manager, websocket)] = None
+        return connected
+
+    def tracked_disconnect(manager: ConnectionManager, websocket: Any) -> None:
+        original_disconnect(manager, websocket)
+        active.pop((manager, websocket), None)
+
+    monkeypatch.setattr(ConnectionManager, "connect", tracked_connect)
+    monkeypatch.setattr(ConnectionManager, "disconnect", tracked_disconnect)
+    try:
+        yield
+    finally:
+        failures: list[Exception] = []
+        for manager, websocket in tuple(active):
+            try:
+                original_disconnect(manager, websocket)
+                active.pop((manager, websocket), None)
+            except Exception as exc:
+                failures.append(exc)
+        if failures:
+            raise AssertionError(f"{len(failures)} fixture-owned connection(s) failed teardown") from failures[0]
+        assert active == {}
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CandleAggregator unit tests (no WS overhead)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -892,6 +928,11 @@ class TestWsAuthRejection:
             patch("asyncio.create_task", side_effect=_mock_create_task),
         ):
             result = await mgr.connect(ws)
+            try:
+                assert result is True
+                assert ws in mgr.active_connections
+            finally:
+                if result:
+                    mgr.disconnect(ws)
 
-        assert result is True
-        assert ws in mgr.active_connections
+        assert ws not in mgr.active_connections

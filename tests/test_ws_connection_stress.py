@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -56,6 +57,83 @@ def _register_connected_ws(manager, ws: MagicMock) -> None:
     """Register a mock client with the state connect() normally creates."""
     manager.active_connections.add(ws)
     manager._per_conn_seq[ws] = itertools.count(1)  # noqa: SLF001
+
+
+class _OwnedConnections:
+    """Track only connections accepted by one test and close each exactly once."""
+
+    def __init__(self) -> None:
+        self._active: dict[MagicMock, Any] = {}
+        self.finalizer_disconnects = 0
+
+    @property
+    def active_count(self) -> int:
+        return len(self._active)
+
+    def record(self, manager: Any, websocket: MagicMock) -> None:
+        if websocket in self._active:
+            raise AssertionError("accepted connection was recorded twice")
+        self._active[websocket] = manager
+
+    def disconnect(self, manager: Any, websocket: MagicMock, *, finalizer: bool = False) -> None:
+        owner = self._active.get(websocket)
+        if owner is None:
+            raise AssertionError("connection is not owned or was already disconnected")
+        if owner is not manager:
+            raise AssertionError("connection belongs to a different fixture manager")
+
+        manager.disconnect(websocket)
+        if websocket in manager.active_connections:
+            raise AssertionError("disconnect returned without removing the owned connection")
+        del self._active[websocket]
+        if finalizer:
+            self.finalizer_disconnects += 1
+
+    def close_all(self) -> None:
+        failures: list[Exception] = []
+        for websocket, manager in tuple(self._active.items()):
+            try:
+                self.disconnect(manager, websocket, finalizer=True)
+            except Exception as exc:  # preserve cleanup failure as test evidence
+                failures.append(exc)
+        if failures:
+            raise AssertionError(f"{len(failures)} owned connection(s) failed deterministic cleanup") from failures[0]
+
+
+@pytest.fixture(autouse=True)
+def _close_test_owned_connections(monkeypatch: pytest.MonkeyPatch):
+    """Finalise every accepted connection owned by the current test."""
+    from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+    original_connect = ConnectionManager.connect
+    original_disconnect = ConnectionManager.disconnect
+    active: dict[tuple[ConnectionManager, MagicMock], None] = {}
+
+    async def tracked_connect(manager: ConnectionManager, websocket: MagicMock) -> bool:
+        connected = await original_connect(manager, websocket)
+        if connected:
+            active[(manager, websocket)] = None
+        return connected
+
+    def tracked_disconnect(manager: ConnectionManager, websocket: MagicMock) -> None:
+        original_disconnect(manager, websocket)
+        active.pop((manager, websocket), None)
+
+    monkeypatch.setattr(ConnectionManager, "connect", tracked_connect)
+    monkeypatch.setattr(ConnectionManager, "disconnect", tracked_disconnect)
+    try:
+        yield
+    finally:
+        failures: list[Exception] = []
+        for manager, websocket in tuple(active):
+            try:
+                original_disconnect(manager, websocket)
+                active.pop((manager, websocket), None)
+            except Exception as exc:
+                failures.append(exc)
+        if failures:
+            raise AssertionError(f"{len(failures)} fixture-owned connection(s) failed teardown") from failures[0]
+        assert active == {}
 
 
 async def _connect_n(manager, n: int, auth_user: dict | None = None) -> list[MagicMock]:
@@ -526,23 +604,189 @@ class TestConcurrentConnectStress:
 
         mgr = ConnectionManager(name="interleave-test")
         connected_ws: list[MagicMock] = []
+        owned = _OwnedConnections()
+        attempts = 0
+        accepted = 0
+        rejected = 0
+        scenario_disconnects = 0
 
-        for i in range(150):
-            if i % 3 == 0 and connected_ws:
-                # Disconnect the oldest
-                victim = connected_ws.pop(0)
-                mgr.disconnect(victim)
-            else:
-                ws = _make_ws(f"ws-{i}")
-                with (
-                    patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": f"u{i}"})),
-                    patch("asyncio.create_task", side_effect=_mock_create_task),
-                ):
-                    connected = await mgr.connect(ws)
-                if connected:
-                    connected_ws.append(ws)
+        try:
+            for i in range(150):
+                if i % 3 == 0 and connected_ws:
+                    # Disconnect the oldest without changing the historical pattern.
+                    victim = connected_ws.pop(0)
+                    owned.disconnect(mgr, victim)
+                    scenario_disconnects += 1
+                else:
+                    attempts += 1
+                    ws = _make_ws(f"ws-{i}")
+                    with (
+                        patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": f"u{i}"})),
+                        patch("asyncio.create_task", side_effect=_mock_create_task),
+                    ):
+                        connected = await mgr.connect(ws)
+                    if connected:
+                        accepted += 1
+                        connected_ws.append(ws)
+                        owned.record(mgr, ws)
+                    else:
+                        rejected += 1
 
-            # Invariant: never exceed cap
-            assert len(mgr.active_connections) <= MAX_WS_CONNECTIONS, (
-                f"Iteration {i}: connections {len(mgr.active_connections)} > cap {MAX_WS_CONNECTIONS}"
-            )
+                # Invariant: never exceed cap
+                assert len(mgr.active_connections) <= MAX_WS_CONNECTIONS, (
+                    f"Iteration {i}: connections {len(mgr.active_connections)} > cap {MAX_WS_CONNECTIONS}"
+                )
+
+            assert attempts == 101
+            assert accepted == 99
+            assert rejected == 2
+            assert scenario_disconnects == 49
+            assert owned.active_count == 50
+        finally:
+            owned.close_all()
+            connected_ws.clear()
+
+        assert owned.finalizer_disconnects == 50
+        assert owned.active_count == 0
+        assert connected_ws == []
+        assert mgr.active_connections == set()
+
+
+class TestOwnedConnectionCleanup:
+    """Negative controls for fail-closed fixture ownership and teardown."""
+
+    @pytest.mark.asyncio
+    async def test_rejected_connection_is_not_owned(self):
+        from api.ws_routes import MAX_WS_CONNECTIONS, ConnectionManager  # noqa: PLC0415
+
+        mgr = ConnectionManager(name="rejected-not-owned")
+        fillers = _OwnedConnections()
+        for i in range(MAX_WS_CONNECTIONS):
+            existing = _make_ws(f"existing-{i}")
+            _register_connected_ws(mgr, existing)
+            fillers.record(mgr, existing)
+        rejected = _make_ws("rejected")
+        owned = _OwnedConnections()
+
+        try:
+            connected = await mgr.connect(rejected)
+            if connected:
+                owned.record(mgr, rejected)
+
+            assert connected is False
+            assert owned.active_count == 0
+        finally:
+            fillers.close_all()
+
+        assert mgr.active_connections == set()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_does_not_delete_another_fixture_session(self):
+        from api import ws_routes  # noqa: PLC0415
+
+        sessions: dict[str, int] = {}
+
+        def session_set(key: str, value: int, *, ex: int) -> None:
+            assert ex > 0
+            sessions[key] = value
+
+        def session_delete(key: str) -> None:
+            del sessions[key]
+
+        mgr_a = ws_routes.ConnectionManager(name="owner-a")
+        mgr_b = ws_routes.ConnectionManager(name="owner-b")
+        ws_a = _make_ws("owned-a")
+        ws_b = _make_ws("owned-b")
+        owned = _OwnedConnections()
+        with (
+            patch("api.ws_routes._ws_session_set", side_effect=session_set),
+            patch("api.ws_routes._ws_session_delete", side_effect=session_delete),
+            patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "fixture"})),
+            patch("asyncio.create_task", side_effect=_mock_create_task),
+        ):
+            assert await mgr_a.connect(ws_a) is True
+            owned.record(mgr_a, ws_a)
+            assert await mgr_b.connect(ws_b) is True
+            owned.close_all()
+
+            assert len(sessions) == 1
+            assert ws_b in mgr_b.active_connections
+            mgr_b.disconnect(ws_b)
+
+        assert sessions == {}
+
+    def test_double_disconnect_is_not_hidden(self):
+        from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+        mgr = ConnectionManager(name="double-disconnect")
+        ws = _make_ws("owned")
+        _register_connected_ws(mgr, ws)
+        owned = _OwnedConnections()
+        owned.record(mgr, ws)
+        owned.disconnect(mgr, ws)
+
+        with pytest.raises(AssertionError, match="not owned or was already disconnected"):
+            owned.disconnect(mgr, ws)
+
+    def test_disconnect_failure_remains_visible(self):
+        manager = MagicMock()
+        manager.disconnect.side_effect = RuntimeError("disconnect failed")
+        ws = _make_ws("owned")
+        owned = _OwnedConnections()
+        owned.record(manager, ws)
+
+        with pytest.raises(AssertionError, match="failed deterministic cleanup") as exc_info:
+            owned.close_all()
+
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
+        assert owned.active_count == 1
+
+    def test_finalizer_runs_when_scenario_assertion_fails(self):
+        from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+        mgr = ConnectionManager(name="assertion-finalizer")
+        ws = _make_ws("owned")
+        _register_connected_ws(mgr, ws)
+        owned = _OwnedConnections()
+        owned.record(mgr, ws)
+
+        with pytest.raises(AssertionError, match="scenario failure"):
+            try:
+                raise AssertionError("scenario failure")
+            finally:
+                owned.close_all()
+
+        assert owned.active_count == 0
+        assert mgr.active_connections == set()
+
+    @pytest.mark.asyncio
+    async def test_fixture_exception_leaves_no_session_key(self):
+        from api import ws_routes  # noqa: PLC0415
+
+        sessions: dict[str, int] = {}
+
+        def session_set(key: str, value: int, *, ex: int) -> None:
+            assert ex > 0
+            sessions[key] = value
+
+        def session_delete(key: str) -> None:
+            del sessions[key]
+
+        mgr = ws_routes.ConnectionManager(name="fixture-exception")
+        ws = _make_ws("owned")
+        owned = _OwnedConnections()
+        with (
+            patch("api.ws_routes._ws_session_set", side_effect=session_set),
+            patch("api.ws_routes._ws_session_delete", side_effect=session_delete),
+            patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "fixture"})),
+            patch("asyncio.create_task", side_effect=_mock_create_task),
+            pytest.raises(RuntimeError, match="fixture failed"),
+        ):
+            try:
+                assert await mgr.connect(ws) is True
+                owned.record(mgr, ws)
+                raise RuntimeError("fixture failed")
+            finally:
+                owned.close_all()
+
+        assert sessions == {}
