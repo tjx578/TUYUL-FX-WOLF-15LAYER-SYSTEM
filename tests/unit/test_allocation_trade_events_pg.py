@@ -6,6 +6,24 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_execution_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
+    store: dict[str, str] = {}
+
+    class _MemoryRedis:
+        def set(self, key: str, value: str, nx: bool | None = None, ex: int | None = None) -> bool:  # noqa: ARG002
+            if nx and key in store:
+                return False
+            store[key] = value
+            return True
+
+        def get(self, key: str) -> str | None:
+            return store.get(key)
+
+    monkeypatch.setattr("execution.idempotency_ledger._idempotency_redis_client", lambda: _MemoryRedis())
+    monkeypatch.setattr("execution.idempotency_ledger._IDEMPOTENCY_REDIS_UNAVAILABLE_UNTIL", 0.0)
+
+
 @pytest.mark.asyncio
 async def test_record_trade_event_updates_status_and_persists(monkeypatch: pytest.MonkeyPatch) -> None:
     import api.allocation_router as ar
@@ -28,6 +46,7 @@ async def test_record_trade_event_updates_status_and_persists(monkeypatch: pytes
     }
 
     monkeypatch.setattr(ar, "_redis_set", AsyncMock(return_value=True))
+    monkeypatch.setattr(ar, "_enqueue_outbox_atomic", AsyncMock(return_value="test-1"))
     persist_mock = AsyncMock(return_value=True)
     monkeypatch.setattr(ar, "_persist_trade_write_through", persist_mock)
     monkeypatch.setattr(ar, "_journal_service", Mock(on_trade_closed=Mock()))
@@ -68,6 +87,7 @@ async def test_record_trade_event_expired_marks_cancelled(monkeypatch: pytest.Mo
     }
 
     monkeypatch.setattr(ar, "_redis_set", AsyncMock(return_value=True))
+    monkeypatch.setattr(ar, "_enqueue_outbox_atomic", AsyncMock(return_value="test-2"))
     monkeypatch.setattr(ar, "_persist_trade_write_through", AsyncMock(return_value=True))
 
     closed_hook = Mock()
@@ -91,20 +111,6 @@ async def test_record_trade_event_expired_marks_cancelled(monkeypatch: pytest.Mo
 @pytest.mark.asyncio
 async def test_record_trade_event_replay_safe_by_execution_intent(monkeypatch: pytest.MonkeyPatch) -> None:
     import api.allocation_router as ar
-
-    store: dict[str, str] = {}
-
-    def _fake_set(key: str, value: str, nx: bool | None = None, ex: int | None = None):  # noqa: ARG001
-        if nx and key in store:
-            return False
-        store[key] = value
-        return True
-
-    def _fake_get(key: str):
-        return store.get(key)
-
-    monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.set", _fake_set)
-    monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.get", _fake_get)
 
     trade_id = "T-EVENT-3"
     trade_ledger = ar._trade_ledger

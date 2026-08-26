@@ -20,6 +20,7 @@ class _KillSwitchOff:
 @pytest.fixture(autouse=True)
 def _isolate_global_kill_switch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("risk.risk_router._kill_switch", _KillSwitchOff())
+    monkeypatch.setattr("risk.risk_router._publish_account_state_to_redis", lambda _state: None)
 
 
 def _app() -> FastAPI:

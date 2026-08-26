@@ -6,6 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import api.ea_router as ea_router_mod
 import risk.risk_router as risk_router_mod
 from api.config_profile_router import router as config_profile_router
 from api.ea_router import router as ea_router
@@ -35,7 +36,8 @@ def _headers(pin: str | None = None) -> dict[str, str]:
 
 
 @pytest.fixture(autouse=True)
-def _clean_global_kill_switch() -> Generator[None, None, None]:
+def _isolate_critical_writes(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    monkeypatch.setattr(ea_router_mod, "_ea_redis_call", lambda *_args, **_kwargs: None)
     risk_router_mod._kill_switch.disable("TEST_RESET")
     ConfigProfileEngine().set_lock(False, actor="test-admin", reason="TEST_RESET")
     yield

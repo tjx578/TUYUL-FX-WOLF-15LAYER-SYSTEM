@@ -37,6 +37,7 @@ def coordinator(mock_take_service, mock_firewall):
     return OrchestratorCoordinator(
         take_signal_service=mock_take_service,
         risk_firewall=mock_firewall,
+        stream_publisher=AsyncMock(),
     )
 
 
@@ -413,15 +414,8 @@ class TestDispatchFailure:
         mock_firewall.evaluate.return_value = approved_firewall_result
         mock_take_service.transition.return_value = pending_take_response
 
-        from unittest.mock import patch
-
-        with (
-            patch(
-                "infrastructure.stream_publisher.StreamPublisher.publish",
-                side_effect=ConnectionError("Redis down"),
-            ),
-            pytest.raises(ConnectionError, match="Redis down"),
-        ):
+        coordinator._publisher.publish.side_effect = ConnectionError("Redis down")  # noqa: SLF001
+        with pytest.raises(ConnectionError, match="Redis down"):
             await coordinator.process_take_signal("take_001", test_signal, test_account)
 
         # Only one transition (FIREWALL_APPROVED) — never EXECUTION_SENT

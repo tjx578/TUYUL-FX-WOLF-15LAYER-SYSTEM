@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from core.redis_keys import HEARTBEAT_ORCHESTRATOR, KILL_SWITCH
 from infrastructure.redis_url import get_redis_url
 from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.state_manager import StateManager
@@ -72,6 +73,22 @@ def redis_client() -> Any:
             client.close()
 
 
+def _assert_expected_safety_outputs(redis_client: Any) -> None:
+    assert redis_client.type(KILL_SWITCH) == "string"
+    assert redis_client.type(HEARTBEAT_ORCHESTRATOR) == "string"
+    assert redis_client.pttl(KILL_SWITCH) == -1
+    assert redis_client.pttl(HEARTBEAT_ORCHESTRATOR) == -1
+    assert int(redis_client.memory_usage(KILL_SWITCH)) > 0
+    assert int(redis_client.memory_usage(HEARTBEAT_ORCHESTRATOR)) > 0
+
+    kill_switch = json.loads(redis_client.get(KILL_SWITCH))
+    heartbeat = json.loads(redis_client.get(HEARTBEAT_ORCHESTRATOR))
+    assert kill_switch["source"] == "wolf15-orchestrator"
+    assert isinstance(kill_switch["active"], bool)
+    assert heartbeat["producer"] == "wolf15-orchestrator"
+    assert isinstance(heartbeat["ts"], float)
+
+
 @pytest.mark.integration
 def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     suffix = uuid.uuid4().hex
@@ -109,6 +126,7 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
         payload = json.loads(stored)
         assert payload["event"] == "MODE_CHANGED"
         assert payload["mode"] == "SAFE"
+        _assert_expected_safety_outputs(redis_client)
     finally:
         manager.close()
         redis_client.delete(state_key, account_key, risk_key)
@@ -156,6 +174,7 @@ def test_orchestrator_compliance_tick_reads_redis_snapshots(redis_client: Any, m
         payload = json.loads(stored)
         assert payload["event"] == "MODE_CHANGED"
         assert payload["mode"] == "SAFE"
+        _assert_expected_safety_outputs(redis_client)
     finally:
         manager.close()
         redis_client.delete(state_key, account_key, risk_key)

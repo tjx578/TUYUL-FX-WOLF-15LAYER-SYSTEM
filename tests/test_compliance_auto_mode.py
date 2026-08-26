@@ -21,6 +21,17 @@ from services.orchestrator.compliance_guard import (
     evaluate_compliance,
 )
 
+
+class _NoopStreamPublisher:
+    async def publish(self, *, stream: str, fields: dict[str, object]) -> str:
+        return "test-0"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_stream_publisher(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("infrastructure.stream_publisher.StreamPublisher", _NoopStreamPublisher)
+
+
 # ── Auto-Mode State Machine ──────────────────────────────────────────────
 
 

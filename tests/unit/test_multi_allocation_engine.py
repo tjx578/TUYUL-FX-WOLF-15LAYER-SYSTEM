@@ -22,7 +22,7 @@ class _NoopAudit:
         return None
 
 
-def test_one_signal_three_accounts_two_execute_one_reject() -> None:
+def test_one_signal_three_accounts_two_execute_one_reject(monkeypatch) -> None:
     repo = AccountRepository.get_default()
 
     repo.upsert_state(
@@ -92,6 +92,8 @@ def test_one_signal_three_accounts_two_execute_one_reject() -> None:
     service._repo = repo
     service._registry = _MemoryRegistry(signal)  # type: ignore[assignment]
     service._audit = _NoopAudit()  # type: ignore[assignment]
+    monkeypatch.setattr(service, "_check_idempotency", lambda _request_id: None)
+    monkeypatch.setattr(service, "_record_idempotency", lambda _request_id, _result: None)
     service._push_execution_plan = lambda request, signal_raw, account_id, lot_size: pushed.append(
         (account_id, lot_size)
     )

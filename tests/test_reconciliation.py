@@ -8,6 +8,7 @@ and prevention of blind duplicate semantics.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -40,7 +41,7 @@ def repo(monkeypatch):
 
 @pytest.fixture
 def reconciler(repo):
-    return ExecutionReconciler(repo=repo, pending_timeout_sec=120)
+    return ExecutionReconciler(repo=repo, pending_timeout_sec=120, stream_publisher=AsyncMock())
 
 
 def _make_intent(

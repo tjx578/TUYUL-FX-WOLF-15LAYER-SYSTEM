@@ -171,8 +171,9 @@ class TestPortfolioReadModel:
             ExecutionLifecycleState.EXPIRED,
         ],
     )
-    async def test_terminal_states_trigger_portfolio_update(self, state):
+    async def test_terminal_states_trigger_portfolio_update(self, state, monkeypatch):
         """All terminal execution states should trigger portfolio read model update."""
+        monkeypatch.setattr("execution.execution_truth_feed._redis_cache_set", lambda *_args, **_kwargs: None)
         tf = ExecutionTruthFeed()
         intent = ExecutionIntentRecord(
             execution_intent_id=f"ei_{state.value}",
