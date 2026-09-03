@@ -26,6 +26,7 @@ Durability and recovery are handled externally (see startup/candle_seeding.py, i
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime, timedelta
 from threading import Lock
 from typing import Any
 
@@ -41,6 +42,63 @@ from state.data_freshness import (
 # Maximum candle history entries per symbol:timeframe key.
 # Prevents unbounded memory growth during long-running sessions.
 CANDLE_MAX_BUFFER = 250
+
+
+def _as_utc_datetime(value: Any) -> datetime | None:
+    """Parse supported candle timestamps without guessing local timezone."""
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    if isinstance(value, (int, float)):
+        epoch = float(value)
+        if epoch > 10_000_000_000:
+            epoch /= 1000.0
+        try:
+            return datetime.fromtimestamp(epoch, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return None
+        try:
+            return _as_utc_datetime(float(normalized))
+        except ValueError:
+            pass
+        try:
+            parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+    return None
+
+
+def _h1_close_time(candle: dict[str, Any]) -> datetime | None:
+    """Return the canonical H1 period close for a candle, when provable."""
+    close_time = _as_utc_datetime(candle.get("close_time"))
+    if close_time is not None:
+        return close_time
+    open_time = _as_utc_datetime(candle.get("open_time"))
+    if open_time is not None:
+        return open_time + timedelta(hours=1)
+
+    semantics = str(candle.get("provider_timestamp_semantics", "")).strip().upper()
+    provider_time = _as_utc_datetime(
+        candle.get("provider_timestamp") or candle.get("timestamp") or candle.get("time")
+    )
+    if provider_time is None:
+        return None
+    if semantics == "PERIOD_END":
+        return provider_time
+    if semantics == "PERIOD_OPEN":
+        return provider_time + timedelta(hours=1)
+    return None
+
+
+def _is_ws_built_h1(candle: dict[str, Any]) -> bool:
+    """Identify H1 candles built from the WebSocket tick lane."""
+    provider = str(candle.get("provider", "")).strip().lower()
+    provider_feed = str(candle.get("provider_feed", "")).strip().lower()
+    return provider == "wolf15_tick_builder" or provider_feed == "finnhub_ws"
 
 
 class LiveContextBus:
@@ -609,7 +667,11 @@ class LiveContextBus:
         return {"symbols": symbols}
 
     def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
-        """Compare latest REST H1 close with WS mid-price to detect drift.
+        """Compare time-aligned REST and WS-built closed H1 candles.
+
+        The latest live WS mid is retained as observational context, but is
+        never treated as comparable to a historical H1 close. A drift verdict
+        requires two explicitly closed H1 candles with the same close time.
 
         Args:
             symbol:         Trading symbol (e.g. ``EURUSD``).
@@ -619,15 +681,20 @@ class LiveContextBus:
             Stable dict consumed by ``H1RefreshScheduler``::
 
                 {
-                    "drifted":    bool,
-                    "drift_pips": float,
-                    "rest_close": float | None,
-                    "ws_mid":     float | None,
+                    "comparable":             bool,
+                    "reason":                 str,
+                    "drifted":                bool,
+                    "drift_pips":             float,
+                    "observed_live_gap_pips": float | None,
+                    "rest_close":             float | None,
+                    "ws_h1_close":            float | None,
+                    "ws_mid":                 float | None,
                 }
         """
-        # Latest REST H1 bar close
         h1_candles = self.get_candles(symbol, "H1")
-        rest_close: float | None = h1_candles[-1]["close"] if h1_candles else None
+        rest_candle = next((c for c in reversed(h1_candles) if not _is_ws_built_h1(c)), None)
+        rest_close = float(rest_candle["close"]) if rest_candle and rest_candle.get("close") is not None else None
+        rest_close_time = _h1_close_time(rest_candle) if rest_candle else None
 
         # Latest WS tick mid-price
         tick = self.get_latest_tick(symbol)
@@ -640,39 +707,91 @@ class LiveContextBus:
             elif bid is not None:
                 ws_mid = float(bid)
 
-        # Cannot compute drift without both prices
-        if rest_close is None or ws_mid is None:
-            return {
-                "drifted": False,
-                "drift_pips": 0.0,
-                "rest_close": rest_close,
-                "ws_mid": ws_mid,
-            }
-
-        # Convert raw price difference to pips
         try:
             multiplier = get_pip_multiplier(symbol)
         except LookupError:
-            # Fall back to standard forex multiplier
             multiplier = 10_000.0
 
-        drift_pips = abs(rest_close - ws_mid) * multiplier
-        drifted = drift_pips > max_drift_pips
+        observed_live_gap_pips = (
+            abs(rest_close - ws_mid) * multiplier if rest_close is not None and ws_mid is not None else None
+        )
+
+        ws_h1_candle = None
+        if rest_close_time is not None:
+            for candidate in reversed(h1_candles):
+                candidate_close_time = _h1_close_time(candidate)
+                if (
+                    _is_ws_built_h1(candidate)
+                    and candidate.get("complete") is True
+                    and candidate_close_time is not None
+                    and abs((candidate_close_time - rest_close_time).total_seconds()) < 1.0
+                ):
+                    ws_h1_candle = candidate
+                    break
+
+        reason = "ALIGNED_CLOSED_H1"
+        if rest_candle is None:
+            reason = "MISSING_REST_H1"
+        elif rest_candle.get("complete") is not True:
+            reason = "REST_H1_NOT_EXPLICITLY_CLOSED"
+        elif rest_close is None:
+            reason = "MISSING_REST_H1_CLOSE"
+        elif rest_close_time is None:
+            reason = "MISSING_REST_H1_CLOSE_TIME"
+        elif ws_h1_candle is None:
+            reason = "MISSING_ALIGNED_WS_CLOSED_H1"
+
+        comparable = reason == "ALIGNED_CLOSED_H1"
+        ws_h1_close = (
+            float(ws_h1_candle["close"])
+            if ws_h1_candle is not None and ws_h1_candle.get("close") is not None
+            else None
+        )
+        if comparable and ws_h1_close is None:
+            comparable = False
+            reason = "MISSING_WS_H1_CLOSE"
+
+        if comparable:
+            assert rest_close is not None and ws_h1_close is not None
+            drift_pips = abs(rest_close - ws_h1_close) * multiplier
+        else:
+            drift_pips = 0.0
+        drifted = comparable and drift_pips > max_drift_pips
 
         if drifted:
             logger.warning(
-                "Price drift alert: %s REST_close=%.5f WS_mid=%.5f drift=%.1f pips (max=%.1f)",
+                "Price drift alert: {} REST_H1_close={:.5f} WS_H1_close={:.5f} "
+                "drift={:.1f} pips (max={:.1f}) close_time={}",
+                symbol,
+                rest_close,
+                ws_h1_close,
+                drift_pips,
+                max_drift_pips,
+                rest_close_time.isoformat() if rest_close_time is not None else None,
+            )
+        elif not comparable and observed_live_gap_pips is not None and observed_live_gap_pips > max_drift_pips:
+            logger.warning(
+                "Price drift not evaluated: {} REST_H1_close={:.5f} WS_live_mid={:.5f} "
+                "observed_gap={:.1f} pips (max={:.1f}) reason={}",
                 symbol,
                 rest_close,
                 ws_mid,
-                drift_pips,
+                observed_live_gap_pips,
                 max_drift_pips,
+                reason,
             )
 
+        ws_close_time = _h1_close_time(ws_h1_candle) if ws_h1_candle is not None else None
         return {
+            "comparable": comparable,
+            "reason": reason,
             "drifted": drifted,
             "drift_pips": drift_pips,
+            "observed_live_gap_pips": observed_live_gap_pips,
             "rest_close": rest_close,
+            "rest_close_time": rest_close_time.isoformat() if rest_close_time is not None else None,
+            "ws_h1_close": ws_h1_close,
+            "ws_close_time": ws_close_time.isoformat() if ws_close_time is not None else None,
             "ws_mid": ws_mid,
         }
 

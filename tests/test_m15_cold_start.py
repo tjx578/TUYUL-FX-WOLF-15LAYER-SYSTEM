@@ -116,8 +116,11 @@ class TestSchedulerM15ColdStartDetection:
             # M15 bar count below threshold (10)
             mock_bus.get_warmup_bar_count.return_value = 3
             mock_bus.check_price_drift.return_value = {
+                "comparable": False,
+                "reason": "MISSING_ALIGNED_WS_CLOSED_H1",
                 "drifted": False,
                 "drift_pips": 0.0,
+                "observed_live_gap_pips": None,
                 "rest_close": None,
                 "ws_mid": None,
             }
@@ -161,8 +164,11 @@ class TestSchedulerM15ColdStartDetection:
             # M15 bar count above threshold
             mock_bus.get_warmup_bar_count.return_value = 50
             mock_bus.check_price_drift.return_value = {
+                "comparable": False,
+                "reason": "MISSING_ALIGNED_WS_CLOSED_H1",
                 "drifted": False,
                 "drift_pips": 0.0,
+                "observed_live_gap_pips": None,
                 "rest_close": None,
                 "ws_mid": None,
             }

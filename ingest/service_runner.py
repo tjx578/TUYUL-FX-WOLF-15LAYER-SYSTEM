@@ -15,6 +15,7 @@ import orjson
 from loguru import logger
 
 from config_loader import get_enabled_symbols
+from context.live_context_bus import LiveContextBus
 from context.system_state import SystemState, SystemStateManager
 from core.redis_keys import HEARTBEAT_INGEST, HEARTBEAT_INGEST_PROCESS, HEARTBEAT_INGEST_PROVIDER
 from ingest.calendar_news import CalendarNewsIngestor
@@ -257,6 +258,7 @@ async def run_ingest_services(
         set_redis_client(redis)
 
         h1_builders: dict[str, CandleBuilder] = {}
+        live_context_bus = LiveContextBus()
 
         def _h1_on_complete(candle: Any) -> None:
             logger.info(
@@ -268,7 +270,10 @@ async def run_ingest_services(
                 candle.close,
                 getattr(candle, "tick_count", "?"),
             )
-            publish_candle_sync(candle.to_dict(), redis=redis)
+            candle_dict = candle.to_dict()
+            candle_dict["provider_feed"] = "finnhub_ws"
+            live_context_bus.update_candle(candle_dict)
+            publish_candle_sync(candle_dict, redis=redis)
 
         for _sym in enabled_symbols:
             h1_builders[_sym] = CandleBuilder(
