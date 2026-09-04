@@ -505,7 +505,7 @@ bool LoadRuntimeCredentials(string &reason)
 
    uchar header[];
    ArrayResize(header, W15_CREDENTIAL_HEADER_BYTES);
-   int header_read = FileReadArray(handle, header, 0, W15_CREDENTIAL_HEADER_BYTES);
+   uint header_read = FileReadArray(handle, header, 0, W15_CREDENTIAL_HEADER_BYTES);
    if(header_read != W15_CREDENTIAL_HEADER_BYTES)
    {
       FileClose(handle);
@@ -533,7 +533,7 @@ bool LoadRuntimeCredentials(string &reason)
 
    uchar payload[];
    ArrayResize(payload, payload_length);
-   int payload_read = FileReadArray(handle, payload, 0, payload_length);
+   uint payload_read = FileReadArray(handle, payload, 0, payload_length);
    if(payload_read != payload_length)
    {
       FileClose(handle);
@@ -542,7 +542,7 @@ bool LoadRuntimeCredentials(string &reason)
    }
    uchar trailing[];
    ArrayResize(trailing, 1);
-   int trailing_read = FileReadArray(handle, trailing, 0, 1);
+   uint trailing_read = FileReadArray(handle, trailing, 0, 1);
    FileClose(handle);
    if(trailing_read != 0)
    {
