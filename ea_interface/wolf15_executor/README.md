@@ -31,18 +31,17 @@ Before compiling:
 1. Add the bridge `https://` URL to MT5 Tools -> Options -> Expert Advisors ->
    Allow WebRequest.
 2. Pre-provision an EDUMB UUID in Agent Manager.
-3. Derive the executor bearer token from the server auth secret.
-4. Derive that executor's scoped command-verification key on a trusted machine
-   with `EXECUTOR_COMMAND_SIGNING_SECRET` set:
-
-   ```powershell
-   python scripts/derive_executor_command_key.py <executor-uuid>
-   ```
-
-5. Set `InpCommandVerificationKeyId` to the active
-   `EXECUTOR_COMMAND_SIGNING_KEY_ID`, and set
-   `InpCommandVerificationKey` to the script's `hex:<64 hex>` output. Never put
-   the root signing secret in MT5.
+3. Provision the executor-scoped bearer token and command-verification material
+   into the approved DPAPI CurrentUser vault. Never put either scoped secret,
+   or either root secret, in an EA input, profile, template, or `.set` file.
+4. Start the one-shot `wolf15-credential-broker.exe` helper as the same Windows
+   user as MT5. Bind its vault digest, executor, account-reference digest,
+   broker server, verification key id, pipe name, and timeout explicitly.
+5. Set `InpCredentialFile` to the local `\\.\pipe\...` reference exposed by
+   that helper. Set `InpExpectedAccountReferenceSha256` and
+   `InpCommandVerificationKeyId` to their nonsecret packet bindings. The helper
+   serves one framed credential envelope to one current-user pipe client and
+   then exits.
 6. Set the exact account id, `sha256:<64 hex>` login hash, and broker server.
    The compiled `WOLF15_XM_30_V1` universe is recorded in
    `broker_maps/xmglobal-mt5-10.csv` and must match the target broker probe.
