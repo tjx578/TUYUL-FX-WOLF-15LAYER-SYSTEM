@@ -35,8 +35,51 @@ def _immutable(table: str) -> None:
 
 
 def upgrade() -> None:
+    # A pre-V3 DEMO command may only cross this migration when its lifecycle is
+    # already terminal.  Never manufacture a packet/hash for historical data,
+    # and never infer a terminal outcome from age alone.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM execution_commands
+                WHERE source_event = 'ENGINEERING_DEMO_CANARY'
+                  AND (
+                      state NOT IN (
+                          'REJECTED','FILLED','CANCELLED','COMPLETED','EXPIRED',
+                          'SHADOW_COMPLETED','SHADOW_REJECTED'
+                      )
+                      OR terminal_at IS NULL
+                  )
+            ) THEN
+                RAISE EXCEPTION 'historical ENGINEERING_DEMO_CANARY command is nonterminal or ambiguous'
+                    USING ERRCODE='23514',
+                          CONSTRAINT='ck_demo_historical_terminal_required';
+            END IF;
+        END;
+        $$;
+        """
+    )
     op.add_column("execution_commands", sa.Column("authority_packet_sha256", sa.String(length=64), nullable=True))
     op.add_column("execution_commands", sa.Column("command_content_sha256", sa.String(length=64), nullable=True))
+    op.add_column(
+        "execution_commands",
+        sa.Column("legacy_authority_exempt", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+    )
+    op.add_column(
+        "execution_commands",
+        sa.Column("legacy_authority_classified_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.execute(
+        """
+        UPDATE execution_commands
+        SET legacy_authority_exempt = true,
+            legacy_authority_classified_at = transaction_timestamp()
+        WHERE source_event = 'ENGINEERING_DEMO_CANARY'
+        """
+    )
 
     op.create_table(
         "engineering_demo_canary_authority_packets",
@@ -70,9 +113,62 @@ def upgrade() -> None:
         (authority_packet_sha256 IS NULL) = (command_content_sha256 IS NULL)
         AND (
             source_event <> 'ENGINEERING_DEMO_CANARY'
+            OR legacy_authority_exempt
             OR (authority_packet_sha256 IS NOT NULL AND command_content_sha256 IS NOT NULL)
         )
+        AND (
+            NOT legacy_authority_exempt
+            OR (
+                source_event = 'ENGINEERING_DEMO_CANARY'
+                AND authority_packet_sha256 IS NULL
+                AND command_content_sha256 IS NULL
+                AND state IN (
+                    'REJECTED','FILLED','CANCELLED','COMPLETED','EXPIRED',
+                    'SHADOW_COMPLETED','SHADOW_REJECTED'
+                )
+                AND terminal_at IS NOT NULL
+            )
+        )
+        AND (legacy_authority_exempt = (legacy_authority_classified_at IS NOT NULL))
         """,
+    )
+    op.execute(
+        """
+        CREATE FUNCTION guard_execution_command_legacy_authority() RETURNS trigger AS $$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                IF OLD.legacy_authority_exempt THEN
+                    RAISE EXCEPTION 'historical authority-exempt command is immutable'
+                        USING ERRCODE='23514',
+                              CONSTRAINT='ck_demo_legacy_command_immutable';
+                END IF;
+                RETURN OLD;
+            END IF;
+            IF TG_OP = 'INSERT' AND NEW.legacy_authority_exempt THEN
+                RAISE EXCEPTION 'new command cannot claim historical authority exemption'
+                    USING ERRCODE='23514',
+                          CONSTRAINT='ck_demo_legacy_authority_insert_forbidden';
+            END IF;
+            IF TG_OP = 'UPDATE' AND OLD.legacy_authority_exempt THEN
+                RAISE EXCEPTION 'historical authority-exempt command is immutable'
+                    USING ERRCODE='23514',
+                          CONSTRAINT='ck_demo_legacy_command_immutable';
+            END IF;
+            IF TG_OP = 'UPDATE' AND (
+                NEW.legacy_authority_exempt IS DISTINCT FROM OLD.legacy_authority_exempt
+                OR NEW.legacy_authority_classified_at IS DISTINCT FROM OLD.legacy_authority_classified_at
+            ) THEN
+                RAISE EXCEPTION 'historical authority classification is migration-owned'
+                    USING ERRCODE='23514',
+                          CONSTRAINT='ck_demo_legacy_classification_immutable';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER trg_execution_command_legacy_authority
+        BEFORE INSERT OR UPDATE OR DELETE ON execution_commands
+        FOR EACH ROW EXECUTE FUNCTION guard_execution_command_legacy_authority();
+        """
     )
 
     op.create_table(
@@ -165,6 +261,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS trg_execution_command_legacy_authority ON execution_commands")
+    op.execute("DROP FUNCTION IF EXISTS guard_execution_command_legacy_authority()")
     for table in (
         "executor_mode_transition_receipts",
         "executor_mode_transition_authority_packets",
@@ -182,5 +280,7 @@ def downgrade() -> None:
     op.drop_constraint("ck_demo_command_frozen_authority_pair", "execution_commands", type_="check")
     op.drop_constraint("fk_demo_command_authority_packet", "execution_commands", type_="foreignkey")
     op.drop_table("engineering_demo_canary_authority_packets")
+    op.drop_column("execution_commands", "legacy_authority_classified_at")
+    op.drop_column("execution_commands", "legacy_authority_exempt")
     op.drop_column("execution_commands", "command_content_sha256")
     op.drop_column("execution_commands", "authority_packet_sha256")

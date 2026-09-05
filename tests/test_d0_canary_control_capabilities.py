@@ -127,6 +127,24 @@ def test_control_migration_is_single_head_and_contains_all_ledgers() -> None:
     assert "BEFORE UPDATE OR DELETE" in source
 
 
+def test_control_migration_preserves_only_terminal_pre_v3_demo_history() -> None:
+    path = Path(__file__).parents[1] / "storage/migrations/versions/20260905_01_d0_canary_control_capabilities.py"
+    source = path.read_text(encoding="utf-8")
+    assert "ck_demo_historical_terminal_required" in source
+    assert "legacy_authority_exempt" in source
+    assert "legacy_authority_classified_at" in source
+    assert "transaction_timestamp()" in source
+    assert "new command cannot claim historical authority exemption" in source
+    assert "historical authority-exempt command is immutable" in source
+    assert "historical authority classification is migration-owned" in source
+    assert "guard_execution_command_legacy_authority" in source
+    assert "BEFORE INSERT OR UPDATE OR DELETE ON execution_commands" in source
+    assert "RETURN OLD" in source
+    assert "authority_packet_sha256 IS NULL" in source
+    assert "command_content_sha256 IS NULL" in source
+    assert "terminal_at IS NOT NULL" in source
+
+
 def test_demo_ea_static_broker_call_limits_remain_bounded() -> None:
     source = (Path(__file__).parents[1] / "ea_interface/wolf15_executor/Wolf15_DumbExecutor_Demo.mq5").read_text(
         encoding="utf-8"
