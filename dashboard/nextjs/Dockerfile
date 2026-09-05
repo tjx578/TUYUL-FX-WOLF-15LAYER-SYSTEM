@@ -12,6 +12,9 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Keep the optional Next.js public asset directory present so the runtime-stage
+# COPY remains valid even when this viewer profile has no static assets.
+RUN mkdir -p public
 
 # Non-secret build defaults make the immutable viewer contract testable locally.
 # Railway can override these ARG values from service variables.
