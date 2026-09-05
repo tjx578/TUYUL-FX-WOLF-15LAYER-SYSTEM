@@ -7,15 +7,19 @@ import asyncio
 import hashlib
 import json
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
 from execution.mt5_command_repository import MT5CommandRepository
+from execution.mt5_demo_canary_authority_packet import (
+    ProcessLocalIssuanceCapability,
+    load_and_validate_authority_packet,
+    packet_sha256,
+)
 from execution.mt5_engineering_demo_canary import (
     MAX_CANARY_TTL_SECONDS,
     EngineeringDemoCanaryAuthorityV1,
-    EngineeringDemoCanaryRequest,
 )
 from execution.mt5_executor_governance import MT5ExecutorGovernanceRepository
 from storage.postgres_client import pg_client
@@ -44,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
     queue.add_argument("--max-price-drift-points", type=int, required=True)
     queue.add_argument("--ttl-seconds", type=int, default=90)
     queue.add_argument("--out", type=Path, required=True)
+
+    frozen = subparsers.add_parser("issue-frozen", help="issue one exact operator-frozen packet")
+    frozen.add_argument("--authority-packet", type=Path, required=True)
+    frozen.add_argument("--authority-packet-sha256", required=True)
+    frozen.add_argument("--out", type=Path, required=True)
 
     arm = subparsers.add_parser("arm", help="open the exact one-shot scope and disengage delivery")
     arm.add_argument("--canary-id", required=True)
@@ -75,26 +84,24 @@ async def execute(args: argparse.Namespace) -> dict[str, object]:
                 reason=args.reason,
                 expected_governance_version=args.expected_governance_version,
             )
-        issued_at = datetime.now(UTC)
-        request = EngineeringDemoCanaryRequest(
-            canary_id=args.canary_id,
-            executor_id=args.executor_id,
-            approved_account_id=args.account_id,
-            approved_broker_server=args.broker_server,
-            approved_canonical_symbol=args.canonical_symbol,
-            approved_broker_symbol=args.broker_symbol,
-            expected_account_snapshot_id=args.account_snapshot_id,
-            side=args.side,
-            volume=args.volume,
-            entry_price=args.entry_price,
-            stop_loss=args.stop_loss,
-            take_profit=args.take_profit,
-            max_spread_points=args.max_spread_points,
-            max_price_drift_points=args.max_price_drift_points,
-            issued_at_utc=issued_at,
-            expires_at_utc=issued_at + timedelta(seconds=args.ttl_seconds),
-        )
-        return await authority.issue(request)
+        if args.operation == "issue-frozen":
+            now = datetime.now(UTC)
+            packet = load_and_validate_authority_packet(
+                args.authority_packet.read_bytes(),
+                expected_sha256=args.authority_packet_sha256,
+                now=now,
+            )
+            digest = packet_sha256(packet)
+            capability = ProcessLocalIssuanceCapability(
+                packet_sha256_value=digest,
+                command_id=packet.command_id,
+            )
+            return await authority.issue_frozen(
+                packet,
+                expected_packet_sha256=digest,
+                capability=capability,
+            )
+        raise RuntimeError("legacy parameter-based queue is disabled; use issue-frozen")
     finally:
         await pg_client.close()
 

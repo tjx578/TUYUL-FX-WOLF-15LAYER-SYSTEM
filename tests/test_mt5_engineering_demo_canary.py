@@ -526,7 +526,7 @@ async def test_authority_is_default_off(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv("WOLF15_ENABLE_ENGINEERING_DEMO_CANARY_ISSUANCE", raising=False)
     authority = EngineeringDemoCanaryAuthorityV1(_FakeRepository())  # type: ignore[arg-type]
 
-    with pytest.raises(EngineeringDemoCanaryError, match="disabled"):
+    with pytest.raises(EngineeringDemoCanaryError, match="unbound issuance is disabled"):
         await authority.issue(_request())
 
 
@@ -538,11 +538,9 @@ async def test_authority_queues_under_engaged_kill_switch(monkeypatch: pytest.Mo
     repository = _FakeRepository()
     authority = EngineeringDemoCanaryAuthorityV1(repository)  # type: ignore[arg-type]
 
-    manifest = await authority.issue(_request())
-
-    assert manifest["demo_only"] is True
-    assert len(repository.enqueued) == 1
-    assert repository.enqueued[0].executor_binding.execution_mode is ExecutorMode.DEMO
+    with pytest.raises(EngineeringDemoCanaryError, match="use issue_frozen"):
+        await authority.issue(_request())
+    assert repository.enqueued == []
 
 
 @pytest.mark.asyncio
@@ -551,5 +549,5 @@ async def test_authority_refuses_issue_after_global_disarm(monkeypatch: pytest.M
     repository = _FakeRepository(kill_switch_active=False)
     authority = EngineeringDemoCanaryAuthorityV1(repository)  # type: ignore[arg-type]
 
-    with pytest.raises(EngineeringDemoCanaryError, match="kill switch"):
+    with pytest.raises(EngineeringDemoCanaryError, match="unbound issuance is disabled"):
         await authority.issue(_request())

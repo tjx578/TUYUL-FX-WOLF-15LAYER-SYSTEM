@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from contracts.mt5_execution_protocol import ExecutorMode
+from contracts.mt5_mode_transition_authority import ModeTransitionAuthorityError, ModeTransitionAuthorityPacket
 from storage.postgres_client import PostgresClient, pg_client
 
 
@@ -312,6 +314,9 @@ class MT5ExecutorGovernanceRepository:
         reason: str,
         expected_mode: ExecutorMode | str | None = None,
         expected_version: int | None = None,
+        authority_packet: ModeTransitionAuthorityPacket | None = None,
+        observed_configuration_sha256: str | None = None,
+        observed_final_shadow_receipt_sha256: str | None = None,
     ) -> GovernanceSnapshot:
         self._require_database()
         actor = _required_text(actor, "actor")
@@ -322,7 +327,8 @@ class MT5ExecutorGovernanceRepository:
             await acquire_canary_lifecycle_advisory_locks(connection, (executor_id,))
             row = await connection.fetchrow(
                 """
-                SELECT e.executor_id, e.execution_mode, e.mode_version, e.revoked_at,
+                SELECT e.executor_id, e.account_id, e.broker_server,
+                       e.execution_mode, e.mode_version, e.revoked_at,
                        a.execution_mode::text AS agent_execution_mode,
                        a.ea_subtype::text AS ea_subtype, a.locked,
                        g.kill_switch_active, g.kill_switch_reason, g.governance_version
@@ -352,6 +358,54 @@ class MT5ExecutorGovernanceRepository:
                 raise ModeTransitionError("LIVE promotion is blocked by the B2 rollout contract")
             if current is ExecutorMode.SHADOW and target is ExecutorMode.DEMO and not bool(row["kill_switch_active"]):
                 raise ModeTransitionError("SHADOW to DEMO requires the global kill switch to remain engaged")
+            if current is ExecutorMode.SHADOW and target is ExecutorMode.DEMO and authority_packet is None:
+                raise ModeTransitionError("SHADOW to DEMO requires an exact one-use authority packet")
+            if authority_packet is not None:
+                try:
+                    authority_packet.assert_one_use_ready(now_utc=datetime.now(UTC), prior_consumptions=0)
+                except ModeTransitionAuthorityError as exc:
+                    raise ModeTransitionError(str(exc)) from exc
+                if (
+                    str(authority_packet.executor_id) != str(executor_id)
+                    or authority_packet.previous_mode is not current
+                    or authority_packet.new_mode is not target
+                    or authority_packet.account_reference != str(row["account_id"])
+                    or authority_packet.broker_server != str(row["broker_server"])
+                    or authority_packet.configuration_sha256 != observed_configuration_sha256
+                    or authority_packet.final_shadow_receipt_sha256 != observed_final_shadow_receipt_sha256
+                ):
+                    raise ModeTransitionError("mode transition authority binding mismatch")
+                packet_inserted = await connection.fetchrow(
+                    """
+                    INSERT INTO executor_mode_transition_authority_packets (
+                        authority_packet_id, authority_packet_sha256, approval_id, executor_id,
+                        previous_mode, new_mode, account_reference, broker_server,
+                        configuration_sha256, final_shadow_receipt_sha256, approved_by,
+                        approved_at, expires_at, payload
+                    ) VALUES (
+                        $1::uuid, $2, $3, $4::uuid, $5, $6, $7, $8,
+                        $9, $10, $11, $12, $13, $14::jsonb
+                    )
+                    ON CONFLICT DO NOTHING
+                    RETURNING authority_packet_id
+                    """,
+                    str(authority_packet.authority_packet_id),
+                    authority_packet.authority_packet_sha256,
+                    authority_packet.approval_id,
+                    str(authority_packet.executor_id),
+                    authority_packet.previous_mode.value,
+                    authority_packet.new_mode.value,
+                    authority_packet.account_reference,
+                    authority_packet.broker_server,
+                    authority_packet.configuration_sha256,
+                    authority_packet.final_shadow_receipt_sha256,
+                    authority_packet.approved_by,
+                    authority_packet.approved_at_utc,
+                    authority_packet.expires_at_utc,
+                    _json(authority_packet.model_dump(mode="json")),
+                )
+                if not packet_inserted:
+                    raise GovernanceConflictError("mode transition authority was already used or conflicts")
 
             draining_to_shadow = current is ExecutorMode.DEMO and target is ExecutorMode.SHADOW
             canary_commands_expired = 0
@@ -514,6 +568,22 @@ class MT5ExecutorGovernanceRepository:
                 _json(previous),
                 _json(new_state),
             )
+            if authority_packet is not None:
+                await connection.execute(
+                    """
+                    INSERT INTO executor_mode_transition_receipts (
+                        transition_id, authority_packet_id, executor_id, previous_mode,
+                        new_mode, previous_version, new_version, transition_status
+                    ) VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, 'APPLIED')
+                    """,
+                    str(uuid4()),
+                    str(authority_packet.authority_packet_id),
+                    str(executor_id),
+                    current.value,
+                    target.value,
+                    version,
+                    int(updated["mode_version"]),
+                )
         return GovernanceSnapshot(
             kill_switch_active=governance_kill_switch_active,
             kill_switch_reason=governance_kill_switch_reason,

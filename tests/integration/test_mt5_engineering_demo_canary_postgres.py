@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -12,13 +14,33 @@ from httpx import AsyncClient
 
 import execution.mt5_command_repository as command_repository_module
 import execution.mt5_executor_governance as governance_module
+from contracts.direct_broker_reconciliation import (
+    DirectBrokerReconciliationRequest,
+    DirectBrokerSourceSnapshotV1,
+    ReconciliationCounts,
+    canonical_sha256,
+)
 from contracts.mt5_execution_protocol import (
     ENGINEERING_DEMO_CANARY_EA_VERSION,
     ExecutionCommandV1,
     ExecutorMode,
     sha256_tag,
 )
+from contracts.mt5_mode_transition_authority import (
+    ModeTransitionAuthorityPacket,
+    canonical_mode_transition_authority_sha256,
+)
+from execution.direct_broker_reconciliation_repository import (
+    DirectBrokerReconciliationRepository,
+    PostgresDirectBrokerReconciliationStore,
+)
 from execution.mt5_command_repository import MT5CommandRepository
+from execution.mt5_demo_canary_authority_packet import (
+    DemoCanaryAuthorityPacketV1,
+    ProcessLocalIssuanceCapability,
+    command_content_sha256_from_fields,
+    packet_sha256,
+)
 from execution.mt5_engineering_demo_canary import (
     EngineeringDemoCanaryAuthorityV1,
     EngineeringDemoCanaryError,
@@ -48,6 +70,31 @@ def _commands(postgres: Any) -> MT5CommandRepository:
 
 def _governance(postgres: Any) -> MT5ExecutorGovernanceRepository:
     return MT5ExecutorGovernanceRepository(pg=postgres)
+
+
+def _demo_transition_packet(
+    executor_id: UUID,
+    *,
+    account_reference: str = ACCOUNT_ID,
+) -> ModeTransitionAuthorityPacket:
+    now = datetime.now(UTC)
+    values: dict[str, object] = {
+        "authority_packet_id": uuid4(),
+        "approval_id": f"integration-{executor_id}",
+        "approved_by": "integration:d0",
+        "approved_at_utc": now - timedelta(seconds=1),
+        "expires_at_utc": now + timedelta(minutes=2),
+        "executor_id": executor_id,
+        "account_reference": account_reference,
+        "broker_server": BROKER_SERVER,
+        "configuration_sha256": "sha256:" + "c" * 64,
+        "final_shadow_receipt_sha256": "sha256:" + "d" * 64,
+        "previous_mode": ExecutorMode.SHADOW,
+        "new_mode": ExecutorMode.DEMO,
+        "consumption_limit": 1,
+    }
+    values["authority_packet_sha256"] = canonical_mode_transition_authority_sha256(values)
+    return ModeTransitionAuthorityPacket.model_validate(values)
 
 
 def _observe_two_canary_lock_entries(monkeypatch: pytest.MonkeyPatch) -> asyncio.Event:
@@ -120,8 +167,12 @@ def _request(
     broker_server: str = BROKER_SERVER,
 ) -> EngineeringDemoCanaryRequest:
     now = datetime.now(UTC)
+    command_id = uuid4()
+    selected_canary_id = canary_id or f"d0-{uuid4().hex[:16]}"
     return EngineeringDemoCanaryRequest(
-        canary_id=canary_id or f"d0-{uuid4().hex[:16]}",
+        canary_id=selected_canary_id,
+        command_id=command_id,
+        idempotency_key=f"{account_id}:engineering-demo-canary:{selected_canary_id}:PLACE_MARKET",
         executor_id=executor_id,
         approved_account_id=account_id,
         approved_broker_server=broker_server,
@@ -135,9 +186,92 @@ def _request(
         take_profit=1.11,
         max_spread_points=25,
         max_price_drift_points=10,
+        max_slippage_points=10,
         issued_at_utc=now,
         expires_at_utc=now + timedelta(seconds=90),
     )
+
+
+def _canary_packet(request: EngineeringDemoCanaryRequest) -> DemoCanaryAuthorityPacketV1:
+    assert request.command_id is not None and request.idempotency_key is not None
+    values: dict[str, object] = {
+        "authority_packet_id": f"integration-{request.canary_id}",
+        "canary_id": request.canary_id,
+        "approved_by": "integration:d0",
+        "approved_at_utc": request.issued_at_utc - timedelta(seconds=1),
+        "command_id": request.command_id,
+        "idempotency_key": request.idempotency_key,
+        "executor_id": request.executor_id,
+        "expected_account_snapshot_id": request.expected_account_snapshot_id,
+        "account_reference": request.approved_account_id,
+        "broker_server": request.approved_broker_server,
+        "canonical_symbol": request.approved_canonical_symbol,
+        "broker_symbol": request.approved_broker_symbol,
+        "side": request.side,
+        "order_type": request.side,
+        "volume": Decimal(str(request.volume)),
+        "entry_price": Decimal(str(request.entry_price)),
+        "stop_loss": Decimal(str(request.stop_loss)),
+        "take_profit": Decimal(str(request.take_profit)),
+        "issued_at_utc": request.issued_at_utc,
+        "expires_at_utc": request.expires_at_utc,
+        "max_spread_points": request.max_spread_points,
+        "max_price_drift_points": request.max_price_drift_points,
+        "max_slippage_points": request.max_slippage_points,
+        "magic_number": request.magic_number,
+        "order_check_max": 2,
+        "order_send_max": 1,
+        "child_allowed": False,
+        "automatic_retry": False,
+        "max_commands": 1,
+        "issuer_source_revision": "132a428106bcc9e9c3e4303f48d6075a77b8a6ab",
+    }
+    values["command_content_sha256"] = command_content_sha256_from_fields(values)
+    return DemoCanaryAuthorityPacketV1.model_validate(values)
+
+
+async def _record_direct_reconciliation(
+    postgres: Any,
+    executor_id: UUID,
+    snapshot_id: str,
+    *,
+    account_id: str,
+) -> None:
+    observed = datetime.now(UTC)
+    counts = ReconciliationCounts(
+        positions=0,
+        pending_orders=0,
+        orders=0,
+        deals=0,
+        matched_wolf15=0,
+        manual_external=0,
+        preexisting=0,
+        orphan_wolf15=0,
+        unattributed=0,
+        ambiguous=0,
+        ledger_mismatch=0,
+    )
+    source = DirectBrokerSourceSnapshotV1(
+        snapshot_id=snapshot_id,
+        executor_id=executor_id,
+        account_reference="sha256:" + hashlib.sha256(account_id.encode("utf-8")).hexdigest(),
+        broker_server_sha256="sha256:" + hashlib.sha256(BROKER_SERVER.encode("utf-8")).hexdigest(),
+        observed_at_utc=observed,
+        counts=counts,
+    )
+    request = DirectBrokerReconciliationRequest(
+        reconciliation_id=uuid4(),
+        executor_id=executor_id,
+        account_reference=source.account_reference,
+        broker_server_sha256=source.broker_server_sha256,
+        observed_at_utc=observed,
+        source_snapshot_id=snapshot_id,
+        source_snapshot_sha256=canonical_sha256(source),
+        counts=counts,
+        terminal_reason="INTEGRATION_DIRECT_BROKER_RECONCILED",
+    )
+    repository = DirectBrokerReconciliationRepository(PostgresDirectBrokerReconciliationStore(postgres))
+    await repository.record(request, source_snapshot=source.model_dump(mode="json"), now=observed)
 
 
 async def _prepare_demo_executor(
@@ -153,12 +287,16 @@ async def _prepare_demo_executor(
         str(executor_id),
         ENGINEERING_DEMO_CANARY_EA_VERSION,
     )
+    authority = _demo_transition_packet(executor_id, account_reference=account_id)
     await _governance(postgres).transition_mode(
         executor_id,
         target_mode=ExecutorMode.DEMO,
         actor="integration:d0",
         reason="prepare dedicated D0 executor",
         expected_mode=ExecutorMode.SHADOW,
+        authority_packet=authority,
+        observed_configuration_sha256=authority.configuration_sha256,
+        observed_final_shadow_receipt_sha256=authority.final_shadow_receipt_sha256,
     )
     heartbeat = {
         "executor_id": str(executor_id),
@@ -174,6 +312,7 @@ async def _prepare_demo_executor(
         headers=_auth_headers(executor_id),
     )
     assert response.status_code == 200, response.text
+    await _record_direct_reconciliation(postgres, executor_id, snapshot_id, account_id=account_id)
 
 
 async def _issue_and_arm(
@@ -190,7 +329,10 @@ async def _issue_and_arm(
     repository = _commands(postgres)
     authority = EngineeringDemoCanaryAuthorityV1(repository)
     request = _request(executor_id, snapshot_id)
-    await authority.issue(request)
+    packet = _canary_packet(request)
+    digest = packet_sha256(packet)
+    capability = ProcessLocalIssuanceCapability(packet_sha256_value=digest, command_id=packet.command_id)
+    await authority.issue_frozen(packet, expected_packet_sha256=digest, capability=capability)
 
     blocked = await client.get(
         f"/api/v1/executors/{executor_id}/commands/next",
@@ -236,7 +378,14 @@ async def _issue_queued(
     monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_SECRET", SIGNING_SECRET)
     monkeypatch.setenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", SIGNING_KEY_ID)
     request = _request(executor_id, snapshot_id)
-    await EngineeringDemoCanaryAuthorityV1(_commands(postgres)).issue(request)
+    packet = _canary_packet(request)
+    digest = packet_sha256(packet)
+    capability = ProcessLocalIssuanceCapability(packet_sha256_value=digest, command_id=packet.command_id)
+    await EngineeringDemoCanaryAuthorityV1(_commands(postgres)).issue_frozen(
+        packet,
+        expected_packet_sha256=digest,
+        capability=capability,
+    )
     row = await postgres.fetchrow(
         "SELECT payload FROM execution_commands WHERE engineering_canary_id=$1",
         request.canary_id,
@@ -536,8 +685,18 @@ async def test_d0_unresolved_effect_blocks_a_second_account_canary(
             account_id=second_account,
             canary_id=f"d0-{uuid4().hex[:16]}",
         )
+        second_packet = _canary_packet(second_request)
+        second_digest = packet_sha256(second_packet)
+        second_capability = ProcessLocalIssuanceCapability(
+            packet_sha256_value=second_digest,
+            command_id=second_packet.command_id,
+        )
         with pytest.raises(EngineeringDemoCanaryError, match="another engineering canary effect"):
-            await EngineeringDemoCanaryAuthorityV1(_commands(postgres)).issue(second_request)
+            await EngineeringDemoCanaryAuthorityV1(_commands(postgres)).issue_frozen(
+                second_packet,
+                expected_packet_sha256=second_digest,
+                capability=second_capability,
+            )
     finally:
         await bridge_e2e._cleanup(postgres, second_executor)
         await postgres.execute("DELETE FROM ea_agents WHERE id=$1::uuid", str(second_executor))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final, Literal
 from uuid import UUID, uuid4
@@ -29,6 +29,12 @@ from contracts.mt5_execution_protocol import (
     sign_execution_command,
 )
 from execution.mt5_command_repository import CommandConflictError, MT5CommandRepository
+from execution.mt5_demo_canary_authority_packet import (
+    DemoCanaryAuthorityPacketV1,
+    IssuanceDisposition,
+    ProcessLocalIssuanceCapability,
+    validate_authority_packet,
+)
 
 ENGINEERING_DEMO_CANARY_MANIFEST_VERSION: Final = "wolf15.mt5.engineering-demo-canary-manifest.v1"
 MAX_CANARY_TTL_SECONDS: Final = 120
@@ -46,6 +52,8 @@ class EngineeringDemoCanaryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     canary_id: str = Field(..., min_length=3, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]+$")
+    command_id: UUID | None = None
+    idempotency_key: str | None = Field(default=None, min_length=3, max_length=240)
     operator_authority: Literal["WOLF15_ENGINEERING_DEMO_OPERATOR_V1"] = ENGINEERING_DEMO_CANARY_OPERATOR_AUTHORITY
     purpose: Literal["EXECUTION_PLUMBING_VALIDATION"] = ENGINEERING_DEMO_CANARY_PURPOSE
     executor_id: UUID
@@ -61,6 +69,8 @@ class EngineeringDemoCanaryRequest(BaseModel):
     take_profit: float = Field(..., gt=0)
     max_spread_points: int = Field(..., ge=0, le=100_000)
     max_price_drift_points: int = Field(..., ge=0, le=100_000)
+    max_slippage_points: int | None = Field(default=None, ge=0, le=100_000)
+    magic_number: int = Field(default=ENGINEERING_DEMO_CANARY_MAGIC, ge=1, le=2_147_483_647)
     issued_at_utc: datetime
     expires_at_utc: datetime
 
@@ -80,6 +90,10 @@ class EngineeringDemoCanaryRequest(BaseModel):
             raise ValueError("BUY canary requires stop_loss < entry_price < take_profit")
         if self.side == "SELL" and not self.take_profit < self.entry_price < self.stop_loss:
             raise ValueError("SELL canary requires take_profit < entry_price < stop_loss")
+        if self.max_slippage_points is not None and self.max_slippage_points != self.max_price_drift_points:
+            raise ValueError("current DEMO wire requires max_slippage_points to equal max_price_drift_points")
+        if self.magic_number != ENGINEERING_DEMO_CANARY_MAGIC:
+            raise ValueError("engineering DEMO canary magic number is fixed")
         return self
 
 
@@ -149,10 +163,9 @@ def build_engineering_demo_canary_command(
     payload: dict[str, Any] = {
         "event": "execution_command",
         "protocol_version": PROTOCOL_VERSION,
-        "command_id": uuid4(),
-        "idempotency_key": ":".join(
-            (request.approved_account_id, "engineering-demo-canary", request.canary_id, "PLACE_MARKET")
-        ),
+        "command_id": request.command_id or uuid4(),
+        "idempotency_key": request.idempotency_key
+        or ":".join((request.approved_account_id, "engineering-demo-canary", request.canary_id, "PLACE_MARKET")),
         "revision": 1,
         "issued_at_utc": request.issued_at_utc,
         "not_before_utc": request.issued_at_utc,
@@ -185,7 +198,7 @@ def build_engineering_demo_canary_command(
             entry_price=request.entry_price,
             stop_loss=request.stop_loss,
             take_profit=request.take_profit,
-            magic=ENGINEERING_DEMO_CANARY_MAGIC,
+            magic=request.magic_number,
             comment_tag=_comment_tag(request.canary_id),
             time_in_force="GTC",
         ),
@@ -242,29 +255,79 @@ class EngineeringDemoCanaryAuthorityV1:
             raise EngineeringDemoCanaryError("engineering DEMO canary issuance is disabled")
 
     async def issue(self, request: EngineeringDemoCanaryRequest) -> dict[str, Any]:
-        self._require_enabled()
+        del request
+        raise EngineeringDemoCanaryError("legacy unbound issuance is disabled; use issue_frozen")
+
+    async def issue_frozen(
+        self,
+        packet: DemoCanaryAuthorityPacketV1,
+        *,
+        expected_packet_sha256: str,
+        capability: ProcessLocalIssuanceCapability,
+    ) -> dict[str, Any]:
+        """Issue only the exact operator-frozen packet under one process capability."""
+
         now = datetime.now(UTC)
-        if request.issued_at_utc > now + timedelta(seconds=5) or request.expires_at_utc <= now:
-            raise EngineeringDemoCanaryError("engineering canary approval is not currently active")
-        schema = await self._repository.engineering_demo_canary_schema_status()
+        digest = validate_authority_packet(packet, expected_sha256=expected_packet_sha256, now=now)
+        if capability.consumed:
+            return {
+                "schema_version": ENGINEERING_DEMO_CANARY_MANIFEST_VERSION,
+                "authority_packet_sha256": digest,
+                "command_id": str(packet.command_id),
+                "disposition": IssuanceDisposition.ALREADY_ISSUED.value,
+            }
+        request = EngineeringDemoCanaryRequest(
+            canary_id=packet.canary_id,
+            command_id=packet.command_id,
+            idempotency_key=packet.idempotency_key,
+            executor_id=packet.executor_id,
+            approved_account_id=packet.account_reference,
+            approved_broker_server=packet.broker_server,
+            approved_canonical_symbol=packet.canonical_symbol,
+            approved_broker_symbol=packet.broker_symbol,
+            expected_account_snapshot_id=packet.expected_account_snapshot_id,
+            side=packet.side,
+            volume=float(packet.volume),
+            entry_price=float(packet.entry_price),
+            stop_loss=float(packet.stop_loss),
+            take_profit=float(packet.take_profit),
+            max_spread_points=packet.max_spread_points,
+            max_price_drift_points=packet.max_price_drift_points,
+            max_slippage_points=packet.max_slippage_points,
+            magic_number=packet.magic_number,
+            issued_at_utc=packet.issued_at_utc,
+            expires_at_utc=packet.expires_at_utc,
+        )
+        result = await self._issue_frozen_request(request, packet=packet, packet_sha256_value=digest)
+        capability.mark_consumed(packet, packet_sha256_value=digest)
+        result["authority_packet_sha256"] = digest
+        result["command_content_sha256"] = packet.command_content_sha256
+        return result
+
+    async def _issue_frozen_request(
+        self,
+        request: EngineeringDemoCanaryRequest,
+        *,
+        packet: DemoCanaryAuthorityPacketV1,
+        packet_sha256_value: str,
+    ) -> dict[str, Any]:
+        """Run existing runtime checks, then persist packet and command atomically."""
+
+        now = datetime.now(UTC)
+        schema = await self._repository.d0_canary_control_schema_status()
         if not schema.get("ready"):
             raise EngineeringDemoCanaryError("engineering canary database schema is not ready")
         executor = await self._repository.get_executor(request.executor_id)
         governance = await self._repository.governance_snapshot(request.executor_id)
-        if governance.execution_mode != ExecutorMode.DEMO.value:
-            raise EngineeringDemoCanaryError("governed executor is not DEMO")
-        if not governance.kill_switch_active:
-            raise EngineeringDemoCanaryError("canary must be queued while the global kill switch is engaged")
+        if governance.execution_mode != ExecutorMode.DEMO.value or not governance.kill_switch_active:
+            raise EngineeringDemoCanaryError("frozen canary requires governed DEMO mode and engaged kill switch")
         heartbeat = executor.get("last_heartbeat_at")
         heartbeat_age = _age_seconds(heartbeat, now=now) if isinstance(heartbeat, datetime) else None
         if heartbeat_age is None or not -5 <= heartbeat_age <= MAX_RUNTIME_AGE_SECONDS:
             raise EngineeringDemoCanaryError("executor heartbeat is missing or stale")
         snapshot = await self._repository.latest_snapshot(request.executor_id)
-        if snapshot is None:
-            raise EngineeringDemoCanaryError("executor account snapshot is missing")
-        snapshot_age = _age_seconds(snapshot.captured_at_utc, now=now)
-        if not -5 <= snapshot_age <= MAX_RUNTIME_AGE_SECONDS:
-            raise EngineeringDemoCanaryError("executor account snapshot is stale")
+        if snapshot is None or not -5 <= _age_seconds(snapshot.captured_at_utc, now=now) <= MAX_RUNTIME_AGE_SECONDS:
+            raise EngineeringDemoCanaryError("executor account snapshot is missing or stale")
         secret = os.getenv("EXECUTOR_COMMAND_SIGNING_SECRET", "").strip()
         key_id = os.getenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", "").strip()
         if len(secret.encode("utf-8")) < 32 or not key_id:
@@ -277,10 +340,16 @@ class EngineeringDemoCanaryAuthorityV1:
             signing_key_id=key_id,
         )
         try:
-            await self._repository.enqueue_engineering_demo_canary_command(command)
+            disposition = await self._repository.enqueue_frozen_engineering_demo_canary_command(
+                command,
+                authority_packet=packet,
+                authority_packet_sha256=packet_sha256_value,
+            )
         except CommandConflictError as exc:
             raise EngineeringDemoCanaryError(str(exc)) from exc
-        return engineering_demo_canary_manifest(request, command=command)
+        manifest = engineering_demo_canary_manifest(request, command=command)
+        manifest["disposition"] = str(disposition)
+        return manifest
 
     async def arm(
         self,

@@ -33,6 +33,11 @@ from contracts.mt5_execution_protocol import (
     verify_execution_command,
     verify_signed_execution_envelope_with_root,
 )
+from execution.mt5_demo_canary_authority_packet import (
+    DemoCanaryAuthorityPacketV1,
+    IssuanceDisposition,
+    emitted_command_content_sha256,
+)
 from execution.mt5_executor_governance import (
     ExecutorGovernanceError,
     GovernanceSnapshot,
@@ -698,6 +703,30 @@ class MT5CommandRepository:
         details = dict(row)
         return {"ready": all(bool(value) for value in details.values()), **details}
 
+    async def d0_canary_control_schema_status(self) -> dict[str, Any]:
+        """Prove the V3 packet and direct-broker ledgers before frozen issuance."""
+
+        self._require_database()
+        row = await self._pg.fetchrow(
+            """
+            SELECT
+                to_regclass('public.engineering_demo_canary_authority_packets') IS NOT NULL
+                    AS authority_packet_table,
+                to_regclass('public.direct_broker_reconciliation_receipts') IS NOT NULL
+                    AS direct_reconciliation_table,
+                (
+                    SELECT count(*) = 2
+                    FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='execution_commands'
+                      AND column_name IN ('authority_packet_sha256','command_content_sha256')
+                ) AS frozen_command_columns
+            """
+        )
+        if not row:
+            return {"ready": False, "reason": "D0 control schema status query returned no row"}
+        details = dict(row)
+        return {"ready": all(bool(value) for value in details.values()), **details}
+
     async def latest_snapshot(self, executor_id: UUID | str) -> AccountSnapshotV1 | None:
         self._require_database()
         row = await self._pg.fetchrow(
@@ -807,7 +836,10 @@ class MT5CommandRepository:
     async def enqueue_engineering_demo_canary_command(
         self,
         command: ExecutionCommandV1,
-    ) -> ExecutionCommandV1:
+        *,
+        authority_packet: DemoCanaryAuthorityPacketV1 | None = None,
+        authority_packet_sha256: str | None = None,
+    ) -> tuple[ExecutionCommandV1, IssuanceDisposition]:
         """Atomically queue one D0 command and its still-closed scoped window."""
 
         self._require_database()
@@ -827,6 +859,17 @@ class MT5CommandRepository:
             raise CommandConflictError("engineering canary signature is missing or invalid")
         payload = command.model_dump(mode="json")
         payload_hash = sha256_tag(payload)
+        if authority_packet is None or authority_packet_sha256 is None:
+            raise CommandConflictError("engineering DEMO issuance requires a frozen authority packet")
+        if (authority_packet is None) != (authority_packet_sha256 is None):
+            raise CommandConflictError("authority packet and digest must be supplied together")
+        if authority_packet is not None and command.command_id != authority_packet.command_id:
+            raise CommandConflictError("command identity differs from frozen authority packet")
+        if authority_packet is not None:
+            emitted_content_sha256 = emitted_command_content_sha256(command)
+            if emitted_content_sha256 != authority_packet.command_content_sha256:
+                raise CommandConflictError("emitted command differs from frozen authority content")
+        packet_digest = authority_packet_sha256.removeprefix("sha256:")
         envelope_key_id = os.getenv("EXECUTOR_COMMAND_SIGNING_KEY_ID", "").strip() or command.signature.key_id
         envelope = build_signed_execution_envelope(command, root_secret=secret, key_id=envelope_key_id)
 
@@ -835,6 +878,72 @@ class MT5CommandRepository:
                 connection,
                 (command.executor_binding.executor_id,),
             )
+            disposition = IssuanceDisposition.CREATED
+            if authority_packet is not None:
+                packet_row = await connection.fetchrow(
+                    """
+                    INSERT INTO engineering_demo_canary_authority_packets (
+                        authority_packet_id, authority_packet_sha256, command_id,
+                        command_content_sha256, approval_id, approved_by,
+                        approved_at, expires_at, issuer_source_revision, payload
+                    ) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                    ON CONFLICT DO NOTHING
+                    RETURNING authority_packet_id
+                    """,
+                    authority_packet.authority_packet_id,
+                    packet_digest,
+                    str(authority_packet.command_id),
+                    authority_packet.command_content_sha256,
+                    authority_packet.authority_packet_id,
+                    authority_packet.approved_by,
+                    authority_packet.approved_at_utc,
+                    authority_packet.expires_at_utc,
+                    authority_packet.issuer_source_revision,
+                    _json(authority_packet),
+                )
+                if not packet_row:
+                    existing_packet = await connection.fetchrow(
+                        """
+                        SELECT authority_packet_sha256, command_id, command_content_sha256, payload
+                        FROM engineering_demo_canary_authority_packets
+                        WHERE authority_packet_id=$1
+                           OR authority_packet_sha256=$2
+                           OR command_id=$3::uuid
+                        """,
+                        authority_packet.authority_packet_id,
+                        packet_digest,
+                        str(authority_packet.command_id),
+                    )
+                    existing_payload = existing_packet["payload"] if existing_packet else None
+                    if isinstance(existing_payload, str):
+                        existing_payload = json.loads(existing_payload)
+                    if (
+                        not existing_packet
+                        or str(existing_packet["authority_packet_sha256"]) != packet_digest
+                        or str(existing_packet["command_id"]) != str(authority_packet.command_id)
+                        or str(existing_packet["command_content_sha256"]) != authority_packet.command_content_sha256
+                        or existing_payload != authority_packet.model_dump(mode="json")
+                    ):
+                        raise CommandConflictError("authority packet identity already exists with different content")
+                    disposition = IssuanceDisposition.ALREADY_ISSUED
+                    existing_command = await connection.fetchrow(
+                        """
+                        SELECT command_id, payload_hash, authority_packet_sha256, command_content_sha256
+                        FROM execution_commands
+                        WHERE command_id=$1::uuid AND account_id=$2 AND idempotency_key=$3
+                        """,
+                        str(command.command_id),
+                        command.executor_binding.account_id,
+                        command.idempotency_key,
+                    )
+                    if (
+                        not existing_command
+                        or str(existing_command["payload_hash"]) != payload_hash
+                        or str(existing_command["authority_packet_sha256"]) != packet_digest
+                        or str(existing_command["command_content_sha256"]) != authority_packet.command_content_sha256
+                    ):
+                        raise CommandConflictError("frozen authority was consumed by different command content")
+                    return command, disposition
             governed = await connection.fetchrow(
                 """
                 SELECT e.account_id, e.login_hash, e.broker_server, e.execution_mode,
@@ -907,7 +1016,25 @@ class MT5CommandRepository:
                 raise CommandConflictError("engineering canary account snapshot has drifted")
             if not snapshot.trade_allowed or not snapshot.autotrading_enabled:
                 raise CommandConflictError("engineering canary terminal trading is unavailable")
-            if not snapshot.broker_ledger_reconciled:
+            if authority_packet is not None:
+                reconciliation = await connection.fetchrow(
+                    """
+                    SELECT observed_at, broker_ledger_reconciled
+                    FROM direct_broker_reconciliation_receipts
+                    WHERE executor_id=$1::uuid AND source_snapshot_id=$2
+                    ORDER BY observed_at DESC
+                    LIMIT 1
+                    FOR SHARE
+                    """,
+                    str(binding.executor_id),
+                    guards.account_snapshot_id,
+                )
+                if not reconciliation or not bool(reconciliation["broker_ledger_reconciled"]):
+                    raise CommandConflictError("authoritative direct broker reconciliation is missing")
+                reconciliation_age = (now - reconciliation["observed_at"].astimezone(UTC)).total_seconds()
+                if not -5 <= reconciliation_age <= 30:
+                    raise CommandConflictError("authoritative direct broker reconciliation is stale")
+            elif not snapshot.broker_ledger_reconciled:
                 raise CommandConflictError("engineering canary broker ledger is not reconciled")
             if snapshot.open_positions or snapshot.pending_orders:
                 raise CommandConflictError("engineering canary requires a flat account")
@@ -961,12 +1088,13 @@ class MT5CommandRepository:
                     revision, action, payload, payload_hash, state, issued_at,
                     not_before, expires_at, wire_format, payload_encoding,
                     signed_payload_b64, signed_payload_sha256, signature_algorithm,
-                    signature_key_id, signature_value
+                    signature_key_id, signature_value, authority_packet_sha256,
+                    command_content_sha256
                 ) VALUES (
                     $1::uuid, $2::uuid, $3, 'ENGINEERING_DEMO_CANARY',
                     NULL, NULL, NULL, NULL, NULL, $4, $5, $6, $7, $8, $9,
                     $10::jsonb, $11, 'QUEUED', $12, $13, $14, $15, $16,
-                    $17, $18, $19, $20, $21
+                    $17, $18, $19, $20, $21, $22, $23
                 )
                 ON CONFLICT DO NOTHING
                 RETURNING command_id
@@ -992,9 +1120,31 @@ class MT5CommandRepository:
                 envelope.algorithm,
                 envelope.key_id,
                 envelope.signature,
+                packet_digest,
+                authority_packet.command_content_sha256 if authority_packet is not None else None,
             )
             if not inserted:
-                raise CommandConflictError("engineering canary identity or idempotency key already exists")
+                if authority_packet is None:
+                    raise CommandConflictError("engineering canary identity or idempotency key already exists")
+                existing_command = await connection.fetchrow(
+                    """
+                    SELECT command_id, payload_hash, authority_packet_sha256, command_content_sha256
+                    FROM execution_commands
+                    WHERE command_id=$1::uuid OR (account_id=$2 AND idempotency_key=$3)
+                    """,
+                    str(command.command_id),
+                    binding.account_id,
+                    command.idempotency_key,
+                )
+                if (
+                    not existing_command
+                    or str(existing_command["command_id"]) != str(command.command_id)
+                    or str(existing_command["payload_hash"]) != payload_hash
+                    or str(existing_command["authority_packet_sha256"]) != packet_digest
+                    or str(existing_command["command_content_sha256"]) != authority_packet.command_content_sha256
+                ):
+                    raise CommandConflictError("command identity already exists with different content")
+                return command, IssuanceDisposition.ALREADY_ISSUED
             await connection.execute(
                 """
                 INSERT INTO engineering_demo_canary_windows (
@@ -1012,7 +1162,23 @@ class MT5CommandRepository:
                 source.approved_broker_symbol,
                 command.expires_at_utc,
             )
-        return command
+        return command, disposition
+
+    async def enqueue_frozen_engineering_demo_canary_command(
+        self,
+        command: ExecutionCommandV1,
+        *,
+        authority_packet: DemoCanaryAuthorityPacketV1,
+        authority_packet_sha256: str,
+    ) -> IssuanceDisposition:
+        """Persist packet and exact command in one transaction."""
+
+        _, disposition = await self.enqueue_engineering_demo_canary_command(
+            command,
+            authority_packet=authority_packet,
+            authority_packet_sha256=authority_packet_sha256,
+        )
+        return disposition
 
     async def arm_engineering_demo_canary(
         self,

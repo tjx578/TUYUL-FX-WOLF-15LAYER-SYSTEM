@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
 
 from contracts.mt5_execution_protocol import ExecutionCommandV1, ExecutorMode, sign_execution_command
+from contracts.mt5_mode_transition_authority import (
+    ModeTransitionAuthorityPacket,
+    canonical_mode_transition_authority_sha256,
+)
 from execution.mt5_command_repository import CommandConflictError, MT5CommandRepository
 from execution.mt5_executor_governance import (
     GovernanceConflictError,
@@ -54,6 +59,27 @@ def _command_in_mode(executor_id: UUID, mode: ExecutorMode) -> ExecutionCommandV
 
 def _demo_command(executor_id: UUID) -> ExecutionCommandV1:
     return _command_in_mode(executor_id, ExecutorMode.DEMO)
+
+
+def _demo_transition_packet(executor_id: UUID) -> ModeTransitionAuthorityPacket:
+    now = datetime.now(UTC)
+    values: dict[str, object] = {
+        "authority_packet_id": uuid4(),
+        "approval_id": f"integration-{executor_id}",
+        "approved_by": "integration:test",
+        "approved_at_utc": now - timedelta(seconds=1),
+        "expires_at_utc": now + timedelta(minutes=2),
+        "executor_id": executor_id,
+        "account_reference": bridge_e2e.ACCOUNT_ID,
+        "broker_server": bridge_e2e.BROKER_SERVER,
+        "configuration_sha256": "sha256:" + "c" * 64,
+        "final_shadow_receipt_sha256": "sha256:" + "d" * 64,
+        "previous_mode": ExecutorMode.SHADOW,
+        "new_mode": ExecutorMode.DEMO,
+        "consumption_limit": 1,
+    }
+    values["authority_packet_sha256"] = canonical_mode_transition_authority_sha256(values)
+    return ModeTransitionAuthorityPacket.model_validate(values)
 
 
 @pytest.mark.asyncio
@@ -134,6 +160,7 @@ async def test_generic_demo_delivery_stays_blocked_and_live_stays_blocked(
 ) -> None:
     governance = _governance(postgres)
     commands = _commands(postgres)
+    authority = _demo_transition_packet(registered)
     promoted = await governance.transition_mode(
         registered,
         target_mode=ExecutorMode.DEMO,
@@ -141,6 +168,9 @@ async def test_generic_demo_delivery_stays_blocked_and_live_stays_blocked(
         reason="prepare guarded demo",
         expected_mode=ExecutorMode.SHADOW,
         expected_version=1,
+        authority_packet=authority,
+        observed_configuration_sha256=authority.configuration_sha256,
+        observed_final_shadow_receipt_sha256=authority.final_shadow_receipt_sha256,
     )
     assert promoted.execution_mode == "DEMO"
     assert promoted.kill_switch_active is True
