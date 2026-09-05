@@ -22,7 +22,16 @@ class _FakeCoreClient:
 
 def _valid_auth(monkeypatch, fake: _FakeCoreClient | None = None) -> dict[str, str]:
     auth_client = fake or _FakeCoreClient(
-        httpx.Response(200, json={"user_id": "owner", "email": "owner", "role": "owner"})
+        httpx.Response(
+            200,
+            json={
+                "user_id": "viewer",
+                "email": "viewer",
+                "role": "viewer",
+                "scopes": ["read:dashboard"],
+                "auth_method": "jwt",
+            },
+        )
     )
     monkeypatch.setattr("services.dashboard_bff.auth.get_client", lambda: auth_client)
     return {"Authorization": "Bearer test-token"}
@@ -97,12 +106,24 @@ def test_valid_session_cookie_cannot_authorize_a_later_invalid_bearer(monkeypatc
                 self.has_session_cookie = True
                 return httpx.Response(
                     200,
-                    json={"user_id": "viewer", "email": "viewer", "role": "viewer"},
+                    json={
+                        "user_id": "viewer",
+                        "email": "viewer",
+                        "role": "viewer",
+                        "scopes": ["read:dashboard"],
+                        "auth_method": "jwt",
+                    },
                 )
             if self.has_session_cookie and headers.get("cookie") != "":
                 return httpx.Response(
                     200,
-                    json={"user_id": "viewer", "email": "viewer", "role": "viewer"},
+                    json={
+                        "user_id": "viewer",
+                        "email": "viewer",
+                        "role": "viewer",
+                        "scopes": ["read:dashboard"],
+                        "auth_method": "jwt",
+                    },
                 )
             return httpx.Response(401, json={"detail": "invalid"})
 
@@ -136,6 +157,52 @@ def test_feed_status_uses_canonical_core_path(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert fake.calls[0][0] == "/api/v1/candles/feed-status"
+
+
+def test_business_routes_require_viewer_jwt_and_dashboard_scope(monkeypatch) -> None:
+    business_client = _FakeCoreClient(error=AssertionError("business upstream must not be called"))
+    monkeypatch.setattr("services.dashboard_bff.routes.status.get_client", lambda: business_client)
+
+    rejected_sessions = (
+        {"user_id": "owner", "role": "owner", "scopes": ["read:dashboard"], "auth_method": "jwt"},
+        {"user_id": "operator", "role": "operator", "scopes": ["read:dashboard"], "auth_method": "jwt"},
+        {"user_id": "viewer", "role": "viewer", "scopes": [], "auth_method": "jwt"},
+        {"user_id": "viewer", "role": "viewer", "scopes": ["read:other"], "auth_method": "jwt"},
+        {"user_id": "api-key", "role": "viewer", "scopes": ["read:dashboard"], "auth_method": "api_key"},
+        {"user_id": "cookie", "role": "viewer", "scopes": ["read:dashboard"], "auth_method": "cookie"},
+    )
+
+    with TestClient(create_app()) as client:
+        for session in rejected_sessions:
+            auth_client = _FakeCoreClient(httpx.Response(200, json=session))
+            monkeypatch.setattr(
+                "services.dashboard_bff.auth.get_client",
+                lambda auth_client=auth_client: auth_client,
+            )
+            response = client.get(
+                "/api/bff/aggregated-status",
+                headers={"Authorization": "Bearer structurally-valid-probe"},
+            )
+            assert response.status_code == 403
+
+    assert business_client.calls == []
+
+
+def test_openapi_declares_viewer_bearer_only_on_business_routes() -> None:
+    schema = create_app().openapi()
+    schemes = schema["components"]["securitySchemes"]
+    assert schemes["ViewerBearer"]["type"] == "http"
+    assert schemes["ViewerBearer"]["scheme"] == "bearer"
+
+    for path in (
+        "/api/bff/aggregated-status",
+        "/api/dashboard/overview",
+        "/api/dashboard/feed-status",
+    ):
+        assert schema["paths"][path]["get"]["security"] == [{"ViewerBearer": []}]
+
+    for path in ("/health", "/healthz", "/readyz"):
+        assert "security" not in schema["paths"][path]["get"]
 
 
 def test_healthz_is_static_and_does_not_touch_core(monkeypatch) -> None:
