@@ -1,74 +1,73 @@
-// Login page — checks for existing session before redirecting.
-// Prevents redirect loop: / → /login → / → /login
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import ViewerLoginForm from "./ViewerLoginForm";
+import { validateSessionToken } from "@/lib/serverAuth";
 
 const SESSION_COOKIE = "wolf15_session";
 
 export default async function LoginPage() {
-  // 1. If session cookie exists, redirect to dashboard
   const cookieStore = await cookies();
   const session = cookieStore.get(SESSION_COOKIE)?.value;
-  if (session) {
+
+  if (session && (await validateSessionToken(session))) {
     redirect("/");
   }
 
-  // 2. If API_KEY env var exists (owner-mode), redirect through the
-  //    owner-session route handler which CAN set cookies (Server Components cannot).
-  const apiKey = process.env.API_KEY?.trim();
-  if (apiKey) {
-    redirect("/api/auth/owner-session");
-  }
-
-  // 3. No session, no API_KEY → render setup instructions
   return (
-    <div
+    <main
       style={{
         minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#080E1A",
-        color: "#E2E8F0",
-        fontFamily: "monospace",
+        display: "grid",
+        placeItems: "center",
+        background:
+          "radial-gradient(circle at 15% 10%, rgba(163,230,53,0.10), transparent 32%), #070b12",
+        color: "#e2e8f0",
         padding: 24,
       }}
     >
-      <div
+      <section
         style={{
-          maxWidth: 480,
-          width: "100%",
-          display: "flex",
-          flexDirection: "column",
-          gap: 20,
+          width: "min(100%, 460px)",
+          border: "1px solid rgba(148,163,184,0.20)",
+          borderRadius: 18,
+          background: "rgba(15,23,42,0.90)",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
+          padding: 28,
         }}
       >
-        <h1 style={{ fontSize: 20, fontWeight: 800, letterSpacing: "0.08em", margin: 0 }}>
-          WOLF-15 SETUP REQUIRED
-        </h1>
-        <p style={{ fontSize: 13, color: "#94A3B8", margin: 0, lineHeight: 1.6 }}>
-          No session found. Set the following environment variable and restart:
-        </p>
         <div
           style={{
-            background: "#0F172A",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 8,
-            padding: "16px 20px",
-            fontSize: 13,
+            color: "#a3e635",
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: "0.14em",
           }}
         >
-          <code style={{ color: "#00F5A0" }}>API_KEY=&lt;your-jwt-or-api-key&gt;</code>
+          WOLF15 / VIEWER
         </div>
-        <div style={{ fontSize: 11, color: "#64748B", lineHeight: 1.6 }}>
-          <p style={{ margin: "0 0 8px" }}>For Vercel deployments, add these env vars in Settings → Environment Variables:</p>
-          <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li><code>INTERNAL_API_URL</code> — Railway backend URL</li>
-            <li><code>NEXT_PUBLIC_WS_BASE_URL</code> — WebSocket base URL (wss://...)</li>
-            <li><code>API_KEY</code> — JWT or API key for owner-mode auth</li>
-          </ul>
-        </div>
-      </div>
-    </div>
+        <h1
+          style={{
+            margin: "12px 0 8px",
+            color: "#f8fafc",
+            fontSize: 26,
+            letterSpacing: "-0.03em",
+          }}
+        >
+          Read-only observability
+        </h1>
+        <p
+          style={{
+            margin: "0 0 22px",
+            color: "#94a3b8",
+            fontSize: 13,
+            lineHeight: 1.65,
+          }}
+        >
+          Sign in with a scoped viewer JWT. This surface cannot send trading,
+          risk, EA, execution, or broker commands.
+        </p>
+        <ViewerLoginForm />
+      </section>
+    </main>
   );
 }

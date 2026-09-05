@@ -1,365 +1,332 @@
 "use client";
 
-/* Dashboard Overview -- operator summary */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { VIEWER_ENDPOINTS } from "@/lib/viewerContract";
 
-import { signalsMock } from "@/lib/mock/signals";
-import { riskMock } from "@/lib/mock/risk";
-
-/* Hero Card */
-function HeroCard({
-  label,
-  value,
-  sub,
-}: {
+type ProbeState = {
+  path: string;
   label: string;
-  value: string;
-  sub: string;
-}) {
-  return (
-    <div
-      style={{
-        background: "linear-gradient(135deg, #1B1D21 0%, #23262C 100%)",
-        border: "1px solid #30343C",
-        borderRadius: 16,
-        padding: "20px 22px",
-      }}
-    >
-      <div
-        style={{
-          color: "#A5ADBA",
-          fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-          fontWeight: 700,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{ fontSize: 32, fontWeight: 800, marginTop: 8, color: "#F5F7FA" }}
-      >
-        {value}
-      </div>
-      <div style={{ color: "#717886", fontSize: 13, marginTop: 6 }}>{sub}</div>
-    </div>
-  );
-}
-
-/* Metric Card */
-function MetricCard({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
-  return (
-    <div
-      style={{
-        background: "#1B1D21",
-        border: "1px solid #30343C",
-        borderRadius: 14,
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          color: "#A5ADBA",
-          fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-          fontWeight: 600,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 26,
-          fontWeight: 800,
-          marginTop: 8,
-          color: color ?? "#F5F7FA",
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* Bias Pill */
-const BIAS_COLOR: Record<string, string> = {
-  BUY: "#32D583",
-  SELL: "#FF4D4F",
-  HOLD: "#ffd740",
+  description: string;
+  state: "loading" | "ok" | "error";
+  status?: number;
+  requestId?: string;
+  cache?: string;
+  payload?: unknown;
 };
 
-function BiasPill({ bias }: { bias: string }) {
-  const c = BIAS_COLOR[bias] ?? "#A5ADBA";
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "3px 10px",
-        borderRadius: 999,
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: "0.06em",
-        background: `${c}18`,
-        color: c,
-        border: `1px solid ${c}30`,
-      }}
-    >
-      {bias}
-    </span>
-  );
+const initialState: ProbeState[] = VIEWER_ENDPOINTS.map((endpoint) => ({
+  ...endpoint,
+  state: "loading",
+}));
+
+async function probe(
+  endpoint: (typeof VIEWER_ENDPOINTS)[number],
+): Promise<ProbeState> {
+  try {
+    const response = await fetch("/api/proxy/" + endpoint.path, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { accept: "application/json" },
+    });
+
+    if (response.status === 401) {
+      window.location.assign("/login");
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = { error: "Response was not valid JSON" };
+    }
+
+    return {
+      ...endpoint,
+      state: response.ok ? "ok" : "error",
+      status: response.status,
+      requestId: response.headers.get("x-request-id") || undefined,
+      cache: response.headers.get("x-bff-cache") || undefined,
+      payload,
+    };
+  } catch {
+    return {
+      ...endpoint,
+      state: "error",
+      payload: { error: "Request could not reach the viewer proxy" },
+    };
+  }
 }
 
-/* Severity Pill */
-function SeverityPill({ level }: { level?: string }) {
-  const c =
-    level === "high"
-      ? "#FF4D4F"
-      : level === "medium"
-        ? "#ffd740"
-        : "#A5ADBA";
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "3px 10px",
-        borderRadius: 999,
-        fontSize: 10,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        background: `${c}18`,
-        color: c,
-        border: `1px solid ${c}30`,
-      }}
-    >
-      {level ?? "info"}
-    </span>
-  );
+function statusColor(state: ProbeState["state"]): string {
+  if (state === "ok") return "#a3e635";
+  if (state === "error") return "#f87171";
+  return "#facc15";
+}
+
+function pretty(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "{\"error\":\"Payload could not be rendered\"}";
+  }
 }
 
 export default function DashboardPage() {
-  const signals = signalsMock.items;
-  const warnings = riskMock.warnings;
+  const [probes, setProbes] = useState<ProbeState[]>(initialState);
+  const [updatedAt, setUpdatedAt] = useState<string>("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    setProbes((current) =>
+      current.map((item) => ({ ...item, state: "loading" })),
+    );
+    const results = await Promise.all(VIEWER_ENDPOINTS.map(probe));
+    setProbes(results);
+    setUpdatedAt(new Date().toLocaleString());
+    setRefreshing(false);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const summary = useMemo(() => {
+    const ok = probes.filter((item) => item.state === "ok").length;
+    if (ok === probes.length) return "CONNECTED";
+    if (ok > 0) return "PARTIAL";
+    if (probes.some((item) => item.state === "loading")) return "CHECKING";
+    return "UNAVAILABLE";
+  }, [probes]);
+
+  async function logout() {
+    await fetch("/api/set-session", {
+      method: "DELETE",
+      credentials: "same-origin",
+      cache: "no-store",
+    }).catch(() => undefined);
+    window.location.assign("/login");
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* A. Hero Cards */}
-      <div
-        style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}
-      >
-        <HeroCard
-          label="System Truth"
-          value="ONLINE"
-          sub="15-layer pipeline healthy"
-        />
-        <HeroCard
-          label="Capital Focus"
-          value="$154,320"
-          sub="3 accounts linked"
-        />
-        <HeroCard
-          label="Action Window"
-          value="London"
-          sub="High-probability session active"
-        />
-      </div>
-
-      {/* B. Metric Cards */}
-      <div
+    <main
+      style={{
+        width: "min(1480px, 100%)",
+        boxSizing: "border-box",
+        margin: "0 auto",
+        padding: "clamp(20px, 4vw, 48px)",
+      }}
+    >
+      <section
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 12,
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: 18,
+          marginBottom: 24,
         }}
       >
-        <MetricCard label="Pending Signals" value="12" />
-        <MetricCard label="Ready to Execute" value="5" color="#32D583" />
-        <MetricCard label="Open Trades" value="3" />
-        <MetricCard label="Daily DD" value="1.1%" color="#FF4D4F" />
-      </div>
-
-      {/* C + D: Top Signals + Risk Alerts */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1.4fr 0.6fr",
-          gap: 14,
-        }}
-      >
-        {/* C. Top Signals Table */}
-        <div
-          style={{
-            background: "#1B1D21",
-            border: "1px solid #30343C",
-            borderRadius: 14,
-            padding: 16,
-          }}
-        >
-          <h3
+        <div>
+          <div
             style={{
-              margin: "0 0 14px",
-              fontSize: 16,
-              fontWeight: 700,
-              color: "#F5F7FA",
+              color: statusColor(
+                summary === "CONNECTED"
+                  ? "ok"
+                  : summary === "CHECKING"
+                    ? "loading"
+                    : "error",
+              ),
+              fontSize: 11,
+              fontWeight: 900,
+              letterSpacing: "0.14em",
             }}
           >
-            Top Signals
-          </h3>
-          <div style={{ overflow: "hidden", borderRadius: 10 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  {["Pair", "Bias", "Confidence", "Session", "Action"].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: "10px 10px",
-                          borderBottom: "1px solid #30343C",
-                          textAlign: "left",
-                          color: "#A5ADBA",
-                          fontSize: 11,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
-                          background: "#23262C",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {signals.map((s) => (
-                  <tr key={s.id}>
-                    <td
-                      style={{
-                        padding: "10px 10px",
-                        borderBottom: "1px solid #30343C",
-                        fontWeight: 700,
-                        color: "#F5F7FA",
-                      }}
-                    >
-                      {s.pair}
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 10px",
-                        borderBottom: "1px solid #30343C",
-                      }}
-                    >
-                      <BiasPill bias={s.bias} />
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 10px",
-                        borderBottom: "1px solid #30343C",
-                        color: s.confidence >= 80 ? "#32D583" : "#A5ADBA",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {s.confidence}%
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 10px",
-                        borderBottom: "1px solid #30343C",
-                        color: "#A5ADBA",
-                      }}
-                    >
-                      {s.session}
-                    </td>
-                    <td
-                      style={{
-                        padding: "10px 10px",
-                        borderBottom: "1px solid #30343C",
-                      }}
-                    >
-                      <button
-                        style={{
-                          background: "transparent",
-                          border: "1px solid #30343C",
-                          borderRadius: 8,
-                          color: "#C8FF1A",
-                          padding: "4px 12px",
-                          cursor: "pointer",
-                          fontSize: 11,
-                          fontWeight: 700,
-                        }}
-                      >
-                        VIEW
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {summary}
           </div>
-        </div>
-
-        {/* D. Risk Alerts */}
-        <div
-          style={{
-            background: "#1B1D21",
-            border: "1px solid #30343C",
-            borderRadius: 14,
-            padding: 16,
-          }}
-        >
-          <h3
+          <h1
             style={{
-              margin: "0 0 14px",
-              fontSize: 16,
-              fontWeight: 700,
-              color: "#F5F7FA",
+              margin: "8px 0 6px",
+              color: "#f8fafc",
+              fontSize: "clamp(25px, 4vw, 42px)",
+              letterSpacing: "-0.04em",
             }}
           >
-            Risk Alerts
-          </h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {warnings.map((w, i) => (
-              <div
-                key={i}
-                style={{
-                  background: "#23262C",
-                  border: "1px solid #30343C",
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                }}
-              >
-                <div
+            Live operational evidence
+          </h1>
+          <p
+            style={{
+              maxWidth: 720,
+              margin: 0,
+              color: "#94a3b8",
+              fontSize: 13,
+              lineHeight: 1.65,
+            }}
+          >
+            Data below comes only from three authenticated GET projections on
+            the dashboard BFF. No control or execution endpoint is exposed.
+          </p>
+          {updatedAt ? (
+            <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: 11 }}>
+              Last refreshed {updatedAt}
+            </p>
+          ) : null}
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            style={{
+              border: "1px solid #3f4a5a",
+              borderRadius: 9,
+              background: "#111827",
+              color: "#e2e8f0",
+              cursor: refreshing ? "wait" : "pointer",
+              padding: "10px 14px",
+              fontSize: 11,
+              fontWeight: 800,
+            }}
+          >
+            {refreshing ? "REFRESHING" : "REFRESH"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void logout()}
+            style={{
+              border: "1px solid #3f4a5a",
+              borderRadius: 9,
+              background: "transparent",
+              color: "#94a3b8",
+              cursor: "pointer",
+              padding: "10px 14px",
+              fontSize: 11,
+              fontWeight: 800,
+            }}
+          >
+            LOG OUT
+          </button>
+        </div>
+      </section>
+
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
+          gap: 16,
+        }}
+      >
+        {probes.map((item) => (
+          <article
+            key={item.path}
+            data-testid={"viewer-probe-" + item.path}
+            style={{
+              minWidth: 0,
+              border: "1px solid rgba(148,163,184,0.18)",
+              borderRadius: 16,
+              background: "#0f172a",
+              boxShadow: "0 18px 44px rgba(0,0,0,0.20)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                borderBottom: "1px solid rgba(148,163,184,0.13)",
+                padding: "16px 18px",
+              }}
+            >
+              <div>
+                <h2
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 6,
+                    margin: 0,
+                    color: "#f8fafc",
+                    fontSize: 15,
                   }}
                 >
-                  <span
-                    style={{ fontWeight: 700, fontSize: 14, color: "#F5F7FA" }}
-                  >
-                    {w.title}
-                  </span>
-                  <SeverityPill
-                    level={
-                      i === 2 ? "high" : i === 1 ? "medium" : "info"
-                    }
-                  />
-                </div>
-                <div style={{ color: "#A5ADBA", fontSize: 13 }}>{w.desc}</div>
+                  {item.label}
+                </h2>
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    color: "#64748b",
+                    fontSize: 11,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {item.description}
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
+              <span
+                style={{
+                  alignSelf: "flex-start",
+                  border: "1px solid " + statusColor(item.state) + "55",
+                  borderRadius: 999,
+                  color: statusColor(item.state),
+                  padding: "4px 8px",
+                  fontSize: 9,
+                  fontWeight: 900,
+                  letterSpacing: "0.1em",
+                }}
+              >
+                {item.state.toUpperCase()}
+                {item.status ? " · " + item.status : ""}
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                minHeight: 18,
+                padding: "10px 18px 0",
+                color: "#64748b",
+                fontSize: 9,
+                overflow: "hidden",
+              }}
+            >
+              <span>{item.path}</span>
+              {item.cache ? <span>CACHE {item.cache}</span> : null}
+              {item.requestId ? (
+                <span
+                  title={item.requestId}
+                  style={{
+                    marginLeft: "auto",
+                    maxWidth: 120,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ID {item.requestId}
+                </span>
+              ) : null}
+            </div>
+
+            <pre
+              style={{
+                maxHeight: 420,
+                margin: 0,
+                overflow: "auto",
+                padding: 18,
+                color: item.state === "error" ? "#fecaca" : "#cbd5e1",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                fontSize: 11,
+                lineHeight: 1.55,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {item.state === "loading"
+                ? "Waiting for authenticated BFF response..."
+                : pretty(item.payload)}
+            </pre>
+          </article>
+        ))}
+      </section>
+    </main>
   );
 }

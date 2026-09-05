@@ -20,7 +20,7 @@ const TOKEN_KEY = "wolf15_token";
 // process.env.NODE_ENV is statically inlined by the bundler.
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-export const ADMIN_ROLES = ["owner", "risk_admin", "config_admin", "approver"] as const;
+export const ADMIN_ROLES = ["risk_admin", "config_admin", "approver"] as const;
 
 export function hasRole(
   role: UserRole | undefined,
@@ -148,7 +148,7 @@ export function getTransportToken(): string | null {
 
 /**
  * Fetch a WebSocket auth ticket from the server.
- * The server route reads the session cookie or the server-only API_KEY
+ * The server route reads only a backend-validated session cookie
  * env var — neither is exposed to the client bundle.
  *
  * Includes TTL cache + in-flight dedup to avoid hammering the server

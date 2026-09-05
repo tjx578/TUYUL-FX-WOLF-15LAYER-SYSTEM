@@ -1,211 +1,159 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveDashboardUpstream } from "@/lib/server/dashboardTopology";
+import { isAllowlistedReadPath } from "@/lib/server/readOnlyProxyPolicy";
+import { validateSessionToken } from "@/lib/serverAuth";
 
-/**
- * Single canonical backend proxy — runtime route handler.
- *
- * ALL browser REST traffic flows through this handler.  There are no
- * build-time rewrites; getRestPrefix() always returns "/api/proxy" on the
- * client, so every fetch request arrives here as:
- *
- *   /api/proxy/api/v1/<resource>
- *
- * The handler reads INTERNAL_API_URL at request time (not build time),
- * strips the /api/proxy prefix that Next.js already consumed, and
- * forwards the remaining path to the backend.
- *
- * Traceability headers on every response:
- *   x-proxy-target  — resolved backend origin (no credentials/path)
- *   x-proxy-status  — "ok" | "misconfigured" | "error"
- *   x-proxy-surface — "core-api" | "bff" (hybrid topology indicator)
- */
+function bearerToken(request: NextRequest): string {
+  const match = /^Bearer\s+(.+)$/i.exec(
+    request.headers.get("authorization") ?? "",
+  );
+  return match?.[1]?.trim() ?? "";
+}
+
+function deny(requestId: string): NextResponse {
+  return NextResponse.json(
+    { error: "Forbidden", code: "READ_ONLY_PROXY_BOUNDARY" },
+    {
+      status: 403,
+      headers: {
+        "cache-control": "no-store",
+        "x-request-id": requestId,
+      },
+    },
+  );
+}
 
 async function proxyRequest(
   request: NextRequest,
-  path: string[]
+  path: string[],
 ): Promise<NextResponse> {
-  const joinedPath = path.join("/");
-
-  // Trace ID: reuse inbound or generate — available for all response paths.
   const requestId =
     request.headers.get("x-request-id") || crypto.randomUUID();
+  const joinedPath = path.join("/");
 
-  // Resolve upstream via hybrid topology (core-api or BFF).
-  const upstream = resolveDashboardUpstream(joinedPath);
+  // Method and exact-path containment run before auth or any upstream request.
+  if (request.method !== "GET" || !isAllowlistedReadPath(joinedPath)) {
+    return deny(requestId);
+  }
 
-  // Fail-fast: no backend URL configured outside of local dev
-  if (!upstream) {
-    console.error(
-      "[api/proxy] PROXY_MISCONFIGURED: INTERNAL_API_URL / NEXT_PUBLIC_API_BASE_URL not set."
-    );
+  const token = bearerToken(request);
+  if (!(await validateSessionToken(token))) {
     return NextResponse.json(
+      { error: "Unauthorized", code: "INVALID_VIEWER_SESSION" },
       {
-        error: "Proxy misconfigured — backend URL not set",
-        code: "PROXY_MISCONFIGURED",
-        detail:
-          "Set INTERNAL_API_URL (server-side) or NEXT_PUBLIC_API_BASE_URL to the Railway backend origin.",
+        status: 401,
+        headers: {
+          "cache-control": "no-store",
+          "x-request-id": requestId,
+        },
       },
+    );
+  }
+
+  const upstream = resolveDashboardUpstream(joinedPath);
+  if (!upstream || upstream.surface !== "bff") {
+    return NextResponse.json(
+      { error: "Viewer BFF is not configured", code: "BFF_MISCONFIGURED" },
       {
         status: 503,
         headers: {
-          "x-proxy-target": "unresolved",
+          "cache-control": "no-store",
           "x-proxy-status": "misconfigured",
-          "x-proxy-surface": "unknown",
+          "x-proxy-surface": "bff",
           "x-request-id": requestId,
         },
-      }
+      },
     );
   }
 
-  const backendUrl = upstream.url;
-
-  // Canonical path mapping.
-  //
-  // getRestPrefix() returns "/api/proxy" on the client, so callers
-  // always produce:  /api/proxy/api/v1/<resource>
-  //
-  // Next.js strips the /api/proxy prefix and hands us the rest,
-  // e.g. ["api", "v1", "trades", "active"] → joinedPath = "api/v1/trades/active".
-  //
-  // We prepend "/" to reconstruct the backend path.  Special health
-  // endpoints are mapped explicitly to their root-level paths.
-  let targetPath: string;
-  if (joinedPath === "health" || joinedPath === "api/health" || joinedPath === "api/v1/health") {
-    targetPath = "/health";
-  } else if (joinedPath === "healthz" || joinedPath === "api/healthz") {
-    targetPath = "/healthz";
-  } else if (joinedPath === "readyz" || joinedPath === "api/readyz") {
-    targetPath = "/readyz";
-  } else if (joinedPath.startsWith("api/")) {
-    // Canonical form: path already includes /api/ prefix → use as-is.
-    targetPath = `/${joinedPath}`;
-  } else {
-    // Fallback for any non-canonical caller — prepend /api/.
-    targetPath = `/api/${joinedPath}`;
-  }
-  const targetUrl = new URL(targetPath, backendUrl);
-
-  // Forward query params
+  const targetUrl = new URL("/api/" + joinedPath, upstream.url);
   request.nextUrl.searchParams.forEach((value, key) => {
     targetUrl.searchParams.set(key, value);
   });
 
-  // Build headers, forwarding most but not host
-  const headers = new Headers();
-  request.headers.forEach((value, key) => {
-    // Skip headers that shouldn't be forwarded
-    if (
-      !["host", "connection", "keep-alive", "transfer-encoding"].includes(
-        key.toLowerCase()
-      )
-    ) {
-      headers.set(key, value);
-    }
+  const headers = new Headers({
+    accept: "application/json",
+    authorization: "Bearer " + token,
+    "x-request-id": requestId,
   });
 
-  // Auth comes from the session cookie injected by middleware, or from
-  // the client's own Authorization header.  No API_KEY fallback.
-
-  // Ensure x-request-id is forwarded to upstream.
-  headers.set("x-request-id", requestId);
-
-  // Safe target label for headers (origin only, no credentials/path)
-  const targetLabel = `${targetUrl.protocol}//${targetUrl.host}`;
+  const targetLabel = targetUrl.protocol + "//" + targetUrl.host;
 
   try {
     const response = await fetch(targetUrl.toString(), {
-      method: request.method,
+      method: "GET",
       headers,
-      body:
-        request.method !== "GET" && request.method !== "HEAD"
-          ? await request.text()
-          : undefined,
-      // @ts-expect-error - duplex is needed for streaming but not in types
-      duplex: "half",
+      cache: "no-store",
+      redirect: "error",
     });
 
-    // Build response headers
-    const responseHeaders = new Headers();
-    response.headers.forEach((value, key) => {
-      // Skip hop-by-hop headers
-      if (
-        !["transfer-encoding", "connection", "keep-alive"].includes(
-          key.toLowerCase()
-        )
-      ) {
-        responseHeaders.set(key, value);
-      }
+    const responseHeaders = new Headers({
+      "cache-control": "no-store",
+      "content-type":
+        response.headers.get("content-type") || "application/json",
+      "x-proxy-target": targetLabel,
+      "x-proxy-status": "ok",
+      "x-proxy-surface": "bff",
+      "x-request-id": requestId,
     });
 
-    // Traceability headers
-    responseHeaders.set("x-proxy-target", targetLabel);
-    responseHeaders.set("x-proxy-status", "ok");
-    responseHeaders.set("x-proxy-surface", upstream.surface);
-    responseHeaders.set("x-request-id", requestId);
+    const bffCache = response.headers.get("x-bff-cache");
+    if (bffCache) responseHeaders.set("x-bff-cache", bffCache);
 
     return new NextResponse(response.body, {
       status: response.status,
-      statusText: response.statusText,
       headers: responseHeaders,
     });
-  } catch (error) {
-    console.error(`[api/proxy] Failed to proxy ${targetUrl}:`, error);
+  } catch {
     return NextResponse.json(
-      {
-        error: "Backend unavailable",
-        detail:
-          error instanceof Error ? error.message : "Connection failed",
-        target: targetLabel,
-      },
+      { error: "Backend unavailable", code: "UPSTREAM_UNAVAILABLE" },
       {
         status: 502,
         headers: {
+          "cache-control": "no-store",
           "x-proxy-target": targetLabel,
           "x-proxy-status": "error",
-          "x-proxy-surface": upstream.surface,
+          "x-proxy-surface": "bff",
           "x-request-id": requestId,
         },
-      }
+      },
     );
   }
 }
 
+type RouteContext = { params: Promise<{ path: string[] }> };
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
