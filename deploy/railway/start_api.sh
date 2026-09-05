@@ -13,6 +13,11 @@ fi
 
 export WOLF15_SERVICE_ROLE="api"
 
+if [[ "${WOLF15_EMBED_ORCHESTRATOR:-false}" =~ ^(1|true|yes|on)$ ]]; then
+  echo "[startup] ERROR: WOLF15_EMBED_ORCHESTRATOR is no longer supported; use wolf15-orchestrator." >&2
+  exit 1
+fi
+
 exec gunicorn app:app \
   -k deploy.uvicorn_worker.UvicornWorker \
   --bind "0.0.0.0:${PORT:-8000}" \

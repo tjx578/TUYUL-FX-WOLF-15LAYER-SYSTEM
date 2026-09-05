@@ -1,0 +1,15 @@
+{
+  "schema": "wolf15.runtime-ownership-map.v1",
+  "verifiedAgainstCommit": "ec31631864204ca183079966d7834338f7a986cd",
+  "productionDeploymentVerified": false,
+  "runtimeOrchestrationOwner": "wolf15-orchestrator",
+  "services": [
+    {"name":"wolf15-api","manifest":"railway.toml","startCommand":"bash deploy/railway/start_api.sh","module":"app:app","owns":["http_api","authentication","read_models"],"mustNotOwn":["orchestrator_state_manager","compliance_scheduler"]},
+    {"name":"wolf15-orchestrator","manifest":"railway-orchestrator.toml","startCommand":"bash deploy/railway/start_orchestrator.sh","module":"services.orchestrator.state_manager","owns":["orchestrator_state_manager","compliance_scheduler","orchestrator_heartbeat"],"mustNotOwn":["strategy_analysis","broker_execution"]},
+    {"name":"wolf15-ingest","manifest":"railway-ingestor.toml","startCommand":"bash deploy/railway/start_ingest.sh","module":"services.ingest.ingest_worker","owns":["provider_ingest","market_context_publication"],"mustNotOwn":["orchestrator_state_manager"]},
+    {"name":"wolf15-engine","manifest":"railway-engine.toml","startCommand":"bash deploy/railway/start_engine_consolidated.sh","module":"services.engine.runner","owns":["analysis_pipeline","pressure_production"],"mustNotOwn":["orchestrator_state_manager","broker_execution"]},
+    {"name":"wolf15-pressure-outbox","manifest":"railway-pressure-outbox.toml","startCommand":"bash deploy/railway/start_pressure_outbox.sh","module":"services.pressure_outbox.runner","owns":["pressure_delivery","evidence_workers","outcome_workers"],"mustNotOwn":["orchestrator_state_manager","risk_authority"]},
+    {"name":"wolf15-execution","manifest":"railway-execution.toml","startCommand":"bash deploy/railway/start_trade_consolidated.sh","module":"services.trade.runner","owns":["allocation_worker","guarded_execution_worker"],"mustNotOwn":["orchestrator_state_manager","implicit_execution_authority"]},
+    {"name":"wolf15-ea-bridge","manifest":"railway-ea-bridge.toml","startCommand":"bash deploy/railway/start_ea_bridge.sh","module":"services.ea_bridge.main:app","owns":["executor_transport","claim_report_protocol","executor_readiness"],"mustNotOwn":["strategy","orchestrator_state_manager"]}
+  ]
+}

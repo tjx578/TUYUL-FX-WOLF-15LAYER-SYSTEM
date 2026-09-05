@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import threading
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager, suppress
 from typing import Any
@@ -66,6 +65,22 @@ def _env_float(key: str, default: float, *, minimum: float = 0.05) -> float:
         return default
 
 
+def _assert_api_only_orchestrator_ownership() -> None:
+    """Reject the removed embedded-orchestrator compatibility switch.
+
+    The API may read the standalone orchestrator's durable state, but it must
+    never construct an autonomous ``StateManager``. Failing at API startup is
+    intentional: accepting the old switch could recreate one writer per
+    Gunicorn worker.
+    """
+
+    if _env_bool("WOLF15_EMBED_ORCHESTRATOR", False):
+        raise RuntimeError(
+            "WOLF15_EMBED_ORCHESTRATOR is no longer supported: "
+            "wolf15-orchestrator is the sole runtime orchestration owner"
+        )
+
+
 async def _await_bool(value: Awaitable[bool] | bool) -> bool:
     if isinstance(value, bool):
         return value
@@ -104,6 +119,7 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _assert_api_only_orchestrator_ownership()
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     from dataclasses import replace
 
@@ -211,28 +227,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _candle_agg_started = True
     except Exception as exc:
         logger.warning("HybridCandleAggregator failed to start: %s — candle WS may be empty", exc)
-
-    # ── Embedded Orchestrator (opt-in via WOLF15_EMBED_ORCHESTRATOR=true) ──
-    _orchestrator_thread: threading.Thread | None = None
-    if _env_bool("WOLF15_EMBED_ORCHESTRATOR", False):
-        try:
-            from services.orchestrator.state_manager import StateManager
-
-            def _run_orchestrator() -> None:
-                try:
-                    StateManager().run_forever()
-                except Exception:
-                    logger.exception("Embedded orchestrator crashed")
-
-            _orchestrator_thread = threading.Thread(
-                target=_run_orchestrator,
-                daemon=True,
-                name="embedded-orchestrator",
-            )
-            _orchestrator_thread.start()
-            logger.info("Embedded orchestrator started (daemon thread)")
-        except Exception:
-            logger.warning("Embedded orchestrator failed to start — running API-only")
 
     try:
         yield

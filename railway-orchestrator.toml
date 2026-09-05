@@ -1,6 +1,5 @@
-# DEPRECATED: Orchestrator is now embedded in the API service
-# (railway.toml, WOLF15_EMBED_ORCHESTRATOR=true). Keep this file
-# for rollback to per-service deployment if needed.
+# Canonical runtime owner for orchestration and compliance evaluation.
+# The API is a read/API facade and must not start StateManager.
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
