@@ -55,6 +55,8 @@ class SessionUserResponse(BaseModel):
     email: str
     role: str
     name: str | None = None
+    scopes: list[str] = Field(default_factory=list)
+    auth_method: str
 
 
 class RefreshResponse(SessionUserResponse):
@@ -74,11 +76,21 @@ def _session_from_payload(payload: dict[str, Any]) -> SessionUserResponse:
     ``name`` are pulled from extra claims embedded at token-creation time.
     Falls back to sensible defaults so the endpoint never 500s for a valid JWT.
     """
+    raw_scopes = payload.get("scopes", payload.get("scope", []))
+    if isinstance(raw_scopes, str):
+        scopes = raw_scopes.split()
+    elif isinstance(raw_scopes, (list, tuple, set)):
+        scopes = [str(scope) for scope in raw_scopes if str(scope)]
+    else:
+        scopes = []
+
     return SessionUserResponse(
         user_id=str(payload.get("sub", "unknown")),
         email=str(payload.get("email", payload.get("sub", "unknown"))),
-        role=str(payload.get("role", "viewer")),
+        role=str(payload.get("role", "unknown")),
         name=payload.get("name"),
+        scopes=sorted(set(scopes)),
+        auth_method=str(payload.get("auth_method", "unknown")),
     )
 
 
@@ -149,7 +161,7 @@ async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
     if payload is not None:
         token = create_token(
             sub=str(payload.get("sub", "dashboard")),
-            extra={k: payload[k] for k in ("email", "role", "name") if k in payload},
+            extra={k: payload[k] for k in ("email", "role", "name", "scope", "scopes") if k in payload},
         )
         set_auth_cookie(response, token)
         user = _session_from_payload(payload)
@@ -204,7 +216,7 @@ async def refresh_session(
     Issue a fresh JWT from a still-valid token, update the HttpOnly cookie.
     """
     extra: dict[str, Any] = {}
-    for key in ("email", "role", "name"):
+    for key in ("email", "role", "name", "scope", "scopes"):
         if key in payload:
             extra[key] = payload[key]
 

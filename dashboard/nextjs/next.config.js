@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Next config is CommonJS. */
 const path = require("path");
 
 // Resolve the backend API base URL, used for:
@@ -120,6 +121,8 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
 }
 
 const isProtectedDeployment = _isProtectedDeployment();
+const isViewerDeployment =
+  (process.env.DASHBOARD_MODE || "").trim().toLowerCase() === "viewer";
 
 // Canonical env vars for backend URL:
 //   INTERNAL_API_URL          — server-only, preferred (Vercel/Railway project vars)
@@ -145,9 +148,10 @@ if (process.env.API_DOMAIN && !process.env.INTERNAL_API_URL) {
   );
 }
 
+const rawPublicApiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const rawApiBase =
   process.env.INTERNAL_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  rawPublicApiBase ||
   process.env.API_BASE_URL ||
   (process.env.API_DOMAIN
     ? `https://${process.env.API_DOMAIN}`
@@ -156,7 +160,7 @@ const rawApiBase =
 
 // Log the resolved base for debugging (only in dev or when env vars are set)
 if (rawApiBase) {
-  console.log("[next.config] Resolved API base from env:", rawApiBase.replace(/^(https?:\/\/[^/]+).*$/, "$1***"));
+  console.log("[next.config] Server API origin is configured.");
 }
 
 // Warn loudly in production when env vars are missing.
@@ -174,7 +178,9 @@ if (isProd && !rawApiBase) {
 }
 
 // Fallback — localhost for local dev, placeholder for production without env vars.
-const resolvedBase = rawApiBase || "http://localhost:8000";
+// Never derive a NEXT_PUBLIC value from INTERNAL_API_URL. Doing so would bake
+// a server-only origin into the browser bundle.
+const resolvedBase = rawPublicApiBase || "http://localhost:8000";
 
 // Normalize: strip trailing slash and any accidental /api suffix to prevent
 // double-prefix (/api/api/...) when used for env injection or WS derivation.
@@ -210,7 +216,8 @@ const configuredWsBase = _normalizeWsBase(process.env.NEXT_PUBLIC_WS_BASE_URL ||
 const wsBase = configuredWsBase || _normalizeWsBase(apiBase.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://"));
 
 _validateWsBase(wsBase, {
-  protectedDeploy: isProtectedDeployment,
+  // The G4 viewer profile has no WebSocket surface.
+  protectedDeploy: isProtectedDeployment && !isViewerDeployment,
   explicitlyConfigured: Boolean(configuredWsBase),
 });
 
@@ -255,13 +262,6 @@ const _customCspOrigins = _extraCspConnectSrcOrigins(wsBase);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Enable instrumentation hook (src/instrumentation.ts) — polyfills
-  // performance API methods required by Next.js internal perf tracking.
-  // Without this, Node.js Alpine containers may throw
-  // "mgt.clearMarks is not a function" at runtime.
-  experimental: {
-    instrumentationHook: true,
-  },
   // Exclude browser-only chart library from server bundle.
   // lightweight-charts uses browser APIs (document/window) when createChart() is
   // called; keeping it out of the server bundle reduces cold-start parse time.
@@ -275,9 +275,8 @@ const nextConfig = {
     config.resolve.alias["@"] = path.join(__dirname, "src");
     return config;
   },
-  // Expose the resolved backend URL to the client bundle so NEXT_PUBLIC_
-  // env var checks in DataStreamDiagnostic / runtimeHealth work correctly
-  // even when the user only set API_BASE_URL on Railway.
+  // Only explicitly public values enter the browser bundle. INTERNAL_API_URL
+  // remains server-only and is read at runtime by the auth/proxy route handlers.
   env: {
     NEXT_PUBLIC_API_BASE_URL: apiBase,
     NEXT_PUBLIC_WS_BASE_URL: wsBase,

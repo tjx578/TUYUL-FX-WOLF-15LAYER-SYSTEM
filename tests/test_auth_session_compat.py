@@ -222,6 +222,25 @@ class TestAuthSessionPrimary:
         assert body["email"] == "test@example.com"
         assert body["role"] == "operator"
         assert body["name"] == "Test User"
+        assert body["auth_method"] == "jwt"
+
+    def test_viewer_jwt_exposes_normalized_dashboard_scope(self, primary_client: TestClient):
+        _set_auth_secret()
+        token = _make_token(
+            sub="viewer_1",
+            email="viewer@example.com",
+            role="viewer",
+            scope="read:dashboard read:other",
+        )
+        resp = primary_client.get(
+            "/api/auth/session",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["role"] == "viewer"
+        assert body["scopes"] == ["read:dashboard", "read:other"]
+        assert body["auth_method"] == "jwt"
 
 
 # ============================================================================

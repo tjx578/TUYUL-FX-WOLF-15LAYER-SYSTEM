@@ -1,10 +1,7 @@
 /**
- * Auth model: owner-only.
+ * Roles retained for compatibility with the core API.
  *
- * The dashboard is a private owner control surface.
- * "owner" is the canonical role for the sole operator.
- * Legacy roles (viewer, operator, risk_admin, config_admin, approver)
- * are retained for backward compatibility with existing JWTs.
+ * The deployed G4 visual service accepts only "viewer"; see viewerContract.ts.
  */
 export type UserRole =
   | "owner"
@@ -18,5 +15,7 @@ export interface SessionUser {
   user_id: string;
   email: string;
   role: UserRole;
-  name?: string;
+  name?: string | null;
+  scopes?: readonly string[];
+  auth_method?: string;
 }

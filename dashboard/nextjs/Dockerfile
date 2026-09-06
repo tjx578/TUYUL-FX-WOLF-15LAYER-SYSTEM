@@ -3,9 +3,6 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-# Install ALL dependencies (including devDependencies) because the build
-# stage needs TypeScript, Tailwind CSS, PostCSS plugins, etc.
-# The final runner stage uses standalone output and does not copy node_modules.
 RUN if [ -f package-lock.json ]; then npm ci; \
     else npm install; fi
 
@@ -15,22 +12,29 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Keep the optional Next.js public asset directory present so the runtime-stage
+# COPY remains valid even when this viewer profile has no static assets.
+RUN mkdir -p public
 
-# Build-time env vars (overridable via --build-arg)
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-ARG NEXT_PUBLIC_WS_BASE_URL=ws://localhost:8000
-ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
-ENV NEXT_PUBLIC_WS_BASE_URL=$NEXT_PUBLIC_WS_BASE_URL
+# Non-secret build defaults make the immutable viewer contract testable locally.
+# Railway can override these ARG values from service variables.
+ARG DASHBOARD_MODE=viewer
+ARG INTERNAL_API_URL=http://localhost:8000
+ARG INTERNAL_DASHBOARD_BFF_URL=http://localhost:8080
+ENV DASHBOARD_MODE=$DASHBOARD_MODE
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
+ENV INTERNAL_DASHBOARD_BFF_URL=$INTERNAL_DASHBOARD_BFF_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_OUTPUT_STANDALONE=true
 
-RUN npm run build
+RUN npm run build:strict
 
 # ---------- STAGE 3: RUNTIME ----------
 FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV DASHBOARD_MODE=viewer
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
@@ -38,7 +42,6 @@ ENV HOSTNAME="0.0.0.0"
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy only the production artifacts
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
