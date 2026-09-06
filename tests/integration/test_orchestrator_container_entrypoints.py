@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -47,14 +48,34 @@ _FALSE_CONTROLS = (
 
 
 def _run(*args: str, timeout: float = 120.0, check: bool = True) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        args,
-        cwd=ROOT,
-        capture_output=True,
-        check=False,
-        text=True,
-        timeout=timeout,
-    )
+    # Docker Desktop on Windows can leave inherited pipe handles open after the
+    # CLI process has completed its daemon operation.  ``capture_output=True``
+    # then leaves ``subprocess.communicate`` waiting in reader threads even
+    # though the container already exists.  Real temporary files preserve the
+    # exact output without relying on pipe EOF propagation across that process
+    # boundary.
+    with (
+        tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stdout_file,
+        tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file,
+    ):
+        completed = subprocess.run(
+            args,
+            cwd=ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            check=False,
+            text=True,
+            timeout=timeout,
+        )
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        result = subprocess.CompletedProcess(
+            completed.args,
+            completed.returncode,
+            stdout_file.read(),
+            stderr_file.read(),
+        )
     if check and result.returncode != 0:
         pytest.fail(
             f"command failed ({result.returncode}): {args!r}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
