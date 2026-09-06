@@ -46,6 +46,7 @@ _FALSE_CONTROLS = (
     "STRATEGY_5SCR_EXECUTION_ENABLED",
     "CANARY_ISSUANCE_ENABLED",
 )
+_DISPOSABLE_REDIS_PASSWORD = "wolf15_t14_disposable_redis"
 
 
 def _run(*args: str, timeout: float = 120.0, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -270,11 +271,14 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "--network",
             network,
             "--health-cmd",
-            "redis-cli ping || exit 1",
+            f"redis-cli -a {_DISPOSABLE_REDIS_PASSWORD} ping || exit 1",
             "--health-interval=1s",
             "--health-timeout=3s",
             "--health-retries=30",
             redis_image,
+            "redis-server",
+            "--requirepass",
+            _DISPOSABLE_REDIS_PASSWORD,
         )
         created_containers.append(redis_name)
         _wait_healthy(redis_name)
@@ -328,7 +332,7 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "--network",
             network,
             "-e",
-            f"REDIS_URL=redis://{redis_name}:6379/0",
+            f"REDIS_URL=redis://:{_DISPOSABLE_REDIS_PASSWORD}@{redis_name}:6379/0",
             "-e",
             f"DATABASE_URL=postgresql://wolf15_t14:wolf15_t14_disposable@{postgres_name}:5432/wolf15_t14",
             "-e",
