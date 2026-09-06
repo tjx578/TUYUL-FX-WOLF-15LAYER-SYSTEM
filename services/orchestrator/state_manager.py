@@ -46,6 +46,8 @@ from utils.market_hours import is_forex_market_open
 
 ORCHESTRATOR_SOURCE = "wolf15-orchestrator"
 _ORCHESTRATOR_READY = threading.Event()
+_STATE_SCHEMA = "wolf15.orchestrator.state/v2"
+_COMMITTED_STATE_MARKER = "COMMITTED"
 
 # Redis key for manual news lock (set by API /news-lock/enable endpoint)
 _NEWS_LOCK_STATE_KEY = "NEWS_LOCK:STATE"
@@ -110,6 +112,10 @@ class OrchestratorState:
     reason: str = "startup"
     compliance_code: str = "INIT"
     updated_at: str = ""
+
+
+class StateHydrationError(RuntimeError):
+    """Raised when persisted orchestrator state is unsafe to resume."""
 
 
 class RuntimeSupervisor:
@@ -232,6 +238,10 @@ class StateManager:
         self._trade_risk: dict[str, Any] = {}
         self._last_compliance_check = 0.0
         self._last_heartbeat = 0.0
+        self._state_revision: int = 0
+        # Recovery progress intentionally remains process-local.  It is a
+        # debounce counter, not compliance authority; carrying partial
+        # progress across a restart could clear SAFE/KILL_SWITCH too early.
         self._recovery_count: int = 0
 
     def configure_intervals(self, compliance_interval_sec: float, heartbeat_interval_sec: float) -> None:
@@ -320,7 +330,11 @@ class StateManager:
         identity = self._ownership.identity
         if identity is None:
             raise OwnershipLostError("state publication requires an active ownership lease")
+        next_revision = self._state_revision + 1
         payload: dict[str, Any] = {
+            "schema": _STATE_SCHEMA,
+            "commit_marker": _COMMITTED_STATE_MARKER,
+            "state_revision": next_revision,
             "source": ORCHESTRATOR_SOURCE,
             "event": event,
             "channel": self._channel,
@@ -351,6 +365,89 @@ class StateManager:
             heartbeat_payload=heartbeat_payload,
             channel=self._channel,
         )
+        # The fenced Redis operation is the commit boundary.  Never advance
+        # the in-process watermark before Redis confirms the atomic write.
+        self._state_revision = next_revision
+
+    def hydrate_committed_state(self) -> bool:
+        """Restore the last atomically committed state before publishing BOOT.
+
+        A prior state is eligible only when it is a v2 committed envelope
+        produced by this orchestrator and its fence generation predates the
+        lease currently held by this process.  Missing state is a valid first
+        start; malformed, uncommitted, or mismatched state fails closed.
+        """
+        identity = self._ownership.identity
+        if identity is None:
+            raise OwnershipLostError("state hydration requires an active ownership lease")
+
+        raw = self._redis.get(self._state_key)
+        if raw is None:
+            self._state_revision = 0
+            self._recovery_count = 0
+            return False
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="strict")
+        if not isinstance(raw, str):
+            raise StateHydrationError("persisted orchestrator state is not text")
+
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError) as exc:
+            raise StateHydrationError("persisted orchestrator state is not valid JSON") from exc
+        if not isinstance(payload, dict):
+            raise StateHydrationError("persisted orchestrator state is not an object")
+        if payload.get("schema") != _STATE_SCHEMA:
+            raise StateHydrationError("persisted orchestrator state schema mismatch")
+        if payload.get("commit_marker") != _COMMITTED_STATE_MARKER:
+            raise StateHydrationError("persisted orchestrator state is not committed")
+        if payload.get("source") != ORCHESTRATOR_SOURCE or payload.get("channel") != self._channel:
+            raise StateHydrationError("persisted orchestrator state authority mismatch")
+
+        prior_generation = payload.get("fence_generation")
+        prior_revision = payload.get("state_revision")
+        if (
+            not isinstance(prior_generation, int)
+            or isinstance(prior_generation, bool)
+            or not isinstance(prior_revision, int)
+            or isinstance(prior_revision, bool)
+        ):
+            raise StateHydrationError("persisted orchestrator state watermark is invalid")
+        prior_owner_id = payload.get("owner_id")
+        if not isinstance(prior_owner_id, str) or not prior_owner_id or prior_owner_id == identity.owner_id:
+            raise StateHydrationError("persisted orchestrator owner identity is stale or mismatched")
+        if prior_generation < 1 or prior_generation >= identity.generation:
+            raise StateHydrationError("persisted orchestrator state fence generation is stale or mismatched")
+        if prior_revision < 1:
+            raise StateHydrationError("persisted orchestrator state revision is invalid")
+
+        try:
+            mode = ExecutionMode(str(payload["mode"]))
+        except (KeyError, ValueError) as exc:
+            raise StateHydrationError("persisted orchestrator mode is invalid") from exc
+        reason = payload.get("reason")
+        compliance_code = payload.get("compliance_code")
+        updated_at = payload.get("updated_at")
+        if not isinstance(reason, str) or not reason:
+            raise StateHydrationError("persisted orchestrator state fields are incomplete")
+        if not isinstance(compliance_code, str) or not compliance_code:
+            raise StateHydrationError("persisted orchestrator state fields are incomplete")
+        if not isinstance(updated_at, str) or not updated_at:
+            raise StateHydrationError("persisted orchestrator state fields are incomplete")
+        try:
+            datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise StateHydrationError("persisted orchestrator updated_at is invalid") from exc
+
+        self._state = OrchestratorState(
+            mode=mode,
+            reason=reason,
+            compliance_code=compliance_code,
+            updated_at=updated_at,
+        )
+        self._state_revision = prior_revision
+        self._recovery_count = 0
+        return True
 
     def _refresh_snapshots_from_redis(self) -> None:
         raw_values = self._redis.mget([self._account_state_key, self._trade_risk_key])
@@ -569,9 +666,16 @@ class StateManager:
                     if not self._ownership.acquire():
                         time.sleep(self._loop_sleep_sec)
                         continue
+                    hydrated = self.hydrate_committed_state()
                     self.start_listener()
                     self._supervisor.mark_owner()
-                    self.publish_state("BOOT")
+                    self.publish_state(
+                        "BOOT",
+                        {
+                            "hydrated": hydrated,
+                            "prior_state_revision": self._state_revision,
+                        },
+                    )
                     logger.info(
                         "wolf15-orchestrator acquired ownership generation={} mode={}",
                         self._ownership.identity.generation if self._ownership.identity else "unknown",

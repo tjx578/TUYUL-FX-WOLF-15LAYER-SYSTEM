@@ -17,6 +17,52 @@ import pytest
 
 from startup.graceful_shutdown import GracefulShutdown
 
+
+class _ShutdownOwnership:
+    """Minimal fenced-owner double for shutdown sequencing tests."""
+
+    def __init__(self, redis_client: MagicMock) -> None:
+        from services.orchestrator.ownership import LeaseIdentity
+
+        self._redis = redis_client
+        self._lease_identity = LeaseIdentity(owner_id="shutdown-test", generation=1)
+        self.identity = None
+
+    @property
+    def held(self) -> bool:
+        return self.identity is not None
+
+    def acquire(self) -> bool:
+        self.identity = self._lease_identity
+        return True
+
+    def renew(self) -> bool:
+        return self.held
+
+    def release(self) -> bool:
+        was_held = self.held
+        self.identity = None
+        return was_held
+
+    def fenced_state_write(
+        self,
+        *,
+        state_key: str,
+        state_payload: str,
+        heartbeat_key: str,
+        heartbeat_payload: str,
+        channel: str,
+    ) -> None:
+        pipe = self._redis.pipeline()
+        pipe.set(state_key, state_payload)
+        pipe.set(heartbeat_key, heartbeat_payload)
+        pipe.publish(channel, state_payload)
+        pipe.execute()
+
+    def fenced_value_write(self, *, key: str, value: str) -> None:
+        self._redis.set(key, value)
+
+
 # ── Helpers ────────────────────────────────────────────────────────
 
 
@@ -174,11 +220,15 @@ class TestOrchestratorShutdownState:
         mock_pubsub = MagicMock()
         mock_redis.pubsub.return_value = mock_pubsub
         mock_pubsub.get_message.return_value = None
+        mock_redis.get.return_value = None
         mock_redis.mget.return_value = [None, None]
         mock_pipe = MagicMock()
         mock_redis.pipeline.return_value = mock_pipe
 
-        sm = StateManager(redis_client=mock_redis)
+        sm = StateManager(
+            redis_client=mock_redis,
+            ownership=_ShutdownOwnership(mock_redis),  # type: ignore[arg-type]
+        )
         sm.configure_intervals(compliance_interval_sec=999, heartbeat_interval_sec=999)
 
         call_count = 0
@@ -210,11 +260,15 @@ class TestOrchestratorShutdownState:
         mock_pubsub = MagicMock()
         mock_redis.pubsub.return_value = mock_pubsub
         mock_pubsub.get_message.return_value = None
+        mock_redis.get.return_value = None
         mock_redis.mget.return_value = [None, None]
         mock_pipe = MagicMock()
         mock_redis.pipeline.return_value = mock_pipe
 
-        sm = StateManager(redis_client=mock_redis)
+        sm = StateManager(
+            redis_client=mock_redis,
+            ownership=_ShutdownOwnership(mock_redis),  # type: ignore[arg-type]
+        )
         sm.configure_intervals(compliance_interval_sec=999, heartbeat_interval_sec=999)
 
         call_count = 0

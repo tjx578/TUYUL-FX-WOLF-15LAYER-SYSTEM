@@ -1,8 +1,9 @@
 # Railway service ownership index
 
-These documents describe the seven core Railway application services verified
-against source commit `ec31631864204ca183079966d7834338f7a986cd`. They are
-source contracts, not evidence that production has been deployed.
+These documents describe the seven core Railway application services in the
+current repository tree. They are source contracts, not evidence that production
+has been deployed. Exact commit/tree identity belongs in the external release
+attestation so this tracked document does not create a self-referential hash.
 
 | Service | Canonical documentation | Runtime entrypoint |
 | --- | --- | --- |
@@ -15,5 +16,13 @@ source contracts, not evidence that production has been deployed.
 | `wolf15-ea-bridge` | [EA bridge](wolf15-ea-bridge/README.md) | `deploy/railway/start_ea_bridge.sh` |
 
 Machine-readable bindings are in [runtime-ownership-map.json](runtime-ownership-map.json).
-Historical worker or infrastructure names are not promoted to active services
-without current manifest and entrypoint evidence.
+The seven additional package domains are explicitly reconciled in
+[Additional domain dispositions](additional-domain-dispositions.md). Historical
+worker or infrastructure names are not promoted to always-on application
+services without current manifest and entrypoint evidence.
+
+Architecture decisions and acceptance tracking:
+
+- [Redis orchestrator ownership/fencing ADR](../architecture/adr-redis-orchestrator-ownership-fencing.md)
+- [State authority and recovery contract](../architecture/orchestrator-state-authority-recovery.md)
+- [T01-T15 and R01-R08 traceability](../architecture/orchestrator-acceptance-traceability.md)

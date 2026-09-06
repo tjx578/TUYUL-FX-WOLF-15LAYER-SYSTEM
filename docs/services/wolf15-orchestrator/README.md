@@ -13,6 +13,13 @@ fences every state, heartbeat, and kill-switch write. It does not own strategy
 analysis, risk sizing, trade-outbox projection delivery, command issuance, EA
 transport, or broker execution.
 
+Startup hydrates only committed, scoped state and revalidates current inputs;
+historical state never inherits freshness or execution authority. Process-local
+inflight evaluation must finish or cancel at shutdown, while a completed commit
+must not be repeated after restart. The detailed boundaries—including the
+intentional process-local semantics of `recovery_count`—are defined in the
+[state authority and recovery contract](../../architecture/orchestrator-state-authority-recovery.md).
+
 `/healthz` reports supervisor liveness and fails on fatal or stagnant runtime;
 `/readyz` is true only for the current lease owner. A healthy standby is live but
 not writer-ready. Compliance mode remains separate: missing account state holds
@@ -30,3 +37,6 @@ Verify with `tests/test_orchestrator_runtime_ownership.py`,
 `tests/test_orchestrator_state_manager.py`, and
 `tests/test_orchestrator_fencing.py`, plus
 `tests/integration/test_orchestrator_redis_pubsub.py`.
+
+See the [Redis ownership/fencing ADR](../../architecture/adr-redis-orchestrator-ownership-fencing.md)
+for why PostgreSQL is not added as a second coordination guard.
