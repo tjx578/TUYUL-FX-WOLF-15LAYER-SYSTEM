@@ -18,6 +18,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -37,6 +38,7 @@ from core.redis_keys import (
 )
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
+from services.orchestrator.ownership import OwnershipLostError, RedisFencedOwnership
 from services.orchestrator.redis_commands import CommandParseError, parse_set_mode_command
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
 from storage.redis_client import RedisClient
@@ -110,8 +112,71 @@ class OrchestratorState:
     updated_at: str = ""
 
 
+class RuntimeSupervisor:
+    """Thread-safe runtime truth consumed by liveness/readiness probes."""
+
+    def __init__(self, *, stall_timeout_sec: float) -> None:
+        if stall_timeout_sec <= 0:
+            raise ValueError("stall timeout must be positive")
+        self._stall_timeout_sec = stall_timeout_sec
+        self._lock = threading.Lock()
+        self._state = "STARTING"
+        self._last_progress = time.monotonic()
+        self._fatal_reason = ""
+
+    @property
+    def state(self) -> str:
+        with self._lock:
+            return self._state
+
+    def mark_standby(self) -> None:
+        self._set_state("STANDBY")
+
+    def mark_owner(self) -> None:
+        self._set_state("OWNER")
+
+    def mark_progress(self) -> None:
+        with self._lock:
+            self._last_progress = time.monotonic()
+
+    def mark_fatal(self, exc: BaseException) -> None:
+        with self._lock:
+            self._state = "FATAL"
+            self._fatal_reason = type(exc).__name__
+
+    def mark_stopped(self) -> None:
+        self._set_state("STOPPED")
+
+    def is_alive(self) -> bool:
+        with self._lock:
+            if self._state in {"FATAL", "STOPPED"}:
+                return False
+            return (time.monotonic() - self._last_progress) <= self._stall_timeout_sec
+
+    def is_ready(self) -> bool:
+        with self._lock:
+            if self._state != "OWNER":
+                return False
+            return (time.monotonic() - self._last_progress) <= self._stall_timeout_sec
+
+    def details(self) -> dict[str, str]:
+        with self._lock:
+            return {"runtime_state": self._state, "fatal_error": self._fatal_reason}
+
+    def _set_state(self, state: str) -> None:
+        with self._lock:
+            self._state = state
+            self._last_progress = time.monotonic()
+
+
 class StateManager:
-    def __init__(self, redis_client: RedisClient | None = None) -> None:
+    def __init__(
+        self,
+        redis_client: RedisClient | None = None,
+        *,
+        ownership: RedisFencedOwnership | None = None,
+        supervisor: RuntimeSupervisor | None = None,
+    ) -> None:
         super().__init__()
         self._state = OrchestratorState(updated_at=_utc_now_iso())
         self._redis: RedisClient = redis_client or RedisClient()
@@ -125,6 +190,43 @@ class StateManager:
         self._loop_sleep_sec = max(0.01, float(os.getenv("ORCHESTRATOR_LOOP_SLEEP_SEC", "0.05")))
         self._compliance_interval_sec = max(1.0, float(os.getenv("ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC", "5")))
         self._heartbeat_interval_sec = max(5.0, float(os.getenv("ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC", "30")))
+
+        lease_ttl_sec = float(os.getenv("ORCHESTRATOR_LEASE_TTL_SEC", "15"))
+        self._lease_renew_interval_sec = float(
+            os.getenv("ORCHESTRATOR_LEASE_RENEW_INTERVAL_SEC", str(lease_ttl_sec / 3))
+        )
+        if self._lease_renew_interval_sec <= 0 or self._lease_renew_interval_sec >= lease_ttl_sec / 2:
+            raise ValueError("lease renewal interval must be positive and less than half the lease ttl")
+        owner_prefix = (
+            os.getenv("ORCHESTRATOR_OWNER_ID")
+            or ":".join(
+                filter(
+                    None,
+                    (
+                        os.getenv("RAILWAY_DEPLOYMENT_ID"),
+                        os.getenv("RAILWAY_REPLICA_ID"),
+                    ),
+                )
+            )
+            or "local"
+        )
+        # Always append a process nonce. Even a mistakenly shared configured
+        # owner label must never let two processes renew each other's lease.
+        owner_id = f"{owner_prefix}:{uuid.uuid4().hex}"
+        self._ownership = ownership or RedisFencedOwnership(
+            self._redis,
+            owner_id=owner_id,
+            lease_key=os.getenv("ORCHESTRATOR_LEASE_KEY", "wolf15:orchestrator:owner"),
+            generation_key=os.getenv("ORCHESTRATOR_FENCE_COUNTER_KEY", "wolf15:orchestrator:fence_generation"),
+            ttl_seconds=lease_ttl_sec,
+        )
+        stall_timeout_sec = float(
+            os.getenv(
+                "ORCHESTRATOR_STALL_TIMEOUT_SEC",
+                str(max(30.0, self._compliance_interval_sec * 3)),
+            )
+        )
+        self._supervisor = supervisor or RuntimeSupervisor(stall_timeout_sec=stall_timeout_sec)
 
         self._account_state: dict[str, Any] = {}
         self._trade_risk: dict[str, Any] = {}
@@ -186,9 +288,9 @@ class StateManager:
         """Persist kill switch state to Redis so other services can read it."""
         try:
             if mode == ExecutionMode.KILL_SWITCH:
-                self._redis.set(
-                    KILL_SWITCH,
-                    json.dumps(
+                self._ownership.fenced_value_write(
+                    key=KILL_SWITCH,
+                    value=json.dumps(
                         {
                             "active": True,
                             "source": ORCHESTRATOR_SOURCE,
@@ -198,9 +300,9 @@ class StateManager:
                     ),
                 )
             else:
-                self._redis.set(
-                    KILL_SWITCH,
-                    json.dumps(
+                self._ownership.fenced_value_write(
+                    key=KILL_SWITCH,
+                    value=json.dumps(
                         {
                             "active": False,
                             "source": ORCHESTRATOR_SOURCE,
@@ -208,10 +310,16 @@ class StateManager:
                         }
                     ),
                 )
+        except OwnershipLostError:
+            raise
         except Exception as exc:
             logger.error("Failed to sync kill switch to Redis: {}", exc)
+            raise
 
     def publish_state(self, event: str, details: dict[str, Any] | None = None) -> None:
+        identity = self._ownership.identity
+        if identity is None:
+            raise OwnershipLostError("state publication requires an active ownership lease")
         payload: dict[str, Any] = {
             "source": ORCHESTRATOR_SOURCE,
             "event": event,
@@ -221,17 +329,28 @@ class StateManager:
             "compliance_code": self._state.compliance_code,
             "updated_at": self._state.updated_at,
             "timestamp": int(time.time()),
+            "owner_id": identity.owner_id,
+            "fence_generation": identity.generation,
         }
         if details:
             payload["details"] = details
 
         encoded = json.dumps(payload)
-        heartbeat_payload = json.dumps({"producer": ORCHESTRATOR_SOURCE, "ts": time.time()})
-        pipe = self._redis.pipeline()
-        pipe.publish(self._channel, encoded)
-        pipe.set(self._state_key, encoded)
-        pipe.set(HEARTBEAT_ORCHESTRATOR, heartbeat_payload)
-        pipe.execute()
+        heartbeat_payload = json.dumps(
+            {
+                "producer": ORCHESTRATOR_SOURCE,
+                "ts": time.time(),
+                "owner_id": identity.owner_id,
+                "fence_generation": identity.generation,
+            }
+        )
+        self._ownership.fenced_state_write(
+            state_key=self._state_key,
+            state_payload=encoded,
+            heartbeat_key=HEARTBEAT_ORCHESTRATOR,
+            heartbeat_payload=heartbeat_payload,
+            channel=self._channel,
+        )
 
     def _refresh_snapshots_from_redis(self) -> None:
         raw_values = self._redis.mget([self._account_state_key, self._trade_risk_key])
@@ -426,6 +545,8 @@ class StateManager:
             )
 
     def process_once(self, now: float | None = None) -> None:
+        if not self._ownership.held:
+            raise OwnershipLostError("compliance evaluation requires an active ownership lease")
         now_ts = now if now is not None else time.time()
         self._poll_channel()
         self._refresh_snapshots_from_redis()
@@ -439,28 +560,69 @@ class StateManager:
             self.publish_state("HEARTBEAT")
 
     def run_forever(self, on_started: Callable[[], None] | None = None) -> None:
-        self.start_listener()
-        self.publish_state("BOOT")
-        logger.info("wolf15-orchestrator started in {}", self.snapshot().mode)
-
-        if on_started is not None:
-            on_started()
-
+        last_renewal = 0.0
+        started_callback_sent = False
         try:
             while True:
-                self.process_once()
+                if not self._ownership.held:
+                    self._supervisor.mark_standby()
+                    if not self._ownership.acquire():
+                        time.sleep(self._loop_sleep_sec)
+                        continue
+                    self.start_listener()
+                    self._supervisor.mark_owner()
+                    self.publish_state("BOOT")
+                    logger.info(
+                        "wolf15-orchestrator acquired ownership generation={} mode={}",
+                        self._ownership.identity.generation if self._ownership.identity else "unknown",
+                        self.snapshot().mode,
+                    )
+                    last_renewal = time.monotonic()
+                    if on_started is not None and not started_callback_sent:
+                        on_started()
+                        started_callback_sent = True
+
+                if time.monotonic() - last_renewal >= self._lease_renew_interval_sec:
+                    if not self._ownership.renew():
+                        logger.warning("orchestrator ownership renewal rejected; entering standby")
+                        self.close()
+                        self._supervisor.mark_standby()
+                        continue
+                    last_renewal = time.monotonic()
+
+                try:
+                    self.process_once()
+                except OwnershipLostError:
+                    logger.warning("orchestrator fenced write rejected; entering standby")
+                    self.close()
+                    self._supervisor.mark_standby()
+                    continue
+                self._supervisor.mark_progress()
                 time.sleep(self._loop_sleep_sec)
+        except Exception as exc:
+            self._supervisor.mark_fatal(exc)
+            raise
         finally:
-            # Persist SHUTDOWN state so other services see orchestrator went down
-            try:
-                self.publish_state("SHUTDOWN")
-                logger.info("orchestrator published SHUTDOWN state to Redis")
-            except Exception as exc:
-                logger.error("orchestrator failed to publish SHUTDOWN state: {}", exc)
+            if self._ownership.held:
+                try:
+                    self.publish_state("SHUTDOWN")
+                    logger.info("orchestrator published SHUTDOWN state to Redis")
+                except Exception as exc:
+                    logger.error("orchestrator failed to publish fenced SHUTDOWN state: {}", exc)
+                try:
+                    self._ownership.release()
+                except Exception as exc:
+                    logger.error("orchestrator ownership release failed: {}", exc)
             self.close()
+            if self._supervisor.state != "FATAL":
+                self._supervisor.mark_stopped()
 
 
-def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> None:
+def _start_health_probe_in_thread(
+    readiness_check: Callable[[], bool] | None = None,
+    liveness_check: Callable[[], bool] | None = None,
+    details_provider: Callable[[], dict[str, str]] | None = None,
+) -> None:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
     from services.shared.health_probe_launcher import start_probe_in_thread
 
@@ -469,6 +631,8 @@ def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = N
         port=port,
         service_name="orchestrator",
         readiness_check=readiness_check,
+        liveness_check=liveness_check,
+        details_provider=details_provider,
         extra_details={
             "service_role": "orchestrator",
             "source": ORCHESTRATOR_SOURCE,
@@ -478,14 +642,19 @@ def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = N
 
 def run() -> None:
     _ORCHESTRATOR_READY.clear()
-    _start_health_probe_in_thread(readiness_check=lambda: _ORCHESTRATOR_READY.is_set())
+    compliance_interval = max(1.0, float(os.getenv("ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC", "5")))
+    stall_timeout = float(os.getenv("ORCHESTRATOR_STALL_TIMEOUT_SEC", str(max(30.0, compliance_interval * 3))))
+    supervisor = RuntimeSupervisor(stall_timeout_sec=stall_timeout)
+    _start_health_probe_in_thread(
+        readiness_check=supervisor.is_ready,
+        liveness_check=supervisor.is_alive,
+        details_provider=supervisor.details,
+    )
     try:
-        StateManager().run_forever(on_started=_ORCHESTRATOR_READY.set)
+        StateManager(supervisor=supervisor).run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
-        logger.exception("Orchestrator fatal error — holding alive for health probe diagnostics")
-        from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
-
-        hold_alive_sync(service_name="Orchestrator")
+        logger.exception("Orchestrator fatal error — exiting for bounded platform restart")
+        raise
 
 
 if __name__ == "__main__":

@@ -157,7 +157,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     outbox_worker: TradeOutboxWorker | None = None
     outbox_task: asyncio.Task[None] | None = None
     try:
-        outbox_worker = TradeOutboxWorker(consumer_name="api-1")
+        # This is API projection delivery, not compliance orchestration or an
+        # execution consumer. A per-process identity avoids aliasing Redis
+        # consumer state across Gunicorn workers and rolling replicas.
+        projection_consumer = f"api-projection-{os.getenv('RAILWAY_REPLICA_ID') or os.getpid()}"
+        outbox_worker = TradeOutboxWorker(consumer_name=projection_consumer)
         outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
     except Exception:
         logger.warning("Trade outbox worker failed to start — will operate without outbox")

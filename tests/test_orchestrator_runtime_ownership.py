@@ -61,3 +61,31 @@ def test_standalone_entrypoint_remains_the_only_state_manager_launcher() -> None
     compatibility = (ROOT / "deploy/railway/start_api_consolidated.sh").read_text(encoding="utf-8")
     assert "services.orchestrator.state_manager" not in api
     assert "services.orchestrator.state_manager" not in compatibility
+
+
+def test_trade_outbox_projection_has_one_explicit_service_owner() -> None:
+    api = (ROOT / "api/app_factory.py").read_text(encoding="utf-8")
+    orchestrator = (ROOT / "services/orchestrator/state_manager.py").read_text(encoding="utf-8")
+    execution = (ROOT / "services/trade/runner.py").read_text(encoding="utf-8")
+    ownership = (ROOT / "docs/services/runtime-ownership-map.json").read_text(encoding="utf-8")
+
+    assert "TradeOutboxWorker" in api
+    assert "TradeOutboxWorker" not in orchestrator
+    assert "TradeOutboxWorker" not in execution
+    assert ownership.count('"trade_outbox_websocket_projection"') == 3
+    assert '"wolf15-api"' in ownership
+
+
+def test_trade_outbox_consumer_identity_is_process_scoped() -> None:
+    api = (ROOT / "api/app_factory.py").read_text(encoding="utf-8")
+
+    assert "api-projection-" in api
+    assert "RAILWAY_REPLICA_ID" in api
+    assert "os.getpid()" in api
+
+
+def test_orchestrator_fatal_path_exits_for_restart() -> None:
+    state_manager = (ROOT / "services/orchestrator/state_manager.py").read_text(encoding="utf-8")
+
+    assert "holding alive for health probe diagnostics" not in state_manager
+    assert 'logger.exception("Orchestrator fatal error — exiting for bounded platform restart")' in state_manager

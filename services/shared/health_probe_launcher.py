@@ -30,6 +30,8 @@ def start_probe_in_thread(
     port: int,
     service_name: str,
     readiness_check: Callable[[], bool] | None = None,
+    liveness_check: Callable[[], bool] | None = None,
+    details_provider: Callable[[], dict[str, str]] | None = None,
     extra_details: dict[str, str] | None = None,
 ) -> HealthProbe:
     """Launch a :class:`HealthProbe` on a daemon thread (isolated loop).
@@ -41,6 +43,8 @@ def start_probe_in_thread(
         port=port,
         service_name=service_name,
         readiness_check=readiness_check,
+        liveness_check=liveness_check,
+        details_provider=details_provider,
     )
     if extra_details:
         for key, value in extra_details.items():
@@ -71,6 +75,8 @@ async def start_probe_as_task(
     port: int,
     service_name: str,
     readiness_check: Callable[[], bool] | None = None,
+    liveness_check: Callable[[], bool] | None = None,
+    details_provider: Callable[[], dict[str, str]] | None = None,
     extra_details: dict[str, str] | None = None,
     task_name: str | None = None,
 ) -> tuple[HealthProbe, asyncio.Task[Any]]:
@@ -83,6 +89,8 @@ async def start_probe_as_task(
         port=port,
         service_name=service_name,
         readiness_check=readiness_check,
+        liveness_check=liveness_check,
+        details_provider=details_provider,
     )
     if extra_details:
         for key, value in extra_details.items():

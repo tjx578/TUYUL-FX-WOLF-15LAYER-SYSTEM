@@ -59,10 +59,14 @@ class HealthProbe:
         port: int = _DEFAULT_LIVENESS_PORT,
         service_name: str = "unknown",
         readiness_check: Callable[[], bool] | None = None,
+        liveness_check: Callable[[], bool] | None = None,
+        details_provider: Callable[[], dict[str, str]] | None = None,
     ) -> None:
         self._port = port
         self._service_name = service_name
         self._readiness_check = readiness_check or (lambda: True)
+        self._liveness_check = liveness_check or (lambda: self._alive)
+        self._details_provider = details_provider
         self._started_at = time.monotonic()
         self._server: asyncio.Server | None = None
         self._alive = True
@@ -76,6 +80,9 @@ class HealthProbe:
 
     def set_readiness_check(self, check: Callable[[], bool]) -> None:
         self._readiness_check = check
+
+    def set_liveness_check(self, check: Callable[[], bool]) -> None:
+        self._liveness_check = check
 
     def set_detail(self, key: str, value: str) -> None:
         """Attach extra key-value metadata included in probe responses.
@@ -94,6 +101,7 @@ class HealthProbe:
             "startup_stage",
             "warmup",
             "warmup_retry",
+            "runtime_state",
         }
     )
 
@@ -195,17 +203,33 @@ class HealthProbe:
 
     def _safe_details(self) -> dict[str, str]:
         """Return only non-sensitive detail keys for unauthenticated probes."""
-        return {k: v for k, v in self._details.items() if k in self._SAFE_DETAIL_KEYS}
+        return {k: v for k, v in self._all_details().items() if k in self._SAFE_DETAIL_KEYS}
+
+    def _all_details(self) -> dict[str, str]:
+        details = dict(self._details)
+        if self._details_provider is not None:
+            try:
+                dynamic = self._details_provider()
+            except Exception:
+                dynamic = {"fatal_error": "details_provider_failed"}
+            for key, value in dynamic.items():
+                details[key] = self._sanitize_detail(key, str(value))
+        return details
 
     def _liveness_response(self) -> str:
         uptime = int(time.monotonic() - self._started_at)
+        try:
+            alive = self._alive and self._liveness_check()
+        except Exception:
+            alive = False
         body: dict[str, object] = {
-            "status": "alive" if self._alive else "dead",
+            "status": "alive" if alive else "dead",
             "service": self._service_name,
             "uptime_sec": uptime,
+            **self._safe_details(),
         }
-        status_code = 200 if self._alive else 503
-        status_text = "OK" if self._alive else "Service Unavailable"
+        status_code = 200 if alive else 503
+        status_text = "OK" if alive else "Service Unavailable"
         return self._http_response(status_code, status_text, body)
 
     def _readiness_response(self) -> str:
@@ -216,6 +240,7 @@ class HealthProbe:
         body: dict[str, object] = {
             "status": "ready" if ready else "not_ready",
             "service": self._service_name,
+            **self._safe_details(),
         }
         status_code = 200 if ready else 503
         status_text = "OK" if ready else "Service Unavailable"
@@ -227,15 +252,19 @@ class HealthProbe:
             ready = self._readiness_check()
         except Exception:
             ready = False
+        try:
+            alive = self._alive and self._liveness_check()
+        except Exception:
+            alive = False
         uptime = int(time.monotonic() - self._started_at)
         body: dict[str, object] = {
-            "alive": self._alive,
+            "alive": alive,
             "ready": ready,
             "service": self._service_name,
             "uptime_sec": uptime,
-            **self._details,
+            **self._all_details(),
         }
-        ok = self._alive and ready
+        ok = alive and ready
         code = 200 if ok else 503
         text = "OK" if ok else "Service Unavailable"
         return self._http_response(code, text, body)

@@ -55,6 +55,9 @@ class _RedisAdapter:
     def pipeline(self) -> Any:
         return self._client.pipeline()
 
+    def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
+        return self._client.eval(script, numkeys, *keys_and_args)
+
 
 @pytest.fixture
 def redis_client() -> Any:
@@ -79,13 +82,47 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
     state_key = f"wolf15:test:orchestrator:state:{suffix}"
     account_key = f"wolf15:test:orchestrator:account:{suffix}"
     risk_key = f"wolf15:test:orchestrator:risk:{suffix}"
+    lease_key = f"wolf15:test:orchestrator:lease:{suffix}"
+    fence_key = f"wolf15:test:orchestrator:fence:{suffix}"
+    ingest_heartbeat_key = f"wolf15:test:ingest:heartbeat:{suffix}"
+    orchestrator_heartbeat_key = f"wolf15:test:orchestrator:heartbeat:{suffix}"
+    news_lock_key = f"wolf15:test:news-lock:{suffix}"
+    kill_switch_key = f"wolf15:test:kill-switch:{suffix}"
 
     monkeypatch.setenv("ORCHESTRATOR_CHANNEL", channel)
     monkeypatch.setenv("ORCHESTRATOR_STATE_KEY", state_key)
     monkeypatch.setenv("ORCHESTRATOR_ACCOUNT_STATE_KEY", account_key)
     monkeypatch.setenv("ORCHESTRATOR_TRADE_RISK_KEY", risk_key)
+    monkeypatch.setenv("ORCHESTRATOR_LEASE_KEY", lease_key)
+    monkeypatch.setenv("ORCHESTRATOR_FENCE_COUNTER_KEY", fence_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.HEARTBEAT_INGEST", ingest_heartbeat_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.HEARTBEAT_ORCHESTRATOR", orchestrator_heartbeat_key)
+    monkeypatch.setattr("services.orchestrator.state_manager._NEWS_LOCK_STATE_KEY", news_lock_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.KILL_SWITCH", kill_switch_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.is_forex_market_open", lambda: True)
+
+    # Keep the compliance tick valid and non-blocking so this test isolates
+    # signed command transport. Without authoritative account state, the
+    # fail-closed evaluator correctly enters KILL_SWITCH before consuming SAFE.
+    redis_client.set(
+        account_key,
+        json.dumps(
+            {
+                "balance": 10_000,
+                "equity": 9_990,
+                "compliance_mode": True,
+                "daily_dd_percent": 1.0,
+                "max_daily_dd_percent": 5.0,
+                "total_dd_percent": 2.0,
+                "max_total_dd_percent": 10.0,
+            }
+        ),
+    )
+    redis_client.set(risk_key, json.dumps({"risk_percent": 1.0}))
+    redis_client.set(ingest_heartbeat_key, json.dumps({"producer": "test", "ts": time.time()}))
 
     manager = StateManager(redis_client=_RedisAdapter(redis_client))  # type: ignore[arg-type]
+    assert manager._ownership.acquire()  # noqa: SLF001
     manager.start_listener()
 
     try:
@@ -111,7 +148,18 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
         assert payload["mode"] == "SAFE"
     finally:
         manager.close()
-        redis_client.delete(state_key, account_key, risk_key)
+        manager._ownership.release()  # noqa: SLF001
+        redis_client.delete(
+            state_key,
+            account_key,
+            risk_key,
+            lease_key,
+            fence_key,
+            ingest_heartbeat_key,
+            orchestrator_heartbeat_key,
+            news_lock_key,
+            kill_switch_key,
+        )
 
 
 @pytest.mark.integration
@@ -121,11 +169,24 @@ def test_orchestrator_compliance_tick_reads_redis_snapshots(redis_client: Any, m
     state_key = f"wolf15:test:orchestrator:state:{suffix}"
     account_key = f"wolf15:test:orchestrator:account:{suffix}"
     risk_key = f"wolf15:test:orchestrator:risk:{suffix}"
+    lease_key = f"wolf15:test:orchestrator:lease:{suffix}"
+    fence_key = f"wolf15:test:orchestrator:fence:{suffix}"
+    ingest_heartbeat_key = f"wolf15:test:ingest:heartbeat:{suffix}"
+    orchestrator_heartbeat_key = f"wolf15:test:orchestrator:heartbeat:{suffix}"
+    news_lock_key = f"wolf15:test:news-lock:{suffix}"
+    kill_switch_key = f"wolf15:test:kill-switch:{suffix}"
 
     monkeypatch.setenv("ORCHESTRATOR_CHANNEL", channel)
     monkeypatch.setenv("ORCHESTRATOR_STATE_KEY", state_key)
     monkeypatch.setenv("ORCHESTRATOR_ACCOUNT_STATE_KEY", account_key)
     monkeypatch.setenv("ORCHESTRATOR_TRADE_RISK_KEY", risk_key)
+    monkeypatch.setenv("ORCHESTRATOR_LEASE_KEY", lease_key)
+    monkeypatch.setenv("ORCHESTRATOR_FENCE_COUNTER_KEY", fence_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.HEARTBEAT_INGEST", ingest_heartbeat_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.HEARTBEAT_ORCHESTRATOR", orchestrator_heartbeat_key)
+    monkeypatch.setattr("services.orchestrator.state_manager._NEWS_LOCK_STATE_KEY", news_lock_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.KILL_SWITCH", kill_switch_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.is_forex_market_open", lambda: True)
 
     redis_client.set(
         account_key,
@@ -140,8 +201,10 @@ def test_orchestrator_compliance_tick_reads_redis_snapshots(redis_client: Any, m
         ),
     )
     redis_client.set(risk_key, json.dumps({"risk_percent": 1.0}))
+    redis_client.set(ingest_heartbeat_key, json.dumps({"producer": "test", "ts": time.time()}))
 
     manager = StateManager(redis_client=_RedisAdapter(redis_client))  # type: ignore[arg-type]
+    assert manager._ownership.acquire()  # noqa: SLF001
     manager.configure_intervals(compliance_interval_sec=1.0, heartbeat_interval_sec=300.0)
 
     try:
@@ -158,4 +221,15 @@ def test_orchestrator_compliance_tick_reads_redis_snapshots(redis_client: Any, m
         assert payload["mode"] == "SAFE"
     finally:
         manager.close()
-        redis_client.delete(state_key, account_key, risk_key)
+        manager._ownership.release()  # noqa: SLF001
+        redis_client.delete(
+            state_key,
+            account_key,
+            risk_key,
+            lease_key,
+            fence_key,
+            ingest_heartbeat_key,
+            orchestrator_heartbeat_key,
+            news_lock_key,
+            kill_switch_key,
+        )
