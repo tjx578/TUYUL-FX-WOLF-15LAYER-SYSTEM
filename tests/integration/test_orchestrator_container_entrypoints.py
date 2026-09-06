@@ -220,6 +220,7 @@ def test_runtime_image_contains_both_explicit_start_scripts() -> None:
     os.getenv("WOLF15_RUN_T14_CONTAINER_SMOKE") != "1",
     reason="set WOLF15_RUN_T14_CONTAINER_SMOKE=1 for the bounded Docker smoke",
 )
+@pytest.mark.timeout(1200)
 def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
     expected_commit = _required_env("WOLF15_T14_EXPECTED_COMMIT")
     expected_tree = _required_env("WOLF15_T14_EXPECTED_TREE")
