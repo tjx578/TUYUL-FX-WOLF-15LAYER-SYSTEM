@@ -26,6 +26,7 @@ import os
 import subprocess
 import tempfile
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import Any
@@ -96,16 +97,84 @@ def _docker_json(*args: str) -> dict[str, Any]:
     return value
 
 
-def _wait_exec(container: str, command: tuple[str, ...], *, timeout: float = 45.0) -> None:
+def _wait_healthy(container: str, *, timeout: float = 60.0) -> None:
     deadline = time.monotonic() + timeout
     last = "not attempted"
     while time.monotonic() < deadline:
-        result = _run("docker", "exec", container, *command, check=False, timeout=10)
+        result = _run(
+            "docker",
+            "inspect",
+            "--format",
+            "{{json .State.Health}}",
+            container,
+            check=False,
+            timeout=10,
+        )
         if result.returncode == 0:
-            return
-        last = f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+            health = json.loads(result.stdout)
+            if isinstance(health, dict) and health.get("Status") == "healthy":
+                return
+            last = json.dumps(health, sort_keys=True)
+        else:
+            last = f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
         time.sleep(0.5)
-    pytest.fail(f"container {container} did not become ready: {last}")
+    pytest.fail(f"container {container} did not become healthy: {last}")
+
+
+def _published_port(container: str, container_port: int) -> int:
+    result = _run(
+        "docker",
+        "inspect",
+        "--format",
+        f'{{{{(index (index .NetworkSettings.Ports "{container_port}/tcp") 0).HostPort}}}}',
+        container,
+    )
+    return int(result.stdout.strip())
+
+
+def _wait_http(port: int, path: str, *, timeout: float = 90.0) -> None:
+    deadline = time.monotonic() + timeout
+    last = "not attempted"
+    url = f"http://127.0.0.1:{port}{path}"
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as response:  # noqa: S310 - loopback-only test endpoint
+                if response.status == 200:
+                    return
+                last = f"HTTP {response.status}"
+        except Exception as exc:  # noqa: BLE001 - bounded readiness reconciliation
+            last = f"{type(exc).__name__}: {exc}"
+        time.sleep(0.5)
+    pytest.fail(f"endpoint {url} did not become ready: {last}")
+
+
+def _container_environment(container: dict[str, Any]) -> dict[str, str]:
+    values = container.get("Config", {}).get("Env", [])
+    assert isinstance(values, list)
+    result: dict[str, str] = {}
+    for value in values:
+        assert isinstance(value, str)
+        key, separator, item = value.partition("=")
+        if separator:
+            result[key] = item
+    return result
+
+
+def _container_processes(container: str) -> str:
+    result = _run("docker", "top", container, "-eo", "args", timeout=20)
+    if result.returncode == 0:
+        return result.stdout
+    pytest.fail(f"cannot inspect process table for {container}: {result.stderr}")
+
+
+def _wait_stopped(container: str, *, timeout: float = 30.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        running = _run("docker", "inspect", "--format", "{{.State.Running}}", container).stdout.strip()
+        if running == "false":
+            return
+        time.sleep(0.25)
+    pytest.fail(f"container {container} did not stop within {timeout} seconds")
 
 
 def _remove_container(name: str) -> None:
@@ -200,10 +269,15 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             redis_name,
             "--network",
             network,
+            "--health-cmd",
+            "redis-cli ping || exit 1",
+            "--health-interval=1s",
+            "--health-timeout=3s",
+            "--health-retries=30",
             redis_image,
         )
         created_containers.append(redis_name)
-        _wait_exec(redis_name, ("redis-cli", "ping"))
+        _wait_healthy(redis_name)
 
         _run(
             "docker",
@@ -220,10 +294,15 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "POSTGRES_PASSWORD=wolf15_t14_disposable",
             "-e",
             "POSTGRES_DB=wolf15_t14",
+            "--health-cmd",
+            "pg_isready -U wolf15_t14 -d wolf15_t14",
+            "--health-interval=1s",
+            "--health-timeout=3s",
+            "--health-retries=60",
             postgres_image,
         )
         created_containers.append(postgres_name)
-        _wait_exec(postgres_name, ("pg_isready", "-U", "wolf15_t14", "-d", "wolf15_t14"), timeout=60)
+        _wait_healthy(postgres_name, timeout=90)
 
         build = _run(
             "docker",
@@ -266,6 +345,8 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "--pull=never",
             "--name",
             api_name,
+            "-p",
+            "127.0.0.1::8000",
             *common,
             *controls,
             "-e",
@@ -277,40 +358,16 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "deploy/railway/start_api.sh",
         )
         created_containers.append(api_name)
-        _wait_exec(
-            api_name,
-            (
-                "python",
-                "-c",
-                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).read()",
-            ),
-            timeout=90,
-        )
+        api_port = _published_port(api_name, 8000)
+        _wait_http(api_port, "/healthz")
         api = _docker_json("container", "inspect", api_name, "--format", "{{json .}}")
         assert api["Path"] == "bash"
         assert api["Args"] == ["deploy/railway/start_api.sh"]
-        api_pid = _run(
-            "docker",
-            "exec",
-            api_name,
-            "python",
-            "-c",
-            "from pathlib import Path; print(Path('/proc/1/cmdline').read_bytes().replace(b'\\0', b' ').decode())",
-        ).stdout
+        api_pid = _container_processes(api_name)
         assert "gunicorn" in api_pid
         assert "app:app" in api_pid
         assert "services.orchestrator.state_manager" not in api_pid
-        assert (
-            _run(
-                "docker",
-                "exec",
-                api_name,
-                "python",
-                "-c",
-                "import os; print(os.environ.get('WOLF15_SERVICE_ROLE', ''))",
-            ).stdout.strip()
-            == "api"
-        )
+        assert _container_environment(api)["WOLF15_SERVICE_ROLE"] == "api"
         api_logs = _run("docker", "logs", api_name, check=False).stdout
         assert "acquired ownership" not in api_logs
         assert "StateManager" not in api_logs
@@ -322,6 +379,8 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "--pull=never",
             "--name",
             orchestrator_name,
+            "-p",
+            "127.0.0.1::8083",
             *common,
             *controls,
             "-e",
@@ -337,59 +396,20 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "deploy/railway/start_orchestrator.sh",
         )
         created_containers.append(orchestrator_name)
-        _wait_exec(
-            orchestrator_name,
-            (
-                "python",
-                "-c",
-                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/healthz', timeout=2).read()",
-            ),
-            timeout=90,
-        )
-        _wait_exec(
-            orchestrator_name,
-            (
-                "python",
-                "-c",
-                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8083/readyz', timeout=2).read()",
-            ),
-            timeout=90,
-        )
+        orchestrator_port = _published_port(orchestrator_name, 8083)
+        _wait_http(orchestrator_port, "/healthz")
+        _wait_http(orchestrator_port, "/readyz")
         orchestrator = _docker_json("container", "inspect", orchestrator_name, "--format", "{{json .}}")
         assert orchestrator["Path"] == "bash"
         assert orchestrator["Args"] == ["deploy/railway/start_orchestrator.sh"]
-        orchestrator_pid = _run(
-            "docker",
-            "exec",
-            orchestrator_name,
-            "python",
-            "-c",
-            "from pathlib import Path; print(Path('/proc/1/cmdline').read_bytes().replace(b'\\0', b' ').decode())",
-        ).stdout
+        orchestrator_pid = _container_processes(orchestrator_name)
         assert "python -m services.orchestrator.state_manager" in orchestrator_pid
         assert "gunicorn" not in orchestrator_pid
-        assert (
-            _run(
-                "docker",
-                "exec",
-                orchestrator_name,
-                "python",
-                "-c",
-                "import os; print(os.environ.get('WOLF15_SERVICE_ROLE', ''))",
-            ).stdout.strip()
-            == "orchestrator"
-        )
+        assert _container_environment(orchestrator)["WOLF15_SERVICE_ROLE"] == "orchestrator"
 
         # SIGINT lets Python unwind StateManager.run_forever's finally block.
         _run("docker", "kill", "--signal=INT", orchestrator_name, timeout=20)
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            running = _run("docker", "inspect", "--format", "{{.State.Running}}", orchestrator_name).stdout.strip()
-            if running == "false":
-                break
-            time.sleep(0.25)
-        else:
-            pytest.fail("orchestrator did not stop within 30 seconds after SIGINT")
+        _wait_stopped(orchestrator_name)
         orchestrator_logs = _run("docker", "logs", orchestrator_name, check=False).stdout
         assert "published SHUTDOWN state" in orchestrator_logs
 
