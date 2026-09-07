@@ -55,7 +55,15 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
     root.mkdir(parents=True, exist_ok=False)
     name = "wolf15-process-recovery-" + uuid.uuid4().hex[:12]
     network = name + "-net"
-    meta: dict[str, Any] = {"container_name": name, "redis_image": REDIS_IMAGE, "cleanup": "NOT_EXECUTED"}
+    meta: dict[str, Any] = {
+        "container_name": name,
+        "network_name": network,
+        "redis_image": REDIS_IMAGE,
+        "cleanup": "NOT_EXECUTED",
+        "phase": "RESERVED",
+        "campaign_id": os.getenv("WOLF15_DISPOSABLE_CAMPAIGN_ID", "standalone"),
+    }
+    _write_json(root / "redis.json", meta)  # Reserved names survive an outer supervisor interruption.
 
     def cli(*args: str) -> str:
         result = subprocess.run([docker, *args], capture_output=True, text=True, timeout=30, check=True)
@@ -63,7 +71,21 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
 
     client = None
     try:
-        meta["network_id"] = cli("network", "create", "--label", "wolf15.test=process-recovery", network)
+        meta["phase"] = "NETWORK_CREATE_REQUESTED"
+        _write_json(root / "redis.json", meta)
+        meta["network_id"] = cli(
+            "network",
+            "create",
+            "--label",
+            "wolf15.test=process-recovery",
+            "--label",
+            "wolf15.campaign=" + meta["campaign_id"],
+            network,
+        )
+        meta["phase"] = "NETWORK_CREATED"
+        _write_json(root / "redis.json", meta)
+        meta["phase"] = "CONTAINER_RUN_REQUESTED"
+        _write_json(root / "redis.json", meta)
         meta["container_id"] = cli(
             "run",
             "-d",
@@ -71,6 +93,8 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
             name,
             "--label",
             "wolf15.test=process-recovery",
+            "--label",
+            "wolf15.campaign=" + meta["campaign_id"],
             "--network",
             network,
             "--memory",
@@ -81,6 +105,8 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
             "0.5",
             "--pids-limit",
             "64",
+            "--tmpfs",
+            "/data:rw,noexec,nosuid,size=16777216",
             "--publish",
             "127.0.0.1::6379",
             "--pull",
@@ -92,12 +118,18 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
             "--appendonly",
             "no",
         )
+        meta["phase"] = "CONTAINER_CREATED"
+        _write_json(root / "redis.json", meta)
         info = json.loads(cli("inspect", name))[0]
         meta["image_id"] = info["Image"]
         meta["resource_limits"] = {
             key: info["HostConfig"][key] for key in ("Memory", "MemorySwap", "NanoCpus", "PidsLimit")
         }
+        meta["tmpfs"] = info["HostConfig"]["Tmpfs"]
+        assert meta["tmpfs"] == {"/data": "rw,noexec,nosuid,size=16777216"}
         assert meta["resource_limits"]["Memory"] == meta["resource_limits"]["MemorySwap"] == 128 * 1024 * 1024
+        assert meta["resource_limits"]["NanoCpus"] == 500_000_000
+        assert meta["resource_limits"]["PidsLimit"] == 64
         binding = info["NetworkSettings"]["Ports"]["6379/tcp"][0]
         assert binding["HostIp"] == "127.0.0.1"
         port = int(binding["HostPort"])
@@ -113,8 +145,10 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
         _wait(ping)
         assert client.dbsize() == 0, "test must start with its own empty Redis"
         meta["redis_version"] = client.info("server")["redis_version"]
+        meta["phase"] = "READY"
         _write_json(root / "redis.json", meta)
         yield client, port, root, meta
+        meta["phase"] = "CASE_COMPLETED"
     finally:
         try:
             if client is not None:
