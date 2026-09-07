@@ -305,6 +305,9 @@ async def test_canonical_raw_to_durable_shadow_command_one_lineage(postgres: _Po
     assert candidate["valid_for_execution"] is False
     assert candidate["source_pressure_event_ids"] == [str(envelope.event_id)]
     assert inbox is not None and inbox["status"] == "PROCESSED"
+    assert inbox["processed_at"] is not None
+    assert inbox["evidence_attempt_count"] == 1
+    assert inbox["last_error"] is None
     assert inbox["evidence_snapshot_id"] == candidate_row["evidence_snapshot_id"] == candidate["evidence_snapshot_id"]
     assert hashlib.sha256(_json(candidate).encode()).hexdigest() == candidate_row["payload_hash"]
     tradeplan_id = str(candidate_row["tradeplan_id"])
