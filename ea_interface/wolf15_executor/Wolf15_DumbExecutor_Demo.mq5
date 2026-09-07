@@ -1254,8 +1254,8 @@ void OnTimer()
       SendDemoHeartbeat();
       g_demo_last_heartbeat = now;
    }
-   if(g_demo_blocked)
-      return;
+   // A stop blocks new issuance, not bounded reconciliation/reporting of the
+   // existing durable command. Recovery never submits and cannot clear this latch.
    if(DemoStateExists())
    {
       if(now - g_demo_last_recovery >= InpRecoveryRetrySeconds || g_trade_event_pending)
@@ -1266,6 +1266,8 @@ void OnTimer()
       }
       return;
    }
+   if(g_demo_blocked)
+      return;
    if(now - g_demo_last_poll >= InpPollIntervalSeconds)
    {
       PollOneDemoCommand();
