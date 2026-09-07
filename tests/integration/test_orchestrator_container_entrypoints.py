@@ -14,6 +14,10 @@ Example (PowerShell)::
     $env:WOLF15_T14_POSTGRES_IMAGE = "postgres@sha256:<locally-present-digest>"
     pytest -q tests/integration/test_orchestrator_container_entrypoints.py
 
+The normal path builds the Dockerfile. An explicit immutable prebuilt image and
+its source/projection attestation may instead be supplied together; see
+``docs/integration/t14-attested-prebuilt-image.md``. No build call is intercepted.
+
 The test exercises no command, broker, or execution path.  All execution
 controls are supplied as literal ``false`` and the orchestrator command secret
 is set to a non-production test value.
@@ -32,6 +36,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+from tests.integration.t14_image_binding import (
+    IN_IMAGE_PROBE,
+    prebuilt_inputs,
+    validate_image_binding,
+    validate_runtime_probe,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 API_START = ROOT / "deploy" / "railway" / "start_api.sh"
@@ -182,6 +193,13 @@ def _remove_container(name: str) -> None:
     _run("docker", "rm", "-f", name, check=False, timeout=30)
 
 
+def _resource_limits(prebuilt: bool, role: str) -> tuple[str, ...]:
+    if not prebuilt:
+        return ()
+    memory = {"redis": "128m", "postgres": "256m", "api": "512m", "orchestrator": "512m"}[role]
+    return ("--memory", memory, "--memory-swap", memory, "--cpus", "1")
+
+
 def test_railway_entrypoint_contract_is_split_and_foregrounded() -> None:
     api = API_START.read_text(encoding="utf-8")
     orchestrator = ORCHESTRATOR_START.read_text(encoding="utf-8")
@@ -232,6 +250,9 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
     assert _run("git", "rev-parse", "HEAD^{tree}").stdout.strip() == expected_tree
     assert not _run("git", "status", "--porcelain").stdout.strip()
 
+    # Explicit mode only: no replacement/interception of the default build call.
+    prebuilt = prebuilt_inputs(os.environ, expected_commit, expected_tree)
+
     # Fail before mutation if Docker or either digest-bound dependency is absent.
     _run("docker", "version", "--format", "{{.Server.Version}}", timeout=20)
     _run("docker", "image", "inspect", redis_image, timeout=20)
@@ -243,7 +264,7 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
     postgres_name = f"{campaign}-postgres"
     api_name = f"{campaign}-api"
     orchestrator_name = f"{campaign}-orchestrator"
-    image_tag = f"{campaign}:local"
+    image_tag = prebuilt[0] if prebuilt else f"{campaign}:local"
     created_containers: list[str] = []
     network_created = False
     image_created = False
@@ -256,9 +277,38 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
         "postgres_image": postgres_image,
         "broker_effects": 0,
         "execution_controls": {key: False for key in _FALSE_CONTROLS},
+        "build_mode": "retained-runtime-full-source-replacement" if prebuilt else "repository-dockerfile",
+        "normal_dockerfile_rebuild": "NOT_EXECUTED_IN_THIS_ATTEMPT" if prebuilt else "REQUIRED",
     }
 
     try:
+        if prebuilt:
+            image = _docker_json("image", "inspect", image_tag, "--format", "{{json .}}")
+            validate_image_binding(image, prebuilt[1])
+            verifier_name = f"{campaign}-filesystem-verifier"
+            created_containers.append(verifier_name)
+            probe = json.loads(
+                _run(
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--pull=never",
+                    "--name",
+                    verifier_name,
+                    "--network=none",
+                    "--read-only",
+                    "--memory=128m",
+                    "--memory-swap=128m",
+                    "--cpus=1",
+                    image_tag,
+                    "python",
+                    "-c",
+                    IN_IMAGE_PROBE,
+                    timeout=30,
+                ).stdout
+            )
+            validate_runtime_probe(probe, prebuilt[1])
+            receipt.update(image_id=image["Id"], image_attestation=prebuilt[1], actual_filesystem_probe=probe)
         _run("docker", "network", "create", network, timeout=30)
         network_created = True
 
@@ -271,6 +321,7 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             redis_name,
             "--network",
             network,
+            *_resource_limits(prebuilt is not None, "redis"),
             "--health-cmd",
             f"redis-cli -a {_DISPOSABLE_REDIS_PASSWORD} ping || exit 1",
             "--health-interval=1s",
@@ -293,6 +344,7 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             postgres_name,
             "--network",
             network,
+            *_resource_limits(prebuilt is not None, "postgres"),
             "-e",
             "POSTGRES_USER=wolf15_t14",
             "-e",
@@ -309,25 +361,26 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
         created_containers.append(postgres_name)
         _wait_healthy(postgres_name, timeout=90)
 
-        build = _run(
-            "docker",
-            "build",
-            "--pull=false",
-            "--target",
-            "runtime",
-            "--label",
-            f"org.wolf15.source.commit={expected_commit}",
-            "--label",
-            f"org.wolf15.source.tree={expected_tree}",
-            "-t",
-            image_tag,
-            ".",
-            timeout=900,
-        )
-        image_created = True
-        image = _docker_json("image", "inspect", image_tag, "--format", "{{json .}}")
-        receipt["image_id"] = image["Id"]
-        receipt["build_exit"] = build.returncode
+        if not prebuilt:
+            build = _run(
+                "docker",
+                "build",
+                "--pull=false",
+                "--target",
+                "runtime",
+                "--label",
+                f"org.wolf15.source.commit={expected_commit}",
+                "--label",
+                f"org.wolf15.source.tree={expected_tree}",
+                "-t",
+                image_tag,
+                ".",
+                timeout=900,
+            )
+            image_created = True
+            image = _docker_json("image", "inspect", image_tag, "--format", "{{json .}}")
+            receipt["image_id"] = image["Id"]
+            receipt["build_exit"] = build.returncode
 
         common = (
             "--network",
@@ -354,6 +407,7 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "--pull=never",
             "--name",
             api_name,
+            *_resource_limits(prebuilt is not None, "api"),
             "-p",
             "127.0.0.1::8000",
             *common,
@@ -370,6 +424,7 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
         api_port = _published_port(api_name, 8000)
         _wait_http(api_port, "/healthz")
         api = _docker_json("container", "inspect", api_name, "--format", "{{json .}}")
+        assert api["Image"] == receipt["image_id"]
         assert api["Path"] == "bash"
         assert api["Args"] == ["deploy/railway/start_api.sh"]
         api_pid = _container_processes(api_name)
@@ -388,6 +443,7 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
             "--pull=never",
             "--name",
             orchestrator_name,
+            *_resource_limits(prebuilt is not None, "orchestrator"),
             "-p",
             "127.0.0.1::8083",
             *common,
@@ -409,6 +465,7 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
         _wait_http(orchestrator_port, "/healthz")
         _wait_http(orchestrator_port, "/readyz")
         orchestrator = _docker_json("container", "inspect", orchestrator_name, "--format", "{{json .}}")
+        assert orchestrator["Image"] == receipt["image_id"]
         assert orchestrator["Path"] == "bash"
         assert orchestrator["Args"] == ["deploy/railway/start_orchestrator.sh"]
         orchestrator_pid = _container_processes(orchestrator_name)
