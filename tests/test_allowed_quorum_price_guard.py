@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+import pipeline.wolf_constitutional_pipeline as pipeline_module
 from analysis.market_context_validator import MarketContext
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
@@ -118,9 +119,16 @@ def test_allowed_quorum_uses_symbol_market_context_price_not_execution_fallback(
     assert payload["reference_price_status"] == "AVAILABLE"
 
 
-def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
+def test_allowed_quorum_labels_stale_live_tick_reference_price(monkeypatch) -> None:
     pipeline = _pipeline()
     tick_ts = datetime(2026, 7, 3, 2, 13, 15, tzinfo=UTC).timestamp()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls.fromtimestamp(tick_ts, tz=tz) + timedelta(seconds=382.125)
+
+    monkeypatch.setattr(pipeline_module, "datetime", FixedDateTime)
     pipeline._context_bus = _FakeContextBus(
         status="STALE_PRESERVED",
         age_seconds=382.125,
@@ -132,6 +140,7 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
         bid=1.1500,
         ask=1.1502,
         price_at_signal_end=1.1501,
+        tick_snapshot_timestamp_epoch=tick_ts,
     )
 
     payload = pipeline._allowed_quorum_decision_update_payload(

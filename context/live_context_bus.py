@@ -252,6 +252,8 @@ class LiveContextBus:
 
     def update_tick(self, tick: dict[str, Any]) -> None:
         """Store latest tick for a symbol. Tick must contain 'symbol' key."""
+        # Own the scalar price/time snapshot; callers may reuse their input dict.
+        tick = dict(tick)
         symbol = tick.get("symbol")
         if symbol:
             sym = str(symbol)
@@ -555,8 +557,10 @@ class LiveContextBus:
         return self._candle_history.get(key, [])
 
     def get_latest_tick(self, symbol: str) -> dict[str, Any] | None:
-        """Return latest tick for symbol, or None if not yet received."""
-        return self._ticks.get(symbol)
+        """Return one copied price/time snapshot, or None if not yet received."""
+        with self._lock:
+            tick = self._ticks.get(symbol)
+            return dict(tick) if tick is not None else None
 
     def get_tick_timestamp(self, symbol: str) -> float | None:
         """Return the observation time of the cached tick, independent of candle freshness."""

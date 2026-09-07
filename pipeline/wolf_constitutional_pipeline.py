@@ -59,6 +59,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import math
 import os
 import time
 
@@ -3460,6 +3461,9 @@ class WolfConstitutionalPipeline:
         )
         latest_tick = self._context_bus.get_latest_tick(symbol)
         latest_tick = latest_tick if isinstance(latest_tick, dict) else {}
+        tick_timestamp = _coerce_timestamp_to_epoch(
+            latest_tick.get("last_seen_ts") or latest_tick.get("timestamp") or latest_tick.get("ts")
+        )
         bid = self._coerce_positive_float(latest_tick.get("bid") or latest_tick.get("price"))
         ask = self._coerce_positive_float(latest_tick.get("ask") or latest_tick.get("price"))
         tick_mid = (bid + ask) / 2.0 if bid is not None and ask is not None else bid or ask
@@ -3491,6 +3495,7 @@ class WolfConstitutionalPipeline:
             raw_allowed_direction=direction,
             bid=bid,
             ask=ask,
+            tick_snapshot_timestamp_epoch=tick_timestamp,
             pip_value=pip_value,
             price_at_signal_start=entry_price or latest_m15_close or latest_h1_close or tick_mid,
             price_at_5m_confirm=latest_m15_close or tick_mid,
@@ -6566,18 +6571,24 @@ class WolfConstitutionalPipeline:
         source = str(lineage.get("price_source") or "UNKNOWN").upper()
         snapshot_time = lineage.get("price_snapshot_time_utc")
         age_seconds = lineage.get("price_age_seconds")
-        freshness = str(lineage.get("price_freshness_status") or "UNKNOWN").upper()
+        # Feed activity and the quote's own provenance are independent evidence.
+        feed_freshness = str(lineage.get("price_freshness_status") or "UNKNOWN").upper()
         is_observed_source = source.startswith("LIVE_TICK") or source.endswith("_CLOSE")
-        reference_is_live = bool(lineage.get("reference_price_is_live"))
+        reference_is_live = bool(lineage.get("reference_price_is_live")) and feed_freshness == "LIVE"
         if price is None:
             reference_status = "MISSING"
         elif reference_is_live:
             reference_status = "LIVE"
-        elif "STALE" in freshness or freshness == "NO_PRODUCER":
+        elif "STALE" in feed_freshness or feed_freshness in {"NO_PRODUCER", "NO_TRANSPORT", "CONFIG_ERROR"}:
             reference_status = "STALE"
         else:
             reference_status = "AVAILABLE"
         snapshot_epoch = _coerce_timestamp_to_epoch(snapshot_time)
+        if snapshot_epoch is not None and (not math.isfinite(snapshot_epoch) or snapshot_epoch <= 0):
+            snapshot_epoch = None
+        snapshot_status = str(lineage.get("price_snapshot_status") or "").upper()
+        if source.startswith("LIVE_TICK") and snapshot_epoch is None:
+            snapshot_status = "MISSING"
         quote_observed_at = (
             datetime.fromtimestamp(snapshot_epoch, tz=UTC) if snapshot_epoch is not None else datetime.now(UTC)
         )
@@ -6602,23 +6613,41 @@ class WolfConstitutionalPipeline:
                 ),
             )
             self._frozen_quote_detector = detector
-        quote_health = detector.observe(
-            symbol=symbol or str(lineage.get("symbol") or "UNKNOWN"),
-            price=price,
-            observed_at=quote_observed_at,
-            source=source,
-        )
-        if quote_health.status == "PRICE_FROZEN":
+        if source.startswith("LIVE_TICK") and snapshot_status in {"MISSING", "STALE", "FUTURE"}:
+            # Do not warm up or poison quote state with an unproven timestamp.
+            quote_health_payload: dict[str, Any] = {
+                "quote_health_status": "INSUFFICIENT_HISTORY",
+                "quote_health_observed_at_utc": snapshot_time,
+                "quote_unchanged_seconds": 0.0,
+                "quote_consecutive_unchanged": 0,
+                "quote_observation_count": 0,
+                "quote_warmup_elapsed_seconds": 0.0,
+                "quote_health_execution_blocked": True,
+                "quote_health_reason": f"QUOTE_SNAPSHOT_TIMESTAMP_{snapshot_status}",
+                "quote_health_rule_version": "frozen-quote.v2-restart-warmup",
+            }
+        else:
+            quote_health_payload = detector.observe(
+                symbol=symbol or str(lineage.get("symbol") or "UNKNOWN"),
+                price=price,
+                observed_at=quote_observed_at,
+                source=source,
+            ).to_payload()
+        quote_status = quote_health_payload["quote_health_status"]
+        if quote_status == "PRICE_FROZEN":
             reference_status = "PRICE_FROZEN"
             reference_is_live = False
-            freshness = "PRICE_FROZEN"
-        elif quote_health.status == "MARKET_CLOSED":
+        elif quote_status == "MARKET_CLOSED":
             reference_status = "MARKET_CLOSED"
             reference_is_live = False
-        elif quote_health.status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
-            reference_status = quote_health.status
+        elif quote_status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
             reference_is_live = False
-            freshness = quote_health.status
+            if reference_status not in {"MISSING", "STALE"}:
+                reference_status = quote_status
+        elif quote_health_payload["quote_health_execution_blocked"]:
+            reference_is_live = False
+            if reference_status != "MISSING":
+                reference_status = quote_status
         payload = {
             "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "reference_price_used_for_decision_update": price,
@@ -6637,10 +6666,11 @@ class WolfConstitutionalPipeline:
             "price_context_field": lineage.get("price_context_field"),
             "price_snapshot_time_utc": snapshot_time,
             "price_age_seconds": age_seconds,
-            "price_freshness_status": freshness,
+            "price_freshness_status": feed_freshness,
+            "price_snapshot_status": snapshot_status or None,
             "reference_price_is_live": reference_is_live,
             "price_lineage_version": 2,
-            **quote_health.to_payload(),
+            **quote_health_payload,
         }
         return payload
 
@@ -6658,11 +6688,20 @@ class WolfConstitutionalPipeline:
         ask = self._coerce_positive_float(context.ask)
         tick_mid = (bid + ask) / 2.0 if bid is not None and ask is not None else None
         if tick_mid is not None and self._same_reference_price(price, tick_mid):
-            return {"price_source": "LIVE_TICK_MID"}
+            return {
+                "price_source": "LIVE_TICK_MID",
+                "price_source_timestamp_epoch": context.tick_snapshot_timestamp_epoch,
+            }
         if field_name == "bid":
-            return {"price_source": "LIVE_TICK_BID"}
+            return {
+                "price_source": "LIVE_TICK_BID",
+                "price_source_timestamp_epoch": context.tick_snapshot_timestamp_epoch,
+            }
         if field_name == "ask":
-            return {"price_source": "LIVE_TICK_ASK"}
+            return {
+                "price_source": "LIVE_TICK_ASK",
+                "price_source_timestamp_epoch": context.tick_snapshot_timestamp_epoch,
+            }
         if self._matches_execution_entry_price(price, synthesis=synthesis, l12_verdict=l12_verdict):
             return {"price_source": "EXECUTION_ENTRY"}
         if candle_source := self._matching_candle_reference(symbol=symbol, price=price, timeframes=("M15", "H1")):
@@ -6758,44 +6797,51 @@ class WolfConstitutionalPipeline:
         source: str,
         source_timestamp: Any | None = None,
     ) -> dict[str, Any]:
+        from state.data_freshness import FRESHNESS_LIVE_MAX_AGE_SEC  # noqa: PLC0415
+
         symbol_key = str(symbol or "").upper()
         bus = getattr(self, "_context_bus", None)
         feed_status = "UNKNOWN"
-        feed_age: float | None = None
-        feed_timestamp: float | None = None
         if symbol_key and bus is not None:
             try:
                 if hasattr(bus, "get_feed_status"):
                     feed_status = str(bus.get_feed_status(symbol_key) or "UNKNOWN").upper()
             except Exception:  # noqa: BLE001 - diagnostics must not break decision payloads.
                 feed_status = "UNKNOWN"
-            try:
-                if hasattr(bus, "get_feed_age"):
-                    raw_age = bus.get_feed_age(symbol_key)
-                    feed_age = None if raw_age is None else round(max(0.0, float(raw_age)), 3)
-            except Exception:  # noqa: BLE001
-                feed_age = None
-            try:
-                if hasattr(bus, "get_feed_timestamp"):
-                    raw_ts = bus.get_feed_timestamp(symbol_key)
-                    feed_timestamp = None if raw_ts is None else float(raw_ts)
-            except Exception:  # noqa: BLE001
-                feed_timestamp = None
         is_tick_source = str(source or "").upper().startswith("LIVE_TICK")
         source_timestamp_epoch = self._coerce_float_or_none(source_timestamp)
+        if (
+            isinstance(source_timestamp, bool)
+            or source_timestamp_epoch is None
+            or not math.isfinite(source_timestamp_epoch)
+            or source_timestamp_epoch <= 0
+        ):
+            source_timestamp_epoch = None
         if source_timestamp_epoch is not None and source_timestamp_epoch > 10_000_000_000:
             source_timestamp_epoch /= 1000.0
-        source_age = (
+        snapshot_time = self._epoch_to_utc_iso(source_timestamp_epoch)
+        signed_age = (
             None
-            if source_timestamp_epoch is None
-            else round(max(0.0, datetime.now(UTC).timestamp() - source_timestamp_epoch), 3)
+            if snapshot_time is None or source_timestamp_epoch is None
+            else datetime.now(UTC).timestamp() - source_timestamp_epoch
         )
-        snapshot_timestamp = feed_timestamp if is_tick_source else source_timestamp_epoch
+        source_age = None if signed_age is None else round(max(0.0, signed_age), 3)
+        snapshot_status = "AVAILABLE"
+        if is_tick_source:
+            if signed_age is None:
+                snapshot_status = "MISSING"
+            elif signed_age < -max(0.0, self._parse_env_float("SIGNAL_PRICE_MAX_FUTURE_SKEW_SECONDS", 1.0)):
+                snapshot_status = "FUTURE"
+            elif signed_age > FRESHNESS_LIVE_MAX_AGE_SEC:
+                snapshot_status = "STALE"
+            else:
+                snapshot_status = "LIVE"
         return {
-            "price_snapshot_time_utc": self._epoch_to_utc_iso(snapshot_timestamp),
-            "price_age_seconds": feed_age if is_tick_source else source_age,
+            "price_snapshot_time_utc": snapshot_time,
+            "price_age_seconds": source_age,
+            "price_snapshot_status": snapshot_status,
             "price_freshness_status": feed_status,
-            "reference_price_is_live": is_tick_source and feed_status == "LIVE",
+            "reference_price_is_live": is_tick_source and feed_status == "LIVE" and snapshot_status == "LIVE",
         }
 
     @staticmethod
