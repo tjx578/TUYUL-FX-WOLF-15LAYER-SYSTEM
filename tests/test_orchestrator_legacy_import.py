@@ -52,6 +52,7 @@ def package() -> dict[str, Any]:
         "source_deployment_id": "00000000-0000-4000-8000-000000000002",
         "importer_image_digest": "sha256:" + "2" * 64,
         "archive_reference": "synthetic/legacy-archive",
+        "operation_marker_path": "/protected-operation-ledger/" + OPERATION + ".attempt.json",
         "lease_ttl_seconds": 30,
         "total_timeout_seconds": 20,
         "connect_timeout_seconds": 2,
@@ -536,7 +537,7 @@ def test_cli_apply_boundaries_with_explicit_fake_protected_store(
                 assert result["status"] == "RESULT_PERSISTENCE_FAILED" and result["observed_status"] == "COMMITTED"
             else:
                 assert result["status"] == "COMMITTED" and receipt_path in files
-            assert receipt_path.with_name(OPERATION + ".attempt.json") in files
+            assert Path(package()["operation_marker_path"]) in files
 
 
 def test_cli_unexpected_exception_redacts_backend_detail(monkeypatch: pytest.MonkeyPatch, capsys: Any) -> None:
@@ -624,14 +625,19 @@ def test_ordinary_v2_hydration_size_boundary(extra_bytes: int) -> None:
     assert client.get(KEYS["state"]) == raw
 
 
-@pytest.mark.parametrize("malformation", ["duplicate", "nonfinite"])
+@pytest.mark.parametrize("malformation", ["duplicate", "nonfinite", "overflow", "negative_overflow"])
 def test_ordinary_v2_rejects_duplicate_and_nonfinite_json(malformation: str) -> None:
     client, archive, manifest, _ = backend()
     apply_once(client, manifest, archive, now=NOW)
     state = strict_json(client.get(KEYS["state"]))
     del state["legacy_import"]
     raw = encoded(state)
-    suffix = b',"reason":"duplicate"}' if malformation == "duplicate" else b',"details":NaN}'
+    suffix = {
+        "duplicate": b',"reason":"duplicate"}',
+        "nonfinite": b',"details":NaN}',
+        "overflow": b',"details":{"nested":[{"number":1e999}]}}',
+        "negative_overflow": b',"details":[{"nested":-1e999}]}',
+    }[malformation]
     raw = raw[:-1] + suffix
     client.values[KEYS["state"]] = raw
     owner = RedisFencedOwnership(
@@ -642,3 +648,154 @@ def test_ordinary_v2_rejects_duplicate_and_nonfinite_json(malformation: str) -> 
     with pytest.raises(StateHydrationError):
         manager.hydrate_committed_state()
     assert client.get(KEYS["state"]) == raw
+
+
+@pytest.mark.parametrize("raw", [b"1e999", b"-1e999", b'{"x":[1e999]}', b'[{"a":{"b":-1e999}}]'])
+def test_exponent_overflow_is_rejected_at_any_nesting(raw: bytes) -> None:
+    with pytest.raises(ImportHoldError):
+        strict_json(raw)
+    assert strict_json(b'{"finite":[1e308,-1.5,0.125]}') == {"finite": [1e308, -1.5, 0.125]}
+
+
+@pytest.mark.parametrize("path", ["", "/", "/0"])
+def test_default_redis_database_zero_requires_explicit_zero_binding(path: str) -> None:
+    from services.orchestrator.legacy_import_cli import credential_in_memory
+
+    p = package()
+    value = "redis://auditor:SYNTHETIC_SENTINEL@disposable.invalid:6379" + path
+    env = {**p["process_binding"], "LOCAL_REFERENCE": value}
+    assert credential_in_memory(p, "LOCAL_REFERENCE", env) == value
+    p["endpoint"]["database"] = 1
+    with pytest.raises(ImportHoldError):
+        credential_in_memory(p, "LOCAL_REFERENCE", env)
+    env["LOCAL_REFERENCE"] = "redis://auditor:SYNTHETIC_SENTINEL@disposable.invalid:6379/1"
+    assert credential_in_memory(p, "LOCAL_REFERENCE", env) == env["LOCAL_REFERENCE"]
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "relative/operation.attempt.json",
+        "/ledger/../other/operation.attempt.json",
+        "/ledger//operation.attempt.json",
+        "/ledger/wrong-id.attempt.json",
+        "//ledger/operation.attempt.json",
+    ],
+)
+def test_marker_location_must_be_canonical_absolute_and_operation_bound(marker: str) -> None:
+    p = package()
+    p["operation_marker_path"] = marker
+    with pytest.raises(ImportHoldError):
+        prepare_documents(p, snapshot(), now=NOW)
+
+
+def test_package_bound_marker_prevents_retry_after_receipt_and_archive_relocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.orchestrator import legacy_import_cli as cli
+
+    class FixedTime:
+        @staticmethod
+        def now(_tz: Any = None) -> datetime:
+            return NOW
+
+    @contextmanager
+    def fake_parent(_path: Path):
+        yield None
+
+    archive, manifest = prepared()
+    first, relocated = tmp_path / "first", tmp_path / "relocated"
+    files = {
+        first / "manifest": manifest,
+        first / "archive": archive,
+        relocated / "manifest": manifest,
+        relocated / "archive": archive,
+    }
+    calls: list[str] = []
+
+    def claim(path: Path, raw: bytes) -> None:
+        if path in files:
+            raise FileExistsError("consumed")
+        files[path] = raw
+
+    def ambiguous_connect(*_args: Any) -> Any:
+        calls.append("connect")
+        raise TimeoutError("synthetic ambiguous connect")
+
+    monkeypatch.setattr(cli, "datetime", FixedTime)
+    monkeypatch.setattr(cli, "protected_read", lambda path: files[path])
+    monkeypatch.setattr(cli, "protected_parent", fake_parent)
+    monkeypatch.setattr(cli, "operation_deadline", fake_parent)
+    monkeypatch.setattr(cli, "protected_write", claim)
+    monkeypatch.setattr(cli, "verify_evidence", lambda _: None)
+    monkeypatch.setattr(cli, "connect", ambiguous_connect)
+    for key, value in package()["process_binding"].items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("LOCAL_REFERENCE", "redis://auditor:SYNTHETIC_SENTINEL@disposable.invalid:6379")
+
+    def args(parent: Path) -> argparse.Namespace:
+        return argparse.Namespace(
+            command="apply",
+            manifest=parent / "manifest",
+            archive=parent / "archive",
+            receipt=parent / "receipt",
+            credential_env="LOCAL_REFERENCE",
+            enable_apply=True,
+        )
+
+    assert cli.execute(args(first))["status"] == "AMBIGUOUS"
+    marker = Path(package()["operation_marker_path"])
+    original_marker = files[marker]
+    with pytest.raises(FileExistsError):
+        cli.execute(args(relocated))
+    assert calls == ["connect"] and files[marker] == original_marker
+    assert relocated / "receipt" not in files
+
+
+@pytest.mark.parametrize("alias_target", ["marker", "archive", "manifest"])
+def test_receipt_destination_alias_holds_before_claim_and_connection(
+    alias_target: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.orchestrator import legacy_import_cli as cli
+
+    class FixedTime:
+        @staticmethod
+        def now(_tz: Any = None) -> datetime:
+            return NOW
+
+    archive, manifest = prepared()
+    marker = Path(package()["operation_marker_path"])
+    archive_path, manifest_path = tmp_path / "archive", tmp_path / "manifest"
+    files = {archive_path: archive, manifest_path: manifest}
+    destinations = {
+        "marker": marker.parent / "child" / ".." / marker.name,
+        "archive": archive_path,
+        "manifest": manifest_path,
+    }
+    monkeypatch.setattr(cli, "datetime", FixedTime)
+    monkeypatch.setattr(cli, "protected_read", lambda path: files[path])
+    monkeypatch.setattr(cli, "verify_evidence", lambda _: None)
+    monkeypatch.setattr(cli, "protected_write", lambda *_: pytest.fail("alias cannot consume an attempt"))
+    monkeypatch.setattr(cli, "connect", lambda *_: pytest.fail("alias cannot connect"))
+    args = argparse.Namespace(
+        command="apply",
+        manifest=manifest_path,
+        archive=archive_path,
+        receipt=destinations[alias_target],
+        credential_env="LOCAL_REFERENCE",
+        enable_apply=True,
+    )
+    with pytest.raises(ImportHoldError, match="IMPORT_DESTINATION_ALIAS_REJECTED"):
+        cli.execute(args)
+    assert marker not in files
+
+
+def test_rebinding_marker_path_cannot_reuse_existing_archive() -> None:
+    archive, manifest = prepared()
+    changed = strict_json(manifest)
+    changed["package"]["operation_marker_path"] = "/different-ledger/" + OPERATION + ".attempt.json"
+    with pytest.raises(ImportHoldError):
+        load_prepared(encoded(changed), archive, now=NOW)

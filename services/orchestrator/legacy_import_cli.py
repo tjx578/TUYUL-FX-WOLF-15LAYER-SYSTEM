@@ -113,7 +113,7 @@ def credential_in_memory(package: dict[str, Any], name: str, environment: Any) -
             "scheme": url.scheme,
             "host": url.hostname,
             "port": url.port,
-            "database": int(url.path.removeprefix("/")),
+            "database": 0 if url.path in {"", "/"} else int(url.path.removeprefix("/")),
         }
         if endpoint != package["endpoint"] or url.query or url.fragment or not url.password or value != value.strip():
             raise ValueError
@@ -202,6 +202,16 @@ class SingleConnection:
         self._client.close()
 
 
+def validate_destinations(package: dict[str, Any], *outputs: Path | None) -> Path:
+    """Detect aliases before consuming authority; this is not a volume proof."""
+    marker = Path(package["operation_marker_path"])
+    paths = [marker, *(path for path in outputs if path is not None)]
+    normalized = [os.path.normcase(str(path.resolve(strict=False))) for path in paths]
+    if len(set(normalized)) != len(normalized):
+        raise ImportHoldError("IMPORT_DESTINATION_ALIAS_REJECTED")
+    return marker
+
+
 def execute(args: argparse.Namespace) -> dict[str, Any]:
     now = datetime.now(UTC)
     if args.command == "prepare":
@@ -211,6 +221,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         if args.write_archive:
             if args.archive is None or args.manifest is None or args.archive == args.manifest:
                 raise ImportHoldError("DISTINCT_EXPLICIT_OUTPUTS_REQUIRED")
+            validate_destinations(package, args.archive, args.manifest)
             protected_write(args.archive, archive)
             protected_write(args.manifest, manifest)
         return {
@@ -226,6 +237,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         return reconcile_observation(manifest, archive, protected_read(args.state_observation))
     package, _ = load_prepared(manifest, archive, now=now)
     verify_evidence(package)
+    marker = validate_destinations(package, args.manifest, args.archive, args.receipt)
     if not args.enable_apply:
         return {"status": "DRY_APPLY_VALIDATED_NO_CONNECTION", "connections": 0}
     if args.receipt is None or not args.credential_env:
@@ -234,8 +246,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         raise ImportHoldError("RECEIPT_ALREADY_EXISTS")
     with protected_parent(args.receipt):
         pass
+    with protected_parent(marker):
+        pass
     url = credential_in_memory(package, args.credential_env, os.environ)
-    marker = args.receipt.with_name(package["operation_id"] + ".attempt.json")
     protected_write(
         marker,
         encoded(

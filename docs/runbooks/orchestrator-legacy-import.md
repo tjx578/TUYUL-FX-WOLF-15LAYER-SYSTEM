@@ -53,7 +53,8 @@ The runtime change also makes **all** persisted v2 hydration use strict JSON:
 duplicate keys and nonfinite numbers are rejected, and the UTF-8 payload limit
 is256KiB. This is broader than optional provenance handling. Offline tests
 cover ordinary v2 below/at/above that boundary, duplicate/nonfinite payloads,
-and existing normal state/recovery behavior. This local change is not yet
+including exponent overflow such as nested `1e999`, and existing normal
+state/recovery behavior. This local change is not yet
 evidence that every historic production v2 payload fits the new bound.
 
 ## Required package and evidence
@@ -70,13 +71,15 @@ fields, with no production defaults:
 | legacy_source_commit, source_deployment_id | Prior legacy producer source commit and deployment; these are provenance, not the importer release. |
 | importer_source_commit, importer_image_digest | Reviewed utility source commit and the exact image intended to execute it; image metadata must be independently bound by package evidence. |
 | archive_reference | Non-secret stable reference; no credential URL or embedded password. The actual archive path is an explicit CLI argument. |
+| operation_marker_path | Canonical absolute POSIX path in the approved persistent operation ledger, ending with operation_id plus `.attempt.json`. This immutable package field is independent of archive, manifest and receipt output locations. |
 | lease_ttl_seconds | Approved existing/planned lease setting; it must outlast total_timeout_seconds and pass the ownership implementation's minimum. |
 | total_timeout_seconds, connect_timeout_seconds, read_timeout_seconds | Explicit bounded operation and socket limits; fixture numbers are not operator policy. |
 | evidence | Required named gate records below, each with a local artifact locator, SHA256, result PASS and observation time. |
 
 Required gate names are old_writers_stopped, revival_controlled, execution_off,
 kill_containment, zero_queues_and_authorities, compatible_recovery,
-archive_policy, mutation_authorization and release_and_image_binding.
+archive_policy, mutation_authorization, release_and_image_binding and
+persistent_operation_ledger.
 The CLI verifies referenced file hashes. Those records are supplied operator
 evidence; a valid hash/schema does **not** independently observe their runtime
 claims. Do not create PASS records from missing measurements.
@@ -129,7 +132,22 @@ The four actual Railway process IDs must match the package. There is no
 fallback credential, admin identity or default production target.
 
 Before any connection, an exclusive protected operation-ID attempt marker is
-persisted. Existing markers/receipts fail closed. The driver uses one initial
+persisted at the package-bound path. Relocating archive/manifest files or
+choosing another receipt directory cannot change that path. Changing the path
+inside a manifest breaks its original protected archive/package binding;
+creating a different package would require its own reviewed authority.
+Normalized archive, manifest, marker and receipt paths must not alias. In
+particular, a receipt equal to the marker holds before consuming an attempt or
+connecting. Existing markers/receipts fail closed. The parent must already
+exist with owner-only permissions. Path validation is not proof of a mounted
+or persistent volume: the persistent_operation_ledger evidence must bind the
+actual persistent location and its lifetime independently of a job container.
+
+An empty or root URL path is accepted as Redis database0 only when the explicit
+approved package binding is database0. The credential value is returned
+unchanged; the utility never rewrites a credential URL. Nonzero database
+bindings still require the matching explicit URL path. Endpoint, query,
+fragment and credential checks remain enforced. The driver uses one initial
 connection with retry count0. A connection wrapper forbids implicit reconnect
 or further network calls after a failed call. Backend exceptions are not
 serialized. The configured driver interface was inspected locally against

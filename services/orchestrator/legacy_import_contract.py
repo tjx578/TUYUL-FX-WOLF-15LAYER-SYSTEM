@@ -9,8 +9,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import re
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID
 
@@ -31,6 +33,7 @@ REQUIRED_EVIDENCE = frozenset(
         "archive_policy",
         "mutation_authorization",
         "release_and_image_binding",
+        "persistent_operation_ledger",
     }
 )
 KEYS = {
@@ -76,7 +79,13 @@ def strict_json(raw: bytes | str) -> Any:
         def reject_constant(_value: str) -> Any:
             raise ImportHoldError("NON_FINITE_JSON_NUMBER")
 
-        return json.loads(raw, object_pairs_hook=_pairs, parse_constant=reject_constant)
+        def finite_float(value: str) -> float:
+            number = float(value)
+            if not math.isfinite(number):
+                raise ImportHoldError("NON_FINITE_JSON_NUMBER")
+            return number
+
+        return json.loads(raw, object_pairs_hook=_pairs, parse_constant=reject_constant, parse_float=finite_float)
     except (ValueError, UnicodeError) as exc:
         raise ImportHoldError("INVALID_JSON") from exc
 
@@ -141,6 +150,7 @@ def validate_package(value: Any, *, now: datetime) -> dict[str, Any]:
             "source_deployment_id",
             "importer_image_digest",
             "archive_reference",
+            "operation_marker_path",
             "lease_ttl_seconds",
             "total_timeout_seconds",
             "connect_timeout_seconds",
@@ -160,6 +170,17 @@ def validate_package(value: Any, *, now: datetime) -> dict[str, Any]:
     _hash(p["importer_image_digest"][7:])
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,119}", _text(p["archive_reference"])) is None:
         raise ImportHoldError("INVALID_ARCHIVE_REFERENCE")
+    marker_raw = _text(p["operation_marker_path"])
+    marker = PurePosixPath(marker_raw)
+    if (
+        not marker.is_absolute()
+        or marker_raw.startswith("//")
+        or str(marker) != marker_raw
+        or ".." in marker.parts
+        or re.fullmatch(r"/[A-Za-z0-9._/-]+", marker_raw) is None
+        or marker.name != p["operation_id"] + ".attempt.json"
+    ):
+        raise ImportHoldError("CANONICAL_PACKAGE_BOUND_OPERATION_MARKER_REQUIRED")
     if now.tzinfo is None or not now < instant(p["valid_until"]):
         raise ImportHoldError("PACKAGE_EXPIRED")
     binding = _shape(p["process_binding"], set(PROCESS_IDS))
