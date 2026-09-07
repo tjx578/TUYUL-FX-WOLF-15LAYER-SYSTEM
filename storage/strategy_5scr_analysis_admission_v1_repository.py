@@ -1,0 +1,607 @@
+"""Durable shadow queue for StrategyAnalysisAdmissionV1.
+
+This repository reads pressure-radar observations, not canonical pressure
+outbox authority.  Its tables are isolated from risk reservations, final
+signals and execution commands.  Granted mature-advisory rows may own a
+StrategyLifecycleV2 episode and one shadow evidence-prefetch job.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+from contracts.strategy_5scr_analysis_admission import (
+    StrategyAnalysisAdmissionV1,
+    StrategyAnalysisEvidenceSnapshotV1,
+)
+from contracts.strategy_5scr_lifecycle_v2 import StrategyLifecycleEventLink, StrategyLifecycleV2
+from storage.observer_export_outbox import ObserverExportOutboxRepository
+from storage.postgres_client import PostgresClient, pg_client
+from storage.strategy_5scr_lifecycle_v2_repository import (
+    LifecycleV2RecoveryState,
+    StrategyLifecycleV2Repository,
+    lifecycle_from_row,
+)
+
+ADMISSION_TABLE = "strategy_5scr_analysis_admissions_v1"
+EVALUATION_TABLE = "strategy_5scr_analysis_admission_evaluations_v1"
+EVIDENCE_JOB_TABLE = "strategy_5scr_analysis_evidence_jobs_v1"
+EVIDENCE_SNAPSHOT_TABLE = "strategy_5scr_analysis_evidence_snapshots_v1"
+
+_REQUIRED_TABLES = frozenset({ADMISSION_TABLE, EVALUATION_TABLE, EVIDENCE_JOB_TABLE, EVIDENCE_SNAPSHOT_TABLE})
+_REQUIRED_INDEXES = frozenset(
+    {
+        "ix_5scr_analysis_admission_lifecycle_v1",
+        "ix_5scr_analysis_admission_evaluation_logical_v1",
+        "ix_5scr_analysis_evidence_jobs_pending_v1",
+        "ix_5scr_analysis_evidence_snapshot_decision_v1",
+    }
+)
+_REQUIRED_CONSTRAINTS: dict[str, tuple[str, str]] = {
+    "fk_5scr_analysis_admission_lifecycle_v1": (ADMISSION_TABLE, "f"),
+    "ck_5scr_analysis_admission_identity_v1": (ADMISSION_TABLE, "c"),
+    "ck_5scr_analysis_admission_class_v1": (ADMISSION_TABLE, "c"),
+    "ck_5scr_analysis_admission_shadow_only_v1": (ADMISSION_TABLE, "c"),
+    "fk_5scr_analysis_admission_evaluation_lifecycle_v1": (EVALUATION_TABLE, "f"),
+    "ck_5scr_analysis_admission_evaluation_identity_v1": (EVALUATION_TABLE, "c"),
+    "ck_5scr_analysis_admission_evaluation_state_v1": (EVALUATION_TABLE, "c"),
+    "ck_5scr_analysis_admission_evaluation_shadow_only_v1": (EVALUATION_TABLE, "c"),
+    "fk_5scr_analysis_evidence_job_admission_v1": (EVIDENCE_JOB_TABLE, "f"),
+    "fk_5scr_analysis_evidence_job_lifecycle_v1": (EVIDENCE_JOB_TABLE, "f"),
+    "ck_5scr_analysis_evidence_job_state_v1": (EVIDENCE_JOB_TABLE, "c"),
+    "uq_5scr_analysis_evidence_job_material_v1": (EVIDENCE_JOB_TABLE, "u"),
+    "fk_5scr_analysis_evidence_snapshot_job_v1": (EVIDENCE_SNAPSHOT_TABLE, "f"),
+    "fk_5scr_analysis_evidence_snapshot_admission_v1": (EVIDENCE_SNAPSHOT_TABLE, "f"),
+    "ck_5scr_analysis_evidence_snapshot_identity_v1": (EVIDENCE_SNAPSHOT_TABLE, "c"),
+    "ck_5scr_analysis_evidence_snapshot_result_v1": (EVIDENCE_SNAPSHOT_TABLE, "c"),
+    "ck_5scr_analysis_evidence_snapshot_shadow_only_v1": (EVIDENCE_SNAPSHOT_TABLE, "c"),
+}
+_AUTHORITY_CHECK_DEFINITIONS = {
+    "ck_5scr_analysis_admission_shadow_only_v1": (
+        "checkrisk_authority=falseandexecution_authority=false"
+    ),
+    "ck_5scr_analysis_admission_evaluation_shadow_only_v1": (
+        "checkrisk_authority=falseandexecution_authority=false"
+    ),
+    "ck_5scr_analysis_evidence_snapshot_shadow_only_v1": (
+        "checkvalid_for_execution=falseandrisk_authority=falseandexecution_authority=false"
+    ),
+}
+_REQUIRED_TRIGGERS = {
+    f"trg_5scr_reject_{table}_mutation": (
+        table,
+        f"strategy_5scr_reject_{table}_mutation",
+    )
+    for table in (ADMISSION_TABLE, EVALUATION_TABLE, EVIDENCE_SNAPSHOT_TABLE)
+}
+
+
+class StrategyAnalysisAdmissionPersistenceError(RuntimeError):
+    """The isolated analysis-admission ledger violated an invariant."""
+
+
+class _DuplicateEventRollbackError(Exception):
+    """Abort a stale transaction whose lifecycle link already exists."""
+
+
+@dataclass(frozen=True)
+class AnalysisAdmissionRadarEvent:
+    deployment_id: str
+    pressure_event_id: str
+    symbol: str
+    observed_at_utc: datetime
+    payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class AnalysisEvidenceWorkItemV1:
+    evidence_job_id: str
+    analysis_admission_id: str
+    strategy_lifecycle_id: str
+    symbol: str
+    opened_at_utc: datetime
+    decision_time_utc: datetime | None
+    attempt_count: int
+    admission_payload: dict[str, Any]
+
+
+def _row_value(row: Any, key: str, default: Any = None) -> Any:
+    if isinstance(row, Mapping):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, TypeError):
+        return default
+
+
+def _json_object(value: Any, *, error: str) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        if isinstance(parsed, dict):
+            return parsed
+    raise StrategyAnalysisAdmissionPersistenceError(error)
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+
+
+def _compact_sql(value: Any) -> str:
+    return "".join(character for character in str(value or "").lower() if not character.isspace() and character not in "()")
+
+
+def analysis_evidence_job_id(strategy_lifecycle_id: str, analysis_material_hash: str) -> str:
+    digest = hashlib.sha256(f"analysis-evidence|{strategy_lifecycle_id}|{analysis_material_hash}".encode()).hexdigest()[
+        :32
+    ]
+    return f"5scr-analysis-evidence-job:{digest}"
+
+
+class StrategyAnalysisAdmissionV1Repository:
+    """Persist advisory decisions, lifecycle links and evidence work."""
+
+    def __init__(
+        self,
+        *,
+        pg: PostgresClient | None = None,
+        observer_export_repository: ObserverExportOutboxRepository | None = None,
+    ) -> None:
+        self._pg = pg or pg_client
+        resolved_export = observer_export_repository
+        if pg is None and observer_export_repository is None:
+            resolved_export = ObserverExportOutboxRepository(pg=self._pg)
+        self._lifecycles = StrategyLifecycleV2Repository(
+            pg=self._pg,
+            observer_export_repository=resolved_export,
+        )
+
+    @property
+    def is_available(self) -> bool:
+        return self._pg.is_available
+
+    async def schema_status(self) -> dict[str, tuple[str, ...]]:
+        if not self._pg.is_available:
+            return {
+                "missing_tables": tuple(sorted(_REQUIRED_TABLES)),
+                "missing_indexes": tuple(sorted(_REQUIRED_INDEXES)),
+                "missing_constraints": tuple(sorted(_REQUIRED_CONSTRAINTS)),
+                "invalid_constraints": (),
+                "missing_triggers": tuple(sorted(_REQUIRED_TRIGGERS)),
+                "invalid_triggers": (),
+            }
+        table_rows = await self._pg.fetch(
+            "SELECT tablename FROM pg_catalog.pg_tables "
+            "WHERE schemaname=current_schema() AND tablename=ANY($1::text[])",
+            sorted(_REQUIRED_TABLES),
+        )
+        index_rows = await self._pg.fetch(
+            "SELECT indexname FROM pg_catalog.pg_indexes "
+            "WHERE schemaname=current_schema() AND indexname=ANY($1::text[])",
+            sorted(_REQUIRED_INDEXES),
+        )
+        constraint_rows = await self._pg.fetch(
+            "SELECT conname, conrelid::regclass::text AS table_name, contype::text AS contype, "
+            "convalidated, pg_get_constraintdef(oid) AS definition FROM pg_catalog.pg_constraint "
+            "WHERE connamespace=current_schema()::regnamespace AND conname=ANY($1::text[])",
+            sorted(_REQUIRED_CONSTRAINTS),
+        )
+        trigger_rows = await self._pg.fetch(
+            "SELECT trigger.tgname, trigger.tgrelid::regclass::text AS table_name, "
+            "procedure.proname AS function_name, trigger.tgenabled::text AS enabled, "
+            "(trigger.tgtype & 1) <> 0 AS row_level, "
+            "(trigger.tgtype & 2) <> 0 AS before_event, "
+            "(trigger.tgtype & 4) <> 0 AS on_insert, "
+            "(trigger.tgtype & 8) <> 0 AS on_delete, "
+            "(trigger.tgtype & 16) <> 0 AS on_update, "
+            "(trigger.tgtype & 32) <> 0 AS on_truncate "
+            "FROM pg_catalog.pg_trigger trigger "
+            "JOIN pg_catalog.pg_proc procedure ON procedure.oid=trigger.tgfoid "
+            "WHERE NOT trigger.tgisinternal AND trigger.tgname=ANY($1::text[])",
+            sorted(_REQUIRED_TRIGGERS),
+        )
+        tables = {str(_row_value(row, "tablename")) for row in table_rows}
+        indexes = {str(_row_value(row, "indexname")) for row in index_rows}
+        constraints = {str(_row_value(row, "conname")): row for row in constraint_rows}
+        invalid_constraints: list[str] = []
+        for name, (table, contype) in _REQUIRED_CONSTRAINTS.items():
+            row = constraints.get(name)
+            if row is None:
+                continue
+            if (
+                str(_row_value(row, "table_name")) != table
+                or str(_row_value(row, "contype")) != contype
+                or _row_value(row, "convalidated") is not True
+            ):
+                invalid_constraints.append(name)
+                continue
+            expected_definition = _AUTHORITY_CHECK_DEFINITIONS.get(name)
+            if expected_definition is not None and _compact_sql(_row_value(row, "definition")) != expected_definition:
+                invalid_constraints.append(name)
+        triggers = {str(_row_value(row, "tgname")): row for row in trigger_rows}
+        invalid_triggers: list[str] = []
+        for name, (table, function) in _REQUIRED_TRIGGERS.items():
+            row = triggers.get(name)
+            if row is None:
+                continue
+            if (
+                str(_row_value(row, "table_name")) != table
+                or str(_row_value(row, "function_name")) != function
+                or str(_row_value(row, "enabled")) != "O"
+                or _row_value(row, "row_level") is not True
+                or _row_value(row, "before_event") is not True
+                or _row_value(row, "on_insert") is not False
+                or _row_value(row, "on_delete") is not True
+                or _row_value(row, "on_update") is not True
+                or _row_value(row, "on_truncate") is not False
+            ):
+                invalid_triggers.append(name)
+        return {
+            "missing_tables": tuple(sorted(_REQUIRED_TABLES - tables)),
+            "missing_indexes": tuple(sorted(_REQUIRED_INDEXES - indexes)),
+            "missing_constraints": tuple(sorted(set(_REQUIRED_CONSTRAINTS) - set(constraints))),
+            "invalid_constraints": tuple(sorted(invalid_constraints)),
+            "missing_triggers": tuple(sorted(set(_REQUIRED_TRIGGERS) - set(triggers))),
+            "invalid_triggers": tuple(sorted(invalid_triggers)),
+        }
+
+    async def fetch_pending_radar_events(self, *, limit: int) -> tuple[AnalysisAdmissionRadarEvent, ...]:
+        """Return every unprocessed advisory radar event in deterministic order."""
+
+        rows = await self._pg.fetch(
+            f"""
+            SELECT radar.deployment_id, radar.event_id, radar.symbol,
+                   radar.observed_at_utc, radar.payload
+            FROM pressure_radar_events radar
+            LEFT JOIN {EVALUATION_TABLE} evaluation
+              ON evaluation.pressure_event_id = radar.event_id
+            WHERE evaluation.pressure_event_id IS NULL
+              AND (
+                    lower(COALESCE(radar.payload->>'pressure_source','')) = 'signal_throttle_check'
+                 OR upper(COALESCE(radar.payload->>'source_stream','')) = 'CANARY'
+                 OR upper(COALESCE(radar.payload->>'raw_direction_role','')) =
+                    'SHORT_HORIZON_PRESSURE_RADAR_ONLY'
+              )
+              AND upper(COALESCE(radar.payload->>'pair_admission_status','NOT_GRANTED')) <> 'GRANTED'
+            ORDER BY radar.symbol, radar.observed_at_utc, radar.event_id
+            LIMIT $1
+            """,
+            max(1, int(limit)),
+        )
+        return tuple(
+            AnalysisAdmissionRadarEvent(
+                deployment_id=str(_row_value(row, "deployment_id")),
+                pressure_event_id=str(_row_value(row, "event_id")),
+                symbol=str(_row_value(row, "symbol")),
+                observed_at_utc=_row_value(row, "observed_at_utc"),
+                payload=_json_object(
+                    _row_value(row, "payload"),
+                    error="STRATEGY_ANALYSIS_ADMISSION_RADAR_PAYLOAD_INVALID",
+                ),
+            )
+            for row in rows
+        )
+
+    async def active_recovery_state(self, symbol: str) -> LifecycleV2RecoveryState | None:
+        return await self._lifecycles.active_recovery_state(symbol)
+
+    async def lifecycle_for_analysis_admission(
+        self,
+        analysis_admission_id: str,
+    ) -> StrategyLifecycleV2 | None:
+        row = await self._pg.fetchrow(
+            f"""
+            SELECT lifecycle.*
+            FROM {ADMISSION_TABLE} admission
+            JOIN strategy_5scr_analysis_lifecycles_v2 lifecycle
+              ON lifecycle.strategy_lifecycle_id=admission.strategy_lifecycle_id
+            WHERE admission.analysis_admission_id=$1
+            """,
+            analysis_admission_id,
+        )
+        return None if row is None else lifecycle_from_row(row)
+
+    async def persist_evaluation(
+        self,
+        event: AnalysisAdmissionRadarEvent,
+        admission: StrategyAnalysisAdmissionV1,
+        *,
+        lifecycle: StrategyLifecycleV2 | None = None,
+        event_link: StrategyLifecycleEventLink | None = None,
+    ) -> bool:
+        if admission.source_pressure_event_id != event.pressure_event_id:
+            raise StrategyAnalysisAdmissionPersistenceError("analysis admission pressure-event mismatch")
+        if admission.symbol != event.symbol.upper():
+            raise StrategyAnalysisAdmissionPersistenceError("analysis admission symbol mismatch")
+        if (lifecycle is None) != (event_link is None):
+            raise StrategyAnalysisAdmissionPersistenceError("partial analysis lifecycle bundle")
+        if admission.admission_status in {"GRANTED", "SUSPENDED"} and lifecycle is None:
+            raise StrategyAnalysisAdmissionPersistenceError("accepted analysis decision requires lifecycle")
+        if admission.admission_status == "REJECTED" and lifecycle is not None and not lifecycle.is_terminal:
+            raise StrategyAnalysisAdmissionPersistenceError(
+                "rejected analysis decision may only terminalize an existing lifecycle"
+            )
+        if lifecycle is not None:
+            assert event_link is not None
+            if (
+                lifecycle.strategy_lifecycle_id != event_link.strategy_lifecycle_id
+                or lifecycle.symbol != admission.symbol
+                or event_link.pressure_event_id != event.pressure_event_id
+            ):
+                raise StrategyAnalysisAdmissionPersistenceError("analysis lifecycle bundle mismatch")
+
+        payload = admission.model_dump(mode="json")
+        lifecycle_id = None if lifecycle is None else lifecycle.strategy_lifecycle_id
+        try:
+            async with self._pg.transaction() as connection:
+                await connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+                    f"strategy-analysis-admission|{event.symbol}",
+                )
+                existing = await connection.fetchrow(
+                    f"SELECT evidence_hash FROM {EVALUATION_TABLE} WHERE pressure_event_id=$1 FOR UPDATE",
+                    event.pressure_event_id,
+                )
+                if existing is not None:
+                    if str(_row_value(existing, "evidence_hash")) != admission.evidence_hash:
+                        raise StrategyAnalysisAdmissionPersistenceError(
+                            "analysis admission event identity is immutable"
+                        )
+                    return False
+
+                if (
+                    lifecycle is not None
+                    and event_link is not None
+                    and not await self._lifecycles.persist_in_transaction(connection, lifecycle, event_link)
+                ):
+                    raise _DuplicateEventRollbackError
+
+                if admission.admission_status == "GRANTED":
+                    assert lifecycle is not None
+                    await connection.execute(
+                        f"""
+                        INSERT INTO {ADMISSION_TABLE} (
+                            analysis_admission_id, strategy_lifecycle_id, symbol,
+                            admission_class, analysis_authority, source_authority,
+                            pressure_direction, admitted_at, expires_at,
+                            initial_evidence_hash, payload,
+                            risk_authority, execution_authority
+                        ) VALUES (
+                            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,false,false
+                        )
+                        ON CONFLICT (analysis_admission_id) DO NOTHING
+                        """,
+                        admission.analysis_admission_id,
+                        lifecycle.strategy_lifecycle_id,
+                        admission.symbol,
+                        admission.admission_class,
+                        admission.analysis_authority,
+                        admission.source_authority,
+                        admission.pressure_direction,
+                        admission.admitted_at_utc,
+                        admission.expires_at_utc,
+                        admission.evidence_hash,
+                        _json(payload),
+                    )
+                    stored = await connection.fetchrow(
+                        f"""
+                        SELECT strategy_lifecycle_id, symbol, admission_class,
+                               pressure_direction, admitted_at
+                        FROM {ADMISSION_TABLE}
+                        WHERE analysis_admission_id=$1
+                        """,
+                        admission.analysis_admission_id,
+                    )
+                    expected = (
+                        lifecycle.strategy_lifecycle_id,
+                        admission.symbol,
+                        admission.admission_class,
+                        admission.pressure_direction,
+                        admission.admitted_at_utc,
+                    )
+                    actual = (
+                        str(_row_value(stored, "strategy_lifecycle_id")),
+                        str(_row_value(stored, "symbol")),
+                        str(_row_value(stored, "admission_class")),
+                        str(_row_value(stored, "pressure_direction")),
+                        _row_value(stored, "admitted_at"),
+                    )
+                    if actual != expected:
+                        raise StrategyAnalysisAdmissionPersistenceError("logical analysis admission is immutable")
+                    await connection.execute(
+                        f"""
+                        INSERT INTO {EVIDENCE_JOB_TABLE} (
+                            evidence_job_id, analysis_admission_id,
+                            strategy_lifecycle_id, analysis_state,
+                            analysis_material_hash, status
+                        ) VALUES ($1,$2,$3,$4,$5,'PENDING')
+                        ON CONFLICT (analysis_admission_id, analysis_material_hash) DO NOTHING
+                        """,
+                        analysis_evidence_job_id(
+                            lifecycle.strategy_lifecycle_id,
+                            admission.analysis_material_hash,
+                        ),
+                        admission.analysis_admission_id,
+                        lifecycle.strategy_lifecycle_id,
+                        admission.analysis_state,
+                        admission.analysis_material_hash,
+                    )
+
+                await connection.execute(
+                    f"""
+                    INSERT INTO {EVALUATION_TABLE} (
+                        pressure_event_id, analysis_admission_id,
+                        strategy_lifecycle_id, deployment_id, symbol,
+                        observed_at, admission_status, analysis_state,
+                        evidence_hash, payload, risk_authority,
+                        execution_authority
+                    ) VALUES (
+                        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,false,false
+                    )
+                    """,
+                    event.pressure_event_id,
+                    admission.analysis_admission_id,
+                    lifecycle_id,
+                    event.deployment_id,
+                    admission.symbol,
+                    event.observed_at_utc,
+                    admission.admission_status,
+                    admission.analysis_state,
+                    admission.evidence_hash,
+                    _json(payload),
+                )
+                if lifecycle is not None and lifecycle.is_terminal:
+                    await connection.execute(
+                        f"""
+                        UPDATE {EVIDENCE_JOB_TABLE}
+                        SET status='CANCELLED', last_error=$2, updated_at=NOW()
+                        WHERE strategy_lifecycle_id=$1 AND status='PENDING'
+                        """,
+                        lifecycle.strategy_lifecycle_id,
+                        admission.analysis_state,
+                    )
+        except _DuplicateEventRollbackError:
+            return False
+        return True
+
+    async def load_pending_evidence(self, *, limit: int) -> tuple[AnalysisEvidenceWorkItemV1, ...]:
+        rows = await self._pg.fetch(
+            f"""
+            SELECT job.evidence_job_id, job.analysis_admission_id,
+                   job.strategy_lifecycle_id, job.decision_time,
+                   job.attempt_count, admission.symbol,
+                   latest_evaluation.payload AS payload,
+                   lifecycle.opened_at
+            FROM {EVIDENCE_JOB_TABLE} job
+            JOIN {ADMISSION_TABLE} admission
+              ON admission.analysis_admission_id=job.analysis_admission_id
+            JOIN strategy_5scr_analysis_lifecycles_v2 lifecycle
+              ON lifecycle.strategy_lifecycle_id=job.strategy_lifecycle_id
+            JOIN LATERAL (
+                SELECT evaluation.payload
+                FROM {EVALUATION_TABLE} evaluation
+                WHERE evaluation.analysis_admission_id=job.analysis_admission_id
+                  AND evaluation.payload->>'analysis_material_hash'=job.analysis_material_hash
+                ORDER BY evaluation.observed_at DESC, evaluation.pressure_event_id DESC
+                LIMIT 1
+            ) latest_evaluation ON true
+            WHERE job.status='PENDING'
+            ORDER BY job.created_at, job.evidence_job_id
+            LIMIT $1
+            """,
+            max(1, int(limit)),
+        )
+        return tuple(
+            AnalysisEvidenceWorkItemV1(
+                evidence_job_id=str(_row_value(row, "evidence_job_id")),
+                analysis_admission_id=str(_row_value(row, "analysis_admission_id")),
+                strategy_lifecycle_id=str(_row_value(row, "strategy_lifecycle_id")),
+                symbol=str(_row_value(row, "symbol")),
+                opened_at_utc=_row_value(row, "opened_at"),
+                decision_time_utc=_row_value(row, "decision_time"),
+                attempt_count=int(_row_value(row, "attempt_count", 0) or 0),
+                admission_payload=_json_object(
+                    _row_value(row, "payload"),
+                    error="STRATEGY_ANALYSIS_ADMISSION_PAYLOAD_INVALID",
+                ),
+            )
+            for row in rows
+        )
+
+    async def freeze_decision_time(self, evidence_job_id: str, decision_time: datetime) -> datetime:
+        row = await self._pg.fetchrow(
+            f"""
+            UPDATE {EVIDENCE_JOB_TABLE}
+            SET decision_time=COALESCE(decision_time,$2),
+                attempt_count=attempt_count+1,
+                updated_at=NOW()
+            WHERE evidence_job_id=$1 AND status='PENDING'
+            RETURNING decision_time
+            """,
+            evidence_job_id,
+            decision_time,
+        )
+        if row is None:
+            raise StrategyAnalysisAdmissionPersistenceError("analysis evidence job is not pending")
+        return _row_value(row, "decision_time")
+
+    async def persist_snapshot(self, snapshot: StrategyAnalysisEvidenceSnapshotV1) -> bool:
+        payload = snapshot.model_dump(mode="json")
+        async with self._pg.transaction() as connection:
+            await connection.execute(
+                f"""
+                INSERT INTO {EVIDENCE_SNAPSHOT_TABLE} (
+                    snapshot_id, evidence_job_id, analysis_admission_id,
+                    strategy_lifecycle_id, symbol, decision_time,
+                    source_timeframes, coverage_status, result_state,
+                    terminal_reason, evidence_hash, payload,
+                    shadow_tradeplan_candidate, valid_for_execution,
+                    risk_authority, execution_authority
+                ) VALUES (
+                    $1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12::jsonb,
+                    $13,false,false,false
+                )
+                ON CONFLICT (snapshot_id) DO NOTHING
+                """,
+                snapshot.snapshot_id,
+                snapshot.evidence_job_id,
+                snapshot.analysis_admission_id,
+                snapshot.strategy_lifecycle_id,
+                snapshot.symbol,
+                snapshot.decision_time_utc,
+                _json(list(snapshot.source_timeframes)),
+                snapshot.coverage_status,
+                snapshot.result_state,
+                snapshot.terminal_reason,
+                snapshot.evidence_hash,
+                _json(payload),
+                snapshot.shadow_tradeplan_candidate,
+            )
+            stored = await connection.fetchrow(
+                f"SELECT evidence_hash FROM {EVIDENCE_SNAPSHOT_TABLE} WHERE snapshot_id=$1",
+                snapshot.snapshot_id,
+            )
+            if str(_row_value(stored, "evidence_hash")) != snapshot.evidence_hash:
+                raise StrategyAnalysisAdmissionPersistenceError("analysis evidence snapshot is immutable")
+            result = await connection.execute(
+                f"""
+                UPDATE {EVIDENCE_JOB_TABLE}
+                SET status='COMPLETED', last_error=NULL, updated_at=NOW()
+                WHERE evidence_job_id=$1 AND status='PENDING'
+                """,
+                snapshot.evidence_job_id,
+            )
+        return bool(str(result).endswith(" 1"))
+
+    async def record_evidence_failure(self, evidence_job_id: str, *, error: str, max_attempts: int) -> bool:
+        result = await self._pg.execute(
+            f"""
+            UPDATE {EVIDENCE_JOB_TABLE}
+            SET status=CASE WHEN attempt_count >= $3 THEN 'FAILED' ELSE 'PENDING' END,
+                last_error=$2, updated_at=NOW()
+            WHERE evidence_job_id=$1 AND status='PENDING'
+            """,
+            evidence_job_id,
+            error[:2000],
+            max(1, int(max_attempts)),
+        )
+        return bool(str(result).endswith(" 1"))
+
+
+__all__ = [
+    "ADMISSION_TABLE",
+    "EVALUATION_TABLE",
+    "EVIDENCE_JOB_TABLE",
+    "EVIDENCE_SNAPSHOT_TABLE",
+    "AnalysisAdmissionRadarEvent",
+    "AnalysisEvidenceWorkItemV1",
+    "StrategyAnalysisAdmissionPersistenceError",
+    "StrategyAnalysisAdmissionV1Repository",
+    "analysis_evidence_job_id",
+]

@@ -7066,6 +7066,13 @@ class WolfConstitutionalPipeline:
             if activity.get("latest_block_effective_density_per_minute") is not None
             else lineage.get("effective_density_per_minute") or lineage.get("density_per_minute")
         )
+        admission_coverage = self._pair_admission_coverage_fields(
+            symbol=symbol_key,
+            report=report,
+            admission_evaluation=admission_evaluation,
+            advisory_block_duration_seconds=block_duration,
+            advisory_block_effective_ticks=effective_ticks,
+        )
 
         pressure_count_scope = "ANALYZER_TOTAL_EVENTS"
         if activity.get("latest_block_effective_ticks") is not None:
@@ -7104,6 +7111,7 @@ class WolfConstitutionalPipeline:
                 "rejection_counts": admission_summary.get("rejection_counts", {}),
                 "execution_authority": False,
             },
+            **admission_coverage,
             "pressure_event_count_scope": pressure_count_scope,
             "current_snapshot_events": session_symbol_events,
             "current_block_events": current_block_events,
@@ -7124,6 +7132,114 @@ class WolfConstitutionalPipeline:
             "pair_interruption_count_scope": activity.get("pair_interruption_count_scope")
             or "ANALYZER_RETENTION_WINDOW",
             "legacy_pressure_event_count": pressure_event_count,
+        }
+
+    @staticmethod
+    def _pair_admission_coverage_fields(
+        *,
+        symbol: str,
+        report: dict[str, Any],
+        admission_evaluation: dict[str, Any],
+        advisory_block_duration_seconds: float | None,
+        advisory_block_effective_ticks: int | None,
+    ) -> dict[str, Any]:
+        """Explain whether PairAdmission evaluation applies to this symbol.
+
+        Advisory/CANARY pressure blocks and canonical raw-authority blocks are
+        intentionally separate populations. The legacy ``NOT_EVALUATED``
+        value did not expose that distinction, making a mature advisory block
+        look like a skipped raw evaluation. These fields make the coverage
+        state explicit without allowing derived pressure to grant admission.
+        """
+
+        symbol_key = str(symbol or "").upper()
+        raw_blocks_value = report.get("raw_admission_blocks")
+        raw_blocks = raw_blocks_value if isinstance(raw_blocks_value, (list, tuple)) else []
+        symbol_raw_blocks = [
+            item
+            for item in raw_blocks
+            if isinstance(item, dict) and str(item.get("symbol") or "").upper() == symbol_key
+        ]
+        latest_raw_block = max(
+            symbol_raw_blocks,
+            key=lambda item: (
+                str(item.get("end") or ""),
+                str(item.get("start") or ""),
+                str(item.get("raw_block_id") or ""),
+            ),
+            default={},
+        )
+
+        summary_value = report.get("pair_admission_summary")
+        summary = summary_value if isinstance(summary_value, dict) else {}
+        evaluations_value = summary.get("evaluations")
+        evaluations = evaluations_value if isinstance(evaluations_value, (list, tuple)) else []
+        symbol_evaluations = [
+            item
+            for item in evaluations
+            if isinstance(item, dict) and str(item.get("symbol") or "").upper() == symbol_key
+        ]
+        granted_count = sum(1 for item in symbol_evaluations if item.get("decision") == "GRANTED")
+        rejected_count = sum(1 for item in symbol_evaluations if item.get("decision") == "REJECTED")
+
+        evaluation_required = bool(symbol_raw_blocks)
+        evaluation_present = bool(admission_evaluation)
+        if evaluation_present:
+            coverage_status = "EVALUATED"
+            coverage_reason = str(
+                admission_evaluation.get("rejection_reason")
+                or admission_evaluation.get("decision")
+                or "RAW_AUTHORITY_BLOCK_EVALUATED"
+            )
+        elif evaluation_required:
+            coverage_status = "MISSING_EVALUATION_INCIDENT"
+            coverage_reason = "RAW_AUTHORITY_BLOCK_PRESENT_WITHOUT_EVALUATION"
+        else:
+            coverage_status = "NOT_APPLICABLE_NO_RAW_AUTHORITY_BLOCK"
+            coverage_reason = "NO_SYMBOL_RAW_AUTHORITY_BLOCK_IN_RETENTION"
+
+        runtime_value = report.get("runtime_config")
+        runtime = runtime_value if isinstance(runtime_value, dict) else {}
+        try:
+            maturity_seconds = max(1.0, float(runtime.get("min_clean_block_minutes", 5.0)) * 60.0)
+        except (TypeError, ValueError):
+            maturity_seconds = 300.0
+        duration = float(advisory_block_duration_seconds or 0.0)
+        ticks = int(advisory_block_effective_ticks or 0)
+        advisory_mature = duration >= maturity_seconds and ticks >= 3
+        if advisory_mature and not evaluation_required:
+            advisory_status = "MATURE_ADVISORY_ONLY_NON_AUTHORITATIVE"
+        elif advisory_mature:
+            advisory_status = "MATURE_WITH_RAW_AUTHORITY_BLOCK"
+        else:
+            advisory_status = "OBSERVED_BELOW_ADVISORY_MATURITY"
+
+        population_value = report.get("raw_admission_population")
+        population = population_value if isinstance(population_value, dict) else {}
+        return {
+            "pair_admission_authority_population": "RAW_SIGNAL_THROTTLE_ONLY",
+            "pair_admission_advisory_pressure_is_authority": False,
+            "pair_admission_advisory_block_status": advisory_status,
+            "pair_admission_advisory_maturity_seconds": maturity_seconds,
+            "pair_admission_evaluation_required": evaluation_required,
+            "pair_admission_evaluation_complete": not evaluation_required or evaluation_present,
+            "pair_admission_evaluation_coverage_status": coverage_status,
+            "pair_admission_evaluation_coverage_reason": coverage_reason,
+            "pair_admission_evaluation_missing_incident": evaluation_required and not evaluation_present,
+            "pair_admission_raw_replay_required": evaluation_required and not evaluation_present,
+            "pair_admission_symbol_raw_block_count": len(symbol_raw_blocks),
+            "pair_admission_latest_raw_block_id": latest_raw_block.get("raw_block_id"),
+            "pair_admission_latest_raw_block_state": latest_raw_block.get("evaluation_state"),
+            "pair_admission_latest_raw_block_duration_seconds": latest_raw_block.get("duration_seconds"),
+            "pair_admission_latest_raw_block_effective_ticks": latest_raw_block.get("effective_ticks"),
+            "pair_admission_symbol_monitoring": {
+                "evaluated_blocks": len(symbol_evaluations),
+                "granted_blocks": granted_count,
+                "rejected_blocks": rejected_count,
+                "execution_authority": False,
+            },
+            "pair_admission_raw_population_status": population.get("population_status"),
+            "pair_admission_raw_authority_event_count": population.get("raw_authority_event_count", 0),
         }
 
     @staticmethod
@@ -7745,6 +7861,7 @@ class WolfConstitutionalPipeline:
         pressure_payload = convert_to_signal_pressure_state(payload)
         if "next_required_stage" in payload:
             pressure_payload["next_required_stage"] = payload["next_required_stage"]
+            pressure_payload["producer_next_required_stage"] = payload["next_required_stage"]
         pressure_payload["signal_pressure_state_emit_result"] = self._emit_signal_pressure_state_payload(
             pressure_payload
         )

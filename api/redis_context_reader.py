@@ -449,56 +449,14 @@ class RedisContextReader:
 
         return {"symbols": symbols}
 
-    def check_price_drift(
-        self,
-        symbol: str,
-        max_drift_pips: float = 5.0,
-    ) -> dict[str, Any]:
-        """Expose an observational REST-close/live-mid gap without a drift verdict.
+    def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
+        """Redis history must independently prove both closed-H1 lineages."""
+        from context.price_drift import compare_closed_h1
 
-        Redis history is deduplicated by candle window and therefore cannot
-        prove two independent closed-H1 observations for the same close time.
-        Treating the current live mid as that second observation would be a
-        temporal apples-to-oranges comparison.
-        """
-        h1_candles = self.get_candles(symbol, "H1", count=1)
-        rest_close = float(h1_candles[-1].get("close", 0)) if h1_candles else None
-
-        tick = self.get_latest_tick(symbol)
-        ws_mid: float | None = None
-        if tick:
-            bid = tick.get("bid") or tick.get("price")
-            ask = tick.get("ask") or tick.get("price")
-            if bid is not None and ask is not None:
-                ws_mid = (float(bid) + float(ask)) / 2.0
-            elif bid is not None:
-                ws_mid = float(bid)
-
-        # Default multiplier (most forex pairs). This only quantifies the
-        # observed gap; it does not make the two timestamps comparable.
-        multiplier = 10000.0
-        sym_upper = symbol.upper()
-        if "JPY" in sym_upper:
-            multiplier = 100.0
-        elif "XAU" in sym_upper:
-            multiplier = 10.0
-
-        observed_live_gap_pips = (
-            round(abs(rest_close - ws_mid) * multiplier, 1)
-            if rest_close is not None and ws_mid is not None
-            else None
+        return compare_closed_h1(
+            symbol, self.get_candles(symbol, "H1", count=250),
+            self.get_latest_tick(symbol), max_drift_pips,
         )
-        return {
-            "comparable": False,
-            "reason": "REST_H1_CLOSE_VS_WS_LIVE_MID_NOT_COMPARABLE",
-            "drifted": False,
-            "drift_pips": 0.0,
-            "observed_live_gap_pips": observed_live_gap_pips,
-            "max_drift_pips": max_drift_pips,
-            "rest_close": rest_close,
-            "ws_h1_close": None,
-            "ws_mid": ws_mid,
-        }
 
     # ── Internal helpers ──────────────────────────────────────
 

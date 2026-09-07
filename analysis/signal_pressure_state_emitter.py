@@ -1,7 +1,9 @@
 """SignalPressureStateJSON emitter.
 
-Pressure-state events are observability-only.  They are not fed through the
-SignalJSON builder and never authorize execution.
+Pressure-state events are non-executable analysis observations.  They are not
+fed through the SignalJSON builder and never authorize execution.  A mature
+derived advisory may be classified for the isolated StrategyAnalysisAdmission
+shadow path; canonical pressure-outbox authority remains PairAdmission-only.
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
+
+from analysis.strategy_5scr_analysis_admission import strategy_analysis_admission_payload
 
 DEFAULT_SIGNAL_PRESSURE_STATE_PREFIX = "[SignalPressureStateJSON]"
 DEFAULT_SIGNAL_PRESSURE_STATE_SUMMARY_PREFIX = "[SignalPressureStateSummary]"
@@ -63,6 +67,16 @@ def build_signal_pressure_state_payload(payload: Mapping[str, Any]) -> dict[str,
     data["strategy_stage"] = strategy_stage
     data["strategy_stage_rank"] = _STRATEGY_STAGE_RANK[strategy_stage]
     data["strategy_stage_role"] = "MONOTONIC_STRATEGY_LIFECYCLE_STAGE"
+    analysis_admission = strategy_analysis_admission_payload(data)
+    data["strategy_analysis_admission"] = analysis_admission
+    data["strategy_analysis_admission_id"] = analysis_admission["analysis_admission_id"]
+    data["strategy_analysis_admission_class"] = analysis_admission["admission_class"]
+    data["strategy_analysis_admission_status"] = analysis_admission["admission_status"]
+    data["strategy_analysis_state"] = analysis_admission["analysis_state"]
+    data["strategy_analysis_direction"] = analysis_admission["pressure_direction"]
+    data["strategy_analysis_authority"] = analysis_admission["analysis_authority"]
+    data["strategy_analysis_risk_authority"] = False
+    data["strategy_analysis_execution_authority"] = False
     data.setdefault("event_severity", _pressure_event_severity(data))
     return data
 
@@ -84,6 +98,7 @@ def _pressure_event_severity(payload: Mapping[str, Any]) -> str:
             "OUT_OF_ORDER",
         }
         or daily_stale
+        or payload.get("pair_admission_evaluation_coverage_status") == "MISSING_EVALUATION_INCIDENT"
         or payload.get("schema_contract_complete") is False
     ):
         return "WARNING"
