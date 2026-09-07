@@ -172,3 +172,138 @@ def test_shutdown_is_a_committed_settlement_boundary() -> None:
     assert settled["commit_marker"] == "COMMITTED"
     assert settled["state_revision"] == 5
     assert manager._state_revision == 5  # noqa: SLF001
+
+
+class _RunOwnership(_Ownership):
+    """In-memory lease lifecycle for exercising the real foreground loop."""
+
+    def __init__(self, redis: _Redis, *, generation: int) -> None:
+        super().__init__(redis, generation=generation)
+        self.held = False
+        self._next_generation = generation
+        self.acquisitions = 0
+        self.releases = 0
+
+    def acquire(self) -> bool:
+        self.identity = LeaseIdentity(owner_id=f"owner-{self._next_generation}", generation=self._next_generation)
+        self._next_generation += 1
+        self.acquisitions += 1
+        self.held = True
+        return True
+
+    def release(self) -> bool:
+        self.releases += 1
+        self.held = False
+        return True
+
+
+def _run_manager(redis: _Redis) -> tuple[StateManager, _RunOwnership]:
+    ownership = _RunOwnership(redis, generation=2)
+    return (
+        StateManager(
+            redis_client=redis,  # type: ignore[arg-type]
+            ownership=ownership,  # type: ignore[arg-type]
+        ),
+        ownership,
+    )
+
+
+def _legacy_payload() -> str:
+    return json.dumps(
+        {
+            "source": "wolf15-orchestrator",
+            "channel": "wolf15:orchestrator:commands",
+            "mode": "KILL_SWITCH",
+            "reason": "synthetic-account-state-missing",
+            "compliance_code": "ACCOUNT_STATE_MISSING",
+            "updated_at": "2026-09-05T13:48:10+00:00",
+            "timestamp": 1,
+            "event": "HEARTBEAT",
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [_legacy_payload(), "{malformed", _committed_payload(commit_marker="INFLIGHT")],
+    ids=["legacy", "malformed", "uncommitted-v2"],
+)
+def test_run_forever_hydration_failure_preserves_storage(payload: str) -> None:
+    redis = _Redis()
+    manager, ownership = _run_manager(redis)
+    redis.values.update(
+        {
+            manager._state_key: payload,  # noqa: SLF001
+            "wolf15:heartbeat:orchestrator": "existing-heartbeat-bytes",
+            "wolf15:system:kill_switch": '{"active":true}',
+        }
+    )
+    before = dict(redis.values)
+    started: list[bool] = []
+
+    with pytest.raises(StateHydrationError):
+        manager.run_forever(on_started=lambda: started.append(True))
+
+    assert redis.values == before
+    assert redis.published == []
+    assert started == []
+    assert ownership.acquisitions == ownership.releases == 1
+    assert ownership.held is False
+    assert manager._state_revision == 0  # noqa: SLF001
+    assert manager._supervisor.state == "FATAL"  # noqa: SLF001
+    assert manager._supervisor.is_ready() is False  # noqa: SLF001
+
+
+def test_run_forever_reacquisition_failure_cannot_settle_prior_process_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = _Redis()
+    manager, ownership = _run_manager(redis)
+    redis.values[manager._state_key] = _committed_payload()  # noqa: SLF001
+    monkeypatch.setattr(manager, "start_listener", lambda: None)
+    expected_after_loss: dict[str, str] = {}
+
+    def lose_lease_to_legacy_writer() -> None:
+        ownership.held = False
+        redis.values[manager._state_key] = _legacy_payload()  # noqa: SLF001
+        redis.values["wolf15:heartbeat:orchestrator"] = "replacement-heartbeat"
+        expected_after_loss.update(redis.values)
+        raise OwnershipLostError("synthetic lease loss")
+
+    monkeypatch.setattr(manager, "process_once", lose_lease_to_legacy_writer)
+    with pytest.raises(StateHydrationError):
+        manager.run_forever()
+
+    assert redis.values == expected_after_loss
+    assert [json.loads(payload)["event"] for _, payload in redis.published] == ["BOOT"]
+    assert ownership.acquisitions == 2
+    assert ownership.releases == 1
+    assert ownership.held is False
+    assert manager._supervisor.state == "FATAL"  # noqa: SLF001
+
+
+@pytest.mark.parametrize("prior_payload", [None, _committed_payload()], ids=["first-start", "recovery"])
+def test_run_forever_initialized_state_still_commits_shutdown(
+    prior_payload: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    redis = _Redis()
+    manager, ownership = _run_manager(redis)
+    if prior_payload is not None:
+        redis.values[manager._state_key] = prior_payload  # noqa: SLF001
+    monkeypatch.setattr(manager, "start_listener", lambda: None)
+
+    def stop_after_boot() -> None:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        manager.run_forever(on_started=stop_after_boot)
+
+    published = [json.loads(payload) for _, payload in redis.published]
+    assert [payload["event"] for payload in published] == ["BOOT", "SHUTDOWN"]
+    expected_revision = 2 if prior_payload is None else 9
+    assert published[-1]["state_revision"] == expected_revision
+    assert published[-1]["commit_marker"] == "COMMITTED"
+    assert published[-1]["mode"] == ("NORMAL" if prior_payload is None else "SAFE")
+    assert published[-1]["compliance_code"] == ("INIT" if prior_payload is None else "DAILY_DD_NEAR_LIMIT")
+    assert ownership.acquisitions == ownership.releases == 1
+    assert manager._supervisor.state == "STOPPED"  # noqa: SLF001

@@ -659,14 +659,17 @@ class StateManager:
     def run_forever(self, on_started: Callable[[], None] | None = None) -> None:
         last_renewal = 0.0
         started_callback_sent = False
+        hydration_completed = False
         try:
             while True:
                 if not self._ownership.held:
+                    hydration_completed = False
                     self._supervisor.mark_standby()
                     if not self._ownership.acquire():
                         time.sleep(self._loop_sleep_sec)
                         continue
                     hydrated = self.hydrate_committed_state()
+                    hydration_completed = True
                     self.start_listener()
                     self._supervisor.mark_owner()
                     self.publish_state(
@@ -708,11 +711,14 @@ class StateManager:
             raise
         finally:
             if self._ownership.held:
-                try:
-                    self.publish_state("SHUTDOWN")
-                    logger.info("orchestrator published SHUTDOWN state to Redis")
-                except Exception as exc:
-                    logger.error("orchestrator failed to publish fenced SHUTDOWN state: {}", exc)
+                # A rejected hydration must preserve the stored bytes, including
+                # after reacquisition; uninitialized state cannot settle them.
+                if hydration_completed:
+                    try:
+                        self.publish_state("SHUTDOWN")
+                        logger.info("orchestrator published SHUTDOWN state to Redis")
+                    except Exception as exc:
+                        logger.error("orchestrator failed to publish fenced SHUTDOWN state: {}", exc)
                 try:
                     self._ownership.release()
                 except Exception as exc:

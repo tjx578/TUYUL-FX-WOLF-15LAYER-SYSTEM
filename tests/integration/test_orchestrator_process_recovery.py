@@ -54,6 +54,7 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
     root = Path(os.getenv("WOLF15_PROCESS_RECOVERY_EVIDENCE", str(tmp_path))) / uuid.uuid4().hex
     root.mkdir(parents=True, exist_ok=False)
     name = "wolf15-process-recovery-" + uuid.uuid4().hex[:12]
+    network = name + "-net"
     meta: dict[str, Any] = {"container_name": name, "redis_image": REDIS_IMAGE, "cleanup": "NOT_EXECUTED"}
 
     def cli(*args: str) -> str:
@@ -62,6 +63,7 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
 
     client = None
     try:
+        meta["network_id"] = cli("network", "create", "--label", "wolf15.test=process-recovery", network)
         meta["container_id"] = cli(
             "run",
             "-d",
@@ -69,6 +71,16 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
             name,
             "--label",
             "wolf15.test=process-recovery",
+            "--network",
+            network,
+            "--memory",
+            "128m",
+            "--memory-swap",
+            "128m",
+            "--cpus",
+            "0.5",
+            "--pids-limit",
+            "64",
             "--publish",
             "127.0.0.1::6379",
             "--pull",
@@ -82,6 +94,10 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
         )
         info = json.loads(cli("inspect", name))[0]
         meta["image_id"] = info["Image"]
+        meta["resource_limits"] = {
+            key: info["HostConfig"][key] for key in ("Memory", "MemorySwap", "NanoCpus", "PidsLimit")
+        }
+        assert meta["resource_limits"]["Memory"] == meta["resource_limits"]["MemorySwap"] == 128 * 1024 * 1024
         binding = info["NetworkSettings"]["Ports"]["6379/tcp"][0]
         assert binding["HostIp"] == "127.0.0.1"
         port = int(binding["HostPort"])
@@ -100,18 +116,23 @@ def disposable_redis(tmp_path: Path) -> Iterator[tuple[Any, int, Path, dict[str,
         _write_json(root / "redis.json", meta)
         yield client, port, root, meta
     finally:
-        if client is not None:
-            client.close()
-        if "container_id" in meta:
-            try:
-                (root / "redis.log").write_text(cli("logs", name), encoding="utf-8")
-            finally:
-                # An observation error must not leave the owned test service running.
-                cli("rm", "-f", name)
-                remaining = cli("ps", "-aq", "--filter", "name=^/" + name + "$")
-                assert not remaining, "disposable Redis cleanup must be proven"
-                meta["cleanup"] = "PASS_REMOVED"
-        _write_json(root / "redis.json", meta)
+        try:
+            if client is not None:
+                client.close()
+            if "container_id" in meta:
+                try:
+                    (root / "redis.log").write_text(cli("logs", name), encoding="utf-8")
+                finally:
+                    # An observation error must not leave the owned test service running.
+                    cli("rm", "-f", name)
+                    remaining = cli("ps", "-aq", "--filter", "name=^/" + name + "$")
+                    assert not remaining, "disposable Redis cleanup must be proven"
+                    meta["cleanup"] = "PASS_REMOVED"
+        finally:
+            if "network_id" in meta:
+                cli("network", "rm", network)
+                meta["network_cleanup"] = "PASS_REMOVED"
+            _write_json(root / "redis.json", meta)
 
 
 def _child_environment(port: int) -> dict[str, str]:
@@ -272,6 +293,140 @@ def _worker(role: str, stop_mode: str, root: Path, port: int) -> None:
         client.close()
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.parametrize("shape", ["legacy", "malformed"])
+def test_rejected_process_startup_preserves_redis_bytes_and_releases_lease(
+    disposable_redis: tuple[Any, int, Path, dict[str, Any]], shape: str
+) -> None:
+    client, port, root, meta = disposable_redis
+    state_key = "wolf15:orchestrator:state"
+    payload = (
+        json.dumps(
+            {
+                "source": "wolf15-orchestrator",
+                "channel": "wolf15:orchestrator:commands",
+                "mode": "KILL_SWITCH",
+                "reason": "synthetic-account-state-missing",
+                "compliance_code": "ACCOUNT_STATE_MISSING",
+                "updated_at": "2026-09-05T13:48:10+00:00",
+                "timestamp": 1,
+                "event": "HEARTBEAT",
+            }
+        )
+        if shape == "legacy"
+        else "{malformed"
+    )
+    before = {
+        state_key: payload,
+        "wolf15:heartbeat:orchestrator": "existing-heartbeat-bytes",
+        "wolf15:system:kill_switch": '{"active":true}',
+    }
+    for key, value in before.items():
+        client.set(key, value)
+    previous_generation = 0  # The task-owned fixture starts with an empty Redis.
+    receipt: dict[str, Any] = {
+        "verdict": "NOT_COMPLETED",
+        "shape": shape,
+        "fixture": "SYNTHETIC_NOT_PRODUCTION_DATA",
+        "source_root": str(ROOT),
+        "attempts": [],
+    }
+    process = None
+    try:
+        for attempt in (1, 2):
+            role = f"failure-{attempt}"
+            executable = getattr(sys, "_base_executable", sys.executable) if os.name == "nt" else sys.executable
+            with (
+                (root / f"{role}.stdout.log").open("w", encoding="utf-8") as stdout,
+                (root / f"{role}.stderr.log").open("w", encoding="utf-8") as stderr,
+            ):
+                process = subprocess.Popen(
+                    [
+                        executable,
+                        "-B",
+                        str(Path(__file__).resolve()),
+                        "--rejected-start",
+                        role,
+                        str(root),
+                        str(port),
+                    ],
+                    cwd=ROOT,
+                    env=_child_environment(port),
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout,
+                    stderr=stderr,
+                    text=True,
+                )
+                assert process.wait(timeout=15) == 0, "rejected-start worker failed; inspect its stderr"
+            observed = json.loads((root / f"{role}.json").read_text(encoding="utf-8"))
+            assert observed["pid"] == process.pid
+            assert observed["error_type"] == "StateHydrationError"
+            assert observed["supervisor_state"] == "FATAL"
+            assert observed["ready"] is False
+            assert {key: client.get(key) for key in before} == before
+            assert client.get("wolf15:orchestrator:owner") is None
+            generation = int(client.get("wolf15:orchestrator:fence_generation"))
+            assert generation > previous_generation
+            previous_generation = generation
+            receipt["attempts"].append(
+                {
+                    **observed,
+                    "generation_after_exit": generation,
+                    "state_and_heartbeat_bytes_preserved": True,
+                    "lease_released": True,
+                }
+            )
+        receipt.update(
+            {
+                "verdict": "PASS_LOCAL_REAL_REDIS_REJECTED_STARTUP",
+                "redis": meta,
+                "production_or_broker_calls": "NOT_EXECUTED",
+                "source_sha256": {
+                    path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+                    for path in (
+                        "services/orchestrator/state_manager.py",
+                        "services/orchestrator/ownership.py",
+                        "tests/integration/test_orchestrator_process_recovery.py",
+                    )
+                },
+            }
+        )
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        receipt["all_children_stopped"] = process is None or process.poll() is not None
+        _write_json(root / "receipt.json", receipt)
+
+
+def _rejected_start_worker(role: str, root: Path, port: int) -> None:
+    sys.path.insert(0, str(ROOT))
+    from services.orchestrator.state_manager import StateHydrationError, StateManager
+
+    client = redis.Redis(host="127.0.0.1", port=port, decode_responses=True, socket_timeout=2)
+    manager = StateManager(redis_client=client)  # type: ignore[arg-type]
+    try:
+        manager.run_forever()
+    except StateHydrationError:
+        _write_json(
+            root / f"{role}.json",
+            {
+                "pid": os.getpid(),
+                "error_type": "StateHydrationError",
+                "supervisor_state": manager._supervisor.state,
+                "ready": manager._supervisor.is_ready(),
+            },  # noqa: SLF001
+        )
+    else:
+        raise AssertionError("legacy/malformed startup unexpectedly accepted")
+    finally:
+        client.close()
+
+
 if __name__ == "__main__":
-    assert sys.argv[1] == "--worker"
-    _worker(sys.argv[2], sys.argv[3], Path(sys.argv[4]), int(sys.argv[5]))
+    if sys.argv[1] == "--rejected-start":
+        _rejected_start_worker(sys.argv[2], Path(sys.argv[3]), int(sys.argv[4]))
+    else:
+        assert sys.argv[1] == "--worker"
+        _worker(sys.argv[2], sys.argv[3], Path(sys.argv[4]), int(sys.argv[5]))
