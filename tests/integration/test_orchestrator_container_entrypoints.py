@@ -186,7 +186,8 @@ def _container_effective_environment(container: str) -> dict[str, str]:
 
 
 def _container_processes(container: str) -> str:
-    result = _run("docker", "top", container, "-eo", "args", timeout=20)
+    # Docker maps host processes into the container using the PID column.
+    result = _run("docker", "top", container, "-eo", "pid,args", timeout=20)
     if result.returncode == 0:
         return result.stdout
     pytest.fail(f"cannot inspect process table for {container}: {result.stderr}")
