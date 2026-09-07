@@ -160,16 +160,29 @@ def _wait_http(port: int, path: str, *, timeout: float = 90.0) -> None:
     pytest.fail(f"endpoint {url} did not become ready: {last}")
 
 
-def _container_environment(container: dict[str, Any]) -> dict[str, str]:
-    values = container.get("Config", {}).get("Env", [])
-    assert isinstance(values, list)
-    result: dict[str, str] = {}
-    for value in values:
-        assert isinstance(value, str)
-        key, separator, item = value.partition("=")
-        if separator:
-            result[key] = item
-    return result
+def _container_effective_environment(container: str) -> dict[str, str]:
+    # Config.Env describes container creation. The entrypoint exports its role
+    # before exec, so inspect the primary process rather than a new exec env.
+    # Emit only these non-secret acceptance fields; never dump /proc environ.
+    allowed = ("WOLF15_SERVICE_ROLE", *_FALSE_CONTROLS)
+    code = (
+        "import json\n"
+        f"allowed = {allowed!r}\n"
+        "result = {}\n"
+        "with open('/proc/1/environ', 'rb') as stream:\n"
+        "    raw = stream.read(1048577)\n"
+        "assert len(raw) <= 1048576\n"
+        "for field in raw.split(b'\\0'):\n"
+        "    key, separator, value = field.partition(b'=')\n"
+        "    if key in [name.encode() for name in allowed]:\n"
+        "        assert separator and key.decode() not in result\n"
+        "        result[key.decode()] = value.decode()\n"
+        "print(json.dumps(result))\n"
+    )
+    values = json.loads(_run("docker", "exec", container, "python", "-c", code, timeout=10).stdout)
+    assert isinstance(values, dict) and set(values) <= set(allowed)
+    assert all(isinstance(value, str) for value in values.values())
+    return values
 
 
 def _container_processes(container: str) -> str:
@@ -431,7 +444,9 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
         assert "gunicorn" in api_pid
         assert "app:app" in api_pid
         assert "services.orchestrator.state_manager" not in api_pid
-        assert _container_environment(api)["WOLF15_SERVICE_ROLE"] == "api"
+        api_environment = _container_effective_environment(api_name)
+        assert api_environment["WOLF15_SERVICE_ROLE"] == "api"
+        assert all(api_environment[key] == "false" for key in _FALSE_CONTROLS)
         api_logs = _run("docker", "logs", api_name, check=False).stdout
         assert "acquired ownership" not in api_logs
         assert "StateManager" not in api_logs
@@ -471,7 +486,9 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
         orchestrator_pid = _container_processes(orchestrator_name)
         assert "python -m services.orchestrator.state_manager" in orchestrator_pid
         assert "gunicorn" not in orchestrator_pid
-        assert _container_environment(orchestrator)["WOLF15_SERVICE_ROLE"] == "orchestrator"
+        orchestrator_environment = _container_effective_environment(orchestrator_name)
+        assert orchestrator_environment["WOLF15_SERVICE_ROLE"] == "orchestrator"
+        assert all(orchestrator_environment[key] == "false" for key in _FALSE_CONTROLS)
 
         # SIGINT lets Python unwind StateManager.run_forever's finally block.
         _run("docker", "kill", "--signal=INT", orchestrator_name, timeout=20)
@@ -487,6 +504,9 @@ def test_exact_tree_api_and_orchestrator_effective_entrypoints() -> None:
                 "orchestrator_healthz": "PASS",
                 "orchestrator_readyz": "PASS",
                 "orchestrator_shutdown": "PASS",
+                "effective_environment_source": "/proc/1/environ",
+                "api_effective_environment": api_environment,
+                "orchestrator_effective_environment": orchestrator_environment,
                 "verdict": "PASS_EXACT_IMAGE_EFFECTIVE_ENTRYPOINT_SMOKE",
             }
         )

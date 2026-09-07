@@ -32,6 +32,13 @@ PostgreSQL, API and orchestrator have memory limits128/256/512/512MiB, no extra
 swap and one CPU each. The filesystem helper is limited to128MiB. Exceeding a
 limit is a failure, not authority to increase it automatically.
 
+Service roles exported by the entrypoint are verified in `/proc/1/environ` of
+the primary process. Docker's creation-time `Config.Env` and the environment of
+a newly started `docker exec` process do not establish those exports. The probe
+outputs only the service role and seven non-secret execution-control fields;
+all seven must remain literal `false` in both primary processes. The receipt
+retains these measured fields without dumping the complete process environment.
+
 This is an image/runtime acceptance path. It does not prove normal-Dockerfile
 dependency resolution, production R01-R08, Redis server-loss recovery, legacy
 state migration, installed EA/EX5 compatibility, or broker effects. No execution
