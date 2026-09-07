@@ -142,6 +142,18 @@ def test_actual_file_inventory_detects_missing_stale_and_modified_paths(tmp_path
     assert "entry.py" not in missing
 
 
+def test_inventory_rejects_absent_application_root(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        filesystem_inventory(str(tmp_path / "absent"))
+
+
+def test_inventory_rejects_file_in_place_of_application_root(tmp_path):
+    root = tmp_path / "app"
+    root.write_bytes(b"not a directory")
+    with pytest.raises(ValueError, match="real non-symlink directory"):
+        filesystem_inventory(str(root))
+
+
 @pytest.mark.parametrize("wrong_field", ["uid", "all_application_owners_1000", "actual_projection_sha256", "source"])
 def test_runtime_probe_is_independent_of_labels(binding, wrong_field):
     evidence, _ = binding

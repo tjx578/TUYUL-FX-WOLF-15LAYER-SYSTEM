@@ -91,6 +91,9 @@ def validate_image_binding(image: dict[str, Any], evidence: dict[str, Any]) -> N
 
 def filesystem_inventory(root: str) -> tuple[dict[str, Any], bool]:
     """Do not follow symlinks; hash every file, directory and link under root."""
+    root_info = os.lstat(root)
+    if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+        raise ValueError("application root must be a real non-symlink directory")
     result = {}
     owners_match = True
     for folder, directories, files in os.walk(root, followlinks=False):
