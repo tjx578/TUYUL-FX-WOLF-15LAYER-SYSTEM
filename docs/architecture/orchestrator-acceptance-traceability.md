@@ -17,7 +17,7 @@ not inherited proof for a changed tree.
 | T06 | Dedicated manifest/script/module resolve exactly | manifest and static entrypoint checks | EXISTING EVIDENCE; T14 smoke required |
 | T07 | At most one effective writer | Redis lease/fence unit and integration tests | EXISTING EVIDENCE; rerun required |
 | T08 | Stale owner cannot mutate guarded state | fencing tests and disposable Redis probe | EXISTING EVIDENCE; rerun required |
-| T09 | Committed state/watermark hydrate across process restart | recovery contract plus process-A/process-B integration tests | IMPLEMENTATION/TEST GATE |
+| T09 | Committed state/watermark hydrate across process restart | recovery contract plus `tests/integration/test_orchestrator_process_recovery.py` using distinct OS processes and disposable Redis | IMPLEMENTATION/TEST GATE |
 | T10 | Health distinguishes liveness, standby, owner, and fatal/stall | supervisor/health tests | EXISTING EVIDENCE; rerun required |
 | T11 | Shutdown settles/cancels inflight work and restart is idempotent | graceful-shutdown and recovery integration tests | IMPLEMENTATION/TEST GATE |
 | T12 | Supervisor transitions and stagnation are observable | `test_orchestrator_supervisor.py`, state-manager tests | EXISTING EVIDENCE; rerun required |
@@ -27,6 +27,15 @@ not inherited proof for a changed tree.
 
 No `PARTIAL` or `UNVERIFIED` label is hidden: open local gates are explicitly
 T09, T11, and T14. All source gates must be rerun against the final tree.
+
+The opt-in process-recovery test exercises committed state after graceful
+shutdown and abrupt process exit before an in-memory change is committed. It
+uses the real lifecycle, Redis lease/fence scripts, and hydration code. Receipts
+include distinct worker PIDs, generations, revisions, and cleanup. Its local
+Redis remains running across the two processes; it does not establish Redis
+server-loss recovery, production durability, or downstream execution replay.
+Historical same-process unit tests remain supporting logic coverage and must
+not be described as separate-process observations.
 
 ## Runtime acceptance (R01-R08)
 
