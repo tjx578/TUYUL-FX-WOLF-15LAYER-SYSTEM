@@ -239,6 +239,7 @@ class StateManager:
         self._last_compliance_check = 0.0
         self._last_heartbeat = 0.0
         self._state_revision: int = 0
+        self._legacy_import: dict[str, Any] | None = None
         # Recovery progress intentionally remains process-local.  It is a
         # debounce counter, not compliance authority; carrying partial
         # progress across a restart could clear SAFE/KILL_SWITCH too early.
@@ -327,6 +328,8 @@ class StateManager:
             raise
 
     def publish_state(self, event: str, details: dict[str, Any] | None = None) -> None:
+        from services.orchestrator.legacy_import_contract import validate_provenance
+
         identity = self._ownership.identity
         if identity is None:
             raise OwnershipLostError("state publication requires an active ownership lease")
@@ -348,6 +351,10 @@ class StateManager:
         }
         if details:
             payload["details"] = details
+        if self._legacy_import is not None:
+            payload["legacy_import"] = validate_provenance(
+                self._legacy_import, owner=identity.owner_id, generation=identity.generation
+            )
 
         encoded = json.dumps(payload)
         heartbeat_payload = json.dumps(
@@ -377,6 +384,8 @@ class StateManager:
         lease currently held by this process.  Missing state is a valid first
         start; malformed, uncommitted, or mismatched state fails closed.
         """
+        from services.orchestrator.legacy_import_contract import ImportHoldError, strict_json, validate_provenance
+
         identity = self._ownership.identity
         if identity is None:
             raise OwnershipLostError("state hydration requires an active ownership lease")
@@ -385,6 +394,7 @@ class StateManager:
         if raw is None:
             self._state_revision = 0
             self._recovery_count = 0
+            self._legacy_import = None
             return False
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8", errors="strict")
@@ -392,7 +402,7 @@ class StateManager:
             raise StateHydrationError("persisted orchestrator state is not text")
 
         try:
-            payload = json.loads(raw)
+            payload = strict_json(raw)
         except (TypeError, ValueError) as exc:
             raise StateHydrationError("persisted orchestrator state is not valid JSON") from exc
         if not isinstance(payload, dict):
@@ -439,6 +449,15 @@ class StateManager:
         except ValueError as exc:
             raise StateHydrationError("persisted orchestrator updated_at is invalid") from exc
 
+        provenance = None
+        if "legacy_import" in payload:
+            try:
+                provenance = validate_provenance(
+                    payload["legacy_import"], owner=prior_owner_id, generation=prior_generation
+                )
+            except ImportHoldError as exc:
+                raise StateHydrationError("persisted legacy import provenance is invalid") from exc
+
         self._state = OrchestratorState(
             mode=mode,
             reason=reason,
@@ -447,6 +466,7 @@ class StateManager:
         )
         self._state_revision = prior_revision
         self._recovery_count = 0
+        self._legacy_import = provenance
         return True
 
     def _refresh_snapshots_from_redis(self) -> None:

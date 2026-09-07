@@ -67,6 +67,48 @@ redis.call('SET', KEYS[2], ARGV[2])
 return 1
 """
 
+_FENCED_LEGACY_IMPORT_SCRIPT = """
+-- wolf15:orchestrator:fenced-legacy-import:v1
+-- Every check precedes the sole mutation. State and provenance are one value.
+for i = 1, 4 do
+  for j = i + 1, 4 do
+    if KEYS[i] == KEYS[j] then return -3 end
+  end
+  if redis.call('TYPE', KEYS[i]).ok ~= 'string' then return -2 end
+end
+if redis.call('GET', KEYS[1]) ~= ARGV[1] or redis.call('PTTL', KEYS[1]) <= 0 then
+  return -1
+end
+local clock = redis.call('TIME')
+local now_ms = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
+if now_ms >= tonumber(ARGV[8]) then return -3 end
+for i = 2, 4 do
+  if redis.call('PTTL', KEYS[i]) ~= -1 or redis.call('GET', KEYS[i]) ~= ARGV[i] then
+    return -2
+  end
+end
+local ok_old, old = pcall(cjson.decode, ARGV[2])
+local ok_kill, kill = pcall(cjson.decode, ARGV[3])
+local ok_new, new = pcall(cjson.decode, ARGV[5])
+if not ok_old or not ok_kill or not ok_new then return -3 end
+if type(old) ~= 'table' or type(kill) ~= 'table' or type(new) ~= 'table' then return -3 end
+if old.schema ~= nil or old.mode ~= 'KILL_SWITCH' or kill.active ~= true then return -3 end
+if new.schema ~= 'wolf15.orchestrator.state/v2' or new.commit_marker ~= 'COMMITTED' then return -3 end
+if new.state_revision ~= 1 or new.event ~= 'IMPORT_COMMITTED' then return -3 end
+if new.owner_id ~= ARGV[6] or new.fence_generation ~= tonumber(ARGV[7]) then return -3 end
+if new.mode ~= old.mode or new.reason ~= old.reason or new.compliance_code ~= old.compliance_code
+  or new.updated_at ~= old.updated_at or new.source ~= old.source or new.channel ~= old.channel then return -3 end
+local p = new.legacy_import
+if type(p) ~= 'table' or p.schema ~= 'wolf15.orchestrator.legacy-import/v1'
+  or p.imported_owner_id ~= new.owner_id or p.imported_fence_generation ~= new.fence_generation then return -3 end
+redis.call('SET', KEYS[2], ARGV[5])
+return 1
+"""
+
+
+class LegacyImportConflictError(RuntimeError):
+    """The compare/import operation rejected its preconditions without writing."""
+
 
 @dataclass(frozen=True, slots=True)
 class LeaseIdentity:
@@ -199,6 +241,53 @@ class RedisFencedOwnership:
         if int(written or 0) != 1:
             self._identity = None
             raise OwnershipLostError("stale orchestrator owner rejected during value write")
+
+    def fenced_legacy_import(
+        self,
+        *,
+        state_key: str,
+        kill_key: str,
+        heartbeat_key: str,
+        old_state: bytes,
+        old_kill: bytes,
+        old_heartbeat: bytes,
+        new_state: bytes,
+        valid_until_epoch_ms: int,
+    ) -> None:
+        """One SET after lease, exact bytes and type/TTL validation; no publication.
+
+        The caller must validate the package and persist its protected raw archive
+        before acquiring ownership. A transport error has an ambiguous outcome.
+        """
+        from services.orchestrator.legacy_import_contract import ImportHoldError, validate_import_state
+
+        identity = self._require_identity()
+        validate_import_state(new_state, old_state=old_state, owner=identity.owner_id, generation=identity.generation)
+        if type(valid_until_epoch_ms) is not int or valid_until_epoch_ms < 1:
+            raise ImportHoldError("INVALID_APPLY_DEADLINE")
+        result = int(
+            self._redis.eval(
+                _FENCED_LEGACY_IMPORT_SCRIPT,
+                4,
+                self._lease_key,
+                state_key,
+                kill_key,
+                heartbeat_key,
+                identity.wire_value,
+                old_state,
+                old_kill,
+                old_heartbeat,
+                new_state,
+                identity.owner_id,
+                identity.generation,
+                valid_until_epoch_ms,
+            )
+        )
+        if result == -1:
+            self._identity = None
+            raise OwnershipLostError("legacy import lease no longer held")
+        if result != 1:
+            raise LegacyImportConflictError("LEGACY_IMPORT_CAS_REJECTED")
 
     def _require_identity(self) -> LeaseIdentity:
         if self._identity is None:
