@@ -8,7 +8,6 @@ export default function Icon() {
         (
             <div
                 style={{
-                    fontSize: 24,
                     background: "#050a14",
                     width: "100%",
                     height: "100%",
@@ -16,9 +15,12 @@ export default function Icon() {
                     alignItems: "center",
                     justifyContent: "center",
                     borderRadius: 6,
+                    gap: 2,
                 }}
             >
-                🐺
+                <div style={{ width: 5, height: 18, background: "#c8ff1a", transform: "skew(12deg)" }} />
+                <div style={{ width: 5, height: 12, background: "#c8ff1a", transform: "skew(-12deg)" }} />
+                <div style={{ width: 5, height: 18, background: "#c8ff1a", transform: "skew(12deg)" }} />
             </div>
         ),
         { ...size },

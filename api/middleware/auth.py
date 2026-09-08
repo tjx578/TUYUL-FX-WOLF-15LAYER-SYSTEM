@@ -274,7 +274,7 @@ def verify_token(
         if scheme.lower() == "bearer" and token:
             payload = decode_token(token)
             if payload is not None:
-                return payload
+                return {**payload, "auth_method": "jwt"}
             if validate_api_key(token):
                 return {"sub": "api_key_user", "auth_method": "api_key"}
 
@@ -283,7 +283,7 @@ def verify_token(
     if cookie_token:
         payload = decode_token(cookie_token)
         if payload is not None:
-            return payload
+            return {**payload, "auth_method": "cookie"}
 
     raise HTTPException(status_code=401, detail="Missing or invalid credentials")
 

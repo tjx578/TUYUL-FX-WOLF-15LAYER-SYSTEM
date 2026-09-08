@@ -6,6 +6,7 @@ Authentication is owner-only: the Next.js middleware injects a server-side
 API key or session cookie for every proxied request.
 
 Endpoints:
+  POST /auth/owner-login   — bounded human-password exchange for a viewer JWT.
   POST /auth/owner-session — canonical owner auth (header-based, no body key).
   GET  /auth/session       — validate JWT (header or cookie), return SessionUser.
   POST /auth/refresh       — re-issue JWT from still-valid token, update cookie.
@@ -26,8 +27,16 @@ Auth model contract (see docs/architecture/dashboard-control-surface.md):
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import os
+import threading
+import time
+from collections import deque
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from loguru import logger
@@ -44,6 +53,40 @@ from .middleware.auth import (
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+OWNER_SESSION_SECONDS = 15 * 60
+
+
+class _OwnerLoginGate:
+    """Bound hashing per worker, including direct core requests.
+
+    Five admissions per rolling minute, one active hash, no hash queue.
+    Deliberately not keyed by attacker-controlled usernames/proxy headers.
+    Replicas/workers have separate budgets; restart resets this local budget.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._attempts: deque[float] = deque()
+        self._active = False
+
+    def acquire(self) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            while self._attempts and self._attempts[0] <= now - 60:
+                self._attempts.popleft()
+            if self._active or len(self._attempts) >= 5:
+                return False
+            self._attempts.append(now)
+            self._active = True
+            return True
+
+    def release(self) -> None:
+        with self._lock:
+            self._active = False
+
+
+_owner_login_gate = _OwnerLoginGate()
+
 
 # ── Response model ────────────────────────────────────────────────────────────
 
@@ -55,10 +98,25 @@ class SessionUserResponse(BaseModel):
     email: str
     role: str
     name: str | None = None
+    scopes: list[str] = Field(default_factory=list)
+    auth_method: str
 
 
 class RefreshResponse(SessionUserResponse):
     """Refresh response includes the new JWT alongside user info."""
+
+    token: str
+
+
+class OwnerLoginRequest(BaseModel):
+    """Human owner credentials; never accepts a machine API key."""
+
+    username: str = Field(..., min_length=1, max_length=254)
+    password: str = Field(..., min_length=1, max_length=1024)
+
+
+class OwnerLoginResponse(BaseModel):
+    """Server-to-server response consumed by the Next.js session boundary."""
 
     token: str
 
@@ -74,15 +132,102 @@ def _session_from_payload(payload: dict[str, Any]) -> SessionUserResponse:
     ``name`` are pulled from extra claims embedded at token-creation time.
     Falls back to sensible defaults so the endpoint never 500s for a valid JWT.
     """
+    raw_scopes = payload.get("scopes", payload.get("scope", []))
+    if isinstance(raw_scopes, str):
+        scopes = raw_scopes.split()
+    elif isinstance(raw_scopes, (list, tuple, set)):
+        scopes = [str(scope) for scope in raw_scopes if str(scope)]
+    else:
+        scopes = []
+
     return SessionUserResponse(
         user_id=str(payload.get("sub", "unknown")),
         email=str(payload.get("email", payload.get("sub", "unknown"))),
-        role=str(payload.get("role", "viewer")),
+        role=str(payload.get("role", "unknown")),
         name=payload.get("name"),
+        scopes=sorted(set(scopes)),
+        auth_method=str(payload.get("auth_method", "unknown")),
     )
 
 
+def _verify_owner_password(password: str, encoded: str) -> bool:
+    """Verify ``pbkdf2_sha256$iterations$salt_b64$digest_b64`` fail-closed."""
+    try:
+        algorithm, raw_iterations, salt_b64, digest_b64 = encoded.split("$", 3)
+        iterations = int(raw_iterations)
+        if algorithm != "pbkdf2_sha256" or not 210_000 <= iterations <= 2_000_000:
+            return False
+        if len(encoded) > 256:
+            return False
+        salt = base64.urlsafe_b64decode(salt_b64 + "=" * (-len(salt_b64) % 4))
+        expected = base64.urlsafe_b64decode(digest_b64 + "=" * (-len(digest_b64) % 4))
+        if len(salt) < 16 or len(expected) != 32:
+            return False
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(actual, expected)
+    except (TypeError, ValueError, UnicodeError):
+        return False
+
+
+def _owner_credentials_valid(username: str, password: str) -> bool:
+    configured_username = os.getenv("DASHBOARD_OWNER_USERNAME", "").strip()
+    password_hash = os.getenv("DASHBOARD_OWNER_PASSWORD_HASH", "").strip()
+    if not configured_username or not password_hash:
+        return False
+    try:
+        username_ok = hmac.compare_digest(username.strip().encode(), configured_username.encode())
+    except UnicodeError:
+        return False
+    password_ok = _verify_owner_password(password, password_hash)
+    return username_ok and password_ok
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/owner-login", response_model=OwnerLoginResponse)
+async def owner_login(body: OwnerLoginRequest, response: Response) -> OwnerLoginResponse:
+    """Exchange owner credentials for a short-lived read-only viewer JWT."""
+    gate = _owner_login_gate
+    if not gate.acquire():
+        raise HTTPException(
+            status_code=429,
+            detail="Try again later",
+            headers={"Retry-After": "60", "Cache-Control": "no-store"},
+        )
+
+    def verify() -> bool:
+        try:
+            return _owner_credentials_valid(body.username, body.password)
+        finally:
+            # Release in the worker, not when a disconnected caller cancels.
+            gate.release()
+
+    with anyio.CancelScope(shield=True):
+        valid = await anyio.to_thread.run_sync(verify, abandon_on_cancel=False)
+    if not valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    now = int(time.time())
+    token = create_token(
+        sub="dashboard-owner-viewer",
+        extra={
+            "email": body.username.strip(),
+            "name": "WOLF15 Owner",
+            "role": "viewer",
+            "scopes": ["read:dashboard"],
+            "auth_method": "owner_password",
+            "iat": now,
+            "exp": now + OWNER_SESSION_SECONDS,
+        },
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return OwnerLoginResponse(token=token)
+
 
 # ── Owner session (canonical) ─────────────────────────────────────────────────
 
@@ -149,7 +294,7 @@ async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
     if payload is not None:
         token = create_token(
             sub=str(payload.get("sub", "dashboard")),
-            extra={k: payload[k] for k in ("email", "role", "name") if k in payload},
+            extra={k: payload[k] for k in ("email", "role", "name", "scope", "scopes") if k in payload},
         )
         set_auth_cookie(response, token)
         user = _session_from_payload(payload)
@@ -204,7 +349,7 @@ async def refresh_session(
     Issue a fresh JWT from a still-valid token, update the HttpOnly cookie.
     """
     extra: dict[str, Any] = {}
-    for key in ("email", "role", "name"):
+    for key in ("email", "role", "name", "scope", "scopes"):
         if key in payload:
             extra[key] = payload[key]
 

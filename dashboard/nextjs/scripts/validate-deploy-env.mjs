@@ -1,118 +1,81 @@
 #!/usr/bin/env node
 
-/**
- * validate-deploy-env.mjs
- * ────────────────────────
- * Pre-deploy check for required environment variables.
- *
- * Run before `next build` in CI/CD or Vercel build command to catch
- * misconfiguration early instead of silently deploying a broken dashboard.
- *
- * Usage:
- *   node scripts/validate-deploy-env.mjs          # exits 1 on missing vars
- *   node scripts/validate-deploy-env.mjs --warn   # prints warnings only (exit 0)
- *
- * Required env vars:
- *   NEXT_PUBLIC_WS_BASE_URL    — wss:// origin for WebSocket (Railway backend)
- *
- * Recommended env vars:
- *   NEXT_PUBLIC_API_BASE_URL   — REST API base (falls back to rewrite if unset)
- *   INTERNAL_API_URL           — Server-side proxy target (for /api/proxy runtime)
- */
-
 const WARN_ONLY = process.argv.includes("--warn");
-
 const errors = [];
 const warnings = [];
 
-// ── NEXT_PUBLIC_WS_BASE_URL (required) ────────────────────────
+function value(name) {
+  return (process.env[name] || "").trim();
+}
 
-const wsUrl = (process.env.NEXT_PUBLIC_WS_BASE_URL || "").trim();
+function requireOrigin(name, purpose) {
+  const raw = value(name);
+  if (!raw) {
+    errors.push(name + " is required for " + purpose + ".");
+    return;
+  }
 
-if (!wsUrl) {
-  errors.push(
-    "NEXT_PUBLIC_WS_BASE_URL is not set. WebSocket connections will fail.\n" +
-    "  Set it to the Railway backend origin, e.g. wss://wolf15-api.up.railway.app"
+  try {
+    const parsed = new URL(raw);
+    const cleanPath = !parsed.pathname || parsed.pathname === "/";
+    if (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      parsed.username ||
+      parsed.password ||
+      !cleanPath ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      errors.push(name + " must be a credential-free HTTP(S) origin with no path.");
+    }
+  } catch {
+    errors.push(name + " must be a valid HTTP(S) origin.");
+  }
+}
+
+const mode = value("DASHBOARD_MODE").toLowerCase();
+if (mode !== "viewer") {
+  errors.push('DASHBOARD_MODE must be exactly "viewer".');
+}
+
+requireOrigin("DASHBOARD_CANONICAL_ORIGIN", "owner-login browser origin");
+try {
+  const raw = process.env.DASHBOARD_CANONICAL_ORIGIN || "";
+  const parsed = new URL(raw);
+  if (raw !== raw.trim() || raw.length > 512 || /[\\\s,%?#]/.test(raw) ||
+      !/^https?:\/\/[^/]+\/?$/i.test(raw) || parsed.hostname.includes("*") ||
+      ["0.0.0.0", "[::]"].includes(parsed.hostname) ||
+      (parsed.protocol === "http:" && !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname))) {
+    errors.push("DASHBOARD_CANONICAL_ORIGIN must be one HTTPS browser origin (HTTP is loopback-only), never a wildcard or bind address.");
+  }
+} catch { /* requireOrigin already records a missing or malformed URL. */ }
+requireOrigin("INTERNAL_API_URL", "server-side JWT validation");
+requireOrigin(
+  "INTERNAL_DASHBOARD_BFF_URL",
+  "the three read-only dashboard projections",
+);
+
+if (value("API_KEY") || value("DASHBOARD_API_KEY")) {
+  warnings.push(
+    "A machine API-key variable is present. The viewer service does not use it and it should be removed.",
   );
+}
+
+if (warnings.length) {
+  console.warn("\nDeploy env warnings:\n");
+  warnings.forEach((warning, index) => {
+    console.warn("  " + (index + 1) + ". " + warning + "\n");
+  });
+}
+
+if (errors.length) {
+  console.error("\nDeploy env errors:\n");
+  errors.forEach((error, index) => {
+    console.error("  " + (index + 1) + ". " + error + "\n");
+  });
+
+  if (!WARN_ONLY) process.exit(1);
+  console.warn("  --warn mode: continuing despite errors.\n");
 } else {
-  if (!wsUrl.startsWith("wss://") && !wsUrl.startsWith("ws://")) {
-    errors.push(
-      `NEXT_PUBLIC_WS_BASE_URL must start with wss:// or ws://, got: "${wsUrl}"`
-    );
-  }
-  if (wsUrl.includes("/ws/") || wsUrl.endsWith("/ws")) {
-    errors.push(
-      `NEXT_PUBLIC_WS_BASE_URL must be a bare origin (no path). Got: "${wsUrl}"\n` +
-      "  Remove the path suffix. The multiplexer appends /ws/live automatically."
-    );
-  }
-  if (wsUrl.includes(".vercel.app")) {
-    errors.push(
-      "NEXT_PUBLIC_WS_BASE_URL points to a Vercel domain. Vercel cannot upgrade WebSocket.\n" +
-      "  Use the Railway backend origin instead."
-    );
-  }
-}
-
-// ── NEXT_PUBLIC_API_BASE_URL (recommended) ────────────────────
-
-const apiUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
-
-if (!apiUrl) {
-  warnings.push(
-    "NEXT_PUBLIC_API_BASE_URL is not set. Build-time rewrites will point to localhost.\n" +
-    "  The runtime proxy (/api/proxy) will handle REST calls, but adds latency.\n" +
-    "  Set it to the Railway API origin, e.g. https://wolf15-api.up.railway.app"
-  );
-} else if (apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1")) {
-  warnings.push(
-    `NEXT_PUBLIC_API_BASE_URL points to localhost ("${apiUrl}").\n` +
-    "  This is fine for local dev but will break in production."
-  );
-}
-
-// ── INTERNAL_API_URL (recommended for server-side proxy) ──────
-
-const internalUrl = (process.env.INTERNAL_API_URL || "").trim();
-if (!internalUrl && !apiUrl) {
-  warnings.push(
-    "Neither INTERNAL_API_URL nor NEXT_PUBLIC_API_BASE_URL is set.\n" +
-    "  The runtime proxy (/api/proxy) needs at least one to reach the backend."
-  );
-}
-
-// ── DASHBOARD_MODE (required) ─────────────────────────────────
-
-const dashboardMode = (process.env.DASHBOARD_MODE || "").trim().toLowerCase();
-if (!dashboardMode) {
-  errors.push(
-    "DASHBOARD_MODE is not set. All page loads will crash at runtime.\n" +
-    '  Set DASHBOARD_MODE=owner in Vercel/Railway env vars.'
-  );
-} else if (dashboardMode !== "owner") {
-  errors.push(
-    `DASHBOARD_MODE="${dashboardMode}" is not supported.\n` +
-    '  The only supported value is "owner".'
-  );
-}
-
-// ── Output ────────────────────────────────────────────────────
-
-if (warnings.length > 0) {
-  console.warn("\n⚠  Deploy env warnings:\n");
-  warnings.forEach((w, i) => console.warn(`  ${i + 1}. ${w}\n`));
-}
-
-if (errors.length > 0) {
-  console.error("\n✗  Deploy env errors:\n");
-  errors.forEach((e, i) => console.error(`  ${i + 1}. ${e}\n`));
-
-  if (WARN_ONLY) {
-    console.warn("  (--warn mode: continuing despite errors)\n");
-  } else {
-    console.error("  Set the missing env vars and retry, or use --warn to skip.\n");
-    process.exit(1);
-  }
-} else if (warnings.length === 0) {
-  console.log("✓  All deploy env vars look good.\n");
+  console.log("Viewer deployment environment is valid.");
 }

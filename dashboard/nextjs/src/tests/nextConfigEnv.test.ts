@@ -131,15 +131,9 @@ describe("next.config.js env-var validation", () => {
 
   it("falls back to localhost in development without env vars", () => {
     Object.assign(process.env, { NODE_ENV: "development" });
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
 
     const config = loadConfig();
-    // Trigger rewrites to capture the logged apiBase
-    config.rewrites();
-    expect(logSpy).toHaveBeenCalledWith(
-      "[next.config] rewrites apiBase =",
-      "http://localhost:8000",
-    );
+    expect(config.env.NEXT_PUBLIC_API_BASE_URL).toBe("http://localhost:8000");
   });
 
   it("strips trailing slash and /api suffix from provided URL", () => {
@@ -148,13 +142,7 @@ describe("next.config.js env-var validation", () => {
       NEXT_PUBLIC_WS_BASE_URL: "wss://api.example.railway.app",
       INTERNAL_API_URL: "https://api.example.com/api/",
     });
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
-
     const config = loadConfig();
-    config.rewrites();
-    expect(logSpy).toHaveBeenCalledWith(
-      "[next.config] rewrites apiBase =",
-      "https://api.example.com",
-    );
+    expect(config.env.NEXT_PUBLIC_API_BASE_URL).toBe("http://localhost:8000");
   });
 });

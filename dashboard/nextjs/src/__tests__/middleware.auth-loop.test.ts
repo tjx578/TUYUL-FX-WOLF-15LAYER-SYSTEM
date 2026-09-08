@@ -1,56 +1,89 @@
 // @vitest-environment node
-import { describe, it, expect } from "vitest";
-import { NextRequest, NextResponse } from "next/server";
+import { describe, expect, it } from "vitest";
+import { NextRequest } from "next/server";
 import { middleware } from "../middleware";
 
-function makeRequest(
-    path: string,
-    opts: { cookie?: string; role?: string } = {},
+function request(
+  path: string,
+  options: { cookie?: string; authorization?: string } = {},
 ): NextRequest {
-    const url = new URL(path, "http://localhost:3000");
-    const req = new NextRequest(url);
-    if (opts.cookie) {
-        req.cookies.set("wolf15_session", opts.cookie);
-    }
-    if (opts.role) {
-        req.headers.set("x-user-role", opts.role);
-    }
-    return req;
+  const headers = new Headers();
+  if (options.authorization) {
+    headers.set("authorization", options.authorization);
+  }
+  const nextRequest = new NextRequest(
+    new URL(path, "https://dashboard.example"),
+    { headers },
+  );
+  if (options.cookie) {
+    nextRequest.cookies.set("wolf15_session", options.cookie);
+  }
+  return nextRequest;
 }
 
-describe("middleware auth-loop prevention", () => {
-    it("allows /login through without redirect (no cookie)", () => {
-        const res = middleware(makeRequest("/login"));
-        expect(res.headers.get("location")).toBeNull();
-    });
+describe("G4 viewer middleware boundary", () => {
+  it("admits only the exact owner-login POST without a session", () => {
+    const login = new NextRequest("https://dashboard.example/api/auth/owner-login", { method: "POST" });
+    expect(middleware(login).status).toBe(200);
+    expect(middleware(request("/api/auth/owner-login")).status).toBe(403);
+    for (const path of ["/api/auth/owner-login/extra", "/api/auth/owner-session", "/api/auth/refresh"]) {
+      expect(middleware(new NextRequest(`https://dashboard.example${path}`, { method: "POST" })).status).toBe(403);
+    }
+  });
 
-    it("allows /login subpath through without redirect", () => {
-        const res = middleware(makeRequest("/login/callback"));
-        expect(res.headers.get("location")).toBeNull();
-    });
+  it.each(["/login", "/healthz", "/api/set-session"])(
+    "keeps %s public",
+    (path) => {
+      expect(middleware(request(path)).status).toBe(200);
+    },
+  );
 
-    it("allows unauthenticated root through (owner mode — no redirect)", () => {
-        const res = middleware(makeRequest("/"));
-        // handlePageRoute returns NextResponse.next() unconditionally in owner mode.
-        // The server-side auth (serverAuth.ts) returns the owner user without a session.
-        expect(res.headers.get("location")).toBeNull();
-    });
+  it("redirects an unauthenticated root request to login", () => {
+    const response = middleware(request("/"));
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://dashboard.example/login",
+    );
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
 
-    it("allows authenticated request through", () => {
-        const res = middleware(makeRequest("/", { cookie: "valid-session" }));
-        expect(res.headers.get("location")).toBeNull();
-    });
+  it("allows only a JWT-shaped cookie to reach the protected root layout", () => {
+    expect(
+      middleware(request("/", { cookie: "header.payload.signature" })).status,
+    ).toBe(200);
+    expect(middleware(request("/", { cookie: "machine-api-key" })).status).toBe(
+      307,
+    );
+  });
 
-    it("allows /audit without admin role through (owner mode — no redirect)", () => {
-        // handlePageRoute is disabled in owner mode — all page routes pass through.
-        const res = middleware(makeRequest("/audit", { cookie: "valid-session" }));
-        expect(res.headers.get("location")).toBeNull();
+  it("denies every non-root page even with a viewer-shaped cookie", async () => {
+    const response = middleware(
+      request("/trades", { cookie: "header.payload.signature" }),
+    );
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "VIEWER_SURFACE_BOUNDARY",
     });
+  });
 
-    it("allows /audit with admin role", () => {
-        const res = middleware(
-            makeRequest("/audit", { cookie: "valid-session", role: "risk_admin" }),
-        );
-        expect(res.headers.get("location")).toBeNull();
+  it("requires a cookie before the proxy route", async () => {
+    const response = middleware(request("/api/proxy/dashboard/overview"));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "SESSION_REQUIRED",
     });
+  });
+
+  it("overwrites a caller authorization header with the HttpOnly cookie", () => {
+    const response = middleware(
+      request("/api/proxy/dashboard/overview", {
+        cookie: "header.payload.signature",
+        authorization: "Bearer caller-controlled",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-request-authorization")).toBe(
+      "Bearer header.payload.signature",
+    );
+  });
 });

@@ -30,11 +30,12 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
+    runtime_env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
     app = FastAPI(
         title="Wolf-15 Dashboard BFF",
         description="Non-authoritative backend-for-frontend for dashboard aggregation.",
         version="0.1.0",
-        docs_url="/docs" if os.getenv("APP_ENV") != "production" else None,
+        docs_url="/docs" if runtime_env != "production" else None,
         redoc_url=None,
         lifespan=_lifespan,
     )
