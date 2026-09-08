@@ -306,6 +306,7 @@ class TestPipelineConstitutionalBoundaries:
 class TestPipelinePerformance:
     """Verify build_l12_synthesis latency stays bounded."""
 
+    @pytest.mark.performance
     def test_build_synthesis_under_50ms(self):
         """Synthesis building must complete in under 50ms (no I/O path)."""
         layer_results = _realistic_layer_results()
@@ -314,6 +315,7 @@ class TestPipelinePerformance:
         elapsed_ms = (time.perf_counter() - start) * 1000
         assert elapsed_ms < 50, f"build_l12_synthesis took {elapsed_ms:.1f}ms (limit: 50ms)"
 
+    @pytest.mark.performance
     def test_build_synthesis_100_iterations_mean_under_10ms(self):
         """Mean over 100 calls must stay under 10ms (warm-path performance)."""
         layer_results = _realistic_layer_results()
