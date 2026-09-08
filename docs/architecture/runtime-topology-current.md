@@ -3,6 +3,9 @@
 **Status:** Canonical
 **Scope:** Current runtime service topology and operational boundaries.
 
+
+> Dashboard revision 2026-09-09: the selected frontend is `https://wolf15-dashboard-frontend-production.up.railway.app` (port `8080`), with server-only direct core calls to `https://wolf15-api-production.up.railway.app`. Public `/login` still shows `VIEWER JWT`; repository password-login/direct-core changes are not a production deployment. Production acceptance remains HOLD. Other service sections retain their earlier evidence dates and do not authorize engine, broker, database or provider mutations.
+
 ## Purpose
 
 This document describes the CURRENT runtime topology.
@@ -20,7 +23,7 @@ The system is composed of distinct runtime concerns:
 - trade service / allocation + execution workers
 - API surfaces
 - dashboard frontend
-- dashboard-bff / dashboard-realtime-gateway (optional, non-authoritative)
+- legacy standalone dashboard-bff (disconnected from selected frontend; non-authoritative)
 - Redis and persistence services
 
 ## Topology Rule
@@ -55,17 +58,11 @@ Responsible for allocation and execution worker runtime behavior.
 
 ### Dashboard
 
-Responsible for owner-operated control, diagnostics, and frontend transport orchestration.
-It is not constitutional verdict authority.
+The selected Railway frontend serves the owner as a read-only viewer on port 8080. Username/password login establishes a bounded HttpOnly session. Exactly three GET projections call core directly through server-only `INTERNAL_API_URL`; unrecognized paths and mutations are rejected. It does not control strategy, execution, risk, broker or engine state.
 
-### Dashboard-BFF (Optional)
+### Legacy standalone Dashboard-BFF
 
-When deployed, responsible for dashboard-specific data aggregation, caching,
-and pre-processing. It is surface-scoped to the dashboard frontend only.
-It is not constitutional verdict authority and must not produce risk decisions
-or execution commands. The Next.js proxy routes a defined allowlist of paths
-to the BFF upstream; all other paths resolve to core-api.
-See `docs/architecture/dashboard-hybrid-topology.md` for the full contract.
+The Python service code remains for legacy deployments. It is disconnected from the selected frontend and is neither a dependency nor a fallback for login or reads. No existing provider service was stopped or deleted by this repository revision. See [direct API topology](dashboard-hybrid-topology.md), whose historical filename is retained for link compatibility.
 
 ## Current Known Architecture Debt
 
@@ -75,10 +72,10 @@ The following debt is acknowledged until removed:
 
 The following items were previously listed as debt and have been resolved:
 
-- ~~owner dashboard auth model is not yet fully simplified~~ — resolved: `DASHBOARD_MODE=owner` with `validateDashboardMode()` guard.
-- ~~browser-facing auth fallback must be reduced to a single clean contract~~ — resolved: API key fallback removed from ws-ticket route.
+- Selected owner login uses `DASHBOARD_MODE=viewer`, a backend password verifier and a 15-minute viewer JWT; production acceptance remains HOLD.
+- Selected browser session has no machine-key fallback and no WebSocket ticket route.
 - ~~overlapping proxy paths must be removed~~ — resolved: single canonical proxy at `/api/proxy/[...path]`, dead `rewrites()` removed.
-- ~~dashboard status routing and infrastructure probe routing must be clearly separated~~ — resolved: `/api/status` (operator, session-authed) vs `/healthz` + `/readyz` (infra, no session).
+- Selected frontend status comes only through the three scoped projections; core `/healthz` and `/readyz` retain infrastructure semantics.
 
 ## Health and Status Semantics
 
@@ -90,7 +87,7 @@ The following items were previously listed as debt and have been resolved:
 
 ## Concurrency Model
 
-Dashboard state is protected by a write-preferring reader/writer lock (`RWLock`):
+Legacy Python dashboard state is protected by a write-preferring reader/writer lock (`RWLock`). This is separate from the selected Next.js viewer:
 
 - Multiple readers may access state concurrently.
 - When a writer is waiting, new readers queue behind it to prevent writer starvation.
@@ -104,7 +101,7 @@ Use this file for:
 - current deployment reasoning
 - current service boundary review
 - current auth/proxy/health cleanup decisions
-- optional hybrid dashboard topology decisions
+- selected Railway frontend direct-core topology decisions
 
 Use historical lineage files for:
 

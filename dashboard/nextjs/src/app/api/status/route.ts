@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 /**
  * Direct core status access is retired in the G4 viewer profile. The user-facing
- * page reads only the three exact BFF projections through /api/proxy.
+ * page reads only the three filtered core API projections through /api/proxy.
  */
 export async function GET(): Promise<NextResponse> {
   return NextResponse.json(

@@ -12,7 +12,6 @@ type ProbeState = {
   state: "loading" | "ok" | "error";
   status?: number;
   requestId?: string;
-  cache?: string;
   payload?: unknown;
 };
 
@@ -106,7 +105,6 @@ async function probe(endpoint: (typeof VIEWER_ENDPOINTS)[number]): Promise<Probe
         state: "error",
         status: response.status,
         requestId: response.headers.get("x-request-id") || undefined,
-        cache: response.headers.get("x-bff-cache") || undefined,
       };
     }
 
@@ -119,7 +117,6 @@ async function probe(endpoint: (typeof VIEWER_ENDPOINTS)[number]): Promise<Probe
         state: "error",
         status: response.status,
         requestId: response.headers.get("x-request-id") || undefined,
-        cache: response.headers.get("x-bff-cache") || undefined,
       };
     }
 
@@ -128,7 +125,6 @@ async function probe(endpoint: (typeof VIEWER_ENDPOINTS)[number]): Promise<Probe
       state: "ok",
       status: response.status,
       requestId: response.headers.get("x-request-id") || undefined,
-      cache: response.headers.get("x-bff-cache") || undefined,
       payload,
     };
   } catch {
@@ -162,7 +158,7 @@ function EvidencePanels({ probes }: { probes: ProbeState[] }) {
           </div>
           <div style={{ borderTop: "1px solid #20343c", padding: 14, color: "#91a7af", fontSize: 11 }}>
             <span>{item.path}</span>
-            <span style={{ marginLeft: 16 }}>CACHE {item.cache || "NOT_MEASURED"}</span>
+            <span style={{ marginLeft: 16 }}>SOURCE core-api</span>
             <span style={{ marginLeft: 16 }}>ID {item.requestId || "NOT_MEASURED"}</span>
           </div>
           {item.state === "ok" ? (
@@ -185,7 +181,7 @@ function buildSnapshot(probes: ProbeState[], receivedAt: string | null, refreshi
   const byPath = Object.fromEntries(probes.map((item) => [item.path, item]));
   const overviewProbe = byPath["dashboard/overview"];
   const feedProbe = byPath["dashboard/feed-status"];
-  const aggregatedProbe = byPath["bff/aggregated-status"];
+  const aggregatedProbe = byPath["dashboard/aggregated-status"];
 
   const overviewPayload = asRecord(overviewProbe?.payload);
   const feedPayload = asRecord(feedProbe?.payload);

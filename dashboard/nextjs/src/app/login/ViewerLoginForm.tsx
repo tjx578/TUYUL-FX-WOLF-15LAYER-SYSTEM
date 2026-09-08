@@ -3,39 +3,43 @@
 import { FormEvent, useState } from "react";
 
 export default function ViewerLoginForm() {
-  const [token, setToken] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token.trim() || submitting) return;
+    if (!username.trim() || !password || submitting) return;
 
     setSubmitting(true);
     setError("");
 
     try {
-      const response = await fetch("/api/set-session", {
+      const response = await fetch("/api/auth/owner-login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: token.trim() }),
+        body: JSON.stringify({ username: username.trim(), password }),
         cache: "no-store",
       });
 
       if (!response.ok) {
         setError(
-          response.status === 403
-            ? "Token is valid but is not authorized for the viewer dashboard."
-            : "The viewer session could not be validated.",
+          response.status === 401
+            ? "Username or password is incorrect."
+            : response.status === 429
+              ? "Too many login attempts. Wait one minute and try again."
+            : "The viewer session could not be created.",
         );
         return;
       }
 
-      setToken("");
+      setPassword("");
       window.location.assign("/");
     } catch {
       setError("The authentication service is unavailable.");
     } finally {
+      setPassword("");
       setSubmitting(false);
     }
   }
@@ -50,7 +54,7 @@ export default function ViewerLoginForm() {
       }}
     >
       <label
-        htmlFor="viewer-token"
+        htmlFor="owner-username"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -60,16 +64,17 @@ export default function ViewerLoginForm() {
           letterSpacing: "0.04em",
         }}
       >
-        VIEWER JWT
+        OWNER USERNAME
         <input
-          id="viewer-token"
-          name="viewer-token"
-          type="password"
-          autoComplete="off"
+          id="owner-username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          maxLength={254}
           spellCheck={false}
-          value={token}
-          onChange={(event) => setToken(event.target.value)}
-          placeholder="Paste the temporary viewer token locally"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          placeholder="Owner account"
           required
           style={{
             width: "100%",
@@ -80,6 +85,41 @@ export default function ViewerLoginForm() {
             color: "#f8fafc",
             padding: "13px 14px",
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontSize: 13,
+            outline: "none",
+          }}
+        />
+      </label>
+
+      <label
+        htmlFor="owner-password"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          color: "#cbd5e1",
+          fontSize: 12,
+          letterSpacing: "0.04em",
+        }}
+      >
+        PASSWORD
+        <input
+          id="owner-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          maxLength={1024}
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            border: "1px solid #334155",
+            borderRadius: 10,
+            background: "#0f172a",
+            color: "#f8fafc",
+            padding: "13px 14px",
             fontSize: 13,
             outline: "none",
           }}
@@ -104,13 +144,13 @@ export default function ViewerLoginForm() {
 
       <button
         type="submit"
-        disabled={submitting || !token.trim()}
+        disabled={submitting || !username.trim() || !password}
         style={{
           border: 0,
           borderRadius: 10,
-          background: submitting || !token.trim() ? "#334155" : "#a3e635",
-          color: submitting || !token.trim() ? "#94a3b8" : "#111827",
-          cursor: submitting || !token.trim() ? "not-allowed" : "pointer",
+          background: submitting || !username.trim() || !password ? "#334155" : "#a3e635",
+          color: submitting || !username.trim() || !password ? "#94a3b8" : "#111827",
+          cursor: submitting || !username.trim() || !password ? "not-allowed" : "pointer",
           fontSize: 12,
           fontWeight: 800,
           letterSpacing: "0.08em",
@@ -128,9 +168,9 @@ export default function ViewerLoginForm() {
           lineHeight: 1.6,
         }}
       >
-        The token is submitted only to this same-origin service, validated by
-        the core auth authority, and stored as an HttpOnly SameSite cookie.
-        Never send a token through chat.
+        Credentials are sent only to this same-origin service. A short-lived
+        read-only session is stored in an HttpOnly SameSite cookie; the JWT is
+        never exposed to browser JavaScript.
       </p>
     </form>
   );

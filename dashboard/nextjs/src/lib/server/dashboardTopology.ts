@@ -1,42 +1,32 @@
-/**
- * Runtime upstream selection for the isolated G4 viewer surface.
- *
- * Only the three paths in VIEWER_PROXY_PATHS can resolve to the dashboard BFF.
- * Missing BFF configuration fails closed; it never falls back to core.
- */
-
 import { VIEWER_PROXY_PATHS } from "@/lib/viewerContract";
 
+/** The core origin is server-only. Missing or invalid configuration fails closed. */
 export function getCoreApiUrl(): string | null {
-  const url =
-    process.env.INTERNAL_API_URL ||
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    null;
-
-  if (url) return url.replace(/\/+$/, "");
-  return process.env.NODE_ENV === "production" ? null : "http://localhost:8000";
-}
-
-export const BFF_ALLOWLISTED_PATHS: readonly string[] = VIEWER_PROXY_PATHS;
-
-function getBffUrl(): string | null {
-  const url = process.env.INTERNAL_DASHBOARD_BFF_URL || null;
-  return url ? url.replace(/\/+$/, "") : null;
+  const raw = process.env.INTERNAL_API_URL;
+  if (!raw || raw !== raw.trim() || raw.length > 512 || /[\\\s,%?#]/.test(raw)) return null;
+  try {
+    const parsed = new URL(raw);
+    if (!/^https?:\/\/[^/]+\/?$/i.test(raw) || parsed.username || parsed.password ||
+        parsed.hostname.includes("*") || ["0.0.0.0", "[::]"].includes(parsed.hostname)) return null;
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+    if (parsed.protocol !== "https:" && (process.env.NODE_ENV === "production" || !loopback)) return null;
+    const canonical = process.env.DASHBOARD_CANONICAL_ORIGIN;
+    if (canonical && parsed.origin === new URL(canonical).origin) return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
 }
 
 export interface UpstreamResult {
   url: string;
-  surface: "core-api" | "bff";
+  surface: "core-api";
 }
 
 export function resolveDashboardUpstream(
   targetPath: string,
 ): UpstreamResult | null {
-  if (BFF_ALLOWLISTED_PATHS.includes(targetPath)) {
-    const bffUrl = getBffUrl();
-    return bffUrl ? { url: bffUrl, surface: "bff" } : null;
-  }
-
+  if (!VIEWER_PROXY_PATHS.includes(targetPath)) return null;
   const coreUrl = getCoreApiUrl();
   return coreUrl ? { url: coreUrl, surface: "core-api" } : null;
 }

@@ -1,148 +1,35 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRequire } from "module";
-import { fileURLToPath } from "url";
-import path from "path";
-
-/**
- * Regression tests for next.config.js env-var validation.
- *
- * The config must:
- *   - Fail fast on protected deployments when critical env vars are missing.
- *   - Warn (not throw) for non-protected production builds with missing API env.
- *   - Resolve the correct apiBase when env vars are provided.
- *   - Fall back to localhost in development when env vars are absent.
- */
-
+import { createRequire } from "node:module";
+import { afterEach, describe, expect, it, vi } from "vitest";
 const require = createRequire(import.meta.url);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const CONFIG_PATH = path.resolve(__dirname, "../../next.config.js");
-
-function loadConfig() {
-  // Clear the module cache so next.config.js is re-evaluated with fresh env.
-  delete require.cache[require.resolve(CONFIG_PATH)];
-  return require(CONFIG_PATH);
-}
-
-describe("next.config.js env-var validation", () => {
-  const originalEnv = { ...process.env };
-  const envKeysToClear = new Set([
-    "INTERNAL_API_URL",
-    "NEXT_PUBLIC_API_BASE_URL",
-    "NODE_ENV",
-    "VERCEL",
-    "VERCEL_ENV",
-    "VERCEL_GIT_COMMIT_REF",
-    "RAILWAY_ENVIRONMENT",
-    "RAILWAY_GIT_BRANCH",
-    "GITHUB_REF_NAME",
-    "CI_BRANCH",
-    "NEXT_CONFIG_FAIL_FAST",
-    "NEXT_CONFIG_PROTECTED_ENV",
-    "NEXT_PUBLIC_WS_BASE_URL",
-    "NEXT_OUTPUT_STANDALONE",
-  ]);
-
-  beforeEach(() => {
-    // Reset env to a clean baseline before each test.
-    process.env = Object.fromEntries(
-      Object.entries(process.env).filter(([key]) => !envKeysToClear.has(key)),
-    ) as NodeJS.ProcessEnv;
+const configPath = require.resolve("../../next.config.js");
+function config() { delete require.cache[configPath]; return require(configPath); }
+afterEach(() => vi.unstubAllEnvs());
+describe("Railway-only server configuration", () => {
+  it("requires the server API in production without a public fallback", () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("INTERNAL_API_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://public.invalid");
+    expect(config).toThrow("INTERNAL_API_URL is required");
   });
-
-  afterEach(() => {
-    // Restore original env.
-    process.env = { ...originalEnv };
-    vi.restoreAllMocks();
+  it.each(["http://api.invalid", "https://user:password@api.invalid", "https://api.invalid/path", "https://api.invalid?x=1", "https://api.invalid/#x"])("rejects unsafe production origin %s", (url) => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("INTERNAL_API_URL", url);
+    expect(config).toThrow();
   });
-
-  it("warns but does not throw in non-protected production when API env vars are missing", () => {
-    Object.assign(process.env, {
-      NODE_ENV: "production",
-      VERCEL_GIT_COMMIT_REF: "feature/test-preview",
-    });
-    const spy = vi.spyOn(console, "error").mockImplementation(() => { });
-
-    expect(() => loadConfig()).not.toThrow();
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("Missing INTERNAL_API_URL or NEXT_PUBLIC_API_BASE_URL"),
-    );
+  it("produces standalone output without exposing server origin or credentials", () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("INTERNAL_API_URL", "https://core-only.invalid");
+    vi.stubEnv("API_KEY", "synthetic-machine-value");
+    const result = config();
+    expect(result.output).toBe("standalone"); expect(result.env).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain("core-only.invalid");
+    expect(JSON.stringify(result)).not.toContain("synthetic-machine-value");
+    expect(result.typescript.ignoreBuildErrors).toBe(false);
   });
-
-  it("throws in protected production when API env vars are missing", () => {
-    Object.assign(process.env, {
-      NODE_ENV: "production",
-      VERCEL_GIT_COMMIT_REF: "main",
-    });
-
-    expect(() => loadConfig()).toThrow(
-      /Missing INTERNAL_API_URL or NEXT_PUBLIC_API_BASE_URL/,
-    );
-  });
-
-  it("throws in protected production when NEXT_PUBLIC_WS_BASE_URL is missing", () => {
-    Object.assign(process.env, {
-      NODE_ENV: "production",
-      VERCEL_GIT_COMMIT_REF: "main",
-      INTERNAL_API_URL: "https://wolf15-api-production.up.railway.app",
-    });
-
-    expect(() => loadConfig()).toThrow(/Missing NEXT_PUBLIC_WS_BASE_URL/);
-  });
-
-  it("throws when NEXT_PUBLIC_WS_BASE_URL points to Vercel domain", () => {
-    Object.assign(process.env, {
-      NODE_ENV: "production",
-      VERCEL_GIT_COMMIT_REF: "main",
-      INTERNAL_API_URL: "https://wolf15-api-production.up.railway.app",
-      NEXT_PUBLIC_WS_BASE_URL: "wss://project.vercel.app",
-    });
-
-    expect(() => loadConfig()).toThrow(/not Vercel domain/);
-  });
-
-  it("does not warn when INTERNAL_API_URL is set in production", () => {
-    Object.assign(process.env, {
-      NODE_ENV: "production",
-      NEXT_PUBLIC_WS_BASE_URL: "wss://api.example.railway.app",
-      INTERNAL_API_URL: "https://api.example.com",
-    });
-    const spy = vi.spyOn(console, "error").mockImplementation(() => { });
-
-    const config = loadConfig();
-    expect(spy).not.toHaveBeenCalled();
-    expect(config).toBeDefined();
-  });
-
-  it("does not warn when NEXT_PUBLIC_API_BASE_URL is set in production", () => {
-    Object.assign(process.env, {
-      NODE_ENV: "production",
-      NEXT_PUBLIC_WS_BASE_URL: "wss://api.example.railway.app",
-      NEXT_PUBLIC_API_BASE_URL: "https://api.example.com",
-    });
-    const spy = vi.spyOn(console, "error").mockImplementation(() => { });
-
-    const config = loadConfig();
-    expect(spy).not.toHaveBeenCalled();
-    expect(config).toBeDefined();
-  });
-
-  it("falls back to localhost in development without env vars", () => {
-    Object.assign(process.env, { NODE_ENV: "development" });
-
-    const config = loadConfig();
-    expect(config.env.NEXT_PUBLIC_API_BASE_URL).toBe("http://localhost:8000");
-  });
-
-  it("strips trailing slash and /api suffix from provided URL", () => {
-    Object.assign(process.env, {
-      NODE_ENV: "production",
-      NEXT_PUBLIC_WS_BASE_URL: "wss://api.example.railway.app",
-      INTERNAL_API_URL: "https://api.example.com/api/",
-    });
-    const config = loadConfig();
-    expect(config.env.NEXT_PUBLIC_API_BASE_URL).toBe("http://localhost:8000");
+  it("limits browser connections to same origin", async () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("INTERNAL_API_URL", "https://core.invalid");
+    const headers = (await config().headers())[0].headers;
+    const csp = headers.find((h: {key: string}) => h.key === "Content-Security-Policy").value;
+    expect(csp.split("; ")).toContain("connect-src 'self'");
+    expect(csp).not.toContain("unsafe-eval");
+    expect(csp).not.toMatch(/vercel|railway\.app|core\.invalid/);
   });
 });

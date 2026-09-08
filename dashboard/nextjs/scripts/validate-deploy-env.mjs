@@ -38,11 +38,26 @@ if (mode !== "viewer") {
   errors.push('DASHBOARD_MODE must be exactly "viewer".');
 }
 
-requireOrigin("INTERNAL_API_URL", "server-side JWT validation");
-requireOrigin(
-  "INTERNAL_DASHBOARD_BFF_URL",
-  "the three read-only dashboard projections",
-);
+requireOrigin("DASHBOARD_CANONICAL_ORIGIN", "owner-login browser origin");
+try {
+  const raw = process.env.DASHBOARD_CANONICAL_ORIGIN || "";
+  const parsed = new URL(raw);
+  if (raw !== raw.trim() || raw.length > 512 || /[\\\s,%?#]/.test(raw) ||
+      !/^https?:\/\/[^/]+\/?$/i.test(raw) || parsed.hostname.includes("*") ||
+      ["0.0.0.0", "[::]"].includes(parsed.hostname) ||
+      (parsed.protocol === "http:" && !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname))) {
+    errors.push("DASHBOARD_CANONICAL_ORIGIN must be one HTTPS browser origin (HTTP is loopback-only), never a wildcard or bind address.");
+  }
+} catch { /* requireOrigin already records a missing or malformed URL. */ }
+requireOrigin("INTERNAL_API_URL", "server-side authentication and read-only API projections");
+try {
+  const api = new URL(value("INTERNAL_API_URL"));
+  const browser = new URL(value("DASHBOARD_CANONICAL_ORIGIN"));
+  if (api.origin === browser.origin) errors.push("INTERNAL_API_URL must not point to the dashboard itself.");
+  if (api.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(api.hostname)) {
+    errors.push("INTERNAL_API_URL requires HTTPS; HTTP is loopback-only for local development.");
+  }
+} catch { /* Invalid origins are already reported without exposing values. */ }
 
 if (value("API_KEY") || value("DASHBOARD_API_KEY")) {
   warnings.push(

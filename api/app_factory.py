@@ -303,62 +303,12 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
 
 
 def _add_cors(app: FastAPI) -> None:
-    # Production should set CORS_ORIGINS explicitly. Keep fallback minimal and stable
-    # so redeploy-specific hostnames (e.g., Railway-generated domains) are never baked in.
-    raw = os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:3001,http://localhost:8000,https://tuyul-fx-dashboard.vercel.app,https://tuyul-fx-wolf-15-layer-system.vercel.app",
-    )
-    if "CORS_ORIGINS" not in os.environ:
-        logger.warning(
-            "CORS_ORIGINS not set; using fallback origins. Set CORS_ORIGINS explicitly in deployed services."
-        )
-    # Support both comma and newline separators (common in Vercel env var editor)
+    # Browser origins are explicit; the existing Railway frontend is the default.
+    raw = os.getenv("CORS_ORIGINS", "https://wolf15-dashboard-frontend-production.up.railway.app")
     raw_normalized = raw.replace("\n", ",").replace("\r", "")
-    origins = [o.strip().rstrip("/") for o in raw_normalized.split(",") if o.strip()]
-    # Vercel preview/production URLs — add if set
-    vercel_url = os.getenv("VERCEL_FRONTEND_URL", "")
-    if vercel_url.strip():
-        for u in vercel_url.replace("\n", ",").split(","):
-            u = u.strip().rstrip("/")
-            if u and u not in origins:
-                origins.append(u)
-    # VERCEL_URL is set automatically by Vercel to the current deployment URL.
-    # It does NOT include the scheme — prefix https:// if missing.
-    auto_vercel_url = os.getenv("VERCEL_URL", "").strip().rstrip("/")
-    if auto_vercel_url:
-        full = auto_vercel_url if auto_vercel_url.startswith("http") else f"https://{auto_vercel_url}"
-        if full not in origins:
-            origins.append(full)
-    # Deduplicate while preserving order
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for o in origins:
-        if o not in seen:
-            seen.add(o)
-            deduped.append(o)
-    origins = deduped
-    logger.info("CORS effective origins (%d): %s", len(origins), origins)
-    # Regex for dynamic origins (e.g. Vercel preview deployments).
+    origins = list(dict.fromkeys(o.strip().rstrip("/") for o in raw_normalized.split(",") if o.strip()))
     origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
-    if origin_regex:
-        logger.info("CORS origin regex: %s", origin_regex)
-    else:
-        # Auto-derive regex for Vercel preview deployments from static origins.
-        # Covers custom-domain previews AND project-name previews.
-        import re as _re
-
-        _vercel_patterns: list[str] = []
-        for o in origins:
-            if o.endswith(".vercel.app"):
-                _prefix = _re.escape(o.rsplit(".vercel.app", 1)[0])
-                _vercel_patterns.append(f"{_prefix}(-[a-z0-9-]+)?\\.vercel\\.app")
-        _vercel_project = os.getenv("VERCEL_PROJECT_NAME", "").strip()
-        if _vercel_project:
-            _vercel_patterns.append(f"https://{_re.escape(_vercel_project)}[a-z0-9-]*\\.vercel\\.app")
-        if _vercel_patterns:
-            origin_regex = "|".join(_vercel_patterns)
-            logger.info("CORS origin regex (auto-derived for Vercel previews): %s", origin_regex)
+    logger.info("CORS configured with %d explicit origins", len(origins))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
