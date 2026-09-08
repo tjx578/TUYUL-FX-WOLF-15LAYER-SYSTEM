@@ -205,3 +205,5 @@ ledger/proteksi, hentikan new risk dan gunakan compatible forward recovery.
 
 Tidak ada memory writeback karena pengguna tidak meminta pembaruan durable
 memory secara langsung. Persistence pekerjaan terdapat di artifact repo ini.
+
+Current-main integration: [followup-main-merge/README.md](followup-main-merge/README.md) records conflict resolution against main e3a0d8c8, independent review and 434 passing selected tests. Program remains HOLD; S01/S03 runtime acceptance remains open.
