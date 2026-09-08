@@ -9,7 +9,7 @@ from fastapi import HTTPException as FastAPIHTTPException
 from fastapi.testclient import TestClient
 
 from agents.exceptions import AgentValidationError
-from agents.models import UpdateAgentRequest
+from agents.models import ExecutionModeEnum, UpdateAgentRequest
 from agents.service import AgentManagerService
 from api.executor_governance_router import router
 from api.middleware import governance
@@ -164,7 +164,7 @@ async def test_generic_agent_update_cannot_bypass_edumb_mode_governance() -> Non
     with pytest.raises(AgentValidationError, match="executor-governance"):
         await service.update_agent(
             repository.get_agent.return_value["id"],
-            UpdateAgentRequest(execution_mode="DEMO"),
+            UpdateAgentRequest(execution_mode=ExecutionModeEnum.DEMO),
             performed_by="operator:test",
         )
 

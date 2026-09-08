@@ -637,7 +637,7 @@ class WolfConstitutionalPipeline:
         self._lfs_history: dict[str, dict[str, float]] = {}  # per-symbol α–β–γ snapshots
 
         # Vault health checker (lazy-initialized on first use)
-        self._vault_checker: Any = None  # type: VaultHealthChecker | None
+        self._vault_checker: Any = None  # VaultHealthChecker | None
 
         # Per-symbol data quality warning state for log throttling.
         self._dq_warning_state: dict[str, dict[str, Any]] = {}
