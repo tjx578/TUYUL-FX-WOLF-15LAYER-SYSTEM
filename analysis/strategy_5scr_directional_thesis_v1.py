@@ -508,7 +508,7 @@ def build_directional_thesis_proofs(
         return DirectionalThesisBuildResult("QUARANTINED", "FUTURE_PRESSURE_AUTHORITY")
     if (
         evidence.pressure_authority.valid_until_utc is not None
-        and evidence.pressure_authority.valid_until_utc < evidence.decision_at_utc
+        and evidence.pressure_authority.valid_until_utc <= evidence.decision_at_utc
     ):
         return DirectionalThesisBuildResult("REJECTED", "PRESSURE_AUTHORITY_EXPIRED")
 

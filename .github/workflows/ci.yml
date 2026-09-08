@@ -79,6 +79,7 @@ jobs:
       DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_RUN_POSTGRES_INTEGRATION: "1"
+      WOLF15_PAIR_ACTIVITY_EXPECTED_PG_MAJOR: "16"
       WOLF15_POSTGRES_TEST_DATABASE: wolf15_ci_test
       WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS: YES_I_UNDERSTAND
       DASHBOARD_JWT_SECRET: ci-test-secret-do-not-use-in-prod

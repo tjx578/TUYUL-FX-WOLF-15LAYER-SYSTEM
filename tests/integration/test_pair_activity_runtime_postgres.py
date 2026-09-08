@@ -21,6 +21,12 @@ from analysis.signal_throttle_log_analyzer import SignalThrottleLiveAnalyzer, Si
 from analysis.strategy_5scr_pair_activity import normalize_pair_activity_observations
 from contracts.strategy_5scr_activity_runtime import ActivityCoverageCheckpointV1, ActivityRuntimeBindingV1
 from contracts.strategy_5scr_pair_activity import PairActivityPolicyV31
+from scripts.ci.pair_activity_run_evidence import (
+    evidence_directory,
+    observe_postgres,
+    record_runtime_fixture,
+    write_fixture_phase,
+)
 from storage.strategy_5scr_activity_runtime import ActivityRuntimeIntegrityError, PostgresActivityRuntime
 from tests.integration.postgres_test_guard import (
     require_destructive_postgres_opt_in,
@@ -52,7 +58,22 @@ def pg_dsn():
         )
         present = connection.execute("SELECT to_regclass('public.pair_activity_ledgers_v31')").fetchone()[0]
         assert present is not None, "explicit migrator setup must create the v3.1 schema before acceptance tests"
-    return dsn
+    strict = evidence_directory() is not None
+    if strict:
+
+        def observe():
+            with psycopg.connect(dsn, connect_timeout=3, options="-c statement_timeout=5000") as connection:
+                return observe_postgres(
+                    connection,
+                    expected,
+                    os.environ["WOLF15_PAIR_ACTIVITY_EXPECTED_MIGRATION_HEAD"],
+                    int(os.environ["WOLF15_PAIR_ACTIVITY_EXPECTED_PG_MAJOR"]),
+                )
+
+        write_fixture_phase("before", observe())
+    yield dsn
+    if strict:
+        write_fixture_phase("after", observe())
 
 
 def raw(second: int, direction: str = "BUY", symbol: str = "EURUSD", *, identity: str | None = None):
@@ -108,6 +129,7 @@ def checkpoint(binding, expected_events, *, end=300, status="COMPLETE"):
 
 
 def runtime(dsn, binding, cp, *, second=300, after_evaluations=None):
+    record_runtime_fixture(binding, cp)
     return PostgresActivityRuntime(
         dsn=dsn,
         binding=binding,
