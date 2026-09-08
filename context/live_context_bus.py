@@ -82,9 +82,7 @@ def _h1_close_time(candle: dict[str, Any]) -> datetime | None:
         return open_time + timedelta(hours=1)
 
     semantics = str(candle.get("provider_timestamp_semantics", "")).strip().upper()
-    provider_time = _as_utc_datetime(
-        candle.get("provider_timestamp") or candle.get("timestamp") or candle.get("time")
-    )
+    provider_time = _as_utc_datetime(candle.get("provider_timestamp") or candle.get("timestamp") or candle.get("time"))
     if provider_time is None:
         return None
     if semantics == "PERIOD_END":
@@ -743,9 +741,7 @@ class LiveContextBus:
 
         comparable = reason == "ALIGNED_CLOSED_H1"
         ws_h1_close = (
-            float(ws_h1_candle["close"])
-            if ws_h1_candle is not None and ws_h1_candle.get("close") is not None
-            else None
+            float(ws_h1_candle["close"]) if ws_h1_candle is not None and ws_h1_candle.get("close") is not None else None
         )
         if comparable and ws_h1_close is None:
             comparable = False

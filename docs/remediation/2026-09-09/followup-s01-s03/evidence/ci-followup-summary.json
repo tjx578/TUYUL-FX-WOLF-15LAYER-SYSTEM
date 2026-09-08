@@ -1,0 +1,559 @@
+{
+  "schema": "wolf15.followup.exact-api-ci/v1",
+  "observed_at_utc": "2026-09-08T20:17:53.946632+00:00",
+  "tested_head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+  "initial_main": "773150952311db3dbf5188f36536b7837d8ec296",
+  "final_observed_main": "2b060f8e55beedd21340cda37bfb0a70c238386e",
+  "main_drift_scope": "PR424 added four local Codex/settings files; no application file in commit metadata",
+  "python": "3.11.9",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "requirements_sha256": "1f80669466b282c4e391effe904e5747e2150e87d4623324d10d391531923afb",
+  "requirements_constraints": [
+    {
+      "requirement": "python-dotenv==1.0.1",
+      "installed": "1.0.1",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "PyYAML==6.0.2",
+      "installed": "6.0.2",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "pydantic==2.9.2",
+      "installed": "2.9.2",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "pydantic-settings==2.5.2",
+      "installed": "2.5.2",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "orjson>=3.11.5,<4.0.0",
+      "installed": "3.12.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "requests>=2.33.0,<3.0.0",
+      "installed": "2.34.2",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "httpx==0.27.2",
+      "installed": "0.27.2",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "websockets==13.1",
+      "installed": "13.1",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "tenacity==9.0.0",
+      "installed": "9.0.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "APScheduler==3.10.4",
+      "installed": "3.10.4",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "numpy>=1.24.0",
+      "installed": "2.4.6",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "scipy>=1.11.0",
+      "installed": "1.17.1",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "pandas==2.2.2",
+      "installed": "2.2.2",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "redis>=5.0.0",
+      "installed": "8.1.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "asyncpg==0.30.0",
+      "installed": "0.30.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "psycopg[binary]==3.2.4",
+      "installed": "3.2.4",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "psycopg2-binary>=2.9.9,<3.0",
+      "installed": "2.9.12",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "alembic==1.14.1",
+      "installed": "1.14.1",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "loguru==0.7.2",
+      "installed": "0.7.2",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "rich==13.8.1",
+      "installed": "13.8.1",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "fastapi>=0.128.0,<1.0.0",
+      "installed": "0.141.1",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "starlette>=0.49.1,<1.0.0",
+      "installed": "0.52.1",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "uvicorn==0.30.6",
+      "installed": "0.30.6",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "gunicorn==23.0.0",
+      "installed": "23.0.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "uvloop>=0.21.0; platform_system != \"Windows\"",
+      "applicable": false,
+      "status": "PLATFORM_MARKER_EXCLUDED"
+    },
+    {
+      "requirement": "httptools>=0.6.4",
+      "installed": "0.8.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "jsonschema>=4.0.0",
+      "installed": "4.26.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "PyJWT>=2.12.0",
+      "installed": "2.13.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "opentelemetry-api>=1.27.0",
+      "installed": "1.44.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "opentelemetry-sdk>=1.27.0",
+      "installed": "1.44.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "opentelemetry-exporter-otlp>=1.27.0",
+      "installed": "1.44.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "opentelemetry-instrumentation-fastapi>=0.48b0",
+      "installed": "0.65b0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "opentelemetry-instrumentation-redis>=0.48b0",
+      "installed": "0.65b0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "opentelemetry-instrumentation-asyncio>=0.48b0",
+      "installed": "0.65b0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "opentelemetry-instrumentation-requests>=0.48b0",
+      "installed": "0.65b0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "opentelemetry-instrumentation-httpx>=0.48b0",
+      "installed": "0.65b0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "prometheus-client>=0.20.0",
+      "installed": "0.26.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "pytest==8.3.2",
+      "installed": "8.3.2",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "pytest-asyncio==0.24.0",
+      "installed": "0.24.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "pytest-cov==6.0.0",
+      "installed": "6.0.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "pytest-timeout>=2.2.0",
+      "installed": "2.4.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "setuptools>=78.1.1",
+      "installed": "84.0.0",
+      "applicable": true,
+      "status": "PASS"
+    },
+    {
+      "requirement": "ruff==0.8.4",
+      "installed": "0.8.4",
+      "applicable": true,
+      "status": "PASS"
+    }
+  ],
+  "install_exit": 0,
+  "pip_check_exit": 0,
+  "subsets": [
+    {
+      "label": "api-ci-exact",
+      "runner": "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+      "platform": "win32",
+      "collection_command": [
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-o",
+        "addopts=",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_api_boot_readiness.py",
+        "tests/test_api_only_entrypoints.py",
+        "tests/test_ci_required_gates.py",
+        "tests/test_railway_release_source_gate.py",
+        "--collect-only",
+        "-q"
+      ],
+      "test_command": [
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-o",
+        "addopts=",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_api_boot_readiness.py",
+        "tests/test_api_only_entrypoints.py",
+        "tests/test_ci_required_gates.py",
+        "tests/test_railway_release_source_gate.py",
+        "-q",
+        "--timeout=60",
+        "--basetemp",
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\ci-temp\\api-ci-exact",
+        "--junitxml",
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\ci-evidence\\api-ci-exact.xml"
+      ],
+      "collection_exit": 0,
+      "expected_test_count": 93,
+      "expected_test_ids": [
+        "tests/test_api_boot_readiness.py::test_router_boot_failure_is_503_even_when_router_import_is_broken[None]",
+        "tests/test_api_boot_readiness.py::test_router_boot_failure_is_503_even_when_router_import_is_broken[errors1]",
+        "tests/test_api_boot_readiness.py::test_completed_router_boot_preserves_heartbeat_gate[True]",
+        "tests/test_api_boot_readiness.py::test_completed_router_boot_preserves_heartbeat_gate[False]",
+        "tests/test_api_boot_readiness.py::test_fallback_is_not_ready_and_does_not_disclose_bootstrap_exception",
+        "tests/test_api_boot_readiness.py::test_router_import_failure_obeys_explicit_bootstrap_policy[True]",
+        "tests/test_api_boot_readiness.py::test_router_import_failure_obeys_explicit_bootstrap_policy[False]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[true-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[true-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[1-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[1-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[yes-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[yes-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[on-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[on-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[TrUe-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[TrUe-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[ \\tYeS \\n-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[ \\tYeS \\n-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[None-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[None-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[false-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[false-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[ FaLsE -start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[ FaLsE -start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[0-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[0-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[off-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[off-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[-start_api.sh]",
+        "tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[-start_api_consolidated.sh]",
+        "tests/test_api_only_entrypoints.py::test_railway_default_uses_canonical_api_entrypoint",
+        "tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[true]",
+        "tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[1]",
+        "tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[yes]",
+        "tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[on]",
+        "tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[ TrUe ]",
+        "tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[\\tYES\\n]",
+        "tests/test_ci_required_gates.py::test_dashboard_lint_and_tests_are_required_without_soft_failure",
+        "tests/test_ci_required_gates.py::test_native_mcp_file_runs_in_a_separate_required_environment",
+        "tests/test_ci_required_gates.py::test_release_receipt_requires_the_native_mcp_job",
+        "tests/test_ci_required_gates.py::test_missing_required_contract_fails_ci",
+        "tests/test_ci_required_gates.py::test_missing_verdict_declaration_fails_ci",
+        "tests/test_ci_required_gates.py::test_spoofed_duplicate_or_malformed_verdict_fails_ci[# class VerdictPayload is missing\\nclass Unrelated: pass\\n]",
+        "tests/test_ci_required_gates.py::test_spoofed_duplicate_or_malformed_verdict_fails_ci[text = 'class VerdictPayload is missing'\\n]",
+        "tests/test_ci_required_gates.py::test_spoofed_duplicate_or_malformed_verdict_fails_ci[class VerdictPayload: pass\\nclass VerdictPayload: pass\\n]",
+        "tests/test_ci_required_gates.py::test_spoofed_duplicate_or_malformed_verdict_fails_ci[class VerdictPayload(\\n]",
+        "tests/test_ci_required_gates.py::test_account_state_in_verdict_fails_ci",
+        "tests/test_ci_required_gates.py::test_clean_verdict_passes_ci",
+        "tests/test_ci_required_gates.py::test_failed_migration_propagates_exit_and_redacts_output",
+        "tests/test_ci_required_gates.py::test_successful_migration_propagates_exit",
+        "tests/test_railway_release_source_gate.py::test_complete_exact_source_receipt_passes",
+        "tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[release_sha]",
+        "tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[checkout_sha]",
+        "tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[remote_main_sha]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[id-43]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[workflow_id-10]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[path-.github/workflows/spoof.yml]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_branch-feature]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[repository-value5]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_repository-value6]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[event-pull_request]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[event-pull_request_target]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[status-queued]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[conclusion-failure]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[conclusion-skipped]",
+        "tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[run_attempt-None]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[head_sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[run_id-43]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[run_attempt-2]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[status-queued]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[conclusion-skipped]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[conclusion-failure]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[runner_id-0]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[runner_id-None]",
+        "tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[steps-value8]",
+        "tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[failure]",
+        "tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[skipped]",
+        "tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[cancelled]",
+        "tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[None]",
+        "tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[missing_job]",
+        "tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[duplicate_job]",
+        "tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[missing_migration]",
+        "tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[wrong_workflow]",
+        "tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[disabled_ci]",
+        "tests/test_railway_release_source_gate.py::test_manual_dispatch_requires_explicit_sha_and_run_id",
+        "tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[False-workflow_dispatch]",
+        "tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[False-workflow_run]",
+        "tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[True-workflow_dispatch]",
+        "tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[True-workflow_run]",
+        "tests/test_railway_release_source_gate.py::test_real_cli_rejects_before_provider_when_dispatch_missing_evidence",
+        "tests/test_railway_release_source_gate.py::test_workflow_binds_checkout_and_never_swallows_provider_failure"
+      ],
+      "pytest_exit": 0,
+      "xml_counts": {
+        "tests": 93,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "elapsed_seconds": 45.555,
+      "before": {
+        "head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "files": {
+          "tests/test_api_boot_readiness.py": "a1ee235e6429f7b6c715801d043dab9884b48130f1cd26db9345105ade6b56dd",
+          "tests/test_api_only_entrypoints.py": "ba6673bb119b12c04449e4fcee8056095248d7222d7208305ec56744f2430fc8",
+          "tests/test_ci_required_gates.py": "10383aafa3bc05c3769f06fffc4fd97e1b519b7605d56e97991f32f8e48f306f",
+          "tests/test_railway_release_source_gate.py": "1d498b97f9bf6590438520958216b8e797487c688f981a94945e6925c6ed068b"
+        }
+      },
+      "after": {
+        "head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "files": {
+          "tests/test_api_boot_readiness.py": "a1ee235e6429f7b6c715801d043dab9884b48130f1cd26db9345105ade6b56dd",
+          "tests/test_api_only_entrypoints.py": "ba6673bb119b12c04449e4fcee8056095248d7222d7208305ec56744f2430fc8",
+          "tests/test_ci_required_gates.py": "10383aafa3bc05c3769f06fffc4fd97e1b519b7605d56e97991f32f8e48f306f",
+          "tests/test_railway_release_source_gate.py": "1d498b97f9bf6590438520958216b8e797487c688f981a94945e6925c6ed068b"
+        }
+      },
+      "source_unchanged": true,
+      "scope": "LOCAL_SUBSET_ONLY_NO_PRODUCTION_DB_BROKER_OR_PROVIDER"
+    },
+    {
+      "label": "legacy-admission-exact",
+      "runner": "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+      "platform": "win32",
+      "collection_command": [
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-o",
+        "addopts=",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_strategy_5scr_pair_admission.py",
+        "tests/test_strategy_5scr_raw_admission_blocks.py",
+        "--collect-only",
+        "-q"
+      ],
+      "test_command": [
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-o",
+        "addopts=",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_strategy_5scr_pair_admission.py",
+        "tests/test_strategy_5scr_raw_admission_blocks.py",
+        "-q",
+        "--timeout=60",
+        "--basetemp",
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\ci-temp\\legacy-admission-exact",
+        "--junitxml",
+        "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\ci-evidence\\legacy-admission-exact.xml"
+      ],
+      "collection_exit": 0,
+      "expected_test_count": 33,
+      "expected_test_ids": [
+        "tests/test_strategy_5scr_pair_admission.py::test_raw_global_ledger_produces_non_executable_analysis_grant",
+        "tests/test_strategy_5scr_pair_admission.py::test_lineage_without_minimum_duration_cannot_grant_admission",
+        "tests/test_strategy_5scr_pair_admission.py::test_mixed_deployments_fail_closed",
+        "tests/test_strategy_5scr_pair_admission.py::test_shadow_audit_exposes_mixed_deployment_rejection_reason",
+        "tests/test_strategy_5scr_pair_admission.py::test_block_summary_cannot_forge_raw_duration",
+        "tests/test_strategy_5scr_pair_admission.py::test_block_summary_cannot_forge_effective_ticks",
+        "tests/test_strategy_5scr_pair_admission.py::test_one_missing_deployment_in_mixed_evidence_fails_closed",
+        "tests/test_strategy_5scr_pair_admission.py::test_missing_scanner_cycle_lineage_fails_closed",
+        "tests/test_strategy_5scr_pair_admission.py::test_raw_ledger_ids_are_deterministic_in_event_time_order",
+        "tests/test_strategy_5scr_pair_admission.py::test_cross_symbol_raw_authority_interrupts_a_forged_pair_block",
+        "tests/test_strategy_5scr_pair_admission.py::test_cross_symbol_policy_is_explicit_on_grant",
+        "tests/test_strategy_5scr_pair_admission.py::test_duplicate_stable_raw_identity_fails_closed",
+        "tests/test_strategy_5scr_pair_admission.py::test_derived_pressure_state_cannot_impersonate_raw_admission_authority",
+        "tests/test_strategy_5scr_pair_admission.py::test_rejection_audit_retains_deterministic_raw_metrics_and_reason",
+        "tests/test_strategy_5scr_pair_admission.py::test_expired_grant_is_not_active",
+        "tests/test_strategy_5scr_pair_admission.py::test_gap_beyond_uninterrupted_limit_fails_closed",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_canary_only_builds_no_raw_admission_block",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_mixed_canary_does_not_change_raw_interval_or_counts",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_raw_only_300_seconds_grants_exactly_once",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_duplicate_replay_does_not_increase_raw_count_or_duplicate_grant",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_cross_symbol_event_finalizes_the_active_raw_block",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_gap_boundary_is_inclusive_at_exactly_300_seconds",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_replay_produces_stable_raw_block_and_lineage_hashes",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_grant_identity_and_evidence_freeze_at_first_threshold_crossing",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_runtime_throttle_pair_can_grant_without_promoting_execution_authority",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_true_unresolved_raw_event_still_fails_closed",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_non_throttled_event_cannot_launder_inferred_direction",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_inferred_direction_is_part_of_stable_raw_identity",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_identical_active_snapshot_replays_the_same_evaluation_identity",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_growing_active_block_versions_the_evaluation_watermark",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_active_to_finalized_versions_evaluation_without_changing_raw_block_identity",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_active_grant_survives_normal_cross_symbol_finalization",
+        "tests/test_strategy_5scr_raw_admission_blocks.py::test_multi_symbol_finalizer_ordering_is_deterministic"
+      ],
+      "pytest_exit": 0,
+      "xml_counts": {
+        "tests": 33,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "elapsed_seconds": 12.988,
+      "before": {
+        "head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "files": {
+          "tests/test_strategy_5scr_pair_admission.py": "c9b5afe9399bc9264f05fbd2e9d7eecfde639f7520ea847fb97a117fa8cd1f4c",
+          "tests/test_strategy_5scr_raw_admission_blocks.py": "bb7bc8972943e491e8f565725cb3f2720856163773cfce9f1048acd05c13035b"
+        }
+      },
+      "after": {
+        "head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+        "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "files": {
+          "tests/test_strategy_5scr_pair_admission.py": "c9b5afe9399bc9264f05fbd2e9d7eecfde639f7520ea847fb97a117fa8cd1f4c",
+          "tests/test_strategy_5scr_raw_admission_blocks.py": "bb7bc8972943e491e8f565725cb3f2720856163773cfce9f1048acd05c13035b"
+        }
+      },
+      "source_unchanged": true,
+      "scope": "LOCAL_SUBSET_ONLY_NO_PRODUCTION_DB_BROKER_OR_PROVIDER"
+    }
+  ],
+  "remote_ci": {
+    "verdict": "NOT_EXECUTED",
+    "billing": "EXCLUDED",
+    "run_ids": [
+      34271414731,
+      34271388045
+    ],
+    "latest_run_jobs": 7,
+    "all_runner_ids_zero": true,
+    "all_step_lists_empty": true
+  },
+  "verdict": "PASS_LOCAL_BOUNDED_SUBSETS_REMOTE_CI_NOT_EXECUTED",
+  "full_required_suite": "NOT_EXECUTED",
+  "linux_dependency_closure": "NOT_EXECUTED_THIS_FOLLOWUP",
+  "new_S03_implementation": "NOT_EVALUATED_BY_LEGACY_SUBSET",
+  "dependency_changes": [],
+  "provider_database_broker_mutations": false,
+  "warnings": [
+    "Starlette BlockingPortal alias deprecation",
+    "pytest-asyncio default fixture loop scope unset"
+  ]
+}

@@ -7004,6 +7004,10 @@ class WolfConstitutionalPipeline:
     ) -> dict[str, Any]:
         """Expose block/window metrics without changing legacy pressure gating."""
 
+        from analysis.strategy_5scr_pair_activity_report import (
+            pair_activity_observability_fields,
+        )
+
         symbol_key = str(symbol or "").upper()
         symbol_activity_raw = report.get("symbol_activity")
         symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
@@ -7076,6 +7080,7 @@ class WolfConstitutionalPipeline:
             pressure_count_scope = "ANALYZER_WINDOW_SYMBOL_EVENTS"
 
         return {
+            **pair_activity_observability_fields(symbol=symbol_key, report=report),
             "pair_eligible_for_analysis": bool(admission),
             "pair_admission_id": admission.get("pair_admission_id"),
             "pair_admission_status": admission.get("status") if admission else "NOT_GRANTED",

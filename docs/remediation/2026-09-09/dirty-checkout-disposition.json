@@ -1,0 +1,375 @@
+{
+  "observed_at": "2026-09-08T19:26:20.365404+00:00",
+  "original_head": "ec31631864204ca183079966d7834338f7a986cd",
+  "scope": "Inventory of pre-existing changes; this task did not modify the original checkout. Snapshot collected during this run, not an assertion about concurrent tasks.",
+  "files": [
+    {
+      "path": "analysis/signal_decision_source_guard.py",
+      "status": " M",
+      "sha256": "111f3271be5721a6229dd1cc34f18f566ba61b2c4a2107edda8be959cc0abf9f",
+      "bytes": 24022,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "analysis/signal_pressure_state_emitter.py",
+      "status": " M",
+      "sha256": "42f42ab1d1fc8ad708f06627f5634bf817efab852a78fac595bf572776dc05d6",
+      "bytes": 6469,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "api/redis_context_reader.py",
+      "status": " M",
+      "sha256": "80dcfc0e2a6aac47ab42a28aa44feebecf0a4e437a85523507d7b89557fb9550",
+      "bytes": 18417,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "context/live_context_bus.py",
+      "status": " M",
+      "sha256": "da405c7e58f320603f37eda37fdb7ac44dfa159ab5ec055a4e1ca937c63b61dd",
+      "bytes": 32366,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/.env.example",
+      "status": " M",
+      "sha256": "3800e150c3be617929662734b2a10a59d00f1ff57019a47bc5ae999d09256029",
+      "bytes": 4718,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/__tests__/middleware.auth-loop.test.ts",
+      "status": " M",
+      "sha256": "5dd6d2e1c67c5a21e2c35d25188d4244c6afeb0c7b8d4d68a13ae7a2a1aff118",
+      "bytes": 2540,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/app/api/auth/owner-session/route.ts",
+      "status": " M",
+      "sha256": "ea243ecfa3487be829ba7860eda95c6ccef0fb00505c2b4777257773b7bcf322",
+      "bytes": 494,
+      "current_main_relation": "NORMALIZED_EQUAL",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/app/api/auth/ws-ticket/route.ts",
+      "status": " M",
+      "sha256": "d4a138da874bc9ca0b1e430f3b098e581f08444eb06dbefd3cbcb20135e4c12c",
+      "bytes": 992,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/app/api/proxy/[...path]/route.ts",
+      "status": " M",
+      "sha256": "d37d105d8d82417a8c25f03869aed7c714e867485773dd4403196dfdb79849ff",
+      "bytes": 7373,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/app/api/set-session/route.ts",
+      "status": " M",
+      "sha256": "4c8c460bf64e4fa3e318455692b8514970d328b0200e2d40eafb4b8e84195758",
+      "bytes": 4681,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/app/api/status/route.ts",
+      "status": " M",
+      "sha256": "94d060dc9d2b42b8146b1517f5f3aeb42a2c5af6236fa5a237f00c1f4a54a544",
+      "bytes": 2673,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/app/login/page.tsx",
+      "status": " M",
+      "sha256": "6882105818363b38372903b61e23c3274b8968659e5db92983b0c1ef39e3165d",
+      "bytes": 2319,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/lib/auth.ts",
+      "status": " M",
+      "sha256": "e9e52e271d673f2f1e15dcc7754aacaaa2c17670c8b2f96f2b2e86be4a21bff3",
+      "bytes": 10480,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/lib/queryClient.ts",
+      "status": " M",
+      "sha256": "dfce4536743279755bab7cf5dd406f6842c20b3c1fcff58439c0ae34fe83620c",
+      "bytes": 2595,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/lib/realtime/realtimeClient.ts",
+      "status": " M",
+      "sha256": "71fd78f65ff2a9f492ad1dd956c7914c44db5cb1e55db010c082ade9de621d13",
+      "bytes": 21153,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/lib/serverAuth.ts",
+      "status": " M",
+      "sha256": "8dd6256e3492984019bcf0f1b986185eb360732b4957db736f59c06c504f6413",
+      "bytes": 2853,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/middleware.ts",
+      "status": " M",
+      "sha256": "75b75ca35ce9385d73982800c9cdd81b2c173b36501486983d8741f5942798a7",
+      "bytes": 4353,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "deploy/railway/start_dashboard_bff.sh",
+      "status": " M",
+      "sha256": "2284e1b985bb112b5a54489264954c380dd79d87a897391a5d0726c776a432e1",
+      "bytes": 1010,
+      "current_main_relation": "NORMALIZED_EQUAL",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "docs/runbooks/strategy-5scr-pressure-safety-rollout.md",
+      "status": " M",
+      "sha256": "f4d8b62f41d2e56e421b957eabc9e66a4edea16a1067839164cf544d40ddb134",
+      "bytes": 13520,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "ingest/h1_refresh_scheduler.py",
+      "status": " M",
+      "sha256": "f3a356f201d8d442aae1bab75ae591996199b81e61c99a16989b1b69af07b68d",
+      "bytes": 13844,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "pipeline/wolf_constitutional_pipeline.py",
+      "status": " M",
+      "sha256": "1b291ec8ed168f756af5770ff69f87ee324aef62883dafb3438b42fd6a054757",
+      "bytes": 470338,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "services/dashboard_bff/app_factory.py",
+      "status": " M",
+      "sha256": "5f3c63c828ab85cb714be9c1003e2e08fd196f9a0b3ba73fdcfb04e34a24d74d",
+      "bytes": 2069,
+      "current_main_relation": "NORMALIZED_EQUAL",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "services/dashboard_bff/routes/health.py",
+      "status": " M",
+      "sha256": "ee0bd55bf05a31488aa6cb27f9aa88d07c662251a6b17a3f95a01a43f054f1ac",
+      "bytes": 1329,
+      "current_main_relation": "NORMALIZED_EQUAL",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "services/dashboard_bff/routes/read_model.py",
+      "status": " M",
+      "sha256": "9ed378842d267a3bb88a882ad656884aab0d55f5bd90a11263dadbe3b56777d8",
+      "bytes": 3945,
+      "current_main_relation": "NORMALIZED_EQUAL",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "services/dashboard_bff/routes/status.py",
+      "status": " M",
+      "sha256": "d9150280163e8bd9db16f27201a3f78d80f291026248af72caf0c491e61f5545",
+      "bytes": 2575,
+      "current_main_relation": "NORMALIZED_EQUAL",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "services/pressure_outbox/preflight.py",
+      "status": " M",
+      "sha256": "0b57fc46b004fb2fac1bd0f11fa6c8b4af11904def1351fdaaf018873f556707",
+      "bytes": 14215,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "services/pressure_outbox/runner.py",
+      "status": " M",
+      "sha256": "c40bd7c6120764789a942ea1825b233bc70de9d4f654d7d3b6f26b86da4ffd22",
+      "bytes": 6170,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "tests/test_h1_refresh.py",
+      "status": " M",
+      "sha256": "a82736bd054ca6c4964f8b198224f151fca303e39737d7440eaf6d94b61b0878",
+      "bytes": 10939,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "tests/test_pair_admission_runtime_selection.py",
+      "status": " M",
+      "sha256": "7829ccf0a79024c3765704d84c31d48ec69661727c0f6888628640a0e10e933b",
+      "bytes": 7312,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "tests/test_price_drift.py",
+      "status": " M",
+      "sha256": "1c682bf314cfd476a5335fd2e13d79811fba9b6bdc79c0e08da267d1aba780cc",
+      "bytes": 8033,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "tests/test_signal_decision_source_guard.py",
+      "status": " M",
+      "sha256": "ac0fce74748b2debb0f2e0882da1e7fae10a1c6295964451cfd9f1f11c8565cb",
+      "bytes": 16616,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "tests/test_signal_pressure_state_observability.py",
+      "status": " M",
+      "sha256": "fb375d823d18132bb0d5897894de88cc956a18413d1ce714d2dbfdf1860559cd",
+      "bytes": 5626,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "analysis/strategy_5scr_analysis_admission.py",
+      "status": "??",
+      "sha256": "ee32bc8431f2895dbcf8f022e3b582310aec420b89674d264e50299343de5a96",
+      "bytes": 17326,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "context/price_drift.py",
+      "status": "??",
+      "sha256": "f7c04cd09926185b41854ebb3535c0cb96093b13e2212c73eab051d14c126c1c",
+      "bytes": 5861,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "contracts/strategy_5scr_analysis_admission.py",
+      "status": "??",
+      "sha256": "69200794c73a3499a5d6cc5d7ccfce8424c1542400f5a91f3ace18556c112009",
+      "bytes": 9239,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/__tests__/proxy.containment.test.ts",
+      "status": "??",
+      "sha256": "323e552d4a63d7ecb66d72731ac0a5a1925948589dc078d34060faf3fd377653",
+      "bytes": 2747,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "dashboard/nextjs/src/lib/server/readOnlyProxyPolicy.ts",
+      "status": "??",
+      "sha256": "03e85fa7289ca9e51d3b6bd86671e429fae0a325fe619240d13a71b0a1053e4c",
+      "bytes": 726,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "docs/runbooks/wolf15-d1-demo-six-package-register.md",
+      "status": "??",
+      "sha256": "f792a07510c7ecbe96407f6a2ea11db477fe205a6163947418bf31b3edd4d624",
+      "bytes": 38931,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "docs/strategy/strategy-5scr-ssot-v3.1-candidate.md",
+      "status": "??",
+      "sha256": "b48997b130b2c8aa797a2d4ff1b259ea5b1465f68658ea6401bff9f9f9b6b62f",
+      "bytes": 4787,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "services/dashboard_bff/auth.py",
+      "status": "??",
+      "sha256": "b6faf16ec2d60f4c4cba13be16f56cdd156a218be127e002f3296239d3449737",
+      "bytes": 1734,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "services/pressure_outbox/analysis_admission_v1_worker.py",
+      "status": "??",
+      "sha256": "6a5e68915eb47297de29418e560eff65e474f9d1fc84ab194c4b41aef92cbae6",
+      "bytes": 17861,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "storage/migrations/versions/20260826_01_strategy_analysis_admission_v1.py",
+      "status": "??",
+      "sha256": "80c6c3d14883905aaafd5dba36055acf3da88b9ad9fbf9a548a7f3e63d2662ae",
+      "bytes": 12006,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "storage/strategy_5scr_analysis_admission_v1_repository.py",
+      "status": "??",
+      "sha256": "6b0baab591c560ddc14c7cefe5b91e09c2462842438eaa7c9334fddac670799c",
+      "bytes": 28299,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "tests/test_strategy_5scr_analysis_admission.py",
+      "status": "??",
+      "sha256": "7de941b0d4ba40a6076573c46dd3c6b68b6bfa835d6aa3515a7b831a65685131",
+      "bytes": 9301,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "tests/test_strategy_5scr_analysis_admission_worker.py",
+      "status": "??",
+      "sha256": "a50855505b9e67536f73eb89587ce06cbb7299de58b42abfc9330d6f3a945759",
+      "bytes": 18649,
+      "current_main_relation": "ABSENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    },
+    {
+      "path": "tests/unit/test_dashboard_bff_containment.py",
+      "status": "??",
+      "sha256": "f35269da00d2d384c7413b82dfdc5f66fb287f66df8672ce39bfec764c9848e6",
+      "bytes": 8394,
+      "current_main_relation": "DIFFERENT",
+      "disposition": "PRESERVED_NOT_STAGED; review against current main before separate integration"
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "before_commit": "08e902b3576cc4c76ac73a9504b5b2b285122589",
+  "scope": "Formatting-only baseline repair; AST equality excludes source positions and proves identical parsed Python structure; not runtime or broker proof.",
+  "files": [
+    {
+      "path": "analysis/htf_structure_snapshot.py",
+      "before_sha256": "08261f0fe0c12a6ccdfd8aa2334dbb76079652d40c5a8e50ca9da42be97c6e19",
+      "after_sha256": "784384b87f60a9893d5d69e0845f82bd5d193189b0c66ca9d260cf696387131e",
+      "ast_equal": true
+    },
+    {
+      "path": "analysis/strategy_5scr_pressure_to_tradeplan.py",
+      "before_sha256": "2632bb55781cccc1d81df03367616cf5e07afb98798a1a4f13d9294982340c6a",
+      "after_sha256": "9dec89e5ec22b927abf0b6df58868e450b7f81e1032044f0afa5a8707d57495f",
+      "ast_equal": true
+    },
+    {
+      "path": "api/redis_context_reader.py",
+      "before_sha256": "920021c78cc56906281cbac96cea8c5393aa2c9b4512a484f311702964c298a6",
+      "after_sha256": "f1736e166c3d780dda3928c5c785f0e3d925046c3930c82bfe32e481e2232930",
+      "ast_equal": true
+    },
+    {
+      "path": "context/live_context_bus.py",
+      "before_sha256": "6ca713c6fae5d57e623e1cc0020fa63ef2773d7cb2892f05df3e898175bd836a",
+      "after_sha256": "b090bf5f3f5d8b30b9bce1c3301bc76800b3541067c7714d04cfd4329c31eb90",
+      "ast_equal": true
+    },
+    {
+      "path": "ingest/h1_refresh_scheduler.py",
+      "before_sha256": "1fb62bed5f9010470aacc492e26d67eeba78a00cfb696b9671d38b2a0881b37b",
+      "after_sha256": "17d13b8f72035c09d9e2dc16eac9cb9d76d67ac7ac79665cfb83badeefbd16bc",
+      "ast_equal": true
+    },
+    {
+      "path": "ops/mt5_mcp/account_binding.py",
+      "before_sha256": "6575ef20991d52545877629d60b90ac5132402bc2b8bef379a26e8fba29354e4",
+      "after_sha256": "3c2eb7a68c76760d26dbdf59b692384890028f2b87ea3f0d5f4eeb67d784db09",
+      "ast_equal": true
+    },
+    {
+      "path": "ops/mt5_mcp/reconcile.py",
+      "before_sha256": "084ca2eb7694008380a12739ff61dfe147537da18383536d8fd5bce0dc0912c7",
+      "after_sha256": "d6143cb7dd3603b180699fa80fe99122a87abc0e31a588030a58c58a5d1ef0c2",
+      "ast_equal": true
+    },
+    {
+      "path": "ops/mt5_mcp/server.py",
+      "before_sha256": "506fe600a2f04ace464e5fbedbf313f3509c2562370d2a03df1a649081448a71",
+      "after_sha256": "3bc658609285c0854f938e67a4682c35fdca653e979dfbdc7778cb0434295c7f",
+      "ast_equal": true
+    },
+    {
+      "path": "tests/test_channel_b_reconciliation.py",
+      "before_sha256": "66e72168ec2b127416eff33d8c840ef57721aae879cca7715a93fae5caa84640",
+      "after_sha256": "aa1320b0deee627e46f4929790e6fdd07225ce80899b47327079424567b2fcf1",
+      "ast_equal": true
+    },
+    {
+      "path": "tests/test_htf_structure_snapshot.py",
+      "before_sha256": "662be81cf9a031539bd09ffb49917daf432883f909ada9d495d8e26cac784aca",
+      "after_sha256": "b020535942bd2928cbdf81c87dc472bd6d3ef69c167f28ddde705f917d68501e",
+      "ast_equal": true
+    },
+    {
+      "path": "tests/test_native_mt5_readonly_mcp.py",
+      "before_sha256": "5b381c808b30e182f4cfc63980ea56cc5febacc1c8209ca9563f76bbeeb57968",
+      "after_sha256": "008711b4b74d38e10cbffecc24a09969d2874860ccd8caf7a3f15d3a8c7a6868",
+      "ast_equal": true
+    }
+  ],
+  "checks": [
+    {
+      "command": [
+        "C:\\Users\\INTEL\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "returncode": 0,
+      "output": "All checks passed!\nwarning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+    },
+    {
+      "command": [
+        "C:\\Users\\INTEL\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "."
+      ],
+      "returncode": 0,
+      "output": "1367 files already formatted\nwarning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+    }
+  ]
+}

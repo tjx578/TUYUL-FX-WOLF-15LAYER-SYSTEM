@@ -207,8 +207,7 @@ class H1RefreshScheduler:
                     )
                 elif drift_check["drifted"]:
                     logger.warning(
-                        "{} PRICE DRIFT DETECTED: {:.1f} pips "
-                        "(REST_H1={} WS_H1={} close_time={})",
+                        "{} PRICE DRIFT DETECTED: {:.1f} pips (REST_H1={} WS_H1={} close_time={})",
                         symbol,
                         drift_check["drift_pips"],
                         drift_check["rest_close"],

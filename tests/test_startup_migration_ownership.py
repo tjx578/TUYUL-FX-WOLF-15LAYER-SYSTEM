@@ -31,3 +31,4 @@ def test_migration_ownership_stays_in_migrator_service(monkeypatch) -> None:
     assert migration_runner.run_migrations() == 0
     assert run.call_args.args[0][1:] == ["-m", "alembic", "upgrade", "head"]
     assert run.call_args.kwargs["capture_output"] is True
+    assert "redact_sensitive_log_text" in _read_text("deploy/railway/migration_runner.py")

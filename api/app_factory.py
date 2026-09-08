@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import threading
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager, suppress
 from typing import Any
@@ -72,6 +71,15 @@ async def _await_bool(value: Awaitable[bool] | bool) -> bool:
     return await value
 
 
+def _assert_api_only_orchestrator_ownership() -> None:
+    """Reject a second lifecycle owner before starting any API consumers."""
+    if _env_bool("WOLF15_EMBED_ORCHESTRATOR", False):
+        raise RuntimeError(
+            "WOLF15_EMBED_ORCHESTRATOR is no longer supported: "
+            "wolf15-orchestrator is the sole runtime orchestration owner"
+        )
+
+
 def _assert_no_duplicate_routes(application: FastAPI) -> None:
     """Raise RuntimeError at startup if any (method, path) pair is registered more than once."""
     seen: dict[tuple[str, str], str] = {}
@@ -104,6 +112,7 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _assert_api_only_orchestrator_ownership()
     read_only_startup = _env_bool("WOLF15_API_READ_ONLY_STARTUP", False)
     if read_only_startup:
         from api.owner_dashboard_release import validate_release_environment
@@ -220,28 +229,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             logger.warning("HybridCandleAggregator failed to start: %s — candle WS may be empty", exc)
 
-    # ── Embedded Orchestrator (opt-in via WOLF15_EMBED_ORCHESTRATOR=true) ──
-    _orchestrator_thread: threading.Thread | None = None
-    if _env_bool("WOLF15_EMBED_ORCHESTRATOR", False):
-        try:
-            from services.orchestrator.state_manager import StateManager
-
-            def _run_orchestrator() -> None:
-                try:
-                    StateManager().run_forever()
-                except Exception:
-                    logger.exception("Embedded orchestrator crashed")
-
-            _orchestrator_thread = threading.Thread(
-                target=_run_orchestrator,
-                daemon=True,
-                name="embedded-orchestrator",
-            )
-            _orchestrator_thread.start()
-            logger.info("Embedded orchestrator started (daemon thread)")
-        except Exception:
-            logger.warning("Embedded orchestrator failed to start — running API-only")
-
     if read_only_startup:
         from api.owner_dashboard_release import emit_startup_attestation
 
@@ -251,7 +238,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "relay": relay is not None,
                 "peer_health": peer_checker is not None,
                 "candle_aggregator": _candle_agg_started,
-                "orchestrator": _orchestrator_thread is not None,
+                "orchestrator": False,
             }
         )
 
@@ -576,6 +563,19 @@ def _register_health_routes(app: FastAPI) -> None:
         whether the system is actually *safe to serve traffic*:
         feed freshness, producer heartbeat, and warmup state.
         """
+        # Check bootstrap before importing a router that may itself have failed.
+        # Do not expose import exception text (it can contain connection details).
+        router_errors = getattr(request.app.state, "router_boot_errors", None)
+        if router_errors is None or router_errors:
+            return JSONResponse(
+                content={
+                    "ready": False,
+                    "router_boot_ok": False,
+                    "reasons": ["router_boot_incomplete" if router_errors is None else "router_boot_failed"],
+                },
+                status_code=503,
+            )
+
         import math as _math  # noqa: PLC0415
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
@@ -590,6 +590,7 @@ def _register_health_routes(app: FastAPI) -> None:
 
         _staleness = feed_snapshot.staleness_seconds
         checks: dict[str, Any] = {
+            "router_boot_ok": True,
             "feed_freshness_class": freshness_class.value,
             "feed_staleness_seconds": _staleness if _math.isfinite(_staleness) else None,
             "producer_alive": hb_alive,
@@ -742,6 +743,13 @@ def _build_bootstrap_fallback_app(error_text: str) -> FastAPI:
     async def health() -> dict[str, Any]:
         return {"status": "alive", "service": "tuyul-fx", "degraded": True}
 
+    @fallback.get("/readyz", dependencies=[Depends(verify_observability_machine_auth)])
+    async def readyz() -> JSONResponse:
+        return JSONResponse(
+            content={"ready": False, "router_boot_ok": False, "reasons": ["api_bootstrap_failed"]},
+            status_code=503,
+        )
+
     @fallback.get("/api/v1/status")
     async def fallback_status() -> dict[str, Any]:
         return {
@@ -814,6 +822,8 @@ def _create_app_inner() -> FastAPI:
             len(router_import_errors) + len(routers),
             "; ".join(router_import_errors),
         )
+        if not fail_open:
+            raise RuntimeError("Mandatory API router import failed")
 
     try:
         for router, description in routers:

@@ -1,0 +1,2 @@
+evidence/** -text -diff
+s01-*.json -text -diff
