@@ -27,6 +27,29 @@ def test_dashboard_lint_and_tests_are_required_without_soft_failure() -> None:
     assert not tests.get("continue-on-error", False)
 
 
+def test_native_mcp_file_runs_in_a_separate_required_environment() -> None:
+    workflow = ci_workflow()
+    api_steps = workflow["jobs"]["tests"]["steps"]
+    api_test = next(step for step in api_steps if step.get("name") == "Run pytest with coverage")
+    assert "--ignore=tests/test_native_mt5_readonly_mcp.py" in api_test["run"]
+    native = workflow["jobs"]["native-mcp-tests"]
+    assert native["name"] == "Native MCP fixture tests"
+    native_test = next(step for step in native["steps"] if step.get("name") == "Run native MCP fixture suite")
+    assert "tests/test_native_mt5_readonly_mcp.py" in native_test["run"]
+    assert "--ignore" not in native_test["run"]
+    assert not native.get("continue-on-error", False)
+    assert not native_test.get("continue-on-error", False)
+    gate = workflow["jobs"]["ci-gate"]
+    assert "native-mcp-tests" in gate["needs"]
+    assert '"${{ needs.native-mcp-tests.result }}"' in gate["steps"][0]["run"]
+
+
+def test_release_receipt_requires_the_native_mcp_job() -> None:
+    from scripts.ci.railway_release_source_gate import REQUIRED_STEPS
+
+    assert "Run native MCP fixture suite" in REQUIRED_STEPS["Native MCP fixture tests"]
+
+
 def _run_contract_guard(tmp_path: Path, content: str | None) -> subprocess.CompletedProcess:
     steps = ci_workflow()["jobs"]["drift-guard"]["steps"]
     step = next(step for step in steps if step.get("name") == "L12 signal must not carry account state")

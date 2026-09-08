@@ -19,6 +19,7 @@ REQUIRED_STEPS = {
         "Run pytest with coverage",
     },
     "Dashboard build (Next.js)": {"Lint", "Dashboard tests", "Build"},
+    "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},
     "Deprecated shim guard": {"Block resurrected shim files", "Block deprecated imports in production code"},
     "Architecture drift guard": {
         "analysis/ must not contain execution logic",

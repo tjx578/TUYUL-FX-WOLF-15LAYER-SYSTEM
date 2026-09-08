@@ -142,6 +142,7 @@ jobs:
       - name: Run pytest with coverage
         run: |
           pytest tests/ \
+            --ignore=tests/test_native_mt5_readonly_mcp.py \
             -v --tb=short \
             --timeout=60 \
             --cov=analysis --cov=constitution --cov=execution \
@@ -191,6 +192,28 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # MCP2 and the API intentionally use separate dependency environments.
+  # This file is moved out of the API suite above, not skipped as acceptance.
+  native-mcp-tests:
+    name: Native MCP fixture tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install isolated MCP test dependencies
+        # Never install/import the native MetaTrader5 terminal package in this job.
+        # Its tests supply FakeMT5; mcp2 needs newer Pydantic than API requirements.
+        run: pip install mcp==2.0.0 psutil==7.2.2 pytest==8.4.2 pytest-asyncio pytest-timeout
+
+      - name: Run native MCP fixture suite
+        run: python -m pytest tests/test_native_mt5_readonly_mcp.py -v --tb=short --timeout=60
 
   # -------------------------------------------------------------------
   # Deprecated shim guard — block resurrection of retired modules
@@ -328,7 +351,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard, shim-guard, drift-guard]
+    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
@@ -336,6 +359,7 @@ jobs:
           echo "ruff:        ${{ needs.ruff.result }}"
           echo "tests:       ${{ needs.tests.result }}"
           echo "dashboard:   ${{ needs.dashboard.result }}"
+          echo "native-mcp:  ${{ needs.native-mcp-tests.result }}"
           echo "shim-guard:  ${{ needs.shim-guard.result }}"
           echo "drift-guard: ${{ needs.drift-guard.result }}"
 
@@ -344,6 +368,7 @@ jobs:
             "${{ needs.ruff.result }}" \
             "${{ needs.tests.result }}" \
             "${{ needs.dashboard.result }}" \
+            "${{ needs.native-mcp-tests.result }}" \
             "${{ needs.shim-guard.result }}" \
             "${{ needs.drift-guard.result }}"; do
             if [[ "$JOB" != "success" ]]; then
