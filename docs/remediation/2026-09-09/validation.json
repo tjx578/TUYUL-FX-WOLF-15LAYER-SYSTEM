@@ -136,5 +136,6 @@
     "whole_source_format": "PASS",
     "formatted_files": 1367
   },
-  "latest_followup_validation": "followup-s01-s03/followup-validation.json"
+  "latest_followup_validation": "followup-s01-s03/followup-validation.json",
+  "latest_runtime_followup": "followup-s03-runtime/validation.json"
 }

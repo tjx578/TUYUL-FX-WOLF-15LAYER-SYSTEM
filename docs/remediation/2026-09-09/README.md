@@ -15,7 +15,7 @@ risk profile, instrumen, window, atau approval order yang diisi dengan asumsi.
 
 ## Follow-up S01/S03 dan dependency API
 
-[Laporan lanjutan](followup-s01-s03/README.md) mengikat perbaikan activity v3.1, pemetaan S01, dan 334 tes yang lulus pada environment API dengan Pydantic 2.9.2. Temuan S03 `FAIL` historis di bawah tetap merupakan bukti checkpoint lama; status terbaru adalah `PATCHED_TESTED_LOCAL_PARTIAL`. S01 dan semua milestone tetap belum DONE.
+[Laporan lanjutan](followup-s01-s03/README.md) mengikat perbaikan activity v3.1, pemetaan S01, dan 334 tes yang lulus pada environment API dengan Pydantic 2.9.2. Temuan S03 `FAIL` historis di bawah tetap merupakan bukti checkpoint lama; status pada follow-up tersebut adalah `PATCHED_TESTED_LOCAL_PARTIAL`. Status terbaru tersedia dalam [follow-up runtime S03](followup-s03-runtime/README.md). S01 dan semua milestone tetap belum DONE.
 
 ## Mulai membaca
 
@@ -207,3 +207,5 @@ Tidak ada memory writeback karena pengguna tidak meminta pembaruan durable
 memory secara langsung. Persistence pekerjaan terdapat di artifact repo ini.
 
 Current-main integration: [followup-main-merge/README.md](followup-main-merge/README.md) records conflict resolution against main e3a0d8c8, independent review and 434 passing selected tests. Program remains HOLD; S01/S03 runtime acceptance remains open.
+
+Latest continuation: [S03 durable caller implementation](followup-s03-runtime/README.md), source59f2db54 aligned with main68ad0794. Final local613 cases pass;45 realPostgreSQL cases remain NOT_EXECUTED. Program remains INCOMPLETE/HOLD,0/6 milestones.
