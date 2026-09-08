@@ -36,11 +36,20 @@ a deployment shortcut, because other services watch that branch.
 
 Deploy API first. Verify its release identity and auth/containment; then deploy
 the exact frontend commit with root dashboard/nextjs, its Dockerfile, port 8080,
-and config file `/deploy/railway/owner-dashboard-frontend.json`,
 viewer mode and canonical origin
 https://wolf15-dashboard-frontend-production.up.railway.app. The server-only API
 origin is https://wolf15-api-production.up.railway.app. Retain the BFF until real
 login and direct GET projections work and no other consumer needs it.
+
+Railway rejects new opt-ins to legacy Config as Code. The existing frontend
+therefore uses service settings: root `/dashboard/nextjs`, Dockerfile detection,
+start `node server.js`, no pre-deploy command, healthcheck `/healthz` with a
+300-second timeout, and restart policy `NEVER`. The checked-in frontend JSON is
+a reference profile for legacy-compatible services; it is not selected on the
+production frontend. Keep auto-deploy disabled for both selected services and
+deploy a reviewed commit explicitly. The API's existing legacy config remains
+supported only until 2026-12-01; migrate that configuration separately before
+the provider cutoff. See https://docs.railway.com/config-as-code.
 
 Billing-related GitHub runner unavailability is waived temporarily by the user;
 it is not a passing remote check. Linux/provider build, runtime acceptance,
