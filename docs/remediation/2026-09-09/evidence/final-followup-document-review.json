@@ -1,0 +1,136 @@
+{
+  "schema_version": "wolf15.final-followup-document-review.v1",
+  "observed_at_utc": "2026-09-08T19:50:11.764088+00:00",
+  "verdict": "PASS_NARROW_FOLLOWUP_DOCUMENTARY_ADMISSION",
+  "scope": "New MCP dependency logs/JSON/XML/freeze, CI-isolation XML, formatting receipt/regression XML, updated README and validation.json; no production access or supplied script execution.",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "7468f94c952eb827d52ff0697f4cb91f9ac92eb1336a6d9368d95c22715d7a3a",
+      "bytes": 14113
+    },
+    {
+      "path": "validation.json",
+      "sha256": "321661d52225f91b986637d0be873194f5c87722a7417365f6d8cec9b36d6ba1",
+      "bytes": 7712
+    },
+    {
+      "path": "evidence\\mcp-dependency-validation-download.log",
+      "sha256": "2c049e4baab8b1eb385142b76976908365366473f1763cddde1598eb5e12ef97",
+      "bytes": 260
+    },
+    {
+      "path": "evidence\\mcp-dependency-validation-freeze.txt",
+      "sha256": "9fd03d338f52be1dc9863dd793a1293489a3cc78c50b92471a535c4d3305b2fb",
+      "bytes": 886
+    },
+    {
+      "path": "evidence\\mcp-dependency-validation-install.log",
+      "sha256": "f676a1bac1e2c1aa205781fa83970eab60574f30d28bfaa650f423076ffe8c35",
+      "bytes": 8303
+    },
+    {
+      "path": "evidence\\mcp-dependency-validation-tests.log",
+      "sha256": "132b95043a5d50b184a2ed9798af5d4b42259089ca04b542d58a1b1740a2333f",
+      "bytes": 1436
+    },
+    {
+      "path": "evidence\\mcp-dependency-validation.json",
+      "sha256": "b0a277f5fa4253f23aa4ac6d21be317396aea312594393a840710304d5e87222",
+      "bytes": 1221
+    },
+    {
+      "path": "evidence\\mcp-dependency-validation.md",
+      "sha256": "d9b28970b0c7cf153a968e5df95610185332d9215ddeefeafaadf66f3c3b3f8a",
+      "bytes": 2476
+    },
+    {
+      "path": "evidence\\mcp-dependency-validation.xml",
+      "sha256": "bfac79f3c154d388acea2542b9d94d584752bc07659b7e5866513b6efe8e3431",
+      "bytes": 1227
+    },
+    {
+      "path": "evidence\\ci-isolation-tests.xml",
+      "sha256": "2efc9af92d381a47eac0d8523f9b00ca2e6e5d32786d9ac133e14a70c58e9b78",
+      "bytes": 8127
+    },
+    {
+      "path": "evidence\\format-baseline-receipt.json",
+      "sha256": "02c7b22ef8a98024759d531ab95780b5caba74aeaada9ac1fc92d7c9bb545813",
+      "bytes": 4022
+    },
+    {
+      "path": "evidence\\format-available-regression-tests.xml",
+      "sha256": "088d129a39b6a1b1074d6bed099c816c62766f7b4a69822eb55a8db41729a76b",
+      "bytes": 11770
+    }
+  ],
+  "file_count": 12,
+  "secret_scan": {
+    "credential_rule_count": 11,
+    "actual_credential_matches": 0,
+    "example_credential_matches": 0,
+    "credential_bearing_urls": 0,
+    "private_network_urls": 0,
+    "http_url_hosts": [
+      "docs.github.com",
+      "docs.pytest.org"
+    ],
+    "local_file_uri": {
+      "file": "evidence/mcp-dependency-validation-freeze.txt",
+      "count": 1,
+      "classification": "LOCAL_MCP_WHEEL_PROVENANCE_NO_CREDENTIALS",
+      "userinfo": false,
+      "hash_fragment": "artifact-integrity digest, not authentication"
+    },
+    "values_disclosed": false,
+    "limits": "Bounded custom pattern and URL review; not a guarantee against all credential formats."
+  },
+  "factual_checks": {
+    "functional_receipt": {
+      "commit": "08e902b3576cc4c76ac73a9504b5b2b285122589",
+      "tests": 484,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "formatting_followup": {
+      "commit": "c7d51c35d11c04cc61f152588ebded7614df1670",
+      "ast_equal_files": 11,
+      "regression_tests": 88,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "fixture_mcp": {
+      "commit": "c7d51c35d11c04cc61f152588ebded7614df1670",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "native_mt5_import_attempts": 0,
+      "broker": "NOT_MEASURED"
+    },
+    "ci_isolation": {
+      "commit": "ac19a69a68edd64d529cf2bb83760b31cd74c15a",
+      "tests": 55,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "git_blob_receipts": "Functional12/12 and CI3/3 reported Git blob hashes match immutable subjects. MCP4/4 reported source hashes match CRLF worktree rendering of corresponding Git blobs.",
+    "readme_run_scope": "Separate runs and overlapping coverage explicitly stated; counts not summed as unique acceptance.",
+    "dependency_scope": "Host Pydantic2.10.3, API pin2.9.2, isolated MCP2.13.5 remain distinguished; full API dependency acceptance unexecuted.",
+    "input_integrity": "10/10 input-manifest hashes unchanged.",
+    "program_status": "INCOMPLETE_HOLD remains; no new engineering milestone closure."
+  },
+  "blocking_findings": [],
+  "nonblocking_notes": [
+    "MCP freeze file URI is local wheel provenance, contains no authentication, and is not a private network endpoint.",
+    "MCP source_sha256 values bind actual CRLF worktree bytes; validation.json distinguishes worktree bytes from Git blob hashes."
+  ],
+  "recommendation": "Admit reviewed followup evidence to documentary feature-branch commit. This does not authorize production deployment or broker effects.",
+  "original_archives_modified": false,
+  "repository_modified_by_review": false,
+  "memory_modified": false
+}
