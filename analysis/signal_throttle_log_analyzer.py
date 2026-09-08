@@ -51,6 +51,7 @@ from .signal_throttle_fusion_router import build_signal_throttle_fusion_v3_diagn
 from .signal_throttle_pattern_detector import classify_pressure_block
 from .signal_throttle_pressure_tier import build_pressure_tier_snapshot
 from .signal_throttle_pure_block_quality import score_pure_pressure_block
+from .strategy_5scr_pair_activity_report import PairActivityReportContextV31, build_pair_activity_report
 from .strategy_5scr_pair_admission import build_pair_admission_audit
 from .strategy_5scr_raw_admission_blocks import (
     build_raw_admission_population,
@@ -412,6 +413,7 @@ def analyze_signal_throttle_events(
     timezone_assumption: str = "UTC",
     market_contexts: dict[str, Any] | None = None,
     state_metadata: dict[str, Any] | None = None,
+    pair_activity_context: PairActivityReportContextV31 | Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if latest_window_minutes is not None:
         latest_window_seconds = int(latest_window_minutes * 60)
@@ -423,6 +425,7 @@ def analyze_signal_throttle_events(
     scanner_cycle_gap_seconds = _env_float("SIGNAL_THROTTLE_SCANNER_CYCLE_MAX_GAP_SECONDS", 300.0)
 
     ordered = sorted(events, key=lambda item: item.timestamp)
+    pair_activity_report = build_pair_activity_report(ordered, context=pair_activity_context)
     state_metadata = state_metadata or _state_metadata_from_events(ordered)
     if not ordered:
         pressure_tier_snapshot = _build_pressure_tier_snapshot(
@@ -486,6 +489,7 @@ def analyze_signal_throttle_events(
                 "execution_authority": False,
             },
             "pair_admission_grants": [],
+            "pair_activity_v31": pair_activity_report,
             "pair_admission_summary": {
                 "rule_version": "5scr.pair-admission.raw-ledger.v2",
                 "evaluated_blocks": 0,
@@ -873,6 +877,7 @@ def analyze_signal_throttle_events(
         "allowed_quorum": allowed_quorum,
         "pair_eligible_for_analysis": pair_eligible_for_analysis,
         "pair_admission_grants": [grant.to_payload() for grant in pair_admission_grants],
+        "pair_activity_v31": pair_activity_report,
         "pair_admission_summary": pair_admission_audit.to_payload(),
         "watch_promotion_blockers": watch_promotion_blockers,
         "event_counts": event_type_counts,
