@@ -109,11 +109,7 @@ def _database(
                 "reservation_v2_binding_mismatch_count": 0,
                 "outbox_v1_account_mismatch_count": 0,
                 "outbox_v2_binding_mismatch_count": 0,
-                **(
-                    {"account_binding_identifier": account_identifier}
-                    if account_identifier is not None
-                    else {}
-                ),
+                **({"account_binding_identifier": account_identifier} if account_identifier is not None else {}),
                 **(
                     {"account_binding_source": account_identifier_source}
                     if account_identifier_source is not None
@@ -288,12 +284,8 @@ def test_ticket_match_is_bidirectional_and_raw_ticket_is_not_reported() -> None:
         window_to=WINDOW_TO,
     )
 
-    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
-        "ACTIVE_ATTRIBUTED": 1
-    }
-    assert report["comparison"]["database_to_broker"]["classification_counts"] == {
-        "ACTIVE_ATTRIBUTED": 1
-    }
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {"ACTIVE_ATTRIBUTED": 1}
+    assert report["comparison"]["database_to_broker"]["classification_counts"] == {"ACTIVE_ATTRIBUTED": 1}
     assert str(ticket) not in json.dumps(report)
 
 
@@ -385,12 +377,8 @@ def test_active_entity_with_multiple_owners_is_ambiguous_and_blocked() -> None:
         window_to=WINDOW_TO,
     )
 
-    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
-        "ACTIVE_AMBIGUOUS": 1
-    }
-    assert report["comparison"]["database_to_broker"]["classification_counts"] == {
-        "ACTIVE_AMBIGUOUS": 2
-    }
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {"ACTIVE_AMBIGUOUS": 1}
+    assert report["comparison"]["database_to_broker"]["classification_counts"] == {"ACTIVE_AMBIGUOUS": 2}
     assert report["B-B16"] == "EXECUTED_BLOCKED"
 
 
@@ -433,9 +421,7 @@ def test_active_entity_with_duplicate_ledger_owners_is_ambiguous_and_blocked() -
         window_to=WINDOW_TO,
     )
 
-    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
-        "ACTIVE_AMBIGUOUS": 1
-    }
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {"ACTIVE_AMBIGUOUS": 1}
     assert report["B-B16"] == "EXECUTED_BLOCKED"
 
 
@@ -482,12 +468,8 @@ def test_old_active_entity_with_one_valid_owner_is_attributed_once() -> None:
         window_to=WINDOW_TO,
     )
 
-    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
-        "ACTIVE_ATTRIBUTED": 1
-    }
-    assert report["comparison"]["database_to_broker"]["classification_counts"] == {
-        "ACTIVE_ATTRIBUTED": 1
-    }
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {"ACTIVE_ATTRIBUTED": 1}
+    assert report["comparison"]["database_to_broker"]["classification_counts"] == {"ACTIVE_ATTRIBUTED": 1}
     assert report["B-B16"] == "EXECUTED_PASS"
 
 
@@ -510,9 +492,7 @@ def test_closed_historical_entity_before_window_is_not_current_state() -> None:
         window_to=WINDOW_TO,
     )
 
-    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
-        "HISTORICAL_PREEXISTING": 1
-    }
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {"HISTORICAL_PREEXISTING": 1}
     assert report["B-B16"] == "EXECUTED_PASS"
 
 
@@ -564,9 +544,7 @@ def test_unmatched_entities_remain_explicit_and_block_the_gate() -> None:
         window_to=WINDOW_TO,
     )
 
-    assert report["comparison"]["broker_to_database"]["classification_counts"] == {
-        "ACTIVE_UNATTRIBUTED": 1
-    }
+    assert report["comparison"]["broker_to_database"]["classification_counts"] == {"ACTIVE_UNATTRIBUTED": 1}
     assert report["comparison"]["database_to_broker"]["classification_counts"] == {"ORPHAN": 1}
     assert report["BROKER_RECONCILIATION"] == "INCOMPLETE_ACCOUNT_IDENTIFIER_WITH_ENTITY_MISMATCH"
     assert report["B-B16"] == "EXECUTED_BLOCKED"

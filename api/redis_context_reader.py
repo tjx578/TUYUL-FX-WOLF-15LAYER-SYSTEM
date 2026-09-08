@@ -484,9 +484,7 @@ class RedisContextReader:
             multiplier = 10.0
 
         observed_live_gap_pips = (
-            round(abs(rest_close - ws_mid) * multiplier, 1)
-            if rest_close is not None and ws_mid is not None
-            else None
+            round(abs(rest_close - ws_mid) * multiplier, 1) if rest_close is not None and ws_mid is not None else None
         )
         return {
             "comparable": False,

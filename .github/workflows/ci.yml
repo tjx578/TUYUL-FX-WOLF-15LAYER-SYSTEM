@@ -142,6 +142,7 @@ jobs:
       - name: Run pytest with coverage
         run: |
           pytest tests/ \
+            --ignore=tests/test_native_mt5_readonly_mcp.py \
             -v --tb=short \
             --timeout=60 \
             --cov=analysis --cov=constitution --cov=execution \
@@ -184,11 +185,35 @@ jobs:
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Lint
-        run: |
-          if npm run 2>/dev/null | grep -q " lint"; then npm run lint || echo "Lint warnings ignored"; else echo "No lint script"; fi
+        run: npm run lint
+
+      - name: Dashboard tests
+        run: npm test
 
       - name: Build
         run: npm run build
+
+  # MCP2 and the API intentionally use separate dependency environments.
+  # This file is moved out of the API suite above, not skipped as acceptance.
+  native-mcp-tests:
+    name: Native MCP fixture tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install isolated MCP test dependencies
+        # Never install/import the native MetaTrader5 terminal package in this job.
+        # Its tests supply FakeMT5; mcp2 needs newer Pydantic than API requirements.
+        run: pip install mcp==2.0.0 psutil==7.2.2 pytest==8.4.2 pytest-asyncio pytest-timeout
+
+      - name: Run native MCP fixture suite
+        run: python -m pytest tests/test_native_mt5_readonly_mcp.py -v --tb=short --timeout=60
 
   # -------------------------------------------------------------------
   # Deprecated shim guard — block resurrection of retired modules
@@ -290,28 +315,28 @@ jobs:
       - name: "L12 signal must not carry account state"
         run: |
           python - <<'PYEOF'
-          import pathlib, re, sys
+          import ast, pathlib, re, sys
 
           ACCOUNT_FIELDS = re.compile(
               r'\b(balance|equity|margin_used|margin_free|account_size)\b'
           )
           TARGET = pathlib.Path('contracts/redis_stream_contracts.py')
           if not TARGET.exists():
-              print(f'SKIP: {TARGET} not found')
-              sys.exit(0)
+              print(f'::error::Required contract {TARGET} not found')
+              sys.exit(1)
 
-          text = TARGET.read_text()
-          # Only scan the VerdictPayload class
-          in_verdict = False
+          text = TARGET.read_text(encoding='utf-8')
+          tree = ast.parse(text, filename=str(TARGET))
+          verdicts = [node for node in tree.body
+                      if isinstance(node, ast.ClassDef) and node.name == 'VerdictPayload']
+          if len(verdicts) != 1:
+              print('::error::Exactly one top-level VerdictPayload declaration is required')
+              sys.exit(1)
           errors = []
-          for i, line in enumerate(text.splitlines(), 1):
-              if 'class VerdictPayload' in line:
-                  in_verdict = True
-                  continue
-              if in_verdict and line.startswith('class '):
-                  break
-              if in_verdict and ACCOUNT_FIELDS.search(line):
-                  errors.append(f'  {TARGET}:{i}: {line.strip()}')
+          for node in ast.walk(verdicts[0]):
+              name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
+              if name and ACCOUNT_FIELDS.fullmatch(name):
+                  errors.append(f'  {TARGET}:{node.lineno}: forbidden account field {name}')
           if errors:
               print('::error::VerdictPayload contains account-state fields:')
               for e in errors:
@@ -326,7 +351,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard, shim-guard, drift-guard]
+    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
@@ -334,6 +359,7 @@ jobs:
           echo "ruff:        ${{ needs.ruff.result }}"
           echo "tests:       ${{ needs.tests.result }}"
           echo "dashboard:   ${{ needs.dashboard.result }}"
+          echo "native-mcp:  ${{ needs.native-mcp-tests.result }}"
           echo "shim-guard:  ${{ needs.shim-guard.result }}"
           echo "drift-guard: ${{ needs.drift-guard.result }}"
 
@@ -342,6 +368,7 @@ jobs:
             "${{ needs.ruff.result }}" \
             "${{ needs.tests.result }}" \
             "${{ needs.dashboard.result }}" \
+            "${{ needs.native-mcp-tests.result }}" \
             "${{ needs.shim-guard.result }}" \
             "${{ needs.drift-guard.result }}"; do
             if [[ "$JOB" != "success" ]]; then

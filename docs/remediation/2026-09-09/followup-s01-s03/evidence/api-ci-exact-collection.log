@@ -1,0 +1,105 @@
+tests/test_api_boot_readiness.py::test_router_boot_failure_is_503_even_when_router_import_is_broken[None]
+tests/test_api_boot_readiness.py::test_router_boot_failure_is_503_even_when_router_import_is_broken[errors1]
+tests/test_api_boot_readiness.py::test_completed_router_boot_preserves_heartbeat_gate[True]
+tests/test_api_boot_readiness.py::test_completed_router_boot_preserves_heartbeat_gate[False]
+tests/test_api_boot_readiness.py::test_fallback_is_not_ready_and_does_not_disclose_bootstrap_exception
+tests/test_api_boot_readiness.py::test_router_import_failure_obeys_explicit_bootstrap_policy[True]
+tests/test_api_boot_readiness.py::test_router_import_failure_obeys_explicit_bootstrap_policy[False]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[true-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[true-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[1-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[1-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[yes-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[yes-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[on-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[on-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[TrUe-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[TrUe-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[ \tYeS \n-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_reject_embedded_owner_before_launch[ \tYeS \n-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[None-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[None-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[false-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[false-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[ FaLsE -start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[ FaLsE -start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[0-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[0-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[off-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[off-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[-start_api.sh]
+tests/test_api_only_entrypoints.py::test_api_entrypoints_launch_exactly_one_api_process[-start_api_consolidated.sh]
+tests/test_api_only_entrypoints.py::test_railway_default_uses_canonical_api_entrypoint
+tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[true]
+tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[1]
+tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[yes]
+tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[on]
+tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[ TrUe ]
+tests/test_api_only_entrypoints.py::test_api_lifespan_rejects_embedded_owner_before_consumer_import[\tYES\n]
+tests/test_ci_required_gates.py::test_dashboard_lint_and_tests_are_required_without_soft_failure
+tests/test_ci_required_gates.py::test_native_mcp_file_runs_in_a_separate_required_environment
+tests/test_ci_required_gates.py::test_release_receipt_requires_the_native_mcp_job
+tests/test_ci_required_gates.py::test_missing_required_contract_fails_ci
+tests/test_ci_required_gates.py::test_missing_verdict_declaration_fails_ci
+tests/test_ci_required_gates.py::test_spoofed_duplicate_or_malformed_verdict_fails_ci[# class VerdictPayload is missing\nclass Unrelated: pass\n]
+tests/test_ci_required_gates.py::test_spoofed_duplicate_or_malformed_verdict_fails_ci[text = 'class VerdictPayload is missing'\n]
+tests/test_ci_required_gates.py::test_spoofed_duplicate_or_malformed_verdict_fails_ci[class VerdictPayload: pass\nclass VerdictPayload: pass\n]
+tests/test_ci_required_gates.py::test_spoofed_duplicate_or_malformed_verdict_fails_ci[class VerdictPayload(\n]
+tests/test_ci_required_gates.py::test_account_state_in_verdict_fails_ci
+tests/test_ci_required_gates.py::test_clean_verdict_passes_ci
+tests/test_ci_required_gates.py::test_failed_migration_propagates_exit_and_redacts_output
+tests/test_ci_required_gates.py::test_successful_migration_propagates_exit
+tests/test_railway_release_source_gate.py::test_complete_exact_source_receipt_passes
+tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[release_sha]
+tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[checkout_sha]
+tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[remote_main_sha]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[id-43]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[workflow_id-10]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[path-.github/workflows/spoof.yml]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_branch-feature]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[repository-value5]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_repository-value6]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[event-pull_request]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[event-pull_request_target]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[status-queued]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[conclusion-failure]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[conclusion-skipped]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[run_attempt-None]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[head_sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[run_id-43]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[run_attempt-2]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[status-queued]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[conclusion-skipped]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[conclusion-failure]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[runner_id-0]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[runner_id-None]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[steps-value8]
+tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[failure]
+tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[skipped]
+tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[cancelled]
+tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[None]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[missing_job]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[duplicate_job]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[missing_migration]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[wrong_workflow]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[disabled_ci]
+tests/test_railway_release_source_gate.py::test_manual_dispatch_requires_explicit_sha_and_run_id
+tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[False-workflow_dispatch]
+tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[False-workflow_run]
+tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[True-workflow_dispatch]
+tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[True-workflow_run]
+tests/test_railway_release_source_gate.py::test_real_cli_rejects_before_provider_when_dispatch_missing_evidence
+tests/test_railway_release_source_gate.py::test_workflow_binds_checkout_and_never_swallows_provider_failure
+
+============================== warnings summary ===============================
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+93 tests collected in 23.19s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

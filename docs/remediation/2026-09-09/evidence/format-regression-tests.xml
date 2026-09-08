@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="18.015" timestamp="2026-09-09T03:36:56.278742+08:00" hostname="DESKTOP-TE510QO"><testcase classname="" name="tests.test_native_mt5_readonly_mcp" time="0.000"><error message="collection failure">ImportError while importing test module 'D:\WOLF15-work\master-remediation-20260909\repo\tests\test_native_mt5_readonly_mcp.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\importlib\__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_native_mt5_readonly_mcp.py:10: in &lt;module&gt;
+    from mcp import Client
+E   ModuleNotFoundError: No module named 'mcp'</error></testcase></testsuite></testsuites>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -93,7 +94,7 @@ async def test_real_lifespan_skips_background_writers(
     candle_start = AsyncMock()
     monkeypatch.setattr(ws_routes._candle_agg, "start", candle_start)
     thread = Mock()
-    monkeypatch.setattr(app_factory.threading, "Thread", thread)
+    monkeypatch.setattr(threading, "Thread", thread)
     app = FastAPI()
     async with app_factory.lifespan(app):
         assert app.state.trade_outbox_worker is None
