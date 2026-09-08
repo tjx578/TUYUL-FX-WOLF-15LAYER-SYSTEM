@@ -18,7 +18,16 @@ def test_api_and_engine_startup_do_not_run_db_migrations() -> None:
         assert token not in engine_start
 
 
-def test_migration_ownership_stays_in_migrator_service() -> None:
-    migrator_start = _read_text("deploy/railway/start_migrator.sh").lower()
+def test_migration_ownership_stays_in_migrator_service(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
 
-    assert "python -m alembic upgrade head" in migrator_start
+    from deploy.railway import migration_runner
+
+    migrator_start = _read_text("deploy/railway/start_migrator.sh").lower()
+    assert "python deploy/railway/migration_runner.py" in migrator_start
+    run = Mock(return_value=SimpleNamespace(returncode=0, stdout="", stderr=""))
+    monkeypatch.setattr(migration_runner.subprocess, "run", run)
+    assert migration_runner.run_migrations() == 0
+    assert run.call_args.args[0][1:] == ["-m", "alembic", "upgrade", "head"]
+    assert run.call_args.kwargs["capture_output"] is True

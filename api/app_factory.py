@@ -104,6 +104,11 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    read_only_startup = _env_bool("WOLF15_API_READ_ONLY_STARTUP", False)
+    if read_only_startup:
+        from api.owner_dashboard_release import validate_release_environment
+
+        validate_release_environment(os.environ)
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     from dataclasses import replace
 
@@ -135,16 +140,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Redis unavailable at startup — will retry on first use")
         app.state.redis = None
 
-    with suppress(Exception):
-        await pg_client.initialize()
+    if not read_only_startup:
+        with suppress(Exception):
+            await pg_client.initialize()
 
     outbox_worker: TradeOutboxWorker | None = None
     outbox_task: asyncio.Task[None] | None = None
-    try:
-        outbox_worker = TradeOutboxWorker(consumer_name="api-1")
-        outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
-    except Exception:
-        logger.warning("Trade outbox worker failed to start — will operate without outbox")
+    if not read_only_startup:
+        try:
+            outbox_worker = TradeOutboxWorker(consumer_name="api-1")
+            outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
+        except Exception:
+            logger.warning("Trade outbox worker failed to start — will operate without outbox")
     app.state.trade_outbox_worker = outbox_worker
     app.state.trade_outbox_task = outbox_task
 
@@ -152,7 +159,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from infrastructure.cross_instance_relay import CrossInstanceRelay
 
     relay: CrossInstanceRelay | None = None
-    if app.state.redis is not None and _env_bool("ENABLE_WS_RELAY", True):
+    if not read_only_startup and app.state.redis is not None and _env_bool("ENABLE_WS_RELAY", True):
         try:
             from api.ws_routes import (
                 alerts_manager,
@@ -191,7 +198,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from infrastructure.peer_health import PeerHealthChecker
 
     peer_checker: PeerHealthChecker | None = None
-    if _env_bool("ENABLE_PEER_HEALTH", True):
+    if not read_only_startup and _env_bool("ENABLE_PEER_HEALTH", True):
         try:
             peer_checker = PeerHealthChecker(self_name="api")
             await peer_checker.start()
@@ -205,12 +212,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from config_loader import get_enabled_symbols
 
     _candle_agg_started = False
-    try:
-        _enabled_syms = [p.replace("/", "").upper() for p in get_enabled_symbols()]
-        await _candle_agg.start(_enabled_syms)
-        _candle_agg_started = True
-    except Exception as exc:
-        logger.warning("HybridCandleAggregator failed to start: %s — candle WS may be empty", exc)
+    if not read_only_startup:
+        try:
+            _enabled_syms = [p.replace("/", "").upper() for p in get_enabled_symbols()]
+            await _candle_agg.start(_enabled_syms)
+            _candle_agg_started = True
+        except Exception as exc:
+            logger.warning("HybridCandleAggregator failed to start: %s — candle WS may be empty", exc)
 
     # ── Embedded Orchestrator (opt-in via WOLF15_EMBED_ORCHESTRATOR=true) ──
     _orchestrator_thread: threading.Thread | None = None
@@ -233,6 +241,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("Embedded orchestrator started (daemon thread)")
         except Exception:
             logger.warning("Embedded orchestrator failed to start — running API-only")
+
+    if read_only_startup:
+        from api.owner_dashboard_release import emit_startup_attestation
+
+        emit_startup_attestation(
+            {
+                "outbox": outbox_worker is not None or outbox_task is not None,
+                "relay": relay is not None,
+                "peer_health": peer_checker is not None,
+                "candle_aggregator": _candle_agg_started,
+                "orchestrator": _orchestrator_thread is not None,
+            }
+        )
 
     try:
         yield
