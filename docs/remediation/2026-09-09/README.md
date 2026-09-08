@@ -13,6 +13,10 @@ Pengguna kemudian mengonfirmasi bahwa paket binding DEMO yang sah belum
 terverifikasi; register hanya berisi tugas penyiapannya. Tidak ada account,
 risk profile, instrumen, window, atau approval order yang diisi dengan asumsi.
 
+## Follow-up S01/S03 dan dependency API
+
+[Laporan lanjutan](followup-s01-s03/README.md) mengikat perbaikan activity v3.1, pemetaan S01, dan 334 tes yang lulus pada environment API dengan Pydantic 2.9.2. Temuan S03 `FAIL` historis di bawah tetap merupakan bukti checkpoint lama; status terbaru adalah `PATCHED_TESTED_LOCAL_PARTIAL`. S01 dan semua milestone tetap belum DONE.
+
 ## Mulai membaca
 
 - [Register status aktual seluruh 41 aksi](CURRENT_DONE_Register_41_Actions.csv)

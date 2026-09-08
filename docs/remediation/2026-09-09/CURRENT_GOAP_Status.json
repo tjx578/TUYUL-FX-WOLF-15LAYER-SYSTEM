@@ -1,5 +1,5 @@
 {
-  "observed_at_utc": "2026-09-08T19:29:19.502160+00:00",
+  "observed_at_utc": "2026-09-08T20:27:01.228117+00:00",
   "base_source": "773150952311db3dbf5188f36536b7837d8ec296",
   "verdict": "INCOMPLETE_HOLD",
   "engineering_milestones_done": 0,
@@ -61,10 +61,10 @@
       "Current status": "PATCHED_TESTED_LOCAL_PARTIAL",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "CI lint errors no longer masked; dashboard tests mandatory; AST guard rejects missing/comment-only/duplicate/malformed verdict; migration exit/redaction tested. PR415/416 convergence and full required suite still open.",
+      "Evidence and blocker": "Full applicable API requirements installed unchanged with Pydantic 2.9.2 and pip check PASS; 334 selected final cases pass. Baseline raw-ID order test corrected without changing producer ordering. Isolated MCP job remains required. Full remote/Linux/DB/convergence gates remain open.",
       "Acceptance": "Integrate reviewed #415 then unique #416 delta; preserve #413 migration behavior/redaction tests; required test failures fail job and skips remain visible; HealthProbeRuntime caller compatibility reviewed",
       "DoD clarification": "Semua required checks benar-benar dijalankan; skipped/missing tidak dihitung PASS. Tidak mengendurkan gate untuk meluluskan kandidat.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json"
     },
     {
       "ID": "C04",
@@ -114,13 +114,13 @@
       "Owner": "Strategy contract maintainer",
       "Hard dependencies": "A00",
       "Historical status": "BLOCKED",
-      "Current status": "SOURCE_BOUND_POLICY_INCOMPLETE",
+      "Current status": "SOURCE_BOUND_MAPPING_COMPLETE_POLICY_SCHEMA_GAPS",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Selected repo SSOT dd27ae87 exact Git bytes/digest and15+20 clauses bound; historical DoD copy differs and complete policy/implementation/schema binding remains open.",
+      "Evidence and blocker": "Exact selected SSOT bytes, old-assessment receipt mismatch, 56 source/test paths, 15 rule groups, 35 clauses, 18 policy registries and 36 section references mapped. Missing historical bytes, enum/schema/decision-table and active policy/mandatory authority closure remain open.",
       "Acceptance": "Record already accepted V3.1 design intent with exact document digest, implementation policy IDs and versioned schemas; resolve enum/example consistency; no repeated design approval request; source-bound authority mapping must identify L1-L11 analysis/validation, only L12 strategy verdict and mandatory post-verdict gates; mapping evidence required, current runtime L12 wiring not inferred",
       "DoD clarification": "SSOT v3.1 existing repo tetap acuan; path/full commit/digest harus bound. R1/R2 tidak diadopsi. Daftar interpretasi dan policy gaps diselesaikan eksplisit.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json"
     },
     {
       "ID": "S02",
@@ -142,13 +142,13 @@
       "Owner": "Admission maintainer",
       "Hard dependencies": "S01",
       "Historical status": "BLOCKED",
-      "Current status": "FAIL",
+      "Current status": "PATCHED_TESTED_LOCAL_PARTIAL",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Same-symbol BUY0 SELL150 BUY300 becomes three zero-duration blocks under explicit 300-second diagnostic gap policy. Pair grant additionally requires uniform BUY/SELL.",
+      "Evidence and blocker": "Versioned activity evaluator preserves mixed direction and suspends source gaps; analyzer/pipeline reporting is explicit and non-executable. 334 final pinned-environment cases pass, including subprocess snapshot replay. Legacy grants remain unchanged. Logical pulse normalization, attestor/policy, PostgreSQL durability, attachment/SLA/runtime closure remain open.",
       "Acceptance": "One normalized material observation per logical pulse; live/replay flags and timestamps agree; duplicate delivery no inflation; mixed direction does not split pair activity; gap suspends pending continuity; future evidence rejected",
       "DoD clarification": "Mixed direction mempertahankan pair activity bila continuity sah. BUY0/SELL150/BUY300 membutuhkan coverage/gap-policy yang valid, bukan otomatis GRANTED.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json"
     },
     {
       "ID": "S04",
@@ -174,8 +174,8 @@
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
       "Evidence and blocker": "P5 target universe only H4 strict swing; DoD v3.1 includes D1/H4/H1 and other legal structures. Existing nearest-target tests pass within narrower universe.",
-      "Acceptance": "Closed/as-of H1 and ordered M15 proof; nearest fresh unconsumed target from SSOT v3.1 Â§17.2 universe; structural SL before RR/cost constraints and final feasible interval per Â§17.1; bound instrument policy/spec; no farther target selected to force RR.",
-      "DoD clarification": "Koreksi ringkasan H4-only: gunakan universe SSOT Â§17.2 D1/H4/H1 dan sumber struktural legal. Â§17.1 menjadi referensi solve order; konflik diagram dicatat dalam binding.",
+      "Acceptance": "Closed/as-of H1 and ordered M15 proof; nearest fresh unconsumed target from SSOT v3.1 §17.2 universe; structural SL before RR/cost constraints and final feasible interval per §17.1; bound instrument policy/spec; no farther target selected to force RR.",
+      "DoD clarification": "Koreksi ringkasan H4-only: gunakan universe SSOT §17.2 D1/H4/H1 dan sumber struktural legal. §17.1 menjadi referensi solve order; konflik diagram dicatat dalam binding.",
       "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json"
     },
     {
@@ -189,7 +189,7 @@
       "Closure scope": "NOT_CLOSED",
       "Evidence and blocker": "211 local component tests pass; all 35 clauses mapped but complete v3.1 frozen dataset/policy/cohort denominators absent.",
       "Acceptance": "Bound dataset/as-of availability/clock/policy replay reproduces identities and decision reasons; parser diagnostics repeated with actual dependencies; no lookahead or advisory authority leak",
-      "DoD clarification": "Seluruh 15 acceptance Â§24.1 dan 20 zero-tolerance Â§24.2 diuji dengan denominator dan fixture. Denominator nol bukan 100% PASS.",
+      "DoD clarification": "Seluruh 15 acceptance §24.1 dan 20 zero-tolerance §24.2 diuji dengan denominator dan fixture. Denominator nol bukan 100% PASS.",
       "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json"
     },
     {
@@ -584,5 +584,7 @@
       "DoD clarification": "Dossier lengkap boleh berakhir HOLD. REAL_REVIEW_DONE tidak sama dengan REAL_READY atau REAL_ACTIVE.",
       "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json"
     }
-  ]
+  ],
+  "latest_tested_source_commit": "385188d02097d3fd5fb3e48cb9669613b8ff6ea7",
+  "latest_followup": "followup-s01-s03/followup-validation.json"
 }
