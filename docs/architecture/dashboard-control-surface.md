@@ -40,6 +40,21 @@ Therefore:
 - owner identity must be explicit and bounded (`DASHBOARD_MODE=owner`)
 - websocket/browser auth must follow a dedicated dashboard contract
 
+### G4 visual observability profile
+
+The separately deployed Next.js visual dashboard is a read-only viewer surface,
+not the owner control surface described above. Its production session contract
+is deliberately narrower:
+
+- the browser establishes a session with a validated JWT only;
+- the JWT must carry `role=viewer` and the `read:dashboard` scope;
+- machine API keys and owner/operator/admin roles cannot authorize the viewer proxy;
+- the proxy exposes only the three exact BFF GET routes documented for G4;
+- no write, risk, execution, EA, or broker route is reachable from this profile.
+
+The owner control surface remains a separate contract and is not activated by
+deploying the G4 viewer service.
+
 ## Key Rotation Policy
 
 API keys managed through `APIKeyManager` follow an explicit rotation protocol:
