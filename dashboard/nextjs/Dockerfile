@@ -19,15 +19,12 @@ RUN mkdir -p public
 # Non-secret build defaults make the immutable viewer contract testable locally.
 # Railway can override these ARG values from service variables.
 ARG DASHBOARD_MODE=viewer
-ARG DASHBOARD_CANONICAL_ORIGIN=http://localhost:3000
-ARG INTERNAL_API_URL=http://localhost:8000
-ARG INTERNAL_DASHBOARD_BFF_URL=http://localhost:8080
+ARG DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app
+ARG INTERNAL_API_URL=https://wolf15-api-production.up.railway.app
 ENV DASHBOARD_MODE=$DASHBOARD_MODE
 ENV DASHBOARD_CANONICAL_ORIGIN=$DASHBOARD_CANONICAL_ORIGIN
 ENV INTERNAL_API_URL=$INTERNAL_API_URL
-ENV INTERNAL_DASHBOARD_BFF_URL=$INTERNAL_DASHBOARD_BFF_URL
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_OUTPUT_STANDALONE=true
 
 RUN npm run build:strict
 
@@ -37,8 +34,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV DASHBOARD_MODE=viewer
+ENV DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app
+ENV INTERNAL_API_URL=https://wolf15-api-production.up.railway.app
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
+ENV PORT=8080
 ENV HOSTNAME="0.0.0.0"
 
 RUN addgroup --system --gid 1001 nodejs && \
@@ -50,6 +49,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 
-EXPOSE 3000
+EXPOSE 8080
 
 CMD ["node", "server.js"]

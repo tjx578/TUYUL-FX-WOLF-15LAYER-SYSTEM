@@ -12,14 +12,14 @@ export async function register() {
 
     // Ensure clearMarks exists (required by Next.js internal perf tracking)
     if (typeof perf.clearMarks !== "function") {
-      perf.clearMarks = (_name?: string) => {
+      perf.clearMarks = () => {
         /* no-op polyfill */
       };
     }
 
     // Ensure clearMeasures exists (same internal usage pattern)
     if (typeof perf.clearMeasures !== "function") {
-      perf.clearMeasures = (_name?: string) => {
+      perf.clearMeasures = () => {
         /* no-op polyfill */
       };
     }

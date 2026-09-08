@@ -1,6 +1,6 @@
 # Owner-login canonical origin
 
-Set server-only `DASHBOARD_CANONICAL_ORIGIN` to one browser origin. Local direct testing uses `http://127.0.0.1:3000`; a public deployment uses its actual HTTPS origin. No fallback to request URL, Host, Forwarded or X-Forwarded-* is permitted. Missing/invalid configuration returns 503; missing/invalid/mismatched incoming Origin returns 403 before body parsing or upstream credentials. Matching Origin with empty JSON reaches 400 body validation.
+Set server-only `DASHBOARD_CANONICAL_ORIGIN` to one browser origin. Local direct testing uses `http://127.0.0.1:3000`; the selected deployment uses `https://wolf15-dashboard-frontend-production.up.railway.app`. No fallback to request URL, Host, Forwarded or X-Forwarded-* is permitted. Missing/invalid configuration returns 503; missing/invalid/mismatched incoming Origin returns 403 before body parsing or upstream credentials. Matching Origin with empty JSON reaches 400 body validation.
 
 `HOSTNAME=0.0.0.0` is only the bind address. The proxy must preserve external host/protocol and overwrite client-supplied forwarding headers at its trust boundary, but those headers do not authorize login. The handler compares against configured canonical origin instead of reconstructing authority from untrusted headers. Proxy routing/access restrictions are separate controls.
 

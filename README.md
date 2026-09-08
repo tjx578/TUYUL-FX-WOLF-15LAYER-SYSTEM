@@ -218,9 +218,8 @@ tests/           → unit tests
 Sistem berjalan dalam beberapa service:
 
 ```text
-Vercel → Dashboard
+Railway → WOLF15-DASHBOARD-FRONTEND → API (server-side, viewer-only)
 Railway → API + Engine + Orchestrator
-Railway → Dashboard-BFF (optional, non-authoritative)
 Railway → Redis
 Railway → PostgreSQL
 Railway → EA Bridge (optional)

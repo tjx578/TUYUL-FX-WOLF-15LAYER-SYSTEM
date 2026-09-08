@@ -39,7 +39,7 @@ function boundaryResponse(
 
 /**
  * Edge routing guard only. Cryptographic validation and the viewer role/scope
- * checks happen in the Node route/layout and again at the BFF boundary.
+ * checks happen in the Node route/layout and at the core API boundary.
  */
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;

@@ -32,11 +32,21 @@ describe("container builder environment contract", () => {
     const result = validate();
     expect(result.error).toBeUndefined();
     expect(result.status, result.stderr).toBe(0);
-    expect(defaults.DASHBOARD_CANONICAL_ORIGIN).toBe("http://localhost:3000");
+    expect(defaults.DASHBOARD_CANONICAL_ORIGIN).toBe("https://wolf15-dashboard-frontend-production.up.railway.app");
+    expect(defaults.INTERNAL_API_URL).toBe("https://wolf15-api-production.up.railway.app");
+    expect(Object.keys(defaults).some(key => key.includes("BFF"))).toBe(false);
   });
 
   it("accepts an explicit HTTPS browser origin override", () => {
     expect(validate({ DASHBOARD_CANONICAL_ORIGIN: "https://dashboard.example" }).status).toBe(0);
+  });
+
+  it("rejects the frontend itself as the API origin", () => {
+    expect(validate({ INTERNAL_API_URL: defaults.DASHBOARD_CANONICAL_ORIGIN }).status).toBe(1);
+  });
+
+  it("rejects plaintext non-loopback API transport", () => {
+    expect(validate({ INTERNAL_API_URL: "http://api.example" }).status).toBe(1);
   });
 
   it.each(["", "https://*.example", "http://0.0.0.0:3000"])(
