@@ -27,9 +27,7 @@ MAXIMUM_SERVER_BYTES: Final = 128
 
 _LOGIN_RE: Final = re.compile(r"[1-9][0-9]*\Z")
 _KEY_ID_RE: Final = re.compile(r"[a-z0-9][a-z0-9._-]{0,31}\Z")
-_IDENTIFIER_RE: Final = re.compile(
-    r"w15ab:v1:([a-z0-9][a-z0-9._-]{0,31}):([A-Za-z0-9_-]{43})\Z"
-)
+_IDENTIFIER_RE: Final = re.compile(r"w15ab:v1:([a-z0-9][a-z0-9._-]{0,31}):([A-Za-z0-9_-]{43})\Z")
 
 
 class AccountBindingError(ValueError):
@@ -98,11 +96,7 @@ def canonical_message(login: object, server: object) -> bytes:
     login_bytes = canonical_login(login)
     server_bytes = canonical_server(server)
     return (
-        DOMAIN
-        + len(login_bytes).to_bytes(4, "big")
-        + login_bytes
-        + len(server_bytes).to_bytes(4, "big")
-        + server_bytes
+        DOMAIN + len(login_bytes).to_bytes(4, "big") + login_bytes + len(server_bytes).to_bytes(4, "big") + server_bytes
     )
 
 
