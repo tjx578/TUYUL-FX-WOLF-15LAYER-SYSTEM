@@ -209,3 +209,6 @@ memory secara langsung. Persistence pekerjaan terdapat di artifact repo ini.
 Current-main integration: [followup-main-merge/README.md](followup-main-merge/README.md) records conflict resolution against main e3a0d8c8, independent review and 434 passing selected tests. Program remains HOLD; S01/S03 runtime acceptance remains open.
 
 Latest continuation: [S03 durable caller implementation](followup-s03-runtime/README.md), source59f2db54 aligned with main68ad0794. Final local613 cases pass;45 realPostgreSQL cases remain NOT_EXECUTED. Program remains INCOMPLETE/HOLD,0/6 milestones.
+
+
+Latest bounded follow-up: [runner evidence binding and pressure expiry](followup-runner-binding/README.md), source `94cd6a5d`. Current changed-source regression241 PASS; no new PostgreSQL/Linux acceptance. Runner remains UNBOUND and program INCOMPLETE / HOLD,0/6 milestones. Prior613 and current241 overlap and must not be summed.
