@@ -25,6 +25,11 @@ SHADOW_ACCEPTANCE_SCHEMA_VERSION: Final = "wolf15.mt5.shadow-acceptance.v1"
 SHADOW_ACCEPTANCE_OPERATOR_AUTHORITY: Final = "WOLF15_SHADOW_ACCEPTANCE_OPERATOR_V1"
 SHADOW_ACCEPTANCE_PURPOSE: Final = "BROKER_CONNECTED_SHADOW_VALIDATION"
 SHADOW_ACCEPTANCE_EA_VERSION: Final = "0.22-shadow-acceptance-v1"
+ENGINEERING_DEMO_CANARY_SCHEMA_VERSION: Final = "wolf15.mt5.engineering-demo-canary.v1"
+ENGINEERING_DEMO_CANARY_OPERATOR_AUTHORITY: Final = "WOLF15_ENGINEERING_DEMO_OPERATOR_V1"
+ENGINEERING_DEMO_CANARY_PURPOSE: Final = "EXECUTION_PLUMBING_VALIDATION"
+ENGINEERING_DEMO_CANARY_EA_VERSION: Final = "0.1-engineering-demo-canary-v1"
+ENGINEERING_DEMO_CANARY_MAGIC: Final = 150016
 SIGNED_WIRE_PAYLOAD_ENCODING: Final = "base64url"
 SIGNED_WIRE_ALGORITHM: Final = "HMAC-SHA256"
 _SIGNED_WIRE_DOMAIN: Final = "WOLF15-MT5-COMMAND-V2"
@@ -126,6 +131,29 @@ class ShadowAcceptanceSource(StrictModel):
     broker_execution: Literal["FORBIDDEN"] = "FORBIDDEN"
 
 
+class EngineeringDemoCanarySource(StrictModel):
+    """Non-strategy lineage for one bounded broker-DEMO execution proof."""
+
+    source_event: Literal["ENGINEERING_DEMO_CANARY"] = "ENGINEERING_DEMO_CANARY"
+    source_schema_version: Literal["wolf15.mt5.engineering-demo-canary.v1"] = ENGINEERING_DEMO_CANARY_SCHEMA_VERSION
+    command_source_class: Literal["ENGINEERING_DEMO_CANARY"] = "ENGINEERING_DEMO_CANARY"
+    canary_id: str = Field(..., min_length=3, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]+$")
+    operator_authority: Literal["WOLF15_ENGINEERING_DEMO_OPERATOR_V1"] = ENGINEERING_DEMO_CANARY_OPERATOR_AUTHORITY
+    purpose: Literal["EXECUTION_PLUMBING_VALIDATION"] = ENGINEERING_DEMO_CANARY_PURPOSE
+    approved_executor_id: UUID
+    approved_account_id: str = Field(..., min_length=1, max_length=100)
+    approved_broker_server: str = Field(..., min_length=1, max_length=200)
+    approved_canonical_symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
+    approved_broker_symbol: str = Field(..., min_length=1, max_length=64)
+    order_role: Literal["PARENT"] = "PARENT"
+    max_broker_effects: Literal[1] = 1
+    strategy_authority: Literal[False] = False
+    strategy_scorecard_eligible: Literal[False] = False
+    research_result_eligible: Literal[False] = False
+    live_real_money_allowed: Literal[False] = False
+    demo_only: Literal[True] = True
+
+
 class OrderInstruction(StrictModel):
     canonical_symbol: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Z0-9._-]+$")
     broker_symbol: str = Field(..., min_length=1, max_length=64)
@@ -193,6 +221,27 @@ class ShadowAcceptanceGuards(StrictModel):
     broker_execution: Literal["FORBIDDEN"] = "FORBIDDEN"
 
 
+class EngineeringDemoCanaryGuards(StrictModel):
+    """One-shot DEMO guards deliberately independent of strategy risk authority."""
+
+    guard_type: Literal["ENGINEERING_DEMO_CANARY"] = "ENGINEERING_DEMO_CANARY"
+    scoped_demo_window_required: Literal[True] = True
+    broker_ledger_reconciled: Literal[True] = True
+    expected_margin_mode: MarginMode
+    account_snapshot_id: str = Field(..., min_length=3, max_length=200)
+    balance_snapshot: float = Field(..., gt=0)
+    equity_snapshot: float = Field(..., gt=0)
+    require_attached_sl: Literal[True] = True
+    require_attached_tp: Literal[True] = True
+    max_spread_points: int = Field(..., ge=0, le=100_000)
+    max_price_drift_points: int = Field(..., ge=0, le=100_000)
+    max_submit_attempts: Literal[1] = 1
+    max_broker_effects: Literal[1] = 1
+    allow_volume_round_down: Literal[False] = False
+    allow_price_normalization: Literal[False] = False
+    broker_execution: Literal["DEMO_ONLY"] = "DEMO_ONLY"
+
+
 class CommandSignature(StrictModel):
     algorithm: Literal["HMAC-SHA256"] = "HMAC-SHA256"
     key_id: str = Field(..., min_length=1, max_length=100)
@@ -211,10 +260,10 @@ class ExecutionCommandV1(StrictModel):
     not_before_utc: datetime
     expires_at_utc: datetime
     executor_binding: ExecutorBinding
-    source: CommandSource | ShadowAcceptanceSource
+    source: CommandSource | ShadowAcceptanceSource | EngineeringDemoCanarySource
     action: ExecutionAction
     order: OrderInstruction | None
-    guards: CommandGuards | ShadowAcceptanceGuards
+    guards: CommandGuards | ShadowAcceptanceGuards | EngineeringDemoCanaryGuards
     signature: CommandSignature
 
     @field_validator("issued_at_utc", "not_before_utc", "expires_at_utc")
@@ -252,6 +301,32 @@ class ExecutionCommandV1(StrictModel):
                 raise ValueError("SHADOW_ACCEPTANCE requires RECONCILE_ONLY without an order")
             if not isinstance(self.guards, ShadowAcceptanceGuards):
                 raise ValueError("SHADOW_ACCEPTANCE requires dedicated acceptance guards")
+        elif isinstance(self.source, EngineeringDemoCanarySource):
+            if self.executor_binding.execution_mode is not ExecutorMode.DEMO:
+                raise ValueError("ENGINEERING_DEMO_CANARY requires DEMO execution mode")
+            if self.action is not ExecutionAction.PLACE_MARKET or self.order is None:
+                raise ValueError("ENGINEERING_DEMO_CANARY requires one PLACE_MARKET order")
+            if not isinstance(self.guards, EngineeringDemoCanaryGuards):
+                raise ValueError("ENGINEERING_DEMO_CANARY requires dedicated canary guards")
+            if (
+                self.source.approved_executor_id != self.executor_binding.executor_id
+                or self.source.approved_account_id != self.executor_binding.account_id
+                or self.source.approved_broker_server != self.executor_binding.broker_server
+            ):
+                raise ValueError("ENGINEERING_DEMO_CANARY approved binding must match executor binding")
+            if (
+                self.source.approved_canonical_symbol != self.order.canonical_symbol
+                or self.source.approved_broker_symbol != self.order.broker_symbol
+            ):
+                raise ValueError("ENGINEERING_DEMO_CANARY approved symbol must match order")
+            if not self.order.comment_tag.startswith("W15D0:"):
+                raise ValueError("ENGINEERING_DEMO_CANARY comment_tag must start with W15D0:")
+            if (
+                self.order.magic != ENGINEERING_DEMO_CANARY_MAGIC
+                or self.order.time_in_force != "GTC"
+                or self.order.broker_expiration_utc is not None
+            ):
+                raise ValueError("ENGINEERING_DEMO_CANARY requires fixed magic and GTC lifetime")
         elif not isinstance(self.guards, CommandGuards):
             raise ValueError("signal_json requires production command guards")
         return self
@@ -622,6 +697,11 @@ __all__ = [
     "SHADOW_ACCEPTANCE_OPERATOR_AUTHORITY",
     "SHADOW_ACCEPTANCE_PURPOSE",
     "SHADOW_ACCEPTANCE_EA_VERSION",
+    "ENGINEERING_DEMO_CANARY_SCHEMA_VERSION",
+    "ENGINEERING_DEMO_CANARY_OPERATOR_AUTHORITY",
+    "ENGINEERING_DEMO_CANARY_PURPOSE",
+    "ENGINEERING_DEMO_CANARY_EA_VERSION",
+    "ENGINEERING_DEMO_CANARY_MAGIC",
     "ExecutionAction",
     "ExecutionReportState",
     "MarginMode",
@@ -629,9 +709,11 @@ __all__ = [
     "ExecutorBinding",
     "CommandSource",
     "ShadowAcceptanceSource",
+    "EngineeringDemoCanarySource",
     "OrderInstruction",
     "CommandGuards",
     "ShadowAcceptanceGuards",
+    "EngineeringDemoCanaryGuards",
     "CommandSignature",
     "ExecutionCommandV1",
     "SignedExecutionEnvelopeV2",
