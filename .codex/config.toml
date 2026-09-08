@@ -1,7 +1,9 @@
-# Codex loads skills from the user, repository, system, and enabled plugins.
-# Keep automatic discovery: no machine-specific skill paths or fixed allow list.
-# Command permissions are separate; see rules/settings-local.rules.
-# Model, sandbox, approvals, plugin installation, and authentication are inherited.
+# Project-specific skill fit; installed global packages are unchanged.
+# Reviewed source identities and reasons: skill-assessment.json.
+# AGENTS.md routes relevant skills without modifying global enablement.
+# Project name-disable selectors were not effective in the tested skills/list.
+# Skill discovery does not require command auto-allow grants.
+# Sandbox, approval policy, providers and authentication remain host-controlled.
 
 [skills]
 include_instructions = true

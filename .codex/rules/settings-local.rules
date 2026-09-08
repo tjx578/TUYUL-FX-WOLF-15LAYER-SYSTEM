@@ -1,102 +1,40 @@
-# User-requested command permissions, portable across project checkouts.
-# These rules do not select skills, install plugins, or authorize future tasks.
-# Rules use argv prefixes: trailing arguments can also match.
-# Python - / -c allow arbitrary code; railway variables and git stash retain
-# their user-requested command-family scope. This is not a read-only policy.
-# Read(~/Downloads/**) has no command-rule equivalent; inherit filesystem policy.
-# Bare python is omitted because prefix [python] would match all Python commands.
+# Repository command review; no command is automatically allowed by this file.
+# Skill availability is governed separately by config.toml and AGENTS.md.
+# A prompt is not a universal block: runtime sandbox/approvals and other rules apply.
+# Absolute executables, alternative runtimes and MCP tools need separate controls.
 
 prefix_rule(
-    pattern = ["rg", "--files", "-g", "*.ts", "-g", "*.tsx"],
-    decision = "allow",
+    pattern = [["python", "python3", "py", "python.exe", "python3.exe", "py.exe"]],
+    decision = "prompt",
+    justification = "Interpreters can run arbitrary code or subprocesses. Use the existing task authorization and review the exact target.",
 )
 
 prefix_rule(
-    pattern = ["rg", "--files", "dashboard/nextjs/src", "-g", "*.ts", "-g", "*.tsx"],
-    decision = "allow",
+    pattern = [["powershell", "pwsh", "bash", "sh", "zsh", "cmd", "powershell.exe", "pwsh.exe", "bash.exe", "sh.exe", "cmd.exe"]],
+    decision = "prompt",
+    justification = "Shell wrappers can contain multiple operations. Use the existing task authorization and review the exact target.",
 )
 
 prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/test_orchestrator_state_manager.py", "-v"],
-    decision = "allow",
+    pattern = [["railway", "railway.exe"]],
+    decision = "prompt",
+    justification = "Railway commands can access credentials or change provider state. Use the existing task authorization and review the exact target.",
 )
 
 prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/test_microboost_continuation_entry.py", "tests/test_signal_json_gate_adapter.py", "tests/test_signal_json_emitter.py", "tests/test_signal_block_finalizer.py", "tests/test_signal_throttle_canary_no_auto_promote.py", "-q", "--no-header", "-p", "no:cacheprovider"],
-    decision = "allow",
+    pattern = [["git", "git.exe"]],
+    decision = "prompt",
+    justification = "Git options and aliases can move writes outside a narrow subcommand prefix. Use the existing task authorization and review the exact target.",
 )
 
 prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/test_signal_throttle.py", "tests/test_signal_throttle_intelligence.py", "tests/test_signal_throttle_log_analyzer.py", "tests/test_signal_throttle_canary_no_auto_promote.py", "tests/test_microboost_continuation_entry.py", "tests/test_microboost_counter_entry.py", "tests/test_microboost_direction_resolver.py", "tests/test_microboost_event_log.py", "tests/test_signal_json_emitter.py", "tests/test_signal_json_gate_adapter.py", "tests/test_signal_block_finalizer.py", "tests/test_pipeline_signal_json_continuation.py", "-q", "--no-header", "-p", "no:cacheprovider"],
-    decision = "allow",
+    pattern = [["gh", "gh.exe"]],
+    decision = "prompt",
+    justification = "GitHub CLI can mutate repository or workflow state. Use the existing task authorization and review the exact target.",
 )
 
 prefix_rule(
-    pattern = ["python", "-"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["railway", "logs"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["railway", "service"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["railway", "list"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["railway", "variables"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["python", "-c"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/", "-q", "-k", "signal or throttle or clean_block or watch or pressure or microboost or quorum"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/test_pipeline_signal_conditioning_fallback.py::test_pipeline_fallback_uses_candle_conditioned_path", "-q"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["git", "stash"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/test_pipeline_signal_conditioning_fallback.py", "-q"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/", "-p", "no:cacheprovider", "-q", "-k", "signal or throttle or clean_block or watch or pressure or microboost or quorum"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/", "-p", "no:cacheprovider", "-q", "-k", "signal or throttle or clean_block or watch or pressure or microboost or quorum", "--co", "-q"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["python", "-m", "pytest", "tests/", "-p", "no:cacheprovider", "-k", "signal or throttle or clean_block or watch or pressure or microboost or quorum", "--co", "-q"],
-    decision = "allow",
-)
-
-prefix_rule(
-    pattern = ["git", "log"],
-    decision = "allow",
+    pattern = [["docker", "docker.exe", "psql", "psql.exe", "redis-cli", "redis-cli.exe"]],
+    decision = "prompt",
+    justification = "Infrastructure and database clients need target-specific review. Use the existing task authorization and review the exact target.",
 )
