@@ -1,0 +1,8 @@
+# Codex loads skills from the user, repository, system, and enabled plugins.
+# Keep automatic discovery: no machine-specific skill paths or fixed allow list.
+# Command permissions are separate; see rules/settings-local.rules.
+# Model, sandbox, approvals, plugin installation, and authentication are inherited.
+
+[skills]
+include_instructions = true
+max_context_tokens = 10000
