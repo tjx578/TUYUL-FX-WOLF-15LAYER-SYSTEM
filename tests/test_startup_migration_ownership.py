@@ -20,5 +20,9 @@ def test_api_and_engine_startup_do_not_run_db_migrations() -> None:
 
 def test_migration_ownership_stays_in_migrator_service() -> None:
     migrator_start = _read_text("deploy/railway/start_migrator.sh").lower()
+    migration_runner = _read_text("deploy/railway/migration_runner.py")
 
-    assert "python -m alembic upgrade head" in migrator_start
+    assert "python deploy/railway/migration_runner.py" in migrator_start
+    assert '(sys.executable, "-m", "alembic", "upgrade", "head")' in migration_runner
+    assert "capture_output=True" in migration_runner
+    assert "redact_sensitive_log_text" in migration_runner

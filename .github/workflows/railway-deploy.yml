@@ -1,54 +1,85 @@
-name: Railway Deploy
+# Manual release surface only. P1-P7 core has no production consumer yet, so
+# this workflow must remain unused until a separately reviewed runtime-wiring release.
+name: Railway Deploy (Controlled Pressure Outbox)
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
   workflow_dispatch:
+    inputs:
+      release_sha:
+        description: "Exact reviewed 40-character commit SHA on main"
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
-  group: deploy-railway-${{ github.ref }}
-  cancel-in-progress: true
+  group: railway-production-pressure-outbox
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy ${{ matrix.service }} (gated)
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'main'
-      )
+    name: Deploy wolf15-pressure-outbox (exact SHA)
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    strategy:
-      # Deploy every service independently so one failing service does not block the rest.
-      fail-fast: false
-      matrix:
-        # IMPORTANT: each entry MUST match the exact service name in the Railway project,
-        # AND that service must point its Config-as-code path to its own railway-<svc>.toml
-        # (Railway dashboard -> service -> Settings -> Config-as-code). Otherwise the deploy
-        # for that service fails ("service not found") or uses the wrong config.
-        # Source of these names: infrastructure/railway/railway.json. Verify in the dashboard.
-        # (migrator intentionally excluded -- run DB migrations deliberately, not per push.)
-        service:
-          - wolf15-api
-          - wolf15-engine
-          - wolf15-ingest
-          - wolf15-orchestrator
-          - wolf15-worker
+    environment: production
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      RAILWAY_PROJECT_ID: af4d15d8-d4cb-44b7-80e7-d99a37ca0045
+      RAILWAY_ENVIRONMENT_ID: 5838964d-8c76-42b3-b0b9-18f2d1e4d5c2
+      RAILWAY_SERVICE_ID: e555dbb1-76ea-4300-8244-80747cfc9786
+      RAILWAY_SERVICE_NAME: wolf15-pressure-outbox
     steps:
-      - name: Checkout
+      - name: Checkout exact release
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
 
-      - name: Validate token presence
-        id: check_token
+      - name: Assert exact reviewed main SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release_sha must be a full lowercase 40-character commit SHA"
+            exit 1
+          fi
+
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ "$checked_out_sha" != "$RELEASE_SHA" ]]; then
+            echo "::error::Checked-out SHA does not match release_sha"
+            exit 1
+          fi
+
+          remote_main_sha="$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')"
+          if [[ "$remote_main_sha" != "$RELEASE_SHA" ]]; then
+            echo "::error::release_sha is not the current remote main"
+            exit 1
+          fi
+
+      - name: Require successful CI for exact SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          successful_ci_count="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=main&head_sha=${RELEASE_SHA}&status=success&per_page=100" \
+              --jq '[.workflow_runs[] | select(.head_sha == env.RELEASE_SHA and .head_branch == "main" and .conclusion == "success")] | length'
+          )"
+          if [[ "$successful_ci_count" -lt 1 ]]; then
+            echo "::error::No successful CI workflow exists for release_sha on main"
+            exit 1
+          fi
+
+      - name: Validate Railway token presence
         env:
           RAILWAY_TOKEN: ${{ secrets['RAILWAY_TOKEN'] }}
         run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then
+          if [[ -z "$RAILWAY_TOKEN" ]]; then
             echo "::error::RAILWAY_TOKEN secret is not configured"
             exit 1
           fi
@@ -58,12 +89,26 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Install pinned Railway CLI
+        run: npm install -g @railway/cli@5.41.0
 
-      - name: Deploy ${{ matrix.service }}
+      - name: Verify Railway CLI version
+        run: test "$(railway --version)" = "railway 5.41.0"
+
+      - name: Deploy exact source to pressure-outbox only
         env:
           RAILWAY_TOKEN: ${{ secrets['RAILWAY_TOKEN'] }}
-        # --service targets one service; --ci runs non-interactively. Each service uses its
-        # own Config-as-code file as configured in the Railway dashboard.
-        run: railway up --service "${{ matrix.service }}" --ci
+        run: |
+          set -euo pipefail
+          remote_main_sha="$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')"
+          if [[ "$remote_main_sha" != "$RELEASE_SHA" ]]; then
+            echo "::error::Remote main changed after release validation; aborting deploy"
+            exit 1
+          fi
+
+          railway up \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_ENVIRONMENT_ID" \
+            --service "$RAILWAY_SERVICE_ID" \
+            --ci \
+            --message "release_sha=${RELEASE_SHA} service=${RAILWAY_SERVICE_NAME}"
