@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import os
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 
 DISABLED_FLAGS = (
     "WOLF15_EMBED_ORCHESTRATOR",
@@ -23,6 +26,37 @@ DISABLED_FLAGS = (
     "CANARY_ISSUANCE_ENABLED",
     "ENABLE_DEV_ROUTES",
 )
+
+ATTESTED_SOURCE_PATHS = (
+    "api/owner_dashboard_release.py",
+    "api/app_factory.py",
+    "deploy/railway/owner-dashboard-api.json",
+    "deploy/railway/start_api.sh",
+)
+
+
+def emit_startup_attestation(background_started: Mapping[str, bool]) -> None:
+    """Emit a fixed, credential-free startup receipt from the actual API worker."""
+    validate_release_environment(os.environ)
+    if os.environ.get("WOLF15_API_READ_ONLY_STARTUP") != "true" or os.environ.get("WOLF15_SERVICE_ROLE") != "api":
+        raise ValueError("Owner dashboard startup profile is not active")
+    if set(background_started) != {"outbox", "relay", "peer_health", "candle_aggregator", "orchestrator"} or any(
+        background_started.values()
+    ):
+        raise ValueError("Owner dashboard background containment failed")
+    root = Path(__file__).resolve().parents[1]
+    receipt = {
+        "schema": "owner-dashboard-startup-v1",
+        "pid": os.getpid(),
+        "read_only_startup": True,
+        "role_api": True,
+        "disabled_flags": {name: os.environ.get(name) == "false" for name in DISABLED_FLAGS},
+        "background_started": dict(background_started),
+        "files": {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in ATTESTED_SOURCE_PATHS},
+    }
+    if not all(receipt["disabled_flags"].values()):
+        raise ValueError("Owner dashboard flags are not normalized")
+    print("WOLF15_OWNER_STARTUP_ATTESTATION " + json.dumps(receipt, sort_keys=True), flush=True)
 
 
 def validate_release_environment(env: Mapping[str, str]) -> None:

@@ -66,7 +66,9 @@ def test_entrypoint_validates_before_exec(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.asyncio
-async def test_real_lifespan_skips_background_writers(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_real_lifespan_skips_background_writers(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
     from fastapi import FastAPI
 
     from api import app_factory, ws_routes
@@ -76,6 +78,7 @@ async def test_real_lifespan_skips_background_writers(monkeypatch: pytest.Monkey
     for key, value in configured().items():
         monkeypatch.setenv(key, value)
     monkeypatch.setenv("WOLF15_API_READ_ONLY_STARTUP", "true")
+    monkeypatch.setenv("WOLF15_SERVICE_ROLE", "api")
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     redis = Mock(ping=AsyncMock(return_value=True))
     monkeypatch.setattr(redis_client, "get_client", AsyncMock(return_value=redis))
@@ -100,6 +103,28 @@ async def test_real_lifespan_skips_background_writers(monkeypatch: pytest.Monkey
     thread.assert_not_called()
     for constructor in constructors:
         constructor.assert_not_called()
+    output = capsys.readouterr().out
+    line = next(line for line in output.splitlines() if line.startswith("WOLF15_OWNER_STARTUP_ATTESTATION "))
+    receipt = json.loads(line.split(" ", 1)[1])
+    assert all(receipt["disabled_flags"].values())
+    assert not any(receipt["background_started"].values())
+    assert len(receipt["files"]) == 4
+    for key in ("DASHBOARD_OWNER_USERNAME", "DASHBOARD_OWNER_PASSWORD_HASH", "DASHBOARD_JWT_SECRET"):
+        assert configured()[key] not in output
+
+
+@pytest.mark.parametrize("background", ["outbox", "relay", "peer_health", "candle_aggregator", "orchestrator"])
+def test_attestation_rejects_running_background_worker(monkeypatch: pytest.MonkeyPatch, background: str) -> None:
+    from api.owner_dashboard_release import emit_startup_attestation
+
+    for key, value in configured().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("WOLF15_API_READ_ONLY_STARTUP", "true")
+    monkeypatch.setenv("WOLF15_SERVICE_ROLE", "api")
+    workers = dict.fromkeys(["outbox", "relay", "peer_health", "candle_aggregator", "orchestrator"], False)
+    workers[background] = True
+    with pytest.raises(ValueError, match="containment"):
+        emit_startup_attestation(workers)
 
 
 def test_release_config_is_explicit_and_has_no_predeploy() -> None:

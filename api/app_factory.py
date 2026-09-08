@@ -242,6 +242,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:
             logger.warning("Embedded orchestrator failed to start — running API-only")
 
+    if read_only_startup:
+        from api.owner_dashboard_release import emit_startup_attestation
+
+        emit_startup_attestation(
+            {
+                "outbox": outbox_worker is not None or outbox_task is not None,
+                "relay": relay is not None,
+                "peer_health": peer_checker is not None,
+                "candle_aggregator": _candle_agg_started,
+                "orchestrator": _orchestrator_thread is not None,
+            }
+        )
+
     try:
         yield
     finally:

@@ -18,6 +18,15 @@ This is a startup containment profile, not a claim that every API endpoint is
 read-only. Existing machine consumers and broader API authorization remain a
 separate boundary; owner tokens are still limited to viewer/read:dashboard.
 
+Each API worker emits `WOLF15_OWNER_STARTUP_ATTESTATION` before accepting traffic.
+The fixed JSON receipt contains its PID, the 14 disabled-flag checks, five
+background-component states, and SHA-256 hashes of four release/startup files.
+It never includes environment dumps, owner identifiers, verifiers or tokens.
+Compare those hashes to canonical Git blobs from the pinned deployment commit
+and bind the log to that deployment ID. This is a worker-emitted runtime receipt;
+SSH inspection, whole-image attestation and database/broker state remain separate
+evidence classes. An unexpected background component prevents startup.
+
 Before deploying: preserve exact currently active deployment IDs for rollback,
 verify the selected services and domains, validate effective disabled flags,
 configure the owner through masked local input, and verify the provider's
