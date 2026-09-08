@@ -77,6 +77,7 @@ jobs:
       PYTHONPATH: .
       REDIS_URL: redis://localhost:6379/0
       DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
+      WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_RUN_POSTGRES_INTEGRATION: "1"
       WOLF15_POSTGRES_TEST_DATABASE: wolf15_ci_test
       WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS: YES_I_UNDERSTAND
@@ -138,6 +139,18 @@ jobs:
 
           asyncio.run(main())
           PYEOF
+
+      - name: Require executed S03 PostgreSQL acceptance
+        run: python scripts/ci/run_pair_activity_runtime_acceptance.py
+
+      - name: Upload S03 source-bound PostgreSQL receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pair-activity-runtime-acceptance
+          path: artifacts/pair-activity-runtime/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Run pytest with coverage
         run: |

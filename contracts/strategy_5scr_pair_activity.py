@@ -278,3 +278,105 @@ class PairActivityAuditV31(FrozenActivityModel):
         if self.coverage_status != "COMPLETE" and any(item.decision == "GRANTED" for item in self.evaluations):
             raise ValueError("incomplete coverage cannot grant activity")
         return self
+
+
+class LogicalRawActivityObservationV1(FrozenActivityModel):
+    """One source observation, never a Microboost transition or order permission."""
+
+    observation_id: str = Field(..., pattern=HASH_PATTERN)
+    identity_basis: Literal["SOURCE_OBSERVATION_ID", "RAW_EVENT_ID"]
+    source_observation_id: str | None = Field(default=None, min_length=1, max_length=200)
+    source_observation_schema: Literal["signal-throttle-observation.v1"] | None = None
+    symbol: str
+    deployment_id: str
+    occurred_at_utc: datetime
+    source_raw_event_ids: tuple[str, ...] = Field(..., min_length=1)
+    direction_quality: Literal["BUY", "SELL", "UNKNOWN"]
+
+    @model_validator(mode="after")
+    def identity_consistency(self) -> Self:
+        if tuple(sorted(set(self.source_raw_event_ids))) != self.source_raw_event_ids:
+            raise ValueError("logical observation raw identities must be sorted and unique")
+        if self.identity_basis == "SOURCE_OBSERVATION_ID":
+            if (
+                not self.source_observation_id
+                or not self.source_observation_id.strip()
+                or self.source_observation_schema is None
+            ):
+                raise ValueError("source observation identity requires its explicit schema and identifier")
+            identity = [self.source_observation_schema, self.deployment_id, self.source_observation_id]
+        else:
+            if (
+                self.source_observation_id is not None
+                or self.source_observation_schema is not None
+                or len(self.source_raw_event_ids) != 1
+            ):
+                raise ValueError("unbound raw facts cannot be conflated into a logical observation")
+            identity = ["raw-event-identity.v1", self.source_raw_event_ids[0]]
+        if self.observation_id != activity_hash(identity):
+            raise ValueError("logical observation identity mismatch")
+        return self
+
+
+class PairActivityObservationNormalizationV1(FrozenActivityModel):
+    schema_version: Literal["5scr.logical-observations.v1"] = "5scr.logical-observations.v1"
+    raw_observations: tuple[RawActivityObservationV31, ...]
+    logical_observations: tuple[LogicalRawActivityObservationV1, ...]
+    raw_event_count: int = Field(..., ge=0)
+    logical_observation_count: int = Field(..., ge=0)
+    duplicate_delivery_count: int = Field(..., ge=0)
+    skipped_non_authority_event_count: int = Field(..., ge=0)
+    raw_population_hash: str = Field(..., pattern=HASH_PATTERN)
+    execution_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def population_consistency(self) -> Self:
+        # Revalidate nested instances: model_copy/model_construct are not trust boundaries.
+        raw = tuple(
+            RawActivityObservationV31.model_validate(item.model_dump(mode="json")) for item in self.raw_observations
+        )
+        logical = tuple(
+            LogicalRawActivityObservationV1.model_validate(item.model_dump(mode="json"))
+            for item in self.logical_observations
+        )
+        if raw != tuple(sorted(raw, key=lambda item: (item.occurred_at_utc, item.raw_event_id))):
+            raise ValueError("normalized raw observations must follow canonical ordering")
+        population = {item.raw_event_id: item for item in raw}
+        if (
+            len(population) != len(raw)
+            or self.raw_event_count != len(raw)
+            or self.raw_population_hash != observation_hash(raw)
+        ):
+            raise ValueError("normalized raw population mismatch")
+        if self.logical_observation_count != len(logical) or len({item.observation_id for item in logical}) != len(
+            logical
+        ):
+            raise ValueError("logical observation population mismatch")
+        if logical != tuple(sorted(logical, key=lambda item: (item.occurred_at_utc, item.observation_id))):
+            raise ValueError("logical observations must follow canonical ordering")
+        by_time: dict[datetime, list[LogicalRawActivityObservationV1]] = {}
+        for item in logical:
+            by_time.setdefault(item.occurred_at_utc, []).append(item)
+        if any(
+            len({item.symbol for item in same_time}) > 1
+            and any(item.identity_basis == "SOURCE_OBSERVATION_ID" for item in same_time)
+            for same_time in by_time.values()
+        ):
+            raise ValueError("AMBIGUOUS_GLOBAL_SOURCE_ORDER")
+        mapped = [raw_id for item in logical for raw_id in item.source_raw_event_ids]
+        if len(mapped) != len(set(mapped)) or set(mapped) != set(population):
+            raise ValueError("logical mapping must cover each raw fact exactly once")
+        for item in logical:
+            members = tuple(population[raw_id] for raw_id in item.source_raw_event_ids)
+            if any(
+                (member.symbol, member.deployment_id, member.occurred_at_utc)
+                != (item.symbol, item.deployment_id, item.occurred_at_utc)
+                for member in members
+            ):
+                raise ValueError("source observation identity conflicts with scope or timestamp")
+            if len({member.scanner_cycle_id for member in members}) != 1:
+                raise ValueError("source observation identity conflicts with scanner lineage")
+            quality = direction_quality(members)
+            if quality == "CONFLICT" or quality != item.direction_quality:
+                raise ValueError("source observation identity conflicts with direction quality")
+        return self
