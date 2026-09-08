@@ -38,6 +38,17 @@ if (mode !== "viewer") {
   errors.push('DASHBOARD_MODE must be exactly "viewer".');
 }
 
+requireOrigin("DASHBOARD_CANONICAL_ORIGIN", "owner-login browser origin");
+try {
+  const raw = process.env.DASHBOARD_CANONICAL_ORIGIN || "";
+  const parsed = new URL(raw);
+  if (raw !== raw.trim() || raw.length > 512 || /[\\\s,%?#]/.test(raw) ||
+      !/^https?:\/\/[^/]+\/?$/i.test(raw) || parsed.hostname.includes("*") ||
+      ["0.0.0.0", "[::]"].includes(parsed.hostname) ||
+      (parsed.protocol === "http:" && !["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname))) {
+    errors.push("DASHBOARD_CANONICAL_ORIGIN must be one HTTPS browser origin (HTTP is loopback-only), never a wildcard or bind address.");
+  }
+} catch { /* requireOrigin already records a missing or malformed URL. */ }
 requireOrigin("INTERNAL_API_URL", "server-side JWT validation");
 requireOrigin(
   "INTERNAL_DASHBOARD_BFF_URL",

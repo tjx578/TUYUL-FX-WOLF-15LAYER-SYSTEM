@@ -63,8 +63,8 @@ export default async function LoginPage() {
             lineHeight: 1.65,
           }}
         >
-          Sign in with a scoped viewer JWT. This surface cannot send trading,
-          risk, EA, execution, or broker commands.
+          Sign in with the owner account. The resulting session is viewer-only
+          and cannot send trading, risk, EA, execution, or broker commands.
         </p>
         <ViewerLoginForm />
       </section>

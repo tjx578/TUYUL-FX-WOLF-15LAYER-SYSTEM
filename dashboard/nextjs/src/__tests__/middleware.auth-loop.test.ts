@@ -22,6 +22,15 @@ function request(
 }
 
 describe("G4 viewer middleware boundary", () => {
+  it("admits only the exact owner-login POST without a session", () => {
+    const login = new NextRequest("https://dashboard.example/api/auth/owner-login", { method: "POST" });
+    expect(middleware(login).status).toBe(200);
+    expect(middleware(request("/api/auth/owner-login")).status).toBe(403);
+    for (const path of ["/api/auth/owner-login/extra", "/api/auth/owner-session", "/api/auth/refresh"]) {
+      expect(middleware(new NextRequest(`https://dashboard.example${path}`, { method: "POST" })).status).toBe(403);
+    }
+  });
+
   it.each(["/login", "/healthz", "/api/set-session"])(
     "keeps %s public",
     (path) => {

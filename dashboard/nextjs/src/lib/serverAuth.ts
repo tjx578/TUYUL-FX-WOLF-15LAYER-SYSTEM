@@ -19,6 +19,7 @@ export class SessionAuthorizationError extends Error {
  */
 export async function validateSessionToken(
   token: string,
+  signal?: AbortSignal,
 ): Promise<SessionUser | null> {
   const candidate = token.trim();
   if (!candidate || candidate.split(".").length !== 3) return null;
@@ -35,6 +36,8 @@ export async function validateSessionToken(
         cookie: "",
       },
       cache: "no-store",
+      redirect: "error",
+      signal: signal ?? AbortSignal.timeout(5000),
     });
     if (!response.ok) return null;
 

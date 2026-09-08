@@ -46,6 +46,7 @@ export function middleware(request: NextRequest): NextResponse {
 
   if (
     pathname === "/login" ||
+    (pathname === "/api/auth/owner-login" && request.method === "POST") ||
     pathname === "/api/set-session" ||
     pathname === "/healthz"
   ) {
