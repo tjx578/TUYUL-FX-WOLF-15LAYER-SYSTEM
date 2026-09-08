@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import getpass
 import hashlib
+import json
 import secrets
 
 
@@ -15,7 +16,15 @@ def main() -> None:
         raise SystemExit("Passwords do not match")
     if len(password) < 14:
         raise SystemExit("Use at least 14 characters")
-    if len(password) > 1024 or len(password.encode("utf-8")) > 3072:
+    try:
+        # The browser counts UTF-16 units, and the route bounds JSON bytes.
+        # Reserve the worst-case escaped representation of a 254-unit username.
+        units = len(password.encode("utf-16-le")) // 2
+        body = json.dumps({"username": "\x01" * 254, "password": password}, ensure_ascii=False, separators=(",", ":"))
+        body_bytes = len(body.encode("utf-8"))
+    except UnicodeError as error:
+        raise SystemExit("Password contains invalid Unicode") from error
+    if units > 1024 or body_bytes > 4096:
         raise SystemExit("Password exceeds the login input limit")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 600_000)

@@ -58,6 +58,7 @@ def test_owner_login_issues_only_scoped_viewer_jwt(monkeypatch) -> None:
     assert body["scopes"] == ["read:dashboard"]
     assert body["auth_method"] == "jwt"
     assert "set-cookie" not in response.headers
+    assert "set-cookie" not in session.headers
 
 
 def test_owner_login_rejects_wrong_password_with_generic_error(monkeypatch) -> None:
@@ -250,7 +251,7 @@ def test_worker_exception_releases_slot(monkeypatch):
     router._owner_login_gate.release()
 
 
-@pytest.mark.parametrize("password", ["short", "x" * 1025, "界" * 1024 + "x"])
+@pytest.mark.parametrize("password", ["short", "x" * 1025, "界" * 1024 + "x", "😀" * 600, "\x01" * 600])
 def test_hash_generator_rejects_out_of_bounds_input_without_output(monkeypatch, capsys, password):
     from scripts import generate_dashboard_owner_password_hash as generator
 
@@ -270,3 +271,45 @@ def test_hash_generator_emits_verifier_not_password(monkeypatch, capsys):
     assert PASSWORD not in encoded
     assert encoded.startswith("pbkdf2_sha256$600000$")
     assert _verify_owner_password(PASSWORD, encoded)
+
+
+def test_hash_generator_accepts_browser_utf16_boundary(monkeypatch, capsys):
+    from api.auth_router import _verify_owner_password
+    from scripts import generate_dashboard_owner_password_hash as generator
+
+    password = "😀" * 512
+    monkeypatch.setattr(generator.getpass, "getpass", lambda _: password)
+    generator.main()
+    assert _verify_owner_password(password, capsys.readouterr().out.strip())
+
+
+@pytest.mark.parametrize("endpoint", ["refresh", "owner-session", "login"])
+@pytest.mark.parametrize("transport", ["bearer", "cookie"])
+def test_owner_password_token_cannot_use_legacy_reissuance(monkeypatch, endpoint, transport):
+    import api.auth_router as router
+    import api.middleware.auth as auth
+
+    monkeypatch.setattr(router, "_owner_credentials_valid", lambda *_: True)
+    monkeypatch.setattr(auth, "TOKEN_EXPIRE_MIN", 60 * 24)
+    client = _client()
+    login = client.post("/api/auth/owner-login", json={"username": USERNAME, "password": PASSWORD})
+    token = login.json()["token"]
+    original = auth.decode_token(token)
+    headers = {"authorization": f"Bearer {token}"} if transport == "bearer" else {}
+    if transport == "cookie":
+        client.cookies.set(auth.COOKIE_NAME, token)
+    session = client.get("/api/auth/session", headers=headers)
+    assert session.status_code == 200
+    assert "set-cookie" not in session.headers
+    response = client.post(
+        f"/api/auth/{endpoint}",
+        headers=headers,
+        json={"api_key": token} if endpoint == "login" else None,
+    )
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Password reauthentication required"}
+    assert response.headers["cache-control"] == "no-store"
+    assert "set-cookie" not in response.headers
+    assert original["exp"] - original["iat"] == 900
+    monkeypatch.setattr(auth.time, "time", lambda: original["exp"] + 1)
+    assert client.get("/api/auth/session", headers=headers).status_code == 401

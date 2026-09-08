@@ -54,6 +54,7 @@ from .middleware.auth import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 OWNER_SESSION_SECONDS = 15 * 60
+OWNER_VIEWER_SUBJECT = "dashboard-owner-viewer"
 
 
 class _OwnerLoginGate:
@@ -185,6 +186,17 @@ def _owner_credentials_valid(username: str, password: str) -> bool:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
+def _require_renewable_session(payload: dict[str, Any]) -> None:
+    # verify_token replaces auth_method with the transport used. The signed,
+    # reserved subject survives every legacy exchange and identifies this flow.
+    if payload.get("sub") == OWNER_VIEWER_SUBJECT:
+        raise HTTPException(
+            status_code=403,
+            detail="Password reauthentication required",
+            headers={"Cache-Control": "no-store"},
+        )
+
+
 @router.post("/owner-login", response_model=OwnerLoginResponse)
 async def owner_login(body: OwnerLoginRequest, response: Response) -> OwnerLoginResponse:
     """Exchange owner credentials for a short-lived read-only viewer JWT."""
@@ -214,7 +226,7 @@ async def owner_login(body: OwnerLoginRequest, response: Response) -> OwnerLogin
 
     now = int(time.time())
     token = create_token(
-        sub="dashboard-owner-viewer",
+        sub=OWNER_VIEWER_SUBJECT,
         extra={
             "email": body.username.strip(),
             "name": "WOLF15 Owner",
@@ -246,6 +258,7 @@ async def owner_session(
     Returns a fresh owner-scoped JWT and sets the HttpOnly session cookie.
     Browser-facing API key submission is NOT allowed on this endpoint.
     """
+    _require_renewable_session(payload)
     token = create_token(
         sub=str(payload.get("sub", "owner")),
         extra={
@@ -292,6 +305,7 @@ async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
     # Try as JWT first (allows login with existing valid JWT)
     payload = decode_token(key)
     if payload is not None:
+        _require_renewable_session(payload)
         token = create_token(
             sub=str(payload.get("sub", "dashboard")),
             extra={k: payload[k] for k in ("email", "role", "name", "scope", "scopes") if k in payload},
@@ -329,9 +343,10 @@ async def get_session(
     """
     Validate the caller's JWT / API key and return the session user.
 
-    On success, refreshes the session cookie to extend its lifetime.
+    Legacy sessions refresh their cookie. Password-issued owner viewer sessions
+    are validation-only so polling cannot extend their absolute expiry.
     """
-    if payload.get("sub"):
+    if payload.get("sub") and payload.get("sub") != OWNER_VIEWER_SUBJECT:
         token = create_token(
             sub=str(payload.get("sub", "dashboard")),
             extra={k: payload[k] for k in ("email", "role", "name") if k in payload},
@@ -348,6 +363,7 @@ async def refresh_session(
     """
     Issue a fresh JWT from a still-valid token, update the HttpOnly cookie.
     """
+    _require_renewable_session(payload)
     extra: dict[str, Any] = {}
     for key in ("email", "role", "name", "scope", "scopes"):
         if key in payload:
