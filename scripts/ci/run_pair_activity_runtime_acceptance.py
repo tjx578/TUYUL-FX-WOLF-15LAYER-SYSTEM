@@ -73,6 +73,7 @@ SOURCES = (
     "pipeline/wolf_constitutional_pipeline.py",
     "tests/integration/postgres_test_guard.py",
     "scripts/ci/run_strategy_persistence_acceptance.py",
+    "scripts/ci/run_supported_upgrade_acceptance.py",
     *DOMAIN_TESTS,
 )
 

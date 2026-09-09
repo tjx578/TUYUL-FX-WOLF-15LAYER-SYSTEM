@@ -67,10 +67,13 @@ def main():
             )
 
             async def state(initialize):
+                repository = CapacityRepositoryV31(fence=fence)
+                prepared = (
+                    repository.prepare_initial_detached(ledger, verify_initial=lambda *_: True) if initialize else None
+                )
                 async with DB(env["DATABASE_URL"]).transaction() as connection:
-                    repository = CapacityRepositoryV31(fence=fence)
                     if initialize:
-                        await repository.initialize_in_transaction(connection, ledger, verify_initial=lambda *_: True)
+                        await repository.initialize_in_transaction(connection, ledger, prepared=prepared)
                     loaded = await repository.lock_current(connection)
                     assert loaded == ledger
                     row = await connection.fetchrow(

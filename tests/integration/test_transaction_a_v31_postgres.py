@@ -100,9 +100,9 @@ def test_transaction_a_postgres_acceptance(pg_dsn, scenario, monkeypatch):
         capacity = CapacityRepositoryV31(fence=owner)
         prepared_initial = capacity.prepare_initial_detached(ledger, verify_initial=lambda *_: True)
         async with db.transaction() as c:
-            assert await c.fetchval(
-                "SELECT to_regclass($1)", PREFIX + "outbox_v31"
-            ), "explicit migration 20260909_06 required"
+            assert await c.fetchval("SELECT to_regclass($1)", PREFIX + "outbox_v31"), (
+                "explicit migration 20260909_06 required"
+            )
             await capacity.initialize_in_transaction(c, ledger, prepared=prepared_initial)
         scope = ActivityConsumerScopeV1(
             consumer_scope_id="transaction-a-fixture",
