@@ -5,12 +5,17 @@ in-transaction variant returns a tentative record for composition, not an ACK.
 No default connection, owner acquisition, migration or risk effect is supplied.
 """
 
+from uuid import UUID
+
 from contracts.strategy_5scr_candidate_revision_v31 import (
+    CandidateCapacityPreparationV31,
     CandidateRevisionAppendV31,
     StoredCandidateRevisionV31,
     candidate_revision_hash_v31,
     prepare_candidate_revision_v31,
 )
+from contracts.strategy_5scr_risk_adapter_v31 import ParentSizingRequestV31
+from risk.strategy_5scr_candidate_handoff_v31 import propose_canonical_parent_v31
 from storage.strategy_5scr_activity_consumer import bind_owner
 
 TABLE = "public.strategy_5scr_candidate_revisions_v31"
@@ -91,3 +96,52 @@ class CandidateRevisionRepositoryV31:
         async with self._pg.transaction() as connection:
             result = await self.append_in_transaction(connection, request, now=now)
         return result
+
+    async def prepare_parent_in_transaction(
+        self,
+        connection,
+        *,
+        expected_candidate_revision_hash,
+        ledger,
+        request: ParentSizingRequestV31,
+        reservation_id,
+        expires_at,
+        now,
+        capacity_owner_epoch,
+        expected_capacity_version,
+        verify_handoff,
+        verify_universe,
+        verify_risk_inputs,
+    ) -> CandidateCapacityPreparationV31:
+        """Prepare capacity from locked latest history in the caller transaction.
+
+        The caller must lock/authenticate the account ledger and persist the
+        complete Transaction A effects before commit. This method writes none
+        of those effects and cannot be used as a durable reservation receipt.
+        Historical append ACKs are separate from admission of the latest plan.
+        """
+        request = ParentSizingRequestV31.model_validate(request.model_dump())
+        latest = await self.lock_latest(connection, UUID(request.tradeplan_id))
+        if latest is None:
+            raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+        if (
+            latest.request_hash != expected_candidate_revision_hash
+            or latest.request.handoff.candidate.tradeplan_revision != request.tradeplan_revision
+        ):
+            raise ValueError("CANDIDATE_LATEST_REVISION_MISMATCH")
+        result = propose_canonical_parent_v31(
+            ledger,
+            latest.request.handoff,
+            request,
+            reservation_id=reservation_id,
+            expires_at=expires_at,
+            now=now,
+            owner_epoch=capacity_owner_epoch,
+            expected_version=expected_capacity_version,
+            verify_handoff=verify_handoff,
+            verify_universe=verify_universe,
+            verify_risk_inputs=verify_risk_inputs,
+        )
+        # All reads and checks above occur while the same owner/candidate locks
+        # remain held. A transaction failure discards this tentative preparation.
+        return CandidateCapacityPreparationV31(profile="TEST_ONLY", candidate_revision=latest, capacity=result)

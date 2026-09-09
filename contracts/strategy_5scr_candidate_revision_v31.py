@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from contracts.strategy_5scr_candidate_handoff_v31 import CandidateHandoffV31
+from contracts.strategy_5scr_capacity_v31 import CapacityProposalV31
 from contracts.strategy_5scr_net_geometry_v31 import GeometryContract
 
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
@@ -43,6 +44,30 @@ class StoredCandidateRevisionV31(GeometryContract):
     def integrity(self):
         if candidate_revision_hash_v31(self.request) != self.request_hash:
             raise ValueError("CANDIDATE_STORED_HASH_MISMATCH")
+        return self
+
+
+class CandidateCapacityPreparationV31(GeometryContract):
+    """Tentative result for the same caller transaction, never a committed ACK."""
+
+    profile: Literal["TEST_ONLY"]
+    candidate_revision: StoredCandidateRevisionV31
+    capacity: CapacityProposalV31
+    durable_commit: Literal[False] = False
+    capital_reservation_authority: Literal[False] = False
+    execution_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def identity(self):
+        candidate = self.candidate_revision.request.handoff.candidate
+        reservation = self.capacity.reservation
+        if (
+            (reservation.tradeplan_id, reservation.tradeplan_revision, reservation.thesis_id)
+            != (str(candidate.tradeplan_id), candidate.tradeplan_revision, str(candidate.strategy_thesis_id))
+            or candidate.analysis_admission_class != "CANONICAL_RAW"
+            or reservation.strategy_candidate_receipt_hash is None
+        ):
+            raise ValueError("CANDIDATE_CAPACITY_PREPARATION_IDENTITY_MISMATCH")
         return self
 
 
