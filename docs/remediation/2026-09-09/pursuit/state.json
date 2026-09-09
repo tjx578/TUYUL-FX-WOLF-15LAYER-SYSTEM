@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
-  "source_verified_at": "2026-09-09T13:51:07.306816+00:00",
+  "source_checkpoint": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+  "source_verified_at": "2026-09-09T14:38:39.851456+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K05_DETACHED_VERIFICATION_CURRENT_POSTGRES_ACCEPTANCE",
+  "current_slice": "C06_ENGINE_SHARED_PROBE_AND_FATAL_LIFECYCLE",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -54,7 +54,8 @@
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
         "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
-        "pursuit/evidence/consumer-fence-20260909/review.json"
+        "pursuit/evidence/consumer-fence-20260909/review.json",
+        "pursuit/evidence/k05-detached-pg-20260909/review.json"
       ]
     },
     "C03": {
@@ -82,7 +83,8 @@
         "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
         "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
-        "pursuit/evidence/consumer-fence-20260909/review.json"
+        "pursuit/evidence/consumer-fence-20260909/review.json",
+        "pursuit/evidence/k05-detached-pg-20260909/review.json"
       ]
     },
     "C04": {
@@ -121,7 +123,8 @@
         "pursuit/evidence/p1-ci-20260909/validation.json",
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
         "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json",
-        "pursuit/evidence/consumer-fence-20260909/review.json"
+        "pursuit/evidence/consumer-fence-20260909/review.json",
+        "pursuit/evidence/k05-detached-pg-20260909/review.json"
       ]
     },
     "C06": {
@@ -201,7 +204,8 @@
         "followup-consumer-owner/validation.json",
         "followup-consumer-owner/acceptance-inventory.json",
         "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
-        "pursuit/evidence/consumer-fence-20260909/review.json"
+        "pursuit/evidence/consumer-fence-20260909/review.json",
+        "pursuit/evidence/k05-detached-pg-20260909/review.json"
       ]
     },
     "S04": {
@@ -754,7 +758,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Run current 94 PostgreSQL identities and required CI on detached-verification candidate; preserve C04 closed scope and remaining C01/C02/C06 and K05 operational bindings.",
+  "next_action_on_resume": "Check evidence-publication required checks, then implement C06 shared engine probe and fatal required-task process lifecycle; K05 operational policy and evidence bindings remain open.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -767,8 +771,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_REAL_PG_87_C04_CLOSED_REQUIRED_CI_REMEDIATION",
-  "actual_source_commit": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+  "previous_goal_turn_classification": "PROGRESS_DETACHED_VERIFICATION_REAL_PG_94_AND_REQUIRED_CI_PASS",
+  "actual_source_commit": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -803,13 +807,14 @@
       "DONE": false
     },
     "K05": {
-      "status": "DETACHED_VERIFICATION_LOCAL_PASS_CURRENT_PG_PENDING_OPERATIONAL_PARTIAL",
+      "status": "DETACHED_VERIFICATION_POSTGRES_PASS_OPERATIONAL_PARTIAL",
       "DONE": false,
-      "evidence_ref": "pursuit/evidence/k05-detached-20260909/validation.json",
+      "evidence_ref": "pursuit/evidence/k05-detached-pg-20260909/review.json",
       "previous_evidence_refs": [
         "evidence/k05-ordered-proof-validation.json",
         "evidence/k05-context-validation.json",
-        "evidence/k05-reference-pattern-validation.json"
+        "evidence/k05-reference-pattern-validation.json",
+        "pursuit/evidence/k05-detached-20260909/validation.json"
       ],
       "remaining": [
         "Latest witness selection, later-candle invalidation and full session/source coverage attestation",
@@ -885,12 +890,12 @@
     "K05_POST_PROOF_VALIDITY"
   ],
   "publication": {
-    "source_commit": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
-    "remote_checkpoint": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+    "source_commit": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+    "remote_checkpoint": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
     "pr": 428,
     "draft": false,
-    "push": "PR428_PUBLISHED_E70264CE",
-    "reason": "Security/Docs and PostgreSQL gates on e70264ce passed. Full CI failed on a stale lock-order assertion (10185pass/1fail); follow-up assertion repair requires new CI. Evidence publication may have a later SHA. Operational binding and fresh review remain open.",
+    "push": "PR428_PUBLISHED_0D00F140",
+    "reason": "CI34363944821, Security and Docs PASS; 10235 Python and 94 distinct PostgreSQL tests passed with no skip. Current source manifests verified. Evidence publication may have a later SHA; required review and operational bindings remain open.",
     "no_main_merge": true,
     "no_deployment": true,
     "merge": "HOLD"
@@ -946,11 +951,24 @@
   },
   "detached_verification_checkpoint": {
     "base_head": "bf20631d44f7b3ed4c0caf8e17f943c3003535d6",
-    "source": "WORKING_TREE_BOUND_BY_LOCAL_RECEIPTS",
+    "source": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
     "local_distinct": 205,
     "pg_collected": 94,
-    "pg_current_source": "NOT_EXECUTED",
-    "ref": "pursuit/evidence/k05-detached-20260909/validation.json",
+    "pg_current_source": "94_PASS_NO_FAILURE_ERROR_SKIP_SOURCE_VERIFIED",
+    "ref": "pursuit/evidence/k05-detached-pg-20260909/review.json",
     "observed_at_utc": "2026-09-09T14:22:52.013110+00:00"
-  }
+  },
+  "publication_history": [
+    {
+      "source_commit": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+      "remote_checkpoint": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+      "pr": 428,
+      "draft": false,
+      "push": "PR428_PUBLISHED_E70264CE",
+      "reason": "Security/Docs and PostgreSQL gates on e70264ce passed. Full CI failed on a stale lock-order assertion (10185pass/1fail); follow-up assertion repair requires new CI. Evidence publication may have a later SHA. Operational binding and fresh review remain open.",
+      "no_main_merge": true,
+      "no_deployment": true,
+      "merge": "HOLD"
+    }
+  ]
 }

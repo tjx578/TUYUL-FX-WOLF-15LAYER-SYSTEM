@@ -1,5 +1,5 @@
 {
-  "source_commit": "bf20631d44f7b3ed4c0caf8e17f943c3003535d6",
+  "source_commit": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
   "scope": "Historical receipts retain exact source; K05 current worktree hashes in its local receipts; evidence publication commit is later",
   "files": [
     {
@@ -881,6 +881,326 @@
       "path": "k05-detached-20260909/validation.json",
       "sha256": "8b4e06419640b4e7ad39d39188a0be22373036a0059092bc4d5de60792121ed1",
       "bytes": 29008
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/1f21c65d61fb41d7ac93579c12cb28b9/collection.log",
+      "sha256": "dfc007427a5e5d359ad89acc9f0152a5a844ba01a9cf4162ea97858ced7a1bf9",
+      "bytes": 6412
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/1f21c65d61fb41d7ac93579c12cb28b9/postgres-after.json",
+      "sha256": "d51091183b0bc6e0493982d3de01dcc7a7673e900753ee319316e108c4a7608d",
+      "bytes": 1087
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/1f21c65d61fb41d7ac93579c12cb28b9/postgres-before.json",
+      "sha256": "ae0bf100ea2338391e34b15187c06ae671fec95756e98b7e54bd6252ee3f3868",
+      "bytes": 1088
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/1f21c65d61fb41d7ac93579c12cb28b9/pytest.log",
+      "sha256": "cb31117b912c1db071dd2e2e18949e80b54f3c07863ccc146e3ff056c7986546",
+      "bytes": 99
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/1f21c65d61fb41d7ac93579c12cb28b9/receipt.json",
+      "sha256": "3ea3ab21d0dce3d6a6999ce963341f0fcba4c4a81454c36de445ed01bfacdb2c",
+      "bytes": 63062
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/1f21c65d61fb41d7ac93579c12cb28b9/runtime-fixtures.jsonl",
+      "sha256": "0b97c9c868bf1dd8fa022a5a7c7dc19e8e06db49128689675f5e9ce9cd9e3db2",
+      "bytes": 70871
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/1f21c65d61fb41d7ac93579c12cb28b9/tests.xml",
+      "sha256": "1f93c9602f8d686c75623a673ae4b4ae1ae878c103cbdf112bf67422f0f50f9a",
+      "bytes": 8433
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/79c54b8aaba74d87a03714ccb10aac76/collection.log",
+      "sha256": "aa94416f9ae42d39369f941a7fbb8984cf860fd56c5bdfe73dc07015fa67b48b",
+      "bytes": 851
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/79c54b8aaba74d87a03714ccb10aac76/postgres-after.json",
+      "sha256": "7cedac634637b5affa1c29a79ca689090c0c00679b83ec8b286cf461fe65fa63",
+      "bytes": 1087
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/79c54b8aaba74d87a03714ccb10aac76/postgres-before.json",
+      "sha256": "ee2c54b0cf58eb7f4f48ad03787257f4d78757feb20121961a3af7b6ced9b8f0",
+      "bytes": 1088
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/79c54b8aaba74d87a03714ccb10aac76/pytest.log",
+      "sha256": "5b5e02e06ce5d89d9c401973b6c506adb81ae5d0c467d9bef5f40494b540c19e",
+      "bytes": 98
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/79c54b8aaba74d87a03714ccb10aac76/receipt.json",
+      "sha256": "a8a26342c0f24d0ab9a8e5a67e789db3228f1fbc50c5c8d746d2098b5acb70a2",
+      "bytes": 57237
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/79c54b8aaba74d87a03714ccb10aac76/runtime-fixtures.jsonl",
+      "sha256": "670dcbe3b524ad432e141af4ad71ecb2ef19b5a4c055167002edebcc34c274e5",
+      "bytes": 9860
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/79c54b8aaba74d87a03714ccb10aac76/tests.xml",
+      "sha256": "f177f5233d9890cd071e043067c0b2dfabc66ca595612e8d5e784f1e75646378",
+      "bytes": 1352
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/963176fd0f944773822154399b231ee0/collection.log",
+      "sha256": "ec693bbaad2f19635293c15ee4343c94eaf61e8f23cde5c3e0c5bb5697057db8",
+      "bytes": 1058
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/963176fd0f944773822154399b231ee0/postgres-after.json",
+      "sha256": "6dfcbc6855c9dd10e59fb6759f02630054faecb1b4cbc30104850575d4d14d51",
+      "bytes": 1107
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/963176fd0f944773822154399b231ee0/postgres-before.json",
+      "sha256": "afcff76373ea75fcb7fecfad92b4d8879c1b53f45c3de6189c43dc1c1c1711e1",
+      "bytes": 1108
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/963176fd0f944773822154399b231ee0/pytest.log",
+      "sha256": "f0dd66f870ad0741f12cf537503fec04a7c93a9c279e8e9421f19cd03d1e058d",
+      "bytes": 98
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/963176fd0f944773822154399b231ee0/receipt.json",
+      "sha256": "4d211cf3020418ad597bbe76c7eb0ac64d38026dd5a6b0113001061cb25e34bd",
+      "bytes": 57359
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/963176fd0f944773822154399b231ee0/tests.xml",
+      "sha256": "bf3bd699c350ac7834eb8956cad53751d441a44ef389abdba741d83a4a7780c2",
+      "bytes": 1599
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/ae766d35030748528dbb06e66967b10a/collection.log",
+      "sha256": "9a7de0eb087346413790a2932dea0c498b29e6b0ad485be0ec8cee3c940276d8",
+      "bytes": 1404
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/ae766d35030748528dbb06e66967b10a/postgres-after.json",
+      "sha256": "f948436a4e803286a80e60d7d1b73a94c797b5c096fb2c6460b70f7837e25cec",
+      "bytes": 1107
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/ae766d35030748528dbb06e66967b10a/postgres-before.json",
+      "sha256": "a59a2c901cfba02ff6b92d9de3d89c606fdd7ed97767a2dca15708f1a2953852",
+      "bytes": 1108
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/ae766d35030748528dbb06e66967b10a/pytest.log",
+      "sha256": "29a5490c2060757907f0d829a0b37ee7f89c640b89a2311ace337535c005a54f",
+      "bytes": 99
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/ae766d35030748528dbb06e66967b10a/receipt.json",
+      "sha256": "c3fc6fc045fa48a441db40b4341d5dcad84fafffde159a3942038e7a96c024bd",
+      "bytes": 57728
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/ae766d35030748528dbb06e66967b10a/tests.xml",
+      "sha256": "08191347a04be05aa5e1ed698d54d5c1de135620f1070e0ca5f4a0442dcd4ca1",
+      "bytes": 2105
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/cf29761ea8ed484aa6ed4b4a54610ca3/collection.log",
+      "sha256": "71436989264402b321aa5490f72b9b5f569dcb09557d0f985cc536530546ff12",
+      "bytes": 1269
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/cf29761ea8ed484aa6ed4b4a54610ca3/postgres-after.json",
+      "sha256": "c64478efa79ec5babafdb67d7452709ae3881b6f50962ad8ed6d4fe8fafd84d9",
+      "bytes": 1087
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/cf29761ea8ed484aa6ed4b4a54610ca3/postgres-before.json",
+      "sha256": "bdae2f40295e552c75c120e6a39a1e6e5da54b440db1bc8d63640ea1355f049f",
+      "bytes": 1088
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/cf29761ea8ed484aa6ed4b4a54610ca3/pytest.log",
+      "sha256": "2c80570d2f3584165e07c85b588f9f6a8437653c08f812ef4348c51570e5d4d0",
+      "bytes": 1069
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/cf29761ea8ed484aa6ed4b4a54610ca3/receipt.json",
+      "sha256": "513966d62fdb36a44968305a1f868990d30076ad1801de42e0fe95760311f991",
+      "bytes": 57686
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/cf29761ea8ed484aa6ed4b4a54610ca3/runtime-fixtures.jsonl",
+      "sha256": "3d12f958102d594960c3d5e5e92df88f5331013948aab73a372e5404dab229fe",
+      "bytes": 15672
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/cf29761ea8ed484aa6ed4b4a54610ca3/tests.xml",
+      "sha256": "fbf01396ecfd44eb542165408746c04dd1b5f26ff6f452f38b7fa6bcf75f628b",
+      "bytes": 1930
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/e88d5a33eda44ac0912a1fc82de9bb74/application-role.json",
+      "sha256": "7fffc3363354cbc51207edf56563d83f973a9dda42afcc9358dbc546c25a539e",
+      "bytes": 902
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/e88d5a33eda44ac0912a1fc82de9bb74/collection.log",
+      "sha256": "ba7b471570fdb7cd30ec9e9ea5ca7a2211ab6e85dbbba60f3625d6f73b8e48c5",
+      "bytes": 141
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/e88d5a33eda44ac0912a1fc82de9bb74/postgres-after.json",
+      "sha256": "0d2e955fa34a311041925173b2d70247effabe37175a73a5534622fc224e98a8",
+      "bytes": 1087
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/e88d5a33eda44ac0912a1fc82de9bb74/postgres-before.json",
+      "sha256": "41a7f19837a000abfef522ea06142deaf9dc12168afa9f8d023afbb06c74903f",
+      "bytes": 1088
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/e88d5a33eda44ac0912a1fc82de9bb74/pytest.log",
+      "sha256": "43557565734a08c43e5a3973973179f5bf3692ffb6987e822d48d508730995f8",
+      "bytes": 98
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/e88d5a33eda44ac0912a1fc82de9bb74/receipt.json",
+      "sha256": "ba2a3e199a31904beb22e4604704a909cad3c17d7e1e14685bcd89f4c45cf7c2",
+      "bytes": 56579
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/e88d5a33eda44ac0912a1fc82de9bb74/runtime-fixtures.jsonl",
+      "sha256": "58404df344e27f094c8cae6ef3878825b45fdc31e15841ecf868d60702284a27",
+      "bytes": 1426
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/e88d5a33eda44ac0912a1fc82de9bb74/tests.xml",
+      "sha256": "a1025e78d59a5cdb96d7206e1c9c45ae1f0d528ddb08af334bdb7c48c2efe60b",
+      "bytes": 403
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/eb1fe5a966f245c5adf6c3e170298721/collection.log",
+      "sha256": "01c18a9241e8e98270b850064e5441829b54f0f01d86fbbc4a7ee586200ff872",
+      "bytes": 1249
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/eb1fe5a966f245c5adf6c3e170298721/postgres-after.json",
+      "sha256": "ed99a084df914f84c4ee583055e04553d0758be9fab72d90ec17b9e24e175375",
+      "bytes": 1107
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/eb1fe5a966f245c5adf6c3e170298721/postgres-before.json",
+      "sha256": "610628a86bb53e720d4bb02b427c3ef9ddc5309ef8a55f475048128f14158d45",
+      "bytes": 1108
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/eb1fe5a966f245c5adf6c3e170298721/pytest.log",
+      "sha256": "cf0d637d0332d657c7228203a833e882bcd219efbe08aed7c8444275ee6f72c8",
+      "bytes": 99
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/eb1fe5a966f245c5adf6c3e170298721/receipt.json",
+      "sha256": "130427578693e7771ee93cb461de4453bed3928690386fffa47f0917c1072d04",
+      "bytes": 57564
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/eb1fe5a966f245c5adf6c3e170298721/tests.xml",
+      "sha256": "57be883055a5d129bf385762b817fa15bbaa17158a8f5c9c7d0393b9543390c0",
+      "bytes": 1870
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/runner-qualification.json",
+      "sha256": "feb760871120c72a07ab187d93be325aa99f9643218841c50f573b3dbcb9fa81",
+      "bytes": 5125
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/supported-upgrade/upgrade-20260909_05.log",
+      "sha256": "1ce8ec00ca821d6b06defeb374c66ac346e7ef1d958fca939d26c3fe95eede31",
+      "bytes": 5552
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/supported-upgrade/upgrade-head.log",
+      "sha256": "fbf67b064573cf01ce496e31b517b6b1a1c1d3e9d195505129e0b7391dd44bc3",
+      "bytes": 423
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/supported-upgrade/upgrade-receipt.json",
+      "sha256": "91581c973f4bef2090cbe6f7b2c9e6b9394c7c40729aface4809804a4d7e3323",
+      "bytes": 1519
+    },
+    {
+      "path": "k05-detached-pg-20260909/accepted/verified-summary.json",
+      "sha256": "70fa307741cca0e018b48a9c90183f5347ace159a0a906802b3cde97904b84f6",
+      "bytes": 3648
+    },
+    {
+      "path": "k05-detached-pg-20260909/built-api/image-id.txt",
+      "sha256": "aff148a67b8ffa5926432c2fdef6b94d945118d8471429f298f329987279d9ad",
+      "bytes": 71
+    },
+    {
+      "path": "k05-detached-pg-20260909/built-api/receipt.json",
+      "sha256": "ef8b2b2fbcbff32b1752e9ded5040cce736a8cf2bed34ee5d0d000d850952bf7",
+      "bytes": 1157
+    },
+    {
+      "path": "k05-detached-pg-20260909/ci.json",
+      "sha256": "4c785163a739b6f584750bdc0627003392fe58361f2e97ddeaeccc4f60d26485",
+      "bytes": 23813
+    },
+    {
+      "path": "k05-detached-pg-20260909/docs.json",
+      "sha256": "b7392cef6598fb0bd82c99eb4f7c43054d55e3644293400bc1887e65a383c871",
+      "bytes": 7181
+    },
+    {
+      "path": "k05-detached-pg-20260909/failed-ci.json",
+      "sha256": "8e94bf51144803d1bc38a48ea9e8ce7e6c8645757ba39cb9d2fed5a44089ff46",
+      "bytes": 23813
+    },
+    {
+      "path": "k05-detached-pg-20260909/failed-df5e0500/runner-qualification.json",
+      "sha256": "9b594371388e7198496f1f10a0883c864bed0fd5ae1afc64c060d2518682bead",
+      "bytes": 5126
+    },
+    {
+      "path": "k05-detached-pg-20260909/failed-df5e0500/supported-upgrade/upgrade-20260909_05.log",
+      "sha256": "1ce8ec00ca821d6b06defeb374c66ac346e7ef1d958fca939d26c3fe95eede31",
+      "bytes": 5552
+    },
+    {
+      "path": "k05-detached-pg-20260909/failed-df5e0500/supported-upgrade/upgrade-receipt.json",
+      "sha256": "4e89635c68cf3dd8bc6f801394e68408b19a8eb1f5b91b55c819c6ad3ad1eeff",
+      "bytes": 325
+    },
+    {
+      "path": "k05-detached-pg-20260909/python/benchmark.xml",
+      "sha256": "3e4bfd7733bd85a078768889dc7c27ae203eb0a44d7a7d90da2d24bdc3a70e9a",
+      "bytes": 1054
+    },
+    {
+      "path": "k05-detached-pg-20260909/python/tests.xml",
+      "sha256": "0f68fea58a83160f410b5e90e11827518bfadbb5a67159b9f9c2fd0aab7237f7",
+      "bytes": 1387936
+    },
+    {
+      "path": "k05-detached-pg-20260909/review.json",
+      "sha256": "26a2c6e550b6a5561a411c48832f3225a2ef69c53aff4c872d2bf0da69eb81bb",
+      "bytes": 2231
+    },
+    {
+      "path": "k05-detached-pg-20260909/security.json",
+      "sha256": "a84f254b8b3b6b03950c6258d134651c5e33b7b6c104b0f6ad570eca9cadae04",
+      "bytes": 9173
     },
     {
       "path": "k05-ordered-proof-source.diff",
