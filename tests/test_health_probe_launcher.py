@@ -11,13 +11,16 @@ import asyncio
 import contextlib
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from services.shared.health_probe_launcher import start_probe_as_task, start_probe_in_thread
+from services.shared.health_probe_launcher import HealthProbeRuntime, start_probe_as_task, start_probe_in_thread
 
 # ── Helpers ────────────────────────────────────────────────────
 
@@ -32,50 +35,74 @@ def _get(port: int, path: str) -> tuple[int, dict]:
         return exc.code, json.loads(exc.read())
 
 
+def _health_probe_threads() -> tuple[threading.Thread, ...]:
+    return tuple(thread for thread in threading.enumerate() if thread.name.endswith("-health-probe"))
+
+
+@contextmanager
+def _running_thread_probe(
+    *,
+    port: int,
+    service_name: str,
+    readiness_check: Callable[[], bool] | None = None,
+    extra_details: dict[str, str] | None = None,
+) -> Iterator[HealthProbeRuntime]:
+    runtime = start_probe_in_thread(
+        port=port,
+        service_name=service_name,
+        readiness_check=readiness_check,
+        extra_details=extra_details,
+    )
+    try:
+        yield runtime
+    finally:
+        runtime.close(timeout=3.0)
+
+
 # ── start_probe_in_thread tests ─────────────────────────────
 
 
 class TestStartProbeInThread:
-    def test_returns_health_probe(self):
-        """start_probe_in_thread returns a HealthProbe instance."""
+    def test_returns_runtime_with_health_probe(self):
+        """start_probe_in_thread returns an explicit runtime owner."""
         from core.health_probe import HealthProbe
 
-        probe = start_probe_in_thread(port=0, service_name="test-thread")
-        assert isinstance(probe, HealthProbe)
-        assert probe._service_name == "test-thread"
+        with _running_thread_probe(port=0, service_name="test-thread") as runtime:
+            assert isinstance(runtime, HealthProbeRuntime)
+            assert isinstance(runtime.probe, HealthProbe)
+            assert runtime.probe._service_name == "test-thread"
 
     def test_daemon_thread_created(self):
         """A daemon thread with the expected name should be running."""
-        start_probe_in_thread(port=0, service_name="thread-check")
-        names = [t.name for t in threading.enumerate() if t.daemon]
-        assert "thread-check-health-probe" in names
+        with _running_thread_probe(port=0, service_name="thread-check") as runtime:
+            assert runtime.thread.daemon
+            assert runtime.thread.is_alive()
+            assert runtime.thread.name == "thread-check-health-probe"
 
     def test_readiness_check_forwarded(self):
         """readiness_check callable is passed through to the probe."""
         check = MagicMock(return_value=True)
-        probe = start_probe_in_thread(
+        with _running_thread_probe(
             port=0,
             service_name="rc-thread",
             readiness_check=check,
-        )
-        assert probe._readiness_check is check
+        ) as runtime:
+            assert runtime.probe._readiness_check is check
 
     def test_extra_details_set(self):
         """Extra details should be stored on the probe."""
-        probe = start_probe_in_thread(
+        with _running_thread_probe(
             port=0,
             service_name="detail-thread",
             extra_details={"role": "orchestrator", "version": "1.0"},
-        )
-        assert probe._details.get("role") == "orchestrator"
-        assert probe._details.get("version") == "1.0"
+        ) as runtime:
+            assert runtime.probe._details.get("role") == "orchestrator"
+            assert runtime.probe._details.get("version") == "1.0"
 
     def test_no_extra_details(self):
         """When no extra_details given, no crash and details stay default."""
-        probe = start_probe_in_thread(port=0, service_name="no-detail")
-        # Should have service_name in details by default or empty
-        # Just ensure no error
-        assert probe is not None
+        with _running_thread_probe(port=0, service_name="no-detail") as runtime:
+            assert runtime.probe is not None
 
     def test_isolated_event_loop(self):
         """Thread should create its own event loop (not reuse the main one)."""
@@ -88,14 +115,65 @@ class TestStartProbeInThread:
             loops_seen.append(loop)
             return loop
 
-        with patch("services.shared.health_probe_launcher.asyncio.new_event_loop", _spy_new_event_loop):
-            start_probe_in_thread(port=0, service_name="loop-test")
-            # Give the thread a moment to run
-            import time
+        with (
+            patch("services.shared.health_probe_launcher.asyncio.new_event_loop", _spy_new_event_loop),
+            _running_thread_probe(port=0, service_name="loop-test") as runtime,
+        ):
+            assert runtime.event_loop is loops_seen[0]
 
-            time.sleep(0.1)
+        assert len(loops_seen) == 1
+        assert loops_seen[0].is_closed()
 
-        assert len(loops_seen) >= 1, "Thread should have created a new event loop"
+
+class TestThreadProbeLifecycle:
+    def test_normal_stop_closes_loop_and_joins_thread(self):
+        runtime = start_probe_in_thread(port=0, service_name="normal-stop")
+        loop = runtime.event_loop
+
+        runtime.stop()
+        runtime.join(timeout=3.0)
+
+        assert not runtime.thread.is_alive()
+        assert loop.is_closed()
+
+    def test_stop_is_idempotent(self):
+        runtime = start_probe_in_thread(port=0, service_name="stop-twice")
+
+        runtime.stop()
+        runtime.stop()
+        runtime.join(timeout=3.0)
+
+        assert not runtime.thread.is_alive()
+
+    def test_context_manager_cleans_up_after_exception(self):
+        class ExpectedError(Exception):
+            pass
+
+        runtime = start_probe_in_thread(port=0, service_name="exception-stop")
+        with pytest.raises(ExpectedError), runtime:
+            raise ExpectedError
+
+        assert not runtime.thread.is_alive()
+        assert runtime.event_loop.is_closed()
+
+    def test_join_is_bounded_and_fails_while_thread_is_live(self):
+        runtime = start_probe_in_thread(port=0, service_name="bounded-join")
+        started = time.monotonic()
+        try:
+            with pytest.raises(TimeoutError):
+                runtime.join(timeout=0.01)
+            assert time.monotonic() - started < 1.0
+        finally:
+            runtime.close(timeout=3.0)
+
+    def test_repeated_launch_stop_does_not_accumulate_threads(self):
+        baseline = {thread.ident for thread in _health_probe_threads()}
+
+        for index in range(6):
+            runtime = start_probe_in_thread(port=0, service_name=f"repeat-{index}")
+            runtime.close(timeout=3.0)
+            assert not runtime.thread.is_alive()
+            assert {thread.ident for thread in _health_probe_threads()} == baseline
 
 
 # ── start_probe_as_task tests ───────────────────────────────
