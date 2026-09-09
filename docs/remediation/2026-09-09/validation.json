@@ -138,5 +138,6 @@
   },
   "latest_followup_validation": "followup-s01-s03/followup-validation.json",
   "latest_runtime_followup": "followup-s03-runtime/validation.json",
-  "latest_runner_binding_followup": "followup-runner-binding/validation.json"
+  "latest_runner_binding_followup": "followup-runner-binding/validation.json",
+  "latest_delivery_contract_followup": "followup-delivery-contract/validation.json"
 }

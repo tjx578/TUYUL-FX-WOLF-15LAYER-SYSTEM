@@ -212,3 +212,6 @@ Latest continuation: [S03 durable caller implementation](followup-s03-runtime/RE
 
 
 Latest bounded follow-up: [runner evidence binding and pressure expiry](followup-runner-binding/README.md), source `94cd6a5d`. Current changed-source regression241 PASS; no new PostgreSQL/Linux acceptance. Runner remains UNBOUND and program INCOMPLETE / HOLD,0/6 milestones. Prior613 and current241 overlap and must not be summed.
+
+
+Latest follow-up: [S03 delivery protocol and hosted-runner diagnosis](followup-delivery-contract/README.md), source `a25b41cf`. The runner-list endpoint is self-hosted-only; exact hosted ubuntu-latest jobs report billing lock.126 local contract/regression tests PASS; producer-to-lifecycle/emission runtime remains NOT_IMPLEMENTED and PostgreSQL/Linux acceptance NOT_EXECUTED. Program remains0/6, INCOMPLETE / HOLD.

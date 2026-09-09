@@ -1,5 +1,5 @@
 {
-  "observed_at_utc": "2026-09-08T21:37:50.233761+00:00",
+  "observed_at_utc": "2026-09-09T02:46:24.217646+00:00",
   "base_source": "68ad0794e087177571972a7b95f4b7dde70b5286",
   "verdict": "INCOMPLETE_HOLD",
   "engineering_milestones_done": 0,
@@ -8,7 +8,7 @@
   "natural_demo_done": false,
   "real_ready": false,
   "user_binding_clarification": "No currently valid DEMO binding packet is verified; register lists preparation tasks only.",
-  "billing": "EXCLUDED_BY_USER; required unavailable CI not treated as passed",
+  "billing": "REMEDIATION_EXCLUDED_BY_USER; GitHub job annotations on0f7a98b2 report account billing lock",
   "actions": [
     {
       "ID": "A00",
@@ -61,10 +61,10 @@
       "Current status": "LOCAL_PINNED_TESTS_PASS_LINUX_CI_UNEXECUTED",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Current changed-source regression241 passed in pinned Windows API environment (overlaps prior613). Same-run PG metadata/nonce/artifact gate implemented;45 unchanged PG cases skipped and strictly rejected. Real PG/Linux/required CI remain unexecuted.",
+      "Evidence and blocker": "126 current local protocol/regression cases PASS; overlaps earlier241/613. Required hosted Linux CI targets ubuntu-latest but jobs on0f7a98b2 did not start; GitHub annotations report account billing lock. PostgreSQL/Linux execution remains NOT_EXECUTED.",
       "Acceptance": "Integrate reviewed #415 then unique #416 delta; preserve #413 migration behavior/redaction tests; required test failures fail job and skips remain visible; HealthProbeRuntime caller compatibility reviewed",
       "DoD clarification": "Semua required checks benar-benar dijalankan; skipped/missing tidak dihitung PASS. Tidak mengendurkan gate untuk meluluskan kandidat.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json; followup-delivery-contract/README.md; followup-delivery-contract/validation.json"
     },
     {
       "ID": "C04",
@@ -75,10 +75,10 @@
       "Current status": "BLOCKED",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Fresh GitHub repository runner inventory returned0. No verified disposable Linux host/configuration or cleanup was supplied; Windows workloads and historical VPSs preserved. No new capacity probe, provisioning or billing action. Runner proposal remains UNBOUND.",
+      "Evidence and blocker": "Correction: repo runner endpoint enumerates SELF-HOSTED runners only; zero does not imply GitHub-hosted unavailability. Exact workflow/job targets ubuntu-latest; push34281716405 and PR34281720281 Python-job annotations explicitly report account locked due to billing issue. Billing remediation excluded; no disposable host or capacity binding added.",
       "Acceptance": "New dedicated Linux runner identity/capacity/billing scope fixed; disposable Redis/PostgreSQL and clean checkout supported; historical Hostinger/Windows workloads untouched",
       "DoD clarification": "Runner bersih mempunyai identitas dan capacity evidence; provisioning atau biaya belum dilakukan oleh DoD.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json; followup-delivery-contract/README.md; followup-delivery-contract/validation.json"
     },
     {
       "ID": "C05",
@@ -145,10 +145,10 @@
       "Current status": "CALLER_STORE_IMPLEMENTED_PG_ACCEPTANCE_NOT_EXECUTED",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Caller/store implementation retained. Strict runner now binds source/configuration/fixture and actual PG before/after metadata when executed; current45 cases remain skipped. Legacy lifecycle consumer delivery/transaction ownership is not yet bound to S03; real persistence/recovery and lifecycle acceptance remain open.",
+      "Evidence and blocker": "Draft typed delivery/attachment/emission protocol and identity/order checks implemented with126 local tests in combined scope. Producer outbox, sequence allocation, relay, consumer inbox/common owner fencing and atomic lifecycle/emission integration remain NOT_IMPLEMENTED; transaction design D01-D11 specifies acceptance. Existing45 PG acceptance still NOT_EXECUTED.",
       "Acceptance": "One normalized material observation per logical pulse; live/replay flags and timestamps agree; duplicate delivery no inflation; mixed direction does not split pair activity; gap suspends pending continuity; future evidence rejected",
       "DoD clarification": "Mixed direction mempertahankan pair activity bila continuity sah. BUY0/SELL150/BUY300 membutuhkan coverage/gap-policy yang valid, bukan otomatis GRANTED.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json; followup-delivery-contract/README.md; followup-delivery-contract/validation.json"
     },
     {
       "ID": "S04",
@@ -588,5 +588,6 @@
   "latest_tested_source_commit": "385188d02097d3fd5fb3e48cb9669613b8ff6ea7",
   "latest_followup": "followup-s01-s03/followup-validation.json",
   "runtime_followup": "followup-s03-runtime/validation.json",
-  "latest_runner_binding_followup": "followup-runner-binding/validation.json"
+  "latest_runner_binding_followup": "followup-runner-binding/validation.json",
+  "latest_delivery_contract_followup": "followup-delivery-contract/validation.json"
 }
