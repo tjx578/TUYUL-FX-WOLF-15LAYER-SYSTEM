@@ -528,13 +528,16 @@ async def run_ingest_services(
         raise
     finally:
         cleanup_errors: list[tuple[str, Exception]] = []
-        from startup.graceful_shutdown import GracefulShutdown
+        from startup.graceful_shutdown import GracefulShutdown, ShutdownDrainTimeoutError
 
         tasks_to_drain = [*supervised_tasks]
         if producer_heartbeat_task is not None:
             tasks_to_drain.append(producer_heartbeat_task)
         # A failed task must not skip cancellation of peers or close Redis under them.
-        await GracefulShutdown(drain_timeout=10).shutdown(tasks_to_drain)
+        try:
+            await GracefulShutdown(drain_timeout=10, require_quiescent=True).shutdown(tasks_to_drain)
+        except ShutdownDrainTimeoutError as exc:
+            raise RuntimeError("shutdown_tasks_not_drained") from exc
         await _safe_stop("ws_feed", ws_feed, cleanup_errors)
         await _safe_stop("rest_poll", rest_poll, cleanup_errors)
         await _safe_stop("news_feed", news_feed, cleanup_errors)

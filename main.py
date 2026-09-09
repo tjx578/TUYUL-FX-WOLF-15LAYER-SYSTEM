@@ -195,9 +195,6 @@ async def main(*, health_probe=None, runtime_state=None) -> None:
     _shutdown_event = asyncio.Event()
     _analysis_healthy = False
     _engine_required_tasks = []
-    if _bootstrap_probe is not None:
-        _health_probe = _bootstrap_probe
-        _health_probe.set_readiness_check(_engine_readiness)
 
     # Shared Railway-safe routing and rate limiting.
     configure_stdlib_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
