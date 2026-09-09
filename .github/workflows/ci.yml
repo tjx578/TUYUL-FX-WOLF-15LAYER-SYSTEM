@@ -18,7 +18,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 jobs:
   ruff:
@@ -198,7 +198,7 @@ jobs:
             --cov=dashboard --cov=journal --cov=risk \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
-            -x
+            --junitxml=full-suite.xml
 
       - name: Upload coverage report
         if: always()
@@ -215,8 +215,10 @@ jobs:
       run:
         working-directory: dashboard/nextjs
     env:
-      INTERNAL_API_URL: http://localhost:8000
-      NEXT_PUBLIC_WS_BASE_URL: ws://localhost:8000
+      # Build fixtures only: no production endpoints or machine credentials.
+      DASHBOARD_MODE: viewer
+      DASHBOARD_CANONICAL_ORIGIN: https://dashboard.example.invalid
+      INTERNAL_API_URL: https://api.example.invalid
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -226,7 +228,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
-          cache-dependency-path: dashboard/nextjs/package.json
+          cache-dependency-path: dashboard/nextjs/package-lock.json
 
       - name: Set up disposable owner-login Python
         uses: actions/setup-python@v5
@@ -241,7 +243,7 @@ jobs:
       - name: Install
         run: |
           npm set fetch-retries 5
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm ci
 
       - name: Lint
         run: npm run lint
@@ -250,12 +252,7 @@ jobs:
         run: npm test
 
       - name: Build
-        env:
-          # Build-only fixture origins; no deployed service or credentials.
-          INTERNAL_API_URL: https://core.ci.invalid
-          DASHBOARD_CANONICAL_ORIGIN: https://dashboard.ci.invalid
-          DASHBOARD_MODE: viewer
-        run: npm run build
+        run: npm run build:strict
 
   # MCP2 and the API intentionally use separate dependency environments.
   # This file is moved out of the API suite above, not skipped as acceptance.
@@ -310,32 +307,37 @@ jobs:
           echo "No retired shims found."
 
       - name: "Block deprecated imports in production code"
+        shell: python
         run: |
-          echo "Scanning for deprecated dashboard imports..."
-          DEPRECATED_PATTERNS=(
-            "from dashboard.price_feed"
-            "from dashboard.trade_ledger"
-            "import dashboard.price_feed"
-            "import dashboard.trade_ledger"
-          )
-          VIOLATIONS=""
-          for PATTERN in "${DEPRECATED_PATTERNS[@]}"; do
-            HITS=$(grep -rnF --include="*.py" \
-              --exclude-dir=tests \
-              --exclude-dir=__pycache__ \
-              --exclude-dir=.venv \
-              "$PATTERN" . || true)
-            if [ -n "$HITS" ]; then
-              VIOLATIONS="${VIOLATIONS}${HITS}\n"
-            fi
-          done
-          if [ -n "$VIOLATIONS" ]; then
-            echo "::error::Deprecated dashboard imports detected:"
-            echo -e "$VIOLATIONS"
-            echo "Use storage.price_feed / storage.trade_ledger instead."
-            exit 1
-          fi
-          echo "No deprecated imports found."
+          import ast
+          import pathlib
+          import subprocess
+          import sys
+
+          retired = {"dashboard.price_feed", "dashboard.trade_ledger"}
+          failed = False
+          paths = subprocess.check_output(["git", "ls-files", "-z", "*.py"]).decode().split("\0")
+          for name in filter(None, paths):
+              path = pathlib.Path(name)
+              if any(part in {"tests", "__pycache__", ".venv", "node_modules"} for part in path.parts):
+                  continue
+              try:
+                  tree = ast.parse(path.read_bytes(), filename=name)
+              except SyntaxError:
+                  print(f"::error file={name}::Python syntax error prevents import inspection")
+                  failed = True
+                  continue
+              for node in ast.walk(tree):
+                  imports = []
+                  if isinstance(node, ast.Import):
+                      imports = [alias.name for alias in node.names]
+                  elif isinstance(node, ast.ImportFrom):
+                      module = node.module or ""
+                      imports = [module, *(f"{module}.{alias.name}" for alias in node.names)]
+                  if any(module == old or module.startswith(old + ".") for module in imports for old in retired):
+                      print(f"::error file={name},line={node.lineno}::Deprecated dashboard import; use storage instead")
+                      failed = True
+          sys.exit(1 if failed else 0)
 
   # -------------------------------------------------------------------
   # Architecture drift guard — constitutional boundary spot-checks
