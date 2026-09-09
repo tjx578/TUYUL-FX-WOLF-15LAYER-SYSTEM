@@ -1,5 +1,5 @@
 {
-  "source_commit": "7dd28e5f78809303b1d4b927e33c6f469c46cd9b",
+  "source_commit": "0467171ffacc89cfb5337a3cb9ee10d7fc66f59c",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -621,6 +621,61 @@
       "path": "k07-parent-adapter-validation.json",
       "sha256": "1309a90511650ce12422084bedc3960387533141a7c90a5e020e0e0688c17be9",
       "bytes": 13488
+    },
+    {
+      "path": "k07-revisions-20260909-a1-collection.log",
+      "sha256": "6cd88b1272ff01c641f64bf4cdbc600191df95953ae027575aede8f153498096",
+      "bytes": 11896
+    },
+    {
+      "path": "k07-revisions-20260909-a1-pytest.log",
+      "sha256": "7b4d228b8a4c6c1b365fbd9be00b29d7c64abeedfafeb43a6fe5828cc2e12e3a",
+      "bytes": 1077
+    },
+    {
+      "path": "k07-revisions-20260909-a1-receipt.json",
+      "sha256": "fabc5550d56b5d88e01f248f4dd039712a19ef490450dd97f55e2e753328da33",
+      "bytes": 19300
+    },
+    {
+      "path": "k07-revisions-20260909-a1.xml",
+      "sha256": "e0d282a700cdd77b1638d55db220bb1475aa260b6c56553e45b3ab009ab75a63",
+      "bytes": 14890
+    },
+    {
+      "path": "k07-revisions-migration-heads.log",
+      "sha256": "ce05a51c5279f428cfbea88ce981c09be2413095cdffb97f4ea0f8dbc06a17e7",
+      "bytes": 20
+    },
+    {
+      "path": "k07-revisions-migration-sql.log",
+      "sha256": "bddfada5c8f978fe2ed32f6374345af2e009b0f971fba35a6d6a3ff37b28b2ad",
+      "bytes": 2986
+    },
+    {
+      "path": "k07-revisions-pg-collection.log",
+      "sha256": "ca19aca1500d1810809f4926e0d3b06dc646c10be1ce39d05339aa596d853c8d",
+      "bytes": 1597
+    },
+    {
+      "path": "k07-revisions-pg-inventory.json",
+      "sha256": "bbdf04ed1adb6bb80ce9e5c89321f65ef332e77003be12a3f5f3410925c82d8e",
+      "bytes": 1501
+    },
+    {
+      "path": "k07-revisions-source.diff",
+      "sha256": "631599b12cd2a0d16be0bb201127c923fc6c3dfe6830c85a816f10bcac8b7052",
+      "bytes": 31435
+    },
+    {
+      "path": "k07-revisions-static.json",
+      "sha256": "da6b0c56341f24072d215d5bc9cef5ecf1c77a824423e5f75e0247dec4e298f3",
+      "bytes": 1645
+    },
+    {
+      "path": "k07-revisions-validation.json",
+      "sha256": "5821eba5a2660061adadab01f7fb4314504714f9063107d6169ebbe68fe1029e",
+      "bytes": 16003
     },
     {
       "path": "lint-format.json",
