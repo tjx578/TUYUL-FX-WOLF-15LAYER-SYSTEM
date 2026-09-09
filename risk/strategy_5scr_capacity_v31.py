@@ -9,16 +9,20 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from decimal import Decimal
 from fractions import Fraction
 from uuid import UUID
 
 from contracts.strategy_5scr_capacity_v31 import (
+    BaselineRefreshReceiptV31,
+    CapacityBaselineProposalV31,
+    CapacityBaselineRefreshV31,
     CapacityLedgerV31,
     CapacityProposalV31,
     CapacityReleaseEvidenceV31,
     CapacityReservationV31,
 )
-from contracts.strategy_5scr_risk_adapter_v31 import ParentSizingRequestV31, risk_amount_fraction_v31
+from contracts.strategy_5scr_risk_adapter_v31 import ExactAmountV31, ParentSizingRequestV31, risk_amount_fraction_v31
 from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31, size_parent_v31
 
 
@@ -33,6 +37,10 @@ def _hash(payload):
 
 def capacity_ledger_hash_v31(ledger: CapacityLedgerV31) -> str:
     return _hash(ledger.model_dump(mode="json"))
+
+
+def capacity_content_hash_v31(value) -> str:
+    return _hash(value.model_dump(mode="json"))
 
 
 def capacity_used_v31(ledger: CapacityLedgerV31) -> Fraction:
@@ -120,6 +128,11 @@ def reserve_parent_capacity_v31(
         raise CapacityRejectedError("CAPACITY_ACCOUNT_SNAPSHOT_POLICY_MISMATCH")
     if request.risk_state_evidence_hash != capacity_ledger_hash_v31(ledger):
         raise CapacityRejectedError("CAPACITY_STATE_RECEIPT_MISMATCH")
+    if (capacity_content_hash_v31(request.snapshot), capacity_content_hash_v31(request.policy)) != (
+        ledger.account_snapshot_hash,
+        ledger.risk_policy_content_hash,
+    ) or Fraction(Decimal(str(request.snapshot.balance))) != Fraction(ledger.closed_balance_usd):
+        raise CapacityRejectedError("CAPACITY_SNAPSHOT_OR_POLICY_CONTENT_MISMATCH")
     if request.risk_state_captured_at != ledger.baseline_captured_at:
         raise CapacityRejectedError("CAPACITY_BASELINE_CLOCK_MISMATCH")
     if risk_amount_fraction_v31(request.account_committed_and_reserved_risk_usd) != capacity_used_v31(ledger):
@@ -235,3 +248,118 @@ def transition_capacity_v31(
         }
     )
     return _proposal(ledger, changed, now)
+
+
+def baseline_refresh_hash_v31(evidence: CapacityBaselineRefreshV31) -> str:
+    payload = evidence.model_dump(mode="json")
+    payload["excluded_reservation_ids"] = sorted(payload["excluded_reservation_ids"])
+    return _hash(payload)
+
+
+def refresh_capacity_baseline_v31(
+    ledger: CapacityLedgerV31,
+    evidence: CapacityBaselineRefreshV31,
+    *,
+    now: datetime,
+    owner_epoch: int,
+    expected_version: int,
+    verify_refresh: Callable[[CapacityBaselineRefreshV31, str], bool] | None,
+) -> CapacityBaselineProposalV31:
+    """Propose a new observed baseline while preserving every prior risk lock.
+
+    The verifier must reconcile the complete balance bridge and disjoint risk
+    partition against independent receipts. Hashes alone do not attest either.
+    """
+    ledger = CapacityLedgerV31.model_validate(ledger.model_dump())
+    evidence = CapacityBaselineRefreshV31.model_validate(evidence.model_dump())
+    _control(ledger, owner_epoch, now)
+    digest = baseline_refresh_hash_v31(evidence)
+
+    def result(updated, duplicate=False):
+        limit = Fraction(updated.closed_balance_usd) * Fraction(evidence.policy.maximum_account_open_risk_fraction)
+        return CapacityBaselineProposalV31(
+            status="DUPLICATE_TEST_ONLY" if duplicate else "APPLIED_TEST_ONLY",
+            ledger=updated,
+            account_capacity_limit_usd=ExactAmountV31(numerator=limit.numerator, denominator=limit.denominator),
+            capacity_over_limit=capacity_used_v31(updated) > limit,
+        )
+
+    existing = next((r for r in ledger.baseline_refreshes if r.operation_id == evidence.operation_id), None)
+    if existing is not None:
+        if existing.request_hash != digest:
+            raise CapacityRejectedError("CAPACITY_BASELINE_REPLAY_CONFLICT")
+        # Policy migration is a separate operation, not implicit baseline refresh.
+        if capacity_content_hash_v31(evidence.policy) != ledger.risk_policy_content_hash:
+            raise CapacityRejectedError("CAPACITY_BASELINE_POLICY_MISMATCH")
+        return result(ledger, duplicate=True)
+    _version(ledger, expected_version)
+    snapshot, policy = evidence.snapshot, evidence.policy
+    if (snapshot.account_id, snapshot.executor_id, snapshot.currency) != (
+        ledger.account_id,
+        ledger.executor_id,
+        policy.account_currency,
+    ):
+        raise CapacityRejectedError("CAPACITY_BASELINE_ACCOUNT_MISMATCH")
+    if (
+        policy.policy_hash != ledger.risk_policy_hash
+        or capacity_content_hash_v31(policy) != ledger.risk_policy_content_hash
+    ):
+        raise CapacityRejectedError("CAPACITY_BASELINE_POLICY_MISMATCH")
+    if evidence.ledger_before_hash != capacity_ledger_hash_v31(ledger):
+        raise CapacityRejectedError("CAPACITY_BASELINE_PREDECESSOR_MISMATCH")
+    if evidence.coverage_from != ledger.baseline_captured_at:
+        raise CapacityRejectedError("CAPACITY_BASELINE_COVERAGE_GAP")
+    age = (now - snapshot.captured_at_utc).total_seconds()
+    if not ledger.as_of <= snapshot.captured_at_utc <= now or not 0 <= age <= min(
+        policy.snapshot_max_age_seconds, policy.risk_state_max_age_seconds
+    ):
+        raise CapacityRejectedError("CAPACITY_BASELINE_STALE_OR_FUTURE")
+    used_ids = {ledger.account_snapshot_id}
+    for receipt in ledger.baseline_refreshes:
+        used_ids.update((receipt.previous_snapshot_id, receipt.next_snapshot_id))
+    if snapshot.snapshot_id in used_ids:
+        raise CapacityRejectedError("CAPACITY_BASELINE_SNAPSHOT_ID_REUSED")
+    active = {r.reservation_id for r in ledger.reservations if r.state in {"HELD_UNISSUED", "PENDING_RECONCILIATION"}}
+    if set(evidence.excluded_reservation_ids) != active:
+        raise CapacityRejectedError("CAPACITY_BASELINE_PARTITION_MISMATCH")
+    balance, equity, floating = (Decimal(str(v)) for v in (snapshot.balance, snapshot.equity, snapshot.floating_pnl))
+    if any(not v.is_finite() for v in (balance, equity, floating)):
+        raise CapacityRejectedError("CAPACITY_BASELINE_NONFINITE")
+    if abs(Fraction(equity) - Fraction(balance) - Fraction(floating)) > Fraction(policy.equity_tolerance_usd):
+        raise CapacityRejectedError("CAPACITY_BASELINE_EQUITY_MISMATCH")
+    expected_balance = Fraction(ledger.closed_balance_usd) + sum(
+        (
+            Fraction(v)
+            for v in (evidence.realized_net_pnl_usd, evidence.net_cashflow_usd, evidence.broker_adjustment_usd)
+        ),
+        Fraction(0),
+    )
+    if expected_balance != Fraction(balance):
+        raise CapacityRejectedError("CAPACITY_BASELINE_BALANCE_BRIDGE_MISMATCH")
+    if verify_refresh is None or verify_refresh(evidence, digest) is not True:
+        raise CapacityRejectedError("CAPACITY_BASELINE_VERIFICATION_REJECTED")
+    if baseline_refresh_hash_v31(evidence) != digest:
+        raise CapacityRejectedError("CAPACITY_BASELINE_EVIDENCE_CHANGED")
+    receipt = BaselineRefreshReceiptV31(
+        operation_id=evidence.operation_id,
+        request_hash=digest,
+        previous_snapshot_id=ledger.account_snapshot_id,
+        next_snapshot_id=snapshot.snapshot_id,
+        applied_version=ledger.version + 1,
+        applied_at=now,
+    )
+    updated = CapacityLedgerV31.model_validate(
+        {
+            **ledger.model_dump(),
+            "version": ledger.version + 1,
+            "as_of": now,
+            "account_snapshot_id": snapshot.snapshot_id,
+            "account_snapshot_hash": capacity_content_hash_v31(snapshot),
+            "closed_balance_usd": balance,
+            "baseline_captured_at": snapshot.captured_at_utc,
+            "baseline_evidence_hash": evidence.source_receipt_hash,
+            "baseline_external_risk_usd": evidence.external_risk_usd,
+            "baseline_refreshes": (*ledger.baseline_refreshes, receipt),
+        }
+    )
+    return result(updated)

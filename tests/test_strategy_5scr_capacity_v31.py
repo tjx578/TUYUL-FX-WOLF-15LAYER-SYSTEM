@@ -9,6 +9,7 @@ from contracts.strategy_5scr_capacity_v31 import CapacityLedgerV31, CapacityRele
 from contracts.strategy_5scr_risk_adapter_v31 import ExactAmountV31, ParentSizingRequestV31
 from risk.strategy_5scr_capacity_v31 import (
     CapacityRejectedError,
+    capacity_content_hash_v31,
     capacity_ledger_hash_v31,
     capacity_used_v31,
     reserve_parent_capacity_v31,
@@ -27,13 +28,17 @@ def exact(value):
 
 def seed():
     payload = data()
+    request = ParentSizingRequestV31.model_validate(payload)
     return CapacityLedgerV31(
         profile="TEST_ONLY",
         parent_slot_policy="ONE_PARENT_PER_THESIS_TEST_V1",
         account_id=payload["expected_account_id"],
         executor_id=payload["expected_executor_id"],
         account_snapshot_id=payload["snapshot"]["snapshot_id"],
+        account_snapshot_hash=capacity_content_hash_v31(request.snapshot),
+        closed_balance_usd=str(request.snapshot.balance),
         risk_policy_hash=payload["policy"]["policy_hash"],
+        risk_policy_content_hash=capacity_content_hash_v31(request.policy),
         owner_epoch=1,
         version=0,
         as_of=NOW,
