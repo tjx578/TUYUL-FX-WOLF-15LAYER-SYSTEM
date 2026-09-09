@@ -29,6 +29,7 @@ import redis.client
 from loguru import logger
 
 from config.logging_bootstrap import configure_loguru_logging
+from core.health_probe import HealthProbe
 from core.redis_keys import (
     ACCOUNT_STATE,
     HEARTBEAT_INGEST,
@@ -468,12 +469,12 @@ class StateManager:
             self.close()
 
 
-def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> None:
+def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> HealthProbe:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
     from services.shared.health_probe_launcher import start_probe_in_thread
 
     port = int(os.getenv("ORCHESTRATOR_HEALTH_PORT", os.getenv("PORT", "8083")))
-    start_probe_in_thread(
+    return start_probe_in_thread(
         port=port,
         service_name="orchestrator",
         readiness_check=readiness_check,
@@ -487,8 +488,9 @@ def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = N
 def run() -> None:
     _ORCHESTRATOR_READY.clear()
     manager = None
+    health_probe = None
     previous_handlers = {}
-    _start_health_probe_in_thread(
+    health_probe = _start_health_probe_in_thread(
         readiness_check=lambda: bool(
             _ORCHESTRATOR_READY.is_set() and manager is not None and manager._mode_owner.is_current()
         )
@@ -505,10 +507,15 @@ def run() -> None:
         manager.run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
         _ORCHESTRATOR_READY.clear()
+        if health_probe is not None:
+            health_probe.set_alive(False)
         logger.exception("Orchestrator fatal error — holding alive for health probe diagnostics")
         from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
 
-        hold_alive_sync(service_name="Orchestrator")
+        hold_alive_sync(
+            service_name="Orchestrator",
+            timeout_sec=int(os.getenv("ORCHESTRATOR_FATAL_DIAGNOSTIC_HOLD_SEC", "30")),
+        )
         raise
     finally:
         _ORCHESTRATOR_READY.clear()

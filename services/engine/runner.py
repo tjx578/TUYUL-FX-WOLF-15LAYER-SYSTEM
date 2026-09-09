@@ -25,6 +25,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from config.logging_bootstrap import configure_loguru_logging, configure_stdlib_logging
+from services.engine.runtime_state import EngineRuntimeState
 from services.shared.db_revision_guard import DatabaseSchemaError, assert_required_tables
 
 configure_stdlib_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
@@ -74,7 +75,7 @@ async def _preflight_checks() -> None:
         await engine.dispose()
 
 
-def _start_health_probe_in_thread() -> Any:
+def _start_health_probe_in_thread(runtime: EngineRuntimeState):
     """Run a liveness-only health probe on a daemon thread.
 
     This keeps ``/healthz`` responsive while the main thread runs the
@@ -83,7 +84,7 @@ def _start_health_probe_in_thread() -> Any:
     from services.shared.health_probe_launcher import start_probe_in_thread
 
     port = int(os.getenv("ENGINE_HEALTH_PORT", os.getenv("PORT", "8081")))
-    return start_probe_in_thread(port=port, service_name="engine", readiness_check=lambda: False)
+    return start_probe_in_thread(port=port, service_name="engine", readiness_check=runtime.ready)
 
 
 def _import_main() -> Callable[[], Coroutine[Any, Any, None]]:
@@ -101,7 +102,7 @@ def _import_main() -> Callable[[], Coroutine[Any, Any, None]]:
     return run_main
 
 
-async def _run_engine(bootstrap_probe: Any = None) -> None:
+async def _run_engine(health_probe, runtime: EngineRuntimeState) -> None:
     """Run preflight checks and main() in a SINGLE event loop.
 
     This avoids the double-asyncio.run() problem where global state
@@ -120,10 +121,7 @@ async def _run_engine(bootstrap_probe: Any = None) -> None:
     # that will run it. This ensures any loop-bound state created during
     # import (instrumentation, tracers) binds to the correct loop.
     run_main = _import_main()
-    if bootstrap_probe is None:
-        await run_main()
-    else:
-        await run_main(_bootstrap_probe=bootstrap_probe)
+    await run_main(health_probe=health_probe, runtime_state=runtime)
 
 
 def run() -> None:
@@ -133,15 +131,38 @@ def run() -> None:
 
     # Start health probe FIRST so Railway sees liveness immediately
     # while the DB preflight and heavy imports proceed.
-    probe = _start_health_probe_in_thread()
+    runtime = EngineRuntimeState()
+    probe = _start_health_probe_in_thread(runtime)
+
+    async def owned_runtime():
+        try:
+            await _run_engine(probe, runtime)
+        except BaseException:
+            runtime.begin_shutdown(fatal=True)
+            probe.set_alive(False)
+            probe.set_detail("startup_stage", "FAILED")
+            raise
+
     try:
-        asyncio.run(_run_engine(probe))
+        asyncio.run(owned_runtime())
+    except KeyboardInterrupt:
+        return
+    except DatabaseSchemaError:
+        # Logged inside _run_engine, fall through to diagnostics
+        pass
     except Exception:
-        logger.exception("Engine required runtime failed")
-        raise
+        logger.exception("Engine main loop exited with error")
+    else:
+        return
     finally:
-        probe.set_readiness_check(lambda: False)
-        probe.set_alive(False)
+        runtime.cancel_process_deadline()
+
+    # If main() returns or crashes, keep process alive so the health
+    # probe stays responsive and operators can inspect /status.
+    from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
+
+    hold_alive_sync(service_name="Engine")
+    raise SystemExit(1)
 
 
 if __name__ == "__main__":

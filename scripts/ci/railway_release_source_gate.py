@@ -36,6 +36,7 @@ REQUIRED_STEPS = {
         "Require actual orchestrator role process acceptance",
         "Require actual ingest role process acceptance",
         "Require actual engine and trade role process acceptance",
+        "Require built engine failure recovery and quiescent shutdown",
         "Require actual pressure outbox role process acceptance",
     },
     "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},

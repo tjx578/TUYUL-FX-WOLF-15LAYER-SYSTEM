@@ -12,20 +12,23 @@ def test_orchestrator_late_fatal_clears_readiness_and_exits(monkeypatch):
     from services.shared import diagnostics
 
     observed = []
+    probe = SimpleNamespace(set_alive=lambda alive: observed.append(("alive", alive)))
 
     def run_forever(on_started):
         on_started()
         assert mod._ORCHESTRATOR_READY.is_set()
         raise RuntimeError("fixture_fatal")
 
-    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: None)
+    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: probe)
     monkeypatch.setattr(mod, "StateManager", lambda: SimpleNamespace(run_forever=run_forever))
     monkeypatch.setattr(
-        diagnostics, "hold_alive_sync", lambda **kwargs: observed.append(mod._ORCHESTRATOR_READY.is_set())
+        diagnostics,
+        "hold_alive_sync",
+        lambda **kwargs: observed.append((mod._ORCHESTRATOR_READY.is_set(), kwargs["timeout_sec"])),
     )
     with pytest.raises(RuntimeError, match="fixture_fatal"):
         mod.run()
-    assert observed == [False]
+    assert observed == [("alive", False), (False, 30)]
 
 
 @pytest.mark.asyncio
@@ -75,7 +78,7 @@ async def test_pressure_outbox_failure_drains_siblings_before_pool_close(monkeyp
     for config in [mod.OutcomeRuntimeConfig, mod.LifecycleV2RuntimeConfig, mod.ShadowEvidenceV2RuntimeConfig]:
         monkeypatch.setattr(config, "from_env", lambda: SimpleNamespace(enabled=False))
     monkeypatch.setattr(asyncio.get_running_loop(), "add_signal_handler", lambda *args: callbacks.append(args[1]))
-    with pytest.raises(RuntimeError, match="crash_limit"):
+    with pytest.raises(RuntimeError, match="REQUIRED_TASK_FAILED:evidence_worker:exception"):
         await mod._main()
     assert order[-1] == "pool_closed"
     assert "primary_drained" in order[:-1]

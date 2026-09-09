@@ -106,6 +106,23 @@ def test_active_protection_and_environment_pass(protection, environment):
     gate.validate_environment(environment)
 
 
+def test_owner_operated_policy_keeps_checks_without_second_account(protection, environment):
+    protection["required_pull_request_reviews"]["required_approving_review_count"] = 0
+    protection["required_pull_request_reviews"]["require_last_push_approval"] = False
+    environment["protection_rules"] = [{"type": "branch_policy"}]
+    gate.validate_branch_protection(protection)
+    gate.validate_environment(environment)
+    protection["required_status_checks"]["checks"].pop()
+    with pytest.raises(gate.GovernanceGateError):
+        gate.validate_branch_protection(protection)
+
+
+def test_owner_operated_policy_rejects_implicit_last_push_approval(protection):
+    protection["required_pull_request_reviews"]["required_approving_review_count"] = 0
+    with pytest.raises(gate.GovernanceGateError):
+        gate.validate_branch_protection(protection)
+
+
 @pytest.mark.parametrize(
     "field",
     [
@@ -132,7 +149,7 @@ def test_missing_protection_field_rejects(protection, field):
         "wrong_app",
         "duplicate_context",
         "admins",
-        "no_reviews",
+        "negative_reviews",
         "bool_reviews",
         "stale",
         "last_push",
@@ -159,8 +176,8 @@ def test_weakened_protection_rejects(protection, case):
         status["checks"].append(deepcopy(status["checks"][0]))
     elif case == "admins":
         protection["enforce_admins"]["enabled"] = False
-    elif case == "no_reviews":
-        reviews["required_approving_review_count"] = 0
+    elif case == "negative_reviews":
+        reviews["required_approving_review_count"] = -1
     elif case == "bool_reviews":
         reviews["required_approving_review_count"] = True
     elif case == "stale":
@@ -190,7 +207,7 @@ def test_weak_environment_rejects(environment, case):
     elif case == "admin_bypass":
         environment["can_admins_bypass"] = True
     elif case == "missing_rule":
-        environment["protection_rules"] = []
+        del environment["protection_rules"]
     elif case == "empty_reviewers":
         environment["protection_rules"][0]["reviewers"] = []
     elif case == "self_review":

@@ -351,6 +351,20 @@ jobs:
       - name: Require actual engine and trade role process acceptance
         if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
         run: python scripts/ci/engine_trade_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/engine-trade-process.json
+      - name: Require built engine failure recovery and quiescent shutdown
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          from scripts.ci.built_engine_acceptance import SOURCES
+          Path('artifacts/engine-sources.json').write_text(json.dumps({p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in SOURCES}))
+          PY
+          docker run --rm --network none --entrypoint python \
+            -e WOLF15_TEST_ENGINE_SOURCES_JSON="$(cat artifacts/engine-sources.json)" \
+            wolf15-p1-runtime:$GITHUB_SHA \
+            -m scripts.ci.built_engine_acceptance > artifacts/built-engine.json
       - name: Require actual pressure outbox role process acceptance
         if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
         run: python scripts/ci/pressure_outbox_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/pressure-outbox-process.json
@@ -364,6 +378,8 @@ jobs:
             artifacts/orchestrator-process.json
             artifacts/ingest-process.json
             artifacts/engine-trade-process.json
+            artifacts/built-engine.json
+            artifacts/engine-sources.json
             artifacts/pressure-outbox-process.json
           if-no-files-found: error
 
