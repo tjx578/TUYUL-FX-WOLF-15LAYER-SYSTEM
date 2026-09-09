@@ -1,0 +1,284 @@
+{
+  "conclusion": "success",
+  "headSha": "fb782c147a02f8dfaa902624d014c0afd9a919db",
+  "jobs": [
+    {
+      "completedAt": "2026-09-09T15:36:29Z",
+      "conclusion": "success",
+      "databaseId": 102532769220,
+      "name": "pip-audit (Python deps)",
+      "startedAt": "2026-09-09T15:35:44Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T15:35:45Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T15:35:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-09-09T15:35:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:53Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:22Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 4,
+          "startedAt": "2026-09-09T15:35:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:25Z",
+          "conclusion": "success",
+          "name": "Run pip-audit (hard-fail)",
+          "number": 5,
+          "startedAt": "2026-09-09T15:36:22Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:26Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 9,
+          "startedAt": "2026-09-09T15:36:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:26Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 10,
+          "startedAt": "2026-09-09T15:36:26Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:26Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 11,
+          "startedAt": "2026-09-09T15:36:26Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34371264145/job/102532769220"
+    },
+    {
+      "completedAt": "2026-09-09T15:35:58Z",
+      "conclusion": "success",
+      "databaseId": 102532769658,
+      "name": "Secret leak scan",
+      "startedAt": "2026-09-09T15:35:44Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T15:35:45Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T15:35:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-09-09T15:35:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:49Z",
+          "conclusion": "success",
+          "name": "Install trufflehog",
+          "number": 3,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:54Z",
+          "conclusion": "success",
+          "name": "Scan for secrets (hard-fail)",
+          "number": 4,
+          "startedAt": "2026-09-09T15:35:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:55Z",
+          "conclusion": "success",
+          "name": "Upload redacted secret detection receipt",
+          "number": 5,
+          "startedAt": "2026-09-09T15:35:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:56Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 10,
+          "startedAt": "2026-09-09T15:35:55Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:56Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 11,
+          "startedAt": "2026-09-09T15:35:56Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34371264145/job/102532769658"
+    },
+    {
+      "completedAt": "2026-09-09T15:36:19Z",
+      "conclusion": "success",
+      "databaseId": 102532769816,
+      "name": "npm audit (Node deps)",
+      "startedAt": "2026-09-09T15:35:44Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T15:35:46Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T15:35:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-09-09T15:35:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:53Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4",
+          "number": 3,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:04Z",
+          "conclusion": "success",
+          "name": "Validate lockfile sync",
+          "number": 4,
+          "startedAt": "2026-09-09T15:35:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:15Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 5,
+          "startedAt": "2026-09-09T15:36:04Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:16Z",
+          "conclusion": "success",
+          "name": "Run npm audit (report)",
+          "number": 6,
+          "startedAt": "2026-09-09T15:36:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:17Z",
+          "conclusion": "success",
+          "name": "Upload npm audit report",
+          "number": 7,
+          "startedAt": "2026-09-09T15:36:16Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:17Z",
+          "conclusion": "success",
+          "name": "Fail on high+",
+          "number": 8,
+          "startedAt": "2026-09-09T15:36:17Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:17Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4",
+          "number": 15,
+          "startedAt": "2026-09-09T15:36:17Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:17Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 16,
+          "startedAt": "2026-09-09T15:36:17Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:17Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 17,
+          "startedAt": "2026-09-09T15:36:17Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34371264145/job/102532769816"
+    },
+    {
+      "completedAt": "2026-09-09T15:36:33Z",
+      "conclusion": "success",
+      "databaseId": 102533063152,
+      "name": "Security Gate",
+      "startedAt": "2026-09-09T15:36:31Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T15:36:32Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T15:36:32Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:32Z",
+          "conclusion": "success",
+          "name": "Evaluate security results",
+          "number": 2,
+          "startedAt": "2026-09-09T15:36:32Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:36:32Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-09-09T15:36:32Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34371264145/job/102533063152"
+    }
+  ],
+  "status": "completed",
+  "observed_at_utc": "2026-09-09T15:41:55.176565+00:00"
+}

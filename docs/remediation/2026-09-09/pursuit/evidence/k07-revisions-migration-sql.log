@@ -1,0 +1,47 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Generating static SQL
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+BEGIN;
+
+INFO  [alembic.runtime.migration] Running upgrade 20260909_03 -> 20260909_04, Immutable TEST_ONLY v3.1 candidate history. No active consumer switch.
+-- Running upgrade 20260909_03 -> 20260909_04
+
+CREATE TABLE public.strategy_5scr_candidate_revisions_v31 (
+        tradeplan_id uuid NOT NULL, revision integer NOT NULL CHECK(revision>0),
+        symbol text NOT NULL, reevaluation_id uuid NOT NULL UNIQUE,
+        predecessor_revision integer, predecessor_hash text,
+        request_hash text NOT NULL CHECK(request_hash ~ '^sha256:[0-9a-f]{64}$'),
+        request_payload text NOT NULL,
+        PRIMARY KEY(tradeplan_id,revision),
+        UNIQUE(tradeplan_id,revision,request_hash),
+        FOREIGN KEY(tradeplan_id,predecessor_revision,predecessor_hash)
+          REFERENCES public.strategy_5scr_candidate_revisions_v31(tradeplan_id,revision,request_hash),
+        CHECK ((revision=1 AND predecessor_revision IS NULL AND predecessor_hash IS NULL)
+            OR (revision>1 AND predecessor_revision IS NOT NULL AND predecessor_revision=revision-1
+                AND predecessor_hash IS NOT NULL)),
+        CHECK ((request_payload::jsonb->>'profile'='TEST_ONLY') IS TRUE),
+        CHECK ((request_payload::jsonb#>>'{handoff,candidate,valid_for_execution}'='false') IS TRUE),
+        CHECK ((request_payload::jsonb#>>'{handoff,candidate,final_signal_allowed}'='false') IS TRUE),
+        CHECK ((request_payload::jsonb#>>'{handoff,candidate,execution_command_allowed}'='false') IS TRUE)
+    );
+
+CREATE FUNCTION public.guard_5scr_candidate_revision_v31() RETURNS trigger LANGUAGE plpgsql AS $$
+    DECLARE owner_token uuid; latest integer;
+    BEGIN
+        IF TG_OP <> 'INSERT' THEN RAISE EXCEPTION 'CANDIDATE_REVISION_IMMUTABLE'; END IF;
+        PERFORM pg_advisory_xact_lock(hashtextextended('5scr-owner:' || NEW.symbol,0));
+        SELECT token INTO owner_token FROM public.strategy_5scr_owner_fences_v1 WHERE symbol=NEW.symbol FOR UPDATE;
+        IF owner_token IS NULL OR owner_token::text IS DISTINCT FROM current_setting('wolf15.lifecycle_owner_token',true)
+        THEN RAISE EXCEPTION 'STALE_OR_UNBOUND_LIFECYCLE_OWNER'; END IF;
+        SELECT max(revision) INTO latest FROM public.strategy_5scr_candidate_revisions_v31 WHERE tradeplan_id=NEW.tradeplan_id;
+        IF NEW.revision <> COALESCE(latest,0)+1 THEN RAISE EXCEPTION 'CANDIDATE_REVISION_PREDECESSOR_CONFLICT'; END IF;
+        RETURN NEW;
+    END; $$;
+
+CREATE TRIGGER guard_5scr_candidate_revision_v31 BEFORE INSERT OR UPDATE OR DELETE
+        ON public.strategy_5scr_candidate_revisions_v31 FOR EACH ROW EXECUTE FUNCTION public.guard_5scr_candidate_revision_v31();
+
+UPDATE alembic_version SET version_num='20260909_04' WHERE alembic_version.version_num = '20260909_03';
+
+COMMIT;
+

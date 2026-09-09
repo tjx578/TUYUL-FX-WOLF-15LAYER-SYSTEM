@@ -1,0 +1,24 @@
+{
+  "canonical_action": "C04",
+  "status": "ACTION_DONE",
+  "source_commit": "f560ed6702cb3a7a6e4525a82b3fca8bf33bbd4a",
+  "tested_pr_head": "d9515f8e433f2752aab4258ef380a4a9ef200998",
+  "tested_merge_sha": "44940235f7984c6f082931f75f5888a26e5d8cf0",
+  "evidence_ref": "pursuit/evidence/p1-ci-20260909/34340383026/runner-qualification.json",
+  "scope": "C04 existing GitHub-hosted disposable Linux runner bootstrap; no VPS provisioning; no other P1 action inferred complete",
+  "expected_vs_actual": {
+    "Linux clean checkout": "PASS",
+    "host identity/capacity": "PASS",
+    "disposable PostgreSQL identity/markers/connectivity": "PASS",
+    "disposable Redis loopback connectivity/version": "PASS",
+    "historical Windows/VPS workloads preserved": "NO_MUTATION"
+  },
+  "milestones_done": 0,
+  "other_C01_C02_C03_C05_C06": "NOT_CLOSED",
+  "limitations": [
+    "Bootstrap superuser is not application-role acceptance",
+    "Existing-data supported migration upgrade not executed",
+    "Cgroup capacity unavailable; host physical-memory metric measured",
+    "Final CI and deployment not inferred from bootstrap"
+  ]
+}

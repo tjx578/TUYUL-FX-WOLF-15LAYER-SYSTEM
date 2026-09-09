@@ -1,0 +1,26 @@
+{
+  "at": "2026-09-09T04:12:37.856475+00:00",
+  "head": "79597e91a33d88a60c74c4c714cefa8120147fc9",
+  "tree": "f88b398bbe3e0aabe035fed3788eed2d6ef42cc5",
+  "branch": "codex/s03-runtime-recovery-20260909",
+  "main": "68ad0794e087177571972a7b95f4b7dde70b5286",
+  "ssot": {
+    "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
+    "git_path": "docs/strategy/WOLF15_STRATEGY_5SCR_CANONICAL_SSOT_V3_1_CANDIDATE.md",
+    "git_blob": "cd848447a2e923d0ea0de6c566a558c7205d3d3b",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "bytes": 86002,
+    "lines": 3491,
+    "committed_evidence_copy_sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "evidence_copy_exact_match": true,
+    "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
+  },
+  "ssot_bytes_equal": true,
+  "canonical_action_count": 41,
+  "milestones_done": 0,
+  "readme_sha256": {
+    "README.md": "8e835ccbc1eaeae25e17e25d61cd6a2ea7b2025a9ca8c95e3bdce3b950dbb7f6",
+    "docs/remediation/2026-09-09/README.md": "89877c4d0a189b615669a15b1e6073dcffd1f44e28bf99993202e5eb6547ee02"
+  },
+  "canonical_register_sha256": "d9fe15674cdb7fd6cc9c7bbc5a856a58ecd4a6720eefa7968c89f5c23bf5a8c5"
+}

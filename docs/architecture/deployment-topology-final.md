@@ -17,9 +17,12 @@ path: docs/architecture/deployment-topology-final.md
 **Document path:** `docs/architecture/deployment-topology-final.md`  
 **Status:** Official Architecture Reference  
 **Scope:** Production deployment topology, platform boundaries, runtime service roles, freshness/readiness behavior, and execution-path deployment rules  
-**Applies to:** Vercel dashboard, Railway services, Redis, PostgreSQL, orchestrator, execution bridge, EA connectivity, observability stack
+**Applies to:** Railway viewer dashboard, Railway services, Redis, PostgreSQL, orchestrator, execution bridge, EA connectivity, observability stack
 
 ---
+
+
+> Dashboard revision 2026-09-09: the selected frontend is `https://wolf15-dashboard-frontend-production.up.railway.app` (port `8080`), with server-only direct core calls to `https://wolf15-api-production.up.railway.app`. Public `/login` still shows `VIEWER JWT`; repository password-login/direct-core changes are not a production deployment. Production acceptance remains HOLD. Other service sections retain their earlier evidence dates and do not authorize engine, broker, database or provider mutations.
 
 ## 1. Purpose per Layer
 
@@ -61,15 +64,15 @@ This plane provides operator-facing access and frontend delivery.
 
 Primary components:
 
-- Vercel-hosted Next.js dashboard
+- Railway-hosted Next.js viewer dashboard, selected service port 8080
 - authenticated browser clients
-- approved WebSocket / SSE / REST fallback transport consumers
+- same-origin browser GET consumers; Next server calls existing core API routes
 
 Its purpose is to:
 
 - present backend truth to operators
-- expose dashboard views for signals, portfolio, settings, and system health
-- consume live or fallback transport channels without becoming a decision authority
+- expose sanitized system/feed observations; unsupported views remain NOT_MEASURED
+- authenticate an owner as a bounded viewer without browser machine credentials or mutation routes
 
 ### 1.4 API / Control Plane
 
@@ -224,8 +227,8 @@ Its purpose is to:
 ### 3.1 Edge / Dashboard Failure Modes
 
 - frontend remains reachable while backend freshness is degraded
-- WebSocket disconnect causes stale UI if fallback transport is absent or misconfigured
-- token storage or frontend security issues expose operator credentials
+- failed core GET projections leave observations unavailable; partial reads must remain explicit
+- unsafe browser credential storage or unsanitized upstream JSON could expose credentials; this viewer uses HttpOnly cookies and server projections
 - UI displays transport health without exposing producer or freshness truth
 
 ### 3.2 API / Control Plane Failure Modes
@@ -282,7 +285,7 @@ A service may recover transport, restart successfully, or become reachable while
 
 ### 4.2 Dashboard Recovery
 
-- the dashboard may reconnect through transport ladder order: WebSocket -> SSE -> REST polling
+- the selected dashboard repeats only its three explicit GET projections when refreshed; no WebSocket/SSE transport ladder is enabled
 - frontend recovery must preserve backend freshness class and heartbeat age
 - UI reconnection must not be treated as proof that engine freshness has recovered
 
@@ -371,7 +374,7 @@ A service may recover transport, restart successfully, or become reachable while
 - production secrets must remain platform-managed and not hard-coded
 - Redis must use authenticated TLS connections
 - Postgres must use managed credentials and least-privilege access
-- frontend token handling must be paired with strong CSP and dependency hygiene because local token storage increases XSS sensitivity
+- frontend session tokens must remain in Secure HttpOnly cookies; CSP, dependency hygiene and server-side response projection protect the browser boundary
 
 ### 5.9 EA Bridge Rule
 
@@ -404,12 +407,12 @@ The system must force or preserve `HOLD` behavior when any of the following cond
                         ▼                                              ▼
 ┌───────────────────────────────┐                  ┌───────────────────────────────────────┐
 │ Edge / Operator Plane         │                  │ Execution Edge                        │
-│ Vercel - Dashboard            │                  │ EA Bridge (Railway or local host)     │
+│ Railway - Viewer            │                  │ EA Bridge (Railway or local host)     │
 │ • Next.js frontend            │                  │ • receives approved execution intent   │
-│ • JWT-authenticated operator  │                  │ • reports ack / fill / reject         │
-│ • WS / SSE / REST fallback    │                  │ • never creates strategy direction     │
+│ • HttpOnly viewer session     │                  │ • reports ack / fill / reject         │
+│ • Three GET projections       │                  │ • never creates strategy direction     │
 └───────────────┬───────────────┘                  └──────────────────┬────────────────────┘
-                │ REST / WS / SSE                                      │ execution feedback
+                │ Server HTTPS                                         │ execution feedback
                 ▼                                                      │
 ┌────────────────────────────────────────────────────────────────────────────────────────────┐
 │ API / Control Plane - Railway                                                             │
@@ -468,16 +471,15 @@ These values must remain environment-managed and not be hard-coded in applicatio
 
 ### 7.2 Frontend Platform Notes
 
-Frontend must set API and WebSocket base URLs explicitly.
+The selected frontend uses these non-secret repository settings:
 
-Recommended baseline:
+- `DASHBOARD_MODE=viewer`
+- `DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app`
+- `INTERNAL_API_URL=https://wolf15-api-production.up.railway.app` (server-only)
+- `PORT=8080`
+- optional local display timezone
 
-- `NEXT_PUBLIC_API_BASE_URL`
-- `NEXT_PUBLIC_WS_BASE_URL`
-- explicit timezone
-- refresh intervals for verdicts, context, and health where polling fallback applies
-
-The frontend must not derive WebSocket URL implicitly from HTTP URL by string replacement.
+No public API/WS variable or BFF variable is needed by this viewer. Browser login and the three read projections use same-origin handlers, with no browser signing/API keys. The standalone legacy Python BFF remains outside the selected path. Core API-only effective startup and production login/data acceptance remain separate HOLD gates.
 
 ### 7.3 Railway Operational Notes
 

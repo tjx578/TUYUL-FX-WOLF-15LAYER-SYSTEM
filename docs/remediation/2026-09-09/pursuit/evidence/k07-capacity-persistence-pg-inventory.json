@@ -1,0 +1,19 @@
+{
+  "scope": "K07 account-capacity persistence; separate from seven candidate-history and 63 S03 database tests",
+  "source_commit": "19c105a53d9b4486f8b88e67cbf7a271fb938196",
+  "required_migration_head": "20260909_05",
+  "required_count": 8,
+  "test_ids": [
+    "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialize_restart]",
+    "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialize_concurrent]",
+    "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialization_rollback]",
+    "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[owner_handover]",
+    "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[raw_write_fenced]",
+    "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_restart_duplicate]",
+    "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_concurrent_duplicate]",
+    "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_rollback]"
+  ],
+  "database_execution": "NOT_EXECUTED",
+  "migration_application": "NOT_EXECUTED",
+  "acceptance_rule": "Execute all eight exact identities on the bound disposable PostgreSQL database with matching source/config/database/migration/fixture and JUnit evidence; no skips/errors/failures. Collection and protocol fakes do not satisfy this gate."
+}

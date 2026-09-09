@@ -1,0 +1,321 @@
+{
+  "schema_version": "wolf15-pursuit-state/v1",
+  "status": "TEMPLATE_NOT_EXECUTED",
+  "source_checkpoint": "01fd6f9c1d0e34dc896eace92c81083e2b718653",
+  "source_verified_at": null,
+  "selected_ssot": "repository_existing_v3.1",
+  "readme_updates_allowed": false,
+  "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
+  "current_slice": "DISCOVER_AND_REBIND",
+  "canonical_action_state": {
+    "A00": {
+      "historical_report": "DONE_ACQUISITION_ONLY",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "C01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "C02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "C03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "C04": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "C05": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "C06": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "S01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "S02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "S03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "S04": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "S05": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "S06": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "R01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "R02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "R03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E04": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E05": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E06": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "D01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E07": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E08": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "E09": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "N01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "N02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "N03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "N04": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "D02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "N05": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "N06": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "N07": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "J01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "J02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "J03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "N08": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "O01": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "O02": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    },
+    "O03": {
+      "historical_report": "NOT_CLOSED",
+      "execution_stage": "UNVERIFIED_FOR_CURRENT_RUN",
+      "closing_receipt_refs": [],
+      "stale_evidence_refs": []
+    }
+  },
+  "milestone_state": {
+    "P1": "NOT_CLOSED",
+    "P2": "NOT_CLOSED",
+    "P3": "NOT_CLOSED",
+    "P4": "NOT_CLOSED",
+    "P5": "NOT_CLOSED",
+    "P6": "NOT_CLOSED"
+  },
+  "known_blockers": [
+    {
+      "id": "B-RUNNER",
+      "cause": "No verified disposable Linux host/configuration",
+      "scope": [
+        "C04",
+        "PostgreSQL acceptance"
+      ],
+      "status": "OPEN_REPORTED",
+      "last_evidence_ref": "sources/latest-reported-checkpoint.json",
+      "recheck_trigger": "Owner supplies existing bound runner or applicable provision authorization/capability; do not poll repeatedly",
+      "question_state": "ALREADY_DISCLOSED"
+    },
+    {
+      "id": "B-CI",
+      "cause": "GitHub platform annotation account locked billing",
+      "scope": [
+        "required remote checks",
+        "merge/release eligibility"
+      ],
+      "status": "OPEN_REPORTED",
+      "last_evidence_ref": "sources/latest-reported-checkpoint.json",
+      "recheck_trigger": "Owner reports platform condition changed or a fresh authorized run exists; billing remains excluded",
+      "question_state": "ALREADY_DISCLOSED"
+    },
+    {
+      "id": "B-DEMO",
+      "cause": "Account/risk/EA/window/reader runtime package unbound",
+      "scope": [
+        "E06",
+        "E07",
+        "E09",
+        "N05",
+        "N06",
+        "N08"
+      ],
+      "status": "OPEN_REPORTED",
+      "last_evidence_ref": "sources/latest-reported-checkpoint.json",
+      "recheck_trigger": "Binding references become available or concrete operation packet ready",
+      "question_state": "ALREADY_DISCLOSED"
+    }
+  ],
+  "decision_log": [],
+  "question_ledger": [],
+  "evidence_receipts": [],
+  "owned_changes": [],
+  "deferred_nonblocking_debt": [],
+  "coordination": {
+    "topology": "ROOT_PLUS_UP_TO_TWO_INDEPENDENT_WORKERS_WHEN_AVAILABLE",
+    "assignments": [],
+    "measurements": [],
+    "changes": []
+  },
+  "next_action_on_resume": "Validate local source, saved receipts and applicable session authority; choose ready slice, preserve verified work.",
+  "no_executable_default_credentials": true
+}

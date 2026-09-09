@@ -1,0 +1,15 @@
+.......                                                                  [100%]
+============================== warnings summary ===============================
+tests/test_native_mt5_readonly_mcp.py::test_mcp_registry_exposes_only_the_five_read_tools
+tests/test_native_mt5_readonly_mcp.py::test_live_reader_calls_only_read_methods_and_redacts_free_text
+tests/test_native_mt5_readonly_mcp.py::test_empty_snapshot_is_measured_but_connection_failure_is_not
+tests/test_native_mt5_readonly_mcp.py::test_history_window_and_limit_fail_closed_before_native_query
+tests/test_native_mt5_readonly_mcp.py::test_terminal_must_be_running_at_the_exact_pinned_path
+tests/test_native_mt5_readonly_mcp.py::test_missing_hmac_key_fails_closed_without_exposing_login
+tests/test_native_mt5_readonly_mcp.py::test_all_five_reads_emit_the_same_versioned_hmac_and_terminal_identity
+  D:\WOLF15-work\master-remediation-20260909\mcp-test-env\Lib\site-packages\pytest_asyncio\plugin.py:916: PytestDeprecationWarning: Overriding the "event_loop_policy" fixture is deprecated and will be removed in a future version of pytest-asyncio. Use the "pytest_asyncio_loop_factories" hook to customize event loop creation.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: D:\WOLF15-work\master-remediation-20260909\evidence\mcp-dependency-validation.xml -
+7 passed, 7 warnings in 70.42s (0:01:10)

@@ -15,6 +15,7 @@ import orjson
 from loguru import logger
 
 from config_loader import get_enabled_symbols
+from context.live_context_bus import LiveContextBus
 from context.system_state import SystemState, SystemStateManager
 from core.redis_keys import HEARTBEAT_INGEST, HEARTBEAT_INGEST_PROCESS, HEARTBEAT_INGEST_PROVIDER
 from ingest.calendar_news import CalendarNewsIngestor
@@ -106,20 +107,31 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient, shutdown_ev
         await asyncio.sleep(_PRODUCER_HEARTBEAT_INTERVAL_SEC)
 
 
+async def _required_producer_heartbeat(ws_feed, redis, shutdown_event):
+    await _producer_heartbeat_loop(ws_feed, redis, shutdown_event)
+    if not (shutdown_event and shutdown_event.is_set()):
+        raise RuntimeError("ingest_required_producer_heartbeat_returned")
+
+
 async def _run_supervised(
     name: str,
     runner: Any,
     restart_delay: float = 5.0,
     shutdown_event: asyncio.Event | None = None,
+    required: bool = False,
 ) -> None:
     """Run a long-lived task with restart isolation."""
     while not (shutdown_event and shutdown_event.is_set()):
         try:
             await runner.run()
+            if required and not (shutdown_event and shutdown_event.is_set()):
+                raise RuntimeError(f"ingest_required_{name}_returned")
             return
         except asyncio.CancelledError:
             raise
         except Exception:
+            if required:
+                raise
             logger.exception("[{}] crashed - restarting in {:.1f}s", name, restart_delay)
             await asyncio.sleep(restart_delay)
 
@@ -257,6 +269,7 @@ async def run_ingest_services(
         set_redis_client(redis)
 
         h1_builders: dict[str, CandleBuilder] = {}
+        live_context_bus = LiveContextBus()
 
         def _h1_on_complete(candle: Any) -> None:
             logger.info(
@@ -268,7 +281,10 @@ async def run_ingest_services(
                 candle.close,
                 getattr(candle, "tick_count", "?"),
             )
-            publish_candle_sync(candle.to_dict(), redis=redis)
+            candle_dict = candle.to_dict()
+            candle_dict["provider_feed"] = "finnhub_ws"
+            live_context_bus.update_candle(candle_dict)
+            publish_candle_sync(candle_dict, redis=redis)
 
         for _sym in enabled_symbols:
             h1_builders[_sym] = CandleBuilder(
@@ -386,7 +402,7 @@ async def run_ingest_services(
             on_connect=htf_refresh.force_refresh_now,
         )
         producer_heartbeat_task = asyncio.create_task(
-            _producer_heartbeat_loop(ws_feed=ws_feed, redis=redis, shutdown_event=shutdown_event),
+            _required_producer_heartbeat(ws_feed=ws_feed, redis=redis, shutdown_event=shutdown_event),
             name="IngestProducerHeartbeat",
         )
 
@@ -460,7 +476,7 @@ async def run_ingest_services(
         _phase = "running"
         supervised_tasks = [
             asyncio.create_task(
-                _run_supervised("finnhub_ws", ws_feed, shutdown_event=shutdown_event),
+                _run_supervised("finnhub_ws", ws_feed, shutdown_event=shutdown_event, required=True),
                 name="IngestSupervisor:finnhub_ws",
             ),
             asyncio.create_task(
@@ -488,17 +504,22 @@ async def run_ingest_services(
                 name="IngestSupervisor:macro_monthly_refresh",
             ),
             asyncio.create_task(
-                _run_supervised("forming_publisher", _FormingPubRunner(forming_pub), shutdown_event=shutdown_event),
+                _run_supervised(
+                    "forming_publisher", _FormingPubRunner(forming_pub), shutdown_event=shutdown_event, required=True
+                ),
                 name="IngestSupervisor:forming_publisher",
             ),
             asyncio.create_task(
                 _run_supervised(
-                    "health_check", _HealthCheckRunner(_ws_connected_fn, redis, ws_feed), shutdown_event=shutdown_event
+                    "health_check",
+                    _HealthCheckRunner(_ws_connected_fn, redis, ws_feed),
+                    shutdown_event=shutdown_event,
+                    required=True,
                 ),
                 name="IngestSupervisor:health_check",
             ),
         ]
-        await asyncio.gather(*supervised_tasks)
+        await asyncio.gather(*supervised_tasks, producer_heartbeat_task)
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled during phase '{}' - shutting down", _phase)
         raise
@@ -507,16 +528,16 @@ async def run_ingest_services(
         raise
     finally:
         cleanup_errors: list[tuple[str, Exception]] = []
-        for task in supervised_tasks:
-            if not task.done():
-                task.cancel()
-        for task in supervised_tasks:
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        from startup.graceful_shutdown import GracefulShutdown, ShutdownDrainTimeoutError
+
+        tasks_to_drain = [*supervised_tasks]
         if producer_heartbeat_task is not None:
-            producer_heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await producer_heartbeat_task
+            tasks_to_drain.append(producer_heartbeat_task)
+        # A failed task must not skip cancellation of peers or close Redis under them.
+        try:
+            await GracefulShutdown(drain_timeout=10, require_quiescent=True).shutdown(tasks_to_drain)
+        except ShutdownDrainTimeoutError as exc:
+            raise RuntimeError("shutdown_tasks_not_drained") from exc
         await _safe_stop("ws_feed", ws_feed, cleanup_errors)
         await _safe_stop("rest_poll", rest_poll, cleanup_errors)
         await _safe_stop("news_feed", news_feed, cleanup_errors)
@@ -526,6 +547,9 @@ async def run_ingest_services(
         if candle_builders:
             for name, cb in candle_builders.items():
                 await _safe_stop(f"candle_builder[{name}]", cb, cleanup_errors)
+
+        if cleanup_errors:
+            raise RuntimeError("shutdown_tasks_not_drained") from cleanup_errors[0][1]
 
         if redis is not None:
             try:

@@ -1,0 +1,134 @@
+{
+  "schema_version": "wolf15-pursuit-binding-inputs/v1",
+  "status": "TEMPLATE_UNBOUND",
+  "runtime_usable": false,
+  "instructions": "Reuse verified existing bindings and authorizations. null means unknown, never default-ready. Store secret values only in the existing secure mechanism; this template accepts references only.",
+  "source": {
+    "workspace_path": null,
+    "source_commit": null,
+    "source_tree": null,
+    "publication_head": null,
+    "ssot_path": null,
+    "ssot_commit": null,
+    "ssot_git_blob": null,
+    "ssot_sha256": null,
+    "pr_branch": null
+  },
+  "runner": {
+    "host_identity_ref": null,
+    "configuration_path": null,
+    "os_and_runtime_manifest_ref": null,
+    "capacity_probe_ref": null,
+    "applicable_resource_guard_ref": null,
+    "disposable_database_scope_ref": null,
+    "database_version_ref": null,
+    "expiry_and_cleanup_scope_ref": null,
+    "provisioning_authorization_ref": null,
+    "cost_scope_ref": null
+  },
+  "strategy_policy": {
+    "registry_path": null,
+    "active_version_and_digest_ref": null,
+    "consumer_mapping_ref": null,
+    "unresolved_strategy_decision_ids": []
+  },
+  "risk_policy": {
+    "selected_profile_ref": null,
+    "profile_digest": null,
+    "account_mode_currency_binding_ref": null,
+    "per_leg_and_account_caps_ref": null,
+    "campaign_R_basis_ref": null,
+    "child_lifetime_and_released_risk_policy_ref": null,
+    "cost_and_symbol_spec_ref": null
+  },
+  "execution": {
+    "demo_account_binding_ref": null,
+    "server_binding_ref": null,
+    "account_trade_mode_attestation_ref": null,
+    "account_hedging_or_netting_ref": null,
+    "instrument_allowlist_ref": null,
+    "terminal_identity_ref": null,
+    "metaeditor_and_include_manifest_ref": null,
+    "ea_source_and_binary_hash_ref": null,
+    "independent_reader_identity_ref": null,
+    "reader_auth_and_scope_ref": null,
+    "transport_consumer_destination_ref": null,
+    "transport_authentication_ref": null
+  },
+  "release": {
+    "existing_railway_project_service_refs": null,
+    "source_image_config_schema_manifest_ref": null,
+    "required_checks_and_ruleset_ref": null,
+    "database_migration_package_ref": null,
+    "backup_restore_evidence_ref": null,
+    "rollback_or_forward_repair_ref": null
+  },
+  "operation_scopes": {
+    "d0_shadow": {
+      "status": "UNBOUND",
+      "authorization_ref": null,
+      "artifact_binding_ref": null,
+      "account_binding_ref": null,
+      "window_utc_ref": null,
+      "submit_and_exposure_limits_ref": null,
+      "stop_and_reconciliation_policy_ref": null
+    },
+    "d0_canary": {
+      "status": "UNBOUND",
+      "authorization_ref": null,
+      "artifact_binding_ref": null,
+      "account_binding_ref": null,
+      "window_utc_ref": null,
+      "submit_and_exposure_limits_ref": null,
+      "stop_and_reconciliation_policy_ref": null
+    },
+    "natural_parent": {
+      "status": "UNBOUND",
+      "authorization_ref": null,
+      "artifact_binding_ref": null,
+      "account_binding_ref": null,
+      "window_utc_ref": null,
+      "submit_and_exposure_limits_ref": null,
+      "stop_and_reconciliation_policy_ref": null
+    },
+    "natural_family": {
+      "status": "UNBOUND",
+      "authorization_ref": null,
+      "artifact_binding_ref": null,
+      "account_binding_ref": null,
+      "window_utc_ref": null,
+      "submit_and_exposure_limits_ref": null,
+      "stop_and_reconciliation_policy_ref": null
+    },
+    "operational_drills": {
+      "status": "UNBOUND",
+      "authorization_ref": null,
+      "artifact_binding_ref": null,
+      "account_binding_ref": null,
+      "window_utc_ref": null,
+      "submit_and_exposure_limits_ref": null,
+      "stop_and_reconciliation_policy_ref": null
+    }
+  },
+  "evaluation": {
+    "soak_slo_rto_rpo_protocol_ref": null,
+    "oos_cost_drawdown_uncertainty_protocol_ref": null,
+    "sample_adequacy_rule_ref": null,
+    "preregistration_receipt_ref": null
+  },
+  "permissions": {
+    "implementation_authorization_ref": null,
+    "draft_branch_publication_authorization_ref": null,
+    "github_admin_change_authorization_ref": null,
+    "production_database_authorization_ref": null,
+    "deployment_authorization_ref": null,
+    "real_broker_authorized": false
+  },
+  "owner_decision_queue": [],
+  "do_not_populate_from": [
+    "Example risk5% or historicalDEMO3.5%/1.5% without active selection",
+    "Memory only for current account/server",
+    "Placeholder hostname or guessed D:/ path",
+    "Previous parent approval to authorize new child artifact implicitly"
+  ]
+}

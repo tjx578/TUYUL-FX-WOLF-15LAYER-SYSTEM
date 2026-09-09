@@ -1,0 +1,45 @@
+tests/test_executor_bridge_factory.py::test_factory_default_has_no_bridge
+tests/test_executor_bridge_factory.py::test_factory_rejects_ambiguous_opt_in[true]
+tests/test_executor_bridge_factory.py::test_factory_rejects_ambiguous_opt_in[false]
+tests/test_executor_bridge_factory.py::test_factory_rejects_ambiguous_opt_in[1]
+tests/test_executor_bridge_factory.py::test_factory_rejects_ambiguous_opt_in[None]
+tests/test_executor_bridge_factory.py::test_factory_auth_prevents_repository_calls[auth0-resource0-401]
+tests/test_executor_bridge_factory.py::test_factory_auth_prevents_repository_calls[auth1-resource1-403]
+tests/test_executor_bridge_factory.py::test_factory_preserves_repository_veto
+tests/test_executor_bridge_factory.py::test_factory_missing_auth_configuration_fails_closed
+tests/test_executor_bridge_factory.py::test_requested_bridge_rejects_degraded_router_boot
+tests/test_executor_bridge_factory.py::test_requested_bridge_rejects_duplicate_routes
+tests/test_executor_bridge_api.py::test_empty_command_poll_returns_204
+tests/test_executor_bridge_api.py::test_claim_returns_hash_bound_to_signed_command
+tests/test_executor_bridge_api.py::test_poll_adds_frozen_envelope_without_removing_the_v1_command
+tests/test_executor_bridge_api.py::test_authenticated_executor_can_reconcile_a_terminal_command
+tests/test_executor_bridge_api.py::test_registration_path_is_bound_to_authenticated_executor
+tests/test_activity_delivery_consumer.py::test_commit_then_expired_relay_ack_then_duplicate_ack_recovers
+tests/test_activity_delivery_consumer.py::test_every_consumer_write_failure_rolls_back[mappings]
+tests/test_activity_delivery_consumer.py::test_every_consumer_write_failure_rolls_back[emissions]
+tests/test_activity_delivery_consumer.py::test_every_consumer_write_failure_rolls_back[inbox]
+tests/test_activity_delivery_consumer.py::test_every_consumer_write_failure_rolls_back[consumer_cursors]
+tests/test_activity_delivery_consumer.py::test_payload_conflict_quarantined_without_rewriting_outcome
+tests/test_activity_delivery_consumer.py::test_uncommitted_predecessor_cannot_be_skipped
+tests/test_activity_delivery_consumer.py::test_old_owner_rejected_after_handover
+tests/test_activity_delivery_consumer.py::test_authenticated_route_returns_ack_only_after_commit
+tests/test_activity_delivery_consumer.py::test_transport_tampering_rejected[identity]
+tests/test_activity_delivery_consumer.py::test_transport_tampering_rejected[timestamp]
+tests/test_activity_delivery_consumer.py::test_transport_tampering_rejected[payload]
+tests/test_activity_delivery_consumer.py::test_transport_tampering_rejected[signature]
+tests/test_activity_delivery_consumer.py::test_api_factory_mounts_only_explicit_bound_endpoint
+tests/test_activity_delivery_consumer.py::test_unseen_expiry_and_missing_policy_fail_closed
+tests/test_activity_delivery_consumer.py::test_changed_policy_cannot_remap_same_logical_activity
+tests/test_activity_delivery_consumer.py::test_recovery_capacity_excess_is_not_silently_truncated
+
+============================== warnings summary ===============================
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+33 tests collected in 8.71s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

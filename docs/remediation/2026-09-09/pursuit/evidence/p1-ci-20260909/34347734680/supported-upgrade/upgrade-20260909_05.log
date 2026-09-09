@@ -1,0 +1,41 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 001_initial, Initial PostgreSQL schema for persistent backup.
+INFO  [alembic.runtime.migration] Running upgrade 001_initial -> 002_governance_models, Add canonical governance tables for accounts, prop firms, and EA instances.
+INFO  [alembic.runtime.migration] Running upgrade 002_governance_models -> 003_trade_outbox, Add durable trade_outbox table for transactional outbox pattern.
+INFO  [alembic.runtime.migration] Running upgrade 003_trade_outbox -> 20260310_01, Reconcile trade_outbox migration chain safely.
+INFO  [alembic.runtime.migration] Running upgrade 20260310_01 -> 20260310_1839, create trade_outbox table
+INFO  [alembic.runtime.migration] Running upgrade 20260310_1839 -> 20260315_01, create ohlc_candles table
+INFO  [alembic.runtime.migration] Running upgrade 20260315_01 -> 20260316_01, create mc_results table for Monte Carlo historical trending
+INFO  [alembic.runtime.migration] Running upgrade 20260316_01 -> 20260321_01, Agent Manager — create ea_profiles, ea_agents, ea_agent_runtime, ea_agent_events,
+ea_agent_audit_logs, account_portfolio_snapshots tables.
+INFO  [alembic.runtime.migration] Running upgrade 20260321_01 -> 20260520_01, Add event_hash dedup key to signalthrottle.signal_events when present.
+INFO  [alembic.runtime.migration] Running upgrade 20260520_01 -> 20260719_01, Add durable MT5 dumb-executor bridge ledger.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_01 -> 20260720_01, Add the durable Strategy 5S-CR pressure outbox and idempotent inbox.
+INFO  [alembic.runtime.migration] Running upgrade 20260720_01 -> 20260720_02, Add durable pressure-radar manifests and deployment-scoped event dedup.
+INFO  [alembic.runtime.migration] Running upgrade 20260720_02 -> 20260723_01, Add canonical candle provenance and durable 5S-CR evidence results.
+INFO  [alembic.runtime.migration] Running upgrade 20260723_01 -> 20260724_01, Quarantine Finnhub candles normalized with reversed timestamp semantics.
+INFO  [alembic.runtime.migration] Running upgrade 20260724_01 -> 20260724_02, Separate immutable provider observations from selected canonical candles.
+INFO  [alembic.runtime.migration] Running upgrade 20260724_02 -> 20260724_03, Add durable lifecycle anchors, immutable evidence snapshots, and retries.
+INFO  [alembic.runtime.migration] Running upgrade 20260724_03 -> 20260724_04, Add immutable 5S-CR tradeplan candidates and M1 outcomes.
+INFO  [alembic.runtime.migration] Running upgrade 20260724_04 -> 20260729_01, Add durable Strategy Analysis Lifecycle V2 (market-episode identity).
+INFO  [alembic.runtime.migration] Running upgrade 20260729_01 -> 20260801_01, Add fail-closed governance for the MT5 executor bridge.
+INFO  [alembic.runtime.migration] Running upgrade 20260801_01 -> 20260803_01, Freeze signed MT5 command wire bytes for executor-side verification.
+INFO  [alembic.runtime.migration] Running upgrade 20260803_01 -> 20260803_02, Add fail-closed lineage for SHADOW acceptance commands.
+INFO  [alembic.runtime.migration] Running upgrade 20260803_02 -> 20260803_03, Add durable 5S-CR campaign locks, reservations, and final-signal outbox.
+INFO  [alembic.runtime.migration] Running upgrade 20260803_03 -> 20260803_04, Bind risk-authorized final signals to SHADOW MT5 commands atomically.
+INFO  [alembic.runtime.migration] Running upgrade 20260803_04 -> 20260804_01, Add Lifecycle V2 admission lineage and shadow evidence ownership.
+INFO  [alembic.runtime.migration] Running upgrade 20260804_01 -> 20260810_01, Add an independent durable PairAdmission evaluation ledger.
+INFO  [alembic.runtime.migration] Running upgrade 20260810_01 -> 20260810_02, Separate PairAdmission evaluation snapshots from logical grant creation.
+INFO  [alembic.runtime.migration] Running upgrade 20260810_02 -> 20260811_01, Add durable shadow-only Microboost pulse events and current state.
+INFO  [alembic.runtime.migration] Running upgrade 20260811_01 -> 20260812_01, Add durable, shadow-only Strategy 5S-CR ContextEpoch V1.
+INFO  [alembic.runtime.migration] Running upgrade 20260812_01 -> 20260812_02, Add immutable, shadow-only H1/M15 proofs and DirectionalThesis V1.
+INFO  [alembic.runtime.migration] Running upgrade 20260812_02 -> 20260812_03, Add durable, versioned, shadow-only ExecutionBox V1.
+INFO  [alembic.runtime.migration] Running upgrade 20260812_03 -> 20260813_01, Add durable, shadow-only Strategy 5S-CR TradePlanCandidate V2.
+INFO  [alembic.runtime.migration] Running upgrade 20260813_01 -> 20260813_02, Add CandidateV2 -> C2 SHADOW risk authority V2.
+INFO  [alembic.runtime.migration] Running upgrade 20260813_02 -> 20260822_01, Add the append-only Wolf15 observer telemetry export.
+INFO  [alembic.runtime.migration] Running upgrade 20260822_01 -> 20260909_01, Add isolated, non-executable v3.1 activity recovery ledgers.
+INFO  [alembic.runtime.migration] Running upgrade 20260909_01 -> 20260909_02, Add producer delivery outbox; no lifecycle consumer activation.
+INFO  [alembic.runtime.migration] Running upgrade 20260909_02 -> 20260909_03, Owner-fenced S03 consumer storage. Explicit migration; no runtime activation.
+INFO  [alembic.runtime.migration] Running upgrade 20260909_03 -> 20260909_04, Immutable TEST_ONLY v3.1 candidate history. No active consumer switch.
+INFO  [alembic.runtime.migration] Running upgrade 20260909_04 -> 20260909_05, Fenced account capacity state for explicit TEST_ONLY transactions.

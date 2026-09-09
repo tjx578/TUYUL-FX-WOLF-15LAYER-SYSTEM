@@ -1,0 +1,101 @@
+{
+  "head": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+  "ci_run": "34363944821",
+  "verified_receipts": [
+    {
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "run_id": "1f21c65d61fb41d7ac93579c12cb28b9",
+      "tested_merge_sha": "e9352325b85942876f17fc394b962919e62f8885",
+      "source_manifest_matches_feature_head": true,
+      "receipt_sha256": "3ea3ab21d0dce3d6a6999ce963341f0fcba4c4a81454c36de445ed01bfacdb2c"
+    },
+    {
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "run_id": "79c54b8aaba74d87a03714ccb10aac76",
+      "tested_merge_sha": "e9352325b85942876f17fc394b962919e62f8885",
+      "source_manifest_matches_feature_head": true,
+      "receipt_sha256": "a8a26342c0f24d0ab9a8e5a67e789db3228f1fbc50c5c8d746d2098b5acb70a2"
+    },
+    {
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "run_id": "963176fd0f944773822154399b231ee0",
+      "tested_merge_sha": "e9352325b85942876f17fc394b962919e62f8885",
+      "source_manifest_matches_feature_head": true,
+      "receipt_sha256": "4d211cf3020418ad597bbe76c7eb0ac64d38026dd5a6b0113001061cb25e34bd"
+    },
+    {
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 12
+      },
+      "run_id": "ae766d35030748528dbb06e66967b10a",
+      "tested_merge_sha": "e9352325b85942876f17fc394b962919e62f8885",
+      "source_manifest_matches_feature_head": true,
+      "receipt_sha256": "c3fc6fc045fa48a441db40b4341d5dcad84fafffde159a3942038e7a96c024bd"
+    },
+    {
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "run_id": "cf29761ea8ed484aa6ed4b4a54610ca3",
+      "tested_merge_sha": "e9352325b85942876f17fc394b962919e62f8885",
+      "source_manifest_matches_feature_head": true,
+      "receipt_sha256": "513966d62fdb36a44968305a1f868990d30076ad1801de42e0fe95760311f991"
+    },
+    {
+      "module": "tests/integration/test_activity_consumer_role_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "run_id": "e88d5a33eda44ac0912a1fc82de9bb74",
+      "tested_merge_sha": "e9352325b85942876f17fc394b962919e62f8885",
+      "source_manifest_matches_feature_head": true,
+      "receipt_sha256": "ba2a3e199a31904beb22e4604704a909cad3c17d7e1e14685bcd89f4c45cf7c2"
+    },
+    {
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 10
+      },
+      "run_id": "eb1fe5a966f245c5adf6c3e170298721",
+      "tested_merge_sha": "e9352325b85942876f17fc394b962919e62f8885",
+      "source_manifest_matches_feature_head": true,
+      "receipt_sha256": "130427578693e7771ee93cb461de4453bed3928690386fffa47f0917c1072d04"
+    }
+  ],
+  "limits": [
+    "Evidence applies only to the assertions executed on this source.",
+    "No production transport, account, policy or broker binding."
+  ]
+}

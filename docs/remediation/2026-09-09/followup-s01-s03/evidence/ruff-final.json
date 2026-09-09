@@ -1,0 +1,29 @@
+{
+  "lint": {
+    "command": [
+      "python",
+      "-m",
+      "ruff",
+      "check",
+      "--no-cache",
+      "."
+    ],
+    "exit_code": 0,
+    "stdout": "All checks passed!\n",
+    "stderr": "warning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+  },
+  "format": {
+    "command": [
+      "python",
+      "-m",
+      "ruff",
+      "format",
+      "--no-cache",
+      "--check",
+      "."
+    ],
+    "exit_code": 0,
+    "stdout": "1372 files already formatted\n",
+    "stderr": "warning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+  }
+}

@@ -48,6 +48,7 @@ from contracts.strategy_5scr_lifecycle_v2 import (
     StrategyLifecycleV2,
 )
 from services.pressure_outbox.shadow_evidence_v2_worker import admission_link_from_outbox_row
+from storage.observer_export_outbox import ObserverExportOutboxRepository
 from storage.strategy_5scr_lifecycle_v2_repository import StrategyLifecycleV2Repository
 from storage.strategy_5scr_shadow_evidence_v2_repository import StrategyShadowEvidenceV2Repository
 
@@ -357,10 +358,21 @@ def build_lifecycle_v2_shadow_runner(
     pg: Any,
     config: LifecycleV2RuntimeConfig,
 ) -> LifecycleV2ShadowRunner:
+    observer_export = ObserverExportOutboxRepository(pg=pg)
     return LifecycleV2ShadowRunner(
-        repository=StrategyLifecycleV2Repository(pg=pg),
+        repository=StrategyLifecycleV2Repository(
+            pg=pg,
+            observer_export_repository=observer_export,
+        ),
         config=config,
-        owner_repository=(StrategyShadowEvidenceV2Repository(pg=pg) if config.evidence_owner_writer_enabled else None),
+        owner_repository=(
+            StrategyShadowEvidenceV2Repository(
+                pg=pg,
+                observer_export_repository=observer_export,
+            )
+            if config.evidence_owner_writer_enabled
+            else None
+        ),
     )
 
 

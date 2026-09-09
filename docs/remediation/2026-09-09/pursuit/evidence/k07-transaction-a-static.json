@@ -1,0 +1,32 @@
+{
+  "results": {
+    "pg-collection": {
+      "exit_code": 0,
+      "artifact": "k07-transaction-a-pg-collection.log",
+      "sha256": "6df709ece23bb952bae98a3b32bf662fa52535ee887c6b3b37cd77bfde75729a",
+      "test_ids": [
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[commit]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[restart_duplicate]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[concurrent_duplicate]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[conflicting_replay]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_capacity]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_campaigns]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_parent_legs]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_signal_previews]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_outbox]"
+      ]
+    },
+    "migration-sql": {
+      "exit_code": 0,
+      "artifact": "k07-transaction-a-migration-sql.log",
+      "sha256": "e8b819fa6359cf4a023c2d8137aa07d818d068ecb202f6d04d3a864985e16758"
+    },
+    "migration-heads": {
+      "exit_code": 0,
+      "artifact": "k07-transaction-a-migration-heads.log",
+      "sha256": "3f4eb3c664a30e222f7c2e7a86b39c4183c86cfe8301824eb7e2e985fd38ccf9"
+    }
+  },
+  "database_execution": "NOT_EXECUTED",
+  "migration_application": "NOT_EXECUTED"
+}

@@ -1,0 +1,48 @@
+.............F.......................................................... [ 39%]
+........................................................................ [ 79%]
+......................................                                   [100%]
+================================== FAILURES ===================================
+____________ test_api_factory_mounts_only_explicit_bound_endpoint _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001D3075773D0>
+
+    def test_api_factory_mounts_only_explicit_bound_endpoint(monkeypatch):
+        from api import app_factory
+        from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
+    
+        monkeypatch.setattr(app_factory, "_create_app_inner", lambda: FastAPI())
+        assert not any(route.path == "/internal/s03/activity-deliveries" for route in app_factory.create_app().routes)
+        db = ConsumerDB()
+        binding = ActivityTransportBinding(
+            destination="https://consumer.test/internal/s03/activity-deliveries",
+            identity="fixture",
+            key=b"x" * 32,
+            maximum_skew_seconds=30,
+        )
+        endpoint = ActivityDeliveryEndpoint(binding, consumer(db), 100000)
+        app = app_factory.create_app(activity_delivery_endpoint=endpoint)
+>       assert sum(route.path == "/internal/s03/activity-deliveries" for route in app.routes) == 1
+
+tests\test_activity_delivery_consumer.py:212: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+.0 = <list_iterator object at 0x000001D3075AD180>
+
+>   assert sum(route.path == "/internal/s03/activity-deliveries" for route in app.routes) == 1
+E   AttributeError: '_IncludedRouter' object has no attribute 'path'
+
+tests\test_activity_delivery_consumer.py:212: AttributeError
+============================== warnings summary ===============================
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\ac3.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_activity_delivery_consumer.py::test_api_factory_mounts_only_explicit_bound_endpoint
+1 failed, 181 passed, 1 warning in 30.47s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

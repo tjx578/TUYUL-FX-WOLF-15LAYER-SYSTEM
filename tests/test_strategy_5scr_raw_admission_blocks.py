@@ -109,6 +109,11 @@ def test_cross_symbol_event_finalizes_the_active_raw_block() -> None:
         ("EURUSD", 1),
     ]
     assert population.blocks[0].cross_symbol_interruption_count == 1
+    assert population.blocks[0].evaluation_state == "FINALIZED"
+    assert population.blocks[0].finalization_reason == "CROSS_SYMBOL_EVENT"
+    assert population.blocks[0].finalization_event_id == raw_signal_throttle_event_id(_raw(150, "GBPUSD"))
+    assert population.blocks[-1].evaluation_state == "ACTIVE"
+    assert population.blocks[-1].finalization_event_id is None
 
 
 def test_gap_boundary_is_inclusive_at_exactly_300_seconds() -> None:
@@ -195,3 +200,68 @@ def test_inferred_direction_is_part_of_stable_raw_identity() -> None:
     sell_id = raw_signal_throttle_event_id(replace(throttled, throttled_inferred_direction="SELL"))
 
     assert buy_id != sell_id
+
+
+def test_identical_active_snapshot_replays_the_same_evaluation_identity() -> None:
+    events = [_raw(0), _raw(150)]
+
+    first = build_raw_admission_population(events)
+    replay = build_raw_admission_population(reversed(events))
+    first_evaluation = build_pair_admission_audit(first.blocks, raw_events=first.events).evaluations[0]
+    replay_evaluation = build_pair_admission_audit(replay.blocks, raw_events=replay.events).evaluations[0]
+
+    assert first_evaluation == replay_evaluation
+    assert first_evaluation["evaluation_state"] == "ACTIVE"
+
+
+def test_growing_active_block_versions_the_evaluation_watermark() -> None:
+    first = build_raw_admission_population([_raw(0), _raw(150)])
+    growing = build_raw_admission_population([_raw(0), _raw(150), _raw(250)])
+    first_evaluation = build_pair_admission_audit(first.blocks, raw_events=first.events).evaluations[0]
+    growing_evaluation = build_pair_admission_audit(growing.blocks, raw_events=growing.events).evaluations[0]
+
+    assert first_evaluation["candidate_block_id"] == growing_evaluation["candidate_block_id"]
+    assert first_evaluation["evaluation_id"] != growing_evaluation["evaluation_id"]
+    assert first_evaluation["evaluation_state"] == growing_evaluation["evaluation_state"] == "ACTIVE"
+    assert first_evaluation["evaluation_watermark"] != growing_evaluation["evaluation_watermark"]
+
+
+def test_active_to_finalized_versions_evaluation_without_changing_raw_block_identity() -> None:
+    active = build_raw_admission_population([_raw(0)])
+    finalized = build_raw_admission_population([_raw(0), _raw(1, "GBPUSD")])
+    active_evaluation = build_pair_admission_audit(active.blocks, raw_events=active.events).evaluations[0]
+    finalized_evaluation = build_pair_admission_audit(finalized.blocks, raw_events=finalized.events).evaluations[0]
+
+    assert active_evaluation["candidate_block_id"] == finalized_evaluation["candidate_block_id"]
+    assert active_evaluation["evaluation_id"] != finalized_evaluation["evaluation_id"]
+    assert active_evaluation["evaluation_state"] == "ACTIVE"
+    assert finalized_evaluation["evaluation_state"] == "FINALIZED"
+    assert finalized_evaluation["finalization_reason"] == "CROSS_SYMBOL_EVENT"
+    assert finalized_evaluation["finalization_event_id"] is not None
+
+
+def test_active_grant_survives_normal_cross_symbol_finalization() -> None:
+    active = build_raw_admission_population([_raw(0), _raw(150), _raw(300)])
+    finalized = build_raw_admission_population([_raw(0), _raw(150), _raw(300), _raw(301, "GBPUSD")])
+    active_audit = build_pair_admission_audit(active.blocks, raw_events=active.events)
+    finalized_audit = build_pair_admission_audit(finalized.blocks, raw_events=finalized.events)
+
+    assert len(active_audit.grants) == len(finalized_audit.grants) == 1
+    assert active_audit.grants[0].pair_admission_id == finalized_audit.grants[0].pair_admission_id
+    assert active_audit.evaluations[0]["evaluation_id"] != finalized_audit.evaluations[0]["evaluation_id"]
+    assert active_audit.evaluations[0]["evaluation_state"] == "ACTIVE"
+    assert finalized_audit.evaluations[0]["evaluation_state"] == "FINALIZED"
+
+
+def test_multi_symbol_finalizer_ordering_is_deterministic() -> None:
+    events = [_raw(0), _raw(150), _raw(300), _raw(301, "GBPUSD")]
+
+    population = build_raw_admission_population(reversed(events))
+
+    assert [(block.symbol, block.evaluation_state) for block in population.blocks] == [
+        ("EURUSD", "FINALIZED"),
+        ("GBPUSD", "ACTIVE"),
+    ]
+    assert population.blocks[0].events == 3
+    assert population.blocks[1].events == 1
+    assert population.blocks[0].finalization_event_id == raw_signal_throttle_event_id(_raw(301, "GBPUSD"))

@@ -1,0 +1,57 @@
+[
+  {
+    "service": "wolf15-auditor",
+    "deploymentId": "e5e24327-09f1-4c84-ab47-43f13913a52b",
+    "status": "REMOVED",
+    "count": 4,
+    "entries": []
+  },
+  {
+    "service": "wolf15-pressure-outbox",
+    "deploymentId": "069243e5-e5e2-4d52-bcec-cbc9a23e0c0b",
+    "status": "SUCCESS",
+    "count": 2,
+    "entries": []
+  },
+  {
+    "service": "wolf15-api",
+    "deploymentId": "81c42eb3-89f3-4876-bfe8-52e50b604bc1",
+    "status": "SUCCESS",
+    "count": 41,
+    "entries": [
+      {
+        "timestamp": "2026-09-07T18:25:17.996945199Z",
+        "severity": "info",
+        "message": "100.64.0.10:25910 - \"GET /readyz HTTP/1.1\" 401"
+      },
+      {
+        "timestamp": "2026-09-07T18:25:18.649545858Z",
+        "severity": "info",
+        "message": "100.64.0.9:33722 - \"GET /api/v1/orchestrator/state HTTP/1.1\" 401"
+      },
+      {
+        "timestamp": "2026-09-07T18:32:12.755167499Z",
+        "severity": "info",
+        "message": "100.64.0.10:36006 - \"GET /readyz HTTP/1.1\" 200"
+      },
+      {
+        "timestamp": "2026-09-07T18:32:12.755173517Z",
+        "severity": "info",
+        "message": "100.64.0.14:28066 - \"GET /api/v1/orchestrator/state HTTP/1.1\" 401"
+      }
+    ]
+  },
+  {
+    "service": "wolf15-orchestrator",
+    "deploymentId": "891df53a-8b9a-40ad-a60c-de91498833a7",
+    "status": "SUCCESS",
+    "count": 2,
+    "entries": [
+      {
+        "timestamp": "2026-09-05T11:08:05.820587384Z",
+        "severity": "info",
+        "message": "2026-09-05 11:08:05 | WARNING  | __main__:_evaluate_compliance_tick:411 - compliance transition -> mode=KILL_SWITCH code=ACCOUNT_STATE_MISSING severity=critical"
+      }
+    ]
+  }
+]
