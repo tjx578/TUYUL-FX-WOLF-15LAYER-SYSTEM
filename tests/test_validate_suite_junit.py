@@ -16,6 +16,8 @@ def test_executed_suite_passes(tmp_path: Path):
     [
         "<testsuites/>",
         '<testsuite tests="0"/>',
+        "<testsuite><testcase/></testsuite>",
+        '<testsuite tests="abc"><testcase/></testsuite>',
         '<testsuite tests="2"><testcase/></testsuite>',
         '<testsuite tests="1" skipped="1"><testcase/></testsuite>',
         '<testsuite tests="1"><testcase><skipped/></testcase></testsuite>',
