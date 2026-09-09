@@ -205,7 +205,8 @@ class TestAllocationSupervisedMain:
     """_main() must restart worker on crash up to max_restarts."""
 
     @pytest.mark.asyncio
-    async def test_main_restarts_on_crash(self) -> None:
+    @pytest.mark.parametrize("crash_count", [0, 2])
+    async def test_main_retries_crash_and_unexpected_return(self, crash_count: int) -> None:
         from allocation import async_worker as mod
 
         run_calls = 0
@@ -213,19 +214,20 @@ class TestAllocationSupervisedMain:
         async def _fake_run(self: Any) -> None:
             nonlocal run_calls
             run_calls += 1
-            if run_calls <= 2:
+            if run_calls <= crash_count:
                 raise RuntimeError("Redis exploded")
-            # 3rd run: clean exit
+            # Subsequent unexpected returns are failures for this required worker.
 
         with (
             patch.object(mod.AsyncAllocationWorker, "run", _fake_run),
             patch.object(mod, "_MAX_RESTARTS", 5),
             patch.object(mod, "_RESTART_COOLDOWN", 0.0),
             patch.object(mod, "start_http_server"),
+            pytest.raises(RuntimeError, match="^ALLOCATION_REQUIRED_WORKER_EXHAUSTED$"),
         ):
             await mod._main()
 
-        assert run_calls == 3  # 2 crashes + 1 clean exit
+        assert run_calls == 6  # Initial attempt plus five bounded retries.
 
     @pytest.mark.asyncio
     async def test_main_gives_up_after_max_restarts(self) -> None:
@@ -243,6 +245,7 @@ class TestAllocationSupervisedMain:
             patch.object(mod, "_MAX_RESTARTS", 3),
             patch.object(mod, "_RESTART_COOLDOWN", 0.0),
             patch.object(mod, "start_http_server"),
+            pytest.raises(RuntimeError, match="^ALLOCATION_REQUIRED_WORKER_EXHAUSTED$"),
         ):
             await mod._main()
 
@@ -253,15 +256,22 @@ class TestAllocationSupervisedMain:
     async def test_main_propagates_cancelled(self) -> None:
         from allocation import async_worker as mod
 
+        run_calls = 0
+
         async def _fake_run(self: Any) -> None:
+            nonlocal run_calls
+            run_calls += 1
             raise asyncio.CancelledError
 
         with (
             patch.object(mod.AsyncAllocationWorker, "run", _fake_run),
             patch.object(mod, "start_http_server"),
+            pytest.raises(asyncio.CancelledError),
         ):
-            # CancelledError should return cleanly, not crash
+            # Cancellation must reach the role supervisor without restarting.
             await mod._main()
+
+        assert run_calls == 1
 
 
 class TestExecutionSupervisedMain:
