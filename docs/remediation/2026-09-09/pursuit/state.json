@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "0467171ffacc89cfb5337a3cb9ee10d7fc66f59c",
-  "source_verified_at": "2026-09-09T07:33:35.745402+00:00",
+  "source_checkpoint": "df768c9c1dcff61f37c167e9092c89cd5546554b",
+  "source_verified_at": "2026-09-09T07:42:23.490709+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K07_IMMUTABLE_CANDIDATE_REVISION_REPOSITORY",
+  "current_slice": "K07_LOCKED_LATEST_CANDIDATE_CAPACITY_PREPARATION",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Connect locked latest candidate history to the capacity handoff and compose Transaction A with explicit TEST_ONLY boundaries. Seven new candidate revision PostgreSQL cases and the existing 63 S03 cases remain NOT_EXECUTED; do not repeat blocked runner/billing questions.",
+  "next_action_on_resume": "Implement persistent account-capacity state and atomic Transaction A composition with locked latest candidate preparation. Preserve TEST_ONLY and the known PostgreSQL/CI/DEMO/publication blockers; use short unique local validation labels to avoid Windows artifact path overflow.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_REVISION_HISTORY_REPOSITORY_MIGRATION_AND_LOCAL_ACCEPTANCE",
-  "actual_source_commit": "0467171ffacc89cfb5337a3cb9ee10d7fc66f59c",
+  "previous_goal_turn_classification": "PROGRESS_LOCKED_LATEST_CANDIDATE_HANDOFF_AND_LOCAL_ACCEPTANCE",
+  "actual_source_commit": "df768c9c1dcff61f37c167e9092c89cd5546554b",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -765,18 +765,18 @@
       ]
     },
     "K07": {
-      "status": "CANDIDATE_REVISION_REPOSITORY_LOCAL_PASS_POSTGRES_UNEXECUTED_PARTIAL",
+      "status": "LOCKED_LATEST_CANDIDATE_CAPACITY_LOCAL_PASS_TRANSACTION_A_PARTIAL",
       "DONE": false,
-      "evidence_ref": "evidence/k07-revisions-validation.json",
+      "evidence_ref": "evidence/k07-latest-capacity-validation.json",
       "previous_evidence_refs": [
+        "evidence/k07-revisions-validation.json",
         "evidence/k07-handoff-validation.json",
         "evidence/k07-baseline-validation.json",
-        "evidence/k07-capacity-validation.json",
-        "evidence/k07-parent-adapter-validation.json"
+        "evidence/k07-capacity-validation.json"
       ],
       "remaining": [
+        "Persistent account-capacity state and atomic reservation/campaign/leg/FinalSignal/outbox Transaction A",
         "Actual candidate history migration/recovery/concurrency acceptance and S3-S5 verifier/consumer binding",
-        "Locked latest candidate to capacity handoff; persistent Transaction A with reservation/campaign/leg/FinalSignal/outbox",
         "Active risk/account/provider binding and child policy integration",
         "Actual independent broker reconciliation, margin and natural family/compounding execution"
       ]
@@ -820,7 +820,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "0467171ffacc89cfb5337a3cb9ee10d7fc66f59c",
+    "source_commit": "df768c9c1dcff61f37c167e9092c89cd5546554b",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,

@@ -1,5 +1,5 @@
 {
-  "source_commit": "0467171ffacc89cfb5337a3cb9ee10d7fc66f59c",
+  "source_commit": "df768c9c1dcff61f37c167e9092c89cd5546554b",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -611,6 +611,56 @@
       "path": "k07-handoff-validation.json",
       "sha256": "9eb93ef931ac33b70636855ebceb45f24b09a1e0ceaa979b8d97b1773e75d2df",
       "bytes": 29907
+    },
+    {
+      "path": "k07-latest-capacity-20260909-a1-collection.log",
+      "sha256": "658abde54ffac55fe57e4a5ebab8f62a67c34ed0d6dfd7ca3c9b95d7356c93f3",
+      "bytes": 13734
+    },
+    {
+      "path": "k07-latest-capacity-20260909-a1-pytest.log",
+      "sha256": "8c50711983e4ea68cfa0824a4bf48098aa5dcd08bb614f0c0c1388bfba65e31b",
+      "bytes": 5428
+    },
+    {
+      "path": "k07-latest-capacity-20260909-a1-receipt.json",
+      "sha256": "e38a515105be022ba95ae9c94e01ee8b28ce2ace17642c3c57355056554cb97d",
+      "bytes": 20866
+    },
+    {
+      "path": "k07-latest-capacity-20260909-a1.xml",
+      "sha256": "056aa806926b6c42bc6efac0c58f2eb58d58c9fcfac166e45f2daf07dd78253c",
+      "bytes": 21305
+    },
+    {
+      "path": "k07-latest-capacity-source.diff",
+      "sha256": "b2550aa87e75212e154f5ed94254fd4b7e883ad44ccbd594e8f35598efa3d9d2",
+      "bytes": 12121
+    },
+    {
+      "path": "k07-latest-capacity-validation.json",
+      "sha256": "464fd8240d87c590699268e6c30a125613e99d5aea5732ad1cc0db7141064272",
+      "bytes": 17292
+    },
+    {
+      "path": "k07-lc-20260909-a2-collection.log",
+      "sha256": "a406e8e7fe60cfca134de0b24e92e6190ddb39cc3942e7ace6779e389477510b",
+      "bytes": 13734
+    },
+    {
+      "path": "k07-lc-20260909-a2-pytest.log",
+      "sha256": "2480381cddf9b5e23b5292b5d98d6063d89adb5a4ef4da246099085f0f4d218b",
+      "bytes": 1071
+    },
+    {
+      "path": "k07-lc-20260909-a2-receipt.json",
+      "sha256": "52d04a22b22876219b6410ca56be672ccbbe7b4114b48ec053551da9ee7c2468",
+      "bytes": 20827
+    },
+    {
+      "path": "k07-lc-20260909-a2.xml",
+      "sha256": "d7c2f5d691fdd5631a1f85d34b04da2e2bb46d5bb849dcc6847d2fcb67baf44f",
+      "bytes": 17196
     },
     {
       "path": "k07-parent-adapter-source.diff",
