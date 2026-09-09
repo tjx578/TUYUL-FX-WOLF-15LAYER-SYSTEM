@@ -812,7 +812,7 @@ def _create_app_inner() -> FastAPI:
     # Mount all routers from the registry. In degraded fail-open mode,
     # keep process alive with health endpoints so orchestrators can
     # inspect diagnostics instead of seeing a dead container.
-    fail_open = _env_bool("ROUTER_BOOT_FAIL_OPEN", default=True)
+    fail_open = _env_bool("ROUTER_BOOT_FAIL_OPEN", default=False)
     routers, router_import_errors = load_routers()
     if router_import_errors:
         router_boot_errors.extend(router_import_errors)
@@ -849,9 +849,9 @@ def _create_app_inner() -> FastAPI:
 
 
 def create_app(*, activity_delivery_endpoint=None, executor_bridge_enabled: bool = False) -> FastAPI:
-    """Build the FastAPI application with fail-open bootstrap protection.
+    """Build the FastAPI application with explicit diagnostic fallback opt-in.
 
-    If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
+    If ``API_BOOT_FAIL_OPEN`` is explicitly truthy and the inner factory
     raises, returns a minimal fallback app that keeps ``/healthz`` alive
     so operators can diagnose the failure via ``/api/v1/status``.
 
@@ -860,7 +860,7 @@ def create_app(*, activity_delivery_endpoint=None, executor_bridge_enabled: bool
     """
     if type(executor_bridge_enabled) is not bool:
         raise ValueError("EXECUTOR_BRIDGE_EXPLICIT_BOOLEAN_REQUIRED")
-    fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
+    fail_open = _env_bool("API_BOOT_FAIL_OPEN", False)
     try:
         application = _create_app_inner()
         if executor_bridge_enabled:

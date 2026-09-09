@@ -424,10 +424,40 @@ jobs:
   # -------------------------------------------------------------------
   # CI Gate — required status check for branch protection
   # -------------------------------------------------------------------
+  built-api:
+    name: Built API bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build exact-source API image
+        run: |
+          mkdir -p artifacts/built-api
+          test -z "$(git status --porcelain)"
+          docker build --iidfile artifacts/built-api/image-id.txt .
+
+      - name: Exercise built API bootstrap and served readiness
+        run: |
+          docker run --rm --network none \
+            -e WOLF15_TEST_APP_SHA256="$(sha256sum api/app_factory.py | cut -d ' ' -f 1)" \
+            -e WOLF15_TEST_REGISTRY_SHA256="$(sha256sum api/router_registry.py | cut -d ' ' -f 1)" \
+            "$(cat artifacts/built-api/image-id.txt)" \
+            python scripts/ci/built_api_acceptance.py > artifacts/built-api/receipt.json
+
+      - name: Upload built API evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-api-bootstrap
+          path: artifacts/built-api/
+          if-no-files-found: error
+          retention-days: 14
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard]
+    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, built-api]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
@@ -438,6 +468,7 @@ jobs:
           echo "native-mcp:  ${{ needs.native-mcp-tests.result }}"
           echo "shim-guard:  ${{ needs.shim-guard.result }}"
           echo "drift-guard: ${{ needs.drift-guard.result }}"
+          echo "built-api:   ${{ needs.built-api.result }}"
 
           FAILED=0
           for JOB in \
@@ -446,7 +477,8 @@ jobs:
             "${{ needs.dashboard.result }}" \
             "${{ needs.native-mcp-tests.result }}" \
             "${{ needs.shim-guard.result }}" \
-            "${{ needs.drift-guard.result }}"; do
+            "${{ needs.drift-guard.result }}" \
+            "${{ needs.built-api.result }}"; do
             if [[ "$JOB" != "success" ]]; then
               FAILED=1
             fi

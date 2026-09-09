@@ -26,6 +26,7 @@ REQUIRED_STEPS = {
     },
     "Dashboard build (Next.js)": {"Lint", "Dashboard tests", "Build"},
     "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},
+    "Built API bootstrap": {"Build exact-source API image", "Exercise built API bootstrap and served readiness"},
     "Deprecated shim guard": {"Block resurrected shim files", "Block deprecated imports in production code"},
     "Architecture drift guard": {
         "analysis/ must not contain execution logic",

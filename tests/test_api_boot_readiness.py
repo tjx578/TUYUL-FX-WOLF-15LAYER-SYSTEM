@@ -74,6 +74,25 @@ def test_fallback_is_not_ready_and_does_not_disclose_bootstrap_exception() -> No
         assert client.get("/healthz").status_code == 200
 
 
+def test_default_bootstrap_does_not_hide_a_fatal_error(monkeypatch):
+    monkeypatch.delenv("API_BOOT_FAIL_OPEN", raising=False)
+
+    def failed():
+        raise RuntimeError("fatal fixture bootstrap")
+
+    monkeypatch.setattr(app_factory, "_create_app_inner", failed)
+    with pytest.raises(RuntimeError, match="fatal fixture bootstrap"):
+        app_factory.create_app()
+
+
+def test_default_mandatory_router_failure_is_fatal(monkeypatch):
+    monkeypatch.delenv("API_BOOT_FAIL_OPEN", raising=False)
+    monkeypatch.delenv("ROUTER_BOOT_FAIL_OPEN", raising=False)
+    monkeypatch.setattr(app_factory, "load_routers", lambda: ([], ["missing mandatory fixture router"]))
+    with pytest.raises(RuntimeError, match="Mandatory API router import failed"):
+        app_factory.create_app()
+
+
 @pytest.mark.parametrize("strict", [True, False])
 def test_router_import_failure_obeys_explicit_bootstrap_policy(monkeypatch, strict: bool) -> None:
     monkeypatch.setenv("ROUTER_BOOT_FAIL_OPEN", "false" if strict else "true")
