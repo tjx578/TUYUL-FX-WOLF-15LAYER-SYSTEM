@@ -1,5 +1,5 @@
 {
-  "source_commit": "dd65625140d3ac391f97ca46c3ef7a540e855390",
+  "source_commit": "16d4ed00db62f07ae122c67912c486ac967a97e4",
   "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
     {
@@ -41,6 +41,26 @@
       "path": "bf2.xml",
       "sha256": "ea04ed48680bb2593a5516aeaaba14d250c15fcbc0716bf6b30f369998b3b604",
       "bytes": 4798
+    },
+    {
+      "path": "bi1-collection.log",
+      "sha256": "ce896dfa9c8a7b84c298d7bd16c3924b5af1bbb4fb0347b68bf6a7980678125c",
+      "bytes": 7083
+    },
+    {
+      "path": "bi1-pytest.log",
+      "sha256": "0a6cd3f40be9789f4a8030020a9dc914fecfef0fa12d4da0b3dacdfdad528d6d",
+      "bytes": 974
+    },
+    {
+      "path": "bi1-receipt.json",
+      "sha256": "9cb855b8ea39d779d08ef1d1d38dbc79d25491dfda2dd43f2ed470d58a2f1f29",
+      "bytes": 12777
+    },
+    {
+      "path": "bi1.xml",
+      "sha256": "2351fd76e809bebbc0a8641fe6911388a7de1ea1114c65dc75dda00ee9c40ecb",
+      "bytes": 8940
     },
     {
       "path": "br1-collection.log",
@@ -126,6 +146,16 @@
       "path": "candle-target-validation.json",
       "sha256": "22b9f59a19f5343a90dd574af5fb444e274a686d4955536a080c664fd447432e",
       "bytes": 13128
+    },
+    {
+      "path": "channel-b-integrity-source.diff",
+      "sha256": "f16b00598606075902e8f494ee650f1447953c1f8e6a07461dc9f25733270b99",
+      "bytes": 9994
+    },
+    {
+      "path": "channel-b-integrity-validation.json",
+      "sha256": "1fb903b5fea260ab40e16e4cae0e90f7c746fc6d09c1745408f612a59c911cc3",
+      "bytes": 7983
     },
     {
       "path": "channel-b-measurement-source.diff",
