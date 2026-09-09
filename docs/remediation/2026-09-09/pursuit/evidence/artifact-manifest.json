@@ -1,7 +1,77 @@
 {
-  "source_commit": "1e0444f0c96e161ba41b468d5716cc9cea2077a3",
-  "scope": "evidence files excluding this manifest; each receipt keeps its own source binding",
+  "source_commit": "1f2922e5b4ddde73ff0c37be544fa7cb9c748a44",
+  "scope": "Evidence files excluding this manifest; each receipt retains its own source binding",
   "files": [
+    {
+      "path": "candle-target-source.diff",
+      "sha256": "cf71aef10ec5bfeef8b0c12b1a2db27f4672a10ea445c010ca3365b2cd9dbae7",
+      "bytes": 14452
+    },
+    {
+      "path": "candle-target-validation.json",
+      "sha256": "22b9f59a19f5343a90dd574af5fb444e274a686d4955536a080c664fd447432e",
+      "bytes": 13128
+    },
+    {
+      "path": "ct1-collection.log",
+      "sha256": "93ecda0397520ce31a51faf5adfb01f5bf36f3a9a09bdbd6bac608cb3f0efe93",
+      "bytes": 10729
+    },
+    {
+      "path": "ct1-pytest.log",
+      "sha256": "d1b580e463e6ff400e5e7d372f465b3f5f09b247490663a21ca6ffedce3429e3",
+      "bytes": 18259
+    },
+    {
+      "path": "ct1-receipt.json",
+      "sha256": "631de6be4c0c4e08b5ac8ff0add61a05b9d8de0f5716a00dd8b712c513a46ec0",
+      "bytes": 17285
+    },
+    {
+      "path": "ct1.xml",
+      "sha256": "3f85d0cfa7de991aede0a0e9801e9addfec37c0866d25fe827fcbe35cf6a1312",
+      "bytes": 31459
+    },
+    {
+      "path": "ct2-collection.log",
+      "sha256": "4d42b53f041a60961779b721d77b2d8f1d8270142c24ea446271d6cbee87a94d",
+      "bytes": 10841
+    },
+    {
+      "path": "ct2-pytest.log",
+      "sha256": "8b6f15874418fa4e6baa9ed2113608d2d0bba646404c76d7a06eafaf59eed85a",
+      "bytes": 1055
+    },
+    {
+      "path": "ct2-receipt.json",
+      "sha256": "1e452fb72e6b309be9d407bfeee22b32bf141770be27726893a3ac3c30e222aa",
+      "bytes": 17404
+    },
+    {
+      "path": "ct2.xml",
+      "sha256": "bd546fe106a6e603ef20006a7a31ae8cdbe54aca5cf8b711f48d503dc986f82e",
+      "bytes": 13802
+    },
+    {
+      "path": "ct3-collection.log",
+      "sha256": "8101c415ea4f21fda55c0253424995db0f2d1fe2ee3bf780e90f9f07ee7a6e97",
+      "bytes": 10962
+    },
+    {
+      "path": "ct3-pytest.log",
+      "sha256": "697a9513dff9aebe5899aa1d4dd54f0baa523c59aa87aaed1c6774e45961a3c7",
+      "bytes": 1055
+    },
+    {
+      "path": "ct3-receipt.json",
+      "sha256": "38fb068c85eec0b430b804d876e35316c8b77485eb40f47ddbe59920593e9d49",
+      "bytes": 17532
+    },
+    {
+      "path": "ct3.xml",
+      "sha256": "24dbd55d30fe2f08e82cfcbeadf47067ab8d19ab9677b2363b338e8529214f37",
+      "bytes": 13962
+    },
     {
       "path": "g00-source.json",
       "sha256": "86f8f05c796f713f3107c65077250b942678a4d6d81015df2f64b758ad0d6f1b",

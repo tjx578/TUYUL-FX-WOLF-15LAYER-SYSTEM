@@ -1,0 +1,321 @@
+FF.......FF............................................................. [ 81%]
+................                                                         [100%]
+================================== FAILURES ===================================
+______ test_canonical_candles_derive_targets_and_reach_net_geometry[BUY] ______
+
+direction = 'BUY'
+
+    @pytest.mark.parametrize("direction", ["BUY", "SELL"])
+    def test_canonical_candles_derive_targets_and_reach_net_geometry(direction):
+        snapshot = TargetCandleSnapshotV31(**snapshot_data(direction))
+        pinned = candle_snapshot_hash_v31(snapshot)
+>       result = solve_candle_target_geometry_v31(
+            snapshot=snapshot, context=context(direction), verify_snapshot=lambda s, h: h == pinned
+        )
+
+tests\test_strategy_5scr_candle_targets_v31.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+analysis\strategy_5scr_candle_targets_v31.py:146: in solve_candle_target_geometry_v31
+    universe = derive_candle_targets_v31(snapshot, verify_snapshot=verify_snapshot)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+snapshot = TargetCandleSnapshotV31(profile='TEST_ONLY', derivation_policy='STRICT_THREE_CONTINUOUS_CANDLES_TEST_V1', policy_hash=...t=0, complete=True, provider='TEST_ONLY', provider_timestamp_semantics='CANONICAL_WINDOW', provider_timestamp=None)))))
+
+    def derive_candle_targets_v31(
+        snapshot: TargetCandleSnapshotV31,
+        *,
+        verify_snapshot: Callable[[TargetCandleSnapshotV31, str], bool] | None,
+    ) -> TargetUniverseV31:
+        snapshot = TargetCandleSnapshotV31.model_validate(snapshot.model_dump())
+        digest = candle_snapshot_hash_v31(snapshot)
+        if verify_snapshot is None:
+            raise ValueError("TARGET_CANDLE_ATTESTOR_UNBOUND")
+        if verify_snapshot(snapshot, digest) is not True:
+            raise ValueError("TARGET_CANDLE_ATTESTATION_REJECTED")
+        h1 = next(frame.candles for frame in snapshot.frames if frame.timeframe == "H1")
+        targets = []
+        buying = snapshot.direction == "BUY"
+        for frame in sorted(snapshot.frames, key=lambda item: item.timeframe):
+            for left, pivot, right in zip(frame.candles, frame.candles[1:], frame.candles[2:], strict=False):
+                strict_swing = pivot.high > max(left.high, right.high) if buying else pivot.low < min(left.low, right.low)
+                if not strict_swing:
+                    continue
+                price = Decimal(str(pivot.high if buying else pivot.low))
+                formed = right.close_time
+                consumed = next(
+                    (
+                        c.close_time
+                        for c in h1
+                        if c.close_time > formed
+                        and (Decimal(str(c.high)) >= price if buying else Decimal(str(c.low)) <= price)
+                    ),
+                    None,
+                )
+                identity = json.dumps(
+                    {
+                        "symbol": snapshot.symbol,
+                        "direction": snapshot.direction,
+                        "timeframe": frame.timeframe,
+                        "pivot_open": pivot.open_time.isoformat(),
+                        "price": str(price),
+                        "policy": snapshot.policy_hash,
+                    },
+                    sort_keys=True,
+                )
+                target_id = "swing:" + hashlib.sha256(identity.encode()).hexdigest()
+                targets.append(
+>                   StructuralTargetV31(
+                        target_id=target_id,
+                        source="SWING",
+                        price=price,
+                        evidence_hash=digest,
+                        formed_at=formed,
+                        valid_until=formed + timedelta(seconds=snapshot.target_lifetime_seconds),
+                        consumed_at=consumed,
+                    )
+                )
+E               pydantic_core._pydantic_core.ValidationError: 1 validation error for StructuralTargetV31
+E               price
+E                 Decimal input should have no more than 12 decimal places [type=decimal_max_places, input_value=Decimal('1.1012000000000002'), input_type=Decimal]
+E                   For further information visit https://errors.pydantic.dev/2.9/v/decimal_max_places
+
+analysis\strategy_5scr_candle_targets_v31.py:116: ValidationError
+_____ test_canonical_candles_derive_targets_and_reach_net_geometry[SELL] ______
+
+direction = 'SELL'
+
+    @pytest.mark.parametrize("direction", ["BUY", "SELL"])
+    def test_canonical_candles_derive_targets_and_reach_net_geometry(direction):
+        snapshot = TargetCandleSnapshotV31(**snapshot_data(direction))
+        pinned = candle_snapshot_hash_v31(snapshot)
+>       result = solve_candle_target_geometry_v31(
+            snapshot=snapshot, context=context(direction), verify_snapshot=lambda s, h: h == pinned
+        )
+
+tests\test_strategy_5scr_candle_targets_v31.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+analysis\strategy_5scr_candle_targets_v31.py:146: in solve_candle_target_geometry_v31
+    universe = derive_candle_targets_v31(snapshot, verify_snapshot=verify_snapshot)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+snapshot = TargetCandleSnapshotV31(profile='TEST_ONLY', derivation_policy='STRICT_THREE_CONTINUOUS_CANDLES_TEST_V1', policy_hash=...t=0, complete=True, provider='TEST_ONLY', provider_timestamp_semantics='CANONICAL_WINDOW', provider_timestamp=None)))))
+
+    def derive_candle_targets_v31(
+        snapshot: TargetCandleSnapshotV31,
+        *,
+        verify_snapshot: Callable[[TargetCandleSnapshotV31, str], bool] | None,
+    ) -> TargetUniverseV31:
+        snapshot = TargetCandleSnapshotV31.model_validate(snapshot.model_dump())
+        digest = candle_snapshot_hash_v31(snapshot)
+        if verify_snapshot is None:
+            raise ValueError("TARGET_CANDLE_ATTESTOR_UNBOUND")
+        if verify_snapshot(snapshot, digest) is not True:
+            raise ValueError("TARGET_CANDLE_ATTESTATION_REJECTED")
+        h1 = next(frame.candles for frame in snapshot.frames if frame.timeframe == "H1")
+        targets = []
+        buying = snapshot.direction == "BUY"
+        for frame in sorted(snapshot.frames, key=lambda item: item.timeframe):
+            for left, pivot, right in zip(frame.candles, frame.candles[1:], frame.candles[2:], strict=False):
+                strict_swing = pivot.high > max(left.high, right.high) if buying else pivot.low < min(left.low, right.low)
+                if not strict_swing:
+                    continue
+                price = Decimal(str(pivot.high if buying else pivot.low))
+                formed = right.close_time
+                consumed = next(
+                    (
+                        c.close_time
+                        for c in h1
+                        if c.close_time > formed
+                        and (Decimal(str(c.high)) >= price if buying else Decimal(str(c.low)) <= price)
+                    ),
+                    None,
+                )
+                identity = json.dumps(
+                    {
+                        "symbol": snapshot.symbol,
+                        "direction": snapshot.direction,
+                        "timeframe": frame.timeframe,
+                        "pivot_open": pivot.open_time.isoformat(),
+                        "price": str(price),
+                        "policy": snapshot.policy_hash,
+                    },
+                    sort_keys=True,
+                )
+                target_id = "swing:" + hashlib.sha256(identity.encode()).hexdigest()
+                targets.append(
+>                   StructuralTargetV31(
+                        target_id=target_id,
+                        source="SWING",
+                        price=price,
+                        evidence_hash=digest,
+                        formed_at=formed,
+                        valid_until=formed + timedelta(seconds=snapshot.target_lifetime_seconds),
+                        consumed_at=consumed,
+                    )
+                )
+E               pydantic_core._pydantic_core.ValidationError: 1 validation error for StructuralTargetV31
+E               price
+E                 Decimal input should have no more than 12 decimal places [type=decimal_max_places, input_value=Decimal('1.0970000000000002'), input_type=Decimal]
+E                   For further information visit https://errors.pydantic.dev/2.9/v/decimal_max_places
+
+analysis\strategy_5scr_candle_targets_v31.py:116: ValidationError
+___ test_h1_touch_consumes_only_after_confirmation_and_ties_are_not_swings ____
+
+    def test_h1_touch_consumes_only_after_confirmation_and_ties_are_not_swings():
+        data = snapshot_data()
+        h1 = data["frames"][2]["candles"]
+        h1[20]["high"] = 1.101
+        h1[25]["high"] = 1.101
+>       universe = derive_candle_targets_v31(TargetCandleSnapshotV31(**data), verify_snapshot=lambda s, h: True)
+
+tests\test_strategy_5scr_candle_targets_v31.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+snapshot = TargetCandleSnapshotV31(profile='TEST_ONLY', derivation_policy='STRICT_THREE_CONTINUOUS_CANDLES_TEST_V1', policy_hash=...t=0, complete=True, provider='TEST_ONLY', provider_timestamp_semantics='CANONICAL_WINDOW', provider_timestamp=None)))))
+
+    def derive_candle_targets_v31(
+        snapshot: TargetCandleSnapshotV31,
+        *,
+        verify_snapshot: Callable[[TargetCandleSnapshotV31, str], bool] | None,
+    ) -> TargetUniverseV31:
+        snapshot = TargetCandleSnapshotV31.model_validate(snapshot.model_dump())
+        digest = candle_snapshot_hash_v31(snapshot)
+        if verify_snapshot is None:
+            raise ValueError("TARGET_CANDLE_ATTESTOR_UNBOUND")
+        if verify_snapshot(snapshot, digest) is not True:
+            raise ValueError("TARGET_CANDLE_ATTESTATION_REJECTED")
+        h1 = next(frame.candles for frame in snapshot.frames if frame.timeframe == "H1")
+        targets = []
+        buying = snapshot.direction == "BUY"
+        for frame in sorted(snapshot.frames, key=lambda item: item.timeframe):
+            for left, pivot, right in zip(frame.candles, frame.candles[1:], frame.candles[2:], strict=False):
+                strict_swing = pivot.high > max(left.high, right.high) if buying else pivot.low < min(left.low, right.low)
+                if not strict_swing:
+                    continue
+                price = Decimal(str(pivot.high if buying else pivot.low))
+                formed = right.close_time
+                consumed = next(
+                    (
+                        c.close_time
+                        for c in h1
+                        if c.close_time > formed
+                        and (Decimal(str(c.high)) >= price if buying else Decimal(str(c.low)) <= price)
+                    ),
+                    None,
+                )
+                identity = json.dumps(
+                    {
+                        "symbol": snapshot.symbol,
+                        "direction": snapshot.direction,
+                        "timeframe": frame.timeframe,
+                        "pivot_open": pivot.open_time.isoformat(),
+                        "price": str(price),
+                        "policy": snapshot.policy_hash,
+                    },
+                    sort_keys=True,
+                )
+                target_id = "swing:" + hashlib.sha256(identity.encode()).hexdigest()
+                targets.append(
+>                   StructuralTargetV31(
+                        target_id=target_id,
+                        source="SWING",
+                        price=price,
+                        evidence_hash=digest,
+                        formed_at=formed,
+                        valid_until=formed + timedelta(seconds=snapshot.target_lifetime_seconds),
+                        consumed_at=consumed,
+                    )
+                )
+E               pydantic_core._pydantic_core.ValidationError: 1 validation error for StructuralTargetV31
+E               price
+E                 Decimal input should have no more than 12 decimal places [type=decimal_max_places, input_value=Decimal('1.1012000000000002'), input_type=Decimal]
+E                   For further information visit https://errors.pydantic.dev/2.9/v/decimal_max_places
+
+analysis\strategy_5scr_candle_targets_v31.py:116: ValidationError
+_______ test_source_frame_reordering_does_not_change_receipt_or_outcome _______
+
+    def test_source_frame_reordering_does_not_change_receipt_or_outcome():
+        data = snapshot_data()
+        original = TargetCandleSnapshotV31(**data)
+        data["frames"].reverse()
+        reordered = TargetCandleSnapshotV31(**data)
+        assert candle_snapshot_hash_v31(original) == candle_snapshot_hash_v31(reordered)
+>       assert derive_candle_targets_v31(original, verify_snapshot=lambda s, h: True) == derive_candle_targets_v31(
+            reordered, verify_snapshot=lambda s, h: True
+        )
+
+tests\test_strategy_5scr_candle_targets_v31.py:130: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+snapshot = TargetCandleSnapshotV31(profile='TEST_ONLY', derivation_policy='STRICT_THREE_CONTINUOUS_CANDLES_TEST_V1', policy_hash=...t=0, complete=True, provider='TEST_ONLY', provider_timestamp_semantics='CANONICAL_WINDOW', provider_timestamp=None)))))
+
+    def derive_candle_targets_v31(
+        snapshot: TargetCandleSnapshotV31,
+        *,
+        verify_snapshot: Callable[[TargetCandleSnapshotV31, str], bool] | None,
+    ) -> TargetUniverseV31:
+        snapshot = TargetCandleSnapshotV31.model_validate(snapshot.model_dump())
+        digest = candle_snapshot_hash_v31(snapshot)
+        if verify_snapshot is None:
+            raise ValueError("TARGET_CANDLE_ATTESTOR_UNBOUND")
+        if verify_snapshot(snapshot, digest) is not True:
+            raise ValueError("TARGET_CANDLE_ATTESTATION_REJECTED")
+        h1 = next(frame.candles for frame in snapshot.frames if frame.timeframe == "H1")
+        targets = []
+        buying = snapshot.direction == "BUY"
+        for frame in sorted(snapshot.frames, key=lambda item: item.timeframe):
+            for left, pivot, right in zip(frame.candles, frame.candles[1:], frame.candles[2:], strict=False):
+                strict_swing = pivot.high > max(left.high, right.high) if buying else pivot.low < min(left.low, right.low)
+                if not strict_swing:
+                    continue
+                price = Decimal(str(pivot.high if buying else pivot.low))
+                formed = right.close_time
+                consumed = next(
+                    (
+                        c.close_time
+                        for c in h1
+                        if c.close_time > formed
+                        and (Decimal(str(c.high)) >= price if buying else Decimal(str(c.low)) <= price)
+                    ),
+                    None,
+                )
+                identity = json.dumps(
+                    {
+                        "symbol": snapshot.symbol,
+                        "direction": snapshot.direction,
+                        "timeframe": frame.timeframe,
+                        "pivot_open": pivot.open_time.isoformat(),
+                        "price": str(price),
+                        "policy": snapshot.policy_hash,
+                    },
+                    sort_keys=True,
+                )
+                target_id = "swing:" + hashlib.sha256(identity.encode()).hexdigest()
+                targets.append(
+>                   StructuralTargetV31(
+                        target_id=target_id,
+                        source="SWING",
+                        price=price,
+                        evidence_hash=digest,
+                        formed_at=formed,
+                        valid_until=formed + timedelta(seconds=snapshot.target_lifetime_seconds),
+                        consumed_at=consumed,
+                    )
+                )
+E               pydantic_core._pydantic_core.ValidationError: 1 validation error for StructuralTargetV31
+E               price
+E                 Decimal input should have no more than 12 decimal places [type=decimal_max_places, input_value=Decimal('1.1012000000000002'), input_type=Decimal]
+E                   For further information visit https://errors.pydantic.dev/2.9/v/decimal_max_places
+
+analysis\strategy_5scr_candle_targets_v31.py:116: ValidationError
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\ct1.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_strategy_5scr_candle_targets_v31.py::test_canonical_candles_derive_targets_and_reach_net_geometry[BUY]
+FAILED tests/test_strategy_5scr_candle_targets_v31.py::test_canonical_candles_derive_targets_and_reach_net_geometry[SELL]
+FAILED tests/test_strategy_5scr_candle_targets_v31.py::test_h1_touch_consumes_only_after_confirmation_and_ties_are_not_swings
+FAILED tests/test_strategy_5scr_candle_targets_v31.py::test_source_frame_reordering_does_not_change_receipt_or_outcome
+4 failed, 84 passed in 5.91s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

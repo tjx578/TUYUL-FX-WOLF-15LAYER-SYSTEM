@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "1e0444f0c96e161ba41b468d5716cc9cea2077a3",
+  "source_checkpoint": "1f2922e5b4ddde73ff0c37be544fa7cb9c748a44",
   "source_verified_at": "2026-09-09T04:12:37.856475+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K06_TARGET_TO_NET_CALLER_PARTIAL",
+  "current_slice": "K06_CANONICAL_CANDLE_SWINGS_TO_NET_GEOMETRY_PARTIAL",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Derive legal structural targets and bind source completeness under an explicit selected policy; integrate strategy candidate/caller. Keep known runtime and publication blockers without unchanged retries.",
+  "next_action_on_resume": "Reconcile remaining target-family policy and operational strategy candidate integration; source completeness attestor remains unbound. Preserve known external blockers without unchanged retries.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -719,7 +719,7 @@
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
   "previous_goal_turn_classification": "PROGRESS_SOURCE_AND_LOCAL_ACCEPTANCE",
-  "actual_source_commit": "1e0444f0c96e161ba41b468d5716cc9cea2077a3",
+  "actual_source_commit": "1f2922e5b4ddde73ff0c37be544fa7cb9c748a44",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -755,13 +755,13 @@
       "DONE": false
     },
     "K06": {
-      "status": "TARGET_SELECTION_TO_NET_GEOMETRY_TEST_ONLY_LOCAL_PASS",
+      "status": "CANONICAL_CANDLE_SWINGS_TO_NET_GEOMETRY_TEST_ONLY_LOCAL_PASS",
       "DONE": false,
-      "evidence_ref": "evidence/target-geometry-validation.json",
+      "evidence_ref": "evidence/candle-target-validation.json",
       "remaining": [
-        "Candle-derived target evidence and completeness attestor",
-        "Active policy binding",
-        "Operational strategy caller and persistence integration"
+        "Full target-family policy and derivation",
+        "Authoritative source/market-calendar and attestor binding",
+        "Active policy and operational candidate/persistence integration"
       ]
     },
     "K07": {
@@ -795,7 +795,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "1e0444f0c96e161ba41b468d5716cc9cea2077a3",
+    "source_commit": "1f2922e5b4ddde73ff0c37be544fa7cb9c748a44",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,
