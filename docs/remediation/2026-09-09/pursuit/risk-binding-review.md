@@ -34,10 +34,14 @@ evidence that it has been deployed or exercised on PostgreSQL.
 | Decimal amount just above an aggregate cap remains above it | Correct campaign/account cap rejection |
 | Valid result under the current lock remains accepted | Approved |
 
-Baseline `rb1` reproduced 11 failures before the source repair. Final `rb2`
+Baseline `rb1` reproduced 11 failures before the source repair. Final `rb4`
 passed **34 tests, zero failures/errors/skips**; exact JUnit identities match
-collection. Ruff lint and format pass for all application source (1,409 files).
-Evidence includes both runs and `risk-binding-source.diff`. The new suite is
+collection. `rb2` initially passed all tests but the exact-ID check rejected its
+receipt: an existing test generated a UUID independently during collection and
+execution. The tamper fixture now uses a fixed UUID; `rb3` and final formatted
+`rb4` retain deterministic identities. Ruff lint and format pass for all
+application source (1,409 files).
+Evidence includes all runs and `risk-binding-source.diff`. The new suite is
 not added to earlier test totals. Independent review remains unavailable after
 the prior agent quota failure; review here is self-review.
 

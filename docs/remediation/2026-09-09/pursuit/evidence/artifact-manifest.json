@@ -1,6 +1,6 @@
 {
-  "source_commit": "1f2922e5b4ddde73ff0c37be544fa7cb9c748a44",
-  "scope": "Evidence files excluding this manifest; each receipt retains its own source binding",
+  "source_commit": "188c78d5072653aa73f950da06860ffea75efd18",
+  "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
     {
       "path": "candle-target-source.diff",
@@ -161,6 +161,96 @@
       "path": "railway-source-bindings.json",
       "sha256": "2d9bb6bc9723f1ae389c63f81f319afb37c1c45c7ead14cf760f4eca8be9d4a4",
       "bytes": 5199
+    },
+    {
+      "path": "rb1-collection.log",
+      "sha256": "4ce40ee214b6842183f7a6dc6c8c24fadf79e4bb989137f5ef56f711242c44f0",
+      "bytes": 2748
+    },
+    {
+      "path": "rb1-pytest.log",
+      "sha256": "4f493eec7258f970446588bf952e426028548c40e704178e870d659c26148c61",
+      "bytes": 15688
+    },
+    {
+      "path": "rb1-receipt.json",
+      "sha256": "6bc302e6d7c6c95d3880bb2734319cdc1ed491625e244559a86e1859f966fbbd",
+      "bytes": 7356
+    },
+    {
+      "path": "rb1.xml",
+      "sha256": "23eb1e4953d1c55a4ced7b82cb0dae7f75b07c7fddc6d3a2b306b9ff38227b81",
+      "bytes": 17634
+    },
+    {
+      "path": "rb2-collection.log",
+      "sha256": "0d0303dbdf73933b6353d059d2f6e86090ffa71d20f76c16d7f9fb4fc6e90c4c",
+      "bytes": 4358
+    },
+    {
+      "path": "rb2-pytest.log",
+      "sha256": "c26b86a1a73e93d4bacc451866ee52895dd688f5acef62696d07d7ef65271fce",
+      "bytes": 974
+    },
+    {
+      "path": "rb2-receipt.json",
+      "sha256": "70a0b13c1f8b9c8d62f32293e105cd776a98c432625d1ec7e46260e61279d73c",
+      "bytes": 9869
+    },
+    {
+      "path": "rb2.xml",
+      "sha256": "9664ae192a14e86d0ffd04492791e21637cbbfd3a2ff8a26b389708b9543c0cf",
+      "bytes": 5162
+    },
+    {
+      "path": "rb3-collection.log",
+      "sha256": "b604738d4941dd39124ab1590ca2a8ede009b1d0b1afcaebeeda41c974c5270f",
+      "bytes": 4358
+    },
+    {
+      "path": "rb3-pytest.log",
+      "sha256": "77a820681d65d2c86745961eff7184fe4a6f2b66635fec9b624a915be8bf61b5",
+      "bytes": 974
+    },
+    {
+      "path": "rb3-receipt.json",
+      "sha256": "3562753f58f477022d4c0cc678a67f332dad1ec25c1187890c9ca28418006675",
+      "bytes": 9429
+    },
+    {
+      "path": "rb3.xml",
+      "sha256": "05f1fbcae24892080a9954b481acb209e3d8614045b1c383af4472c99d6e51e0",
+      "bytes": 5162
+    },
+    {
+      "path": "rb4-collection.log",
+      "sha256": "59f0cae6b101a4f62d9caeeebaf3d9c2a17ffdb846331252c492da5cc82c3218",
+      "bytes": 4358
+    },
+    {
+      "path": "rb4-pytest.log",
+      "sha256": "7383e5004c75bf486cb6f3b40aa0a0a786e173783888fff9fcf28a4b3fee55e5",
+      "bytes": 974
+    },
+    {
+      "path": "rb4-receipt.json",
+      "sha256": "a45617bf58467a5ed379ac388429cef16a5d2a95ddbf5a70d02701d03a0a573c",
+      "bytes": 9429
+    },
+    {
+      "path": "rb4.xml",
+      "sha256": "b3c6d801976bccd654bb77f91c26c913c9670059ee901baf7da91e82e224f90d",
+      "bytes": 5162
+    },
+    {
+      "path": "risk-binding-source.diff",
+      "sha256": "0dc256d19a00ac002243df95148ea31f3f4f809e95265b3f395c9f7156d0f11b",
+      "bytes": 9117
+    },
+    {
+      "path": "risk-binding-validation.json",
+      "sha256": "d7a55de634afec2b39c51e8ff67b494b3e534dee622c538490a78ec4e619672c",
+      "bytes": 6369
     },
     {
       "path": "target-geometry-source.diff",
