@@ -4712,8 +4712,10 @@ class WolfConstitutionalPipeline:
             "evaluations_seen": len(evaluations),
             "status_counts": dict(sorted(status_counts.items())),
             "errors": sorted(set(errors)),
-            "persistence_boundary": "INDEPENDENT_PAIR_ADMISSION_LEDGER",
-            "observability_route_independent": True,
+            "persistence_boundary": "ATOMIC_PAIR_ADMISSION_AND_OBSERVER_EXPORT",
+            "observability_route_independent": False,
+            "observer_export_required": True,
+            "observer_authority": "OBSERVATIONAL_ONLY",
             "execution_authority": False,
         }
 

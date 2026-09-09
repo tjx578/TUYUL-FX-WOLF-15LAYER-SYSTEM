@@ -9,9 +9,11 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 
+import storage.pressure_radar_manifest as radar_storage
 from storage.pressure_radar_manifest import (
     PressureRadarManifestRepository,
     PressureRadarPersistenceContractError,
@@ -423,6 +425,37 @@ def test_radar_runtime_requires_its_own_granular_write_flag(
 
     assert result.status == "DISABLED"
     assert result.envelope is None
+
+
+@pytest.mark.asyncio
+async def test_radar_runtime_opens_circuit_after_first_write_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_RADAR_WRITE_ENABLED", "true")
+
+    class _FailingRepository:
+        is_available = True
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ingest(self, _payload: dict[str, Any]) -> None:
+            self.calls += 1
+            raise RuntimeError('relation "observer_export.stream_heads" does not exist')
+
+    repository = _FailingRepository()
+    runtime = PressureRadarRuntime()
+    runtime.configure(loop=asyncio.get_running_loop(), repository=cast(Any, repository))
+
+    with patch.object(radar_storage.logger, "warning") as warning:
+        first = await asyncio.to_thread(runtime.persist_sync, _qualifying_payload())
+        second = await asyncio.to_thread(runtime.persist_sync, _qualifying_payload())
+
+    assert first.status == "HOLD"
+    assert first.error == "PRESSURE_RADAR_WRITE_CIRCUIT_OPEN"
+    assert second == first
+    assert repository.calls == 1
+    warning.assert_called_once()
 
 
 @pytest.mark.asyncio

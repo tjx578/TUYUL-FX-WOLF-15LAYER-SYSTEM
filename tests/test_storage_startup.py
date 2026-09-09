@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import fnmatch
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -44,6 +45,11 @@ class FakeRedis:
 
     def set(self, key: str, value: str, ex: int | None = None) -> None:
         self._store[key] = value
+
+
+def _discard_created_task(coroutine: Any) -> MagicMock:
+    coroutine.close()
+    return MagicMock()
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -122,7 +128,7 @@ class TestInitPersistentStorageRecoveryRouting:
             patch("storage.startup.pg_client", fake_pg),
             patch("storage.startup.RedisClient", return_value=redis),
             patch("storage.startup.PersistenceSync", return_value=svc),
-            patch("storage.startup.asyncio.create_task"),
+            patch("storage.startup.asyncio.create_task", side_effect=_discard_created_task),
         ):
             from storage import startup
 
@@ -154,7 +160,7 @@ class TestInitPersistentStorageRecoveryRouting:
             patch("storage.startup.pg_client", fake_pg),
             patch("storage.startup.RedisClient", return_value=redis),
             patch("storage.startup.PersistenceSync", return_value=svc),
-            patch("storage.startup.asyncio.create_task"),
+            patch("storage.startup.asyncio.create_task", side_effect=_discard_created_task),
         ):
             from storage import startup
 
@@ -186,7 +192,7 @@ class TestInitPersistentStorageRecoveryRouting:
             patch("storage.startup.pg_client", fake_pg),
             patch("storage.startup.RedisClient", return_value=redis),
             patch("storage.startup.PersistenceSync", return_value=svc),
-            patch("storage.startup.asyncio.create_task"),
+            patch("storage.startup.asyncio.create_task", side_effect=_discard_created_task),
         ):
             from storage import startup
 
@@ -196,3 +202,123 @@ class TestInitPersistentStorageRecoveryRouting:
 
         recover_from_pg.assert_not_awaited()
         recover_risk_only.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pair_admission_preflight_configures_only_when_observer_schema_ready() -> None:
+    redis = FakeRedis(
+        store={"wolf15:peak_equity": "100000.0"},
+        candle_keys=["wolf15:candle_history:EURUSD:H1"],
+    )
+    svc = MagicMock()
+    svc.run = AsyncMock(return_value=None)
+    fake_pg = MagicMock()
+    fake_pg.is_available = True
+    fake_pg.initialize = AsyncMock()
+    pair_repository = MagicMock()
+    pair_repository.schema_status = AsyncMock(return_value=SimpleNamespace(ready=True, missing_tables=()))
+    radar_repository = MagicMock()
+    radar_repository.schema_status = AsyncMock(return_value=SimpleNamespace(ready=True, missing_tables=()))
+    observer_repository = MagicMock()
+    observer_repository.schema_status = AsyncMock(
+        return_value=SimpleNamespace(
+            ready=True,
+            missing_tables=(),
+            missing_indexes=(),
+            missing_triggers=(),
+        )
+    )
+
+    with (
+        patch("storage.startup.pg_client", fake_pg),
+        patch("storage.startup.RedisClient", return_value=redis),
+        patch("storage.startup.PersistenceSync", return_value=svc),
+        patch("storage.startup.asyncio.create_task", side_effect=_discard_created_task),
+        patch(
+            "storage.pair_admission_evaluations.PairAdmissionEvaluationRepository",
+            return_value=pair_repository,
+        ),
+        patch(
+            "storage.observer_export_outbox.ObserverExportOutboxRepository",
+            return_value=observer_repository,
+        ),
+        patch(
+            "storage.pressure_radar_manifest.PressureRadarManifestRepository",
+            return_value=radar_repository,
+        ),
+        patch("storage.pair_admission_evaluations.configure_pair_admission_evaluation_runtime") as configure,
+        patch("storage.pair_admission_evaluations.hold_pair_admission_evaluation_runtime") as hold,
+        patch("storage.pressure_radar_manifest.configure_pressure_radar_runtime") as radar_configure,
+        patch("storage.pressure_radar_manifest.hold_pressure_radar_runtime") as radar_hold,
+    ):
+        from storage import startup
+
+        startup._sync_service = None
+        startup._sync_task = None
+        await startup.init_persistent_storage()
+
+    configure.assert_called_once()
+    assert configure.call_args.kwargs["repository"] is pair_repository
+    hold.assert_not_called()
+    radar_configure.assert_called_once()
+    assert radar_configure.call_args.kwargs["repository"] is radar_repository
+    radar_hold.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pair_admission_preflight_holds_when_observer_stream_head_missing() -> None:
+    redis = FakeRedis(
+        store={"wolf15:peak_equity": "100000.0"},
+        candle_keys=["wolf15:candle_history:EURUSD:H1"],
+    )
+    svc = MagicMock()
+    svc.run = AsyncMock(return_value=None)
+    fake_pg = MagicMock()
+    fake_pg.is_available = True
+    fake_pg.initialize = AsyncMock()
+    pair_repository = MagicMock()
+    pair_repository.schema_status = AsyncMock(return_value=SimpleNamespace(ready=True, missing_tables=()))
+    radar_repository = MagicMock()
+    radar_repository.schema_status = AsyncMock(return_value=SimpleNamespace(ready=True, missing_tables=()))
+    observer_repository = MagicMock()
+    observer_repository.schema_status = AsyncMock(
+        return_value=SimpleNamespace(
+            ready=False,
+            missing_tables=("stream_heads",),
+            missing_indexes=(),
+            missing_triggers=(),
+        )
+    )
+
+    with (
+        patch("storage.startup.pg_client", fake_pg),
+        patch("storage.startup.RedisClient", return_value=redis),
+        patch("storage.startup.PersistenceSync", return_value=svc),
+        patch("storage.startup.asyncio.create_task", side_effect=_discard_created_task),
+        patch(
+            "storage.pair_admission_evaluations.PairAdmissionEvaluationRepository",
+            return_value=pair_repository,
+        ),
+        patch(
+            "storage.observer_export_outbox.ObserverExportOutboxRepository",
+            return_value=observer_repository,
+        ),
+        patch(
+            "storage.pressure_radar_manifest.PressureRadarManifestRepository",
+            return_value=radar_repository,
+        ),
+        patch("storage.pair_admission_evaluations.configure_pair_admission_evaluation_runtime") as configure,
+        patch("storage.pair_admission_evaluations.hold_pair_admission_evaluation_runtime") as hold,
+        patch("storage.pressure_radar_manifest.configure_pressure_radar_runtime") as radar_configure,
+        patch("storage.pressure_radar_manifest.hold_pressure_radar_runtime") as radar_hold,
+    ):
+        from storage import startup
+
+        startup._sync_service = None
+        startup._sync_task = None
+        await startup.init_persistent_storage()
+
+    configure.assert_not_called()
+    hold.assert_called_once_with("PAIR_ADMISSION_REQUIRED_SCHEMA_NOT_READY")
+    radar_configure.assert_not_called()
+    radar_hold.assert_called_once_with("PRESSURE_RADAR_REQUIRED_SCHEMA_NOT_READY")

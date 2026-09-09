@@ -56,15 +56,72 @@ async def init_persistent_storage() -> PersistenceSync | None:
 
     # Bind the synchronous analysis thread to the asyncpg owner loop.  The
     # feature remains inert unless both the master and granular write flags are true.
+    from storage.observer_export_outbox import ObserverExportOutboxRepository  # noqa: PLC0415
     from storage.pair_admission_evaluations import (  # noqa: PLC0415
+        PairAdmissionEvaluationRepository,
         configure_pair_admission_evaluation_runtime,
+        hold_pair_admission_evaluation_runtime,
     )
     from storage.pressure_outbox import configure_pressure_outbox_runtime  # noqa: PLC0415
-    from storage.pressure_radar_manifest import configure_pressure_radar_runtime  # noqa: PLC0415
+    from storage.pressure_radar_manifest import (  # noqa: PLC0415
+        PressureRadarManifestRepository,
+        configure_pressure_radar_runtime,
+        hold_pressure_radar_runtime,
+    )
 
-    configure_pair_admission_evaluation_runtime(loop=asyncio.get_running_loop())
+    loop = asyncio.get_running_loop()
+    observer_export = ObserverExportOutboxRepository(pg=pg_client)
+    pair_admission = PairAdmissionEvaluationRepository(
+        pg=pg_client,
+        observer_export_repository=observer_export,
+    )
+    pressure_radar = PressureRadarManifestRepository(
+        pg=pg_client,
+        observer_export_repository=observer_export,
+    )
+    try:
+        pair_status, radar_status, observer_status = await asyncio.gather(
+            pair_admission.schema_status(),
+            pressure_radar.schema_status(),
+            observer_export.schema_status(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        hold_pair_admission_evaluation_runtime("PAIR_ADMISSION_SCHEMA_PREFLIGHT_FAILED")
+        hold_pressure_radar_runtime("PRESSURE_RADAR_SCHEMA_PREFLIGHT_FAILED")
+        logger.warning("Observer-backed persistence HOLD: schema preflight failed: {}", exc)
+    else:
+        if pair_status.ready and observer_status.ready:
+            configure_pair_admission_evaluation_runtime(loop=loop, repository=pair_admission)
+            logger.info("PairAdmission persistence preflight READY")
+        else:
+            hold_pair_admission_evaluation_runtime("PAIR_ADMISSION_REQUIRED_SCHEMA_NOT_READY")
+            logger.warning(
+                "PairAdmission persistence HOLD: required schema not ready "
+                "pair_admission_ready={} observer_export_ready={} "
+                "pair_missing_tables={} observer_missing_tables={} "
+                "observer_missing_indexes={} observer_missing_triggers={}",
+                pair_status.ready,
+                observer_status.ready,
+                pair_status.missing_tables,
+                observer_status.missing_tables,
+                observer_status.missing_indexes,
+                observer_status.missing_triggers,
+            )
+        if radar_status.ready and observer_status.ready:
+            configure_pressure_radar_runtime(loop=loop, repository=pressure_radar)
+            logger.info("Pressure radar persistence preflight READY")
+        else:
+            hold_pressure_radar_runtime("PRESSURE_RADAR_REQUIRED_SCHEMA_NOT_READY")
+            logger.warning(
+                "Pressure radar persistence HOLD: required schema not ready "
+                "pressure_radar_ready={} observer_export_ready={} "
+                "radar_missing_tables={} observer_missing_tables={}",
+                radar_status.ready,
+                observer_status.ready,
+                radar_status.missing_tables,
+                observer_status.missing_tables,
+            )
     configure_pressure_outbox_runtime(loop=asyncio.get_running_loop())
-    configure_pressure_radar_runtime(loop=asyncio.get_running_loop())
 
     redis = RedisClient()
     try:

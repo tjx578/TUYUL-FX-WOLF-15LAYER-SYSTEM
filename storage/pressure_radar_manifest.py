@@ -14,6 +14,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -83,7 +84,7 @@ class DurablePressureRadarResult:
     duplicate: bool = False
 
 
-RadarPersistenceStatus = Literal["PERSISTED", "DUPLICATE", "DISABLED", "REJECTED", "FAILED"]
+RadarPersistenceStatus = Literal["PERSISTED", "DUPLICATE", "DISABLED", "HOLD", "REJECTED", "FAILED"]
 
 
 @dataclass(frozen=True)
@@ -467,6 +468,8 @@ class PressureRadarRuntime:
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._repository: PressureRadarManifestRepository | None = None
+        self._state_lock = threading.Lock()
+        self._hold_reason: str | None = None
 
     def configure(
         self,
@@ -474,12 +477,38 @@ class PressureRadarRuntime:
         loop: asyncio.AbstractEventLoop,
         repository: PressureRadarManifestRepository,
     ) -> None:
-        self._loop = loop
-        self._repository = repository
+        with self._state_lock:
+            self._loop = loop
+            self._repository = repository
+            self._hold_reason = None
+
+    @property
+    def hold_reason(self) -> str | None:
+        with self._state_lock:
+            return self._hold_reason
+
+    def hold(self, reason: str) -> None:
+        resolved_reason = str(reason).strip() or "PRESSURE_RADAR_PERSISTENCE_HOLD"
+        with self._state_lock:
+            self._loop = None
+            self._repository = None
+            self._hold_reason = resolved_reason
+
+    def _open_circuit(self, reason: str) -> bool:
+        resolved_reason = str(reason).strip() or "PRESSURE_RADAR_PERSISTENCE_CIRCUIT_OPEN"
+        with self._state_lock:
+            if self._hold_reason is not None:
+                return False
+            self._loop = None
+            self._repository = None
+            self._hold_reason = resolved_reason
+            return True
 
     def clear(self) -> None:
-        self._loop = None
-        self._repository = None
+        with self._state_lock:
+            self._loop = None
+            self._repository = None
+            self._hold_reason = None
 
     def persist_sync(
         self,
@@ -497,10 +526,16 @@ class PressureRadarRuntime:
         )
         if not flags_enabled:
             return PressureRadarPersistenceResult(status="DISABLED")
-        loop = self._loop
-        repository = self._repository
+        with self._state_lock:
+            hold_reason = self._hold_reason
+            loop = self._loop
+            repository = self._repository
+        if hold_reason is not None:
+            return PressureRadarPersistenceResult(status="HOLD", error=hold_reason)
         if loop is None or repository is None or not loop.is_running() or not repository.is_available:
-            return PressureRadarPersistenceResult(status="FAILED", error="PRESSURE_RADAR_RUNTIME_UNAVAILABLE")
+            reason = "PRESSURE_RADAR_RUNTIME_UNAVAILABLE"
+            self._open_circuit(reason)
+            return PressureRadarPersistenceResult(status="HOLD", error=reason)
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -516,7 +551,10 @@ class PressureRadarRuntime:
             result = future.result(timeout=max(0.1, float(timeout_seconds)))
         except concurrent.futures.TimeoutError:
             future.cancel()
-            return PressureRadarPersistenceResult(status="FAILED", error="PRESSURE_RADAR_WRITE_TIMEOUT")
+            reason = "PRESSURE_RADAR_WRITE_TIMEOUT_CIRCUIT_OPEN"
+            if self._open_circuit(reason):
+                logger.warning("Pressure radar persistence circuit opened: {}", reason)
+            return PressureRadarPersistenceResult(status="HOLD", error=reason)
         except (
             PressureRadarError,
             PressureRadarPersistenceContractError,
@@ -527,11 +565,15 @@ class PressureRadarRuntime:
             PressureRadarPersistenceIntegrityError,
             PressureOutboxIntegrityError,
         ) as exc:
-            logger.error("Durable pressure radar integrity failure: {}", exc)
-            return PressureRadarPersistenceResult(status="FAILED", error=str(exc))
+            reason = "PRESSURE_RADAR_INTEGRITY_CIRCUIT_OPEN"
+            if self._open_circuit(reason):
+                logger.error("Pressure radar persistence circuit opened after integrity failure: {}", exc)
+            return PressureRadarPersistenceResult(status="HOLD", error=reason)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Durable pressure radar write failed: {}", exc)
-            return PressureRadarPersistenceResult(status="FAILED", error=str(exc))
+            reason = "PRESSURE_RADAR_WRITE_CIRCUIT_OPEN"
+            if self._open_circuit(reason):
+                logger.warning("Pressure radar persistence circuit opened after write failure: {}", exc)
+            return PressureRadarPersistenceResult(status="HOLD", error=reason)
 
         return PressureRadarPersistenceResult(
             status="DUPLICATE" if result.duplicate else "PERSISTED",
@@ -555,6 +597,10 @@ def configure_pressure_radar_runtime(
     )
 
 
+def hold_pressure_radar_runtime(reason: str) -> None:
+    pressure_radar_runtime.hold(reason)
+
+
 def persist_pressure_radar_payload_sync(payload: Mapping[str, Any]) -> PressureRadarPersistenceResult:
     timeout = float(
         os.getenv(
@@ -575,6 +621,7 @@ __all__ = [
     "PressureRadarRuntime",
     "PressureRadarSchemaStatus",
     "configure_pressure_radar_runtime",
+    "hold_pressure_radar_runtime",
     "persist_pressure_radar_payload_sync",
     "pressure_radar_payload_hash",
     "pressure_radar_runtime",
