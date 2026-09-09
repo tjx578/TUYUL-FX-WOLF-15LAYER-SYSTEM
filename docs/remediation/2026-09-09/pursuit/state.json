@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "94b333f16c4de743153720c145e56589a35b1ff7",
-  "source_verified_at": "2026-09-09T08:39:15.398924+00:00",
+  "source_checkpoint": "5aa0d0becc1e9e46da977f4ede279bc6c061c544",
+  "source_verified_at": "2026-09-09T08:48:14.620524+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K05_MATERIAL_CONTEXT_RECEIPT_HANDOFF_BINDING",
+  "current_slice": "K05_ORDERED_CANDLE_EVIDENCE_HANDOFF_BINDING",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Bind ordered H1/M15 proof bodies and clocks into the same TEST_ONLY handoff; implement operational context/policy producer and epoch lifecycle only from explicit rules and bindings. Keep legacy/new risk-writer selection separate. Do not relabel old TEST_ONLY V1 records into V2.",
+  "next_action_on_resume": "Bind actual pattern derivation and resolution evidence under an explicit versioned policy to the handoff, with inherited admission/hypothesis and independent expiry/invalidation. Evidence integrity alone is not pattern or source authority. Keep historical TEST_ONLY V1/V2 compatibility explicit and preserve runtime blockers.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_MANDATORY_CONTEXT_BINDING_AND_LOCAL_REGRESSIONS",
-  "actual_source_commit": "94b333f16c4de743153720c145e56589a35b1ff7",
+  "previous_goal_turn_classification": "PROGRESS_REQUIRED_ORDERED_EVIDENCE_BINDING_AND_LOCAL_REGRESSIONS",
+  "actual_source_commit": "5aa0d0becc1e9e46da977f4ede279bc6c061c544",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -754,14 +754,17 @@
       "DONE": false
     },
     "K05": {
-      "status": "MATERIAL_CONTEXT_HANDOFF_BINDING_LOCAL_PASS_RUNTIME_PARTIAL",
+      "status": "ORDERED_CANDLE_AND_CONTEXT_BINDING_LOCAL_PASS_RUNTIME_PARTIAL",
       "DONE": false,
-      "evidence_ref": "evidence/k05-context-validation.json",
+      "evidence_ref": "evidence/k05-ordered-proof-validation.json",
+      "previous_evidence_refs": [
+        "evidence/k05-context-validation.json"
+      ],
       "remaining": [
-        "Actual source/registry/LocationRoutePolicy derivation and attestor binding",
-        "Ordered H1/M15 proof, lifecycle/admission/hypothesis authority and separate domain clocks",
+        "Actual source/registry/LocationRoutePolicy and pattern derivation with attestor binding",
+        "Lifecycle/admission/hypothesis inheritance and independent proof invalidation/expiry",
         "Immutable context epoch persistence, recovery and operational consumer",
-        "Explicit compatibility/re-evaluation for historical TEST_ONLY V1 handoffs"
+        "Explicit compatibility/re-evaluation for historical TEST_ONLY V1/V2 handoffs"
       ]
     },
     "K06": {
@@ -830,7 +833,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "94b333f16c4de743153720c145e56589a35b1ff7",
+    "source_commit": "5aa0d0becc1e9e46da977f4ede279bc6c061c544",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,

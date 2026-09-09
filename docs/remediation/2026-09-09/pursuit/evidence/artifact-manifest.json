@@ -1,5 +1,5 @@
 {
-  "source_commit": "94b333f16c4de743153720c145e56589a35b1ff7",
+  "source_commit": "5aa0d0becc1e9e46da977f4ede279bc6c061c544",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -501,6 +501,36 @@
       "path": "k05-ctx-0909-a2.xml",
       "sha256": "8b50d6a1926539da41e2dd7c722b591addf4bdfdc53a0bbb650181bdac590ed2",
       "bytes": 22133
+    },
+    {
+      "path": "k05-ordered-proof-source.diff",
+      "sha256": "38e0c6c6c690658abf92b657b7977e6f6ead734cdb055efd902e8fa22b389129",
+      "bytes": 21902
+    },
+    {
+      "path": "k05-ordered-proof-validation.json",
+      "sha256": "22955fe2d58c8b74a9b032057d2781fd0a82fb82d058a30e535561692c0a5eb3",
+      "bytes": 34338
+    },
+    {
+      "path": "k05-prf-0909-a1-collection.log",
+      "sha256": "5078d4ebe93ee65bf077de0eff64395ab96ed17c53722c02007709141b1d01b2",
+      "bytes": 26199
+    },
+    {
+      "path": "k05-prf-0909-a1-pytest.log",
+      "sha256": "f1dad54b85f7edbdff75e3d0871a74ad27cd7501a3593bd9ea2b0805a7a83c4d",
+      "bytes": 1150
+    },
+    {
+      "path": "k05-prf-0909-a1-receipt.json",
+      "sha256": "30e91e56d3e633b91288f9c41abe2a0b770e68204c6ad54ad4bfa5ff72ab9f15",
+      "bytes": 36469
+    },
+    {
+      "path": "k05-prf-0909-a1.xml",
+      "sha256": "d066b414e9c31486ca7cbd9061babec31eb1943559eb434429c0fbf92b553a3d",
+      "bytes": 33568
     },
     {
       "path": "k07-adapter-20260909-a1-collection.log",
