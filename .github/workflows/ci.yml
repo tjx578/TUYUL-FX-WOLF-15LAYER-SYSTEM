@@ -205,7 +205,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage.xml
+          path: |
+            coverage.xml
+            full-suite.xml
           retention-days: 14
 
   dashboard:
@@ -253,6 +255,29 @@ jobs:
 
       - name: Build
         run: npm run build:strict
+
+  runtime-acceptance:
+    name: P1 built runtime acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Build candidate runtime image
+        run: docker build --label org.opencontainers.image.revision=$GITHUB_SHA -t wolf15-p1-runtime:$GITHUB_SHA .
+      - name: Require built runtime ownership readiness and shutdown acceptance
+        run: python scripts/ci/p1_runtime_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/p1-runtime.json
+      - name: Upload built runtime receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-runtime-acceptance
+          path: artifacts/p1-runtime.json
+          if-no-files-found: error
 
   # MCP2 and the API intentionally use separate dependency environments.
   # This file is moved out of the API suite above, not skipped as acceptance.
@@ -417,7 +442,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard]
+    needs: [ruff, tests, dashboard, native-mcp-tests, shim-guard, drift-guard, runtime-acceptance]
     if: always()
     steps:
       - name: Evaluate all upstream jobs
@@ -428,6 +453,7 @@ jobs:
           echo "native-mcp:  ${{ needs.native-mcp-tests.result }}"
           echo "shim-guard:  ${{ needs.shim-guard.result }}"
           echo "drift-guard: ${{ needs.drift-guard.result }}"
+          echo "runtime:     ${{ needs.runtime-acceptance.result }}"
 
           FAILED=0
           for JOB in \
@@ -436,7 +462,8 @@ jobs:
             "${{ needs.dashboard.result }}" \
             "${{ needs.native-mcp-tests.result }}" \
             "${{ needs.shim-guard.result }}" \
-            "${{ needs.drift-guard.result }}"; do
+            "${{ needs.drift-guard.result }}" \
+            "${{ needs.runtime-acceptance.result }}"; do
             if [[ "$JOB" != "success" ]]; then
               FAILED=1
             fi

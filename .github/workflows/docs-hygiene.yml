@@ -5,15 +5,7 @@ name: Docs Hygiene
 
 on:
   push:
-    paths:
-      - "docs/**"
-      - "contracts/README.md"
-      - ".github/workflows/docs-hygiene.yml"
   pull_request:
-    paths:
-      - "docs/**"
-      - "contracts/README.md"
-      - ".github/workflows/docs-hygiene.yml"
   workflow_dispatch:
 
 permissions:

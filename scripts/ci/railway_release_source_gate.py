@@ -24,6 +24,10 @@ REQUIRED_STEPS = {
         "Run pytest with coverage",
     },
     "Dashboard build (Next.js)": {"Lint", "Dashboard tests", "Build"},
+    "P1 built runtime acceptance": {
+        "Build candidate runtime image",
+        "Require built runtime ownership readiness and shutdown acceptance",
+    },
     "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},
     "Deprecated shim guard": {"Block resurrected shim files", "Block deprecated imports in production code"},
     "Architecture drift guard": {
@@ -149,6 +153,12 @@ def main() -> int:
             and latest_run.get("conclusion") == "success",
             "CI was rerun or changed during verification",
         )
+        from p1_governance_gate import GovernanceGateError, validate_live_governance
+
+        try:
+            validate_live_governance(repository, release_sha, ci_run_id)
+        except GovernanceGateError as exc:
+            raise ReleaseGateError("required governance or auxiliary gate evidence missing") from exc
         print(f"PASS_EXACT_SOURCE_CI sha={release_sha} run_id={ci_run_id} attempt={attempt}")
         return 0
     except (ReleaseGateError, KeyError, OSError, ValueError, IndexError, subprocess.SubprocessError):

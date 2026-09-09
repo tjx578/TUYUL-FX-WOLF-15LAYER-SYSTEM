@@ -2,11 +2,11 @@
 
 ## What is added
 
-1. **Prometheus + Grafana stack** via [docker-compose.yml](../docker-compose.yml)
-2. **Async allocation worker** in [allocation/async_worker.py](../allocation/async_worker.py)
-3. **Async execution worker** in [execution/async_worker.py](../execution/async_worker.py)
-4. Prometheus scrape config in [monitoring/prometheus.yml](../monitoring/prometheus.yml)
-5. Grafana provisioning and starter dashboard in [monitoring/grafana](../monitoring/grafana)
+1. **Prometheus + Grafana stack** via [docker-compose.yml](../../../docker-compose.yml)
+2. **Async allocation worker** in [allocation/async_worker.py](../../../allocation/async_worker.py)
+3. **Async execution worker** in [execution/async_worker.py](../../../execution/async_worker.py)
+4. Prometheus scrape config in [monitoring/prometheus.yml](../../../monitoring/prometheus.yml)
+5. Grafana provisioning and starter dashboard in [monitoring/grafana](../../../monitoring/grafana)
 
 ## Runtime ports
 

@@ -34,7 +34,7 @@ jobs:
           pip install pip-audit
 
       - name: Run pip-audit (hard-fail)
-        run: pip-audit --desc --strict --ignore-vuln CVE-2026-4539  # pygments: no fix available, local-access only
+        run: pip-audit --desc --strict
 
   # ---------------------------------------------------------------
   # Node.js: npm audit
@@ -89,7 +89,7 @@ jobs:
 
       - name: Install trufflehog
         run: |
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/v3.97.4/scripts/install.sh | sh -s -- -b /usr/local/bin v3.97.4
 
       - name: Scan for secrets (hard-fail)
         run: |
@@ -105,23 +105,9 @@ jobs:
             > "$RUNNER_TEMP/secret-scan.jsonl" 2> "$RUNNER_TEMP/secret-scan.stderr"
           scan_status=$?
           set -e
-          python3 - <<'PYEOF'
-          import json
-          import os
-          from pathlib import Path
-
-          findings = []
-          for line in (Path(os.environ["RUNNER_TEMP"]) / "secret-scan.jsonl").read_text().splitlines():
-              item = json.loads(line)
-              location = item.get("SourceMetadata", {}).get("Data", {}).get("Filesystem", {})
-              findings.append({"detector": item.get("DetectorName"), "file": location.get("file"), "line": location.get("line")})
-          print(json.dumps({"finding_count": len(findings), "locations_only": findings}, ensure_ascii=True))
-          PYEOF
-          if [ "$scan_status" -ne 0 ]; then
-            echo "::error::Secret scan requires review (exit $scan_status); raw findings are withheld."
-            exit "$scan_status"
-          fi
-          echo "Secret scan passed without credential verification."
+          python scripts/ci/security_findings.py "$RUNNER_TEMP/secret-scan.jsonl" \
+            --scanner-exit "$scan_status" \
+            --manifest docs/remediation/2026-09-09/p1-integration/security/secret-reviewed-fingerprints.json
 
   # ---------------------------------------------------------------
   # Security gate

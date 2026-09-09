@@ -44,7 +44,7 @@ Purpose:
 
 Request body schema:
 
-- See [schemas/take_signal_request_schema.json](../schemas/take_signal_request_schema.json)
+- See [schemas/take_signal_request_schema.json](../../../schemas/take_signal_request_schema.json)
 
 Success response:
 
@@ -207,7 +207,7 @@ If all pass:
 
 Canonical event envelope:
 
-- See [schemas/operational_event_schema.json](../schemas/operational_event_schema.json)
+- See [schemas/operational_event_schema.json](../../../schemas/operational_event_schema.json)
 
 Minimum event types:
 

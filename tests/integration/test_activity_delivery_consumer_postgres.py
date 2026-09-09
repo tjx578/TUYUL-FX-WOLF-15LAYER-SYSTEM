@@ -326,3 +326,71 @@ def test_fresh_consumer_after_restart_recovers_committed_inbox(pg_dsn):
         validate_source=lambda event: pytest.fail("committed duplicate must not reacquire source"),
     )
     assert asyncio.run(restarted.consume(payload))[-1] == "DUPLICATE_NO_EFFECT"
+
+
+def test_unprivileged_application_role_enforces_owner_fence(pg_dsn):
+    """Exercise the real trigger as a non-owner role in the guarded disposable DB.
+
+    Positive current owner, unbound legacy write and stale post-handover writer
+    use the same application privileges. This is not deployed-role attestation.
+    """
+    from uuid import uuid4
+
+    _, consumer, db, owner, lifecycle, _ = setup(pg_dsn)
+    role = "wolf15_acceptance_" + uuid4().hex
+
+    async def run():
+        admin = await asyncpg.connect(pg_dsn, timeout=3, command_timeout=10)
+        try:
+            await admin.execute(
+                f'CREATE ROLE "{role}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS'
+            )
+            await admin.execute(f'GRANT USAGE ON SCHEMA public TO "{role}"')
+            await admin.execute(
+                f'GRANT SELECT, INSERT, UPDATE ON public.strategy_5scr_analysis_lifecycles_v2 TO "{role}"'
+            )
+            # SELECT FOR UPDATE in bind_owner needs UPDATE, not owner-table ownership.
+            await admin.execute(f'GRANT SELECT, UPDATE ON public.strategy_5scr_owner_fences_v1 TO "{role}"')
+
+            @asynccontextmanager
+            async def app_transaction():
+                async with db.transaction() as c:
+                    await c.execute(f'SET LOCAL ROLE "{role}"')
+                    assert await c.fetchval("SELECT current_user") == role
+                    flags = await c.fetchrow(
+                        "SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls FROM pg_roles WHERE rolname=current_user"
+                    )
+                    assert not any(flags.values())
+                    yield c
+
+            with pytest.raises(asyncpg.RaiseError, match="STALE_OR_UNBOUND"):
+                async with app_transaction() as c:
+                    await owner._lifecycles.upsert_lifecycle(lifecycle, _executor=c)
+            async with app_transaction() as c:
+                await bind_owner(c, consumer.fence)
+                await owner._lifecycles.upsert_lifecycle(lifecycle, _executor=c)
+                assert (
+                    await c.fetchval(
+                        "SELECT execution_authority FROM public.strategy_5scr_analysis_lifecycles_v2 "
+                        "WHERE strategy_lifecycle_id=$1",
+                        lifecycle.strategy_lifecycle_id,
+                    )
+                    is False
+                )
+            async with db.transaction() as c:
+                await transfer_owner(
+                    c, symbol="S03TEST", scope=consumer.scope, expected_generation=consumer.fence.generation
+                )
+            with pytest.raises(ValueError, match="STALE_OR_UNBOUND"):
+                async with app_transaction() as c:
+                    await bind_owner(c, consumer.fence)
+                    await owner._lifecycles.upsert_lifecycle(lifecycle, _executor=c)
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                async with app_transaction() as c:
+                    await c.execute("ALTER TABLE public.strategy_5scr_analysis_lifecycles_v2 DISABLE TRIGGER ALL")
+        finally:
+            await admin.execute(f'DROP OWNED BY "{role}"')
+            await admin.execute(f'DROP ROLE "{role}"')
+            await admin.close()
+
+    asyncio.run(run())

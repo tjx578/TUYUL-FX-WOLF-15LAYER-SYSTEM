@@ -75,7 +75,11 @@ class GracefulShutdown:
                     t.cancel()
                 # Give forcefully cancelled tasks a short window to clean up
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait(pending, timeout=2.0)
+                    _, pending = await asyncio.wait(pending, timeout=2.0)
+
+                if pending:
+                    # Do not close pools under tasks still capable of using them.
+                    raise RuntimeError("shutdown_tasks_not_drained")
 
             # Collect and log any unexpected exceptions from drained tasks
             for task in done:

@@ -240,7 +240,7 @@ async def main() -> None:
     if RUN_MODE in ("all", "api-only"):
         tasks.append(
             asyncio.create_task(
-                supervised_task("HTTPServer", _run_http_server, _shutdown_event, _health_probe),
+                supervised_task("HTTPServer", _run_http_server, _shutdown_event, _health_probe, required=True),
                 name="HTTPServer",
             )
         )
@@ -249,13 +249,13 @@ async def main() -> None:
         if RUN_MODE in ("all", "engine-only", "engine-ingest"):
             tasks.append(
                 asyncio.create_task(
-                    supervised_task("RedisConsumer", run_redis_consumer, _shutdown_event, _health_probe),
+                    supervised_task("RedisConsumer", run_redis_consumer, _shutdown_event, _health_probe, required=True),
                     name="RedisConsumer",
                 )
             )
             tasks.append(
                 asyncio.create_task(
-                    supervised_task("AnalysisLoop", _run_analysis_loop, _shutdown_event, _health_probe),
+                    supervised_task("AnalysisLoop", _run_analysis_loop, _shutdown_event, _health_probe, required=True),
                     name="AnalysisLoop",
                 )
             )
@@ -277,7 +277,7 @@ async def main() -> None:
         if RUN_MODE in ("all", "engine-only", "engine-ingest"):
             tasks.append(
                 asyncio.create_task(
-                    supervised_task("AnalysisLoop", _run_analysis_loop, _shutdown_event, _health_probe),
+                    supervised_task("AnalysisLoop", _run_analysis_loop, _shutdown_event, _health_probe, required=True),
                     name="AnalysisLoop",
                 )
             )
@@ -313,6 +313,7 @@ async def main() -> None:
         logger.error(f"Fatal error: {exc}")
         raise
     finally:
+        _shutdown_event.set()
         await gs.shutdown(tasks)
         logger.info("System shutdown complete.")
 

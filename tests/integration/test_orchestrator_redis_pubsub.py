@@ -10,6 +10,7 @@ import contextlib
 import json
 import time
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -74,7 +75,9 @@ def redis_client() -> Any:
 
 
 @pytest.mark.integration
-def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_orchestrator_receives_set_mode_command_via_redis(
+    redis_client: Any, monkeypatch: pytest.MonkeyPatch, isolated_governance_keys: float
+) -> None:
     suffix = uuid.uuid4().hex
     channel = f"wolf15:test:orchestrator:commands:{suffix}"
     state_key = f"wolf15:test:orchestrator:state:{suffix}"
@@ -86,19 +89,38 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
     monkeypatch.setenv("ORCHESTRATOR_ACCOUNT_STATE_KEY", account_key)
     monkeypatch.setenv("ORCHESTRATOR_TRADE_RISK_KEY", risk_key)
 
+    redis_client.set(
+        account_key,
+        json.dumps(
+            {
+                "balance": 10_000,
+                "equity": 10_000,
+                "compliance_mode": True,
+                "daily_dd_percent": 0.0,
+                "max_daily_dd_percent": 5.0,
+                "max_risk_per_trade_percent": 1.0,
+            }
+        ),
+    )
+    redis_client.set(risk_key, json.dumps({"risk_percent": 0.5}))
     manager = StateManager(redis_client=_RedisAdapter(redis_client))  # type: ignore[arg-type]
+    manager.configure_intervals(compliance_interval_sec=1.0, heartbeat_interval_sec=300.0)
     manager.start_listener()
 
     try:
+        # Exercise a real compliance tick with valid authoritative snapshots first.
+        manager.process_once(now=isolated_governance_keys)
+        assert manager.snapshot().compliance_code == "OK"
         redis_client.publish(
             channel,
             json.dumps({"command": "SET_MODE", "mode": "SAFE", "reason": "integration-test"}),
         )
 
         _wait_until(
-            # This case isolates command delivery before scheduled compliance
-            # and heartbeat ticks. Missing-account compliance is tested below.
-            lambda: manager.process_once(now=0.0) or manager.snapshot().mode == ExecutionMode.SAFE,
+            lambda: (
+                manager.process_once(now=isolated_governance_keys + 0.1)
+                or manager.snapshot().mode == ExecutionMode.SAFE
+            ),
             timeout=2.0,
             interval=0.02,
         )
@@ -112,6 +134,10 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
         payload = json.loads(stored)
         assert payload["event"] == "MODE_CHANGED"
         assert payload["mode"] == "SAFE"
+        # A subsequent compliance tick must not replace SAFE with a missing-data veto.
+        manager.process_once(now=isolated_governance_keys + 1.0)
+        assert manager.snapshot().mode == ExecutionMode.SAFE
+        assert manager.snapshot().compliance_code == "EXTERNAL_COMMAND"
     finally:
         manager.close()
         redis_client.delete(state_key, account_key, risk_key)
@@ -119,12 +145,17 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
 
 @pytest.fixture(autouse=True)
 def isolated_governance_keys(redis_client: Any, monkeypatch: pytest.MonkeyPatch):
+    fixed_now = 1_800_000_000.0
+    monkeypatch.setattr(state_manager, "time", SimpleNamespace(time=lambda: fixed_now, sleep=time.sleep))
+    monkeypatch.setattr(state_manager, "is_forex_market_open", lambda: True)
+    monkeypatch.delenv("ORCHESTRATOR_COMMAND_SECRET", raising=False)
     keys = []
     for name in ("KILL_SWITCH", "HEARTBEAT_ORCHESTRATOR", "HEARTBEAT_INGEST", "_NEWS_LOCK_STATE_KEY"):
         key = f"wolf15:test:orchestrator:{uuid.uuid4().hex}:{name}"
         keys.append(key)
         monkeypatch.setattr(state_manager, name, key)
-    yield
+    redis_client.set(state_manager.HEARTBEAT_INGEST, json.dumps({"ts": fixed_now}))
+    yield fixed_now
     redis_client.delete(*keys)
 
 
