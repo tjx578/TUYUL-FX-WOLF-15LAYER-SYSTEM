@@ -33,6 +33,9 @@ def test_orchestrator_late_fatal_clears_readiness_and_exits(monkeypatch):
 async def test_pressure_outbox_failure_drains_siblings_before_pool_close(monkeypatch, signal_stop):
     from services.pressure_outbox import runner as mod
 
+    monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_DISPATCH_ENABLED", "true")
+    monkeypatch.setenv("PORT", "0")
     order = []
     started = asyncio.Event()
     stop_started = asyncio.Event()

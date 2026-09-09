@@ -16,6 +16,7 @@ import hashlib
 import hmac as _hmac
 import json
 import os
+import signal
 import threading
 import time
 from collections.abc import Callable
@@ -118,6 +119,7 @@ class StateManager:
         self._state = OrchestratorState(updated_at=_utc_now_iso())
         self._redis: RedisClient = redis_client or RedisClient()
         self._pubsub: redis.client.PubSub | None = None
+        self._stop_requested = threading.Event()
         lease_client = self._redis.client if isinstance(self._redis, RedisClient) else self._redis
         ttl_ms = int(os.getenv("ORCHESTRATOR_OWNER_LEASE_MS", "30000"))
         self._mode_owner = ModeOwnerLease(lease_client, key=KILL_SWITCH + ":mode-owner", ttl_ms=ttl_ms)
@@ -441,6 +443,9 @@ class StateManager:
             self._last_heartbeat = now_ts
             self.publish_state("HEARTBEAT")
 
+    def request_stop(self) -> None:
+        self._stop_requested.set()
+
     def run_forever(self, on_started: Callable[[], None] | None = None) -> None:
         self.start_listener()
         self.publish_state("BOOT")
@@ -450,9 +455,9 @@ class StateManager:
             on_started()
 
         try:
-            while True:
+            while not self._stop_requested.is_set():
                 self.process_once()
-                time.sleep(self._loop_sleep_sec)
+                self._stop_requested.wait(self._loop_sleep_sec)
         finally:
             # Persist SHUTDOWN state so other services see orchestrator went down
             try:
@@ -482,6 +487,7 @@ def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = N
 def run() -> None:
     _ORCHESTRATOR_READY.clear()
     manager = None
+    previous_handlers = {}
     _start_health_probe_in_thread(
         readiness_check=lambda: bool(
             _ORCHESTRATOR_READY.is_set() and manager is not None and manager._mode_owner.is_current()
@@ -489,6 +495,13 @@ def run() -> None:
     )
     try:
         manager = StateManager()
+
+        def request_stop(signum, frame):
+            _ORCHESTRATOR_READY.clear()
+            manager.request_stop()
+
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous_handlers[signum] = signal.signal(signum, request_stop)
         manager.run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
         _ORCHESTRATOR_READY.clear()
@@ -497,6 +510,10 @@ def run() -> None:
 
         hold_alive_sync(service_name="Orchestrator")
         raise
+    finally:
+        _ORCHESTRATOR_READY.clear()
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == "__main__":

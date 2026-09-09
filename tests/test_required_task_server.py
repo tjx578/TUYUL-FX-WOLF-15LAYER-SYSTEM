@@ -73,7 +73,7 @@ async def test_pending_required_task_keeps_process_deadline_armed(monkeypatch):
 
     monkeypatch.setattr(required_task_server.threading, "Timer", Timer)
     supervisor = RequiredTaskSupervisor({"writer": True})
-    task = supervisor.start("writer", asyncio.Event().wait())
+    supervisor.start("writer", asyncio.Event().wait())
     app = SimpleNamespace(state=SimpleNamespace(required_task_supervisor=supervisor))
     server = SimpleNamespace(started=True, should_exit=True, lifespan=SimpleNamespace(shutdown_failed=True))
 

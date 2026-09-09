@@ -32,6 +32,10 @@ REQUIRED_STEPS = {
     "P1 built runtime acceptance": {
         "Build candidate runtime image",
         "Require built runtime ownership readiness and shutdown acceptance",
+        "Require actual orchestrator role process acceptance",
+        "Require actual ingest role process acceptance",
+        "Require actual engine and trade role process acceptance",
+        "Require actual pressure outbox role process acceptance",
     },
     "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},
     "Built API bootstrap": {"Build exact-source API image", "Exercise built API bootstrap and served readiness"},

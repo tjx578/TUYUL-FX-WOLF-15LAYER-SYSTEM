@@ -20,10 +20,6 @@ REQUIRED_CONTEXTS = frozenset({"CI Gate", "Security Gate", "Docs Gate"})
 REQUIRED_WORKFLOWS = {
     ".github/workflows/ci.yml": {
         **CI_STEPS,
-        "P1 built runtime acceptance": {
-            "Build candidate runtime image",
-            "Require built runtime ownership readiness and shutdown acceptance",
-        },
     },
     ".github/workflows/wolf-security-scan.yml": {
         "pip-audit (Python deps)": {"Run pip-audit (hard-fail)"},

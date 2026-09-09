@@ -91,6 +91,7 @@ instrument_httpx()
 _ENGINE_HEALTH_PORT = int(os.getenv("ENGINE_HEALTH_PORT", "8081"))
 _health_probe = HealthProbe(port=_ENGINE_HEALTH_PORT, service_name="engine")
 _analysis_healthy = False
+_engine_required_tasks: list[asyncio.Task] = []
 
 # ── Run mode configuration ──────────────────────────────────────
 RUN_MODE = os.getenv("RUN_MODE", "all").lower()
@@ -98,7 +99,12 @@ RUN_MODE = os.getenv("RUN_MODE", "all").lower()
 
 def _engine_readiness() -> bool:
     """Readiness gate: True once at least one analysis cycle has completed."""
-    return _analysis_healthy
+    return bool(
+        _analysis_healthy
+        and _engine_required_tasks
+        and all(not task.done() for task in _engine_required_tasks)
+        and not (_shutdown_event and _shutdown_event.is_set())
+    )
 
 
 _health_probe.set_readiness_check(_engine_readiness)
@@ -176,9 +182,14 @@ async def _run_analysis_loop() -> None:
         monitor.cancel()
 
 
-async def main() -> None:
-    global _shutdown_event
+async def main(*, _bootstrap_probe: HealthProbe | None = None) -> None:
+    global _shutdown_event, _health_probe, _analysis_healthy, _engine_required_tasks
     _shutdown_event = asyncio.Event()
+    _analysis_healthy = False
+    _engine_required_tasks = []
+    if _bootstrap_probe is not None:
+        _health_probe = _bootstrap_probe
+        _health_probe.set_readiness_check(_engine_readiness)
 
     # Shared Railway-safe routing and rate limiting.
     configure_stdlib_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
@@ -199,11 +210,8 @@ async def main() -> None:
     # ── Startup validation ──────────────────────────────────────────
     startup_check = await validate_engine_startup_async()
     if not startup_check.ok:
-        logger.error(
-            "Startup validation found {} error(s) — engine may not function correctly. "
-            "Continuing to keep health probe alive for diagnostics.",
-            len(startup_check.errors),
-        )
+        logger.error("Engine startup validation failed with {} error(s)", len(startup_check.errors))
+        raise RuntimeError("ENGINE_STARTUP_VALIDATION_FAILED")
 
     has_api_key = _validate_api_key()
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
@@ -301,12 +309,18 @@ async def main() -> None:
     from infrastructure.redis_client import close_pool  # noqa: PLC0415
 
     gs = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")))
-    gs.register_cleanup("health probe", _health_probe.stop)
+    if _bootstrap_probe is None:
+        gs.register_cleanup("health probe", _health_probe.stop)
     gs.register_cleanup("persistent storage", shutdown_persistent_storage)
     gs.register_cleanup("redis pool", close_pool)
 
+    _engine_required_tasks = list(tasks)
+    stop_waiter = asyncio.create_task(_shutdown_event.wait(), name="EngineShutdownSignal")
     try:
-        await asyncio.gather(*tasks)
+        done, _ = await asyncio.wait([*tasks, stop_waiter], return_when=asyncio.FIRST_COMPLETED)
+        if stop_waiter not in done:
+            await asyncio.gather(*done)
+            raise RuntimeError("ENGINE_REQUIRED_TASK_RETURNED")
     except asyncio.CancelledError:
         logger.info("Tasks cancelled, initiating graceful shutdown...")
     except Exception as exc:
@@ -314,7 +328,8 @@ async def main() -> None:
         raise
     finally:
         _shutdown_event.set()
-        await gs.shutdown(tasks)
+        _analysis_healthy = False
+        await gs.shutdown([*tasks, stop_waiter])
         logger.info("System shutdown complete.")
 
 

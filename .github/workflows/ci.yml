@@ -326,7 +326,7 @@ jobs:
   runtime-acceptance:
     name: P1 built runtime acceptance
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -338,12 +338,25 @@ jobs:
         run: docker build --label org.opencontainers.image.revision=$GITHUB_SHA -t wolf15-p1-runtime:$GITHUB_SHA .
       - name: Require built runtime ownership readiness and shutdown acceptance
         run: python scripts/ci/p1_runtime_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/p1-runtime.json
+      - name: Require actual orchestrator role process acceptance
+        run: python scripts/ci/orchestrator_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/orchestrator-process.json
+      - name: Require actual ingest role process acceptance
+        run: python scripts/ci/ingest_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/ingest-process.json
+      - name: Require actual engine and trade role process acceptance
+        run: python scripts/ci/engine_trade_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/engine-trade-process.json
+      - name: Require actual pressure outbox role process acceptance
+        run: python scripts/ci/pressure_outbox_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/pressure-outbox-process.json
       - name: Upload built runtime receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: p1-runtime-acceptance
-          path: artifacts/p1-runtime.json
+          path: |
+            artifacts/p1-runtime.json
+            artifacts/orchestrator-process.json
+            artifacts/ingest-process.json
+            artifacts/engine-trade-process.json
+            artifacts/pressure-outbox-process.json
           if-no-files-found: error
 
   # MCP2 and the API intentionally use separate dependency environments.

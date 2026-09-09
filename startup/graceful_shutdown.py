@@ -132,5 +132,6 @@ class GracefulShutdown:
             )
             for t in pending:
                 t.cancel()
-            with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait(pending, timeout=2.0)
+            _, pending = await asyncio.wait(pending, timeout=2.0)
+            if pending:
+                raise RuntimeError("shutdown_worker_tasks_not_drained")

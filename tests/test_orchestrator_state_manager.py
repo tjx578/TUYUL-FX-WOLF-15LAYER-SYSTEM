@@ -411,3 +411,43 @@ def test_pubsub_set_mode_rejected_with_tampered_payload(monkeypatch: Any) -> Non
     manager.process_once(now=0.5)
 
     assert manager.snapshot().mode != ExecutionMode.KILL_SWITCH
+
+
+def test_requested_stop_publishes_shutdown_then_releases_owner():
+    store = _FakeRedis()
+    manager = _new_manager(store)
+    manager.run_forever(on_started=manager.request_stop)
+    events = [json.loads(payload)["event"] for _, payload in store.published]
+    assert events == ["BOOT", "SHUTDOWN"]
+    assert store._pubsub.closed
+    assert not store._mode_lease_tokens
+
+
+def test_process_signal_stops_owner_and_restores_handlers(monkeypatch):
+    import signal
+
+    from services.orchestrator import state_manager as mod
+
+    calls = []
+    callbacks = {}
+    previous = object()
+
+    def register(signum, callback):
+        callbacks[signum] = callback
+        return previous
+
+    class Manager:
+        def run_forever(self, on_started):
+            on_started()
+            callbacks[signal.SIGTERM](signal.SIGTERM, None)
+            assert not mod._ORCHESTRATOR_READY.is_set()
+
+        def request_stop(self):
+            calls.append("stop_requested")
+
+    monkeypatch.setattr(mod.signal, "signal", register)
+    monkeypatch.setattr(mod, "StateManager", Manager)
+    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: None)
+    mod.run()
+    assert calls == ["stop_requested"]
+    assert callbacks == {signal.SIGTERM: previous, signal.SIGINT: previous}
