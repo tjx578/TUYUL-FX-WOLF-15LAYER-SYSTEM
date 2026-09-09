@@ -16,6 +16,11 @@ REQUIRED_STEPS = {
     "Python tests (pytest)": {
         "Apply database migrations",
         "Mark PostgreSQL as a disposable test environment",
+        "Qualify disposable Linux PostgreSQL and Redis runner",
+        "Require executed S03 PostgreSQL acceptance",
+        "Require separate S03 producer and relay PostgreSQL acceptance",
+        "Require separate S03 consumer and owner PostgreSQL acceptance",
+        "Require separate candidate capacity and TEST_ONLY transaction PostgreSQL acceptance",
         "Run pytest with coverage",
     },
     "Dashboard build (Next.js)": {"Lint", "Dashboard tests", "Build"},

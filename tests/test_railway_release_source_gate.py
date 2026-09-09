@@ -61,6 +61,14 @@ def test_complete_exact_source_receipt_passes(receipt):
     gate.validate_receipt(**receipt)
 
 
+@pytest.mark.parametrize("missing", sorted(gate.REQUIRED_STEPS["Python tests (pytest)"]))
+def test_release_rejects_missing_postgres_or_runner_step(receipt, missing):
+    job = next(job for job in receipt["jobs"] if job["name"] == "Python tests (pytest)")
+    job["steps"] = [step for step in job["steps"] if step["name"] != missing]
+    with pytest.raises(gate.ReleaseGateError, match="required CI step absent"):
+        gate.validate_receipt(**receipt)
+
+
 @pytest.mark.parametrize("field", ["release_sha", "checkout_sha", "remote_main_sha"])
 def test_source_a_ci_cannot_deploy_source_b(receipt, field):
     receipt[field] = "b" * 40
