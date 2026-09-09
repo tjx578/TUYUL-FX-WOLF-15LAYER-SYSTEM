@@ -41,6 +41,7 @@ from infrastructure.tracing import (
     instrument_requests,
     setup_tracer,
 )
+from startup.required_tasks import RequiredTaskSupervisor
 from storage.postgres_client import pg_client
 
 from .middleware.auth import verify_token
@@ -118,6 +119,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from api.owner_dashboard_release import validate_release_environment
 
         validate_release_environment(os.environ)
+    supervisor = RequiredTaskSupervisor({"trade_outbox": not read_only_startup})
+    app.state.required_task_supervisor = supervisor
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     from dataclasses import replace
 
@@ -158,9 +161,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not read_only_startup:
         try:
             outbox_worker = TradeOutboxWorker(consumer_name="api-1")
-            outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
+            outbox_task = supervisor.start("trade_outbox", outbox_worker.run())
         except Exception:
-            logger.warning("Trade outbox worker failed to start — will operate without outbox")
+            supervisor.fail("trade_outbox", "bootstrap_failed")
+            with suppress(Exception):
+                await asyncio.wait_for(pg_client.close(), timeout=10)
+            with suppress(Exception):
+                await asyncio.wait_for(close_pool(), timeout=10)
+            raise RuntimeError("REQUIRED_TRADE_OUTBOX_BOOTSTRAP_FAILED") from None
     app.state.trade_outbox_worker = outbox_worker
     app.state.trade_outbox_task = outbox_task
 
@@ -245,6 +253,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        supervisor.stopping = True
         if peer_checker is not None:
             with suppress(Exception):
                 await peer_checker.stop()
@@ -257,13 +266,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if outbox_worker is not None:
             with suppress(Exception):
                 await outbox_worker.stop()
-        if outbox_task is not None:
-            with suppress(asyncio.CancelledError):
-                outbox_task.cancel()
-                await outbox_task
+        # A cancellation-resistant writer must stop before its pools are closed.
+        await supervisor.stop(timeout=10)
         with suppress(Exception):
-            await pg_client.close()
-        await close_pool()
+            await asyncio.wait_for(pg_client.close(), timeout=10)
+        await asyncio.wait_for(close_pool(), timeout=10)
         logger.info("🐺 TUYUL FX Wolf-15 shutting down…")
 
 
@@ -576,6 +583,18 @@ def _register_health_routes(app: FastAPI) -> None:
                 status_code=503,
             )
 
+        supervisor = getattr(request.app.state, "required_task_supervisor", None)
+        runtime = (
+            supervisor.snapshot()
+            if supervisor is not None
+            else {"ready": False, "states": {}, "reasons": ["runtime_not_started"]}
+        )
+        if not runtime["ready"]:
+            return JSONResponse(
+                content={"ready": False, "router_boot_ok": True, "runtime": runtime, "reasons": runtime["reasons"]},
+                status_code=503,
+            )
+
         import math as _math  # noqa: PLC0415
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
@@ -591,6 +610,7 @@ def _register_health_routes(app: FastAPI) -> None:
         _staleness = feed_snapshot.staleness_seconds
         checks: dict[str, Any] = {
             "router_boot_ok": True,
+            "runtime": runtime,
             "feed_freshness_class": freshness_class.value,
             "feed_staleness_seconds": _staleness if _math.isfinite(_staleness) else None,
             "producer_alive": hb_alive,

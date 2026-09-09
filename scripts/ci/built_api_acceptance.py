@@ -62,12 +62,102 @@ def request(path):
         return response.status, json.loads(response.read())
 
 
+def listener_ports(pid):
+    """Read the tested Linux process's socket inodes without another listener."""
+    inodes = set()
+    for descriptor in Path(f"/proc/{pid}/fd").iterdir():
+        try:
+            target = os.readlink(descriptor)
+        except FileNotFoundError:
+            continue
+        if target.startswith("socket:["):
+            inodes.add(target[8:-1])
+    ports = []
+    for protocol in ("tcp", "tcp6"):
+        for line in Path(f"/proc/{pid}/net/{protocol}").read_text().splitlines()[1:]:
+            fields = line.split()
+            if fields[3] == "0A" and fields[9] in inodes:
+                ports.append(int(fields[1].split(":")[1], 16))
+    return sorted(ports)
+
+
+def worker_failure_case(env):
+    """Fault the real built API worker after the HTTP listener is available."""
+    code = """
+import asyncio, sys
+from pathlib import Path
+from storage import trade_outbox_worker
+from storage.postgres_client import pg_client
+class FaultWorker:
+    def __init__(self, **kwargs): pass
+    async def run(self):
+        try:
+            while not Path(sys.argv[1]).exists(): await asyncio.sleep(0.02)
+            raise RuntimeError('CI_REQUIRED_WORKER_FAULT')
+        finally: print('CI_WORKER_DRAINED', flush=True)
+    async def stop(self): pass
+trade_outbox_worker.TradeOutboxWorker = FaultWorker
+original_close = pg_client.close
+async def close():
+    print('CI_POOL_CLOSE', flush=True)
+    await original_close()
+pg_client.close = close
+import api_server
+raise SystemExit(api_server.run_api())
+"""
+    with tempfile.TemporaryDirectory() as folder:
+        trigger = Path(folder) / "fail"
+        log_path = Path(folder) / "worker.log"
+        with log_path.open("w+") as log:
+            process = subprocess.Popen([sys.executable, "-c", code, str(trigger)], env=env, stdout=log, stderr=log)
+            try:
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    assert process.poll() is None, "worker fault fixture exited before serving"
+                    try:
+                        if request("/healthz")[0] == 200:
+                            break
+                    except (OSError, ValueError):
+                        pass
+                    time.sleep(0.05)
+                else:
+                    raise AssertionError("worker fault fixture listener timeout")
+                assert listener_ports(process.pid) == [18080]
+                trigger.write_text("TEST_ONLY_FAULT")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    status, body = request("/readyz")
+                    if "required_task_trade_outbox_exception" in body.get("reasons", []):
+                        assert status == 503 and body["ready"] is False
+                        break
+                    time.sleep(0.02)
+                else:
+                    raise AssertionError("required worker loss was not served as causal 503")
+                assert process.wait(timeout=15) == 1, "required worker loss must exit nonzero"
+                output = log_path.read_text()
+                assert output.index("CI_WORKER_DRAINED") < output.index("CI_POOL_CLOSE")
+                return {
+                    "case": "required_worker_late_failure",
+                    "readyz": 503,
+                    "exit_code": 1,
+                    "listener_ports": [18080],
+                    "drain_before_pool": True,
+                    "passed": True,
+                }
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=5)
+
+
 def main():
     receipt = {"scope": "BUILT_API_BOOTSTRAP_LIFESPAN_AND_HTTP_ONLY", "accepted": False, "cases": []}
     try:
         for path, variable in (
             ("api/app_factory.py", "WOLF15_TEST_APP_SHA256"),
             ("api/router_registry.py", "WOLF15_TEST_REGISTRY_SHA256"),
+            ("api_server.py", "WOLF15_TEST_ENTRYPOINT_SHA256"),
+            ("startup/required_tasks.py", "WOLF15_TEST_SUPERVISOR_SHA256"),
         ):
             actual = hashlib.sha256(Path(path).read_bytes()).hexdigest()
             assert actual == os.environ[variable], "built source bytes differ"
@@ -108,6 +198,8 @@ def main():
                     receipt["cases"].append(
                         {"case": "served_dependency_failure", "healthz": 200, "readyz": status, "passed": True}
                     )
+                    assert listener_ports(process.pid) == [18080]
+                    receipt["cases"].append({"case": "single_configured_listener", "ports": [18080], "passed": True})
                 finally:
                     process.terminate()
                     try:
@@ -121,6 +213,7 @@ def main():
                 assert code in {0, -signal.SIGTERM}, f"built API shutdown returned {code}"
                 assert "Application shutdown complete" in log_path.read_text(), "lifespan shutdown was not confirmed"
                 receipt["cases"].append({"case": "graceful_shutdown", "exit_code": code, "passed": True})
+        receipt["cases"].append(worker_failure_case(env))
         faults = (
             (
                 "mandatory_router",
@@ -131,6 +224,11 @@ def main():
                 "bootstrap",
                 "import api.app_factory as f\ndef fail(): raise RuntimeError('CI_FATAL_BOOTSTRAP_FIXTURE')\nf._create_app_inner=fail\nimport api_server",
                 "CI_FATAL_BOOTSTRAP_FIXTURE",
+            ),
+            (
+                "required_worker_bootstrap",
+                "from storage import trade_outbox_worker as w\ndef fail(**kwargs): raise RuntimeError('fixture')\nw.TradeOutboxWorker=fail\nimport api_server\nraise SystemExit(api_server.run_api())",
+                "REQUIRED_TRADE_OUTBOX_BOOTSTRAP_FAILED",
             ),
         )
         for case, code, reason in faults:

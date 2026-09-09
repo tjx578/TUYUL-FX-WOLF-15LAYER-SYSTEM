@@ -466,6 +466,8 @@ jobs:
           docker run --rm --network none \
             -e WOLF15_TEST_APP_SHA256="$(sha256sum api/app_factory.py | cut -d ' ' -f 1)" \
             -e WOLF15_TEST_REGISTRY_SHA256="$(sha256sum api/router_registry.py | cut -d ' ' -f 1)" \
+            -e WOLF15_TEST_ENTRYPOINT_SHA256="$(sha256sum api_server.py | cut -d ' ' -f 1)" \
+            -e WOLF15_TEST_SUPERVISOR_SHA256="$(sha256sum startup/required_tasks.py | cut -d ' ' -f 1)" \
             "$(cat artifacts/built-api/image-id.txt)" \
             python scripts/ci/built_api_acceptance.py > artifacts/built-api/receipt.json
 

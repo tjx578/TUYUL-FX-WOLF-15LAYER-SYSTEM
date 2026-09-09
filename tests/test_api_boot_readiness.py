@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from api import app_factory
 from api.middleware.machine_auth import verify_observability_machine_auth
+from startup.required_tasks import RequiredTaskSupervisor
 from state.data_freshness import FreshnessClass
 
 
@@ -50,6 +51,7 @@ def test_completed_router_boot_preserves_heartbeat_gate(monkeypatch, alive: bool
 
     app = health_app()
     app.state.router_boot_errors = []
+    app.state.required_task_supervisor = RequiredTaskSupervisor({"trade_outbox": False})
     app.state.redis = SimpleNamespace(get=AsyncMock(return_value=json.dumps({"ts": time.time()}) if alive else None))
     monkeypatch.setattr(
         api.allocation_router,
