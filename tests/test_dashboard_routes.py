@@ -274,10 +274,13 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def _reset_state() -> Any:
+def _reset_state(monkeypatch, tmp_path) -> Any:
     """Clear all in-memory caches and fake Redis between tests."""
     from accounts.account_manager import AccountManager
+    from journal import forensic_replay
     from storage.trade_ledger import TradeLedger
+
+    monkeypatch.setattr(forensic_replay, "FORENSIC_ARTIFACTS_PATH", tmp_path / "replay_artifacts.jsonl")
 
     AccountManager._memory_accounts.clear()
     TradeLedger._memory_trades.clear()

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from api import app_factory
 from api.middleware.machine_auth import verify_observability_machine_auth
+from startup.required_tasks import RequiredTaskSupervisor
 from state.data_freshness import FreshnessClass
 
 
@@ -50,6 +51,7 @@ def test_completed_router_boot_preserves_heartbeat_gate(monkeypatch, alive: bool
 
     app = health_app()
     app.state.router_boot_errors = []
+    app.state.required_task_supervisor = RequiredTaskSupervisor({"trade_outbox": False})
     app.state.redis = SimpleNamespace(get=AsyncMock(return_value=json.dumps({"ts": time.time()}) if alive else None))
     monkeypatch.setattr(
         api.allocation_router,
@@ -72,6 +74,25 @@ def test_fallback_is_not_ready_and_does_not_disclose_bootstrap_exception() -> No
         assert response.json()["reasons"] == ["api_bootstrap_failed"]
         assert "private" not in response.text
         assert client.get("/healthz").status_code == 200
+
+
+def test_default_bootstrap_does_not_hide_a_fatal_error(monkeypatch):
+    monkeypatch.delenv("API_BOOT_FAIL_OPEN", raising=False)
+
+    def failed():
+        raise RuntimeError("fatal fixture bootstrap")
+
+    monkeypatch.setattr(app_factory, "_create_app_inner", failed)
+    with pytest.raises(RuntimeError, match="fatal fixture bootstrap"):
+        app_factory.create_app()
+
+
+def test_default_mandatory_router_failure_is_fatal(monkeypatch):
+    monkeypatch.delenv("API_BOOT_FAIL_OPEN", raising=False)
+    monkeypatch.delenv("ROUTER_BOOT_FAIL_OPEN", raising=False)
+    monkeypatch.setattr(app_factory, "load_routers", lambda: ([], ["missing mandatory fixture router"]))
+    with pytest.raises(RuntimeError, match="Mandatory API router import failed"):
+        app_factory.create_app()
 
 
 @pytest.mark.parametrize("strict", [True, False])

@@ -98,22 +98,15 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/v3.97.4/scripts/install.sh | sh -s -- -b /usr/local/bin v3.97.4
 
       - name: Scan for secrets (hard-fail)
-        run: |
-          # Detect secrets without authenticating against their providers.
-          # Keep raw scanner results in the ephemeral runner, never in job logs.
-          set +e
-          trufflehog filesystem . \
-            --no-update \
-            --no-verification \
-            --json \
-            --fail \
-            --exclude-paths=.github/trufflehog-exclude.txt \
-            > "$RUNNER_TEMP/secret-scan.jsonl" 2> "$RUNNER_TEMP/secret-scan.stderr"
-          scan_status=$?
-          set -e
-          python scripts/ci/security_findings.py "$RUNNER_TEMP/secret-scan.jsonl" \
-            --scanner-exit "$scan_status" \
-            --manifest docs/remediation/2026-09-09/p1-integration/security/secret-reviewed-fingerprints.json
+        run: python scripts/ci/secret_scan_receipt.py
+
+      - name: Upload redacted secret detection receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-detection-receipt
+          path: artifacts/secret-scan/receipt.json
+          if-no-files-found: error
 
   # ---------------------------------------------------------------
   # Security gate

@@ -17,11 +17,13 @@ REQUIRED_STEPS = {
         "Apply database migrations",
         "Mark PostgreSQL as a disposable test environment",
         "Qualify disposable Linux PostgreSQL and Redis runner",
+        "Require supported PostgreSQL upgrade with existing data",
         "Require executed S03 PostgreSQL acceptance",
         "Require separate S03 producer and relay PostgreSQL acceptance",
         "Require separate S03 consumer and owner PostgreSQL acceptance",
         "Require separate candidate capacity and TEST_ONLY transaction PostgreSQL acceptance",
         "Run pytest with coverage",
+        "Require uninstrumented latency budgets",
     },
     "Dashboard build (Next.js)": {"Lint", "Dashboard tests", "Build"},
     "P1 built runtime acceptance": {
@@ -29,6 +31,7 @@ REQUIRED_STEPS = {
         "Require built runtime ownership readiness and shutdown acceptance",
     },
     "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},
+    "Built API bootstrap": {"Build exact-source API image", "Exercise built API bootstrap and served readiness"},
     "Deprecated shim guard": {"Block resurrected shim files", "Block deprecated imports in production code"},
     "Architecture drift guard": {
         "analysis/ must not contain execution logic",

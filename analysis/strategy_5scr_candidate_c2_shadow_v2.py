@@ -316,6 +316,7 @@ def evaluate_candidate_c2_shadow_v2(
         reason = snapshot_validation.reason
         mapping = {
             S5RiskReason.ACCOUNT_MISMATCH: "C2_ACCOUNT_BINDING_MISMATCH",
+            S5RiskReason.ACCOUNT_CURRENCY_UNSUPPORTED: "C2_ACCOUNT_CURRENCY_UNSUPPORTED",
             S5RiskReason.SNAPSHOT_INCONSISTENT: "C2_ACCOUNT_SNAPSHOT_INCONSISTENT",
             S5RiskReason.TRADE_DISABLED: "C2_ACCOUNT_TRADE_DISABLED",
             S5RiskReason.SNAPSHOT_STALE: "C2_ACCOUNT_SNAPSHOT_STALE",
