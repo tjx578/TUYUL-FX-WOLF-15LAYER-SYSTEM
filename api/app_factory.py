@@ -848,16 +848,32 @@ def _create_app_inner() -> FastAPI:
     return app
 
 
-def create_app(*, activity_delivery_endpoint=None) -> FastAPI:
+def create_app(*, activity_delivery_endpoint=None, executor_bridge_enabled: bool = False) -> FastAPI:
     """Build the FastAPI application with fail-open bootstrap protection.
 
     If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
     raises, returns a minimal fallback app that keeps ``/healthz`` alive
     so operators can diagnose the failure via ``/api/v1/status``.
+
+    Executor bridge routes require an explicit boolean opt-in. Mounting them
+    does not enable command production, delivery, or broker execution flags.
     """
+    if type(executor_bridge_enabled) is not bool:
+        raise ValueError("EXECUTOR_BRIDGE_EXPLICIT_BOOLEAN_REQUIRED")
     fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
     try:
         application = _create_app_inner()
+        if executor_bridge_enabled:
+            from api.executor_bridge_router import router as executor_bridge_router
+
+            if getattr(application.state, "router_boot_errors", []):
+                raise ValueError("EXECUTOR_BRIDGE_ROUTER_BOOT_FAILED")
+            existing_paths = application.openapi().get("paths", {})
+            if any(getattr(route, "path", None) in existing_paths for route in executor_bridge_router.routes):
+                raise ValueError("EXECUTOR_BRIDGE_ALREADY_REGISTERED")
+            application.include_router(executor_bridge_router)
+            application.openapi_schema = None
+            _assert_no_duplicate_routes(application)
         if activity_delivery_endpoint is not None:
             from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
 
@@ -870,7 +886,7 @@ def create_app(*, activity_delivery_endpoint=None) -> FastAPI:
             _assert_no_duplicate_routes(application)
         return application
     except Exception as exc:
-        if not fail_open or activity_delivery_endpoint is not None:
+        if not fail_open or activity_delivery_endpoint is not None or executor_bridge_enabled:
             raise
         logger.exception("API bootstrap failed — enabling fallback liveness app")
         return _build_bootstrap_fallback_app(f"api_bootstrap_failed: {exc!s}")
