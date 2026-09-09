@@ -1,6 +1,6 @@
 {
-  "source_commit": "404ef14eac2bfe715a53060204ce8c9d40f3ca08",
-  "scope": "Evidence files; individual receipts retain historical source binding",
+  "source_commit": "07495800dabe175be63841bd008274af37ec0b19",
+  "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
     {
       "path": "candle-target-source.diff",
@@ -253,6 +253,16 @@
       "bytes": 5162
     },
     {
+      "path": "reservation-row-source.diff",
+      "sha256": "f0963109ad6dcab430b09cc5d3a6c99cd44a89c5f1e28bdf99958bf9f3a4618b",
+      "bytes": 9142
+    },
+    {
+      "path": "reservation-row-validation.json",
+      "sha256": "974f33bffebbe2aaa69391a4ad75c8a90b36db172560dad077661a6941b52e2c",
+      "bytes": 7964
+    },
+    {
       "path": "risk-binding-source.diff",
       "sha256": "0dc256d19a00ac002243df95148ea31f3f4f809e95265b3f395c9f7156d0f11b",
       "bytes": 9117
@@ -321,6 +331,26 @@
       "path": "rp3.xml",
       "sha256": "ded6c367fb8d83ba2800ff474579718b09f0f6a851c5481e7037d7acb95fd542",
       "bytes": 6058
+    },
+    {
+      "path": "rs1-collection.log",
+      "sha256": "7ec81767d84889f6b3f263a7c85be40246a1c1dccb809cdf773553af190713f1",
+      "bytes": 6290
+    },
+    {
+      "path": "rs1-pytest.log",
+      "sha256": "fff3603fc57b355b9019a5141764b611f5c8fe0343bb5e37c1bcfba67eb6e1a8",
+      "bytes": 974
+    },
+    {
+      "path": "rs1-receipt.json",
+      "sha256": "b0e440ab8441fac54941108b141041ddc0b78d408e4e0416079a04aed7228929",
+      "bytes": 12173
+    },
+    {
+      "path": "rs1.xml",
+      "sha256": "f21874e73d2b2dd9e2bddbb67c04d6b9c6cd98274af3c9ba459630c9e408ad29",
+      "bytes": 7796
     },
     {
       "path": "target-geometry-source.diff",

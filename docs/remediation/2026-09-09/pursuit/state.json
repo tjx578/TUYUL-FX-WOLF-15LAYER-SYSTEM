@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "404ef14eac2bfe715a53060204ce8c9d40f3ca08",
+  "source_checkpoint": "07495800dabe175be63841bd008274af37ec0b19",
   "source_verified_at": "2026-09-09T04:12:37.856475+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K07_SIZING_LOCK_PROVENANCE",
+  "current_slice": "K07_RESERVATION_ROW_AND_CURRENCY_BINDING",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Inspect broker snapshot/tradeplan/candidate identity across reservation adapter; lock identity is now enforced locally. Keep active risk profile and external acceptance unbound until evidence exists.",
+  "next_action_on_resume": "Inspect reservation lifecycle/release and v3.1 candidate adapter boundaries; current V1 row bindings are locally tested, database and active DEMO profile remain unverified.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_SOURCE_AND_LOCAL_ACCEPTANCE",
-  "actual_source_commit": "404ef14eac2bfe715a53060204ce8c9d40f3ca08",
+  "previous_goal_turn_classification": "PROGRESS_EXISTING_SOURCE_AND_LOCAL_ACCEPTANCE",
+  "actual_source_commit": "07495800dabe175be63841bd008274af37ec0b19",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -765,13 +765,13 @@
       ]
     },
     "K07": {
-      "status": "RISK_LOCK_PROVENANCE_SOURCE_LOCAL_PASS",
+      "status": "LOCK_AND_RESERVATION_ROW_BINDINGS_LOCAL_PASS",
       "DONE": false,
-      "evidence_ref": "evidence/lock-provenance-validation.json",
+      "evidence_ref": "evidence/reservation-row-validation.json",
       "remaining": [
-        "Broker snapshot/tradeplan/candidate provenance",
-        "Active account risk profile",
-        "Database ledger concurrency and recovery acceptance"
+        "Active account/mode/currency/version profile",
+        "V3.1 candidate adapter and combined strategy-risk lineage",
+        "Database ledger concurrency/recovery and independent broker acceptance"
       ]
     },
     "K08": {
@@ -801,7 +801,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "404ef14eac2bfe715a53060204ce8c9d40f3ca08",
+    "source_commit": "07495800dabe175be63841bd008274af37ec0b19",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,
