@@ -5,6 +5,7 @@ import base64
 import json
 import shutil
 import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -739,9 +740,13 @@ def test_powershell_process_helper_propagates_nonzero_and_keeps_report(tmp_path:
         pytest.skip("PowerShell is required for launcher contract verification")
 
     launcher = Path("scripts/run_channel_b_reconciliation.ps1").resolve()
-    fake_python = tmp_path / "fake-python.cmd"
-    fake_python.write_text(
-        '@echo off\r\necho {"B-B16":"EXECUTED_BLOCKED"}\r\nexit /b 3\r\n',
+    # Use the real interpreter with a disposable module so native exit-code
+    # propagation is exercised on both Windows PowerShell and Linux pwsh.
+    fake_scripts = tmp_path / "scripts"
+    fake_scripts.mkdir()
+    (fake_scripts / "__init__.py").write_text("", encoding="ascii")
+    (fake_scripts / "reconcile_channel_b.py").write_text(
+        'print(\'{"B-B16":"EXECUTED_BLOCKED"}\')\nraise SystemExit(3)\n',
         encoding="ascii",
     )
     report_path = tmp_path / "blocked-report.json"
@@ -766,7 +771,7 @@ $functionAst = $ast.Find(
 if ($null -eq $functionAst) {{ exit 91 }}
 Invoke-Expression $functionAst.Extent.Text
 $code = Invoke-ChannelBReconciliationProcess `
-    -Python '{ps_literal(fake_python)}' `
+    -Python '{ps_literal(Path(sys.executable))}' `
     -RepoRoot '{ps_literal(tmp_path)}' `
     -OutputPath '{ps_literal(report_path)}'
 if ($code -ne 3) {{ exit 92 }}
