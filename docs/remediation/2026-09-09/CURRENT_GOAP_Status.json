@@ -1,5 +1,5 @@
 {
-  "observed_at_utc": "2026-09-09T02:46:24.217646+00:00",
+  "observed_at_utc": "2026-09-09T03:18:13.852247+00:00",
   "base_source": "68ad0794e087177571972a7b95f4b7dde70b5286",
   "verdict": "INCOMPLETE_HOLD",
   "engineering_milestones_done": 0,
@@ -145,10 +145,10 @@
       "Current status": "CALLER_STORE_IMPLEMENTED_PG_ACCEPTANCE_NOT_EXECUTED",
       "DONE": false,
       "Closure scope": "NOT_CLOSED",
-      "Evidence and blocker": "Draft typed delivery/attachment/emission protocol and identity/order checks implemented with126 local tests in combined scope. Producer outbox, sequence allocation, relay, consumer inbox/common owner fencing and atomic lifecycle/emission integration remain NOT_IMPLEMENTED; transaction design D01-D11 specifies acceptance. Existing45 PG acceptance still NOT_EXECUTED.",
+      "Evidence and blocker": "Producer outbox and bounded immutable relay source implemented at 5219624a92253b66fe8bc67a1acace99b71e61e7; 176 local tests pass. Existing 45 PostgreSQL cases unchanged; separate 7 producer/relay cases skipped and strict runner rejects skips. Migration 20260909_02 offline only. Consumer transaction, authenticated transport and common lifecycle owner fencing NOT_IMPLEMENTED/NOT_BOUND; D01-D11 remain incomplete.",
       "Acceptance": "One normalized material observation per logical pulse; live/replay flags and timestamps agree; duplicate delivery no inflation; mixed direction does not split pair activity; gap suspends pending continuity; future evidence rejected",
       "DoD clarification": "Mixed direction mempertahankan pair activity bila continuity sah. BUY0/SELL150/BUY300 membutuhkan coverage/gap-policy yang valid, bukan otomatis GRANTED.",
-      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json; followup-delivery-contract/README.md; followup-delivery-contract/validation.json"
+      "Evidence pointers": "evidence/contract-audit.json; evidence/strategy-audit.json; evidence/release-audit.json; validation.json; followup-s01-s03/README.md; followup-s01-s03/followup-validation.json; followup-s03-runtime/README.md; followup-s03-runtime/validation.json; followup-runner-binding/README.md; followup-runner-binding/validation.json; followup-delivery-contract/README.md; followup-delivery-contract/validation.json; followup-producer-relay/README.md; followup-producer-relay/validation.json; followup-producer-relay/acceptance-inventory.json"
     },
     {
       "ID": "S04",
@@ -589,5 +589,10 @@
   "latest_followup": "followup-s01-s03/followup-validation.json",
   "runtime_followup": "followup-s03-runtime/validation.json",
   "latest_runner_binding_followup": "followup-runner-binding/validation.json",
-  "latest_delivery_contract_followup": "followup-delivery-contract/validation.json"
+  "latest_delivery_contract_followup": "followup-delivery-contract/validation.json",
+  "latest_producer_relay_followup": {
+    "source_commit": "5219624a92253b66fe8bc67a1acace99b71e61e7",
+    "path": "followup-producer-relay/validation.json",
+    "milestones_closed": 0
+  }
 }

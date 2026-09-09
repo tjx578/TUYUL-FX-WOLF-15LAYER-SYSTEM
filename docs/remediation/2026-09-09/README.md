@@ -215,3 +215,7 @@ Latest bounded follow-up: [runner evidence binding and pressure expiry](followup
 
 
 Latest follow-up: [S03 delivery protocol and hosted-runner diagnosis](followup-delivery-contract/README.md), source `a25b41cf`. The runner-list endpoint is self-hosted-only; exact hosted ubuntu-latest jobs report billing lock.126 local contract/regression tests PASS; producer-to-lifecycle/emission runtime remains NOT_IMPLEMENTED and PostgreSQL/Linux acceptance NOT_EXECUTED. Program remains0/6, INCOMPLETE / HOLD.
+
+## Producer/relay follow-up
+
+Source `5219624a92253b66fe8bc67a1acace99b71e61e7`: opt-in producer outbox and relay implemented; 176 selected local tests pass. Existing45 and new7 PostgreSQL cases remain unexecuted. Consumer owner transaction/fencing is still open. See [checkpoint](followup-producer-relay/README.md). Status remains INCOMPLETE / HOLD, 0/6 milestones.
