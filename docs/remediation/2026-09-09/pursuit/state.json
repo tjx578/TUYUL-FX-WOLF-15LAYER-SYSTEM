@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "07495800dabe175be63841bd008274af37ec0b19",
-  "source_verified_at": "2026-09-09T04:12:37.856475+00:00",
+  "source_checkpoint": "5fd0d5330c6226999124e8ab6b9c910fd7348788",
+  "source_verified_at": "2026-09-09T05:20:31.896029+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K07_RESERVATION_ROW_AND_CURRENCY_BINDING",
+  "current_slice": "K11_INTENT_WRITE_FAILURE_PROPAGATION",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Inspect reservation lifecycle/release and v3.1 candidate adapter boundaries; current V1 row bindings are locally tested, database and active DEMO profile remain unverified.",
+  "next_action_on_resume": "Assess intent durability gaps: affected-row verification, concurrent idempotency conflicts and explicit unavailable-database behavior; retain broker and database gates.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -719,7 +719,7 @@
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
   "previous_goal_turn_classification": "PROGRESS_EXISTING_SOURCE_AND_LOCAL_ACCEPTANCE",
-  "actual_source_commit": "07495800dabe175be63841bd008274af37ec0b19",
+  "actual_source_commit": "5fd0d5330c6226999124e8ab6b9c910fd7348788",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -787,8 +787,14 @@
       "DONE": false
     },
     "K11": {
-      "status": "NOT_YET_REBOUND",
-      "DONE": false
+      "status": "INTENT_WRITE_FAILURE_LOCAL_PASS_PARTIAL",
+      "DONE": false,
+      "evidence_ref": "evidence/intent-write-validation.json",
+      "remaining": [
+        "Actual PostgreSQL persistence and recovery",
+        "Independent broker reader binding",
+        "Strict durable-mode and concurrent idempotency semantics"
+      ]
     },
     "K12": {
       "status": "NOT_YET_REBOUND",
@@ -801,7 +807,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "07495800dabe175be63841bd008274af37ec0b19",
+    "source_commit": "5fd0d5330c6226999124e8ab6b9c910fd7348788",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,
