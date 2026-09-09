@@ -449,48 +449,14 @@ class RedisContextReader:
 
         return {"symbols": symbols}
 
-    def check_price_drift(
-        self,
-        symbol: str,
-        max_drift_pips: float = 5.0,
-    ) -> dict[str, Any]:
-        """Check price drift (simplified, no pip_values dependency)."""
-        h1_candles = self.get_candles(symbol, "H1", count=1)
-        rest_close = float(h1_candles[-1].get("close", 0)) if h1_candles else None
+    def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
+        """Redis history must independently prove both closed-H1 lineages."""
+        from context.price_drift import compare_closed_h1
 
-        tick = self.get_latest_tick(symbol)
-        ws_mid: float | None = None
-        if tick:
-            bid = tick.get("bid") or tick.get("price")
-            ask = tick.get("ask") or tick.get("price")
-            if bid is not None and ask is not None:
-                ws_mid = (float(bid) + float(ask)) / 2.0
-            elif bid is not None:
-                ws_mid = float(bid)
-
-        if rest_close is None or ws_mid is None:
-            return {
-                "drifted": False,
-                "drift_pips": 0.0,
-                "rest_close": rest_close,
-                "ws_mid": ws_mid,
-            }
-
-        # Default multiplier (most forex pairs)
-        multiplier = 10000.0
-        sym_upper = symbol.upper()
-        if "JPY" in sym_upper:
-            multiplier = 100.0
-        elif "XAU" in sym_upper:
-            multiplier = 10.0
-
-        drift_pips = abs(rest_close - ws_mid) * multiplier
-        return {
-            "drifted": drift_pips > max_drift_pips,
-            "drift_pips": round(drift_pips, 1),
-            "rest_close": rest_close,
-            "ws_mid": ws_mid,
-        }
+        return compare_closed_h1(
+            symbol, self.get_candles(symbol, "H1", count=250),
+            self.get_latest_tick(symbol), max_drift_pips,
+        )
 
     # ── Internal helpers ──────────────────────────────────────
 

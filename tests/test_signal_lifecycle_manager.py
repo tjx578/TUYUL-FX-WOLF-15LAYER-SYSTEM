@@ -257,7 +257,9 @@ def test_confirmed_opposing_final_waits_until_one_m15_bar_elapsed():
     assert follow_up["final_direction"] == "WAIT"
     assert follow_up["reversal_confirmed"] is True
     assert follow_up["cooldown_m15_bars_elapsed"] == 0
-    assert manager.active_signal("USDCAD")["direction"] == "BUY"
+    current_active = manager.active_signal("USDCAD")
+    assert current_active is not None
+    assert current_active["direction"] == "BUY"
 
 
 def test_confirmed_opposing_final_without_explicit_cooldown_defaults_to_zero():
@@ -276,7 +278,9 @@ def test_confirmed_opposing_final_without_explicit_cooldown_defaults_to_zero():
     assert follow_up["final_direction"] == "WAIT"
     assert follow_up["reversal_confirmed"] is True
     assert follow_up["cooldown_m15_bars_elapsed"] == 0
-    assert manager.active_signal("USDCAD")["direction"] == "BUY"
+    current_active = manager.active_signal("USDCAD")
+    assert current_active is not None
+    assert current_active["direction"] == "BUY"
 
 
 def test_lifecycle_id_is_stable_across_direction_revisions_in_same_clean_block():

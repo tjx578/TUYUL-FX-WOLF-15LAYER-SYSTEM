@@ -148,7 +148,7 @@ export function getTransportToken(): string | null {
 
 /**
  * Fetch a WebSocket auth ticket from the server.
- * The server route reads the session cookie or the server-only API_KEY
+ * The server route reads only a backend-validated session cookie
  * env var — neither is exposed to the client bundle.
  *
  * Includes TTL cache + in-flight dedup to avoid hammering the server

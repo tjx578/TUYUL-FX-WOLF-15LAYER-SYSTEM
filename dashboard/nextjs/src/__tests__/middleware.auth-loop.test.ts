@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { describe, it, expect } from "vitest";
-import { NextRequest, NextResponse } from "next/server";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { NextRequest } from "next/server";
 import { middleware } from "../middleware";
 
 function makeRequest(
@@ -19,38 +19,49 @@ function makeRequest(
 }
 
 describe("middleware auth-loop prevention", () => {
-    it("allows /login through without redirect (no cookie)", () => {
-        const res = middleware(makeRequest("/login"));
+    beforeEach(() => {
+        process.env.INTERNAL_API_URL = "https://core.example";
+        globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            user_id: "owner", email: "owner@example.test", role: "owner",
+        }), { status: 200, headers: { "content-type": "application/json" } }));
+    });
+
+    afterEach(() => {
+        delete process.env.INTERNAL_API_URL;
+        vi.restoreAllMocks();
+    });
+
+    it("allows /login through without redirect (no cookie)", async () => {
+        const res = await middleware(makeRequest("/login"));
         expect(res.headers.get("location")).toBeNull();
     });
 
-    it("allows /login subpath through without redirect", () => {
-        const res = middleware(makeRequest("/login/callback"));
-        expect(res.headers.get("location")).toBeNull();
+    it("denies an unauthenticated login subpath", async () => {
+        const res = await middleware(makeRequest("/login/callback"));
+        expect(res.status).toBe(401);
     });
 
-    it("allows unauthenticated root through (owner mode — no redirect)", () => {
-        const res = middleware(makeRequest("/"));
-        // handlePageRoute returns NextResponse.next() unconditionally in owner mode.
-        // The server-side auth (serverAuth.ts) returns the owner user without a session.
-        expect(res.headers.get("location")).toBeNull();
+    it("denies unauthenticated root without setting a cookie", async () => {
+        const res = await middleware(makeRequest("/"));
+        expect(res.status).toBe(401);
+        expect(res.headers.get("set-cookie")).toBeNull();
     });
 
-    it("allows authenticated request through", () => {
-        const res = middleware(makeRequest("/", { cookie: "valid-session" }));
-        expect(res.headers.get("location")).toBeNull();
+    it("denies a non-JWT cookie without calling the backend", async () => {
+        const res = await middleware(makeRequest("/", { cookie: "machine-api-key" }));
+        expect(res.status).toBe(401);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
-    it("allows /audit without admin role through (owner mode — no redirect)", () => {
-        // handlePageRoute is disabled in owner mode — all page routes pass through.
-        const res = middleware(makeRequest("/audit", { cookie: "valid-session" }));
-        expect(res.headers.get("location")).toBeNull();
+    it("allows a backend-validated JWT session", async () => {
+        const res = await middleware(makeRequest("/", { cookie: "header.payload.signature" }));
+        expect(res.status).toBe(200);
+        expect(globalThis.fetch).toHaveBeenCalledOnce();
     });
 
-    it("allows /audit with admin role", () => {
-        const res = middleware(
-            makeRequest("/audit", { cookie: "valid-session", role: "risk_admin" }),
-        );
-        expect(res.headers.get("location")).toBeNull();
+    it("denies a JWT rejected by the backend", async () => {
+        vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(null, { status: 401 }));
+        const res = await middleware(makeRequest("/audit", { cookie: "header.payload.signature" }));
+        expect(res.status).toBe(401);
     });
 });

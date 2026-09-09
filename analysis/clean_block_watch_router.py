@@ -128,6 +128,7 @@ def route_clean_block_to_watch(
         )
 
     assert signal_price is not None  # for type checkers; guarded above
+    assert direction is not None  # for type checkers; guarded above
     return CleanBlockWatchRoute(
         event="signal_watch_json",
         payload=_watch_payload(
@@ -760,7 +761,7 @@ def _signal_price(market_context: Any | None) -> float | None:
 def _field(source: Any, name: str) -> Any:
     if isinstance(source, Mapping):
         return source.get(name)
-    if is_dataclass(source):
+    if is_dataclass(source) and not isinstance(source, type):
         return asdict(source).get(name)
     return getattr(source, name, None)
 

@@ -84,9 +84,10 @@ def build_pair_memory_context(
         material_state=material_state,
         phase_structure_validation_enabled=phase_structure_validation_enabled,
     )
-    existing = current.get("pair_memory_context") if isinstance(current.get("pair_memory_context"), Mapping) else {}
+    existing_value = current.get("pair_memory_context")
+    existing = dict(existing_value) if isinstance(existing_value, Mapping) else {}
     context = {
-        **dict(existing),
+        **existing,
         "memory_available": previous is not None,
         "memory_source_event": PAIR_MEMORY_SOURCE_EVENT,
         "memory_scope": "PAIR_LIFECYCLE",

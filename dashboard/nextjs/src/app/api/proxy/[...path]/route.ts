@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveDashboardUpstream } from "@/lib/server/dashboardTopology";
+import { isAllowlistedReadPath } from "@/lib/server/readOnlyProxyPolicy";
+import { validateSessionToken } from "@/lib/serverAuth";
+
+function bearerToken(request: NextRequest): string {
+  const match = /^(?:Bearer)\s+(.+)$/i.exec(request.headers.get("authorization") ?? "");
+  return match?.[1]?.trim() ?? "";
+}
 
 /**
  * Single canonical backend proxy — runtime route handler.
@@ -29,6 +36,20 @@ async function proxyRequest(
   // Trace ID: reuse inbound or generate — available for all response paths.
   const requestId =
     request.headers.get("x-request-id") || crypto.randomUUID();
+
+  if (request.method !== "GET" || !isAllowlistedReadPath(joinedPath)) {
+    return NextResponse.json(
+      { error: "Forbidden", code: "READ_ONLY_PROXY_BOUNDARY" },
+      { status: 403, headers: { "cache-control": "no-store", "x-request-id": requestId } },
+    );
+  }
+
+  if (!(await validateSessionToken(bearerToken(request)))) {
+    return NextResponse.json(
+      { error: "Unauthorized", code: "INVALID_SESSION" },
+      { status: 401, headers: { "cache-control": "no-store", "x-request-id": requestId } },
+    );
+  }
 
   // Resolve upstream via hybrid topology (core-api or BFF).
   const upstream = resolveDashboardUpstream(joinedPath);
@@ -114,12 +135,8 @@ async function proxyRequest(
 
   try {
     const response = await fetch(targetUrl.toString(), {
-      method: request.method,
+      method: "GET",
       headers,
-      body:
-        request.method !== "GET" && request.method !== "HEAD"
-          ? await request.text()
-          : undefined,
       // @ts-expect-error - duplex is needed for streaming but not in types
       duplex: "half",
     });
@@ -148,14 +165,12 @@ async function proxyRequest(
       statusText: response.statusText,
       headers: responseHeaders,
     });
-  } catch (error) {
-    console.error(`[api/proxy] Failed to proxy ${targetUrl}:`, error);
+  } catch {
+    console.error(`[api/proxy] Upstream request failed; request_id=${requestId}`);
     return NextResponse.json(
       {
         error: "Backend unavailable",
-        detail:
-          error instanceof Error ? error.message : "Connection failed",
-        target: targetLabel,
+        code: "UPSTREAM_UNAVAILABLE",
       },
       {
         status: 502,

@@ -182,6 +182,26 @@ def test_clean_block_router_uses_raw_pressure_direction_when_direction_unresolve
     assert route.payload["valid_for_execution"] is False
 
 
+def test_clean_block_without_direction_stays_diagnostic():
+    candidate = _candidate()
+    candidate.pop("direction")
+    route = route_clean_block_to_watch(candidate, market_context=_market())
+
+    assert route.emit_as_watch is False
+    assert route.diagnostic is True
+    assert "CLEAN_BLOCK_DIRECTION_MISSING" in route.payload["blocked_by"]
+    assert route.payload["valid_for_execution"] is False
+
+
+def test_market_context_class_without_prices_stays_diagnostic():
+    route = route_clean_block_to_watch(_candidate(), market_context=MarketContext)
+
+    assert route.emit_as_watch is False
+    assert route.diagnostic is True
+    assert "SIGNAL_PRICE_MISSING" in route.payload["blocked_by"]
+    assert route.payload["valid_for_execution"] is False
+
+
 def test_scanner_cycle_clean_block_below_advisory_maturity_stays_memory_radar_even_with_market_context():
     candidate = _scanner_candidate()
     candidate["duration_seconds"] = 240.0

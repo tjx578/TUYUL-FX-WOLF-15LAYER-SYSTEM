@@ -71,6 +71,7 @@ class TestPeriodicRefresh:
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
             mock_bus.check_price_drift.return_value = {
+                "comparable": True,
                 "drifted": False,
                 "drift_pips": 5.0,
                 "rest_close": 1.1005,
@@ -141,6 +142,7 @@ class TestPriceDriftDetection:
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
             mock_bus.check_price_drift.return_value = {
+                "comparable": True,
                 "drifted": True,
                 "drift_pips": 75.0,  # Exceeds threshold
                 "rest_close": 1.1005,
@@ -201,6 +203,7 @@ class TestPriceDriftDetection:
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
             mock_bus.check_price_drift.return_value = {
+                "comparable": True,
                 "drifted": False,
                 "drift_pips": 5.0,  # Within threshold
                 "rest_close": 1.1005,

@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rg --files -g \"*.ts\" -g \"*.tsx\")",
+      "Bash(rg --files dashboard/nextjs/src -g \"*.ts\" -g \"*.tsx\")",
+      "Bash(python -m pytest tests/test_orchestrator_state_manager.py -v)",
+      "Bash(python -m pytest tests/test_microboost_continuation_entry.py tests/test_signal_json_gate_adapter.py tests/test_signal_json_emitter.py tests/test_signal_block_finalizer.py tests/test_signal_throttle_canary_no_auto_promote.py -q --no-header -p no:cacheprovider)",
+      "Bash(python -m pytest tests/test_signal_throttle.py tests/test_signal_throttle_intelligence.py tests/test_signal_throttle_log_analyzer.py tests/test_signal_throttle_canary_no_auto_promote.py tests/test_microboost_continuation_entry.py tests/test_microboost_counter_entry.py tests/test_microboost_direction_resolver.py tests/test_microboost_event_log.py tests/test_signal_json_emitter.py tests/test_signal_json_gate_adapter.py tests/test_signal_block_finalizer.py tests/test_pipeline_signal_json_continuation.py -q --no-header -p no:cacheprovider)",
+      "Read(~/Downloads/**)",
+      "Bash(python -)",
+      "Bash(railway logs *)",
+      "Bash(railway service *)",
+      "Bash(railway list *)",
+      "Bash(railway variables *)",
+      "Bash(python -c *)",
+      "Bash(python -m pytest tests/ -q -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\")",
+      "Bash(python -m pytest tests/test_pipeline_signal_conditioning_fallback.py::test_pipeline_fallback_uses_candle_conditioned_path -q)",
+      "Bash(git stash *)",
+      "Bash(python -m pytest tests/test_pipeline_signal_conditioning_fallback.py -q)",
+      "Bash(python -m pytest tests/ -p no:cacheprovider -q -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\")",
+      "Bash(python -m pytest tests/ -p no:cacheprovider -q -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\" --co -q)",
+      "Bash(python -m pytest tests/ -p no:cacheprovider -k \"signal or throttle or clean_block or watch or pressure or microboost or quorum\" --co -q)",
+      "Bash(python)",
+      "Bash(git log *)"
+    ]
+  }
+}

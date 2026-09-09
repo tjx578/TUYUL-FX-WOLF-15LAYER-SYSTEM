@@ -198,11 +198,14 @@ class H1RefreshScheduler:
                 # Check price drift
                 drift_check = self.context_bus.check_price_drift(symbol, self.max_drift_pips)
 
-                if drift_check["drifted"]:
+                if drift_check.get("comparable") is not True:
+                    logger.debug("{} price drift not comparable: {}", symbol, drift_check.get("reason", "MISSING_COMPARABILITY"))
+                    # Missing evidence cannot degrade OR recover an existing fault.
+                elif drift_check["drifted"]:
                     logger.warning(
                         f"{symbol} PRICE DRIFT DETECTED: "
                         f"{drift_check['drift_pips']:.1f} pips "
-                        f"(REST={drift_check['rest_close']}, WS={drift_check['ws_mid']})"
+                        f"(REST={drift_check['rest_close']}, WS_H1={drift_check.get('ws_h1_close')})"
                     )
                     self.system_state.mark_symbol_degraded(symbol, f"Price drift {drift_check['drift_pips']:.1f} pips")
                 else:

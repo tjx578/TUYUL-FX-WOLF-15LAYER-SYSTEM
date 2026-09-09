@@ -2,6 +2,7 @@
 // Prevents redirect loop: / → /login → / → /login
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { validateSessionToken } from "@/lib/serverAuth";
 
 const SESSION_COOKIE = "wolf15_session";
 
@@ -9,18 +10,9 @@ export default async function LoginPage() {
   // 1. If session cookie exists, redirect to dashboard
   const cookieStore = await cookies();
   const session = cookieStore.get(SESSION_COOKIE)?.value;
-  if (session) {
+  if (session && await validateSessionToken(session)) {
     redirect("/");
   }
-
-  // 2. If API_KEY env var exists (owner-mode), redirect through the
-  //    owner-session route handler which CAN set cookies (Server Components cannot).
-  const apiKey = process.env.API_KEY?.trim();
-  if (apiKey) {
-    redirect("/api/auth/owner-session");
-  }
-
-  // 3. No session, no API_KEY → render setup instructions
   return (
     <div
       style={{
@@ -47,7 +39,7 @@ export default async function LoginPage() {
           WOLF-15 SETUP REQUIRED
         </h1>
         <p style={{ fontSize: 13, color: "#94A3B8", margin: 0, lineHeight: 1.6 }}>
-          No session found. Set the following environment variable and restart:
+          No validated user session was found. Authenticate through the approved identity flow.
         </p>
         <div
           style={{
@@ -58,14 +50,14 @@ export default async function LoginPage() {
             fontSize: 13,
           }}
         >
-          <code style={{ color: "#00F5A0" }}>API_KEY=&lt;your-jwt-or-api-key&gt;</code>
+          <code style={{ color: "#00F5A0" }}>VALIDATED SESSION REQUIRED</code>
         </div>
         <div style={{ fontSize: 11, color: "#64748B", lineHeight: 1.6 }}>
           <p style={{ margin: "0 0 8px" }}>For Vercel deployments, add these env vars in Settings → Environment Variables:</p>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             <li><code>INTERNAL_API_URL</code> — Railway backend URL</li>
             <li><code>NEXT_PUBLIC_WS_BASE_URL</code> — WebSocket base URL (wss://...)</li>
-            <li><code>API_KEY</code> — JWT or API key for owner-mode auth</li>
+            <li>Machine API keys must never be supplied to the browser.</li>
           </ul>
         </div>
       </div>

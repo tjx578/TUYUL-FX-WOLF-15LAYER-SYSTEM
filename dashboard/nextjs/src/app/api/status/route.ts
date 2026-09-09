@@ -66,11 +66,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                 "cache-control": "no-store",
             },
         });
-    } catch (error) {
+    } catch {
         return NextResponse.json(
             {
                 error: "Backend unreachable",
-                detail: error instanceof Error ? error.message : "Connection failed",
+                code: "UPSTREAM_UNAVAILABLE",
             },
             {
                 status: 502,

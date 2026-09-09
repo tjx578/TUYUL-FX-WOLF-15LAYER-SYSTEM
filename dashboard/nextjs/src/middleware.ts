@@ -26,30 +26,19 @@ function resolveSessionToken(request: NextRequest): string | null {
     return request.cookies.get(SESSION_COOKIE)?.value?.trim() || null;
 }
 
-// ── 2. Owner-mode auto-bootstrap ───────────────────────────────────────
-// In owner mode, if no session cookie exists but the server-side API_KEY
-// is configured, auto-set the session cookie so the proxy can inject auth
-// without requiring a manual /login visit first.
-
-const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours
-
-function ownerAutoBootstrap(
-    request: NextRequest,
-    response: NextResponse,
-): string | null {
-    const mode = (process.env.DASHBOARD_MODE ?? "").trim().toLowerCase();
-    const apiKey = (process.env.API_KEY ?? "").trim();
-    if (mode !== "owner" || !apiKey) return null;
-
-    // Set the session cookie for subsequent requests.
-    response.cookies.set(SESSION_COOKIE, apiKey, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: COOKIE_MAX_AGE,
-    });
-    return apiKey;
+async function isValidatedSession(token: string): Promise<boolean> {
+    if (token.split(".").length !== 3) return false;
+    const origin = (process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "");
+    if (!origin) return false;
+    try {
+        const response = await fetch(`${origin}/api/auth/session`, {
+            headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+            cache: "no-store",
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
 }
 
 // ── 3. Proxy header injection ──────────────────────────────────────────
@@ -74,42 +63,29 @@ function injectProxyAuth(
 }
 
 // ── 4. Entrypoint ──────────────────────────────────────────────────────
-export function middleware(request: NextRequest): NextResponse {
+export async function middleware(request: NextRequest): Promise<NextResponse> {
     const { pathname } = request.nextUrl;
 
     // Auth resolution — always runs, never redirects.
-    let token = resolveSessionToken(request);
+    const token = resolveSessionToken(request);
 
     // Proxy routes: inject auth header from resolved token.
     if (pathname.startsWith(PROXY_PREFIX)) {
-        // If no session cookie, try owner-mode auto-bootstrap.
-        if (!token) {
-            const response = injectProxyAuth(request, null);
-            const bootstrapped = ownerAutoBootstrap(request, response);
-            if (bootstrapped) {
-                // Inject auth into THIS request and set cookie for future ones.
-                const headers = new Headers(request.headers);
-                headers.set("authorization", `Bearer ${bootstrapped}`);
-                const authedResponse = NextResponse.next({ request: { headers } });
-                // Copy the cookie from bootstrap into the authed response.
-                authedResponse.cookies.set(SESSION_COOKIE, bootstrapped, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === "production",
-                    sameSite: "lax",
-                    path: "/",
-                    maxAge: COOKIE_MAX_AGE,
-                });
-                return authedResponse;
-            }
+        if (!token || !(await isValidatedSession(token))) {
+            return NextResponse.json(
+                { error: "Unauthorized", code: "SESSION_REQUIRED" },
+                { status: 401, headers: { "cache-control": "no-store" } },
+            );
         }
         return injectProxyAuth(request, token);
     }
 
-    // Non-proxy page requests: auto-bootstrap cookie if missing.
-    if (!token) {
-        const response = NextResponse.next();
-        ownerAutoBootstrap(request, response);
-        return response;
+    const publicPath = pathname === "/login" || pathname.startsWith("/api/auth/") || pathname === "/api/set-session";
+    if (!publicPath && (!token || !(await isValidatedSession(token)))) {
+        return NextResponse.json(
+            { error: "Unauthorized", code: "SESSION_REQUIRED" },
+            { status: 401, headers: { "cache-control": "no-store" } },
+        );
     }
 
     // All other routes (pages, internal API): pass through.

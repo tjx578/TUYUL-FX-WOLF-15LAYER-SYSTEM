@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { validateSessionToken } from "@/lib/serverAuth";
 
 const COOKIE_NAME = "wolf15_session";
 const MAX_AGE = 60 * 60 * 8; // 8 hours
@@ -92,6 +93,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Check expiry if present
   if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) {
     return NextResponse.json({ error: "token expired" }, { status: 400 });
+  }
+
+  // Structural checks are not authentication. The core auth authority must
+  // verify the signature, expiry and claims before this browser cookie exists.
+  if (!(await validateSessionToken(token))) {
+    return NextResponse.json({ error: "invalid session" }, { status: 401 });
   }
 
   const response = NextResponse.json({ ok: true });

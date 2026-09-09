@@ -406,6 +406,9 @@ def _live_rr_gate(
     if live_price is None:
         _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_PRICE_MISSING")
         return None
+    if exit_price is None:
+        _add(defer_gates, defer_reasons, "LiveRRRecalculationGate", "LIVE_PRICE_MISSING")
+        return None
 
     if direction is not None and selected_sl is not None and target is not None:
         stop_breached = (direction == "BUY" and exit_price <= selected_sl) or (

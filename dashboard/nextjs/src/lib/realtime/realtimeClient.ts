@@ -282,7 +282,7 @@ export function connectLiveUpdates(
     emitStatus(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
 
     // [BUG FIX #7+#8] Prefer WS ticket from server route (returns session
-    // cookie or server-side API_KEY — never exposes key in client bundle).
+    // backend-validated session cookie; machine keys never enter the browser).
     // Only fall back to localStorage JWT if the ticket fetch fails.
     // This ensures WS auth works even when the cached JWT lacks a role claim.
     let token: string | null = null;

@@ -31,7 +31,6 @@ from typing import Any
 
 from loguru import logger
 
-from config.pip_values import get_pip_multiplier
 from state.data_freshness import (
     FreshnessClass,
     classify_feed_freshness,
@@ -609,72 +608,12 @@ class LiveContextBus:
         return {"symbols": symbols}
 
     def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
-        """Compare latest REST H1 close with WS mid-price to detect drift.
+        """Compare only explicit, fresh, same-period REST/WS closed H1 evidence."""
+        from context.price_drift import compare_closed_h1
 
-        Args:
-            symbol:         Trading symbol (e.g. ``EURUSD``).
-            max_drift_pips: Maximum acceptable drift in pips.
-
-        Returns:
-            Stable dict consumed by ``H1RefreshScheduler``::
-
-                {
-                    "drifted":    bool,
-                    "drift_pips": float,
-                    "rest_close": float | None,
-                    "ws_mid":     float | None,
-                }
-        """
-        # Latest REST H1 bar close
-        h1_candles = self.get_candles(symbol, "H1")
-        rest_close: float | None = h1_candles[-1]["close"] if h1_candles else None
-
-        # Latest WS tick mid-price
-        tick = self.get_latest_tick(symbol)
-        ws_mid: float | None = None
-        if tick:
-            bid = tick.get("bid") or tick.get("price")
-            ask = tick.get("ask") or tick.get("price")
-            if bid is not None and ask is not None:
-                ws_mid = (float(bid) + float(ask)) / 2.0
-            elif bid is not None:
-                ws_mid = float(bid)
-
-        # Cannot compute drift without both prices
-        if rest_close is None or ws_mid is None:
-            return {
-                "drifted": False,
-                "drift_pips": 0.0,
-                "rest_close": rest_close,
-                "ws_mid": ws_mid,
-            }
-
-        # Convert raw price difference to pips
-        try:
-            multiplier = get_pip_multiplier(symbol)
-        except LookupError:
-            # Fall back to standard forex multiplier
-            multiplier = 10_000.0
-
-        drift_pips = abs(rest_close - ws_mid) * multiplier
-        drifted = drift_pips > max_drift_pips
-
-        if drifted:
-            logger.warning(
-                "Price drift alert: %s REST_close=%.5f WS_mid=%.5f drift=%.1f pips (max=%.1f)",
-                symbol,
-                rest_close,
-                ws_mid,
-                drift_pips,
-                max_drift_pips,
-            )
-
-        return {
-            "drifted": drifted,
-            "drift_pips": drift_pips,
-            "rest_close": rest_close,
-            "ws_mid": ws_mid,
-        }
+        return compare_closed_h1(
+            symbol, self.get_candles(symbol, "H1"), self.get_latest_tick(symbol), max_drift_pips
+        )
 
     def get_warmup_bar_count(self, symbol: str, timeframe: str) -> int:
         """Return number of bars currently stored for symbol/timeframe."""

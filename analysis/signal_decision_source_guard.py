@@ -91,6 +91,7 @@ def has_lifecycle_anchor(payload: Mapping[str, Any], *, source_stage: str | None
 def convert_to_signal_pressure_state(payload: Mapping[str, Any]) -> dict[str, Any]:
     source_stage = _source_stage(payload)
     source_family = _text(payload.get("source_family")) or _text(payload.get("signal_family"))
+    producer_next_required_stage = _text(payload.get("next_required_stage"))
     pressure_payload = dict(payload)
     pressure_payload.update(
         {
@@ -109,6 +110,8 @@ def convert_to_signal_pressure_state(payload: Mapping[str, Any]) -> dict[str, An
             "tradeplan_valid": False,
             "eligible_for_signal_decision": False,
             "next_required_stage": "MICROBOOST_OR_MARKET_CONTEXT",
+            "producer_next_required_stage": producer_next_required_stage,
+            "next_required_stage_role": "LEGACY_PRESSURE_TRANSPORT_STAGE",
             "route_reason": _route_reason(payload, source_stage),
             "signal_quality": "PRESSURE_STATE_ONLY",
             **signal_pressure_runtime_identity(),
@@ -329,6 +332,25 @@ def _apply_direction_scope_contract(payload: dict[str, Any]) -> None:
     raw_direction = _text_value(payload.get("raw_direction"))
     if raw_direction not in {"BUY", "SELL"}:
         raw_direction = None
+    direction_fields: dict[str, str] = {}
+    for field_name in ("raw_direction", "candidate_direction", "watch_direction", "block_direction"):
+        field_direction = _text_value(payload.get(field_name))
+        if field_direction in {"BUY", "SELL"}:
+            direction_fields[field_name] = field_direction
+    distinct_directions = set(direction_fields.values())
+    if not direction_fields:
+        consensus_status = "UNAVAILABLE"
+        consensus_direction = None
+        conflict_fields: list[str] = []
+    elif len(distinct_directions) == 1:
+        consensus_status = "ALIGNED"
+        consensus_direction = next(iter(distinct_directions))
+        conflict_fields = []
+    else:
+        consensus_status = "CONFLICT"
+        consensus_direction = None
+        baseline = raw_direction or next(iter(direction_fields.values()))
+        conflict_fields = [name for name, value in direction_fields.items() if value != baseline]
     try:
         horizon_seconds = max(
             60.0,
@@ -366,6 +388,21 @@ def _apply_direction_scope_contract(payload: dict[str, Any]) -> None:
         resolution = "EXPIRED"
         resolved_direction = None
 
+    if resolution == "ACCEPTED":
+        resolution_direction_role = "ACCEPTED_PRESSURE_REACTION_NOT_STRATEGY_AUTHORITY"
+    elif resolution == "REJECTED":
+        resolution_direction_role = "COUNTER_REACTION_ONLY_NOT_OPPOSITE_STRATEGY_AUTHORITY"
+    else:
+        resolution_direction_role = "NONE"
+
+    direction_next_required_stage = (
+        "H1_M15_STRATEGY_5SCR_CONFIRMATION"
+        if resolution in {"ACCEPTED", "REJECTED"}
+        else "FRESH_PRESSURE_AND_CONTEXT"
+        if resolution == "EXPIRED"
+        else "LIQUIDITY_ACCEPTANCE_OR_REJECTION"
+    )
+
     if raw_direction is None:
         direction_status = "NO_DIRECTION"
     elif resolution == "EXPIRED":
@@ -389,15 +426,31 @@ def _apply_direction_scope_contract(payload: dict[str, Any]) -> None:
             "raw_direction_eligible_for_context_resolution": raw_direction is not None and resolution != "EXPIRED",
             "pressure_direction_resolution": resolution,
             "pressure_resolution_direction": resolved_direction,
+            # The compatibility field above records the observed liquidity
+            # reaction. It never authorizes a strategy direction, especially
+            # when same-side pressure is rejected and the reaction points to
+            # the opposite side.
+            "pressure_resolution_direction_role": resolution_direction_role,
+            "pressure_resolution_direction_authorized": False,
+            "observed_reaction_direction": resolved_direction if resolution == "REJECTED" else None,
+            "opposite_strategy_direction_authorized": False,
+            "legal_strategy_direction": None,
+            "legal_strategy_direction_status": (
+                "PENDING_H1_M15_PROOF"
+                if resolution in {"ACCEPTED", "REJECTED"}
+                else "PRESSURE_EXPIRED"
+                if resolution == "EXPIRED"
+                else "PENDING_LIQUIDITY_RESOLUTION"
+            ),
+            "pressure_direction_consensus_status": consensus_status,
+            "pressure_direction_consensus_direction": consensus_direction,
+            "pressure_direction_conflict_fields": conflict_fields,
+            "pressure_direction_conflict_execution_authority": False,
             "pressure_resolution_source": "HTF_LIQUIDITY_LIFECYCLE",
             "liquidity_resolution": liquidity_resolution,
-            "direction_next_required_stage": (
-                "H1_M15_STRATEGY_5SCR_CONFIRMATION"
-                if resolution in {"ACCEPTED", "REJECTED"}
-                else "FRESH_PRESSURE_AND_CONTEXT"
-                if resolution == "EXPIRED"
-                else "LIQUIDITY_ACCEPTANCE_OR_REJECTION"
-            ),
+            "direction_next_required_stage": direction_next_required_stage,
+            "strategy_next_required_stage": direction_next_required_stage,
+            "strategy_next_required_stage_role": "CANONICAL_DIRECTION_WORKFLOW_STAGE",
             "strategy_5scr_required": True,
         }
     )

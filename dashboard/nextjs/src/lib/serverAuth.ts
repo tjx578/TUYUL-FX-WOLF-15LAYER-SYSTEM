@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import type { SessionUser, UserRole } from "@/contracts/auth";
 import { hasRole } from "@/lib/auth";
+import { getCoreApiUrl } from "@/lib/server/dashboardTopology";
 
 /**
  * Owner-only auth model — explicit mode.
@@ -16,53 +18,56 @@ import { hasRole } from "@/lib/auth";
  * See docs/architecture/dashboard-control-surface.md — Auth Model.
  */
 
-const SUPPORTED_MODES = ["owner"] as const;
-type DashboardMode = (typeof SUPPORTED_MODES)[number];
+const SESSION_COOKIE = "wolf15_session";
+const USER_ROLES: readonly UserRole[] = ["owner", "viewer", "operator", "risk_admin", "config_admin", "approver"];
 
-function validateDashboardMode(): DashboardMode {
-  const raw = (process.env.DASHBOARD_MODE ?? "").trim().toLowerCase();
-  if (!raw) {
-    throw new Error(
-      "DASHBOARD_MODE env var is not set. " +
-      "Set DASHBOARD_MODE=owner for the owner-only control surface.",
-    );
+export class SessionAuthorizationError extends Error {
+  constructor(message: string, readonly status: 401 | 403 = 401) {
+    super(message);
+    this.name = "SessionAuthorizationError";
   }
-  if (!SUPPORTED_MODES.includes(raw as DashboardMode)) {
-    throw new Error(
-      `DASHBOARD_MODE="${raw}" is not supported. ` +
-      `Supported modes: ${SUPPORTED_MODES.join(", ")}.`,
-    );
-  }
-  return raw as DashboardMode;
 }
 
-let _validatedMode: DashboardMode | null = null;
-
-function ensureOwnerMode(): DashboardMode {
-  if (_validatedMode === null) {
-    _validatedMode = validateDashboardMode();
-  }
-  return _validatedMode;
+function isSessionUser(value: unknown): value is SessionUser {
+  if (!value || typeof value !== "object") return false;
+  const user = value as Record<string, unknown>;
+  return typeof user.user_id === "string" && user.user_id.length > 0 &&
+    typeof user.email === "string" && typeof user.role === "string" &&
+    USER_ROLES.includes(user.role as UserRole) &&
+    (user.name === undefined || user.name === null || typeof user.name === "string");
 }
 
-const OWNER_USER: SessionUser = {
-  user_id: "owner",
-  email: "owner@tuyulfx.com",
-  role: "owner" as UserRole,
-  name: "TUYUL FX Owner",
-};
+export async function validateSessionToken(token: string): Promise<SessionUser | null> {
+  const candidate = token.trim();
+  if (!candidate || candidate.split(".").length !== 3) return null;
+  const coreApiUrl = getCoreApiUrl();
+  if (!coreApiUrl) return null;
+  try {
+    const response = await fetch(`${coreApiUrl}/api/auth/session`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${candidate}`, accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const user: unknown = await response.json();
+    return isSessionUser(user) ? user : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function getVerifiedSessionUser(): Promise<SessionUser | null> {
-  ensureOwnerMode();
-  return OWNER_USER;
+  const cookieStore = await cookies();
+  return validateSessionToken(cookieStore.get(SESSION_COOKIE)?.value ?? "");
 }
 
 export async function requireVerifiedSession(
   allowedRoles?: readonly UserRole[],
 ): Promise<SessionUser> {
-  ensureOwnerMode();
-  if (allowedRoles?.length && !hasRole(OWNER_USER.role, allowedRoles)) {
-    throw new Error("Forbidden: role is not allowed for this route");
+  const user = await getVerifiedSessionUser();
+  if (!user) throw new SessionAuthorizationError("Unauthorized: validated session required");
+  if (allowedRoles?.length && !hasRole(user.role, allowedRoles)) {
+    throw new SessionAuthorizationError("Forbidden: role is not allowed for this route", 403);
   }
-  return OWNER_USER;
+  return user;
 }
