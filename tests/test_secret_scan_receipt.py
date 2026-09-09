@@ -37,3 +37,21 @@ def test_external_source_path_is_rejected(tmp_path):
     }
     with pytest.raises(ValueError):
         summarize_findings(json.dumps(row), tmp_path)
+
+
+def test_review_is_bound_to_both_source_bytes_and_detected_value(tmp_path):
+    path = tmp_path / "fixture.py"
+    path.write_text("reviewed fixture source")
+    row = {
+        "SourceMetadata": {"Data": {"Filesystem": {"file": str(path), "line": 1}}},
+        "DetectorName": "FixtureDetector",
+        "Raw": "reviewed dummy",
+    }
+    original = summarize_findings(json.dumps(row), tmp_path)[0]
+    reviewed = ({**original, "reason": "explicit dummy fixture"},)
+    assert summarize_findings(json.dumps(row), tmp_path, reviewed)[0]["disposition"] == "REVIEWED_EXACT_BYTES"
+    row["Raw"] = "different credential"
+    assert summarize_findings(json.dumps(row), tmp_path, reviewed)[0]["disposition"] == "REVIEW_REQUIRED"
+    row["Raw"] = "reviewed dummy"
+    path.write_text("changed fixture source")
+    assert summarize_findings(json.dumps(row), tmp_path, reviewed)[0]["disposition"] == "REVIEW_REQUIRED"

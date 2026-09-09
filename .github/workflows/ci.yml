@@ -203,10 +203,10 @@ jobs:
             --cov-report=xml:coverage.xml \
             --junitxml=artifacts/python-suite/tests.xml
 
-      - name: Require uninstrumented WebSocket latency budgets
+      - name: Require uninstrumented latency budgets
         if: ${{ !cancelled() }}
         run: |
-          python -m pytest tests/test_ws_connection_stress.py -m benchmark \
+          python -m pytest tests/test_ws_connection_stress.py tests/test_load_tick_stress.py -m benchmark \
             -o addopts= -q --timeout=60 \
             --junitxml=artifacts/python-suite/benchmark.xml
           python - <<'PYEOF'
@@ -216,8 +216,12 @@ jobs:
           assert {case.get('name') for case in cases} == {
               'test_broadcast_50_clients_under_100ms',
               'test_broadcast_1000_messages_to_10_clients',
+              'test_process_10k_ticks_within_time_bound',
+              'test_throughput_meets_minimum',
+              'test_multi_symbol_throughput',
+              'test_processing_latency_per_cycle',
           }
-          assert len(cases) == 2
+          assert len(cases) == 6
           assert all(not list(case.iter('skipped')) and not list(case.iter('failure'))
                      and not list(case.iter('error')) for case in cases)
           PYEOF

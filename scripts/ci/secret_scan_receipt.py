@@ -1,7 +1,7 @@
 """Capture scanner findings without publishing credential material.
 
-Every finding still fails this gate. Review uses exact source-file and finding
-hashes; an unverified result is not silently treated as a false positive.
+Review uses exact source-file and finding hashes; an unverified result is not
+silently treated as a false positive. Only explicitly reviewed bytes qualify.
 """
 
 import hashlib
@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 
-def summarize_findings(output: str, root: Path) -> list[dict]:
+def summarize_findings(output: str, root: Path, reviewed: tuple[dict, ...] = ()) -> list[dict]:
     findings = []
     for line in output.splitlines():
         if not line.strip():
@@ -24,16 +24,20 @@ def summarize_findings(output: str, root: Path) -> list[dict]:
         raw = row["Raw"]
         if not isinstance(raw, str) or not raw or not isinstance(row["DetectorName"], str):
             raise ValueError("INVALID_SCANNER_FINDING")
-        findings.append(
-            {
-                "path": relative,
-                "line": metadata.get("line"),
-                "detector": row["DetectorName"],
-                "raw_sha256": hashlib.sha256(raw.encode()).hexdigest(),
-                "source_file_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                "disposition": "REVIEW_REQUIRED",
-            }
-        )
+        finding = {
+            "path": relative,
+            "line": metadata.get("line"),
+            "detector": row["DetectorName"],
+            "raw_sha256": hashlib.sha256(raw.encode()).hexdigest(),
+            "source_file_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "disposition": "REVIEW_REQUIRED",
+        }
+        for allowed in reviewed:
+            if all(finding[key] == allowed[key] for key in ("path", "source_file_sha256", "raw_sha256", "detector")):
+                finding["disposition"] = "REVIEWED_EXACT_BYTES"
+                finding["reason"] = allowed["reason"]
+                break
+        findings.append(finding)
     return findings
 
 
@@ -58,8 +62,16 @@ def main():
             timeout=300,
         )
         receipt["scanner_exit"] = result.returncode
-        receipt["findings"] = summarize_findings(result.stdout, root)
-        receipt["accepted"] = result.returncode == 0 and not receipt["findings"]
+        policy = root / ".github/secret-findings-reviewed.json"
+        reviewed = json.loads(policy.read_text())
+        assert reviewed["schema_version"] == 1
+        receipt["review_policy_sha256"] = hashlib.sha256(policy.read_bytes()).hexdigest()
+        receipt["findings"] = summarize_findings(result.stdout, root, tuple(reviewed["reviewed_findings"]))
+        receipt["accepted"] = (
+            result.returncode in (0, 183)
+            and (result.returncode != 183 or bool(receipt["findings"]))
+            and all(f["disposition"] == "REVIEWED_EXACT_BYTES" for f in receipt["findings"])
+        )
         if result.returncode not in (0, 183):
             receipt["failure_class"] = "SCANNER_PROCESS_FAILURE"
         # Neither stdout nor stderr is written: both may contain secrets.

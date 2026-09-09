@@ -23,7 +23,7 @@ REQUIRED_STEPS = {
         "Require separate S03 consumer and owner PostgreSQL acceptance",
         "Require separate candidate capacity and TEST_ONLY transaction PostgreSQL acceptance",
         "Run pytest with coverage",
-        "Require uninstrumented WebSocket latency budgets",
+        "Require uninstrumented latency budgets",
     },
     "Dashboard build (Next.js)": {"Lint", "Dashboard tests", "Build"},
     "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},

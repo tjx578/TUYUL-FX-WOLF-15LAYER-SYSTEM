@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from ingest.candle_builder import CandleBuilder
+from ingest.candle_builder import CandleBuilder, Timeframe
 
 # Import the shared tick generator from conftest
 from tests.conftest import generate_ticks
@@ -36,17 +36,33 @@ MAX_PROCESS_TIME_S = 5.0  # Upper bound for full batch processing
 # ---------------------------------------------------------------------------
 
 
-def _setup_builder() -> tuple[Any, MagicMock]:
-    """Create a CandleBuilder with a mocked context bus."""
-    if not hasattr(CandleBuilder, "process_ticks"):
-        pytest.skip("Legacy CandleBuilder batch API (process_ticks) is not available")
+class _TickBatchFixture:
+    """Fixture batches call the actual per-symbol on_tick API, without a bus service."""
 
-    builder = cast(Any, CandleBuilder())  # type: ignore[call-arg]
-    mock_bus = MagicMock()
-    mock_bus.update_candle = MagicMock()
-    mock_bus.consume_ticks = MagicMock(return_value=[])
-    builder.context_bus = mock_bus
-    return builder, mock_bus
+    def __init__(self, sink):
+        self.builders: dict[str, CandleBuilder] = {}
+        self.sink = sink
+
+    async def process_ticks(self):
+        for tick in self.sink.consume_ticks():
+            symbol = tick["symbol"]
+            if symbol not in self.builders:
+                self.builders[symbol] = CandleBuilder(
+                    symbol,
+                    Timeframe.M15,
+                    on_complete=lambda candle: self.sink.update_candle(candle.to_dict()),
+                )
+            self.builders[symbol].on_tick(
+                (tick["bid"] + tick["ask"]) / 2,
+                datetime.fromtimestamp(tick["timestamp"], UTC),
+                tick["volume"],
+            )
+
+
+def _setup_builder() -> tuple[_TickBatchFixture, MagicMock]:
+    sink = MagicMock()
+    sink.consume_ticks.return_value = []
+    return _TickBatchFixture(sink), sink
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +74,7 @@ class TestHighFrequencyTickBurst:
     """Simulate rapid-fire ticks on a single pair."""
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_process_10k_ticks_within_time_bound(self) -> None:
         """10 000 ticks must be processed under MAX_PROCESS_TIME_S."""
         builder, mock_bus = _setup_builder()
@@ -78,6 +95,7 @@ class TestHighFrequencyTickBurst:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_throughput_meets_minimum(self) -> None:
         """Measured throughput must exceed THROUGHPUT_FLOOR_TPS."""
         builder, mock_bus = _setup_builder()
@@ -107,15 +125,11 @@ class TestHighFrequencyTickBurst:
 
         await builder.process_ticks()
 
-        # Count ticks still in buffer + ticks consumed by candles
-        remaining_in_buffer = sum(len(v) for v in builder.buffers.values())
-        candles_built = mock_bus.update_candle.call_count
-        # Each candle consumed at least 1 tick, so total accountability:
-        # remaining + candles_built * (at_least_1) >= tick_count is loose;
-        # verify that all ticks ended up in the buffer initially
-        assert remaining_in_buffer + candles_built >= 0  # sanity
-        # More precise: buffer should hold ticks for the tail period
-        assert remaining_in_buffer <= tick_count, "Buffer grew beyond input"
+        actual = builder.builders["EURUSD"]
+        partial = actual.current_partial
+        assert partial is not None
+        assert sum(c.tick_count for c in actual.completed_candles) + partial.tick_count == tick_count
+        assert partial.volume + sum(c.volume for c in actual.completed_candles) == sum(t["volume"] for t in ticks)
 
 
 # ---------------------------------------------------------------------------
@@ -148,13 +162,22 @@ class TestMultiSymbolConcurrentLoad:
         mock_bus.consume_ticks.return_value = all_ticks
         await builder.process_ticks()
 
-        # Each symbol should have its own buffer -- no cross-contamination
+        assert set(builder.builders) == set(self.SYMBOLS)
         for sym in self.SYMBOLS:
-            buffer = builder.buffers.get(sym, [])
-            for tick in buffer:
-                assert tick["symbol"] == sym, f"Tick for {tick['symbol']} found in {sym} buffer"
+            partial = builder.builders[sym].current_partial
+            assert partial is not None and partial.symbol == sym
+            assert partial.tick_count == per_symbol_count
+            assert (
+                partial.open
+                == (
+                    next(t for t in all_ticks if t["symbol"] == sym)["bid"]
+                    + next(t for t in all_ticks if t["symbol"] == sym)["ask"]
+                )
+                / 2
+            )
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_multi_symbol_throughput(self) -> None:
         """Multi-symbol load must still meet throughput floor."""
         builder, mock_bus = _setup_builder()
@@ -263,9 +286,8 @@ class TestTickSpikeAndGap:
         # Verify high captures the spike
         candle_calls = mock_bus.update_candle.call_args_list
         m15_candles = [c[0][0] for c in candle_calls if c[0][0].get("timeframe") == "M15"]
-        if m15_candles:
-            highs = [c["high"] for c in m15_candles]
-            assert max(highs) >= 2100.0, "Spike not reflected in candle high"
+        assert m15_candles
+        assert max(c["high"] for c in m15_candles) == 2150.5, "Spike not reflected in candle high"
 
     @pytest.mark.asyncio
     async def test_timestamp_gap_between_candles(self) -> None:
@@ -307,8 +329,13 @@ class TestTickSpikeAndGap:
         candle_calls = mock_bus.update_candle.call_args_list
         m15_candles = [c[0][0] for c in candle_calls if c[0][0]["symbol"] == "EURUSD"]
 
-        # Should have produced at least 2 separate candles
-        assert len(m15_candles) >= 2, f"Expected >=2 candles across gap, got {len(m15_candles)}"
+        # The second occupied window is still forming; no candle is invented
+        # for either empty window in the 30-minute gap.
+        assert len(m15_candles) == 1
+        assert m15_candles[0]["open_time"] == base_time.isoformat()
+        partial = builder.builders["EURUSD"].current_partial
+        assert partial is not None and partial.open_time == gap_start
+        assert partial.tick_count == 10 and m15_candles[0]["tick_count"] == 10
 
     @pytest.mark.asyncio
     async def test_duplicate_timestamps_handled(self) -> None:
@@ -331,8 +358,10 @@ class TestTickSpikeAndGap:
         mock_bus.consume_ticks.return_value = ticks
         await builder.process_ticks()
 
-        # No crash -- candles may or may not be emitted depending on window
-        assert True, "Duplicate timestamps caused crash"
+        partial = builder.builders["EURUSD"].current_partial
+        assert partial is not None and partial.tick_count == 100
+        assert partial.close == (ticks[-1]["bid"] + ticks[-1]["ask"]) / 2
+        assert not builder.builders["EURUSD"].completed_candles
 
 
 # ---------------------------------------------------------------------------
@@ -362,12 +391,12 @@ class TestSustainedLoad:
             mock_bus.consume_ticks.return_value = ticks
             await builder.process_ticks()
 
-            current_buffer = sum(len(v) for v in builder.buffers.values())
+            current_buffer = sum(1 + len(b.completed_candles) for b in builder.builders.values())
             max_buffer_size = max(max_buffer_size, current_buffer)
 
         # Buffer should never grow unboundedly -- cap at a reasonable multiple
         # of a single M15 window worth of ticks
-        assert max_buffer_size < HIGH_FREQ_TICK_COUNT, f"Buffer grew to {max_buffer_size} -- possible memory leak"
+        assert max_buffer_size <= 2, f"Unexpected retained candle count for this 1000-second fixture: {max_buffer_size}"
 
     @pytest.mark.asyncio
     async def test_sustained_multi_symbol_cycles(self) -> None:
@@ -400,6 +429,7 @@ class TestSustainedLoad:
         assert total_candles > 0, "No candles produced over 50 sustained cycles"
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_processing_latency_per_cycle(self) -> None:
         """Each individual cycle must complete in <100ms for real-time viability."""
         builder, mock_bus = _setup_builder()
