@@ -1,0 +1,108 @@
+"""
+Redis Keys — Dual-Zone Architecture Extension.
+
+ADD these to existing core/redis_keys.py.
+
+Covers:
+  - Forming bar keys (M15 + H1)
+  - TRQ engine output keys (pre-move alerts, R3D state)
+  - Dual-zone confluence keys
+
+Existing keys (candle_history, candle_latest, tick_*, signal_*, etc.)
+remain unchanged — this is additive only.
+"""
+
+from __future__ import annotations
+
+# ══════════════════════════════════════════════════════════════════
+# FORMING BAR KEYS (ingest → dashboard)
+# ══════════════════════════════════════════════════════════════════
+
+CANDLE_FORMING_PREFIX = "wolf15:candle:forming"
+
+
+def candle_forming(symbol: str, timeframe: str) -> str:
+    """Forming (in-progress) candle bar. Type: HASH, TTL=120s.
+
+    Written by: ingest FormingBarPublisher (M15=500ms, H1=1s).
+    Read by:    dashboard HybridCandleAggregator.
+    """
+    return f"{CANDLE_FORMING_PREFIX}:{symbol.upper()}:{timeframe.upper()}"
+
+
+def channel_candle_forming(symbol: str, timeframe: str) -> str:
+    """PubSub channel for forming bar updates."""
+    return f"candle:forming:{symbol.upper()}:{timeframe.upper()}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# TRQ ENGINE OUTPUT KEYS (engine → dashboard)
+# ══════════════════════════════════════════════════════════════════
+
+TRQ_PREFIX = "wolf15:trq"
+
+
+def trq_premove(symbol: str) -> str:
+    """TRQ pre-move detection output. Type: HASH, TTL=120s.
+
+    Written by: engine TRQRedisBridge after each M15 cycle.
+    Read by:    dashboard (display only, no recomputation).
+
+    Fields: pair, state, conf12, wlwci, r3d_last, delta_r3d,
+            gradient, bias, lead_time_hours, monte_carlo_*,
+            alert, updated_at
+    """
+    return f"{TRQ_PREFIX}:premove:{symbol.upper()}"
+
+
+def trq_r3d_history(symbol: str) -> str:
+    """TRQ R3D energy history. Type: LIST, max=100, TTL=6h.
+
+    Written by: engine TRQRedisBridge (append each M15 cycle).
+    Read by:    dashboard for R3D chart overlay.
+    """
+    return f"{TRQ_PREFIX}:r3d_history:{symbol.upper()}"
+
+
+def channel_trq_premove() -> str:
+    """PubSub channel for TRQ pre-move alerts (all symbols)."""
+    return "trq:premove"
+
+
+def channel_trq_premove_symbol(symbol: str) -> str:
+    """PubSub channel for TRQ pre-move alert (per symbol)."""
+    return f"trq:premove:{symbol.upper()}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# DUAL-ZONE CONFLUENCE KEYS (engine → dashboard)
+# ══════════════════════════════════════════════════════════════════
+
+
+def zone_confluence(symbol: str) -> str:
+    """Zone confluence state. Type: HASH, TTL=120s.
+
+    Written by: engine after both zones produce output.
+    Read by:    dashboard for confluence indicator display.
+
+    Fields: micro_state, macro_state, confluence_verdict,
+            micro_confidence, macro_confidence, updated_at
+    """
+    return f"wolf15:confluence:{symbol.upper()}"
+
+
+def channel_confluence() -> str:
+    """PubSub channel for confluence state updates."""
+    return "wolf15:confluence"
+
+
+# ══════════════════════════════════════════════════════════════════
+# TYPE MAP ADDITIONS (for key sanitizer)
+# ══════════════════════════════════════════════════════════════════
+
+DUALZONE_TYPE_MAP: dict[str, str] = {
+    "wolf15:candle:forming:*:*": "hash",
+    "wolf15:trq:premove:*": "hash",
+    "wolf15:trq:r3d_history:*": "list",
+    "wolf15:confluence:*": "hash",
+}

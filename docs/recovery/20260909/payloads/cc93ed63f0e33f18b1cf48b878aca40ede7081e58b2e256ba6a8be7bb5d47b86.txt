@@ -1,0 +1,414 @@
+"""
+Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
+
+.. deprecated::
+    This **sync** Redis singleton is superseded by the native-async pool in
+    ``infrastructure.redis_client`` (``RedisClientManager``).
+
+    New code must use::
+
+        from infrastructure.redis_client import get_client, get_async_redis
+
+    This module remains only for backward-compatibility with components that
+    still rely on synchronous Redis calls (e.g. ``storage`` helpers,
+    ``ws_routes``).  It will be removed once the async migration is complete.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any, cast  # noqa: UP035
+
+# Type alias for Redis stream read responses:
+# list of (stream_name, list of (entry_id, fields)) tuples.
+StreamResponse = list[tuple[str, list[tuple[str, dict[str, str]]]]]
+
+import redis  # noqa: E402
+import redis.client  # noqa: E402
+import redis.exceptions  # noqa: E402
+from loguru import logger  # noqa: E402
+from redis.backoff import ExponentialBackoff  # noqa: E402
+from redis.retry import Retry as RedisRetry  # noqa: E402
+from tenacity import (  # noqa: E402
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+_RETRY_EXCEPTIONS: tuple[type[Exception], ...] = (
+    redis.exceptions.ConnectionError,
+    redis.exceptions.TimeoutError,
+)
+
+from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+from infrastructure.redis_url import sanitize_redis_url as _sanitize_redis_url  # noqa: E402
+
+configure_loguru_logging()
+
+
+class RedisClient:
+    """
+    Thread-safe Redis client with connection pooling and retry logic.
+
+    Supports:
+      - Basic key-value operations
+      - Pub/Sub messaging
+      - Redis Streams (XADD, XREAD, consumer groups)
+      - Health checks
+    """
+
+    _instance: RedisClient | None = None
+
+    def __new__(cls) -> RedisClient:
+        if not cls._instance:
+            cls._instance = super().__new__(cls)
+            cls._instance._init()
+        return cls._instance
+
+    def _init(self) -> None:
+        """Initialize Redis connection pool."""
+        from infrastructure.redis_client import RedisConfig
+        from infrastructure.redis_url import get_redis_url
+
+        url = get_redis_url()
+        cfg = RedisConfig.from_env()
+        try:
+            max_connections = int(os.getenv("REDIS_SYNC_MAX_CONNECTIONS", str(cfg.max_connections)))
+        except (TypeError, ValueError):
+            max_connections = cfg.max_connections
+        max_connections = max(1, max_connections)
+
+        retry = RedisRetry(
+            backoff=ExponentialBackoff(cap=cfg.retry_backoff_cap, base=cfg.retry_backoff_base),
+            retries=cfg.retry_attempts,
+            supported_errors=_RETRY_EXCEPTIONS,
+        )
+
+        # TCP transport hardening: enable keepalive, use a blocking pool so
+        # bursts wait briefly for an idle connection, and add health checks to
+        # prune stale sockets before they carry command traffic.
+        # NOTE: Only SO_KEEPALIVE is set here (socket_keepalive=True).
+        # Detailed keepalive timing (idle/interval/count) is handled
+        # server-side via Redis --tcp-keepalive.  Passing
+        # socket_keepalive_options with TCP_KEEPIDLE etc. causes EINVAL
+        # on some container runtimes (e.g. Railway Alpine).
+        self._pool = redis.BlockingConnectionPool.from_url(
+            url,
+            decode_responses=cfg.decode_responses,
+            socket_timeout=cfg.socket_timeout,
+            socket_connect_timeout=cfg.socket_connect_timeout,
+            max_connections=max_connections,
+            timeout=cfg.blocking_pool_timeout,
+            socket_keepalive=cfg.socket_keepalive,
+            health_check_interval=cfg.health_check_interval,
+            retry_on_timeout=cfg.retry_on_timeout,
+            retry_on_error=_RETRY_EXCEPTIONS,
+            retry=retry,
+        )
+        self.client = redis.Redis(connection_pool=self._pool)
+        logger.info(
+            "Redis client initialized with blocking connection pool: {} max={} wait={}s timeout={}s",
+            _sanitize_redis_url(url),
+            max_connections,
+            cfg.blocking_pool_timeout,
+            cfg.socket_timeout,
+        )
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def ping(self) -> bool:
+        """
+        Health check for Redis connection.
+
+        Returns:
+            True if Redis is reachable and responsive.
+
+        Raises:
+            redis.exceptions.ConnectionError: If connection fails after retries.
+        """
+        result: bool = cast(bool, self.client.ping())
+        return result
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def set(self, key: str, value: str, ex: int | None = None) -> None:
+        """Set key-value with optional expiration."""
+        self.client.set(key, value, ex=ex)
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def get(self, key: str) -> str | None:
+        """Get value by key."""
+        return cast(str | None, self.client.get(key))
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def mget(self, keys: list[str]) -> list[str | None]:
+        """Get multiple values in a single round-trip."""
+        return cast(list[str | None], self.client.mget(keys))
+
+    def pipeline(self) -> redis.client.Pipeline:
+        """Return a Redis pipeline for batching commands."""
+        return self.client.pipeline()
+
+    def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
+        """Execute one atomic Lua script on the configured Redis server."""
+        return self.client.eval(script, numkeys, *keys_and_args)
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def hset(self, name: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> int:
+        """
+        Set hash field(s).
+
+        Args:
+            name: Hash name.
+            mapping: Dictionary of field-value pairs.
+            **kwargs: Alternative way to specify field-value pairs.
+
+        Returns:
+            Number of fields that were added.
+        """
+        if mapping:
+            return cast(int, self.client.hset(name, mapping=mapping))
+        return cast(int, self.client.hset(name, **kwargs))
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def hget(self, name: str, key: str) -> str | None:
+        """Get hash field value."""
+        return cast(str | None, self.client.hget(name, key))
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def hgetall(self, name: str) -> dict[str, str]:
+        """Get all fields and values of a hash."""
+        return cast(dict[str, str], self.client.hgetall(name))
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def delete(self, key: str) -> int:
+        """Delete key."""
+        return cast(int, self.client.delete(key))
+
+    def pubsub(self) -> redis.client.PubSub:
+        """
+        Get a Pub/Sub instance for subscribing to channels.
+
+        Returns:
+            redis.client.PubSub instance for subscribing.
+        """
+        return cast(redis.client.PubSub, self.client.pubsub())
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def publish(self, channel: str, message: str) -> int:
+        """
+        Publish message to a channel.
+
+        Args:
+            channel: Channel name.
+            message: Message payload.
+
+        Returns:
+            Number of subscribers that received the message.
+        """
+        return cast(int, self.client.publish(channel, message))
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def xadd(
+        self,
+        name: str,
+        fields: dict[str, Any],
+        id: str = "*",
+        maxlen: int | None = None,
+        approximate: bool = True,
+    ) -> str:
+        """
+        Add entry to a Redis Stream.
+
+        Args:
+            name: Stream name.
+            fields: Dictionary of field-value pairs.
+            id: Entry ID (default "*" for auto-generate).
+            maxlen: Maximum stream length (oldest entries trimmed).
+            approximate: Use approximate trimming (~) for performance.
+
+        Returns:
+            Entry ID assigned by Redis.
+        """
+        return cast(str, self.client.xadd(name, fields, id=id, maxlen=maxlen, approximate=approximate))  # type: ignore[arg-type]
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def xread(
+        self,
+        streams: dict[str, str],
+        count: int | None = None,
+        block: int | None = None,
+    ) -> StreamResponse:
+        """
+        Read from Redis Streams.
+
+        Args:
+            streams: Dict mapping stream names to last seen IDs (use "0" for all).
+            count: Max number of entries to read per stream.
+            block: Block for N milliseconds if no data (None = no blocking).
+
+        Returns:
+            List of [stream_name, [(entry_id, fields), ...]] tuples.
+        """
+        return cast(StreamResponse, self.client.xread(streams, count=count, block=block))  # type: ignore
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def xreadgroup(
+        self,
+        groupname: str,
+        consumername: str,
+        streams: dict[str, str],
+        count: int | None = None,
+        block: int | None = None,
+    ) -> StreamResponse:
+        """
+        Read from Redis Streams using a consumer group.
+
+        Args:
+            groupname: Consumer group name.
+            consumername: Consumer name within the group.
+            streams: Dict mapping stream names to last seen IDs (use ">" for new).
+            count: Max number of entries to read per stream.
+            block: Block for N milliseconds if no data.
+
+        Returns:
+            List of [stream_name, [(entry_id, fields), ...]] tuples.
+        """
+        return cast(StreamResponse, self.client.xreadgroup(groupname, consumername, streams, count=count, block=block))  # type: ignore
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def xgroup_create(
+        self,
+        name: str,
+        groupname: str,
+        id: str = "0",
+        mkstream: bool = True,
+    ) -> bool:
+        """
+        Create a consumer group for a stream.
+
+        Args:
+            name: Stream name.
+            groupname: Consumer group name.
+            id: Starting position ("0" for beginning, "$" for new entries only).
+            mkstream: Create stream if it doesn't exist.
+
+        Returns:
+            True if group was created.
+
+        Raises:
+            redis.exceptions.ResponseError: If group already exists.
+        """
+        try:
+            return cast(bool, self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream))
+        except redis.exceptions.ResponseError as e:
+            err = str(e)
+            if "BUSYGROUP" in err:
+                # Group already exists, this is fine
+                logger.debug(f"Consumer group {groupname} already exists on {name}")
+                return False
+            if "WRONGTYPE" in err:
+                # Key exists with incompatible type → delete and retry
+                logger.warning(
+                    "Key '%s' has wrong type for stream → deleting and recreating",
+                    name,
+                )
+                self.client.delete(name)
+                self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream)
+                return True
+            raise
+
+
+class _LazyRedisClient:
+    """Lazy proxy that defers ``RedisClient()`` construction until first use.
+
+    This prevents the module-level singleton from crashing the import chain
+    when Redis is unreachable or ``REDIS_URL`` is not configured (e.g. during
+    Railway cold-start before env vars are injected).  All attribute access is
+    transparently forwarded to the underlying ``RedisClient`` instance.
+    """
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "_instance", None)
+
+    def _resolve(self) -> RedisClient:
+        inst = object.__getattribute__(self, "_instance")
+        if inst is None:
+            inst = RedisClient()
+            object.__setattr__(self, "_instance", inst)
+        return inst
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._resolve(), name, value)
+
+
+# Singleton instance for imports — lazily initialized on first attribute access
+# so that importing this module never crashes even when Redis is unavailable.
+redis_client: RedisClient = _LazyRedisClient()  # type: ignore[assignment]

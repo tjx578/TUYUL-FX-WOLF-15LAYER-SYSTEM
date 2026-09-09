@@ -1,0 +1,301 @@
+"""
+TRQ Redis Bridge — Engine Output Publisher.
+
+Publishes computed TRQ pre-move detection results to Redis so the
+dashboard can display alerts WITHOUT running TRQ calculations itself.
+
+This is the key SSOT guarantee: TRQ computation happens ONLY in the
+engine container. Dashboard is a pure display layer.
+
+Redis contract:
+  wolf15:trq:premove:{SYM}         HASH   TTL=120s
+  wolf15:trq:r3d_history:{SYM}     LIST   max=100  TTL=6h
+  trq:premove                      PubSub (broadcast all symbols)
+  trq:premove:{SYM}                PubSub (per-symbol)
+
+Integration:
+  In the engine pipeline (after TRQ computation):
+
+    from engine.trq_redis_bridge import TRQRedisBridge
+
+    trq_bridge = TRQRedisBridge(redis_client)
+
+    # After each M15 cycle computation:
+    result = detect_premove(df, pair)
+    monte_carlo = monte_carlo_reflective(df)
+    await trq_bridge.publish_premove(pair, result, monte_carlo)
+
+Zone: engine/ — analysis output only, no execution authority.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+import orjson
+from loguru import logger
+from pydantic import BaseModel, field_validator
+
+from core.redis_keys import (
+    channel_trq_premove,
+    channel_trq_premove_symbol,
+    trq_premove,
+    trq_r3d_history,
+)
+
+
+# ── Schema validation ─────────────────────────────────────────────
+
+
+class TRQPremoveSchema(BaseModel):
+    """Validate TRQ pre-move output before Redis write."""
+
+    pair: str
+    state: str
+    conf12: float
+    wlwci: float
+    r3d_last: float
+    delta_r3d: float
+    gradient: float
+    bias: str
+    alert: bool
+    lead_time_hours: float
+    mc_prob_bullish: float
+    mc_prob_bearish: float
+    mc_mean: float
+    mc_std: float
+    mc_confidence_interval: float
+    fusion_state: str = "Unknown"
+    integrity_index: float = 0.0
+    reflective_sync: str = "Unknown"
+    timestamp: str = ""
+    updated_at: float = 0.0
+
+    @field_validator("conf12")
+    @classmethod
+    def conf12_range(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"CONF12 must be 0-1, got {v}")
+        return v
+
+    @field_validator("wlwci")
+    @classmethod
+    def wlwci_range(cls, v: float) -> float:
+        if not -1.0 <= v <= 1.0:
+            raise ValueError(f"WLWCI must be -1 to 1, got {v}")
+        return v
+
+    def to_redis_hash(self) -> dict[str, str]:
+        return {k: str(v) for k, v in self.model_dump().items()}
+
+
+# ── Bridge ────────────────────────────────────────────────────────
+
+
+class TRQRedisBridge:
+    """Publishes TRQ engine output to Redis for dashboard consumption.
+
+    Dashboard NEVER runs TRQ calculations. It reads:
+      - Pre-move state (CONF12, bias, alert) from HASH
+      - R3D history from LIST (for chart overlay)
+      - Real-time alerts from PubSub
+
+    This guarantees SSOT: engine computes, dashboard displays.
+    """
+
+    PREMOVE_TTL_SEC: int = 120
+    R3D_HISTORY_MAXLEN: int = 100
+    R3D_HISTORY_TTL_SEC: int = 6 * 3600  # 6 hours
+
+    def __init__(self, redis_client: Any) -> None:
+        self._redis = redis_client
+        self._publish_count: int = 0
+        self._error_count: int = 0
+        self._validation_errors: int = 0
+
+    async def publish_premove(
+        self,
+        pair: str,
+        premove_result: dict[str, Any],
+        monte_carlo: dict[str, float],
+    ) -> bool:
+        """Publish TRQ pre-move result to Redis.
+
+        Args:
+            pair: Symbol (e.g. "EURUSD").
+            premove_result: Output from detect_premove().
+            monte_carlo: Output from monte_carlo_reflective().
+
+        Returns:
+            True if published successfully.
+        """
+        sym = pair.upper()
+        now = time.time()
+
+        # ── Validate ──
+        try:
+            validated = TRQPremoveSchema(
+                pair=sym,
+                state=str(premove_result.get("state", "Unknown")),
+                conf12=float(premove_result.get("conf12", 0)),
+                wlwci=float(premove_result.get("wlwci", 0)),
+                r3d_last=float(premove_result.get("r3d_last", 0)),
+                delta_r3d=float(premove_result.get("delta_r3d", 0)),
+                gradient=float(premove_result.get("gradient", 0)),
+                bias=str(premove_result.get("bias", "Neutral")),
+                alert=bool(premove_result.get("alert", False)),
+                lead_time_hours=float(
+                    premove_result.get("lead_time_hours", 0)
+                ),
+                mc_prob_bullish=float(
+                    monte_carlo.get("prob_bullish", 0)
+                ),
+                mc_prob_bearish=float(
+                    monte_carlo.get("prob_bearish", 0)
+                ),
+                mc_mean=float(monte_carlo.get("mean", 0)),
+                mc_std=float(monte_carlo.get("std", 0)),
+                mc_confidence_interval=float(
+                    monte_carlo.get("confidence_interval", 0)
+                ),
+                fusion_state=str(
+                    premove_result.get("fusion_state", "Unknown")
+                ),
+                integrity_index=float(
+                    premove_result.get("integrity_index", 0)
+                ),
+                reflective_sync=str(
+                    premove_result.get("reflective_sync", "Unknown")
+                ),
+                timestamp=str(
+                    premove_result.get("timestamp", "")
+                ),
+                updated_at=now,
+            )
+        except Exception as exc:
+            self._validation_errors += 1
+            logger.debug("[TRQBridge] Validation failed %s: %s", sym, exc)
+            return False
+
+        # ── Write to Redis ──
+        try:
+            payload = validated.to_redis_hash()
+            premove_key = trq_premove(sym)
+            history_key = trq_r3d_history(sym)
+            broadcast_ch = channel_trq_premove()
+            symbol_ch = channel_trq_premove_symbol(sym)
+
+            pipe = self._redis.pipeline()
+
+            # 1. Pre-move state HASH
+            pipe.hset(premove_key, mapping=payload)
+            pipe.expire(premove_key, self.PREMOVE_TTL_SEC)
+
+            # 2. R3D history LIST (append + trim)
+            r3d_entry = orjson.dumps({
+                "r3d": validated.r3d_last,
+                "delta": validated.delta_r3d,
+                "gradient": validated.gradient,
+                "conf12": validated.conf12,
+                "ts": now,
+            }).decode("utf-8")
+            pipe.rpush(history_key, r3d_entry)
+            pipe.ltrim(history_key, -self.R3D_HISTORY_MAXLEN, -1)
+            pipe.expire(history_key, self.R3D_HISTORY_TTL_SEC)
+
+            # 3. PubSub broadcast (best-effort)
+            pub_payload = orjson.dumps(payload).decode("utf-8")
+            pipe.publish(broadcast_ch, pub_payload)
+            pipe.publish(symbol_ch, pub_payload)
+
+            await pipe.execute()
+
+            self._publish_count += 1
+            return True
+
+        except Exception as exc:
+            self._error_count += 1
+            logger.warning("[TRQBridge] Write failed %s: %s", sym, exc)
+            return False
+
+    async def publish_zone_confluence(
+        self,
+        pair: str,
+        micro_state: dict[str, Any],
+        macro_state: dict[str, Any],
+    ) -> bool:
+        """Publish dual-zone confluence state.
+
+        Args:
+            pair: Symbol.
+            micro_state: Zone A output (TRQ pre-move state).
+            macro_state: Zone B output (L12 verdict state).
+        """
+        from core.redis_keys import channel_confluence, zone_confluence
+
+        sym = pair.upper()
+        key = zone_confluence(sym)
+        channel = channel_confluence()
+
+        micro_verdict = str(micro_state.get("state", "Unknown"))
+        macro_verdict = str(macro_state.get("verdict", "Unknown"))
+
+        micro_conf = float(micro_state.get("conf12", 0))
+        macro_conf = float(macro_state.get("confidence", 0))
+
+        # Confluence logic: both zones must agree
+        micro_bullish = micro_verdict == "Bullish Pre-Move"
+        micro_bearish = micro_verdict == "Bearish Pre-Move"
+        macro_buy = "BUY" in macro_verdict.upper()
+        macro_sell = "SELL" in macro_verdict.upper()
+
+        if micro_bullish and macro_buy:
+            confluence = "EXECUTE_BUY"
+        elif micro_bearish and macro_sell:
+            confluence = "EXECUTE_SELL"
+        elif micro_verdict == "Neutral" or "NO_TRADE" in macro_verdict:
+            confluence = "NO_TRADE"
+        else:
+            confluence = "HOLD"
+
+        payload: dict[str, str] = {
+            "pair": sym,
+            "micro_state": micro_verdict,
+            "macro_state": macro_verdict,
+            "micro_confidence": str(micro_conf),
+            "macro_confidence": str(macro_conf),
+            "confluence_verdict": confluence,
+            "updated_at": str(time.time()),
+        }
+
+        try:
+            pipe = self._redis.pipeline()
+            pipe.hset(key, mapping=payload)
+            pipe.expire(key, 120)
+            pipe.publish(
+                channel,
+                orjson.dumps(payload).decode("utf-8"),
+            )
+            await pipe.execute()
+            return True
+        except Exception as exc:
+            logger.warning(
+                "[TRQBridge] Confluence write failed %s: %s",
+                sym,
+                exc,
+            )
+            return False
+
+    def health(self) -> dict[str, Any]:
+        """Health stats for monitoring."""
+        total = self._publish_count + self._error_count
+        return {
+            "publish_count": self._publish_count,
+            "error_count": self._error_count,
+            "validation_errors": self._validation_errors,
+            "error_rate": (
+                round(self._error_count / total, 4) if total > 0
+                else 0.0
+            ),
+        }

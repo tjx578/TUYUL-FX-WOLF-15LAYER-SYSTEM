@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+import hashlib
+import subprocess
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+from failure_reconciliation import captured_process_streams, collect_git_porcelain
+
+Runner = Callable[..., subprocess.CompletedProcess[bytes]]
+
+
+def fixed_runner(result: subprocess.CompletedProcess[bytes]) -> Runner:
+    def runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return result
+
+    return runner
+
+
+def completed(
+    *, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.CompletedProcess(
+        args=["git", "status"],
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def test_01_success_stdout_bytes_are_preserved(tmp_path: Path) -> None:
+    snapshot = collect_git_porcelain(
+        tmp_path, runner=fixed_runner(completed(stdout=b"?? file.py\n"))
+    )
+    assert snapshot.raw == b"?? file.py\n"
+
+
+def test_02_success_stderr_bytes_are_preserved() -> None:
+    _, stderr = captured_process_streams(completed(stderr=b"warning-bytes"))
+    assert stderr == b"warning-bytes"
+
+
+def test_03_empty_stdout_is_preserved() -> None:
+    stdout, _ = captured_process_streams(completed(stdout=b""))
+    assert stdout == b""
+
+
+def test_04_empty_stderr_is_preserved() -> None:
+    _, stderr = captured_process_streams(completed(stderr=b""))
+    assert stderr == b""
+
+
+def test_05_nonzero_return_code_keeps_existing_error_behavior(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="exit 7"):
+        collect_git_porcelain(
+            tmp_path,
+            runner=fixed_runner(completed(returncode=7, stderr=b"failure-bytes")),
+        )
+
+
+def test_06_binary_non_utf8_bytes_are_not_decoded() -> None:
+    stdout, stderr = captured_process_streams(
+        completed(stdout=b"\xff\x00", stderr=b"\xfe\x80")
+    )
+    assert stdout == b"\xff\x00"
+    assert stderr == b"\xfe\x80"
+
+
+def test_07_stdout_evidence_hash_is_stable() -> None:
+    stdout, _ = captured_process_streams(completed(stdout=b" M exact.py\n"))
+    assert (
+        hashlib.sha256(stdout).hexdigest()
+        == hashlib.sha256(b" M exact.py\n").hexdigest()
+    )
+
+
+def test_08_stderr_evidence_hash_is_stable() -> None:
+    _, stderr = captured_process_streams(completed(stderr=b"diagnostic-bytes"))
+    assert (
+        hashlib.sha256(stderr).hexdigest()
+        == hashlib.sha256(b"diagnostic-bytes").hexdigest()
+    )

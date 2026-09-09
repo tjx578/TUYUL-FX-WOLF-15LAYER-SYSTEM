@@ -1,0 +1,67 @@
+// @vitest-environment node
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { NextRequest } from "next/server";
+import { middleware } from "../middleware";
+
+function makeRequest(
+    path: string,
+    opts: { cookie?: string; role?: string } = {},
+): NextRequest {
+    const url = new URL(path, "http://localhost:3000");
+    const req = new NextRequest(url);
+    if (opts.cookie) {
+        req.cookies.set("wolf15_session", opts.cookie);
+    }
+    if (opts.role) {
+        req.headers.set("x-user-role", opts.role);
+    }
+    return req;
+}
+
+describe("middleware auth-loop prevention", () => {
+    beforeEach(() => {
+        process.env.INTERNAL_API_URL = "https://core.example";
+        globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            user_id: "owner", email: "owner@example.test", role: "owner",
+        }), { status: 200, headers: { "content-type": "application/json" } }));
+    });
+
+    afterEach(() => {
+        delete process.env.INTERNAL_API_URL;
+        vi.restoreAllMocks();
+    });
+
+    it("allows /login through without redirect (no cookie)", async () => {
+        const res = await middleware(makeRequest("/login"));
+        expect(res.headers.get("location")).toBeNull();
+    });
+
+    it("denies an unauthenticated login subpath", async () => {
+        const res = await middleware(makeRequest("/login/callback"));
+        expect(res.status).toBe(401);
+    });
+
+    it("denies unauthenticated root without setting a cookie", async () => {
+        const res = await middleware(makeRequest("/"));
+        expect(res.status).toBe(401);
+        expect(res.headers.get("set-cookie")).toBeNull();
+    });
+
+    it("denies a non-JWT cookie without calling the backend", async () => {
+        const res = await middleware(makeRequest("/", { cookie: "machine-api-key" }));
+        expect(res.status).toBe(401);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it("allows a backend-validated JWT session", async () => {
+        const res = await middleware(makeRequest("/", { cookie: "header.payload.signature" }));
+        expect(res.status).toBe(200);
+        expect(globalThis.fetch).toHaveBeenCalledOnce();
+    });
+
+    it("denies a JWT rejected by the backend", async () => {
+        vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(null, { status: 401 }));
+        const res = await middleware(makeRequest("/audit", { cookie: "header.payload.signature" }));
+        expect(res.status).toBe(401);
+    });
+});
