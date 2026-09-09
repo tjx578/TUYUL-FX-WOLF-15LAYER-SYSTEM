@@ -69,6 +69,10 @@ WEEKEND_POLL_INTERVAL_S: float = 300.0  # Check every 5 min during weekend
 from utils.market_hours import is_forex_market_open  # noqa: E402, F401
 
 
+class FinnhubBackgroundDrainError(RuntimeError):
+    """A client-owned task can still access shared resources."""
+
+
 class FinnhubSymbolMapper:
     """Map internal symbols to Finnhub symbols and back."""
 
@@ -170,6 +174,8 @@ class FinnhubWebSocket:
         self._running: bool = False
         self._connected: bool = False
         self._ws: websockets.asyncio.client.ClientConnection | None = None
+        self._background_tasks: set[asyncio.Task[None]] = set()
+        self._background_drain_timeout = 10.0
         self._lock_renewal_task: asyncio.Task[None] | None = None
         self._last_disconnect_reason: str | None = None
 
@@ -282,11 +288,32 @@ class FinnhubWebSocket:
                 )
             await asyncio.sleep(LEADER_LOCK_RENEWAL_S)
 
+    def _track_background(self, coroutine: Coroutine[Any, Any, None], *, name: str) -> asyncio.Task[None]:
+        task = asyncio.create_task(coroutine, name=name)
+        self._background_tasks.add(task)
+        return task
+
+    async def _drain_background(self) -> None:
+        tasks = set(self._background_tasks)
+        if self._lock_renewal_task is not None:
+            tasks.add(self._lock_renewal_task)
+        if not tasks:
+            return
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        _, pending = await asyncio.wait(tasks, timeout=self._background_drain_timeout)
+        if pending:
+            raise FinnhubBackgroundDrainError("finnhub_background_tasks_not_drained")
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._background_tasks.difference_update(tasks)
+        self._lock_renewal_task = None
+
     def _cancel_lock_renewal(self) -> None:
         """Cancel the background lock renewal task if running."""
         if self._lock_renewal_task is not None and not self._lock_renewal_task.done():
             self._lock_renewal_task.cancel()
-        self._lock_renewal_task = None
+        # Keep ownership until _drain_background has observed task completion.
 
     async def _subscribe(
         self,
@@ -345,9 +372,9 @@ class FinnhubWebSocket:
             # Fire on_connect callback (e.g. HTF refresh) — best effort
             if self._on_connect is not None:
                 with contextlib.suppress(Exception):
-                    asyncio.create_task(self._on_connect(), name="WsOnConnectCallback")
+                    self._track_background(self._on_connect(), name="WsOnConnectCallback")
             # Start background lock renewal so TTL doesn't expire mid-session
-            self._lock_renewal_task = asyncio.create_task(
+            self._lock_renewal_task = self._track_background(
                 self._lock_renewal_loop(),
                 name="LeaderLockRenewal",
             )
@@ -518,6 +545,7 @@ class FinnhubWebSocket:
 
             finally:
                 self._cancel_lock_renewal()
+                await self._drain_background()
                 if self._ws is not None:
                     with contextlib.suppress(Exception):
                         await self._ws.close()
@@ -533,6 +561,7 @@ class FinnhubWebSocket:
         self._running = False
         self._connected = False
         self._cancel_lock_renewal()
+        await self._drain_background()
         if self._ws is not None:
             with contextlib.suppress(Exception):
                 await self._ws.close()

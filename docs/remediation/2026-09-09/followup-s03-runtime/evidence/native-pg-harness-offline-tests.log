@@ -1,0 +1,13 @@
+test_child_environment_does_not_inherit_production_connections (test_native_pg_harness.HarnessGuards.test_child_environment_does_not_inherit_production_connections) ... ok
+test_existing_cluster_is_preserved (test_native_pg_harness.HarnessGuards.test_existing_cluster_is_preserved) ... ok
+test_existing_owner_state_prevents_reinitialization (test_native_pg_harness.HarnessGuards.test_existing_owner_state_prevents_reinitialization) ... ok
+test_foreign_cluster_cannot_be_stopped (test_native_pg_harness.HarnessGuards.test_foreign_cluster_cannot_be_stopped) ... ok
+test_high_commit_guard_prevents_all_provision_actions (test_native_pg_harness.HarnessGuards.test_high_commit_guard_prevents_all_provision_actions) ... ok
+test_measurement_failure_never_starts (test_native_pg_harness.HarnessGuards.test_measurement_failure_never_starts) ... ok
+test_verified_owned_stop_does_not_require_capacity (test_native_pg_harness.HarnessGuards.test_verified_owned_stop_does_not_require_capacity) ... ok
+test_wrong_pid_image_cannot_be_stopped (test_native_pg_harness.HarnessGuards.test_wrong_pid_image_cannot_be_stopped) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.051s
+
+OK

@@ -7,8 +7,6 @@ from services.shared.db_revision_guard import DatabaseSchemaError, assert_requir
 
 pytestmark = pytest.mark.asyncio
 
-pytest.importorskip("aiosqlite")
-
 
 async def test_assert_required_tables_raises_for_missing_table() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)

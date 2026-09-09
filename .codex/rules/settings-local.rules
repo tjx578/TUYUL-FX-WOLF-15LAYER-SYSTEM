@@ -1,0 +1,40 @@
+# Repository command review; no command is automatically allowed by this file.
+# Skill availability is governed separately by config.toml and AGENTS.md.
+# A prompt is not a universal block: runtime sandbox/approvals and other rules apply.
+# Absolute executables, alternative runtimes and MCP tools need separate controls.
+
+prefix_rule(
+    pattern = [["python", "python3", "py", "python.exe", "python3.exe", "py.exe"]],
+    decision = "prompt",
+    justification = "Interpreters can run arbitrary code or subprocesses. Use the existing task authorization and review the exact target.",
+)
+
+prefix_rule(
+    pattern = [["powershell", "pwsh", "bash", "sh", "zsh", "cmd", "powershell.exe", "pwsh.exe", "bash.exe", "sh.exe", "cmd.exe"]],
+    decision = "prompt",
+    justification = "Shell wrappers can contain multiple operations. Use the existing task authorization and review the exact target.",
+)
+
+prefix_rule(
+    pattern = [["railway", "railway.exe"]],
+    decision = "prompt",
+    justification = "Railway commands can access credentials or change provider state. Use the existing task authorization and review the exact target.",
+)
+
+prefix_rule(
+    pattern = [["git", "git.exe"]],
+    decision = "prompt",
+    justification = "Git options and aliases can move writes outside a narrow subcommand prefix. Use the existing task authorization and review the exact target.",
+)
+
+prefix_rule(
+    pattern = [["gh", "gh.exe"]],
+    decision = "prompt",
+    justification = "GitHub CLI can mutate repository or workflow state. Use the existing task authorization and review the exact target.",
+)
+
+prefix_rule(
+    pattern = [["docker", "docker.exe", "psql", "psql.exe", "redis-cli", "redis-cli.exe"]],
+    decision = "prompt",
+    justification = "Infrastructure and database clients need target-specific review. Use the existing task authorization and review the exact target.",
+)

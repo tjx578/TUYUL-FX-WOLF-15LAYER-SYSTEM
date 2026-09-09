@@ -32,11 +32,13 @@ async def _bootstrap_and_run() -> None:
     probe, health_task = await start_probe_as_task(
         port=port,
         service_name="ingest",
+        readiness_check=lambda: False,
         task_name="BootstrapHealthProbe",
     )
     # Yield so the probe can bind the port before any slow work.
     await asyncio.sleep(0.2)
 
+    service_task = None
     try:
         # Import ingest_service in the main thread.  Using run_in_executor
         # was the original approach but ingest_service's module-level imports
@@ -54,18 +56,31 @@ async def _bootstrap_and_run() -> None:
 
         # Hand the already-running probe to main() so there is no
         # port-rebind gap visible to Railway's prober.
-        await run_main(_bootstrap_probe=probe)
+        service_task = asyncio.create_task(run_main(_bootstrap_probe=probe), name="RequiredIngestService")
+        done, _ = await asyncio.wait({service_task, health_task}, return_when=asyncio.FIRST_COMPLETED)
+        if health_task in done:
+            raise RuntimeError("ingest_health_probe_stopped")
+        await service_task
+        shutdown = getattr(ingest_service, "_shutdown_event", None)
+        if shutdown is None or not shutdown.is_set():
+            raise RuntimeError("ingest_required_service_returned")
     except Exception as exc:
+        probe.set_alive(False)
         probe.set_detail("fatal_error", str(exc)[:200])
         logger.error("Ingest service fatal error: {}", exc)
         logger.exception(exc)
-        # Keep process alive so health probe keeps responding.
-        # Railway deployment succeeds; operator can inspect /status.
-        from services.shared.diagnostics import hold_alive_async  # noqa: PLC0415
-
-        await hold_alive_async(service_name="Ingest")
+        raise
     finally:
+        probe.set_alive(False)
+        if service_task is not None and not service_task.done():
+            service_task.cancel()
+            _, pending = await asyncio.wait({service_task}, timeout=20)
+            if pending:
+                raise RuntimeError("ingest_service_not_drained")
+        if service_task is not None:
+            await asyncio.gather(service_task, return_exceptions=True)
         health_task.cancel()
+        await asyncio.gather(health_task, return_exceptions=True)
         with contextlib.suppress(Exception):
             await probe.stop()
 

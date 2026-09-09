@@ -9,75 +9,15 @@ loop.
 
 from __future__ import annotations
 
-import sys
 import time
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
 
-# ---------------------------------------------------------------------------
-# Pre-mock heavy dependencies so allocation_router can be imported cleanly.
-# ---------------------------------------------------------------------------
-
-_STUB_MODULES = [
-    "accounts.risk_engine",
-    "propfirm_manager",
-    "propfirm_manager.profile_manager",
-    "propfirm_manager.profiles",
-    "propfirm_manager.profiles.base_guard",
-    "allocation.signal_service",
-    "journal.trade_journal_service",
-    "infrastructure.tracing",
-    "infrastructure.redis_url",
-    "risk.kill_switch",
-    "api.middleware.governance",
-]
-
-_saved_modules: dict[str, types.ModuleType | None] = {}
-
-
-def _install_stubs() -> None:
-    for name in _STUB_MODULES:
-        _saved_modules[name] = sys.modules.get(name)
-        mod = types.ModuleType(name)
-        mod.RiskEngine = MagicMock()  # type: ignore[attr-defined]
-        mod.SignalService = MagicMock()  # type: ignore[attr-defined]
-        mod.GlobalKillSwitch = MagicMock()  # type: ignore[attr-defined]
-        mod.enforce_write_policy = MagicMock()  # type: ignore[attr-defined]
-        mod.trade_journal_automation_service = MagicMock()  # type: ignore[attr-defined]
-        mod.setup_tracer = MagicMock(return_value=MagicMock())  # type: ignore[attr-defined]
-        mod.inject_trace_context = MagicMock()  # type: ignore[attr-defined]
-        mod.get_redis_url = MagicMock(return_value="redis://localhost:6379/0")  # type: ignore[attr-defined]
-        mod.get_safe_redis_url = MagicMock(return_value="redis://localhost:6379/0")  # type: ignore[attr-defined]
-        sys.modules[name] = mod
-
-
-def _restore_modules() -> None:
-    for name, original in _saved_modules.items():
-        if original is None:
-            sys.modules.pop(name, None)
-        else:
-            sys.modules[name] = original
-
-
-_install_stubs()
-
-_import_error: Exception | None = None
-_check_stale_data = None
-
-try:
-    from api.allocation_router import _check_stale_data
-except Exception as exc:  # pragma: no cover
-    _import_error = exc
-
-_restore_modules()
-
-pytestmark = pytest.mark.skipif(
-    _check_stale_data is None,
-    reason=f"api.allocation_router could not be imported: {_import_error}",
-)
+# Import the real router: collection-time module stubs poison its captured
+# dependencies for every later API test, even after sys.modules is restored.
+from api.allocation_router import _check_stale_data
 
 
 class TestRecoveryGracePeriod:

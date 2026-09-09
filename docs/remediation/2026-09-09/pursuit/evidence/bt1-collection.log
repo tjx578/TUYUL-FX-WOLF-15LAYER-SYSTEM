@@ -1,0 +1,52 @@
+tests/test_mt5_execution_protocol.py::test_signed_command_round_trip
+tests/test_mt5_execution_protocol.py::test_command_tampering_breaks_signature
+tests/test_mt5_execution_protocol.py::test_signed_wire_envelope_round_trips_exact_frozen_bytes
+tests/test_mt5_execution_protocol.py::test_signed_wire_envelope_rejects_a_key_scoped_to_another_executor
+tests/test_mt5_execution_protocol.py::test_signed_wire_envelope_rejects_every_bound_field_tamper[payload_b64]
+tests/test_mt5_execution_protocol.py::test_signed_wire_envelope_rejects_every_bound_field_tamper[payload_sha256]
+tests/test_mt5_execution_protocol.py::test_signed_wire_envelope_rejects_every_bound_field_tamper[signature]
+tests/test_mt5_execution_protocol.py::test_signed_wire_envelope_rejects_every_bound_field_tamper[key_id]
+tests/test_mt5_execution_protocol.py::test_signed_wire_envelope_rejects_every_bound_field_tamper[executor_id]
+tests/test_mt5_execution_protocol.py::test_signed_wire_payload_is_python_canonical_json_not_a_reconstructed_object
+tests/test_mt5_execution_protocol.py::test_signed_wire_golden_vector_is_stable_for_the_mql5_verifier
+tests/test_mt5_execution_protocol.py::test_buy_price_order_is_fail_closed
+tests/test_mt5_execution_protocol.py::test_non_final_sources_cannot_be_promoted[signal_pressure_state_json]
+tests/test_mt5_execution_protocol.py::test_non_final_sources_cannot_be_promoted[signal_watch_json]
+tests/test_mt5_execution_protocol.py::test_non_final_sources_cannot_be_promoted[signal_decision_update_json]
+tests/test_mt5_execution_protocol.py::test_non_final_sources_cannot_be_promoted[signal_throttle_pressure_tier_snapshot]
+tests/test_mt5_execution_protocol.py::test_final_signal_promotes_to_shadow_command
+tests/test_mt5_execution_protocol.py::test_final_signal_promotion_is_bound_to_exact_parent_reservation[update0-PROMOTION_RISK_AUTHORITY_SHADOW_ONLY]
+tests/test_mt5_execution_protocol.py::test_final_signal_promotion_is_bound_to_exact_parent_reservation[update1-PROMOTION_RISK_AUTHORITY_PARENT_ONLY]
+tests/test_mt5_execution_protocol.py::test_final_signal_promotion_is_bound_to_exact_parent_reservation[update2-PROMOTION_RESERVED_VOLUME_MISMATCH]
+tests/test_mt5_execution_protocol.py::test_final_signal_promotion_is_bound_to_exact_parent_reservation[update3-PROMOTION_RISK_SNAPSHOT_MISMATCH]
+tests/test_mt5_execution_protocol.py::test_final_signal_promotion_is_bound_to_exact_parent_reservation[update4-PROMOTION_RISK_RESERVATION_MISMATCH]
+tests/test_mt5_execution_protocol.py::test_final_signal_promotion_is_bound_to_exact_parent_reservation[update5-PROMOTION_RESERVED_SYMBOL_MISMATCH]
+tests/test_mt5_execution_protocol.py::test_final_signal_without_5scr_proof_cannot_be_promoted
+tests/test_mt5_execution_protocol.py::test_final_signal_cannot_promote_to_lifecycle_action
+tests/test_mt5_execution_protocol.py::test_invalid_execution_flag_cannot_be_promoted
+tests/test_executor_bridge_api.py::test_empty_command_poll_returns_204
+tests/test_executor_bridge_api.py::test_claim_returns_hash_bound_to_signed_command
+tests/test_executor_bridge_api.py::test_poll_adds_frozen_envelope_without_removing_the_v1_command
+tests/test_executor_bridge_api.py::test_authenticated_executor_can_reconcile_a_terminal_command
+tests/test_executor_bridge_api.py::test_registration_path_is_bound_to_authenticated_executor
+tests/test_mt5_risk_command_producer.py::test_producer_is_dark_when_flags_are_absent
+tests/test_mt5_risk_command_producer.py::test_each_producer_prerequisite_fails_closed[execution_enabled]
+tests/test_mt5_risk_command_producer.py::test_each_producer_prerequisite_fails_closed[signed_command_bridge_enabled]
+tests/test_mt5_risk_command_producer.py::test_each_producer_prerequisite_fails_closed[execution_command_producer_enabled]
+tests/test_mt5_risk_command_producer.py::test_each_producer_prerequisite_fails_closed[risk_reservation_enabled]
+tests/test_mt5_risk_command_producer.py::test_each_producer_prerequisite_fails_closed[trade_outbox_write_enabled]
+tests/test_mt5_risk_command_producer.py::test_producer_refuses_order_send_even_when_other_flags_are_enabled
+tests/test_mt5_risk_command_producer.py::test_producer_requires_signing_material
+tests/test_mt5_risk_command_producer.py::test_production_policy_rejects_an_unusable_command_window
+
+============================== warnings summary ===============================
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+40 tests collected in 8.39s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

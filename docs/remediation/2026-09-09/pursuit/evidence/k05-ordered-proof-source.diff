@@ -1,0 +1,496 @@
+commit 5aa0d0becc1e9e46da977f4ede279bc6c061c544
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 16:46:39 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 16:46:39 2026 +0800
+
+    feat(strategy): bind ordered candle evidence to candidate handoff
+
+diff --git a/analysis/strategy_5scr_directional_thesis_v1.py b/analysis/strategy_5scr_directional_thesis_v1.py
+index 8d7c60b9..d5426f5b 100644
+--- a/analysis/strategy_5scr_directional_thesis_v1.py
++++ b/analysis/strategy_5scr_directional_thesis_v1.py
+@@ -9,6 +9,8 @@ from dataclasses import dataclass
+ from datetime import UTC, datetime, timedelta
+ from typing import Any, Literal
+ 
++from contracts.strategy_5scr_candle_identity import candle_evidence_hash as candle_evidence_hash
++from contracts.strategy_5scr_candle_identity import candle_material_hash as candle_material_hash
+ from contracts.strategy_5scr_context_epoch_v1 import StrategyContextEpochV1
+ from contracts.strategy_5scr_directional_thesis_v1 import (
+     DIRECTIONAL_THESIS_RULE_VERSION,
+@@ -38,27 +40,6 @@ def _sha256(payload: Any) -> str:
+     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+ 
+ 
+-def candle_material_hash(candle: ClosedCandleAuthorityRefV1) -> str:
+-    return _sha256(
+-        {
+-            "symbol": candle.symbol,
+-            "timeframe": candle.timeframe,
+-            "open_time_utc": candle.open_time_utc,
+-            "close_time_utc": candle.close_time_utc,
+-            "open": candle.open,
+-            "high": candle.high,
+-            "low": candle.low,
+-            "close": candle.close,
+-        }
+-    )
+-
+-
+-def candle_evidence_hash(candle: ClosedCandleAuthorityRefV1) -> str:
+-    payload = candle.model_dump(mode="json")
+-    payload.pop("candle_evidence_id", None)
+-    return _sha256(payload)
+-
+-
+ def _validate_candle_identity(candle: ClosedCandleAuthorityRefV1) -> str | None:
+     if candle.material_candle_hash != candle_material_hash(candle):
+         return "CANDLE_MATERIAL_HASH_DRIFT"
+diff --git a/contracts/strategy_5scr_candidate_handoff_v31.py b/contracts/strategy_5scr_candidate_handoff_v31.py
+index 32dbcdda..6c757b7a 100644
+--- a/contracts/strategy_5scr_candidate_handoff_v31.py
++++ b/contracts/strategy_5scr_candidate_handoff_v31.py
+@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
+ 
+ from contracts.strategy_5scr_context_route_v31 import ContextRouteReceiptV31, context_route_receipt_hash_v31
+ from contracts.strategy_5scr_net_geometry_v31 import EntryIntervalV31, GeometryContract, Price
++from contracts.strategy_5scr_ordered_proof_v31 import OrderedProofEvidenceV31, ordered_proof_hash_v31
+ from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
+ 
+ 
+@@ -70,11 +71,12 @@ class TradePlanCandidateV31(GeometryContract):
+ class CandidateHandoffV31(GeometryContract):
+     profile: Literal["TEST_ONLY"]
+     selected_ssot_hash: Literal["sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"]
+-    proof_policy_id: Literal["S3_S5_HANDOFF_TEST_V2"]
++    proof_policy_id: Literal["S3_S5_HANDOFF_TEST_V3"]
+     candidate: TradePlanCandidateV31
+     target_universe: TargetUniverseV31
+     admission_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+     thesis_structural_proof_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    thesis_structural_proof: OrderedProofEvidenceV31
+     context_route_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+     context_route_receipt: ContextRouteReceiptV31
+     price_quality_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+@@ -106,4 +108,27 @@ class CandidateHandoffV31(GeometryContract):
+             or context.selected_route not in context.material.allowed_routes
+         ):
+             raise ValueError("HANDOFF_CONTEXT_ROUTE_NOT_ALLOWED")
++        proof = self.thesis_structural_proof
++        if self.thesis_structural_proof_hash != ordered_proof_hash_v31(proof):
++            raise ValueError("HANDOFF_ORDERED_PROOF_HASH_MISMATCH")
++        if (
++            proof.strategy_thesis_id,
++            proof.strategy_lifecycle_id,
++            proof.context_epoch_id,
++            proof.symbol,
++            proof.direction,
++            proof.selected_route,
++            proof.context_material_hash,
++        ) != (
++            candidate.strategy_thesis_id,
++            candidate.strategy_lifecycle_id,
++            candidate.context_epoch_id,
++            candidate.symbol,
++            candidate.direction,
++            context.selected_route,
++            context.material_context_hash,
++        ):
++            raise ValueError("HANDOFF_ORDERED_PROOF_SCOPE_MISMATCH")
++        if not proof.evaluated_at <= candidate.decision_at < deadline <= proof.valid_until:
++            raise ValueError("HANDOFF_ORDERED_PROOF_EXPIRED")
+         return self
+diff --git a/contracts/strategy_5scr_candle_identity.py b/contracts/strategy_5scr_candle_identity.py
+new file mode 100644
+index 00000000..6a7a5ad2
+--- /dev/null
++++ b/contracts/strategy_5scr_candle_identity.py
+@@ -0,0 +1,30 @@
++"""Shared existing closed-candle fingerprint semantics; no source attestation."""
++
++import hashlib
++import json
++
++
++def _sha256(payload):
++    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode()
++    return "sha256:" + hashlib.sha256(encoded).hexdigest()
++
++
++def candle_material_hash(candle):
++    return _sha256(
++        {
++            "symbol": candle.symbol,
++            "timeframe": candle.timeframe,
++            "open_time_utc": candle.open_time_utc,
++            "close_time_utc": candle.close_time_utc,
++            "open": candle.open,
++            "high": candle.high,
++            "low": candle.low,
++            "close": candle.close,
++        }
++    )
++
++
++def candle_evidence_hash(candle):
++    payload = candle.model_dump(mode="json")
++    payload.pop("candle_evidence_id", None)
++    return _sha256(payload)
+diff --git a/contracts/strategy_5scr_ordered_proof_v31.py b/contracts/strategy_5scr_ordered_proof_v31.py
+new file mode 100644
+index 00000000..f71be0c5
+--- /dev/null
++++ b/contracts/strategy_5scr_ordered_proof_v31.py
+@@ -0,0 +1,88 @@
++"""TEST_ONLY ordered proof evidence binding; pattern derivation remains external.
++
++Reuse the established candle format and hashes without converting V1 thesis or
++context identities. A content-coherent candle is not an authenticated feed.
++"""
++
++from datetime import UTC, datetime
++from typing import Literal
++from uuid import UUID
++
++from pydantic import Field, field_validator, model_validator
++
++from contracts.strategy_5scr_candle_identity import candle_evidence_hash, candle_material_hash
++from contracts.strategy_5scr_context_route_v31 import Digest, Direction, Label, content_hash
++from contracts.strategy_5scr_directional_thesis_v1 import ClosedCandleAuthorityRefV1
++from contracts.strategy_5scr_net_geometry_v31 import GeometryContract
++
++
++class OrderedProofEvidenceV31(GeometryContract):
++    profile: Literal["TEST_ONLY"]
++    strategy_thesis_id: UUID
++    strategy_lifecycle_id: UUID
++    context_epoch_id: UUID
++    symbol: str = Field(pattern=r"^[A-Z0-9._-]{3,32}$")
++    direction: Direction
++    selected_route: Label
++    context_material_hash: Digest
++    pattern_policy_hash: Digest
++    level_version: Label
++    h1_proof_id: UUID
++    m15_proof_id: UUID
++    h1_source_candles: tuple[ClosedCandleAuthorityRefV1, ...] = Field(min_length=1, max_length=1000)
++    m15_source_candles: tuple[ClosedCandleAuthorityRefV1, ...] = Field(min_length=2, max_length=1000)
++    h1_closed_at: datetime
++    m15_closed_at: datetime
++    m15_break_candle_id: Digest
++    m15_completion_candle_id: Digest
++    m15_completion_kind: Literal["ACCEPTANCE", "FAILED_RECLAIM", "RETEST"]
++    h1_resolution_receipt_hash: Digest
++    m15_resolution_receipt_hash: Digest
++    evaluated_at: datetime
++    valid_until: datetime
++
++    @field_validator("h1_closed_at", "m15_closed_at", "evaluated_at", "valid_until")
++    @classmethod
++    def aware(cls, value):
++        if value.tzinfo is None or value.utcoffset() is None:
++            raise ValueError("ORDERED_PROOF_CLOCK_MUST_BE_AWARE")
++        return value.astimezone(UTC)
++
++    @model_validator(mode="after")
++    def coherent(self):
++        if self.h1_proof_id == self.m15_proof_id:
++            raise ValueError("ORDERED_PROOF_ID_CONFLICT")
++        if not self.h1_closed_at <= self.m15_closed_at <= self.evaluated_at < self.valid_until:
++            raise ValueError("ORDERED_PROOF_CLOCK_ORDER_INVALID")
++        for timeframe, candles, closed_at in (
++            ("H1", self.h1_source_candles, self.h1_closed_at),
++            ("M15", self.m15_source_candles, self.m15_closed_at),
++        ):
++            ids = [c.candle_evidence_id for c in candles]
++            times = [c.close_time_utc for c in candles]
++            if len(set(ids)) != len(ids) or times != sorted(set(times)):
++                raise ValueError("ORDERED_PROOF_CANDLE_ORDER_OR_DUPLICATE")
++            if times[-1] != closed_at:
++                raise ValueError("ORDERED_PROOF_CLOSE_NOT_BOUND_TO_SOURCE")
++            for candle in candles:
++                if candle.symbol != self.symbol or candle.timeframe != timeframe:
++                    raise ValueError("ORDERED_PROOF_CANDLE_SCOPE_MISMATCH")
++                if candle.material_candle_hash != candle_material_hash(
++                    candle
++                ) or candle.candle_evidence_id != candle_evidence_hash(candle):
++                    raise ValueError("ORDERED_PROOF_CANDLE_HASH_MISMATCH")
++        by_id = {c.candle_evidence_id: c for c in self.m15_source_candles}
++        breaking = by_id.get(self.m15_break_candle_id)
++        completion = by_id.get(self.m15_completion_candle_id)
++        if (
++            breaking is None
++            or completion is None
++            or not self.h1_closed_at <= breaking.close_time_utc < completion.close_time_utc == self.m15_closed_at
++        ):
++            raise ValueError("ORDERED_PROOF_BREAK_COMPLETION_NOT_BOUND")
++        return self
++
++
++def ordered_proof_hash_v31(proof: OrderedProofEvidenceV31) -> str:
++    proof = OrderedProofEvidenceV31.model_validate(proof.model_dump())
++    return content_hash(proof.model_dump(mode="json"))
+diff --git a/tests/test_strategy_5scr_candidate_handoff_v31.py b/tests/test_strategy_5scr_candidate_handoff_v31.py
+index 4e756b5e..cbba4adb 100644
+--- a/tests/test_strategy_5scr_candidate_handoff_v31.py
++++ b/tests/test_strategy_5scr_candidate_handoff_v31.py
+@@ -14,6 +14,7 @@ from contracts.strategy_5scr_context_route_v31 import (
+     material_context_hash_v31,
+ )
+ from contracts.strategy_5scr_net_geometry_v31 import NetGeometryContextV31, NetGeometryRequestV31
++from contracts.strategy_5scr_ordered_proof_v31 import ordered_proof_hash_v31
+ from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
+ from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31, propose_canonical_parent_v31
+ from risk.strategy_5scr_capacity_v31 import CapacityRejectedError
+@@ -21,6 +22,7 @@ from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
+ from tests.test_strategy_5scr_capacity_v31 import NOW, H, request_for, seed
+ from tests.test_strategy_5scr_context_route_v31 import receipt as context_fixture
+ from tests.test_strategy_5scr_net_geometry_v31 import request_data
++from tests.test_strategy_5scr_ordered_proof_v31 import proof as proof_fixture
+ from tests.test_strategy_5scr_target_selection_v31 import fixture as target_fixture
+ 
+ 
+@@ -81,14 +83,16 @@ def bundle(direction="BUY"):
+         decision_at=NOW,
+     )
+     context_receipt = context_fixture(direction)
++    structural_proof = proof_fixture(context_receipt)
+     handoff = CandidateHandoffV31(
+         profile="TEST_ONLY",
+         selected_ssot_hash="sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+-        proof_policy_id="S3_S5_HANDOFF_TEST_V2",
++        proof_policy_id="S3_S5_HANDOFF_TEST_V3",
+         candidate=candidate,
+         target_universe=universe,
+         admission_receipt_hash=H,
+-        thesis_structural_proof_hash=H,
++        thesis_structural_proof_hash=ordered_proof_hash_v31(structural_proof),
++        thesis_structural_proof=structural_proof,
+         context_route_receipt_hash=context_route_receipt_hash_v31(context_receipt),
+         context_route_receipt=context_receipt,
+         price_quality_receipt_hash=H,
+@@ -167,6 +171,7 @@ def test_context_binding_rejected_before_risk_verifiers(fault, reason):
+     )
+     body["candidate"] = handoff.candidate
+     body["target_universe"] = handoff.target_universe
++    body["thesis_structural_proof"] = handoff.thesis_structural_proof
+     if fault != "missing_body":
+         body["context_route_receipt"] = ContextRouteReceiptV31.model_validate(context)
+     unsafe = CandidateHandoffV31.model_construct(**body)
+@@ -201,6 +206,58 @@ def test_canonical_candidate_to_target_geometry_sizing_capacity_is_bound_and_non
+     assert handoff.candidate.model_dump_json() == candidate_before
+ 
+ 
++@pytest.mark.parametrize(
++    "fault,reason",
++    [
++        ("thesis", "ORDERED_PROOF_SCOPE_MISMATCH"),
++        ("epoch", "ORDERED_PROOF_SCOPE_MISMATCH"),
++        ("route", "ORDERED_PROOF_SCOPE_MISMATCH"),
++        ("hash", "ORDERED_PROOF_HASH_MISMATCH"),
++        ("expiry", "ORDERED_PROOF_EXPIRED"),
++        ("future_evaluation", "ORDERED_PROOF_EXPIRED"),
++        ("missing", "Field required"),
++        ("old_policy", "literal_error"),
++    ],
++)
++def test_ordered_proof_binding_rejected_before_risk(fault, reason):
++    ledger, handoff, request = bundle()
++    structural = handoff.thesis_structural_proof
++    if fault == "thesis":
++        structural = structural.model_copy(update={"strategy_thesis_id": UUID(int=99)})
++    elif fault == "epoch":
++        structural = structural.model_copy(update={"context_epoch_id": UUID(int=99)})
++    elif fault == "route":
++        structural = structural.model_copy(update={"selected_route": "OTHER_ROUTE"})
++    elif fault == "expiry":
++        structural = structural.model_copy(update={"valid_until": NOW + timedelta(microseconds=1)})
++    elif fault == "future_evaluation":
++        structural = structural.model_copy(update={"evaluated_at": NOW + timedelta(seconds=1)})
++    body = dict(handoff)
++    body["thesis_structural_proof"] = structural
++    body["thesis_structural_proof_hash"] = H if fault == "hash" else ordered_proof_hash_v31(structural)
++    if fault == "missing":
++        body.pop("thesis_structural_proof")
++    if fault == "old_policy":
++        body["proof_policy_id"] = "S3_S5_HANDOFF_TEST_V2"
++    unsafe = CandidateHandoffV31.model_construct(**body)
++    calls = []
++    with pytest.raises(ValidationError, match=reason):
++        propose_canonical_parent_v31(
++            ledger,
++            unsafe,
++            request,
++            reservation_id=UUID(int=21),
++            expires_at=NOW + timedelta(seconds=1),
++            now=NOW,
++            owner_epoch=ledger.owner_epoch,
++            expected_version=ledger.version,
++            verify_handoff=lambda *args: calls.append(args),
++            verify_universe=None,
++            verify_risk_inputs=None,
++        )
++    assert not calls and not ledger.reservations
++
++
+ def test_advisory_candidate_stops_before_verifiers_or_capacity():
+     ledger, handoff, request = bundle()
+     candidate = handoff.candidate.model_copy(
+diff --git a/tests/test_strategy_5scr_candidate_revision_v31.py b/tests/test_strategy_5scr_candidate_revision_v31.py
+index 9a5e41cb..ddd6e6ff 100644
+--- a/tests/test_strategy_5scr_candidate_revision_v31.py
++++ b/tests/test_strategy_5scr_candidate_revision_v31.py
+@@ -13,9 +13,11 @@ from contracts.strategy_5scr_candidate_revision_v31 import (
+     prepare_candidate_revision_v31,
+ )
+ from contracts.strategy_5scr_context_route_v31 import context_route_receipt_hash_v31, material_context_hash_v31
++from contracts.strategy_5scr_ordered_proof_v31 import ordered_proof_hash_v31
+ from storage.strategy_5scr_activity_consumer import LifecycleOwnerFence
+ from storage.strategy_5scr_candidate_revision_v31 import CandidateRevisionRepositoryV31, _stored
+ from tests.test_strategy_5scr_candidate_handoff_v31 import NOW, bundle
++from tests.test_strategy_5scr_ordered_proof_v31 import proof as proof_fixture
+ 
+ 
+ def revision(number=1, previous=None, advisory=False):
+@@ -132,6 +134,14 @@ def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+                 "context_route_receipt_hash": context_route_receipt_hash_v31(context),
+             }
+         )
++    if fault in ("symbol", "strategy_lifecycle_id", "strategy_thesis_id"):
++        structural_proof = proof_fixture(handoff.context_route_receipt, thesis_id=candidate.strategy_thesis_id)
++        handoff = handoff.model_copy(
++            update={
++                "thesis_structural_proof": structural_proof,
++                "thesis_structural_proof_hash": ordered_proof_hash_v31(structural_proof),
++            }
++        )
+     request = request.model_copy(update={"handoff": handoff})
+     with pytest.raises(ValueError, match=reason):
+         prepared(request, first)
+diff --git a/tests/test_strategy_5scr_ordered_proof_v31.py b/tests/test_strategy_5scr_ordered_proof_v31.py
+new file mode 100644
+index 00000000..59db7b6a
+--- /dev/null
++++ b/tests/test_strategy_5scr_ordered_proof_v31.py
+@@ -0,0 +1,120 @@
++from datetime import timedelta
++from uuid import UUID
++
++import pytest
++from pydantic import ValidationError
++
++from contracts.strategy_5scr_ordered_proof_v31 import OrderedProofEvidenceV31, ordered_proof_hash_v31
++from tests.test_strategy_5scr_context_route_v31 import NOW, H, receipt
++from tests.test_strategy_5scr_directional_thesis_v1 import _candles, _rehash_candle
++
++
++def proof(context=None, thesis_id=None):
++    context = context or receipt()
++    thesis_id = thesis_id or UUID(int=2)
++    h1, m15 = _candles(context.direction)
++    offset = NOW - timedelta(minutes=1) - m15[-1].close_time_utc
++
++    def shifted(candles):
++        return tuple(
++            _rehash_candle(
++                {
++                    **c.model_dump(),
++                    "symbol": context.symbol,
++                    "open_time_utc": c.open_time_utc + offset,
++                    "close_time_utc": c.close_time_utc + offset,
++                }
++            )
++            for c in candles
++        )
++
++    h1, m15 = shifted(h1), shifted(m15)
++    return OrderedProofEvidenceV31(
++        profile="TEST_ONLY",
++        strategy_thesis_id=thesis_id,
++        strategy_lifecycle_id=context.strategy_lifecycle_id,
++        context_epoch_id=context.context_epoch_id,
++        symbol=context.symbol,
++        direction=context.direction,
++        selected_route=context.selected_route,
++        context_material_hash=context.material_context_hash,
++        pattern_policy_hash=H,
++        level_version="fixture-level-v1",
++        h1_proof_id=UUID(int=70),
++        m15_proof_id=UUID(int=71),
++        h1_source_candles=h1,
++        m15_source_candles=m15,
++        h1_closed_at=h1[-1].close_time_utc,
++        m15_closed_at=m15[-1].close_time_utc,
++        m15_break_candle_id=m15[-2].candle_evidence_id,
++        m15_completion_candle_id=m15[-1].candle_evidence_id,
++        m15_completion_kind="RETEST",
++        h1_resolution_receipt_hash=H,
++        m15_resolution_receipt_hash=H,
++        evaluated_at=NOW,
++        valid_until=NOW + timedelta(hours=1),
++    )
++
++
++@pytest.mark.parametrize("direction", ["BUY", "SELL"])
++def test_full_candle_content_roundtrips_with_ordered_proof_hash(direction):
++    value = proof(receipt(direction))
++    restored = OrderedProofEvidenceV31.model_validate_json(value.model_dump_json())
++    assert restored == value and ordered_proof_hash_v31(restored) == ordered_proof_hash_v31(value)
++    assert value.h1_closed_at <= value.m15_closed_at <= value.evaluated_at
++
++
++@pytest.mark.parametrize(
++    "fault",
++    [
++        "future",
++        "expiry",
++        "naive",
++        "h1_close",
++        "m15_close",
++        "same_proof_id",
++        "duplicate",
++        "reversed",
++        "wrong_symbol",
++        "wrong_timeframe",
++        "material_hash",
++        "content_hash",
++        "missing_break",
++        "completion_is_break",
++        "level_missing",
++    ],
++)
++def test_incoherent_proof_rejected(fault):
++    body = proof().model_dump()
++    if fault == "future":
++        body["evaluated_at"] = body["m15_closed_at"] - timedelta(seconds=1)
++    elif fault == "expiry":
++        body["valid_until"] = body["evaluated_at"]
++    elif fault == "naive":
++        body["evaluated_at"] = NOW.replace(tzinfo=None)
++    elif fault == "h1_close":
++        body["h1_closed_at"] -= timedelta(seconds=1)
++    elif fault == "m15_close":
++        body["m15_closed_at"] += timedelta(seconds=1)
++    elif fault == "same_proof_id":
++        body["m15_proof_id"] = body["h1_proof_id"]
++    elif fault == "duplicate":
++        body["h1_source_candles"] *= 2
++    elif fault == "reversed":
++        body["m15_source_candles"] = tuple(reversed(body["m15_source_candles"]))
++    elif fault == "wrong_symbol":
++        body["h1_source_candles"][0]["symbol"] = "XAUUSD"
++    elif fault == "wrong_timeframe":
++        body["h1_source_candles"] = body["m15_source_candles"]
++    elif fault == "material_hash":
++        body["h1_source_candles"][0]["close"] += 0.0001
++    elif fault == "content_hash":
++        body["h1_source_candles"][0]["source_content_hash"] = "sha256:" + "8" * 64
++    elif fault == "missing_break":
++        body["m15_break_candle_id"] = "sha256:" + "8" * 64
++    elif fault == "completion_is_break":
++        body["m15_completion_candle_id"] = body["m15_break_candle_id"]
++    elif fault == "level_missing":
++        body.pop("level_version")
++    with pytest.raises(ValidationError):
++        OrderedProofEvidenceV31.model_validate(body)

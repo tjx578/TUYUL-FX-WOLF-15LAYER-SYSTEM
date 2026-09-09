@@ -1,0 +1,191 @@
+commit 07495800dabe175be63841bd008274af37ec0b19
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 13:04:15 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 13:04:15 2026 +0800
+
+    Bind reservation inputs to stored snapshot and candidate metadata
+
+diff --git a/risk/s5_campaign_risk.py b/risk/s5_campaign_risk.py
+index 55704504..0c50047f 100644
+--- a/risk/s5_campaign_risk.py
++++ b/risk/s5_campaign_risk.py
+@@ -23,6 +23,7 @@ class S5RiskReason(StrEnum):
+     APPROVED_CHILD = "RISK_APPROVED_CHILD"
+     SNAPSHOT_STALE = "RISK_SNAPSHOT_STALE"
+     ACCOUNT_MISMATCH = "RISK_ACCOUNT_MISMATCH"
++    ACCOUNT_CURRENCY_UNSUPPORTED = "RISK_ACCOUNT_CURRENCY_UNSUPPORTED"
+     SNAPSHOT_INCONSISTENT = "RISK_SNAPSHOT_INCONSISTENT"
+     TRADE_DISABLED = "RISK_TRADE_DISABLED"
+     INVALID_SYMBOL_SPEC = "RISK_INVALID_SYMBOL_SPEC"
+@@ -142,6 +143,12 @@ def validate_account_snapshot(
+     age = (current - snapshot.captured_at_utc).total_seconds()
+     if snapshot.account_id != expected_account_id:
+         return SnapshotValidation(False, S5RiskReason.ACCOUNT_MISMATCH, "snapshot account binding mismatch")
++    if snapshot.currency != "USD":
++        return SnapshotValidation(
++            False,
++            S5RiskReason.ACCOUNT_CURRENCY_UNSUPPORTED,
++            "USD risk primitives require a USD account; currency conversion is not bound",
++        )
+     if age < -2 or age > policy.snapshot_max_age_seconds:
+         return SnapshotValidation(False, S5RiskReason.SNAPSHOT_STALE, f"snapshot age {age:.3f}s outside policy")
+     if not snapshot.trade_allowed or not snapshot.autotrading_enabled:
+diff --git a/storage/strategy_5scr_risk_reservation_repository.py b/storage/strategy_5scr_risk_reservation_repository.py
+index be5e2284..48642f91 100644
+--- a/storage/strategy_5scr_risk_reservation_repository.py
++++ b/storage/strategy_5scr_risk_reservation_repository.py
+@@ -94,6 +94,33 @@ def _candidate_hash(payload: Mapping[str, Any]) -> str:
+     return hashlib.sha256(canonical_json_bytes(dict(payload))).hexdigest()
+ 
+ 
++def _snapshot_from_row(row: Mapping[str, Any]) -> AccountSnapshotV1:
++    snapshot = AccountSnapshotV1.model_validate(_mapping(row["payload"]))
++    if snapshot.snapshot_id != str(row["snapshot_id"]) or snapshot.captured_at_utc != row["captured_at"]:
++        raise RiskReservationConflictError("snapshot payload identity or capture clock differs from stored row")
++    return snapshot
++
++
++def _candidate_from_row(row: Mapping[str, Any]) -> tuple[dict[str, Any], Strategy5SCRTradePlan]:
++    candidate = _mapping(row["payload"])
++    _assert_candidate_is_non_executable(candidate)
++    if _candidate_hash(candidate) != str(row["payload_hash"]):
++        raise RiskReservationConflictError("stored candidate payload hash mismatch")
++    tradeplan = tradeplan_from_candidate_payload(candidate)
++    # This is the existing V1 table's lifecycle/campaign mapping, not an adapter
++    # that rewrites v3.1 or shadow candidate identities into the legacy schema.
++    expected = {
++        "tradeplan_id": tradeplan.tradeplan_id,
++        "lifecycle_id": tradeplan.campaign_id,
++        "symbol": tradeplan.symbol,
++        "direction": tradeplan.direction,
++        "decision_at": tradeplan.decision_at_utc,
++    }
++    if any(row[key] != value for key, value in expected.items()):
++        raise RiskReservationConflictError("candidate payload metadata differs from stored row")
++    return candidate, tradeplan
++
++
+ def _identity_uuid(kind: str, identity: str) -> UUID:
+     return uuid5(_IDENTITY_NAMESPACE, f"{kind}:{identity}")
+ 
+@@ -441,7 +468,7 @@ class Strategy5SCRRiskReservationRepository:
+ 
+             snapshot_row = await connection.fetchrow(
+                 """
+-                SELECT snapshot_id, payload
++                SELECT snapshot_id, captured_at, payload
+                 FROM executor_account_snapshots
+                 WHERE executor_id = $1::uuid AND account_id = $2
+                 ORDER BY captured_at DESC, received_at DESC
+@@ -452,7 +479,7 @@ class Strategy5SCRRiskReservationRepository:
+             )
+             if not snapshot_row:
+                 raise RiskReservationRejectedError("RISK_SNAPSHOT_MISSING", "executor has no account snapshot")
+-            snapshot = AccountSnapshotV1.model_validate(_mapping(snapshot_row["payload"]))
++            snapshot = _snapshot_from_row(snapshot_row)
+             snapshot_verdict = validate_account_snapshot(
+                 snapshot,
+                 expected_account_id=account_id,
+@@ -483,11 +510,7 @@ class Strategy5SCRRiskReservationRepository:
+             )
+             if not candidate_row:
+                 raise RiskReservationRejectedError("RISK_CANDIDATE_MISSING", "tradeplan candidate is unavailable")
+-            candidate = _mapping(candidate_row["payload"])
+-            _assert_candidate_is_non_executable(candidate)
+-            if _candidate_hash(candidate) != str(candidate_row["payload_hash"]):
+-                raise RiskReservationConflictError("stored candidate payload hash mismatch")
+-            tradeplan = tradeplan_from_candidate_payload(candidate)
++            candidate, tradeplan = _candidate_from_row(candidate_row)
+             if tradeplan.tradeplan_id != request.tradeplan_id:
+                 raise RiskReservationConflictError("candidate payload tradeplan identity mismatch")
+             age = (now - tradeplan.decision_at_utc).total_seconds()
+diff --git a/tests/test_s5_campaign_risk.py b/tests/test_s5_campaign_risk.py
+index 652d980f..0c56e36a 100644
+--- a/tests/test_s5_campaign_risk.py
++++ b/tests/test_s5_campaign_risk.py
+@@ -295,3 +295,11 @@ def test_risk_lock_fingerprint_survives_decimal_database_scale():
+ def test_naive_lock_clock_is_rejected_explicitly():
+     invalid = replace(_risk_lock(), locked_at_utc=datetime(2026, 9, 9))
+     assert _authorize(_sized_parent(), risk_lock=invalid) == S5RiskReason.RISK_STATE_INVALID
++
++
++@pytest.mark.parametrize("currency", ["JPY", "EUR", "USC"])
++def test_usd_risk_does_not_assume_account_currency_conversion(currency):
++    snapshot = _snapshot().model_copy(update={"currency": currency})
++    verdict = validate_account_snapshot(snapshot, expected_account_id="acct-01", policy=CampaignRiskPolicy())
++    assert not verdict.allowed
++    assert verdict.reason == S5RiskReason.ACCOUNT_CURRENCY_UNSUPPORTED
+diff --git a/tests/test_strategy_5scr_risk_reservation.py b/tests/test_strategy_5scr_risk_reservation.py
+index a83d04d2..8fbbfadc 100644
+--- a/tests/test_strategy_5scr_risk_reservation.py
++++ b/tests/test_strategy_5scr_risk_reservation.py
+@@ -13,12 +13,68 @@ from contracts.strategy_5scr_risk_reservation import (
+     validate_final_signal_reservation,
+ )
+ from storage.strategy_5scr_risk_reservation_repository import (
++    RiskReservationConflictError,
+     RiskReservationRejectedError,
++    _candidate_from_row,
++    _candidate_hash,
++    _snapshot_from_row,
+     build_final_signal_payload,
+ )
++from tests.test_s5_campaign_risk import _snapshot
+ from tests.test_strategy_5scr_pressure_to_tradeplan import _evidence, _legacy_builder, _lifecycle
+ 
+ 
++def _candidate_row():
++    candidate, plan = _candidate_and_plan()
++    return {
++        "tradeplan_id": plan.tradeplan_id,
++        "lifecycle_id": plan.campaign_id,
++        "symbol": plan.symbol,
++        "direction": plan.direction,
++        "decision_at": plan.decision_at_utc,
++        "payload": candidate,
++        "payload_hash": _candidate_hash(candidate),
++    }
++
++
++def test_current_candidate_and_snapshot_row_bindings_pass():
++    row = _candidate_row()
++    candidate, plan = _candidate_from_row(row)
++    assert candidate == row["payload"] and plan.tradeplan_id == row["tradeplan_id"]
++    snapshot = _snapshot()
++    assert (
++        _snapshot_from_row(
++            {
++                "snapshot_id": snapshot.snapshot_id,
++                "captured_at": snapshot.captured_at_utc,
++                "payload": snapshot.model_dump(mode="json"),
++            }
++        )
++        == snapshot
++    )
++
++
++@pytest.mark.parametrize("field", ["tradeplan_id", "lifecycle_id", "symbol", "direction", "decision_at"])
++def test_candidate_row_metadata_drift_is_rejected_even_with_valid_payload_hash(field):
++    row = _candidate_row()
++    row[field] = row[field] + timedelta(seconds=1) if field == "decision_at" else "WRONG"
++    with pytest.raises(RiskReservationConflictError, match="metadata"):
++        _candidate_from_row(row)
++
++
++@pytest.mark.parametrize("field", ["snapshot_id", "captured_at"])
++def test_snapshot_row_identity_and_recency_cannot_drift_from_payload(field):
++    snapshot = _snapshot()
++    row = {
++        "snapshot_id": snapshot.snapshot_id,
++        "captured_at": snapshot.captured_at_utc,
++        "payload": snapshot.model_dump(mode="json"),
++    }
++    row[field] = "WRONG" if field == "snapshot_id" else snapshot.captured_at_utc - timedelta(hours=1)
++    with pytest.raises(RiskReservationConflictError, match="snapshot payload"):
++        _snapshot_from_row(row)
++
++
+ def _candidate_and_plan():
+     result = _legacy_builder().build(_lifecycle(), _evidence())
+     assert result.tradeplan is not None

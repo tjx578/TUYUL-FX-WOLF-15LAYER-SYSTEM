@@ -1,0 +1,292 @@
+.................................................F.F.................... [ 60%]
+...............................................                          [100%]
+================================== FAILURES ===================================
+_ test_revision_cannot_relabel_stale_or_unrelated_evidence[symbol-PLAN_SCOPE_CHANGED] _
+
+fault = 'symbol', reason = 'PLAN_SCOPE_CHANGED'
+
+    @pytest.mark.parametrize(
+        "fault,reason",
+        [
+            ("revision", "PREDECESSOR_CONFLICT"),
+            ("predecessor", "PREDECESSOR_CONFLICT"),
+            ("symbol", "PLAN_SCOPE_CHANGED"),
+            ("tradeplan_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_lifecycle_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_thesis_id", "PLAN_SCOPE_CHANGED"),
+            ("clock", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_id", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_receipt", "FRESH_REEVALUATION_REQUIRED"),
+            ("admission_id", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+            ("admission_receipt", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+        ],
+    )
+    def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+        first = prepared(revision(advisory=True))
+        request = revision(2, first)
+        candidate = request.handoff.candidate
+        if fault == "revision":
+            candidate = candidate.model_copy(update={"tradeplan_revision": 3})
+        elif fault == "predecessor":
+            request = request.model_copy(update={"predecessor_hash": "sha256:" + "f" * 64})
+        elif fault in ("tradeplan_id", "strategy_lifecycle_id", "strategy_thesis_id"):
+            candidate = candidate.model_copy(update={fault: UUID(int=999)})
+        elif fault == "symbol":
+            candidate = candidate.model_copy(update={"symbol": "XAUUSD"})
+        elif fault == "clock":
+            candidate = candidate.model_copy(update={"decision_at": NOW})
+        elif fault == "evaluation_id":
+            request = request.model_copy(update={"reevaluation_id": first.request.reevaluation_id})
+        elif fault == "evaluation_receipt":
+            request = request.model_copy(update={"reevaluation_receipt_hash": first.request.reevaluation_receipt_hash})
+        elif fault == "admission_id":
+            candidate = candidate.model_copy(
+                update={"strategy_analysis_admission_id": first.request.handoff.candidate.strategy_analysis_admission_id}
+            )
+        elif fault == "admission_receipt":
+            request = request.model_copy(
+                update={
+                    "handoff": request.handoff.model_copy(
+                        update={"admission_receipt_hash": first.request.handoff.admission_receipt_hash}
+                    )
+                }
+            )
+        request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+        with pytest.raises(ValueError, match=reason):
+>           prepared(request, first)
+
+tests\test_strategy_5scr_candidate_revision_v31.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_strategy_5scr_candidate_revision_v31.py:61: in prepared
+    return prepare_candidate_revision_v31(request, previous, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+request = CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUATED_CANDIDATE_TEST_V1', handoff=Can...00-0000000000ca'), reevaluation_receipt_hash='sha256:000000000000000000000000000000000000000000000000000000000000000c')
+previous = StoredCandidateRevisionV31(request=CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUA...000000000000000000000000000b'), request_hash='sha256:b55e1b797a6a022d57bc0285a115c1d4ffecab0a1d93a6a5324eff76af1cd334')
+
+    def prepare_candidate_revision_v31(
+        request: CandidateRevisionAppendV31,
+        previous: StoredCandidateRevisionV31 | None,
+        *,
+        now: datetime,
+        verify_reevaluation: Callable[[CandidateRevisionAppendV31, str], bool] | None,
+    ) -> StoredCandidateRevisionV31:
+        """Validate a new append; duplicate handling belongs to the locked store.
+    
+        The verifier must bind complete S3-S5 re-evaluation and individual authority
+        clocks. Receipt references alone do not prove those domain requirements.
+        """
+>       request = CandidateRevisionAppendV31.model_validate(request.model_dump())
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for CandidateRevisionAppendV31
+E       handoff
+E         Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.9/v/value_error
+
+contracts\strategy_5scr_candidate_revision_v31.py:86: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+fault = 'symbol', reason = 'PLAN_SCOPE_CHANGED'
+
+    @pytest.mark.parametrize(
+        "fault,reason",
+        [
+            ("revision", "PREDECESSOR_CONFLICT"),
+            ("predecessor", "PREDECESSOR_CONFLICT"),
+            ("symbol", "PLAN_SCOPE_CHANGED"),
+            ("tradeplan_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_lifecycle_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_thesis_id", "PLAN_SCOPE_CHANGED"),
+            ("clock", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_id", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_receipt", "FRESH_REEVALUATION_REQUIRED"),
+            ("admission_id", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+            ("admission_receipt", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+        ],
+    )
+    def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+        first = prepared(revision(advisory=True))
+        request = revision(2, first)
+        candidate = request.handoff.candidate
+        if fault == "revision":
+            candidate = candidate.model_copy(update={"tradeplan_revision": 3})
+        elif fault == "predecessor":
+            request = request.model_copy(update={"predecessor_hash": "sha256:" + "f" * 64})
+        elif fault in ("tradeplan_id", "strategy_lifecycle_id", "strategy_thesis_id"):
+            candidate = candidate.model_copy(update={fault: UUID(int=999)})
+        elif fault == "symbol":
+            candidate = candidate.model_copy(update={"symbol": "XAUUSD"})
+        elif fault == "clock":
+            candidate = candidate.model_copy(update={"decision_at": NOW})
+        elif fault == "evaluation_id":
+            request = request.model_copy(update={"reevaluation_id": first.request.reevaluation_id})
+        elif fault == "evaluation_receipt":
+            request = request.model_copy(update={"reevaluation_receipt_hash": first.request.reevaluation_receipt_hash})
+        elif fault == "admission_id":
+            candidate = candidate.model_copy(
+                update={"strategy_analysis_admission_id": first.request.handoff.candidate.strategy_analysis_admission_id}
+            )
+        elif fault == "admission_receipt":
+            request = request.model_copy(
+                update={
+                    "handoff": request.handoff.model_copy(
+                        update={"admission_receipt_hash": first.request.handoff.admission_receipt_hash}
+                    )
+                }
+            )
+        request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+>       with pytest.raises(ValueError, match=reason):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'PLAN_SCOPE_CHANGED'
+E        Input: "1 validation error for CandidateRevisionAppendV31\nhandoff\n  Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.9/v/value_error"
+
+tests\test_strategy_5scr_candidate_revision_v31.py:121: AssertionError
+_ test_revision_cannot_relabel_stale_or_unrelated_evidence[strategy_lifecycle_id-PLAN_SCOPE_CHANGED] _
+
+fault = 'strategy_lifecycle_id', reason = 'PLAN_SCOPE_CHANGED'
+
+    @pytest.mark.parametrize(
+        "fault,reason",
+        [
+            ("revision", "PREDECESSOR_CONFLICT"),
+            ("predecessor", "PREDECESSOR_CONFLICT"),
+            ("symbol", "PLAN_SCOPE_CHANGED"),
+            ("tradeplan_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_lifecycle_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_thesis_id", "PLAN_SCOPE_CHANGED"),
+            ("clock", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_id", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_receipt", "FRESH_REEVALUATION_REQUIRED"),
+            ("admission_id", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+            ("admission_receipt", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+        ],
+    )
+    def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+        first = prepared(revision(advisory=True))
+        request = revision(2, first)
+        candidate = request.handoff.candidate
+        if fault == "revision":
+            candidate = candidate.model_copy(update={"tradeplan_revision": 3})
+        elif fault == "predecessor":
+            request = request.model_copy(update={"predecessor_hash": "sha256:" + "f" * 64})
+        elif fault in ("tradeplan_id", "strategy_lifecycle_id", "strategy_thesis_id"):
+            candidate = candidate.model_copy(update={fault: UUID(int=999)})
+        elif fault == "symbol":
+            candidate = candidate.model_copy(update={"symbol": "XAUUSD"})
+        elif fault == "clock":
+            candidate = candidate.model_copy(update={"decision_at": NOW})
+        elif fault == "evaluation_id":
+            request = request.model_copy(update={"reevaluation_id": first.request.reevaluation_id})
+        elif fault == "evaluation_receipt":
+            request = request.model_copy(update={"reevaluation_receipt_hash": first.request.reevaluation_receipt_hash})
+        elif fault == "admission_id":
+            candidate = candidate.model_copy(
+                update={"strategy_analysis_admission_id": first.request.handoff.candidate.strategy_analysis_admission_id}
+            )
+        elif fault == "admission_receipt":
+            request = request.model_copy(
+                update={
+                    "handoff": request.handoff.model_copy(
+                        update={"admission_receipt_hash": first.request.handoff.admission_receipt_hash}
+                    )
+                }
+            )
+        request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+        with pytest.raises(ValueError, match=reason):
+>           prepared(request, first)
+
+tests\test_strategy_5scr_candidate_revision_v31.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_strategy_5scr_candidate_revision_v31.py:61: in prepared
+    return prepare_candidate_revision_v31(request, previous, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+request = CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUATED_CANDIDATE_TEST_V1', handoff=Can...00-0000000000ca'), reevaluation_receipt_hash='sha256:000000000000000000000000000000000000000000000000000000000000000c')
+previous = StoredCandidateRevisionV31(request=CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUA...000000000000000000000000000b'), request_hash='sha256:b55e1b797a6a022d57bc0285a115c1d4ffecab0a1d93a6a5324eff76af1cd334')
+
+    def prepare_candidate_revision_v31(
+        request: CandidateRevisionAppendV31,
+        previous: StoredCandidateRevisionV31 | None,
+        *,
+        now: datetime,
+        verify_reevaluation: Callable[[CandidateRevisionAppendV31, str], bool] | None,
+    ) -> StoredCandidateRevisionV31:
+        """Validate a new append; duplicate handling belongs to the locked store.
+    
+        The verifier must bind complete S3-S5 re-evaluation and individual authority
+        clocks. Receipt references alone do not prove those domain requirements.
+        """
+>       request = CandidateRevisionAppendV31.model_validate(request.model_dump())
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for CandidateRevisionAppendV31
+E       handoff
+E         Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.9/v/value_error
+
+contracts\strategy_5scr_candidate_revision_v31.py:86: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+fault = 'strategy_lifecycle_id', reason = 'PLAN_SCOPE_CHANGED'
+
+    @pytest.mark.parametrize(
+        "fault,reason",
+        [
+            ("revision", "PREDECESSOR_CONFLICT"),
+            ("predecessor", "PREDECESSOR_CONFLICT"),
+            ("symbol", "PLAN_SCOPE_CHANGED"),
+            ("tradeplan_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_lifecycle_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_thesis_id", "PLAN_SCOPE_CHANGED"),
+            ("clock", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_id", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_receipt", "FRESH_REEVALUATION_REQUIRED"),
+            ("admission_id", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+            ("admission_receipt", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+        ],
+    )
+    def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+        first = prepared(revision(advisory=True))
+        request = revision(2, first)
+        candidate = request.handoff.candidate
+        if fault == "revision":
+            candidate = candidate.model_copy(update={"tradeplan_revision": 3})
+        elif fault == "predecessor":
+            request = request.model_copy(update={"predecessor_hash": "sha256:" + "f" * 64})
+        elif fault in ("tradeplan_id", "strategy_lifecycle_id", "strategy_thesis_id"):
+            candidate = candidate.model_copy(update={fault: UUID(int=999)})
+        elif fault == "symbol":
+            candidate = candidate.model_copy(update={"symbol": "XAUUSD"})
+        elif fault == "clock":
+            candidate = candidate.model_copy(update={"decision_at": NOW})
+        elif fault == "evaluation_id":
+            request = request.model_copy(update={"reevaluation_id": first.request.reevaluation_id})
+        elif fault == "evaluation_receipt":
+            request = request.model_copy(update={"reevaluation_receipt_hash": first.request.reevaluation_receipt_hash})
+        elif fault == "admission_id":
+            candidate = candidate.model_copy(
+                update={"strategy_analysis_admission_id": first.request.handoff.candidate.strategy_analysis_admission_id}
+            )
+        elif fault == "admission_receipt":
+            request = request.model_copy(
+                update={
+                    "handoff": request.handoff.model_copy(
+                        update={"admission_receipt_hash": first.request.handoff.admission_receipt_hash}
+                    )
+                }
+            )
+        request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+>       with pytest.raises(ValueError, match=reason):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'PLAN_SCOPE_CHANGED'
+E        Input: "1 validation error for CandidateRevisionAppendV31\nhandoff\n  Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.9/v/value_error"
+
+tests\test_strategy_5scr_candidate_revision_v31.py:121: AssertionError
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\k05-ctx-0909-a1.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_strategy_5scr_candidate_revision_v31.py::test_revision_cannot_relabel_stale_or_unrelated_evidence[symbol-PLAN_SCOPE_CHANGED]
+FAILED tests/test_strategy_5scr_candidate_revision_v31.py::test_revision_cannot_relabel_stale_or_unrelated_evidence[strategy_lifecycle_id-PLAN_SCOPE_CHANGED]
+2 failed, 117 passed in 8.33s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

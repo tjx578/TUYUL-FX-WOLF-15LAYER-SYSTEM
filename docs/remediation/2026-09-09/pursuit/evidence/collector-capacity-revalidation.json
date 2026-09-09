@@ -1,0 +1,26 @@
+{
+  "status": "HOST_CAPACITY_HOLD",
+  "committed_bytes": 18488389632,
+  "commit_limit_bytes": 19278962688,
+  "commit_headroom_bytes": 790573056,
+  "available_physical_mib": 4663,
+  "files": {
+    "ops/mt5_mcp/snapshot.py": {
+      "sha256": "fe95485780b9f7dc4944a305f332b378857c9172edd7e05e3be89e3f6b24c3dc",
+      "ast_parse": "PASS",
+      "matches_pending_checkpoint": true
+    },
+    "tests/test_native_mt5_readonly_mcp.py": {
+      "sha256": "6dabfe2aacbfd0d7b1db17736bef279372ed2dabe42a836a767538b753c19c6e",
+      "ast_parse": "PASS",
+      "matches_pending_checkpoint": true
+    }
+  },
+  "prior_test_reconstruction_exact": true,
+  "test_ast_equivalent_to_cp1": true,
+  "interpretation": "Static equivalence only; final exact-byte test run and commit remain pending.",
+  "runtime_retried": false,
+  "git_retried": false,
+  "workloads_modified": false,
+  "blocked_goal_turns_including_initial_failure": 2
+}

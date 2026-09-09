@@ -255,6 +255,7 @@ def test_orchestrator_publishes_heartbeat_key():
     from services.orchestrator.state_manager import StateManager
 
     mock_redis = MagicMock()
+    mock_redis.eval.return_value = 1
     mock_pipe = MagicMock()
     mock_redis.pipeline.return_value = mock_pipe
     mock_redis.pubsub.return_value = MagicMock()
@@ -262,19 +263,13 @@ def test_orchestrator_publishes_heartbeat_key():
     sm = StateManager(redis_client=mock_redis)
     sm.publish_state("HEARTBEAT")
 
-    # The pipeline should have 3 operations: publish + set state + set heartbeat
-    assert mock_pipe.set.call_count == 2
-    set_calls = mock_pipe.set.call_args_list
-
-    # Second set call should be the dedicated heartbeat key
-    heartbeat_key = set_calls[1][0][0]
-    assert "heartbeat:orchestrator" in heartbeat_key
-
-    heartbeat_payload = json.loads(set_calls[1][0][1])
+    # Atomic owner comparison, state and heartbeat writes share one Redis script.
+    call = mock_redis.eval.call_args.args
+    assert call[1] == 3
+    assert "heartbeat:orchestrator" in call[4]
+    heartbeat_payload = json.loads(call[-1])
     assert "ts" in heartbeat_payload
     assert heartbeat_payload["producer"] == "wolf15-orchestrator"
-
-    mock_pipe.execute.assert_called_once()
 
 
 # ── 8. PeerHealthSummary.to_dict ───────────────────────────────────────────

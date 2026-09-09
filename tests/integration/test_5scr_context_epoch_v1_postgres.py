@@ -14,6 +14,7 @@ from contracts.strategy_5scr_context_epoch_v1 import (
     MaterialContextEvidenceV1,
 )
 from contracts.strategy_5scr_lifecycle_v2 import StrategyLifecycleEventLink, StrategyLifecycleV2
+from storage.observer_export_outbox import ObserverExportOutboxRepository
 from storage.strategy_5scr_context_epoch_v1_repository import (
     EPOCH_TABLE,
     TRANSITION_TABLE,
@@ -246,6 +247,40 @@ async def test_a_b_a_restart_and_duplicate_preserve_three_epoch_identities(postg
         assert history[0].material_context_hash == history[2].material_context_hash
         assert history[0].context_epoch_id != history[2].context_epoch_id
         assert [epoch.state for epoch in history] == ["SUPERSEDED", "SUPERSEDED", "ACTIVE"]
+    finally:
+        await _cleanup(postgres, lifecycle_id)
+
+
+async def test_context_material_transitions_publish_source_verbatim_shadow_events(
+    postgres: PoolBackedPostgres,
+) -> None:
+    lifecycle_id = f"5scr-lifecycle:{uuid4().hex}"
+    first = _evidence(1, bias="BULLISH", variant="observer-a")
+    second = _evidence(2, bias="BEARISH", variant="observer-b")
+    await _seed(postgres, lifecycle_id, (first, second))
+    export = ObserverExportOutboxRepository(pg=cast(Any, postgres))
+    repository = StrategyContextEpochV1Repository(
+        pg=cast(Any, postgres),
+        observer_export_repository=export,
+    )
+    try:
+        opened = await repository.process_evidence(first)
+        transitioned = await repository.process_evidence(second)
+        replay = await repository.process_evidence(second)
+        rows = await export.read_stream(f"analysis-lifecycle:{lifecycle_id}")
+
+        assert opened.status == "PERSISTED"
+        assert transitioned.status == "PERSISTED"
+        assert replay.status == "DUPLICATE"
+        assert len(rows) == 2
+        assert [row.envelope.payload.body["transition_reason"] for row in rows] == [
+            "OPENED",
+            "MATERIAL_CONTEXT_CHANGED",
+        ]
+        assert rows[0].envelope.payload.body["previous_epoch_id"] is None
+        assert rows[1].envelope.payload.body["previous_epoch_id"] == opened.epoch.context_epoch_id
+        assert all(row.envelope.source.service.endswith("-shadow") for row in rows)
+        assert all(row.envelope.payload.body["execution_authority"] is False for row in rows)
     finally:
         await _cleanup(postgres, lifecycle_id)
 

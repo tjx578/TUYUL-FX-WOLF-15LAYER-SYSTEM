@@ -11,9 +11,10 @@ Trace: x-request-id forwarded from proxy unchanged.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 
+from services.dashboard_bff.auth import require_bff_authorization
 from services.dashboard_bff.http_client import get_client
 
 router = APIRouter(tags=["status"])
@@ -24,6 +25,7 @@ async def aggregated_status(
     request: Request,
     authorization: str | None = Header(default=None),
     x_request_id: str | None = Header(default=None, alias="x-request-id"),
+    _auth: dict[str, object] = Depends(require_bff_authorization),  # noqa: B008
 ) -> JSONResponse:
     """Compose an aggregated operator status from core-api.
 
@@ -42,11 +44,10 @@ async def aggregated_status(
     try:
         resp = await client.get("/api/v1/status", headers=fwd_headers)
         core_data = resp.json()
-    except Exception as exc:
+    except Exception:
         return JSONResponse(
             {
-                "error": "core-api unreachable from BFF",
-                "detail": str(exc),
+                "error": "core-api request failed",
                 "surface": "bff",
             },
             status_code=502,

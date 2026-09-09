@@ -1,0 +1,28 @@
+{
+  "base_commit": "c46b89bd4da2d965a507c67a7853db59b8a74a59",
+  "source_status": "UNCOMMITTED",
+  "current_source_sha256": {
+    "ops/mt5_mcp/snapshot.py": "fe95485780b9f7dc4944a305f332b378857c9172edd7e05e3be89e3f6b24c3dc",
+    "tests/test_native_mt5_readonly_mcp.py": "6dabfe2aacbfd0d7b1db17736bef279372ed2dabe42a836a767538b753c19c6e"
+  },
+  "prior_test_source_sha256": {
+    "ops/mt5_mcp/snapshot.py": "fe95485780b9f7dc4944a305f332b378857c9172edd7e05e3be89e3f6b24c3dc",
+    "tests/test_native_mt5_readonly_mcp.py": "e3570ce0f3600c55158d7111f74c7580700298b4e779005fd185148287b49c7e"
+  },
+  "prior_run": "cp1",
+  "prior_tests": 11,
+  "prior_exact_junit_identity_match": true,
+  "current_source_test_status": "NOT_EXECUTED",
+  "final_attempt": "cp2 failed before collection while git diff attempted source snapshot",
+  "error": "fatal: Out of memory, malloc failed (tried to allocate 1048576 bytes)",
+  "ruff": "one import ordering issue fixed; formatter unchanged thereafter",
+  "runtime": {
+    "mcp": "2.0.0",
+    "pydantic": "2.13.5",
+    "pytest": "8.4.2",
+    "psutil": "7.2.2"
+  },
+  "verdict": "PARTIAL_SOURCE_FINAL_VALIDATION_AND_COMMIT_HOLD",
+  "canonical_actions_closed": [],
+  "milestones_done": 0
+}

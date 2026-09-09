@@ -1,0 +1,60 @@
+**PARTIAL_PLAN — kriteria DONE sudah ditetapkan; kelulusan implementasi dan runtime belum terbukti.**
+
+Untuk target Anda, **WOLF15 dinyatakan DONE menuju DEMO otomatis ketika sinyal alami 5S-CR berjalan dari evidence hingga broker, termasuk parent, child yang memenuhi syarat, compounding, dan rekonsiliasi independen—sesuai SSOT v3.1 yang dipilih di repo.**
+
+Assessment selesai, merge PR, build berhasil, atau satu canary terkirim belum memenuhi seluruh target tersebut.
+
+**Kriteria DONE per milestone**
+
+| Milestone                              | Dinyatakan DONE apabila                                                                                                                                                 | Bukti wajib                                                                                               |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **P1 — Release, ownership, readiness** | Source yang diuji sama dengan artifact yang dirilis; satu owner proses per scope; kegagalan task/router wajib terlihat; kegagalan CI/migrasi menggagalkan rilis         | Manifest source/image/config/schema/EA, hasil CI, pengujian kegagalan readiness, pemetaan owner service   |
+| **P2 — Evidence dan strategi**         | Admission, lifecycle, proof, target, SL dan RR mengikuti v3.1; input dan policy yang sama menghasilkan keputusan identik; advisory tidak memperoleh authority eksekusi  | Fixture, replay, identitas dan reason yang tersimpan, laporan acceptance §24                              |
+| **P3 — Risk dan natural command**      | Candidate aktual tersambung ke risk → FinalSignal → signed command → EA; reservation atomik; kapasitas akun dan sizing benar; kontrak serta migrasi gabungan kompatibel | Combined build, pengujian database/concurrency/recovery, contract vectors Python–MQL5, hasil compile EA   |
+| **P4 — D0 engineering DEMO**           | Artifact/account DEMO terikat; SHADOW final menghasilkan nol submit; canary terbatas mencapai outcome yang direkonsiliasi; tidak ada outcome ambigu sebelum rearm       | Trace terminal, scope canary, hash EA, bukti orders/deals/positions/history dari pembaca independen       |
+| **P5a — Natural parent**               | Event canonical alami melewati seluruh strategi dan risk hingga parent benar-benar dieksekusi; proteksi dan lifecycle penutupannya terbukti                             | Lineage episode → candidate → reservation → command → broker → outcome                                    |
+| **P5b — Parent-child dan compounding** | Child memenuhi aturan; risiko dan lifetime slot benar; kedua leg direkonsiliasi; compounding campaign berikutnya memakai basis saldo sesuai policy                      | Bukti rilis child tersendiri, pengujian recovery, broker lifecycle, perhitungan basis campaign berikutnya |
+| **P6 — Evaluasi kesiapan REAL**        | Bukti operasional, recovery, OOS/walk-forward, biaya dan risiko lengkap; dinilai dengan kriteria yang ditetapkan sebelum hasil diketahui                                | Dossier evaluasi, pengukuran aktual, residual risks dan keputusan beralasan                               |
+
+**P5a adalah hasil antara. Target lengkap DEMO otomatis membutuhkan P5b.** Dossier P6 dapat selesai dengan keputusan **HOLD** apabila hasil evaluasinya belum memenuhi kriteria.
+
+**Syarat penutupan setiap tindakan**
+
+Satu tindakan dari backlog hanya boleh ditutup sebagai DONE jika seluruh kondisi berikut terpenuhi:
+
+1. **Outcome terbukti**, bukan hanya kode sudah ditulis.
+2. **Hard dependency terpenuhi**, termasuk policy dan kontrak yang diperlukan.
+3. **Positive path dan negative/fault cases relevan lulus.** Required test yang dilewati tetap belum lulus.
+4. **Bukti terikat pada versi yang tepat:** commit, SSOT, policy, schema, konfigurasi, fixture dan binary EA.
+5. **Tidak ada blocker correctness pada scope tersebut**, seperti salah akun/volume, duplicate submission, kebocoran authority, exposure hilang atau readiness palsu.
+6. **Recovery terbukti** dan mempertahankan ledger, proteksi serta broker truth.
+7. **Hasil dapat ditelusuri reviewer**, dengan expected result, actual result, waktu, environment dan evidence.
+
+PASS dari D0 tidak otomatis berlaku untuk artifact natural. PASS parent juga tidak otomatis membuktikan kemampuan child.
+
+**Pengujian penentu yang tidak boleh terlewat**
+
+* **Mixed direction:** `BUY@0, SELL@150, BUY@300` tidak memecah aktivitas pair hanya karena arah. Eligibility tetap bergantung pada raw coverage, continuity dan gap policy yang sah.
+* **Duplicate dan restart:** tidak menggandakan pulse, lifecycle, reservation atau logical submission.
+* **Advisory:** qualifying evidence tetap dianalisis, tetapi menghasilkan **nol capital reservation dan command**.
+* **Geometri:** closed/as-of proof, structural SL, nearest valid target dan biaya mengikuti v3.1. Ringkasan “H4-only” pada backlog harus dikoreksi mengikuti target universe SSOT.
+* **Risk concurrency:** dua worker tidak dapat memakai kapasitas akun yang sama dua kali.
+* **Unknown submission:** timeout, expiry atau cancellation yang belum terkonfirmasi tidak otomatis membebaskan exposure.
+* **Recovery:** crash, reconnect, partial fill, report terbalik dan kill switch menghasilkan state yang dapat direkonsiliasi.
+
+Untuk P2, §24 v3.1 sudah menyediakan **15 acceptance dengan cakupan 100% dan 20 zero-tolerance**. Angka tersebut harus dilaporkan bersama cakupan dan denominator. Tidak adanya kasus qualifying bukan bukti 100% PASS.
+
+**Batas penting dalam menilai hasil**
+
+Canary yang ditolak broker tetapi berhasil direkonsiliasi membuktikan penanganan rejection; belum membuktikan fill. Satu logical submit juga tidak berarti satu transaction callback. `OrderSend=true` sendiri bukan bukti bahwa transaksi sudah dieksekusi. [Dokumentasi MetaQuotes](https://www.mql5.com/en/docs/trading/ordersend).
+
+Durasi soak, latency SLO, kecukupan sampel, drawdown dan profil risiko harus terikat sebelum evaluasi. Saya tidak menetapkan angka sembarang. Parameter wajib yang belum terikat membuat gate terkait belum DONE.
+
+Tidak seluruh 20 service harus selalu berjalan. Service wajib pada jalur rilis harus berfungsi dan terverifikasi; service lainnya harus memiliki status serta alasan yang jelas.
+
+Dokumen dan register seluruh **41 tindakan** sudah tersedia:
+
+* [WOLF15_Definition_of_Done_2026-09-09.md](sandbox:/workspace/scratch/3c52c2735051/wolf15-done-criteria-20260909/WOLF15_Definition_of_Done_2026-09-09.md)
+* [WOLF15_DONE_Register_41_Actions_2026-09-09.csv](sandbox:/workspace/scratch/3c52c2735051/wolf15-done-criteria-20260909/WOLF15_DONE_Register_41_Actions_2026-09-09.csv)
+
+**Status berdasarkan bukti yang tersedia: assessment selesai dan kriteria DONE tersedia. Implementasi serta acceptance runtime belum dijalankan dalam pekerjaan ini.**

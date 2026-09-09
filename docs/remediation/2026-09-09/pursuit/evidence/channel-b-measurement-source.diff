@@ -1,0 +1,151 @@
+commit dd65625140d3ac391f97ca46c3ef7a540e855390
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 13:36:54 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 13:36:54 2026 +0800
+
+    Reject inconsistent Channel B measurements and unproven zero mutation
+
+diff --git a/ops/mt5_mcp/reconcile.py b/ops/mt5_mcp/reconcile.py
+index f5e74586..2e4afc51 100644
+--- a/ops/mt5_mcp/reconcile.py
++++ b/ops/mt5_mcp/reconcile.py
+@@ -285,7 +285,7 @@ def _measurement_summary(
+         return {}, False
+     summary: dict[str, Any] = {}
+     expected_window = {"from_utc": _iso(window_from), "to_utc": _iso(window_to)}
+-    measured = bool(broker.get("tool_surface_exact")) and broker.get("window") == expected_window
++    measured = broker.get("tool_surface_exact") is True and broker.get("window") == expected_window
+     for tool_name in (
+         "mt5_account_get",
+         "mt5_positions_get",
+@@ -300,13 +300,30 @@ def _measurement_summary(
+             continue
+         state = payload.get("measurement_state", "NOT_MEASURED")
+         truncated = payload.get("truncated")
++        records = payload.get("records")
++        count = payload.get("record_count")
++        source_count = payload.get("source_record_count")
++        consistent = (
++            isinstance(records, list)
++            and all(isinstance(record, Mapping) for record in records)
++            and type(count) is int
++            and type(source_count) is int
++            and count == source_count == len(records)
++            and state == ("MEASURED" if records else "MEASURED_EMPTY")
++        )
++        if consistent and tool_name != "mt5_account_get":
++            tickets = [record.get("ticket") for record in records]
++            consistent = all(type(ticket) is int and ticket > 0 for ticket in tickets)
++            if consistent:
++                consistent = len(set(tickets)) == len(tickets)
+         summary[tool_name] = {
+             "measurement_state": state,
+             "record_count": payload.get("record_count"),
+             "source_record_count": payload.get("source_record_count"),
+             "truncated": truncated,
++            "payload_consistent": consistent,
+         }
+-        if state not in MEASURED_STATES or truncated is not False:
++        if state not in MEASURED_STATES or truncated is not False or not consistent:
+             measured = False
+         if tool_name.startswith("mt5_history_") and payload.get("window") != expected_window:
+             measured = False
+@@ -481,12 +498,13 @@ def reconcile_snapshots(
+         window_from=window_from,
+         window_to=window_to,
+     )
+-    database_measured = bool(database.get("measured")) and not bool(database.get("truncated"))
++    database_measured = database.get("measured") is True and database.get("truncated") is False
+     mutation_evidence = database.get("mutation_evidence", {})
+     zero_mutation = bool(
+         isinstance(mutation_evidence, Mapping)
+         and mutation_evidence.get("xid_unassigned") is True
+-        and int(mutation_evidence.get("changed_tuples") or 0) == 0
++        and type(mutation_evidence.get("changed_tuples")) is int
++        and mutation_evidence["changed_tuples"] == 0
+     )
+     account_state, account_evidence = _account_binding(broker, database)
+ 
+diff --git a/tests/test_channel_b_reconciliation.py b/tests/test_channel_b_reconciliation.py
+index 4e2c6135..382ba5b9 100644
+--- a/tests/test_channel_b_reconciliation.py
++++ b/tests/test_channel_b_reconciliation.py
+@@ -711,6 +711,8 @@ def test_exit_code_contract_is_zero_only_for_executed_pass(gate: str, expected:
+ 
+ 
+ def test_cli_uses_nonzero_exit_for_blocked_report(monkeypatch: object, capsys: object, tmp_path: Path) -> None:
++    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
++
+     async def fake_run_reconciliation(**_kwargs: object) -> dict[str, object]:
+         return {
+             "schema_version": "wolf15.channel-b-reconciliation.v2",
+@@ -784,3 +786,68 @@ exit 0
+ 
+     assert completed.returncode == 0, completed.stderr or completed.stdout
+     assert "EXECUTED_BLOCKED" in report_path.read_text(encoding="utf-8-sig")
++
++
++@pytest.mark.parametrize(
++    "update",
++    [
++        {"records": None},
++        {"record_count": True},
++        {"record_count": "0"},
++        {"source_record_count": 1},
++        {"measurement_state": "MEASURED"},
++        {"records": [None], "record_count": 1, "source_record_count": 1, "measurement_state": "MEASURED"},
++        {"records": [{}], "record_count": 1, "source_record_count": 1, "measurement_state": "MEASURED"},
++        {"records": [{"ticket": True}], "record_count": 1, "source_record_count": 1, "measurement_state": "MEASURED"},
++        {"records": [{"ticket": -1}], "record_count": 1, "source_record_count": 1, "measurement_state": "MEASURED"},
++        {
++            "records": [{"ticket": 10}, {"ticket": 10}],
++            "record_count": 2,
++            "source_record_count": 2,
++            "measurement_state": "MEASURED",
++        },
++    ],
++)
++def test_inconsistent_broker_payload_cannot_pass(update):
++    broker = _broker()
++    broker["snapshots"]["mt5_orders_get"].update(update)
++    report = reconcile.reconcile_snapshots(
++        database=_database(
++            account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
++        ),
++        broker=broker,
++        window_from=WINDOW_FROM,
++        window_to=WINDOW_TO,
++    )
++    assert report["B-B16"] == "NOT_EXECUTED"
++    assert report["DIRECT_BROKER_STATE"] == "NOT_MEASURED"
++    assert report["broker_measurements"]["mt5_orders_get"]["payload_consistent"] is False
++
++
++@pytest.mark.parametrize("changed", [None, False, "0", -1, 0.0, "invalid"])
++def test_missing_or_coerced_zero_mutation_evidence_cannot_pass(changed):
++    database = _database(
++        account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
++    )
++    database["mutation_evidence"]["changed_tuples"] = changed
++    report = reconcile.reconcile_snapshots(
++        database=database, broker=_broker(), window_from=WINDOW_FROM, window_to=WINDOW_TO
++    )
++    assert report["B-B16"] == "EXECUTION_ERROR"
++    assert report["DATABASE_PRODUCTION_MUTATION_COUNT"] == "NOT_MEASURED"
++
++
++@pytest.mark.parametrize(
++    "channel,field,value",
++    [("broker", "tool_surface_exact", "true"), ("database", "measured", "true"), ("database", "truncated", None)],
++)
++def test_measurement_flags_require_explicit_booleans(channel, field, value):
++    database = _database(
++        account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
++    )
++    broker = _broker()
++    (broker if channel == "broker" else database)[field] = value
++    report = reconcile.reconcile_snapshots(
++        database=database, broker=broker, window_from=WINDOW_FROM, window_to=WINDOW_TO
++    )
++    assert report["B-B16"] == "NOT_EXECUTED"

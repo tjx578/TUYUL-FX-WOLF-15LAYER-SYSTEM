@@ -1,0 +1,28 @@
+{
+  "scope": "ACTUAL_ORCHESTRATOR_INTERNAL_NETWORK",
+  "accepted": false,
+  "cases": [
+    {
+      "case": "graceful",
+      "ready_before_fault": 200,
+      "missing_account_mode": "KILL_SWITCH",
+      "listener_ports": [
+        18083
+      ],
+      "exit_code": 0,
+      "passed": true
+    }
+  ],
+  "production": "NOT_EXECUTED",
+  "trading_enabled": false,
+  "image_id": "sha256:81071c1be6e0bc1e6d268cf2c5f30d0d2ce4804773dabd19d9b6aa7260088282",
+  "files": {
+    "services/orchestrator/state_manager.py": "a4a77259c3f52ca5254ac076c2847c57bd2b4cc0fa6ca55a12d7bd6893239fdf",
+    "services/orchestrator/mode_owner.py": "b415942de4db7da2552e799809f1b5411d258c9cc6dac921f1bca5d740f8a070",
+    "deploy/railway/start_orchestrator.sh": "741e906eafd7cf8dd5f6cb915e24ec77a1a9108942b5630c0f80087ea8f84b4c",
+    "core/health_probe.py": "4f925f9528bc1869690fcb9ab2c3bd80a5c26b4efdc053a1c48366f18372fdeb"
+  },
+  "current_case": "dependency_failure",
+  "failure_class": "AssertionError",
+  "diagnostic": "process acceptance condition timed out"
+}

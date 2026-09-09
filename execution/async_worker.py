@@ -70,6 +70,13 @@ process_memory = _get_or_create_metric(
     ["service"],
 )
 
+_runtime_ready = False
+
+
+def runtime_ready() -> bool:
+    return _runtime_ready
+
+
 _exec_tracer = setup_tracer("wolf-execution")
 instrument_asyncio()
 instrument_redis()
@@ -112,6 +119,7 @@ class AsyncExecutionWorker:
         self._orchestrator_alive: bool = True
 
     async def run(self) -> None:
+        global _runtime_ready
         tracemalloc.start()
         logger.info(
             "Execution worker started (worker={} stream={} metrics={})",
@@ -129,6 +137,7 @@ class AsyncExecutionWorker:
                 redis_cfg = replace(base_cfg, socket_timeout=self._cfg.redis_socket_timeout)
                 redis_client = await get_client(redis_cfg)
                 await self._ensure_group(redis_client)
+                _runtime_ready = True
                 backoff = 1.0  # Reset on successful connect
 
                 while True:
@@ -148,6 +157,7 @@ class AsyncExecutionWorker:
                         aioredis.ConnectionError,
                         OSError,
                     ) as exc:
+                        _runtime_ready = False
                         execution_errors_total.inc()
                         logger.warning(
                             "xreadgroup connection error: {} — reconnecting",
@@ -182,10 +192,12 @@ class AsyncExecutionWorker:
                         await asyncio.gather(*tasks, return_exceptions=False)
 
             except asyncio.CancelledError:
+                _runtime_ready = False
                 logger.info("Execution worker cancelled — draining in-flight tasks")
                 await self._drain_in_flight()
                 raise
             except Exception as exc:
+                _runtime_ready = False
                 execution_errors_total.inc()
                 logger.exception(
                     "Execution worker error: {} — retry in {:.1f}s",
@@ -335,6 +347,7 @@ _RESTART_COOLDOWN = float(os.getenv("EXEC_RESTART_COOLDOWN_SEC", "5.0"))
 
 
 async def _main() -> None:
+    global _runtime_ready
     flags = ExecutionPlaneFlags.from_env()
     log_execution_plane(flags, service="execution")
     if not flags.legacy_push_execution_enabled:
@@ -385,6 +398,7 @@ async def _main() -> None:
                     return
                 await asyncio.sleep(_RESTART_COOLDOWN)
     finally:
+        _runtime_ready = False
         await close_pool()
         await _probe.stop()
 

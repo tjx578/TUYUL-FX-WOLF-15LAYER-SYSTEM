@@ -25,8 +25,10 @@ Run:
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Generator
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -41,7 +43,6 @@ def _make_client() -> Any:
     """Build TestClient with auth dependency overridden to always pass."""
     from fastapi import FastAPI
 
-    import api.l12_routes as l12_routes
     from api.app_factory import create_app
     from api.middleware.auth import verify_token
 
@@ -53,15 +54,42 @@ def _make_client() -> Any:
 
     application.dependency_overrides[cast(Callable[..., Any], verify_token)] = _fake_auth
 
-    # Contract tests validate response shape; they must not depend on live Redis.
-    l12_routes.get_verdict = lambda _pair: None
-
     return TestClient(application, raise_server_exceptions=True)
 
 
-# Fixture: single client reused across all contract tests (session-scoped)
-@pytest.fixture(scope="module")
-def client() -> Generator[Any, None, None]:
+# Response-shape fixtures bind real routes to deterministic reader data. Restore
+# every module attribute after each case; no collection-time singleton mutation.
+@pytest.fixture
+def client(monkeypatch) -> Generator[Any, None, None]:
+    import api.accounts_router as accounts
+    import api.l12_routes as verdicts
+    from schemas.trade_models import Account
+
+    monkeypatch.setattr(verdicts, "AVAILABLE_PAIRS", [{"symbol": "EURUSD", "enabled": True}])
+    monkeypatch.setattr(verdicts, "_verdict_cache", verdicts.VerdictCache())
+    monkeypatch.setattr(
+        verdicts,
+        "get_verdict",
+        lambda _pair: {
+            "symbol": "EURUSD",
+            "verdict": "HOLD",
+            "confidence": 0.0,
+            "timestamp": time.time(),
+            "gates": [],
+        },
+    )
+    account = Account(
+        account_id="ACC-CONTRACT-FIXTURE",
+        name="TEST_ONLY",
+        balance=1000,
+        equity=1000,
+        prop_firm=False,
+        max_daily_dd_percent=1,
+        max_total_dd_percent=2,
+        max_concurrent_trades=1,
+    )
+    monkeypatch.setattr(accounts._accounts, "list_accounts_async", AsyncMock(return_value=[account]))
+    monkeypatch.setattr(accounts, "_read_payload", AsyncMock(return_value={}))
     yield _make_client()
 
 
@@ -96,9 +124,7 @@ class TestStatusContract:
     def test_full_status_shape(self, client: Any) -> None:
         """Full status endpoint returns richer shape."""
         resp = client.get("/api/v1/status/full")
-        # May return 401/503 in isolated test env — only validate shape when 200.
-        if resp.status_code != 200:
-            pytest.skip("Full status requires live infra")
+        assert resp.status_code == 200
         data: dict[str, Any] = resp.json()
         required = {"status", "service", "version", "redis", "postgres", "timestamp"}
         missing = required - data.keys()
@@ -204,8 +230,7 @@ class TestVerdictAllContract:
         raw: Any = client.get("/api/v1/verdict/all").json()
         items = _extract_verdict_items(raw)
 
-        if not items:
-            pytest.skip("No verdicts available in test environment")
+        assert items, "The bound reader fixture must reach the real route"
 
         required = {"symbol", "verdict", "confidence"}
         for item in items[:5]:  # spot-check first 5
@@ -215,8 +240,7 @@ class TestVerdictAllContract:
     def test_confidence_is_numeric(self, client: Any) -> None:
         raw: Any = client.get("/api/v1/verdict/all").json()
         items = _extract_verdict_items(raw)
-        if not items:
-            pytest.skip("No verdicts")
+        assert items
         for item in items[:5]:
             assert isinstance(item["confidence"], int | float), (
                 f"confidence must be numeric, got {type(item['confidence'])}"
@@ -233,8 +257,7 @@ class TestVerdictAllContract:
         }
         raw: Any = client.get("/api/v1/verdict/all").json()
         items = _extract_verdict_items(raw)
-        if not items:
-            pytest.skip("No verdicts")
+        assert items
         for item in items[:5]:
             assert item["verdict"] in valid_verdicts, f"Unknown verdict value: {item['verdict']!r}"
 
@@ -280,8 +303,7 @@ class TestAccountsContract:
         else:
             items = []
 
-        if not items:
-            pytest.skip("No accounts in test environment")
+        assert items, "The bound account fixture must reach the real route"
 
         required = {"account_id", "account_name"}
         for item in items[:3]:
@@ -343,5 +365,13 @@ class TestRateLimitContract:
         assert "retry_after_sec" in resp_body
 
 
-@pytest.mark.skip(reason="Not yet implemented")
-def test_something(): ...
+def test_empty_verdict_snapshot_is_explicit(client, monkeypatch):
+    import api.l12_routes as verdicts
+
+    monkeypatch.setattr(verdicts, "get_verdict", lambda _pair: None)
+    monkeypatch.setattr(verdicts, "_verdict_cache", verdicts.VerdictCache())
+    response = client.get("/api/v1/verdict/all")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mode"] == "NO_SNAPSHOT_YET"
+    assert data["count"] == 0 and data["verdicts"] == {}

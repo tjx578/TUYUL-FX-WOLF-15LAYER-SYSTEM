@@ -191,6 +191,16 @@ class TestConnectionCap:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+class _RecordingClient:
+    """Record deliveries without mock bookkeeping in timed benchmarks."""
+
+    def __init__(self):
+        self.messages = []
+
+    async def send_json(self, message):
+        self.messages.append(message)
+
+
 class TestBroadcastThroughput:
     """Broadcast must reach all 50 clients within time constraints."""
 
@@ -215,12 +225,13 @@ class TestBroadcastThroughput:
             assert "seq" in sent
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_broadcast_50_clients_under_100ms(self):
-        """Broadcast to 50 mock clients must complete in under 100ms."""
+        """Broadcast to 50 recording clients must complete in under 100ms."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
 
         mgr = ConnectionManager(name="latency-test")
-        clients = [_make_ws(f"ws-{i}") for i in range(50)]
+        clients = [_RecordingClient() for _ in range(50)]
         for c in clients:
             _register_connected_ws(mgr, c)
 
@@ -230,14 +241,20 @@ class TestBroadcastThroughput:
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         assert elapsed_ms < 100, f"Broadcast to 50 clients took {elapsed_ms:.1f}ms (limit: 100ms)"
+        assert all(len(client.messages) == 1 for client in clients)
 
     @pytest.mark.asyncio
+    @pytest.mark.benchmark
     async def test_broadcast_1000_messages_to_10_clients(self):
-        """1000 sequential broadcasts to 10 clients must stay under 1s total."""
+        """1000 broadcasts to recording clients must stay under 1s total.
+
+        Measure the broadcaster, without AsyncMock's 10,000 call-record and
+        signature-processing allocations under coverage instrumentation.
+        """
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
 
         mgr = ConnectionManager(name="sustained-test")
-        clients = [_make_ws(f"ws-{i}") for i in range(10)]
+        clients = [_RecordingClient() for _ in range(10)]
         for c in clients:
             _register_connected_ws(mgr, c)
 
@@ -249,7 +266,8 @@ class TestBroadcastThroughput:
         assert elapsed < 1.0, f"1000 broadcasts to 10 clients took {elapsed:.2f}s (limit: 1.0s)"
         # All clients must have received all 1000 messages
         for c in clients:
-            assert c.send_json.call_count == 1000
+            assert len(c.messages) == 1000
+            assert [message["seq"] for message in c.messages] == list(range(1, 1001))
 
     @pytest.mark.asyncio
     async def test_broadcast_skips_broken_clients_silently(self):

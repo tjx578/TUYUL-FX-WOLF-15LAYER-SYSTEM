@@ -1,0 +1,1296 @@
+{
+  "ActivityConsumerScopeV1": {
+    "additionalProperties": false,
+    "description": "Logical owner references, never credentials or evidence of owner approval.",
+    "properties": {
+      "hypothesis_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Hypothesis Authority",
+        "type": "boolean"
+      },
+      "risk_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Risk Authority",
+        "type": "boolean"
+      },
+      "execution_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Execution Authority",
+        "type": "boolean"
+      },
+      "consumer_scope_id": {
+        "maxLength": 200,
+        "minLength": 1,
+        "title": "Consumer Scope Id",
+        "type": "string"
+      },
+      "producer_binding_hash": {
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "title": "Producer Binding Hash",
+        "type": "string"
+      },
+      "lifecycle_owner_id": {
+        "maxLength": 200,
+        "minLength": 1,
+        "title": "Lifecycle Owner Id",
+        "type": "string"
+      },
+      "lifecycle_policy_hash": {
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "title": "Lifecycle Policy Hash",
+        "type": "string"
+      },
+      "environment_class": {
+        "enum": [
+          "DISPOSABLE_TEST",
+          "SHADOW"
+        ],
+        "title": "Environment Class",
+        "type": "string"
+      }
+    },
+    "required": [
+      "consumer_scope_id",
+      "producer_binding_hash",
+      "lifecycle_owner_id",
+      "lifecycle_policy_hash",
+      "environment_class"
+    ],
+    "title": "ActivityConsumerScopeV1",
+    "type": "object"
+  },
+  "ActivityDeliveryV1": {
+    "$defs": {
+      "ActivityConsumerScopeV1": {
+        "additionalProperties": false,
+        "description": "Logical owner references, never credentials or evidence of owner approval.",
+        "properties": {
+          "hypothesis_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Hypothesis Authority",
+            "type": "boolean"
+          },
+          "risk_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Risk Authority",
+            "type": "boolean"
+          },
+          "execution_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Execution Authority",
+            "type": "boolean"
+          },
+          "consumer_scope_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Consumer Scope Id",
+            "type": "string"
+          },
+          "producer_binding_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Producer Binding Hash",
+            "type": "string"
+          },
+          "lifecycle_owner_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Lifecycle Owner Id",
+            "type": "string"
+          },
+          "lifecycle_policy_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Lifecycle Policy Hash",
+            "type": "string"
+          },
+          "environment_class": {
+            "enum": [
+              "DISPOSABLE_TEST",
+              "SHADOW"
+            ],
+            "title": "Environment Class",
+            "type": "string"
+          }
+        },
+        "required": [
+          "consumer_scope_id",
+          "producer_binding_hash",
+          "lifecycle_owner_id",
+          "lifecycle_policy_hash",
+          "environment_class"
+        ],
+        "title": "ActivityConsumerScopeV1",
+        "type": "object"
+      },
+      "PairActivityEvaluationV31": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "pair_activity_evaluated",
+            "default": "pair_activity_evaluated",
+            "enum": [
+              "pair_activity_evaluated"
+            ],
+            "title": "Event",
+            "type": "string"
+          },
+          "rule_version": {
+            "const": "5scr.pair-activity.v3.1",
+            "default": "5scr.pair-activity.v3.1",
+            "enum": [
+              "5scr.pair-activity.v3.1"
+            ],
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "activity_id": {
+            "pattern": "^5scr-activity-v31:[0-9a-f]{32}$",
+            "title": "Activity Id",
+            "type": "string"
+          },
+          "evaluation_id": {
+            "pattern": "^5scr-activity-eval-v31:[0-9a-f]{32}$",
+            "title": "Evaluation Id",
+            "type": "string"
+          },
+          "ledger_id": {
+            "title": "Ledger Id",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "deployment_id": {
+            "title": "Deployment Id",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "PENDING",
+              "GRANTED",
+              "SUSPENDED",
+              "RECONCILIATION_REQUIRED"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reason_code": {
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PairActivityPolicyV31"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "$ref": "#/$defs/RawActivityCoverageV31"
+          },
+          "evaluated_at_utc": {
+            "format": "date-time",
+            "title": "Evaluated At Utc",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/$defs/RawActivityObservationV31"
+            },
+            "minItems": 1,
+            "title": "Observations",
+            "type": "array"
+          },
+          "source_lineage_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Source Lineage Hash",
+            "type": "string"
+          },
+          "direction_quality": {
+            "enum": [
+              "BUY",
+              "SELL",
+              "CONFLICT",
+              "UNKNOWN"
+            ],
+            "title": "Direction Quality",
+            "type": "string"
+          },
+          "block_started_at_utc": {
+            "format": "date-time",
+            "title": "Block Started At Utc",
+            "type": "string"
+          },
+          "block_observed_through_utc": {
+            "format": "date-time",
+            "title": "Block Observed Through Utc",
+            "type": "string"
+          },
+          "global_observed_through_utc": {
+            "format": "date-time",
+            "title": "Global Observed Through Utc",
+            "type": "string"
+          },
+          "finalized_at_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Finalized At Utc"
+          },
+          "duration_seconds": {
+            "minimum": 0.0,
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "maximum_observed_gap_seconds": {
+            "minimum": 0.0,
+            "title": "Maximum Observed Gap Seconds",
+            "type": "number"
+          },
+          "finalized_by_raw_event_id": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Finalized By Raw Event Id"
+          },
+          "admission_id": {
+            "anyOf": [
+              {
+                "pattern": "^5scr-activity-admission-v31:[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Admission Id"
+          },
+          "admission_lineage_hash": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Admission Lineage Hash"
+          },
+          "admitted_at_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Admitted At Utc"
+          },
+          "valid_until_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Valid Until Utc"
+          },
+          "previous_admission_id": {
+            "anyOf": [
+              {
+                "pattern": "^5scr-activity-admission-v31:[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Previous Admission Id"
+          },
+          "hypothesis_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Hypothesis Authority",
+            "type": "boolean"
+          },
+          "risk_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Risk Authority",
+            "type": "boolean"
+          },
+          "execution_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Execution Authority",
+            "type": "boolean"
+          },
+          "valid_for_execution": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Valid For Execution",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "activity_id",
+          "evaluation_id",
+          "ledger_id",
+          "symbol",
+          "deployment_id",
+          "decision",
+          "reason_code",
+          "policy",
+          "coverage",
+          "evaluated_at_utc",
+          "observations",
+          "source_lineage_hash",
+          "direction_quality",
+          "block_started_at_utc",
+          "block_observed_through_utc",
+          "global_observed_through_utc",
+          "duration_seconds",
+          "maximum_observed_gap_seconds"
+        ],
+        "title": "PairActivityEvaluationV31",
+        "type": "object"
+      },
+      "PairActivityPolicyV31": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "maximum_source_gap_seconds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Maximum Source Gap Seconds",
+            "type": "number"
+          },
+          "grant_ttl_seconds": {
+            "exclusiveMinimum": 0,
+            "title": "Grant Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "policy_id",
+          "maximum_source_gap_seconds",
+          "grant_ttl_seconds"
+        ],
+        "title": "PairActivityPolicyV31",
+        "type": "object"
+      },
+      "RawActivityCoverageV31": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "COMPLETE",
+              "INCOMPLETE",
+              "UNKNOWN"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "ledger_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Ledger Id",
+            "type": "string"
+          },
+          "deployment_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Deployment Id",
+            "type": "string"
+          },
+          "window_start_utc": {
+            "format": "date-time",
+            "title": "Window Start Utc",
+            "type": "string"
+          },
+          "window_end_utc": {
+            "format": "date-time",
+            "title": "Window End Utc",
+            "type": "string"
+          },
+          "source_ledger_hash": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Ledger Hash"
+          }
+        },
+        "required": [
+          "status",
+          "ledger_id",
+          "deployment_id",
+          "window_start_utc",
+          "window_end_utc"
+        ],
+        "title": "RawActivityCoverageV31",
+        "type": "object"
+      },
+      "RawActivityObservationV31": {
+        "additionalProperties": false,
+        "properties": {
+          "raw_event_id": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Raw Event Id",
+            "type": "string"
+          },
+          "symbol": {
+            "pattern": "^[A-Z0-9._-]{3,32}$",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "deployment_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Deployment Id",
+            "type": "string"
+          },
+          "scanner_cycle_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Scanner Cycle Id",
+            "type": "string"
+          },
+          "occurred_at_utc": {
+            "format": "date-time",
+            "title": "Occurred At Utc",
+            "type": "string"
+          },
+          "direction_quality": {
+            "enum": [
+              "BUY",
+              "SELL",
+              "UNKNOWN"
+            ],
+            "title": "Direction Quality",
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw_event_id",
+          "symbol",
+          "deployment_id",
+          "scanner_cycle_id",
+          "occurred_at_utc",
+          "direction_quality"
+        ],
+        "title": "RawActivityObservationV31",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "hypothesis_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Hypothesis Authority",
+        "type": "boolean"
+      },
+      "risk_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Risk Authority",
+        "type": "boolean"
+      },
+      "execution_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Execution Authority",
+        "type": "boolean"
+      },
+      "schema_version": {
+        "const": "5scr.activity-delivery.v1",
+        "default": "5scr.activity-delivery.v1",
+        "enum": [
+          "5scr.activity-delivery.v1"
+        ],
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "scope": {
+        "$ref": "#/$defs/ActivityConsumerScopeV1"
+      },
+      "source_snapshot_id": {
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "title": "Source Snapshot Id",
+        "type": "string"
+      },
+      "source_revision": {
+        "minimum": 0,
+        "title": "Source Revision",
+        "type": "integer"
+      },
+      "activity_sequence": {
+        "minimum": 1,
+        "title": "Activity Sequence",
+        "type": "integer"
+      },
+      "previous_delivery_id": {
+        "anyOf": [
+          {
+            "pattern": "^5scr-activity-delivery:[0-9a-f]{32}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Previous Delivery Id"
+      },
+      "evaluation": {
+        "$ref": "#/$defs/PairActivityEvaluationV31"
+      },
+      "delivery_id": {
+        "pattern": "^5scr-activity-delivery:[0-9a-f]{32}$",
+        "title": "Delivery Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "scope",
+      "source_snapshot_id",
+      "source_revision",
+      "activity_sequence",
+      "evaluation",
+      "delivery_id"
+    ],
+    "title": "ActivityDeliveryV1",
+    "type": "object"
+  },
+  "ActivityLifecycleEmissionLinkV1": {
+    "$defs": {
+      "ActivityConsumerScopeV1": {
+        "additionalProperties": false,
+        "description": "Logical owner references, never credentials or evidence of owner approval.",
+        "properties": {
+          "hypothesis_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Hypothesis Authority",
+            "type": "boolean"
+          },
+          "risk_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Risk Authority",
+            "type": "boolean"
+          },
+          "execution_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Execution Authority",
+            "type": "boolean"
+          },
+          "consumer_scope_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Consumer Scope Id",
+            "type": "string"
+          },
+          "producer_binding_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Producer Binding Hash",
+            "type": "string"
+          },
+          "lifecycle_owner_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Lifecycle Owner Id",
+            "type": "string"
+          },
+          "lifecycle_policy_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Lifecycle Policy Hash",
+            "type": "string"
+          },
+          "environment_class": {
+            "enum": [
+              "DISPOSABLE_TEST",
+              "SHADOW"
+            ],
+            "title": "Environment Class",
+            "type": "string"
+          }
+        },
+        "required": [
+          "consumer_scope_id",
+          "producer_binding_hash",
+          "lifecycle_owner_id",
+          "lifecycle_policy_hash",
+          "environment_class"
+        ],
+        "title": "ActivityConsumerScopeV1",
+        "type": "object"
+      },
+      "ActivityDeliveryV1": {
+        "additionalProperties": false,
+        "properties": {
+          "hypothesis_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Hypothesis Authority",
+            "type": "boolean"
+          },
+          "risk_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Risk Authority",
+            "type": "boolean"
+          },
+          "execution_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Execution Authority",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "const": "5scr.activity-delivery.v1",
+            "default": "5scr.activity-delivery.v1",
+            "enum": [
+              "5scr.activity-delivery.v1"
+            ],
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/$defs/ActivityConsumerScopeV1"
+          },
+          "source_snapshot_id": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Source Snapshot Id",
+            "type": "string"
+          },
+          "source_revision": {
+            "minimum": 0,
+            "title": "Source Revision",
+            "type": "integer"
+          },
+          "activity_sequence": {
+            "minimum": 1,
+            "title": "Activity Sequence",
+            "type": "integer"
+          },
+          "previous_delivery_id": {
+            "anyOf": [
+              {
+                "pattern": "^5scr-activity-delivery:[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Previous Delivery Id"
+          },
+          "evaluation": {
+            "$ref": "#/$defs/PairActivityEvaluationV31"
+          },
+          "delivery_id": {
+            "pattern": "^5scr-activity-delivery:[0-9a-f]{32}$",
+            "title": "Delivery Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "source_snapshot_id",
+          "source_revision",
+          "activity_sequence",
+          "evaluation",
+          "delivery_id"
+        ],
+        "title": "ActivityDeliveryV1",
+        "type": "object"
+      },
+      "PairActivityEvaluationV31": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "pair_activity_evaluated",
+            "default": "pair_activity_evaluated",
+            "enum": [
+              "pair_activity_evaluated"
+            ],
+            "title": "Event",
+            "type": "string"
+          },
+          "rule_version": {
+            "const": "5scr.pair-activity.v3.1",
+            "default": "5scr.pair-activity.v3.1",
+            "enum": [
+              "5scr.pair-activity.v3.1"
+            ],
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "activity_id": {
+            "pattern": "^5scr-activity-v31:[0-9a-f]{32}$",
+            "title": "Activity Id",
+            "type": "string"
+          },
+          "evaluation_id": {
+            "pattern": "^5scr-activity-eval-v31:[0-9a-f]{32}$",
+            "title": "Evaluation Id",
+            "type": "string"
+          },
+          "ledger_id": {
+            "title": "Ledger Id",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "deployment_id": {
+            "title": "Deployment Id",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "PENDING",
+              "GRANTED",
+              "SUSPENDED",
+              "RECONCILIATION_REQUIRED"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reason_code": {
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PairActivityPolicyV31"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "$ref": "#/$defs/RawActivityCoverageV31"
+          },
+          "evaluated_at_utc": {
+            "format": "date-time",
+            "title": "Evaluated At Utc",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/$defs/RawActivityObservationV31"
+            },
+            "minItems": 1,
+            "title": "Observations",
+            "type": "array"
+          },
+          "source_lineage_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Source Lineage Hash",
+            "type": "string"
+          },
+          "direction_quality": {
+            "enum": [
+              "BUY",
+              "SELL",
+              "CONFLICT",
+              "UNKNOWN"
+            ],
+            "title": "Direction Quality",
+            "type": "string"
+          },
+          "block_started_at_utc": {
+            "format": "date-time",
+            "title": "Block Started At Utc",
+            "type": "string"
+          },
+          "block_observed_through_utc": {
+            "format": "date-time",
+            "title": "Block Observed Through Utc",
+            "type": "string"
+          },
+          "global_observed_through_utc": {
+            "format": "date-time",
+            "title": "Global Observed Through Utc",
+            "type": "string"
+          },
+          "finalized_at_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Finalized At Utc"
+          },
+          "duration_seconds": {
+            "minimum": 0.0,
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "maximum_observed_gap_seconds": {
+            "minimum": 0.0,
+            "title": "Maximum Observed Gap Seconds",
+            "type": "number"
+          },
+          "finalized_by_raw_event_id": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Finalized By Raw Event Id"
+          },
+          "admission_id": {
+            "anyOf": [
+              {
+                "pattern": "^5scr-activity-admission-v31:[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Admission Id"
+          },
+          "admission_lineage_hash": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Admission Lineage Hash"
+          },
+          "admitted_at_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Admitted At Utc"
+          },
+          "valid_until_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Valid Until Utc"
+          },
+          "previous_admission_id": {
+            "anyOf": [
+              {
+                "pattern": "^5scr-activity-admission-v31:[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Previous Admission Id"
+          },
+          "hypothesis_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Hypothesis Authority",
+            "type": "boolean"
+          },
+          "risk_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Risk Authority",
+            "type": "boolean"
+          },
+          "execution_authority": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Execution Authority",
+            "type": "boolean"
+          },
+          "valid_for_execution": {
+            "const": false,
+            "default": false,
+            "enum": [
+              false
+            ],
+            "title": "Valid For Execution",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "activity_id",
+          "evaluation_id",
+          "ledger_id",
+          "symbol",
+          "deployment_id",
+          "decision",
+          "reason_code",
+          "policy",
+          "coverage",
+          "evaluated_at_utc",
+          "observations",
+          "source_lineage_hash",
+          "direction_quality",
+          "block_started_at_utc",
+          "block_observed_through_utc",
+          "global_observed_through_utc",
+          "duration_seconds",
+          "maximum_observed_gap_seconds"
+        ],
+        "title": "PairActivityEvaluationV31",
+        "type": "object"
+      },
+      "PairActivityPolicyV31": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Policy Id",
+            "type": "string"
+          },
+          "maximum_source_gap_seconds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Maximum Source Gap Seconds",
+            "type": "number"
+          },
+          "grant_ttl_seconds": {
+            "exclusiveMinimum": 0,
+            "title": "Grant Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "policy_id",
+          "maximum_source_gap_seconds",
+          "grant_ttl_seconds"
+        ],
+        "title": "PairActivityPolicyV31",
+        "type": "object"
+      },
+      "RawActivityCoverageV31": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "COMPLETE",
+              "INCOMPLETE",
+              "UNKNOWN"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "ledger_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Ledger Id",
+            "type": "string"
+          },
+          "deployment_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Deployment Id",
+            "type": "string"
+          },
+          "window_start_utc": {
+            "format": "date-time",
+            "title": "Window Start Utc",
+            "type": "string"
+          },
+          "window_end_utc": {
+            "format": "date-time",
+            "title": "Window End Utc",
+            "type": "string"
+          },
+          "source_ledger_hash": {
+            "anyOf": [
+              {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Ledger Hash"
+          }
+        },
+        "required": [
+          "status",
+          "ledger_id",
+          "deployment_id",
+          "window_start_utc",
+          "window_end_utc"
+        ],
+        "title": "RawActivityCoverageV31",
+        "type": "object"
+      },
+      "RawActivityObservationV31": {
+        "additionalProperties": false,
+        "properties": {
+          "raw_event_id": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Raw Event Id",
+            "type": "string"
+          },
+          "symbol": {
+            "pattern": "^[A-Z0-9._-]{3,32}$",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "deployment_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Deployment Id",
+            "type": "string"
+          },
+          "scanner_cycle_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Scanner Cycle Id",
+            "type": "string"
+          },
+          "occurred_at_utc": {
+            "format": "date-time",
+            "title": "Occurred At Utc",
+            "type": "string"
+          },
+          "direction_quality": {
+            "enum": [
+              "BUY",
+              "SELL",
+              "UNKNOWN"
+            ],
+            "title": "Direction Quality",
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw_event_id",
+          "symbol",
+          "deployment_id",
+          "scanner_cycle_id",
+          "occurred_at_utc",
+          "direction_quality"
+        ],
+        "title": "RawActivityObservationV31",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Proposed owner bundle member, not a receipt asserting a committed effect.\n\nIt references an owner-selected lifecycle; transport never mints that ID.\nThe emission is an analysis-state notification, never a pressure/command payload.",
+    "properties": {
+      "hypothesis_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Hypothesis Authority",
+        "type": "boolean"
+      },
+      "risk_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Risk Authority",
+        "type": "boolean"
+      },
+      "execution_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Execution Authority",
+        "type": "boolean"
+      },
+      "schema_version": {
+        "const": "5scr.activity-lifecycle-emission-link.v1",
+        "default": "5scr.activity-lifecycle-emission-link.v1",
+        "enum": [
+          "5scr.activity-lifecycle-emission-link.v1"
+        ],
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "delivery": {
+        "$ref": "#/$defs/ActivityDeliveryV1"
+      },
+      "strategy_lifecycle_id": {
+        "pattern": "^5scr-lifecycle:[0-9a-f]{32}$",
+        "title": "Strategy Lifecycle Id",
+        "type": "string"
+      },
+      "material_state_hash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Material State Hash",
+        "type": "string"
+      },
+      "emission_purpose": {
+        "enum": [
+          "ACTIVITY_ATTACHED",
+          "ACTIVITY_SUSPENDED",
+          "ACTIVITY_RECONCILIATION"
+        ],
+        "title": "Emission Purpose",
+        "type": "string"
+      }
+    },
+    "required": [
+      "delivery",
+      "strategy_lifecycle_id",
+      "material_state_hash",
+      "emission_purpose"
+    ],
+    "title": "ActivityLifecycleEmissionLinkV1",
+    "type": "object"
+  }
+}
