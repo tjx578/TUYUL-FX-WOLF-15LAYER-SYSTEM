@@ -27,6 +27,7 @@ TEST = "tests/integration/test_pair_activity_runtime_postgres.py"
 SOURCES = (
     TEST,
     "scripts/ci/pair_activity_run_evidence.py",
+    "scripts/ci/postgres_server_binding.py",
     "tests/conftest.py",
     "conftest.py",
     "requirements.txt",

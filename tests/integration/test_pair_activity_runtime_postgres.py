@@ -27,6 +27,7 @@ from scripts.ci.pair_activity_run_evidence import (
     record_runtime_fixture,
     write_fixture_phase,
 )
+from scripts.ci.postgres_server_binding import require_server_address
 from storage.strategy_5scr_activity_runtime import ActivityRuntimeIntegrityError, PostgresActivityRuntime
 from tests.integration.postgres_test_guard import (
     require_destructive_postgres_opt_in,
@@ -46,7 +47,10 @@ def pg_dsn():
     require_disposable_postgres_target(dsn, expected_database=expected)
     assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
     with psycopg.connect(dsn) as connection:
-        assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+        require_server_address(
+            connection.execute("SELECT inet_server_addr()::text").fetchone()[0],
+            os.environ.get("WOLF15_POSTGRES_TEST_SERVER_ADDRESS", ""),
+        )
         assert connection.execute("SELECT current_database()").fetchone()[0] == expected
         assert (
             connection.execute("SELECT current_setting('wolf15.environment_class',true)").fetchone()[0]

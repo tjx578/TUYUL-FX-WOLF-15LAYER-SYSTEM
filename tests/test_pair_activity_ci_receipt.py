@@ -165,8 +165,11 @@ def test_runner_requires_one_complete_bound_run_and_persists_failures(tmp_path, 
 
 
 @pytest.mark.parametrize("fault", [None, "database", "address", "version", "head", "marker", "fsync", "table"])
-def test_observed_database_must_match_guarded_runtime_binding(fault):
+@pytest.mark.parametrize("server", ["127.0.0.1", "172.18.0.3/32"])
+def test_observed_database_must_match_guarded_runtime_binding(fault, server, monkeypatch):
     from scripts.ci.pair_activity_run_evidence import observe_postgres
+
+    monkeypatch.setenv("WOLF15_POSTGRES_TEST_SERVER_ADDRESS", "172.18.0.3" if server.startswith("172.") else "")
 
     class Cursor:
         def __init__(self, rows):
@@ -186,7 +189,7 @@ def test_observed_database_must_match_guarded_runtime_binding(fault):
                         (
                             "other" if fault == "database" else "wolf15_ci_test",
                             "test_user",
-                            "10.0.0.1" if fault == "address" else "127.0.0.1",
+                            "10.0.0.1" if fault == "address" else server,
                             5432,
                             "170000" if fault == "version" else "160010",
                             "2026-09-09T00:00:00Z",

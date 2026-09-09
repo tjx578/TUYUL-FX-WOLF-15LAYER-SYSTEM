@@ -18,6 +18,8 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.ci.postgres_server_binding import require_server_address
+
 LOCK = threading.Lock()
 PG_SETTINGS = (
     "fsync",
@@ -224,6 +226,10 @@ def observe_postgres(connection, expected_database: str, expected_head: str, exp
         )
     )
     result["server_version_num"] = int(result["server_version_num"])
+    try:
+        require_server_address(result["server_address"], os.environ.get("WOLF15_POSTGRES_TEST_SERVER_ADDRESS", ""))
+    except ValueError as exc:
+        raise ValueError("POSTGRES_EVIDENCE_BINDING_REJECTED") from exc
     result["migration_heads"] = sorted(
         row[0] for row in connection.execute("SELECT version_num FROM public.alembic_version").fetchall()
     )
@@ -238,7 +244,6 @@ def observe_postgres(connection, expected_database: str, expected_head: str, exp
         expected_major not in {16, 17}
         or result["server_version_num"] // 10000 != expected_major
         or result["database"] != expected_database
-        or result["server_address"] not in {"127.0.0.1", "::1"}
         or result["migration_heads"] != [expected_head]
         or result["settings"]["wolf15.environment_class"] != "DISPOSABLE_TEST"
         or result["settings"]["wolf15.destructive_tests_allowed"] != "true"

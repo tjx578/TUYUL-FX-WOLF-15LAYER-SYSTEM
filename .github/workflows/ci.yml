@@ -100,6 +100,29 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-timeout pytest-asyncio pytest-cov
 
+      - name: Bind exact disposable PostgreSQL service address
+        env:
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          python - <<'PYEOF'
+          import json
+          import os
+          import subprocess
+          from ipaddress import ip_address
+
+          service_id = os.environ["POSTGRES_SERVICE_ID"]
+          assert service_id, "PostgreSQL service identity is required"
+          inspected = json.loads(subprocess.check_output(["docker", "inspect", service_id], text=True))
+          assert len(inspected) == 1 and inspected[0]["Id"] == service_id
+          assert inspected[0]["State"]["Running"] is True
+          networks = inspected[0]["NetworkSettings"]["Networks"]
+          assert len(networks) == 1, "Ambiguous PostgreSQL service network"
+          address = str(ip_address(next(iter(networks.values()))["IPAddress"]))
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.write(f"WOLF15_POSTGRES_TEST_SERVER_ADDRESS={address}\n")
+          print(json.dumps({"service_id": service_id, "server_address": address}))
+          PYEOF
+
       - name: Apply database migrations
         run: python -m alembic upgrade head
 
