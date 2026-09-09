@@ -93,10 +93,23 @@ jobs:
 
       - name: Scan for secrets (hard-fail)
         run: |
+          # Detect secrets without authenticating against their providers.
+          # Keep raw scanner results in the ephemeral runner, never in job logs.
+          set +e
           trufflehog filesystem . \
             --no-update \
+            --no-verification \
+            --json \
             --fail \
-            --exclude-paths=.github/trufflehog-exclude.txt
+            --exclude-paths=.github/trufflehog-exclude.txt \
+            > "$RUNNER_TEMP/secret-scan.jsonl" 2> "$RUNNER_TEMP/secret-scan.stderr"
+          scan_status=$?
+          set -e
+          if [ "$scan_status" -ne 0 ]; then
+            echo "::error::Secret scan requires review (exit $scan_status); raw findings are withheld."
+            exit "$scan_status"
+          fi
+          echo "Secret scan passed without credential verification."
 
   # ---------------------------------------------------------------
   # Security gate
