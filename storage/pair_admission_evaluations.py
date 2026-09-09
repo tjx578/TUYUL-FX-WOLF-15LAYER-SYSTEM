@@ -20,6 +20,8 @@ from typing import Any, Literal
 
 from loguru import logger
 
+from storage.observer_export_outbox import ObserverExportOutboxRepository
+from storage.observer_strategy_events import pair_admission_evaluation_observer_draft
 from storage.postgres_client import PostgresClient, pg_client
 
 _REQUIRED_TABLES = frozenset({"pair_admission_evaluations"})
@@ -313,8 +315,16 @@ def _validated(evaluation: Mapping[str, Any]) -> dict[str, Any]:
 class PairAdmissionEvaluationRepository:
     """Append-only admission evaluation ledger with one grant per raw block."""
 
-    def __init__(self, *, pg: PostgresClient | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        pg: PostgresClient | None = None,
+        observer_export_repository: ObserverExportOutboxRepository | None = None,
+    ) -> None:
         self._pg = pg or pg_client
+        self._observer_export = observer_export_repository
+        if pg is None and observer_export_repository is None:
+            self._observer_export = ObserverExportOutboxRepository(pg=self._pg)
 
     @property
     def is_available(self) -> bool:
@@ -477,6 +487,11 @@ class PairAdmissionEvaluationRepository:
             if existing is not None:
                 if str(_row_value(existing, "payload_hash")) != record["payload_hash"]:
                     raise PairAdmissionEvaluationIntegrityError("PAIR_ADMISSION_EVALUATION_HASH_MISMATCH")
+                if self._observer_export is not None:
+                    await self._observer_export.append_in_transaction(
+                        conn,
+                        pair_admission_evaluation_observer_draft(record),
+                    )
                 return DurablePairAdmissionEvaluation(
                     evaluation_id=record["evaluation_id"],
                     raw_block_id=record["raw_block_id"],
@@ -540,6 +555,11 @@ class PairAdmissionEvaluationRepository:
                 record["payload_hash"],
                 json.dumps(record["payload"], separators=(",", ":"), ensure_ascii=False, default=str),
             )
+            if self._observer_export is not None:
+                await self._observer_export.append_in_transaction(
+                    conn,
+                    pair_admission_evaluation_observer_draft(record),
+                )
         return DurablePairAdmissionEvaluation(
             evaluation_id=record["evaluation_id"],
             raw_block_id=record["raw_block_id"],

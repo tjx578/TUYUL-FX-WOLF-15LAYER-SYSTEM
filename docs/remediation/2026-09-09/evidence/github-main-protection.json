@@ -1,0 +1,13 @@
+{
+  "name": "main",
+  "protected": false,
+  "sha": "773150952311db3dbf5188f36536b7837d8ec296",
+  "protection": {
+    "enabled": false,
+    "required_status_checks": {
+      "enforcement_level": "off",
+      "contexts": [],
+      "checks": []
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema_examples_validated": 3,
+  "ruff": [
+    {
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        ".",
+        "--config",
+        "pyproject.toml"
+      ],
+      "exit": 0,
+      "output": "All checks passed!\nwarning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        ".",
+        "--config",
+        "pyproject.toml"
+      ],
+      "exit": 0,
+      "output": "1388 files already formatted\nwarning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+    }
+  ]
+}

@@ -1,0 +1,688 @@
+{
+  "schema_version": "wolf15/pursuit-failures-v1",
+  "purpose": "Planning aid; not a claim that forecast incidents occurred.",
+  "scope": "P1-P6",
+  "cases": [
+    {
+      "id": "F01",
+      "group": "Source dan koordinasi",
+      "action_refs": [
+        "A00",
+        "C01",
+        "N03"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "PR/main berubah sejak checkpoint",
+      "bounded_diagnosis": "Baca full OID, diff executable/config/schema dan receipt; gunakan worktree aktual yang terikat. Jangan reset ke SHA chat.",
+      "autonomous_response": "Import bukti yang masih cocok; ulang hanya affected gates dan required suite pada combined candidate.",
+      "retry_trigger_and_exit_evidence": "Candidate baru selesai direkonsiliasi; konflik dan source ownership jelas.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F02",
+      "group": "Source dan koordinasi",
+      "action_refs": [
+        "A00",
+        "N03"
+      ],
+      "provenance": "REPORTED_CONSTRAINT",
+      "symptom": "Checkout bersama mempunyai perubahan di luar task",
+      "bounded_diagnosis": "Inventaris hash dan pemilik perubahan; gunakan worktree terisolasi, hindari reset/clean/stash menyeluruh.",
+      "autonomous_response": "Lanjut slice pada checkout terisolasi. Jangan meminta penghapusan pekerjaan lama sebagai jalan pintas.",
+      "retry_trigger_and_exit_evidence": "Base/owned changes sudah terikat tanpa kehilangan perubahan.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F03",
+      "group": "Source dan koordinasi",
+      "action_refs": [
+        "S01"
+      ],
+      "provenance": "REPORTED_GAP",
+      "symptom": "Salinan assessment lama tidak tersedia/berbeda bytes",
+      "bounded_diagnosis": "Cari repo archive, sumber lampiran dan manifest existing; bandingkan encoding/bytes tanpa mengklaim semantic parity.",
+      "autonomous_response": "Gunakan selected repo v3.1. Isolasi hanya clause normatif yang memang ambigu; jangan re-audit semua lampiran terus-menerus.",
+      "retry_trigger_and_exit_evidence": "Sumber ditemukan atau keputusan clause yang konkret tersedia; jika tidak, gap parity tetap tercatat.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F04",
+      "group": "Source dan koordinasi",
+      "action_refs": [
+        "C01",
+        "C05"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Push branch memicu automation deployment di luar scope",
+      "bounded_diagnosis": "Baca trigger workflow dan environment mapping sebelum push. Buat commit lokal dan diff yang reviewable.",
+      "autonomous_response": "Gunakan branch/path publikasi yang sudah sah bila tersedia. Jangan mengubah ruleset/automation tanpa scope yang berlaku.",
+      "retry_trigger_and_exit_evidence": "Scope publikasi tidak lagi mempunyai side effect yang belum diotorisasi.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F05",
+      "group": "Source dan koordinasi",
+      "action_refs": [
+        "S04",
+        "N03"
+      ],
+      "provenance": "REPORTED_CONSTRAINT",
+      "symptom": "Agent quota atau review independen tidak tersedia",
+      "bounded_diagnosis": "Catat status agent; jangan spawn/rerun berulang pada kegagalan sama. Root mengerjakan source serial dan mengintegrasikan satu penulis per file.",
+      "autonomous_response": "Self-review diberi label tepat. Mandatory independent review tetap pending; local implementation lain berlanjut.",
+      "retry_trigger_and_exit_evidence": "Reviewer tersedia atau governance memberi jalur review lain yang sah.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F06",
+      "group": "Source dan koordinasi",
+      "action_refs": [
+        "C01",
+        "N03",
+        "O03"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Bukti stale, file ganda atau jumlah tes membesar semu",
+      "bounded_diagnosis": "Bandingkan source tree, config, schema, fixture/test identities dan cohort. Pisahkan source commit dari publication HEAD.",
+      "autonomous_response": "Pertahankan valid evidence; tandai affected receipts stale. Jangan menjumlahkan hasil suite overlap sebagai coverage unik.",
+      "retry_trigger_and_exit_evidence": "Receipt baru mempunyai exact scope/identity dan denominator yang dapat ditelusuri.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F07",
+      "group": "Runner dan CI",
+      "action_refs": [
+        "C04"
+      ],
+      "provenance": "REPORTED_GAP",
+      "symptom": "Linux disposable belum mempunyai host/config yang sah",
+      "bounded_diagnosis": "Cari registry/config existing dan capability read-only; siapkan bootstrap/test bundle dan target proposal.",
+      "autonomous_response": "Jangan memakai VPS lama/produksi. Masukkan satu blocker runner, kemudian lanjut K03/K04/K06/K07/K08/K09/K11/K12 yang siap.",
+      "retry_trigger_and_exit_evidence": "Alias/config host, isolasi database dan scope penggunaannya benar-benar tersedia.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F08",
+      "group": "Runner dan CI",
+      "action_refs": [
+        "C04"
+      ],
+      "provenance": "REPORTED_CONSTRAINT",
+      "symptom": "Committed memory Windows tinggi; Docker/Linux tidak aktif",
+      "bounded_diagnosis": "Read-only preflight pada host actual, simpan checkpoint sebelum workload berat. Jangan menganggap threshold historis cocok untuk host lain.",
+      "autonomous_response": "Hindari heavy run pada resource tak memadai; jangan menutup aplikasi, reboot, mengubah pagefile atau mengaktifkan VM existing tanpa scope.",
+      "retry_trigger_and_exit_evidence": "Operator/runner menyediakan capacity yang terukur dan scope uji yang sah.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F09",
+      "group": "Runner dan CI",
+      "action_refs": [
+        "C03",
+        "C05"
+      ],
+      "provenance": "REPORTED_PLATFORM_CAUSE",
+      "symptom": "GitHub job tidak mulai karena account-lock billing annotation",
+      "bounded_diagnosis": "Baca annotation run pada exact HEAD bila diperlukan untuk perubahan status; catat platform-reported cause.",
+      "autonomous_response": "Billing dikecualikan. Jangan rerun keadaan sama, menonaktifkan checks, atau menyebut local test sebagai remote PASS.",
+      "retry_trigger_and_exit_evidence": "Platform telah pulih menurut bukti baru; jalankan required checks yang sesuai source.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F10",
+      "group": "Runner dan CI",
+      "action_refs": [
+        "C04",
+        "C05"
+      ],
+      "provenance": "CORRECTED_INTERPRETATION",
+      "symptom": "Daftar runner repository kosong",
+      "bounded_diagnosis": "Endpoint itu hanya inventaris self-hosted. Periksa runs-on/workflow dan annotation untuk diagnosis aktual.",
+      "autonomous_response": "Jangan menyimpulkan GitHub-hosted Linux tidak tersedia dari daftar kosong.",
+      "retry_trigger_and_exit_evidence": "Runner/workflow/annotation baru menunjukkan capability yang dapat digunakan.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F11",
+      "group": "Runner dan CI",
+      "action_refs": [
+        "C03",
+        "N04"
+      ],
+      "provenance": "REPORTED_DEPENDENCY_CONFLICT",
+      "symptom": "API Pydantic pin berbenturan dengan MCP dependency",
+      "bounded_diagnosis": "Gunakan environment terpisah sesuai constraints revision aktual; ukur pip check pada masing-masing environment.",
+      "autonomous_response": "Pertahankan API pin dan fixture MCP lane; jangan upgrade dependency global agar satu suite lolos.",
+      "retry_trigger_and_exit_evidence": "Setiap environment memenuhi dependency native scope dan required tests yang relevan.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F12",
+      "group": "Runner dan CI",
+      "action_refs": [
+        "E05",
+        "N04"
+      ],
+      "provenance": "REPORTED_EVIDENCE_LIMIT",
+      "symptom": "FakeMT5, compile atau Linux backend dianggap bukti terminal",
+      "bounded_diagnosis": "Pisahkan pure fixture, MetaEditor compile, native library capability, terminal HTTP dan actual broker receipts.",
+      "autonomous_response": "Selesaikan source/golden vectors secara lokal. Kekurangan terminal memblokir gate terminal, bukan seluruh backend.",
+      "retry_trigger_and_exit_evidence": "Exact binary dan terminal run tersedia pada environment yang terikat.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F13",
+      "group": "Database dan migrasi",
+      "action_refs": [
+        "C03",
+        "E04",
+        "N04"
+      ],
+      "provenance": "REPORTED_EVIDENCE_LIMIT",
+      "symptom": "45 existing dan tujuh producer/relay PG skipped",
+      "bounded_diagnosis": "Baca JUnit/inventory dan acceptance runner receipt; pytest exit 0 tidak berarti gate PASS.",
+      "autonomous_response": "Jangan replay negative control terus. Siapkan actual database run, tambah inventory consumer secara reviewed.",
+      "retry_trigger_and_exit_evidence": "Migrasi dan required PostgreSQL inventories benar-benar dijalankan dengan nol required skip.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F14",
+      "group": "Database dan migrasi",
+      "action_refs": [
+        "C03",
+        "S06"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Test selection kosong atau identitas parameter berubah",
+      "bounded_diagnosis": "Bandingkan collection/JUnit dengan manifest revision yang sama; cari path/filter/import error sebelum mengubah expected IDs.",
+      "autonomous_response": "Perbaiki command/fixture yang salah; perubahan scope acceptance memerlukan alasan kontrak. Jangan sekadar menurunkan jumlah expected tests.",
+      "retry_trigger_and_exit_evidence": "Identitas test cocok dan scope wajib benar-benar executed.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F15",
+      "group": "Database dan migrasi",
+      "action_refs": [
+        "C04",
+        "D01",
+        "D02",
+        "J02"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "DSN mengarah ke database shared/produksi",
+      "bounded_diagnosis": "Gunakan target non-secret identity, ownership dan isolation proof sebelum init/reset/migrate; nama database saja tidak membuktikan isolasi.",
+      "autonomous_response": "Hentikan mutasi target itu. Lanjut menyiapkan bundle dan gunakan disposable yang benar-benar milik test.",
+      "retry_trigger_and_exit_evidence": "Target identity/schema/authorization terikat dan verified isolated.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F16",
+      "group": "Database dan migrasi",
+      "action_refs": [
+        "N03",
+        "D01",
+        "D02",
+        "J02"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Dua Alembic head atau actual applied head drift",
+      "bounded_diagnosis": "Baca graph dan actual applied history. Buat additive convergence berdasarkan history; uji fresh dan supported upgrade.",
+      "autonomous_response": "Jangan rewrite applied revision atau memilih satu head dengan menghapus yang lain. Offline SQL tetap persiapan.",
+      "retry_trigger_and_exit_evidence": "Migration plan baru diuji lalu actual application menghasilkan receipt sesuai scope.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F17",
+      "group": "Database dan migrasi",
+      "action_refs": [
+        "C03",
+        "E04",
+        "N04"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Nonce, source/config atau DB metadata receipt tidak cocok",
+      "bounded_diagnosis": "Simpan failure receipt; tentukan field stabil vs planned schema/data change. Verifikasi command dan environment yang sungguh berjalan.",
+      "autonomous_response": "Perbaiki penyebab run/capture; jangan melonggarkan guard agar receipt stale diterima.",
+      "retry_trigger_and_exit_evidence": "Run baru memakai identity yang benar dan metadata invariant konsisten.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F18",
+      "group": "Database dan migrasi",
+      "action_refs": [
+        "S03",
+        "S04",
+        "R02"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Deadlock, timeout atau unique violation pada concurrency",
+      "bounded_diagnosis": "Reproduce bound transactions; periksa lock order, scope, isolation dan retries sesuai policy. Unique conflict harus dibedakan committed duplicate vs changed payload.",
+      "autonomous_response": "Perbaiki transaksi/locking; jangan menahan network I/O di lock atau menjadikan semua symbol satu global mutex tanpa kebutuhan.",
+      "retry_trigger_and_exit_evidence": "Race/rollback/retry tests membuktikan invariants dengan transaksi PostgreSQL aktual.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F19",
+      "group": "Delivery dan ownership",
+      "action_refs": [
+        "S03",
+        "S04"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Same ID digunakan untuk payload berbeda",
+      "bounded_diagnosis": "Bandingkan immutable persisted bytes/digest, producer identity dan source evaluation.",
+      "autonomous_response": "Quarantine dengan reason; jangan overwrite payload, ACK success atau advance cursor sebagai data sah.",
+      "retry_trigger_and_exit_evidence": "Sumber konflik diperbaiki dan recovery versioned mempertahankan bukti original.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F20",
+      "group": "Delivery dan ownership",
+      "action_refs": [
+        "S03",
+        "S04"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Predecessor hilang atau sequence gap permanen",
+      "bounded_diagnosis": "Periksa committed outbox/counter/evaluation dan predecessor lineage; bedakan pending delivery dari nomor yang tidak pernah committed.",
+      "autonomous_response": "Jangan skip predecessor. Pertahankan incident/wait per activity; unrelated partition boleh lanjut bila kontrak mengizinkan.",
+      "retry_trigger_and_exit_evidence": "Predecessor terkirim atau controlled reconciliation yang sah menyelesaikan gap.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F21",
+      "group": "Delivery dan ownership",
+      "action_refs": [
+        "S04"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Consumer commit sukses tetapi ACK hilang/lease relay expired",
+      "bounded_diagnosis": "Reproduce commit lalu lost ACK; relay lease baru mengirim payload yang sama.",
+      "autonomous_response": "Inbox mengenali committed duplicate, mengembalikan outcome/ACK yang sama tanpa extra effect; successor maju hanya setelah ACK valid.",
+      "retry_trigger_and_exit_evidence": "Crash/retry test membuktikan satu lifecycle/emission effect dan progress berikutnya.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F22",
+      "group": "Delivery dan ownership",
+      "action_refs": [
+        "C02",
+        "S04"
+      ],
+      "provenance": "REPORTED_IMPLEMENTATION_GAP",
+      "symptom": "Legacy writer melewati lifecycle owner fence",
+      "bounded_diagnosis": "Inventaris seluruh write path ke state yang sama; guard ownership/epoch di transaksi setiap mutasi.",
+      "autonomous_response": "Relay lease fence saja tidak cukup. Satukan fence semantics termasuk legacy writer dan lakukan takeover test.",
+      "retry_trigger_and_exit_evidence": "Stale owner/legacy writes ditolak; owner baru menulis dengan history konsisten.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F23",
+      "group": "Delivery dan ownership",
+      "action_refs": [
+        "S04"
+      ],
+      "provenance": "REPORTED_IMPLEMENTATION_GAP",
+      "symptom": "Consumer destination atau transport authentication belum bound",
+      "bounded_diagnosis": "Implement principal/destination/purpose/payload validation dan fixtures pada explicit interface; secret berupa reference.",
+      "autonomous_response": "Jangan memperlakukan 2xx delivery sebagai commit proof, atau mengaktifkan endpoint anonymous sementara.",
+      "retry_trigger_and_exit_evidence": "Consumer terautentikasi terikat dan ACK sesudah atomic commit teruji.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F24",
+      "group": "Delivery dan ownership",
+      "action_refs": [
+        "S04"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Notifikasi eksternal sukses/gagal di tengah DB transaction",
+      "bounded_diagnosis": "Bedakan durable emission intent dengan actual external notification; external send setelah commit melalui worker/outbox.",
+      "autonomous_response": "Gunakan emission ID stabil dan retry policy. Jangan mengklaim atomic DB+HTTP atau mengirim pesan eksternal tanpa scope.",
+      "retry_trigger_and_exit_evidence": "Crash/retry mempertahankan intent dan sink dedup sesuai kontrak.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F25",
+      "group": "Evidence dan strategi",
+      "action_refs": [
+        "S02",
+        "S03"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Gap/backfill atau forming candle dianggap fresh/closed",
+      "bounded_diagnosis": "Audit source time, receive time, availability, closed flag, selection policy, coverage dan watermarks.",
+      "autonomous_response": "Preserve gap/suspension/revision history; jangan memberi authority retroaktif dari backfill.",
+      "retry_trigger_and_exit_evidence": "Live/replay as-of, retention dan recovery menghasilkan data/reason yang konsisten.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F26",
+      "group": "Evidence dan strategi",
+      "action_refs": [
+        "S03"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Direction kembali membelah pair activity; facet dihitung ganda",
+      "bounded_diagnosis": "Jalankan caller BUY@0→SELL@150→BUY@300 dan facet/duplicate fixtures pada explicit v3.1 context.",
+      "autonomous_response": "Perbaiki logical observation reducer; pisahkan kualitas direction dari continuity.",
+      "retry_trigger_and_exit_evidence": "Satu activity 300 detik, dedup stabil, dan PostgreSQL restart mempertahankan identity.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F27",
+      "group": "Evidence dan strategi",
+      "action_refs": [
+        "S01",
+        "S04"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "V1 adapter aktif atau advisory memperoleh authority order",
+      "bounded_diagnosis": "Telusuri actual producer/caller/consumer/policy; test invalid/expired/conflicting policy termasuk equality valid_until.",
+      "autonomous_response": "Explicit version adapter; advisory analysis SHADOW_ONLY, tanpa risk reservation/command. Raw upgrade re-evaluates lifecycle yang sama.",
+      "retry_trigger_and_exit_evidence": "V3.1 binding lengkap dan zero-sink negative scenarios serta upgrade positif terbukti.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F28",
+      "group": "Evidence dan strategi",
+      "action_refs": [
+        "S04"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Job analisis lama selesai setelah revision/generation baru",
+      "bounded_diagnosis": "Bind material revision dan owner generation pada publish; uji slow worker/cancel/restart.",
+      "autonomous_response": "Reject stale late result; single-flight/coalescing hanya untuk work yang tidak menghilangkan material evidence.",
+      "retry_trigger_and_exit_evidence": "Latest revision tetap authoritative; stale completion tidak overwrite atau emit new authority.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F29",
+      "group": "Evidence dan strategi",
+      "action_refs": [
+        "S05"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Target lebih jauh dipilih untuk memaksakan RR",
+      "bounded_diagnosis": "Periksa solver normatif v3.1 dan target universe D1/H4/H1/legal structural sources serta consumed/fresh states.",
+      "autonomous_response": "Pilih nearest legal target; empty feasible interval menghasilkan WAIT/NO_TRADE sesuai kontrak.",
+      "retry_trigger_and_exit_evidence": "BUY/SELL mirror, nearest-target dan interval boundary fixtures lulus.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F30",
+      "group": "Evidence dan strategi",
+      "action_refs": [
+        "S05",
+        "R02"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Pip/tick FX, JPY atau metal salah; cost masih gross",
+      "bounded_diagnosis": "Bind broker specs/currency/step dan net cost model; cek representability setelah rounding.",
+      "autonomous_response": "Jangan clamp volume ke minimum yang melanggar cash risk atau mengganti SL/TP agar lolos.",
+      "retry_trigger_and_exit_evidence": "Projected loss/net RR sesuai oracle bound untuk supported symbols; unsupported ditolak.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F31",
+      "group": "Risk dan execution",
+      "action_refs": [
+        "R01",
+        "E06"
+      ],
+      "provenance": "REPORTED_BINDING_GAP",
+      "symptom": "Profile risiko, account/server atau policy wajib belum dipilih",
+      "bounded_diagnosis": "Cari existing binding dan keputusan pengguna; pisahkan historical 5+5 dan DEMO3.5+1.5.",
+      "autonomous_response": "Generic TEST_ONLY adapters boleh maju; kumpulkan pilihan nyata dengan impact dan minta satu cohort decision bila masih diperlukan.",
+      "retry_trigger_and_exit_evidence": "Satu active profile account/mode/currency/version memiliki sumber authority yang sah.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F32",
+      "group": "Risk dan execution",
+      "action_refs": [
+        "R02",
+        "R03",
+        "N01"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "TradePlan ID atau lineage antar komponen tidak kompatibel",
+      "bounded_diagnosis": "Bandingkan actual candidate/proof/reservation/FinalSignal IDs dan validators; test positive current lineage dan old/shadow negative.",
+      "autonomous_response": "Buat adapter/schema eksplisit. Jangan regex/string replace untuk memaksa lineage atau downgrade unknown version.",
+      "retry_trigger_and_exit_evidence": "Current positive pipeline lolos; malformed/stale/advisory/projection tetap ditolak.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F33",
+      "group": "Risk dan execution",
+      "action_refs": [
+        "R02",
+        "N07"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Dua worker oversubscribe atau risk release terlalu dini",
+      "bounded_diagnosis": "Lock capacity dan campaign/role pada atomic transaction; model filled/pending/reserved/unknown tanpa double count.",
+      "autonomous_response": "Cancel queue/expiry transport tidak membuktikan broker zero effect. Unknown capacity tetap dihitung hingga independent reconciliation.",
+      "retry_trigger_and_exit_evidence": "Concurrent/partial-fill/cancel-race/restart oracles menjaga caps dan release hanya sesuai proof.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F34",
+      "group": "Risk dan execution",
+      "action_refs": [
+        "N01",
+        "N02",
+        "E05"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Signature/decimal/time serialization berbeda Python-MQL5",
+      "bounded_diagnosis": "Golden vectors byte-level pada field order, UTF-8, canonical numeric/time representations dan keyID.",
+      "autonomous_response": "Pertahankan invalid signature rejection; jangan menonaktifkan validasi atau mengubah payload sesudah sign.",
+      "retry_trigger_and_exit_evidence": "Exact producer/EA binary menerima valid vectors dan menolak tampered vectors.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F35",
+      "group": "Risk dan execution",
+      "action_refs": [
+        "E05",
+        "E08",
+        "N02"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "EA binary lama atau terminal HTTP rehearsal belum bekerja",
+      "bounded_diagnosis": "Bind output binary/include/source/MetaEditor digest; inspect WebRequest target/allowlist/auth dan actual terminal.",
+      "autonomous_response": "Compile bukan HTTP/broker proof. Blocking I/O diikuti revalidation fields mekanis yang mutable; terminal handler cepat sesuai desain.",
+      "retry_trigger_and_exit_evidence": "Final binary menjalankan expected poll/claim/report/restart dan SHADOW zero-submit.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F36",
+      "group": "Risk dan execution",
+      "action_refs": [
+        "E02",
+        "E09",
+        "N02",
+        "N08"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "OrderSend diterima tetapi outcome ambigu/partial/out-of-order",
+      "bounded_diagnosis": "Gunakan submit marker, retcodes dan independent orders/deals/positions/history dengan query completeness.",
+      "autonomous_response": "Jangan automatic resend, close-all atau delete journal. Satu logical request bisa punya banyak event/deal.",
+      "retry_trigger_and_exit_evidence": "Outcome known, exposure/protection direkonsiliasi; ambiguity tetap blocker jika proof belum lengkap.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F37",
+      "group": "Release dan natural DEMO",
+      "action_refs": [
+        "D01",
+        "E07",
+        "J02",
+        "J03"
+      ],
+      "provenance": "REPORTED_RELEASE_RISK",
+      "symptom": "Railway staged changes atau image/config/schema tidak sama",
+      "bounded_diagnosis": "Read exact serviceUUID, source/image/config/schema; pisahkan shared staged diff dari scoped proposed repair.",
+      "autonomous_response": "Siapkan release packet konkret; jangan apply-all atau menyimpulkan parity dari deployment SUCCESS.",
+      "retry_trigger_and_exit_evidence": "Exact intended diff diterapkan dalam scope dan running parity/owner dibuktikan.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F38",
+      "group": "Release dan natural DEMO",
+      "action_refs": [
+        "E02",
+        "E06",
+        "E09"
+      ],
+      "provenance": "REPORTED_BINDING_GAP",
+      "symptom": "Reader tidak independen atau empty query tidak lengkap",
+      "bounded_diagnosis": "Bind principal/channel/account/history coverage/challenge/freshness. Nilai boundary independensi berdasarkan implementation nyata.",
+      "autonomous_response": "Executor bool/heartbeat/positions=[] dari error tidak menjadi proof flat; implement verifier dan lanjut source lain.",
+      "retry_trigger_and_exit_evidence": "Attestation fresh/comprehensive disetujui backend yang sesuai purpose, tanpa credential leak.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F39",
+      "group": "Release dan natural DEMO",
+      "action_refs": [
+        "E09",
+        "N06",
+        "N08"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Window kedaluwarsa atau account/mode berubah",
+      "bounded_diagnosis": "Verifikasi binding saat arm/claim/pre-submit; cocokkan exact DEMO server/account/session/caps.",
+      "autonomous_response": "Stop new submit sesuai contract; jangan memperpanjang canary, mengganti akun atau menaikkan cap sendiri.",
+      "retry_trigger_and_exit_evidence": "Binding operasi baru/masih berlaku memenuhi scoped authority dan fresh preflight.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F40",
+      "group": "Release dan natural DEMO",
+      "action_refs": [
+        "N06",
+        "N08"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Tidak ada natural setup/child eligible dalam window",
+      "bounded_diagnosis": "Simpan coverage, reasons, data quality dan NOT_OBSERVED; bedakan strategy WAIT sah dari wiring defect.",
+      "autonomous_response": "Jangan synthetic order untuk menutup natural milestone, mengganti rule atau extend window otomatis. Lanjut offline analysis/review yang siap.",
+      "retry_trigger_and_exit_evidence": "Natural episode memenuhi policy pada observation window yang sah; proof positif benar-benar tersedia.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F41",
+      "group": "Release dan natural DEMO",
+      "action_refs": [
+        "N07",
+        "N08"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Child close membuka slot lagi atau floating profit dianggap released risk",
+      "bounded_diagnosis": "Bind lifetime role policy dan locked campaign R; evaluasi parent OPEN/thesis/target/new structure/fresh entry.",
+      "autonomous_response": "Slot lifetime tidak dihapus sesudah close. Released risk perlu proof sesuai policy; jangan menciptakan BE/trailing atau memperbesar budget.",
+      "retry_trigger_and_exit_evidence": "Legal child dan forbidden reopen/risk-release cases terbukti dengan consistent family ledger.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F42",
+      "group": "Release dan natural DEMO",
+      "action_refs": [
+        "J01",
+        "J02",
+        "J03",
+        "N08"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Parent-only evidence diwariskan ke binary child",
+      "bounded_diagnosis": "Freeze exact child source/schema/EA, rerun affected release/compile/PG gates dan final SHADOW pada artifact child.",
+      "autonomous_response": "Jangan enable child lewat flag yang membuka jalur legacy tak terklasifikasi.",
+      "retry_trigger_and_exit_evidence": "Child release parity dan positive family/next-campaign compounding terikat pada artifact tersebut.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F43",
+      "group": "Operasi, evaluasi dan penutupan",
+      "action_refs": [
+        "C06",
+        "O01"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Readiness hijau tetapi mandatory task mati/backlog hilang",
+      "bounded_diagnosis": "Uji actual served probe, supervisor task, late crash dan queue identity; gunakan mandatory-vs-disabled role inventory.",
+      "autonomous_response": "Required failure menghasilkan readiness unavailable; jangan membuang job untuk membuat queue tampak pulih.",
+      "retry_trigger_and_exit_evidence": "Fault/recovery receipts membuktikan outcome, completeness dan measured recovery terhadap policy.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F44",
+      "group": "Operasi, evaluasi dan penutupan",
+      "action_refs": [
+        "O01"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Drill/kill switch memutus proteksi atau reconciliation",
+      "bounded_diagnosis": "Susun bounded drill scope terlebih dahulu, pisahkan new risk dari existing obligations.",
+      "autonomous_response": "Stop new risk dalam authority yang berlaku sambil mempertahankan protection/reader. Jangan mematikan seluruh service/VPS.",
+      "retry_trigger_and_exit_evidence": "Recovery/exposure before-after known dan RTO/RPO yang ditetapkan dinilai dari run aktual.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F45",
+      "group": "Operasi, evaluasi dan penutupan",
+      "action_refs": [
+        "O02"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Leakage, duplikat log atau parent-child dianggap sampel independen",
+      "bounded_diagnosis": "Bind availability/as-of, dedup inputs, freeze IS/OOS/walk-forward protocol sebelum melihat hasil dan gunakan campaign cohort.",
+      "autonomous_response": "Laporkan cost/fill assumptions dan uncertainty; WAIT bukan win, data ganda bukan new sample.",
+      "retry_trigger_and_exit_evidence": "Reproducible clean evaluation dengan cohort/denominator yang memadai dan jelas.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F46",
+      "group": "Operasi, evaluasi dan penutupan",
+      "action_refs": [
+        "O01",
+        "O02",
+        "O03"
+      ],
+      "provenance": "REPORTED_CRITERIA_GAP",
+      "symptom": "SLO, soak window, sample adequacy atau threshold ekonomi belum bound",
+      "bounded_diagnosis": "Cari versioned policy/requirement dan buat candidate evaluation protocol dengan sumber/rationale/impact.",
+      "autonomous_response": "Jangan mengisi angka arbitrer atau tuning setelah hasil. Kerjakan instrumentation/data acquisition yang sah sambil menunggu keputusan minimum.",
+      "retry_trigger_and_exit_evidence": "Protocol dan thresholds relevan ditetapkan sebelum evaluation, lalu actual evidence cukup.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F47",
+      "group": "Operasi, evaluasi dan penutupan",
+      "action_refs": [
+        "O02",
+        "O03"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Evaluasi lengkap menunjukkan performa tidak memenuhi target",
+      "bounded_diagnosis": "Pertahankan negative results dan nilai seluruh criteria berdasarkan protocol yang dibekukan.",
+      "autonomous_response": "P6 review dapat complete dengan verdict HOLD jika evidence/dependencies lengkap. Defect wajib pada P1–P5 tetap membuka gate terkait; jangan menutupnya melalui dossier.",
+      "retry_trigger_and_exit_evidence": "Reviewer dapat menelusuri complete evidence dan alasan verdict; REAL tetap tidak aktif.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    },
+    {
+      "id": "F48",
+      "group": "Operasi, evaluasi dan penutupan",
+      "action_refs": [
+        "O03"
+      ],
+      "provenance": "FORECAST",
+      "symptom": "Semua frontier tertutup external blocker dan pertanyaan berulang",
+      "bounded_diagnosis": "Baca blocker/question ledger: lokasi yang sudah dicari, jawaban yang berlaku dan recheck trigger.",
+      "autonomous_response": "Selesaikan independent source work yang sah; keluarkan satu intervention packet konkret dan checkpoint. Jangan menyebut BLOCKED sebagai DONE.",
+      "retry_trigger_and_exit_evidence": "Ada source/input/capability/authority baru yang membuka dependency; resume dari receipt terakhir.",
+      "policy": "Reuse valid session authority. No same-state retry or repeated question. External mutations require their actual bound scope."
+    }
+  ]
+}

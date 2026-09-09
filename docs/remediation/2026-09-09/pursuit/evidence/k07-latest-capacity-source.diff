@@ -1,0 +1,272 @@
+commit df768c9c1dcff61f37c167e9092c89cd5546554b
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 15:40:56 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 15:40:56 2026 +0800
+
+    feat(storage): prepare capacity from locked latest candidate revision
+
+diff --git a/contracts/strategy_5scr_candidate_revision_v31.py b/contracts/strategy_5scr_candidate_revision_v31.py
+index 52e777c8..0016b0cd 100644
+--- a/contracts/strategy_5scr_candidate_revision_v31.py
++++ b/contracts/strategy_5scr_candidate_revision_v31.py
+@@ -10,6 +10,7 @@ from uuid import UUID
+ from pydantic import Field, model_validator
+ 
+ from contracts.strategy_5scr_candidate_handoff_v31 import CandidateHandoffV31
++from contracts.strategy_5scr_capacity_v31 import CapacityProposalV31
+ from contracts.strategy_5scr_net_geometry_v31 import GeometryContract
+ 
+ Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+@@ -46,6 +47,30 @@ class StoredCandidateRevisionV31(GeometryContract):
+         return self
+ 
+ 
++class CandidateCapacityPreparationV31(GeometryContract):
++    """Tentative result for the same caller transaction, never a committed ACK."""
++
++    profile: Literal["TEST_ONLY"]
++    candidate_revision: StoredCandidateRevisionV31
++    capacity: CapacityProposalV31
++    durable_commit: Literal[False] = False
++    capital_reservation_authority: Literal[False] = False
++    execution_authority: Literal[False] = False
++
++    @model_validator(mode="after")
++    def identity(self):
++        candidate = self.candidate_revision.request.handoff.candidate
++        reservation = self.capacity.reservation
++        if (
++            (reservation.tradeplan_id, reservation.tradeplan_revision, reservation.thesis_id)
++            != (str(candidate.tradeplan_id), candidate.tradeplan_revision, str(candidate.strategy_thesis_id))
++            or candidate.analysis_admission_class != "CANONICAL_RAW"
++            or reservation.strategy_candidate_receipt_hash is None
++        ):
++            raise ValueError("CANDIDATE_CAPACITY_PREPARATION_IDENTITY_MISMATCH")
++        return self
++
++
+ def prepare_candidate_revision_v31(
+     request: CandidateRevisionAppendV31,
+     previous: StoredCandidateRevisionV31 | None,
+diff --git a/storage/strategy_5scr_candidate_revision_v31.py b/storage/strategy_5scr_candidate_revision_v31.py
+index a3480c33..5b46c4b8 100644
+--- a/storage/strategy_5scr_candidate_revision_v31.py
++++ b/storage/strategy_5scr_candidate_revision_v31.py
+@@ -5,12 +5,17 @@ in-transaction variant returns a tentative record for composition, not an ACK.
+ No default connection, owner acquisition, migration or risk effect is supplied.
+ """
+ 
++from uuid import UUID
++
+ from contracts.strategy_5scr_candidate_revision_v31 import (
++    CandidateCapacityPreparationV31,
+     CandidateRevisionAppendV31,
+     StoredCandidateRevisionV31,
+     candidate_revision_hash_v31,
+     prepare_candidate_revision_v31,
+ )
++from contracts.strategy_5scr_risk_adapter_v31 import ParentSizingRequestV31
++from risk.strategy_5scr_candidate_handoff_v31 import propose_canonical_parent_v31
+ from storage.strategy_5scr_activity_consumer import bind_owner
+ 
+ TABLE = "public.strategy_5scr_candidate_revisions_v31"
+@@ -91,3 +96,52 @@ class CandidateRevisionRepositoryV31:
+         async with self._pg.transaction() as connection:
+             result = await self.append_in_transaction(connection, request, now=now)
+         return result
++
++    async def prepare_parent_in_transaction(
++        self,
++        connection,
++        *,
++        expected_candidate_revision_hash,
++        ledger,
++        request: ParentSizingRequestV31,
++        reservation_id,
++        expires_at,
++        now,
++        capacity_owner_epoch,
++        expected_capacity_version,
++        verify_handoff,
++        verify_universe,
++        verify_risk_inputs,
++    ) -> CandidateCapacityPreparationV31:
++        """Prepare capacity from locked latest history in the caller transaction.
++
++        The caller must lock/authenticate the account ledger and persist the
++        complete Transaction A effects before commit. This method writes none
++        of those effects and cannot be used as a durable reservation receipt.
++        Historical append ACKs are separate from admission of the latest plan.
++        """
++        request = ParentSizingRequestV31.model_validate(request.model_dump())
++        latest = await self.lock_latest(connection, UUID(request.tradeplan_id))
++        if latest is None:
++            raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
++        if (
++            latest.request_hash != expected_candidate_revision_hash
++            or latest.request.handoff.candidate.tradeplan_revision != request.tradeplan_revision
++        ):
++            raise ValueError("CANDIDATE_LATEST_REVISION_MISMATCH")
++        result = propose_canonical_parent_v31(
++            ledger,
++            latest.request.handoff,
++            request,
++            reservation_id=reservation_id,
++            expires_at=expires_at,
++            now=now,
++            owner_epoch=capacity_owner_epoch,
++            expected_version=expected_capacity_version,
++            verify_handoff=verify_handoff,
++            verify_universe=verify_universe,
++            verify_risk_inputs=verify_risk_inputs,
++        )
++        # All reads and checks above occur while the same owner/candidate locks
++        # remain held. A transaction failure discards this tentative preparation.
++        return CandidateCapacityPreparationV31(profile="TEST_ONLY", candidate_revision=latest, capacity=result)
+diff --git a/tests/test_strategy_5scr_latest_candidate_capacity_v31.py b/tests/test_strategy_5scr_latest_candidate_capacity_v31.py
+new file mode 100644
+index 00000000..874f2afd
+--- /dev/null
++++ b/tests/test_strategy_5scr_latest_candidate_capacity_v31.py
+@@ -0,0 +1,140 @@
++import asyncio
++from datetime import timedelta
++from uuid import UUID
++
++import pytest
++from pydantic import ValidationError
++
++from analysis.strategy_5scr_target_selection_v31 import target_universe_hash_v31
++from contracts.strategy_5scr_candidate_revision_v31 import CandidateCapacityPreparationV31
++from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
++from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
++from tests.test_strategy_5scr_candidate_handoff_v31 import bundle
++from tests.test_strategy_5scr_candidate_revision_v31 import NOW, FakeDB, repository, revision
++
++
++async def fixture(advisory=False):
++    db = FakeDB()
++    repo = repository(db)
++    append = revision(advisory=advisory)
++    stored = await repo.append(append, now=NOW)
++    ledger, _, request = bundle()
++    handoff = stored.request.handoff
++    request = request.model_copy(update={"strategy_candidate_receipt_hash": candidate_handoff_hash_v31(handoff)})
++    kwargs = {
++        "expected_candidate_revision_hash": stored.request_hash,
++        "ledger": ledger,
++        "request": request,
++        "reservation_id": UUID(int=91),
++        "expires_at": NOW + timedelta(seconds=1),
++        "now": NOW,
++        "capacity_owner_epoch": ledger.owner_epoch,
++        "expected_capacity_version": ledger.version,
++        "verify_handoff": lambda _, digest: digest == candidate_handoff_hash_v31(handoff),
++        "verify_universe": lambda _, digest: digest == target_universe_hash_v31(handoff.target_universe),
++        "verify_risk_inputs": lambda _, digest: digest == parent_sizing_request_hash_v31(request),
++    }
++    return db, repo, stored, kwargs
++
++
++def test_caller_loads_locked_current_candidate_then_runs_actual_capacity_handoff():
++    async def run():
++        db, repo, stored, kwargs = await fixture()
++        async with db.transaction():
++            result = await repo.prepare_parent_in_transaction(db, **kwargs)
++            assert result.candidate_revision == stored
++            assert result.capacity.ledger.version == 1
++            assert result.capacity.reservation.strategy_candidate_receipt_hash == candidate_handoff_hash_v31(
++                stored.request.handoff
++            )
++            assert result.durable_commit is result.capital_reservation_authority is result.execution_authority is False
++        assert kwargs["ledger"].reservations == ()
++        assert len(db.rows) == 1  # Preparation does not claim to persist risk/outbox effects.
++
++    asyncio.run(run())
++
++
++@pytest.mark.parametrize(
++    "fault,reason",
++    [
++        ("missing", "LATEST_REVISION_UNAVAILABLE"),
++        ("hash", "LATEST_REVISION_MISMATCH"),
++        ("revision", "LATEST_REVISION_MISMATCH"),
++        ("handoff", "HANDOFF_RECEIPT_MISMATCH"),
++        ("capacity_epoch", "OWNER_FENCED"),
++        ("capacity_version", "VERSION_CONFLICT"),
++        ("expiry", "RECEIPT_EXPIRED"),
++        ("transaction", "CALLER_TRANSACTION_REQUIRED"),
++    ],
++)
++def test_latest_candidate_capacity_denies_missing_or_conflicting_binding(fault, reason):
++    async def run():
++        db, repo, _, kwargs = await fixture()
++        if fault == "missing":
++            db.rows = []
++        elif fault == "hash":
++            kwargs["expected_candidate_revision_hash"] = "sha256:" + "f" * 64
++        elif fault == "revision":
++            kwargs["request"] = kwargs["request"].model_copy(update={"tradeplan_revision": 2})
++        elif fault == "handoff":
++            kwargs["request"] = kwargs["request"].model_copy(
++                update={"strategy_candidate_receipt_hash": "sha256:" + "f" * 64}
++            )
++        elif fault == "capacity_epoch":
++            kwargs["capacity_owner_epoch"] += 1
++        elif fault == "capacity_version":
++            kwargs["expected_capacity_version"] += 1
++        elif fault == "expiry":
++            kwargs["now"] = NOW + timedelta(seconds=2)
++        with pytest.raises(ValueError, match=reason):
++            if fault == "transaction":
++                await repo.prepare_parent_in_transaction(db, **kwargs)
++            else:
++                async with db.transaction():
++                    await repo.prepare_parent_in_transaction(db, **kwargs)
++
++    asyncio.run(run())
++
++
++def test_superseded_revision_cannot_enter_capacity_even_with_matching_old_receipt():
++    async def run():
++        db, repo, first, kwargs = await fixture()
++        second = await repo.append(revision(2, first), now=NOW + timedelta(seconds=1))
++        for expected in (first.request_hash, second.request_hash):
++            kwargs["expected_candidate_revision_hash"] = expected
++            with pytest.raises(ValueError, match="LATEST_REVISION_MISMATCH"):
++                async with db.transaction():
++                    await repo.prepare_parent_in_transaction(db, **kwargs)
++        assert await repo.append(first.request, now=NOW + timedelta(days=1)) == first
++
++    asyncio.run(run())
++
++
++def test_advisory_history_cannot_gain_risk_authority_through_storage():
++    async def run():
++        db, repo, _, kwargs = await fixture(advisory=True)
++
++        def forbidden(*_):
++            raise AssertionError("advisory reached verifier")
++
++        kwargs.update(verify_handoff=forbidden, verify_universe=forbidden, verify_risk_inputs=forbidden)
++        with pytest.raises(ValueError, match="ADVISORY_RISK_HANDOFF_PROHIBITED"):
++            async with db.transaction():
++                await repo.prepare_parent_in_transaction(db, **kwargs)
++
++    asyncio.run(run())
++
++
++def test_preparation_contract_cannot_claim_commit_or_substitute_candidate_identity():
++    async def run():
++        db, repo, _, kwargs = await fixture()
++        async with db.transaction():
++            result = await repo.prepare_parent_in_transaction(db, **kwargs)
++        with pytest.raises(ValidationError):
++            CandidateCapacityPreparationV31.model_validate({**result.model_dump(), "durable_commit": True})
++        payload = result.model_dump()
++        payload["candidate_revision"]["request"]["handoff"]["candidate"]["tradeplan_revision"] = 2
++        with pytest.raises(ValidationError):
++            CandidateCapacityPreparationV31.model_validate(payload)
++
++    asyncio.run(run())

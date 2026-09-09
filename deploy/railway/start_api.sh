@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Runtime orchestration belongs to the dedicated orchestrator service. Normalize
+# the legacy switch exactly as the Python API bootstrap does (trim and lowercase).
+embed_orchestrator="${WOLF15_EMBED_ORCHESTRATOR:-false}"
+embed_orchestrator="${embed_orchestrator#"${embed_orchestrator%%[![:space:]]*}"}"
+embed_orchestrator="${embed_orchestrator%"${embed_orchestrator##*[![:space:]]}"}"
+case "${embed_orchestrator,,}" in
+  1|true|yes|on)
+    echo "[startup] ERROR: WOLF15_EMBED_ORCHESTRATOR is no longer supported; use wolf15-orchestrator." >&2
+    exit 1
+    ;;
+esac
+
 # ── Validate Redis connectivity env var ──
 if [[ -z "${REDIS_URL:-}" && -z "${REDIS_PRIVATE_URL:-}" && -z "${REDISHOST:-}" ]]; then
   echo "[startup] WARNING: No Redis URL configured (REDIS_URL / REDIS_PRIVATE_URL / REDISHOST). Outbox worker and real-time features will fail." >&2

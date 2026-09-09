@@ -1,0 +1,95 @@
+{
+  "captured_at_utc": "2026-09-08T21:28:11.961605+00:00",
+  "repository": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+  "candidate": {
+    "headRefOid": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+    "isDraft": true,
+    "mergeStateStatus": "UNSTABLE",
+    "state": "OPEN",
+    "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/pull/428"
+  },
+  "registered_repository_runners": {
+    "total_count": 0,
+    "runners": []
+  },
+  "runs": [
+    {
+      "conclusion": "failure",
+      "databaseId": 34280260050,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "Perf Guard",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280260050"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 34280259941,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "CI",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280259941"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 34280259960,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "Docs Hygiene",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280259960"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 34280260020,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "Wolf Security Scan",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280260020"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 34280247877,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "CI",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280247877"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 34280247901,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "Tests",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280247901"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 34280247895,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "Docs Hygiene",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280247895"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 34280248116,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "Lint",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280248116"
+    },
+    {
+      "conclusion": "failure",
+      "databaseId": 34280247883,
+      "headSha": "90f5d777a89c134fbc528c6b667666d68d8dcdb1",
+      "name": "Perf Guard",
+      "status": "completed",
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34280247883"
+    }
+  ],
+  "disposable_linux_host": "UNBOUND",
+  "windows_capacity": "NOT_REMEASURED_THIS_TURN",
+  "previous_windows_capacity_evidence": "followup-s03-runtime/evidence/native-pg-measure-1788901420757060600.json",
+  "user_constraint": "No cleanup performed; retain existing Windows workloads and historical VPSs. No verified disposable Linux configuration supplied.",
+  "billing": "EXCLUDED_BY_USER",
+  "postgres_acceptance": "NOT_EXECUTED"
+}

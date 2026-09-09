@@ -1,0 +1,193 @@
+commit 1ad5c7a13bbcea5d4eff3eaded6f90989cb14f46
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 13:32:05 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 13:32:05 2026 +0800
+
+    Bind executor bridge through explicit fail-closed application factory opt-in
+
+diff --git a/api/app_factory.py b/api/app_factory.py
+index 928d59be..611a1721 100644
+--- a/api/app_factory.py
++++ b/api/app_factory.py
+@@ -848,16 +848,32 @@ def _create_app_inner() -> FastAPI:
+     return app
+ 
+ 
+-def create_app(*, activity_delivery_endpoint=None) -> FastAPI:
++def create_app(*, activity_delivery_endpoint=None, executor_bridge_enabled: bool = False) -> FastAPI:
+     """Build the FastAPI application with fail-open bootstrap protection.
+ 
+     If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
+     raises, returns a minimal fallback app that keeps ``/healthz`` alive
+     so operators can diagnose the failure via ``/api/v1/status``.
++
++    Executor bridge routes require an explicit boolean opt-in. Mounting them
++    does not enable command production, delivery, or broker execution flags.
+     """
++    if type(executor_bridge_enabled) is not bool:
++        raise ValueError("EXECUTOR_BRIDGE_EXPLICIT_BOOLEAN_REQUIRED")
+     fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
+     try:
+         application = _create_app_inner()
++        if executor_bridge_enabled:
++            from api.executor_bridge_router import router as executor_bridge_router
++
++            if getattr(application.state, "router_boot_errors", []):
++                raise ValueError("EXECUTOR_BRIDGE_ROUTER_BOOT_FAILED")
++            existing_paths = application.openapi().get("paths", {})
++            if any(getattr(route, "path", None) in existing_paths for route in executor_bridge_router.routes):
++                raise ValueError("EXECUTOR_BRIDGE_ALREADY_REGISTERED")
++            application.include_router(executor_bridge_router)
++            application.openapi_schema = None
++            _assert_no_duplicate_routes(application)
+         if activity_delivery_endpoint is not None:
+             from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
+ 
+@@ -870,7 +886,7 @@ def create_app(*, activity_delivery_endpoint=None) -> FastAPI:
+             _assert_no_duplicate_routes(application)
+         return application
+     except Exception as exc:
+-        if not fail_open or activity_delivery_endpoint is not None:
++        if not fail_open or activity_delivery_endpoint is not None or executor_bridge_enabled:
+             raise
+         logger.exception("API bootstrap failed — enabling fallback liveness app")
+         return _build_bootstrap_fallback_app(f"api_bootstrap_failed: {exc!s}")
+diff --git a/tests/test_executor_bridge_factory.py b/tests/test_executor_bridge_factory.py
+new file mode 100644
+index 00000000..df543b3a
+--- /dev/null
++++ b/tests/test_executor_bridge_factory.py
+@@ -0,0 +1,132 @@
++"""Factory-level bridge binding; no lifespan, database or broker is started."""
++
++from unittest.mock import AsyncMock
++from uuid import UUID
++
++import pytest
++from fastapi.testclient import TestClient
++
++from api import app_factory
++from api.middleware.executor_auth import derive_executor_token
++from execution.mt5_command_repository import CommandConflictError, get_mt5_command_repository
++
++EXECUTOR = UUID("11111111-1111-4111-8111-111111111111")
++OTHER = UUID("22222222-2222-4222-8222-222222222222")
++COMMAND = UUID("33333333-3333-4333-8333-333333333333")
++SECRET = "factory-fixture-only-key-000000000000"
++
++
++@pytest.fixture
++def factory(monkeypatch):
++    # Retain the actual inner factory and middleware; unrelated router imports
++    # and telemetry exporters are isolated, and TestClient does not run lifespan.
++    monkeypatch.setattr(app_factory, "load_routers", lambda: ([], []))
++    for name in (
++        "setup_tracer",
++        "instrument_asyncio",
++        "instrument_redis",
++        "instrument_requests",
++        "instrument_httpx",
++        "instrument_fastapi",
++    ):
++        monkeypatch.setattr(app_factory, name, lambda *a, **kw: None)
++    monkeypatch.setenv("ENV", "test")
++    monkeypatch.setenv("ENABLE_DEV_ROUTES", "false")
++    monkeypatch.setenv("FORCE_HTTPS", "false")
++    monkeypatch.setenv("EXECUTOR_BRIDGE_AUTH_SECRET", SECRET)
++    monkeypatch.delenv("EXECUTOR_BRIDGE_AUTH_SECRET_PREVIOUS", raising=False)
++    return app_factory.create_app
++
++
++def path(executor=EXECUTOR):
++    return f"/api/v1/executors/{executor}/commands/{COMMAND}/status"
++
++
++def headers(executor=EXECUTOR):
++    return {
++        "X-Executor-Id": str(executor),
++        "Authorization": "Bearer " + derive_executor_token(str(executor), secret=SECRET),
++    }
++
++
++def test_factory_default_has_no_bridge(factory, monkeypatch):
++    monkeypatch.setenv("EXECUTOR_BRIDGE_ENABLED", "true")
++    app = factory()
++    assert TestClient(app).get(path(), headers=headers()).status_code == 404
++    assert path() not in app.openapi()["paths"]
++
++
++@pytest.mark.parametrize("value", ["true", "false", 1, None])
++def test_factory_rejects_ambiguous_opt_in(factory, value):
++    with pytest.raises(ValueError, match="EXPLICIT_BOOLEAN"):
++        factory(executor_bridge_enabled=value)
++
++
++@pytest.mark.parametrize("auth,resource,expected", [({}, EXECUTOR, 401), (headers(), OTHER, 403)])
++def test_factory_auth_prevents_repository_calls(factory, auth, resource, expected):
++    app = factory(executor_bridge_enabled=True)
++    repository = AsyncMock()
++    app.dependency_overrides[get_mt5_command_repository] = lambda: repository
++    assert TestClient(app).get(path(resource), headers=auth).status_code == expected
++    repository.command_status.assert_not_awaited()
++
++
++def test_factory_preserves_repository_veto(factory):
++    app = factory(executor_bridge_enabled=True)
++    repository = AsyncMock()
++    repository.command_status.side_effect = CommandConflictError("fixture governance veto")
++    app.dependency_overrides[get_mt5_command_repository] = lambda: repository
++    response = TestClient(app).get(path(), headers=headers())
++    assert response.status_code == 409
++    repository.command_status.assert_awaited_once_with(executor_id=EXECUTOR, command_id=COMMAND)
++
++
++def test_factory_missing_auth_configuration_fails_closed(factory, monkeypatch):
++    monkeypatch.delenv("EXECUTOR_BRIDGE_AUTH_SECRET")
++    app = factory(executor_bridge_enabled=True)
++    repository = AsyncMock()
++    app.dependency_overrides[get_mt5_command_repository] = lambda: repository
++    assert TestClient(app).get(path(), headers=headers()).status_code == 503
++    repository.command_status.assert_not_awaited()
++
++
++def test_requested_bridge_rejects_degraded_router_boot(factory, monkeypatch):
++    monkeypatch.setattr(app_factory, "load_routers", lambda: ([], ["fixture import failure"]))
++    monkeypatch.setenv("API_BOOT_FAIL_OPEN", "true")
++    monkeypatch.setenv("ROUTER_BOOT_FAIL_OPEN", "true")
++    with pytest.raises(ValueError, match="ROUTER_BOOT_FAILED"):
++        factory(executor_bridge_enabled=True)
++
++
++def test_requested_bridge_rejects_duplicate_routes(factory, monkeypatch):
++    from api.executor_bridge_router import router
++
++    monkeypatch.setattr(app_factory, "load_routers", lambda: ([(router, "duplicate fixture")], []))
++    with pytest.raises(ValueError, match="ALREADY_REGISTERED"):
++        factory(executor_bridge_enabled=True)
++
++
++def test_factory_authenticated_status_success(factory):
++    app = factory(executor_bridge_enabled=True)
++    repository = AsyncMock()
++    repository.command_status.return_value = {"command_id": str(COMMAND), "terminal": False}
++    app.dependency_overrides[get_mt5_command_repository] = lambda: repository
++    response = TestClient(app).get(path(), headers=headers())
++    assert response.status_code == 200
++    assert response.json()["data"] == repository.command_status.return_value
++    assert response.headers["cache-control"] == "no-store"
++
++
++def test_all_mounted_bridge_routes_require_machine_auth(factory):
++    from api.executor_bridge_router import router
++
++    app = factory(executor_bridge_enabled=True)
++    repository = AsyncMock()
++    app.dependency_overrides[get_mt5_command_repository] = lambda: repository
++    client = TestClient(app)
++    for route in router.routes:
++        resource = route.path.replace("{executor_id}", str(EXECUTOR)).replace("{command_id}", str(COMMAND))
++        for method in route.methods:
++            response = client.request(method, resource, json={})
++            assert response.status_code == 401, (method, resource, response.text)
++    assert not repository.mock_calls

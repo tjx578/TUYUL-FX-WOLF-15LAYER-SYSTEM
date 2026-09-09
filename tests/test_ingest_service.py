@@ -17,6 +17,10 @@ from context.system_state import SystemState, SystemStateManager
 @pytest.fixture
 def ingest_service_module():
     """Load ingest_service with lightweight stubs for heavy dependencies."""
+    # Load extension modules before patch.dict restores sys.modules. Unloading
+    # a freshly imported NumPy extension makes the next fixture import invalid.
+    import numpy  # noqa: F401
+
     # Stub WebSocket and other heavy dependencies first
     fake_websockets_module = types.ModuleType("websockets")
     fake_websockets_module.connect = AsyncMock()  # type: ignore[attr-defined]
@@ -321,6 +325,78 @@ async def test_main_resets_system_state_after_runtime_failure(
                             await ingest_service_module.main(_bootstrap_probe=probe)
 
     assert reset_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_signal_cancels_and_drains_waiting_runtime(ingest_service_module, monkeypatch):
+    event = asyncio.Event()
+    entered = asyncio.Event()
+    drained = asyncio.Event()
+
+    async def waiting_runtime(_has_api_key):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            drained.set()
+
+    monkeypatch.setattr(ingest_service_module, "run_ingest_services", waiting_runtime)
+    task = asyncio.create_task(ingest_service_module._run_until_shutdown(True, event))
+    await entered.wait()
+    event.set()
+    await asyncio.wait_for(task, 2)
+    assert drained.is_set()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_storage_failure_propagates(ingest_service_module, monkeypatch):
+    probe = MagicMock()
+    monkeypatch.setattr(ingest_service_module, "_validate_api_key", lambda: False)
+    monkeypatch.setattr(
+        ingest_service_module, "init_persistent_storage", AsyncMock(side_effect=RuntimeError("db down"))
+    )
+    closed = AsyncMock()
+    monkeypatch.setattr(ingest_service_module, "shutdown_persistent_storage", closed)
+    with pytest.raises(RuntimeError, match="db down"):
+        await ingest_service_module.main(_bootstrap_probe=probe)
+    probe.set_alive.assert_called_with(False)
+    closed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_signal_cleanup_failure_cannot_close_pool(ingest_service_module, monkeypatch):
+    async def runtime(_has_api_key):
+        ingest_service_module._shutdown_event.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise RuntimeError("shutdown_tasks_not_drained") from None
+
+    monkeypatch.setattr(ingest_service_module, "run_ingest_services", runtime)
+    monkeypatch.setattr(ingest_service_module, "_validate_api_key", lambda: True)
+    monkeypatch.setattr(ingest_service_module, "init_persistent_storage", AsyncMock())
+    close = AsyncMock()
+    monkeypatch.setattr(ingest_service_module, "shutdown_persistent_storage", close)
+    with pytest.raises(RuntimeError, match="shutdown_tasks_not_drained"):
+        await ingest_service_module.main(_bootstrap_probe=MagicMock())
+    close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_redis_preflight_has_bounded_retries(ingest_service_module, monkeypatch):
+    monkeypatch.setattr(
+        ingest_service_module, "run_ingest_services", AsyncMock(side_effect=RuntimeError("runtime failed"))
+    )
+    monkeypatch.setattr(ingest_service_module, "_validate_api_key", lambda: True)
+    monkeypatch.setattr(ingest_service_module, "init_persistent_storage", AsyncMock())
+    monkeypatch.setattr(ingest_service_module, "shutdown_persistent_storage", AsyncMock())
+    monkeypatch.setattr(ingest_service_module, "_restart_delay", AsyncMock())
+    ping = AsyncMock(return_value=False)
+    monkeypatch.setattr(ingest_service_module, "_preflight_redis_check", ping)
+    with pytest.raises(RuntimeError, match="ingest_redis_preflight_retries_exhausted"):
+        await asyncio.wait_for(ingest_service_module.main(_bootstrap_probe=MagicMock()), 2)
+    assert ping.await_count == 3
 
 
 @pytest.mark.asyncio

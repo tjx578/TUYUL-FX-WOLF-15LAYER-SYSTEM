@@ -1,0 +1,63 @@
+{
+  "schema_version": "wolf15.s01-artifact-verification.v1",
+  "observed_at_utc": "2026-09-08T20:13:34.768320+00:00",
+  "scope": "Source identity/AST and produced artifact structure only",
+  "status": "PASS_STRUCTURAL_WITH_EXPLICIT_S01_HOLD",
+  "checks": {
+    "selected_copy_exact_match": true,
+    "selected_ssot_digest_matches_prior_binding": true,
+    "source_subject_bound": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+    "mapping_rows": 15,
+    "policy_registry_rows": 18,
+    "all_mapped_paths_have_existence_status": true,
+    "runtime_tests_run": false,
+    "S01_DONE": false,
+    "historical_copy_semantic_parity": "UNVERIFIABLE",
+    "v31_analysis_contract_present": false,
+    "candidate_fields_missing_from_v31_summary": [
+      "strategy_analysis_admission_id",
+      "analysis_admission_class",
+      "promotion_eligibility",
+      "order_type"
+    ],
+    "generated_json_schema_validation": "NOT_EXECUTED",
+    "no_authority_granted": true,
+    "acceptance_clauses_mapped": 35,
+    "clauses_have_nonpass_status_and_null_denominators": true,
+    "utf8_review": {
+      "strict_utf8_decode": "PASS",
+      "mojibake_repairs_to_generated_narrative_only": 20,
+      "files": [
+        {
+          "file": "s01-contract-binding.json",
+          "suspect_marker_counts": {}
+        },
+        {
+          "file": "s01-rule-contract-test-matrix.json",
+          "suspect_marker_counts": {}
+        },
+        {
+          "file": "s01-source-comparison.json",
+          "suspect_marker_counts": {}
+        },
+        {
+          "file": "s01-verification.json",
+          "suspect_marker_counts": {}
+        },
+        {
+          "file": "s01-review.md",
+          "suspect_marker_counts": {}
+        }
+      ],
+      "archival_ssot_modified": false
+    },
+    "matrix_section_anchors": {
+      "status": "PASS",
+      "mapping_rows_checked": 15,
+      "numeric_references_checked": 36,
+      "missing_sections": [],
+      "external_refs_separated": true,
+      "selected_ssot_sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"
+    }
+  }
+}

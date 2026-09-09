@@ -1,0 +1,1201 @@
+.......................................F................................ [ 66%]
+.................FFFFFFFFFFFFFFFFF.FF                                    [100%]
+================================== FAILURES ===================================
+_______ test_repository_commit_retry_and_latest_keep_immutable_history ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000028776D4A610>
+
+    def test_repository_commit_retry_and_latest_keep_immutable_history(monkeypatch):
+        from storage import strategy_5scr_prepared_v31 as detached
+    
+        monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(seconds=2))
+    
+        async def run():
+            db = FakeDB()
+            repo = repository(db)
+            request = revision(advisory=True)
+            first = await repo.append(request, now=NOW)
+            second_request = revision(2, first)
+            second = await repo.append(second_request, now=NOW + timedelta(seconds=1))
+            assert await repo.append(request, now=NOW + timedelta(days=1)) == first
+            async with db.transaction():
+                assert await repo.lock_latest(db, request.handoff.candidate.tradeplan_id) == second
+            assert len(db.rows) == 2 and db.commits == 6
+            conflict = request.model_copy(update={"reevaluation_receipt_hash": "sha256:" + "f" * 64})
+            with pytest.raises(ValueError, match="PAYLOAD_CONFLICT"):
+                await repo.append(conflict, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_candidate_revision_v31.py:280: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_candidate_revision_v31.py:269: in run
+    first = await repo.append(request, now=NOW)
+storage\strategy_5scr_candidate_revision_v31.py:152: in append
+    result = await self.append_in_transaction(connection, request, now=now, prepared=prepared)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EAD5A50>
+connection = <tests.test_strategy_5scr_candidate_revision_v31.FakeDB object at 0x0000028776D4BED0>
+request = CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUATED_CANDIDATE_TEST_V1', handoff=Can...00-0000000000c9'), reevaluation_receipt_hash='sha256:000000000000000000000000000000000000000000000000000000000000000b')
+now = datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc)
+prepared = StoredCandidateRevisionV31(request=CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUA...000000000000000000000000000b'), request_hash='sha256:aacbbbdbb0bcc9ee552e618af9776af41c7a89f53aeb2961ed9a4ec0e43e328c')
+callbacks = {}
+candidate = TradePlanCandidateV31(profile='TEST_ONLY', tradeplan_id=UUID('00000000-0000-0000-0000-000000000001'), tradeplan_revisi...55555555555555555555555555555555555555', decision_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+latest = None, existing = None
+checked_at = datetime.datetime(2026, 9, 9, 0, 0, 2, tzinfo=datetime.timezone.utc)
+
+    async def append_in_transaction(
+        self, connection, request: CandidateRevisionAppendV31, *, now, prepared=None, **callbacks
+    ):
+        detached.reject_callbacks_v31(callbacks)
+        if callbacks:
+            raise ValueError("CANDIDATE_UNEXPECTED_ARGUMENT")
+        request = CandidateRevisionAppendV31.model_validate(request.model_dump())
+        candidate = request.handoff.candidate
+        if candidate.symbol != self.fence.symbol:
+            raise ValueError("CANDIDATE_OWNER_SYMBOL_MISMATCH")
+        latest = await self.lock_latest(connection, candidate.tradeplan_id)
+        existing = _stored(
+            await connection.fetchrow(
+                f"SELECT * FROM {TABLE} WHERE tradeplan_id=$1 AND revision=$2",
+                candidate.tradeplan_id,
+                candidate.tradeplan_revision,
+            )
+        )
+        if existing:
+            if existing.request_hash != candidate_revision_hash_v31(request):
+                raise ValueError("CANDIDATE_REVISION_PAYLOAD_CONFLICT")
+            # Historical acknowledgement does not move latest backwards or renew expiry.
+            return existing
+        prepared = detached.unseal_v31(
+            prepared, self._issuer, "append", self._append_binding(request, latest), StoredCandidateRevisionV31
+        )
+        checked_at = detached.commit_time_v31()
+        if not request.handoff.candidate.decision_at <= checked_at < request.handoff.handoff_receipt_valid_until:
+>           raise ValueError("CANDIDATE_REVISION_RECEIPT_EXPIRED")
+E           ValueError: CANDIDATE_REVISION_RECEIPT_EXPIRED
+
+storage\strategy_5scr_candidate_revision_v31.py:93: ValueError
+_ test_all_records_and_capacity_commit_together_as_non_deliverable_test_only __
+
+    def test_all_records_and_capacity_commit_together_as_non_deliverable_test_only():
+        async def run():
+            db, repo, _, request = await fixture()
+            result = await repo.submit(request, now=NOW)
+            assert result.status == "COMMITTED_TEST_ONLY" and db.committed_effect_transactions == 1
+            assert all(len(rows) == 1 for rows in db.records.values())
+            async with db.transaction():
+                stored = await repo.capacity.lock_current(db)
+            assert stored.version == 1 and stored.reservations[0] == result.bundle.reservation
+            assert result.capital_reservation_authority is result.execution_authority is False
+            preview = result.bundle.records()["signal_previews"]
+            with pytest.raises(ValueError):
+                validate_final_signal_reservation(preview)
+            assert result.bundle.records()["outbox"]["status"] == "NON_DELIVERABLE_TEST_ONLY"
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:126: in run
+    result = await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876ED44ED0>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_failure_after_each_write_or_commit_rolls_back_every_effect[campaigns] __
+
+failure = 'campaigns'
+
+    @pytest.mark.parametrize("failure", ["campaigns", "parent_legs", "signal_previews", "outbox", "commit"])
+    def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
+        async def run():
+            db, repo, initial, request = await fixture()
+            db.fault_after = failure
+            db.fail_commit = failure == "commit"
+            with pytest.raises(RuntimeError):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values()) and db.committed_effect_transactions == 0
+            db.fail_commit = False
+            async with db.transaction():
+                assert await repo.capacity.lock_current(db) == initial
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:148: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002877816CA90>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_failure_after_each_write_or_commit_rolls_back_every_effect[parent_legs] _
+
+failure = 'parent_legs'
+
+    @pytest.mark.parametrize("failure", ["campaigns", "parent_legs", "signal_previews", "outbox", "commit"])
+    def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
+        async def run():
+            db, repo, initial, request = await fixture()
+            db.fault_after = failure
+            db.fail_commit = failure == "commit"
+            with pytest.raises(RuntimeError):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values()) and db.committed_effect_transactions == 0
+            db.fail_commit = False
+            async with db.transaction():
+                assert await repo.capacity.lock_current(db) == initial
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:148: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EBF81D0>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_failure_after_each_write_or_commit_rolls_back_every_effect[signal_previews] _
+
+failure = 'signal_previews'
+
+    @pytest.mark.parametrize("failure", ["campaigns", "parent_legs", "signal_previews", "outbox", "commit"])
+    def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
+        async def run():
+            db, repo, initial, request = await fixture()
+            db.fault_after = failure
+            db.fail_commit = failure == "commit"
+            with pytest.raises(RuntimeError):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values()) and db.committed_effect_transactions == 0
+            db.fail_commit = False
+            async with db.transaction():
+                assert await repo.capacity.lock_current(db) == initial
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:148: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x0000028778279510>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+___ test_failure_after_each_write_or_commit_rolls_back_every_effect[outbox] ___
+
+failure = 'outbox'
+
+    @pytest.mark.parametrize("failure", ["campaigns", "parent_legs", "signal_previews", "outbox", "commit"])
+    def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
+        async def run():
+            db, repo, initial, request = await fixture()
+            db.fault_after = failure
+            db.fail_commit = failure == "commit"
+            with pytest.raises(RuntimeError):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values()) and db.committed_effect_transactions == 0
+            db.fail_commit = False
+            async with db.transaction():
+                assert await repo.capacity.lock_current(db) == initial
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:148: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x0000028778225F50>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+___ test_failure_after_each_write_or_commit_rolls_back_every_effect[commit] ___
+
+failure = 'commit'
+
+    @pytest.mark.parametrize("failure", ["campaigns", "parent_legs", "signal_previews", "outbox", "commit"])
+    def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
+        async def run():
+            db, repo, initial, request = await fixture()
+            db.fault_after = failure
+            db.fail_commit = failure == "commit"
+            with pytest.raises(RuntimeError):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values()) and db.committed_effect_transactions == 0
+            db.fail_commit = False
+            async with db.transaction():
+                assert await repo.capacity.lock_current(db) == initial
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:148: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EEF8450>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_lost_ack_retry_after_expiry_returns_same_complete_bundle_without_new_effect _
+
+    def test_lost_ack_retry_after_expiry_returns_same_complete_bundle_without_new_effect():
+        async def run():
+            db, repo, _, request = await fixture()
+            first = await repo.submit(request, now=NOW)
+            before = deepcopy(db.records)
+            restarted = TransactionARepositoryV31(
+                pg=db,
+                capacity_repository=repo.capacity,
+                candidate_repository=repo.candidates,
+                verify_handoff=None,
+                verify_universe=None,
+                verify_risk_inputs=None,
+            )
+            retry = await restarted.submit(request, now=NOW + timedelta(days=1))
+            assert retry.status == "DUPLICATE_TEST_ONLY" and retry.bundle == first.bundle and db.records == before
+            assert retry.execution_authority is False
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:174: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:160: in run
+    first = await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x0000028778291290>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_________ test_replay_cannot_substitute_any_bound_request[signal_id] __________
+
+field = 'signal_id'
+
+    @pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
+    def test_replay_cannot_substitute_any_bound_request(field):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            value = (
+                "sha256:" + "f" * 64
+                if field == "candidate_revision_hash"
+                else (8 if field == "expected_capacity_version" else UUID(int=999))
+            )
+            with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
+                await repo.submit(request.model_copy(update={field: value}), now=NOW)
+            assert all(len(rows) == 1 for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:191: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:181: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EC81850>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_________ test_replay_cannot_substitute_any_bound_request[outbox_id] __________
+
+field = 'outbox_id'
+
+    @pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
+    def test_replay_cannot_substitute_any_bound_request(field):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            value = (
+                "sha256:" + "f" * 64
+                if field == "candidate_revision_hash"
+                else (8 if field == "expected_capacity_version" else UUID(int=999))
+            )
+            with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
+                await repo.submit(request.model_copy(update={field: value}), now=NOW)
+            assert all(len(rows) == 1 for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:191: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:181: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x0000028776D4A9D0>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+__ test_replay_cannot_substitute_any_bound_request[candidate_revision_hash] ___
+
+field = 'candidate_revision_hash'
+
+    @pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
+    def test_replay_cannot_substitute_any_bound_request(field):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            value = (
+                "sha256:" + "f" * 64
+                if field == "candidate_revision_hash"
+                else (8 if field == "expected_capacity_version" else UUID(int=999))
+            )
+            with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
+                await repo.submit(request.model_copy(update={field: value}), now=NOW)
+            assert all(len(rows) == 1 for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:191: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:181: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002877818A950>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_replay_cannot_substitute_any_bound_request[expected_capacity_version] __
+
+field = 'expected_capacity_version'
+
+    @pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
+    def test_replay_cannot_substitute_any_bound_request(field):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            value = (
+                "sha256:" + "f" * 64
+                if field == "candidate_revision_hash"
+                else (8 if field == "expected_capacity_version" else UUID(int=999))
+            )
+            with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
+                await repo.submit(request.model_copy(update={field: value}), now=NOW)
+            assert all(len(rows) == 1 for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:191: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:181: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EE882D0>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_leg] _
+
+fault = 'missing_leg'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:198: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EEAD210>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[payload_hash] _
+
+fault = 'payload_hash'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:198: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EAE9090>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[record_id] _
+
+fault = 'record_id'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:198: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002877817AF90>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_capacity] _
+
+fault = 'missing_capacity'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:198: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EEC7650>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[capacity_scope] _
+
+fault = 'capacity_scope'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:198: in run
+    await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x0000028776F22890>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+_ test_orphan_capacity_is_rejected_without_creating_missing_transaction_records _
+
+    async def run():
+        db, repo, _, request = await fixture()
+        async with db.transaction():
+            ledger = await repo.capacity.lock_current(db)
+            latest = await repo.candidates.lock_latest(db, UUID(request.sizing.tradeplan_id))
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=NOW,
+            expected_capacity_version=0,
+        )
+        prepared = repo.candidates.prepare_parent_detached(
+            latest,
+            ledger=ledger,
+            capacity_owner_epoch=repo.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=lambda *_: True,
+            verify_universe=lambda *_: True,
+            verify_risk_inputs=lambda *_: True,
+        )
+        async with db.transaction():
+            await repo.capacity.prepare_parent_in_transaction(
+                db,
+                candidate_repository=repo.candidates,
+                **arguments,
+                prepared=prepared,
+            )
+        with pytest.raises(ValueError, match="ORPHAN_CAPACITY"):
+>           await repo.submit(request, now=NOW)
+
+tests\test_strategy_5scr_transaction_a_v31.py:257: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x0000028776E5FE50>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...ime(2026, 9, 9, 0, 0, tzinfo=TzInfo(UTC)), state='HELD_UNISSUED', release_evidence_hash=None),), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+
+During handling of the above exception, another exception occurred:
+
+    def test_orphan_capacity_is_rejected_without_creating_missing_transaction_records():
+        async def run():
+            db, repo, _, request = await fixture()
+            async with db.transaction():
+                ledger = await repo.capacity.lock_current(db)
+                latest = await repo.candidates.lock_latest(db, UUID(request.sizing.tradeplan_id))
+            arguments = dict(
+                request=request.sizing,
+                expected_candidate_revision_hash=request.candidate_revision_hash,
+                reservation_id=request.reservation_id,
+                expires_at=request.expires_at,
+                now=NOW,
+                expected_capacity_version=0,
+            )
+            prepared = repo.candidates.prepare_parent_detached(
+                latest,
+                ledger=ledger,
+                capacity_owner_epoch=repo.capacity.fence.owner_epoch,
+                **arguments,
+                verify_handoff=lambda *_: True,
+                verify_universe=lambda *_: True,
+                verify_risk_inputs=lambda *_: True,
+            )
+            async with db.transaction():
+                await repo.capacity.prepare_parent_in_transaction(
+                    db,
+                    candidate_repository=repo.candidates,
+                    **arguments,
+                    prepared=prepared,
+                )
+            with pytest.raises(ValueError, match="ORPHAN_CAPACITY"):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:260: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    async def run():
+        db, repo, _, request = await fixture()
+        async with db.transaction():
+            ledger = await repo.capacity.lock_current(db)
+            latest = await repo.candidates.lock_latest(db, UUID(request.sizing.tradeplan_id))
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=NOW,
+            expected_capacity_version=0,
+        )
+        prepared = repo.candidates.prepare_parent_detached(
+            latest,
+            ledger=ledger,
+            capacity_owner_epoch=repo.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=lambda *_: True,
+            verify_universe=lambda *_: True,
+            verify_risk_inputs=lambda *_: True,
+        )
+        async with db.transaction():
+            await repo.capacity.prepare_parent_in_transaction(
+                db,
+                candidate_repository=repo.candidates,
+                **arguments,
+                prepared=prepared,
+            )
+>       with pytest.raises(ValueError, match="ORPHAN_CAPACITY"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'ORPHAN_CAPACITY'
+E        Input: 'CANDIDATE_LATEST_REVISION_UNAVAILABLE'
+
+tests\test_strategy_5scr_transaction_a_v31.py:256: AssertionError
+_______ test_all_external_transaction_verifiers_run_after_snapshot_exit _______
+
+    def test_all_external_transaction_verifiers_run_after_snapshot_exit():
+        async def run():
+            db, repo, _, request = await fixture()
+            calls = []
+    
+            def verify(*args):
+                assert not db.active
+                calls.append(len(args))
+                return True
+    
+            repo.verify_handoff = repo.verify_universe = repo.verify_risk_inputs = verify
+            result = await repo.submit(request, now=NOW)
+            assert result.status == "COMMITTED_TEST_ONLY" and len(calls) >= 3
+            assert db.committed_effect_transactions == 1
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:290: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:286: in run
+    result = await repo.submit(request, now=NOW)
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EBB5850>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+______ test_verifier_delay_cannot_extend_transaction_reservation_expiry _______
+
+    async def run():
+        db, repo, initial, request = await fixture()
+    
+        def verify(*_):
+            assert not db.active
+            monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
+            return True
+    
+        repo.verify_handoff = verify
+        with pytest.raises(ValueError, match="EXPIRED"):
+>           await repo.submit(request, now=NOW)
+
+tests\test_strategy_5scr_transaction_a_v31.py:306: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+storage\strategy_5scr_transaction_a_v31.py:104: in submit
+    detached = self.candidates.prepare_parent_detached(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_candidate_revision_v31.CandidateRevisionRepositoryV31 object at 0x000002876EC21610>
+latest = None
+ledger = CapacityLedgerV31(profile='TEST_ONLY', parent_slot_policy='ONE_PARENT_PER_THESIS_TEST_V1', account_id='fixture-account...denominator=1), reservation_ttl_seconds=10, release_evidence_max_age_seconds=5, reservations=(), baseline_refreshes=())
+kwargs = {'capacity_owner_epoch': 1, 'expected_candidate_revision_hash': 'sha256:d37ad60a9b1bfeab0a1a1dd63536c3581b736bff0516cf...expected_capacity_version': 0, 'expires_at': datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc), ...}
+request = ParentSizingRequestV31(profile='TEST_ONLY', entry_role='PARENT', tradeplan_id='00000000-0000-0000-0000-000000000001', ...059baa4b790451bb51ba7a06099', risk_state_captured_at=datetime.datetime(2026, 9, 9, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def prepare_parent_detached(self, latest, *, ledger, **kwargs):
+        request = ParentSizingRequestV31.model_validate(kwargs["request"].model_dump())
+        if latest is None:
+>           raise ValueError("CANDIDATE_LATEST_REVISION_UNAVAILABLE")
+E           ValueError: CANDIDATE_LATEST_REVISION_UNAVAILABLE
+
+storage\strategy_5scr_candidate_revision_v31.py:170: ValueError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002876EC23450>
+
+    def test_verifier_delay_cannot_extend_transaction_reservation_expiry(monkeypatch):
+        from storage import strategy_5scr_prepared_v31 as detached
+    
+        async def run():
+            db, repo, initial, request = await fixture()
+    
+            def verify(*_):
+                assert not db.active
+                monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
+                return True
+    
+            repo.verify_handoff = verify
+            with pytest.raises(ValueError, match="EXPIRED"):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values())
+            assert db.committed_effect_transactions == 0
+            async with db.transaction():
+                assert await repo.capacity.lock_current(db) == initial
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:312: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    async def run():
+        db, repo, initial, request = await fixture()
+    
+        def verify(*_):
+            assert not db.active
+            monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
+            return True
+    
+        repo.verify_handoff = verify
+>       with pytest.raises(ValueError, match="EXPIRED"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'EXPIRED'
+E        Input: 'CANDIDATE_LATEST_REVISION_UNAVAILABLE'
+
+tests\test_strategy_5scr_transaction_a_v31.py:305: AssertionError
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\k05-detached-a1.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_strategy_5scr_candidate_revision_v31.py::test_repository_commit_retry_and_latest_keep_immutable_history
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_all_records_and_capacity_commit_together_as_non_deliverable_test_only
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_failure_after_each_write_or_commit_rolls_back_every_effect[campaigns]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_failure_after_each_write_or_commit_rolls_back_every_effect[parent_legs]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_failure_after_each_write_or_commit_rolls_back_every_effect[signal_previews]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_failure_after_each_write_or_commit_rolls_back_every_effect[outbox]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_failure_after_each_write_or_commit_rolls_back_every_effect[commit]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_lost_ack_retry_after_expiry_returns_same_complete_bundle_without_new_effect
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_replay_cannot_substitute_any_bound_request[signal_id]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_replay_cannot_substitute_any_bound_request[outbox_id]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_replay_cannot_substitute_any_bound_request[candidate_revision_hash]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_replay_cannot_substitute_any_bound_request[expected_capacity_version]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_leg]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[payload_hash]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[record_id]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_capacity]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[capacity_scope]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_orphan_capacity_is_rejected_without_creating_missing_transaction_records
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_all_external_transaction_verifiers_run_after_snapshot_exit
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_verifier_delay_cannot_extend_transaction_reservation_expiry
+20 failed, 89 passed in 12.70s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

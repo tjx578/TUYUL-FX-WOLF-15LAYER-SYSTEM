@@ -1517,3 +1517,20 @@ def test_complete_long_range_liveness_finds_old_invalidation_and_gaps_fail_close
         decision_at_utc=watermark + timedelta(hours=30),
     )
     assert gap == ActiveStructuralLivenessResult("LIVENESS_COVERAGE_INCOMPLETE", None, watermark)
+
+
+@pytest.mark.parametrize("remaining_microseconds", [1, 0, -1])
+def test_pressure_authority_validity_is_exclusive_at_expiry(remaining_microseconds: int) -> None:
+    context = _context()
+    result = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(
+            context, "BUY", pressure=_pressure(valid_until=DECISION + timedelta(microseconds=remaining_microseconds))
+        ),
+    )
+    if remaining_microseconds > 0:
+        assert result.status == "READY"
+        assert result.artifact is not None
+    else:
+        assert (result.status, result.reason_code) == ("REJECTED", "PRESSURE_AUTHORITY_EXPIRED")
+        assert result.artifact is None

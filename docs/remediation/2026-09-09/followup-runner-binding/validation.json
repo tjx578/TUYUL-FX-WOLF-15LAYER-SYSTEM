@@ -1,0 +1,43 @@
+{
+  "observed_at_utc": "2026-09-08T21:37:50.233761+00:00",
+  "source_commit": "94cd6a5d0bf920ad6b5ca5f9475d273b0c7ab334",
+  "source_git_sha256": {
+    ".github/workflows/ci.yml": "0b834c49becd7fbf4248096895d22b89f180598f588be49f75cd81b48d735058",
+    "analysis/strategy_5scr_directional_thesis_v1.py": "3a3826ba63d3a66d63f3f4548d59a3604b3f28da1add4880f97946f5f39b9534",
+    "scripts/ci/run_pair_activity_runtime_acceptance.py": "d6aea29c9121774da28d7dba991f52efcf1866fcb1c691556f9fc4932e053b1b",
+    "scripts/ci/pair_activity_run_evidence.py": "7d6da015d4b396fc63df300decb48ae493731b6a69b8d391db8674d70714b99b",
+    "tests/integration/test_pair_activity_runtime_postgres.py": "9e5f5bd98e2022cb4fe891e6c08b0a6fbc3a66a532e6bb43c4f6b3b664f2e334",
+    "tests/test_pair_activity_ci_receipt.py": "0bb1ec693c424792ad94a2c1430522eac65a8b529bf1a86d6f0ee99915bd27c0",
+    "tests/test_strategy_5scr_directional_thesis_v1.py": "04b0e00734a9859c152b3094989a8e7f1fb1b375198e353ebae514207d038c7b"
+  },
+  "verdict": "INCOMPLETE_HOLD",
+  "milestones_done": 0,
+  "milestones_total": 6,
+  "targeted_local": {
+    "expected": 241,
+    "passed": 241,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "source_unchanged": true
+  },
+  "postgres_negative_control": {
+    "run_id": "d16fb37aa69c4a82ae3a43809b2532f7",
+    "expected": 45,
+    "skipped": 45,
+    "pytest_exit": 0,
+    "gate_exit": 1,
+    "accepted": false,
+    "identities_match_previous": true,
+    "host_capacity_probed": false
+  },
+  "postgres_runtime": "NOT_EXECUTED",
+  "migration_execution": "NOT_EXECUTED",
+  "linux_runtime": "NOT_EXECUTED",
+  "runner_binding": "UNBOUND",
+  "billing": "EXCLUDED_BY_USER",
+  "agent_final_review": "NOT_COMPLETED_USAGE_LIMIT",
+  "parent_review": "COMPLETED",
+  "production_mutations": false,
+  "broker_execution": false
+}

@@ -49,6 +49,16 @@ def _has_wait_with_timeout(source_path: str, func_or_scope: str) -> bool:
             if not isinstance(child, ast.Call):
                 continue
             if isinstance(child.func, ast.Attribute) and child.func.attr == "wait":
+                # Waiting for the first required task to finish is normal healthy
+                # supervision, not a post-failure diagnostic hold. Cleanup waits
+                # still need their explicit bound.
+                if any(
+                    kw.arg == "return_when"
+                    and isinstance(kw.value, ast.Attribute)
+                    and kw.value.attr == "FIRST_COMPLETED"
+                    for kw in child.keywords
+                ):
+                    continue
                 # Skip if this wait() is inside a wait_for()
                 if id(child) in wait_for_inner_ids:
                     continue
