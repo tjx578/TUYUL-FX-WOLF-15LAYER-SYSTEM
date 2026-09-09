@@ -1,5 +1,5 @@
 {
-  "source_commit": "19c105a53d9b4486f8b88e67cbf7a271fb938196",
+  "source_commit": "01eb39efa679564eebab1ba7542453054ae4bfef",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -801,6 +801,81 @@
       "path": "k07-revisions-validation.json",
       "sha256": "5821eba5a2660061adadab01f7fb4314504714f9063107d6169ebbe68fe1029e",
       "bytes": 16003
+    },
+    {
+      "path": "k07-ta-0909-a1-collection.log",
+      "sha256": "a43c0612c1099c2786278277fa198d583ec8637aa7f397406515c993fc31f128",
+      "bytes": 18183
+    },
+    {
+      "path": "k07-ta-0909-a1-pytest.log",
+      "sha256": "c805d4ccad26016a1867d54563c3ffcfdf782b7493494d30a332f4a197277044",
+      "bytes": 1067
+    },
+    {
+      "path": "k07-ta-0909-a1-receipt.json",
+      "sha256": "b88a8198f68035e2f27462074b7f44b332d4b19b9134ab87c133dd4b90193ac0",
+      "bytes": 26717
+    },
+    {
+      "path": "k07-ta-0909-a1.xml",
+      "sha256": "dfdd8e7752f706104ee795af8545d86af9774cbaf32a865aef4fc3be5d9004a1",
+      "bytes": 23010
+    },
+    {
+      "path": "k07-ta-0909-a2-collection.log",
+      "sha256": "b1bd82df374b97ffd6a79b6dadd38bab3486f1a03b5013d627f62a66431c1160",
+      "bytes": 18316
+    },
+    {
+      "path": "k07-ta-0909-a2-pytest.log",
+      "sha256": "5aa39013e107e5d3d6fd64d59e8e1e3070aecbf311894423ec1cbe4ee3020687",
+      "bytes": 1067
+    },
+    {
+      "path": "k07-ta-0909-a2-receipt.json",
+      "sha256": "2f9f47b33a9e5ca917467d8a118dd7a71de014e7270615df4c6794490bd63756",
+      "bytes": 27119
+    },
+    {
+      "path": "k07-ta-0909-a2.xml",
+      "sha256": "729f04d51805e052ab32d00e5d833cf6b74d679a2c68391321d08610ec31f576",
+      "bytes": 23182
+    },
+    {
+      "path": "k07-transaction-a-migration-heads.log",
+      "sha256": "3f4eb3c664a30e222f7c2e7a86b39c4183c86cfe8301824eb7e2e985fd38ccf9",
+      "bytes": 20
+    },
+    {
+      "path": "k07-transaction-a-migration-sql.log",
+      "sha256": "e8b819fa6359cf4a023c2d8137aa07d818d068ecb202f6d04d3a864985e16758",
+      "bytes": 5797
+    },
+    {
+      "path": "k07-transaction-a-pg-collection.log",
+      "sha256": "6df709ece23bb952bae98a3b32bf662fa52535ee887c6b3b37cd77bfde75729a",
+      "bytes": 1772
+    },
+    {
+      "path": "k07-transaction-a-pg-inventory.json",
+      "sha256": "ffbb0ed4c63c8c8270e1408d27a33c02096d509e4bb2c3d7cd853ebacbf3c708",
+      "bytes": 1751
+    },
+    {
+      "path": "k07-transaction-a-source.diff",
+      "sha256": "8087a2c224beffc58d5f9cfcac21a0de0a4e9838dd0cdf1c5eb1a5e17403ee0d",
+      "bytes": 35506
+    },
+    {
+      "path": "k07-transaction-a-static.json",
+      "sha256": "6266205ac59806b332a899341cd55bc092c04e94d2b48cec496b93e35cb7f491",
+      "bytes": 1854
+    },
+    {
+      "path": "k07-transaction-a-validation.json",
+      "sha256": "6b75fb2dcf3680638b778ba6a648e0bd50def286fe30582f1129480850a60d01",
+      "bytes": 22991
     },
     {
       "path": "lint-format.json",
