@@ -1,0 +1,69 @@
+{
+  "kind": "USER_REPORTED_CHECKPOINT",
+  "report_observed_in": "current conversation",
+  "report_timestamp": "NOT_RECORDED",
+  "packaged_at": "2026-09-09T03:46:46.583575+00:00",
+  "repository": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+  "branch": "codex/s03-runtime-recovery-20260909",
+  "pull_request": 428,
+  "source_commit": "5219624a92253b66fe8bc67a1acace99b71e61e7",
+  "publication_head": "01fd6f9c1d0e34dc896eace92c81083e2b718653",
+  "program_status": "INCOMPLETE / HOLD",
+  "milestones_done": 0,
+  "milestone_count": 6,
+  "reported_source_progress": [
+    "S01 repo v3.1 path/commit/blob/hash binding; 15 rule groups,35 acceptance clauses,18 policy registries mapped; consumers/policy gaps remain",
+    "S03 direction-independent pair activity; caller/observation identities and persistence source implemented",
+    "Producer evaluation,snapshot,transactional per-activity row counter,outbox share one transaction; repeat evaluation preserves first envelope/sequence",
+    "Relay sends persisted immutable bytes outside lease transaction; waits predecessor ACK; rejects ACK from expired/replaced lease",
+    "Migration20260909_02 creates cursor/outbox constraints and immutable-payload trigger; offline SQL only",
+    "Direction V1 valid_until boundary now expired; no implicit v3.1 conversion",
+    "Per-run PG receipt source/config/host/nonce/test-ID binding and negative skip gate already implemented"
+  ],
+  "reported_missing": [
+    "consumer inbox/lifecycle/mapping/cursor/emission transaction",
+    "shared lifecycle owner fence including legacy writers",
+    "authenticated transport and consumer destination",
+    "v3.1 actual direction-consumer migration",
+    "active policy/attestor binding",
+    "PostgreSQL actual migrations/recovery/concurrency tests",
+    "bound disposable Linux runner",
+    "valid DEMO account/risk/EA/canary/independent broker reader package"
+  ],
+  "reported_latest_tests": {
+    "local_passed": 176,
+    "local_failures": 0,
+    "local_skipped": 0,
+    "postgres_existing_skipped": 45,
+    "postgres_producer_relay_skipped": 7,
+    "migration_execution": "NOT_EXECUTED",
+    "new_skip_gate": "REJECTED_SKIPPED_RESULTS"
+  },
+  "historical_local_suite_counts": [
+    484,
+    88,
+    7,
+    55,
+    434,
+    613,
+    241,
+    126
+  ],
+  "count_rule": "Latest and historical local runs overlap; never sum as unique acceptance coverage.",
+  "ci": {
+    "runs_on": "ubuntu-latest",
+    "status": "PLATFORM_BLOCKED",
+    "reported_annotation": "Account locked due to billing; jobs did not start",
+    "job_url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34306921467/job/102325427803",
+    "billing_action": "EXCLUDED_UNLESS_NEW_EXPLICIT_OWNER_INSTRUCTION",
+    "self_hosted_inventory_empty_does_not_establish_hosted_unavailability": true
+  },
+  "constraints": [
+    "SSOT v3.1 existing repo remains selected; no R1/R2 adoption",
+    "Do not update repository README",
+    "Preserve46pre-existingcheckoutchanges and original inputs",
+    "Do not reuse historical VPS or stop Windows workloads without applicable authorization",
+    "No merge/deploy/productionDB/broker performed by this plan"
+  ],
+  "fresh_source_or_remote_verification_by_plan_author": false
+}

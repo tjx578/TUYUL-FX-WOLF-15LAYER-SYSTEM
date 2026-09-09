@@ -210,7 +210,7 @@ class HealthProbe:
 
     def _readiness_response(self) -> str:
         try:
-            ready = self._readiness_check()
+            ready = self._alive and self._readiness_check()
         except Exception:
             ready = False
         body: dict[str, object] = {
@@ -224,7 +224,7 @@ class HealthProbe:
     def _status_response(self) -> str:
         """Combined liveness + readiness + all detail metadata (authenticated only)."""
         try:
-            ready = self._readiness_check()
+            ready = self._alive and self._readiness_check()
         except Exception:
             ready = False
         uptime = int(time.monotonic() - self._started_at)

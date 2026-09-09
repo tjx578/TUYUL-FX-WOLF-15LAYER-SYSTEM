@@ -62,7 +62,8 @@ async def test_probe_task_reference_stored() -> None:
     ):
         from services.trade.runner import _main
 
-        await _main()
+        with pytest.raises(RuntimeError, match="TRADE_REQUIRED_TASK_RETURNED"):
+            await _main()
 
     # At least 2 worker tasks: alloc + exec (probe is via shared launcher)
     assert len(tasks_created) >= 2
@@ -131,7 +132,8 @@ async def test_env_vars_set_before_worker_import() -> None:
     ):
         from services.trade.runner import _main
 
-        await _main()
+        with pytest.raises(RuntimeError, match="TRADE_REQUIRED_TASK_RETURNED"):
+            await _main()
 
     assert env_at_import["ALLOC_HEALTH_PORT"] == "19091"
     assert env_at_import["EXEC_HEALTH_PORT"] == "19092"
@@ -168,7 +170,82 @@ async def test_probe_stopped_in_finally() -> None:
     ):
         from services.trade.runner import _main
 
-        await _main()
+        with pytest.raises(RuntimeError, match="TRADE_REQUIRED_TASK_RETURNED"):
+            await _main()
 
     assert len(probes_created) == 1
     probes_created[0].stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_trade_waits_for_allocation_readiness_and_clears_on_cancel() -> None:
+    captured = None
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def probe_start(**kwargs):
+        nonlocal captured
+        captured = kwargs["readiness_check"]
+        return _make_probe_mock(), asyncio.create_task(asyncio.sleep(999))
+
+    async def worker():
+        entered.set()
+        await release.wait()
+
+    with (
+        patch("services.shared.health_probe_launcher.start_probe_as_task", new=probe_start),
+        patch("allocation.async_worker._main", new=worker),
+        patch("allocation.async_worker.is_ready", return_value=False) as ready,
+        patch("execution.async_worker.runtime_ready", return_value=True),
+    ):
+        from services.trade.runner import _main
+
+        task = asyncio.create_task(_main())
+        await entered.wait()
+        assert captured is not None and captured() is False
+        ready.return_value = True
+        assert captured() is True
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert captured() is False
+
+
+@pytest.mark.asyncio
+async def test_trade_requires_execution_readiness_when_legacy_execution_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = None
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def probe_start(**kwargs):
+        nonlocal captured
+        captured = kwargs["readiness_check"]
+        return _make_probe_mock(), asyncio.create_task(asyncio.sleep(999))
+
+    async def worker():
+        entered.set()
+        await release.wait()
+
+    monkeypatch.setenv("EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("LEGACY_PUSH_EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("EA_BRIDGE_URL", "http://bridge.internal")
+
+    with (
+        patch("services.shared.health_probe_launcher.start_probe_as_task", new=probe_start),
+        patch("allocation.async_worker._main", new=worker),
+        patch("execution.async_worker._main", new=worker),
+        patch("allocation.async_worker.is_ready", return_value=True),
+        patch("execution.async_worker.runtime_ready", return_value=False) as exec_ready,
+    ):
+        from services.trade.runner import _main
+
+        task = asyncio.create_task(_main())
+        await entered.wait()
+        assert captured is not None and captured() is False
+        exec_ready.return_value = True
+        assert captured() is True
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task

@@ -318,6 +318,39 @@ def _handle_signal(signum: int, frame: types.FrameType | None) -> None:
         _shutdown_event.set()
 
 
+class IngestDrainError(RuntimeError):
+    """Resources must remain open while a required operation can still use them."""
+
+
+async def _run_until_shutdown(has_api_key: bool, event: asyncio.Event) -> None:
+    """Drain the actual service on SIGTERM even when provider loops are waiting."""
+    work = asyncio.create_task(run_ingest_services(has_api_key), name="IngestRuntime")
+    stopping = asyncio.create_task(event.wait(), name="IngestShutdownSignal")
+    try:
+        done, _ = await asyncio.wait({work, stopping}, return_when=asyncio.FIRST_COMPLETED)
+        if work in done:
+            await work
+            if not event.is_set():
+                raise RuntimeError("ingest_required_runtime_returned")
+    finally:
+        if not work.done():
+            work.cancel()
+        stopping.cancel()
+        _, pending = await asyncio.wait({work, stopping}, timeout=20)
+        if pending:
+            raise IngestDrainError("ingest_runtime_not_drained")
+        await asyncio.gather(work, stopping, return_exceptions=True)
+        if not work.cancelled():
+            # Cancellation may finish with a cleanup failure. Do not mistake a
+            # done wrapper for successfully drained child operations.
+            work.result()
+
+
+async def _restart_delay(event: asyncio.Event, seconds: float) -> None:
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(event.wait(), timeout=seconds)
+
+
 async def main(
     *,
     _bootstrap_probe: HealthProbe | None = None,
@@ -349,6 +382,9 @@ async def main(
         health_task = None
 
     hp = sm.health_probe
+    resources_drained = True
+    runtime_active = False
+    hp.set_readiness_check(lambda: runtime_active and ingest_readiness())
 
     # Shared Railway-safe routing and rate limiting.
     configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
@@ -375,6 +411,8 @@ async def main(
             if restart_attempt > 0:
                 redis_ok = await _preflight_redis_check()
                 if not redis_ok:
+                    if restart_attempt >= 3:
+                        raise RuntimeError("ingest_redis_preflight_retries_exhausted")
                     backoff = min(30.0, float(2 ** min(restart_attempt, 5)))
                     hp.set_detail("runtime_restart", str(restart_attempt))
                     hp.set_detail("runtime_error", "redis_preflight_failed")
@@ -384,16 +422,23 @@ async def main(
                         backoff,
                     )
                     restart_attempt += 1
-                    await asyncio.sleep(backoff)
+                    await _restart_delay(_shutdown_event, backoff)
                     continue
 
             try:
-                await run_ingest_services(has_api_key)
+                runtime_active = True
+                await _run_until_shutdown(has_api_key, _shutdown_event)
                 break
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                runtime_active = False
                 restart_attempt += 1
+                if isinstance(exc, IngestDrainError) or str(exc) == "shutdown_tasks_not_drained":
+                    resources_drained = False
+                    raise
+                if restart_attempt >= 3:
+                    raise
                 backoff = min(30.0, float(2 ** min(restart_attempt, 5)))
                 hp.set_detail("runtime_restart", str(restart_attempt))
                 hp.set_detail("runtime_error", str(exc)[:120])
@@ -405,21 +450,23 @@ async def main(
                 )
                 with contextlib.suppress(Exception):
                     SystemStateManager().reset()
-                await asyncio.sleep(backoff)
+                await _restart_delay(_shutdown_event, backoff)
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received")
     except Exception as exc:
+        hp.set_alive(False)
         hp.set_detail("fatal_error", str(exc)[:120])
         logger.exception(f"Ingest bootstrap failed: {exc}")
-        if owns_probe and _shutdown_event:
-            with contextlib.suppress(asyncio.CancelledError):
-                await _shutdown_event.wait()
+        raise
     finally:
+        runtime_active = False
+        hp.set_alive(False)
         if health_task is not None:
             health_task.cancel()
         if owns_probe:
             await hp.stop()
-        await shutdown_persistent_storage()
+        if resources_drained:
+            await shutdown_persistent_storage()
         logger.info("Ingest service shutdown complete")
 
 

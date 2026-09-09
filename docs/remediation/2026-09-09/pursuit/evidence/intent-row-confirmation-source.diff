@@ -1,0 +1,139 @@
+commit a5eccc98ebb05cd45216af9bc0ed47ea504d6e03
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 13:24:09 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 13:24:09 2026 +0800
+
+    Require intent row write confirmation and matching transition state
+
+diff --git a/execution/execution_intent.py b/execution/execution_intent.py
+index a550e3b6..9e32dad1 100644
+--- a/execution/execution_intent.py
++++ b/execution/execution_intent.py
+@@ -182,6 +182,10 @@ class ExecutionIntentResponse(BaseModel):
+ # ── Repository ────────────────────────────────────────────────────────────────
+ 
+ 
++class ExecutionIntentWriteConflictError(RuntimeError):
++    """The database did not confirm exactly one intended row mutation."""
++
++
+ class ExecutionIntentRepository:
+     """Persistence for execution intent records."""
+ 
+@@ -279,7 +283,7 @@ class ExecutionIntentRepository:
+         data = record.model_dump(mode="json")
+         data.update(updates)
+ 
+-        await self._pg_update(execution_intent_id, updates)
++        await self._pg_update(execution_intent_id, updates, expected_state=current.value)
+         self._cache_set(execution_intent_id, data)
+         self._memory[execution_intent_id] = data
+ 
+@@ -319,7 +323,7 @@ class ExecutionIntentRepository:
+ 
+             if not pg_client.is_available:
+                 return
+-            await pg_client.execute(
++            result = await pg_client.execute(
+                 """
+                 INSERT INTO execution_intents (
+                     execution_intent_id, idempotency_key, take_id, signal_id,
+@@ -354,11 +358,13 @@ class ExecutionIntentRepository:
+                 data.get("actual_lot_size"),
+                 data.get("rejection_code"),
+             )
++            if result != "INSERT 0 1":
++                raise ExecutionIntentWriteConflictError("Intent insert was not confirmed; reload by idempotency key")
+         except Exception:
+             logger.warning("[ExecIntentRepo] PG insert failed", exc_info=True)
+             raise
+ 
+-    async def _pg_update(self, eid: str, updates: dict[str, Any]) -> None:
++    async def _pg_update(self, eid: str, updates: dict[str, Any], *, expected_state: str) -> None:
+         try:
+             from storage.postgres_client import pg_client  # noqa: PLC0415
+ 
+@@ -369,10 +375,15 @@ class ExecutionIntentRepository:
+                 parts.append(f"{col} = ${i}")
+                 args.append(val)
+             args.append(eid)
+-            await pg_client.execute(
+-                f"UPDATE execution_intents SET {', '.join(parts)} WHERE execution_intent_id = ${len(args)}",
++            id_parameter = len(args)
++            args.append(expected_state)
++            result = await pg_client.execute(
++                f"UPDATE execution_intents SET {', '.join(parts)} "
++                f"WHERE execution_intent_id = ${id_parameter} AND state = ${len(args)}",
+                 *args,
+             )
++            if result != "UPDATE 1":
++                raise ExecutionIntentWriteConflictError("Intent update was not confirmed; reload authoritative state")
+         except Exception:
+             logger.warning("[ExecIntentRepo] PG update failed", exc_info=True)
+             raise
+diff --git a/tests/test_reconciliation.py b/tests/test_reconciliation.py
+index 45649ad5..ef716c73 100644
+--- a/tests/test_reconciliation.py
++++ b/tests/test_reconciliation.py
+@@ -63,6 +63,60 @@ async def test_available_database_write_failure_does_not_advance_local_state(rep
+ # ── Fixtures ──────────────────────────────────────────────────────────────────
+ 
+ 
++@pytest.mark.asyncio
++@pytest.mark.parametrize(
++    "operation,tag,accepted",
++    [
++        ("create", "INSERT 0 0", False),
++        ("create", "SKIP", False),
++        ("create", "INSERT 0 1", True),
++        ("transition", "UPDATE 0", False),
++        ("transition", "UPDATE 2", False),
++        ("transition", "SKIP", False),
++        ("transition", "UPDATE 1", True),
++    ],
++)
++async def test_write_confirmation_and_state_predicate(repo, monkeypatch, operation, tag, accepted):
++    from types import SimpleNamespace
++    from unittest.mock import AsyncMock, Mock
++
++    import storage.postgres_client as postgres_module
++    from execution.execution_intent import ExecutionIntentWriteConflictError
++
++    record = _make_intent("row_confirmation", state=ExecutionLifecycleState.ACKNOWLEDGED)
++    if operation != "create":
++        await repo.create(record)
++    before = {key: dict(value) for key, value in repo._memory.items()}
++    before_index = dict(repo._idem_index)
++    cache_write = Mock()
++    monkeypatch.setattr(repo, "_cache_set", cache_write)
++    execute = AsyncMock(return_value=tag)
++    monkeypatch.setattr(postgres_module, "pg_client", SimpleNamespace(is_available=True, execute=execute))
++    monkeypatch.setattr(repo, "_pg_insert", ExecutionIntentRepository._pg_insert.__get__(repo))
++    monkeypatch.setattr(repo, "_pg_update", ExecutionIntentRepository._pg_update.__get__(repo))
++
++    async def act():
++        if operation == "create":
++            return await repo.create(record)
++        return await repo.transition(record.execution_intent_id, ExecutionLifecycleState.FILLED)
++
++    if accepted:
++        result = await act()
++        assert result.state == (record.state if operation == "create" else ExecutionLifecycleState.FILLED)
++        cache_write.assert_called_once()
++    else:
++        with pytest.raises(ExecutionIntentWriteConflictError):
++            await act()
++        cache_write.assert_not_called()
++        assert repo._memory == before
++        assert repo._idem_index == before_index
++    execute.assert_awaited_once()
++    if operation == "transition":
++        args = execute.call_args.args
++        assert args[-2:] == (record.execution_intent_id, "ACKNOWLEDGED")
++        assert f"AND state = ${len(args) - 1}" in args[0]
++
++
+ @pytest.fixture
+ def repo(monkeypatch):
+     r = ExecutionIntentRepository()

@@ -1,0 +1,3 @@
+inputs/** -text -diff
+source-binding/** -text -diff
+evidence/** -text -diff

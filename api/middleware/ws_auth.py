@@ -37,46 +37,22 @@ from .auth import decode_token, validate_api_key
 logger = logging.getLogger(__name__)
 
 _WS_ALLOWED_ORIGINS_RAW: str = os.getenv("WS_ALLOWED_ORIGINS", "").strip()
-# If WS_ALLOWED_ORIGINS is not explicitly set, inherit from CORS_ORIGINS so
-# the Vercel frontend domain is automatically allowed for WebSocket connections.
-_ws_origins_source = _WS_ALLOWED_ORIGINS_RAW or os.getenv("CORS_ORIGINS", "").strip()
-
-WS_ALLOWED_ORIGINS = {origin.strip().rstrip("/") for origin in _ws_origins_source.split(",") if origin.strip()}
-# Also pick up VERCEL_FRONTEND_URL if set (matches CORS logic in app_factory).
-_vercel_url = os.getenv("VERCEL_FRONTEND_URL", "").strip()
-if _vercel_url:
-    for u in _vercel_url.split(","):
-        u = u.strip().rstrip("/")
-        if u:
-            WS_ALLOWED_ORIGINS.add(u)
-
-# Regex pattern for dynamic origins (e.g. Vercel preview deployments).
-# Set CORS_ORIGIN_REGEX to a regex like r"https://tuyul-fx-.*\.vercel\.app"
+# Existing non-dashboard WS consumers use explicit origins; the viewer itself
+# has no WebSocket surface. Never derive provider preview origins implicitly.
+_ws_origins_source = (
+    _WS_ALLOWED_ORIGINS_RAW
+    or os.getenv("CORS_ORIGINS", "https://wolf15-dashboard-frontend-production.up.railway.app").strip()
+)
+WS_ALLOWED_ORIGINS = {
+    origin.strip().rstrip("/") for origin in _ws_origins_source.replace("\n", ",").split(",") if origin.strip()
+}
 _ORIGIN_REGEX_RAW = os.getenv("CORS_ORIGIN_REGEX", "").strip()
 _ORIGIN_REGEX: re.Pattern[str] | None = None
 if _ORIGIN_REGEX_RAW:
     try:
         _ORIGIN_REGEX = re.compile(_ORIGIN_REGEX_RAW)
     except re.error:
-        logger.error("Invalid CORS_ORIGIN_REGEX: %s", _ORIGIN_REGEX_RAW)
-else:
-    # Auto-derive regex for Vercel preview deployments from static origins.
-    # Vercel preview URLs come in two flavours:
-    #   1. Custom-domain style: <custom-domain>-<hash>.vercel.app
-    #   2. Project-name style:  <project>-<hash>-<scope>.vercel.app
-    # We derive patterns for (1) from the static origins AND for (2) from
-    # VERCEL_PROJECT_NAME if set.
-    _vercel_patterns: list[str] = []
-    for _o in WS_ALLOWED_ORIGINS:
-        if _o.endswith(".vercel.app"):
-            _prefix = re.escape(_o.rsplit(".vercel.app", 1)[0])
-            _vercel_patterns.append(f"{_prefix}(-[a-z0-9-]+)?\\.vercel\\.app")
-    _vercel_project = os.getenv("VERCEL_PROJECT_NAME", "").strip()
-    if _vercel_project:
-        _vercel_patterns.append(f"https://{re.escape(_vercel_project)}[a-z0-9-]*\\.vercel\\.app")
-    if _vercel_patterns:
-        with contextlib.suppress(re.error):
-            _ORIGIN_REGEX = re.compile("|".join(_vercel_patterns))
+        logger.error("Invalid CORS_ORIGIN_REGEX configuration")
 
 
 def _is_origin_allowed(origin: str) -> bool:

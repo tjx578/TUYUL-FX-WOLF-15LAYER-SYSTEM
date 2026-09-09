@@ -22,8 +22,27 @@ def create_shutdown_event() -> asyncio.Event:
 def install_signal_handlers(shutdown_event: asyncio.Event) -> None:
     """Install SIGINT/SIGTERM handlers that set the shutdown event."""
 
+    def _set_shutdown(signum: int) -> None:
+        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        shutdown_event.set()
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    else:
+        try:
+            loop.add_signal_handler(signal.SIGINT, _set_shutdown, signal.SIGINT)
+            loop.add_signal_handler(signal.SIGTERM, _set_shutdown, signal.SIGTERM)
+            return
+        except (NotImplementedError, RuntimeError):
+            pass
+
     def _handler(signum: int, frame: types.FrameType | None) -> None:
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        if loop is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(shutdown_event.set)
+            return
         shutdown_event.set()
 
     signal.signal(signal.SIGINT, _handler)

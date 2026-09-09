@@ -242,6 +242,8 @@ class TestCheckOrdering:
 
 
 class _FakeRedis:
+    from tests.orchestrator_mode_owner_fake import eval_mode_owner as eval
+
     """Minimal sync Redis stub for StateManager tests."""
 
     def __init__(self, store: dict[str, str] | None = None) -> None:

@@ -1,0 +1,893 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index ee018821..58745c37 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -144,6 +144,9 @@ jobs:
+       - name: Require executed S03 PostgreSQL acceptance
+         run: python scripts/ci/run_pair_activity_runtime_acceptance.py
+ 
++      - name: Require separate S03 producer and relay PostgreSQL acceptance
++        run: python scripts/ci/run_activity_delivery_producer_acceptance.py
++
+       - name: Upload S03 source-bound PostgreSQL receipt
+         if: always()
+         uses: actions/upload-artifact@v4
+diff --git a/analysis/strategy_5scr_activity_service.py b/analysis/strategy_5scr_activity_service.py
+index 92ba788e..b847e43a 100644
+--- a/analysis/strategy_5scr_activity_service.py
++++ b/analysis/strategy_5scr_activity_service.py
+@@ -7,6 +7,7 @@ from collections.abc import Mapping
+ from pathlib import Path
+ from typing import Any
+ 
++from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
+ from contracts.strategy_5scr_activity_runtime import ActivityCoverageCheckpointV1, ActivityRuntimeBindingV1
+ from storage.strategy_5scr_activity_runtime import PostgresActivityRuntime, unavailable_activity
+ 
+@@ -46,4 +47,13 @@ def activity_runtime_from_environment(
+             return None
+         return ActivityCoverageCheckpointV1.model_validate_json(Path(checkpoint_path).read_text(encoding="utf-8"))
+ 
+-    return PostgresActivityRuntime(dsn=dsn, binding=binding, checkpoint_provider=checkpoint)
++    try:
++        scope_path = env.get("WOLF15_PAIR_ACTIVITY_DELIVERY_SCOPE_PATH")
++        scope = (
++            ActivityConsumerScopeV1.model_validate_json(Path(scope_path).read_text(encoding="utf-8"))
++            if scope_path
++            else None
++        )
++        return PostgresActivityRuntime(dsn=dsn, binding=binding, checkpoint_provider=checkpoint, delivery_scope=scope)
++    except (OSError, ValueError, TypeError):
++        return UnboundActivityRuntime("ACTIVITY_DELIVERY_SCOPE_INVALID")
+diff --git a/scripts/ci/run_activity_delivery_producer_acceptance.py b/scripts/ci/run_activity_delivery_producer_acceptance.py
+new file mode 100644
+index 00000000..bb45aba4
+--- /dev/null
++++ b/scripts/ci/run_activity_delivery_producer_acceptance.py
+@@ -0,0 +1,13 @@
++"""Separate seven-case producer/relay gate; never substitutes for consumer acceptance."""
++
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++if str(ROOT) not in sys.path:
++    sys.path.insert(0, str(ROOT))
++
++from scripts.ci.run_pair_activity_runtime_acceptance import main  # noqa: E402
++
++if __name__ == "__main__":
++    raise SystemExit(main(test_module="tests/integration/test_activity_delivery_producer_postgres.py"))
+diff --git a/scripts/ci/run_pair_activity_runtime_acceptance.py b/scripts/ci/run_pair_activity_runtime_acceptance.py
+index a38690bf..ac240321 100644
+--- a/scripts/ci/run_pair_activity_runtime_acceptance.py
++++ b/scripts/ci/run_pair_activity_runtime_acceptance.py
+@@ -44,6 +44,11 @@ SOURCES = (
+     "contracts/strategy_5scr_pair_activity.py",
+     "contracts/strategy_5scr_activity_runtime.py",
+     "storage/strategy_5scr_activity_runtime.py",
++    "storage/strategy_5scr_activity_outbox.py",
++    "contracts/strategy_5scr_activity_delivery.py",
++    "services/pressure_outbox/activity_delivery_relay.py",
++    "tests/integration/test_activity_delivery_producer_postgres.py",
++    "scripts/ci/run_activity_delivery_producer_acceptance.py",
+     "storage/strategy_5scr_activity_schema.py",
+     "storage/migrations/versions/20260909_01_pair_activity_runtime.py",
+     "pipeline/wolf_constitutional_pipeline.py",
+@@ -87,7 +92,7 @@ def source_hashes() -> dict[str, str]:
+     return {name: digest(ROOT / name) for name in sorted(names)}
+ 
+ 
+-def main() -> int:
++def main(*, test_module: str = TEST) -> int:
+     run_id = uuid4().hex
+     out = ROOT / "artifacts/pair-activity-runtime" / run_id
+     out.mkdir(parents=True, exist_ok=False)
+@@ -96,6 +101,7 @@ def main() -> int:
+         "started_at_utc": now(),
+         "accepted": False,
+         "scope": "DISPOSABLE_POSTGRES_ONLY",
++        "test_module": test_module,
+         "execution_authority": False,
+         "migration_upgrade_execution": "NOT_BOUND",
+         "linux_acceptance": "NOT_EXECUTED",
+@@ -144,7 +150,7 @@ def main() -> int:
+                 or capacity.get("cgroup", {}).get("below_90_percent") is False
+             ):
+                 raise ValueError("RUNNER_CAPACITY_NOT_ADMITTED")
+-        base = [sys.executable, "-m", "pytest", TEST, "-o", "addopts=", "-p", "no:cacheprovider"]
++        base = [sys.executable, "-m", "pytest", test_module, "-o", "addopts=", "-p", "no:cacheprovider"]
+         collection = subprocess.run(
+             [*base, "--collect-only", "-q"],
+             cwd=ROOT,
+@@ -155,7 +161,7 @@ def main() -> int:
+             timeout=180,
+         )
+         (out / "collection.log").write_text(redact(collection.stdout + collection.stderr, env), encoding="utf-8")
+-        expected = [line for line in collection.stdout.splitlines() if line.startswith(TEST + "::")]
++        expected = [line for line in collection.stdout.splitlines() if line.startswith(test_module + "::")]
+         receipt.update(collection_exit=collection.returncode, expected_tests=len(expected), expected_ids=expected)
+         if collection.returncode or not expected or len(set(expected)) != len(expected):
+             raise ValueError("ACCEPTANCE_COLLECTION_FAILED")
+diff --git a/services/pressure_outbox/activity_delivery_relay.py b/services/pressure_outbox/activity_delivery_relay.py
+new file mode 100644
+index 00000000..4ca9492e
+--- /dev/null
++++ b/services/pressure_outbox/activity_delivery_relay.py
+@@ -0,0 +1,76 @@
++"""Bounded at-least-once S03 relay; no lifecycle or execution writer.
++
++The injected transport must authenticate the destination and return an ACK only
++after its owner transaction commits. No default destination or policy is assumed.
++"""
++
++from __future__ import annotations
++
++from collections.abc import Callable
++from uuid import uuid4
++
++from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1, ActivityDeliveryV1
++
++
++class ActivityDeliveryRelay:
++    def __init__(
++        self,
++        *,
++        connect: Callable,
++        ledger_id: str,
++        scope: ActivityConsumerScopeV1,
++        send: Callable[[bytes], tuple[str, str, str]],
++        lease_seconds: int,
++    ) -> None:
++        if type(lease_seconds) is not int or lease_seconds <= 0 or not ledger_id.strip():
++            raise ValueError("RELAY_LEASE_AND_LEDGER_REQUIRED")
++        self._connect = connect
++        self._ledger_id = ledger_id
++        self._scope = ActivityConsumerScopeV1.model_validate(scope.model_dump(mode="json"))
++        self._send = send
++        self._lease_seconds = lease_seconds
++
++    def poll_once(self) -> str:
++        token = uuid4()
++        with self._connect() as connection:
++            row = connection.execute(
++                "SELECT o.delivery_id,o.payload,o.payload_hash FROM public.pair_activity_delivery_outbox_v1 o "
++                "WHERE o.ledger_id=%s AND o.scope_hash=%s AND NOT o.acknowledged "
++                "AND (o.lease_until IS NULL OR o.lease_until<=clock_timestamp()) "
++                "AND (o.previous_delivery_id IS NULL OR EXISTS "
++                "(SELECT 1 FROM public.pair_activity_delivery_outbox_v1 p "
++                "WHERE p.delivery_id=o.previous_delivery_id AND p.acknowledged)) "
++                "ORDER BY o.activity_id,o.sequence LIMIT 1 FOR UPDATE OF o SKIP LOCKED",
++                (self._ledger_id, self._scope.scope_hash),
++            ).fetchone()
++            if row is None:
++                return "NO_READY_DELIVERY"
++            delivery = ActivityDeliveryV1.model_validate_json(row["payload"])
++            if (
++                delivery.delivery_id != row["delivery_id"]
++                or delivery.payload_hash != row["payload_hash"]
++                or delivery.scope != self._scope
++            ):
++                raise ValueError("RELAY_IMMUTABLE_PAYLOAD_CONFLICT")
++            connection.execute(
++                "UPDATE public.pair_activity_delivery_outbox_v1 SET lease_token=%s,"
++                "lease_until=clock_timestamp()+(%s * interval '1 second'),attempts=attempts+1 "
++                "WHERE delivery_id=%s",
++                (token, self._lease_seconds, delivery.delivery_id),
++            )
++        # Remote I/O deliberately happens after the local lease commit. An exception
++        # leaves the same bytes retryable after the bound lease; no replacement ID.
++        ack = self._send(row["payload"].encode("utf-8"))
++        if ack not in (
++            (delivery.delivery_id, delivery.payload_hash, "COMMITTED"),
++            (delivery.delivery_id, delivery.payload_hash, "DUPLICATE_NO_EFFECT"),
++        ):
++            return "UNACKNOWLEDGED"
++        with self._connect() as connection:
++            updated = connection.execute(
++                "UPDATE public.pair_activity_delivery_outbox_v1 SET acknowledged=true,lease_token=NULL,lease_until=NULL "
++                "WHERE delivery_id=%s AND lease_token=%s AND NOT acknowledged "
++                "AND lease_until>clock_timestamp() RETURNING delivery_id",
++                (delivery.delivery_id, token),
++            ).fetchone()
++        return "ACKNOWLEDGED" if updated else "STALE_LEASE_ACK_IGNORED"
+diff --git a/storage/migrations/versions/20260909_02_activity_delivery_outbox.py b/storage/migrations/versions/20260909_02_activity_delivery_outbox.py
+new file mode 100644
+index 00000000..0c644288
+--- /dev/null
++++ b/storage/migrations/versions/20260909_02_activity_delivery_outbox.py
+@@ -0,0 +1,94 @@
++"""Add producer delivery outbox; no lifecycle consumer activation.
++
++Revision ID: 20260909_02
++Revises: 20260909_01
++"""
++
++from alembic import op
++
++revision = "20260909_02"
++down_revision = "20260909_01"
++branch_labels = None
++depends_on = None
++
++
++def upgrade() -> None:
++    op.execute("""
++        CREATE TABLE public.pair_activity_delivery_outbox_v1 (
++            delivery_id text PRIMARY KEY,
++            ledger_id text NOT NULL,
++            scope_hash text NOT NULL,
++            activity_id text NOT NULL,
++            evaluation_id text NOT NULL,
++            snapshot_id text NOT NULL,
++            sequence bigint NOT NULL CHECK (sequence > 0),
++            previous_delivery_id text,
++            payload text NOT NULL,
++            payload_hash text NOT NULL,
++            envelope jsonb NOT NULL,
++            acknowledged boolean NOT NULL DEFAULT false,
++            lease_token uuid,
++            lease_until timestamptz,
++            attempts bigint NOT NULL DEFAULT 0,
++            UNIQUE (ledger_id,scope_hash,evaluation_id),
++            UNIQUE (ledger_id,scope_hash,activity_id,sequence),
++            UNIQUE (ledger_id,scope_hash,activity_id,delivery_id),
++            FOREIGN KEY (ledger_id,activity_id,evaluation_id)
++                REFERENCES public.pair_activity_evaluations_v31(ledger_id,activity_id,evaluation_id),
++            FOREIGN KEY (ledger_id,snapshot_id)
++                REFERENCES public.pair_activity_snapshots_v31(ledger_id,snapshot_id),
++            FOREIGN KEY (ledger_id,scope_hash,activity_id,previous_delivery_id)
++                REFERENCES public.pair_activity_delivery_outbox_v1(ledger_id,scope_hash,activity_id,delivery_id),
++            CHECK ((sequence = 1) = (previous_delivery_id IS NULL)),
++            CHECK (envelope = payload::jsonb),
++            CHECK ((envelope->>'delivery_id' = delivery_id) IS TRUE),
++            CHECK ((envelope->'hypothesis_authority' = 'false'::jsonb) IS TRUE
++               AND (envelope->'risk_authority' = 'false'::jsonb) IS TRUE
++               AND (envelope->'execution_authority' = 'false'::jsonb) IS TRUE)
++        )
++    """)
++    op.execute("""
++        CREATE TABLE public.pair_activity_delivery_cursors_v1 (
++            ledger_id text NOT NULL REFERENCES public.pair_activity_ledgers_v31(ledger_id),
++            scope_hash text NOT NULL,
++            activity_id text NOT NULL,
++            sequence bigint NOT NULL DEFAULT 0 CHECK (sequence >= 0),
++            last_delivery_id text,
++            PRIMARY KEY (ledger_id,scope_hash,activity_id),
++            CHECK ((sequence = 0) = (last_delivery_id IS NULL)),
++            FOREIGN KEY (ledger_id,scope_hash,activity_id,last_delivery_id)
++                REFERENCES public.pair_activity_delivery_outbox_v1(ledger_id,scope_hash,activity_id,delivery_id)
++        )
++    """)
++    op.execute(
++        "CREATE INDEX ix_activity_delivery_pending_v1 ON public.pair_activity_delivery_outbox_v1 "
++        "(ledger_id,scope_hash,activity_id,sequence) WHERE NOT acknowledged"
++    )
++
++    op.execute("""
++        CREATE FUNCTION public.guard_activity_delivery_payload_v1() RETURNS trigger
++        LANGUAGE plpgsql AS $$
++        BEGIN
++            IF (to_jsonb(NEW) - ARRAY['acknowledged','lease_token','lease_until','attempts'])
++                IS DISTINCT FROM
++               (to_jsonb(OLD) - ARRAY['acknowledged','lease_token','lease_until','attempts']) THEN
++                RAISE EXCEPTION 'ACTIVITY_DELIVERY_IMMUTABLE_PAYLOAD';
++            END IF;
++            IF OLD.acknowledged AND NOT NEW.acknowledged THEN
++                RAISE EXCEPTION 'ACTIVITY_DELIVERY_ACK_CANNOT_REWIND';
++            END IF;
++            RETURN NEW;
++        END;
++        $$
++    """)
++    op.execute(
++        "CREATE TRIGGER guard_activity_delivery_payload_v1 BEFORE UPDATE "
++        "ON public.pair_activity_delivery_outbox_v1 FOR EACH ROW "
++        "EXECUTE FUNCTION public.guard_activity_delivery_payload_v1()"
++    )
++
++
++def downgrade() -> None:
++    op.execute("DROP TABLE public.pair_activity_delivery_cursors_v1")
++    op.execute("DROP TABLE public.pair_activity_delivery_outbox_v1")
++    op.execute("DROP FUNCTION public.guard_activity_delivery_payload_v1()")
+diff --git a/storage/strategy_5scr_activity_outbox.py b/storage/strategy_5scr_activity_outbox.py
+new file mode 100644
+index 00000000..42fa3cef
+--- /dev/null
++++ b/storage/strategy_5scr_activity_outbox.py
+@@ -0,0 +1,86 @@
++"""Producer-owned delivery allocation. Caller owns the transaction and ledger lock.
++
++No connection, commit, transport, lifecycle writer or execution authority lives here.
++"""
++
++from __future__ import annotations
++
++import json
++
++from psycopg.types.json import Jsonb
++
++from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1, ActivityDeliveryV1, activity_delivery
++from contracts.strategy_5scr_pair_activity import PairActivityEvaluationV31
++
++
++def enqueue_activity_evaluation(connection, *, binding, scope, snapshot_id, revision, evaluation) -> ActivityDeliveryV1:
++    scope = ActivityConsumerScopeV1.model_validate(scope.model_dump(mode="json"))
++    evaluation = PairActivityEvaluationV31.model_validate(evaluation.model_dump(mode="json"))
++    if scope.producer_binding_hash != binding.binding_hash or scope.environment_class != binding.environment_class:
++        raise ValueError("DELIVERY_PRODUCER_BINDING_MISMATCH")
++    # These checks bind the envelope to the actual transaction's source rows.
++    source = connection.execute(
++        "SELECT report,revision FROM public.pair_activity_snapshots_v31 WHERE ledger_id=%s AND snapshot_id=%s",
++        (binding.ledger_id, snapshot_id),
++    ).fetchone()
++    payload = evaluation.model_dump(mode="json")
++    if (
++        source is None
++        or source["revision"] != revision
++        or source["report"].get("provenance", {}).get("binding_hash") != binding.binding_hash
++        or payload not in source["report"].get("audit", {}).get("evaluations", [])
++    ):
++        raise ValueError("DELIVERY_SOURCE_SNAPSHOT_MISMATCH")
++    key = (binding.ledger_id, scope.scope_hash, evaluation.activity_id)
++    connection.execute(
++        "INSERT INTO public.pair_activity_delivery_cursors_v1(ledger_id,scope_hash,activity_id) "
++        "VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
++        key,
++    )
++    cursor = connection.execute(
++        "SELECT sequence,last_delivery_id FROM public.pair_activity_delivery_cursors_v1 "
++        "WHERE ledger_id=%s AND scope_hash=%s AND activity_id=%s FOR UPDATE",
++        key,
++    ).fetchone()
++    existing = connection.execute(
++        "SELECT payload FROM public.pair_activity_delivery_outbox_v1 "
++        "WHERE ledger_id=%s AND scope_hash=%s AND evaluation_id=%s",
++        (binding.ledger_id, scope.scope_hash, evaluation.evaluation_id),
++    ).fetchone()
++    if existing:
++        committed = ActivityDeliveryV1.model_validate_json(existing["payload"])
++        if committed.scope != scope or committed.evaluation != evaluation:
++            raise ValueError("DELIVERY_IMMUTABLE_EVALUATION_CONFLICT")
++        # A repeated evaluation in another snapshot keeps its first envelope.
++        return committed
++    delivery = activity_delivery(
++        scope=scope,
++        source_snapshot_id=snapshot_id,
++        source_revision=revision,
++        activity_sequence=cursor["sequence"] + 1,
++        previous_delivery_id=cursor["last_delivery_id"],
++        evaluation=evaluation,
++    )
++    wire = json.dumps(delivery.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
++    connection.execute(
++        "INSERT INTO public.pair_activity_delivery_outbox_v1 "
++        "(delivery_id,ledger_id,scope_hash,activity_id,evaluation_id,snapshot_id,sequence,previous_delivery_id,payload,payload_hash,envelope) "
++        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
++        (
++            delivery.delivery_id,
++            *key,
++            evaluation.evaluation_id,
++            snapshot_id,
++            delivery.activity_sequence,
++            delivery.previous_delivery_id,
++            wire,
++            delivery.payload_hash,
++            Jsonb(delivery.model_dump(mode="json")),
++        ),
++    )
++    connection.execute(
++        "UPDATE public.pair_activity_delivery_cursors_v1 SET sequence=%s,last_delivery_id=%s "
++        "WHERE ledger_id=%s AND scope_hash=%s AND activity_id=%s",
++        (delivery.activity_sequence, delivery.delivery_id, *key),
++    )
++    return delivery
+diff --git a/storage/strategy_5scr_activity_runtime.py b/storage/strategy_5scr_activity_runtime.py
+index cee2066c..b7fcac4b 100644
+--- a/storage/strategy_5scr_activity_runtime.py
++++ b/storage/strategy_5scr_activity_runtime.py
+@@ -22,8 +22,10 @@ from analysis.strategy_5scr_pair_activity import (
+     normalize_pair_activity_observations,
+     pair_activity_raw_event_id,
+ )
++from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
+ from contracts.strategy_5scr_activity_runtime import ActivityCoverageCheckpointV1, ActivityRuntimeBindingV1
+ from contracts.strategy_5scr_pair_activity import PairActivityEvaluationV31, RawActivityCoverageV31, activity_hash
++from storage.strategy_5scr_activity_outbox import enqueue_activity_evaluation
+ 
+ 
+ class ActivityRuntimeIntegrityError(ValueError):
+@@ -57,12 +59,21 @@ class PostgresActivityRuntime:
+         checkpoint_provider: Callable[[], ActivityCoverageCheckpointV1 | None],
+         clock: Callable[[], datetime] | None = None,
+         after_evaluations: Callable[[], None] | None = None,
++        delivery_scope: ActivityConsumerScopeV1 | None = None,
+     ) -> None:
+         self._dsn = dsn
+         self.binding = ActivityRuntimeBindingV1.model_validate(binding.model_dump(mode="json"))
+         self._checkpoint_provider = checkpoint_provider
+         self._clock = clock or (lambda: datetime.now(UTC))
+         self._after_evaluations = after_evaluations
++        self._delivery_scope = (
++            ActivityConsumerScopeV1.model_validate(delivery_scope.model_dump(mode="json")) if delivery_scope else None
++        )
++        if self._delivery_scope and (
++            self._delivery_scope.producer_binding_hash != self.binding.binding_hash
++            or self._delivery_scope.environment_class != self.binding.environment_class
++        ):
++            raise ActivityRuntimeIntegrityError("DELIVERY_PRODUCER_BINDING_MISMATCH")
+         self._record_failure: str | None = None
+ 
+     def _connect(self) -> psycopg.Connection:
+@@ -342,6 +353,16 @@ class PostgresActivityRuntime:
+             # including its trigger and replay boundary, rather than a new view
+             # masquerading under the same immutable snapshot identity.
+             report = stored_snapshot["report"]
++            if self._delivery_scope is not None:
++                for item in audit.evaluations:
++                    enqueue_activity_evaluation(
++                        connection,
++                        binding=self.binding,
++                        scope=self._delivery_scope,
++                        snapshot_id=snapshot_id,
++                        revision=ledger["revision"],
++                        evaluation=item,
++                    )
+         return report
+ 
+     def snapshot(self) -> dict[str, Any]:
+diff --git a/tests/integration/test_activity_delivery_producer_postgres.py b/tests/integration/test_activity_delivery_producer_postgres.py
+new file mode 100644
+index 00000000..16745cc1
+--- /dev/null
++++ b/tests/integration/test_activity_delivery_producer_postgres.py
+@@ -0,0 +1,185 @@
++"""Separate producer/relay database scope. Does not close consumer D01-D11.
++
++Uses the existing disposable guard; migrations must be applied explicitly.
++No production credentials, implicit DDL, or replacement of the original 45 tests.
++"""
++
++from datetime import timedelta
++
++import psycopg
++import pytest
++from psycopg.rows import dict_row
++
++from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
++from scripts.ci.pair_activity_run_evidence import record_runtime_fixture
++from services.pressure_outbox.activity_delivery_relay import ActivityDeliveryRelay
++from storage.strategy_5scr_activity_runtime import PostgresActivityRuntime
++from tests.integration.test_pair_activity_runtime_postgres import (
++    START,
++    checkpoint,
++    fixture_binding,
++    pg_dsn,
++    raw,
++)
++
++__all__ = ["pg_dsn"]
++
++
++def setup_runtime(dsn):
++    binding = fixture_binding()
++    events = [raw(0), raw(150, "SELL"), raw(300)]
++    cp = checkpoint(binding, events)
++    record_runtime_fixture(binding, cp)
++    scope = ActivityConsumerScopeV1(
++        consumer_scope_id="fixture-owner-scope",
++        producer_binding_hash=binding.binding_hash,
++        lifecycle_owner_id="fixture-owner",
++        lifecycle_policy_hash="sha256:" + "2" * 64,
++        environment_class="DISPOSABLE_TEST",
++    )
++    worker = PostgresActivityRuntime(
++        dsn=dsn,
++        binding=binding,
++        checkpoint_provider=lambda: cp,
++        clock=lambda: START + timedelta(seconds=300),
++        delivery_scope=scope,
++    )
++    worker.append(events)
++    return worker, scope
++
++
++def outbox(dsn, ledger):
++    with psycopg.connect(dsn, row_factory=dict_row) as c:
++        return c.execute(
++            "SELECT * FROM public.pair_activity_delivery_outbox_v1 WHERE ledger_id=%s ORDER BY sequence", (ledger,)
++        ).fetchall()
++
++
++def test_producer_duplicate_restart_keeps_first_envelope(pg_dsn):
++    worker, scope = setup_runtime(pg_dsn)
++    report = worker.evaluate()
++    assert report["audit"]["evaluations"][0]["duration_seconds"] == 300
++    first = outbox(pg_dsn, worker.binding.ledger_id)
++    assert len(first) == 1 and first[0]["sequence"] == 1
++    restarted = PostgresActivityRuntime(
++        dsn=pg_dsn,
++        binding=worker.binding,
++        checkpoint_provider=worker._checkpoint_provider,
++        clock=worker._clock,
++        delivery_scope=scope,
++    )
++    restarted.evaluate()
++    assert outbox(pg_dsn, worker.binding.ledger_id) == first
++
++
++def test_producer_outbox_failure_rolls_back_evaluation_snapshot_and_counter(pg_dsn, monkeypatch):
++    from storage import strategy_5scr_activity_runtime as module
++
++    worker, _ = setup_runtime(pg_dsn)
++    actual = module.enqueue_activity_evaluation
++
++    def crash(*args, **kwargs):
++        actual(*args, **kwargs)
++        raise RuntimeError("injected after outbox before commit")
++
++    with monkeypatch.context() as patch:
++        patch.setattr(module, "enqueue_activity_evaluation", crash)
++        with pytest.raises(RuntimeError, match="injected"):
++            worker.evaluate()
++    assert outbox(pg_dsn, worker.binding.ledger_id) == []
++    with psycopg.connect(pg_dsn) as c:
++        for table in (
++            "pair_activity_evaluations_v31",
++            "pair_activity_snapshots_v31",
++            "pair_activity_delivery_cursors_v1",
++        ):
++            assert (
++                c.execute(
++                    f"SELECT count(*) FROM public.{table} WHERE ledger_id=%s", (worker.binding.ledger_id,)
++                ).fetchone()[0]
++                == 0
++            )
++    worker.evaluate()
++    assert outbox(pg_dsn, worker.binding.ledger_id)[0]["sequence"] == 1
++
++
++def test_relay_ack_loss_keeps_payload_after_database_lease_expiry(pg_dsn):
++    worker, scope = setup_runtime(pg_dsn)
++    worker.evaluate()
++    sent = []
++
++    def send(wire):
++        from contracts.strategy_5scr_activity_delivery import ActivityDeliveryV1
++
++        sent.append(wire)
++        if len(sent) == 1:
++            raise TimeoutError("fake ACK loss; not a real consumer")
++        delivery = ActivityDeliveryV1.model_validate_json(wire)
++        return delivery.delivery_id, delivery.payload_hash, "DUPLICATE_NO_EFFECT"
++
++    relay = ActivityDeliveryRelay(
++        connect=worker._connect, ledger_id=worker.binding.ledger_id, scope=scope, send=send, lease_seconds=60
++    )
++    with pytest.raises(TimeoutError):
++        relay.poll_once()
++    assert relay.poll_once() == "NO_READY_DELIVERY"
++    with worker._connect() as c:
++        c.execute(
++            "UPDATE public.pair_activity_delivery_outbox_v1 SET lease_until=clock_timestamp()-interval '1 second' "
++            "WHERE ledger_id=%s",
++            (worker.binding.ledger_id,),
++        )
++    assert relay.poll_once() == "ACKNOWLEDGED"
++    assert sent[0] == sent[1]
++
++
++def test_committed_envelope_is_database_immutable(pg_dsn):
++    worker, _ = setup_runtime(pg_dsn)
++    worker.evaluate()
++    first = outbox(pg_dsn, worker.binding.ledger_id)
++    with pytest.raises(psycopg.Error, match="ACTIVITY_DELIVERY_IMMUTABLE_PAYLOAD"), worker._connect() as c:
++        c.execute(
++            "UPDATE public.pair_activity_delivery_outbox_v1 SET payload_hash=%s WHERE ledger_id=%s",
++            ("sha256:" + "0" * 64, worker.binding.ledger_id),
++        )
++    assert outbox(pg_dsn, worker.binding.ledger_id) == first
++
++
++def test_new_evaluation_same_revision_has_committed_predecessor(pg_dsn):
++    worker, _ = setup_runtime(pg_dsn)
++    worker.evaluate()
++    worker._clock = lambda: START + timedelta(seconds=301)
++    worker.evaluate()
++    stored = outbox(pg_dsn, worker.binding.ledger_id)
++    assert len(stored) == 2
++    assert [r["sequence"] for r in stored] == [1, 2]
++    assert stored[1]["previous_delivery_id"] == stored[0]["delivery_id"]
++    assert stored[0]["envelope"]["source_revision"] == stored[1]["envelope"]["source_revision"]
++
++
++def test_concurrent_duplicate_evaluation_allocates_once(pg_dsn):
++    from concurrent.futures import ThreadPoolExecutor
++
++    worker, _ = setup_runtime(pg_dsn)
++    with ThreadPoolExecutor(max_workers=2) as pool:
++        results = list(pool.map(lambda _: worker.evaluate(), range(4)))
++    assert len(results) == 4
++    assert len(outbox(pg_dsn, worker.binding.ledger_id)) == 1
++
++
++def test_relay_waits_for_predecessor_ack(pg_dsn):
++    worker, scope = setup_runtime(pg_dsn)
++    worker.evaluate()
++    worker._clock = lambda: START + timedelta(seconds=301)
++    worker.evaluate()
++    sent = []
++    relay = ActivityDeliveryRelay(
++        connect=worker._connect,
++        ledger_id=worker.binding.ledger_id,
++        scope=scope,
++        send=lambda wire: sent.append(wire),
++        lease_seconds=60,
++    )
++    assert relay.poll_once() == "UNACKNOWLEDGED"
++    assert relay.poll_once() == "NO_READY_DELIVERY"
++    assert len(sent) == 1
+diff --git a/tests/test_activity_delivery_producer.py b/tests/test_activity_delivery_producer.py
+new file mode 100644
+index 00000000..75e07832
+--- /dev/null
++++ b/tests/test_activity_delivery_producer.py
+@@ -0,0 +1,85 @@
++"""Producer allocation unit model; SQL transactions still require PostgreSQL acceptance."""
++
++from types import SimpleNamespace
++
++import pytest
++
++from storage.strategy_5scr_activity_outbox import enqueue_activity_evaluation
++from tests.test_activity_delivery_contract import delivery
++
++
++class ProducerStore:
++    def __init__(self, event):
++        self.source = {
++            "revision": event.source_revision,
++            "report": {
++                "provenance": {"binding_hash": event.scope.producer_binding_hash},
++                "audit": {"evaluations": [event.evaluation.model_dump(mode="json")]},
++            },
++        }
++        self.cursor = {"sequence": 0, "last_delivery_id": None}
++        self.existing = None
++        self.result = None
++        self.writes = []
++
++    def execute(self, sql, args):
++        if sql.startswith("SELECT report"):
++            self.result = self.source
++        elif sql.startswith("SELECT sequence"):
++            self.result = self.cursor
++        elif sql.startswith("SELECT payload"):
++            self.result = self.existing
++        else:
++            self.writes.append((sql, args))
++            if sql.startswith("INSERT INTO public.pair_activity_delivery_outbox"):
++                self.existing = {"payload": args[8]}
++            if sql.startswith("UPDATE"):
++                self.cursor = {"sequence": args[0], "last_delivery_id": args[1]}
++            self.result = None
++        return self
++
++    def fetchone(self):
++        return self.result
++
++
++def enqueue(store, event):
++    binding = SimpleNamespace(
++        binding_hash=event.scope.producer_binding_hash,
++        environment_class=event.scope.environment_class,
++        ledger_id="fixture-ledger",
++    )
++    return enqueue_activity_evaluation(
++        store,
++        binding=binding,
++        scope=event.scope,
++        snapshot_id=event.source_snapshot_id,
++        revision=event.source_revision,
++        evaluation=event.evaluation,
++    )
++
++
++def test_first_allocation_and_duplicate_snapshot_preserve_original_envelope():
++    event = delivery()
++    store = ProducerStore(event)
++    first = enqueue(store, event)
++    assert first.activity_sequence == 1 and first.previous_delivery_id is None
++    other_snapshot = delivery(source_snapshot_id="sha256:" + "7" * 64)
++    assert enqueue(store, other_snapshot) == first
++    assert len([sql for sql, _ in store.writes if sql.startswith("UPDATE")]) == 1
++
++
++@pytest.mark.parametrize("corruption", ["missing", "revision", "provenance", "evaluation"])
++def test_unbound_source_never_allocates(corruption):
++    event = delivery()
++    store = ProducerStore(event)
++    if corruption == "missing":
++        store.source = None
++    elif corruption == "revision":
++        store.source["revision"] = 999
++    elif corruption == "provenance":
++        store.source["report"]["provenance"] = {}
++    else:
++        store.source["report"]["audit"]["evaluations"] = []
++    with pytest.raises(ValueError, match="DELIVERY_SOURCE_SNAPSHOT_MISMATCH"):
++        enqueue(store, event)
++    assert store.writes == []
+diff --git a/tests/test_activity_delivery_relay.py b/tests/test_activity_delivery_relay.py
+new file mode 100644
+index 00000000..37f7ceda
+--- /dev/null
++++ b/tests/test_activity_delivery_relay.py
+@@ -0,0 +1,110 @@
++"""Relay control-flow tests with an explicit fake store/transport, not PostgreSQL acceptance."""
++
++from contextlib import contextmanager
++
++import pytest
++
++from services.pressure_outbox.activity_delivery_relay import ActivityDeliveryRelay
++from tests.test_activity_delivery_contract import delivery, scope
++
++
++class Store:
++    def __init__(self):
++        self.event = delivery()
++        self.row = dict(
++            delivery_id=self.event.delivery_id,
++            payload=self.event.model_dump_json(),
++            payload_hash=self.event.payload_hash,
++        )
++        self.active = False
++        self.queries = []
++        self.ack_updated = True
++        self.result = None
++
++    @contextmanager
++    def connect(self):
++        assert not self.active
++        self.active = True
++        try:
++            yield self
++        finally:
++            self.active = False
++
++    def execute(self, sql, args):
++        assert self.active
++        self.queries.append((sql, args))
++        self.result = (
++            self.row
++            if sql.startswith("SELECT")
++            else ({"delivery_id": self.event.delivery_id} if "RETURNING" in sql and self.ack_updated else None)
++        )
++        return self
++
++    def fetchone(self):
++        return self.result
++
++    def relay(self, send):
++        return ActivityDeliveryRelay(
++            connect=self.connect, ledger_id="fixture-ledger", scope=scope(), send=send, lease_seconds=10
++        )
++
++
++def test_network_is_outside_transaction_and_exact_bytes_are_sent():
++    store = Store()
++
++    def send(wire):
++        assert not store.active
++        assert wire == store.row["payload"].encode("utf-8")
++        return store.event.delivery_id, store.event.payload_hash, "COMMITTED"
++
++    assert store.relay(send).poll_once() == "ACKNOWLEDGED"
++
++
++def test_ack_loss_retries_same_payload_and_delivery_with_new_lease():
++    store = Store()
++    wires = []
++
++    def send(wire):
++        wires.append(wire)
++        if len(wires) == 1:
++            raise TimeoutError("fake lost ACK")
++        return store.event.delivery_id, store.event.payload_hash, "DUPLICATE_NO_EFFECT"
++
++    relay = store.relay(send)
++    with pytest.raises(TimeoutError):
++        relay.poll_once()
++    assert relay.poll_once() == "ACKNOWLEDGED"
++    assert wires[0] == wires[1]
++    leases = [args[0] for sql, args in store.queries if "attempts=attempts+1" in sql]
++    assert len(leases) == 2 and leases[0] != leases[1]
++
++
++@pytest.mark.parametrize(
++    "ack",
++    [None, ("wrong", "wrong", "COMMITTED"), (delivery().delivery_id, delivery().payload_hash, "WAITING_PREDECESSOR")],
++)
++def test_noncommitted_or_unbound_ack_does_not_acknowledge(ack):
++    store = Store()
++    assert store.relay(lambda _: ack).poll_once() == "UNACKNOWLEDGED"
++    assert not any("acknowledged=true" in sql for sql, _ in store.queries)
++
++
++def test_replaced_or_expired_lease_cannot_acknowledge():
++    store = Store()
++    store.ack_updated = False
++    assert store.relay(lambda _: (store.event.delivery_id, store.event.payload_hash, "COMMITTED")).poll_once() == (
++        "STALE_LEASE_ACK_IGNORED"
++    )
++
++
++def test_corrupt_payload_never_reaches_transport():
++    store = Store()
++    store.row["payload_hash"] = "sha256:" + "0" * 64
++    with pytest.raises(ValueError, match="RELAY_IMMUTABLE_PAYLOAD_CONFLICT"):
++        store.relay(lambda _: pytest.fail("transport must not run")).poll_once()
++
++
++def test_no_ready_delivery_never_calls_transport():
++    store = Store()
++    store.row = None
++    assert store.relay(lambda _: pytest.fail("transport must not run")).poll_once() == "NO_READY_DELIVERY"
+diff --git a/tests/test_activity_runtime_binding.py b/tests/test_activity_runtime_binding.py
+index 014d6b6a..7dc5ddad 100644
+--- a/tests/test_activity_runtime_binding.py
++++ b/tests/test_activity_runtime_binding.py
+@@ -36,6 +36,38 @@ def test_factory_does_not_fall_back_to_general_database():
+     assert runtime.snapshot()["reason_code"] == "ACTIVITY_RUNTIME_BINDING_UNBOUND"
+ 
+ 
++@pytest.mark.parametrize("valid", [True, False])
++def test_factory_binds_delivery_scope_or_fails_explicitly(tmp_path, valid):
++    from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
++    from storage.strategy_5scr_activity_runtime import PostgresActivityRuntime
++
++    bound = binding()
++    source = tmp_path / "binding.json"
++    source.write_text(bound.model_dump_json(), encoding="utf-8")
++    scope_path = tmp_path / "scope.json"
++    scope = ActivityConsumerScopeV1(
++        consumer_scope_id="fixture",
++        producer_binding_hash=bound.binding_hash if valid else "sha256:" + "0" * 64,
++        lifecycle_owner_id="fixture-owner",
++        lifecycle_policy_hash="sha256:" + "2" * 64,
++        environment_class="DISPOSABLE_TEST",
++    )
++    scope_path.write_text(scope.model_dump_json(), encoding="utf-8")
++    runtime = activity_runtime_from_environment(
++        {
++            "WOLF15_PAIR_ACTIVITY_BINDING_PATH": str(source),
++            "WOLF15_PAIR_ACTIVITY_DATABASE_URL": "never-connected",
++            "DEPLOYMENT_ID": bound.deployment_id,
++            "WOLF15_PAIR_ACTIVITY_DELIVERY_SCOPE_PATH": str(scope_path),
++        }
++    )
++    if valid:
++        assert isinstance(runtime, PostgresActivityRuntime)
++        assert runtime._delivery_scope == scope
++    else:
++        assert runtime.snapshot()["reason_code"] == "ACTIVITY_DELIVERY_SCOPE_INVALID"
++
++
+ def test_factory_missing_dsn_or_wrong_deployment_is_explicit(tmp_path):
+     path = tmp_path / "binding.json"
+     path.write_text(binding().model_dump_json(), encoding="utf-8")
+diff --git a/tests/test_pair_activity_ci_receipt.py b/tests/test_pair_activity_ci_receipt.py
+index db0dfc26..66dbece1 100644
+--- a/tests/test_pair_activity_ci_receipt.py
++++ b/tests/test_pair_activity_ci_receipt.py
+@@ -219,7 +219,7 @@ def test_migration_graph_records_structure_without_claiming_execution():
+     from scripts.ci.pair_activity_run_evidence import migration_graph
+ 
+     graph = migration_graph(Path(__file__).resolve().parents[1])
+-    assert graph["repository_heads"] == ["20260909_01"]
++    assert graph["repository_heads"] == ["20260909_02"]
+     assert graph["revision_parents"]["20260909_01"] == "20260822_01"
+     assert graph["migration_upgrade_execution"] == "NOT_BOUND"
+ 

@@ -1,0 +1,31 @@
+{
+  "results": {
+    "pg-collection": {
+      "exit_code": 0,
+      "artifact": "k07-capacity-persistence-pg-collection.log",
+      "sha256": "2a9c89b9334d80d6a43bf151f29af2b2e40c8b37628d54819280a6e2038f61a7",
+      "test_ids": [
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialize_restart]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialize_concurrent]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialization_rollback]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[owner_handover]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[raw_write_fenced]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_restart_duplicate]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_concurrent_duplicate]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_rollback]"
+      ]
+    },
+    "migration-sql": {
+      "exit_code": 0,
+      "artifact": "k07-capacity-persistence-migration-sql.log",
+      "sha256": "645bbb18577a85e93975d27c2e97f2d1cededc3bab9027b1605f86acc911fdc4"
+    },
+    "migration-heads": {
+      "exit_code": 0,
+      "artifact": "k07-capacity-persistence-migration-heads.log",
+      "sha256": "71308f5041e74eee19bc2af51215fa9db2a34b7967f8fba9f65bd8b30c50a416"
+    }
+  },
+  "database_execution": "NOT_EXECUTED",
+  "migration_application": "NOT_EXECUTED"
+}

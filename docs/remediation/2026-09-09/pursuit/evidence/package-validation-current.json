@@ -1,0 +1,30 @@
+{
+  "status": "DOCUMENT_PACKAGE_PASS",
+  "scope": "Planning artifact structure, declared authority boundaries, links and byte identity only.",
+  "runtime_or_engineering_acceptance": "NOT_EXECUTED",
+  "program_status": "INCOMPLETE / HOLD (latest user-reported checkpoint)",
+  "plan_status": "PARTIAL_PLAN",
+  "canonical_actions": 41,
+  "goap_nodes": 54,
+  "milestone_counts": {
+    "P1": 7,
+    "P2": 6,
+    "P3": 7,
+    "P4": 10,
+    "P5": 8,
+    "P6": 3
+  },
+  "failure_cases": 48,
+  "local_file_links_checked": 17,
+  "stable_manifest_files": 20,
+  "checks_passed": 234,
+  "plan_sha256": "9986dd171febdcd13cad94e58c892a4cfcd8b0c5b4e3f204ab5e72ef8645cad9",
+  "manifest_sha256": "289323e832e6c84b5a4a014eda7e5d78acd3f5194b57ad2ac17561eb0daa15bc",
+  "errors": [],
+  "limitations": [
+    "Does not execute WOLF15, PostgreSQL migrations, CI, MT5 or broker operations.",
+    "Does not validate live credentials, current repository HEAD, authorization or external resource availability.",
+    "Not a cryptographic signature or a substitute for independent runtime evidence.",
+    "The manifest excludes itself and this generated report to avoid circular hashes."
+  ]
+}

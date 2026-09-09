@@ -1,0 +1,120 @@
+{
+  "observed_at_utc": "2026-09-08T20:27:01.228117+00:00",
+  "verdict": "PASS_LOCAL_SELECTED_TESTS_PROGRAM_HOLD",
+  "tested_source_commit": "385188d02097d3fd5fb3e48cb9669613b8ff6ea7",
+  "tested_source_tree": "d74193fb7704c35521779381c63419cf76dabe95",
+  "test_collection_base_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+  "test_worktree_diff_sha256": "f84990555fc41b399918cbae6a0dbfb369195adaf88b0ef2baed85ccffee2f12",
+  "source_worktree_sha256": {
+    "tests/test_strategy_5scr_pair_activity.py": "4666566dae472017e78e779ca91eee62f47eabe784ab6b123b1b661dd60fc4ed",
+    "tests/test_pair_activity_report_integration.py": "7fd6a2f1407066b6b4c7770b78c4cd66432204c768c7629880b34605da264073",
+    "tests/test_api_boot_readiness.py": "a1ee235e6429f7b6c715801d043dab9884b48130f1cd26db9345105ade6b56dd",
+    "tests/test_api_only_entrypoints.py": "ba6673bb119b12c04449e4fcee8056095248d7222d7208305ec56744f2430fc8",
+    "tests/test_ci_required_gates.py": "10383aafa3bc05c3769f06fffc4fd97e1b519b7605d56e97991f32f8e48f306f",
+    "tests/test_railway_release_source_gate.py": "1d498b97f9bf6590438520958216b8e797487c688f981a94945e6925c6ed068b",
+    "tests/test_strategy_5scr_raw_admission_blocks.py": "bb7bc8972943e491e8f565725cb3f2720856163773cfce9f1048acd05c13035b",
+    "tests/test_strategy_5scr_pair_admission.py": "c9b5afe9399bc9264f05fbd2e9d7eecfde639f7520ea847fb97a117fa8cd1f4c",
+    "tests/test_pair_admission_runtime_selection.py": "d3ee5d21a619ee96d47549e70584c1d8c3df16a7f42aae90c2427279982d61fc",
+    "tests/test_pair_admission_evaluation_persistence.py": "d2da907bd9ac427eac6668fc5479e10114e0b1cfe3f286e2f10086ceea81e2c9",
+    "tests/test_signal_throttle_log_analyzer.py": "43032ee732235989d0fc66158b5f0b22dc44297ae8b6300523072d6f58a256d8",
+    "tests/test_strategy_5scr_directional_thesis_v1.py": "d503ffcd72108ccf8772830d77454b1438d3bc5867bc673bbd515396d499d0a8",
+    "tests/test_strategy_5scr_directional_thesis_v1_containment.py": "1ebc765d66799fb514982f1c6da2e04bfe62d6f2289e049d3142a5a5b564b68c",
+    "tests/test_pressure_direction_recovery.py": "b8ba6af4950693f2b15f3fc680cc85db22a2d9a6d670ba9256b831b6b2f3d9dd",
+    "analysis/signal_throttle_log_analyzer.py": "43b2ebb6e7505098ce9facb4f3ff4c27637d108f403579b6ffea534461f2be65",
+    "pipeline/wolf_constitutional_pipeline.py": "1b0169ff6b7da6c7e1c7d5bc1d390027d6dd5971766e0730db111a3adfa63587",
+    "analysis/strategy_5scr_pair_activity.py": "eb90e3c54a24297928a1e8008600259ee9880871c1acc5e4f0d02ae748bc4ec0",
+    "analysis/strategy_5scr_pair_activity_report.py": "2a251fb17864d605bb68dc0dfe55dde4cfd9056307b4dc1cbdf84c6680ae61c6",
+    "contracts/strategy_5scr_pair_activity.py": "a1b0e24f8f441a6db99e744b177b532466c601ad0bfe10d37234c7f76e10adb9"
+  },
+  "source_git_blob_sha256": {
+    "tests/test_strategy_5scr_pair_activity.py": "4666566dae472017e78e779ca91eee62f47eabe784ab6b123b1b661dd60fc4ed",
+    "tests/test_pair_activity_report_integration.py": "7fd6a2f1407066b6b4c7770b78c4cd66432204c768c7629880b34605da264073",
+    "tests/test_api_boot_readiness.py": "a1ee235e6429f7b6c715801d043dab9884b48130f1cd26db9345105ade6b56dd",
+    "tests/test_api_only_entrypoints.py": "ba6673bb119b12c04449e4fcee8056095248d7222d7208305ec56744f2430fc8",
+    "tests/test_ci_required_gates.py": "10383aafa3bc05c3769f06fffc4fd97e1b519b7605d56e97991f32f8e48f306f",
+    "tests/test_railway_release_source_gate.py": "1d498b97f9bf6590438520958216b8e797487c688f981a94945e6925c6ed068b",
+    "tests/test_strategy_5scr_raw_admission_blocks.py": "2409a59b256415986f1c5c858a90225ced28ddeb88a7024ed0f532214d5fdea3",
+    "tests/test_strategy_5scr_pair_admission.py": "cbdaad97b7ac489ddb5ec59876e42085822281c657f4c15839d066eeb44895c2",
+    "tests/test_pair_admission_runtime_selection.py": "4f07255325cae4c404486acbe30c755129bc2c31b8bf401769b15600d42838b4",
+    "tests/test_pair_admission_evaluation_persistence.py": "619391154b932e2d3b6e30b8ae6599b46928179e9a92a4a38bf68274958e88bf",
+    "tests/test_signal_throttle_log_analyzer.py": "94c148fc24e457efbdf8bdd01b9f1563f13048911c03554350b5f7906e7a2fff",
+    "tests/test_strategy_5scr_directional_thesis_v1.py": "c4784a5ebb392a1b70c6b2c9075913d6dc74c270e9e56ad51890c4286bad1268",
+    "tests/test_strategy_5scr_directional_thesis_v1_containment.py": "5476d7762e9e22c8d46f59789480e40aab0806922f490571486f2349dc8533d7",
+    "tests/test_pressure_direction_recovery.py": "9ee3ebcb0e8886e7ed9423fdfc626fbc46d0d76147238f42764e46d2ec513902",
+    "analysis/signal_throttle_log_analyzer.py": "7c19974d97b5a8c3eb43c673e133723c0f09304f40e5e41dc613cf1cc63da70b",
+    "pipeline/wolf_constitutional_pipeline.py": "60037c0bb2697098c23c8d46a2b0b8b9644434274b50a427eedc588e10951872",
+    "analysis/strategy_5scr_pair_activity.py": "eb90e3c54a24297928a1e8008600259ee9880871c1acc5e4f0d02ae748bc4ec0",
+    "analysis/strategy_5scr_pair_activity_report.py": "2a251fb17864d605bb68dc0dfe55dde4cfd9056307b4dc1cbdf84c6680ae61c6",
+    "contracts/strategy_5scr_pair_activity.py": "a1b0e24f8f441a6db99e744b177b532466c601ad0bfe10d37234c7f76e10adb9"
+  },
+  "line_endings": "Tested worktree bytes matched expected hashes; committed Git bytes matched after explicit CRLF/LF normalization.",
+  "counts": {
+    "tests": 334,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "expected_test_count": 334,
+  "collection_exit": 0,
+  "pytest_exit": 0,
+  "source_unchanged_during_tests": true,
+  "test_receipt": "evidence/combined-s03-final-exact-receipt.json",
+  "junit": "evidence/combined-s03-final-exact.xml",
+  "environment": {
+    "python": "3.11.9",
+    "platform": "Windows",
+    "pydantic": "2.9.2",
+    "pydantic_settings": "2.5.2",
+    "pytest": "8.3.2",
+    "pytest_asyncio": "0.24.0",
+    "pip_check": "PASS",
+    "applicable_direct_constraints": 42,
+    "mcp": "NOT_INSTALLED_SEPARATE_REQUIRED_JOB",
+    "MetaTrader5": "NOT_INSTALLED"
+  },
+  "static_checks": {
+    "lint": {
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "--no-cache",
+        "."
+      ],
+      "exit_code": 0,
+      "stdout": "All checks passed!\n",
+      "stderr": "warning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+    },
+    "format": {
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "format",
+        "--no-cache",
+        "--check",
+        "."
+      ],
+      "exit_code": 0,
+      "stdout": "1372 files already formatted\n",
+      "stderr": "warning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+    }
+  },
+  "S01": "SOURCE_BOUND_MAPPING_COMPLETE_POLICY_SCHEMA_GAPS",
+  "S03": "PATCHED_TESTED_LOCAL_PARTIAL",
+  "milestones_done": 0,
+  "milestones_total": 6,
+  "full_required_remote_CI": "NOT_EXECUTED",
+  "Linux_dependency_path": "NOT_EXECUTED",
+  "production_database": "NOT_MEASURED",
+  "broker": "NOT_MEASURED",
+  "remote_main_observed": "2b060f8e55beedd21340cda37bfb0a70c238386e",
+  "limitations": [
+    "No active completeness attestor or v3.1 production policy binding",
+    "No logical-pulse merge of twin raw facts without source identity",
+    "Local file/subprocess replay does not prove PostgreSQL atomic durability or runtime recovery",
+    "Original assessment SSOT bytes unavailable; parity not asserted",
+    "Final combined suite includes earlier subsets; repeated runs are not unique-case totals"
+  ]
+}

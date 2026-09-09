@@ -171,6 +171,7 @@ class TestOrchestratorShutdownState:
         from services.orchestrator.state_manager import StateManager
 
         mock_redis = MagicMock()
+        mock_redis.eval.return_value = 1
         mock_pubsub = MagicMock()
         mock_redis.pubsub.return_value = mock_pubsub
         mock_pubsub.get_message.return_value = None
@@ -197,7 +198,7 @@ class TestOrchestratorShutdownState:
             sm.run_forever()
 
         # Verify SHUTDOWN was published (last pipeline call before close)
-        publish_calls = [c for c in mock_redis.pipeline.return_value.publish.call_args_list]
+        publish_calls = [c for c in mock_redis.eval.call_args_list]
         # At least one publish should contain "SHUTDOWN"
         shutdown_published = any("SHUTDOWN" in str(args) for args in publish_calls)
         assert shutdown_published, f"Expected SHUTDOWN publish, got: {publish_calls}"
@@ -207,6 +208,7 @@ class TestOrchestratorShutdownState:
         from services.orchestrator.state_manager import StateManager
 
         mock_redis = MagicMock()
+        mock_redis.eval.return_value = 1
         mock_pubsub = MagicMock()
         mock_redis.pubsub.return_value = mock_pubsub
         mock_pubsub.get_message.return_value = None
@@ -224,7 +226,7 @@ class TestOrchestratorShutdownState:
             call_count += 1
             if call_count >= 1:
                 # NOW make pipeline fail — after BOOT publish succeeded
-                mock_pipe.execute.side_effect = ConnectionError("redis down")
+                mock_redis.eval.side_effect = ConnectionError("redis down")
                 raise KeyboardInterrupt("test exit")
 
         sm.process_once = limited_process

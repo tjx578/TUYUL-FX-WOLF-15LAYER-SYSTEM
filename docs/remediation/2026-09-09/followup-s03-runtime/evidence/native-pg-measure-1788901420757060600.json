@@ -1,0 +1,15 @@
+{
+  "action": "measure",
+  "status": "HOLD",
+  "at_utc": "2026-09-08T21:03:40.757060+00:00",
+  "capacity": {
+    "observed_at_utc": "2026-09-08T21:03:40.757060+00:00",
+    "source": "Windows_GetPerformanceInfo",
+    "committed_bytes": 17940209664,
+    "commit_limit_bytes": 18924924928,
+    "available_physical_bytes": 4810870784,
+    "percent_committed": 94.7967,
+    "guard_limit_percent": 90.0,
+    "guard_pass": false
+  }
+}

@@ -1,0 +1,270 @@
+"""Explicit lifecycle for one disposable native PostgreSQL cluster, never production.
+
+Default action measures capacity. Start requires a fresh <90% commit guard; stop requires verified ownership.
+No existing cluster is initialized, restarted, removed, or reused.
+"""
+from __future__ import annotations
+
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+import socket
+import stat
+import subprocess
+import time
+import uuid
+from ctypes import wintypes
+from datetime import UTC, datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+PG_BIN = Path('C:/Program Files/PostgreSQL/17/bin')
+TEST_PARENT = Path('D:/WOLF15-work/disposable-tests')
+PGDATA = TEST_PARENT / 'wolf15-s03-test-20260909'
+STATE = ROOT / 'native-pg-owned-state.json'
+DB_NAME = 'wolf15_s03_test'
+DB_USER = 'wolf15_fixture'
+FIXTURE_PASSWORD = 'wolf15-disposable-fixture-only-20260909'
+EXPECTED_HASHES = {
+    'postgres.exe': '8ae8bb442e8a4c4fb2c8e9ad38c19aca610ee3cba33afd69249de769f905329b',
+    'initdb.exe': '2ef1b590d0967af7c0ea10bbf1b53195a589c75ef5b5cdc6177aa2b0bee9fe65',
+    'pg_ctl.exe': '595303cede56a05eff6e2ec6e6e8bd5531c13832ba09fab57b1a9e93bc945c34',
+    'psql.exe': 'aa12e27530ac07f129e69daca953ea5f02202a7bde45d503e771abc39016536d',
+}
+
+
+class Hold(RuntimeError):
+    pass
+
+
+class PerformanceInformation(ctypes.Structure):
+    _fields_ = [('cb', wintypes.DWORD)] + [
+        (name, ctypes.c_size_t) for name in (
+            'CommitTotal', 'CommitLimit', 'CommitPeak', 'PhysicalTotal', 'PhysicalAvailable',
+            'SystemCache', 'KernelTotal', 'KernelPaged', 'KernelNonpaged', 'PageSize',
+        )
+    ] + [(name, wintypes.DWORD) for name in ('HandleCount', 'ProcessCount', 'ThreadCount')]
+
+
+def measure_capacity() -> dict:
+    if os.name != 'nt':
+        raise Hold('WINDOWS_CAPACITY_API_REQUIRED')
+    info = PerformanceInformation()
+    info.cb = ctypes.sizeof(info)
+    function = ctypes.WinDLL('psapi', use_last_error=True).GetPerformanceInfo
+    function.argtypes = [ctypes.POINTER(PerformanceInformation), wintypes.DWORD]
+    function.restype = wintypes.BOOL
+    if not function(ctypes.byref(info), info.cb) or not info.CommitLimit:
+        raise Hold('CAPACITY_MEASUREMENT_FAILED')
+    percent = 100.0 * info.CommitTotal / info.CommitLimit
+    return {
+        'observed_at_utc': datetime.now(UTC).isoformat(), 'source': 'Windows_GetPerformanceInfo',
+        'committed_bytes': info.CommitTotal * info.PageSize,
+        'commit_limit_bytes': info.CommitLimit * info.PageSize,
+        'available_physical_bytes': info.PhysicalAvailable * info.PageSize,
+        'percent_committed': round(percent, 4), 'guard_limit_percent': 90.0,
+        'guard_pass': percent < 90.0,
+    }
+
+
+def guard_capacity() -> dict:
+    measured = measure_capacity()
+    record('capacity', 'PASS' if measured['guard_pass'] else 'HOLD', capacity=measured)
+    if not measured['guard_pass']:
+        raise Hold('COMMITTED_MEMORY_NOT_BELOW_90_PERCENT')
+    return measured
+
+
+def record(action: str, status: str, **fields) -> dict:
+    receipt = {'action': action, 'status': status, 'at_utc': datetime.now(UTC).isoformat(), **fields}
+    target = ROOT / f'native-pg-{action}-{time.time_ns()}.json'
+    with target.open('x', encoding='utf-8') as output:
+        json.dump(receipt, output, indent=2)
+    print(json.dumps(receipt), flush=True)
+    return receipt
+
+
+def reject_reparse(path: Path) -> None:
+    for candidate in [path, *path.parents]:
+        if candidate.exists() and candidate.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise Hold('REPARSE_PATH_REJECTED')
+
+
+def validate_paths() -> None:
+    reject_reparse(PGDATA)
+    reject_reparse(STATE)
+    if PGDATA.resolve().parent != TEST_PARENT.resolve() or PGDATA.name != 'wolf15-s03-test-20260909':
+        raise Hold('TEST_PATH_OUTSIDE_FIXED_PARENT')
+
+
+def verify_binaries() -> None:
+    for name, expected in EXPECTED_HASHES.items():
+        path = PG_BIN / name
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise Hold('POSTGRES_BINARY_IDENTITY_MISMATCH')
+
+
+def child_environment() -> dict[str, str]:
+    allow = {'PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP'}
+    result = {key: value for key, value in os.environ.items() if key.upper() in allow}
+    result.update({'PGPASSWORD': FIXTURE_PASSWORD, 'PGCONNECT_TIMEOUT': '5', 'PGCLIENTENCODING': 'UTF8',
+                   'TEMP': str(ROOT), 'TMP': str(ROOT)})
+    return result
+
+
+def run(args: list[str], label: str, timeout: int = 60) -> str:
+    result = subprocess.run(args, env=child_environment(), capture_output=True, text=True,
+                            encoding='utf-8', errors='replace', timeout=timeout,
+                            creationflags=subprocess.CREATE_NO_WINDOW, check=False)
+    (ROOT / f'native-pg-{label}-{time.time_ns()}.log').write_text(
+        result.stdout + result.stderr, encoding='utf-8')
+    if result.returncode:
+        raise Hold(f'{label.upper()}_FAILED_EXIT_{result.returncode}')
+    return result.stdout.strip()
+
+
+def sql(port: int, statement: str, database: str = 'postgres') -> str:
+    return run([str(PG_BIN / 'psql.exe'), '-X', '-w', '-h', '127.0.0.1', '-p', str(port),
+                '-U', DB_USER, '-d', database, '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement], 'sql')
+
+
+def save_state(state: dict, *, exclusive: bool = False) -> None:
+    with STATE.open('x' if exclusive else 'w', encoding='utf-8') as output:
+        json.dump(state, output, indent=2)
+
+
+def start() -> None:
+    guard_capacity()
+    validate_paths()
+    verify_binaries()
+    if PGDATA.exists() or STATE.exists():
+        raise Hold('EXISTING_CLUSTER_OR_OWNER_STATE_NOT_REUSABLE')
+    reserved = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    reserved.bind(('127.0.0.1', 0))
+    port = reserved.getsockname()[1]
+    state = {'schema': 'wolf15.disposable-native-pg/v1', 'owner_nonce': uuid.uuid4().hex,
+             'pgdata': str(PGDATA.resolve()), 'postgres_binary': str((PG_BIN / 'postgres.exe').resolve()),
+             'port': port, 'host': '127.0.0.1', 'database': DB_NAME, 'user': DB_USER,
+             'status': 'INITIALIZING', 'postgres_version': '17.11'}
+    save_state(state, exclusive=True)
+    password_path = ROOT / f'fixture-pg-password-{state["owner_nonce"]}.txt'
+    with password_path.open('x', encoding='utf-8') as output:
+        output.write(FIXTURE_PASSWORD + '\n')
+    try:
+        TEST_PARENT.mkdir(parents=True, exist_ok=True)
+        run([str(PG_BIN / 'initdb.exe'), '-D', str(PGDATA), '-U', DB_USER,
+             '--auth-host=scram-sha-256', '--auth-local=trust', '--encoding=UTF8', '--locale=C',
+             '--pwfile', str(password_path)], 'initdb', timeout=90)
+        guard_capacity()
+        reserved.close()
+        options = (f'-h 127.0.0.1 -p {port} -c shared_buffers=16MB -c max_connections=12 '
+                   '-c work_mem=1MB -c maintenance_work_mem=16MB -c max_worker_processes=0 '
+                   '-c autovacuum=off -c fsync=on -c synchronous_commit=on')
+        run([str(PG_BIN / 'pg_ctl.exe'), '-D', str(PGDATA), '-l', str(ROOT / 'native-pg-server.log'),
+             '-o', options, '-w', '-t', '30', 'start'], 'start', timeout=45)
+        state['pid'] = int((PGDATA / 'postmaster.pid').read_text().splitlines()[0])
+        state['status'] = 'STARTED_PENDING_DATABASE'
+        save_state(state)
+        sql(port, f'CREATE DATABASE {DB_NAME}')
+        sql(port, f"ALTER DATABASE {DB_NAME} SET wolf15.environment_class = 'DISPOSABLE_TEST'")
+        sql(port, f"ALTER DATABASE {DB_NAME} SET wolf15.destructive_tests_allowed = 'true'")
+        binding = sql(port, "SELECT json_build_object('database',current_database(),'host',inet_server_addr(),"
+                      "'port',inet_server_port(),'pgdata',current_setting('data_directory'),"
+                      "'version',version(),'environment_class',current_setting('wolf15.environment_class'),"
+                      "'destructive_tests_allowed',current_setting('wolf15.destructive_tests_allowed'))", DB_NAME)
+        bound = json.loads(binding)
+        if (bound['database'] != DB_NAME or bound['host'] != '127.0.0.1' or bound['port'] != port
+                or Path(bound['pgdata']).resolve() != PGDATA.resolve()
+                or bound['environment_class'] != 'DISPOSABLE_TEST' or bound['destructive_tests_allowed'] != 'true'):
+            raise Hold('DATABASE_BINDING_MISMATCH')
+        state['status'] = 'READY_DISPOSABLE_NATIVE_ONLY'
+        state['binding'] = bound
+        state['fixture_dsn'] = f'postgresql://{DB_USER}:{FIXTURE_PASSWORD}@127.0.0.1:{port}/{DB_NAME}'
+        save_state(state)
+        record('start', state['status'], owner_state_path=str(STATE), binding=bound,
+               fixture_dsn_location='fixture_dsn field in owner_state_path', linux_acceptance=False)
+    except BaseException:
+        # pg_ctl can time out after spawning a server. Preserve an independently
+        # checked ownership binding so a later explicit stop never needs a blind kill.
+        if (PGDATA / 'postmaster.pid').exists():
+            try:
+                possible_pid = int((PGDATA / 'postmaster.pid').read_text().splitlines()[0])
+                candidate = {**state, 'pid': possible_pid}
+                validate_owner(candidate)
+                state['pid'] = possible_pid
+                state['failure_process_binding'] = 'VERIFIED_OWNED_PID'
+            except (Hold, OSError, ValueError, IndexError, KeyError):
+                state['failure_process_binding'] = 'NOT_VERIFIED_NO_BLIND_STOP'
+        state['status'] = 'HOLD_PRESERVED_FOR_OWNER_INSPECTION'
+        save_state(state)
+        raise
+    finally:
+        reserved.close()
+
+
+def process_image(pid: int) -> str:
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    query = kernel.QueryFullProcessImageNameW
+    query.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+    query.restype = wintypes.BOOL
+    handle = kernel.OpenProcess(0x1000, False, pid)
+    if not handle:
+        raise Hold('OWNED_PID_NOT_QUERYABLE')
+    try:
+        length = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(length.value)
+        if not query(handle, 0, buffer, ctypes.byref(length)):
+            raise Hold('OWNED_PID_IMAGE_UNVERIFIED')
+        return buffer.value
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def validate_owner(state: dict) -> None:
+    if (state.get('schema') != 'wolf15.disposable-native-pg/v1' or not state.get('owner_nonce')
+            or Path(state.get('pgdata', '.')).resolve() != PGDATA.resolve()
+            or state.get('host') != '127.0.0.1' or not isinstance(state.get('pid'), int)):
+        raise Hold('OWNED_CLUSTER_BINDING_INVALID')
+    lines = (PGDATA / 'postmaster.pid').read_text().splitlines()
+    if (int(lines[0]) != state['pid'] or Path(lines[1]).resolve() != PGDATA.resolve()
+            or int(lines[3]) != state['port']
+            or Path(process_image(state['pid'])).resolve() != (PG_BIN / 'postgres.exe').resolve()):
+        raise Hold('OWNED_PID_DATA_PORT_OR_BINARY_MISMATCH')
+
+
+def stop() -> None:
+    # Stopping a verified owned instance releases resources. Capacity gates
+    # initialization/start only and must never prevent this cleanup path.
+    validate_paths()
+    verify_binaries()
+    state = json.loads(STATE.read_text(encoding='utf-8'))
+    validate_owner(state)
+    run([str(PG_BIN / 'pg_ctl.exe'), '-D', str(PGDATA), '-m', 'fast', '-w', '-t', '30', 'stop'], 'stop', timeout=45)
+    state['status'] = 'STOPPED_PRESERVED_NO_DELETE'
+    save_state(state)
+    record('stop', state['status'], pgdata=str(PGDATA), owner_nonce=state['owner_nonce'])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['measure', 'start', 'stop'], nargs='?', default='measure')
+    args = parser.parse_args()
+    try:
+        if args.action == 'measure':
+            result = measure_capacity()
+            record('measure', 'PASS' if result['guard_pass'] else 'HOLD', capacity=result)
+            return 0 if result['guard_pass'] else 3
+        {'start': start, 'stop': stop}[args.action]()
+        return 0
+    except (Hold, OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError) as error:
+        record(args.action, 'HOLD', reason=str(error), error_type=type(error).__name__)
+        return 3
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
