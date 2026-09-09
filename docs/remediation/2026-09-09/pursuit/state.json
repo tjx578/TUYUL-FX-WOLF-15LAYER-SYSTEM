@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "95daea01a8132f9e426f66062ff737147884b0d0",
-  "source_verified_at": "2026-09-09T07:02:06.113700+00:00",
+  "source_checkpoint": "7dd28e5f78809303b1d4b927e33c6f469c46cd9b",
+  "source_verified_at": "2026-09-09T07:20:51.985177+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K07_BASELINE_REFRESH_COMPOUNDING_FIXTURE_ACCEPTANCE",
+  "current_slice": "K07_CANONICAL_CANDIDATE_HANDOFF_FIXTURE_ACCEPTANCE",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Continue canonical candidate authority handoff and child policy integration; preserve TEST_ONLY until active bindings and actual Transaction A/database/broker evidence are available.",
+  "next_action_on_resume": "Continue durable candidate revision/advisory separation and bound child-policy interfaces. Keep TEST_ONLY; actual S3-S5 proof provider, active policy and Transaction A/database/broker gates remain open.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_BASELINE_REFRESH_CONTENT_BINDING_AND_COMPOUNDING_FIXTURES",
-  "actual_source_commit": "95daea01a8132f9e426f66062ff737147884b0d0",
+  "previous_goal_turn_classification": "PROGRESS_CANONICAL_CANDIDATE_TO_TARGET_SIZING_CAPACITY_TEST_ONLY",
+  "actual_source_commit": "7dd28e5f78809303b1d4b927e33c6f469c46cd9b",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -765,19 +765,20 @@
       ]
     },
     "K07": {
-      "status": "BASELINE_REFRESH_AND_NEXT_CAMPAIGN_SIZING_LOCAL_PASS_PARTIAL",
+      "status": "CANONICAL_CANDIDATE_HANDOFF_LOCAL_PASS_PARTIAL",
       "DONE": false,
-      "evidence_ref": "evidence/k07-baseline-validation.json",
+      "evidence_ref": "evidence/k07-handoff-validation.json",
       "previous_evidence_refs": [
+        "evidence/k07-baseline-validation.json",
         "evidence/k07-capacity-validation.json",
         "evidence/k07-parent-adapter-validation.json",
         "evidence/reservation-row-validation.json"
       ],
       "remaining": [
-        "Canonical candidate authority handoff and active risk/account/provider binding",
+        "Durable candidate revisions and actual S3-S5 proof/individual-clock consumer binding",
+        "Active risk/account/provider binding and child policy integration",
         "Persistent Transaction A with version/epoch CAS and PostgreSQL recovery",
-        "Actual independent balance/exposure reconciliation, margin and natural execution",
-        "Child eligibility/risk policy and natural family/compounding evidence"
+        "Actual independent balance/exposure reconciliation, margin and natural family/compounding execution"
       ]
     },
     "K08": {
@@ -819,7 +820,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "95daea01a8132f9e426f66062ff737147884b0d0",
+    "source_commit": "7dd28e5f78809303b1d4b927e33c6f469c46cd9b",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,

@@ -1,5 +1,5 @@
 {
-  "source_commit": "95daea01a8132f9e426f66062ff737147884b0d0",
+  "source_commit": "7dd28e5f78809303b1d4b927e33c6f469c46cd9b",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -561,6 +561,56 @@
       "path": "k07-capacity-validation.json",
       "sha256": "9349f3b64d7e95dc7c09e1d982a7ec578a0b0b455b0a704cff072dd8d9d8ca12",
       "bytes": 17359
+    },
+    {
+      "path": "k07-handoff-20260909-a1-collection.log",
+      "sha256": "a44e7709c280820dc7d3e08fc4d3688ef84f6d5be919e7ab47bd83329563f135",
+      "bytes": 23885
+    },
+    {
+      "path": "k07-handoff-20260909-a1-pytest.log",
+      "sha256": "f61b77c9b01f9586c9a0e2986f38f94e8e484f3525ec5278ff2874059181a105",
+      "bytes": 1157
+    },
+    {
+      "path": "k07-handoff-20260909-a1-receipt.json",
+      "sha256": "3f452131c99b09433d8310f94364330e36c8427c6780d9d81734419427fa547c",
+      "bytes": 33211
+    },
+    {
+      "path": "k07-handoff-20260909-a1.xml",
+      "sha256": "a913df1233c01ac805dcf23ecd61ccf6159a3b9e02c38ee32c816c028f649675",
+      "bytes": 30707
+    },
+    {
+      "path": "k07-handoff-20260909-a2-collection.log",
+      "sha256": "3a8129a339348b4ea5c729756fc3d36ec46d3a8ded2f5f8bb4c22623fe1bc9ce",
+      "bytes": 24814
+    },
+    {
+      "path": "k07-handoff-20260909-a2-pytest.log",
+      "sha256": "15a690ee1e03d13641865b8ad0ffbb41af56aee158396140b17e70103136e36d",
+      "bytes": 1157
+    },
+    {
+      "path": "k07-handoff-20260909-a2-receipt.json",
+      "sha256": "3f2dd628a322d4a9cb531b4b9fafb5c14b9b995d748a360c4a0cf3cc2a4553eb",
+      "bytes": 34189
+    },
+    {
+      "path": "k07-handoff-20260909-a2.xml",
+      "sha256": "2be59278bfc4076f0ff538a18ff97226a375fe6d4e68654643136a6eb53f3950",
+      "bytes": 31909
+    },
+    {
+      "path": "k07-handoff-source.diff",
+      "sha256": "0af4cdba1fa85d4001ec270f09935743379482395607aa22fa19782940697894",
+      "bytes": 27563
+    },
+    {
+      "path": "k07-handoff-validation.json",
+      "sha256": "9eb93ef931ac33b70636855ebceb45f24b09a1e0ceaa979b8d97b1773e75d2df",
+      "bytes": 29907
     },
     {
       "path": "k07-parent-adapter-source.diff",
