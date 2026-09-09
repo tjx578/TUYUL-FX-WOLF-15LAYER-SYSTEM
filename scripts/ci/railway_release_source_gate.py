@@ -37,6 +37,24 @@ REQUIRED_STEPS = {
     },
     "CI Gate": {"Evaluate all upstream jobs"},
 }
+RELEASE_WORKFLOWS = {
+    CI_PATH: REQUIRED_STEPS,
+    ".github/workflows/wolf-security-scan.yml": {
+        "pip-audit (Python deps)": {"Run pip-audit (hard-fail)"},
+        "npm audit (Node deps)": {"Validate lockfile sync", "Run npm audit (report)"},
+        "Secret leak scan": {"Scan for secrets (hard-fail)"},
+        "Security Gate": {"Evaluate security results"},
+    },
+    ".github/workflows/docs-hygiene.yml": {
+        "Architecture reading-order integrity": set(),
+        "Legacy docs quarantine": {
+            "No production code may import from docs/legacy/",
+            "docs/legacy/README.md must exist",
+        },
+        "Architecture cross-reference check": {"Check internal markdown links"},
+        "Docs Gate": {"Evaluate docs hygiene jobs"},
+    },
+}
 
 
 class ReleaseGateError(ValueError):
@@ -58,15 +76,18 @@ def validate_receipt(
     workflow: dict[str, Any],
     run: dict[str, Any],
     jobs: list[dict[str, Any]],
+    expected_path: str = CI_PATH,
 ) -> None:
     """Reject missing evidence, source substitution, or successful-but-skipped CI."""
     require(bool(re.fullmatch(r"[0-9a-f]{40}", release_sha)), "release SHA must be full lowercase hex")
     require(release_sha == checkout_sha == remote_main_sha, "checkout/release/current main mismatch")
     require(bool(re.fullmatch(r"[1-9][0-9]*", ci_run_id)), "CI run id must be a positive integer")
     require(str(run.get("id")) == ci_run_id, "CI run id mismatch")
-    require(workflow.get("path") == CI_PATH and workflow.get("state") == "active", "untrusted CI workflow")
+    require(expected_path in RELEASE_WORKFLOWS, "untrusted required workflow")
+    required_steps = RELEASE_WORKFLOWS[expected_path]
+    require(workflow.get("path") == expected_path and workflow.get("state") == "active", "untrusted CI workflow")
     require(run.get("workflow_id") == workflow.get("id") and workflow.get("id") is not None, "workflow id mismatch")
-    require(run.get("path") == CI_PATH, "CI run workflow path mismatch")
+    require(run.get("path") == expected_path, "CI run workflow path mismatch")
     require(run.get("repository", {}).get("full_name") == repository, "CI repository mismatch")
     require(run.get("head_repository", {}).get("full_name") == repository, "fork CI cannot authorize release")
     require(run.get("head_sha") == release_sha and run.get("head_branch") == "main", "CI source mismatch")
@@ -74,7 +95,7 @@ def validate_receipt(
     require(run.get("status") == "completed" and run.get("conclusion") == "success", "CI did not succeed")
     require(isinstance(run.get("run_attempt"), int) and run["run_attempt"] > 0, "missing CI attempt")
     names = [job.get("name") for job in jobs]
-    require(len(names) == len(set(names)) and set(REQUIRED_STEPS).issubset(names), "missing or duplicate CI jobs")
+    require(len(names) == len(set(names)) and set(required_steps).issubset(names), "missing or duplicate CI jobs")
     for job in jobs:
         require(job.get("head_sha") == release_sha, "job source mismatch")
         require(job.get("run_id") == run["id"] and job.get("run_attempt") == run["run_attempt"], "job run mismatch")
@@ -87,7 +108,7 @@ def validate_receipt(
             "failed, skipped, or incomplete CI step",
         )
         require(
-            REQUIRED_STEPS.get(job["name"], set()).issubset({step.get("name") for step in steps}),
+            required_steps.get(job["name"], set()).issubset({step.get("name") for step in steps}),
             "required CI step absent",
         )
 
@@ -101,6 +122,36 @@ def command(args: list[str]) -> str:
 
 def github_json(endpoint: str) -> Any:
     return json.loads(command(["gh", "api", "-H", "Accept: application/vnd.github+json", endpoint]))
+
+
+def collect_jobs(prefix: str, run: dict[str, Any]) -> list[dict[str, Any]]:
+    attempt = run.get("run_attempt")
+    require(isinstance(attempt, int) and attempt > 0, "missing CI attempt")
+    jobs: list[dict[str, Any]] = []
+    for page in range(1, 101):
+        response = github_json(f"{prefix}/runs/{run['id']}/attempts/{attempt}/jobs?per_page=100&page={page}")
+        batch = response.get("jobs", [])
+        jobs.extend(batch)
+        if len(jobs) == response.get("total_count"):
+            return jobs
+        require(bool(batch), "incomplete jobs pagination")
+    raise ReleaseGateError("jobs pagination limit exceeded")
+
+
+def latest_required_run(response: dict[str, Any], release_sha: str) -> dict[str, Any]:
+    runs = response.get("workflow_runs", [])
+    require(len(runs) == response.get("total_count"), "required workflow history incomplete")
+    eligible = [
+        run
+        for run in runs
+        if run.get("head_sha") == release_sha
+        and run.get("head_branch") == "main"
+        and run.get("event") in {"push", "workflow_dispatch"}
+    ]
+    require(bool(eligible), "required workflow has no exact-source main run")
+    require(all(isinstance(run.get("id"), int) and run["id"] > 0 for run in eligible), "invalid required run id")
+    # Do not fall back to an older success while the newest run is failing/pending.
+    return max(eligible, key=lambda run: run["id"])
 
 
 def main() -> int:
@@ -124,16 +175,7 @@ def main() -> int:
         run = github_json(f"{prefix}/runs/{ci_run_id}")
         attempt = run.get("run_attempt")
         require(isinstance(attempt, int) and attempt > 0, "missing CI attempt")
-        jobs: list[dict[str, Any]] = []
-        for page in range(1, 101):
-            response = github_json(f"{prefix}/runs/{ci_run_id}/attempts/{attempt}/jobs?per_page=100&page={page}")
-            batch = response.get("jobs", [])
-            jobs.extend(batch)
-            if len(jobs) == response.get("total_count"):
-                break
-            require(bool(batch), "incomplete jobs pagination")
-        else:
-            raise ReleaseGateError("jobs pagination limit exceeded")
+        jobs = collect_jobs(prefix, run)
         require(not command(["git", "status", "--porcelain", "--untracked-files=all"]), "release checkout is dirty")
         current_main = command(["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"]).split()[0]
         validate_receipt(
@@ -146,12 +188,44 @@ def main() -> int:
             run=run,
             jobs=jobs,
         )
-        latest_run = github_json(f"{prefix}/runs/{ci_run_id}")
+        verified_runs = [run]
+        for path in RELEASE_WORKFLOWS:
+            if path == CI_PATH:
+                continue
+            name = path.rsplit("/", 1)[1]
+            required_workflow = github_json(f"{prefix}/workflows/{name}")
+            response = github_json(f"{prefix}/workflows/{name}/runs?head_sha={release_sha}&branch=main&per_page=100")
+            required_run = latest_required_run(response, release_sha)
+            validate_receipt(
+                release_sha=release_sha,
+                checkout_sha=release_sha,
+                remote_main_sha=current_main,
+                repository=repository,
+                ci_run_id=str(required_run["id"]),
+                workflow=required_workflow,
+                run=required_run,
+                jobs=collect_jobs(prefix, required_run),
+                expected_path=path,
+            )
+            verified_runs.append(required_run)
+        for verified in verified_runs:
+            name = verified["path"].rsplit("/", 1)[1]
+            current = latest_required_run(
+                github_json(f"{prefix}/workflows/{name}/runs?head_sha={release_sha}&branch=main&per_page=100"),
+                release_sha,
+            )
+            require(current["id"] == verified["id"], "new required workflow run supersedes verified evidence")
+            latest_run = github_json(f"{prefix}/runs/{verified['id']}")
+            require(
+                latest_run.get("head_sha") == release_sha
+                and latest_run.get("run_attempt") == verified["run_attempt"]
+                and latest_run.get("status") == "completed"
+                and latest_run.get("conclusion") == "success",
+                "required workflow was rerun or changed during verification",
+            )
         require(
-            latest_run.get("run_attempt") == attempt
-            and latest_run.get("status") == "completed"
-            and latest_run.get("conclusion") == "success",
-            "CI was rerun or changed during verification",
+            command(["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"]).split()[0] == release_sha,
+            "main advanced during verification",
         )
         print(f"PASS_EXACT_SOURCE_CI sha={release_sha} run_id={ci_run_id} attempt={attempt}")
         return 0

@@ -1,5 +1,5 @@
 {
-  "source_commit": "9fcfd80c058178116db31d498c45546746873ad6",
+  "source_commit": "ae2abc5694e8dae478b9ebc90af3e66b4b17e48f",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -3548,6 +3548,41 @@
       "bytes": 32076
     },
     {
+      "path": "p1-ci-20260909/34352508173/github-run.json",
+      "sha256": "32b402ba3ac5fc6eb823a22fd22b9cd78e731eb94f8d8d71feb483dca7d8ac30",
+      "bytes": 5995
+    },
+    {
+      "path": "p1-ci-20260909/34352508173/secret-scan/receipt.json",
+      "sha256": "66912ff0468f563b74f1773235510ed9910ac146964f64662e8419ebb2f61d0b",
+      "bytes": 33850
+    },
+    {
+      "path": "p1-ci-20260909/34352508180/built-api/image-id.txt",
+      "sha256": "c86220d3a17aca5a2d962fe3d659e83ede93ff802b83d22b3d21884fccff888a",
+      "bytes": 71
+    },
+    {
+      "path": "p1-ci-20260909/34352508180/built-api/receipt.json",
+      "sha256": "ee81088d79d8b0197f798f9ed0b8f768e6b5fa5416f31803d71fe99d195ccf4d",
+      "bytes": 1157
+    },
+    {
+      "path": "p1-ci-20260909/34352508180/github-run.json",
+      "sha256": "5942e4307f34b07ba23471090e89834e23131add9c6817a7457cde404b258a00",
+      "bytes": 15352
+    },
+    {
+      "path": "p1-ci-20260909/34352508180/python-suite/benchmark.xml",
+      "sha256": "21798330313c50e13bd361b0405d566beedefba52594315970315dbb70642cbe",
+      "bytes": 1054
+    },
+    {
+      "path": "p1-ci-20260909/34352508180/python-suite/tests.xml",
+      "sha256": "29eda51fd56d3df3ca9a6f57d95bc7089be3fed18f8d681d489b52a83b712cb8",
+      "bytes": 1377163
+    },
+    {
       "path": "p1-ci-20260909/api-required-task-built-review.json",
       "sha256": "939956d73cc4a6f1c61c08cba7b30e65d61231c347e15b906bae793c5af1b597",
       "bytes": 5003
@@ -3561,6 +3596,11 @@
       "path": "p1-ci-20260909/consumer-role-process-bound-review.json",
       "sha256": "990f3f544d95dd8d6b37ae4f32213dac6ab5eb7b2304559453263cb4703ec045",
       "bytes": 10013
+    },
+    {
+      "path": "p1-ci-20260909/disabled-profile-release-gate-review.json",
+      "sha256": "232e3ef7bc1a83219d435a57fce4d909f89ead4f690dc40ba5734ad84d7fb82c",
+      "bytes": 3097
     },
     {
       "path": "p1-ci-20260909/no-skip-supervisor-review.json",
@@ -3586,6 +3626,26 @@
       "path": "p1-ci-20260909/p1-boot-a1.xml",
       "sha256": "1303ae08a52e80546ea11f67725d5e655617c2692be699b89ed6496489cea228",
       "bytes": 9256
+    },
+    {
+      "path": "p1-ci-20260909/p1-disabled-a1-collection.log",
+      "sha256": "f17d18eee52e6afd31c751c9770005227c9b43af25f7929d26aacb87e9dc8830",
+      "bytes": 18479
+    },
+    {
+      "path": "p1-ci-20260909/p1-disabled-a1-pytest.log",
+      "sha256": "a4f83789e53294a5660687739613c4f264d516b99d538679f41fb8dcf772145d",
+      "bytes": 1149
+    },
+    {
+      "path": "p1-ci-20260909/p1-disabled-a1-receipt.json",
+      "sha256": "8cbca485e1080bec35b174e9f619309e3fe611aff5d8b5f7c64aa9bd78c92d56",
+      "bytes": 24904
+    },
+    {
+      "path": "p1-ci-20260909/p1-disabled-a1.xml",
+      "sha256": "71fcf1743e8be03390f37c0e5cb439e363dcd5de3080469632d9a8bd3a49f9de",
+      "bytes": 24120
     },
     {
       "path": "p1-ci-20260909/p1-fix-a1-collection.log",
@@ -3786,6 +3846,46 @@
       "path": "p1-ci-20260909/p1-rel-a1.xml",
       "sha256": "fc7a1133c9a62f77e66d356ca816eae9e23edf161f23bfacb8648685e5e4b59b",
       "bytes": 9606
+    },
+    {
+      "path": "p1-ci-20260909/p1-release-gates-a1-collection.log",
+      "sha256": "e201b57eb61731d97863d270e11432e057992b84bc694d06e3a24dfd40c35d52",
+      "bytes": 9270
+    },
+    {
+      "path": "p1-ci-20260909/p1-release-gates-a1-pytest.log",
+      "sha256": "eeb3cdab3e578468c6f2e894dc82ad883618e379e50d23d4ef30dc011ba79cda",
+      "bytes": 990
+    },
+    {
+      "path": "p1-ci-20260909/p1-release-gates-a1-receipt.json",
+      "sha256": "41d436f006da2c83612b06d27acd543eaffc83a0a33bc7942194e6edc95c0875",
+      "bytes": 15041
+    },
+    {
+      "path": "p1-ci-20260909/p1-release-gates-a1.xml",
+      "sha256": "35b376c12d15b5b9d2d07521a40665be4526a3b83d047d690eee39d2ec34523d",
+      "bytes": 11576
+    },
+    {
+      "path": "p1-ci-20260909/p1-release-gates-a2-collection.log",
+      "sha256": "f294b38a9498b6d0b3a4163ec333307f5dd6fe11b0da362ee17c8629460746a5",
+      "bytes": 9830
+    },
+    {
+      "path": "p1-ci-20260909/p1-release-gates-a2-pytest.log",
+      "sha256": "3e99057dbddaa79df722d9a68a65e789175d04fdb34fb948e1306fe16805cf37",
+      "bytes": 1072
+    },
+    {
+      "path": "p1-ci-20260909/p1-release-gates-a2-receipt.json",
+      "sha256": "c9e1b9f8671c2aa6d7b0f1ac04bd423bedccb2da3d7f65d103134a87620b50c7",
+      "bytes": 15636
+    },
+    {
+      "path": "p1-ci-20260909/p1-release-gates-a2.xml",
+      "sha256": "f3e8d9ca311017904e599f356a21133c3842cefe3bae07685c8a05aa95bb4e43",
+      "bytes": 12332
     },
     {
       "path": "p1-ci-20260909/p1-run34339544343.json",

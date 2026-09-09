@@ -1,19 +1,11 @@
 # Docs hygiene — verify architecture reading order, legacy quarantine,
-# and broken cross-references.  Runs on push/PR when docs change.
+# and broken cross-references. Always runs for the required Docs Gate context.
 
 name: Docs Hygiene
 
 on:
   push:
-    paths:
-      - "docs/**"
-      - "contracts/README.md"
-      - ".github/workflows/docs-hygiene.yml"
   pull_request:
-    paths:
-      - "docs/**"
-      - "contracts/README.md"
-      - ".github/workflows/docs-hygiene.yml"
   workflow_dispatch:
 
 permissions:

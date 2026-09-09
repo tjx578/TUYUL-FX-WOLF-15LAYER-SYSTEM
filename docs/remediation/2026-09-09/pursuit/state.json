@@ -34,7 +34,8 @@
         "evidence/strategy-audit.json",
         "evidence/release-audit.json",
         "validation.json",
-        "pursuit/evidence/p1-ci-20260909/validation.json"
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
       ]
     },
     "C02": {
@@ -78,7 +79,8 @@
         "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
         "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
-        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
       ]
     },
     "C04": {
@@ -115,12 +117,13 @@
         "evidence/release-audit.json",
         "validation.json",
         "pursuit/evidence/p1-ci-20260909/validation.json",
-        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
       ]
     },
     "C06": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "BUILT_API_RESISTANT_PROCESS_BOUND_PASS_OTHER_ROLES_OPEN",
+      "execution_stage": "BUILT_API_TEN_CASES_PASS_ENGINE_AND_OTHER_ROLES_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -133,7 +136,8 @@
         "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
         "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
-        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json",
+        "pursuit/evidence/p1-ci-20260909/disabled-profile-release-gate-review.json"
       ]
     },
     "S01": {
@@ -872,7 +876,7 @@
   "next_frontier": [
     "C01_ALTERNATE_CANARY_EQUIVALENT_GATE",
     "C02_RUNTIME_OWNER_AND_LEGACY_ZERO_SUBMIT",
-    "C06_OTHER_REQUIRED_ROLE_SUPERVISION",
+    "C06_ENGINE_SHARED_PROBE_AND_FATAL_LIFECYCLE",
     "K05_POST_PROOF_VALIDITY"
   ],
   "publication": {
@@ -881,7 +885,7 @@
     "pr": 428,
     "draft": false,
     "push": "PR428_PUBLISHED_9FCFD80C",
-    "reason": "Current CI and security PASS; externally changed to ready for review. Remaining action scopes and required review keep merge/deployment HOLD.",
+    "reason": "ae2abc56 CI passed; Security Gate failed on reviewed source-digest false positive. Review repair and all-required-workflow source gate await next CI. Merge and deployment HOLD.",
     "no_main_merge": true,
     "no_deployment": true,
     "merge": "HOLD"
