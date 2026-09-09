@@ -1,0 +1,132 @@
+{
+  "schema_version": "wolf15/collected-pg-inventory-v1",
+  "source_commit": "d2487ae02cdcbe8322e3ed8cf2b5b88fa0337cd0",
+  "scope": "SIX_CURRENT_V31_POSTGRES_MODULES_NOT_ALL_REPOSITORY_TESTS",
+  "runtime_executed": false,
+  "unique_pg_total": 87,
+  "groups": [
+    {
+      "path": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "sha256": "4dcfe6e942ba6d39421b3013a0eb6edcca60e8a4a3889e7f41f076241819c02c",
+      "collected_test_ids": [
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_real_service_caller_300_seconds_restart_and_replay",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_restart_in_fresh_python_process_reads_postgres_not_memory",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_concurrent_connections_do_not_duplicate_activity_or_observation",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_crash_rolls_back_outcome_attachment_and_watermark",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_failure_cases_through_caller_persist_explicit_outcomes[missing_checkpoint-INDETERMINATE_RAW_AUTHORITY_COVERAGE]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_failure_cases_through_caller_persist_explicit_outcomes[missing_policy-PAIR_ACTIVITY_POLICY_UNBOUND]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_failure_cases_through_caller_persist_explicit_outcomes[incomplete-INDETERMINATE_RAW_AUTHORITY_COVERAGE]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_failure_cases_through_caller_persist_explicit_outcomes[missing_population-INDETERMINATE_RAW_AUTHORITY_COVERAGE]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_failure_cases_through_caller_persist_explicit_outcomes[gap-SUSPENDED_SOURCE_GAP]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_backfill_requires_reconciliation_and_keeps_one_frozen_admission",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_conflicting_source_identity_rolls_back_raw_append",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_immutable_ledger_binding_rejected",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[hypothesis_authority-True]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[hypothesis_authority-None]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[hypothesis_authority-false]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[hypothesis_authority-missing]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[risk_authority-True]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[risk_authority-None]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[risk_authority-false]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[risk_authority-missing]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[execution_authority-True]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[execution_authority-None]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[execution_authority-false]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[execution_authority-missing]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[valid_for_execution-True]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[valid_for_execution-None]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[valid_for_execution-false]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_postgres_itself_rejects_authority_escalation_or_null[valid_for_execution-missing]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_stale_worker_cannot_rewind_committed_watermark",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_temporary_coverage_loss_recovers_original_frozen_admission",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_incomplete_coverage_does_not_advance_covered_watermark",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_producer_twins_and_duplicate_deliveries_have_one_durable_observation",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[True-hypothesis_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[True-risk_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[True-execution_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[None-hypothesis_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[None-risk_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[None-execution_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[false-hypothesis_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[false-risk_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[false-execution_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[missing-hypothesis_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[missing-risk_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_snapshot_database_guard_requires_boolean_false_for_all_authorities[missing-execution_authority]",
+        "tests/integration/test_pair_activity_runtime_postgres.py::test_database_authority_guards_accept_actual_boolean_false_control"
+      ]
+    },
+    {
+      "path": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "sha256": "009162bc6bbbc52ef4d0c009111a0a7b5a5163f0be7cd7e743f15afb5df42b6d",
+      "collected_test_ids": [
+        "tests/integration/test_activity_delivery_producer_postgres.py::test_producer_duplicate_restart_keeps_first_envelope",
+        "tests/integration/test_activity_delivery_producer_postgres.py::test_producer_outbox_failure_rolls_back_evaluation_snapshot_and_counter",
+        "tests/integration/test_activity_delivery_producer_postgres.py::test_relay_ack_loss_keeps_payload_after_database_lease_expiry",
+        "tests/integration/test_activity_delivery_producer_postgres.py::test_committed_envelope_is_database_immutable",
+        "tests/integration/test_activity_delivery_producer_postgres.py::test_new_evaluation_same_revision_has_committed_predecessor",
+        "tests/integration/test_activity_delivery_producer_postgres.py::test_concurrent_duplicate_evaluation_allocates_once",
+        "tests/integration/test_activity_delivery_producer_postgres.py::test_relay_waits_for_predecessor_ack"
+      ]
+    },
+    {
+      "path": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "sha256": "86632c3677d80d2a71ac4dfe975939c2379523fd525b008828768d3149ce2140",
+      "collected_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[mappings]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[emissions]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[inbox]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[consumer_cursors]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_legacy_writer_and_old_owner_cannot_bypass_handover",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_payload_conflict_quarantined_in_database",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_successor_waits_for_consumer_predecessor",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_existing_advisory_lifecycle_is_attached_without_remint",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_concurrent_consumer_duplicate_has_one_effect",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_fresh_consumer_after_restart_recovers_committed_inbox"
+      ]
+    },
+    {
+      "path": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "sha256": "112ac1e95803267961b66038c944b09dd9f66aec091fb6512b51b3aad852756c",
+      "collected_test_ids": [
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[restart_duplicate]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[rollback]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[concurrent_duplicate]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[payload_conflict]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[advisory_canonical]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[stale_owner]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[raw_mutation]"
+      ]
+    },
+    {
+      "path": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "sha256": "c8ca0ff1fe3d98bf7e800492d903d368e6bc5e77986e58d0971f84ed233e1aed",
+      "collected_test_ids": [
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialize_restart]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialize_concurrent]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[initialization_rollback]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[owner_handover]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[raw_write_fenced]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_restart_duplicate]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_concurrent_duplicate]",
+        "tests/integration/test_capacity_persistence_v31_postgres.py::test_capacity_persistence_postgres_acceptance[parent_rollback]"
+      ]
+    },
+    {
+      "path": "tests/integration/test_transaction_a_v31_postgres.py",
+      "sha256": "de76b4ebd78e4a4e815fa8fd525568f5689393a2a7086649866edf9a3e579a9c",
+      "collected_test_ids": [
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[commit]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[restart_duplicate]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[concurrent_duplicate]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[conflicting_replay]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_capacity]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_campaigns]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_parent_legs]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_signal_previews]",
+        "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_outbox]"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "results": {
+    "consumer-heads": {
+      "exit_code": 0,
+      "command": [
+        "-m",
+        "alembic",
+        "heads"
+      ]
+    },
+    "consumer-offline-sql": {
+      "exit_code": 0,
+      "command": [
+        "-m",
+        "alembic",
+        "upgrade",
+        "20260909_02:20260909_03",
+        "--sql"
+      ]
+    }
+  },
+  "scope": "NO_DATABASE_EXECUTION",
+  "versions": {
+    "fastapi": "0.141.1",
+    "pydantic": "2.9.2",
+    "psycopg": "3.2.4",
+    "asyncpg": "0.30.0",
+    "httpx": "0.27.2"
+  }
+}

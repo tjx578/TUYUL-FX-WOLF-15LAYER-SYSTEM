@@ -1,0 +1,124 @@
+{
+  "schema_version": "audit-wolf15-constitution/decision-envelope-v1",
+  "task_type": "PROMPT_AUDIT",
+  "source_binding": "BOUND",
+  "sources": [
+    {
+      "id": "master-goal",
+      "kind": "SOURCE_DOCUMENT",
+      "locator": "WOLF15_PURSUIT_GOAL.md",
+      "sha256": "323befc5281ae0eb1f014a75f8990dba748b0332e4f810cadf7910937c1faff6",
+      "observed_at": "2026-09-09T03:58:32.088982+00:00"
+    },
+    {
+      "id": "launch",
+      "kind": "SOURCE_DOCUMENT",
+      "locator": "START_CODEX_DESKTOP.md",
+      "sha256": "958bb5820904b0bafc1471ce49d4ee7c02854b8efcf27961e6e008a1439b2ed4",
+      "observed_at": "2026-09-09T03:58:32.088982+00:00"
+    },
+    {
+      "id": "goap",
+      "kind": "SOURCE_DOCUMENT",
+      "locator": "WOLF15_PURSUIT_PLAN.json",
+      "sha256": "9986dd171febdcd13cad94e58c892a4cfcd8b0c5b4e3f204ab5e72ef8645cad9",
+      "observed_at": "2026-09-09T03:58:32.088982+00:00"
+    },
+    {
+      "id": "reported-checkpoint",
+      "kind": "SOURCE_DOCUMENT",
+      "locator": "sources/latest-reported-checkpoint.json",
+      "sha256": "6cfcd900694cf1cdeff2247aa950567bdc1591b95659f77fa9144613a8866bec",
+      "observed_at": "2026-09-09T03:58:32.088982+00:00"
+    },
+    {
+      "id": "backlog",
+      "kind": "SOURCE_DOCUMENT",
+      "locator": "sources/canonical-backlog-41.csv",
+      "sha256": "9672d5bf6e07b3d6db5f6d6cd92f903ce53fec12369df744c88aaab7ce1c8490",
+      "observed_at": "2026-09-09T03:58:32.088982+00:00"
+    },
+    {
+      "id": "audit-review",
+      "kind": "SOURCE_DOCUMENT",
+      "locator": "review/authority-review.md",
+      "sha256": "d9c7d8214c38e6ffa8fe3a0232e07c06d3428d6f74093a1db6832efe3be77c03",
+      "observed_at": "2026-09-09T03:58:32.088982+00:00"
+    }
+  ],
+  "claims": [
+    {
+      "id": "pursuit-boundaries",
+      "text": "The authored pursuit contract separates implementation, runtime proof, scoped operations, natural family goals and REAL review.",
+      "evidence_status": "DERIVED",
+      "claim_type": "SCENARIO",
+      "evidence_ids": [
+        "master-goal",
+        "launch",
+        "goap",
+        "audit-review"
+      ]
+    },
+    {
+      "id": "checkpoint-reported",
+      "text": "Latest PR428 source/publication and test counts are user-reported; the local snapshot records this attribution.",
+      "evidence_status": "USER_CLAIM",
+      "claim_type": "FACT",
+      "evidence_ids": [
+        "reported-checkpoint"
+      ]
+    },
+    {
+      "id": "runtime-not-measured",
+      "text": "Current remote source, runtime closure and broker readiness were not independently verified during planning.",
+      "evidence_status": "NOT_MEASURED",
+      "claim_type": "UNKNOWN",
+      "evidence_ids": []
+    }
+  ],
+  "authority": {
+    "analysis_owner": "L1-L11_ANALYSIS_ONLY",
+    "constitutional_owner": "L12_REPORTED_ONLY",
+    "risk_owner": "RISK_DASHBOARD_ONLY",
+    "execution_owner": "BLIND_EXECUTOR_NO_STRATEGY",
+    "journal_role": "RECORD_ONLY",
+    "enrichment_role": "ADVISORY_ONLY",
+    "controls": {
+      "execution_authority": false,
+      "broker_side_effect_allowed": false,
+      "order_send_eligible": false,
+      "final_size_authorized": false,
+      "external_mutation_authorized": false
+    }
+  },
+  "pipeline": {
+    "applicable": true,
+    "status": "NOT_MEASURED",
+    "model": "NOT_MEASURED",
+    "v11_l12_relation": "NOT_MEASURED",
+    "evidence_ids": [
+      "master-goal"
+    ]
+  },
+  "states": {
+    "audit_verdict": "HOLD",
+    "analysis_state": "NOT_APPLICABLE",
+    "constitutional_verdict": "NOT_OBSERVED",
+    "risk_approval": "NOT_OBSERVED",
+    "execution_status": "NOT_AUTHORIZED",
+    "authority_evidence_ids": []
+  },
+  "unresolved": [
+    "runtime-not-measured",
+    "Fresh repository and runner bindings are Desktop G00 tasks; runtime policy, consumer deployment and DEMO bindings remain external preconditions."
+  ],
+  "response_sections": [
+    "Tujuan Prompt",
+    "Kekuatan",
+    "Celah / Ambiguitas",
+    "Risiko Authority Drift",
+    "Perbaikan Disarankan",
+    "Versi Revisi",
+    "Catatan Implementasi"
+  ]
+}

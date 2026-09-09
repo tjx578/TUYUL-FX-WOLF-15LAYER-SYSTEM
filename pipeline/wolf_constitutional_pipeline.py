@@ -451,7 +451,10 @@ class WolfConstitutionalPipeline:
             throttle_intel_max_events = max(100, int(os.getenv("SIGNAL_THROTTLE_INTEL_MAX_EVENTS", "20000")))
         except (TypeError, ValueError):
             throttle_intel_max_events = 20000
+        from analysis.strategy_5scr_activity_service import activity_runtime_from_environment
+
         self._signal_throttle_live_analyzer = SignalThrottleLiveAnalyzer(
+            pair_activity_runtime=activity_runtime_from_environment(),
             latest_window_minutes=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_LATEST_WINDOW_MINUTES", 60.0)),
             retention_seconds=int(self._parse_env_float("SIGNAL_THROTTLE_INTEL_RETENTION_SECONDS", 7200.0)),
             max_events=throttle_intel_max_events,
@@ -6616,9 +6619,12 @@ class WolfConstitutionalPipeline:
             reference_status = "MARKET_CLOSED"
             reference_is_live = False
         elif quote_health.status in {"PRICE_QUALITY_WARMING_UP", "INSUFFICIENT_HISTORY"}:
-            reference_status = quote_health.status
             reference_is_live = False
-            freshness = quote_health.status
+            # Detector warmup does not erase an already observed stale feed.
+            # Quote quality is exposed separately and still blocks execution.
+            if reference_status != "STALE":
+                reference_status = quote_health.status
+                freshness = quote_health.status
         payload = {
             "decision_price_role": "REFERENCE_ONLY_NOT_EXECUTABLE",
             "reference_price_used_for_decision_update": price,
@@ -7004,6 +7010,10 @@ class WolfConstitutionalPipeline:
     ) -> dict[str, Any]:
         """Expose block/window metrics without changing legacy pressure gating."""
 
+        from analysis.strategy_5scr_pair_activity_report import (
+            pair_activity_observability_fields,
+        )
+
         symbol_key = str(symbol or "").upper()
         symbol_activity_raw = report.get("symbol_activity")
         symbol_activity = symbol_activity_raw if isinstance(symbol_activity_raw, dict) else {}
@@ -7076,6 +7086,7 @@ class WolfConstitutionalPipeline:
             pressure_count_scope = "ANALYZER_WINDOW_SYMBOL_EVENTS"
 
         return {
+            **pair_activity_observability_fields(symbol=symbol_key, report=report),
             "pair_eligible_for_analysis": bool(admission),
             "pair_admission_id": admission.get("pair_admission_id"),
             "pair_admission_status": admission.get("status") if admission else "NOT_GRANTED",

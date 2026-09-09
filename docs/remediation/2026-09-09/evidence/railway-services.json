@@ -1,0 +1,1942 @@
+[
+  {
+    "service": {
+      "id": "14ae9a1e-7db6-4be7-92eb-8e56f81e7228",
+      "name": "wolf15-runtime-maintenance"
+    },
+    "config": {
+      "source": {
+        "image": "ghcr.io/tjx578/wolf15-d1-release@sha256:7a400ba95277b29c27c654eb54e7db9167a5eddb85366845d6beef564e5f5071"
+      },
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "deploy": {
+        "startCommand": "LONG_ENCODED_COMMAND_OMITTED",
+        "preDeployCommand": [],
+        "restartPolicyType": "NEVER",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "volumeMounts": {
+        "b143e6e5-380c-4ef3-b2d5-a08067029296": {
+          "mountPath": "/runtime-control"
+        }
+      }
+    },
+    "variableNames": [
+      "ALLOW_MARKET_EXECUTION",
+      "APP_ENV",
+      "CANARY_ISSUANCE_ENABLED",
+      "DATABASE_URL",
+      "EA_COMMAND_DELIVERY_ENABLED",
+      "ENV",
+      "EXECUTION_ENABLED",
+      "MT5_ORDER_SEND_ENABLED",
+      "RAILWAY_RUN_UID",
+      "REDIS_URL",
+      "RISK_RESERVATION_ENABLED",
+      "STRATEGY_5SCR_EXECUTION_ENABLED",
+      "WOLF15_CONTROL_ENVIRONMENT_KIND",
+      "WOLF15_CONTROL_EXPECTED_RECEIPT_SHA256",
+      "WOLF15_CONTROL_OPERATION_ID",
+      "WOLF15_CONTROL_SERVICE_ID",
+      "WOLF15_CONTROL_VOLUME_ID",
+      "WOLF15_EMBED_ORCHESTRATOR",
+      "WOLF15_LOAD_DOTENV",
+      "WOLF15_STORAGE_CLI_SHA256"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 20,
+      "config": {},
+      "variableNames": [
+        "ALLOW_MARKET_EXECUTION",
+        "APP_ENV",
+        "CANARY_ISSUANCE_ENABLED",
+        "DATABASE_URL",
+        "EA_COMMAND_DELIVERY_ENABLED",
+        "ENV",
+        "EXECUTION_ENABLED",
+        "MT5_ORDER_SEND_ENABLED",
+        "RAILWAY_RUN_UID",
+        "REDIS_URL",
+        "RISK_RESERVATION_ENABLED",
+        "STRATEGY_5SCR_EXECUTION_ENABLED",
+        "WOLF15_CONTROL_ENVIRONMENT_KIND",
+        "WOLF15_CONTROL_EXPECTED_RECEIPT_SHA256",
+        "WOLF15_CONTROL_OPERATION_ID",
+        "WOLF15_CONTROL_SERVICE_ID",
+        "WOLF15_CONTROL_VOLUME_ID",
+        "WOLF15_EMBED_ORCHESTRATOR",
+        "WOLF15_LOAD_DOTENV",
+        "WOLF15_STORAGE_CLI_SHA256"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "20363410-fc36-4b4f-9a36-54ac565bd673",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-08T00:34:03.343Z",
+        "updatedAt": "2026-09-08T00:35:10.561Z",
+        "serviceId": "14ae9a1e-7db6-4be7-92eb-8e56f81e7228",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "a5518afc-5bff-4ca8-978c-05942df03ddd",
+        "meta": {
+          "reason": "deploy",
+          "image": "ghcr.io/tjx578/wolf15-d1-release@sha256:7a400ba95277b29c27c654eb54e7db9167a5eddb85366845d6beef564e5f5071"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "57af3e58-a31b-48b7-8904-371f976d797e",
+      "name": "wolf15-auditor"
+    },
+    "config": {
+      "source": {
+        "image": "ghcr.io/tjx578/wolf15-auditor@sha256:550202aa6cf1d740e9dfc64dc1ebe1a523f471bf1c4dc1e39d470dadc384f788",
+        "rootDirectory": "ghcr.io/tjx578/wolf15-auditor:v2-e3331756069f"
+      },
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "deploy": {
+        "startCommand": "LONG_ENCODED_COMMAND_OMITTED",
+        "restartPolicyType": "NEVER",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "volumeMounts": {
+        "2b65a875-c1a5-487b-9cff-5a8c3dc2df19": {
+          "mountPath": "/audit-data/results"
+        }
+      }
+    },
+    "variableNames": [
+      "RAILWAY_RUN_UID",
+      "WOLF15_AUDITOR_PASSWORD"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 2,
+      "config": {},
+      "variableNames": [
+        "RAILWAY_RUN_UID",
+        "WOLF15_AUDITOR_PASSWORD"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "e5e24327-09f1-4c84-ab47-43f13913a52b",
+        "status": "REMOVED",
+        "createdAt": "2026-09-07T17:51:54.670Z",
+        "updatedAt": "2026-09-07T17:53:30.147Z",
+        "serviceId": "57af3e58-a31b-48b7-8904-371f976d797e",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "e539e018-6259-45d4-9fd1-b92b209760da",
+        "meta": {
+          "reason": "deploy",
+          "image": "ghcr.io/tjx578/wolf15-auditor@sha256:550202aa6cf1d740e9dfc64dc1ebe1a523f471bf1c4dc1e39d470dadc384f788"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "b9cd6d24-beae-4211-b475-9b3bfe78b392",
+      "name": "WOLF15-DASHBOARD-FRONTEND"
+    },
+    "config": {
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "deploy": {
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "networking": {
+        "serviceDomains": {
+          "wolf15-dashboard-frontend-production.up.railway.app": {
+            "port": 8080
+          }
+        },
+        "privateNetworkEndpoint": "wolf15-dashboard-frontend"
+      }
+    },
+    "variableNames": [
+      "DASHBOARD_MODE",
+      "INTERNAL_API_URL",
+      "INTERNAL_DASHBOARD_BFF_URL"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 3,
+      "config": {},
+      "variableNames": [
+        "DASHBOARD_MODE",
+        "INTERNAL_API_URL",
+        "INTERNAL_DASHBOARD_BFF_URL"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "bfc41a75-eaa7-48a9-a6c1-14e747399c2d",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-06T08:46:32.227Z",
+        "updatedAt": "2026-09-06T08:47:40.854Z",
+        "serviceId": "b9cd6d24-beae-4211-b475-9b3bfe78b392",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "796f6b03-9ccf-4d63-9e5f-75c0b590b012",
+        "meta": {
+          "reason": "deploy"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "f6403cfe-e50c-4acf-beeb-6f9cd07f0080",
+      "name": "wolf15-ea-bridge"
+    },
+    "config": {
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "configFile": "/railway-ea-bridge.toml",
+      "deploy": {
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "networking": {
+        "serviceDomains": {
+          "wolf15-ea-bridge-production.up.railway.app": {}
+        }
+      }
+    },
+    "variableNames": [
+      "ALLOW_MARKET_EXECUTION",
+      "CANARY_ISSUANCE_ENABLED",
+      "DATABASE_URL",
+      "EA_BRIDGE_WORKERS",
+      "EA_COMMAND_DELIVERY_ENABLED",
+      "EXECUTION_COMMAND_PRODUCER_ENABLED",
+      "EXECUTION_ENABLED",
+      "EXECUTOR_BRIDGE_AUTH_SECRET",
+      "EXECUTOR_COMMAND_SIGNING_KEY_ID",
+      "EXECUTOR_COMMAND_SIGNING_SECRET",
+      "LEGACY_PUSH_EXECUTION_ENABLED",
+      "MT5_ORDER_SEND_ENABLED",
+      "RISK_RESERVATION_ENABLED",
+      "SIGNED_COMMAND_BRIDGE_ENABLED",
+      "STRATEGY_5SCR_EXECUTION_ENABLED",
+      "TRADE_OUTBOX_WRITE_ENABLED"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 17,
+      "config": {
+        "networking": {
+          "serviceDomains": {
+            "wolf15-ea-bridge-production.up.railway.app": {
+              "port": null
+            }
+          }
+        }
+      },
+      "variableNames": [
+        "ALLOW_MARKET_EXECUTION",
+        "CANARY_ISSUANCE_ENABLED",
+        "DATABASE_URL",
+        "EA_BRIDGE_WORKERS",
+        "EA_COMMAND_DELIVERY_ENABLED",
+        "EXECUTION_COMMAND_PRODUCER_ENABLED",
+        "EXECUTION_ENABLED",
+        "EXECUTOR_BRIDGE_AUTH_SECRET",
+        "EXECUTOR_COMMAND_SIGNING_KEY_ID",
+        "EXECUTOR_COMMAND_SIGNING_SECRET",
+        "LEGACY_PUSH_EXECUTION_ENABLED",
+        "MT5_ORDER_SEND_ENABLED",
+        "RISK_RESERVATION_ENABLED",
+        "SIGNED_COMMAND_BRIDGE_ENABLED",
+        "STRATEGY_5SCR_EXECUTION_ENABLED",
+        "TRADE_OUTBOX_WRITE_ENABLED"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "af5a1382-8a69-4d6a-b93b-9dc1becb0db3",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-03T14:49:39.022Z",
+        "updatedAt": "2026-09-03T14:51:02.175Z",
+        "serviceId": "f6403cfe-e50c-4acf-beeb-6f9cd07f0080",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "cdcbde32-cbca-41be-8269-3cbe5caff617",
+        "meta": {
+          "reason": "deploy"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "e555dbb1-76ea-4300-8244-80747cfc9786",
+      "name": "wolf15-pressure-outbox"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main"
+      },
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "configFile": "/railway-pressure-outbox.toml",
+      "deploy": {
+        "startCommand": "[start_pressure_outbox.sh](C:/Users/INTEL/OneDrive/Documents/GitHub/TUYUL-FX-WOLF-15LAYER-SYSTEM/deploy/railway/start_pressure_outbox.sh).",
+        "preDeployCommand": [],
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "ALLOW_MARKET_EXECUTION",
+      "CANARY_ISSUANCE_ENABLED",
+      "DATABASE_URL",
+      "EA_COMMAND_DELIVERY_ENABLED",
+      "EXECUTION_COMMAND_PRODUCER_ENABLED",
+      "EXECUTION_ENABLED",
+      "LEGACY_PUSH_EXECUTION_ENABLED",
+      "MT5_ORDER_SEND_ENABLED",
+      "PRESSURE_OUTBOX_EXPECTED_PHASE",
+      "RISK_RESERVATION_ENABLED",
+      "SIGNAL_PRESSURE_OUTBOX_DISPATCH_ENABLED",
+      "SIGNAL_PRESSURE_OUTBOX_ENABLED",
+      "SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED",
+      "SIGNED_COMMAND_BRIDGE_ENABLED",
+      "STRATEGY_5SCR_EVIDENCE_BATCH_SIZE",
+      "STRATEGY_5SCR_EVIDENCE_ENABLED",
+      "STRATEGY_5SCR_EVIDENCE_LIVE_ALLOWED",
+      "STRATEGY_5SCR_EVIDENCE_MODE",
+      "STRATEGY_5SCR_EVIDENCE_POLL_SECONDS",
+      "STRATEGY_5SCR_EVIDENCE_PROVIDER",
+      "STRATEGY_5SCR_EXECUTION_ENABLED",
+      "STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED",
+      "STRATEGY_5SCR_LIFECYCLE_V2_ENABLED",
+      "STRATEGY_5SCR_LIFECYCLE_V2_EVIDENCE_OWNER_WRITER_ENABLED",
+      "STRATEGY_5SCR_LIFECYCLE_V2_METRICS_ENABLED",
+      "STRATEGY_5SCR_LIFECYCLE_V2_SHADOW_ONLY",
+      "STRATEGY_5SCR_OUTCOME_ENABLED",
+      "STRATEGY_5SCR_PRESSURE_CONSUMER_ENABLED",
+      "STRATEGY_5SCR_SHADOW_EVIDENCE_V2_ENABLED",
+      "STRATEGY_5SCR_SHADOW_EVIDENCE_V2_SHADOW_ONLY",
+      "TRADE_OUTBOX_WRITE_ENABLED"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 31,
+      "config": {},
+      "variableNames": [
+        "ALLOW_MARKET_EXECUTION",
+        "CANARY_ISSUANCE_ENABLED",
+        "DATABASE_URL",
+        "EA_COMMAND_DELIVERY_ENABLED",
+        "EXECUTION_COMMAND_PRODUCER_ENABLED",
+        "EXECUTION_ENABLED",
+        "LEGACY_PUSH_EXECUTION_ENABLED",
+        "MT5_ORDER_SEND_ENABLED",
+        "PRESSURE_OUTBOX_EXPECTED_PHASE",
+        "RISK_RESERVATION_ENABLED",
+        "SIGNAL_PRESSURE_OUTBOX_DISPATCH_ENABLED",
+        "SIGNAL_PRESSURE_OUTBOX_ENABLED",
+        "SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED",
+        "SIGNED_COMMAND_BRIDGE_ENABLED",
+        "STRATEGY_5SCR_EVIDENCE_BATCH_SIZE",
+        "STRATEGY_5SCR_EVIDENCE_ENABLED",
+        "STRATEGY_5SCR_EVIDENCE_LIVE_ALLOWED",
+        "STRATEGY_5SCR_EVIDENCE_MODE",
+        "STRATEGY_5SCR_EVIDENCE_POLL_SECONDS",
+        "STRATEGY_5SCR_EVIDENCE_PROVIDER",
+        "STRATEGY_5SCR_EXECUTION_ENABLED",
+        "STRATEGY_5SCR_LIFECYCLE_V2_DUAL_WRITE_ENABLED",
+        "STRATEGY_5SCR_LIFECYCLE_V2_ENABLED",
+        "STRATEGY_5SCR_LIFECYCLE_V2_EVIDENCE_OWNER_WRITER_ENABLED",
+        "STRATEGY_5SCR_LIFECYCLE_V2_METRICS_ENABLED",
+        "STRATEGY_5SCR_LIFECYCLE_V2_SHADOW_ONLY",
+        "STRATEGY_5SCR_OUTCOME_ENABLED",
+        "STRATEGY_5SCR_PRESSURE_CONSUMER_ENABLED",
+        "STRATEGY_5SCR_SHADOW_EVIDENCE_V2_ENABLED",
+        "STRATEGY_5SCR_SHADOW_EVIDENCE_V2_SHADOW_ONLY",
+        "TRADE_OUTBOX_WRITE_ENABLED"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "069243e5-e5e2-4d52-bcec-cbc9a23e0c0b",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-03T14:51:52.692Z",
+        "updatedAt": "2026-09-03T14:53:35.225Z",
+        "serviceId": "e555dbb1-76ea-4300-8244-80747cfc9786",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "7b4aa3bd-c535-4ae8-b066-26dd888727e6",
+        "meta": {
+          "reason": "deploy"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "06ba09ff-7c27-4db9-8dfb-b40b07ae1ee6",
+      "name": "verify-and-patch-schema"
+    },
+    "config": {
+      "source": {
+        "image": "ghcr.io/railwayapp/function-bun:1.3.0"
+      },
+      "build": {
+        "builder": "RAILPACK"
+      },
+      "deploy": {
+        "startCommand": "LONG_ENCODED_COMMAND_OMITTED",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "DATABASE_URL"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 1,
+      "config": {},
+      "variableNames": [
+        "DATABASE_URL"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "e562b095-e2cf-4d63-9da7-b68430384b7a",
+        "status": "SUCCESS",
+        "createdAt": "2026-07-07T11:12:55.415Z",
+        "updatedAt": "2026-07-07T11:12:59.328Z",
+        "serviceId": "06ba09ff-7c27-4db9-8dfb-b40b07ae1ee6",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "a539c3ec-2b73-49d1-9262-76c30efa81fe",
+        "meta": {
+          "reason": "deploy",
+          "image": "ghcr.io/railwayapp/function-bun:1.3.0"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "0ca594be-94ba-4328-9ea9-8fe77278a4ec",
+      "name": "wolf15-signalthrottle-service"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/wolf15-signalthrottle-service"
+      },
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "configFile": "/railway.toml",
+      "deploy": {
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "networking": {
+        "serviceDomains": {
+          "wolf15-signalthrottle-service-production.up.railway.app": {
+            "port": 8080
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "APP_ENV",
+      "CHART_TIME_OFFSET_HOURS",
+      "DASHBOARD_BASIC_AUTH_PASSWORD",
+      "DASHBOARD_BASIC_AUTH_USER",
+      "DATABASE_URL",
+      "DB_SCHEMA",
+      "ENABLE_MARKET_CONTEXT",
+      "ENGINE_LOG_SOURCE_SERVICE",
+      "ENGINE_LOG_SOURCE_URL",
+      "ENGINE_LOG_SYNC_ENABLED",
+      "ENGINE_LOG_SYNC_INTERVAL_SECONDS",
+      "ENGINE_LOG_SYNC_TIMEOUT_SECONDS",
+      "FINNHUB_API_KEY",
+      "HARD_FINALIZE_SECONDS",
+      "LOG_TIMEZONE",
+      "MAX_EVENT_GAP_SECONDS",
+      "MIN_RADAR_MINUTES",
+      "MIN_STRONG_MINUTES",
+      "OHLC_PROVIDER",
+      "OWNER_TIMEZONE",
+      "SERVICE_NAME",
+      "SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED",
+      "SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED",
+      "SOFT_FINALIZE_SECONDS",
+      "WEBHOOK_SECRET"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 25,
+      "config": {},
+      "variableNames": [
+        "APP_ENV",
+        "CHART_TIME_OFFSET_HOURS",
+        "DASHBOARD_BASIC_AUTH_PASSWORD",
+        "DASHBOARD_BASIC_AUTH_USER",
+        "DATABASE_URL",
+        "DB_SCHEMA",
+        "ENABLE_MARKET_CONTEXT",
+        "ENGINE_LOG_SOURCE_SERVICE",
+        "ENGINE_LOG_SOURCE_URL",
+        "ENGINE_LOG_SYNC_ENABLED",
+        "ENGINE_LOG_SYNC_INTERVAL_SECONDS",
+        "ENGINE_LOG_SYNC_TIMEOUT_SECONDS",
+        "FINNHUB_API_KEY",
+        "HARD_FINALIZE_SECONDS",
+        "LOG_TIMEZONE",
+        "MAX_EVENT_GAP_SECONDS",
+        "MIN_RADAR_MINUTES",
+        "MIN_STRONG_MINUTES",
+        "OHLC_PROVIDER",
+        "OWNER_TIMEZONE",
+        "SERVICE_NAME",
+        "SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED",
+        "SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED",
+        "SOFT_FINALIZE_SECONDS",
+        "WEBHOOK_SECRET"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "0ea6dcc0-5294-4960-8f4a-dfd4f977f00c",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-03T04:40:30.429Z",
+        "updatedAt": "2026-09-03T04:41:07.084Z",
+        "serviceId": "0ca594be-94ba-4328-9ea9-8fe77278a4ec",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "903fd5e4-9be5-47d1-94e3-30ea3a207521",
+        "meta": {
+          "reason": "deploy",
+          "commitMessage": "feat(engine-logs): add engine log entries table and related functionality\n\n- Created a new table `engine_log_entries` in the database schema to store engine log entries with various attributes.\n- Implemented a function to generate a unique hash for engine log entries based on timestamp, message, and source service.\n- Updated tests to validate the new functionality, including parsing engine log entries from CSV format.\n- Modified existing tests to reflect changes in the dashboard and signal processing logic, ensuring proper handling of trade plans and signal statuses.\n- Introduced new scoring functions for phase 1 classification, including pressure temperature and theme cluster determination based on symbol.",
+          "commitHash": "610d6ebcf548c44488ddeecd33671a7315357ab8",
+          "branch": "main"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "2830b4c3-e45c-4333-ad44-030fc7ee412c",
+      "name": "execute-lock-flush"
+    },
+    "config": {
+      "source": {
+        "image": "ghcr.io/railwayapp/function-bun:1.3.0"
+      },
+      "build": {
+        "builder": "RAILPACK"
+      },
+      "deploy": {
+        "startCommand": "LONG_ENCODED_COMMAND_OMITTED",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "REDIS_URL"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 1,
+      "config": {},
+      "variableNames": [
+        "REDIS_URL"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "789c6ad0-a75c-40ad-b3ff-ed1dbb3683c6",
+        "status": "SUCCESS",
+        "createdAt": "2026-07-07T11:21:55.791Z",
+        "updatedAt": "2026-07-07T11:22:01.284Z",
+        "serviceId": "2830b4c3-e45c-4333-ad44-030fc7ee412c",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "e893b499-ae7c-4ca6-8180-aa5d25b6412c",
+        "meta": {
+          "reason": "deploy",
+          "image": "ghcr.io/railwayapp/function-bun:1.3.0"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "d6fc5d8c-926d-453c-a93a-c937b4b804fa",
+      "name": "WOLF15-DASHBOARD"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main"
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "buildEnvironment": "V3",
+        "dockerfilePath": "/dashboard/nextjs/Dockerfile"
+      },
+      "configFile": "/railway-dashboard-bff.toml",
+      "deploy": {
+        "startCommand": "start_dashboard_bff.sh",
+        "preDeployCommand": [],
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "networking": {
+        "serviceDomains": {
+          "wolf15-dashboard-production.up.railway.app": {
+            "port": 8080
+          }
+        },
+        "privateNetworkEndpoint": "wolf15-dashboard"
+      }
+    },
+    "variableNames": [
+      "APP_ENV",
+      "GUNICORN_LOG_LEVEL",
+      "GUNICORN_WORKERS",
+      "INTERNAL_API_URL",
+      "LOG_LEVEL",
+      "REDIS_URL",
+      "WOLF15_SERVICE_ROLE"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 7,
+      "config": {},
+      "variableNames": [
+        "APP_ENV",
+        "GUNICORN_LOG_LEVEL",
+        "GUNICORN_WORKERS",
+        "INTERNAL_API_URL",
+        "LOG_LEVEL",
+        "REDIS_URL",
+        "WOLF15_SERVICE_ROLE"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "87db6771-231e-4e94-b845-5b73eb3a8a41",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-05T13:48:57.742Z",
+        "updatedAt": "2026-09-05T13:50:29.516Z",
+        "serviceId": "d6fc5d8c-926d-453c-a93a-c937b4b804fa",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "645e4808-ccd8-4c05-9b8b-d6b93fa82e65",
+        "meta": {
+          "reason": "deploy"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "80f84085-df8c-46b6-abfc-5ab042840a96",
+      "name": "wolf15-worker-regime"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main"
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "buildEnvironment": "V3",
+        "dockerfilePath": "/services/worker/Dockerfile"
+      },
+      "configFile": "/railway-worker-regime.toml",
+      "deploy": {
+        "startCommand": "bash deploy/railway/start_worker.sh services.worker.regime_recalibration",
+        "restartPolicyType": "NEVER",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "APP_ENV",
+      "DATABASE_URL",
+      "DEBUG",
+      "LOG_LEVEL",
+      "REDIS_URL",
+      "WOLF15_SERVICE_ROLE",
+      "WORKER_REGIME_ENABLED"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 7,
+      "config": {},
+      "variableNames": [
+        "APP_ENV",
+        "DATABASE_URL",
+        "DEBUG",
+        "LOG_LEVEL",
+        "REDIS_URL",
+        "WOLF15_SERVICE_ROLE",
+        "WORKER_REGIME_ENABLED"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "f23b3afe-5134-4959-a5c7-d5ddcd9f4614",
+        "status": "SUCCESS",
+        "createdAt": "2026-08-14T07:28:47.298Z",
+        "updatedAt": "2026-09-06T02:00:12.145Z",
+        "serviceId": "80f84085-df8c-46b6-abfc-5ab042840a96",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "ac46f959-c1bc-4955-a549-64fef3425d48",
+        "meta": {
+          "reason": "deploy",
+          "commitMessage": "Merge pull request #412 from codex/5scr-candidate-v2-to-c2-shadow\n\nfeat(5scr): add CandidateV2 C2 shadow authority",
+          "commitHash": "7c45484e9124bb4a8a745dc1ef8832a7745ea58c",
+          "branch": "main"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "fb1da878-9615-48d1-bad9-b0f7ae497582",
+      "name": "wolf15-worker-backtest"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main"
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "buildEnvironment": "V3",
+        "dockerfilePath": "/services/worker/Dockerfile"
+      },
+      "configFile": "/railway-worker-backtest.toml",
+      "deploy": {
+        "startCommand": "bash deploy/railway/start_worker.sh services.worker.nightly_backtest",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "APP_ENV",
+      "DATABASE_URL",
+      "DEBUG",
+      "LOG_LEVEL",
+      "REDIS_URL",
+      "WOLF15_SERVICE_ROLE",
+      "WOLF15_WORKER_ENTRY"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 7,
+      "config": {},
+      "variableNames": [
+        "APP_ENV",
+        "DATABASE_URL",
+        "DEBUG",
+        "LOG_LEVEL",
+        "REDIS_URL",
+        "WOLF15_SERVICE_ROLE",
+        "WOLF15_WORKER_ENTRY"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "084fcbb7-b2bd-4736-a268-90bec9da5118",
+        "status": "SUCCESS",
+        "createdAt": "2026-08-14T07:28:46.818Z",
+        "updatedAt": "2026-09-08T01:31:18.060Z",
+        "serviceId": "fb1da878-9615-48d1-bad9-b0f7ae497582",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "fb3bc518-0d95-4604-aefd-ff647a159093",
+        "meta": {
+          "reason": "deploy",
+          "commitMessage": "Merge pull request #412 from codex/5scr-candidate-v2-to-c2-shadow\n\nfeat(5scr): add CandidateV2 C2 shadow authority",
+          "commitHash": "7c45484e9124bb4a8a745dc1ef8832a7745ea58c",
+          "branch": "main"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "8dfa93e2-1e22-4c16-9e28-7160b9dd872b",
+      "name": "wolf15-migrator"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "release/d0-demo-bbc3205b",
+        "checkSuites": false
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "buildEnvironment": "V3",
+        "dockerfilePath": "/services/worker/Dockerfile"
+      },
+      "configFile": "/railway-migrator.toml",
+      "deploy": {
+        "startCommand": "python -m alembic upgrade head",
+        "preDeployCommand": [],
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "DATABASE_URL"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 1,
+      "config": {},
+      "variableNames": [
+        "DATABASE_URL"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "a82b28f0-5aa6-4e01-a7e1-fa452bc9d2f5",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-03T12:33:28.121Z",
+        "updatedAt": "2026-09-03T12:35:05.747Z",
+        "serviceId": "8dfa93e2-1e22-4c16-9e28-7160b9dd872b",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "b6913df7-66dc-4f89-a93f-969b40b445a1",
+        "meta": {
+          "reason": "deploy",
+          "commitMessage": "test: close WebSocket fixture sessions deterministically",
+          "commitHash": "bbc3205be53e8266243934519b20b1577db305b1",
+          "branch": "release/d0-demo-bbc3205b"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "d3f53524-4571-496f-8008-b3f98fedc5b9",
+      "name": "wolf15-api"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main",
+        "rootDirectory": ""
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "buildEnvironment": "V3",
+        "dockerfilePath": "/Dockerfile"
+      },
+      "configFile": "/railway.toml",
+      "deploy": {
+        "startCommand": "bash deploy/railway/start_api.sh",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "networking": {
+        "serviceDomains": {
+          "wolf15-api-production.up.railway.app": {
+            "port": 8000
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "ALLOW_DASHBOARD_WRITE",
+      "ALLOW_MARKET_EXECUTION",
+      "APP_ENV",
+      "AUDIT_LOG_ENABLED",
+      "AUTH_COOKIE_SAMESITE",
+      "AUTH_COOKIE_SECURE",
+      "CANARY_ISSUANCE_ENABLED",
+      "COMPLIANCE_MODE_DEFAULT",
+      "CONTEXT_MODE",
+      "CORS_ORIGINS",
+      "DASHBOARD_API_KEY",
+      "DASHBOARD_JWT_SECRET",
+      "DATABASE_URL",
+      "DEBUG",
+      "EA_COMMAND_DELIVERY_ENABLED",
+      "ENABLE_DEV_ROUTES",
+      "ENV",
+      "EXECUTION_COMMAND_PRODUCER_ENABLED",
+      "EXECUTION_ENABLED",
+      "FORCE_HTTPS",
+      "GUNICORN_KEEPALIVE",
+      "GUNICORN_MAX_REQUESTS",
+      "GUNICORN_MAX_REQUESTS_JITTER",
+      "GUNICORN_THREADS",
+      "GUNICORN_TIMEOUT",
+      "GUNICORN_WORKERS",
+      "HEALTH_PROBE_TOKEN",
+      "INTERNAL_API_URL",
+      "JWT_ALGORITHM",
+      "JWT_SECRET",
+      "JWT_TTL_MINUTES",
+      "LEGACY_PUSH_EXECUTION_ENABLED",
+      "LOG_LEVEL",
+      "MT5_ORDER_SEND_ENABLED",
+      "OBSERVABILITY_MACHINE_KEY",
+      "PORT",
+      "PYTHONPATH",
+      "RATE_LIMIT_BACKEND",
+      "RATE_LIMIT_BURST",
+      "RATE_LIMIT_ENABLED",
+      "RATE_LIMIT_EXEMPT_PATHS",
+      "RATE_LIMIT_REQUESTS_PER_MIN",
+      "RATE_LIMIT_WS_CONNECT_PER_MIN",
+      "RATE_LIMIT_WS_PER_MIN",
+      "REDIS_URL",
+      "RISK_RESERVATION_ENABLED",
+      "SECRET_KEY",
+      "SIGNED_COMMAND_BRIDGE_ENABLED",
+      "STRATEGY_5SCR_EXECUTION_ENABLED",
+      "TRADE_OUTBOX_WRITE_ENABLED",
+      "WOLF15_SERVICE_ROLE",
+      "WS_MAX_CONNECTIONS_PER_MIN",
+      "WS_REQUIRE_AUTH"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 53,
+      "config": {},
+      "variableNames": [
+        "ALLOW_DASHBOARD_WRITE",
+        "ALLOW_MARKET_EXECUTION",
+        "APP_ENV",
+        "AUDIT_LOG_ENABLED",
+        "AUTH_COOKIE_SAMESITE",
+        "AUTH_COOKIE_SECURE",
+        "CANARY_ISSUANCE_ENABLED",
+        "COMPLIANCE_MODE_DEFAULT",
+        "CONTEXT_MODE",
+        "CORS_ORIGINS",
+        "DASHBOARD_API_KEY",
+        "DASHBOARD_JWT_SECRET",
+        "DATABASE_URL",
+        "DEBUG",
+        "EA_COMMAND_DELIVERY_ENABLED",
+        "ENABLE_DEV_ROUTES",
+        "ENV",
+        "EXECUTION_COMMAND_PRODUCER_ENABLED",
+        "EXECUTION_ENABLED",
+        "FORCE_HTTPS",
+        "GUNICORN_KEEPALIVE",
+        "GUNICORN_MAX_REQUESTS",
+        "GUNICORN_MAX_REQUESTS_JITTER",
+        "GUNICORN_THREADS",
+        "GUNICORN_TIMEOUT",
+        "GUNICORN_WORKERS",
+        "HEALTH_PROBE_TOKEN",
+        "INTERNAL_API_URL",
+        "JWT_ALGORITHM",
+        "JWT_SECRET",
+        "JWT_TTL_MINUTES",
+        "LEGACY_PUSH_EXECUTION_ENABLED",
+        "LOG_LEVEL",
+        "MT5_ORDER_SEND_ENABLED",
+        "OBSERVABILITY_MACHINE_KEY",
+        "PORT",
+        "PYTHONPATH",
+        "RATE_LIMIT_BACKEND",
+        "RATE_LIMIT_BURST",
+        "RATE_LIMIT_ENABLED",
+        "RATE_LIMIT_EXEMPT_PATHS",
+        "RATE_LIMIT_REQUESTS_PER_MIN",
+        "RATE_LIMIT_WS_CONNECT_PER_MIN",
+        "RATE_LIMIT_WS_PER_MIN",
+        "REDIS_URL",
+        "RISK_RESERVATION_ENABLED",
+        "SECRET_KEY",
+        "SIGNED_COMMAND_BRIDGE_ENABLED",
+        "STRATEGY_5SCR_EXECUTION_ENABLED",
+        "TRADE_OUTBOX_WRITE_ENABLED",
+        "WOLF15_SERVICE_ROLE",
+        "WS_MAX_CONNECTIONS_PER_MIN",
+        "WS_REQUIRE_AUTH"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "81c42eb3-89f3-4876-bfe8-52e50b604bc1",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-05T13:46:37.678Z",
+        "updatedAt": "2026-09-05T13:48:13.506Z",
+        "serviceId": "d3f53524-4571-496f-8008-b3f98fedc5b9",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "7830ba34-61f8-44d3-a685-63566f95ffcc",
+        "meta": {
+          "reason": "deploy"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "31ccbb32-8105-41d5-bff7-140b3a990885",
+      "name": "wolf15-worker-montercarlo"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main"
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "buildEnvironment": "V3",
+        "dockerfilePath": "/Dockerfile"
+      },
+      "configFile": "/railway-worker-montecarlo.toml",
+      "deploy": {
+        "startCommand": "bash -c 'while true; do python -m services.worker.montecarlo_job; sleep ${WOLF15_JOB_INTERVAL_SECONDS:-3600}; done'",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "networking": {
+        "privateNetworkEndpoint": "observant-achievement"
+      }
+    },
+    "variableNames": [
+      "PYTHONPATH",
+      "REDIS_URL",
+      "WOLF15_MC_SEED",
+      "WOLF15_MC_SIMULATIONS"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 4,
+      "config": {},
+      "variableNames": [
+        "PYTHONPATH",
+        "REDIS_URL",
+        "WOLF15_MC_SEED",
+        "WOLF15_MC_SIMULATIONS"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "addc8e22-3382-4f61-a729-d7210f3d9ec4",
+        "status": "SUCCESS",
+        "createdAt": "2026-08-14T07:28:45.416Z",
+        "updatedAt": "2026-09-08T01:01:04.867Z",
+        "serviceId": "31ccbb32-8105-41d5-bff7-140b3a990885",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "5a8bf207-2f8b-40e1-9514-acb3ca2ff1b8",
+        "meta": {
+          "reason": "deploy",
+          "commitMessage": "Merge pull request #412 from codex/5scr-candidate-v2-to-c2-shadow\n\nfeat(5scr): add CandidateV2 C2 shadow authority",
+          "commitHash": "7c45484e9124bb4a8a745dc1ef8832a7745ea58c",
+          "branch": "main"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "4492195c-81cd-4e7d-88e8-bf6e380bbcc2",
+      "name": "wolf15-orchestrator"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main"
+      },
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "configFile": "/railway-orchestrator.toml",
+      "deploy": {
+        "startCommand": "python -m services.orchestrator.state_manager",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "us-west2": {
+            "numReplicas": 1,
+            "stackerAssignment": null
+          }
+        }
+      },
+      "networking": {
+        "privateNetworkEndpoint": "tender-dream"
+      }
+    },
+    "variableNames": [
+      "HEALTH_PROBE_TOKEN",
+      "ORCHESTRATOR_ACCOUNT_STATE_KEY",
+      "ORCHESTRATOR_CHANNEL",
+      "ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC",
+      "ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC",
+      "ORCHESTRATOR_LOOP_SLEEP_SEC",
+      "ORCHESTRATOR_STATE_KEY",
+      "ORCHESTRATOR_TRADE_RISK_KEY",
+      "PORT",
+      "PYTHONPATH",
+      "REDIS_URL"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 12,
+      "config": {
+        "deploy": {
+          "multiRegionConfig": {
+            "us-west2": {
+              "stackerAssignment": null
+            }
+          }
+        }
+      },
+      "variableNames": [
+        "HEALTH_PROBE_TOKEN",
+        "ORCHESTRATOR_ACCOUNT_STATE_KEY",
+        "ORCHESTRATOR_CHANNEL",
+        "ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC",
+        "ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC",
+        "ORCHESTRATOR_LOOP_SLEEP_SEC",
+        "ORCHESTRATOR_STATE_KEY",
+        "ORCHESTRATOR_TRADE_RISK_KEY",
+        "PORT",
+        "PYTHONPATH",
+        "REDIS_URL"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "891df53a-8b9a-40ad-a60c-de91498833a7",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-05T11:06:43.977Z",
+        "updatedAt": "2026-09-05T11:08:05.128Z",
+        "serviceId": "4492195c-81cd-4e7d-88e8-bf6e380bbcc2",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "474e17b3-bc6d-4191-b166-e87441f4e5ba",
+        "meta": {
+          "reason": "deploy",
+          "commitMessage": "fix: time-align H1 price drift checks",
+          "commitHash": "2c099aef5900b30433624c62a3273243f4596437",
+          "branch": "main"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "4300c609-fd97-4eb2-bd13-487c940b5a51",
+      "name": "wolf15-execution"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main"
+      },
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "configFile": "/railway-execution.toml",
+      "deploy": {
+        "startCommand": "bash deploy/railway/start_execution.sh",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      },
+      "networking": {
+        "privateNetworkEndpoint": "modest-magic"
+      }
+    },
+    "variableNames": [
+      "ALLOW_MARKET_EXECUTION",
+      "CANARY_ISSUANCE_ENABLED",
+      "EA_BRIDGE_URL",
+      "EA_COMMAND_DELIVERY_ENABLED",
+      "EXECUTION_COMMAND_PRODUCER_ENABLED",
+      "EXECUTION_ENABLED",
+      "EXEC_METRICS_PORT",
+      "HEALTH_PROBE_TOKEN",
+      "LEGACY_PUSH_EXECUTION_ENABLED",
+      "MAX_CONCURRENCY",
+      "MT5_ORDER_SEND_ENABLED",
+      "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "PYTHONPATH",
+      "REDIS_URL",
+      "RISK_RESERVATION_ENABLED",
+      "SIGNED_COMMAND_BRIDGE_ENABLED",
+      "STRATEGY_5SCR_EXECUTION_ENABLED",
+      "TRADE_OUTBOX_WRITE_ENABLED"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 18,
+      "config": {},
+      "variableNames": [
+        "ALLOW_MARKET_EXECUTION",
+        "CANARY_ISSUANCE_ENABLED",
+        "EA_BRIDGE_URL",
+        "EA_COMMAND_DELIVERY_ENABLED",
+        "EXECUTION_COMMAND_PRODUCER_ENABLED",
+        "EXECUTION_ENABLED",
+        "EXEC_METRICS_PORT",
+        "HEALTH_PROBE_TOKEN",
+        "LEGACY_PUSH_EXECUTION_ENABLED",
+        "MAX_CONCURRENCY",
+        "MT5_ORDER_SEND_ENABLED",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "PYTHONPATH",
+        "REDIS_URL",
+        "RISK_RESERVATION_ENABLED",
+        "SIGNED_COMMAND_BRIDGE_ENABLED",
+        "STRATEGY_5SCR_EXECUTION_ENABLED",
+        "TRADE_OUTBOX_WRITE_ENABLED"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "8ceb4bc3-efb4-42fe-b0e8-62d1d6d1f1a1",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-03T14:47:43.248Z",
+        "updatedAt": "2026-09-03T14:49:10.243Z",
+        "serviceId": "4300c609-fd97-4eb2-bd13-487c940b5a51",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "e669dcae-d88a-48fb-adc3-6b9c6d319052",
+        "meta": {
+          "reason": "deploy"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "43bc213a-96af-4ed5-b679-691534fad4b4",
+      "name": "wolf15-engine"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main",
+        "commitSha": "f8c23782"
+      },
+      "build": {
+        "builder": "DOCKERFILE",
+        "buildEnvironment": "V3",
+        "dockerfilePath": "/Dockerfile"
+      },
+      "configFile": "/railway-engine.toml",
+      "deploy": {
+        "startCommand": "bash deploy/railway/start_engine.sh",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "ALLOW_DASHBOARD_WRITE",
+      "ALLOW_MARKET_EXECUTION",
+      "API_BASE_URL",
+      "APP_ENV",
+      "CANARY_ISSUANCE_ENABLED",
+      "CANDLE_HISTORY_KEY_PREFIXES",
+      "CONTEXT_MODE",
+      "DATABASE_URL",
+      "DEBUG",
+      "EA_COMMAND_DELIVERY_ENABLED",
+      "ENGINE_HEALTH_PORT",
+      "ENGINE_MODE",
+      "ENV",
+      "EXECUTION_COMMAND_PRODUCER_ENABLED",
+      "EXECUTION_ENABLED",
+      "FINNHUB_API_KEY",
+      "GATE_MODE",
+      "GOVERNANCE_STRICT_MODE",
+      "HEALTH_PROBE_TOKEN",
+      "HTF_DAILY_PHASE_FEED_ENABLED",
+      "HTF_STRUCTURE_CONTEXT_ENABLED",
+      "HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY",
+      "HTF_STRUCTURE_SNAPSHOT_ENABLED",
+      "HTF_STRUCTURE_SNAPSHOT_INTERVAL_SECONDS",
+      "INGEST_BASE_URL",
+      "LEGACY_PUSH_EXECUTION_ENABLED",
+      "LOG_LEVEL",
+      "MICROBOOST_DIRECTION_INHERIT_ENABLED",
+      "MICROBOOST_INTEL_EMIT_ON_ROLE_CHANGE_ONLY",
+      "MICROBOOST_SHADOW_DIAGNOSTIC_ENABLED",
+      "MICROBOOST_TABLE_RATE_LIMIT_SECONDS",
+      "MICROBOOST_WATCH_MISS_DIAGNOSTIC_ENABLED",
+      "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED",
+      "MT5_ORDER_SEND_ENABLED",
+      "ORCHESTRATOR_BASE_URL",
+      "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "PIPELINE_TIMEOUT_SEC",
+      "PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS",
+      "PROPFIRM_MODE",
+      "PYTHONPATH",
+      "REDIS_URL",
+      "RISK_RESERVATION_ENABLED",
+      "RUN_MODE",
+      "SIGNALTHROTTLE_WEBHOOK_ENABLED",
+      "SIGNALTHROTTLE_WEBHOOK_SECRET",
+      "SIGNALTHROTTLE_WEBHOOK_URL",
+      "SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR",
+      "SIGNAL_EXEC_PROVISIONAL_RR_HARD_BLOCK_ENABLED",
+      "SIGNAL_FAMILY_LINEAGE_ENABLED",
+      "SIGNAL_INTELLIGENCE_FLAG_SNAPSHOT_ENABLED",
+      "SIGNAL_JSON_EMIT_CONDITIONAL",
+      "SIGNAL_JSON_EMIT_VALID",
+      "SIGNAL_JSON_EMIT_WATCH",
+      "SIGNAL_JSON_EXEC_GATES_EMIT_CONTINUATION",
+      "SIGNAL_JSON_EXEC_GATES_EMIT_SIDECAR",
+      "SIGNAL_JSON_EXEC_GATES_ENABLED",
+      "SIGNAL_JSON_EXEC_GATES_ENFORCE",
+      "SIGNAL_JSON_FINAL_BARRIER_ENABLED",
+      "SIGNAL_JSON_LOG_ENABLED",
+      "SIGNAL_JSON_MIN_RR_VALID",
+      "SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE",
+      "SIGNAL_JSON_STRICT_LIFECYCLE",
+      "SIGNAL_JSON_TP1_RR_REQUIRED",
+      "SIGNAL_JSON_VERBOSE_OBSERVABILITY",
+      "SIGNAL_LOG_COMPACT_MODE_ENABLED",
+      "SIGNAL_PRESSURE_OUTBOX_ENABLED",
+      "SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED",
+      "SIGNAL_PRESSURE_RADAR_WRITE_ENABLED",
+      "SIGNAL_PRESSURE_STATE_JSON_ENABLED",
+      "SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS",
+      "SIGNAL_THROTTLE_ALLOWED_QUORUM_DECISION_COOLDOWN_SECONDS",
+      "SIGNAL_THROTTLE_ALLOWED_QUORUM_DECISION_UPDATE_ENABLED",
+      "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED",
+      "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS",
+      "SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED",
+      "SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS",
+      "SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY",
+      "SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS",
+      "SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK",
+      "SIGNAL_WATCH_BUCKET_EMIT_MINUTES",
+      "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED",
+      "SIGNAL_WATCH_EMIT_ON_CHANGE_ONLY",
+      "SIGNAL_WATCH_FINALIZER_TRACK_EARLY_ENABLED",
+      "SIGNAL_WATCH_IDLE_PROMOTION_ENABLED",
+      "SIGNAL_WATCH_INTERNAL_SUMMARY_ENABLED",
+      "SIGNAL_WATCH_JSON_LOG_LEVEL",
+      "SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED",
+      "SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED",
+      "SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED",
+      "SIGNAL_WATCH_PRODUCTION_GATE_ENABLED",
+      "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED",
+      "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED",
+      "SIGNAL_WATCH_PROMOTION_SUMMARY_ENABLED",
+      "SIGNAL_WATCH_REQUIRE_DECISION_GRADE_CONTEXT",
+      "SIGNAL_WATCH_SUPPRESS_IDENTICAL",
+      "SIGNED_COMMAND_BRIDGE_ENABLED",
+      "STRATEGY_5SCR_EXECUTION_ENABLED",
+      "STRUCTURE_LADDER_DIAGNOSTIC_ENABLED",
+      "TICK_FEED_HEARTBEAT_ALERT_INTERVAL_SECONDS",
+      "TICK_FEED_HEARTBEAT_ENABLED",
+      "TICK_FEED_HEARTBEAT_MAX_SILENCE_SECONDS",
+      "TICK_FEED_HEARTBEAT_STARTUP_GRACE_SECONDS",
+      "TIMEZONE",
+      "TRADE_OUTBOX_WRITE_ENABLED",
+      "TRADING_MODE",
+      "WOLF15_LOG_LEVEL",
+      "WOLF15_SERVICE_ROLE",
+      "WOLF_SHADOW_CAPTURE_ENABLED",
+      "WOLF_SHADOW_JOURNAL_PATH"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 109,
+      "config": {},
+      "variableNames": [
+        "ALLOW_DASHBOARD_WRITE",
+        "ALLOW_MARKET_EXECUTION",
+        "API_BASE_URL",
+        "APP_ENV",
+        "CANARY_ISSUANCE_ENABLED",
+        "CANDLE_HISTORY_KEY_PREFIXES",
+        "CONTEXT_MODE",
+        "DATABASE_URL",
+        "DEBUG",
+        "EA_COMMAND_DELIVERY_ENABLED",
+        "ENGINE_HEALTH_PORT",
+        "ENGINE_MODE",
+        "ENV",
+        "EXECUTION_COMMAND_PRODUCER_ENABLED",
+        "EXECUTION_ENABLED",
+        "FINNHUB_API_KEY",
+        "GATE_MODE",
+        "GOVERNANCE_STRICT_MODE",
+        "HEALTH_PROBE_TOKEN",
+        "HTF_DAILY_PHASE_FEED_ENABLED",
+        "HTF_STRUCTURE_CONTEXT_ENABLED",
+        "HTF_STRUCTURE_SNAPSHOT_EMIT_ON_CHANGE_ONLY",
+        "HTF_STRUCTURE_SNAPSHOT_ENABLED",
+        "HTF_STRUCTURE_SNAPSHOT_INTERVAL_SECONDS",
+        "INGEST_BASE_URL",
+        "LEGACY_PUSH_EXECUTION_ENABLED",
+        "LOG_LEVEL",
+        "MICROBOOST_DIRECTION_INHERIT_ENABLED",
+        "MICROBOOST_INTEL_EMIT_ON_ROLE_CHANGE_ONLY",
+        "MICROBOOST_SHADOW_DIAGNOSTIC_ENABLED",
+        "MICROBOOST_TABLE_RATE_LIMIT_SECONDS",
+        "MICROBOOST_WATCH_MISS_DIAGNOSTIC_ENABLED",
+        "MICROBOOST_WATCH_MISS_DIRECTION_RECOVERY_ENABLED",
+        "MT5_ORDER_SEND_ENABLED",
+        "ORCHESTRATOR_BASE_URL",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "PIPELINE_TIMEOUT_SEC",
+        "PRESSURE_TIER_SNAPSHOT_INTERVAL_SECONDS",
+        "PROPFIRM_MODE",
+        "PYTHONPATH",
+        "REDIS_URL",
+        "RISK_RESERVATION_ENABLED",
+        "RUN_MODE",
+        "SIGNALTHROTTLE_WEBHOOK_ENABLED",
+        "SIGNALTHROTTLE_WEBHOOK_SECRET",
+        "SIGNALTHROTTLE_WEBHOOK_URL",
+        "SIGNAL_DECISION_REQUIRE_LIFECYCLE_ANCHOR",
+        "SIGNAL_EXEC_PROVISIONAL_RR_HARD_BLOCK_ENABLED",
+        "SIGNAL_FAMILY_LINEAGE_ENABLED",
+        "SIGNAL_INTELLIGENCE_FLAG_SNAPSHOT_ENABLED",
+        "SIGNAL_JSON_EMIT_CONDITIONAL",
+        "SIGNAL_JSON_EMIT_VALID",
+        "SIGNAL_JSON_EMIT_WATCH",
+        "SIGNAL_JSON_EXEC_GATES_EMIT_CONTINUATION",
+        "SIGNAL_JSON_EXEC_GATES_EMIT_SIDECAR",
+        "SIGNAL_JSON_EXEC_GATES_ENABLED",
+        "SIGNAL_JSON_EXEC_GATES_ENFORCE",
+        "SIGNAL_JSON_FINAL_BARRIER_ENABLED",
+        "SIGNAL_JSON_LOG_ENABLED",
+        "SIGNAL_JSON_MIN_RR_VALID",
+        "SIGNAL_JSON_REQUIRE_TERMINAL_DECISION_UPDATE",
+        "SIGNAL_JSON_STRICT_LIFECYCLE",
+        "SIGNAL_JSON_TP1_RR_REQUIRED",
+        "SIGNAL_JSON_VERBOSE_OBSERVABILITY",
+        "SIGNAL_LOG_COMPACT_MODE_ENABLED",
+        "SIGNAL_PRESSURE_OUTBOX_ENABLED",
+        "SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED",
+        "SIGNAL_PRESSURE_RADAR_WRITE_ENABLED",
+        "SIGNAL_PRESSURE_STATE_JSON_ENABLED",
+        "SIGNAL_PRESSURE_STATE_RATE_LIMIT_SECONDS",
+        "SIGNAL_THROTTLE_ALLOWED_QUORUM_DECISION_COOLDOWN_SECONDS",
+        "SIGNAL_THROTTLE_ALLOWED_QUORUM_DECISION_UPDATE_ENABLED",
+        "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_ENABLED",
+        "SIGNAL_THROTTLE_INTEL_DIRECTION_BRIDGE_WINDOW_SECONDS",
+        "SIGNAL_THROTTLE_PRESSURE_DECISION_BYPASS_DISABLED",
+        "SIGNAL_THROTTLE_PRESSURE_DIRECTION_FROM_DIAGNOSTICS",
+        "SIGNAL_THROTTLE_PRESSURE_DIRECTION_RECOVERY",
+        "SIGNAL_THROTTLE_RAW_SAMPLE_SECONDS",
+        "SIGNAL_WATCH_ALLOW_CLEAN_BLOCK_DIRECTION_FALLBACK",
+        "SIGNAL_WATCH_BUCKET_EMIT_MINUTES",
+        "SIGNAL_WATCH_CLUSTER_DEDUP_ENABLED",
+        "SIGNAL_WATCH_EMIT_ON_CHANGE_ONLY",
+        "SIGNAL_WATCH_FINALIZER_TRACK_EARLY_ENABLED",
+        "SIGNAL_WATCH_IDLE_PROMOTION_ENABLED",
+        "SIGNAL_WATCH_INTERNAL_SUMMARY_ENABLED",
+        "SIGNAL_WATCH_JSON_LOG_LEVEL",
+        "SIGNAL_WATCH_MARKET_STRUCTURE_PREVIEW_ENABLED",
+        "SIGNAL_WATCH_MARKET_STRUCTURE_STATUS_ENABLED",
+        "SIGNAL_WATCH_PATTERN_HEADLINE_RESOLVE_ENABLED",
+        "SIGNAL_WATCH_PRODUCTION_GATE_ENABLED",
+        "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_ENABLED",
+        "SIGNAL_WATCH_PROMOTION_DIAGNOSTIC_PRODUCTION_GATE_ENABLED",
+        "SIGNAL_WATCH_PROMOTION_SUMMARY_ENABLED",
+        "SIGNAL_WATCH_REQUIRE_DECISION_GRADE_CONTEXT",
+        "SIGNAL_WATCH_SUPPRESS_IDENTICAL",
+        "SIGNED_COMMAND_BRIDGE_ENABLED",
+        "STRATEGY_5SCR_EXECUTION_ENABLED",
+        "STRUCTURE_LADDER_DIAGNOSTIC_ENABLED",
+        "TICK_FEED_HEARTBEAT_ALERT_INTERVAL_SECONDS",
+        "TICK_FEED_HEARTBEAT_ENABLED",
+        "TICK_FEED_HEARTBEAT_MAX_SILENCE_SECONDS",
+        "TICK_FEED_HEARTBEAT_STARTUP_GRACE_SECONDS",
+        "TIMEZONE",
+        "TRADE_OUTBOX_WRITE_ENABLED",
+        "TRADING_MODE",
+        "WOLF15_LOG_LEVEL",
+        "WOLF15_SERVICE_ROLE",
+        "WOLF_SHADOW_CAPTURE_ENABLED",
+        "WOLF_SHADOW_JOURNAL_PATH"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "8162d4d3-4f90-4618-9262-2430608fab6a",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-03T14:41:59.981Z",
+        "updatedAt": "2026-09-03T14:43:10.885Z",
+        "serviceId": "43bc213a-96af-4ed5-b679-691534fad4b4",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "486f0318-c5e6-451d-a18d-452f08ed44a2",
+        "meta": {
+          "reason": "deploy"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "e7fb1aa7-2ca0-4287-bd53-35d82181c890",
+      "name": "wolf15-ingest"
+    },
+    "config": {
+      "source": {
+        "repo": "tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM",
+        "branch": "main",
+        "rootDirectory": ""
+      },
+      "build": {
+        "builder": "RAILPACK",
+        "buildEnvironment": "V3"
+      },
+      "configFile": "/railway-ingestor.toml",
+      "deploy": {
+        "startCommand": "bash deploy/railway/start_ingest.sh",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        }
+      }
+    },
+    "variableNames": [
+      "ALLOW_MARKET_EXECUTION",
+      "ALPHAVANTAGE_ENABLED",
+      "ALPHA_VANTAGE_API_KEY",
+      "APP_ENV",
+      "CANARY_ISSUANCE_ENABLED",
+      "CONTEXT_MODE",
+      "COOLDOWN_SEC",
+      "DATABASE_URL",
+      "EA_COMMAND_DELIVERY_ENABLED",
+      "ENV",
+      "EXECUTION_COMMAND_PRODUCER_ENABLED",
+      "EXECUTION_ENABLED",
+      "FINNHUB_API_KEY",
+      "HEALTH_PROBE_TOKEN",
+      "INGEST_HEALTH_PORT",
+      "INGEST_PRODUCER_FRESHNESS_SEC",
+      "INGEST_PRODUCER_HEARTBEAT_INTERVAL_SEC",
+      "INGEST_WS_CONNECT_GRACE_SEC",
+      "LEGACY_PUSH_EXECUTION_ENABLED",
+      "LOG_LEVEL",
+      "MT5_ORDER_SEND_ENABLED",
+      "NEWS_LOCK_ENABLED",
+      "NEWS_PROVIDER",
+      "PORT",
+      "PYTHONPATH",
+      "REDIS_URL",
+      "RISK_RESERVATION_ENABLED",
+      "RUN_MODE",
+      "SIGNED_COMMAND_BRIDGE_ENABLED",
+      "STRATEGY_5SCR_EXECUTION_ENABLED",
+      "TIMEZONE",
+      "TRADE_OUTBOX_WRITE_ENABLED",
+      "TWELVE_DATA_API_KEY",
+      "WOLF15_INGEST_CB_FAILURE_THRESHOLD",
+      "WOLF15_INGEST_CB_RECOVERY_TIMEOUT",
+      "WOLF15_SERVICE_ROLE"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 36,
+      "config": {},
+      "variableNames": [
+        "ALLOW_MARKET_EXECUTION",
+        "ALPHAVANTAGE_ENABLED",
+        "ALPHA_VANTAGE_API_KEY",
+        "APP_ENV",
+        "CANARY_ISSUANCE_ENABLED",
+        "CONTEXT_MODE",
+        "COOLDOWN_SEC",
+        "DATABASE_URL",
+        "EA_COMMAND_DELIVERY_ENABLED",
+        "ENV",
+        "EXECUTION_COMMAND_PRODUCER_ENABLED",
+        "EXECUTION_ENABLED",
+        "FINNHUB_API_KEY",
+        "HEALTH_PROBE_TOKEN",
+        "INGEST_HEALTH_PORT",
+        "INGEST_PRODUCER_FRESHNESS_SEC",
+        "INGEST_PRODUCER_HEARTBEAT_INTERVAL_SEC",
+        "INGEST_WS_CONNECT_GRACE_SEC",
+        "LEGACY_PUSH_EXECUTION_ENABLED",
+        "LOG_LEVEL",
+        "MT5_ORDER_SEND_ENABLED",
+        "NEWS_LOCK_ENABLED",
+        "NEWS_PROVIDER",
+        "PORT",
+        "PYTHONPATH",
+        "REDIS_URL",
+        "RISK_RESERVATION_ENABLED",
+        "RUN_MODE",
+        "SIGNED_COMMAND_BRIDGE_ENABLED",
+        "STRATEGY_5SCR_EXECUTION_ENABLED",
+        "TIMEZONE",
+        "TRADE_OUTBOX_WRITE_ENABLED",
+        "TWELVE_DATA_API_KEY",
+        "WOLF15_INGEST_CB_FAILURE_THRESHOLD",
+        "WOLF15_INGEST_CB_RECOVERY_TIMEOUT",
+        "WOLF15_SERVICE_ROLE"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "9460abd0-872d-4c72-9c0b-e2e5e8bbbbbf",
+        "status": "SUCCESS",
+        "createdAt": "2026-09-03T14:45:28.587Z",
+        "updatedAt": "2026-09-03T14:46:51.021Z",
+        "serviceId": "e7fb1aa7-2ca0-4287-bd53-35d82181c890",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "83599f1b-7048-4212-9d7c-df3be98e02c3",
+        "meta": {
+          "reason": "deploy"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "e5ff17c2-ea3c-4a10-b0e6-d5e8054d7f9d",
+      "name": "Postgres"
+    },
+    "config": {
+      "source": {
+        "image": "ghcr.io/railwayapp-templates/postgres-ssl:17",
+        "autoUpdates": {
+          "type": "vuln",
+          "tagMode": "sha",
+          "schedule": [
+            {
+              "day": 6,
+              "endHour": 24,
+              "startHour": 10
+            },
+            {
+              "day": 0,
+              "endHour": 18,
+              "startHour": 0
+            }
+          ],
+          "remediationNotice": null
+        }
+      },
+      "build": {
+        "builder": "RAILPACK"
+      },
+      "deploy": {
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1
+          }
+        },
+        "requiredMountPath": "/var/lib/postgresql/data"
+      },
+      "networking": {
+        "tcpProxies": {
+          "5432": {}
+        },
+        "privateNetworkEndpoint": "postgres"
+      },
+      "volumeMounts": {
+        "a7225ff4-3c33-48e1-b783-d33517de5f4e": {
+          "mountPath": "/var/lib/postgresql/data"
+        }
+      }
+    },
+    "variableNames": [
+      "DATABASE_PUBLIC_URL",
+      "DATABASE_URL",
+      "PGDATA",
+      "PGDATABASE",
+      "PGHOST",
+      "PGPASSWORD",
+      "PGPORT",
+      "PGUSER",
+      "POSTGRES_DB",
+      "POSTGRES_PASSWORD",
+      "POSTGRES_USER",
+      "RAILWAY_DEPLOYMENT_DRAINING_SECONDS",
+      "SSL_CERT_DAYS"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 14,
+      "config": {
+        "source": {
+          "autoUpdates": {
+            "remediationNotice": null
+          }
+        }
+      },
+      "variableNames": [
+        "DATABASE_PUBLIC_URL",
+        "DATABASE_URL",
+        "PGDATA",
+        "PGDATABASE",
+        "PGHOST",
+        "PGPASSWORD",
+        "PGPORT",
+        "PGUSER",
+        "POSTGRES_DB",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_USER",
+        "RAILWAY_DEPLOYMENT_DRAINING_SECONDS",
+        "SSL_CERT_DAYS"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "f23556f0-d0ec-4649-b137-92c6871dfd5d",
+        "status": "SUCCESS",
+        "createdAt": "2026-08-26T20:56:25.033Z",
+        "updatedAt": "2026-08-26T20:57:34.646Z",
+        "serviceId": "e5ff17c2-ea3c-4a10-b0e6-d5e8054d7f9d",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "c9b32fb5-ee6c-4b1d-865d-37ba05dd3734",
+        "meta": {
+          "reason": "vuln-remediation",
+          "image": "ghcr.io/railwayapp-templates/postgres-ssl:17"
+        }
+      }
+    ]
+  },
+  {
+    "service": {
+      "id": "fd9fe71c-217c-4de7-ad2b-eb64a65f6088",
+      "name": "Redis"
+    },
+    "config": {
+      "source": {
+        "image": "redis:8.6.2"
+      },
+      "build": {
+        "builder": "RAILPACK"
+      },
+      "deploy": {
+        "startCommand": "/bin/sh -c \"rm -rf $RAILWAY_VOLUME_MOUNT_PATH/lost+found/ && exec docker-entrypoint.sh redis-server --requirepass $REDIS_PASSWORD --save 60 1 --dir $RAILWAY_VOLUME_MOUNT_PATH\"",
+        "useLegacyStacker": false,
+        "ipv6EgressEnabled": false,
+        "runtime": "V2",
+        "multiRegionConfig": {
+          "asia-southeast1-eqsg3a": {
+            "numReplicas": 1,
+            "stackerAssignment": null
+          }
+        }
+      },
+      "networking": {
+        "privateNetworkEndpoint": "redis"
+      },
+      "volumeMounts": {
+        "269258d1-8fd0-466b-ac92-6e4ebb59940a": {
+          "mountPath": "/database"
+        }
+      }
+    },
+    "variableNames": [
+      "DATABASE_URL",
+      "REDISHOST",
+      "REDISPASSWORD",
+      "REDISPORT",
+      "REDISUSER",
+      "REDIS_PASSWORD",
+      "REDIS_URL"
+    ],
+    "staged": {
+      "patchId": "68c2214f-679f-4674-842d-fa052617e986",
+      "patchStatus": "STAGED",
+      "changeCount": 8,
+      "config": {
+        "deploy": {
+          "multiRegionConfig": {
+            "asia-southeast1-eqsg3a": {
+              "stackerAssignment": null
+            }
+          }
+        }
+      },
+      "variableNames": [
+        "DATABASE_URL",
+        "REDISHOST",
+        "REDISPASSWORD",
+        "REDISPORT",
+        "REDISUSER",
+        "REDIS_PASSWORD",
+        "REDIS_URL"
+      ]
+    },
+    "deployments": [
+      {
+        "id": "ed539524-1514-4917-bb53-6408dc2d9a34",
+        "status": "SUCCESS",
+        "createdAt": "2026-08-11T12:46:40.503Z",
+        "updatedAt": "2026-08-11T12:48:29.081Z",
+        "serviceId": "fd9fe71c-217c-4de7-ad2b-eb64a65f6088",
+        "environmentId": "5838964d-8c76-42b3-b0b9-18f2d1e4d5c2",
+        "url": null,
+        "snapshotId": "d4fca117-2a0f-4e4e-9755-8cbad9b4a964",
+        "meta": {
+          "reason": "deploy",
+          "image": "redis:8.6.2"
+        }
+      }
+    ]
+  }
+]

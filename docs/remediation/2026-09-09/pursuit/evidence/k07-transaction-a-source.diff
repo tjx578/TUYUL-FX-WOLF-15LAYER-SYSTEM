@@ -1,0 +1,784 @@
+commit 01eb39efa679564eebab1ba7542453054ae4bfef
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 16:07:26 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 16:07:26 2026 +0800
+
+    feat(storage): compose test-only campaign leg preview and outbox atomically
+
+diff --git a/contracts/strategy_5scr_transaction_a_v31.py b/contracts/strategy_5scr_transaction_a_v31.py
+new file mode 100644
+index 00000000..4269317a
+--- /dev/null
++++ b/contracts/strategy_5scr_transaction_a_v31.py
+@@ -0,0 +1,137 @@
++"""TEST_ONLY transaction composition; the signal preview is not a FinalSignal."""
++
++import hashlib
++import json
++from datetime import datetime
++from typing import Literal
++from uuid import UUID
++
++from pydantic import Field, model_validator
++
++from contracts.strategy_5scr_capacity_v31 import CapacityReservationV31
++from contracts.strategy_5scr_net_geometry_v31 import GeometryContract
++from contracts.strategy_5scr_risk_adapter_v31 import ParentSizingRequestV31
++
++
++def transaction_content_hash_v31(value):
++    payload = value.model_dump(mode="json") if hasattr(value, "model_dump") else value
++    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
++    return "sha256:" + hashlib.sha256(body.encode()).hexdigest()
++
++
++class TransactionARequestV31(GeometryContract):
++    profile: Literal["TEST_ONLY"]
++    reservation_id: UUID
++    campaign_id: UUID
++    parent_leg_id: UUID
++    signal_id: UUID
++    outbox_id: UUID
++    candidate_revision_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    expected_capacity_version: int = Field(ge=0, strict=True)
++    sizing: ParentSizingRequestV31
++    expires_at: datetime
++
++    @model_validator(mode="after")
++    def bindings(self):
++        UUID(self.sizing.tradeplan_id)
++        if self.sizing.campaign_id != str(self.campaign_id):
++            raise ValueError("TRANSACTION_A_CAMPAIGN_ID_MISMATCH")
++        if (
++            self.expires_at.tzinfo is None
++            or self.expires_at.utcoffset() is None
++            or self.expires_at <= self.sizing.evaluated_at
++        ):
++            raise ValueError("TRANSACTION_A_WINDOW_INVALID")
++        return self
++
++
++class TransactionABundleV31(GeometryContract):
++    profile: Literal["TEST_ONLY"]
++    request: TransactionARequestV31
++    reservation: CapacityReservationV31
++
++    @model_validator(mode="after")
++    def bindings(self):
++        request, reserved = self.request, self.reservation
++        sizing_hash = transaction_content_hash_v31(request.sizing)
++        envelope = transaction_content_hash_v31(
++            {
++                "request_hash": sizing_hash,
++                "reservation_id": str(request.reservation_id),
++                "expires_at": request.expires_at.isoformat(),
++            }
++        )
++        if (
++            (
++                reserved.reservation_id,
++                reserved.campaign_id,
++                reserved.tradeplan_id,
++                reserved.tradeplan_revision,
++                reserved.thesis_id,
++                reserved.reserved_at,
++                reserved.expires_at,
++                reserved.strategy_candidate_receipt_hash,
++            )
++            != (
++                request.reservation_id,
++                str(request.campaign_id),
++                request.sizing.tradeplan_id,
++                request.sizing.tradeplan_revision,
++                request.sizing.thesis_id,
++                request.sizing.evaluated_at,
++                request.expires_at,
++                request.sizing.strategy_candidate_receipt_hash,
++            )
++            or reserved.sizing.request_hash != sizing_hash
++            or reserved.envelope_hash != envelope
++            or reserved.state != "HELD_UNISSUED"
++            or reserved.sizing.volume is None
++            or reserved.sizing.candidate_entry is None
++        ):
++            raise ValueError("TRANSACTION_A_RESERVATION_BINDING_MISMATCH")
++        return self
++
++    def records(self):
++        r = self.request
++        common = {"profile": "TEST_ONLY", "execution_authority": False, "capital_reservation_authority": False}
++        campaign = {**common, "campaign_id": str(r.campaign_id), "bundle": self.model_dump(mode="json")}
++        leg = {
++            **common,
++            "parent_leg_id": str(r.parent_leg_id),
++            "campaign_id": str(r.campaign_id),
++            "reservation_id": str(r.reservation_id),
++            "role": "PARENT",
++            "state": "PENDING_TEST_ONLY",
++        }
++        signal = {
++            **common,
++            "schema_version": "wolf15.test-only.signal-preview.v31",
++            "signal_id": str(r.signal_id),
++            "parent_leg_id": str(r.parent_leg_id),
++            "tradeplan_id": r.sizing.tradeplan_id,
++            "tradeplan_revision": r.sizing.tradeplan_revision,
++            "symbol": r.sizing.geometry.symbol,
++            "strategy_direction": r.sizing.geometry.direction,
++            "final_direction": "WAIT",
++            "valid_for_execution": False,
++            "is_final_signal": False,
++            "entry": str(self.reservation.sizing.candidate_entry),
++            "sl": str(r.sizing.geometry.stop_price),
++            "tp": str(r.sizing.geometry.target_price),
++            "volume": self.reservation.sizing.volume.model_dump(mode="json"),
++        }
++        outbox = {
++            **common,
++            "outbox_id": str(r.outbox_id),
++            "signal_id": str(r.signal_id),
++            "signal_payload_hash": transaction_content_hash_v31(signal),
++            "status": "NON_DELIVERABLE_TEST_ONLY",
++        }
++        return {"campaigns": campaign, "parent_legs": leg, "signal_previews": signal, "outbox": outbox}
++
++
++class TransactionAReceiptV31(GeometryContract):
++    status: Literal["COMMITTED_TEST_ONLY", "DUPLICATE_TEST_ONLY"]
++    bundle: TransactionABundleV31
++    capital_reservation_authority: Literal[False] = False
++    execution_authority: Literal[False] = False
+diff --git a/storage/migrations/versions/20260909_06_transaction_a_v31.py b/storage/migrations/versions/20260909_06_transaction_a_v31.py
+new file mode 100644
+index 00000000..81ac4471
+--- /dev/null
++++ b/storage/migrations/versions/20260909_06_transaction_a_v31.py
+@@ -0,0 +1,46 @@
++"""TEST_ONLY atomic campaign/leg/signal-preview/outbox records."""
++
++from alembic import op
++
++revision = "20260909_06"
++down_revision = "20260909_05"
++branch_labels = None
++depends_on = None
++
++
++def upgrade():
++    for name in ("campaigns", "parent_legs", "signal_previews", "outbox"):
++        extra = {
++            "campaigns": "UNIQUE(record_id,reservation_id), FOREIGN KEY(tradeplan_id,tradeplan_revision) REFERENCES public.strategy_5scr_candidate_revisions_v31(tradeplan_id,revision), CHECK(record_id=campaign_id)",
++            "parent_legs": "UNIQUE(record_id,reservation_id), FOREIGN KEY(campaign_id,reservation_id) REFERENCES public.strategy_5scr_transaction_a_campaigns_v31(record_id,reservation_id), CHECK(record_id=parent_leg_id)",
++            "signal_previews": "UNIQUE(record_id,reservation_id), FOREIGN KEY(parent_leg_id,reservation_id) REFERENCES public.strategy_5scr_transaction_a_parent_legs_v31(record_id,reservation_id), CHECK(record_id=signal_id)",
++            "outbox": "FOREIGN KEY(signal_id,reservation_id) REFERENCES public.strategy_5scr_transaction_a_signal_previews_v31(record_id,reservation_id), CHECK ((payload::jsonb->>'status'='NON_DELIVERABLE_TEST_ONLY') IS TRUE)",
++        }[name]
++        op.execute(f"""CREATE TABLE public.strategy_5scr_transaction_a_{name}_v31 (
++            record_id uuid PRIMARY KEY, reservation_id uuid NOT NULL UNIQUE,
++            account_id text NOT NULL REFERENCES public.strategy_5scr_capacity_ledgers_v31(account_id),
++            tradeplan_id uuid NOT NULL, tradeplan_revision integer NOT NULL,
++            campaign_id uuid NOT NULL,parent_leg_id uuid NOT NULL,signal_id uuid NOT NULL,
++            request_hash text NOT NULL,payload_hash text NOT NULL,payload text NOT NULL,
++            CHECK ((payload::jsonb->>'profile'='TEST_ONLY') IS TRUE),
++            CHECK ((payload::jsonb->>'execution_authority'='false') IS TRUE),
++            CHECK ((payload::jsonb->>'capital_reservation_authority'='false') IS TRUE),
++            {extra})""")
++    op.execute("""CREATE FUNCTION public.guard_5scr_transaction_a_v31() RETURNS trigger LANGUAGE plpgsql AS $$
++    DECLARE expected_token uuid;
++    BEGIN
++        IF TG_OP<>'INSERT' THEN RAISE EXCEPTION 'TRANSACTION_A_RECORD_IMMUTABLE'; END IF;
++        SELECT token INTO expected_token FROM public.strategy_5scr_capacity_ledgers_v31 WHERE account_id=NEW.account_id FOR UPDATE;
++        IF expected_token IS NULL OR expected_token::text IS DISTINCT FROM current_setting('wolf15.capacity_owner_token',true)
++        THEN RAISE EXCEPTION 'TRANSACTION_A_OWNER_FENCED'; END IF;
++        RETURN NEW;
++    END; $$""")
++    for name in ("campaigns", "parent_legs", "signal_previews", "outbox"):
++        op.execute(f"""CREATE TRIGGER guard_5scr_transaction_a_v31 BEFORE INSERT OR UPDATE OR DELETE
++            ON public.strategy_5scr_transaction_a_{name}_v31 FOR EACH ROW EXECUTE FUNCTION public.guard_5scr_transaction_a_v31()""")
++
++
++def downgrade():
++    for name in ("outbox", "signal_previews", "parent_legs", "campaigns"):
++        op.execute(f"DROP TABLE public.strategy_5scr_transaction_a_{name}_v31")
++    op.execute("DROP FUNCTION public.guard_5scr_transaction_a_v31()")
+diff --git a/storage/strategy_5scr_transaction_a_v31.py b/storage/strategy_5scr_transaction_a_v31.py
+new file mode 100644
+index 00000000..fa684cdf
+--- /dev/null
++++ b/storage/strategy_5scr_transaction_a_v31.py
+@@ -0,0 +1,133 @@
++"""Own the TEST_ONLY multi-record transaction and acknowledge only after commit."""
++
++import json
++from uuid import UUID
++
++from contracts.strategy_5scr_transaction_a_v31 import (
++    TransactionABundleV31,
++    TransactionAReceiptV31,
++    TransactionARequestV31,
++    transaction_content_hash_v31,
++)
++
++PREFIX = "public.strategy_5scr_transaction_a_"
++
++
++class TransactionARepositoryV31:
++    def __init__(
++        self, *, pg, capacity_repository, candidate_repository, verify_handoff, verify_universe, verify_risk_inputs
++    ):
++        self._pg = pg
++        self.capacity = capacity_repository
++        self.candidates = candidate_repository
++        self.verify_handoff = verify_handoff
++        self.verify_universe = verify_universe
++        self.verify_risk_inputs = verify_risk_inputs
++
++    async def _existing(self, connection, request, current):
++        row = await connection.fetchrow(
++            f"SELECT * FROM {PREFIX}campaigns_v31 WHERE reservation_id=$1", request.reservation_id
++        )
++        if row is None:
++            return None
++        if row["request_hash"] != transaction_content_hash_v31(request):
++            raise ValueError("TRANSACTION_A_REPLAY_CONFLICT")
++        payload = json.loads(row["payload"])
++        bundle = TransactionABundleV31.model_validate(payload["bundle"])
++        if bundle.request != request:
++            raise ValueError("TRANSACTION_A_STORED_REQUEST_MISMATCH")
++        expected = bundle.records()
++        live = next((r for r in current.reservations if r.reservation_id == request.reservation_id), None)
++        lifecycle_fields = {"state", "changed_at", "release_evidence_hash"}
++        if live is None or live.model_dump(exclude=lifecycle_fields) != bundle.reservation.model_dump(
++            exclude=lifecycle_fields
++        ):
++            raise ValueError("TRANSACTION_A_CAPACITY_BINDING_MISSING")
++        for name, content in expected.items():
++            stored = (
++                row
++                if name == "campaigns"
++                else await connection.fetchrow(
++                    f"SELECT * FROM {PREFIX}{name}_v31 WHERE reservation_id=$1", request.reservation_id
++                )
++            )
++            ids = {
++                "campaigns": request.campaign_id,
++                "parent_legs": request.parent_leg_id,
++                "signal_previews": request.signal_id,
++                "outbox": request.outbox_id,
++            }
++            if (
++                stored is None
++                or stored["account_id"] != current.account_id
++                or str(stored["record_id"]) != str(ids[name])
++                or str(stored["reservation_id"]) != str(request.reservation_id)
++                or str(stored["tradeplan_id"]) != request.sizing.tradeplan_id
++                or stored["tradeplan_revision"] != request.sizing.tradeplan_revision
++                or str(stored["campaign_id"]) != str(request.campaign_id)
++                or str(stored["parent_leg_id"]) != str(request.parent_leg_id)
++                or str(stored["signal_id"]) != str(request.signal_id)
++                or stored["request_hash"] != transaction_content_hash_v31(request)
++                or stored["payload_hash"] != transaction_content_hash_v31(content)
++                or json.loads(stored["payload"]) != content
++            ):
++                raise ValueError("TRANSACTION_A_PARTIAL_OR_CORRUPT_BUNDLE")
++        return bundle
++
++    async def submit(self, request: TransactionARequestV31, *, now):
++        request = TransactionARequestV31.model_validate(request.model_dump())
++        async with self._pg.transaction() as connection:
++            current = await self.capacity.lock_current(connection)
++            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
++                current.account_id,
++                current.executor_id,
++            ):
++                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
++            bundle = await self._existing(connection, request, current)
++            duplicate = bundle is not None
++            if bundle is None:
++                prepared = await self.capacity.prepare_parent_in_transaction(
++                    connection,
++                    candidate_repository=self.candidates,
++                    request=request.sizing,
++                    expected_candidate_revision_hash=request.candidate_revision_hash,
++                    reservation_id=request.reservation_id,
++                    expires_at=request.expires_at,
++                    now=now,
++                    expected_capacity_version=request.expected_capacity_version,
++                    verify_handoff=self.verify_handoff,
++                    verify_universe=self.verify_universe,
++                    verify_risk_inputs=self.verify_risk_inputs,
++                )
++                if prepared.capacity.status != "APPLIED_TEST_ONLY":
++                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
++                bundle = TransactionABundleV31(
++                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
++                )
++                ids = {
++                    "campaigns": request.campaign_id,
++                    "parent_legs": request.parent_leg_id,
++                    "signal_previews": request.signal_id,
++                    "outbox": request.outbox_id,
++                }
++                for name, payload in bundle.records().items():
++                    await connection.execute(
++                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
++                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
++                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
++                        ids[name],
++                        request.reservation_id,
++                        current.account_id,
++                        UUID(request.sizing.tradeplan_id),
++                        request.sizing.tradeplan_revision,
++                        request.campaign_id,
++                        request.parent_leg_id,
++                        request.signal_id,
++                        transaction_content_hash_v31(request),
++                        transaction_content_hash_v31(payload),
++                        json.dumps(payload),
++                    )
++        # Even the duplicate path exits the transaction before its receipt leaves.
++        return TransactionAReceiptV31(
++            status="DUPLICATE_TEST_ONLY" if duplicate else "COMMITTED_TEST_ONLY", bundle=bundle
++        )
+diff --git a/tests/integration/test_transaction_a_v31_postgres.py b/tests/integration/test_transaction_a_v31_postgres.py
+new file mode 100644
+index 00000000..905ca8e7
+--- /dev/null
++++ b/tests/integration/test_transaction_a_v31_postgres.py
+@@ -0,0 +1,183 @@
++"""Actual TEST_ONLY transaction composition acceptance on guarded PostgreSQL."""
++
++import asyncio
++from contextlib import asynccontextmanager
++from datetime import timedelta
++from uuid import uuid4
++
++import pytest
++
++from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
++from contracts.strategy_5scr_candidate_revision_v31 import CandidateRevisionAppendV31
++from contracts.strategy_5scr_capacity_owner_v31 import CapacityOwnerFenceV31
++from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
++from risk.strategy_5scr_capacity_v31 import capacity_content_hash_v31, capacity_ledger_hash_v31
++from storage.strategy_5scr_activity_consumer import transfer_owner
++from storage.strategy_5scr_candidate_revision_v31 import CandidateRevisionRepositoryV31
++from storage.strategy_5scr_capacity_v31 import CapacityRepositoryV31
++from storage.strategy_5scr_transaction_a_v31 import PREFIX, TransactionARepositoryV31
++from tests.integration.test_candidate_revision_v31_postgres import DB
++from tests.integration.test_pair_activity_runtime_postgres import pg_dsn
++from tests.test_strategy_5scr_transaction_a_v31 import NOW, fixture
++
++__all__ = ["pg_dsn"]
++
++
++class FaultConnection:
++    def __init__(self, c, fault):
++        self.c, self.fault = c, fault
++
++    def __getattr__(self, name):
++        return getattr(self.c, name)
++
++    async def execute(self, sql, *args):
++        result = await self.c.execute(sql, *args)
++        if self.fault and f"INSERT INTO {PREFIX}{self.fault}_v31" in sql:
++            raise RuntimeError("injected write failure")
++        return result
++
++    async def fetchrow(self, sql, *args):
++        result = await self.c.fetchrow(sql, *args)
++        if self.fault == "capacity" and sql.startswith("UPDATE public.strategy_5scr_capacity_ledgers_v31"):
++            raise RuntimeError("injected write failure")
++        return result
++
++
++class FaultDB(DB):
++    def __init__(self, dsn):
++        super().__init__(dsn)
++        self.fault = None
++
++    @asynccontextmanager
++    async def transaction(self):
++        async with super().transaction() as c:
++            yield FaultConnection(c, self.fault)
++
++
++@pytest.mark.parametrize(
++    "scenario",
++    [
++        "commit",
++        "restart_duplicate",
++        "concurrent_duplicate",
++        "conflicting_replay",
++        "rollback_capacity",
++        "rollback_campaigns",
++        "rollback_parent_legs",
++        "rollback_signal_previews",
++        "rollback_outbox",
++    ],
++)
++def test_transaction_a_postgres_acceptance(pg_dsn, scenario):
++    async def run():
++        db = FaultDB(pg_dsn)
++        constructed, _, ledger, request = await fixture()
++        account = "transaction-fixture-" + str(uuid4())
++        snapshot = request.sizing.snapshot.model_copy(update={"account_id": account})
++        ledger = ledger.model_copy(
++            update={"account_id": account, "account_snapshot_hash": capacity_content_hash_v31(snapshot)}
++        )
++        owner = CapacityOwnerFenceV31(
++            profile="TEST_ONLY",
++            account_id=account,
++            executor_id=ledger.executor_id,
++            owner_id="fixture-transaction-owner",
++            owner_epoch=1,
++            token=uuid4(),
++        )
++        capacity = CapacityRepositoryV31(fence=owner)
++        async with db.transaction() as c:
++            assert await c.fetchval("SELECT to_regclass($1)", PREFIX + "outbox_v31"), (
++                "explicit migration 20260909_06 required"
++            )
++            await capacity.initialize_in_transaction(c, ledger, verify_initial=lambda *_: True)
++        scope = ActivityConsumerScopeV1(
++            consumer_scope_id="transaction-a-fixture",
++            producer_binding_hash="sha256:" + "a" * 64,
++            lifecycle_owner_id="fixture-strategy-owner",
++            lifecycle_policy_hash="sha256:" + "b" * 64,
++            environment_class="DISPOSABLE_TEST",
++        )
++        async with db.transaction() as c:
++            old = await c.fetchrow("SELECT generation FROM public.strategy_5scr_owner_fences_v1 WHERE symbol='EURUSD'")
++            fence = await transfer_owner(
++                c, symbol="EURUSD", scope=scope, expected_generation=old["generation"] if old else 0
++            )
++        candidates = CandidateRevisionRepositoryV31(pg=db, fence=fence, verify_reevaluation=lambda *_: True)
++        append = CandidateRevisionAppendV31.model_validate_json(constructed.rows[0]["request_payload"])
++        plan = uuid4()
++        campaign = uuid4()
++        append = append.model_copy(
++            update={
++                "reevaluation_id": uuid4(),
++                "handoff": append.handoff.model_copy(
++                    update={"candidate": append.handoff.candidate.model_copy(update={"tradeplan_id": plan})}
++                ),
++            }
++        )
++        candidate = await candidates.append(append, now=NOW)
++        sizing = request.sizing.model_copy(
++            update={
++                "expected_account_id": account,
++                "snapshot": snapshot,
++                "tradeplan_id": str(plan),
++                "campaign_id": str(campaign),
++                "risk_state_evidence_hash": capacity_ledger_hash_v31(ledger),
++                "strategy_candidate_receipt_hash": candidate_handoff_hash_v31(candidate.request.handoff),
++            }
++        )
++        request = request.model_copy(
++            update={
++                "reservation_id": uuid4(),
++                "campaign_id": campaign,
++                "parent_leg_id": uuid4(),
++                "signal_id": uuid4(),
++                "outbox_id": uuid4(),
++                "candidate_revision_hash": candidate.request_hash,
++                "sizing": sizing,
++            }
++        )
++        repo = TransactionARepositoryV31(
++            pg=db,
++            capacity_repository=capacity,
++            candidate_repository=candidates,
++            verify_handoff=lambda *_: True,
++            verify_universe=lambda *_: True,
++            verify_risk_inputs=lambda *_: True,
++        )
++        failed = scenario.startswith("rollback_")
++        if failed:
++            db.fault = scenario.removeprefix("rollback_")
++            with pytest.raises(RuntimeError, match="injected write failure"):
++                await repo.submit(request, now=NOW)
++            db.fault = None
++        elif scenario == "concurrent_duplicate":
++            receipts = await asyncio.gather(repo.submit(request, now=NOW), repo.submit(request, now=NOW))
++            assert {r.status for r in receipts} == {"COMMITTED_TEST_ONLY", "DUPLICATE_TEST_ONLY"}
++        else:
++            first = await repo.submit(request, now=NOW)
++            if scenario == "restart_duplicate":
++                restarted = TransactionARepositoryV31(
++                    pg=DB(pg_dsn),
++                    capacity_repository=capacity,
++                    candidate_repository=candidates,
++                    verify_handoff=None,
++                    verify_universe=None,
++                    verify_risk_inputs=None,
++                )
++                duplicate = await restarted.submit(request, now=NOW + timedelta(days=1))
++                assert duplicate.bundle == first.bundle and duplicate.status == "DUPLICATE_TEST_ONLY"
++            elif scenario == "conflicting_replay":
++                with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
++                    await repo.submit(request.model_copy(update={"outbox_id": uuid4()}), now=NOW)
++        async with DB(pg_dsn).transaction() as c:
++            current = await capacity.lock_current(c)
++            assert current.version == (0 if failed else 1)
++            assert len(current.reservations) == (0 if failed else 1)
++            for name in ("campaigns", "parent_legs", "signal_previews", "outbox"):
++                count = await c.fetchval(
++                    f"SELECT count(*) FROM {PREFIX}{name}_v31 WHERE reservation_id=$1", request.reservation_id
++                )
++                assert count == (0 if failed else 1)
++
++    asyncio.run(run())
+diff --git a/tests/test_pair_activity_ci_receipt.py b/tests/test_pair_activity_ci_receipt.py
+index 1a2a919d..29ae58ab 100644
+--- a/tests/test_pair_activity_ci_receipt.py
++++ b/tests/test_pair_activity_ci_receipt.py
+@@ -219,7 +219,8 @@ def test_migration_graph_records_structure_without_claiming_execution():
+     from scripts.ci.pair_activity_run_evidence import migration_graph
+ 
+     graph = migration_graph(Path(__file__).resolve().parents[1])
+-    assert graph["repository_heads"] == ["20260909_05"]
++    assert graph["repository_heads"] == ["20260909_06"]
++    assert graph["revision_parents"]["20260909_06"] == "20260909_05"
+     assert graph["revision_parents"]["20260909_05"] == "20260909_04"
+     assert graph["revision_parents"]["20260909_04"] == "20260909_03"
+     assert graph["revision_parents"]["20260909_01"] == "20260822_01"
+diff --git a/tests/test_strategy_5scr_transaction_a_v31.py b/tests/test_strategy_5scr_transaction_a_v31.py
+new file mode 100644
+index 00000000..1cabae69
+--- /dev/null
++++ b/tests/test_strategy_5scr_transaction_a_v31.py
+@@ -0,0 +1,233 @@
++import asyncio
++from contextlib import asynccontextmanager
++from copy import deepcopy
++from datetime import timedelta
++from uuid import UUID
++
++import pytest
++from pydantic import ValidationError
++
++from contracts.strategy_5scr_risk_reservation import validate_final_signal_reservation
++from contracts.strategy_5scr_transaction_a_v31 import TransactionARequestV31
++from storage.strategy_5scr_transaction_a_v31 import PREFIX, TransactionARepositoryV31
++from tests.test_strategy_5scr_capacity_persistence_v31 import NOW, CapacityDB, parent_fixture
++
++
++class TransactionDB(CapacityDB):
++    def __init__(self):
++        super().__init__()
++        self.records = {name: {} for name in ("campaigns", "parent_legs", "signal_previews", "outbox")}
++        self.fault_after = None
++
++    @asynccontextmanager
++    async def transaction(self):
++        before = deepcopy(self.records)
++        try:
++            async with super().transaction():
++                yield self
++        except BaseException:
++            self.records = before
++            raise
++
++    async def fetchrow(self, sql, *args):
++        for name, rows in self.records.items():
++            if f"FROM {PREFIX}{name}_v31" in sql:
++                return rows.get(args[0])
++        return await super().fetchrow(sql, *args)
++
++    async def execute(self, sql, *args):
++        for name, rows in self.records.items():
++            if f"INSERT INTO {PREFIX}{name}_v31" in sql:
++                if args[1] in rows or any(r["record_id"] == args[0] for r in rows.values()):
++                    raise ValueError("unique record conflict")
++                rows[args[1]] = dict(
++                    zip(
++                        (
++                            "record_id",
++                            "reservation_id",
++                            "account_id",
++                            "tradeplan_id",
++                            "tradeplan_revision",
++                            "campaign_id",
++                            "parent_leg_id",
++                            "signal_id",
++                            "request_hash",
++                            "payload_hash",
++                            "payload",
++                        ),
++                        args,
++                        strict=True,
++                    )
++                )
++                if self.fault_after == name:
++                    raise RuntimeError("fault after " + name)
++                return
++        return await super().execute(sql, *args)
++
++
++async def fixture():
++    old, capacity, initial, candidates, kwargs = await parent_fixture()
++    db = TransactionDB()
++    db.capacity = deepcopy(old.capacity)
++    db.rows = deepcopy(old.rows)
++    sizing = kwargs["request"].model_copy(update={"campaign_id": str(UUID(int=901))})
++    request = TransactionARequestV31(
++        profile="TEST_ONLY",
++        reservation_id=kwargs["reservation_id"],
++        campaign_id=UUID(int=901),
++        parent_leg_id=UUID(int=902),
++        signal_id=UUID(int=903),
++        outbox_id=UUID(int=904),
++        candidate_revision_hash=kwargs["expected_candidate_revision_hash"],
++        expected_capacity_version=0,
++        sizing=sizing,
++        expires_at=kwargs["expires_at"],
++    )
++    repo = TransactionARepositoryV31(
++        pg=db,
++        capacity_repository=capacity,
++        candidate_repository=candidates,
++        verify_handoff=lambda *_: True,
++        verify_universe=lambda *_: True,
++        verify_risk_inputs=lambda *_: True,
++    )
++    return db, repo, initial, request
++
++
++def test_all_records_and_capacity_commit_together_as_non_deliverable_test_only():
++    async def run():
++        db, repo, _, request = await fixture()
++        result = await repo.submit(request, now=NOW)
++        assert result.status == "COMMITTED_TEST_ONLY" and db.commits == 1
++        assert all(len(rows) == 1 for rows in db.records.values())
++        async with db.transaction():
++            stored = await repo.capacity.lock_current(db)
++        assert stored.version == 1 and stored.reservations[0] == result.bundle.reservation
++        assert result.capital_reservation_authority is result.execution_authority is False
++        preview = result.bundle.records()["signal_previews"]
++        with pytest.raises(ValueError):
++            validate_final_signal_reservation(preview)
++        assert result.bundle.records()["outbox"]["status"] == "NON_DELIVERABLE_TEST_ONLY"
++
++    asyncio.run(run())
++
++
++@pytest.mark.parametrize("failure", ["campaigns", "parent_legs", "signal_previews", "outbox", "commit"])
++def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
++    async def run():
++        db, repo, initial, request = await fixture()
++        db.fault_after = failure
++        db.fail_commit = failure == "commit"
++        with pytest.raises(RuntimeError):
++            await repo.submit(request, now=NOW)
++        assert all(not rows for rows in db.records.values()) and db.commits == 0
++        db.fail_commit = False
++        async with db.transaction():
++            assert await repo.capacity.lock_current(db) == initial
++
++    asyncio.run(run())
++
++
++def test_lost_ack_retry_after_expiry_returns_same_complete_bundle_without_new_effect():
++    async def run():
++        db, repo, _, request = await fixture()
++        first = await repo.submit(request, now=NOW)
++        before = deepcopy(db.records)
++        restarted = TransactionARepositoryV31(
++            pg=db,
++            capacity_repository=repo.capacity,
++            candidate_repository=repo.candidates,
++            verify_handoff=None,
++            verify_universe=None,
++            verify_risk_inputs=None,
++        )
++        retry = await restarted.submit(request, now=NOW + timedelta(days=1))
++        assert retry.status == "DUPLICATE_TEST_ONLY" and retry.bundle == first.bundle and db.records == before
++        assert retry.execution_authority is False
++
++    asyncio.run(run())
++
++
++@pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
++def test_replay_cannot_substitute_any_bound_request(field):
++    async def run():
++        db, repo, _, request = await fixture()
++        await repo.submit(request, now=NOW)
++        value = (
++            "sha256:" + "f" * 64
++            if field == "candidate_revision_hash"
++            else (8 if field == "expected_capacity_version" else UUID(int=999))
++        )
++        with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
++            await repo.submit(request.model_copy(update={field: value}), now=NOW)
++        assert all(len(rows) == 1 for rows in db.records.values())
++
++    asyncio.run(run())
++
++
++@pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
++def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
++    async def run():
++        db, repo, _, request = await fixture()
++        await repo.submit(request, now=NOW)
++        if fault == "missing_leg":
++            db.records["parent_legs"] = {}
++        elif fault == "payload_hash":
++            db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
++        elif fault == "record_id":
++            db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
++        else:
++            async with db.transaction():
++                current = await repo.capacity.lock_current(db)
++            altered = current.model_copy(
++                update={
++                    "reservations": ()
++                    if fault == "missing_capacity"
++                    else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
++                }
++            )
++            from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
++
++            db.capacity[current.account_id].update(
++                payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
++            )
++        with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
++            await repo.submit(request, now=NOW)
++
++    asyncio.run(run())
++
++
++def test_orphan_capacity_is_rejected_without_creating_missing_transaction_records():
++    async def run():
++        db, repo, _, request = await fixture()
++        async with db.transaction():
++            await repo.capacity.prepare_parent_in_transaction(
++                db,
++                candidate_repository=repo.candidates,
++                request=request.sizing,
++                expected_candidate_revision_hash=request.candidate_revision_hash,
++                reservation_id=request.reservation_id,
++                expires_at=request.expires_at,
++                now=NOW,
++                expected_capacity_version=0,
++                verify_handoff=lambda *_: True,
++                verify_universe=lambda *_: True,
++                verify_risk_inputs=lambda *_: True,
++            )
++        with pytest.raises(ValueError, match="ORPHAN_CAPACITY"):
++            await repo.submit(request, now=NOW)
++        assert all(not rows for rows in db.records.values())
++
++    asyncio.run(run())
++
++
++def test_request_rejects_legacy_plan_and_campaign_identity_relabeling():
++    async def run():
++        _, _, _, request = await fixture()
++        for field, value in [("tradeplan_id", "5scr-plan:" + "a" * 32), ("campaign_id", "legacy-campaign")]:
++            with pytest.raises(ValidationError):
++                TransactionARequestV31.model_validate(
++                    {**request.model_dump(), "sizing": {**request.sizing.model_dump(), field: value}}
++                )
++
++    asyncio.run(run())

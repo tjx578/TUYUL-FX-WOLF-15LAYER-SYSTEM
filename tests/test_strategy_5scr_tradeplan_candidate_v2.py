@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal, cast
@@ -9,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 import analysis.strategy_5scr_tradeplan_candidate_v2 as tradeplan_rules
+import storage.strategy_5scr_tradeplan_candidate_v2_repository as tradeplan_storage
 from analysis.strategy_5scr_tradeplan_candidate_v2 import (
     derive_structural_stop_authority_v1,
     derive_structural_target_map_v1,
@@ -32,6 +34,50 @@ from contracts.strategy_5scr_tradeplan_candidate_v2 import (
 
 NOW = datetime(2026, 8, 13, 0, tzinfo=UTC)
 H = "sha256:" + "1" * 64
+
+
+def test_schema_fingerprint_binds_exact_catalog_bytes() -> None:
+    unquoted = "CREATE   INDEX candidate_idx ON authority_table (state)"
+    formatting_only = "create index CANDIDATE_IDX on AUTHORITY_TABLE (STATE)"
+    literal = "CHECK (state = 'ACTIVE')"
+    identifier = 'SELECT "AuthorityScope" FROM authority_table'
+    dollar_quoted = "CREATE FUNCTION guard() RETURNS trigger AS $body$ RETURN NEW; $body$ LANGUAGE plpgsql"
+
+    assert tradeplan_storage._sql_fingerprint(unquoted) != tradeplan_storage._sql_fingerprint(formatting_only)
+    assert tradeplan_storage._sql_fingerprint(unquoted) == tradeplan_storage._sql_fingerprint(unquoted)
+    assert tradeplan_storage._sql_fingerprint(literal) != tradeplan_storage._sql_fingerprint(
+        literal.replace("'ACTIVE'", "'active'")
+    )
+    assert tradeplan_storage._sql_fingerprint(identifier) != tradeplan_storage._sql_fingerprint(
+        identifier.replace('"AuthorityScope"', '"authorityscope"')
+    )
+    assert tradeplan_storage._sql_fingerprint(dollar_quoted) != tradeplan_storage._sql_fingerprint(
+        dollar_quoted.replace("RETURN NEW;", "RETURN OLD;")
+    )
+    assert tradeplan_storage._sql_fingerprint("-- guard\nRETURN NEW;") != tradeplan_storage._sql_fingerprint(
+        "-- guard RETURN NEW;"
+    )
+
+
+def test_schema_status_fails_closed_for_nonpersistent_authority_tables() -> None:
+    status = tradeplan_storage.TradePlanCandidateV2SchemaStatus(
+        missing_tables=(),
+        invalid_tables=(tradeplan_storage.CANDIDATE_TABLE,),
+        missing_columns=(),
+        invalid_columns=(),
+        missing_constraints=(),
+        invalid_constraints=(),
+        missing_indexes=(),
+        invalid_indexes=(),
+        missing_triggers=(),
+        invalid_triggers=(),
+    )
+    source = inspect.getsource(tradeplan_storage.Strategy5SCRTradePlanCandidateV2Repository.schema_status)
+
+    assert not status.ready
+    assert "relkind::text AS relkind" in source
+    assert "relpersistence::text AS relpersistence" in source
+    assert "relispartition" in source
 
 
 def _candle(

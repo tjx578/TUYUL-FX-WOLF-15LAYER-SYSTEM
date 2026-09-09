@@ -34,7 +34,7 @@ jobs:
           pip install pip-audit
 
       - name: Run pip-audit (hard-fail)
-        run: pip-audit --desc --strict --ignore-vuln CVE-2026-4539  # pygments: no fix available, local-access only
+        run: pip-audit --desc --strict
 
   # ---------------------------------------------------------------
   # Node.js: npm audit
@@ -63,7 +63,12 @@ jobs:
           npm ci
 
       - name: Run npm audit (report)
-        run: npm audit --audit-level=high --json > npm-audit-report.json || true
+        run: |
+          set +e
+          npm audit --audit-level=high --json > npm-audit-report.json
+          audit_status=$?
+          set -e
+          echo "$audit_status" > npm-audit-exit.txt
 
       - name: Upload npm audit report
         uses: actions/upload-artifact@v4
@@ -74,7 +79,8 @@ jobs:
 
       - name: Fail on high+
         run: |
-          node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync('npm-audit-report.json','utf8'));const v=r.metadata?.vulnerabilities||{};if((v.high||0)+(v.critical||0)>0){console.error('High/Critical vulnerabilities found:',v);process.exit(1)}"
+          node --test ../../scripts/ci/npm_audit_gate.test.mjs
+          node ../../scripts/ci/npm_audit_gate.mjs npm-audit-report.json "$(cat npm-audit-exit.txt)"
 
   # ---------------------------------------------------------------
   # Secret leak scan
@@ -89,14 +95,18 @@ jobs:
 
       - name: Install trufflehog
         run: |
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/v3.97.4/scripts/install.sh | sh -s -- -b /usr/local/bin v3.97.4
 
       - name: Scan for secrets (hard-fail)
-        run: |
-          trufflehog filesystem . \
-            --no-update \
-            --fail \
-            --exclude-paths=.github/trufflehog-exclude.txt
+        run: python scripts/ci/secret_scan_receipt.py
+
+      - name: Upload redacted secret detection receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-detection-receipt
+          path: artifacts/secret-scan/receipt.json
+          if-no-files-found: error
 
   # ---------------------------------------------------------------
   # Security gate

@@ -1,0 +1,44 @@
+{
+  "schema": "wolf15.disposable-runner-binding-proposal.v1",
+  "status": "UNBOUND",
+  "provisioned": false,
+  "candidate_branch": "codex/s03-runtime-recovery-20260909",
+  "candidate_sha": "94cd6a5d0bf920ad6b5ca5f9475d273b0c7ab334",
+  "host": {
+    "operator_approved_identity": null,
+    "configuration_reference": null,
+    "os": null,
+    "architecture": null,
+    "capacity_receipt": null,
+    "access_scope": "DEDICATED_DISPOSABLE_TEST_ONLY"
+  },
+  "database": {
+    "instance_identity": null,
+    "engine_version": null,
+    "migration_owner": null,
+    "database_name": null,
+    "loopback_required": true,
+    "environment_class": "DISPOSABLE_TEST",
+    "credential_reference": null
+  },
+  "acceptance": {
+    "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+    "expected_case_count_at_baseline": 45,
+    "strict_zero_skips": true,
+    "migration_execution_receipt": null,
+    "run_receipt": null
+  },
+  "authority": {
+    "production": false,
+    "broker": false,
+    "hypothesis": false,
+    "risk": false,
+    "execution": false
+  },
+  "constraints": [
+    "Preserve Windows workloads and historical VPSs.",
+    "Do not substitute deployment metadata or SQL generation for a running PostgreSQL test.",
+    "A supplied fixture policy is TEST_ONLY and is not an approved operational policy.",
+    "Do not store passwords or DSNs in this proposal."
+  ]
+}

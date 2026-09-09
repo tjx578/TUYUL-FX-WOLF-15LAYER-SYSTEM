@@ -5,6 +5,12 @@
 # CI/CD
 .github/
 
+# Coding-assistant configuration and local catalogs (not application agents/)
+.codex/
+.agents/
+.claude/
+settings.local.json
+
 # Environment & secrets
 .env
 .env.*

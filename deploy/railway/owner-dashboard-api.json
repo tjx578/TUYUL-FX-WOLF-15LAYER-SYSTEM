@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {"builder": "DOCKERFILE", "dockerfilePath": "Dockerfile"},
+  "deploy": {
+    "startCommand": "python -m api.owner_dashboard_release",
+    "preDeployCommand": [],
+    "healthcheckPath": "/healthz",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "NEVER"
+  }
+}

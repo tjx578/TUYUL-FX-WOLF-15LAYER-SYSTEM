@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.ci.postgres_server_binding import require_server_address
 from tests.integration.postgres_test_guard import (
     DESTRUCTIVE_TEST_OPT_IN,
     require_destructive_postgres_opt_in,
@@ -21,6 +22,33 @@ def test_destructive_opt_in_requires_the_exact_phrase() -> None:
     for invalid in ("", "yes", "YES_I_UNDERSTAND ", "yes_i_understand"):
         with pytest.raises(ValueError):
             require_destructive_postgres_opt_in(invalid)
+
+
+@pytest.mark.parametrize("actual", ["127.0.0.1", "127.0.0.1/32", "::1", "::1/128"])
+def test_server_guard_accepts_loopback_host_notation(actual: str) -> None:
+    assert require_server_address(actual) in {"127.0.0.1", "::1"}
+
+
+def test_server_guard_binds_the_exact_inspected_container() -> None:
+    assert require_server_address("172.18.0.3/32", "172.18.0.3") == "172.18.0.3"
+
+
+@pytest.mark.parametrize(
+    ("actual", "expected"),
+    [
+        ("172.18.0.3/32", ""),
+        ("172.18.0.4/32", "172.18.0.3"),
+        ("172.18.0.3/24", "172.18.0.3"),
+        ("172.18.0.3", "172.18.0.0/24"),
+        ("127.0.0.1", "172.18.0.3"),
+        ("0.0.0.0", "0.0.0.0"),
+        ("224.0.0.1", "224.0.0.1"),
+        ("db.example.com", "db.example.com"),
+    ],
+)
+def test_server_guard_rejects_unbound_mismatch_ranges_and_invalid_hosts(actual: str, expected: str) -> None:
+    with pytest.raises(ValueError):
+        require_server_address(actual, expected)
 
 
 def test_ci_provisions_every_disposable_database_proof() -> None:

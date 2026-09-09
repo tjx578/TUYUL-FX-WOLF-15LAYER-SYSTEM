@@ -63,7 +63,9 @@ _REQUIRED_TABLES = frozenset(
 
 
 def _normalize_sql(value: Any) -> str:
-    return " ".join(str(value or "").replace('"', "").lower().split())
+    """Fingerprint the exact stable PostgreSQL catalog representation."""
+
+    return str(value or "")
 
 
 def _sql_fingerprint(value: Any) -> str:
@@ -479,53 +481,53 @@ _REQUIRED_CONSTRAINTS: dict[str, _ConstraintContract] = {
 # migration's own DDL.  Names, types, or selected fragments are not enough:
 # a same-named ``CHECK (... OR TRUE)`` must fail readiness.
 _REQUIRED_CONSTRAINT_DEFINITION_HASHES = {
-    "ck_5scr_h1_proof_authority_v1": "146a39405048400cb9530b0b115514caeaa89952e38c03e2846633cf15ee0564",
-    "ck_5scr_h1_proof_direction_v1": "ee2b96c391a0439f8ce901871d825c41c0640bd84ea3c25c4cd4861f4d5534fe",
-    "ck_5scr_h1_proof_event_v1": "7831e61af2398e7ef8c3838eedf23308630a62862cbf25053e5fe8407e97c3c7",
-    "ck_5scr_h1_proof_identity_v1": "78df54842b2bf818e4666e7d0d3f38e2e5158e43727069ad085020d649cf3bf8",
-    "ck_5scr_h1_proof_order_v1": "1af0721b527ae51e3293a69a6a11d038f651700bb1c8f1182b96cc2010301f8a",
-    "ck_5scr_h1_proof_shadow_only_v1": "069ad805fc3e58c90feb7b72bcb3f5868f6863476463d71d5e10c2b066c96f60",
-    "ck_5scr_h1_proof_sources_v1": "c82389107a5a8e5d1202e08ebc6acba0d72c8596685a083bbf7e4a522aaa9795",
-    "ck_5scr_h1_proof_structure_v1": "36d3272046f81ee678d8a12886dcf7fe471576b4347d9bc7e5f9068292515015",
-    "ck_5scr_m15_proof_authority_v1": "b00a4b125066660b63270f1ce74065192efe115c3b9da02d1957c311c12e0783",
-    "ck_5scr_m15_proof_completion_v1": "912e69be6e9bf3a13b6ab5c495fe35552d5530bfb7e1c7944ce92d9410157719",
-    "ck_5scr_m15_proof_direction_v1": "ee2b96c391a0439f8ce901871d825c41c0640bd84ea3c25c4cd4861f4d5534fe",
-    "ck_5scr_m15_proof_identity_v1": "358ddea4f416821c8144973dbbb7623dcbf689df7ab21fdcd5813d14d3e11001",
-    "ck_5scr_m15_proof_order_v1": "7e75f16874f1e2134ffbee04ed9c1567e686d30c6786b098d6ade8da67a96e32",
-    "ck_5scr_m15_proof_shadow_only_v1": "069ad805fc3e58c90feb7b72bcb3f5868f6863476463d71d5e10c2b066c96f60",
-    "ck_5scr_m15_proof_sources_v1": "1a3f3dbbf08faace7c39320092ec86cbb10cc596b7c152170b7ec2f6141bc6de",
-    "ck_5scr_m15_proof_structure_v1": "cbed8d33ba3a694f11a5600600f6ea3d9c2da4bec500e8d0afddd52ab8dadd4f",
-    "ck_5scr_thesis_direction_v1": "ee2b96c391a0439f8ce901871d825c41c0640bd84ea3c25c4cd4861f4d5534fe",
-    "ck_5scr_thesis_domain_direction_v1": "026284cbe0cab5d988ef6db31825795800ca61609ad4a7d39291bd208e253480",
-    "ck_5scr_thesis_domain_v1": "eb57c4dd498ab0485850810cd7273f1fa9622c145f997878c6c248efe61d883b",
-    "ck_5scr_thesis_identity_v1": "c284f43f882dd039032a246e9f6cc857fdaa4a29cb3b8588d7076553f5032b04",
-    "ck_5scr_thesis_pressure_authority_v1": "adaffde060bc850640b977b1cc9420992f4f15ee021f2393c0ef17d64ece3d86",
-    "ck_5scr_thesis_pressure_direction_v1": "667f474b25deb7f86f58c899702b4fbd06e3cc6d8019daa3bad6f7e358c75121",
-    "ck_5scr_thesis_pressure_enum_v1": "b8ca4773ce10044a0712d8526df724d0b70f3602bb8177b0a14bf9e7402b0d63",
-    "ck_5scr_thesis_route_hash_v1": "91fa91dc42c72e0b4d5a6124e494e1bc80c0fa913fca4dde0d468135b2693b1b",
-    "ck_5scr_thesis_counter_pressure_hash_v1": "12e95e2cd4195f04d3a020ce66d3772cea7bc4bde51ded22d726f9fc7de20b55",
-    "ck_5scr_thesis_shadow_only_v1": "784104188fe902a7efad1747bb0817529b629f1c8b61ba22a9ca0cfc74f91281",
-    "ck_5scr_thesis_state_v1": "74adb602f04fb62b81164ea2ad69efcfa6d1f635452f77abb07c762223cca7a6",
-    "ck_5scr_thesis_temporal_v1": "708921543a4038a13210527352af3baa42f907f304eeb3894333dbeda2e06f5c",
-    "fk_5scr_h1_proof_context_scope_v1": "8c5c3a15e4ab8adedb9a4021b0462181ddc80d35de4144f389e297d2929b4aca",
-    "fk_5scr_h1_proof_lifecycle_v1": "b1761179c1b12af56f970536031e896d2cd42265aeec3e0c6923ca2144989230",
-    "fk_5scr_m15_proof_context_scope_v1": "8c5c3a15e4ab8adedb9a4021b0462181ddc80d35de4144f389e297d2929b4aca",
-    "fk_5scr_m15_proof_h1_scope_v1": "8d62a819b7bb14043bc52680ff0e6b7d98f9ad8d04b84917d7f2ce0a7e22a61e",
-    "fk_5scr_m15_proof_lifecycle_v1": "b1761179c1b12af56f970536031e896d2cd42265aeec3e0c6923ca2144989230",
-    "fk_5scr_thesis_context_scope_v1": "8c5c3a15e4ab8adedb9a4021b0462181ddc80d35de4144f389e297d2929b4aca",
-    "fk_5scr_thesis_h1_scope_v1": "8d62a819b7bb14043bc52680ff0e6b7d98f9ad8d04b84917d7f2ce0a7e22a61e",
-    "fk_5scr_thesis_lifecycle_v1": "b1761179c1b12af56f970536031e896d2cd42265aeec3e0c6923ca2144989230",
-    "fk_5scr_thesis_m15_scope_v1": "9039fadd33fe264479622c86478560d57fe44224692c002f6cbfa5001cbf46dc",
-    "strategy_5scr_directional_theses_v1_pkey": "7dfc5afce692f48f92c8381321bdddd6d8838d070e0e01e4518d71896df3e9d0",
-    "strategy_5scr_h1_structure_proofs_v1_pkey": "963a6af276effe20c85f7f0bc5ea7ce97b62a58a1e51cb5f6098323e1a30bfb7",
-    "strategy_5scr_m15_structural_proofs_v1_pkey": "f8735a5c90f61db1ea09506255bcf04302c96a8079132c622aa3a2271bb470f4",
-    "uq_5scr_context_epoch_scope_v1": "6bfd4824f2d395255cd95beff3e8438674fbdd141003a8e85774e58847fc57d4",
-    "uq_5scr_h1_proof_scope_v1": "afe187e15beb5e975210916f495090b57b3641ef2f2062e19e3ae6fc42126b43",
-    "uq_5scr_h1_proof_semantic_v1": "5541f5250b3da8a574ad5fd63cee05e435f0e8007cfc4e73e147c003981cd333",
-    "uq_5scr_m15_proof_scope_v1": "b5c5fcbafd6fb3b299869e64a241c03eef8c90027160ff74579794a7f8c2e4ff",
-    "uq_5scr_m15_proof_semantic_v1": "5541f5250b3da8a574ad5fd63cee05e435f0e8007cfc4e73e147c003981cd333",
-    "uq_5scr_thesis_semantic_identity_v1": "68fc0a2e082042b51e3c7516fec57199a3bc04b615a24e8a74bbae90094fedbc",
-    "uq_5scr_thesis_sequence_v1": "8a0de6c56765b7893f52b288b4be7e6dbe3d5748a3999e5df948b0a513e55036",
+    "ck_5scr_h1_proof_authority_v1": "41c172a46ea906e01d2197546a50507cf76418a2bf1ff47814531eb16bc54f9e",
+    "ck_5scr_h1_proof_direction_v1": "ef580a440fc80882fc679015428f630644be900cbe52633db97a0b66d61ed5a3",
+    "ck_5scr_h1_proof_event_v1": "edb742e1e1f87198f011f4ec8f99f7cca7d6d7b80dc0cbfd137a1c88a5224b92",
+    "ck_5scr_h1_proof_identity_v1": "6a9c40f7ff084aca62b09e188577629927d3621bb61831125104c9eb1592a27e",
+    "ck_5scr_h1_proof_order_v1": "6a8e59291af84b603cc1569a84bbf563dccf52272cf4401afe1f5e25b7c99ad3",
+    "ck_5scr_h1_proof_shadow_only_v1": "241ba579eb592c0fafb96ddb69ae9ef328390d3465b1b535b70e6977d20438a4",
+    "ck_5scr_h1_proof_sources_v1": "7fde116f628aae69619e0850d0f3832a41333f86f9982af1fde259a645b4eec2",
+    "ck_5scr_h1_proof_structure_v1": "e171d2230ac7ca925730ef40ad531f106a840f0511810cabc7cbc4cdd3fae2d2",
+    "ck_5scr_m15_proof_authority_v1": "61285b1658a3c7da4d75c583f5234cfe89683d38f1189681e9bf7aa2417983d4",
+    "ck_5scr_m15_proof_completion_v1": "e64e39e2fe79a2f0ca574c95567ea4cad5741d50f51258826286b2754adad83c",
+    "ck_5scr_m15_proof_direction_v1": "ef580a440fc80882fc679015428f630644be900cbe52633db97a0b66d61ed5a3",
+    "ck_5scr_m15_proof_identity_v1": "1beec69565c967982a9f0a161cf272b0502f3a42663034cf4bac81238de8ce86",
+    "ck_5scr_m15_proof_order_v1": "8c11582c5b9c5b254b266f42cec620fdd472bc8e9f28c09937dfb736314c8731",
+    "ck_5scr_m15_proof_shadow_only_v1": "241ba579eb592c0fafb96ddb69ae9ef328390d3465b1b535b70e6977d20438a4",
+    "ck_5scr_m15_proof_sources_v1": "107e1ce85041eaf56054dab605089e1c7d81d9b840835feb863a789dc275f604",
+    "ck_5scr_m15_proof_structure_v1": "49e5e1a24fc27024239155baf4bf0639d5d1785d709ce70c408e64ca09c7dd32",
+    "ck_5scr_thesis_direction_v1": "ef580a440fc80882fc679015428f630644be900cbe52633db97a0b66d61ed5a3",
+    "ck_5scr_thesis_domain_direction_v1": "74b44eef46970fa9ec64ef06090a1f2d45fe6da9b1323637823e450c7b4c56b1",
+    "ck_5scr_thesis_domain_v1": "ad74cf9bfb0fd477225698c9d5c3670000a4e250e98b599df35ed73ee45816c4",
+    "ck_5scr_thesis_identity_v1": "146337e17170aaf3aecc261426a28c6d136e75a74cc86136f46ee2875d844aba",
+    "ck_5scr_thesis_pressure_authority_v1": "598253d13c6e5033aa01b2c97d08c9e26f56b1b6ccbeab7867f76c98efe89961",
+    "ck_5scr_thesis_pressure_direction_v1": "690ccd6db9066a544e9671e1c89cd5e2ec0004cb18e9071f9bd89c901d25ef5b",
+    "ck_5scr_thesis_pressure_enum_v1": "5b853cd4e5f144fbc93db0ab3a07cf6316ae619275bcbb5df016640bf71c87df",
+    "ck_5scr_thesis_route_hash_v1": "86f6714bdf170310ab1fbba0c75ef94633ebb7f1ce61a654067eb81837a5ca73",
+    "ck_5scr_thesis_counter_pressure_hash_v1": "9854ca8b4e41f04e9f7c7871748b1e545d94f949c951554f599c4e3bd2134378",
+    "ck_5scr_thesis_shadow_only_v1": "4d8f493cdf507cdfb69b4d11681dcdc93352247840c59c6ca67d07dd61395d44",
+    "ck_5scr_thesis_state_v1": "5ba1f16102bc6df2682ebf7828db275fa48e3ed31f75ee9b69269157d1c1e5ac",
+    "ck_5scr_thesis_temporal_v1": "77ad31ea9aca2ce83e20cf2ab771c708ff8fa2be3c215202c9b015470560037e",
+    "fk_5scr_h1_proof_context_scope_v1": "cd752ec8c65105e4c15ec426a83fc643f87966388e23c460667edf60935a6c66",
+    "fk_5scr_h1_proof_lifecycle_v1": "31c316748300dbd4469cf8ccd91828fcdca520c4f93363bbcbb2f8a9411a7d32",
+    "fk_5scr_m15_proof_context_scope_v1": "cd752ec8c65105e4c15ec426a83fc643f87966388e23c460667edf60935a6c66",
+    "fk_5scr_m15_proof_h1_scope_v1": "3e5540dc573f83ef5473c82ddf43e4406c09b94ae4be3b87641e2a753578e7aa",
+    "fk_5scr_m15_proof_lifecycle_v1": "31c316748300dbd4469cf8ccd91828fcdca520c4f93363bbcbb2f8a9411a7d32",
+    "fk_5scr_thesis_context_scope_v1": "cd752ec8c65105e4c15ec426a83fc643f87966388e23c460667edf60935a6c66",
+    "fk_5scr_thesis_h1_scope_v1": "3e5540dc573f83ef5473c82ddf43e4406c09b94ae4be3b87641e2a753578e7aa",
+    "fk_5scr_thesis_lifecycle_v1": "31c316748300dbd4469cf8ccd91828fcdca520c4f93363bbcbb2f8a9411a7d32",
+    "fk_5scr_thesis_m15_scope_v1": "4547a12535c0b12bd0e10c7c6d426a4bff0095121feb6611007274fa8c8df8bf",
+    "strategy_5scr_directional_theses_v1_pkey": "f09f3a34f1bd0ad12bcd17340852bc458684b8a5845685247d7cd68f45bd5d76",
+    "strategy_5scr_h1_structure_proofs_v1_pkey": "66cc0248f1bc625bab4b428d7a118337402b547d4b3c18602c893b22efdc1940",
+    "strategy_5scr_m15_structural_proofs_v1_pkey": "d08c6819bb772cc974f3e2ca4ac70e9cfdfc812dfb5bfea85e041ccee0685544",
+    "uq_5scr_context_epoch_scope_v1": "fbafdfbe9eb8307bf9997f54d2109e55a3af46ff016a774fdbbf2096de482b59",
+    "uq_5scr_h1_proof_scope_v1": "b5f725b1088d870c6041316d3e2a60d16e991ecac7bed9cca1868755524a3d41",
+    "uq_5scr_h1_proof_semantic_v1": "f3719d5de776b48d0a70df01debbac5b2ccbf0c8a11adddc7fcc104b6f2bb865",
+    "uq_5scr_m15_proof_scope_v1": "087249552887224eaac69e54ccb0755bcefeed1d95eec7ec1676e89b7f62eb58",
+    "uq_5scr_m15_proof_semantic_v1": "f3719d5de776b48d0a70df01debbac5b2ccbf0c8a11adddc7fcc104b6f2bb865",
+    "uq_5scr_thesis_semantic_identity_v1": "da727f20d1ffb03f698e6f057b2f73af513378b5d7065b88489449fc0af49bbe",
+    "uq_5scr_thesis_sequence_v1": "302fd8a492ee3480e9f248696893f078a1b5ee775888e306dd6dbee359fb2f03",
 }
 
 
@@ -556,11 +558,11 @@ _REQUIRED_INDEXES = {
 }
 
 _REQUIRED_INDEX_DEFINITION_HASHES = {
-    "ix_5scr_h1_proof_context_time_v1": "043a83871e841b18b3c3b34b86bf8616a3f3649e75ce3c4bf3fc798d9fb8af2a",
-    "ix_5scr_m15_proof_context_time_v1": "68f2f85b8a5655dde06bd2b14292055c19b05cc390dd5418297c4577c31f49aa",
-    "ix_5scr_thesis_context_history_v1": "0f1468ce017406884cbaead7ecb55b844b7b885549a88c33a262e644bae34895",
-    "ix_canonical_candles_closed_asof": "33464dca2d5bf02324034d700666958d6ff70f7b188474fd3de20ab15ebeeffb",
-    "uq_5scr_thesis_active_lifecycle_v1": "d1d5fd228eb7df35b0303ebaf45969bc1fb159055b08a9d3df163cc28321f84a",
+    "ix_5scr_h1_proof_context_time_v1": "34bebfeae4bcd024015797960590a7bb3f1f7eca61ce9be158619a806f27cb55",
+    "ix_5scr_m15_proof_context_time_v1": "5926ddd0ef1e83da3490a76bbace2cf7faf16527e422ce4e71da69ca889ff025",
+    "ix_5scr_thesis_context_history_v1": "5076e8e4a20cabd286e708ede83843a1a0b91470acf1a185e803fc07c5d6dbc7",
+    "ix_canonical_candles_closed_asof": "7cdfcd915696824a0635c7c41d38dab8ea03ac179c503121e41819c998dd3b84",
+    "uq_5scr_thesis_active_lifecycle_v1": "bdebb9ee9e727eaf17b3b832b92fbac6fb8e6cab32c5fe20222c74345ab5d3bb",
 }
 
 
@@ -602,16 +604,16 @@ _REQUIRED_TRIGGERS = {
 
 _REQUIRED_TRIGGER_DEFINITION_HASHES = {
     "trg_strategy_5scr_directional_theses_v1_guard": (
-        "8e4d42286095d6c0ff3e282e79682b7cbb2fa65a2fd9237935488b7cc5b7a163",
-        "e6ae01e362a3f076d20989dc69905f5fc196823e453ea03a22d5148ce5e6f037",
+        "ffad54ce02e33c29dc64b7444f0302ef2168aa3b032562294cee70387cdde10a",
+        "f56a1d9a0061d937e5a90acf0c2db66307ecb5e4245ec8f8399548a956afa284",
     ),
     "trg_strategy_5scr_h1_structure_proofs_v1_immutable": (
-        "b6159d2a6e6529ba15b6b313c19e0c6738a0baa218ce96b05fd4c8e795dab41a",
-        "4d4bc3488422dd51c6448c9835e63eaadae34ab11acdd229d37a6bf0dfea5c20",
+        "bdaf117ffd2b74ea91f7553d16f1e1254f29a1bae589d68f78434ae44a591cf1",
+        "4c671ced56042b8c3356bca9e34a18ebdf63811be1a68908b207f9927e700804",
     ),
     "trg_strategy_5scr_m15_structural_proofs_v1_immutable": (
-        "5a6d2e3830f5f1ba25c29b31386fbf49a905b8267d264649eab39a7ecf3fd0d6",
-        "4d4bc3488422dd51c6448c9835e63eaadae34ab11acdd229d37a6bf0dfea5c20",
+        "e09fc0fe4930b51e5b447c2369b913deb495fe9884bd0df5607a3a7a286639bb",
+        "4c671ced56042b8c3356bca9e34a18ebdf63811be1a68908b207f9927e700804",
     ),
 }
 

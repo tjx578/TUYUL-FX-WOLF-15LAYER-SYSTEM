@@ -258,7 +258,7 @@
       "title": "Deployment Topology Baseline",
       "path": "docs/architecture/infrastructure/deployment-baseline.md",
       "domain": "deployment",
-      "description": "Production architecture diagram and service boundary reference for Railway deployment.",
+      "description": "Railway viewer on port 8080 with server-only direct core API, alongside independent backend/state services. No production rollout is implied.",
       "status": "canonical",
       "last_updated": "2026-03-18"
     },
@@ -285,7 +285,7 @@
       "title": "Go-Live Checklist",
       "path": "docs/architecture/operations/go-live-checklist.md",
       "domain": "operations",
-      "description": "Production go-live checklist for Vercel + Railway deployment: environment, routing, EA bridge, and readiness verification.",
+      "description": "Railway selected viewer and direct-core release gates. Repository changes are separate from production password-login acceptance, which remains HOLD.",
       "status": "canonical",
       "last_updated": "2026-03-18"
     },

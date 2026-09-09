@@ -16,6 +16,7 @@ RUNTIME_FILES = (
     ROOT / "analysis" / "strategy_5scr_tradeplan_candidate_v2.py",
     ROOT / "storage" / "strategy_5scr_tradeplan_candidate_v2_repository.py",
 )
+OBSERVER_PROJECTION_FILE = ROOT / "storage" / "observer_strategy_events.py"
 
 
 def _imports(path: Path) -> set[str]:
@@ -41,7 +42,9 @@ def test_p6_has_no_legacy_risk_command_or_ea_dependency() -> None:
         "execution",
         "services.trade",
     )
-    imported = set().union(*(_imports(path) for path in RUNTIME_FILES))
+    # The observer projection may read the canonical P6 evaluation contract,
+    # but it is held to the same no-risk/no-command/no-EA import boundary.
+    imported = set().union(*(_imports(path) for path in (*RUNTIME_FILES, OBSERVER_PROJECTION_FILE)))
     assert not any(module == item or module.startswith(item + ".") for module in imported for item in forbidden)
 
 
@@ -89,6 +92,19 @@ def test_p6_has_no_existing_production_consumer() -> None:
     # P6's own migration is allowed to name its tables; it is schema, not a
     # runtime consumer.  All other production call sites must remain absent.
     runtime.add((ROOT / "storage" / "migrations" / "versions" / "20260813_01_5scr_tradeplan_candidate_v2.py").resolve())
+    # P7 is the first reviewed downstream consumer of CandidateV2.  Keep this
+    # allowlist exact so no unrelated runtime path can silently acquire P6
+    # strategy authority.
+    runtime.update(
+        {
+            (ROOT / "contracts" / "strategy_5scr_candidate_c2_shadow_v2.py").resolve(),
+            (ROOT / "analysis" / "strategy_5scr_candidate_c2_shadow_v2.py").resolve(),
+            (ROOT / "storage" / "strategy_5scr_candidate_c2_shadow_v2_repository.py").resolve(),
+            # Audited source-verbatim telemetry mirror, not a strategy or
+            # execution consumer of CandidateV2.
+            OBSERVER_PROJECTION_FILE.resolve(),
+        }
+    )
     consumers: list[str] = []
     for root in ("analysis", "api", "contracts", "core", "execution", "services", "storage"):
         directory = ROOT / root

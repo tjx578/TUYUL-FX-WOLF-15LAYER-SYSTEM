@@ -1,0 +1,15 @@
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[commit]
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[restart_duplicate]
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[concurrent_duplicate]
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[conflicting_replay]
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_capacity]
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_campaigns]
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_parent_legs]
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_signal_previews]
+tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_outbox]
+
+9 tests collected in 1.14s
+/opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

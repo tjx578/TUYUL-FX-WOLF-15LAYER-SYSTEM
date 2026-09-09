@@ -10,6 +10,7 @@ from typing import Any, Literal
 import pytest
 from pydantic import ValidationError
 
+import storage.strategy_5scr_directional_thesis_v1_repository as thesis_storage
 from analysis.strategy_5scr_directional_thesis_v1 import (
     ActiveStructuralLivenessResult,
     DirectionalThesisBuildArtifact,
@@ -39,6 +40,29 @@ CONTEXT = "5scr-context:22222222222222222222222222222222"
 SYMBOL = "EURUSD"
 BUY_ROUTE = "BUY_BREAK_RETEST"
 SELL_ROUTE = "SELL_BREAK_RETEST"
+
+
+def test_p4_schema_fingerprint_binds_exact_catalog_bytes() -> None:
+    unquoted = "CREATE   INDEX thesis_idx ON thesis_table (state)"
+    formatting_only = "create index THESIS_IDX on THESIS_TABLE (STATE)"
+    literal = "CHECK (state = 'ACTIVE')"
+    identifier = 'SELECT "AuthorityScope" FROM thesis_table'
+    dollar_quoted = "CREATE FUNCTION guard() RETURNS trigger AS $body$ RETURN NEW; $body$ LANGUAGE plpgsql"
+
+    assert thesis_storage._sql_fingerprint(unquoted) != thesis_storage._sql_fingerprint(formatting_only)
+    assert thesis_storage._sql_fingerprint(unquoted) == thesis_storage._sql_fingerprint(unquoted)
+    assert thesis_storage._sql_fingerprint(literal) != thesis_storage._sql_fingerprint(
+        literal.replace("'ACTIVE'", "'active'")
+    )
+    assert thesis_storage._sql_fingerprint(identifier) != thesis_storage._sql_fingerprint(
+        identifier.replace('"AuthorityScope"', '"authorityscope"')
+    )
+    assert thesis_storage._sql_fingerprint(dollar_quoted) != thesis_storage._sql_fingerprint(
+        dollar_quoted.replace("RETURN NEW;", "RETURN OLD;")
+    )
+    assert thesis_storage._sql_fingerprint("-- guard\nRETURN NEW;") != thesis_storage._sql_fingerprint(
+        "-- guard RETURN NEW;"
+    )
 
 
 def _tag(value: Any) -> str:
@@ -1493,3 +1517,20 @@ def test_complete_long_range_liveness_finds_old_invalidation_and_gaps_fail_close
         decision_at_utc=watermark + timedelta(hours=30),
     )
     assert gap == ActiveStructuralLivenessResult("LIVENESS_COVERAGE_INCOMPLETE", None, watermark)
+
+
+@pytest.mark.parametrize("remaining_microseconds", [1, 0, -1])
+def test_pressure_authority_validity_is_exclusive_at_expiry(remaining_microseconds: int) -> None:
+    context = _context()
+    result = build_directional_thesis_proofs(
+        context=context,
+        evidence=_evidence(
+            context, "BUY", pressure=_pressure(valid_until=DECISION + timedelta(microseconds=remaining_microseconds))
+        ),
+    )
+    if remaining_microseconds > 0:
+        assert result.status == "READY"
+        assert result.artifact is not None
+    else:
+        assert (result.status, result.reason_code) == ("REJECTED", "PRESSURE_AUTHORITY_EXPIRED")
+        assert result.artifact is None

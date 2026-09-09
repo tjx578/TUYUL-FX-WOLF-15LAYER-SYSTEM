@@ -58,7 +58,9 @@ def _enabled(value: str | None, *, default: bool) -> bool:
 
 
 def _normalize_sql(value: Any) -> str:
-    return " ".join(str(value or "").replace('"', "").lower().split())
+    """Fingerprint the exact stable PostgreSQL catalog representation."""
+
+    return str(value or "")
 
 
 def _sql_fingerprint(value: Any) -> str:
@@ -322,30 +324,30 @@ _REQUIRED_CONSTRAINTS: dict[str, _ConstraintContract] = {
 # release.  Missing entries deliberately fail closed; the catalog itself must
 # be complete rather than silently falling back to substring matching.
 _REQUIRED_CONSTRAINT_DEFINITION_HASHES: dict[str, str] = {
-    "ck_5scr_execution_box_geometry_v1": "3da2615ad989aea6838f159d0678ab75d3ca351a7265e11c65f1d1a996b21a10",
-    "ck_5scr_execution_box_identity_v1": "d6401a12c25383a54dfa35465cc2abde239b0ff81ad14ee75802a4b410b5e039",
-    "ck_5scr_execution_box_lineage_v1": "b1bb21d25ad93910628845740c434d58ed95bc820c29b9681a2529a383903510",
-    "ck_5scr_execution_box_observation_identity_v1": "f8acc75d8a9ca06645aa5c4abe6c17f3f1ac1b4076c907f2206516ea0379b463",
-    "ck_5scr_execution_box_observation_outcome_v1": "94bd57a46baa790c113fd80bd2787a002b413e3a76415aa14f402f4a8ca62e1b",
-    "ck_5scr_execution_box_observation_shadow_only_v1": "069ad805fc3e58c90feb7b72bcb3f5868f6863476463d71d5e10c2b066c96f60",
-    "ck_5scr_execution_box_shadow_only_v1": "cac310316bbb0316d551cc61e37e45b2a78b4ae9a1c22cc489dcfcc7664a379a",
-    "ck_5scr_execution_box_sources_v1": "b4d29a376db8b8891c838f77f33ad24eae146b192036905e921c2074d33abef7",
-    "ck_5scr_execution_box_state_v1": "13faf2d0a7b2675db7729ed5f1ed9bb9b4d6c5fc066b39940c60ba1c4828b734",
-    "ck_5scr_execution_box_temporal_v1": "f79a69f74eefae051c0b695a82e842f0b900c341367ab22b3766f451f94ea36c",
-    "fk_5scr_execution_box_context_scope_v1": "8c5c3a15e4ab8adedb9a4021b0462181ddc80d35de4144f389e297d2929b4aca",
-    "fk_5scr_execution_box_lifecycle_v1": "b1761179c1b12af56f970536031e896d2cd42265aeec3e0c6923ca2144989230",
-    "fk_5scr_execution_box_observation_box_v1": "8f851f5fee0037f32148dd2cd96937db7ac1febc7121b274c293a56d2c9baab5",
-    "fk_5scr_execution_box_previous_v1": "6b67f5d28fea0a1717bddff62f972b448ca54510659b44840014da88c7163b27",
-    "fk_5scr_execution_box_thesis_scope_v1": "5ec4564c3bd6958f24bdee6fda09b8c38476befb22b05974017dd71e48f8bf33",
-    "strategy_5scr_execution_box_observations_v1_pkey": "7f9a57e36021e2a95f7c18dae3dd95c19c9cbc7c144894b228019985d7f7face",
-    "strategy_5scr_execution_boxes_v1_pkey": "599f4cebee611ca2df5c752d46e6d0fd0cc9c090d0fa7cdeb5ad8f5476c3154b",
-    "uq_5scr_context_epoch_scope_v1": "6bfd4824f2d395255cd95beff3e8438674fbdd141003a8e85774e58847fc57d4",
-    "uq_5scr_execution_box_observation_clock_v1": "4bb6a8bf036ec0c0dda3ae491ff9c4559c01ddd0bb092c7a266eef2005332033",
-    "uq_5scr_execution_box_observation_scope_v1": "ed4a0763370324545a0f283c2d2d29b0b0ad4de0e13b7d86b81027e11aa1db00",
-    "uq_5scr_execution_box_predecessor_scope_v1": "99edefc0cca5325bc7e49611f563aaf0e1c87dfe82527d66a50e4f0fdbce350d",
-    "uq_5scr_execution_box_sequence_v1": "1e89d81e95ff972d9fb140addb2b2bd7d433a66ff0926f76ddf079120bed6a0a",
-    "uq_5scr_execution_box_version_v1": "723a9c03a7a56b1ea6a8c1e9ab1f25b98cfe02abe794e8d0cf12584f4f185ad6",
-    "uq_5scr_thesis_execution_box_scope_v1": "bdf28c6a6f6a4f35d607fa114cdf9ae5818b5a0eda19462a3984b758775f9a41",
+    "ck_5scr_execution_box_geometry_v1": "40dbeabc867e87c702c2f86b46090a1281746b2e4068317a57acf9d8400fdb2e",
+    "ck_5scr_execution_box_identity_v1": "f8f9a3c0c9ae7f378041b1c5be51cceb58da59ec5add7a2de5a0dce0fd1c04bb",
+    "ck_5scr_execution_box_lineage_v1": "0b4d01e09aa01cf277918eba79df859797c299020a1c3f603ec4253ffebf9980",
+    "ck_5scr_execution_box_observation_identity_v1": "1522272f19bd506e40e99822ffb42c54121aa8c7d4d58b936805192bed6cd9fd",
+    "ck_5scr_execution_box_observation_outcome_v1": "4e990d77d6678c68c8a20b1c57ffba392c37a201860874d6f023897b65386bf6",
+    "ck_5scr_execution_box_observation_shadow_only_v1": "241ba579eb592c0fafb96ddb69ae9ef328390d3465b1b535b70e6977d20438a4",
+    "ck_5scr_execution_box_shadow_only_v1": "9b996154165a14a6f559155e6d2a0abc80105aeee0ea7383feb1cc9f7f940544",
+    "ck_5scr_execution_box_sources_v1": "c5aa78cc0327dea84d6abb69299656d43d4e59c618cc1a7e51a677ba042d2cb7",
+    "ck_5scr_execution_box_state_v1": "707e4890c595b500cbfaad488bb20fac016832983c244e5c36a19d9d4232864e",
+    "ck_5scr_execution_box_temporal_v1": "ea44942c9b9b27f03356ad277ef907b29bb75973f14e608620dd0d3b5e90afd5",
+    "fk_5scr_execution_box_context_scope_v1": "cd752ec8c65105e4c15ec426a83fc643f87966388e23c460667edf60935a6c66",
+    "fk_5scr_execution_box_lifecycle_v1": "31c316748300dbd4469cf8ccd91828fcdca520c4f93363bbcbb2f8a9411a7d32",
+    "fk_5scr_execution_box_observation_box_v1": "3ad212cb55e694ece1f1664263959ad6c04670e11a59194ca6e9476fc6dc8986",
+    "fk_5scr_execution_box_previous_v1": "40122972954e73bfa7a177dc48bf4e4ab82eb2b471388be34c43d29ce1016d06",
+    "fk_5scr_execution_box_thesis_scope_v1": "0bc158c4768c2aca278785bf74badb138d0112c2eada9ee94b33b6618c27c243",
+    "strategy_5scr_execution_box_observations_v1_pkey": "4dccce8e06e9a8f52111669142aaccc3bf8e8dd8d0bc6af971567bd55e45917c",
+    "strategy_5scr_execution_boxes_v1_pkey": "e04fa22677ebc6d3d59e05a04b880e8fbf7ae8eaf10dda53c6f8c035215f087d",
+    "uq_5scr_context_epoch_scope_v1": "fbafdfbe9eb8307bf9997f54d2109e55a3af46ff016a774fdbbf2096de482b59",
+    "uq_5scr_execution_box_observation_clock_v1": "5f4a169aafeef2d3117c8baab2a5d4d458f2262f97bcd0f377b74574c9361a52",
+    "uq_5scr_execution_box_observation_scope_v1": "3f805c903266813852e93d8e12ead26c17d78578e8fbdb0871c4f5426a51f63c",
+    "uq_5scr_execution_box_predecessor_scope_v1": "af102b6508fbcff5c4e54d651d0c106e93ea2dfda31d72afc6638c477fc48a3e",
+    "uq_5scr_execution_box_sequence_v1": "e3cefa1fc2cf026c43355e0b9a70f3b0b6ef9c8bea4e48010d1faf38bfae7525",
+    "uq_5scr_execution_box_version_v1": "52f4d47689bbc991115a4a17e9f31a71c65a6fd4b3decb28ff16b822fbe890e1",
+    "uq_5scr_thesis_execution_box_scope_v1": "0d0ae25a08807535a5beba46f3262e9e7d469dcf24580c91283cc2d7f4f55fa6",
 }
 
 _REQUIRED_INDEXES: dict[str, _IndexContract] = {
@@ -365,12 +367,12 @@ _REQUIRED_INDEXES: dict[str, _IndexContract] = {
     ),
 }
 _REQUIRED_INDEX_DEFINITION_HASHES: dict[str, str] = {
-    "ix_5scr_execution_box_lifecycle_history_v1": "cd2b0f8e19251d65a029e80c567b355da3f60d8e861e716fbf134a9882537df1",
-    "ix_5scr_execution_box_observation_history_v1": "b19c418e9604ae8d07e909e7763e1caee3911e982830d6297e0e6d6d6e5a2afd",
-    "ix_canonical_candles_closed_asof": "33464dca2d5bf02324034d700666958d6ff70f7b188474fd3de20ab15ebeeffb",
-    "uq_5scr_execution_box_active_lifecycle_v1": "1ce48f2fd5272237ef80b219b1603a327f06cf376ce68fcb3e533956a1914364",
-    "uq_5scr_execution_box_active_thesis_v1": "7e44e3ab39f61dcf668dbc87a45c31123d9da4b239a43c80cdc1ea40f2f1601a",
-    "uq_5scr_execution_box_observation_request_v1": "9e43aed2814bf5e6dfeec87b463308e580d304e0f5f60726f1ac92ffd02261d8",
+    "ix_5scr_execution_box_lifecycle_history_v1": "ce140fbc2db55f1d7d971cc7e9a1196e95c626e4bbe529a53e2451431377e69a",
+    "ix_5scr_execution_box_observation_history_v1": "f284a367c9600870389f18304827b2bf9f2a868778d4b635817009d8fbdf5c55",
+    "ix_canonical_candles_closed_asof": "7cdfcd915696824a0635c7c41d38dab8ea03ac179c503121e41819c998dd3b84",
+    "uq_5scr_execution_box_active_lifecycle_v1": "677e5d24163bf37194acf7375ef296e01d9858f4486dfae36dbd055109ca2e7b",
+    "uq_5scr_execution_box_active_thesis_v1": "73fa53bda5ac943db821af95c37eb1f9f8b693925cc25ef8186e336181c44537",
+    "uq_5scr_execution_box_observation_request_v1": "224d61852096314f0be63cd559678b2288120348edb3d8e1ee6cc1eaf8ac6c51",
 }
 
 _REQUIRED_TRIGGERS: dict[str, _TriggerContract] = {
@@ -381,12 +383,12 @@ _REQUIRED_TRIGGERS: dict[str, _TriggerContract] = {
 }
 _REQUIRED_TRIGGER_DEFINITION_HASHES: dict[str, tuple[str, str]] = {
     "trg_strategy_5scr_execution_box_observations_v1_immutable": (
-        "598a01e8c48d2940459f09ac02eaba56ee7631e648fc6ffa7a36e17efe4b16e6",
-        "5d72ea5b807b22dfed1b8fae923244ab502f45288873d4922ffbb3c754eb1296",
+        "dbe9b421c99c0cfa9426253748e84ecb7d074bbf245aa31b39a514b2ef4ff409",
+        "884fddcf149ded8ffc8f475e2524d1ba951a6c81b8d1e2baf78aaabe005dac3f",
     ),
     "trg_strategy_5scr_execution_boxes_v1_guard": (
-        "99d93498b2dbb89aac3971dfba8d0b95c3a0e46d30c59804527a47a8a4c25dad",
-        "4dcd83a5942fadb4a3a0d19231b65af35177002b571eaa3083ff67cc7be9ccab",
+        "35fc57cd6e79aa808968abe6a96b8f50989f235c3da9d6a91ea5e662c30c888c",
+        "735ca65d1afd5c8506d13309f7417b892ded6cdda9d0f53c4f423526b67f16e4",
     ),
 }
 
