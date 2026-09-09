@@ -1,0 +1,45 @@
+........................................................................ [ 21%]
+........................................................................ [ 43%]
+.....................................................F.................. [ 64%]
+........................................................................ [ 86%]
+.............................................                            [100%]
+================================== FAILURES ===================================
+_____ test_live_record_throttled_keeps_inferred_direction_for_audit_only ______
+
+    def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
+        analyzer = SignalThrottleLiveAnalyzer()
+        analyzer.record_throttled(
+            symbol="USDJPY",
+            verdict="EXECUTE_REDUCED_RISK_BUY",
+            count=3,
+            remaining=0,
+            max_signals=3,
+            window_seconds=300,
+        )
+    
+        events = list(analyzer._events)
+    
+>       assert events[0].event_type == "THROTTLED"
+E       AssertionError: assert 'DOWNGRADED_TO_HOLD' == 'THROTTLED'
+E         
+E         - THROTTLED
+E         + DOWNGRADED_TO_HOLD
+
+tests\test_signal_throttle_log_analyzer.py:312: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  signal_throttle_raw:signal_throttle_log_analyzer.py:999 [SignalThrottle] USDJPY THROTTLED - 3 signals in last 300s (max 3) deployment_id=unknown scanner_cycle_id=SCAN_20260908T202000Z_300S scanner_epoch=2026-09-08T20:20:00+00:00 observed_cycle_index=1 throttled_inferred_direction=BUY
+WARNING  signal_throttle_raw:signal_throttle_log_analyzer.py:999 [SignalThrottle] USDJPY THROTTLED - verdict EXECUTE_REDUCED_RISK_BUY downgraded to HOLD (count=3, remaining=0) deployment_id=unknown scanner_cycle_id=SCAN_20260908T202000Z_300S scanner_epoch=2026-09-08T20:20:00+00:00 observed_cycle_index=1
+============================== warnings summary ===============================
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\ci-evidence\combined-s03-frozen-exact.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_signal_throttle_log_analyzer.py::test_live_record_throttled_keeps_inferred_direction_for_audit_only
+1 failed, 332 passed, 1 warning in 31.57s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

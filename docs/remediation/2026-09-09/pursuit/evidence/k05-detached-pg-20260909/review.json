@@ -1,0 +1,51 @@
+{
+  "source_commit": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+  "ci_run": "34363944821",
+  "ci_status": "completed",
+  "ci_conclusion": "success",
+  "security": "success",
+  "docs": "success",
+  "postgres_distinct": 94,
+  "postgres_failures": 0,
+  "postgres_skipped": 0,
+  "source_manifest_verified": true,
+  "tested_merge_sha": "e9352325b85942876f17fc394b962919e62f8885",
+  "postgres_version": 160015,
+  "migration_head": "20260909_07",
+  "upgrade_preserved_row_hash": true,
+  "expected_actual": {
+    "detached_verifier": "Second PostgreSQL connection acquired account/symbol lock during callbacks",
+    "owner_changed": "Stale candidate owner rejected after verification",
+    "delayed_expiry": "Transaction A final INSERT then expiry caused rollback with zero records and unchanged capacity",
+    "duplicate": "Restart/concurrent duplicate preserved one effect",
+    "consumer_ack": "Historical required consumer11 executed again without skip"
+  },
+  "failed_candidate": {
+    "sha": "df5e050078d8b8e1b27da9f42380b77b6c63d347",
+    "cause": "Upgrade seed still passed verifier to transaction method; pinned Ruff formatter differed",
+    "repair": "Prepared initial verification before transaction; script source hashed; format with Ruff0.15.7"
+  },
+  "limits": [
+    "TEST_ONLY; no execution/capital authority",
+    "Application pre-exit checks do not guarantee PostgreSQL commit timestamp",
+    "K05 operational coverage/provenance/policy/attestor and admission-hypothesis binding remain open",
+    "P1 C01 C02 C06 remain open; C04 existing runner closure preserved",
+    "No main merge, production migration, Railway deployment or broker action"
+  ],
+  "next_review": {
+    "C06": "Engine served probe differs from supervisor probe; fatal hold path returns success; required task exhaustion does not terminate owner",
+    "files": [
+      "services/engine/runner.py",
+      "core/health_probe.py",
+      "main.py",
+      "startup/task_supervisor.py"
+    ],
+    "reviewer": "capacity_detached; read-only source review"
+  },
+  "observed_at_utc": "2026-09-09T14:38:39.851456+00:00",
+  "python_counts": {
+    "tests": 10235,
+    "benchmark": 6
+  },
+  "built_api_cases": 10
+}

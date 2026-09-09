@@ -1,0 +1,18 @@
+[
+  {
+    "Path": "C:\\Program Files\\PostgreSQL\\17\\bin\\postgres.exe",
+    "Hash": "8AE8BB442E8A4C4FB2C8E9AD38C19ACA610EE3CBA33AFD69249DE769F905329B"
+  },
+  {
+    "Path": "C:\\Program Files\\PostgreSQL\\17\\bin\\initdb.exe",
+    "Hash": "2EF1B590D0967AF7C0EA10BBF1B53195A589C75EF5B5CDC6177AA2B0BEE9FE65"
+  },
+  {
+    "Path": "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_ctl.exe",
+    "Hash": "595303CEDE56A05EFF6E2EC6E6E8BD5531C13832BA09FAB57B1A9E93BC945C34"
+  },
+  {
+    "Path": "C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe",
+    "Hash": "AA12E27530AC07F129E69DACA953EA5F02202A7BDE45D503E771ABC39016536D"
+  }
+]

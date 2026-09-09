@@ -27,15 +27,18 @@ async def health_alias() -> JSONResponse:
 
 @router.get("/readyz")
 async def readyz() -> JSONResponse:
-    """Readiness — can the BFF serve traffic?
-
-    Checks that the shared httpx client is open (i.e. core-api is
-    reachable, barring network issues).
-    """
+    """Readiness — can the BFF reach a healthy core-api dependency?"""
     client = get_client()
-    if client.is_closed:
+    try:
+        response = await client.get("/healthz")
+    except Exception:
         return JSONResponse(
-            {"status": "not_ready", "reason": "http_client_closed"},
+            {"status": "not_ready", "reason": "core_api_unavailable"},
+            status_code=503,
+        )
+    if not response.is_success:
+        return JSONResponse(
+            {"status": "not_ready", "reason": "core_api_unhealthy"},
             status_code=503,
         )
     return JSONResponse({"status": "ready", "service": "dashboard-bff"})

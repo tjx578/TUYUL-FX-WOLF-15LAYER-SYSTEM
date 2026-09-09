@@ -1,0 +1,18 @@
+{
+  "scope": "K07 candidate revision history, separate from 63 S03 delivery acceptance identities",
+  "source_commit": "0467171ffacc89cfb5337a3cb9ee10d7fc66f59c",
+  "required_migration_head": "20260909_04",
+  "required_count": 7,
+  "test_ids": [
+    "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[restart_duplicate]",
+    "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[rollback]",
+    "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[concurrent_duplicate]",
+    "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[payload_conflict]",
+    "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[advisory_canonical]",
+    "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[stale_owner]",
+    "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[raw_mutation]"
+  ],
+  "database_execution": "NOT_EXECUTED",
+  "migration_application": "NOT_EXECUTED",
+  "acceptance_rule": "All seven collected identities must actually execute on the bound disposable PostgreSQL database with matching source/config/DB/head evidence and JUnit, no skips/errors/failures. Collection and local protocol fakes do not close this gate."
+}

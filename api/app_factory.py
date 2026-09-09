@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import threading
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager, suppress
 from typing import Any
@@ -42,6 +41,7 @@ from infrastructure.tracing import (
     instrument_requests,
     setup_tracer,
 )
+from startup.required_tasks import RequiredTaskSupervisor
 from storage.postgres_client import pg_client
 
 from .middleware.auth import verify_token
@@ -70,6 +70,15 @@ async def _await_bool(value: Awaitable[bool] | bool) -> bool:
     if isinstance(value, bool):
         return value
     return await value
+
+
+def _assert_api_only_orchestrator_ownership() -> None:
+    """Reject a second lifecycle owner before starting any API consumers."""
+    if _env_bool("WOLF15_EMBED_ORCHESTRATOR", False):
+        raise RuntimeError(
+            "WOLF15_EMBED_ORCHESTRATOR is no longer supported: "
+            "wolf15-orchestrator is the sole runtime orchestration owner"
+        )
 
 
 def _assert_no_duplicate_routes(application: FastAPI) -> None:
@@ -104,6 +113,14 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _assert_api_only_orchestrator_ownership()
+    read_only_startup = _env_bool("WOLF15_API_READ_ONLY_STARTUP", False)
+    if read_only_startup:
+        from api.owner_dashboard_release import validate_release_environment
+
+        validate_release_environment(os.environ)
+    supervisor = RequiredTaskSupervisor({"trade_outbox": not read_only_startup})
+    app.state.required_task_supervisor = supervisor
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     from dataclasses import replace
 
@@ -135,16 +152,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Redis unavailable at startup — will retry on first use")
         app.state.redis = None
 
-    with suppress(Exception):
-        await pg_client.initialize()
+    if not read_only_startup:
+        with suppress(Exception):
+            await pg_client.initialize()
 
     outbox_worker: TradeOutboxWorker | None = None
     outbox_task: asyncio.Task[None] | None = None
-    try:
-        outbox_worker = TradeOutboxWorker(consumer_name="api-1")
-        outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
-    except Exception:
-        logger.warning("Trade outbox worker failed to start — will operate without outbox")
+    if not read_only_startup:
+        try:
+            outbox_worker = TradeOutboxWorker(consumer_name="api-1")
+            outbox_task = supervisor.start("trade_outbox", outbox_worker.run())
+        except Exception:
+            supervisor.fail("trade_outbox", "bootstrap_failed")
+            with suppress(Exception):
+                await asyncio.wait_for(pg_client.close(), timeout=10)
+            with suppress(Exception):
+                await asyncio.wait_for(close_pool(), timeout=10)
+            raise RuntimeError("REQUIRED_TRADE_OUTBOX_BOOTSTRAP_FAILED") from None
     app.state.trade_outbox_worker = outbox_worker
     app.state.trade_outbox_task = outbox_task
 
@@ -152,7 +176,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from infrastructure.cross_instance_relay import CrossInstanceRelay
 
     relay: CrossInstanceRelay | None = None
-    if app.state.redis is not None and _env_bool("ENABLE_WS_RELAY", True):
+    if not read_only_startup and app.state.redis is not None and _env_bool("ENABLE_WS_RELAY", True):
         try:
             from api.ws_routes import (
                 alerts_manager,
@@ -191,7 +215,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from infrastructure.peer_health import PeerHealthChecker
 
     peer_checker: PeerHealthChecker | None = None
-    if _env_bool("ENABLE_PEER_HEALTH", True):
+    if not read_only_startup and _env_bool("ENABLE_PEER_HEALTH", True):
         try:
             peer_checker = PeerHealthChecker(self_name="api")
             await peer_checker.start()
@@ -205,38 +229,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from config_loader import get_enabled_symbols
 
     _candle_agg_started = False
-    try:
-        _enabled_syms = [p.replace("/", "").upper() for p in get_enabled_symbols()]
-        await _candle_agg.start(_enabled_syms)
-        _candle_agg_started = True
-    except Exception as exc:
-        logger.warning("HybridCandleAggregator failed to start: %s — candle WS may be empty", exc)
-
-    # ── Embedded Orchestrator (opt-in via WOLF15_EMBED_ORCHESTRATOR=true) ──
-    _orchestrator_thread: threading.Thread | None = None
-    if _env_bool("WOLF15_EMBED_ORCHESTRATOR", False):
+    if not read_only_startup:
         try:
-            from services.orchestrator.state_manager import StateManager
+            _enabled_syms = [p.replace("/", "").upper() for p in get_enabled_symbols()]
+            await _candle_agg.start(_enabled_syms)
+            _candle_agg_started = True
+        except Exception as exc:
+            logger.warning("HybridCandleAggregator failed to start: %s — candle WS may be empty", exc)
 
-            def _run_orchestrator() -> None:
-                try:
-                    StateManager().run_forever()
-                except Exception:
-                    logger.exception("Embedded orchestrator crashed")
+    if read_only_startup:
+        from api.owner_dashboard_release import emit_startup_attestation
 
-            _orchestrator_thread = threading.Thread(
-                target=_run_orchestrator,
-                daemon=True,
-                name="embedded-orchestrator",
-            )
-            _orchestrator_thread.start()
-            logger.info("Embedded orchestrator started (daemon thread)")
-        except Exception:
-            logger.warning("Embedded orchestrator failed to start — running API-only")
+        emit_startup_attestation(
+            {
+                "outbox": outbox_worker is not None or outbox_task is not None,
+                "relay": relay is not None,
+                "peer_health": peer_checker is not None,
+                "candle_aggregator": _candle_agg_started,
+                "orchestrator": False,
+            }
+        )
 
     try:
         yield
     finally:
+        supervisor.stopping = True
         if peer_checker is not None:
             with suppress(Exception):
                 await peer_checker.stop()
@@ -249,13 +266,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if outbox_worker is not None:
             with suppress(Exception):
                 await outbox_worker.stop()
-        if outbox_task is not None:
-            with suppress(asyncio.CancelledError):
-                outbox_task.cancel()
-                await outbox_task
+        # A cancellation-resistant writer must stop before its pools are closed.
+        await supervisor.stop(timeout=10)
         with suppress(Exception):
-            await pg_client.close()
-        await close_pool()
+            await asyncio.wait_for(pg_client.close(), timeout=10)
+        await asyncio.wait_for(close_pool(), timeout=10)
         logger.info("🐺 TUYUL FX Wolf-15 shutting down…")
 
 
@@ -303,62 +318,12 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
 
 
 def _add_cors(app: FastAPI) -> None:
-    # Production should set CORS_ORIGINS explicitly. Keep fallback minimal and stable
-    # so redeploy-specific hostnames (e.g., Railway-generated domains) are never baked in.
-    raw = os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:3001,http://localhost:8000,https://tuyul-fx-dashboard.vercel.app,https://tuyul-fx-wolf-15-layer-system.vercel.app",
-    )
-    if "CORS_ORIGINS" not in os.environ:
-        logger.warning(
-            "CORS_ORIGINS not set; using fallback origins. Set CORS_ORIGINS explicitly in deployed services."
-        )
-    # Support both comma and newline separators (common in Vercel env var editor)
+    # Browser origins are explicit; the existing Railway frontend is the default.
+    raw = os.getenv("CORS_ORIGINS", "https://wolf15-dashboard-frontend-production.up.railway.app")
     raw_normalized = raw.replace("\n", ",").replace("\r", "")
-    origins = [o.strip().rstrip("/") for o in raw_normalized.split(",") if o.strip()]
-    # Vercel preview/production URLs — add if set
-    vercel_url = os.getenv("VERCEL_FRONTEND_URL", "")
-    if vercel_url.strip():
-        for u in vercel_url.replace("\n", ",").split(","):
-            u = u.strip().rstrip("/")
-            if u and u not in origins:
-                origins.append(u)
-    # VERCEL_URL is set automatically by Vercel to the current deployment URL.
-    # It does NOT include the scheme — prefix https:// if missing.
-    auto_vercel_url = os.getenv("VERCEL_URL", "").strip().rstrip("/")
-    if auto_vercel_url:
-        full = auto_vercel_url if auto_vercel_url.startswith("http") else f"https://{auto_vercel_url}"
-        if full not in origins:
-            origins.append(full)
-    # Deduplicate while preserving order
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for o in origins:
-        if o not in seen:
-            seen.add(o)
-            deduped.append(o)
-    origins = deduped
-    logger.info("CORS effective origins (%d): %s", len(origins), origins)
-    # Regex for dynamic origins (e.g. Vercel preview deployments).
+    origins = list(dict.fromkeys(o.strip().rstrip("/") for o in raw_normalized.split(",") if o.strip()))
     origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
-    if origin_regex:
-        logger.info("CORS origin regex: %s", origin_regex)
-    else:
-        # Auto-derive regex for Vercel preview deployments from static origins.
-        # Covers custom-domain previews AND project-name previews.
-        import re as _re
-
-        _vercel_patterns: list[str] = []
-        for o in origins:
-            if o.endswith(".vercel.app"):
-                _prefix = _re.escape(o.rsplit(".vercel.app", 1)[0])
-                _vercel_patterns.append(f"{_prefix}(-[a-z0-9-]+)?\\.vercel\\.app")
-        _vercel_project = os.getenv("VERCEL_PROJECT_NAME", "").strip()
-        if _vercel_project:
-            _vercel_patterns.append(f"https://{_re.escape(_vercel_project)}[a-z0-9-]*\\.vercel\\.app")
-        if _vercel_patterns:
-            origin_regex = "|".join(_vercel_patterns)
-            logger.info("CORS origin regex (auto-derived for Vercel previews): %s", origin_regex)
+    logger.info("CORS configured with %d explicit origins", len(origins))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -605,6 +570,31 @@ def _register_health_routes(app: FastAPI) -> None:
         whether the system is actually *safe to serve traffic*:
         feed freshness, producer heartbeat, and warmup state.
         """
+        # Check bootstrap before importing a router that may itself have failed.
+        # Do not expose import exception text (it can contain connection details).
+        router_errors = getattr(request.app.state, "router_boot_errors", None)
+        if router_errors is None or router_errors:
+            return JSONResponse(
+                content={
+                    "ready": False,
+                    "router_boot_ok": False,
+                    "reasons": ["router_boot_incomplete" if router_errors is None else "router_boot_failed"],
+                },
+                status_code=503,
+            )
+
+        supervisor = getattr(request.app.state, "required_task_supervisor", None)
+        runtime = (
+            supervisor.snapshot()
+            if supervisor is not None
+            else {"ready": False, "states": {}, "reasons": ["runtime_not_started"]}
+        )
+        if not runtime["ready"]:
+            return JSONResponse(
+                content={"ready": False, "router_boot_ok": True, "runtime": runtime, "reasons": runtime["reasons"]},
+                status_code=503,
+            )
+
         import math as _math  # noqa: PLC0415
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
@@ -619,6 +609,8 @@ def _register_health_routes(app: FastAPI) -> None:
 
         _staleness = feed_snapshot.staleness_seconds
         checks: dict[str, Any] = {
+            "router_boot_ok": True,
+            "runtime": runtime,
             "feed_freshness_class": freshness_class.value,
             "feed_staleness_seconds": _staleness if _math.isfinite(_staleness) else None,
             "producer_alive": hb_alive,
@@ -771,6 +763,13 @@ def _build_bootstrap_fallback_app(error_text: str) -> FastAPI:
     async def health() -> dict[str, Any]:
         return {"status": "alive", "service": "tuyul-fx", "degraded": True}
 
+    @fallback.get("/readyz", dependencies=[Depends(verify_observability_machine_auth)])
+    async def readyz() -> JSONResponse:
+        return JSONResponse(
+            content={"ready": False, "router_boot_ok": False, "reasons": ["api_bootstrap_failed"]},
+            status_code=503,
+        )
+
     @fallback.get("/api/v1/status")
     async def fallback_status() -> dict[str, Any]:
         return {
@@ -833,7 +832,7 @@ def _create_app_inner() -> FastAPI:
     # Mount all routers from the registry. In degraded fail-open mode,
     # keep process alive with health endpoints so orchestrators can
     # inspect diagnostics instead of seeing a dead container.
-    fail_open = _env_bool("ROUTER_BOOT_FAIL_OPEN", default=True)
+    fail_open = _env_bool("ROUTER_BOOT_FAIL_OPEN", default=False)
     routers, router_import_errors = load_routers()
     if router_import_errors:
         router_boot_errors.extend(router_import_errors)
@@ -843,6 +842,8 @@ def _create_app_inner() -> FastAPI:
             len(router_import_errors) + len(routers),
             "; ".join(router_import_errors),
         )
+        if not fail_open:
+            raise RuntimeError("Mandatory API router import failed")
 
     try:
         for router, description in routers:
@@ -867,18 +868,45 @@ def _create_app_inner() -> FastAPI:
     return app
 
 
-def create_app() -> FastAPI:
-    """Build the FastAPI application with fail-open bootstrap protection.
+def create_app(*, activity_delivery_endpoint=None, executor_bridge_enabled: bool = False) -> FastAPI:
+    """Build the FastAPI application with explicit diagnostic fallback opt-in.
 
-    If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
+    If ``API_BOOT_FAIL_OPEN`` is explicitly truthy and the inner factory
     raises, returns a minimal fallback app that keeps ``/healthz`` alive
     so operators can diagnose the failure via ``/api/v1/status``.
+
+    Executor bridge routes require an explicit boolean opt-in. Mounting them
+    does not enable command production, delivery, or broker execution flags.
     """
-    fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
+    if type(executor_bridge_enabled) is not bool:
+        raise ValueError("EXECUTOR_BRIDGE_EXPLICIT_BOOLEAN_REQUIRED")
+    fail_open = _env_bool("API_BOOT_FAIL_OPEN", False)
     try:
-        return _create_app_inner()
+        application = _create_app_inner()
+        if executor_bridge_enabled:
+            from api.executor_bridge_router import router as executor_bridge_router
+
+            if getattr(application.state, "router_boot_errors", []):
+                raise ValueError("EXECUTOR_BRIDGE_ROUTER_BOOT_FAILED")
+            existing_paths = application.openapi().get("paths", {})
+            if any(getattr(route, "path", None) in existing_paths for route in executor_bridge_router.routes):
+                raise ValueError("EXECUTOR_BRIDGE_ALREADY_REGISTERED")
+            application.include_router(executor_bridge_router)
+            application.openapi_schema = None
+            _assert_no_duplicate_routes(application)
+        if activity_delivery_endpoint is not None:
+            from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
+
+            if not isinstance(activity_delivery_endpoint, ActivityDeliveryEndpoint):
+                raise ValueError("ACTIVITY_DELIVERY_ENDPOINT_BINDING_REQUIRED")
+            if "/internal/s03/activity-deliveries" in application.openapi().get("paths", {}):
+                raise ValueError("ACTIVITY_DELIVERY_ENDPOINT_ALREADY_REGISTERED")
+            application.include_router(activity_delivery_endpoint.router())
+            application.openapi_schema = None
+            _assert_no_duplicate_routes(application)
+        return application
     except Exception as exc:
-        if not fail_open:
+        if not fail_open or activity_delivery_endpoint is not None or executor_bridge_enabled:
             raise
         logger.exception("API bootstrap failed — enabling fallback liveness app")
         return _build_bootstrap_fallback_app(f"api_bootstrap_failed: {exc!s}")

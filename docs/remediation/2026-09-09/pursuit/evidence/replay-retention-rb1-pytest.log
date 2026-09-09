@@ -1,0 +1,52 @@
+........................................................................ [ 72%]
+....................F.......                                             [100%]
+================================== FAILURES ===================================
+_________ test_caller_retains_fixture_inputs_and_replays_after_reload _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000164DFCD9890>
+tmp_path = WindowsPath('C:/Users/INTEL/.codex/visualizations/2026/09/08/01a08273-1154-71e3-8242-cf3965a5b514/s03-runtime-staging/ci-temp/rb1/test_caller_retains_fixture_in0')
+
+    def test_caller_retains_fixture_inputs_and_replays_after_reload(monkeypatch, tmp_path):
+        from ops.mt5_mcp.replay_bundle import decode_replay_bundle
+        from ops.mt5_mcp.replay_report import verify_reconciliation_replay
+        from ops.mt5_mcp.report_integrity import orchestrator_sources
+    
+        path = tmp_path / "fixture-evidence.json"
+        trusted_receipts = []
+    
+        def sink(encoded, digest):
+            path.write_bytes(encoded)
+            trusted_receipts.append(digest)
+            return True
+    
+        report = _retention_caller(monkeypatch, tmp_path, retention_sink=sink)
+        restored = decode_replay_bundle(path.read_bytes())
+        assert restored["report"] == report
+        assert len(trusted_receipts) == 1
+        # Real datetime type is required by verifier scope; restore module clock.
+        monkeypatch.setattr(reconcile, "datetime", datetime)
+        result = verify_reconciliation_replay(
+            **restored,
+            expected_receipt_digest=trusted_receipts[0],
+            expected_sources=orchestrator_sources(),
+            expected_account_identifier=DIRECT_IDENTIFIER,
+            window_from=WINDOW_FROM,
+            window_to=WINDOW_TO,
+            as_of=WINDOW_TO + timedelta(seconds=10),
+            maximum_age=timedelta(seconds=10),
+        )
+>       assert result["reason"] == "CONSISTENT_REPLAY"
+E       AssertionError: assert 'RECONCILIATION_GATE_NOT_PASS' == 'CONSISTENT_REPLAY'
+E         
+E         - CONSISTENT_REPLAY
+E         + RECONCILIATION_GATE_NOT_PASS
+
+tests\test_channel_b_reconciliation.py:1203: AssertionError
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\rb1.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_channel_b_reconciliation.py::test_caller_retains_fixture_inputs_and_replays_after_reload
+1 failed, 99 passed in 3.08s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

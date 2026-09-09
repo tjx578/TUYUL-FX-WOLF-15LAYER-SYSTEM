@@ -586,9 +586,7 @@ def _daily_freshness_evidence(
     explicit_open = parse_candle_timestamp(candle.get("open_time"))
     explicit_close = parse_candle_timestamp(candle.get("close_time"))
     provider_time = parse_candle_timestamp(candle.get("provider_timestamp"))
-    generic_time = parse_candle_timestamp(
-        candle.get("timestamp") or candle.get("time") or candle.get("datetime")
-    )
+    generic_time = parse_candle_timestamp(candle.get("timestamp") or candle.get("time") or candle.get("datetime"))
 
     period = None
     if explicit_close is not None:

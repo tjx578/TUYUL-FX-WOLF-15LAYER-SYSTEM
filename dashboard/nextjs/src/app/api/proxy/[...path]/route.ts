@@ -1,211 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveDashboardUpstream } from "@/lib/server/dashboardTopology";
+import { isAllowlistedReadPath } from "@/lib/server/readOnlyProxyPolicy";
+import { fetchViewerProjection } from "@/lib/server/viewerProjection";
+import { validateSessionToken } from "@/lib/serverAuth";
 
-/**
- * Single canonical backend proxy — runtime route handler.
- *
- * ALL browser REST traffic flows through this handler.  There are no
- * build-time rewrites; getRestPrefix() always returns "/api/proxy" on the
- * client, so every fetch request arrives here as:
- *
- *   /api/proxy/api/v1/<resource>
- *
- * The handler reads INTERNAL_API_URL at request time (not build time),
- * strips the /api/proxy prefix that Next.js already consumed, and
- * forwards the remaining path to the backend.
- *
- * Traceability headers on every response:
- *   x-proxy-target  — resolved backend origin (no credentials/path)
- *   x-proxy-status  — "ok" | "misconfigured" | "error"
- *   x-proxy-surface — "core-api" | "bff" (hybrid topology indicator)
- */
-
-async function proxyRequest(
-  request: NextRequest,
-  path: string[]
-): Promise<NextResponse> {
+async function proxyRequest(request: NextRequest, path: string[]): Promise<NextResponse> {
+  const requestId = crypto.randomUUID();
   const joinedPath = path.join("/");
+  const headers = { "cache-control": "no-store", "x-request-id": requestId, "x-proxy-surface": "core-api" };
+  const error = (status: number, code: string, message: string) => NextResponse.json(
+    { error: message, code }, { status, headers },
+  );
 
-  // Trace ID: reuse inbound or generate — available for all response paths.
-  const requestId =
-    request.headers.get("x-request-id") || crypto.randomUUID();
+  // Deny extra paths, query parameters and all mutations before any fetch.
+  if (request.method !== "GET" || !isAllowlistedReadPath(joinedPath) || request.nextUrl.search) {
+    return error(403, "READ_ONLY_PROXY_BOUNDARY", "Forbidden");
+  }
+  const token = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1]?.trim() ?? "";
+  if (!token || token.split(".").length !== 3) return error(401, "INVALID_VIEWER_SESSION", "Unauthorized");
 
-  // Resolve upstream via hybrid topology (core-api or BFF).
   const upstream = resolveDashboardUpstream(joinedPath);
-
-  // Fail-fast: no backend URL configured outside of local dev
-  if (!upstream) {
-    console.error(
-      "[api/proxy] PROXY_MISCONFIGURED: INTERNAL_API_URL / NEXT_PUBLIC_API_BASE_URL not set."
-    );
-    return NextResponse.json(
-      {
-        error: "Proxy misconfigured — backend URL not set",
-        code: "PROXY_MISCONFIGURED",
-        detail:
-          "Set INTERNAL_API_URL (server-side) or NEXT_PUBLIC_API_BASE_URL to the Railway backend origin.",
-      },
-      {
-        status: 503,
-        headers: {
-          "x-proxy-target": "unresolved",
-          "x-proxy-status": "misconfigured",
-          "x-proxy-surface": "unknown",
-          "x-request-id": requestId,
-        },
-      }
-    );
+  if (!upstream || upstream.url === request.nextUrl.origin) {
+    return error(503, "CORE_API_MISCONFIGURED", "Core API is not configured");
   }
-
-  const backendUrl = upstream.url;
-
-  // Canonical path mapping.
-  //
-  // getRestPrefix() returns "/api/proxy" on the client, so callers
-  // always produce:  /api/proxy/api/v1/<resource>
-  //
-  // Next.js strips the /api/proxy prefix and hands us the rest,
-  // e.g. ["api", "v1", "trades", "active"] → joinedPath = "api/v1/trades/active".
-  //
-  // We prepend "/" to reconstruct the backend path.  Special health
-  // endpoints are mapped explicitly to their root-level paths.
-  let targetPath: string;
-  if (joinedPath === "health" || joinedPath === "api/health" || joinedPath === "api/v1/health") {
-    targetPath = "/health";
-  } else if (joinedPath === "healthz" || joinedPath === "api/healthz") {
-    targetPath = "/healthz";
-  } else if (joinedPath === "readyz" || joinedPath === "api/readyz") {
-    targetPath = "/readyz";
-  } else if (joinedPath.startsWith("api/")) {
-    // Canonical form: path already includes /api/ prefix → use as-is.
-    targetPath = `/${joinedPath}`;
-  } else {
-    // Fallback for any non-canonical caller — prepend /api/.
-    targetPath = `/api/${joinedPath}`;
-  }
-  const targetUrl = new URL(targetPath, backendUrl);
-
-  // Forward query params
-  request.nextUrl.searchParams.forEach((value, key) => {
-    targetUrl.searchParams.set(key, value);
-  });
-
-  // Build headers, forwarding most but not host
-  const headers = new Headers();
-  request.headers.forEach((value, key) => {
-    // Skip headers that shouldn't be forwarded
-    if (
-      !["host", "connection", "keep-alive", "transfer-encoding"].includes(
-        key.toLowerCase()
-      )
-    ) {
-      headers.set(key, value);
-    }
-  });
-
-  // Auth comes from the session cookie injected by middleware, or from
-  // the client's own Authorization header.  No API_KEY fallback.
-
-  // Ensure x-request-id is forwarded to upstream.
-  headers.set("x-request-id", requestId);
-
-  // Safe target label for headers (origin only, no credentials/path)
-  const targetLabel = `${targetUrl.protocol}//${targetUrl.host}`;
-
+  if (!(await validateSessionToken(token))) return error(401, "INVALID_VIEWER_SESSION", "Unauthorized");
   try {
-    const response = await fetch(targetUrl.toString(), {
-      method: request.method,
-      headers,
-      body:
-        request.method !== "GET" && request.method !== "HEAD"
-          ? await request.text()
-          : undefined,
-      // @ts-expect-error - duplex is needed for streaming but not in types
-      duplex: "half",
-    });
-
-    // Build response headers
-    const responseHeaders = new Headers();
-    response.headers.forEach((value, key) => {
-      // Skip hop-by-hop headers
-      if (
-        !["transfer-encoding", "connection", "keep-alive"].includes(
-          key.toLowerCase()
-        )
-      ) {
-        responseHeaders.set(key, value);
-      }
-    });
-
-    // Traceability headers
-    responseHeaders.set("x-proxy-target", targetLabel);
-    responseHeaders.set("x-proxy-status", "ok");
-    responseHeaders.set("x-proxy-surface", upstream.surface);
-    responseHeaders.set("x-request-id", requestId);
-
-    return new NextResponse(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: responseHeaders,
-    });
-  } catch (error) {
-    console.error(`[api/proxy] Failed to proxy ${targetUrl}:`, error);
-    return NextResponse.json(
-      {
-        error: "Backend unavailable",
-        detail:
-          error instanceof Error ? error.message : "Connection failed",
-        target: targetLabel,
-      },
-      {
-        status: 502,
-        headers: {
-          "x-proxy-target": targetLabel,
-          "x-proxy-status": "error",
-          "x-proxy-surface": upstream.surface,
-          "x-request-id": requestId,
-        },
-      }
-    );
+    const payload = await fetchViewerProjection(upstream.url, joinedPath, token, requestId);
+    return NextResponse.json(payload, { status: 200, headers });
+  } catch {
+    return error(502, "UPSTREAM_UNAVAILABLE", "Backend unavailable");
   }
 }
 
+type RouteContext = { params: Promise<{ path: string[] }> };
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
-) {
-  const { path } = await params;
-  return proxyRequest(request, path);
+  { params }: RouteContext,
+): Promise<NextResponse> {
+  return proxyRequest(request, (await params).path);
 }

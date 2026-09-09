@@ -146,14 +146,63 @@ def _resolve_port(default: int = 8000) -> int:
         return default
 
 
-if __name__ == "__main__":
+def run_api() -> int:
+    """Serve one application/listener and fail the process on required task loss.
+
+    A one-second diagnostic window exposes the causal 503 before shutdown.
+    Shutdown has a 45-second process bound, including cancellation-resistant
+    tasks; a stuck writer never causes the supervisor to close its pool early.
+    """
+    import asyncio
+    import threading
+    from contextlib import suppress
+
     import uvicorn
 
-    uvicorn.run(
-        "api_server:app",
+    config = uvicorn.Config(
+        app,
         host="0.0.0.0",
         port=_resolve_port(),
         log_level="info",
         log_config=_build_uvicorn_log_config(),
         ws_per_message_deflate=True,
+        timeout_graceful_shutdown=10,
     )
+    server = uvicorn.Server(config)
+    deadline: threading.Timer | None = None
+
+    async def serve() -> int:
+        async def monitor() -> None:
+            nonlocal deadline
+            while True:
+                supervisor = getattr(app.state, "required_task_supervisor", None)
+                if supervisor is not None:
+                    supervisor.snapshot()
+                    if supervisor.fatal.is_set() and not server.should_exit:
+                        await asyncio.sleep(1)
+                        server.should_exit = True
+                if server.should_exit and deadline is None:
+                    deadline = threading.Timer(45, lambda: os._exit(1))
+                    deadline.daemon = True
+                    deadline.start()
+                await asyncio.sleep(0.05)
+
+        watcher = asyncio.create_task(monitor(), name="api-required-task-monitor")
+        try:
+            await server.serve()
+            supervisor = getattr(app.state, "required_task_supervisor", None)
+            return 1 if not server.started or (supervisor is not None and supervisor.fatal.is_set()) else 0
+        finally:
+            watcher.cancel()
+            with suppress(asyncio.CancelledError):
+                await watcher
+
+    try:
+        return asyncio.run(serve())
+    finally:
+        if deadline is not None:
+            deadline.cancel()
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_api())

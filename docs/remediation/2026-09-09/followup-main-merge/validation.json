@@ -1,0 +1,58 @@
+{
+  "observed_at_utc": "2026-09-08T20:41:22.715728+00:00",
+  "verdict": "PASS_LOCAL_SELECTED_MERGE_TESTS_PROGRAM_HOLD",
+  "parents": [
+    "c715b3a8d7949b2e3ca3476cfc822cad4748461b",
+    "e3a0d8c83d5d8de60645a1d4f7c00f66fe9d5941"
+  ],
+  "reviewed_pre_documentation_tree": "953f9a25afe1927bdf423ca213893d674148ca05",
+  "source_git_hashes": {
+    "tests/test_strategy_5scr_pair_activity.py": "4666566dae472017e78e779ca91eee62f47eabe784ab6b123b1b661dd60fc4ed",
+    "tests/test_pair_activity_report_integration.py": "7fd6a2f1407066b6b4c7770b78c4cd66432204c768c7629880b34605da264073",
+    "tests/test_api_boot_readiness.py": "a1ee235e6429f7b6c715801d043dab9884b48130f1cd26db9345105ade6b56dd",
+    "tests/test_api_only_entrypoints.py": "ba6673bb119b12c04449e4fcee8056095248d7222d7208305ec56744f2430fc8",
+    "tests/test_ci_required_gates.py": "10383aafa3bc05c3769f06fffc4fd97e1b519b7605d56e97991f32f8e48f306f",
+    "tests/test_railway_release_source_gate.py": "1d498b97f9bf6590438520958216b8e797487c688f981a94945e6925c6ed068b",
+    "tests/test_strategy_5scr_raw_admission_blocks.py": "2409a59b256415986f1c5c858a90225ced28ddeb88a7024ed0f532214d5fdea3",
+    "tests/test_strategy_5scr_pair_admission.py": "cbdaad97b7ac489ddb5ec59876e42085822281c657f4c15839d066eeb44895c2",
+    "tests/test_pair_admission_runtime_selection.py": "4f07255325cae4c404486acbe30c755129bc2c31b8bf401769b15600d42838b4",
+    "tests/test_pair_admission_evaluation_persistence.py": "619391154b932e2d3b6e30b8ae6599b46928179e9a92a4a38bf68274958e88bf",
+    "tests/test_signal_throttle_log_analyzer.py": "94c148fc24e457efbdf8bdd01b9f1563f13048911c03554350b5f7906e7a2fff",
+    "tests/test_strategy_5scr_directional_thesis_v1.py": "c4784a5ebb392a1b70c6b2c9075913d6dc74c270e9e56ad51890c4286bad1268",
+    "tests/test_strategy_5scr_directional_thesis_v1_containment.py": "5476d7762e9e22c8d46f59789480e40aab0806922f490571486f2349dc8533d7",
+    "tests/test_pressure_direction_recovery.py": "9ee3ebcb0e8886e7ed9423fdfc626fbc46d0d76147238f42764e46d2ec513902",
+    "tests/test_startup_migration_ownership.py": "8dd109976e793a81b23139f923a1dabc558941a2b282935442279db7c4246463",
+    "tests/unit/test_owner_dashboard_release.py": "ec2ed4fc72da315d87dbbdb9ba866900bddde69465266640c98db78d858c9eb2",
+    "api/app_factory.py": "134be41989b84979e71146def6148ad4e4a18bfec70644bf5a67df486c37d8d0",
+    "api/owner_dashboard_release.py": "dc8f0ec73a11f4683165a2190d580e84bf05c22a00a939329638c0299358de5f",
+    "deploy/railway/migration_runner.py": "6d260d7e1f0d3198a997a356ace9ab5e9c28a7be6179077e6ea7a60cc9d93697",
+    "analysis/signal_throttle_log_analyzer.py": "7c19974d97b5a8c3eb43c673e133723c0f09304f40e5e41dc613cf1cc63da70b",
+    "pipeline/wolf_constitutional_pipeline.py": "60037c0bb2697098c23c8d46a2b0b8b9644434274b50a427eedc588e10951872",
+    "analysis/strategy_5scr_pair_activity.py": "eb90e3c54a24297928a1e8008600259ee9880871c1acc5e4f0d02ae748bc4ec0",
+    "analysis/strategy_5scr_pair_activity_report.py": "2a251fb17864d605bb68dc0dfe55dde4cfd9056307b4dc1cbdf84c6680ae61c6",
+    "contracts/strategy_5scr_pair_activity.py": "a1b0e24f8f441a6db99e744b177b532466c601ad0bfe10d37234c7f76e10adb9"
+  },
+  "counts": {
+    "tests": 434,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "expected": 434,
+  "source_unchanged": true,
+  "environment": "Same pinned Windows Python3.11.9/Pydantic2.9.2 API environment as S01/S03 followup",
+  "ruff": "4 changed/upstream API source and test files passed lint and format",
+  "remote_ci_at_prior_published_c715b3a8": {
+    "run": 34275592567,
+    "jobs": 7,
+    "all_runner_id": 0,
+    "all_steps": []
+  },
+  "milestones_done": 0,
+  "milestones_total": 6,
+  "limitations": [
+    "Local selected suite, not full remote CI or Linux parity",
+    "No production mutation, database or broker acceptance",
+    "S01 and S03 acceptance gaps unchanged"
+  ]
+}

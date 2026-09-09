@@ -1,0 +1,1896 @@
+........................................................................ [ 65%]
+.................F....FFFFFFFFFFFF..F.                                   [100%]
+================================== FAILURES ===================================
+_ test_all_records_and_capacity_commit_together_as_non_deliverable_test_only __
+
+    def test_all_records_and_capacity_commit_together_as_non_deliverable_test_only():
+        async def run():
+            db, repo, _, request = await fixture()
+            result = await repo.submit(request, now=NOW)
+            assert result.status == "COMMITTED_TEST_ONLY" and db.committed_effect_transactions == 1
+            assert all(len(rows) == 1 for rows in db.records.values())
+            async with db.transaction():
+                stored = await repo.capacity.lock_current(db)
+            assert stored.version == 1 and stored.reservations[0] == result.bundle.reservation
+            assert result.capital_reservation_authority is result.execution_authority is False
+            preview = result.bundle.records()["signal_previews"]
+            with pytest.raises(ValueError):
+                validate_final_signal_reservation(preview)
+            assert result.bundle.records()["outbox"]["status"] == "NON_DELIVERABLE_TEST_ONLY"
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:126: in run
+    result = await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A41F04E90>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+___ test_failure_after_each_write_or_commit_rolls_back_every_effect[commit] ___
+
+failure = 'commit'
+
+    @pytest.mark.parametrize("failure", ["campaigns", "parent_legs", "signal_previews", "outbox", "commit"])
+    def test_failure_after_each_write_or_commit_rolls_back_every_effect(failure):
+        async def run():
+            db, repo, initial, request = await fixture()
+            db.fault_after = failure
+            db.fail_commit = failure == "commit"
+            with pytest.raises(RuntimeError):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values()) and db.committed_effect_transactions == 0
+            db.fail_commit = False
+            async with db.transaction():
+                assert await repo.capacity.lock_current(db) == initial
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:148: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A4321FB10>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+____________ test_expiry_during_last_write_rolls_back_all_effects _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000029A39FEDE90>
+
+    def test_expiry_during_last_write_rolls_back_all_effects(monkeypatch):
+        from storage import strategy_5scr_prepared_v31 as detached
+    
+        async def run():
+            db, repo, initial, request = await fixture()
+            execute = db.execute
+    
+            async def delayed(sql, *args):
+                result = await execute(sql, *args)
+                if f"INSERT INTO {PREFIX}outbox_v31" in sql:
+                    monkeypatch.setattr(detached, "commit_time_v31", lambda: request.expires_at)
+                return result
+    
+            db.execute = delayed
+            with pytest.raises(ValueError, match="EXPIRED"):
+                await repo.submit(request, now=NOW)
+            assert all(not rows for rows in db.records.values())
+            assert db.committed_effect_transactions == 0
+            async with db.transaction():
+                assert await repo.capacity.lock_current(db) == initial
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:178: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:172: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A39FE3450>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_ test_lost_ack_retry_after_expiry_returns_same_complete_bundle_without_new_effect _
+
+    def test_lost_ack_retry_after_expiry_returns_same_complete_bundle_without_new_effect():
+        async def run():
+            db, repo, _, request = await fixture()
+            first = await repo.submit(request, now=NOW)
+            before = deepcopy(db.records)
+            restarted = TransactionARepositoryV31(
+                pg=db,
+                capacity_repository=repo.capacity,
+                candidate_repository=repo.candidates,
+                verify_handoff=None,
+                verify_universe=None,
+                verify_risk_inputs=None,
+            )
+            retry = await restarted.submit(request, now=NOW + timedelta(days=1))
+            assert retry.status == "DUPLICATE_TEST_ONLY" and retry.bundle == first.bundle and db.records == before
+            assert retry.execution_authority is False
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:184: in run
+    first = await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A41EEB6D0>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_________ test_replay_cannot_substitute_any_bound_request[signal_id] __________
+
+field = 'signal_id'
+
+    @pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
+    def test_replay_cannot_substitute_any_bound_request(field):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            value = (
+                "sha256:" + "f" * 64
+                if field == "candidate_revision_hash"
+                else (8 if field == "expected_capacity_version" else UUID(int=999))
+            )
+            with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
+                await repo.submit(request.model_copy(update={field: value}), now=NOW)
+            assert all(len(rows) == 1 for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:205: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A39F9EC90>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_________ test_replay_cannot_substitute_any_bound_request[outbox_id] __________
+
+field = 'outbox_id'
+
+    @pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
+    def test_replay_cannot_substitute_any_bound_request(field):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            value = (
+                "sha256:" + "f" * 64
+                if field == "candidate_revision_hash"
+                else (8 if field == "expected_capacity_version" else UUID(int=999))
+            )
+            with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
+                await repo.submit(request.model_copy(update={field: value}), now=NOW)
+            assert all(len(rows) == 1 for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:205: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A39FA7410>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+__ test_replay_cannot_substitute_any_bound_request[candidate_revision_hash] ___
+
+field = 'candidate_revision_hash'
+
+    @pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
+    def test_replay_cannot_substitute_any_bound_request(field):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            value = (
+                "sha256:" + "f" * 64
+                if field == "candidate_revision_hash"
+                else (8 if field == "expected_capacity_version" else UUID(int=999))
+            )
+            with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
+                await repo.submit(request.model_copy(update={field: value}), now=NOW)
+            assert all(len(rows) == 1 for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:205: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A39FBE050>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_ test_replay_cannot_substitute_any_bound_request[expected_capacity_version] __
+
+field = 'expected_capacity_version'
+
+    @pytest.mark.parametrize("field", ["signal_id", "outbox_id", "candidate_revision_hash", "expected_capacity_version"])
+    def test_replay_cannot_substitute_any_bound_request(field):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            value = (
+                "sha256:" + "f" * 64
+                if field == "candidate_revision_hash"
+                else (8 if field == "expected_capacity_version" else UUID(int=999))
+            )
+            with pytest.raises(ValueError, match="REPLAY_CONFLICT"):
+                await repo.submit(request.model_copy(update={field: value}), now=NOW)
+            assert all(len(rows) == 1 for rows in db.records.values())
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:205: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A43524390>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_leg] _
+
+fault = 'missing_leg'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:222: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A41F8FB10>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[payload_hash] _
+
+fault = 'payload_hash'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:222: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A39F8FB10>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[record_id] _
+
+fault = 'record_id'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:222: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A41F6A3D0>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_capacity] _
+
+fault = 'missing_capacity'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:222: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A434CBA90>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_ test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[capacity_scope] _
+
+fault = 'capacity_scope'
+
+    @pytest.mark.parametrize("fault", ["missing_leg", "payload_hash", "record_id", "missing_capacity", "capacity_scope"])
+    def test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt(fault):
+        async def run():
+            db, repo, _, request = await fixture()
+            await repo.submit(request, now=NOW)
+            if fault == "missing_leg":
+                db.records["parent_legs"] = {}
+            elif fault == "payload_hash":
+                db.records["outbox"][request.reservation_id]["payload_hash"] = "sha256:" + "f" * 64
+            elif fault == "record_id":
+                db.records["signal_previews"][request.reservation_id]["record_id"] = UUID(int=999)
+            else:
+                async with db.transaction():
+                    current = await repo.capacity.lock_current(db)
+                altered = current.model_copy(
+                    update={
+                        "reservations": ()
+                        if fault == "missing_capacity"
+                        else (current.reservations[0].model_copy(update={"campaign_id": "corrupt-campaign"}),)
+                    }
+                )
+                from risk.strategy_5scr_capacity_v31 import capacity_ledger_hash_v31
+    
+                db.capacity[current.account_id].update(
+                    payload=altered.model_dump_json(), ledger_hash=capacity_ledger_hash_v31(altered)
+                )
+            with pytest.raises(ValueError, match="PARTIAL_OR_CORRUPT|CAPACITY_BINDING_MISSING"):
+                await repo.submit(request, now=NOW)
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:222: in run
+    await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A39C99B90>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+_______ test_all_external_transaction_verifiers_run_after_snapshot_exit _______
+
+    def test_all_external_transaction_verifiers_run_after_snapshot_exit():
+        async def run():
+            db, repo, _, request = await fixture()
+            calls = []
+    
+            def verify(*args):
+                assert not db.active
+                calls.append(len(args))
+                return True
+    
+            repo.verify_handoff = repo.verify_universe = repo.verify_risk_inputs = verify
+            result = await repo.submit(request, now=NOW)
+            assert result.status == "COMMITTED_TEST_ONLY" and len(calls) >= 3
+            assert db.committed_effect_transactions == 1
+    
+>       asyncio.run(run())
+
+tests\test_strategy_5scr_transaction_a_v31.py:314: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+tests\test_strategy_5scr_transaction_a_v31.py:310: in run
+    result = await repo.submit(request, now=NOW)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <storage.strategy_5scr_transaction_a_v31.TransactionARepositoryV31 object at 0x0000029A39CD80D0>
+request = TransactionARequestV31(profile='TEST_ONLY', reservation_id=UUID('00000000-0000-0000-0000-00000000005b'), campaign_id=U... 0, 0, tzinfo=datetime.timezone.utc)), expires_at=datetime.datetime(2026, 9, 9, 0, 0, 1, tzinfo=datetime.timezone.utc))
+
+    async def submit(self, request: TransactionARequestV31, *, now):
+        request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
+                current.account_id,
+                current.executor_id,
+            ):
+                raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
+            bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+    
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        detached = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+    
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
+            duplicate = bundle is not None
+            if bundle is None:
+                prepared = await self.capacity.prepare_parent_in_transaction(
+                    connection,
+                    candidate_repository=self.candidates,
+                    **arguments,
+                    prepared=detached,
+                )
+                if prepared.capacity.status != "APPLIED_TEST_ONLY":
+                    raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
+                bundle = TransactionABundleV31(
+                    profile="TEST_ONLY", request=request, reservation=prepared.capacity.reservation
+                )
+                ids = {
+                    "campaigns": request.campaign_id,
+                    "parent_legs": request.parent_leg_id,
+                    "signal_previews": request.signal_id,
+                    "outbox": request.outbox_id,
+                }
+                for name, payload in bundle.records().items():
+                    await connection.execute(
+                        f"INSERT INTO {PREFIX}{name}_v31(record_id,reservation_id,account_id,tradeplan_id,"
+                        "tradeplan_revision,campaign_id,parent_leg_id,signal_id,request_hash,payload_hash,payload) "
+                        "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+                        ids[name],
+                        request.reservation_id,
+                        current.account_id,
+                        UUID(request.sizing.tradeplan_id),
+                        request.sizing.tradeplan_revision,
+                        request.campaign_id,
+                        request.parent_leg_id,
+                        request.signal_id,
+                        transaction_content_hash_v31(request),
+                        transaction_content_hash_v31(payload),
+                        json.dumps(payload),
+                    )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+>               detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
+E               AttributeError: 'PreparedV31' object has no attribute 'fresh_parent_v31'
+
+storage\strategy_5scr_transaction_a_v31.py:162: AttributeError
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\k05-detached-a2.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_all_records_and_capacity_commit_together_as_non_deliverable_test_only
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_failure_after_each_write_or_commit_rolls_back_every_effect[commit]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_expiry_during_last_write_rolls_back_all_effects
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_lost_ack_retry_after_expiry_returns_same_complete_bundle_without_new_effect
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_replay_cannot_substitute_any_bound_request[signal_id]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_replay_cannot_substitute_any_bound_request[outbox_id]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_replay_cannot_substitute_any_bound_request[candidate_revision_hash]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_replay_cannot_substitute_any_bound_request[expected_capacity_version]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_leg]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[payload_hash]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[record_id]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_capacity]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[capacity_scope]
+FAILED tests/test_strategy_5scr_transaction_a_v31.py::test_all_external_transaction_verifiers_run_after_snapshot_exit
+14 failed, 96 passed in 13.10s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

@@ -191,11 +191,7 @@ class PressureEventNormalizer:
             campaign_anchor = None
             anchor_source = "UNRESOLVED"
             anchor_execution_grade = False
-        anchor_at = (
-            _parse_datetime(payload.get("lifecycle_anchor_at_utc"))
-            if anchor_execution_grade
-            else None
-        )
+        anchor_at = _parse_datetime(payload.get("lifecycle_anchor_at_utc")) if anchor_execution_grade else None
         selection_confirmed = payload.get("pressure_selection_confirmed") is True
         if selection_confirmed and not (
             str(payload.get("radar_status") or "").upper() == "ANALYSIS_READY"

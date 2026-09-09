@@ -3,6 +3,7 @@ Tests for analysis modules (L1-L11).
 Constitutional boundary: analysis must have NO execution side-effects.
 """
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -23,8 +24,15 @@ class TestAnalysisBoundary:
             if py_file.name.startswith("__"):
                 continue
             content = py_file.read_text(encoding="utf-8", errors="ignore")
-            for forbidden in ["from execution", "import execution"]:
-                assert forbidden not in content, f"{py_file.name} imports execution -- boundary violation"
+            for node in ast.walk(ast.parse(content)):
+                modules = []
+                if isinstance(node, ast.ImportFrom):
+                    modules = [node.module or ""]
+                elif isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                assert not any(module == "execution" or module.startswith("execution.") for module in modules), (
+                    f"{py_file.name} imports execution -- boundary violation"
+                )
 
     def test_no_order_placement_in_analysis(self):
         """Analysis must never place orders."""

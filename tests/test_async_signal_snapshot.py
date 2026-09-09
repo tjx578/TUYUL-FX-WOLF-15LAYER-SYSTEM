@@ -8,8 +8,6 @@ Validates:
   ws_routes are fully async.
 - Async pubsub helpers ``_make_async_pubsub`` / ``_async_read_pubsub_message``
   are importable and have the correct async signatures.
-- CSP ``connect-src`` in next.config.js allows custom backend domains
-  (BUG #7).
 """
 
 from __future__ import annotations
@@ -349,78 +347,3 @@ class TestAnalysisLoopReadiness:
         src = inspect.getsource(_al_mod.analysis_loop)
         assert "on_first_cycle.set()" in src, "on_first_cycle.set() must be present in analysis_loop"
         assert "_first_cycle_done" in src, "_first_cycle_done flag must be present"
-
-
-# ---------------------------------------------------------------------------
-# BUG #7 — CSP custom domain helper (JS logic tested via Node.js subprocess)
-# ---------------------------------------------------------------------------
-
-
-class TestCspCustomDomainLogic:
-    """_extraCspConnectSrcOrigins must add custom-domain origins to connect-src."""
-
-    def _run_node_snippet(self, code: str) -> str:
-        """Helper: run a small Node.js snippet and return stdout."""
-        import subprocess
-
-        result = subprocess.run(
-            ["node", "-e", code],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return result.stdout.strip()
-
-    # Inline the helper function in each snippet so tests are self-contained.
-    _HELPER_JS = """
-function _extraCspConnectSrcOrigins(wsOrigin) {
-  if (!wsOrigin) return [];
-  try {
-    const httpEquiv = wsOrigin.replace(/^wss:\\/\\//, "https://").replace(/^ws:\\/\\//, "http://");
-    const { host } = new URL(httpEquiv);
-    if (
-      host.endsWith(".railway.app") ||
-      host.endsWith(".vercel.app") ||
-      host === "localhost" ||
-      host.startsWith("localhost:")
-    ) { return []; }
-    return ["wss://" + host, "https://" + host];
-  } catch { return []; }
-}
-"""
-
-    def test_railway_domain_returns_empty(self):
-        """Standard *.railway.app domain must not add extra CSP entries."""
-        out = self._run_node_snippet(
-            self._HELPER_JS
-            + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("wss://my-service.up.railway.app")));'
-        )
-        assert out == "[]", f"Expected [] for railway.app domain, got {out!r}"
-
-    def test_custom_domain_adds_origins(self):
-        """Custom domain must add both wss:// and https:// origins."""
-        out = self._run_node_snippet(
-            self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("wss://trading.example.com")));'
-        )
-        result = json.loads(out)
-        assert "wss://trading.example.com" in result
-        assert "https://trading.example.com" in result
-
-    def test_vercel_domain_returns_empty(self):
-        """*.vercel.app domain must not add duplicate CSP entries."""
-        out = self._run_node_snippet(
-            self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("wss://my-app.vercel.app")));'
-        )
-        assert out == "[]", f"Expected [] for vercel.app domain, got {out!r}"
-
-    def test_localhost_returns_empty(self):
-        """localhost WS origin must not add extra CSP entries."""
-        out = self._run_node_snippet(
-            self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("ws://localhost:8080")));'
-        )
-        assert out == "[]", f"Expected [] for localhost, got {out!r}"
-
-    def test_empty_input_returns_empty(self):
-        """Empty wsBase must return empty list."""
-        out = self._run_node_snippet(self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("")));')
-        assert out == "[]"

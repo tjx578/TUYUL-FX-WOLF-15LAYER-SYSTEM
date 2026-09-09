@@ -1,0 +1,19 @@
+{
+  "commit": "5219624a92253b66fe8bc67a1acace99b71e61e7",
+  "files": {
+    ".github/workflows/ci.yml": "2edf69d4b34a99dfb40a24e53c5a685b0cfbd93ab7a8d6bfd306deffb6ff32af",
+    "analysis/strategy_5scr_activity_service.py": "a4b9ff5c283dc8690de862ac020d6448c6289a9ae89ee6fa933166c1cd492591",
+    "scripts/ci/run_activity_delivery_producer_acceptance.py": "ca3e0653d3f8c148754254515424a04f8e63995b74a6eaec211afd4d7592daeb",
+    "scripts/ci/run_pair_activity_runtime_acceptance.py": "09b97a4093a5e600cfbe11db2da9d18ecd604e9f15b866f725a00c3695bbe8bb",
+    "services/pressure_outbox/activity_delivery_relay.py": "58bed348b7d54e680b27f12185cfd8220417817d5c2bd7f285931eea0fc99c70",
+    "storage/migrations/versions/20260909_02_activity_delivery_outbox.py": "f2101353b1a792b0c2365f65c4f649ee9d296e27efc5015f8fb4fe3e0d2a0578",
+    "storage/strategy_5scr_activity_outbox.py": "62bf80141426bc3afed5494221d51a39d1cfdae613b576f4721a03a01a4c4437",
+    "storage/strategy_5scr_activity_runtime.py": "0fd6670575dd0657fc5d7e84a236776b8f678ab52a57fa77ead3b2581a56bbe1",
+    "tests/integration/test_activity_delivery_producer_postgres.py": "009162bc6bbbc52ef4d0c009111a0a7b5a5163f0be7cd7e743f15afb5df42b6d",
+    "tests/test_activity_delivery_producer.py": "6031aff5ef777696a26f8b1131ef08c7ffd1c8ea5b70804e133250bbcbee60ce",
+    "tests/test_activity_delivery_relay.py": "da10be39cc02ea282b6d9a36ef6501ecd01cd58bdaa350b5400afedff91a0fb1",
+    "tests/test_activity_runtime_binding.py": "ffdf55c5791585c9475ab44974308c0e534f9d6a7915e487c18788e953968a63",
+    "tests/test_pair_activity_ci_receipt.py": "5229d807ca727b49f7f3d565761818467d9af9b1d41ef18ac5e2dede12d7af1a"
+  },
+  "original_45_test_file_unchanged": true
+}

@@ -92,11 +92,15 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Scan for secrets (hard-fail)
-        run: |
-          trufflehog filesystem . \
-            --no-update \
-            --fail \
-            --exclude-paths=.github/trufflehog-exclude.txt
+        run: python scripts/ci/secret_scan_receipt.py
+
+      - name: Upload redacted secret detection receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-detection-receipt
+          path: artifacts/secret-scan/receipt.json
+          if-no-files-found: error
 
   # ---------------------------------------------------------------
   # Security gate

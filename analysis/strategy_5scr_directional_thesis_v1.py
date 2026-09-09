@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+from contracts.strategy_5scr_candle_identity import candle_evidence_hash as candle_evidence_hash
+from contracts.strategy_5scr_candle_identity import candle_material_hash as candle_material_hash
 from contracts.strategy_5scr_context_epoch_v1 import StrategyContextEpochV1
 from contracts.strategy_5scr_directional_thesis_v1 import (
     DIRECTIONAL_THESIS_RULE_VERSION,
@@ -36,27 +38,6 @@ class ActiveStructuralLivenessResult:
 def _sha256(payload: Any) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
-
-
-def candle_material_hash(candle: ClosedCandleAuthorityRefV1) -> str:
-    return _sha256(
-        {
-            "symbol": candle.symbol,
-            "timeframe": candle.timeframe,
-            "open_time_utc": candle.open_time_utc,
-            "close_time_utc": candle.close_time_utc,
-            "open": candle.open,
-            "high": candle.high,
-            "low": candle.low,
-            "close": candle.close,
-        }
-    )
-
-
-def candle_evidence_hash(candle: ClosedCandleAuthorityRefV1) -> str:
-    payload = candle.model_dump(mode="json")
-    payload.pop("candle_evidence_id", None)
-    return _sha256(payload)
 
 
 def _validate_candle_identity(candle: ClosedCandleAuthorityRefV1) -> str | None:
@@ -508,7 +489,7 @@ def build_directional_thesis_proofs(
         return DirectionalThesisBuildResult("QUARANTINED", "FUTURE_PRESSURE_AUTHORITY")
     if (
         evidence.pressure_authority.valid_until_utc is not None
-        and evidence.pressure_authority.valid_until_utc < evidence.decision_at_utc
+        and evidence.pressure_authority.valid_until_utc <= evidence.decision_at_utc
     ):
         return DirectionalThesisBuildResult("REJECTED", "PRESSURE_AUTHORITY_EXPIRED")
 

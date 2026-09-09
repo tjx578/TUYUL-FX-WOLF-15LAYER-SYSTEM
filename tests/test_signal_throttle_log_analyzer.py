@@ -4,6 +4,8 @@ import csv
 import logging
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from analysis.market_context_validator import MarketContext
 from analysis.microboost_core_event import (
     MICROBOOST_CORE_EVENT_FIELDS,
@@ -296,7 +298,10 @@ def test_live_analyzer_assigns_runtime_scanner_cycle_metadata(monkeypatch):
     assert third.observed_cycle_index == 1
 
 
-def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
+@pytest.mark.parametrize("second,expected_first", [(0, "THROTTLED"), (3, "DOWNGRADED_TO_HOLD")])
+def test_live_record_throttled_keeps_inferred_direction_for_audit_only(monkeypatch, second, expected_first):
+    monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "fixture-baseline-order")
+    timestamp = datetime(2026, 9, 8, 20, 20, second, tzinfo=UTC)
     analyzer = SignalThrottleLiveAnalyzer()
     analyzer.record_throttled(
         symbol="USDJPY",
@@ -305,15 +310,22 @@ def test_live_record_throttled_keeps_inferred_direction_for_audit_only():
         remaining=0,
         max_signals=3,
         window_seconds=300,
+        timestamp=timestamp,
     )
 
     events = list(analyzer._events)
-
-    assert events[0].event_type == "THROTTLED"
-    assert events[0].direction is None
-    assert events[0].throttled_inferred_direction == "BUY"
-    assert events[1].event_type == "DOWNGRADED_TO_HOLD"
-    assert events[1].direction == "BUY"
+    # Equal timestamps use the stable raw-ID tiebreak, not physical arrival order.
+    # These two pinned fixtures exercise both orders found on the baseline.
+    assert len(events) == 2
+    assert events[0].event_type == expected_first
+    by_type = {event.event_type: event for event in events}
+    assert set(by_type) == {"THROTTLED", "DOWNGRADED_TO_HOLD"}
+    assert by_type["THROTTLED"].direction is None
+    assert by_type["THROTTLED"].throttled_inferred_direction == "BUY"
+    assert by_type["DOWNGRADED_TO_HOLD"].direction == "BUY"
+    assert by_type["DOWNGRADED_TO_HOLD"].is_downgraded is True
+    assert all(event.timestamp == timestamp for event in events)
+    assert all(event.eligible_for_execution is False for event in events)
 
 
 def test_csv_fixture_reports_data_quality_without_large_raw_export():
