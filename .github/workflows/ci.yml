@@ -335,16 +335,21 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Build candidate runtime image
+        id: runtime-image
         run: docker build --label org.opencontainers.image.revision=$GITHUB_SHA -t wolf15-p1-runtime:$GITHUB_SHA .
       - name: Require built runtime ownership readiness and shutdown acceptance
         run: python scripts/ci/p1_runtime_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/p1-runtime.json
       - name: Require actual orchestrator role process acceptance
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
         run: python scripts/ci/orchestrator_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/orchestrator-process.json
       - name: Require actual ingest role process acceptance
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
         run: python scripts/ci/ingest_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/ingest-process.json
       - name: Require actual engine and trade role process acceptance
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
         run: python scripts/ci/engine_trade_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/engine-trade-process.json
       - name: Require actual pressure outbox role process acceptance
+        if: ${{ !cancelled() && steps.runtime-image.outcome == 'success' }}
         run: python scripts/ci/pressure_outbox_process_acceptance.py --image wolf15-p1-runtime:$GITHUB_SHA --output artifacts/pressure-outbox-process.json
       - name: Upload built runtime receipt
         if: always()
