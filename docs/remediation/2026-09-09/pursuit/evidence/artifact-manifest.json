@@ -1,7 +1,57 @@
 {
-  "source_commit": "48a7d95d4ba47c161afd7c1e3f068151de749a2d",
+  "source_commit": "1ad5c7a13bbcea5d4eff3eaded6f90989cb14f46",
   "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
+    {
+      "path": "bf1-collection.log",
+      "sha256": "86f007d6ddc3a2c11378e3453d1654b0ccc12a63dd50bae62045808fe15e77ef",
+      "bytes": 4469
+    },
+    {
+      "path": "bf1-pytest.log",
+      "sha256": "e62b084804652ae7040d13541f82cb9c323ecb9e0af1fdb4a0c2ae83f1245844",
+      "bytes": 2552
+    },
+    {
+      "path": "bf1-receipt.json",
+      "sha256": "9b006b52f95095e4857ed89620742138c0f042966d528e8e0f2a98f323194ade",
+      "bytes": 9152
+    },
+    {
+      "path": "bf1.xml",
+      "sha256": "fa0b16d0b74485556205f6ce3366a63c6e86704c6bb8075f88e713d18c5199af",
+      "bytes": 5184
+    },
+    {
+      "path": "bf2-collection.log",
+      "sha256": "3a1d3a4cd4eb4f2b38fdf759796d377885e103e99626b70a55b40ef2c8c783e8",
+      "bytes": 4643
+    },
+    {
+      "path": "bf2-pytest.log",
+      "sha256": "6ee57af93a4b1c54dbb77b80d07100b054fb513d7ab7fe33c119750bd31b29ec",
+      "bytes": 1673
+    },
+    {
+      "path": "bf2-receipt.json",
+      "sha256": "748ded727344bd33e94a1a7acb754ccbf4b1077cdf1fc9b403f1a192eeb73fa1",
+      "bytes": 9340
+    },
+    {
+      "path": "bf2.xml",
+      "sha256": "ea04ed48680bb2593a5516aeaaba14d250c15fcbc0716bf6b30f369998b3b604",
+      "bytes": 4798
+    },
+    {
+      "path": "bridge-factory-source.diff",
+      "sha256": "3c7056ec2380d81120a60b1a6647343014219da109c38b9b4ddbf5e5d298cd14",
+      "bytes": 8668
+    },
+    {
+      "path": "bridge-factory-validation.json",
+      "sha256": "704e2408b8dd8a32121858f91619ac668aa9f1af85c6bc8ddddf236fba379c8e",
+      "bytes": 4605
+    },
     {
       "path": "bridge-integration-audit.json",
       "sha256": "e6a4aabca708486f939acc689c63a5ba685af0286b56d97b8ba753f3837590dd",
