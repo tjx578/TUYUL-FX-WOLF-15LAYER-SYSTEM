@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "71ee81a6d18c3ee0a904eec6489f11bf10d19b59",
-  "source_verified_at": "2026-09-09T06:21:39.262121+00:00",
+  "source_checkpoint": "2c9d3dab743747f17dc350a04a8225f65490b26b",
+  "source_verified_at": "2026-09-09T06:34:19.471771+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K11_REPLAY_RETENTION_CALLER_LOCAL_ACCEPTANCE",
+  "current_slice": "K07_V31_TYPED_PARENT_SIZING_LOCAL_ACCEPTANCE",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Continue independent source integration; operational replay retention needs a bound confidential sink and separately trusted receipt custody. Do not retry unchanged runner, billing or DEMO blockers.",
+  "next_action_on_resume": "Continue K07 versioned capacity reservation reducer and strategy-candidate handoff. Preserve TEST_ONLY until active policy/authority binding; do not reinterpret V1 or retry unchanged external gates.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_CALLER_RETENTION_AND_RELOAD_REPLAY",
-  "actual_source_commit": "71ee81a6d18c3ee0a904eec6489f11bf10d19b59",
+  "previous_goal_turn_classification": "PROGRESS_TYPED_POLICY_ACCOUNT_SPEC_GEOMETRY_ADAPTER",
+  "actual_source_commit": "2c9d3dab743747f17dc350a04a8225f65490b26b",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -765,13 +765,15 @@
       ]
     },
     "K07": {
-      "status": "LOCK_AND_RESERVATION_ROW_BINDINGS_LOCAL_PASS",
+      "status": "V31_PARENT_SIZING_ADAPTER_LOCAL_PASS_PARTIAL",
       "DONE": false,
-      "evidence_ref": "evidence/reservation-row-validation.json",
+      "evidence_ref": "evidence/k07-parent-adapter-validation.json",
+      "previous_evidence_ref": "evidence/reservation-row-validation.json",
       "remaining": [
-        "Active account/mode/currency/version profile",
-        "V3.1 candidate adapter and combined strategy-risk lineage",
-        "Database ledger concurrency/recovery and independent broker acceptance"
+        "Active account/mode/currency/version profile and attestors",
+        "Canonical strategy-candidate handoff and versioned reservation/capacity reducer",
+        "Margin gates and database concurrency/recovery",
+        "Natural command and independent broker acceptance"
       ]
     },
     "K08": {
@@ -813,7 +815,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "71ee81a6d18c3ee0a904eec6489f11bf10d19b59",
+    "source_commit": "2c9d3dab743747f17dc350a04a8225f65490b26b",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,

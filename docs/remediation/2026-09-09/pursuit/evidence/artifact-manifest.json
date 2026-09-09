@@ -1,6 +1,6 @@
 {
-  "source_commit": "71ee81a6d18c3ee0a904eec6489f11bf10d19b59",
-  "scope": "Evidence files; historical receipts retain their own scope and status",
+  "source_commit": "2c9d3dab743747f17dc350a04a8225f65490b26b",
+  "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
       "path": "bc1-collection.log",
@@ -421,6 +421,56 @@
       "path": "iw4.xml",
       "sha256": "a9113baeb798430978732cb503efc3aab8f953aca9f5bbdc8d97727e3883cef7",
       "bytes": 9353
+    },
+    {
+      "path": "k07-adapter-20260909-a1-collection.log",
+      "sha256": "86e5a6a483eff22bc9befe10f34e36c7e5b48b5d00d0f2a063b36278c07f68a7",
+      "bytes": 9057
+    },
+    {
+      "path": "k07-adapter-20260909-a1-pytest.log",
+      "sha256": "8e740e76f1fd9f32f5bfe287d8faea433717523604eec9c7161084a8245c1a72",
+      "bytes": 994
+    },
+    {
+      "path": "k07-adapter-20260909-a1-receipt.json",
+      "sha256": "232a48e7c35f2b8237dd162f309278e120cc5cce0109380ba22232009e8ecdc9",
+      "bytes": 15135
+    },
+    {
+      "path": "k07-adapter-20260909-a1.xml",
+      "sha256": "b6e3b9f3f220292779fe13513111e7f383bb7657323a3cd8ee3d3d5f61e79712",
+      "bytes": 11343
+    },
+    {
+      "path": "k07-adapter-20260909-a2-collection.log",
+      "sha256": "817c29567613b1f2251fc808c7fc68916ac1490ea3b038cc83ca508202821045",
+      "bytes": 10703
+    },
+    {
+      "path": "k07-adapter-20260909-a2-pytest.log",
+      "sha256": "fe4d63ed3f944723ee2e9f37c8ad69d7fc4f037cb02e5753ec26cb518e50d72f",
+      "bytes": 1075
+    },
+    {
+      "path": "k07-adapter-20260909-a2-receipt.json",
+      "sha256": "abcaf9aa3dd757cb24849a627f88f1794950df786ad913419b9a59c462bc83e5",
+      "bytes": 16879
+    },
+    {
+      "path": "k07-adapter-20260909-a2.xml",
+      "sha256": "5a97df6cc3ad6700b0d8c0dff4bfbf533f0a54d3f282adb68b4c25caca73319f",
+      "bytes": 13535
+    },
+    {
+      "path": "k07-parent-adapter-source.diff",
+      "sha256": "88b58b1c98e3011ffba5a5ff4523dbaab1fb3dea9866a3ea8ce26b78c6cfd6e1",
+      "bytes": 22963
+    },
+    {
+      "path": "k07-parent-adapter-validation.json",
+      "sha256": "1309a90511650ce12422084bedc3960387533141a7c90a5e020e0e0688c17be9",
+      "bytes": 13488
     },
     {
       "path": "lint-format.json",
