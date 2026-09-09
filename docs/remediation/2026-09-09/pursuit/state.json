@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "a3c3639146d3deb52ec35187406d51653644a33c",
-  "source_verified_at": "2026-09-09T08:57:56.721187+00:00",
+  "source_checkpoint": "f560ed6702cb3a7a6e4525a82b3fca8bf33bbd4a",
+  "source_verified_at": "2026-09-09T10:29:48.369483+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K05_EXPLICIT_REFERENCE_PATTERN_DERIVATION",
+  "current_slice": "P1_CI_AND_POSTGRES_EXECUTION",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -25,7 +25,7 @@
     },
     "C01": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "PATCHED_TESTED_LOCAL_PARTIAL",
+      "execution_stage": "LOCAL_GATE_CONTROLS_PASS_ALTERNATE_DEPLOY_PATH_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -33,12 +33,13 @@
         "evidence/contract-audit.json",
         "evidence/strategy-audit.json",
         "evidence/release-audit.json",
-        "validation.json"
+        "validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json"
       ]
     },
     "C02": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "PATCHED_TESTED_LOCAL_PARTIAL",
+      "execution_stage": "REAL_PG_CONSUMER_FENCING_PASS_APPLICATION_ROLE_AND_RUNTIME_OWNER_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -46,12 +47,13 @@
         "evidence/contract-audit.json",
         "evidence/strategy-audit.json",
         "evidence/release-audit.json",
-        "validation.json"
+        "validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json"
       ]
     },
     "C03": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "LOCAL_PINNED_TESTS_PASS_LINUX_CI_UNEXECUTED",
+      "execution_stage": "LINUX_CI_EXECUTED_FAILED_FIXES_UNDER_VERIFICATION",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -67,15 +69,18 @@
         "followup-runner-binding/README.md",
         "followup-runner-binding/validation.json",
         "followup-delivery-contract/README.md",
-        "followup-delivery-contract/validation.json"
+        "followup-delivery-contract/validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json"
       ]
     },
     "C04": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "BLOCKED",
-      "closing_receipt_refs": [],
+      "execution_stage": "LINUX_CI_BOOTSTRAP_ACCEPTANCE_PASSED",
+      "closing_receipt_refs": [
+        "pursuit/evidence/p1-ci-20260909/34340383026/runner-qualification.json"
+      ],
       "stale_evidence_refs": [],
-      "closure_status": "NOT_CLOSED",
+      "closure_status": "ACTION_DONE",
       "source_evidence_refs": [
         "evidence/contract-audit.json",
         "evidence/strategy-audit.json",
@@ -84,12 +89,15 @@
         "followup-runner-binding/README.md",
         "followup-runner-binding/validation.json",
         "followup-delivery-contract/README.md",
-        "followup-delivery-contract/validation.json"
-      ]
+        "followup-delivery-contract/validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/34340383026/runner-qualification.json"
+      ],
+      "closure_scope": "C04 existing GitHub-hosted disposable Linux runner bootstrap; no VPS provisioning; no other P1 action inferred complete"
     },
     "C05": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "BLOCKED",
+      "execution_stage": "MAIN_UNPROTECTED_RULESET_DISABLED",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -97,12 +105,13 @@
         "evidence/contract-audit.json",
         "evidence/strategy-audit.json",
         "evidence/release-audit.json",
-        "validation.json"
+        "validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json"
       ]
     },
     "C06": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "PATCHED_TESTED_LOCAL_PARTIAL",
+      "execution_stage": "BUILT_RUNTIME_ACCEPTANCE_NOT_EXECUTED",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -110,7 +119,8 @@
         "evidence/contract-audit.json",
         "evidence/strategy-audit.json",
         "evidence/release-audit.json",
-        "validation.json"
+        "validation.json",
+        "pursuit/evidence/p1-ci-20260909/validation.json"
       ]
     },
     "S01": {
@@ -829,27 +839,30 @@
     }
   },
   "next_frontier": [
-    "K01_ACTIVE_POLICY_AND_CONSUMER_MAPPING",
-    "K06_TARGET_UNIVERSE_AND_CALLER_CONTRACT",
-    "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
+    "P1_CURRENT_CANDIDATE_CI_RESULTS",
+    "C04_RUNNER_QUALIFICATION_RECEIPT",
+    "SUPPORTED_MIGRATION_UPGRADE",
+    "C02_APPLICATION_ROLE_C06_BUILT_RUNTIME",
+    "K05_POST_PROOF_VALIDITY"
   ],
   "publication": {
-    "source_commit": "a3c3639146d3deb52ec35187406d51653644a33c",
-    "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
+    "source_commit": "f560ed6702cb3a7a6e4525a82b3fca8bf33bbd4a",
+    "remote_checkpoint": "d9515f8e433f2752aab4258ef380a4a9ef200998",
     "pr": 428,
     "draft": true,
-    "push": "HOLD",
-    "reason": "B-PUBLISH-FRONTEND-BRANCH",
+    "push": "PR_D951_PUBLISHED_NEW_RELEASE_GATE_COMMIT_LOCAL",
+    "reason": "Frontend auto-deploy disabled; other connected branches differ; scoped Draft publication authorized",
     "no_main_merge": true,
     "no_deployment": true
   },
   "new_blockers": {
     "B-PUBLISH-FRONTEND-BRANCH": {
-      "status": "UNVERIFIED",
+      "status": "RESOLVED_FOR_CURRENT_DRAFT_PUSH",
       "scope": "new push only; local engineering remains executable",
       "evidence": "evidence/railway-source-bindings.json",
       "condition_to_retry": "Read-only authoritative branch trigger binding for frontend service b9cd6d24-beae-4211-b475-9b3bfe78b392",
-      "question_asked": false
+      "question_asked": false,
+      "latest_evidence": "evidence/p1-ci-20260909/p1-railway-trigger-current.json"
     }
   },
   "integration_frontier_audit": {
@@ -885,5 +898,10 @@
     "consecutive_goal_turns": 0,
     "latest_evidence": "evidence/collector-final-validation.json",
     "status": "MITIGATED_FOR_BOUNDED_GIT_AND_SMALL_NATIVE_FIXTURE_SUITE"
+  },
+  "platform_status": {
+    "github_billing": "PAID_REPORTED",
+    "actions": "VERIFIED_EXECUTED",
+    "evidence_ref": "evidence/p1-ci-20260909/validation.json"
   }
 }
