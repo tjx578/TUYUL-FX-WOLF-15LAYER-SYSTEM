@@ -1,0 +1,728 @@
+{
+  "conclusion": "success",
+  "databaseId": 34363944821,
+  "headSha": "0d00f140bc5f365fb94ae5434a2ff827ff2ef047",
+  "jobs": [
+    {
+      "completedAt": "2026-09-09T14:37:14Z",
+      "conclusion": "success",
+      "databaseId": 102507731419,
+      "name": "Python tests (pytest)",
+      "startedAt": "2026-09-09T14:29:33Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T14:29:35Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T14:29:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:53Z",
+          "conclusion": "success",
+          "name": "Initialize containers",
+          "number": 2,
+          "startedAt": "2026-09-09T14:29:35Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:55Z",
+          "conclusion": "success",
+          "name": "Checkout",
+          "number": 3,
+          "startedAt": "2026-09-09T14:29:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:58Z",
+          "conclusion": "success",
+          "name": "Setup Python",
+          "number": 4,
+          "startedAt": "2026-09-09T14:29:55Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:25Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 5,
+          "startedAt": "2026-09-09T14:29:58Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:25Z",
+          "conclusion": "success",
+          "name": "Bind exact disposable PostgreSQL service address",
+          "number": 6,
+          "startedAt": "2026-09-09T14:30:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:27Z",
+          "conclusion": "success",
+          "name": "Apply database migrations",
+          "number": 7,
+          "startedAt": "2026-09-09T14:30:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:27Z",
+          "conclusion": "success",
+          "name": "Mark PostgreSQL as a disposable test environment",
+          "number": 8,
+          "startedAt": "2026-09-09T14:30:27Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:28Z",
+          "conclusion": "success",
+          "name": "Qualify disposable Linux PostgreSQL and Redis runner",
+          "number": 9,
+          "startedAt": "2026-09-09T14:30:27Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:32Z",
+          "conclusion": "success",
+          "name": "Require supported PostgreSQL upgrade with existing data",
+          "number": 10,
+          "startedAt": "2026-09-09T14:30:28Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:38Z",
+          "conclusion": "success",
+          "name": "Require executed S03 PostgreSQL acceptance",
+          "number": 11,
+          "startedAt": "2026-09-09T14:30:32Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:42Z",
+          "conclusion": "success",
+          "name": "Require separate S03 producer and relay PostgreSQL acceptance",
+          "number": 12,
+          "startedAt": "2026-09-09T14:30:38Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:49Z",
+          "conclusion": "success",
+          "name": "Require separate S03 consumer and owner PostgreSQL acceptance",
+          "number": 13,
+          "startedAt": "2026-09-09T14:30:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:53Z",
+          "conclusion": "success",
+          "name": "Require disposable consumer application-role PostgreSQL acceptance",
+          "number": 14,
+          "startedAt": "2026-09-09T14:30:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:31:14Z",
+          "conclusion": "success",
+          "name": "Require separate candidate capacity and TEST_ONLY transaction PostgreSQL acceptance",
+          "number": 15,
+          "startedAt": "2026-09-09T14:30:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:31:15Z",
+          "conclusion": "success",
+          "name": "Upload S03 source-bound PostgreSQL receipt",
+          "number": 16,
+          "startedAt": "2026-09-09T14:31:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:06Z",
+          "conclusion": "success",
+          "name": "Run pytest with coverage",
+          "number": 17,
+          "startedAt": "2026-09-09T14:31:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:09Z",
+          "conclusion": "success",
+          "name": "Require uninstrumented latency budgets",
+          "number": 18,
+          "startedAt": "2026-09-09T14:37:06Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:10Z",
+          "conclusion": "success",
+          "name": "Upload complete Python test outcomes",
+          "number": 19,
+          "startedAt": "2026-09-09T14:37:09Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:11Z",
+          "conclusion": "success",
+          "name": "Upload coverage report",
+          "number": 20,
+          "startedAt": "2026-09-09T14:37:10Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:11Z",
+          "conclusion": "success",
+          "name": "Post Setup Python",
+          "number": 38,
+          "startedAt": "2026-09-09T14:37:11Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:11Z",
+          "conclusion": "success",
+          "name": "Post Checkout",
+          "number": 39,
+          "startedAt": "2026-09-09T14:37:11Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:12Z",
+          "conclusion": "success",
+          "name": "Stop containers",
+          "number": 40,
+          "startedAt": "2026-09-09T14:37:11Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:12Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 41,
+          "startedAt": "2026-09-09T14:37:12Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34363944821/job/102507731419"
+    },
+    {
+      "completedAt": "2026-09-09T14:29:40Z",
+      "conclusion": "success",
+      "databaseId": 102507731613,
+      "name": "Deprecated shim guard",
+      "startedAt": "2026-09-09T14:29:33Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T14:29:35Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T14:29:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Checkout",
+          "number": 2,
+          "startedAt": "2026-09-09T14:29:35Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Block resurrected shim files",
+          "number": 3,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Block deprecated imports in production code",
+          "number": 4,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Post Checkout",
+          "number": 8,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 9,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34363944821/job/102507731613"
+    },
+    {
+      "completedAt": "2026-09-09T14:29:57Z",
+      "conclusion": "success",
+      "databaseId": 102507731655,
+      "name": "Native MCP fixture tests",
+      "startedAt": "2026-09-09T14:29:40Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T14:29:42Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T14:29:41Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:43Z",
+          "conclusion": "success",
+          "name": "Checkout",
+          "number": 2,
+          "startedAt": "2026-09-09T14:29:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:43Z",
+          "conclusion": "success",
+          "name": "Setup Python",
+          "number": 3,
+          "startedAt": "2026-09-09T14:29:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:52Z",
+          "conclusion": "success",
+          "name": "Install isolated MCP test dependencies",
+          "number": 4,
+          "startedAt": "2026-09-09T14:29:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:54Z",
+          "conclusion": "success",
+          "name": "Run native MCP fixture suite",
+          "number": 5,
+          "startedAt": "2026-09-09T14:29:52Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:54Z",
+          "conclusion": "success",
+          "name": "Post Setup Python",
+          "number": 9,
+          "startedAt": "2026-09-09T14:29:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:54Z",
+          "conclusion": "success",
+          "name": "Post Checkout",
+          "number": 10,
+          "startedAt": "2026-09-09T14:29:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:54Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 11,
+          "startedAt": "2026-09-09T14:29:54Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34363944821/job/102507731655"
+    },
+    {
+      "completedAt": "2026-09-09T14:31:38Z",
+      "conclusion": "success",
+      "databaseId": 102507731764,
+      "name": "Built API bootstrap",
+      "startedAt": "2026-09-09T14:29:33Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T14:29:34Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T14:29:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:36Z",
+          "conclusion": "success",
+          "name": "Checkout",
+          "number": 2,
+          "startedAt": "2026-09-09T14:29:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:30:28Z",
+          "conclusion": "success",
+          "name": "Build exact-source API image",
+          "number": 3,
+          "startedAt": "2026-09-09T14:29:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:31:35Z",
+          "conclusion": "success",
+          "name": "Exercise built API bootstrap and served readiness",
+          "number": 4,
+          "startedAt": "2026-09-09T14:30:28Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:31:36Z",
+          "conclusion": "success",
+          "name": "Upload built API evidence",
+          "number": 5,
+          "startedAt": "2026-09-09T14:31:35Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:31:36Z",
+          "conclusion": "success",
+          "name": "Post Checkout",
+          "number": 10,
+          "startedAt": "2026-09-09T14:31:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:31:36Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 11,
+          "startedAt": "2026-09-09T14:31:36Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34363944821/job/102507731764"
+    },
+    {
+      "completedAt": "2026-09-09T14:29:48Z",
+      "conclusion": "success",
+      "databaseId": 102507731951,
+      "name": "Ruff lint & format",
+      "startedAt": "2026-09-09T14:29:33Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T14:29:35Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T14:29:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Checkout",
+          "number": 2,
+          "startedAt": "2026-09-09T14:29:35Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:41Z",
+          "conclusion": "success",
+          "name": "Setup Python",
+          "number": 3,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:44Z",
+          "conclusion": "success",
+          "name": "Install ruff",
+          "number": 4,
+          "startedAt": "2026-09-09T14:29:41Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:44Z",
+          "conclusion": "success",
+          "name": "Ruff check (lint \u00e2\u20ac\u201d hard fail)",
+          "number": 5,
+          "startedAt": "2026-09-09T14:29:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:44Z",
+          "conclusion": "success",
+          "name": "Ruff format check (hard fail)",
+          "number": 6,
+          "startedAt": "2026-09-09T14:29:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:45Z",
+          "conclusion": "success",
+          "name": "Post Setup Python",
+          "number": 11,
+          "startedAt": "2026-09-09T14:29:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:45Z",
+          "conclusion": "success",
+          "name": "Post Checkout",
+          "number": 12,
+          "startedAt": "2026-09-09T14:29:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:45Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 13,
+          "startedAt": "2026-09-09T14:29:45Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34363944821/job/102507731951"
+    },
+    {
+      "completedAt": "2026-09-09T14:29:39Z",
+      "conclusion": "success",
+      "databaseId": 102507731973,
+      "name": "Architecture drift guard",
+      "startedAt": "2026-09-09T14:29:33Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T14:29:34Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T14:29:33Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:36Z",
+          "conclusion": "success",
+          "name": "Checkout",
+          "number": 2,
+          "startedAt": "2026-09-09T14:29:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:36Z",
+          "conclusion": "success",
+          "name": "Setup Python",
+          "number": 3,
+          "startedAt": "2026-09-09T14:29:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "analysis/ must not contain execution logic",
+          "number": 4,
+          "startedAt": "2026-09-09T14:29:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "execution/ must not contain strategy logic",
+          "number": 5,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "L12 signal must not carry account state",
+          "number": 6,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Post Setup Python",
+          "number": 11,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Post Checkout",
+          "number": 12,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:37Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 13,
+          "startedAt": "2026-09-09T14:29:37Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34363944821/job/102507731973"
+    },
+    {
+      "completedAt": "2026-09-09T14:32:48Z",
+      "conclusion": "success",
+      "databaseId": 102507732062,
+      "name": "Dashboard build (Next.js)",
+      "startedAt": "2026-09-09T14:29:33Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T14:29:36Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T14:29:33Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:38Z",
+          "conclusion": "success",
+          "name": "Checkout",
+          "number": 2,
+          "startedAt": "2026-09-09T14:29:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:46Z",
+          "conclusion": "success",
+          "name": "Set up Node",
+          "number": 3,
+          "startedAt": "2026-09-09T14:29:38Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:29:46Z",
+          "conclusion": "success",
+          "name": "Set up disposable owner-login Python",
+          "number": 4,
+          "startedAt": "2026-09-09T14:29:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:07Z",
+          "conclusion": "success",
+          "name": "Install owner-login contract dependencies",
+          "number": 5,
+          "startedAt": "2026-09-09T14:29:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:16Z",
+          "conclusion": "success",
+          "name": "Install",
+          "number": 6,
+          "startedAt": "2026-09-09T14:32:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:18Z",
+          "conclusion": "success",
+          "name": "Lint",
+          "number": 7,
+          "startedAt": "2026-09-09T14:32:16Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:21Z",
+          "conclusion": "success",
+          "name": "Dashboard tests",
+          "number": 8,
+          "startedAt": "2026-09-09T14:32:18Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:46Z",
+          "conclusion": "success",
+          "name": "Build",
+          "number": 9,
+          "startedAt": "2026-09-09T14:32:21Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:46Z",
+          "conclusion": "success",
+          "name": "Post Set up disposable owner-login Python",
+          "number": 16,
+          "startedAt": "2026-09-09T14:32:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:46Z",
+          "conclusion": "success",
+          "name": "Post Set up Node",
+          "number": 17,
+          "startedAt": "2026-09-09T14:32:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:46Z",
+          "conclusion": "success",
+          "name": "Post Checkout",
+          "number": 18,
+          "startedAt": "2026-09-09T14:32:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:32:46Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "startedAt": "2026-09-09T14:32:46Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34363944821/job/102507732062"
+    },
+    {
+      "completedAt": "2026-09-09T14:37:19Z",
+      "conclusion": "success",
+      "databaseId": 102510668504,
+      "name": "CI Gate",
+      "startedAt": "2026-09-09T14:37:17Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T14:37:18Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T14:37:18Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:18Z",
+          "conclusion": "success",
+          "name": "Evaluate all upstream jobs",
+          "number": 2,
+          "startedAt": "2026-09-09T14:37:18Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T14:37:18Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-09-09T14:37:18Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34363944821/job/102510668504"
+    }
+  ],
+  "status": "completed"
+}

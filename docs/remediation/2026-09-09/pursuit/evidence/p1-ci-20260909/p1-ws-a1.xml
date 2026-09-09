@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="5" failures="0" skipped="0" tests="5" time="4.463" timestamp="2026-09-09T19:47:54.053438+08:00" hostname="DESKTOP-TE510QO"><testcase classname="tests.test_ws_load" name="test_ws_load_50_connections" time="1.392"><error message="failed on setup with &quot;AssertionError: socket fixture exited: Traceback (most recent call last):&#10;    File &quot;D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py&quot;, line 12, in &lt;module&gt;&#10;      from unittest.mock import AsyncMock&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py&quot;, line 26, in &lt;module&gt;&#10;      import asyncio&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py&quot;, line 42, in &lt;module&gt;&#10;      from .windows_events import *&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py&quot;, line 8, in &lt;module&gt;&#10;      import _overlapped&#10;  OSError: [WinError 10106] The requested service provider could not be loaded or initialized&#10;  &#10;assert 1 is None&#10; +  where 1 = poll()&#10; +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll&quot;">tmp_path_factory = TempPathFactory(_given_basetemp=WindowsPath('C:/Users/INTEL/.codex/visualizations/2026/09/08/01a08273-1154-71e3-8242-c...a08273-1154-71e3-8242-cf3965a5b514/s03-runtime-staging/ci-temp/p1-ws-a1'), _retention_count=3, _retention_policy='all')
+
+    @pytest.fixture(scope="module")
+    def socket_server(tmp_path_factory):
+        folder = tmp_path_factory.mktemp("ws-loopback")
+        address_path = folder / "address.json"
+        root = Path(__file__).resolve().parents[1]
+        env = environment()
+        env["PYTHONPATH"] = str(root)
+        # Fixture-only signing key, never inherited host credentials.
+        env["DASHBOARD_JWT_SECRET"] = "test-only-loopback-ws-jwt-key-at-least-32-characters"
+        env["JWT_SECRET"] = env["DASHBOARD_JWT_SECRET"]
+        env["WOLF15_FORENSIC_ARTIFACTS_PATH"] = str(folder / "forensics.jsonl")
+        with (folder / "server.log").open("w+") as log:
+            process = subprocess.Popen(
+                [sys.executable, str(root / "tests/fixtures/ws_load_app.py"), str(address_path)],
+                cwd=folder,
+                env=env,
+                stdout=log,
+                stderr=log,
+            )
+            try:
+                deadline = time.monotonic() + 30
+                while time.monotonic() &lt; deadline:
+&gt;                   assert process.poll() is None, "socket fixture exited: " + (folder / "server.log").read_text()[-3000:]
+E                   AssertionError: socket fixture exited: Traceback (most recent call last):
+E                       File "D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py", line 12, in &lt;module&gt;
+E                         from unittest.mock import AsyncMock
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 26, in &lt;module&gt;
+E                         import asyncio
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py", line 42, in &lt;module&gt;
+E                         from .windows_events import *
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py", line 8, in &lt;module&gt;
+E                         import _overlapped
+E                     OSError: [WinError 10106] The requested service provider could not be loaded or initialized
+E                     
+E                   assert 1 is None
+E                    +  where 1 = poll()
+E                    +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll
+
+tests\test_ws_load.py:57: AssertionError</error></testcase><testcase classname="tests.test_ws_load" name="test_ws_channel_isolation" time="0.002"><error message="failed on setup with &quot;AssertionError: socket fixture exited: Traceback (most recent call last):&#10;    File &quot;D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py&quot;, line 12, in &lt;module&gt;&#10;      from unittest.mock import AsyncMock&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py&quot;, line 26, in &lt;module&gt;&#10;      import asyncio&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py&quot;, line 42, in &lt;module&gt;&#10;      from .windows_events import *&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py&quot;, line 8, in &lt;module&gt;&#10;      import _overlapped&#10;  OSError: [WinError 10106] The requested service provider could not be loaded or initialized&#10;  &#10;assert 1 is None&#10; +  where 1 = poll()&#10; +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll&quot;">tmp_path_factory = TempPathFactory(_given_basetemp=WindowsPath('C:/Users/INTEL/.codex/visualizations/2026/09/08/01a08273-1154-71e3-8242-c...a08273-1154-71e3-8242-cf3965a5b514/s03-runtime-staging/ci-temp/p1-ws-a1'), _retention_count=3, _retention_policy='all')
+
+    @pytest.fixture(scope="module")
+    def socket_server(tmp_path_factory):
+        folder = tmp_path_factory.mktemp("ws-loopback")
+        address_path = folder / "address.json"
+        root = Path(__file__).resolve().parents[1]
+        env = environment()
+        env["PYTHONPATH"] = str(root)
+        # Fixture-only signing key, never inherited host credentials.
+        env["DASHBOARD_JWT_SECRET"] = "test-only-loopback-ws-jwt-key-at-least-32-characters"
+        env["JWT_SECRET"] = env["DASHBOARD_JWT_SECRET"]
+        env["WOLF15_FORENSIC_ARTIFACTS_PATH"] = str(folder / "forensics.jsonl")
+        with (folder / "server.log").open("w+") as log:
+            process = subprocess.Popen(
+                [sys.executable, str(root / "tests/fixtures/ws_load_app.py"), str(address_path)],
+                cwd=folder,
+                env=env,
+                stdout=log,
+                stderr=log,
+            )
+            try:
+                deadline = time.monotonic() + 30
+                while time.monotonic() &lt; deadline:
+&gt;                   assert process.poll() is None, "socket fixture exited: " + (folder / "server.log").read_text()[-3000:]
+E                   AssertionError: socket fixture exited: Traceback (most recent call last):
+E                       File "D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py", line 12, in &lt;module&gt;
+E                         from unittest.mock import AsyncMock
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 26, in &lt;module&gt;
+E                         import asyncio
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py", line 42, in &lt;module&gt;
+E                         from .windows_events import *
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py", line 8, in &lt;module&gt;
+E                         import _overlapped
+E                     OSError: [WinError 10106] The requested service provider could not be loaded or initialized
+E                     
+E                   assert 1 is None
+E                    +  where 1 = poll()
+E                    +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll
+
+tests\test_ws_load.py:57: AssertionError</error></testcase><testcase classname="tests.test_ws_load" name="test_ws_rapid_connect_disconnect" time="0.002"><error message="failed on setup with &quot;AssertionError: socket fixture exited: Traceback (most recent call last):&#10;    File &quot;D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py&quot;, line 12, in &lt;module&gt;&#10;      from unittest.mock import AsyncMock&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py&quot;, line 26, in &lt;module&gt;&#10;      import asyncio&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py&quot;, line 42, in &lt;module&gt;&#10;      from .windows_events import *&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py&quot;, line 8, in &lt;module&gt;&#10;      import _overlapped&#10;  OSError: [WinError 10106] The requested service provider could not be loaded or initialized&#10;  &#10;assert 1 is None&#10; +  where 1 = poll()&#10; +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll&quot;">tmp_path_factory = TempPathFactory(_given_basetemp=WindowsPath('C:/Users/INTEL/.codex/visualizations/2026/09/08/01a08273-1154-71e3-8242-c...a08273-1154-71e3-8242-cf3965a5b514/s03-runtime-staging/ci-temp/p1-ws-a1'), _retention_count=3, _retention_policy='all')
+
+    @pytest.fixture(scope="module")
+    def socket_server(tmp_path_factory):
+        folder = tmp_path_factory.mktemp("ws-loopback")
+        address_path = folder / "address.json"
+        root = Path(__file__).resolve().parents[1]
+        env = environment()
+        env["PYTHONPATH"] = str(root)
+        # Fixture-only signing key, never inherited host credentials.
+        env["DASHBOARD_JWT_SECRET"] = "test-only-loopback-ws-jwt-key-at-least-32-characters"
+        env["JWT_SECRET"] = env["DASHBOARD_JWT_SECRET"]
+        env["WOLF15_FORENSIC_ARTIFACTS_PATH"] = str(folder / "forensics.jsonl")
+        with (folder / "server.log").open("w+") as log:
+            process = subprocess.Popen(
+                [sys.executable, str(root / "tests/fixtures/ws_load_app.py"), str(address_path)],
+                cwd=folder,
+                env=env,
+                stdout=log,
+                stderr=log,
+            )
+            try:
+                deadline = time.monotonic() + 30
+                while time.monotonic() &lt; deadline:
+&gt;                   assert process.poll() is None, "socket fixture exited: " + (folder / "server.log").read_text()[-3000:]
+E                   AssertionError: socket fixture exited: Traceback (most recent call last):
+E                       File "D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py", line 12, in &lt;module&gt;
+E                         from unittest.mock import AsyncMock
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 26, in &lt;module&gt;
+E                         import asyncio
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py", line 42, in &lt;module&gt;
+E                         from .windows_events import *
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py", line 8, in &lt;module&gt;
+E                         import _overlapped
+E                     OSError: [WinError 10106] The requested service provider could not be loaded or initialized
+E                     
+E                   assert 1 is None
+E                    +  where 1 = poll()
+E                    +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll
+
+tests\test_ws_load.py:57: AssertionError</error></testcase><testcase classname="tests.test_ws_load" name="test_ws_load_fixture_does_not_bypass_auth[invalid]" time="0.003"><error message="failed on setup with &quot;AssertionError: socket fixture exited: Traceback (most recent call last):&#10;    File &quot;D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py&quot;, line 12, in &lt;module&gt;&#10;      from unittest.mock import AsyncMock&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py&quot;, line 26, in &lt;module&gt;&#10;      import asyncio&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py&quot;, line 42, in &lt;module&gt;&#10;      from .windows_events import *&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py&quot;, line 8, in &lt;module&gt;&#10;      import _overlapped&#10;  OSError: [WinError 10106] The requested service provider could not be loaded or initialized&#10;  &#10;assert 1 is None&#10; +  where 1 = poll()&#10; +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll&quot;">tmp_path_factory = TempPathFactory(_given_basetemp=WindowsPath('C:/Users/INTEL/.codex/visualizations/2026/09/08/01a08273-1154-71e3-8242-c...a08273-1154-71e3-8242-cf3965a5b514/s03-runtime-staging/ci-temp/p1-ws-a1'), _retention_count=3, _retention_policy='all')
+
+    @pytest.fixture(scope="module")
+    def socket_server(tmp_path_factory):
+        folder = tmp_path_factory.mktemp("ws-loopback")
+        address_path = folder / "address.json"
+        root = Path(__file__).resolve().parents[1]
+        env = environment()
+        env["PYTHONPATH"] = str(root)
+        # Fixture-only signing key, never inherited host credentials.
+        env["DASHBOARD_JWT_SECRET"] = "test-only-loopback-ws-jwt-key-at-least-32-characters"
+        env["JWT_SECRET"] = env["DASHBOARD_JWT_SECRET"]
+        env["WOLF15_FORENSIC_ARTIFACTS_PATH"] = str(folder / "forensics.jsonl")
+        with (folder / "server.log").open("w+") as log:
+            process = subprocess.Popen(
+                [sys.executable, str(root / "tests/fixtures/ws_load_app.py"), str(address_path)],
+                cwd=folder,
+                env=env,
+                stdout=log,
+                stderr=log,
+            )
+            try:
+                deadline = time.monotonic() + 30
+                while time.monotonic() &lt; deadline:
+&gt;                   assert process.poll() is None, "socket fixture exited: " + (folder / "server.log").read_text()[-3000:]
+E                   AssertionError: socket fixture exited: Traceback (most recent call last):
+E                       File "D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py", line 12, in &lt;module&gt;
+E                         from unittest.mock import AsyncMock
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 26, in &lt;module&gt;
+E                         import asyncio
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py", line 42, in &lt;module&gt;
+E                         from .windows_events import *
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py", line 8, in &lt;module&gt;
+E                         import _overlapped
+E                     OSError: [WinError 10106] The requested service provider could not be loaded or initialized
+E                     
+E                   assert 1 is None
+E                    +  where 1 = poll()
+E                    +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll
+
+tests\test_ws_load.py:57: AssertionError</error></testcase><testcase classname="tests.test_ws_load" name="test_ws_load_fixture_does_not_bypass_auth[unscoped]" time="0.002"><error message="failed on setup with &quot;AssertionError: socket fixture exited: Traceback (most recent call last):&#10;    File &quot;D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py&quot;, line 12, in &lt;module&gt;&#10;      from unittest.mock import AsyncMock&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py&quot;, line 26, in &lt;module&gt;&#10;      import asyncio&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py&quot;, line 42, in &lt;module&gt;&#10;      from .windows_events import *&#10;    File &quot;C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py&quot;, line 8, in &lt;module&gt;&#10;      import _overlapped&#10;  OSError: [WinError 10106] The requested service provider could not be loaded or initialized&#10;  &#10;assert 1 is None&#10; +  where 1 = poll()&#10; +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll&quot;">tmp_path_factory = TempPathFactory(_given_basetemp=WindowsPath('C:/Users/INTEL/.codex/visualizations/2026/09/08/01a08273-1154-71e3-8242-c...a08273-1154-71e3-8242-cf3965a5b514/s03-runtime-staging/ci-temp/p1-ws-a1'), _retention_count=3, _retention_policy='all')
+
+    @pytest.fixture(scope="module")
+    def socket_server(tmp_path_factory):
+        folder = tmp_path_factory.mktemp("ws-loopback")
+        address_path = folder / "address.json"
+        root = Path(__file__).resolve().parents[1]
+        env = environment()
+        env["PYTHONPATH"] = str(root)
+        # Fixture-only signing key, never inherited host credentials.
+        env["DASHBOARD_JWT_SECRET"] = "test-only-loopback-ws-jwt-key-at-least-32-characters"
+        env["JWT_SECRET"] = env["DASHBOARD_JWT_SECRET"]
+        env["WOLF15_FORENSIC_ARTIFACTS_PATH"] = str(folder / "forensics.jsonl")
+        with (folder / "server.log").open("w+") as log:
+            process = subprocess.Popen(
+                [sys.executable, str(root / "tests/fixtures/ws_load_app.py"), str(address_path)],
+                cwd=folder,
+                env=env,
+                stdout=log,
+                stderr=log,
+            )
+            try:
+                deadline = time.monotonic() + 30
+                while time.monotonic() &lt; deadline:
+&gt;                   assert process.poll() is None, "socket fixture exited: " + (folder / "server.log").read_text()[-3000:]
+E                   AssertionError: socket fixture exited: Traceback (most recent call last):
+E                       File "D:\WOLF15-work\master-remediation-20260909\repo\tests\fixtures\ws_load_app.py", line 12, in &lt;module&gt;
+E                         from unittest.mock import AsyncMock
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py", line 26, in &lt;module&gt;
+E                         import asyncio
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\__init__.py", line 42, in &lt;module&gt;
+E                         from .windows_events import *
+E                       File "C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\asyncio\windows_events.py", line 8, in &lt;module&gt;
+E                         import _overlapped
+E                     OSError: [WinError 10106] The requested service provider could not be loaded or initialized
+E                     
+E                   assert 1 is None
+E                    +  where 1 = poll()
+E                    +    where poll = &lt;Popen: returncode: 1 args: ['C:\\Users\\INTEL\\.codex\\visualizations\\2026...&gt;.poll
+
+tests\test_ws_load.py:57: AssertionError</error></testcase></testsuite></testsuites>

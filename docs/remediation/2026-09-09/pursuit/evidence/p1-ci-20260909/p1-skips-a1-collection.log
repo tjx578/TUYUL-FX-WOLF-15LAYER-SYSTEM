@@ -1,0 +1,131 @@
+tests/contract/test_api_contracts.py::TestStatusContract::test_returns_200
+tests/contract/test_api_contracts.py::TestStatusContract::test_required_fields
+tests/contract/test_api_contracts.py::TestStatusContract::test_status_is_string
+tests/contract/test_api_contracts.py::TestStatusContract::test_full_status_shape
+tests/contract/test_api_contracts.py::TestStatusContract::test_healthz_liveness
+tests/contract/test_api_contracts.py::TestContextContract::test_returns_2xx
+tests/contract/test_api_contracts.py::TestContextContract::test_array_or_object
+tests/contract/test_api_contracts.py::TestContextContract::test_staleness_is_json_safe
+tests/contract/test_api_contracts.py::TestVerdictAllContract::test_returns_200
+tests/contract/test_api_contracts.py::TestVerdictAllContract::test_is_list_or_dict
+tests/contract/test_api_contracts.py::TestVerdictAllContract::test_verdict_item_required_fields
+tests/contract/test_api_contracts.py::TestVerdictAllContract::test_confidence_is_numeric
+tests/contract/test_api_contracts.py::TestVerdictAllContract::test_verdict_string_values
+tests/contract/test_api_contracts.py::TestAccountsContract::test_returns_200
+tests/contract/test_api_contracts.py::TestAccountsContract::test_is_list_or_wrapped
+tests/contract/test_api_contracts.py::TestAccountsContract::test_account_item_fields
+tests/contract/test_api_contracts.py::TestExecutionContract::test_returns_2xx
+tests/contract/test_api_contracts.py::TestExecutionContract::test_is_object_when_200
+tests/contract/test_api_contracts.py::TestRateLimitContract::test_429_has_retry_after
+tests/contract/test_api_contracts.py::test_empty_verdict_snapshot_is_explicit
+tests/test_load_tick_stress.py::TestHighFrequencyTickBurst::test_process_10k_ticks_within_time_bound
+tests/test_load_tick_stress.py::TestHighFrequencyTickBurst::test_throughput_meets_minimum
+tests/test_load_tick_stress.py::TestHighFrequencyTickBurst::test_no_tick_data_loss
+tests/test_load_tick_stress.py::TestMultiSymbolConcurrentLoad::test_multi_symbol_isolation
+tests/test_load_tick_stress.py::TestMultiSymbolConcurrentLoad::test_multi_symbol_throughput
+tests/test_load_tick_stress.py::TestMultiSymbolConcurrentLoad::test_candles_built_for_all_symbols
+tests/test_load_tick_stress.py::TestTickSpikeAndGap::test_price_spike_handled
+tests/test_load_tick_stress.py::TestTickSpikeAndGap::test_timestamp_gap_between_candles
+tests/test_load_tick_stress.py::TestTickSpikeAndGap::test_duplicate_timestamps_handled
+tests/test_load_tick_stress.py::TestSustainedLoad::test_sustained_100_cycles_no_memory_leak
+tests/test_load_tick_stress.py::TestSustainedLoad::test_sustained_multi_symbol_cycles
+tests/test_load_tick_stress.py::TestSustainedLoad::test_processing_latency_per_cycle
+tests/unit/test_ws_v3_upgrades.py::TestConnectionManagerBuffer::test_buffer_stores_messages
+tests/unit/test_ws_v3_upgrades.py::TestConnectionManagerBuffer::test_buffer_ring_evicts_oldest
+tests/unit/test_ws_v3_upgrades.py::TestConnectionManagerBuffer::test_replay_all_when_no_since
+tests/unit/test_ws_v3_upgrades.py::TestConnectionManagerBuffer::test_replay_filters_by_since
+tests/unit/test_ws_v3_upgrades.py::TestCachedRiskSingletons::test_get_risk_manager_caches
+tests/unit/test_ws_v3_upgrades.py::TestCachedRiskSingletons::test_get_circuit_breaker_caches
+tests/unit/test_ws_v3_upgrades.py::TestPriceEvent::test_notify_sets_event
+tests/unit/test_ws_v3_upgrades.py::TestPriceEvent::test_event_clears_after_read
+tests/unit/test_ws_v3_upgrades.py::TestHeartbeatConfig::test_ping_interval_is_positive
+tests/unit/test_ws_v3_upgrades.py::TestBroadcastBuffers::test_broadcast_adds_to_buffer
+tests/unit/test_ws_v3_upgrades.py::TestPublisherHelpers::test_publish_signal_update_broadcasts_envelope
+tests/unit/test_ws_v3_upgrades.py::TestPublisherHelpers::test_publish_pipeline_update_uses_explicit_payload
+tests/unit/test_ws_v3_upgrades.py::TestPublisherHelpers::test_publish_pipeline_update_from_cache_returns_false_when_missing
+tests/test_secret_scan_receipt.py::test_findings_preserve_source_binding_without_exposing_raw
+tests/test_secret_scan_receipt.py::test_malformed_scanner_output_is_not_a_clean_scan[not json]
+tests/test_secret_scan_receipt.py::test_malformed_scanner_output_is_not_a_clean_scan[{}]
+tests/test_secret_scan_receipt.py::test_malformed_scanner_output_is_not_a_clean_scan[{"Raw": "x"}]
+tests/test_secret_scan_receipt.py::test_external_source_path_is_rejected
+tests/test_secret_scan_receipt.py::test_review_is_bound_to_both_source_bytes_and_detected_value
+tests/test_railway_release_source_gate.py::test_complete_exact_source_receipt_passes
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Apply database migrations]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Mark PostgreSQL as a disposable test environment]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Qualify disposable Linux PostgreSQL and Redis runner]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Require executed S03 PostgreSQL acceptance]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Require separate S03 consumer and owner PostgreSQL acceptance]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Require separate S03 producer and relay PostgreSQL acceptance]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Require separate candidate capacity and TEST_ONLY transaction PostgreSQL acceptance]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Require supported PostgreSQL upgrade with existing data]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Require uninstrumented latency budgets]
+tests/test_railway_release_source_gate.py::test_release_rejects_missing_postgres_or_runner_step[Run pytest with coverage]
+tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[release_sha]
+tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[checkout_sha]
+tests/test_railway_release_source_gate.py::test_source_a_ci_cannot_deploy_source_b[remote_main_sha]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[id-43]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[workflow_id-10]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[path-.github/workflows/spoof.yml]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_branch-feature]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[repository-value5]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[head_repository-value6]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[event-pull_request]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[event-pull_request_target]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[status-queued]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[conclusion-failure]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[conclusion-skipped]
+tests/test_railway_release_source_gate.py::test_untrusted_or_incomplete_run_rejected[run_attempt-None]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[head_sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[run_id-43]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[run_attempt-2]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[status-queued]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[conclusion-skipped]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[conclusion-failure]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[runner_id-0]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[runner_id-None]
+tests/test_railway_release_source_gate.py::test_skipped_missing_runner_or_wrong_job_rejected[steps-value8]
+tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[failure]
+tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[skipped]
+tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[cancelled]
+tests/test_railway_release_source_gate.py::test_failed_step_cannot_hide_behind_successful_job[None]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[missing_job]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[duplicate_job]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[missing_migration]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[wrong_workflow]
+tests/test_railway_release_source_gate.py::test_required_evidence_cannot_be_removed[disabled_ci]
+tests/test_railway_release_source_gate.py::test_manual_dispatch_requires_explicit_sha_and_run_id
+tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[False-workflow_dispatch]
+tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[False-workflow_run]
+tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[True-workflow_dispatch]
+tests/test_railway_release_source_gate.py::test_cli_event_binding_and_rerun_race[True-workflow_run]
+tests/test_railway_release_source_gate.py::test_real_cli_rejects_before_provider_when_dispatch_missing_evidence
+tests/test_railway_release_source_gate.py::test_workflow_binds_checkout_and_never_swallows_provider_failure
+
+============================== warnings summary ===============================
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests\test_load_tick_stress.py:77
+  D:\WOLF15-work\master-remediation-20260909\repo\tests\test_load_tick_stress.py:77: PytestUnknownMarkWarning: Unknown pytest.mark.benchmark - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.benchmark
+
+tests\test_load_tick_stress.py:98
+  D:\WOLF15-work\master-remediation-20260909\repo\tests\test_load_tick_stress.py:98: PytestUnknownMarkWarning: Unknown pytest.mark.benchmark - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.benchmark
+
+tests\test_load_tick_stress.py:180
+  D:\WOLF15-work\master-remediation-20260909\repo\tests\test_load_tick_stress.py:180: PytestUnknownMarkWarning: Unknown pytest.mark.benchmark - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.benchmark
+
+tests\test_load_tick_stress.py:432
+  D:\WOLF15-work\master-remediation-20260909\repo\tests\test_load_tick_stress.py:432: PytestUnknownMarkWarning: Unknown pytest.mark.benchmark - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.benchmark
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+103 tests collected in 4.05s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

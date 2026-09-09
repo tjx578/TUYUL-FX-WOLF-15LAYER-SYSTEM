@@ -1,0 +1,30 @@
+{
+  "results": {
+    "pg-collection": {
+      "exit_code": 0,
+      "artifact": "k07-revisions-pg-collection.log",
+      "sha256": "ca19aca1500d1810809f4926e0d3b06dc646c10be1ce39d05339aa596d853c8d",
+      "test_ids": [
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[restart_duplicate]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[rollback]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[concurrent_duplicate]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[payload_conflict]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[advisory_canonical]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[stale_owner]",
+        "tests/integration/test_candidate_revision_v31_postgres.py::test_candidate_revision_postgres_acceptance[raw_mutation]"
+      ]
+    },
+    "migration-sql": {
+      "exit_code": 0,
+      "artifact": "k07-revisions-migration-sql.log",
+      "sha256": "bddfada5c8f978fe2ed32f6374345af2e009b0f971fba35a6d6a3ff37b28b2ad"
+    },
+    "migration-heads": {
+      "exit_code": 0,
+      "artifact": "k07-revisions-migration-heads.log",
+      "sha256": "ce05a51c5279f428cfbea88ce981c09be2413095cdffb97f4ea0f8dbc06a17e7"
+    }
+  },
+  "database_execution": "NOT_EXECUTED",
+  "migration_application": "NOT_EXECUTED"
+}

@@ -1,0 +1,253 @@
+{
+  "run_id": "strategy-audit-20260909",
+  "utc": "2026-09-08T19:23:01.249209+00:00",
+  "commit": "773150952311db3dbf5188f36536b7837d8ec296",
+  "tree": "ba145af03adce09b3d43d0a4138f5ccea73f92f9",
+  "worktree": "D:\\WOLF15-work\\master-strategy-audit-20260909",
+  "worktree_status": "",
+  "python": "3.11.9",
+  "pytest": "8.4.2",
+  "pydantic": "2.10.3",
+  "ssot_path": "C:\\Users\\INTEL\\OneDrive\\Documents\\GitHub\\TUYUL-FX-WOLF-15LAYER-SYSTEM-SSOT-V31\\docs\\strategy\\WOLF15_STRATEGY_5SCR_CANONICAL_SSOT_V3_1_CANDIDATE.md",
+  "ssot_worktree_sha256": "b23e432633fb7f6f005fa70613ae3db1d7d43a80b4f4541c31e583f25a4b8b79",
+  "ssot_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
+  "ssot_git_blob_sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+  "ssot_line_ending_normalized_equal": true,
+  "dod_sha256": "0b2ed9e0bf3758509ad065babbaf59b3f1e24a1d0e469b96a6adb7e37276a705",
+  "source_sha256": {
+    "analysis/strategy_5scr_raw_admission_blocks.py": "b534117a1ca53af90174bebe117f8b56f75add83e270f7a58a87be1bac92cdcd",
+    "analysis/strategy_5scr_pair_admission.py": "e0e9b500e5feb5ac3a4dae247efaf28b50df91bdf73f628c60cb073e266d7bd7",
+    "contracts/strategy_5scr_risk_reservation.py": "35a9442643537edd1878ba7c3e4ba917659d4f72edac3fc34f2adcd95bdd098c",
+    "contracts/strategy_5scr_tradeplan_candidate_v2.py": "a4320084962a250ebfeb0d73a6d6511eb87fc511be2e4e76145f633e510c35aa",
+    "storage/strategy_5scr_risk_reservation_repository.py": "b42cb9b6788dca9b71b296c2672cb2b5301d80ffaaee94961c8d503aefd701bc",
+    "execution/mt5_risk_command_producer.py": "db958967ca352fc755c06e218afe690f022d8a5a5947366bdb06a138d1a2c05b",
+    "risk/s5_campaign_risk.py": "e695ce04f34e98b631c8ad9392109fa54c1d40d26aabce3a2b849efa7e1e668f"
+  },
+  "harness_sha256": "3fea29fcf9f6027e53c1591c55488c13ea1c14dc183ddf1fef1d9ce4b3cff5b2",
+  "tests": {
+    "passed": 211,
+    "failed": 0,
+    "skipped": 0
+  },
+  "mixed_direction_scenarios": [
+    {
+      "id": "same_direction_gap300",
+      "fixture": {
+        "symbol": "EURUSD",
+        "offsets_seconds": [
+          0,
+          150,
+          300
+        ],
+        "directions": [
+          "BUY",
+          "BUY",
+          "BUY"
+        ],
+        "max_gap_seconds": 300,
+        "coverage": "SYNTHETIC_ORDERED_COMPLETE_INPUT_LEDGER",
+        "policy_scope": "DIAGNOSTIC_ONLY_NOT_SELECTED_PRODUCTION_POLICY"
+      },
+      "block_count": 1,
+      "durations": [
+        300.0
+      ],
+      "finalization_reasons": [
+        null
+      ],
+      "grant_count": 1,
+      "evaluated_blocks": 1,
+      "rejection_counts": {},
+      "scope": "Tests input population semantics only; no real source continuity, persistence, SLA or order permission."
+    },
+    {
+      "id": "mixed_direction_gap300",
+      "fixture": {
+        "symbol": "EURUSD",
+        "offsets_seconds": [
+          0,
+          150,
+          300
+        ],
+        "directions": [
+          "BUY",
+          "SELL",
+          "BUY"
+        ],
+        "max_gap_seconds": 300,
+        "coverage": "SYNTHETIC_ORDERED_COMPLETE_INPUT_LEDGER",
+        "policy_scope": "DIAGNOSTIC_ONLY_NOT_SELECTED_PRODUCTION_POLICY"
+      },
+      "block_count": 3,
+      "durations": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "finalization_reasons": [
+        "DIRECTION_CHANGE_EVENT",
+        "DIRECTION_CHANGE_EVENT",
+        null
+      ],
+      "grant_count": 0,
+      "evaluated_blocks": 3,
+      "rejection_counts": {
+        "BLOCK_EVENT_COUNT_INVALID": 3
+      },
+      "scope": "Tests input population semantics only; no real source continuity, persistence, SLA or order permission."
+    },
+    {
+      "id": "mixed_direction_gap100",
+      "fixture": {
+        "symbol": "EURUSD",
+        "offsets_seconds": [
+          0,
+          150,
+          300
+        ],
+        "directions": [
+          "BUY",
+          "SELL",
+          "BUY"
+        ],
+        "max_gap_seconds": 100,
+        "coverage": "SYNTHETIC_ORDERED_COMPLETE_INPUT_LEDGER",
+        "policy_scope": "DIAGNOSTIC_ONLY_NOT_SELECTED_PRODUCTION_POLICY"
+      },
+      "block_count": 3,
+      "durations": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "finalization_reasons": [
+        "DIRECTION_CHANGE_EVENT",
+        "DIRECTION_CHANGE_EVENT",
+        null
+      ],
+      "grant_count": 0,
+      "evaluated_blocks": 3,
+      "rejection_counts": {
+        "BLOCK_EVENT_COUNT_INVALID": 3
+      },
+      "scope": "Tests input population semantics only; no real source continuity, persistence, SLA or order permission."
+    }
+  ],
+  "risk_candidate_identity_diagnostic": [
+    {
+      "prefix": "5scr-plan:",
+      "accepted": true
+    },
+    {
+      "prefix": "5scr-tradeplan-v2:",
+      "accepted": false,
+      "error_types": [
+        "string_pattern_mismatch"
+      ]
+    }
+  ],
+  "per_id_findings": [
+    {
+      "action_id": "S01",
+      "status": "BLOCKED",
+      "done": false,
+      "finding": "v3.1 exists on separate docs branch; selected source digest can be bound, implementation schemas/policies remain unmapped.",
+      "source_ref": "docs/strategy/WOLF15_STRATEGY_5SCR_CANONICAL_SSOT_V3_1_CANDIDATE.md"
+    },
+    {
+      "action_id": "S02",
+      "status": "INCOMPLETE",
+      "done": false,
+      "finding": "Closed/as-of component cases pass; real fresh coverage, owner-atomic lease and live readiness unmeasured.",
+      "source_ref": "tests/test_strategy_5scr_closed_candle_evidence.py:272"
+    },
+    {
+      "action_id": "S03",
+      "status": "FAIL",
+      "done": false,
+      "finding": "Same-symbol BUY0 SELL150 BUY300 becomes three zero-duration blocks under explicit 300-second diagnostic gap policy. Pair grant additionally requires uniform BUY/SELL.",
+      "source_ref": "analysis/strategy_5scr_raw_admission_blocks.py:307;analysis/strategy_5scr_pair_admission.py:299"
+    },
+    {
+      "action_id": "S04",
+      "status": "BLOCKED",
+      "done": false,
+      "finding": "Current observer documents no MATURE_ADVISORY producer; lifecycle v2 recovery passing is not dual admission or advisory upgrade closure.",
+      "source_ref": "storage/observer_strategy_events.py:1"
+    },
+    {
+      "action_id": "S05",
+      "status": "FAIL",
+      "done": false,
+      "finding": "P5 target universe only H4 strict swing; DoD v3.1 includes D1/H4/H1 and other legal structures. Existing nearest-target tests pass within narrower universe.",
+      "source_ref": "contracts/strategy_5scr_tradeplan_candidate_v2.py:21"
+    },
+    {
+      "action_id": "S06",
+      "status": "INCOMPLETE",
+      "done": false,
+      "finding": "211 local component tests pass; all 35 clauses mapped but complete v3.1 frozen dataset/policy/cohort denominators absent.",
+      "source_ref": "strategy-acceptance-matrix.json"
+    },
+    {
+      "action_id": "R01",
+      "status": "UNBOUND",
+      "done": false,
+      "finding": "Campaign default equal 5% per entry, 10% account cap; no actual account/mode/currency selection proves applicable profile.",
+      "source_ref": "risk/s5_campaign_risk.py:39"
+    },
+    {
+      "action_id": "R02",
+      "status": "BLOCKED",
+      "done": false,
+      "finding": "Account advisory transaction lock and safe floor sizing exist. Current candidate identity incompatible; PostgreSQL two-distinct-candidate race unexecuted; current repository requires flat account.",
+      "source_ref": "storage/strategy_5scr_risk_reservation_repository.py:397;storage/strategy_5scr_risk_reservation_repository.py:469"
+    },
+    {
+      "action_id": "R03",
+      "status": "BLOCKED",
+      "done": false,
+      "finding": "5scr-tradeplan-v2 request rejected by risk contract requiring 5scr-plan. CommandSource binds legacy strategy version; no explicit natural DEMO source class. Do not substitute ID prefix.",
+      "source_ref": "contracts/strategy_5scr_risk_reservation.py:37;contracts/mt5_execution_protocol.py:94"
+    },
+    {
+      "action_id": "N01",
+      "status": "BLOCKED",
+      "done": false,
+      "finding": "Existing deterministic SHADOW producer is unwired and accepts legacy final signal; current natural L12 plus post-verdict plus risk integration not bound.",
+      "source_ref": "execution/mt5_risk_command_producer.py:1;execution/mt5_risk_command_producer.py:398"
+    },
+    {
+      "action_id": "N02",
+      "status": "BLOCKED",
+      "done": false,
+      "finding": "Producer explicitly requires SHADOW. Natural DEMO source/EA compile/wire/recovery acceptance unexecuted.",
+      "source_ref": "execution/mt5_risk_command_producer.py:284"
+    },
+    {
+      "action_id": "N03",
+      "status": "BLOCKED",
+      "done": false,
+      "finding": "No exact converged natural strategy/risk/EA artifact; immutable source type mismatch remains. PR418/419 history was not merged by this audit.",
+      "source_ref": "contracts/strategy_5scr_tradeplan_candidate_v2.py:425;contracts/strategy_5scr_risk_reservation.py:37"
+    },
+    {
+      "action_id": "N04",
+      "status": "NOT_EXECUTED",
+      "done": false,
+      "finding": "Focused Python tests cannot substitute full combined natural suite, MetaEditor, disposable PG and partial-fill/unknown races.",
+      "source_ref": "tests/integration/test_5scr_risk_reservation_postgres.py:548"
+    },
+    {
+      "action_id": "N07",
+      "status": "BLOCKED",
+      "done": false,
+      "finding": "Pure risk helper models child but durable reservation request is PARENT-only. Lifetime child slot, partial fill and broker-proved release unimplemented/unverified in selected path.",
+      "source_ref": "contracts/strategy_5scr_risk_reservation.py:40;risk/s5_campaign_risk.py:273"
+    }
+  ],
+  "runtime_database": "NOT_MEASURED",
+  "broker": "NOT_MEASURED",
+  "full_required_suite": "NOT_EXECUTED",
+  "scope": "Read-only source audit and local synthetic checks; no database/provider/broker effects; no commit/push."
+}

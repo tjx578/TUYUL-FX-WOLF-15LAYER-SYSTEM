@@ -23,7 +23,98 @@ async def _noop_coro(*args, **kwargs):
     return None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["create", "transition", "reconcile"])
+async def test_available_database_write_failure_does_not_advance_local_state(repo, reconciler, monkeypatch, operation):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    import storage.postgres_client as postgres_module
+
+    record = _make_intent("write_failure", state=ExecutionLifecycleState.ACKNOWLEDGED)
+    if operation != "create":
+        await repo.create(record)
+    before_memory = {key: dict(value) for key, value in repo._memory.items()}
+    before_index = dict(repo._idem_index)
+    cache_write = Mock()
+    monkeypatch.setattr(repo, "_cache_set", cache_write)
+    failure = RuntimeError("injected database write failure")
+    execute = AsyncMock(side_effect=failure)
+    monkeypatch.setattr(postgres_module, "pg_client", SimpleNamespace(is_available=True, execute=execute))
+    monkeypatch.setattr(repo, "_pg_insert", ExecutionIntentRepository._pg_insert.__get__(repo))
+    monkeypatch.setattr(repo, "_pg_update", ExecutionIntentRepository._pg_update.__get__(repo))
+    with pytest.raises(RuntimeError, match="injected database write failure") as caught:
+        if operation == "create":
+            await repo.create(record)
+        elif operation == "transition":
+            await repo.transition(record.execution_intent_id, ExecutionLifecycleState.FILLED)
+        else:
+            await reconciler.reconcile_single(
+                record.execution_intent_id,
+                broker_truth={"status": "FILLED", "fill_price": 1.0855},
+            )
+    assert caught.value is failure
+    execute.assert_awaited_once()
+    cache_write.assert_not_called()
+    assert repo._memory == before_memory
+    assert repo._idem_index == before_index
+
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "operation,tag,accepted",
+    [
+        ("create", "INSERT 0 0", False),
+        ("create", "SKIP", False),
+        ("create", "INSERT 0 1", True),
+        ("transition", "UPDATE 0", False),
+        ("transition", "UPDATE 2", False),
+        ("transition", "SKIP", False),
+        ("transition", "UPDATE 1", True),
+    ],
+)
+async def test_write_confirmation_and_state_predicate(repo, monkeypatch, operation, tag, accepted):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    import storage.postgres_client as postgres_module
+    from execution.execution_intent import ExecutionIntentWriteConflictError
+
+    record = _make_intent("row_confirmation", state=ExecutionLifecycleState.ACKNOWLEDGED)
+    if operation != "create":
+        await repo.create(record)
+    before = {key: dict(value) for key, value in repo._memory.items()}
+    before_index = dict(repo._idem_index)
+    cache_write = Mock()
+    monkeypatch.setattr(repo, "_cache_set", cache_write)
+    execute = AsyncMock(return_value=tag)
+    monkeypatch.setattr(postgres_module, "pg_client", SimpleNamespace(is_available=True, execute=execute))
+    monkeypatch.setattr(repo, "_pg_insert", ExecutionIntentRepository._pg_insert.__get__(repo))
+    monkeypatch.setattr(repo, "_pg_update", ExecutionIntentRepository._pg_update.__get__(repo))
+
+    async def act():
+        if operation == "create":
+            return await repo.create(record)
+        return await repo.transition(record.execution_intent_id, ExecutionLifecycleState.FILLED)
+
+    if accepted:
+        result = await act()
+        assert result.state == (record.state if operation == "create" else ExecutionLifecycleState.FILLED)
+        cache_write.assert_called_once()
+    else:
+        with pytest.raises(ExecutionIntentWriteConflictError):
+            await act()
+        cache_write.assert_not_called()
+        assert repo._memory == before
+        assert repo._idem_index == before_index
+    execute.assert_awaited_once()
+    if operation == "transition":
+        args = execute.call_args.args
+        assert args[-2:] == (record.execution_intent_id, "ACKNOWLEDGED")
+        assert f"AND state = ${len(args) - 1}" in args[0]
 
 
 @pytest.fixture
