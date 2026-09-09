@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 
@@ -11,7 +13,7 @@ from analysis.signal_throttle_log_analyzer import SignalThrottleLogEvent
 from analysis.strategy_5scr_pair_admission import build_pair_admission_audit
 from analysis.strategy_5scr_raw_admission_blocks import build_raw_admission_population
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
-from storage.pair_admission_evaluations import PairAdmissionEvaluationRepository
+from storage.pair_admission_evaluations import PairAdmissionEvaluationRepository, PairAdmissionEvaluationRuntime
 
 START = datetime(2026, 8, 10, 1, 0, tzinfo=UTC)
 
@@ -42,6 +44,12 @@ def _evaluation_for(seconds: tuple[int, ...]) -> dict[str, Any]:
 
 def _evaluation() -> dict[str, Any]:
     return _evaluation_for((0, 150, 300))
+
+
+def _enable_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED", "true")
+    monkeypatch.setenv("SIGNAL_PRESSURE_RADAR_WRITE_ENABLED", "true")
 
 
 class _Transaction:
@@ -279,6 +287,49 @@ async def test_schema_readiness_fails_closed_on_contract_drift(
     assert getattr(status, dimension)
 
 
+def test_runtime_hold_short_circuits_without_validating_or_writing(monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable_persistence(monkeypatch)
+    runtime = PairAdmissionEvaluationRuntime()
+    runtime.hold("PAIR_ADMISSION_REQUIRED_SCHEMA_NOT_READY")
+
+    result = runtime.persist_sync({"event": "invalid"})
+
+    assert result.status == "HOLD"
+    assert result.error == "PAIR_ADMISSION_REQUIRED_SCHEMA_NOT_READY"
+
+
+@pytest.mark.asyncio
+async def test_runtime_opens_circuit_after_first_write_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable_persistence(monkeypatch)
+
+    class _FailingRepository:
+        is_available = True
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ingest(self, _evaluation: dict[str, Any]) -> None:
+            self.calls += 1
+            raise RuntimeError('relation "observer_export.stream_heads" does not exist')
+
+    repository = _FailingRepository()
+    runtime = PairAdmissionEvaluationRuntime()
+    runtime.configure(
+        loop=asyncio.get_running_loop(),
+        repository=cast(Any, repository),
+    )
+
+    with patch.object(admission_storage.logger, "warning") as warning:
+        first = await asyncio.to_thread(runtime.persist_sync, _evaluation())
+        second = await asyncio.to_thread(runtime.persist_sync, _evaluation())
+
+    assert first.status == "HOLD"
+    assert first.error == "PAIR_ADMISSION_WRITE_CIRCUIT_OPEN"
+    assert second == first
+    assert repository.calls == 1
+    warning.assert_called_once()
+
+
 def test_pipeline_persists_evaluation_before_any_observability_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -304,8 +355,10 @@ def test_pipeline_persists_evaluation_before_any_observability_route(
         "evaluations_seen": 1,
         "status_counts": {"PERSISTED": 1},
         "errors": [],
-        "persistence_boundary": "INDEPENDENT_PAIR_ADMISSION_LEDGER",
-        "observability_route_independent": True,
+        "persistence_boundary": "ATOMIC_PAIR_ADMISSION_AND_OBSERVER_EXPORT",
+        "observability_route_independent": False,
+        "observer_export_required": True,
+        "observer_authority": "OBSERVATIONAL_ONLY",
         "execution_authority": False,
     }
 

@@ -135,7 +135,20 @@ class DurablePairAdmissionEvaluation:
     duplicate: bool = False
 
 
-PairAdmissionPersistenceStatus = Literal["PERSISTED", "DUPLICATE", "DISABLED", "REJECTED", "FAILED"]
+PairAdmissionPersistenceStatus = Literal[
+    "PERSISTED",
+    "DUPLICATE",
+    "DISABLED",
+    "HOLD",
+    "REJECTED",
+    "FAILED",
+]
+
+_PAIR_ADMISSION_ENABLE_FLAGS = (
+    "SIGNAL_PRESSURE_OUTBOX_ENABLED",
+    "SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED",
+    "SIGNAL_PRESSURE_RADAR_WRITE_ENABLED",
+)
 
 
 @dataclass(frozen=True)
@@ -143,6 +156,12 @@ class PairAdmissionPersistenceResult:
     status: PairAdmissionPersistenceStatus
     evaluation_id: str | None = None
     error: str | None = None
+
+
+def pair_admission_persistence_enabled() -> bool:
+    """Return whether the guarded PairAdmission persistence lane is enabled."""
+
+    return all(os.getenv(name, "false").strip().lower() == "true" for name in _PAIR_ADMISSION_ENABLE_FLAGS)
 
 
 @dataclass(frozen=True)
@@ -576,6 +595,8 @@ class PairAdmissionEvaluationRuntime:
         self._seen: set[tuple[str, str]] = set()
         self._seen_order: deque[tuple[str, str]] = deque()
         self._seen_lock = threading.Lock()
+        self._state_lock = threading.Lock()
+        self._hold_reason: str | None = None
         self._max_seen = max(100, int(max_seen))
 
     def configure(
@@ -584,12 +605,40 @@ class PairAdmissionEvaluationRuntime:
         loop: asyncio.AbstractEventLoop,
         repository: PairAdmissionEvaluationRepository,
     ) -> None:
-        self._loop = loop
-        self._repository = repository
+        with self._state_lock:
+            self._loop = loop
+            self._repository = repository
+            self._hold_reason = None
+
+    @property
+    def hold_reason(self) -> str | None:
+        with self._state_lock:
+            return self._hold_reason
+
+    def hold(self, reason: str) -> None:
+        """Open the persistence circuit without affecting core analysis."""
+
+        resolved_reason = str(reason).strip() or "PAIR_ADMISSION_PERSISTENCE_HOLD"
+        with self._state_lock:
+            self._loop = None
+            self._repository = None
+            self._hold_reason = resolved_reason
+
+    def _open_circuit(self, reason: str) -> bool:
+        resolved_reason = str(reason).strip() or "PAIR_ADMISSION_PERSISTENCE_CIRCUIT_OPEN"
+        with self._state_lock:
+            if self._hold_reason is not None:
+                return False
+            self._loop = None
+            self._repository = None
+            self._hold_reason = resolved_reason
+            return True
 
     def clear(self) -> None:
-        self._loop = None
-        self._repository = None
+        with self._state_lock:
+            self._loop = None
+            self._repository = None
+            self._hold_reason = None
         with self._seen_lock:
             self._seen.clear()
             self._seen_order.clear()
@@ -609,16 +658,14 @@ class PairAdmissionEvaluationRuntime:
         *,
         timeout_seconds: float = 5.0,
     ) -> PairAdmissionPersistenceResult:
-        flags_enabled = all(
-            os.getenv(name, "false").strip().lower() == "true"
-            for name in (
-                "SIGNAL_PRESSURE_OUTBOX_ENABLED",
-                "SIGNAL_PRESSURE_OUTBOX_WRITE_ENABLED",
-                "SIGNAL_PRESSURE_RADAR_WRITE_ENABLED",
-            )
-        )
-        if not flags_enabled:
+        if not pair_admission_persistence_enabled():
             return PairAdmissionPersistenceResult(status="DISABLED")
+        with self._state_lock:
+            hold_reason = self._hold_reason
+            loop = self._loop
+            repository = self._repository
+        if hold_reason is not None:
+            return PairAdmissionPersistenceResult(status="HOLD", error=hold_reason)
         try:
             record = _validated(evaluation)
         except PairAdmissionEvaluationContractError as exc:
@@ -627,10 +674,10 @@ class PairAdmissionEvaluationRuntime:
         with self._seen_lock:
             if key in self._seen:
                 return PairAdmissionPersistenceResult(status="DUPLICATE", evaluation_id=record["evaluation_id"])
-        loop = self._loop
-        repository = self._repository
         if loop is None or repository is None or not loop.is_running() or not repository.is_available:
-            return PairAdmissionPersistenceResult(status="FAILED", error="PAIR_ADMISSION_RUNTIME_UNAVAILABLE")
+            reason = "PAIR_ADMISSION_RUNTIME_UNAVAILABLE"
+            self._open_circuit(reason)
+            return PairAdmissionPersistenceResult(status="HOLD", error=reason)
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -642,15 +689,22 @@ class PairAdmissionEvaluationRuntime:
             durable = future.result(timeout=max(0.1, float(timeout_seconds)))
         except concurrent.futures.TimeoutError:
             future.cancel()
-            return PairAdmissionPersistenceResult(status="FAILED", error="PAIR_ADMISSION_WRITE_TIMEOUT")
+            reason = "PAIR_ADMISSION_WRITE_TIMEOUT_CIRCUIT_OPEN"
+            if self._open_circuit(reason):
+                logger.warning("PairAdmission persistence circuit opened: {}", reason)
+            return PairAdmissionPersistenceResult(status="HOLD", error=reason)
         except PairAdmissionEvaluationContractError as exc:
             return PairAdmissionPersistenceResult(status="REJECTED", error=str(exc))
         except PairAdmissionEvaluationIntegrityError as exc:
-            logger.error("Durable PairAdmission integrity failure: {}", exc)
-            return PairAdmissionPersistenceResult(status="FAILED", error=str(exc))
+            reason = "PAIR_ADMISSION_INTEGRITY_CIRCUIT_OPEN"
+            if self._open_circuit(reason):
+                logger.error("PairAdmission persistence circuit opened after integrity failure: {}", exc)
+            return PairAdmissionPersistenceResult(status="HOLD", error=reason)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Durable PairAdmission write failed: {}", exc)
-            return PairAdmissionPersistenceResult(status="FAILED", error=str(exc))
+            reason = "PAIR_ADMISSION_WRITE_CIRCUIT_OPEN"
+            if self._open_circuit(reason):
+                logger.warning("PairAdmission persistence circuit opened after write failure: {}", exc)
+            return PairAdmissionPersistenceResult(status="HOLD", error=reason)
         self._remember(key)
         return PairAdmissionPersistenceResult(
             status="DUPLICATE" if durable.duplicate else "PERSISTED",
@@ -672,6 +726,10 @@ def configure_pair_admission_evaluation_runtime(
     )
 
 
+def hold_pair_admission_evaluation_runtime(reason: str) -> None:
+    pair_admission_evaluation_runtime.hold(reason)
+
+
 def persist_pair_admission_evaluation_sync(
     evaluation: Mapping[str, Any],
 ) -> PairAdmissionPersistenceResult:
@@ -689,6 +747,8 @@ __all__ = [
     "PairAdmissionEvaluationRuntime",
     "PairAdmissionPersistenceResult",
     "configure_pair_admission_evaluation_runtime",
+    "hold_pair_admission_evaluation_runtime",
+    "pair_admission_persistence_enabled",
     "pair_admission_evaluation_hash",
     "pair_admission_evaluation_runtime",
     "persist_pair_admission_evaluation_sync",

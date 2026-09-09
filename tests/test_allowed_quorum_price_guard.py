@@ -156,9 +156,9 @@ def test_allowed_quorum_labels_stale_live_tick_reference_price() -> None:
     assert payload["reference_price_is_live"] is False
     assert payload["valid_for_execution"] is False
     assert payload["observed_price"] == 1.1501
-    assert payload["observed_price_status"] == "STALE"
+    assert payload["observed_price_status"] == "PRICE_QUALITY_WARMING_UP"
     assert payload["reference_price"] == 1.1501
-    assert payload["reference_price_status"] == "STALE"
+    assert payload["reference_price_status"] == "PRICE_QUALITY_WARMING_UP"
     assert payload["price_lineage_version"] == 2
 
 
