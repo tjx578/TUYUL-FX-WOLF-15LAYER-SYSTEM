@@ -1,0 +1,35 @@
+{
+  "at_utc": "2026-09-09T10:29:30.348085+00:00",
+  "phase": "after",
+  "postgres": {
+    "database": "wolf15_ci_test",
+    "database_oid": "16384",
+    "migration_heads": [
+      "20260909_06"
+    ],
+    "postmaster_started_at": "2026-09-09 10:28:29.847655+00",
+    "server_address": "172.18.0.3/32",
+    "server_port": 5432,
+    "server_version_num": 160015,
+    "settings": {
+      "TimeZone": "UTC",
+      "default_transaction_isolation": "read committed",
+      "fsync": "on",
+      "max_connections": "100",
+      "shared_buffers": "128MB",
+      "synchronous_commit": "on",
+      "wolf15.destructive_tests_allowed": "true",
+      "wolf15.environment_class": "DISPOSABLE_TEST"
+    },
+    "tables": {
+      "attachments": "pair_activity_attachments_v31",
+      "evaluations": "pair_activity_evaluations_v31",
+      "ledgers": "pair_activity_ledgers_v31",
+      "observations": "pair_activity_observations_v31",
+      "raw": "pair_activity_raw_v31",
+      "snapshots": "pair_activity_snapshots_v31"
+    },
+    "user": "wolf_user"
+  },
+  "run_id": "2e5a43a9736942dd90252a7e4135cc7b"
+}

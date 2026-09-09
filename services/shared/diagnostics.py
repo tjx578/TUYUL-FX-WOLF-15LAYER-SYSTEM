@@ -22,12 +22,16 @@ from loguru import logger
 _DEFAULT_HOLD_TIMEOUT_SEC = 3600
 
 
-def hold_alive_sync(*, service_name: str = "service") -> None:
+def hold_alive_sync(*, service_name: str = "service", timeout_sec: int | None = None) -> None:
     """Block the current thread so a daemon-thread health probe stays responsive.
 
     Exits on SIGTERM/SIGINT or after ``DEGRADED_HOLD_TIMEOUT_SEC`` (default 3600s).
     """
-    hold_timeout = int(os.environ.get("DEGRADED_HOLD_TIMEOUT_SEC", str(_DEFAULT_HOLD_TIMEOUT_SEC)))
+    hold_timeout = (
+        timeout_sec
+        if timeout_sec is not None
+        else int(os.environ.get("DEGRADED_HOLD_TIMEOUT_SEC", str(_DEFAULT_HOLD_TIMEOUT_SEC)))
+    )
     logger.warning(
         "{} holding alive for health probe diagnostics (max {}s). Send SIGTERM to exit.",
         service_name,

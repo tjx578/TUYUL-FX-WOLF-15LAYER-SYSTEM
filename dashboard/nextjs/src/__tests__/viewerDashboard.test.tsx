@@ -24,14 +24,27 @@ function dashboard(): DashboardElement {
 }
 
 describe("WOLF15 Railway dashboard v2.1 integration", () => {
+  // The legacy connectionState.ts timers were retired by #422. Freshness in
+  // the selected viewer comes from the bounded core projection.
+  it.each([0, 7200])("preserves observed STALE status at age %s without a local timer override", async (age) => {
+    globalThis.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => Promise.resolve(
+      new Response(JSON.stringify(String(input).endsWith("dashboard/feed-status")
+        ? { ingest_status: "HEALTHY", symbols: { EURUSD: { feed_status: "STALE", age_seconds: age } } }
+        : { status: { status: "ok", service: "tuyul-fx" } }), { status: 200 }),
+    ));
+    render(<DashboardPage />);
+    await waitFor(() => expect(dashboard().snapshot?.feed?.data?.items).toEqual([
+      expect.objectContaining({ symbol: "EURUSD", state: "STALE", quality: "STALE" }),
+    ]));
+  });
+
   it("loads exactly the three existing GET projections and exposes all nine views", async () => {
     globalThis.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => Promise.resolve(
-      new Response(JSON.stringify({ status: "ok", source: "real-bff", endpoint: String(input), token: "SECRET_VALUE" }), {
+      new Response(JSON.stringify({ status: "ok", source: "core-api", endpoint: String(input), token: "SECRET_VALUE" }), {
         status: 200,
         headers: {
           "content-type": "application/json",
           "x-request-id": "req-verified",
-          "x-bff-cache": "MISS",
         },
       }),
     ));
@@ -42,7 +55,7 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
     expect(vi.mocked(globalThis.fetch).mock.calls.map((call) => call[0])).toEqual([
       "/api/proxy/dashboard/overview",
       "/api/proxy/dashboard/feed-status",
-      "/api/proxy/bff/aggregated-status",
+      "/api/proxy/dashboard/aggregated-status",
     ]);
 
     await waitFor(() => expect(dashboard().shadowRoot?.innerHTML).toContain("Command Center"));
@@ -63,7 +76,7 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
     expect(html).toContain("OBSERVATIONAL ONLY");
     expect(html).not.toContain("$154,320");
     expect(html).not.toContain("Ready to Execute");
-    expect(screen.getAllByText(/real-bff/)).toHaveLength(3);
+    expect(screen.getAllByText(/"source": "core-api"/)).toHaveLength(3);
     expect(document.body.innerHTML).not.toContain("SECRET_VALUE");
     expect(screen.getAllByText(/REDACTED/)).toHaveLength(3);
     expect(screen.getAllByTestId(/viewer-probe-/)).toHaveLength(3);
@@ -97,7 +110,7 @@ describe("WOLF15 Railway dashboard v2.1 integration", () => {
       }
       return Promise.resolve(new Response(JSON.stringify({
         core_status: { status: "ok" },
-        bff: { surface: "bff", phase: 1 },
+        source: "core-api",
       }), { status: 200 }));
     });
 

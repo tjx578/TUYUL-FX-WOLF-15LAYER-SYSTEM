@@ -9,6 +9,7 @@ import signal
 
 from loguru import logger
 
+from core.health_probe import HealthProbe
 from services.pressure_outbox.analysis_admission_v1_worker import (
     StrategyAnalysisAdmissionRuntimeConfig,
     build_strategy_analysis_admission_v1_worker,
@@ -25,10 +26,14 @@ from services.pressure_outbox.outcome_worker import (
     OutcomeRuntimeConfig,
     build_outcome_worker,
 )
+from services.pressure_outbox.preflight import rollout_flags
 from services.pressure_outbox.shadow_evidence_v2_worker import (
     ShadowEvidenceV2RuntimeConfig,
     build_shadow_evidence_v2_worker,
 )
+from startup.graceful_shutdown import GracefulShutdown
+from startup.required_tasks import RequiredTaskSupervisor
+from startup.task_supervisor import supervised_task
 from storage.postgres_client import pg_client
 from storage.pressure_outbox import PressureOutboxRepository
 from storage.pressure_outbox_worker import PressureOutboxWorker
@@ -93,12 +98,62 @@ async def _main() -> None:
         if analysis_admission_worker is not None:
             await analysis_admission_worker.stop()
 
+    shutdown_event = asyncio.Event()
+    stop_tasks: list[asyncio.Task] = []
+
+    def request_stop() -> None:
+        shutdown_event.set()
+        stop_tasks.append(asyncio.create_task(_stop_workers(), name="pressure-outbox-stop"))
+
     loop = asyncio.get_running_loop()
     for signal_name in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError, RuntimeError):
-            loop.add_signal_handler(signal_name, lambda: asyncio.create_task(_stop_workers()))
+            loop.add_signal_handler(signal_name, request_stop)
+    tasks: list[asyncio.Task] = []
+    primary_enabled = rollout_flags().master and rollout_flags().dispatch
+    requirements = {
+        "pressure-outbox": primary_enabled,
+        "evidence_worker": evidence_worker is not None,
+        "outcome_worker": outcome_worker is not None,
+        "lifecycle_v2_worker": lifecycle_v2_worker is not None,
+        "shadow_evidence_v2_worker": shadow_evidence_v2_worker is not None,
+        "analysis_admission_worker": analysis_admission_worker is not None,
+        "health-probe": True,
+    }
+    supervisor = RequiredTaskSupervisor(requirements)
+    probe = HealthProbe(
+        port=int(os.getenv("PORT", "8085")),
+        service_name="pressure-outbox",
+        readiness_check=lambda: bool(
+            primary_enabled
+            and supervisor.snapshot()["ready"]
+            and worker.runtime_ready()
+            and not shutdown_event.is_set()
+        ),
+    )
+    probe.set_detail(
+        "workers", ",".join(f"{name}:{'REQUIRED' if enabled else 'DISABLED'}" for name, enabled in requirements.items())
+    )
+
+    async def monitor():
+        while not shutdown_event.is_set():
+            supervisor.snapshot()
+            if primary_enabled and getattr(worker, "_consecutive_poll_failures", 0):
+                supervisor.fail("pressure-outbox", "poll_failed")
+            if supervisor.fatal.is_set():
+                await asyncio.sleep(1)
+                raise RuntimeError("REQUIRED_PRESSURE_OUTBOX_TASK_FAILED")
+            await asyncio.sleep(0.05)
+
+    def start_worker(name, instance):
+        tasks.append(
+            supervisor.start(name, supervised_task(name, instance.run, shutdown_event, max_restarts=0, required=True))
+        )
+
     try:
-        tasks = [worker.run()]
+        tasks.append(supervisor.start("health-probe", probe.start()))
+        if primary_enabled:
+            start_worker("pressure-outbox", worker)
         if evidence_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR evidence worker mode={} provider={} execution_enabled={}",
@@ -106,13 +161,13 @@ async def _main() -> None:
                 evidence_config.provider,
                 evidence_config.execution_enabled,
             )
-            tasks.append(evidence_worker.run())
+            start_worker("evidence_worker", evidence_worker)
         if outcome_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR M1 outcome worker horizon_minutes={}",
                 outcome_config.horizon_minutes,
             )
-            tasks.append(outcome_worker.run())
+            start_worker("outcome_worker", outcome_worker)
         if lifecycle_v2_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR lifecycle V2 shadow worker shadow_only={} dual_write={} continuity_gap={}s",
@@ -120,23 +175,44 @@ async def _main() -> None:
                 lifecycle_v2_config.dual_write_enabled,
                 lifecycle_v2_config.max_continuity_gap_seconds,
             )
-            tasks.append(lifecycle_v2_worker.run())
+            start_worker("lifecycle_v2_worker", lifecycle_v2_worker)
         if shadow_evidence_v2_worker is not None:
             logger.info(
                 "Starting Strategy 5S-CR Lifecycle V2 evidence owner shadow_only={}",
                 shadow_evidence_v2_config.shadow_only,
             )
-            tasks.append(shadow_evidence_v2_worker.run())
+            start_worker("shadow_evidence_v2_worker", shadow_evidence_v2_worker)
         if analysis_admission_worker is not None:
             logger.info(
                 "Starting StrategyAnalysisAdmissionV1 mature-advisory worker shadow_only={} batch_size={}",
                 analysis_admission_config.shadow_only,
                 analysis_admission_config.batch_size,
             )
-            tasks.append(analysis_admission_worker.run())
-        await asyncio.gather(*tasks)
+            start_worker("analysis_admission_worker", analysis_admission_worker)
+        tasks.append(asyncio.create_task(monitor(), name="pressure-role-monitor"))
+        stopper = asyncio.create_task(shutdown_event.wait(), name="pressure-stop-wait")
+        tasks.append(stopper)
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        if not shutdown_event.is_set():
+            supervisor.snapshot()
+            # A completed required worker or probe must not hide behind other tasks.
+            for task in done:
+                task.result()
+            raise RuntimeError("REQUIRED_PRESSURE_OUTBOX_TASK_RETURNED")
     finally:
-        await pg_client.close()
+        shutdown_event.set()
+        supervisor.stopping = True
+        shutdown = GracefulShutdown(
+            drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")),
+            require_quiescent=True,
+        )
+        shutdown.register_cleanup("pressure outbox health probe", probe.stop)
+        shutdown.register_cleanup("pressure outbox PostgreSQL pool", pg_client.close)
+        await shutdown.shutdown([*tasks, *stop_tasks])
+        # Failure racing a signal must retain its nonzero result after draining.
+        for task in tasks:
+            if task.done() and not task.cancelled() and task.exception() is not None:
+                task.result()
 
 
 def run() -> None:

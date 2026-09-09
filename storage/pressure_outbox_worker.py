@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from datetime import UTC, datetime
 
 from loguru import logger
@@ -45,6 +46,8 @@ class PressureOutboxWorker:
         self.poll_interval_seconds = max(0.01, float(poll_interval_seconds))
         self.batch_size = max(1, int(batch_size))
         self.lease_seconds = max(1.0, float(lease_seconds))
+        if self.poll_interval_seconds >= self.lease_seconds:
+            raise ValueError("PRESSURE_OUTBOX_POLL_SECONDS must be lower than PRESSURE_OUTBOX_LEASE_SECONDS")
         self.max_attempts = max(1, int(max_attempts))
         self.master_enabled = _env_flag("SIGNAL_PRESSURE_OUTBOX_ENABLED") if master_enabled is None else master_enabled
         self.dispatch_enabled = (
@@ -55,6 +58,16 @@ class PressureOutboxWorker:
         )
         self._stopped = asyncio.Event()
         self._consecutive_poll_failures = 0
+        self._last_successful_poll: float | None = None
+
+    def runtime_ready(self) -> bool:
+        return bool(
+            self.master_enabled
+            and self.dispatch_enabled
+            and self._last_successful_poll is not None
+            and self._consecutive_poll_failures == 0
+            and time.monotonic() - self._last_successful_poll < self.lease_seconds
+        )
 
     async def stop(self) -> None:
         self._stopped.set()
@@ -74,6 +87,7 @@ class PressureOutboxWorker:
             try:
                 processed = await self.process_once()
                 self._consecutive_poll_failures = 0
+                self._last_successful_poll = time.monotonic()
                 if processed == 0:
                     await self._wait_or_stop(self.poll_interval_seconds)
             except Exception as exc:  # noqa: BLE001

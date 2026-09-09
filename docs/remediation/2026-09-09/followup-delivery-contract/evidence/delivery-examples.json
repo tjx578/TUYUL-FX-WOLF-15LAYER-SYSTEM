@@ -1,0 +1,210 @@
+{
+  "schema_status": "DRAFT_PROTOCOL_ONLY",
+  "objects": {
+    "ActivityConsumerScopeV1": {
+      "hypothesis_authority": false,
+      "risk_authority": false,
+      "execution_authority": false,
+      "consumer_scope_id": "fixture-analysis-scope",
+      "producer_binding_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "lifecycle_owner_id": "fixture-existing-owner",
+      "lifecycle_policy_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "environment_class": "DISPOSABLE_TEST"
+    },
+    "ActivityDeliveryV1": {
+      "hypothesis_authority": false,
+      "risk_authority": false,
+      "execution_authority": false,
+      "schema_version": "5scr.activity-delivery.v1",
+      "scope": {
+        "hypothesis_authority": false,
+        "risk_authority": false,
+        "execution_authority": false,
+        "consumer_scope_id": "fixture-analysis-scope",
+        "producer_binding_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "lifecycle_owner_id": "fixture-existing-owner",
+        "lifecycle_policy_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "environment_class": "DISPOSABLE_TEST"
+      },
+      "source_snapshot_id": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "source_revision": 3,
+      "activity_sequence": 1,
+      "previous_delivery_id": null,
+      "evaluation": {
+        "event": "pair_activity_evaluated",
+        "rule_version": "5scr.pair-activity.v3.1",
+        "activity_id": "5scr-activity-v31:b18afed881bdbb85f24e0f8582ec067f",
+        "evaluation_id": "5scr-activity-eval-v31:eabf7921545433677362af678f14424a",
+        "ledger_id": "fixture-ordered-ledger",
+        "symbol": "EURUSD",
+        "deployment_id": "deployment-A",
+        "decision": "GRANTED",
+        "reason_code": "PAIR_ACTIVITY_THRESHOLD_REACHED",
+        "policy": {
+          "policy_id": "fixture-only/gap300-ttl900",
+          "maximum_source_gap_seconds": 300.0,
+          "grant_ttl_seconds": 900
+        },
+        "coverage": {
+          "status": "COMPLETE",
+          "ledger_id": "fixture-ordered-ledger",
+          "deployment_id": "deployment-A",
+          "window_start_utc": "2026-08-10T00:00:00Z",
+          "window_end_utc": "2026-08-10T00:05:00Z",
+          "source_ledger_hash": "sha256:b2aa2dc93bf8eb1e78c99e09df733b7064ca9d80b2a336e97e0ab38ba04b8e60"
+        },
+        "evaluated_at_utc": "2026-08-10T00:05:00Z",
+        "observations": [
+          {
+            "raw_event_id": "sha256:878f76bac19f16eecfe997747ceacdbe2e3b1091fe92d80fdde9c83826ac48a3",
+            "symbol": "EURUSD",
+            "deployment_id": "deployment-A",
+            "scanner_cycle_id": "cycle-0",
+            "occurred_at_utc": "2026-08-10T00:00:00Z",
+            "direction_quality": "BUY"
+          },
+          {
+            "raw_event_id": "sha256:7bdcdb7a6e41df893d4619763b0132fb432c1f14e65a0f5640024d0ebd07bbef",
+            "symbol": "EURUSD",
+            "deployment_id": "deployment-A",
+            "scanner_cycle_id": "cycle-150",
+            "occurred_at_utc": "2026-08-10T00:02:30Z",
+            "direction_quality": "SELL"
+          },
+          {
+            "raw_event_id": "sha256:a570b0a23f5ec2295ae431ab11583d61100e95e914c6ad1af6884366598344ed",
+            "symbol": "EURUSD",
+            "deployment_id": "deployment-A",
+            "scanner_cycle_id": "cycle-300",
+            "occurred_at_utc": "2026-08-10T00:05:00Z",
+            "direction_quality": "BUY"
+          }
+        ],
+        "source_lineage_hash": "sha256:b2aa2dc93bf8eb1e78c99e09df733b7064ca9d80b2a336e97e0ab38ba04b8e60",
+        "direction_quality": "CONFLICT",
+        "block_started_at_utc": "2026-08-10T00:00:00Z",
+        "block_observed_through_utc": "2026-08-10T00:05:00Z",
+        "global_observed_through_utc": "2026-08-10T00:05:00Z",
+        "finalized_at_utc": null,
+        "duration_seconds": 300.0,
+        "maximum_observed_gap_seconds": 150.0,
+        "finalized_by_raw_event_id": null,
+        "admission_id": "5scr-activity-admission-v31:d1bbc43e332e2a9038455ff54919b496",
+        "admission_lineage_hash": "sha256:b2aa2dc93bf8eb1e78c99e09df733b7064ca9d80b2a336e97e0ab38ba04b8e60",
+        "admitted_at_utc": "2026-08-10T00:05:00Z",
+        "valid_until_utc": "2026-08-10T00:20:00Z",
+        "previous_admission_id": null,
+        "hypothesis_authority": false,
+        "risk_authority": false,
+        "execution_authority": false,
+        "valid_for_execution": false
+      },
+      "delivery_id": "5scr-activity-delivery:4fa67b1f2bb89b1dff8a5d8c3a2b7d26"
+    },
+    "ActivityLifecycleEmissionLinkV1": {
+      "hypothesis_authority": false,
+      "risk_authority": false,
+      "execution_authority": false,
+      "schema_version": "5scr.activity-lifecycle-emission-link.v1",
+      "delivery": {
+        "hypothesis_authority": false,
+        "risk_authority": false,
+        "execution_authority": false,
+        "schema_version": "5scr.activity-delivery.v1",
+        "scope": {
+          "hypothesis_authority": false,
+          "risk_authority": false,
+          "execution_authority": false,
+          "consumer_scope_id": "fixture-analysis-scope",
+          "producer_binding_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "lifecycle_owner_id": "fixture-existing-owner",
+          "lifecycle_policy_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "environment_class": "DISPOSABLE_TEST"
+        },
+        "source_snapshot_id": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "source_revision": 3,
+        "activity_sequence": 1,
+        "previous_delivery_id": null,
+        "evaluation": {
+          "event": "pair_activity_evaluated",
+          "rule_version": "5scr.pair-activity.v3.1",
+          "activity_id": "5scr-activity-v31:b18afed881bdbb85f24e0f8582ec067f",
+          "evaluation_id": "5scr-activity-eval-v31:eabf7921545433677362af678f14424a",
+          "ledger_id": "fixture-ordered-ledger",
+          "symbol": "EURUSD",
+          "deployment_id": "deployment-A",
+          "decision": "GRANTED",
+          "reason_code": "PAIR_ACTIVITY_THRESHOLD_REACHED",
+          "policy": {
+            "policy_id": "fixture-only/gap300-ttl900",
+            "maximum_source_gap_seconds": 300.0,
+            "grant_ttl_seconds": 900
+          },
+          "coverage": {
+            "status": "COMPLETE",
+            "ledger_id": "fixture-ordered-ledger",
+            "deployment_id": "deployment-A",
+            "window_start_utc": "2026-08-10T00:00:00Z",
+            "window_end_utc": "2026-08-10T00:05:00Z",
+            "source_ledger_hash": "sha256:b2aa2dc93bf8eb1e78c99e09df733b7064ca9d80b2a336e97e0ab38ba04b8e60"
+          },
+          "evaluated_at_utc": "2026-08-10T00:05:00Z",
+          "observations": [
+            {
+              "raw_event_id": "sha256:878f76bac19f16eecfe997747ceacdbe2e3b1091fe92d80fdde9c83826ac48a3",
+              "symbol": "EURUSD",
+              "deployment_id": "deployment-A",
+              "scanner_cycle_id": "cycle-0",
+              "occurred_at_utc": "2026-08-10T00:00:00Z",
+              "direction_quality": "BUY"
+            },
+            {
+              "raw_event_id": "sha256:7bdcdb7a6e41df893d4619763b0132fb432c1f14e65a0f5640024d0ebd07bbef",
+              "symbol": "EURUSD",
+              "deployment_id": "deployment-A",
+              "scanner_cycle_id": "cycle-150",
+              "occurred_at_utc": "2026-08-10T00:02:30Z",
+              "direction_quality": "SELL"
+            },
+            {
+              "raw_event_id": "sha256:a570b0a23f5ec2295ae431ab11583d61100e95e914c6ad1af6884366598344ed",
+              "symbol": "EURUSD",
+              "deployment_id": "deployment-A",
+              "scanner_cycle_id": "cycle-300",
+              "occurred_at_utc": "2026-08-10T00:05:00Z",
+              "direction_quality": "BUY"
+            }
+          ],
+          "source_lineage_hash": "sha256:b2aa2dc93bf8eb1e78c99e09df733b7064ca9d80b2a336e97e0ab38ba04b8e60",
+          "direction_quality": "CONFLICT",
+          "block_started_at_utc": "2026-08-10T00:00:00Z",
+          "block_observed_through_utc": "2026-08-10T00:05:00Z",
+          "global_observed_through_utc": "2026-08-10T00:05:00Z",
+          "finalized_at_utc": null,
+          "duration_seconds": 300.0,
+          "maximum_observed_gap_seconds": 150.0,
+          "finalized_by_raw_event_id": null,
+          "admission_id": "5scr-activity-admission-v31:d1bbc43e332e2a9038455ff54919b496",
+          "admission_lineage_hash": "sha256:b2aa2dc93bf8eb1e78c99e09df733b7064ca9d80b2a336e97e0ab38ba04b8e60",
+          "admitted_at_utc": "2026-08-10T00:05:00Z",
+          "valid_until_utc": "2026-08-10T00:20:00Z",
+          "previous_admission_id": null,
+          "hypothesis_authority": false,
+          "risk_authority": false,
+          "execution_authority": false,
+          "valid_for_execution": false
+        },
+        "delivery_id": "5scr-activity-delivery:4fa67b1f2bb89b1dff8a5d8c3a2b7d26"
+      },
+      "strategy_lifecycle_id": "5scr-lifecycle:44444444444444444444444444444444",
+      "material_state_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "emission_purpose": "ACTIVITY_ATTACHED"
+    }
+  },
+  "derived_ids": {
+    "delivery_id": "5scr-activity-delivery:4fa67b1f2bb89b1dff8a5d8c3a2b7d26",
+    "payload_hash": "sha256:df7d73682d033e79de52c66f45751539d195e7768986487fb2b765cd5bf44748",
+    "attachment_id": "5scr-activity-link:8e898afe7eba2917ea6ce75db17178be",
+    "analysis_emission_id": "5scr-analysis-emission:9be7d76a3b23ecec9e00912d37d0647b"
+  }
+}

@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="11" skipped="0" tests="22" time="1.667" timestamp="2026-09-09T12:48:01.165807+08:00" hostname="DESKTOP-TE510QO"><testcase classname="tests.test_s5_campaign_risk" name="test_campaign_locks_five_percent_from_closed_balance" time="0.003" /><testcase classname="tests.test_s5_campaign_risk" name="test_broker_aware_volume_rounds_down" time="0.002" /><testcase classname="tests.test_s5_campaign_risk" name="test_volume_is_never_clamped_up_to_broker_minimum" time="0.002" /><testcase classname="tests.test_s5_campaign_risk" name="test_negative_cost_buffer_fails_closed" time="0.001" /><testcase classname="tests.test_s5_campaign_risk" name="test_unknown_entry_role_fails_closed" time="0.001" /><testcase classname="tests.test_s5_campaign_risk" name="test_child_requires_open_parent" time="0.002" /><testcase classname="tests.test_s5_campaign_risk" name="test_account_cap_blocks_additional_campaign" time="0.002" /><testcase classname="tests.test_s5_campaign_risk" name="test_stale_snapshot_fails_closed" time="0.008" /><testcase classname="tests.test_s5_campaign_risk" name="test_sizing_from_different_risk_lock_cannot_borrow_current_campaign_capacity" time="0.002"><failure message="AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;&#10;  &#10;  - RISK_STATE_INVALID&#10;  + RISK_APPROVED_PARENT">def test_sizing_from_different_risk_lock_cannot_borrow_current_campaign_capacity():
+        larger = CampaignRiskLock.create(campaign_id="OTHER", account_id="acct-01", closed_balance=1200,
+                                        policy=CampaignRiskPolicy())
+        candidate = size_position_for_locked_risk(risk_lock=larger, symbol_spec=_symbol(), entry_price=1.1,
+                                                stop_loss=1.095, entry_role="PARENT")
+        assert candidate.actual_planned_risk_usd == Decimal("60")
+&gt;       assert _authorize(candidate) == S5RiskReason.RISK_STATE_INVALID
+E       AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;
+E         
+E         - RISK_STATE_INVALID
+E         + RISK_APPROVED_PARENT
+
+tests\test_s5_campaign_risk.py:200: AssertionError</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_inconsistent_sizing_cannot_authorize[changes0]" time="0.003"><failure message="AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;&#10;  &#10;  - RISK_STATE_INVALID&#10;  + RISK_APPROVED_PARENT">changes = {'allowed': False}
+
+    @pytest.mark.parametrize("changes", [
+        {"allowed": False},
+        {"actual_planned_risk_usd": Decimal("-1")},
+        {"actual_planned_risk_usd": Decimal("NaN")},
+        {"effective_loss_per_lot": Decimal("Infinity")},
+        {"actual_planned_risk_usd": Decimal("1")},
+        {"reason": S5RiskReason.APPROVED_CHILD},
+    ])
+    def test_inconsistent_sizing_cannot_authorize(changes):
+&gt;       assert _authorize(replace(_sized_parent(), **changes)) == S5RiskReason.RISK_STATE_INVALID
+E       AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;
+E         
+E         - RISK_STATE_INVALID
+E         + RISK_APPROVED_PARENT
+
+tests\test_s5_campaign_risk.py:212: AssertionError</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_inconsistent_sizing_cannot_authorize[changes1]" time="0.003"><failure message="AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;&#10;  &#10;  - RISK_STATE_INVALID&#10;  + RISK_APPROVED_PARENT">changes = {'actual_planned_risk_usd': Decimal('-1')}
+
+    @pytest.mark.parametrize("changes", [
+        {"allowed": False},
+        {"actual_planned_risk_usd": Decimal("-1")},
+        {"actual_planned_risk_usd": Decimal("NaN")},
+        {"effective_loss_per_lot": Decimal("Infinity")},
+        {"actual_planned_risk_usd": Decimal("1")},
+        {"reason": S5RiskReason.APPROVED_CHILD},
+    ])
+    def test_inconsistent_sizing_cannot_authorize(changes):
+&gt;       assert _authorize(replace(_sized_parent(), **changes)) == S5RiskReason.RISK_STATE_INVALID
+E       AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;
+E         
+E         - RISK_STATE_INVALID
+E         + RISK_APPROVED_PARENT
+
+tests\test_s5_campaign_risk.py:212: AssertionError</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_inconsistent_sizing_cannot_authorize[changes2]" time="0.002"><failure message="decimal.InvalidOperation: [&lt;class 'decimal.InvalidOperation'&gt;]">changes = {'actual_planned_risk_usd': Decimal('NaN')}
+
+    @pytest.mark.parametrize("changes", [
+        {"allowed": False},
+        {"actual_planned_risk_usd": Decimal("-1")},
+        {"actual_planned_risk_usd": Decimal("NaN")},
+        {"effective_loss_per_lot": Decimal("Infinity")},
+        {"actual_planned_risk_usd": Decimal("1")},
+        {"reason": S5RiskReason.APPROVED_CHILD},
+    ])
+    def test_inconsistent_sizing_cannot_authorize(changes):
+&gt;       assert _authorize(replace(_sized_parent(), **changes)) == S5RiskReason.RISK_STATE_INVALID
+
+tests\test_s5_campaign_risk.py:212: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_s5_campaign_risk.py:186: in _authorize
+    return authorize_campaign_risk(**args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def authorize_campaign_risk(
+        *,
+        risk_lock: CampaignRiskLock,
+        candidate: PositionRiskResult,
+        entry_role: str,
+        parent_is_open: bool,
+        child_already_exists: bool,
+        committed_or_reserved_campaign_risk_usd: float,
+        account_total_open_risk_usd: float,
+        policy: CampaignRiskPolicy,
+    ) -&gt; S5RiskReason:
+        role = entry_role.upper()
+        if role not in {"PARENT", "CHILD"}:
+            return S5RiskReason.INVALID_ENTRY_ROLE
+        if committed_or_reserved_campaign_risk_usd &lt; 0 or account_total_open_risk_usd &lt; 0:
+            return S5RiskReason.RISK_STATE_INVALID
+        if not candidate.allowed:
+            return candidate.reason
+        if role == "CHILD" and not parent_is_open:
+            return S5RiskReason.PARENT_NOT_OPEN
+        if role == "CHILD" and child_already_exists:
+            return S5RiskReason.CHILD_ALREADY_EXISTS
+    
+        combined_campaign = Decimal(str(committed_or_reserved_campaign_risk_usd)) + candidate.actual_planned_risk_usd
+&gt;       if combined_campaign &gt; risk_lock.max_campaign_risk_usd:
+E       decimal.InvalidOperation: [&lt;class 'decimal.InvalidOperation'&gt;]
+
+risk\s5_campaign_risk.py:277: InvalidOperation</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_inconsistent_sizing_cannot_authorize[changes3]" time="0.002"><failure message="AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;&#10;  &#10;  - RISK_STATE_INVALID&#10;  + RISK_APPROVED_PARENT">changes = {'effective_loss_per_lot': Decimal('Infinity')}
+
+    @pytest.mark.parametrize("changes", [
+        {"allowed": False},
+        {"actual_planned_risk_usd": Decimal("-1")},
+        {"actual_planned_risk_usd": Decimal("NaN")},
+        {"effective_loss_per_lot": Decimal("Infinity")},
+        {"actual_planned_risk_usd": Decimal("1")},
+        {"reason": S5RiskReason.APPROVED_CHILD},
+    ])
+    def test_inconsistent_sizing_cannot_authorize(changes):
+&gt;       assert _authorize(replace(_sized_parent(), **changes)) == S5RiskReason.RISK_STATE_INVALID
+E       AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;
+E         
+E         - RISK_STATE_INVALID
+E         + RISK_APPROVED_PARENT
+
+tests\test_s5_campaign_risk.py:212: AssertionError</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_inconsistent_sizing_cannot_authorize[changes4]" time="0.002"><failure message="AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;&#10;  &#10;  - RISK_STATE_INVALID&#10;  + RISK_APPROVED_PARENT">changes = {'actual_planned_risk_usd': Decimal('1')}
+
+    @pytest.mark.parametrize("changes", [
+        {"allowed": False},
+        {"actual_planned_risk_usd": Decimal("-1")},
+        {"actual_planned_risk_usd": Decimal("NaN")},
+        {"effective_loss_per_lot": Decimal("Infinity")},
+        {"actual_planned_risk_usd": Decimal("1")},
+        {"reason": S5RiskReason.APPROVED_CHILD},
+    ])
+    def test_inconsistent_sizing_cannot_authorize(changes):
+&gt;       assert _authorize(replace(_sized_parent(), **changes)) == S5RiskReason.RISK_STATE_INVALID
+E       AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;
+E         
+E         - RISK_STATE_INVALID
+E         + RISK_APPROVED_PARENT
+
+tests\test_s5_campaign_risk.py:212: AssertionError</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_inconsistent_sizing_cannot_authorize[changes5]" time="0.002"><failure message="AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;&#10;  &#10;  - RISK_STATE_INVALID&#10;  + RISK_APPROVED_PARENT">changes = {'reason': &lt;S5RiskReason.APPROVED_CHILD: 'RISK_APPROVED_CHILD'&gt;}
+
+    @pytest.mark.parametrize("changes", [
+        {"allowed": False},
+        {"actual_planned_risk_usd": Decimal("-1")},
+        {"actual_planned_risk_usd": Decimal("NaN")},
+        {"effective_loss_per_lot": Decimal("Infinity")},
+        {"actual_planned_risk_usd": Decimal("1")},
+        {"reason": S5RiskReason.APPROVED_CHILD},
+    ])
+    def test_inconsistent_sizing_cannot_authorize(changes):
+&gt;       assert _authorize(replace(_sized_parent(), **changes)) == S5RiskReason.RISK_STATE_INVALID
+E       AssertionError: assert &lt;S5RiskReason...ROVED_PARENT'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;
+E         
+E         - RISK_STATE_INVALID
+E         + RISK_APPROVED_PARENT
+
+tests\test_s5_campaign_risk.py:212: AssertionError</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_invalid_ledger_numbers_return_rejection[nan-committed_or_reserved_campaign_risk_usd]" time="0.002"><failure message="decimal.InvalidOperation: [&lt;class 'decimal.InvalidOperation'&gt;]">field = 'committed_or_reserved_campaign_risk_usd', value = nan
+
+    @pytest.mark.parametrize("field", ["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"])
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
+    def test_invalid_ledger_numbers_return_rejection(field, value):
+&gt;       assert _authorize(_sized_parent(), **{field: value}) == S5RiskReason.RISK_STATE_INVALID
+
+tests\test_s5_campaign_risk.py:218: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_s5_campaign_risk.py:186: in _authorize
+    return authorize_campaign_risk(**args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def authorize_campaign_risk(
+        *,
+        risk_lock: CampaignRiskLock,
+        candidate: PositionRiskResult,
+        entry_role: str,
+        parent_is_open: bool,
+        child_already_exists: bool,
+        committed_or_reserved_campaign_risk_usd: float,
+        account_total_open_risk_usd: float,
+        policy: CampaignRiskPolicy,
+    ) -&gt; S5RiskReason:
+        role = entry_role.upper()
+        if role not in {"PARENT", "CHILD"}:
+            return S5RiskReason.INVALID_ENTRY_ROLE
+        if committed_or_reserved_campaign_risk_usd &lt; 0 or account_total_open_risk_usd &lt; 0:
+            return S5RiskReason.RISK_STATE_INVALID
+        if not candidate.allowed:
+            return candidate.reason
+        if role == "CHILD" and not parent_is_open:
+            return S5RiskReason.PARENT_NOT_OPEN
+        if role == "CHILD" and child_already_exists:
+            return S5RiskReason.CHILD_ALREADY_EXISTS
+    
+        combined_campaign = Decimal(str(committed_or_reserved_campaign_risk_usd)) + candidate.actual_planned_risk_usd
+&gt;       if combined_campaign &gt; risk_lock.max_campaign_risk_usd:
+E       decimal.InvalidOperation: [&lt;class 'decimal.InvalidOperation'&gt;]
+
+risk\s5_campaign_risk.py:277: InvalidOperation</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_invalid_ledger_numbers_return_rejection[nan-account_total_open_risk_usd]" time="0.002"><failure message="decimal.InvalidOperation: [&lt;class 'decimal.InvalidOperation'&gt;]">field = 'account_total_open_risk_usd', value = nan
+
+    @pytest.mark.parametrize("field", ["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"])
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
+    def test_invalid_ledger_numbers_return_rejection(field, value):
+&gt;       assert _authorize(_sized_parent(), **{field: value}) == S5RiskReason.RISK_STATE_INVALID
+
+tests\test_s5_campaign_risk.py:218: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_s5_campaign_risk.py:186: in _authorize
+    return authorize_campaign_risk(**args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def authorize_campaign_risk(
+        *,
+        risk_lock: CampaignRiskLock,
+        candidate: PositionRiskResult,
+        entry_role: str,
+        parent_is_open: bool,
+        child_already_exists: bool,
+        committed_or_reserved_campaign_risk_usd: float,
+        account_total_open_risk_usd: float,
+        policy: CampaignRiskPolicy,
+    ) -&gt; S5RiskReason:
+        role = entry_role.upper()
+        if role not in {"PARENT", "CHILD"}:
+            return S5RiskReason.INVALID_ENTRY_ROLE
+        if committed_or_reserved_campaign_risk_usd &lt; 0 or account_total_open_risk_usd &lt; 0:
+            return S5RiskReason.RISK_STATE_INVALID
+        if not candidate.allowed:
+            return candidate.reason
+        if role == "CHILD" and not parent_is_open:
+            return S5RiskReason.PARENT_NOT_OPEN
+        if role == "CHILD" and child_already_exists:
+            return S5RiskReason.CHILD_ALREADY_EXISTS
+    
+        combined_campaign = Decimal(str(committed_or_reserved_campaign_risk_usd)) + candidate.actual_planned_risk_usd
+        if combined_campaign &gt; risk_lock.max_campaign_risk_usd:
+            return S5RiskReason.CAMPAIGN_EXCEEDS_2R
+    
+        projected_open_risk = Decimal(str(account_total_open_risk_usd)) + candidate.actual_planned_risk_usd
+        account_cap = risk_lock.balance_base * policy.max_total_open_risk_percent
+&gt;       if projected_open_risk &gt; account_cap:
+E       decimal.InvalidOperation: [&lt;class 'decimal.InvalidOperation'&gt;]
+
+risk\s5_campaign_risk.py:282: InvalidOperation</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_invalid_ledger_numbers_return_rejection[inf-committed_or_reserved_campaign_risk_usd]" time="0.002"><failure message="AssertionError: assert &lt;S5RiskReason...N_EXCEEDS_2R'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;&#10;  &#10;  - RISK_STATE_INVALID&#10;  + RISK_CAMPAIGN_EXCEEDS_2R">field = 'committed_or_reserved_campaign_risk_usd', value = inf
+
+    @pytest.mark.parametrize("field", ["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"])
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
+    def test_invalid_ledger_numbers_return_rejection(field, value):
+&gt;       assert _authorize(_sized_parent(), **{field: value}) == S5RiskReason.RISK_STATE_INVALID
+E       AssertionError: assert &lt;S5RiskReason...N_EXCEEDS_2R'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;
+E         
+E         - RISK_STATE_INVALID
+E         + RISK_CAMPAIGN_EXCEEDS_2R
+
+tests\test_s5_campaign_risk.py:218: AssertionError</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_invalid_ledger_numbers_return_rejection[inf-account_total_open_risk_usd]" time="0.002"><failure message="AssertionError: assert &lt;S5RiskReason...ISK_EXCEEDED'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;&#10;  &#10;  - RISK_STATE_INVALID&#10;  + RISK_ACCOUNT_OPEN_RISK_EXCEEDED">field = 'account_total_open_risk_usd', value = inf
+
+    @pytest.mark.parametrize("field", ["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"])
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
+    def test_invalid_ledger_numbers_return_rejection(field, value):
+&gt;       assert _authorize(_sized_parent(), **{field: value}) == S5RiskReason.RISK_STATE_INVALID
+E       AssertionError: assert &lt;S5RiskReason...ISK_EXCEEDED'&gt; == &lt;S5RiskReason...TATE_INVALID'&gt;
+E         
+E         - RISK_STATE_INVALID
+E         + RISK_ACCOUNT_OPEN_RISK_EXCEEDED
+
+tests\test_s5_campaign_risk.py:218: AssertionError</failure></testcase><testcase classname="tests.test_s5_campaign_risk" name="test_invalid_ledger_numbers_return_rejection[-1-committed_or_reserved_campaign_risk_usd]" time="0.002" /><testcase classname="tests.test_s5_campaign_risk" name="test_invalid_ledger_numbers_return_rejection[-1-account_total_open_risk_usd]" time="0.001" /><testcase classname="tests.test_s5_campaign_risk" name="test_current_lock_valid_candidate_is_still_approved" time="0.001" /></testsuite></testsuites>

@@ -1,0 +1,361 @@
+{
+  "fixture_only": true,
+  "active_production_binding": false,
+  "valid": [
+    {
+      "name": "radar_aligned",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "RADAR_ONLY",
+        "pressure_contract_status": "OPEN",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "pressure_contract_invalidated_at": null,
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "BUY",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": false
+      },
+      "policy": {
+        "approval_state": "APPROVED",
+        "policy_id": "fixture-only/pressure-policy/v1",
+        "policy_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "approved_at_utc": "2026-09-08T23:59:40Z",
+        "valid_until_utc": "2026-09-09T00:00:20Z"
+      },
+      "decision": {
+        "rule_version": "5scr.pressure-direction-gate.v3.1",
+        "evidence_hash": "sha256:6793e6900c58a257ee98130bf909bd332b26095b7f26bc4f7a51eb9528a6366b",
+        "evaluated_at_utc": "2026-09-09T00:00:00Z",
+        "requested_direction": "BUY",
+        "pressure_direction_gate_passed": true,
+        "reason_code": "PRESSURE_DIRECTION_GATE_PASSED",
+        "separate_route_gate_passed": false,
+        "separate_route_reason": "SEPARATE_ROUTE_POLICY_UNRESOLVED",
+        "hypothesis_authority": false,
+        "risk_authority": false,
+        "execution_authority": false
+      }
+    },
+    {
+      "name": "policy_unbound",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "RADAR_ONLY",
+        "pressure_contract_status": "OPEN",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "pressure_contract_invalidated_at": null,
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "BUY",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": false
+      },
+      "policy": {
+        "approval_state": "UNBOUND",
+        "policy_id": null,
+        "policy_digest": null,
+        "approved_at_utc": null,
+        "valid_until_utc": null
+      },
+      "decision": {
+        "rule_version": "5scr.pressure-direction-gate.v3.1",
+        "evidence_hash": "sha256:d5d722d70ba3f7406a0bf34d9a6fa93957adea7b8020ae973e0aab2844f630c5",
+        "evaluated_at_utc": "2026-09-09T00:00:00Z",
+        "requested_direction": "BUY",
+        "pressure_direction_gate_passed": false,
+        "reason_code": "PRESSURE_POLICY_UNBOUND_OR_REVOKED",
+        "separate_route_gate_passed": false,
+        "separate_route_reason": "SEPARATE_ROUTE_POLICY_UNRESOLVED",
+        "hypothesis_authority": false,
+        "risk_authority": false,
+        "execution_authority": false
+      }
+    },
+    {
+      "name": "conflict",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "RADAR_ONLY",
+        "pressure_contract_status": "OPEN",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "pressure_contract_invalidated_at": null,
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "SELL",
+        "direction_lineage_alignment": "CONFLICT",
+        "pressure_consensus_status": "CONFLICT",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": false
+      },
+      "policy": {
+        "approval_state": "APPROVED",
+        "policy_id": "fixture-only/pressure-policy/v1",
+        "policy_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "approved_at_utc": "2026-09-08T23:59:40Z",
+        "valid_until_utc": "2026-09-09T00:00:20Z"
+      },
+      "decision": {
+        "rule_version": "5scr.pressure-direction-gate.v3.1",
+        "evidence_hash": "sha256:a3a1b72e73df3b12db2e561cb6a0ce44404718d83248447a0578cbda74f880c1",
+        "evaluated_at_utc": "2026-09-09T00:00:00Z",
+        "requested_direction": "BUY",
+        "pressure_direction_gate_passed": false,
+        "reason_code": "PRESSURE_DIRECTION_LINEAGE_CONFLICT",
+        "separate_route_gate_passed": false,
+        "separate_route_reason": "SEPARATE_ROUTE_POLICY_UNRESOLVED",
+        "hypothesis_authority": false,
+        "risk_authority": false,
+        "execution_authority": false
+      }
+    },
+    {
+      "name": "invalidated",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "RADAR_ONLY",
+        "pressure_contract_status": "INVALIDATED",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "pressure_contract_invalidated_at": "2026-09-09T00:00:00Z",
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "BUY",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": false
+      },
+      "policy": {
+        "approval_state": "APPROVED",
+        "policy_id": "fixture-only/pressure-policy/v1",
+        "policy_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "approved_at_utc": "2026-09-08T23:59:40Z",
+        "valid_until_utc": "2026-09-09T00:00:20Z"
+      },
+      "decision": {
+        "rule_version": "5scr.pressure-direction-gate.v3.1",
+        "evidence_hash": "sha256:86668eadf83f455684b4e48f69e3ea9093ab25ee36f040dc757335a9e3178e17",
+        "evaluated_at_utc": "2026-09-09T00:00:00Z",
+        "requested_direction": "BUY",
+        "pressure_direction_gate_passed": false,
+        "reason_code": "CONTRACT_INVALIDATED",
+        "separate_route_gate_passed": false,
+        "separate_route_reason": "SEPARATE_ROUTE_POLICY_UNRESOLVED",
+        "hypothesis_authority": false,
+        "risk_authority": false,
+        "execution_authority": false
+      }
+    },
+    {
+      "name": "locked",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "CONSOLIDATED_DIRECTION_CONTRACT",
+        "pressure_contract_status": "LOCKED",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "pressure_contract_invalidated_at": null,
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "BUY",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": "BUY",
+        "formal_transition_event_id": "fixture-event-1",
+        "execution_authority": false
+      },
+      "policy": {
+        "approval_state": "APPROVED",
+        "policy_id": "fixture-only/pressure-policy/v1",
+        "policy_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "approved_at_utc": "2026-09-08T23:59:40Z",
+        "valid_until_utc": "2026-09-09T00:00:20Z"
+      },
+      "decision": {
+        "rule_version": "5scr.pressure-direction-gate.v3.1",
+        "evidence_hash": "sha256:026af66fc88d938e160913dc44f6931d5601e4e36c95c9bd85a13bd56609431c",
+        "evaluated_at_utc": "2026-09-09T00:00:00Z",
+        "requested_direction": "BUY",
+        "pressure_direction_gate_passed": true,
+        "reason_code": "PRESSURE_DIRECTION_GATE_PASSED",
+        "separate_route_gate_passed": false,
+        "separate_route_reason": "SEPARATE_ROUTE_POLICY_UNRESOLVED",
+        "hypothesis_authority": false,
+        "risk_authority": false,
+        "execution_authority": false
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "missing_source_version",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "RADAR_ONLY",
+        "pressure_contract_status": "OPEN",
+        "pressure_contract_invalidated_at": null,
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "BUY",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": false
+      },
+      "expected": "MODEL_REJECTED"
+    },
+    {
+      "name": "missing_invalidation_field",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "RADAR_ONLY",
+        "pressure_contract_status": "OPEN",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "BUY",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": false
+      },
+      "expected": "MODEL_REJECTED"
+    },
+    {
+      "name": "false_alignment",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "RADAR_ONLY",
+        "pressure_contract_status": "OPEN",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "pressure_contract_invalidated_at": null,
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "SELL",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": false
+      },
+      "expected": "MODEL_REJECTED"
+    },
+    {
+      "name": "authority_escalation",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "RADAR_ONLY",
+        "pressure_contract_status": "OPEN",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "pressure_contract_invalidated_at": null,
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "BUY",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": true
+      },
+      "expected": "MODEL_REJECTED"
+    },
+    {
+      "name": "implicit_lock",
+      "authority": {
+        "schema_version": "5scr.pressure-authority.v3.1",
+        "symbol": "EURUSD",
+        "source_event_ids": [
+          "fixture-event-1"
+        ],
+        "pressure_authority_mode": "CONSOLIDATED_DIRECTION_CONTRACT",
+        "pressure_contract_status": "LOCKED",
+        "pressure_contract_version": "fixture-producer-contract/v1",
+        "pressure_contract_invalidated_at": null,
+        "observed_at_utc": "2026-09-08T23:59:50Z",
+        "valid_until_utc": "2026-09-09T00:00:10Z",
+        "raw_direction": "BUY",
+        "candidate_direction": "BUY",
+        "watch_direction": "BUY",
+        "block_direction": "BUY",
+        "direction_lineage_alignment": "ALIGNED",
+        "pressure_consensus_status": "BUY",
+        "contract_direction": null,
+        "formal_transition_event_id": null,
+        "execution_authority": false
+      },
+      "expected": "MODEL_REJECTED"
+    }
+  ]
+}

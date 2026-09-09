@@ -178,7 +178,19 @@ def _override_auth_dependencies() -> Any:
 
     # Also override the exact route-bound dependency callables in case other
     # tests reloaded/mocked modules and changed function object identity.
-    for route in app.routes:
+    # FastAPI 0.141 retains included routers instead of flattening app.routes.
+    # Visit their original routes as well so collection-time dependency mocks
+    # are overridden by their exact callable identity, then restored below.
+    pending = list(app.routes)
+    visited: set[int] = set()
+    while pending:
+        route = pending.pop()
+        if id(route) in visited:
+            continue
+        visited.add(id(route))
+        original_router = getattr(route, "original_router", None)
+        if original_router is not None:
+            pending.extend(original_router.routes)
         if not isinstance(route, APIRoute):
             continue
         if not str(route.path).startswith("/api/v1/"):
@@ -262,10 +274,13 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def _reset_state() -> Any:
+def _reset_state(monkeypatch, tmp_path) -> Any:
     """Clear all in-memory caches and fake Redis between tests."""
     from accounts.account_manager import AccountManager
+    from journal import forensic_replay
     from storage.trade_ledger import TradeLedger
+
+    monkeypatch.setattr(forensic_replay, "FORENSIC_ARTIFACTS_PATH", tmp_path / "replay_artifacts.jsonl")
 
     AccountManager._memory_accounts.clear()
     TradeLedger._memory_trades.clear()

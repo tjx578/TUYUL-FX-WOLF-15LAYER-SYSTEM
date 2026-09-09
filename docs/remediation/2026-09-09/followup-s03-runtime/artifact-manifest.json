@@ -1,0 +1,254 @@
+{
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "fed24c25e261706f20cd0d7b47ee3ce372dfca14dc6d2f36069cb79be48f07c1",
+      "bytes": 24
+    },
+    {
+      "path": "contract-assessment.md",
+      "sha256": "265c8c684489ec501d429acde841ae660585fd1f10218706650022b4f84465c8",
+      "bytes": 17611
+    },
+    {
+      "path": "evidence/final-activity-migration-offline-sql.log",
+      "sha256": "5d340241b86a65f392a1599736696acafbfd708f69be74be28504c0d3d6bf70f",
+      "bytes": 3357
+    },
+    {
+      "path": "evidence/final-activity-postgres-collection.log",
+      "sha256": "bca063f637d73d0878e47ff5a3706d6cdce0b9a510adb9205c7c7bb9baacacbe",
+      "bytes": 7193
+    },
+    {
+      "path": "evidence/final-migration-heads.log",
+      "sha256": "984adbcff506de15a04fd16f3d59e3d2b43ff9d5572d7125e3b023d34c9d2424",
+      "bytes": 31
+    },
+    {
+      "path": "evidence/native-pg-binary-hashes.json",
+      "sha256": "98d091c11c1abeb7281b2268e2ce98a249952ddc19ff1e3460f78bcf09dc2553",
+      "bytes": 637
+    },
+    {
+      "path": "evidence/native-pg-harness-offline-tests.log",
+      "sha256": "bcf83147c393613c2fdc3df613f04aea723a46cbb59392c33d0e9d474ef97862",
+      "bytes": 1221
+    },
+    {
+      "path": "evidence/native-pg-measure-1788901420757060600.json",
+      "sha256": "dc53ed606608a12e16b3c510cb391e4d67005f884180cd9125c6c1b7dc6666d5",
+      "bytes": 441
+    },
+    {
+      "path": "evidence/native_pg_harness.py.txt",
+      "sha256": "6be0b32ba4d425f3d6a0006e3454ebd5ee3ec876c3bc9768125b69a0cc4e333c",
+      "bytes": 12649
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/final-activity-migration-offline-sql.log",
+      "sha256": "5d340241b86a65f392a1599736696acafbfd708f69be74be28504c0d3d6bf70f",
+      "bytes": 3357
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/final-activity-postgres-collection.log",
+      "sha256": "bca063f637d73d0878e47ff5a3706d6cdce0b9a510adb9205c7c7bb9baacacbe",
+      "bytes": 7193
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/final-activity-postgres-NEGATIVE-CONTROL.log",
+      "sha256": "f1ca261f55233b936d79714b830b8069baba5fb45972dbbb73e0731bab06ca86",
+      "bytes": 166
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/final-migration-heads.log",
+      "sha256": "984adbcff506de15a04fd16f3d59e3d2b43ff9d5572d7125e3b023d34c9d2424",
+      "bytes": 31
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/final-postgres-negative-control-review.json",
+      "sha256": "7e93ac21db1929ff075282936b91f2286caabecc640beb98eb24462ad30e498b",
+      "bytes": 6101
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/NEGATIVE-CONTROL-collection.log",
+      "sha256": "c5c48f676237d3bcc2903bdb9cfe33fc66929c6a7795eeeccaaf76b5e162e1d6",
+      "bytes": 7182
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/NEGATIVE-CONTROL-pytest.log",
+      "sha256": "dfc29ad0db2ca3ccd70c9823e9de394371676a6dec017f343ec7b674d4696bcc",
+      "bytes": 940
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/NEGATIVE-CONTROL-receipt.json",
+      "sha256": "ea1127757f02ca73bcb03cf789cfe7f4412d933cc182013ac64da467a640cc16",
+      "bytes": 9962
+    },
+    {
+      "path": "evidence/negative-control-v1-20260908T211141Z/NEGATIVE-CONTROL-tests.xml",
+      "sha256": "4bd393b36d6983bc563c798f05195309ad66feda80e1599ccf5c523b9ebff413",
+      "bytes": 20386
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/final-activity-migration-offline-sql.log",
+      "sha256": "5d340241b86a65f392a1599736696acafbfd708f69be74be28504c0d3d6bf70f",
+      "bytes": 3357
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/final-activity-postgres-collection.log",
+      "sha256": "bca063f637d73d0878e47ff5a3706d6cdce0b9a510adb9205c7c7bb9baacacbe",
+      "bytes": 7193
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/final-activity-postgres-NEGATIVE-CONTROL.log",
+      "sha256": "f1ca261f55233b936d79714b830b8069baba5fb45972dbbb73e0731bab06ca86",
+      "bytes": 166
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/final-migration-heads.log",
+      "sha256": "984adbcff506de15a04fd16f3d59e3d2b43ff9d5572d7125e3b023d34c9d2424",
+      "bytes": 31
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/final-postgres-negative-control-review.json",
+      "sha256": "bb667f0c3c668ad0a27a3ba8cb841ec6fa4f3c13645508d8eadeabce361ee908",
+      "bytes": 5137
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/NEGATIVE-CONTROL-collection.log",
+      "sha256": "a325cde7f66ea630cbcbc9b5a8f33594aa34f93a91a790deb3508fddbc4da1a1",
+      "bytes": 7182
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/NEGATIVE-CONTROL-pytest.log",
+      "sha256": "700f8f8dd727a2162d43b611471bcd6248e0a699a25eea64abac5fde42b3404a",
+      "bytes": 940
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/NEGATIVE-CONTROL-receipt.json",
+      "sha256": "9aa84d71c44f3f7f97ccede815e8875b37614fd611abe30d9e0ee29ec748ccda",
+      "bytes": 10462
+    },
+    {
+      "path": "evidence/negative-control-v2-20260908T211311Z/NEGATIVE-CONTROL-tests.xml",
+      "sha256": "169e082e4f6d2dcca5bf3f7c17621fa286acaa85d83d42b1f9c6d33e31499304",
+      "bytes": 20386
+    },
+    {
+      "path": "evidence/postgres-offline-review.json",
+      "sha256": "fcea9e0590c2f1c0b20ffaa8298225f8eed38b67aab5ae800493e6524d77d317",
+      "bytes": 2308
+    },
+    {
+      "path": "evidence/pressure-authority-v31-examples.json",
+      "sha256": "dffdb85b123bd0f379aa6e7be1b74dd8881ed9149d689e7f9b2d7d6567ba485d",
+      "bytes": 14060
+    },
+    {
+      "path": "evidence/pressure-authority-v31-schemas.json",
+      "sha256": "58916c2a1dc80bec3776d203dcac39638858657aa04a0b1b9d3ca5b5724e2ee0",
+      "bytes": 9041
+    },
+    {
+      "path": "evidence/pressure-authority-v31-tests.xml",
+      "sha256": "558ec7a2a3f39de0b1f09129cdfbe5c258ec91cc876743c65bb327f8a2093af8",
+      "bytes": 14176
+    },
+    {
+      "path": "evidence/pressure-authority-v31-validation.json",
+      "sha256": "5e16697b879a9895545487d827978cf6aed75996639d8ede6500271ec55fa7d4",
+      "bytes": 1507
+    },
+    {
+      "path": "evidence/s03-runtime-combined-collection.log",
+      "sha256": "1211e633b82e52f58d348cd59cb1177870be855da3d440e1ef5f4d359a0a53f6",
+      "bytes": 70173
+    },
+    {
+      "path": "evidence/s03-runtime-combined-pytest.log",
+      "sha256": "c87f72ef87460dbc2f87f1da7126b67e554f8e74249d0fb314fe70faee6f4fb3",
+      "bytes": 3331
+    },
+    {
+      "path": "evidence/s03-runtime-combined-receipt.json",
+      "sha256": "96a2411b87a0e997a5d8d9bbc52d8e70b3806fec4071e855f6e216d42d41e90a",
+      "bytes": 87935
+    },
+    {
+      "path": "evidence/s03-runtime-combined.xml",
+      "sha256": "6701fb018a05cc1117c8ec1245306acec7033a3ea3d9419a8bbc5f3165aae434",
+      "bytes": 92905
+    },
+    {
+      "path": "evidence/s03-runtime-final-collection.log",
+      "sha256": "f981137a5fa0e5fa29af4acde0a396a7a8feace8797e05bda461539cb2dbd0ac",
+      "bytes": 70269
+    },
+    {
+      "path": "evidence/s03-runtime-final-pytest.log",
+      "sha256": "29be39359cb2dbdddb2bf2e74899b3ffd9efa462cbfa37525f597ed862d753b8",
+      "bytes": 3328
+    },
+    {
+      "path": "evidence/s03-runtime-final-receipt.json",
+      "sha256": "2bc7f1a5a3759a4f4b6634628395f5509b590fdb10d0a5ec56d5db0f8bafd882",
+      "bytes": 88029
+    },
+    {
+      "path": "evidence/s03-runtime-final.xml",
+      "sha256": "f06c24a5f41f2abac95d459255756ccdcbcc8bbc075ffb36448c7db75842e5b1",
+      "bytes": 93040
+    },
+    {
+      "path": "evidence/source-commit-receipt.json",
+      "sha256": "ffa4d830a7dbf3a7a92f15c260f94fbe390dcb9090782b38f7fb7467cd2546e2",
+      "bytes": 10501
+    },
+    {
+      "path": "evidence/test_native_pg_harness.py.txt",
+      "sha256": "9d98310af06713ac418ec4862e819314594285ca03aa4a97532ef38c275395fd",
+      "bytes": 6547
+    },
+    {
+      "path": "final-offline-review-summary.md",
+      "sha256": "0cf92a971c44556072a034232288f7d4d4db55d828f0b5cd3f7d5c7666d24f53",
+      "bytes": 2322
+    },
+    {
+      "path": "linux-pg-readiness.md",
+      "sha256": "21de50fbb1aad5955473d6b7331844b1ac6bc5929e41747f6a074860b1cd1f64",
+      "bytes": 6145
+    },
+    {
+      "path": "postgres-fixture-review.md",
+      "sha256": "acd723dce7483fb49f9f10c3aee0bfe2c44c5ee662f654b4668179d9b1ddf6aa",
+      "bytes": 4396
+    },
+    {
+      "path": "pressure-authority-v31-review.md",
+      "sha256": "f47321d896d58e80df69e0a57395e07be9d31b26d6aa0f776e74085822ea3214",
+      "bytes": 3533
+    },
+    {
+      "path": "README.md",
+      "sha256": "e12f564478bf6ed456a9a3fb1a9a592eaee5ab03ccb4147c43c9c4a9c8dccec5",
+      "bytes": 9356
+    },
+    {
+      "path": "runtime-document-admission.md",
+      "sha256": "0b607cfd41b980f23d2f1f6a27b0166028a90255c27c5345641edbfe8ae7ee65",
+      "bytes": 4812
+    },
+    {
+      "path": "runtime-source-review.md",
+      "sha256": "631ef03f692a482f4fd18363bb0887802c474895db6fa2fbe99b12196c460195",
+      "bytes": 9601
+    },
+    {
+      "path": "validation.json",
+      "sha256": "14de367fbce2d1e126799e0f6d8a6470b94482f48c326931f946165465f3d8a5",
+      "bytes": 6339
+    }
+  ]
+}

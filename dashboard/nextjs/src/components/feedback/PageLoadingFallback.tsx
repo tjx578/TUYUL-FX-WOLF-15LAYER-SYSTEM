@@ -1,5 +1,3 @@
-import { Skeleton } from "@/components/primitives/Skeleton";
-
 export function PageLoadingFallback() {
-    return <Skeleton className="h-96 w-full" />;
+  return <p className="viewer-loading" role="status">Loading dashboard…</p>;
 }

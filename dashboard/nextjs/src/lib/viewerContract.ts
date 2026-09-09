@@ -5,17 +5,17 @@ export const VIEWER_ENDPOINTS = Object.freeze([
   {
     path: "dashboard/overview",
     label: "System overview",
-    description: "Core status and liveness composed by the dashboard BFF.",
+    description: "Core API status and liveness.",
   },
   {
     path: "dashboard/feed-status",
     label: "Feed status",
-    description: "Current market-data feed state reported by the dashboard BFF.",
+    description: "Current market-data feed state reported by the core API.",
   },
   {
-    path: "bff/aggregated-status",
+    path: "dashboard/aggregated-status",
     label: "Aggregated status",
-    description: "Read-only operator status with BFF provenance.",
+    description: "Read-only operator status from the core API.",
   },
 ] as const);
 

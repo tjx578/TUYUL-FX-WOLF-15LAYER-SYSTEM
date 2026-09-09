@@ -1,0 +1,107 @@
+{
+  "existing_runtime": 45,
+  "producer_relay": 7,
+  "consumer_owner": 11,
+  "consumer_expected_ids": [
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[mappings]",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[emissions]",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[inbox]",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[consumer_cursors]",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_legacy_writer_and_old_owner_cannot_bypass_handover",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_payload_conflict_quarantined_in_database",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_successor_waits_for_consumer_predecessor",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_existing_advisory_lifecycle_is_attached_without_remint",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_concurrent_consumer_duplicate_has_one_effect",
+    "tests/integration/test_activity_delivery_consumer_postgres.py::test_fresh_consumer_after_restart_recovers_committed_inbox"
+  ],
+  "consumer_gate": "scripts/ci/run_activity_delivery_consumer_acceptance.py",
+  "D01_D11": {
+    "D01": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D02": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_fresh_consumer_after_restart_recovers_committed_inbox"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D03": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_payload_conflict_quarantined_in_database"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D04": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_successor_waits_for_consumer_predecessor"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D05": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D06": {
+      "postgres_test_ids": [],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D07": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[mappings]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[emissions]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[inbox]",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_consumer_rollback_all_writes[consumer_cursors]"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D08": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_legacy_writer_and_old_owner_cannot_bypass_handover",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_concurrent_consumer_duplicate_has_one_effect"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D09": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_existing_advisory_lifecycle_is_attached_without_remint"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D10": {
+      "postgres_test_ids": [],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    },
+    "D11": {
+      "postgres_test_ids": [
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor",
+        "tests/integration/test_activity_delivery_consumer_postgres.py::test_legacy_writer_and_old_owner_cannot_bypass_handover"
+      ],
+      "status": "NOT_EXECUTED",
+      "DONE": false
+    }
+  },
+  "limitations": [
+    "D06 retains the separate producer rollback gate",
+    "D10 expiry and missing-policy negatives are local model tests only",
+    "ASGI request authentication is covered by the authored combined PG test; live HTTPS/TLS is NOT_EXECUTED",
+    "Actual strategy policy, attestor, grants, owner handover and transport credentials remain unbound"
+  ]
+}

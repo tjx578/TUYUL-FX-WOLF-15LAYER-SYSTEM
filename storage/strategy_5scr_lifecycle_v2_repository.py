@@ -393,6 +393,8 @@ class StrategyLifecycleV2Repository:
         self,
         lifecycle: StrategyLifecycleV2,
         link: StrategyLifecycleEventLink,
+        *,
+        owner_fence=None,
     ) -> bool:
         """Write episode and link atomically.
 
@@ -401,7 +403,7 @@ class StrategyLifecycleV2Repository:
         """
         try:
             async with self._pg.transaction() as connection:
-                if not await self.persist_in_transaction(connection, lifecycle, link):
+                if not await self.persist_in_transaction(connection, lifecycle, link, owner_fence=owner_fence):
                     # The lifecycle upsert happened first to satisfy the FK.
                     # Roll it back when another worker already linked this
                     # event, otherwise a lagging worker could overwrite newer
@@ -416,8 +418,17 @@ class StrategyLifecycleV2Repository:
         connection: Any,
         lifecycle: StrategyLifecycleV2,
         link: StrategyLifecycleEventLink,
+        *,
+        owner_fence=None,
     ) -> bool:
         """Persist lifecycle/link/export using one caller-owned transaction."""
+
+        if owner_fence is not None:
+            from storage.strategy_5scr_activity_consumer import bind_owner
+
+            if owner_fence.symbol != lifecycle.symbol:
+                raise ValueError("OWNER_LIFECYCLE_SCOPE_MISMATCH")
+            await bind_owner(connection, owner_fence)
 
         previous_state: str | None = None
         if self._observer_export is not None:

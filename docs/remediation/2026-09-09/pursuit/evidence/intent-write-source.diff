@@ -1,0 +1,76 @@
+commit 5fd0d5330c6226999124e8ab6b9c910fd7348788
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 13:19:43 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 13:19:43 2026 +0800
+
+    Propagate execution intent database write failures before local state advances
+
+diff --git a/execution/execution_intent.py b/execution/execution_intent.py
+index 90570811..a550e3b6 100644
+--- a/execution/execution_intent.py
++++ b/execution/execution_intent.py
+@@ -356,6 +356,7 @@ class ExecutionIntentRepository:
+             )
+         except Exception:
+             logger.warning("[ExecIntentRepo] PG insert failed", exc_info=True)
++            raise
+ 
+     async def _pg_update(self, eid: str, updates: dict[str, Any]) -> None:
+         try:
+@@ -374,6 +375,7 @@ class ExecutionIntentRepository:
+             )
+         except Exception:
+             logger.warning("[ExecIntentRepo] PG update failed", exc_info=True)
++            raise
+ 
+     async def _pg_fetch(self, eid: str) -> dict[str, Any] | None:
+         try:
+diff --git a/tests/test_reconciliation.py b/tests/test_reconciliation.py
+index 16aaa7ee..45649ad5 100644
+--- a/tests/test_reconciliation.py
++++ b/tests/test_reconciliation.py
+@@ -23,6 +23,43 @@ async def _noop_coro(*args, **kwargs):
+     return None
+ 
+ 
++@pytest.mark.asyncio
++@pytest.mark.parametrize("operation", ["create", "transition", "reconcile"])
++async def test_available_database_write_failure_does_not_advance_local_state(repo, reconciler, monkeypatch, operation):
++    from types import SimpleNamespace
++    from unittest.mock import AsyncMock, Mock
++
++    import storage.postgres_client as postgres_module
++
++    record = _make_intent("write_failure", state=ExecutionLifecycleState.ACKNOWLEDGED)
++    if operation != "create":
++        await repo.create(record)
++    before_memory = {key: dict(value) for key, value in repo._memory.items()}
++    before_index = dict(repo._idem_index)
++    cache_write = Mock()
++    monkeypatch.setattr(repo, "_cache_set", cache_write)
++    failure = RuntimeError("injected database write failure")
++    execute = AsyncMock(side_effect=failure)
++    monkeypatch.setattr(postgres_module, "pg_client", SimpleNamespace(is_available=True, execute=execute))
++    monkeypatch.setattr(repo, "_pg_insert", ExecutionIntentRepository._pg_insert.__get__(repo))
++    monkeypatch.setattr(repo, "_pg_update", ExecutionIntentRepository._pg_update.__get__(repo))
++    with pytest.raises(RuntimeError, match="injected database write failure") as caught:
++        if operation == "create":
++            await repo.create(record)
++        elif operation == "transition":
++            await repo.transition(record.execution_intent_id, ExecutionLifecycleState.FILLED)
++        else:
++            await reconciler.reconcile_single(
++                record.execution_intent_id,
++                broker_truth={"status": "FILLED", "fill_price": 1.0855},
++            )
++    assert caught.value is failure
++    execute.assert_awaited_once()
++    cache_write.assert_not_called()
++    assert repo._memory == before_memory
++    assert repo._idem_index == before_index
++
++
+ # ── Fixtures ──────────────────────────────────────────────────────────────────
+ 
+ 

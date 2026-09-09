@@ -260,13 +260,46 @@ def test_business_proxy_sanitizes_upstream_exception(monkeypatch) -> None:
 def test_production_docs_respect_generic_env(monkeypatch) -> None:
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.setenv("ENV", "production")
-    paths = {route.path for route in create_app().routes}
-    assert "/docs" not in paths
+    client = TestClient(create_app())
+    response = client.get("/docs", follow_redirects=False)
+    assert response.status_code == 404
 
 
-def test_bff_registers_only_get_routes() -> None:
+def test_bff_registers_only_get_routes(monkeypatch) -> None:
+    from fastapi import routing
+
     app = create_app()
     business_paths = ("/api/bff", "/api/dashboard")
-    for route in app.routes:
+    expected_paths = {
+        "/api/bff/aggregated-status",
+        "/api/dashboard/overview",
+        "/api/dashboard/feed-status",
+    }
+    # New FastAPI preserves included-router branches. Its context iterator
+    # resolves their effective prefixes, including routes excluded from OpenAPI.
+    # Older FastAPI already has flat app.routes; unknown wrappers must fail,
+    # never disappear behind hasattr/getattr filtering or a schema-only check.
+    context_iterator = getattr(routing, "iter_route_contexts", None)
+    routes = list(context_iterator(app.routes)) if context_iterator else app.routes
+    observed_paths = []
+    for route in routes:
+        assert isinstance(route.path, str), "Unresolved route: containment inventory incomplete"
         if route.path.startswith(business_paths):
+            observed_paths.append(route.path)
             assert route.methods == {"GET"}
+    assert len(observed_paths) == len(expected_paths)
+    assert set(observed_paths) == expected_paths
+
+    auth_client = _FakeCoreClient(error=AssertionError("method denial must precede auth upstream"))
+    headers = _valid_auth(monkeypatch, auth_client)
+    business_client = _FakeCoreClient(error=AssertionError("mutation must not reach business upstream"))
+    monkeypatch.setattr("services.dashboard_bff.routes.read_model.get_client", lambda: business_client)
+    monkeypatch.setattr("services.dashboard_bff.routes.status.get_client", lambda: business_client)
+    client = TestClient(app)
+    for path in sorted(expected_paths):
+        for method in ("POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT"):
+            response = client.request(method, path, headers=headers, follow_redirects=False)
+            assert response.status_code == 405, (method, path, response.status_code)
+            assert {item.strip() for item in response.headers["allow"].split(",")} == {"GET"}
+    assert auth_client.calls == []
+    assert business_client.calls == []

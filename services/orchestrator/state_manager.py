@@ -16,6 +16,7 @@ import hashlib
 import hmac as _hmac
 import json
 import os
+import signal
 import threading
 import time
 import uuid
@@ -187,6 +188,7 @@ class StateManager:
         self._state = OrchestratorState(updated_at=_utc_now_iso())
         self._redis: RedisClient = redis_client or RedisClient()
         self._pubsub: redis.client.PubSub | None = None
+        self._stop_requested = threading.Event()
 
         self._channel = os.getenv("ORCHESTRATOR_CHANNEL", ORCHESTRATOR_COMMANDS)
         self._state_key = os.getenv("ORCHESTRATOR_STATE_KEY", ORCHESTRATOR_STATE)
@@ -676,38 +678,51 @@ class StateManager:
             self._last_heartbeat = now_ts
             self.publish_state("HEARTBEAT")
 
+    def request_stop(self) -> None:
+        self._stop_requested.set()
+
     def run_forever(self, on_started: Callable[[], None] | None = None) -> None:
         last_renewal = 0.0
         started_callback_sent = False
         hydration_completed = False
+
+        def activate_owner() -> None:
+            nonlocal hydration_completed, last_renewal, started_callback_sent
+            hydrated = self.hydrate_committed_state()
+            hydration_completed = True
+            self.start_listener()
+            self._supervisor.mark_owner()
+            self.publish_state(
+                "BOOT",
+                {
+                    "hydrated": hydrated,
+                    "prior_state_revision": self._state_revision,
+                },
+            )
+            logger.info(
+                "wolf15-orchestrator acquired ownership generation={} mode={}",
+                self._ownership.identity.generation if self._ownership.identity else "unknown",
+                self.snapshot().mode,
+            )
+            last_renewal = time.monotonic()
+            if on_started is not None and not started_callback_sent:
+                on_started()
+                started_callback_sent = True
+
         try:
-            while True:
+            while not self._stop_requested.is_set():
                 if not self._ownership.held:
                     hydration_completed = False
                     self._supervisor.mark_standby()
                     if not self._ownership.acquire():
-                        time.sleep(self._loop_sleep_sec)
+                        self._stop_requested.wait(self._loop_sleep_sec)
                         continue
-                    hydrated = self.hydrate_committed_state()
-                    hydration_completed = True
-                    self.start_listener()
-                    self._supervisor.mark_owner()
-                    self.publish_state(
-                        "BOOT",
-                        {
-                            "hydrated": hydrated,
-                            "prior_state_revision": self._state_revision,
-                        },
-                    )
-                    logger.info(
-                        "wolf15-orchestrator acquired ownership generation={} mode={}",
-                        self._ownership.identity.generation if self._ownership.identity else "unknown",
-                        self.snapshot().mode,
-                    )
-                    last_renewal = time.monotonic()
-                    if on_started is not None and not started_callback_sent:
-                        on_started()
-                        started_callback_sent = True
+                    activate_owner()
+                elif not hydration_completed:
+                    activate_owner()
+
+                if self._stop_requested.is_set():
+                    break
 
                 if time.monotonic() - last_renewal >= self._lease_renew_interval_sec:
                     if not self._ownership.renew():
@@ -725,7 +740,7 @@ class StateManager:
                     self._supervisor.mark_standby()
                     continue
                 self._supervisor.mark_progress()
-                time.sleep(self._loop_sleep_sec)
+                self._stop_requested.wait(self._loop_sleep_sec)
         except Exception as exc:
             self._supervisor.mark_fatal(exc)
             raise
@@ -775,16 +790,30 @@ def run() -> None:
     compliance_interval = max(1.0, float(os.getenv("ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC", "5")))
     stall_timeout = float(os.getenv("ORCHESTRATOR_STALL_TIMEOUT_SEC", str(max(30.0, compliance_interval * 3))))
     supervisor = RuntimeSupervisor(stall_timeout_sec=stall_timeout)
+    manager = StateManager(supervisor=supervisor)
+    previous_handlers: dict[signal.Signals, Any] = {}
     _start_health_probe_in_thread(
         readiness_check=supervisor.is_ready,
         liveness_check=supervisor.is_alive,
         details_provider=supervisor.details,
     )
     try:
-        StateManager(supervisor=supervisor).run_forever(on_started=_ORCHESTRATOR_READY.set)
+        def request_stop(signum: int, frame: Any) -> None:
+            del frame
+            _ORCHESTRATOR_READY.clear()
+            logger.info("orchestrator received signal {} — stopping", signum)
+            manager.request_stop()
+
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous_handlers[signum] = signal.signal(signum, request_stop)
+        manager.run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
         logger.exception("Orchestrator fatal error — exiting for bounded platform restart")
         raise
+    finally:
+        _ORCHESTRATOR_READY.clear()
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == "__main__":

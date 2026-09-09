@@ -1,0 +1,44 @@
+{
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "b51677d71191045b5621c339fc7b983419de796758ac8f622b0e881379e6411f",
+      "bytes": 25
+    },
+    {
+      "path": "evidence/merge-main-exact-collection.log",
+      "sha256": "ca88da5c665019b08c7a713f72c98c7f58c88b3dbd5edd05840ddfff0b2efa9a",
+      "bytes": 49378
+    },
+    {
+      "path": "evidence/merge-main-exact-pytest.log",
+      "sha256": "f0d1a00ddb57b1817b72bf7c94c5baa9b228949726fcb60916c08fe8467a6f38",
+      "bytes": 2658
+    },
+    {
+      "path": "evidence/merge-main-exact-receipt.json",
+      "sha256": "fae0e22a14336f8868c78a1eb1d80cbd1354b81811095e8570da3cace1c987d4",
+      "bytes": 61090
+    },
+    {
+      "path": "evidence/merge-main-exact.xml",
+      "sha256": "5938fb487cc0727b81b99ce3003746b5bc769a2e81ec35af44c79149cab1828c",
+      "bytes": 65094
+    },
+    {
+      "path": "merge-review.md",
+      "sha256": "d4b38213fc22378d5e4c291a8e26d67fede4eef6c925efbc2cb0b10a0c464661",
+      "bytes": 4385
+    },
+    {
+      "path": "README.md",
+      "sha256": "05301301ca83d28a704c7c0ccbaa62055b2b1845f1ece8bc710b2a4f4419fd28",
+      "bytes": 2450
+    },
+    {
+      "path": "validation.json",
+      "sha256": "c6fa68ec5187b167a19c9a460ee4bb906f45cd6276bb1678fbbce906c774d034",
+      "bytes": 3899
+    }
+  ]
+}
