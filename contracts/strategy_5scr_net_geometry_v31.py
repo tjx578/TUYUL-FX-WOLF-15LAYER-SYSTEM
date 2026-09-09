@@ -68,16 +68,12 @@ class NetGeometryPolicyV31(GeometryContract):
     minimum_net_rr: Annotated[Decimal, Field(ge=Decimal("1.5"), max_digits=28, decimal_places=12)]
 
 
-class NetGeometryRequestV31(GeometryContract):
+class NetGeometryContextV31(GeometryContract):
     symbol: str = Field(min_length=3, max_length=32)
     instrument_class: Literal["FX", "METAL", "OTHER"]
     direction: Literal["BUY", "SELL"]
     decision_at: datetime
-    # Already-selected nearest target and structural SL; the kernel cannot
-    # search for a farther target or tighten a stop to improve RR.
-    target_price: Price
     stop_price: Price
-    target_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     stop_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     digits: int = Field(ge=0, le=12, strict=True)
     point: Price
@@ -88,6 +84,13 @@ class NetGeometryRequestV31(GeometryContract):
     broker_interval: EntryIntervalV31
     policy: NetGeometryPolicyV31 | None
     costs: NetCostSnapshotV31 | None
+
+
+class NetGeometryRequestV31(NetGeometryContextV31):
+    # Already-selected nearest target and structural SL; the kernel cannot
+    # search for a farther target or tighten a stop to improve RR.
+    target_price: Price
+    target_evidence_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def geometry(self) -> NetGeometryRequestV31:
