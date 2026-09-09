@@ -47,6 +47,9 @@ async def child():
     }
     cache = redis.Redis.from_url(os.environ["REDIS_URL"], decode_responses=True)
     try:
+        # Run before the positive roles create any consumer groups. These flags
+        # must be rejected by the real trade entrypoint before worker imports.
+        receipt["invalid_dual_plane"] = await invalid_dual_plane(cache)
         for role, command in (
             ("engine", ["bash", "deploy/railway/start_engine.sh"]),
             ("trade", [sys.executable, "-m", "services.trade.runner"]),
@@ -120,6 +123,106 @@ async def child():
     finally:
         cache.close()
         print("ENGINE_TRADE_RECEIPT " + json.dumps(receipt), flush=True)
+
+
+async def invalid_dual_plane(cache):
+    """Actual role startup rejection; a loopback recording sink is never a broker."""
+    import threading
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    import psycopg
+    from psycopg import sql
+
+    calls = []
+
+    class Sink(BaseHTTPRequestHandler):
+        def do_GET(self):
+            calls.append(("GET", self.path))
+            self.send_response(200)
+            self.end_headers()
+
+        def do_POST(self):
+            calls.append(("POST", self.path))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    def snapshot():
+        redis_state = {key: hashlib.sha256(cache.dump(key)).hexdigest() for key in sorted(cache.scan_iter())}
+        database_state = {}
+        with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
+            connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            tables = connection.execute(
+                "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname='public' ORDER BY tablename"
+            ).fetchall()
+            for (table,) in tables:
+                digest = hashlib.sha256()
+                count = 0
+                rows = connection.execute(
+                    sql.SQL("SELECT row_to_json(t)::text FROM public.{} t ORDER BY row_to_json(t)::text").format(
+                        sql.Identifier(table)
+                    )
+                )
+                for (row,) in rows:
+                    digest.update(row.encode() + b"\n")
+                    count += 1
+                database_state[table] = {"rows": count, "sha256": digest.hexdigest()}
+        return {"redis": redis_state, "public_tables": database_state}
+
+    assert not cache.exists("allocation:request"), "negative case must precede consumer creation"
+    before = snapshot()
+    sink = HTTPServer(("127.0.0.1", 0), Sink)
+    thread = threading.Thread(target=sink.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{sink.server_port}"
+    path = Path("/tmp/trade-invalid-dual-plane.log")
+    process = None
+    try:
+        with urllib.request.urlopen(base + "/recording-control", timeout=2) as response:
+            assert response.status == 200
+        env = dict(
+            os.environ,
+            PORT="18084",
+            TRADE_HEALTH_PORT="18084",
+            EXECUTION_ENABLED="true",
+            LEGACY_PUSH_EXECUTION_ENABLED="true",
+            SIGNED_COMMAND_BRIDGE_ENABLED="true",
+            EA_BRIDGE_URL=base,
+        )
+        with path.open("w") as log:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, "-m", "services.trade.runner", env=env, stdout=log, stderr=log
+            )
+            code = await asyncio.wait_for(process.wait(), timeout=30)
+        assert code != 0, "invalid dual plane was not rejected"
+        assert "EXECUTION_PLANE_CONFLICT" in path.read_text(), "exit was not the required preflight rejection"
+        assert not cache.exists("allocation:request"), "invalid role created an allocation consumer stream/group"
+        assert snapshot() == before, "invalid role changed Redis or persistent public-table rows"
+        assert calls == [("GET", "/recording-control")], "invalid role contacted the recording sink"
+        return {
+            "accepted": True,
+            "scope": "ACTUAL_TRADE_ROLE_INVALID_DUAL_PLANE_BEFORE_CONSUMERS",
+            "exit_code": code,
+            "reason": "EXECUTION_PLANE_CONFLICT",
+            "allocation_stream_or_group_created": False,
+            "redis_state_unchanged": True,
+            "public_table_rows_unchanged": True,
+            "before_state": before,
+            "sink_control_requests": 1,
+            "sink_dispatch_requests": 0,
+            "broker_acceptance": "NOT_EXECUTED",
+            "all_legacy_paths_coverage": False,
+        }
+    finally:
+        if process is not None and process.returncode is None:
+            process.kill()
+            await process.wait()
+        sink.shutdown()
+        sink.server_close()
+        thread.join(timeout=2)
 
 
 def run(image, output):
@@ -261,6 +364,8 @@ def run(image, output):
                 "main.py",
                 "services/engine/runner.py",
                 "services/trade/runner.py",
+                "services/trade/preflight.py",
+                "execution/execution_plane_flags.py",
                 "allocation/async_worker.py",
                 "startup/graceful_shutdown.py",
                 "deploy/railway/start_engine.sh",

@@ -17,3 +17,13 @@ Independent review found that registered-symbol fencing alone does not close int
 Recovery: nine C06 WIP files were independently hash-verified and published on recovery commit `dba789eddee545089b71bf63267ce5f0542eeb0e` before the external main merge. Folder cleanup remains NOT_EXECUTED; aggregate recovery receipts do not prove current consumer inactivity. Canonical README/register and previous closure receipts are preserved.
 
 Next gate: publish this reviewed feature candidate, execute all required Linux workflows and database/runtime suites at its exact SHA, inspect receipts and failures, then assess C01-C06 individually. No production migration, Railway deployment, trading activation or folder deletion is authorized by this report.
+
+## First integrated execution and follow-up
+
+Draft PR #436 published `fb782c147a02f8dfaa902624d014c0afd9a919db`. CI run `34371264126` executed **all 100 dedicated PostgreSQL identities with zero failures/errors/skips**. JUnit identity sets, artifact hashes and every source-manifest blob matched the feature head; test merge was `eb18b2664efd8c3dc362d19bd6541f9b8a895112`. The two drain and four Redis lanes ran successfully as steps; their JUnit receipts require final artifact reconciliation. Security `34371264145` and Docs `34371264054` passed. Full Python was still running at receipt capture; no full-suite success is claimed.
+
+Runtime failed on orchestrator dependency-failure timeout and missing Dockerfile in the built-engine source check. The Dockerfile is excluded from the image intentionally; follow-up separates its host build-input hash from the 13 source hashes checked inside the image, with the image ID recorded. The orchestrator fixture now binds its eight-second diagnostic hold using the selected runtime setting rather than relying on the previous generic timeout.
+
+Further review restored the prior unconditional refusal to close pools while default-mode writers remain live; strict mode retains its typed timeout and bounded cleanup. Both modes now have resistant-writer tests. Actual trade-role invalid-dual-plane acceptance is added before the positive roles, checking nonzero conflict rejection, no consumers or DB/Redis changes, and zero requests to a functioning local recording sink. Its coverage is explicitly narrower than every historical broker path.
+
+Follow-up local scope: **118 passed, zero skipped**, preserved separately from overlapping previous suites. [First-run evidence](fb782c14/postgres-verified-summary.json) and failed runtime receipts remain available under `fb782c14/`. Follow-up source still requires new exact-candidate Linux acceptance. P1 and release remain HOLD.

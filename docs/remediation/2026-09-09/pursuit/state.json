@@ -986,7 +986,7 @@
     "original_428": "65cdf4e2eb57748accf1eb08f8d7f75b96317575",
     "original_431": "9e6f1ee38aaed8ff858f78611520ac61f79abe25",
     "current_431": "1966c55eb06069a7b77660d35b2fc828293378ae",
-    "database_execution": "NOT_EXECUTED_ON_INTEGRATED_SOURCE",
+    "database_execution": "100_PASS_NO_SKIP_SOURCE_BOUND_FB782C14",
     "database_collected": 100,
     "drain_pg_collected": 2,
     "redis_collected": 4,
@@ -1000,6 +1000,9 @@
       "P1 C01-C06 combined closure review",
       "S03 protected-symbol coverage and effective target privilege binding"
     ],
-    "evidence_ref": "pursuit/reconciliation/local-review.json"
+    "evidence_ref": "pursuit/reconciliation/local-review.json",
+    "database_execution_source": "fb782c147a02f8dfaa902624d014c0afd9a919db",
+    "database_evidence_ref": "pursuit/reconciliation/fb782c14/postgres-verified-summary.json",
+    "runtime_execution": "FIRST_CANDIDATE_FAILED_ORCHESTRATOR_TIMEOUT_AND_ENGINE_BUILD_INPUT_PATH; FOLLOWUP_PENDING"
   }
 }
