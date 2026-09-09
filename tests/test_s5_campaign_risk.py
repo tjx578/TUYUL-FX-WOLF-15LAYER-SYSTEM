@@ -295,3 +295,11 @@ def test_risk_lock_fingerprint_survives_decimal_database_scale():
 def test_naive_lock_clock_is_rejected_explicitly():
     invalid = replace(_risk_lock(), locked_at_utc=datetime(2026, 9, 9))
     assert _authorize(_sized_parent(), risk_lock=invalid) == S5RiskReason.RISK_STATE_INVALID
+
+
+@pytest.mark.parametrize("currency", ["JPY", "EUR", "USC"])
+def test_usd_risk_does_not_assume_account_currency_conversion(currency):
+    snapshot = _snapshot().model_copy(update={"currency": currency})
+    verdict = validate_account_snapshot(snapshot, expected_account_id="acct-01", policy=CampaignRiskPolicy())
+    assert not verdict.allowed
+    assert verdict.reason == S5RiskReason.ACCOUNT_CURRENCY_UNSUPPORTED

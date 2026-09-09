@@ -94,6 +94,33 @@ def _candidate_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(dict(payload))).hexdigest()
 
 
+def _snapshot_from_row(row: Mapping[str, Any]) -> AccountSnapshotV1:
+    snapshot = AccountSnapshotV1.model_validate(_mapping(row["payload"]))
+    if snapshot.snapshot_id != str(row["snapshot_id"]) or snapshot.captured_at_utc != row["captured_at"]:
+        raise RiskReservationConflictError("snapshot payload identity or capture clock differs from stored row")
+    return snapshot
+
+
+def _candidate_from_row(row: Mapping[str, Any]) -> tuple[dict[str, Any], Strategy5SCRTradePlan]:
+    candidate = _mapping(row["payload"])
+    _assert_candidate_is_non_executable(candidate)
+    if _candidate_hash(candidate) != str(row["payload_hash"]):
+        raise RiskReservationConflictError("stored candidate payload hash mismatch")
+    tradeplan = tradeplan_from_candidate_payload(candidate)
+    # This is the existing V1 table's lifecycle/campaign mapping, not an adapter
+    # that rewrites v3.1 or shadow candidate identities into the legacy schema.
+    expected = {
+        "tradeplan_id": tradeplan.tradeplan_id,
+        "lifecycle_id": tradeplan.campaign_id,
+        "symbol": tradeplan.symbol,
+        "direction": tradeplan.direction,
+        "decision_at": tradeplan.decision_at_utc,
+    }
+    if any(row[key] != value for key, value in expected.items()):
+        raise RiskReservationConflictError("candidate payload metadata differs from stored row")
+    return candidate, tradeplan
+
+
 def _identity_uuid(kind: str, identity: str) -> UUID:
     return uuid5(_IDENTITY_NAMESPACE, f"{kind}:{identity}")
 
@@ -441,7 +468,7 @@ class Strategy5SCRRiskReservationRepository:
 
             snapshot_row = await connection.fetchrow(
                 """
-                SELECT snapshot_id, payload
+                SELECT snapshot_id, captured_at, payload
                 FROM executor_account_snapshots
                 WHERE executor_id = $1::uuid AND account_id = $2
                 ORDER BY captured_at DESC, received_at DESC
@@ -452,7 +479,7 @@ class Strategy5SCRRiskReservationRepository:
             )
             if not snapshot_row:
                 raise RiskReservationRejectedError("RISK_SNAPSHOT_MISSING", "executor has no account snapshot")
-            snapshot = AccountSnapshotV1.model_validate(_mapping(snapshot_row["payload"]))
+            snapshot = _snapshot_from_row(snapshot_row)
             snapshot_verdict = validate_account_snapshot(
                 snapshot,
                 expected_account_id=account_id,
@@ -483,11 +510,7 @@ class Strategy5SCRRiskReservationRepository:
             )
             if not candidate_row:
                 raise RiskReservationRejectedError("RISK_CANDIDATE_MISSING", "tradeplan candidate is unavailable")
-            candidate = _mapping(candidate_row["payload"])
-            _assert_candidate_is_non_executable(candidate)
-            if _candidate_hash(candidate) != str(candidate_row["payload_hash"]):
-                raise RiskReservationConflictError("stored candidate payload hash mismatch")
-            tradeplan = tradeplan_from_candidate_payload(candidate)
+            candidate, tradeplan = _candidate_from_row(candidate_row)
             if tradeplan.tradeplan_id != request.tradeplan_id:
                 raise RiskReservationConflictError("candidate payload tradeplan identity mismatch")
             age = (now - tradeplan.decision_at_utc).total_seconds()

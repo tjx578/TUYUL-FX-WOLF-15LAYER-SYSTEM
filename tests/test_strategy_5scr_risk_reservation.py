@@ -13,10 +13,66 @@ from contracts.strategy_5scr_risk_reservation import (
     validate_final_signal_reservation,
 )
 from storage.strategy_5scr_risk_reservation_repository import (
+    RiskReservationConflictError,
     RiskReservationRejectedError,
+    _candidate_from_row,
+    _candidate_hash,
+    _snapshot_from_row,
     build_final_signal_payload,
 )
+from tests.test_s5_campaign_risk import _snapshot
 from tests.test_strategy_5scr_pressure_to_tradeplan import _evidence, _legacy_builder, _lifecycle
+
+
+def _candidate_row():
+    candidate, plan = _candidate_and_plan()
+    return {
+        "tradeplan_id": plan.tradeplan_id,
+        "lifecycle_id": plan.campaign_id,
+        "symbol": plan.symbol,
+        "direction": plan.direction,
+        "decision_at": plan.decision_at_utc,
+        "payload": candidate,
+        "payload_hash": _candidate_hash(candidate),
+    }
+
+
+def test_current_candidate_and_snapshot_row_bindings_pass():
+    row = _candidate_row()
+    candidate, plan = _candidate_from_row(row)
+    assert candidate == row["payload"] and plan.tradeplan_id == row["tradeplan_id"]
+    snapshot = _snapshot()
+    assert (
+        _snapshot_from_row(
+            {
+                "snapshot_id": snapshot.snapshot_id,
+                "captured_at": snapshot.captured_at_utc,
+                "payload": snapshot.model_dump(mode="json"),
+            }
+        )
+        == snapshot
+    )
+
+
+@pytest.mark.parametrize("field", ["tradeplan_id", "lifecycle_id", "symbol", "direction", "decision_at"])
+def test_candidate_row_metadata_drift_is_rejected_even_with_valid_payload_hash(field):
+    row = _candidate_row()
+    row[field] = row[field] + timedelta(seconds=1) if field == "decision_at" else "WRONG"
+    with pytest.raises(RiskReservationConflictError, match="metadata"):
+        _candidate_from_row(row)
+
+
+@pytest.mark.parametrize("field", ["snapshot_id", "captured_at"])
+def test_snapshot_row_identity_and_recency_cannot_drift_from_payload(field):
+    snapshot = _snapshot()
+    row = {
+        "snapshot_id": snapshot.snapshot_id,
+        "captured_at": snapshot.captured_at_utc,
+        "payload": snapshot.model_dump(mode="json"),
+    }
+    row[field] = "WRONG" if field == "snapshot_id" else snapshot.captured_at_utc - timedelta(hours=1)
+    with pytest.raises(RiskReservationConflictError, match="snapshot payload"):
+        _snapshot_from_row(row)
 
 
 def _candidate_and_plan():

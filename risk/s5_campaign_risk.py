@@ -23,6 +23,7 @@ class S5RiskReason(StrEnum):
     APPROVED_CHILD = "RISK_APPROVED_CHILD"
     SNAPSHOT_STALE = "RISK_SNAPSHOT_STALE"
     ACCOUNT_MISMATCH = "RISK_ACCOUNT_MISMATCH"
+    ACCOUNT_CURRENCY_UNSUPPORTED = "RISK_ACCOUNT_CURRENCY_UNSUPPORTED"
     SNAPSHOT_INCONSISTENT = "RISK_SNAPSHOT_INCONSISTENT"
     TRADE_DISABLED = "RISK_TRADE_DISABLED"
     INVALID_SYMBOL_SPEC = "RISK_INVALID_SYMBOL_SPEC"
@@ -142,6 +143,12 @@ def validate_account_snapshot(
     age = (current - snapshot.captured_at_utc).total_seconds()
     if snapshot.account_id != expected_account_id:
         return SnapshotValidation(False, S5RiskReason.ACCOUNT_MISMATCH, "snapshot account binding mismatch")
+    if snapshot.currency != "USD":
+        return SnapshotValidation(
+            False,
+            S5RiskReason.ACCOUNT_CURRENCY_UNSUPPORTED,
+            "USD risk primitives require a USD account; currency conversion is not bound",
+        )
     if age < -2 or age > policy.snapshot_max_age_seconds:
         return SnapshotValidation(False, S5RiskReason.SNAPSHOT_STALE, f"snapshot age {age:.3f}s outside policy")
     if not snapshot.trade_allowed or not snapshot.autotrading_enabled:
