@@ -1,5 +1,5 @@
 {
-  "source_commit": "2c9d3dab743747f17dc350a04a8225f65490b26b",
+  "source_commit": "bea7cd05c7bbb1feced445534c5d990a7f9f00b1",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -461,6 +461,56 @@
       "path": "k07-adapter-20260909-a2.xml",
       "sha256": "5a97df6cc3ad6700b0d8c0dff4bfbf533f0a54d3f282adb68b4c25caca73319f",
       "bytes": 13535
+    },
+    {
+      "path": "k07-capacity-20260909-a1-collection.log",
+      "sha256": "c41909331da2f6b34f14f4cd5be88bee05c283a5cb75bc022a410371af5e49eb",
+      "bytes": 12726
+    },
+    {
+      "path": "k07-capacity-20260909-a1-pytest.log",
+      "sha256": "432398afe17379d358c0e0b3594ba05ee995df3aaf356a130cb97b971b4fddb0",
+      "bytes": 1077
+    },
+    {
+      "path": "k07-capacity-20260909-a1-receipt.json",
+      "sha256": "d5c3e9d678159dd2a88e4f1ed5068b58a7e53a5ee703fd98263bc8bb3c09ebba",
+      "bytes": 19815
+    },
+    {
+      "path": "k07-capacity-20260909-a1.xml",
+      "sha256": "2a638eebb28a0faf4ea9cb80f4316299c8662fc7c6ee0143d0effa749659c112",
+      "bytes": 16221
+    },
+    {
+      "path": "k07-capacity-20260909-a2-collection.log",
+      "sha256": "9786c0c08ad955feddefefc5c9a8716c3a321b342bad4ef774ccc3058feefe12",
+      "bytes": 13607
+    },
+    {
+      "path": "k07-capacity-20260909-a2-pytest.log",
+      "sha256": "873afdbf4496b2219a3f9b91ec7837e5b5fce6b0e8656466aac8391b2481942d",
+      "bytes": 1077
+    },
+    {
+      "path": "k07-capacity-20260909-a2-receipt.json",
+      "sha256": "2cf2a093d84f7858b485856a4acdf3613b3cdbd756abaf0d6c1e2a78b18dbbb3",
+      "bytes": 20745
+    },
+    {
+      "path": "k07-capacity-20260909-a2.xml",
+      "sha256": "ad395ee42c253dedf2605d7716d6225c35cf55060df165874d2df798f29e37df",
+      "bytes": 17375
+    },
+    {
+      "path": "k07-capacity-source.diff",
+      "sha256": "72da928bf5439b9c7d8215854eca9c508e86e1d2d1c6c78503daeea698c4b99c",
+      "bytes": 35518
+    },
+    {
+      "path": "k07-capacity-validation.json",
+      "sha256": "9349f3b64d7e95dc7c09e1d982a7ec578a0b0b455b0a704cff072dd8d9d8ca12",
+      "bytes": 17359
     },
     {
       "path": "k07-parent-adapter-source.diff",

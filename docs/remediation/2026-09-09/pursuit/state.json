@@ -1,12 +1,12 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "2c9d3dab743747f17dc350a04a8225f65490b26b",
-  "source_verified_at": "2026-09-09T06:34:19.471771+00:00",
+  "source_checkpoint": "bea7cd05c7bbb1feced445534c5d990a7f9f00b1",
+  "source_verified_at": "2026-09-09T06:49:29.241449+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "K07_V31_TYPED_PARENT_SIZING_LOCAL_ACCEPTANCE",
+  "current_slice": "K07_V31_CAPACITY_REDUCER_LOCAL_ACCEPTANCE",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -705,7 +705,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Continue K07 versioned capacity reservation reducer and strategy-candidate handoff. Preserve TEST_ONLY until active policy/authority binding; do not reinterpret V1 or retry unchanged external gates.",
+  "next_action_on_resume": "Continue canonical strategy-candidate handoff and evidence-bound baseline refresh for next-campaign compounding; preserve locked prior budgets and TEST_ONLY. Actual Transaction A persistence and child policy remain separate.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -718,8 +718,8 @@
     "evidence_copy_exact_match": true,
     "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
   },
-  "previous_goal_turn_classification": "PROGRESS_TYPED_POLICY_ACCOUNT_SPEC_GEOMETRY_ADAPTER",
-  "actual_source_commit": "2c9d3dab743747f17dc350a04a8225f65490b26b",
+  "previous_goal_turn_classification": "PROGRESS_VERSIONED_CAPACITY_REPLAY_RELEASE_REDUCER",
+  "actual_source_commit": "bea7cd05c7bbb1feced445534c5d990a7f9f00b1",
   "slice_state": {
     "G00": {
       "status": "REPO_SSOT_PR_PROVIDER_REBOUND_WITH_EXPLICIT_UNKNOWNS",
@@ -765,15 +765,18 @@
       ]
     },
     "K07": {
-      "status": "V31_PARENT_SIZING_ADAPTER_LOCAL_PASS_PARTIAL",
+      "status": "V31_SIZING_AND_CAPACITY_REDUCER_LOCAL_PASS_PARTIAL",
       "DONE": false,
-      "evidence_ref": "evidence/k07-parent-adapter-validation.json",
-      "previous_evidence_ref": "evidence/reservation-row-validation.json",
+      "evidence_ref": "evidence/k07-capacity-validation.json",
+      "previous_evidence_refs": [
+        "evidence/k07-parent-adapter-validation.json",
+        "evidence/reservation-row-validation.json"
+      ],
       "remaining": [
-        "Active account/mode/currency/version profile and attestors",
-        "Canonical strategy-candidate handoff and versioned reservation/capacity reducer",
-        "Margin gates and database concurrency/recovery",
-        "Natural command and independent broker acceptance"
+        "Canonical candidate authority and active account/risk/source binding",
+        "Evidence-bound baseline refresh and closed-balance compounding",
+        "Persistent Transaction A with owner/version CAS, margin gates and real PostgreSQL recovery",
+        "Child policy, natural commands and independent broker acceptance"
       ]
     },
     "K08": {
@@ -815,7 +818,7 @@
     "K02_K03_RUNTIME_BINDING_WHEN_RESOURCE_AVAILABLE"
   ],
   "publication": {
-    "source_commit": "2c9d3dab743747f17dc350a04a8225f65490b26b",
+    "source_commit": "bea7cd05c7bbb1feced445534c5d990a7f9f00b1",
     "remote_checkpoint": "79597e91a33d88a60c74c4c714cefa8120147fc9",
     "pr": 428,
     "draft": true,
