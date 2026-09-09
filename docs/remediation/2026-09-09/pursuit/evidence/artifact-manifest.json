@@ -1,5 +1,5 @@
 {
-  "source_commit": "bea7cd05c7bbb1feced445534c5d990a7f9f00b1",
+  "source_commit": "95daea01a8132f9e426f66062ff737147884b0d0",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -461,6 +461,56 @@
       "path": "k07-adapter-20260909-a2.xml",
       "sha256": "5a97df6cc3ad6700b0d8c0dff4bfbf533f0a54d3f282adb68b4c25caca73319f",
       "bytes": 13535
+    },
+    {
+      "path": "k07-baseline-20260909-a1-collection.log",
+      "sha256": "1ca0ff1596d9b53cc780d599089f03eb3d3c0fb141ab866fa07137a31d08c0f5",
+      "bytes": 16805
+    },
+    {
+      "path": "k07-baseline-20260909-a1-pytest.log",
+      "sha256": "1a9c56b935302a9f5b03abd55ebd6e2b236649652b2d63085a9eed8fa762910f",
+      "bytes": 1077
+    },
+    {
+      "path": "k07-baseline-20260909-a1-receipt.json",
+      "sha256": "986fe16c6a2967ffa65b2cb65a18ac8b2cd7478c2f542b509d114a28b29dc0d3",
+      "bytes": 24255
+    },
+    {
+      "path": "k07-baseline-20260909-a1.xml",
+      "sha256": "48d70228eb91713bee12aed1ab39ed39aee9eb2353a7e7f77d21337c4a54e1d7",
+      "bytes": 21470
+    },
+    {
+      "path": "k07-baseline-20260909-a2-collection.log",
+      "sha256": "042b9f9cb990b128e38748af3515b8a38372187ca2f5bf1545cf45ff4d187202",
+      "bytes": 17388
+    },
+    {
+      "path": "k07-baseline-20260909-a2-pytest.log",
+      "sha256": "f7adf39e9dc724e7e1f03b6f9fa49415110386c4300ecb2f317370e6b6d76a38",
+      "bytes": 1077
+    },
+    {
+      "path": "k07-baseline-20260909-a2-receipt.json",
+      "sha256": "761b5ead994e38e82f44c86e8067f13679843bc127ed7b0b8152ec0b22630685",
+      "bytes": 24872
+    },
+    {
+      "path": "k07-baseline-20260909-a2.xml",
+      "sha256": "069e82fe4dfe38612538556a2bf3ab7673984138f799d21e8da0e7bcbeacaea1",
+      "bytes": 22248
+    },
+    {
+      "path": "k07-baseline-source.diff",
+      "sha256": "066f7da26608ed2c6db9dfc283df240406e32499d4d97e0efaa28ec25ed13d8d",
+      "bytes": 27807
+    },
+    {
+      "path": "k07-baseline-validation.json",
+      "sha256": "75d48ad6b21eaf77232e81dab0189c1d36a99b3fc54dee17583490e58cbae447",
+      "bytes": 21193
     },
     {
       "path": "k07-capacity-20260909-a1-collection.log",
