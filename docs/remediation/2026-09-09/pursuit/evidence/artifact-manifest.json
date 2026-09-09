@@ -1,5 +1,5 @@
 {
-  "source_commit": "d144d3042f36bfc8887cbbf0795da501975cc500",
+  "source_commit": "52a9cb9460e6c66392f85032f22993d14eb7e7a1",
   "scope": "Evidence files; individual receipts retain historical source bindings",
   "files": [
     {
@@ -196,6 +196,36 @@
       "path": "channel-b-observation-window-validation.json",
       "sha256": "395b84745c28b0629c1bce8a2ba645b77d0053730c2b94844a8e9b802892a0aa",
       "bytes": 9407
+    },
+    {
+      "path": "channel-b-replay-source.diff",
+      "sha256": "8f474e539bebd0baf95433945a628adb902da5bf970c914284b7e3f8af2cf632",
+      "bytes": 12256
+    },
+    {
+      "path": "channel-b-replay-validation.json",
+      "sha256": "0e4127357bf5dc6ff51d24c5c12ee20cf98dbfcac291840a47f3bec13642877c",
+      "bytes": 11602
+    },
+    {
+      "path": "cr2-collection.log",
+      "sha256": "a0b7c37e0584c7fbde9c3b19a6fb4f89dbbdb494e43ff004085d6c342438f746",
+      "bytes": 10498
+    },
+    {
+      "path": "cr2-pytest.log",
+      "sha256": "7a96b02ac6afc359641b8c3a5b61f8eeb4d339cf843f4fa28a866215ef0bc00e",
+      "bytes": 1055
+    },
+    {
+      "path": "cr2-receipt.json",
+      "sha256": "91b43bcf402a62127cd2efcd5aab8a599cd5a5e58dfb64e2e8b3427b3580dbf5",
+      "bytes": 16392
+    },
+    {
+      "path": "cr2.xml",
+      "sha256": "fefb19c329b4927c52aa45b5e0cb381faca35003448ccfe75d9af2de4b250526",
+      "bytes": 13525
     },
     {
       "path": "ct1-collection.log",
