@@ -1,8 +1,8 @@
 {
   "schema_version": "wolf15-pursuit-state/v1",
   "status": "IN_PROGRESS",
-  "source_checkpoint": "2e80441413cca767eec5c6d8baf4c643407d1159",
-  "source_verified_at": "2026-09-09T12:11:08.096258+00:00",
+  "source_checkpoint": "9fcfd80c058178116db31d498c45546746873ad6",
+  "source_verified_at": "2026-09-09T12:34:50.502088+00:00",
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
@@ -39,7 +39,7 @@
     },
     "C02": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "REAL_PG_CONSUMER_FENCING_PASS_APPLICATION_ROLE_AND_RUNTIME_OWNER_OPEN",
+      "execution_stage": "DISPOSABLE_APPLICATION_ROLE_FENCING_PASS_RUNTIME_OWNER_AND_ZERO_SUBMIT_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -51,7 +51,8 @@
         "pursuit/evidence/p1-ci-20260909/validation.json",
         "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
-        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json"
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
       ]
     },
     "C03": {
@@ -76,7 +77,8 @@
         "pursuit/evidence/p1-ci-20260909/validation.json",
         "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
-        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json"
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
       ]
     },
     "C04": {
@@ -103,7 +105,7 @@
     },
     "C05": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "MAIN_UNPROTECTED_RULESET_DISABLED",
+      "execution_stage": "CLASSIC_MAIN_PROTECTION_OBSERVED_REVIEW_AND_RELEASE_BINDING_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -112,12 +114,13 @@
         "evidence/strategy-audit.json",
         "evidence/release-audit.json",
         "validation.json",
-        "pursuit/evidence/p1-ci-20260909/validation.json"
+        "pursuit/evidence/p1-ci-20260909/validation.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
       ]
     },
     "C06": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "BUILT_API_REQUIRED_TASK_FAULT_503_EXIT_AND_DRAIN_PASS_OTHER_ROLES_OPEN",
+      "execution_stage": "BUILT_API_RESISTANT_PROCESS_BOUND_PASS_OTHER_ROLES_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -129,7 +132,8 @@
         "pursuit/evidence/p1-ci-20260909/validation.json",
         "pursuit/evidence/p1-ci-20260909/upgrade-built-api-review.json",
         "pursuit/evidence/p1-ci-20260909/no-skip-supervisor-review.json",
-        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json"
+        "pursuit/evidence/p1-ci-20260909/api-required-task-built-review.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
       ]
     },
     "S01": {
@@ -166,7 +170,7 @@
     },
     "S03": {
       "historical_report": "NOT_CLOSED",
-      "execution_stage": "CONSUMER_SOURCE_IMPLEMENTED_PG_ACCEPTANCE_NOT_EXECUTED",
+      "execution_stage": "DISPOSABLE_PG_DELIVERY_AND_APPLICATION_ROLE_PASS_OPERATIONAL_BINDING_OPEN",
       "closing_receipt_refs": [],
       "stale_evidence_refs": [],
       "closure_status": "NOT_CLOSED",
@@ -188,7 +192,8 @@
         "followup-producer-relay/acceptance-inventory.json",
         "followup-consumer-owner/README.md",
         "followup-consumer-owner/validation.json",
-        "followup-consumer-owner/acceptance-inventory.json"
+        "followup-consumer-owner/acceptance-inventory.json",
+        "pursuit/evidence/p1-ci-20260909/consumer-role-process-bound-review.json"
       ]
     },
     "S04": {
@@ -741,7 +746,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Continue C01 alternate canary release binding, C02/C06 other required roles and resistant-shutdown fault, and K05 external attestor under account lock. Preserve C04 closure, source-bound CI and separate DEMO binding.",
+  "next_action_on_resume": "Continue C01 equivalent alternate canary source/target gate, C02 runtime owner and legacy zero-submit, C06 disabled-profile and other required roles, and K05 external attestation outside account locks.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -868,16 +873,15 @@
     "C01_ALTERNATE_CANARY_EQUIVALENT_GATE",
     "C02_RUNTIME_OWNER_AND_LEGACY_ZERO_SUBMIT",
     "C06_OTHER_REQUIRED_ROLE_SUPERVISION",
-    "C06_RESISTANT_SHUTDOWN_FAULT",
     "K05_POST_PROOF_VALIDITY"
   ],
   "publication": {
-    "source_commit": "2e80441413cca767eec5c6d8baf4c643407d1159",
-    "remote_checkpoint": "2e80441413cca767eec5c6d8baf4c643407d1159",
+    "source_commit": "9fcfd80c058178116db31d498c45546746873ad6",
+    "remote_checkpoint": "9fcfd80c058178116db31d498c45546746873ad6",
     "pr": 428,
-    "draft": true,
-    "push": "DRAFT_PR428_PUBLISHED_2E804414",
-    "reason": "CI and security passed on 2e804414; C01/C02/C05/C06 remaining scope keeps merge and deployment HOLD",
+    "draft": false,
+    "push": "PR428_PUBLISHED_9FCFD80C",
+    "reason": "Current CI and security PASS; externally changed to ready for review. Remaining action scopes and required review keep merge/deployment HOLD.",
     "no_main_merge": true,
     "no_deployment": true,
     "merge": "HOLD"
