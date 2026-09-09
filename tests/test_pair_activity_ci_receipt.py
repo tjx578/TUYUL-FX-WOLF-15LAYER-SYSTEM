@@ -226,7 +226,8 @@ def test_migration_graph_records_structure_without_claiming_execution():
     from scripts.ci.pair_activity_run_evidence import migration_graph
 
     graph = migration_graph(Path(__file__).resolve().parents[1])
-    assert graph["repository_heads"] == ["20260909_06"]
+    assert graph["repository_heads"] == ["20260909_07"]
+    assert graph["revision_parents"]["20260909_07"] == "20260909_06"
     assert graph["revision_parents"]["20260909_06"] == "20260909_05"
     assert graph["revision_parents"]["20260909_05"] == "20260909_04"
     assert graph["revision_parents"]["20260909_04"] == "20260909_03"

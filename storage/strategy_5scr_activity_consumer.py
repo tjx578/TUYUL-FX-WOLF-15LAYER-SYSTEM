@@ -82,13 +82,18 @@ async def transfer_owner(connection, *, symbol, scope: ActivityConsumerScopeV1, 
 
 
 async def bind_owner(connection, fence: LifecycleOwnerFence):
-    await lock_symbol(connection, fence.symbol)
+    if connection.is_in_transaction() is not True:
+        raise ValueError("LIFECYCLE_OWNER_TRANSACTION_REQUIRED")
     row = await connection.fetchrow(
-        "SELECT * FROM public.strategy_5scr_owner_fences_v1 WHERE symbol=$1 FOR UPDATE", fence.symbol
+        "SELECT public.bind_5scr_lifecycle_owner_v1($1,$2,$3,$4,$5) AS bound",
+        fence.symbol,
+        fence.scope_hash,
+        fence.owner_id,
+        fence.generation,
+        fence.token,
     )
-    if row is None or any(row[key] != getattr(fence, key) for key in ("scope_hash", "owner_id", "generation", "token")):
+    if row is None or row["bound"] is not True:
         raise ValueError("STALE_OR_UNBOUND_LIFECYCLE_OWNER")
-    await connection.execute("SELECT set_config('wolf15.lifecycle_owner_token',$1,true)", str(fence.token))
 
 
 class ActivityLifecycleConsumer:

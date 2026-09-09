@@ -26,6 +26,8 @@ class OwnerConnection:
 
     async def fetchrow(self, sql, *args):
         self.calls.append((sql, args))
+        if "bind_5scr_lifecycle_owner_v1" in sql:
+            return {"bound": tuple(asdict(self.fence).values()) == args}
         return asdict(self.fence)
 
 
@@ -58,6 +60,6 @@ def test_transactional_handover_rotates_owner_and_rejects_old_binding():
         with pytest.raises(ValueError, match="STALE_OR_UNBOUND_LIFECYCLE_OWNER"):
             await bind_owner(connection, old)
         await bind_owner(connection, new)
-        assert connection.calls[-1][1] == (str(new.token),)
+        assert connection.calls[-1][1] == tuple(asdict(new).values())
 
     asyncio.run(run())

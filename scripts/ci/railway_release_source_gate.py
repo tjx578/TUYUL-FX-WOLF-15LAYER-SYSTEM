@@ -48,8 +48,8 @@ RELEASE_WORKFLOWS = {
     ".github/workflows/docs-hygiene.yml": {
         "Architecture reading-order integrity": set(),
         "Legacy docs quarantine": {
-            "No production code may import from docs/legacy/",
-            "docs/legacy/README.md must exist",
+            "Reject legacy documentation references in production Python",
+            "Verify historical quarantine index exists",
         },
         "Architecture cross-reference check": {"Check internal markdown links"},
         "Docs Gate": {"Evaluate docs hygiene jobs"},

@@ -222,6 +222,8 @@ class FakeDB:
             self.active = False
 
     async def fetchrow(self, sql, *args):
+        if "bind_5scr_lifecycle_owner_v1" in sql:
+            return {"bound": tuple(vars(self.fence).values()) == args}
         if "owner_fences" in sql:
             return vars(self.fence)
         rows = [r for r in self.rows if r["tradeplan_id"] == args[0]]
