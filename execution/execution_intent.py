@@ -356,6 +356,7 @@ class ExecutionIntentRepository:
             )
         except Exception:
             logger.warning("[ExecIntentRepo] PG insert failed", exc_info=True)
+            raise
 
     async def _pg_update(self, eid: str, updates: dict[str, Any]) -> None:
         try:
@@ -374,6 +375,7 @@ class ExecutionIntentRepository:
             )
         except Exception:
             logger.warning("[ExecIntentRepo] PG update failed", exc_info=True)
+            raise
 
     async def _pg_fetch(self, eid: str) -> dict[str, Any] | None:
         try:
