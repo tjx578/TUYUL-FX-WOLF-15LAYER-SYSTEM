@@ -49,7 +49,7 @@ Rules:
 
 This repo now runs API via Gunicorn worker model in:
 
-- [../../../deploy/railway/start_api.sh](../../../deploy/railway/start_api.sh)
+- [deploy/railway/start_api.sh](../../../deploy/railway/start_api.sh)
 
 Parameters:
 
@@ -89,7 +89,7 @@ Requirements:
 
 App status:
 
-- async pool already used in [../../../storage/postgres_client.py](../../../storage/postgres_client.py)
+- async pool already used in [storage/postgres_client.py](../../../storage/postgres_client.py)
 - health integrated in [api_server.py](../../../api_server.py#L332)
 
 ## 6) Selected Railway frontend configuration
@@ -110,7 +110,7 @@ See [direct API contract](../dashboard-hybrid-topology.md) and `dashboard/nextjs
 
 Redis-backed limiter configured in:
 
-- [../../../api/middleware/rate_limit.py](../../../api/middleware/rate_limit.py)
+- [api/middleware/rate_limit.py](../../../api/middleware/rate_limit.py)
 
 Supports:
 
@@ -123,7 +123,7 @@ Supports:
 
 Implemented in:
 
-- [../../../api/ws_routes.py](../../../api/ws_routes.py)
+- [api/ws_routes.py](../../../api/ws_routes.py)
 
 Controls:
 
@@ -136,7 +136,7 @@ Controls:
 
 Implemented in:
 
-- [../../../api_server.py](../../../api_server.py)
+- [api_server.py](../../../api_server.py)
 
 Includes:
 

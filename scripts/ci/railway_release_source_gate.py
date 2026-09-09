@@ -18,6 +18,9 @@ REQUIRED_STEPS = {
         "Mark PostgreSQL as a disposable test environment",
         "Qualify disposable Linux PostgreSQL and Redis runner",
         "Require supported PostgreSQL upgrade with existing data",
+        "Require distributed mode-owner Redis acceptance",
+        "Require actual in-flight PostgreSQL shutdown drain",
+        "Require effective Railway API role acceptance",
         "Require executed S03 PostgreSQL acceptance",
         "Require separate S03 producer and relay PostgreSQL acceptance",
         "Require separate S03 consumer and owner PostgreSQL acceptance",
@@ -27,6 +30,15 @@ REQUIRED_STEPS = {
         "Require uninstrumented latency budgets",
     },
     "Dashboard build (Next.js)": {"Lint", "Dashboard tests", "Build"},
+    "P1 built runtime acceptance": {
+        "Build candidate runtime image",
+        "Require built runtime ownership readiness and shutdown acceptance",
+        "Require actual orchestrator role process acceptance",
+        "Require actual ingest role process acceptance",
+        "Require actual engine and trade role process acceptance",
+        "Require built engine failure recovery and quiescent shutdown",
+        "Require actual pressure outbox role process acceptance",
+    },
     "Native MCP fixture tests": {"Install isolated MCP test dependencies", "Run native MCP fixture suite"},
     "Built API bootstrap": {"Build exact-source API image", "Exercise built API bootstrap and served readiness"},
     "Deprecated shim guard": {"Block resurrected shim files", "Block deprecated imports in production code"},
@@ -227,6 +239,15 @@ def main() -> int:
             command(["git", "ls-remote", "--exit-code", "origin", "refs/heads/main"]).split()[0] == release_sha,
             "main advanced during verification",
         )
+        if __package__:
+            from .p1_governance_gate import GovernanceGateError, validate_live_governance
+        else:
+            from p1_governance_gate import GovernanceGateError, validate_live_governance
+
+        try:
+            validate_live_governance(repository, release_sha, ci_run_id)
+        except GovernanceGateError as exc:
+            raise ReleaseGateError("required governance or auxiliary gate evidence missing") from exc
         print(f"PASS_EXACT_SOURCE_CI sha={release_sha} run_id={ci_run_id} attempt={attempt}")
         return 0
     except (ReleaseGateError, KeyError, OSError, ValueError, IndexError, subprocess.SubprocessError):

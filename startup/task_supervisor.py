@@ -54,6 +54,12 @@ async def supervised_task(
     reset — the assumption being that the task was healthy for a while
     and the crash is a new transient failure, not a persistent bug.
 
+    Required long-running tasks treat unexpected completion as failure and raise
+    after the restart budget, so the process owner can exit nonzero. A failure
+    latches health/readiness closed unless an explicit state callback owns
+    readiness recovery after role bootstrap is proven again. Optional
+    intentionally completed tasks retain their existing behavior.
+
     Cooldown between restarts grows exponentially from *cooldown* up to
     ``_RESTART_COOLDOWN_MAX`` to avoid hammering a broken dependency.
     """
@@ -75,7 +81,7 @@ async def supervised_task(
                 max_restarts,
             )
             await coro_factory()
-            return  # clean exit
+            return  # intentional optional exit or requested shutdown
         except asyncio.CancelledError:
             logger.info("[SUPERVISOR] Task '{}' cancelled", name)
             return
@@ -166,9 +172,17 @@ async def _supervise_required(name, coro_factory, shutdown_event, health_probe, 
             cause = "cancelled"
         except Exception:
             cause = "exception"
-        if stopping():
+        if stopping() and cause != "exception":
             publish("STOPPED")
             return
+        if stopping():
+            # A real worker failure racing an orderly stop is still a failure.
+            # Preserve it for the process owner after siblings have drained.
+            failed(cause)
+        if health_probe is not None and state_callback is None:
+            health_probe.set_readiness_check(lambda: False)
+            health_probe.set_alive(False)
+            health_probe.set_detail("dead_reason", f"{name}_required_task_failed")
         elapsed = time.monotonic() - started_at
         if elapsed >= _SUCCESS_WINDOW:
             restarts = 0

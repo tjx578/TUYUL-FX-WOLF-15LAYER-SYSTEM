@@ -156,3 +156,20 @@ async def test_actual_api_worker_constructor_failure_is_fatal(monkeypatch, api_d
             pytest.fail("startup must fail")
     app_factory.pg_client.close.assert_awaited_once()
     api_dependencies.close_pool.assert_awaited_once()
+
+
+@pytest.mark.parametrize("shutdown_failed", [True, False])
+def test_api_process_exit_respects_lifespan_shutdown_failure(monkeypatch, shutdown_failed):
+    import uvicorn
+
+    import api_server
+
+    server = SimpleNamespace(
+        started=True,
+        should_exit=False,
+        lifespan=SimpleNamespace(startup_failed=False, shutdown_failed=shutdown_failed),
+        serve=AsyncMock(),
+    )
+    monkeypatch.setattr(api_server, "app", FastAPI())
+    monkeypatch.setattr(uvicorn, "Server", lambda config: server)
+    assert api_server.run_api() == (1 if shutdown_failed else 0)

@@ -29,11 +29,13 @@ def summarize_findings(output: str, root: Path, reviewed: tuple[dict, ...] = ())
             "line": metadata.get("line"),
             "detector": row["DetectorName"],
             "raw_sha256": hashlib.sha256(raw.encode()).hexdigest(),
-            "source_file_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "source_file_sha256": hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest(),
             "disposition": "REVIEW_REQUIRED",
         }
         for allowed in reviewed:
-            if all(finding[key] == allowed[key] for key in ("path", "source_file_sha256", "raw_sha256", "detector")):
+            if not row.get("Verified", False) and all(
+                finding[key] == allowed[key] for key in ("path", "source_file_sha256", "raw_sha256", "detector")
+            ):
                 finding["disposition"] = "REVIEWED_EXACT_BYTES"
                 finding["reason"] = allowed["reason"]
                 break
@@ -64,7 +66,8 @@ def main():
         receipt["scanner_exit"] = result.returncode
         policy = root / ".github/secret-findings-reviewed.json"
         reviewed = json.loads(policy.read_text())
-        assert reviewed["schema_version"] == 1
+        if reviewed["schema_version"] != 2 or reviewed["source_hash_normalization"] != "CRLF_TO_LF":
+            raise ValueError("INVALID_REVIEW_POLICY")
         receipt["review_policy_sha256"] = hashlib.sha256(policy.read_bytes()).hexdigest()
         receipt["findings"] = summarize_findings(result.stdout, root, tuple(reviewed["reviewed_findings"]))
         receipt["accepted"] = (

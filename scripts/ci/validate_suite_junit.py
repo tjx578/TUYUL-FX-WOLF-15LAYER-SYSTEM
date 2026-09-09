@@ -13,7 +13,14 @@ def validate(path: Path) -> int:
     total = 0
     for suite in suites:
         cases = suite.findall("testcase")
-        if not cases or int(suite.attrib["tests"]) != len(cases):
+        declared = suite.get("tests")
+        if declared is None:
+            raise ValueError("EMPTY_OR_INCONSISTENT_TEST_SUITE")
+        try:
+            declared_count = int(declared)
+        except (TypeError, ValueError):
+            raise ValueError("EMPTY_OR_INCONSISTENT_TEST_SUITE") from None
+        if not cases or declared_count != len(cases):
             raise ValueError("EMPTY_OR_INCONSISTENT_TEST_SUITE")
         if any(int(suite.get(key, "0")) != 0 for key in ("failures", "errors", "skipped")):
             raise ValueError("REQUIRED_TESTS_NOT_PASSED")

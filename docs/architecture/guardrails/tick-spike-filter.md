@@ -10,7 +10,7 @@
 
 ## 🐛 Root Cause
 
-The tick spike filter in [`../../../ingest/dependencies.py`](../../../ingest/dependencies.py) was rejecting incoming price data when deviation exceeded a **flat 0.5% threshold**.
+The tick spike filter in [`ingest/dependencies.py`](../../../ingest/dependencies.py) was rejecting incoming price data when deviation exceeded a **flat 0.5% threshold**.
 
 ### Three Problems Identified
 
@@ -106,7 +106,7 @@ Baseline resets now log:
 
 ## 🧪 Test Coverage
 
-Added 7 new test cases in [`../../../tests/test_tick_spike_filter.py`](../../../tests/test_tick_spike_filter.py):
+Added 7 new test cases in [`tests/test_tick_spike_filter.py`](../../../tests/test_tick_spike_filter.py):
 
 | Test | Validates |
 | ------ | ----------- |
@@ -138,7 +138,7 @@ Added 7 new test cases in [`../../../tests/test_tick_spike_filter.py`](../../../
 
 ## 🔧 Configuration
 
-To adjust thresholds, edit `SPIKE_THRESHOLDS` in [`../../../ingest/dependencies.py`](../../../ingest/dependencies.py):
+To adjust thresholds, edit `SPIKE_THRESHOLDS` in [`ingest/dependencies.py`](../../../ingest/dependencies.py):
 
 ```python
 SPIKE_THRESHOLDS: dict[str, float] = {
@@ -199,8 +199,8 @@ _STALENESS_THRESHOLD_SECONDS: float = 60.0  # Increase to 120.0 for weekend gaps
 **Branch**: `fix/tick-spike-filter`  
 **Files Changed**:
 
-- [`../../../ingest/dependencies.py`](../../../ingest/dependencies.py) — Core logic update
-- [`../../../tests/test_tick_spike_filter.py`](../../../tests/test_tick_spike_filter.py) — New test coverage
+- [`ingest/dependencies.py`](../../../ingest/dependencies.py) — Core logic update
+- [`tests/test_tick_spike_filter.py`](../../../tests/test_tick_spike_filter.py) — New test coverage
 
 **Backwards Compatibility**:
 

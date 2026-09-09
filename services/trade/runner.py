@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
+from contextlib import suppress
 
 from loguru import logger
 
@@ -32,10 +34,18 @@ async def _main() -> None:
     os.environ["EXEC_HEALTH_PORT"] = exec_health_port
 
     # Track whether workers are alive so probe reports unhealthy on crash.
-    _workers_alive = True
+    _workers_alive = False
+    allocation_runtime = None
+    worker_tasks: list[asyncio.Task[object]] = []
 
     def _readiness_check() -> bool:
-        return _workers_alive
+        return bool(
+            _workers_alive
+            and allocation_runtime is not None
+            and allocation_runtime.is_ready()
+            and worker_tasks
+            and all(not task.done() for task in worker_tasks)
+        )
 
     from services.shared.health_probe_launcher import start_probe_as_task  # noqa: PLC0415
 
@@ -60,10 +70,12 @@ async def _main() -> None:
     log_execution_plane(execution_flags, service="trade")
 
     # Import workers lazily to avoid import-time side effects until we're ready.
-    from allocation.async_worker import _main as alloc_main  # noqa: PLC0415
+    from allocation import async_worker  # noqa: PLC0415
 
-    alloc_task = asyncio.create_task(alloc_main(), name="AllocationWorker")
-    worker_tasks: list[asyncio.Task[object]] = [alloc_task]
+    allocation_runtime = async_worker
+
+    alloc_task = asyncio.create_task(allocation_runtime._main(), name="AllocationWorker")
+    worker_tasks.append(alloc_task)
 
     if execution_flags.legacy_push_execution_enabled:
         from execution.async_worker import _main as exec_main  # noqa: PLC0415
@@ -80,15 +92,31 @@ async def _main() -> None:
     gs = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")))
     gs.register_cleanup("trade health probe", probe.stop)
 
+    stopping = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    registered_signals = []
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        with suppress(NotImplementedError, RuntimeError):
+            loop.add_signal_handler(signum, stopping.set)
+            registered_signals.append(signum)
+    stop_waiter = asyncio.create_task(stopping.wait(), name="TradeShutdownSignal")
+    _workers_alive = True
     try:
-        await asyncio.gather(*worker_tasks)
+        done, _ = await asyncio.wait([*worker_tasks, probe_task, stop_waiter], return_when=asyncio.FIRST_COMPLETED)
+        if stop_waiter not in done:
+            await asyncio.gather(*done)
+            raise RuntimeError("TRADE_REQUIRED_TASK_RETURNED")
     except Exception:
         _workers_alive = False
         logger.exception("Trade service worker crashed — marking unhealthy")
         raise
     finally:
         _workers_alive = False
-        await gs.shutdown([*worker_tasks, probe_task])
+        try:
+            await gs.shutdown([*worker_tasks, probe_task, stop_waiter])
+        finally:
+            for signum in registered_signals:
+                loop.remove_signal_handler(signum)
 
 
 if __name__ == "__main__":

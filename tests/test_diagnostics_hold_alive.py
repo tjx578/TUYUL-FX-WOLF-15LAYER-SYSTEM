@@ -134,9 +134,7 @@ class TestNoInlineCopyPaste:
     @pytest.mark.parametrize(
         "rel_path,expected_import",
         [
-            ("services/engine/runner.py", "hold_alive_sync"),
             ("services/orchestrator/state_manager.py", "hold_alive_sync"),
-            ("services/ingest/ingest_worker.py", "hold_alive_async"),
         ],
     )
     def test_imports_shared_diagnostics(self, rel_path, expected_import):

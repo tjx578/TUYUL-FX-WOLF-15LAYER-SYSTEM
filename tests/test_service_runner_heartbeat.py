@@ -13,6 +13,18 @@ from core.redis_keys import HEARTBEAT_INGEST_PROCESS, HEARTBEAT_INGEST_PROVIDER
 
 
 @pytest.mark.asyncio
+async def test_required_heartbeat_cannot_return_before_shutdown(monkeypatch):
+    from ingest import service_runner
+
+    monkeypatch.setattr(service_runner, "_producer_heartbeat_loop", AsyncMock())
+    with pytest.raises(RuntimeError, match="ingest_required_producer_heartbeat_returned"):
+        await service_runner._required_producer_heartbeat(None, None, asyncio.Event())
+    stopped = asyncio.Event()
+    stopped.set()
+    await service_runner._required_producer_heartbeat(None, None, stopped)
+
+
+@pytest.mark.asyncio
 async def test_process_heartbeat_publishes_ws_reason_while_disconnected(monkeypatch: pytest.MonkeyPatch) -> None:
     import ingest.service_metrics as service_metrics_module
     import ingest.service_runner as service_runner_module

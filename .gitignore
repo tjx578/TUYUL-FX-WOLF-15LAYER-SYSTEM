@@ -96,3 +96,5 @@ storage/decision_archive/2026-*/
 
 # Local receipts are published only through the reviewed remediation package.
 /artifacts/pair-activity-runtime/
+/artifacts/python-suite/
+/artifacts/c06-effective-api/

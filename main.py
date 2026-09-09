@@ -193,6 +193,29 @@ async def main(*, health_probe=None, runtime_state=None) -> None:
     _engine_runtime = runtime_state or EngineRuntimeState()
     _health_probe.set_readiness_check(_engine_readiness)
     _shutdown_event = asyncio.Event()
+    tasks: list[asyncio.Task[object]] = []
+    gs = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")), require_quiescent=True)
+    try:
+        await _run_main(health_probe, tasks, gs)
+    except BaseException:
+        _engine_runtime.begin_shutdown(fatal=True)
+        raise
+    finally:
+        _shutdown_event.set()
+        _engine_runtime.begin_shutdown()
+        _health_probe.set_detail("startup_stage", "STOPPING")
+        await gs.shutdown(tasks)
+        # An embedded async caller owns no external process watchdog. Release
+        # its locally created deadline only once owned resources are quiescent.
+        # Injected states remain armed through the synchronous owner's loop
+        # cleanup, including cancellation-resistant tasks outside this task list.
+        if runtime_state is None:
+            _engine_runtime.cancel_process_deadline()
+        logger.info("System shutdown complete.")
+
+
+async def _run_main(health_probe, tasks, gs) -> None:
+    """Acquire resources under main's shutdown owner, including failed startup."""
 
     # Shared Railway-safe routing and rate limiting.
     configure_stdlib_logging(level=os.getenv("WOLF15_LOG_LEVEL"))
@@ -224,10 +247,16 @@ async def main(*, health_probe=None, runtime_state=None) -> None:
     # In engine-only mode the runner (services/engine/runner.py) already
     # started a bootstrap probe on PORT before entering main(). Binding
     # the same port again would fail with EADDRINUSE.
-    tasks: list[asyncio.Task[object]] = []
     if health_probe is None:
+        gs.register_cleanup("health probe", _health_probe.stop)
         tasks.append(asyncio.create_task(_health_probe.start(), name="HealthProbe"))
 
+    from infrastructure.redis_client import close_pool  # noqa: PLC0415
+
+    # Register before acquisition: initialization can allocate resources and then
+    # fail. Both closers tolerate resources that were never fully initialized.
+    gs.register_cleanup("persistent storage", shutdown_persistent_storage)
+    gs.register_cleanup("redis pool", close_pool)
     await init_persistent_storage()
 
     # ── Redis pool health check at startup ──────────────────────────
@@ -338,15 +367,6 @@ async def main(*, health_probe=None, runtime_state=None) -> None:
 
     logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
 
-    # ── Graceful shutdown coordinator ──────────────────────────────
-    from infrastructure.redis_client import close_pool  # noqa: PLC0415
-
-    gs = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")), require_quiescent=True)
-    if health_probe is None:
-        gs.register_cleanup("health probe", _health_probe.stop)
-    gs.register_cleanup("persistent storage", shutdown_persistent_storage)
-    gs.register_cleanup("redis pool", close_pool)
-
     _engine_runtime.bootstrap_complete()
     joined = asyncio.gather(*tasks)
     stopping = asyncio.create_task(_shutdown_event.wait(), name="EngineShutdownSignal")
@@ -365,22 +385,28 @@ async def main(*, health_probe=None, runtime_state=None) -> None:
         logger.error(f"Fatal error: {exc}")
         raise
     finally:
-        _shutdown_event.set()
-        _engine_runtime.begin_shutdown()
-        _health_probe.set_detail("startup_stage", "STOPPING")
         stopping.cancel()
         await asyncio.gather(stopping, return_exceptions=True)
-        await gs.shutdown(tasks)
-        await asyncio.gather(joined, return_exceptions=True)
-        logger.info("System shutdown complete.")
+        # The outer owner drains the same tasks before closing their resources.
+        # Observe gather failures without waiting here for resistant writers.
+        joined.add_done_callback(lambda future: None if future.cancelled() else future.exception())
+
+
+def run() -> int:
+    """Own the watchdog until asyncio.run has drained asynchronous cleanup."""
+    runtime = EngineRuntimeState()
+    try:
+        asyncio.run(main(runtime_state=runtime))
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received, exiting...")
+        return 0
+    except Exception as exc:
+        logger.error(f"Fatal error: {exc}")
+        return 1
+    finally:
+        runtime.cancel_process_deadline()
+    return 0
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received, exiting...")
-        sys.exit(0)
-    except Exception as exc:
-        logger.error(f"Fatal error: {exc}")
-        sys.exit(1)
+    sys.exit(run())

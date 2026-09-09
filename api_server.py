@@ -191,7 +191,14 @@ def run_api() -> int:
         try:
             await server.serve()
             supervisor = getattr(app.state, "required_task_supervisor", None)
-            return 1 if not server.started or (supervisor is not None and supervisor.fatal.is_set()) else 0
+            lifecycle_failed = any(
+                getattr(server.lifespan, field, False) for field in ("startup_failed", "shutdown_failed")
+            )
+            return (
+                1
+                if (not server.started or lifecycle_failed or (supervisor is not None and supervisor.fatal.is_set()))
+                else 0
+            )
         finally:
             watcher.cancel()
             with suppress(asyncio.CancelledError):

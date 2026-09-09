@@ -55,3 +55,32 @@ def test_review_is_bound_to_both_source_bytes_and_detected_value(tmp_path):
     row["Raw"] = "reviewed dummy"
     path.write_text("changed fixture source")
     assert summarize_findings(json.dumps(row), tmp_path, reviewed)[0]["disposition"] == "REVIEW_REQUIRED"
+
+
+def test_verified_finding_cannot_use_reviewed_exception(tmp_path):
+    path = tmp_path / "fixture.py"
+    path.write_text("reviewed dummy source")
+    row = {
+        "SourceMetadata": {"Data": {"Filesystem": {"file": str(path)}}},
+        "DetectorName": "FixtureDetector",
+        "Raw": "reviewed dummy",
+        "Verified": False,
+    }
+    original = summarize_findings(json.dumps(row), tmp_path)[0]
+    reviewed = ({**original, "reason": "explicit dummy fixture"},)
+    row["Verified"] = True
+    assert summarize_findings(json.dumps(row), tmp_path, reviewed)[0]["disposition"] == "REVIEW_REQUIRED"
+
+
+def test_review_hash_normalizes_checkout_line_endings(tmp_path):
+    path = tmp_path / "fixture.py"
+    path.write_bytes(b"reviewed dummy source\n")
+    row = {
+        "SourceMetadata": {"Data": {"Filesystem": {"file": str(path)}}},
+        "DetectorName": "FixtureDetector",
+        "Raw": "reviewed dummy",
+    }
+    original = summarize_findings(json.dumps(row), tmp_path)[0]
+    reviewed = ({**original, "reason": "explicit dummy fixture"},)
+    path.write_bytes(b"reviewed dummy source\r\n")
+    assert summarize_findings(json.dumps(row), tmp_path, reviewed)[0]["disposition"] == "REVIEWED_EXACT_BYTES"

@@ -97,6 +97,13 @@ class WorkerConfig:
         return max((self.block_ms / 1000.0) + 2.0, 10.0)
 
 
+_ALLOCATION_READY = False
+
+
+def is_ready() -> bool:
+    return _ALLOCATION_READY
+
+
 class AsyncAllocationWorker:
     def __init__(self, config: WorkerConfig | None = None) -> None:
         super().__init__()
@@ -107,6 +114,8 @@ class AsyncAllocationWorker:
         self._orchestrator_alive: bool = True
 
     async def run(self) -> None:
+        global _ALLOCATION_READY
+        _ALLOCATION_READY = False
         tracemalloc.start()
         logger.info(
             "Allocation worker started (worker={} stream={} metrics={})",
@@ -125,6 +134,7 @@ class AsyncAllocationWorker:
                 redis_client = await get_client(redis_cfg)
                 await self._ensure_group(redis_client)
                 await self._recover_pending(redis_client)
+                _ALLOCATION_READY = True
                 backoff = 1.0  # Reset on successful connect
 
                 while True:
@@ -149,6 +159,7 @@ class AsyncAllocationWorker:
                             "xreadgroup connection error: {} — reconnecting",
                             type(exc).__name__,
                         )
+                        _ALLOCATION_READY = False
                         await close_pool()
                         break  # Break inner loop → reconnect in outer loop
 
@@ -178,10 +189,12 @@ class AsyncAllocationWorker:
                         await asyncio.gather(*tasks, return_exceptions=False)
 
             except asyncio.CancelledError:
+                _ALLOCATION_READY = False
                 logger.info("Allocation worker cancelled — draining in-flight tasks")
                 await self._drain_in_flight()
                 raise
             except Exception as exc:
+                _ALLOCATION_READY = False
                 alloc_errors_total.inc()
                 logger.exception(
                     "Allocation worker error: {} — retry in {:.1f}s",
@@ -378,15 +391,17 @@ _RESTART_COOLDOWN = float(os.getenv("ALLOC_RESTART_COOLDOWN_SEC", "5.0"))
 async def _main() -> None:
     start_http_server(int(os.getenv("ALLOC_METRICS_PORT", "9102")))
 
-    health_port = int(os.getenv("PORT", os.getenv("ALLOC_HEALTH_PORT", "8085")))
+    health_port = int(os.getenv("ALLOC_HEALTH_PORT", os.getenv("PORT", "8085")))
     from services.shared.health_probe_launcher import start_probe_as_task  # noqa: PLC0415
 
     _probe, _probe_task = await start_probe_as_task(
         port=health_port,
         service_name="allocation",
+        readiness_check=is_ready,
     )
 
     restarts = 0
+    worker = None
     try:
         while restarts <= _MAX_RESTARTS:
             try:
@@ -397,11 +412,13 @@ async def _main() -> None:
                 )
                 worker = AsyncAllocationWorker()
                 await worker.run()
-                return  # clean exit
+                raise RuntimeError("ALLOCATION_REQUIRED_WORKER_RETURNED")
             except asyncio.CancelledError:
                 logger.info("[SUPERVISOR] Allocation worker cancelled")
-                return
+                raise
             except Exception as exc:
+                if worker is not None and any(not task.done() for task in worker._in_flight):
+                    raise RuntimeError("allocation_restart_before_drain_forbidden") from exc
                 restarts += 1
                 logger.error(
                     "[SUPERVISOR] Allocation worker crashed: {} (restart {}/{})",
@@ -411,11 +428,17 @@ async def _main() -> None:
                 )
                 if restarts > _MAX_RESTARTS:
                     logger.critical("[SUPERVISOR] Allocation worker exceeded max restarts — giving up")
-                    return
+                    raise RuntimeError("ALLOCATION_REQUIRED_WORKER_EXHAUSTED") from None
                 await asyncio.sleep(_RESTART_COOLDOWN)
     finally:
-        await close_pool()
+        pool_close_forbidden = worker is not None and any(not task.done() for task in worker._in_flight)
+        if not pool_close_forbidden:
+            await close_pool()
+        _probe_task.cancel()
+        await asyncio.gather(_probe_task, return_exceptions=True)
         await _probe.stop()
+        if pool_close_forbidden:
+            logger.critical("Allocation pool close forbidden: in-flight tasks were not drained")
 
 
 if __name__ == "__main__":

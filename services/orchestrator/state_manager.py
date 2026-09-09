@@ -16,17 +16,20 @@ import hashlib
 import hmac as _hmac
 import json
 import os
+import signal
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any, cast
 
 import redis.client
 from loguru import logger
 
 from config.logging_bootstrap import configure_loguru_logging
+from core.health_probe import HealthProbe
 from core.redis_keys import (
     ACCOUNT_STATE,
     HEARTBEAT_INGEST,
@@ -37,6 +40,7 @@ from core.redis_keys import (
 )
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
+from services.orchestrator.mode_owner import ModeOwnerLease
 from services.orchestrator.redis_commands import CommandParseError, parse_set_mode_command
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
 from storage.redis_client import RedisClient
@@ -116,6 +120,11 @@ class StateManager:
         self._state = OrchestratorState(updated_at=_utc_now_iso())
         self._redis: RedisClient = redis_client or RedisClient()
         self._pubsub: redis.client.PubSub | None = None
+        self._stop_requested = threading.Event()
+        lease_client = self._redis.client if isinstance(self._redis, RedisClient) else self._redis
+        ttl_ms = int(os.getenv("ORCHESTRATOR_OWNER_LEASE_MS", "30000"))
+        self._mode_owner = ModeOwnerLease(lease_client, key=KILL_SWITCH + ":mode-owner", ttl_ms=ttl_ms)
+        self._next_owner_renewal = 0.0
 
         self._channel = os.getenv("ORCHESTRATOR_CHANNEL", ORCHESTRATOR_COMMANDS)
         self._state_key = os.getenv("ORCHESTRATOR_STATE_KEY", ORCHESTRATOR_STATE)
@@ -167,13 +176,27 @@ class StateManager:
         )
         return self._state
 
+    def _require_mode_owner(self) -> None:
+        if not self._mode_owner.attempted:
+            self._mode_owner.acquire()
+            self._next_owner_renewal = monotonic() + self._mode_owner.ttl_ms / 3000
+        elif monotonic() >= self._next_owner_renewal:
+            self._mode_owner.renew()
+            self._next_owner_renewal = monotonic() + self._mode_owner.ttl_ms / 3000
+
     def start_listener(self) -> None:
+        self._require_mode_owner()
         pubsub = self._redis.pubsub()
         pubsub.subscribe(self._channel)
         self._pubsub = pubsub
         logger.info("orchestrator subscribed to channel {}", self._channel)
 
     def close(self) -> None:
+        if self._mode_owner.attempted:
+            try:
+                self._mode_owner.release()
+            except Exception:
+                logger.warning("Mode owner release unavailable or already expired")
         pubsub = self._pubsub
         if pubsub is None:
             return
@@ -184,32 +207,13 @@ class StateManager:
 
     def _sync_kill_switch(self, mode: ExecutionMode) -> None:
         """Persist kill switch state to Redis so other services can read it."""
-        try:
-            if mode == ExecutionMode.KILL_SWITCH:
-                self._redis.set(
-                    KILL_SWITCH,
-                    json.dumps(
-                        {
-                            "active": True,
-                            "source": ORCHESTRATOR_SOURCE,
-                            "reason": self._state.reason,
-                            "activated_at": _utc_now_iso(),
-                        }
-                    ),
-                )
-            else:
-                self._redis.set(
-                    KILL_SWITCH,
-                    json.dumps(
-                        {
-                            "active": False,
-                            "source": ORCHESTRATOR_SOURCE,
-                            "cleared_at": _utc_now_iso(),
-                        }
-                    ),
-                )
-        except Exception as exc:
-            logger.error("Failed to sync kill switch to Redis: {}", exc)
+        self._require_mode_owner()
+        payload = {"active": mode == ExecutionMode.KILL_SWITCH, "source": ORCHESTRATOR_SOURCE}
+        if mode == ExecutionMode.KILL_SWITCH:
+            payload.update(reason=self._state.reason, activated_at=_utc_now_iso())
+        else:
+            payload["cleared_at"] = _utc_now_iso()
+        self._mode_owner.write([(KILL_SWITCH, json.dumps(payload))])
 
     def publish_state(self, event: str, details: dict[str, Any] | None = None) -> None:
         payload: dict[str, Any] = {
@@ -227,11 +231,12 @@ class StateManager:
 
         encoded = json.dumps(payload)
         heartbeat_payload = json.dumps({"producer": ORCHESTRATOR_SOURCE, "ts": time.time()})
-        pipe = self._redis.pipeline()
-        pipe.publish(self._channel, encoded)
-        pipe.set(self._state_key, encoded)
-        pipe.set(HEARTBEAT_ORCHESTRATOR, heartbeat_payload)
-        pipe.execute()
+        self._require_mode_owner()
+        self._mode_owner.write(
+            [(self._state_key, encoded), (HEARTBEAT_ORCHESTRATOR, heartbeat_payload)],
+            channel=self._channel,
+            event=encoded,
+        )
 
     def _refresh_snapshots_from_redis(self) -> None:
         raw_values = self._redis.mget([self._account_state_key, self._trade_risk_key])
@@ -426,6 +431,7 @@ class StateManager:
             )
 
     def process_once(self, now: float | None = None) -> None:
+        self._require_mode_owner()
         now_ts = now if now is not None else time.time()
         self._poll_channel()
         self._refresh_snapshots_from_redis()
@@ -438,6 +444,9 @@ class StateManager:
             self._last_heartbeat = now_ts
             self.publish_state("HEARTBEAT")
 
+    def request_stop(self) -> None:
+        self._stop_requested.set()
+
     def run_forever(self, on_started: Callable[[], None] | None = None) -> None:
         self.start_listener()
         self.publish_state("BOOT")
@@ -447,9 +456,9 @@ class StateManager:
             on_started()
 
         try:
-            while True:
+            while not self._stop_requested.is_set():
                 self.process_once()
-                time.sleep(self._loop_sleep_sec)
+                self._stop_requested.wait(self._loop_sleep_sec)
         finally:
             # Persist SHUTDOWN state so other services see orchestrator went down
             try:
@@ -460,12 +469,12 @@ class StateManager:
             self.close()
 
 
-def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> None:
+def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> HealthProbe:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
     from services.shared.health_probe_launcher import start_probe_in_thread
 
     port = int(os.getenv("ORCHESTRATOR_HEALTH_PORT", os.getenv("PORT", "8083")))
-    start_probe_in_thread(
+    return start_probe_in_thread(
         port=port,
         service_name="orchestrator",
         readiness_check=readiness_check,
@@ -478,14 +487,40 @@ def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = N
 
 def run() -> None:
     _ORCHESTRATOR_READY.clear()
-    _start_health_probe_in_thread(readiness_check=lambda: _ORCHESTRATOR_READY.is_set())
+    manager = None
+    health_probe = None
+    previous_handlers = {}
+    health_probe = _start_health_probe_in_thread(
+        readiness_check=lambda: bool(
+            _ORCHESTRATOR_READY.is_set() and manager is not None and manager._mode_owner.is_current()
+        )
+    )
     try:
-        StateManager().run_forever(on_started=_ORCHESTRATOR_READY.set)
+        manager = StateManager()
+
+        def request_stop(signum, frame):
+            _ORCHESTRATOR_READY.clear()
+            manager.request_stop()
+
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous_handlers[signum] = signal.signal(signum, request_stop)
+        manager.run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
+        _ORCHESTRATOR_READY.clear()
+        if health_probe is not None:
+            health_probe.set_alive(False)
         logger.exception("Orchestrator fatal error — holding alive for health probe diagnostics")
         from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
 
-        hold_alive_sync(service_name="Orchestrator")
+        hold_alive_sync(
+            service_name="Orchestrator",
+            timeout_sec=int(os.getenv("ORCHESTRATOR_FATAL_DIAGNOSTIC_HOLD_SEC", "30")),
+        )
+        raise
+    finally:
+        _ORCHESTRATOR_READY.clear()
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == "__main__":
