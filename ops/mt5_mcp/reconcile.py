@@ -444,9 +444,9 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
         if isinstance(row, Mapping)
         and str(row.get("executor_id")) in active_ids
         and row.get("status") == "ONLINE"
-        and isinstance(row.get("heartbeat_age_seconds"), int)
+        and type(row.get("heartbeat_age_seconds")) is int
         and -5 <= row["heartbeat_age_seconds"] <= MAX_RUNTIME_AGE_SECONDS
-        and isinstance(row.get("snapshot_age_seconds"), int)
+        and type(row.get("snapshot_age_seconds")) is int
         and -5 <= row["snapshot_age_seconds"] <= MAX_RUNTIME_AGE_SECONDS
         and row.get("latest_snapshot_id") is not None
     }
@@ -468,7 +468,7 @@ def _account_binding(broker: Mapping[str, Any], database: Mapping[str, Any]) -> 
             "outbox_v2_binding_mismatch_count",
         )
         internal_holds = row.get("latest_snapshot_account_matches") is True and all(
-            int(row.get(field) or 0) == 0 for field in mismatch_fields
+            type(row.get(field)) is int and row[field] == 0 for field in mismatch_fields
         )
     evidence: dict[str, Any] = {
         **direct_evidence,

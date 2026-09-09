@@ -943,3 +943,151 @@ def test_broker_snapshot_records_parent_bounds_over_child_claim(monkeypatch, tmp
     started = datetime.fromisoformat(interval["started_at_utc"])
     finished = datetime.fromisoformat(interval["finished_at_utc"])
     assert before <= started <= finished <= after
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "command_account_mismatch_count",
+        "reservation_v1_account_mismatch_count",
+        "reservation_v2_binding_mismatch_count",
+        "outbox_v1_account_mismatch_count",
+        "outbox_v2_binding_mismatch_count",
+    ],
+)
+def test_missing_account_mismatch_count_is_not_zero(field):
+    database = _database(
+        account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
+    )
+    del database["account_binding"][0][field]
+    report = reconcile.reconcile_snapshots(
+        database=database, broker=_broker(), window_from=WINDOW_FROM, window_to=WINDOW_TO
+    )
+    assert report["B-B16"] != "EXECUTED_PASS"
+    assert report["account_binding_evidence"]["database_internal_binding_holds"] is False
+
+
+def _replay_bundle():
+    from ops.mt5_mcp.report_integrity import seal_report
+
+    database = _database(
+        account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
+    )
+    broker = _broker()
+    sources = {"fixture.py": "sha256:" + "1" * 64}
+    report = seal_report(
+        reconcile.reconcile_snapshots(database=database, broker=broker, window_from=WINDOW_FROM, window_to=WINDOW_TO),
+        database=database,
+        broker=broker,
+        sources_before=sources,
+        sources_after=sources,
+    )
+    return {
+        "report": report,
+        "database": database,
+        "broker": broker,
+        "expected_receipt_digest": report["integrity"]["receipt_digest"],
+        "expected_account_identifier": DIRECT_IDENTIFIER,
+        "expected_sources": sources,
+        "window_from": WINDOW_FROM,
+        "window_to": WINDOW_TO,
+        "as_of": WINDOW_TO + timedelta(seconds=10),
+        "maximum_age": timedelta(seconds=10),
+    }
+
+
+def test_replay_bound_inputs_pass_without_execution_authority():
+    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
+
+    result = verify_reconciliation_replay(**_replay_bundle())
+    assert result["input_replay_consistent"] is True
+    assert result["independent_reader_attestation"] == "NOT_VERIFIED"
+    assert result["execution_authority"] is False
+    assert result["production_ready"] is False
+
+
+@pytest.mark.parametrize(
+    "change,reason",
+    [
+        ("digest", "REPORT_INTEGRITY_MISMATCH"),
+        ("account", "ACCOUNT_SCOPE_MISMATCH"),
+        ("source", "SOURCE_BINDING_MISMATCH"),
+        ("input", "INPUT_DIGEST_MISMATCH"),
+        ("window", "WINDOW_MISMATCH"),
+        ("age", "REPORT_TOO_OLD"),
+        ("clock", "COLLECTION_CLOCK_MISMATCH"),
+        ("naive", "INVALID_VERIFIER_SCOPE"),
+        ("no_age", "INVALID_VERIFIER_SCOPE"),
+    ],
+)
+def test_replay_rejects_mismatched_verifier_scope(change, reason):
+    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
+
+    bundle = _replay_bundle()
+    if change == "digest":
+        bundle["expected_receipt_digest"] = "sha256:" + "0" * 64
+    elif change == "account":
+        bundle["expected_account_identifier"] = account_binding.identifier(
+            secret_key=TEST_KEY, key_id=TEST_KEY_ID, login=99999999, server="Broker-Demo"
+        )
+    elif change == "source":
+        bundle["expected_sources"] = {"different.py": "sha256:" + "1" * 64}
+    elif change == "input":
+        bundle["database"]["mutation_evidence"]["changed_tuples"] = 1
+    elif change == "window":
+        bundle["window_from"] -= timedelta(seconds=1)
+    elif change == "age":
+        bundle["as_of"] += timedelta(microseconds=1)
+    elif change == "clock":
+        bundle["as_of"] = WINDOW_TO
+    elif change == "naive":
+        bundle["as_of"] = bundle["as_of"].replace(tzinfo=None)
+    elif change == "no_age":
+        bundle["maximum_age"] = timedelta(0)
+    result = verify_reconciliation_replay(**bundle)
+    assert result["reason"] == reason
+    assert result["input_replay_consistent"] is False
+    assert result["execution_authority"] is False
+
+
+def test_consistently_resealed_false_result_is_rejected_by_reexecution():
+    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
+    from ops.mt5_mcp.report_integrity import seal_report
+
+    bundle = _replay_bundle()
+    body = {k: v for k, v in bundle["report"].items() if k != "integrity"}
+    body["ACCOUNT_BINDING_STATE"] = "fabricated"
+    changed = seal_report(
+        body,
+        database=bundle["database"],
+        broker=bundle["broker"],
+        sources_before=bundle["expected_sources"],
+        sources_after=bundle["expected_sources"],
+    )
+    bundle["report"] = changed
+    bundle["expected_receipt_digest"] = changed["integrity"]["receipt_digest"]
+    assert verify_reconciliation_replay(**bundle)["reason"] == "EVALUATION_REPLAY_MISMATCH"
+
+
+def test_consistent_replay_of_blocked_gate_is_not_accepted():
+    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
+    from ops.mt5_mcp.report_integrity import seal_report
+
+    bundle = _replay_bundle()
+    bundle["database"]["account_binding"][0]["command_account_mismatch_count"] = 1
+    evaluated = reconcile.reconcile_snapshots(
+        database=bundle["database"], broker=bundle["broker"], window_from=WINDOW_FROM, window_to=WINDOW_TO
+    )
+    assert evaluated["B-B16"] == "EXECUTED_BLOCKED"
+    report = seal_report(
+        evaluated,
+        database=bundle["database"],
+        broker=bundle["broker"],
+        sources_before=bundle["expected_sources"],
+        sources_after=bundle["expected_sources"],
+    )
+    bundle["report"] = report
+    bundle["expected_receipt_digest"] = report["integrity"]["receipt_digest"]
+    result = verify_reconciliation_replay(**bundle)
+    assert result["reason"] == "RECONCILIATION_GATE_NOT_PASS"
+    assert result["input_replay_consistent"] is False
