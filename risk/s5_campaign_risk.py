@@ -7,10 +7,13 @@ profit never increases the risk unit.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
+from fractions import Fraction
 
 from contracts.mt5_execution_protocol import AccountSnapshotV1, SymbolCapability
 
@@ -20,6 +23,7 @@ class S5RiskReason(StrEnum):
     APPROVED_CHILD = "RISK_APPROVED_CHILD"
     SNAPSHOT_STALE = "RISK_SNAPSHOT_STALE"
     ACCOUNT_MISMATCH = "RISK_ACCOUNT_MISMATCH"
+    ACCOUNT_CURRENCY_UNSUPPORTED = "RISK_ACCOUNT_CURRENCY_UNSUPPORTED"
     SNAPSHOT_INCONSISTENT = "RISK_SNAPSHOT_INCONSISTENT"
     TRADE_DISABLED = "RISK_TRADE_DISABLED"
     INVALID_SYMBOL_SPEC = "RISK_INVALID_SYMBOL_SPEC"
@@ -103,6 +107,29 @@ class PositionRiskResult:
     raw_volume: Decimal
     final_volume: Decimal
     actual_planned_risk_usd: Decimal
+    risk_lock_fingerprint: str | None = None
+
+
+def campaign_risk_lock_fingerprint(risk_lock: CampaignRiskLock) -> str:
+    """Bind sizing to the complete lock, independent of Decimal display scale.
+
+    This is identity binding, not an authorization signature. The repository
+    must still obtain the lock and broker evidence from its trusted transaction.
+    """
+    if risk_lock.locked_at_utc.tzinfo is None or risk_lock.locked_at_utc.utcoffset() is None:
+        raise ValueError("risk lock clock must be timezone-aware")
+    numeric = {}
+    for name in ("balance_base", "risk_percent_per_entry", "risk_unit_usd", "max_campaign_risk_usd"):
+        value = Fraction(getattr(risk_lock, name))
+        numeric[name] = (value.numerator, value.denominator)
+    payload = {
+        "schema": "s5-risk-lock-binding/v1",
+        "campaign_id": risk_lock.campaign_id,
+        "account_id": risk_lock.account_id,
+        "locked_at": risk_lock.locked_at_utc.astimezone(UTC).isoformat(),
+        "numeric": numeric,
+    }
+    return "sha256:" + hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def validate_account_snapshot(
@@ -116,6 +143,12 @@ def validate_account_snapshot(
     age = (current - snapshot.captured_at_utc).total_seconds()
     if snapshot.account_id != expected_account_id:
         return SnapshotValidation(False, S5RiskReason.ACCOUNT_MISMATCH, "snapshot account binding mismatch")
+    if snapshot.currency != "USD":
+        return SnapshotValidation(
+            False,
+            S5RiskReason.ACCOUNT_CURRENCY_UNSUPPORTED,
+            "USD risk primitives require a USD account; currency conversion is not bound",
+        )
     if age < -2 or age > policy.snapshot_max_age_seconds:
         return SnapshotValidation(False, S5RiskReason.SNAPSHOT_STALE, f"snapshot age {age:.3f}s outside policy")
     if not snapshot.trade_allowed or not snapshot.autotrading_enabled:
@@ -247,6 +280,7 @@ def size_position_for_locked_risk(
         raw_volume,
         final_volume,
         actual_risk,
+        risk_lock_fingerprint=campaign_risk_lock_fingerprint(risk_lock),
     )
 
 
@@ -257,28 +291,62 @@ def authorize_campaign_risk(
     entry_role: str,
     parent_is_open: bool,
     child_already_exists: bool,
-    committed_or_reserved_campaign_risk_usd: float,
-    account_total_open_risk_usd: float,
+    committed_or_reserved_campaign_risk_usd: float | Decimal,
+    account_total_open_risk_usd: float | Decimal,
     policy: CampaignRiskPolicy,
 ) -> S5RiskReason:
     role = entry_role.upper()
     if role not in {"PARENT", "CHILD"}:
         return S5RiskReason.INVALID_ENTRY_ROLE
-    if committed_or_reserved_campaign_risk_usd < 0 or account_total_open_risk_usd < 0:
+    campaign_total = Decimal(str(committed_or_reserved_campaign_risk_usd))
+    account_total = Decimal(str(account_total_open_risk_usd))
+    if any(not value.is_finite() or value < 0 for value in (campaign_total, account_total)):
         return S5RiskReason.RISK_STATE_INVALID
     if not candidate.allowed:
+        if candidate.reason in {S5RiskReason.APPROVED_PARENT, S5RiskReason.APPROVED_CHILD}:
+            return S5RiskReason.RISK_STATE_INVALID
         return candidate.reason
+    approved_reason = S5RiskReason.APPROVED_CHILD if role == "CHILD" else S5RiskReason.APPROVED_PARENT
+    values = (
+        candidate.risk_budget_usd,
+        candidate.effective_loss_per_lot,
+        candidate.raw_volume,
+        candidate.final_volume,
+        candidate.actual_planned_risk_usd,
+        risk_lock.risk_unit_usd,
+        risk_lock.max_campaign_risk_usd,
+        risk_lock.balance_base,
+        risk_lock.risk_percent_per_entry,
+    )
+    if any(not isinstance(value, Decimal) or not value.is_finite() or value <= 0 for value in values):
+        return S5RiskReason.RISK_STATE_INVALID
+    if risk_lock.locked_at_utc.tzinfo is None or risk_lock.locked_at_utc.utcoffset() is None:
+        return S5RiskReason.RISK_STATE_INVALID
+    if candidate.risk_lock_fingerprint is None or candidate.risk_lock_fingerprint != campaign_risk_lock_fingerprint(
+        risk_lock
+    ):
+        return S5RiskReason.RISK_STATE_INVALID
+    if (
+        candidate.reason != approved_reason
+        or candidate.risk_budget_usd != risk_lock.risk_unit_usd
+        or candidate.final_volume > candidate.raw_volume
+        or Fraction(candidate.actual_planned_risk_usd)
+        != Fraction(candidate.final_volume) * Fraction(candidate.effective_loss_per_lot)
+    ):
+        return S5RiskReason.RISK_STATE_INVALID
+    if candidate.actual_planned_risk_usd > risk_lock.risk_unit_usd:
+        return S5RiskReason.ACTUAL_EXCEEDS_1R
     if role == "CHILD" and not parent_is_open:
         return S5RiskReason.PARENT_NOT_OPEN
     if role == "CHILD" and child_already_exists:
         return S5RiskReason.CHILD_ALREADY_EXISTS
 
-    combined_campaign = Decimal(str(committed_or_reserved_campaign_risk_usd)) + candidate.actual_planned_risk_usd
-    if combined_campaign > risk_lock.max_campaign_risk_usd:
+    combined_campaign = Fraction(campaign_total) + Fraction(candidate.actual_planned_risk_usd)
+    if combined_campaign > Fraction(risk_lock.max_campaign_risk_usd):
         return S5RiskReason.CAMPAIGN_EXCEEDS_2R
 
-    projected_open_risk = Decimal(str(account_total_open_risk_usd)) + candidate.actual_planned_risk_usd
-    account_cap = risk_lock.balance_base * policy.max_total_open_risk_percent
+    projected_open_risk = Fraction(account_total) + Fraction(candidate.actual_planned_risk_usd)
+    account_cap = Fraction(risk_lock.balance_base) * Fraction(policy.max_total_open_risk_percent)
     if projected_open_risk > account_cap:
         return S5RiskReason.ACCOUNT_OPEN_RISK_EXCEEDED
     return S5RiskReason.APPROVED_CHILD if role == "CHILD" else S5RiskReason.APPROVED_PARENT
@@ -290,6 +358,7 @@ __all__ = [
     "CampaignRiskLock",
     "SnapshotValidation",
     "PositionRiskResult",
+    "campaign_risk_lock_fingerprint",
     "validate_account_snapshot",
     "find_symbol_capability",
     "size_position_for_locked_risk",

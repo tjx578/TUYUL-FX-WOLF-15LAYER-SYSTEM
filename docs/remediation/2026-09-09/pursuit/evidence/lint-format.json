@@ -1,0 +1,29 @@
+[
+  {
+    "command": [
+      "C:\\Users\\INTEL\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      "-m",
+      "ruff",
+      "check",
+      ".",
+      "--config",
+      "pyproject.toml"
+    ],
+    "exit_code": 0,
+    "output": "All checks passed!\nwarning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+  },
+  {
+    "command": [
+      "C:\\Users\\INTEL\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      "-m",
+      "ruff",
+      "format",
+      "--check",
+      ".",
+      "--config",
+      "pyproject.toml"
+    ],
+    "exit_code": 0,
+    "output": "1404 files already formatted\nwarning: The following rules have been removed and ignoring them has no effect:\n    - UP038\n\n"
+  }
+]

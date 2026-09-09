@@ -1,0 +1,153 @@
+{
+  "scope": "C03_CURRENT_CI_AND_C06_BUILT_API_ROLE_ONLY",
+  "source_commit": "2e80441413cca767eec5c6d8baf4c643407d1159",
+  "captured_at": "2026-09-09T12:11:08.096258+00:00",
+  "ci_run": "34348573253",
+  "github_run": "p1-ci-20260909\\34348573253\\github-run.json",
+  "python_suite": {
+    "tests": 10166,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "separate_benchmark_tests": 6,
+  "pg_receipts": [
+    {
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 9
+      },
+      "tested_merge_sha": "627a6e230a2488d7b63e257aca0ca0720f80b985",
+      "receipt": "p1-ci-20260909/34348573253/0c19dd3328bf4180b057a5f64ee4b63f/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "tested_merge_sha": "627a6e230a2488d7b63e257aca0ca0720f80b985",
+      "receipt": "p1-ci-20260909/34348573253/0d221f60ae76476f88ffe0db1551393d/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "627a6e230a2488d7b63e257aca0ca0720f80b985",
+      "receipt": "p1-ci-20260909/34348573253/34a52e571c0e4e05a09936950de53c78/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "tested_merge_sha": "627a6e230a2488d7b63e257aca0ca0720f80b985",
+      "receipt": "p1-ci-20260909/34348573253/57a7c10dde8b4961ba05baabfd23fff9/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "tested_merge_sha": "627a6e230a2488d7b63e257aca0ca0720f80b985",
+      "receipt": "p1-ci-20260909/34348573253/6b781039f61a4665ab031f9bcaf29476/receipt.json"
+    },
+    {
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "tested_merge_sha": "627a6e230a2488d7b63e257aca0ca0720f80b985",
+      "receipt": "p1-ci-20260909/34348573253/74ab2877ef074b0dac213c6b8d00c290/receipt.json"
+    }
+  ],
+  "built_api": {
+    "scope": "BUILT_API_BOOTSTRAP_LIFESPAN_AND_HTTP_ONLY",
+    "accepted": true,
+    "cases": [
+      {
+        "case": "full_built_registry",
+        "passed": true
+      },
+      {
+        "case": "served_dependency_failure",
+        "healthz": 200,
+        "readyz": 503,
+        "passed": true
+      },
+      {
+        "case": "single_configured_listener",
+        "ports": [
+          18080
+        ],
+        "passed": true
+      },
+      {
+        "case": "graceful_shutdown",
+        "exit_code": -15,
+        "passed": true
+      },
+      {
+        "case": "required_worker_late_failure",
+        "readyz": 503,
+        "exit_code": 1,
+        "listener_ports": [
+          18080
+        ],
+        "drain_before_pool": true,
+        "passed": true
+      },
+      {
+        "case": "mandatory_router",
+        "exit_code": 1,
+        "passed": true
+      },
+      {
+        "case": "bootstrap",
+        "exit_code": 1,
+        "passed": true
+      },
+      {
+        "case": "required_worker_bootstrap",
+        "exit_code": 1,
+        "passed": true
+      }
+    ]
+  },
+  "security_run": "34348573251",
+  "expected_actual": {
+    "required_task_late_failure": "served 503 with required_task_trade_outbox_exception, followed by process exit 1",
+    "worker_bootstrap_failure": "process exit 1 with fixed bootstrap reason",
+    "one_listener": "Linux process socket inode inventory contains exactly port 18080",
+    "shutdown_order": "in-flight worker finally marker precedes actual PostgreSQL close wrapper",
+    "normal_shutdown": "SIGTERM exit -15 and Application shutdown complete log; not classified as worker loss",
+    "optional_disabled": "read-only API writer constructors remain absent in the local real-lifespan test; other optional task runtime states still require fuller C06 work"
+  },
+  "limits": [
+    "Fault injected only at required worker seam; no producer/broker actions",
+    "45-second forced-exit watchdog for resistant tasks is implemented but not exercised by this built-image run",
+    "Other required service roles not closed",
+    "C01 and C05 release/governance dependencies remain open",
+    "No deployment or main merge"
+  ],
+  "review": "AUTHOR_SERIAL_ONLY",
+  "milestones_done": 0
+}

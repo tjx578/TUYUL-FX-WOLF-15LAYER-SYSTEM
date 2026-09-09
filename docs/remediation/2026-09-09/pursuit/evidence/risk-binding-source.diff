@@ -1,0 +1,201 @@
+diff --git a/risk/s5_campaign_risk.py b/risk/s5_campaign_risk.py
+index 2a363b5c..80281ed8 100644
+--- a/risk/s5_campaign_risk.py
++++ b/risk/s5_campaign_risk.py
+@@ -11,6 +11,7 @@ from dataclasses import dataclass
+ from datetime import UTC, datetime
+ from decimal import ROUND_FLOOR, Decimal
+ from enum import StrEnum
++from fractions import Fraction
+ 
+ from contracts.mt5_execution_protocol import AccountSnapshotV1, SymbolCapability
+ 
+@@ -257,28 +258,55 @@ def authorize_campaign_risk(
+     entry_role: str,
+     parent_is_open: bool,
+     child_already_exists: bool,
+-    committed_or_reserved_campaign_risk_usd: float,
+-    account_total_open_risk_usd: float,
++    committed_or_reserved_campaign_risk_usd: float | Decimal,
++    account_total_open_risk_usd: float | Decimal,
+     policy: CampaignRiskPolicy,
+ ) -> S5RiskReason:
+     role = entry_role.upper()
+     if role not in {"PARENT", "CHILD"}:
+         return S5RiskReason.INVALID_ENTRY_ROLE
+-    if committed_or_reserved_campaign_risk_usd < 0 or account_total_open_risk_usd < 0:
++    campaign_total = Decimal(str(committed_or_reserved_campaign_risk_usd))
++    account_total = Decimal(str(account_total_open_risk_usd))
++    if any(not value.is_finite() or value < 0 for value in (campaign_total, account_total)):
+         return S5RiskReason.RISK_STATE_INVALID
+     if not candidate.allowed:
++        if candidate.reason in {S5RiskReason.APPROVED_PARENT, S5RiskReason.APPROVED_CHILD}:
++            return S5RiskReason.RISK_STATE_INVALID
+         return candidate.reason
++    approved_reason = S5RiskReason.APPROVED_CHILD if role == "CHILD" else S5RiskReason.APPROVED_PARENT
++    values = (
++        candidate.risk_budget_usd,
++        candidate.effective_loss_per_lot,
++        candidate.raw_volume,
++        candidate.final_volume,
++        candidate.actual_planned_risk_usd,
++        risk_lock.risk_unit_usd,
++        risk_lock.max_campaign_risk_usd,
++        risk_lock.balance_base,
++    )
++    if any(not isinstance(value, Decimal) or not value.is_finite() or value <= 0 for value in values):
++        return S5RiskReason.RISK_STATE_INVALID
++    if (
++        candidate.reason != approved_reason
++        or candidate.risk_budget_usd != risk_lock.risk_unit_usd
++        or candidate.final_volume > candidate.raw_volume
++        or Fraction(candidate.actual_planned_risk_usd)
++        != Fraction(candidate.final_volume) * Fraction(candidate.effective_loss_per_lot)
++    ):
++        return S5RiskReason.RISK_STATE_INVALID
++    if candidate.actual_planned_risk_usd > risk_lock.risk_unit_usd:
++        return S5RiskReason.ACTUAL_EXCEEDS_1R
+     if role == "CHILD" and not parent_is_open:
+         return S5RiskReason.PARENT_NOT_OPEN
+     if role == "CHILD" and child_already_exists:
+         return S5RiskReason.CHILD_ALREADY_EXISTS
+ 
+-    combined_campaign = Decimal(str(committed_or_reserved_campaign_risk_usd)) + candidate.actual_planned_risk_usd
+-    if combined_campaign > risk_lock.max_campaign_risk_usd:
++    combined_campaign = Fraction(campaign_total) + Fraction(candidate.actual_planned_risk_usd)
++    if combined_campaign > Fraction(risk_lock.max_campaign_risk_usd):
+         return S5RiskReason.CAMPAIGN_EXCEEDS_2R
+ 
+-    projected_open_risk = Decimal(str(account_total_open_risk_usd)) + candidate.actual_planned_risk_usd
+-    account_cap = risk_lock.balance_base * policy.max_total_open_risk_percent
++    projected_open_risk = Fraction(account_total) + Fraction(candidate.actual_planned_risk_usd)
++    account_cap = Fraction(risk_lock.balance_base) * Fraction(policy.max_total_open_risk_percent)
+     if projected_open_risk > account_cap:
+         return S5RiskReason.ACCOUNT_OPEN_RISK_EXCEEDED
+     return S5RiskReason.APPROVED_CHILD if role == "CHILD" else S5RiskReason.APPROVED_PARENT
+diff --git a/storage/strategy_5scr_risk_reservation_repository.py b/storage/strategy_5scr_risk_reservation_repository.py
+index 80ebe6bd..be5e2284 100644
+--- a/storage/strategy_5scr_risk_reservation_repository.py
++++ b/storage/strategy_5scr_risk_reservation_repository.py
+@@ -588,8 +588,8 @@ class Strategy5SCRRiskReservationRepository:
+                 entry_role=request.entry_role,
+                 parent_is_open=False,
+                 child_already_exists=False,
+-                committed_or_reserved_campaign_risk_usd=float(totals["campaign_risk"]),
+-                account_total_open_risk_usd=float(totals["account_risk"]),
++                committed_or_reserved_campaign_risk_usd=totals["campaign_risk"],
++                account_total_open_risk_usd=totals["account_risk"],
+                 policy=self._policy.campaign,
+             )
+             if verdict != _APPROVED_PARENT:
+diff --git a/tests/test_s5_campaign_risk.py b/tests/test_s5_campaign_risk.py
+index 464b5af8..800e35d4 100644
+--- a/tests/test_s5_campaign_risk.py
++++ b/tests/test_s5_campaign_risk.py
+@@ -1,9 +1,12 @@
+ from __future__ import annotations
+ 
++from dataclasses import replace
+ from datetime import UTC, datetime, timedelta
+ from decimal import Decimal
+ from uuid import uuid4
+ 
++import pytest
++
+ from contracts.mt5_execution_protocol import AccountSnapshotV1, MarginMode, SymbolCapability
+ from risk.s5_campaign_risk import (
+     CampaignRiskLock,
+@@ -173,3 +176,80 @@ def test_stale_snapshot_fails_closed() -> None:
+     )
+     assert not result.allowed
+     assert result.reason == S5RiskReason.SNAPSHOT_STALE
++
++
++def _authorize(candidate, **overrides):
++    args = dict(
++        risk_lock=_risk_lock(),
++        candidate=candidate,
++        entry_role="PARENT",
++        parent_is_open=False,
++        child_already_exists=False,
++        committed_or_reserved_campaign_risk_usd=0,
++        account_total_open_risk_usd=0,
++        policy=CampaignRiskPolicy(),
++    )
++    args.update(overrides)
++    return authorize_campaign_risk(**args)
++
++
++def _sized_parent():
++    return size_position_for_locked_risk(
++        risk_lock=_risk_lock(), symbol_spec=_symbol(), entry_price=1.1, stop_loss=1.095, entry_role="PARENT"
++    )
++
++
++def test_sizing_from_different_risk_lock_cannot_borrow_current_campaign_capacity():
++    larger = CampaignRiskLock.create(
++        campaign_id="OTHER", account_id="acct-01", closed_balance=1200, policy=CampaignRiskPolicy()
++    )
++    candidate = size_position_for_locked_risk(
++        risk_lock=larger, symbol_spec=_symbol(), entry_price=1.1, stop_loss=1.095, entry_role="PARENT"
++    )
++    assert candidate.actual_planned_risk_usd == Decimal("60")
++    assert _authorize(candidate) == S5RiskReason.RISK_STATE_INVALID
++
++
++@pytest.mark.parametrize(
++    "changes",
++    [
++        {"allowed": False},
++        {"actual_planned_risk_usd": Decimal("-1")},
++        {"actual_planned_risk_usd": Decimal("NaN")},
++        {"effective_loss_per_lot": Decimal("Infinity")},
++        {"actual_planned_risk_usd": Decimal("1")},
++        {"reason": S5RiskReason.APPROVED_CHILD},
++    ],
++)
++def test_inconsistent_sizing_cannot_authorize(changes):
++    assert _authorize(replace(_sized_parent(), **changes)) == S5RiskReason.RISK_STATE_INVALID
++
++
++@pytest.mark.parametrize("field", ["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"])
++@pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
++def test_invalid_ledger_numbers_return_rejection(field, value):
++    assert _authorize(_sized_parent(), **{field: value}) == S5RiskReason.RISK_STATE_INVALID
++
++
++def test_current_lock_valid_candidate_is_still_approved():
++    assert _authorize(_sized_parent()) == S5RiskReason.APPROVED_PARENT
++
++
++def test_one_risk_unit_is_rechecked_even_when_campaign_cap_has_room():
++    candidate = replace(
++        _sized_parent(), final_volume=Decimal("0.12"), raw_volume=Decimal("0.12"), actual_planned_risk_usd=Decimal("60")
++    )
++    assert _authorize(candidate) == S5RiskReason.ACTUAL_EXCEEDS_1R
++
++
++@pytest.mark.parametrize(
++    "field,reason",
++    [
++        ("committed_or_reserved_campaign_risk_usd", S5RiskReason.CAMPAIGN_EXCEEDS_2R),
++        ("account_total_open_risk_usd", S5RiskReason.ACCOUNT_OPEN_RISK_EXCEEDED),
++    ],
++)
++def test_decimal_ledger_excess_is_not_rounded_down_at_cap(field, reason):
++    total = Decimal("50.000000000000000000000000001")
++    assert float(total) == 50.0  # The old repository conversion lost this excess.
++    assert _authorize(_sized_parent(), **{field: total}) == reason
+diff --git a/tests/test_strategy_5scr_risk_reservation.py b/tests/test_strategy_5scr_risk_reservation.py
+index 3e043386..a83d04d2 100644
+--- a/tests/test_strategy_5scr_risk_reservation.py
++++ b/tests/test_strategy_5scr_risk_reservation.py
+@@ -86,7 +86,7 @@ def test_final_signal_promotion_is_credential_free_and_does_not_mutate_candidate
+ @pytest.mark.parametrize(
+     ("path", "value", "match"),
+     [
+-        (("risk_reservation_id",), str(uuid4()), "does not match proof"),
++        (("risk_reservation_id",), "44444444-4444-4444-8444-444444444444", "does not match proof"),
+         (("risk_snapshot_id",), "other-snapshot", "does not match proof"),
+         (("reserved_volume",), 0.2, "does not match proof"),
+         (("broker_symbol",), "CHFJPY.other", "does not match reservation proof"),

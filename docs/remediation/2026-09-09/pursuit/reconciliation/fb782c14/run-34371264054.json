@@ -1,0 +1,220 @@
+{
+  "conclusion": "success",
+  "headSha": "fb782c147a02f8dfaa902624d014c0afd9a919db",
+  "jobs": [
+    {
+      "completedAt": "2026-09-09T15:35:50Z",
+      "conclusion": "success",
+      "databaseId": 102532769313,
+      "name": "Legacy docs quarantine",
+      "startedAt": "2026-09-09T15:35:44Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T15:35:45Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T15:35:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-09-09T15:35:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Reject legacy documentation references in production Python",
+          "number": 3,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Verify historical quarantine index exists",
+          "number": 4,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 8,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 9,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34371264054/job/102532769313"
+    },
+    {
+      "completedAt": "2026-09-09T15:35:54Z",
+      "conclusion": "success",
+      "databaseId": 102532769479,
+      "name": "Architecture cross-reference check",
+      "startedAt": "2026-09-09T15:35:46Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T15:35:47Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T15:35:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:49Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-09-09T15:35:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:49Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-09-09T15:35:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:49Z",
+          "conclusion": "success",
+          "name": "Check internal markdown links",
+          "number": 4,
+          "startedAt": "2026-09-09T15:35:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:49Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 7,
+          "startedAt": "2026-09-09T15:35:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:50Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 8,
+          "startedAt": "2026-09-09T15:35:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:50Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 9,
+          "startedAt": "2026-09-09T15:35:50Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34371264054/job/102532769479"
+    },
+    {
+      "completedAt": "2026-09-09T15:35:52Z",
+      "conclusion": "success",
+      "databaseId": 102532769927,
+      "name": "Architecture reading-order integrity",
+      "startedAt": "2026-09-09T15:35:45Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T15:35:47Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T15:35:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-09-09T15:35:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Verify every reading-order entry exists",
+          "number": 3,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:48Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 6,
+          "startedAt": "2026-09-09T15:35:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:49Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 7,
+          "startedAt": "2026-09-09T15:35:49Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34371264054/job/102532769927"
+    },
+    {
+      "completedAt": "2026-09-09T15:35:58Z",
+      "conclusion": "success",
+      "databaseId": 102532850892,
+      "name": "Docs Gate",
+      "startedAt": "2026-09-09T15:35:56Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-09-09T15:35:57Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-09-09T15:35:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:57Z",
+          "conclusion": "success",
+          "name": "Evaluate docs hygiene jobs",
+          "number": 2,
+          "startedAt": "2026-09-09T15:35:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-09-09T15:35:57Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-09-09T15:35:57Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/34371264054/job/102532850892"
+    }
+  ],
+  "status": "completed",
+  "observed_at_utc": "2026-09-09T15:41:57.308632+00:00"
+}

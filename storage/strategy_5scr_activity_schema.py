@@ -1,0 +1,67 @@
+"""DDL shared by the explicit migration and disposable PostgreSQL tests.
+
+Runtime constructors never execute DDL or migrate an existing database.
+"""
+
+ACTIVITY_SCHEMA_SQL = """
+CREATE TABLE public.pair_activity_ledgers_v31 (
+    ledger_id text PRIMARY KEY,
+    binding_hash text NOT NULL,
+    binding jsonb NOT NULL,
+    revision bigint NOT NULL DEFAULT 0 CHECK (revision >= 0),
+    evaluated_through timestamptz,
+    raw_watermark timestamptz,
+    covered_through timestamptz,
+    execution_authority boolean NOT NULL DEFAULT false CHECK (execution_authority IS FALSE)
+);
+CREATE TABLE public.pair_activity_raw_v31 (
+    ledger_id text NOT NULL REFERENCES public.pair_activity_ledgers_v31(ledger_id),
+    raw_event_id text NOT NULL,
+    occurred_at timestamptz NOT NULL,
+    payload jsonb NOT NULL,
+    PRIMARY KEY (ledger_id, raw_event_id)
+);
+CREATE INDEX ix_activity_raw_time_v31 ON public.pair_activity_raw_v31(ledger_id, occurred_at, raw_event_id);
+CREATE TABLE public.pair_activity_observations_v31 (
+    ledger_id text NOT NULL REFERENCES public.pair_activity_ledgers_v31(ledger_id),
+    observation_id text NOT NULL,
+    payload jsonb NOT NULL,
+    PRIMARY KEY (ledger_id, observation_id)
+);
+CREATE TABLE public.pair_activity_evaluations_v31 (
+    ledger_id text NOT NULL REFERENCES public.pair_activity_ledgers_v31(ledger_id),
+    evaluation_id text NOT NULL,
+    activity_id text NOT NULL,
+    payload jsonb NOT NULL CHECK (
+      (payload->'hypothesis_authority' = 'false'::jsonb) IS TRUE
+      AND (payload->'risk_authority' = 'false'::jsonb) IS TRUE
+      AND (payload->'execution_authority' = 'false'::jsonb) IS TRUE
+      AND (payload->'valid_for_execution' = 'false'::jsonb) IS TRUE
+    ),
+    PRIMARY KEY (ledger_id, evaluation_id),
+    UNIQUE (ledger_id, activity_id, evaluation_id),
+    CHECK ((payload->>'evaluation_id' = evaluation_id) IS TRUE),
+    CHECK ((payload->>'activity_id' = activity_id) IS TRUE)
+);
+CREATE TABLE public.pair_activity_attachments_v31 (
+    ledger_id text NOT NULL,
+    activity_id text NOT NULL,
+    evaluation_id text NOT NULL,
+    frozen_evaluation_id text,
+    PRIMARY KEY (ledger_id, activity_id),
+    FOREIGN KEY (ledger_id, activity_id, evaluation_id) REFERENCES public.pair_activity_evaluations_v31(ledger_id, activity_id, evaluation_id),
+    FOREIGN KEY (ledger_id, activity_id, frozen_evaluation_id) REFERENCES public.pair_activity_evaluations_v31(ledger_id, activity_id, evaluation_id)
+);
+CREATE TABLE public.pair_activity_snapshots_v31 (
+    ledger_id text NOT NULL REFERENCES public.pair_activity_ledgers_v31(ledger_id),
+    snapshot_id text NOT NULL,
+    revision bigint NOT NULL,
+    checkpoint jsonb,
+    report jsonb NOT NULL CHECK (
+        (report->'execution_authority' = 'false'::jsonb) IS TRUE
+        AND (report->'hypothesis_authority' = 'false'::jsonb) IS TRUE
+        AND (report->'risk_authority' = 'false'::jsonb) IS TRUE
+    ),
+    PRIMARY KEY (ledger_id, snapshot_id)
+);
+"""

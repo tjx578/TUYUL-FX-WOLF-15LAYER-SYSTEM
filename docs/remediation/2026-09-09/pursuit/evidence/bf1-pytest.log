@@ -1,0 +1,29 @@
+..........F......................                                        [100%]
+================================== FAILURES ===================================
+_______________ test_requested_bridge_rejects_duplicate_routes ________________
+
+factory = <function create_app at 0x000001E7C524F600>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001E7CCD60250>
+
+    def test_requested_bridge_rejects_duplicate_routes(factory, monkeypatch):
+        from api.executor_bridge_router import router
+    
+        monkeypatch.setattr(app_factory, "load_routers", lambda: ([(router, "duplicate fixture")], []))
+>       with pytest.raises(RuntimeError):
+E       Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests\test_executor_bridge_factory.py:105: Failed
+============================== warnings summary ===============================
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\bf1.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_executor_bridge_factory.py::test_requested_bridge_rejects_duplicate_routes
+1 failed, 32 passed, 1 warning in 7.77s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

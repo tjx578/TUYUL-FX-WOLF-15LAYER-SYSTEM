@@ -1,0 +1,48 @@
+{
+  "scope": "DISPOSABLE_05_TO_HEAD_EXISTING_TEST_ONLY_CAPACITY_LEDGER",
+  "accepted": true,
+  "source_commit": "ae27c34a77d8c86021b1ef182c5c06d1423e1e5d",
+  "steps": [
+    {
+      "target": "20260909_05",
+      "exit_code": 0
+    },
+    {
+      "target": "head",
+      "exit_code": 0
+    }
+  ],
+  "database": "wolf15_ci_test_domain_217612400d2c",
+  "baseline_row_hash": "a32b54f8497ac6d3beb05f1340e6d9f49274af8d3e0241ef10614797a31c60a4",
+  "upgraded_row_hash": "a32b54f8497ac6d3beb05f1340e6d9f49274af8d3e0241ef10614797a31c60a4",
+  "postgres": {
+    "database": "wolf15_ci_test_domain_217612400d2c",
+    "user": "wolf_user",
+    "server_address": "172.18.0.3/32",
+    "server_port": 5432,
+    "server_version_num": 160015,
+    "postmaster_started_at": "2026-09-09 11:30:29.555186+00",
+    "database_oid": "18465",
+    "migration_heads": [
+      "20260909_06"
+    ],
+    "settings": {
+      "fsync": "on",
+      "synchronous_commit": "on",
+      "shared_buffers": "128MB",
+      "max_connections": "100",
+      "TimeZone": "UTC",
+      "default_transaction_isolation": "read committed",
+      "wolf15.environment_class": "DISPOSABLE_TEST",
+      "wolf15.destructive_tests_allowed": "true"
+    },
+    "tables": {
+      "ledgers": "pair_activity_ledgers_v31",
+      "raw": "pair_activity_raw_v31",
+      "observations": "pair_activity_observations_v31",
+      "evaluations": "pair_activity_evaluations_v31",
+      "attachments": "pair_activity_attachments_v31",
+      "snapshots": "pair_activity_snapshots_v31"
+    }
+  }
+}

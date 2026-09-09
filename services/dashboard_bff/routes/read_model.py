@@ -10,9 +10,10 @@ Trace: x-request-id forwarded from proxy unchanged.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse
 
+from services.dashboard_bff.auth import require_bff_authorization
 from services.dashboard_bff.http_client import get_client
 
 router = APIRouter(tags=["read-model"])
@@ -22,6 +23,7 @@ router = APIRouter(tags=["read-model"])
 async def dashboard_overview(
     authorization: str | None = Header(default=None),
     x_request_id: str | None = Header(default=None, alias="x-request-id"),
+    _auth: dict[str, object] = Depends(require_bff_authorization),  # noqa: B008
 ) -> JSONResponse:
     """Compose a dashboard overview snapshot.
 
@@ -46,7 +48,7 @@ async def dashboard_overview(
 
     def _safe_json(result: object) -> object:
         if isinstance(result, BaseException):
-            return {"error": str(result)}
+            return {"error": "core-api request failed"}
         if hasattr(result, "json"):
             try:
                 return result.json()  # type: ignore[union-attr]
@@ -78,10 +80,11 @@ async def dashboard_overview(
 async def feed_status(
     authorization: str | None = Header(default=None),
     x_request_id: str | None = Header(default=None, alias="x-request-id"),
+    _auth: dict[str, object] = Depends(require_bff_authorization),  # noqa: B008
 ) -> JSONResponse:
     """Ingest feed health summary for the dashboard.
 
-    Phase 1: proxies /api/v1/feed-status from core-api.
+    Phase 1: proxies /api/v1/candles/feed-status from core-api.
     Phase 2: reads directly from Redis producer heartbeats.
     """
     client = get_client()
@@ -93,10 +96,10 @@ async def feed_status(
         fwd_headers["x-request-id"] = x_request_id
 
     try:
-        resp = await client.get("/api/v1/feed-status", headers=fwd_headers)
+        resp = await client.get("/api/v1/candles/feed-status", headers=fwd_headers)
         data = resp.json()
-    except Exception as exc:
-        data = {"error": "core-api unreachable from BFF", "detail": str(exc)}
+    except Exception:
+        data = {"error": "core-api request failed"}
         resp_headers: dict[str, str] = {"x-bff-cache": "MISS"}
         if x_request_id:
             resp_headers["x-request-id"] = x_request_id

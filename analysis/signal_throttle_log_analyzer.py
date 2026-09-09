@@ -15,6 +15,7 @@ import os
 import re
 import threading
 import time
+from bisect import bisect_right
 from collections import Counter, deque
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields
@@ -22,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 from numbers import Real
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 try:
     from ..schemas.direction import normalize_direction
@@ -50,7 +52,13 @@ from .signal_throttle_fusion_router import build_signal_throttle_fusion_v3_diagn
 from .signal_throttle_pattern_detector import classify_pressure_block
 from .signal_throttle_pressure_tier import build_pressure_tier_snapshot
 from .signal_throttle_pure_block_quality import score_pure_pressure_block
+from .strategy_5scr_pair_activity_report import PairActivityReportContextV31, build_pair_activity_report
 from .strategy_5scr_pair_admission import build_pair_admission_audit
+from .strategy_5scr_raw_admission_blocks import (
+    build_raw_admission_population,
+    is_raw_signal_throttle_authority,
+    raw_signal_throttle_event_id,
+)
 
 _SYMBOL_RE = r"(?P<symbol>[A-Z]{3,6}[A-Z0-9]*)"
 _THROTTLED_RE = re.compile(rf"\[SignalThrottle\]\s+{_SYMBOL_RE}\s+THROTTLED", re.IGNORECASE)
@@ -136,6 +144,8 @@ class SignalThrottleLogEvent:
     allowed_streak_before: int | None = None
     allowed_streak_after: int | None = None
     throttled_inferred_direction: str | None = None
+    source_observation_id: str | None = None
+    source_observation_schema: str | None = None
 
     @property
     def effective_ticks(self) -> int:
@@ -216,6 +226,55 @@ def parse_engine_log_event(event: dict[str, Any]) -> SignalThrottleLogEvent | No
     return parse_signal_throttle_row(event)
 
 
+def _source_observation_id(value: str | None) -> str:
+    if value is None:
+        return str(uuid4())
+    if not isinstance(value, str) or not value.strip() or len(value) > 200:
+        raise ValueError("source observation identity requires a nonempty identifier")
+    return value
+
+
+def _parse_source_observation_metadata(
+    message: str, row: dict[str, Any]
+) -> tuple[str | None, str | None, datetime | None]:
+    keys = ("source_observation_id", "source_observation_schema", "source_observed_at_utc")
+    payload = {}
+    if any(key in message for key in keys):
+        start = message.find("{")
+        if start >= 0:
+            try:
+                payload = json.loads(message[start:])
+            except json.JSONDecodeError as exc:
+                raise ValueError("malformed source observation metadata") from exc
+            if not isinstance(payload, dict):
+                raise ValueError("source observation metadata must be an object")
+    values = {}
+    for key in keys:
+        if key in payload:
+            values[key] = payload[key]
+        elif key in row:
+            values[key] = row[key]
+        elif re.search(rf"\b{key}=", message):
+            values[key] = _extract_kv_text(message, key)
+    if not values or all(value is None for value in values.values()):
+        return None, None, None
+    source_id = values.get("source_observation_id")
+    schema = values.get("source_observation_schema")
+    if source_id is None or schema != "signal-throttle-observation.v1":
+        raise ValueError("source observation identity requires its supported schema")
+    _source_observation_id(source_id)
+    source_time = values.get(
+        "source_observed_at_utc", _extract_field(row, "timestamp", "time", "@timestamp", "datetime")
+    )
+    try:
+        observed = datetime.fromisoformat(str(source_time).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("source observation timestamp is invalid") from exc
+    if observed.tzinfo is None or observed.utcoffset() is None:
+        raise ValueError("source observation timestamp requires an explicit UTC offset")
+    return source_id, schema, observed.astimezone(UTC)
+
+
 def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | None:
     message = _extract_field(row, "message", "body", "log", "text")
     is_signal_throttle_check = _SIGNAL_THROTTLE_CHECK_RE.search(message) is not None
@@ -227,6 +286,9 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
     if timestamp is None:
         return None
 
+    source_observation_id, source_observation_schema, source_time = _parse_source_observation_metadata(message, row)
+    if source_time is not None:
+        timestamp = source_time
     severity = _extract_field(row, "severity", "level", default="info").lower()
     symbol = ""
     event_type = "UNKNOWN"
@@ -362,6 +424,8 @@ def parse_signal_throttle_row(row: dict[str, Any]) -> SignalThrottleLogEvent | N
         source_stream=source_stream,
         deployment_id=deployment_id or None,
         scanner_cycle_id=scanner_cycle_id or None,
+        source_observation_id=source_observation_id,
+        source_observation_schema=source_observation_schema,
         scanner_epoch=scanner_epoch or None,
         observed_cycle_index=observed_cycle_index,
         eligible_for_pressure_block=eligible_for_pressure_block,
@@ -406,6 +470,7 @@ def analyze_signal_throttle_events(
     timezone_assumption: str = "UTC",
     market_contexts: dict[str, Any] | None = None,
     state_metadata: dict[str, Any] | None = None,
+    pair_activity_context: PairActivityReportContextV31 | Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if latest_window_minutes is not None:
         latest_window_seconds = int(latest_window_minutes * 60)
@@ -417,6 +482,7 @@ def analyze_signal_throttle_events(
     scanner_cycle_gap_seconds = _env_float("SIGNAL_THROTTLE_SCANNER_CYCLE_MAX_GAP_SECONDS", 300.0)
 
     ordered = sorted(events, key=lambda item: item.timestamp)
+    pair_activity_report = build_pair_activity_report(ordered, context=pair_activity_context)
     state_metadata = state_metadata or _state_metadata_from_events(ordered)
     if not ordered:
         pressure_tier_snapshot = _build_pressure_tier_snapshot(
@@ -465,7 +531,22 @@ def analyze_signal_throttle_events(
             "pure_block_ledger": [],
             "pure_block_count": 0,
             "v1_clean_block_ledger": [],
+            "raw_admission_blocks": [],
+            "raw_admission_population": {
+                "input_event_count": 0,
+                "raw_authority_event_count": 0,
+                "skipped_non_authority_event_count": 0,
+                "duplicate_raw_event_count": 0,
+                "raw_block_count": 0,
+                "population_status": "NO_RAW_AUTHORITY_CANDIDATE",
+                "authority_population": "RAW_SIGNAL_THROTTLE_ONLY",
+                "cross_symbol_policy": "CROSS_SYMBOL_EVENT_FINALIZES_BLOCK",
+                "gap_boundary_policy": "GAP_GT_MAX_FINALIZES_BLOCK",
+                "duplicate_event_policy": "IGNORE_DUPLICATE_STABLE_RAW_ID",
+                "execution_authority": False,
+            },
             "pair_admission_grants": [],
+            "pair_activity_v31": pair_activity_report,
             "pair_admission_summary": {
                 "rule_version": "5scr.pair-admission.raw-ledger.v2",
                 "evaluated_blocks": 0,
@@ -578,6 +659,10 @@ def analyze_signal_throttle_events(
         ordered,
         max_symbol_gap_seconds=scanner_cycle_gap_seconds,
     )
+    raw_admission_population = build_raw_admission_population(
+        ordered,
+        max_gap_seconds=min(300.0, float(scanner_cycle_gap_seconds)),
+    )
     burst_blocks = build_pressure_blocks(ordered, max_gap_seconds=clean_gap_seconds)
     symbol_activity = build_symbol_activity(
         ordered,
@@ -631,19 +716,9 @@ def analyze_signal_throttle_events(
         lifecycle_blocks,
         clean_block_seconds=clean_block_seconds,
     )
-    clean_block_ids = {
-        (
-            str(item.get("symbol") or "").upper(),
-            str(item.get("block_start_utc") or item.get("clean_block_start_utc") or ""),
-            str(item.get("block_end_utc") or item.get("clean_block_end_utc") or ""),
-        ): str(item.get("source_clean_block_id"))
-        for item in v1_clean_block_ledger
-        if item.get("source_clean_block_id")
-    }
     pair_admission_audit = build_pair_admission_audit(
-        lifecycle_blocks,
-        raw_events=ordered,
-        clean_block_ids=clean_block_ids,
+        raw_admission_population.blocks,
+        raw_events=raw_admission_population.events,
         min_duration_seconds=float(clean_block_seconds),
         max_gap_seconds=min(300.0, float(scanner_cycle_gap_seconds)),
     )
@@ -859,6 +934,7 @@ def analyze_signal_throttle_events(
         "allowed_quorum": allowed_quorum,
         "pair_eligible_for_analysis": pair_eligible_for_analysis,
         "pair_admission_grants": [grant.to_payload() for grant in pair_admission_grants],
+        "pair_activity_v31": pair_activity_report,
         "pair_admission_summary": pair_admission_audit.to_payload(),
         "watch_promotion_blockers": watch_promotion_blockers,
         "event_counts": event_type_counts,
@@ -870,6 +946,8 @@ def analyze_signal_throttle_events(
         "pure_block_ledger": pure_block_ledger,
         "pure_block_count": len(pure_block_ledger),
         "v1_clean_block_ledger": v1_clean_block_ledger,
+        "raw_admission_blocks": [block.to_dict() for block in raw_admission_population.blocks],
+        "raw_admission_population": raw_admission_population.to_payload(),
         "v1_clean_block_count": len(v1_clean_block_ledger),
         "v1_active_clean_block": v1_active_clean_block,
         "clean_block_ledger_source": V1_CLEAN_BLOCK_LEDGER_SOURCE,
@@ -1031,10 +1109,28 @@ def _with_raw_lineage_metadata(message: str, event: SignalThrottleLogEvent) -> s
         ("scanner_cycle_id", event.scanner_cycle_id),
         ("scanner_epoch", event.scanner_epoch),
         ("observed_cycle_index", event.observed_cycle_index),
+        ("throttled_inferred_direction", event.throttled_inferred_direction),
     ):
         if value is None or f"{key}=" in message:
             continue
         parts.append(f"{key}={value}")
+    if event.source_observation_id is not None or event.source_observation_schema is not None:
+        if event.source_observation_id is None or event.source_observation_schema != "signal-throttle-observation.v1":
+            raise ValueError("source observation identity requires its supported schema")
+        _source_observation_id(event.source_observation_id)
+        if event.timestamp.tzinfo is None or event.timestamp.utcoffset() is None:
+            raise ValueError("source observation timestamp requires an explicit UTC offset")
+        # JSON preserves opaque identifiers, including whitespace, without log injection.
+        parts.append(
+            json.dumps(
+                {
+                    "source_observation_id": event.source_observation_id,
+                    "source_observation_schema": event.source_observation_schema,
+                    "source_observed_at_utc": event.timestamp.astimezone(UTC).isoformat(),
+                },
+                separators=(",", ":"),
+            )
+        )
     if not parts:
         return message
     return f"{message} {' '.join(parts)}"
@@ -1084,6 +1180,7 @@ class SignalThrottleLiveAnalyzer:
         allowed_quorum_window_seconds: int = 120,
         fragmented_min_unique_pairs: int = 5,
         fragmented_max_clean_block_minutes: float = 1.0,
+        pair_activity_runtime: Any | None = None,
     ) -> None:
         self.latest_window_seconds = int(latest_window_seconds or latest_window_minutes * 60)
         self.candidate_lifecycle_window_seconds = int(candidate_lifecycle_window_seconds)
@@ -1103,16 +1200,28 @@ class SignalThrottleLiveAnalyzer:
         self.scanner_cycle_window_seconds = _env_float("SIGNAL_THROTTLE_SCANNER_CYCLE_MAX_GAP_SECONDS", 300.0)
         self._scanner_cycle_symbol_order: dict[str, dict[str, int]] = {}
         self._events: deque[SignalThrottleLogEvent] = deque()
+        self._event_keys: deque[tuple[datetime, str]] = deque()
+        self._retention_guard: tuple[datetime, datetime] | None = None
         self._lock = threading.Lock()
+        self._pair_activity_runtime = pair_activity_runtime
 
     def record(self, event: SignalThrottleLogEvent) -> None:
         with self._lock:
-            self._events.append(event)
+            if self._pair_activity_runtime is not None:
+                self._pair_activity_runtime.record(event)
+            self._insert_event_canonically_locked(event)
             self._purge_locked(event.timestamp)
 
     def _record_runtime_event(self, event: SignalThrottleLogEvent) -> None:
-        enriched = self._with_runtime_lineage(event)
-        self.record(enriched)
+        # Scanner-cycle metadata and the event deque form one lineage boundary.
+        # Mutate and snapshot them under the same lock so concurrent symbol
+        # workers cannot observe a partially rebuilt cycle-order map.
+        with self._lock:
+            enriched = self._with_runtime_lineage(event)
+            if self._pair_activity_runtime is not None:
+                self._pair_activity_runtime.record(enriched)
+            self._insert_event_canonically_locked(enriched)
+            self._purge_locked(enriched.timestamp)
         emit_signal_throttle_raw_event(enriched)
 
     def record_log_event(self, event: dict[str, Any]) -> bool:
@@ -1128,6 +1237,7 @@ class SignalThrottleLiveAnalyzer:
         symbol: str,
         verdict: str,
         timestamp: datetime | None = None,
+        observation_id: str | None = None,
     ) -> None:
         now = _coerce_timestamp(timestamp)
         self._record_runtime_event(
@@ -1137,6 +1247,8 @@ class SignalThrottleLiveAnalyzer:
                 message=f"[SignalThrottle] {symbol} allowed - verdict {verdict}",
                 symbol=symbol.upper(),
                 event_type="ALLOWED",
+                source_observation_id=_source_observation_id(observation_id),
+                source_observation_schema="signal-throttle-observation.v1",
                 verdict=verdict,
                 direction=normalize_direction(None, verdict),
                 raw_verdict=verdict,
@@ -1162,8 +1274,10 @@ class SignalThrottleLiveAnalyzer:
         max_signals: int | None = None,
         window_seconds: float | None = None,
         timestamp: datetime | None = None,
+        observation_id: str | None = None,
     ) -> None:
         now = _coerce_timestamp(timestamp)
+        observation_id = _source_observation_id(observation_id)
         count_text = "?" if count is None else str(count)
         max_text = "?" if max_signals is None else str(max_signals)
         window_text = _format_optional_number(window_seconds)
@@ -1177,6 +1291,8 @@ class SignalThrottleLiveAnalyzer:
                 ),
                 symbol=symbol.upper(),
                 event_type="THROTTLED",
+                source_observation_id=observation_id,
+                source_observation_schema="signal-throttle-observation.v1",
                 effective_action="HOLD",
                 count=count,
                 remaining=remaining,
@@ -1203,6 +1319,8 @@ class SignalThrottleLiveAnalyzer:
                     ),
                     symbol=symbol.upper(),
                     event_type="DOWNGRADED_TO_HOLD",
+                    source_observation_id=observation_id,
+                    source_observation_schema="signal-throttle-observation.v1",
                     verdict=verdict,
                     direction=normalize_direction(None, verdict),
                     raw_verdict=verdict,
@@ -1229,6 +1347,7 @@ class SignalThrottleLiveAnalyzer:
         direction: str | None = None,
         reason: str | None = None,
         timestamp: datetime | None = None,
+        observation_id: str | None = None,
     ) -> None:
         """Record a directional candidate that was downgraded before throttling."""
         now = _coerce_timestamp(timestamp)
@@ -1251,6 +1370,8 @@ class SignalThrottleLiveAnalyzer:
                 message=f"[SignalThrottle] {symbol} verdict {verdict_text} downgraded to HOLD{reason_text}",
                 symbol=symbol.upper(),
                 event_type="DOWNGRADED_TO_HOLD",
+                source_observation_id=_source_observation_id(observation_id),
+                source_observation_schema="signal-throttle-observation.v1",
                 verdict=verdict_text if verdict_text != "UNKNOWN" else None,
                 direction=normalized_direction,
                 raw_verdict=verdict_text if verdict_text != "UNKNOWN" else None,
@@ -1344,6 +1465,8 @@ class SignalThrottleLiveAnalyzer:
             market_contexts=market_contexts,
         )
         report.setdefault("runtime_config", {})
+        if self._pair_activity_runtime is not None:
+            report["pair_activity_v31"] = self._pair_activity_runtime.snapshot()
         report["runtime_config"]["retention_seconds"] = self.retention_seconds
         report["runtime_config"]["active_block_ttl_seconds"] = self.active_block_ttl_seconds
         report["runtime_config"]["allowed_quorum_window_seconds"] = self.allowed_quorum_window_seconds
@@ -1373,6 +1496,8 @@ class SignalThrottleLiveAnalyzer:
         return SignalThrottleLogEvent(**values)
 
     def _scanner_cycle_metadata(self, timestamp: datetime, symbol: str) -> tuple[str, str, int]:
+        """Resolve lineage while ``self._lock`` is held by the runtime writer."""
+
         window = max(1.0, float(self.scanner_cycle_window_seconds or 300.0))
         stamp = _coerce_timestamp(timestamp)
         epoch_seconds = int(stamp.timestamp() // window * window)
@@ -1383,19 +1508,125 @@ class SignalThrottleLiveAnalyzer:
         symbol_key = str(symbol or "").upper()
         if symbol_key not in order:
             order[symbol_key] = len(order) + 1
+        # Iterate over an immutable snapshot even though the writer lock is
+        # already held.  This keeps the pruning operation deterministic and
+        # prevents future refactors from reintroducing a live-dict iteration.
+        cycle_snapshot = tuple(self._scanner_cycle_symbol_order.items())
         self._scanner_cycle_symbol_order = {
             key: value
-            for key, value in self._scanner_cycle_symbol_order.items()
+            for key, value in cycle_snapshot
             if key == cycle_id or not _scanner_cycle_id_is_older_than(key, epoch, keep_windows=3, window_seconds=window)
         }
         return cycle_id, scanner_epoch, order[symbol_key]
 
+    @staticmethod
+    def _canonical_event_key(event: SignalThrottleLogEvent) -> tuple[datetime, str]:
+        """Match the raw ledger's EVENT_TIME_ASC_RAW_ID_TIEBREAK order."""
+
+        return event.timestamp, raw_signal_throttle_event_id(event)
+
+    def _insert_event_canonically_locked(self, event: SignalThrottleLogEvent) -> None:
+        """Insert one arrival without making physical arrival order authoritative."""
+
+        event_key = self._canonical_event_key(event)
+        if not self._event_keys or self._event_keys[-1] <= event_key:
+            self._events.append(event)
+            self._event_keys.append(event_key)
+            return
+
+        ordered = list(self._events)
+        ordered_keys = list(self._event_keys)
+        insert_at = bisect_right(ordered_keys, event_key)
+        ordered.insert(insert_at, event)
+        ordered_keys.insert(insert_at, event_key)
+        self._events = deque(ordered)
+        self._event_keys = deque(ordered_keys)
+        # A late event can change the block that straddles the cutoff. Never
+        # reuse a guard computed before that canonical insertion.
+        self._retention_guard = None
+
     def _purge_locked(self, now: datetime) -> None:
-        cutoff = now - timedelta(seconds=self.retention_seconds)
-        while self._events and self._events[0].timestamp < cutoff:
+        if not self._events:
+            self._event_keys = deque()
+            self._retention_guard = None
+            return
+
+        # A late/replayed event must not move the retention watermark backward.
+        # Canonical insertion guarantees the right edge is the newest event.
+        watermark = max(now, self._events[-1].timestamp)
+        cutoff = watermark - timedelta(seconds=self.retention_seconds)
+        retention_floor = self._raw_block_safe_retention_floor_locked(cutoff)
+        if self._events[0].timestamp >= retention_floor and len(self._events) <= self.max_events:
+            return
+
+        while self._events and self._events[0].timestamp < retention_floor:
             self._events.popleft()
-        while len(self._events) > self.max_events:
-            self._events.popleft()
+            self._event_keys.popleft()
+        if len(self._events) > self.max_events:
+            while len(self._events) > self.max_events:
+                self._events.popleft()
+                self._event_keys.popleft()
+            self._retention_guard = None
+        # Both canonical deques are mutated under the same writer lock, so a
+        # reader can never observe a partially purged or count-trimmed state.
+
+    def _raw_block_safe_retention_floor_locked(self, cutoff: datetime) -> datetime:
+        """Do not let the time window retain only a suffix of one raw block.
+
+        PairAdmission identity is anchored to the first raw source event.  A
+        row-by-row time purge used to move that anchor forward while leaving
+        the same finalization event in memory, producing a new logical grant
+        on every snapshot.  Keep the complete block that straddles ``cutoff``
+        and remove it atomically once its own end is older than the cutoff.
+
+        Only the prefix through the first raw event at/after the cutoff is
+        inspected.  Events removed by this method are therefore scanned once,
+        while the guard avoids rebuilding a protected block until its end is
+        actually crossed.
+        """
+
+        guard = self._retention_guard
+        if guard is not None:
+            guarded_start, guarded_end = guard
+            if guarded_start < cutoff <= guarded_end:
+                return guarded_start
+
+        prefix: list[SignalThrottleLogEvent] = []
+        found_raw_at_or_after_cutoff = False
+        for event in self._events:
+            prefix.append(event)
+            if event.timestamp >= cutoff and is_raw_signal_throttle_authority(event):
+                found_raw_at_or_after_cutoff = True
+                break
+
+        if not found_raw_at_or_after_cutoff:
+            self._retention_guard = None
+            return cutoff
+
+        max_gap_seconds = min(300.0, float(self.scanner_cycle_window_seconds))
+        population = build_raw_admission_population(
+            prefix,
+            max_gap_seconds=max_gap_seconds,
+        )
+        for block in population.blocks:
+            if block.start < cutoff <= block.end:
+                # The prefix proves which block straddles the cutoff. Resolve
+                # its current tail once so a long active one-symbol block does
+                # not force an O(window) rebuild for every subsequent event.
+                protected_end = block.end
+                full_population = build_raw_admission_population(
+                    self._events,
+                    max_gap_seconds=max_gap_seconds,
+                )
+                for current in full_population.blocks:
+                    if current.raw_block_id == block.raw_block_id:
+                        protected_end = current.end
+                        break
+                self._retention_guard = (block.start, protected_end)
+                return block.start
+
+        self._retention_guard = None
+        return cutoff
 
 
 def build_pressure_blocks(

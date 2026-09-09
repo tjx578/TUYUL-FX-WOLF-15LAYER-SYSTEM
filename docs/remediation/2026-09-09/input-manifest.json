@@ -1,0 +1,55 @@
+{
+  "scope": "Exact documentary bytes, not authority or runtime proof",
+  "files": [
+    {
+      "path": "inputs/WOLF15_Master_Backlog_2026-09-08.csv",
+      "bytes": 33209,
+      "sha256": "628b48a3d5565619028ce59d980af6d2e8a409460443d211612c2445f01973ab"
+    },
+    {
+      "path": "inputs/WOLF15_Master_Evidence_2026-09-08.zip",
+      "bytes": 199629,
+      "sha256": "f38972426d532a4275bab088a3a7d7953f1a4b9732e758129f04b804b18800c0"
+    },
+    {
+      "path": "inputs/WOLF15_Master_GOAP_2026-09-08.json",
+      "bytes": 107198,
+      "sha256": "afd801996dce92c8d5abdd6a8a245bb80c3ac20495aa6693b74503d0f3bd25e4"
+    },
+    {
+      "path": "inputs/WOLF15_Master_Remediation_2026-09-08.md",
+      "bytes": 35973,
+      "sha256": "787f2ca210dd9099f6495919c61a7481fa3f327973df2c9d90a8e9c2f144adfe"
+    },
+    {
+      "path": "inputs/WOLF15_DONE_Register_41_Actions_2026-09-09.csv",
+      "bytes": 23210,
+      "sha256": "a2a858a4eacaea0dc07bdd13df946446b86e21701fec63b53950cddaeea7d113"
+    },
+    {
+      "path": "inputs/WOLF15_Definition_of_Done_2026-09-09.md",
+      "bytes": 19433,
+      "sha256": "0b2ed9e0bf3758509ad065babbaf59b3f1e24a1d0e469b96a6adb7e37276a705"
+    },
+    {
+      "path": "inputs/pasted-assessment-1.txt",
+      "bytes": 5866,
+      "sha256": "40cbe747c2aac98033089ffa6a761bbf5edbd4fbac24b46c75caae66cdbb304c"
+    },
+    {
+      "path": "inputs/pasted-assessment-2.txt",
+      "bytes": 7145,
+      "sha256": "f7e566dc7093ce7a3dfdefb2243373395bfc5d31d6776ffc33b94934bc3ddb1f"
+    },
+    {
+      "path": "inputs/WOLF15_Master_Backlog_2026-09-08.canonical.csv",
+      "bytes": 32683,
+      "sha256": "9672d5bf6e07b3d6db5f6d6cd92f903ce53fec12369df744c88aaab7ce1c8490"
+    },
+    {
+      "path": "source-binding/selected-ssot-v3.1.md",
+      "bytes": 86002,
+      "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"
+    }
+  ]
+}

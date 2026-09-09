@@ -1,0 +1,377 @@
+{
+  "PressureAuthorityV31": {
+    "additionalProperties": false,
+    "description": "A versioned producer snapshot, not an inferred legacy LOCKED contract.",
+    "properties": {
+      "schema_version": {
+        "const": "5scr.pressure-authority.v3.1",
+        "default": "5scr.pressure-authority.v3.1",
+        "enum": [
+          "5scr.pressure-authority.v3.1"
+        ],
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "symbol": {
+        "pattern": "^[A-Z0-9._-]{3,32}$",
+        "title": "Symbol",
+        "type": "string"
+      },
+      "source_event_ids": {
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1,
+        "title": "Source Event Ids",
+        "type": "array"
+      },
+      "pressure_authority_mode": {
+        "enum": [
+          "RADAR_ONLY",
+          "CONSOLIDATED_DIRECTION_CONTRACT"
+        ],
+        "title": "Pressure Authority Mode",
+        "type": "string"
+      },
+      "pressure_contract_status": {
+        "enum": [
+          "OPEN",
+          "LOCKED",
+          "TRANSITION_PENDING",
+          "INVALIDATED",
+          "EXPIRED"
+        ],
+        "title": "Pressure Contract Status",
+        "type": "string"
+      },
+      "pressure_contract_version": {
+        "minLength": 1,
+        "title": "Pressure Contract Version",
+        "type": "string"
+      },
+      "pressure_contract_invalidated_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Pressure Contract Invalidated At"
+      },
+      "observed_at_utc": {
+        "format": "date-time",
+        "title": "Observed At Utc",
+        "type": "string"
+      },
+      "valid_until_utc": {
+        "format": "date-time",
+        "title": "Valid Until Utc",
+        "type": "string"
+      },
+      "raw_direction": {
+        "anyOf": [
+          {
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Raw Direction"
+      },
+      "candidate_direction": {
+        "anyOf": [
+          {
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Candidate Direction"
+      },
+      "watch_direction": {
+        "anyOf": [
+          {
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Watch Direction"
+      },
+      "block_direction": {
+        "anyOf": [
+          {
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Block Direction"
+      },
+      "direction_lineage_alignment": {
+        "enum": [
+          "ALIGNED",
+          "CONFLICT",
+          "UNAVAILABLE"
+        ],
+        "title": "Direction Lineage Alignment",
+        "type": "string"
+      },
+      "pressure_consensus_status": {
+        "enum": [
+          "BUY",
+          "SELL",
+          "CONFLICT",
+          "INCOMPLETE",
+          "STALE"
+        ],
+        "title": "Pressure Consensus Status",
+        "type": "string"
+      },
+      "contract_direction": {
+        "anyOf": [
+          {
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Contract Direction"
+      },
+      "formal_transition_event_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Formal Transition Event Id"
+      },
+      "execution_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Execution Authority",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "symbol",
+      "source_event_ids",
+      "pressure_authority_mode",
+      "pressure_contract_status",
+      "pressure_contract_version",
+      "pressure_contract_invalidated_at",
+      "observed_at_utc",
+      "valid_until_utc",
+      "raw_direction",
+      "candidate_direction",
+      "watch_direction",
+      "block_direction",
+      "direction_lineage_alignment",
+      "pressure_consensus_status"
+    ],
+    "title": "PressureAuthorityV31",
+    "type": "object"
+  },
+  "PressurePolicyBindingV31": {
+    "additionalProperties": false,
+    "description": "Explicit binding; UNBOUND is useful evidence, never an active policy.",
+    "properties": {
+      "approval_state": {
+        "enum": [
+          "UNBOUND",
+          "APPROVED",
+          "REVOKED"
+        ],
+        "title": "Approval State",
+        "type": "string"
+      },
+      "policy_id": {
+        "anyOf": [
+          {
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Policy Id"
+      },
+      "policy_digest": {
+        "anyOf": [
+          {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Policy Digest"
+      },
+      "approved_at_utc": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Approved At Utc"
+      },
+      "valid_until_utc": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Valid Until Utc"
+      }
+    },
+    "required": [
+      "approval_state"
+    ],
+    "title": "PressurePolicyBindingV31",
+    "type": "object"
+  },
+  "PressureDirectionDecisionV31": {
+    "additionalProperties": false,
+    "properties": {
+      "rule_version": {
+        "const": "5scr.pressure-direction-gate.v3.1",
+        "default": "5scr.pressure-direction-gate.v3.1",
+        "enum": [
+          "5scr.pressure-direction-gate.v3.1"
+        ],
+        "title": "Rule Version",
+        "type": "string"
+      },
+      "evidence_hash": {
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "title": "Evidence Hash",
+        "type": "string"
+      },
+      "evaluated_at_utc": {
+        "format": "date-time",
+        "title": "Evaluated At Utc",
+        "type": "string"
+      },
+      "requested_direction": {
+        "enum": [
+          "BUY",
+          "SELL"
+        ],
+        "title": "Requested Direction",
+        "type": "string"
+      },
+      "pressure_direction_gate_passed": {
+        "title": "Pressure Direction Gate Passed",
+        "type": "boolean"
+      },
+      "reason_code": {
+        "title": "Reason Code",
+        "type": "string"
+      },
+      "separate_route_gate_passed": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Separate Route Gate Passed",
+        "type": "boolean"
+      },
+      "separate_route_reason": {
+        "const": "SEPARATE_ROUTE_POLICY_UNRESOLVED",
+        "default": "SEPARATE_ROUTE_POLICY_UNRESOLVED",
+        "enum": [
+          "SEPARATE_ROUTE_POLICY_UNRESOLVED"
+        ],
+        "title": "Separate Route Reason",
+        "type": "string"
+      },
+      "hypothesis_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Hypothesis Authority",
+        "type": "boolean"
+      },
+      "risk_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Risk Authority",
+        "type": "boolean"
+      },
+      "execution_authority": {
+        "const": false,
+        "default": false,
+        "enum": [
+          false
+        ],
+        "title": "Execution Authority",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "evidence_hash",
+      "evaluated_at_utc",
+      "requested_direction",
+      "pressure_direction_gate_passed",
+      "reason_code"
+    ],
+    "title": "PressureDirectionDecisionV31",
+    "type": "object"
+  }
+}

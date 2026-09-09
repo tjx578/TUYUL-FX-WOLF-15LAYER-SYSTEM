@@ -10,6 +10,11 @@ from datetime import UTC, datetime, timedelta
 from math import isclose
 from typing import Any
 
+from analysis.strategy_5scr_raw_admission_blocks import (
+    is_raw_signal_throttle_authority,
+    raw_signal_throttle_direction,
+    raw_signal_throttle_event_id,
+)
 from contracts.strategy_5scr_pair_admission import (
     PAIR_ADMISSION_MAX_TTL_SECONDS,
     PAIR_ADMISSION_RULE_VERSION,
@@ -20,8 +25,6 @@ DEFAULT_PAIR_ADMISSION_MIN_DURATION_SECONDS = 300.0
 DEFAULT_PAIR_ADMISSION_MIN_EFFECTIVE_TICKS = 3
 DEFAULT_PAIR_ADMISSION_TTL_SECONDS = PAIR_ADMISSION_MAX_TTL_SECONDS
 DEFAULT_PAIR_ADMISSION_MAX_GAP_SECONDS = 300.0
-_RAW_AUTHORITY_STREAMS = frozenset({"RAW_THROTTLED", "ALLOWED", "DOWNGRADED"})
-_RAW_AUTHORITY_EVENT_TYPES = frozenset({"THROTTLED", "ALLOWED", "DOWNGRADED_TO_HOLD"})
 
 
 @dataclass(frozen=True)
@@ -87,44 +90,6 @@ def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def _raw_event_id(event: Any) -> str:
-    identity = {
-        "timestamp": _utc(_value(event, "timestamp")),
-        "symbol": str(_value(event, "symbol") or "").upper(),
-        "event_type": _value(event, "event_type"),
-        "source_stream": _value(event, "source_stream"),
-        "pressure_source": _value(event, "pressure_source"),
-        "verdict": _value(event, "verdict"),
-        "direction": _value(event, "direction"),
-        "suppressed": _value(event, "suppressed", 0),
-        "scanner_cycle_id": _value(event, "scanner_cycle_id"),
-        "deployment_id": _value(event, "deployment_id"),
-    }
-    return "sha256:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
-
-
-def _is_raw_signal_throttle_authority(event: Any) -> bool:
-    """Exclude derived pressure/intel payloads from admission authority."""
-
-    return (
-        str(_value(event, "pressure_source") or "").strip() == "SignalThrottle"
-        and str(_value(event, "source_stream") or "").strip().upper() in _RAW_AUTHORITY_STREAMS
-        and str(_value(event, "event_type") or "").strip().upper() in _RAW_AUTHORITY_EVENT_TYPES
-    )
-
-
-def _event_direction(event: Any) -> str | None:
-    direction = str(_value(event, "direction") or "").strip().upper()
-    if direction in {"BUY", "SELL"}:
-        return direction
-    verdict = str(_value(event, "verdict") or "").strip().upper()
-    if verdict.endswith("_BUY"):
-        return "BUY"
-    if verdict.endswith("_SELL"):
-        return "SELL"
-    return None
-
-
 def _event_effective_ticks(event: Any) -> int:
     """Recompute effective ticks from raw fields; never trust a summary value."""
 
@@ -154,6 +119,9 @@ def _integer(value: Any) -> int | None:
 def _candidate_block_id(block: Any, source_clean_block_id: str | None) -> str:
     """Return a stable audit identity without promoting clean-block lineage."""
 
+    raw_block_id = str(_value(block, "raw_block_id") or "").strip()
+    if raw_block_id:
+        return raw_block_id
     if source_clean_block_id:
         return source_clean_block_id
     identity = {
@@ -166,6 +134,24 @@ def _candidate_block_id(block: Any, source_clean_block_id: str | None) -> str:
     return f"5scr-admission-candidate:{digest}"
 
 
+def _evaluation_state(block: Any) -> str:
+    state = str(_value(block, "evaluation_state") or "").strip().upper()
+    if state in {"ACTIVE", "FINALIZED"}:
+        return state
+    if str(_value(block, "finalization_event_id") or "").strip():
+        return "FINALIZED"
+    try:
+        interrupted = int(_value(block, "cross_symbol_interruption_count", 0) or 0)
+    except (TypeError, ValueError):
+        interrupted = 0
+    return "FINALIZED" if interrupted > 0 else "ACTIVE"
+
+
+def _finalization_event_id(block: Any) -> str | None:
+    resolved = str(_value(block, "finalization_event_id") or "").strip()
+    return resolved or None
+
+
 def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, Any]:
     """Compute deterministic diagnostics retained for grants and rejections."""
 
@@ -174,6 +160,7 @@ def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, An
     end = _utc(_value(block, "end"))
     ordered: list[tuple[datetime, Any, str]] = []
     cross_symbol_events = 0
+    finalization_event_id = _finalization_event_id(block)
     for event in raw_events:
         timestamp = _utc(_value(event, "timestamp"))
         if timestamp is None:
@@ -182,13 +169,15 @@ def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, An
             continue
         if end is not None and timestamp > end:
             continue
+        if not is_raw_signal_throttle_authority(event):
+            continue
+        event_id = raw_signal_throttle_event_id(event)
         event_symbol = str(_value(event, "symbol") or "").strip().upper()
         if event_symbol != symbol:
-            cross_symbol_events += 1
+            if event_id != finalization_event_id:
+                cross_symbol_events += 1
             continue
-        if _value(event, "eligible_for_pressure_block") is False or not _is_raw_signal_throttle_authority(event):
-            continue
-        ordered.append((timestamp, event, _raw_event_id(event)))
+        ordered.append((timestamp, event, event_id))
     ordered.sort(key=lambda item: (item[0], item[2]))
     timestamps = tuple(item[0] for item in ordered)
     events = tuple(item[1] for item in ordered)
@@ -205,6 +194,9 @@ def _raw_audit_snapshot(block: Any, raw_events: tuple[Any, ...]) -> dict[str, An
         "calculated_effective_ticks": sum(_event_effective_ticks(event) for event in events),
         "source_event_count": len(events),
         "source_ledger_event_ids": list(event_ids),
+        "raw_lineage_hash": (
+            None if not event_ids else "sha256:" + hashlib.sha256("|".join(event_ids).encode("utf-8")).hexdigest()
+        ),
         "source_scanner_cycle_ids": list(
             dict.fromkeys(
                 str(_value(event, "scanner_cycle_id") or "").strip()
@@ -235,12 +227,21 @@ def _audit_evaluation(
     snapshot = _raw_audit_snapshot(block, raw_events)
     candidate_id = _candidate_block_id(block, source_clean_block_id)
     decision = "GRANTED" if grant is not None else "REJECTED"
+    evaluation_state = _evaluation_state(block)
+    finalization_event_id = _finalization_event_id(block)
+    evaluation_watermark = {
+        "episode_observed_through_utc": snapshot["raw_event_range_end_utc"],
+        "finalization_event_id": finalization_event_id if evaluation_state == "FINALIZED" else None,
+    }
     identity = {
         "rule_version": PAIR_ADMISSION_RULE_VERSION,
         "candidate_block_id": candidate_id,
+        "raw_block_id": candidate_id if candidate_id.startswith("5scr-raw-block:") else None,
         "decision": decision,
         "rejection_reason": rejection_reason,
         "source_ledger_event_ids": snapshot["source_ledger_event_ids"],
+        "evaluation_state": evaluation_state,
+        "evaluation_watermark": evaluation_watermark,
     }
     evaluation_id = (
         "5scr-admission-evaluation:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()[:32]
@@ -256,12 +257,18 @@ def _audit_evaluation(
         "episode_observed_through_utc": (None if (ended := _utc(_value(block, "end"))) is None else ended.isoformat()),
         "decision": decision,
         "pair_admission_id": None if grant is None else grant.pair_admission_id,
+        "pair_admission_source_ledger_hash": None if grant is None else grant.source_ledger_hash,
         "rejection_reason": rejection_reason,
         "reason_codes": [] if rejection_reason is None else [rejection_reason],
         "rejected_at_utc": snapshot["decision_at_utc"] if grant is None else None,
+        "evaluation_state": evaluation_state,
+        "evaluation_watermark": evaluation_watermark,
+        "finalization_reason": (str(_value(block, "finalization_reason") or "").strip() or None),
+        "finalization_event_id": finalization_event_id,
         "source_event_authority": "RAW_SIGNAL_THROTTLE_LOG_EVENT",
         "source_ledger_ordering": "EVENT_TIME_ASC_RAW_ID_TIEBREAK",
-        "cross_symbol_interruption_policy": "SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL",
+        "cross_symbol_interruption_policy": "CROSS_SYMBOL_EVENT_FINALIZES_BLOCK",
+        "cross_symbol_interruption_count": int(_value(block, "cross_symbol_interruption_count", 0) or 0),
         "duplicate_event_policy": "REJECT_DUPLICATE_STABLE_RAW_ID",
         "deployment_boundary_policy": "SINGLE_DEPLOYMENT_REQUIRED",
         "execution_authority": False,
@@ -302,12 +309,21 @@ def _validate_raw_evidence(
     if max_gap_seconds <= 0 or max_gap_seconds > DEFAULT_PAIR_ADMISSION_MAX_GAP_SECONDS:
         return None, "PAIR_ADMISSION_MAX_GAP_INVALID"
 
+    if any(
+        is_raw_signal_throttle_authority(event)
+        and str(_value(event, "symbol") or "").strip().upper() != symbol
+        and raw_signal_throttle_event_id(event) != _finalization_event_id(block)
+        and (timestamp := _utc(_value(event, "timestamp"))) is not None
+        and start <= timestamp <= end
+        for event in raw_events
+    ):
+        return None, "CROSS_SYMBOL_INTERRUPTION"
+
     evidence_with_time = [
-        (timestamp, event, _raw_event_id(event))
+        (timestamp, event, raw_signal_throttle_event_id(event))
         for event in raw_events
         if str(_value(event, "symbol") or "").strip().upper() == symbol
-        and _value(event, "eligible_for_pressure_block") is not False
-        and _is_raw_signal_throttle_authority(event)
+        and is_raw_signal_throttle_authority(event)
         and (timestamp := _utc(_value(event, "timestamp"))) is not None
         and start <= timestamp <= end
     ]
@@ -324,9 +340,9 @@ def _validate_raw_evidence(
         return None, "BLOCK_INTERVAL_EVIDENCE_MISMATCH"
     if declared_events is not None and declared_events != len(evidence):
         return None, "BLOCK_EVENT_COUNT_EVIDENCE_MISMATCH"
-    if any(_event_direction(event) is None for event in evidence):
+    if any(raw_signal_throttle_direction(event) is None for event in evidence):
         return None, "RAW_LEDGER_DIRECTION_UNRESOLVED"
-    if any(_event_direction(event) != direction for event in evidence):
+    if any(raw_signal_throttle_direction(event) != direction for event in evidence):
         return None, "RAW_LEDGER_DIRECTION_CONFLICT"
 
     observed_duration = (timestamps[-1] - timestamps[0]).total_seconds()
@@ -356,19 +372,42 @@ def _validate_raw_evidence(
     scanner_values = tuple(str(_value(event, "scanner_cycle_id") or "").strip() for event in evidence)
     if any(not value for value in scanner_values):
         return None, "SCANNER_CYCLE_ID_MISSING"
-    scanner_cycle_ids = tuple(dict.fromkeys(scanner_values))
-    ledger_hash = "sha256:" + hashlib.sha256("|".join(source_event_ids).encode("utf-8")).hexdigest()
+
+    # Freeze the immutable grant evidence at the first observation point that
+    # crosses every admission gate.  The enclosing raw block may keep growing,
+    # but its logical grant and evidence-at-admission must not change.
+    admission_end_index: int | None = None
+    admission_effective_ticks = 0
+    for index, event in enumerate(evidence):
+        admission_effective_ticks += _event_effective_ticks(event)
+        prefix_duration = (timestamps[index] - timestamps[0]).total_seconds()
+        if index >= 1 and prefix_duration >= min_duration_seconds and admission_effective_ticks >= min_effective_ticks:
+            admission_end_index = index
+            break
+    if admission_end_index is None:
+        return None, "PAIR_ADMISSION_THRESHOLD_NOT_REACHED"
+
+    admission_events = evidence[: admission_end_index + 1]
+    admission_timestamps = timestamps[: admission_end_index + 1]
+    admission_event_ids = source_event_ids[: admission_end_index + 1]
+    admission_scanner_values = scanner_values[: admission_end_index + 1]
+    admission_gaps = tuple(
+        (admission_timestamps[index] - admission_timestamps[index - 1]).total_seconds()
+        for index in range(1, len(admission_timestamps))
+    )
+    scanner_cycle_ids = tuple(dict.fromkeys(admission_scanner_values))
+    ledger_hash = "sha256:" + hashlib.sha256("|".join(admission_event_ids).encode("utf-8")).hexdigest()
     return (
         _ValidatedRawEvidence(
-            events=evidence,
+            events=admission_events,
             deployment_id=next(iter(deployments)),
-            started_at_utc=timestamps[0],
-            observed_through_utc=timestamps[-1],
-            duration_seconds=observed_duration,
-            effective_ticks=effective_ticks,
-            max_gap_seconds=observed_max_gap,
+            started_at_utc=admission_timestamps[0],
+            observed_through_utc=admission_timestamps[-1],
+            duration_seconds=(admission_timestamps[-1] - admission_timestamps[0]).total_seconds(),
+            effective_ticks=sum(_event_effective_ticks(event) for event in admission_events),
+            max_gap_seconds=max(admission_gaps, default=0.0),
             maximum_allowed_gap_seconds=max_gap_seconds,
-            source_event_ids=source_event_ids,
+            source_event_ids=admission_event_ids,
             scanner_cycle_ids=scanner_cycle_ids,
             ledger_hash=ledger_hash,
         ),
@@ -401,11 +440,7 @@ def build_pair_admission_grant(
         return None
     identity = {
         "deployment_id": validated.deployment_id,
-        "symbol": symbol,
-        "direction": direction,
-        "episode_started_at_utc": validated.started_at_utc.isoformat(),
-        "episode_observed_through_utc": validated.observed_through_utc.isoformat(),
-        "source_ledger_hash": validated.ledger_hash,
+        "raw_block_id": _candidate_block_id(block, source_clean_block_id),
         "rule_version": PAIR_ADMISSION_RULE_VERSION,
     }
     admission_id = "5scr-admission:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()[:32]

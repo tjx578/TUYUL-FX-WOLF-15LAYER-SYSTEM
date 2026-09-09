@@ -1,0 +1,40 @@
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+...............                                                          [100%]
+============================== warnings summary ===============================
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\starlette\testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests/test_strategy_5scr_candidate_c2_shadow_v2.py::test_unrepresentable_capability_numbers_fail_closed[nan-stops_level_points]
+tests/test_strategy_5scr_candidate_c2_shadow_v2.py::test_unrepresentable_capability_numbers_fail_closed[nan-freeze_level_points]
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pydantic\main.py:390: UserWarning: Pydantic serializer warnings:
+    Expected `int` but got `float` with value `nan` - serialized value may not be as expected
+    return self.__pydantic_serializer__.to_python(
+
+tests/test_strategy_5scr_candidate_c2_shadow_v2.py::test_unrepresentable_capability_numbers_fail_closed[positive-infinity-stops_level_points]
+tests/test_strategy_5scr_candidate_c2_shadow_v2.py::test_unrepresentable_capability_numbers_fail_closed[positive-infinity-freeze_level_points]
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pydantic\main.py:390: UserWarning: Pydantic serializer warnings:
+    Expected `int` but got `float` with value `inf` - serialized value may not be as expected
+    return self.__pydantic_serializer__.to_python(
+
+tests/test_strategy_5scr_candidate_c2_shadow_v2.py::test_unrepresentable_capability_numbers_fail_closed[negative-infinity-stops_level_points]
+tests/test_strategy_5scr_candidate_c2_shadow_v2.py::test_unrepresentable_capability_numbers_fail_closed[negative-infinity-freeze_level_points]
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pydantic\main.py:390: UserWarning: Pydantic serializer warnings:
+    Expected `int` but got `float` with value `-inf` - serialized value may not be as expected
+    return self.__pydantic_serializer__.to_python(
+
+tests/test_strategy_5scr_candidate_c2_shadow_v2.py::test_unrepresentable_capability_numbers_fail_closed[numeric-28-12-overflow-stops_level_points]
+tests/test_strategy_5scr_candidate_c2_shadow_v2.py::test_unrepresentable_capability_numbers_fail_closed[numeric-28-12-overflow-freeze_level_points]
+  C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pydantic\main.py:390: UserWarning: Pydantic serializer warnings:
+    Expected `int` but got `float` with value `1e+16` - serialized value may not be as expected
+    return self.__pydantic_serializer__.to_python(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\p1-fix-a4.xml -
+231 passed, 9 warnings in 22.12s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

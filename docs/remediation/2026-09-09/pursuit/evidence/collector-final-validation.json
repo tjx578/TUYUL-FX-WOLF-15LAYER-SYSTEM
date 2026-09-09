@@ -1,0 +1,48 @@
+{
+  "source_commit": "12836a04df9f3fbb9e8706aae4264f3c40269d1a",
+  "tests": 11,
+  "new_cases": 4,
+  "failures": 0,
+  "skipped": 0,
+  "exact_junit_identity_match": true,
+  "test_ids": [
+    "tests/test_native_mt5_readonly_mcp.py::test_all_five_reads_emit_the_same_versioned_hmac_and_terminal_identity",
+    "tests/test_native_mt5_readonly_mcp.py::test_collector_rejects_config_surface_before_launch",
+    "tests/test_native_mt5_readonly_mcp.py::test_collector_rejects_helper_source_change",
+    "tests/test_native_mt5_readonly_mcp.py::test_collector_rejects_listed_surface_before_tool_reads",
+    "tests/test_native_mt5_readonly_mcp.py::test_collector_strips_audit_dsn_and_records_nonsecret_provenance",
+    "tests/test_native_mt5_readonly_mcp.py::test_empty_snapshot_is_measured_but_connection_failure_is_not",
+    "tests/test_native_mt5_readonly_mcp.py::test_history_window_and_limit_fail_closed_before_native_query",
+    "tests/test_native_mt5_readonly_mcp.py::test_live_reader_calls_only_read_methods_and_redacts_free_text",
+    "tests/test_native_mt5_readonly_mcp.py::test_mcp_registry_exposes_only_the_five_read_tools",
+    "tests/test_native_mt5_readonly_mcp.py::test_missing_hmac_key_fails_closed_without_exposing_login",
+    "tests/test_native_mt5_readonly_mcp.py::test_terminal_must_be_running_at_the_exact_pinned_path"
+  ],
+  "source_files": {
+    "ops/mt5_mcp/snapshot.py": {
+      "git_sha256": "dfe2f25c34d8729da2f10d3586e0c1c87cbcaaacc1400cefdf8ac5aedff82aa9",
+      "working_sha256": "fe95485780b9f7dc4944a305f332b378857c9172edd7e05e3be89e3f6b24c3dc"
+    },
+    "tests/test_native_mt5_readonly_mcp.py": {
+      "git_sha256": "468a02ac8a767d2e39a5623d9ba01df54029af3740768d44be59305cef1e0069",
+      "working_sha256": "6dabfe2aacbfd0d7b1db17736bef279372ed2dabe42a836a767538b753c19c6e"
+    }
+  },
+  "ruff": "PASS",
+  "format": "PASS",
+  "runtime": {
+    "mcp": "2.0.0",
+    "pydantic": "2.13.5",
+    "pytest": "8.4.2",
+    "psutil": "7.2.2"
+  },
+  "git_resource_options": {
+    "core.packedGitWindowSize": "1m",
+    "core.packedGitLimit": "32m",
+    "core.deltaBaseCacheLimit": "8m"
+  },
+  "scope": "Native MCP fixture suite on final working bytes, separate from API environment. No live broker/server subprocess.",
+  "capacity_outcome": "Alternative bounded-cache Git snapshot and small fixture suite succeeded; no general host capacity or database readiness claim.",
+  "canonical_actions_closed": [],
+  "milestones_done": 0
+}

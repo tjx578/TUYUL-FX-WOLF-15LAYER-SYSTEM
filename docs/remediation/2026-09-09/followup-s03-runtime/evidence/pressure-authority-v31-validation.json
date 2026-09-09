@@ -1,0 +1,54 @@
+{
+  "pydantic": "2.9.2",
+  "python": "3.11.9",
+  "valid_examples": 5,
+  "invalid_examples_model_rejected": 5,
+  "schema_generation": "PASS",
+  "generated_from_actual_models": true,
+  "runtime_integration": "NOT_IMPLEMENTED",
+  "full_S01_DONE": false,
+  "source_sha256": {
+    "contracts/strategy_5scr_pressure_authority_v31.py": "a7cfe6a81d34c5f3fc5456c21d20eef8f7b514c9c84d5e95ec20f344832952d4",
+    "tests/test_pressure_authority_v31.py": "7efc6f5fd47c2989c818d01a995d6cf93e6c83fff75d32d455d590366b123dd8"
+  },
+  "json_schema_meta_validation": "PASS_3_SCHEMAS",
+  "valid_example_schema_validation": "PASS_15_OBJECTS",
+  "invalid_examples": [
+    {
+      "name": "missing_source_version",
+      "schema_rejects": true,
+      "model_rejects": true
+    },
+    {
+      "name": "missing_invalidation_field",
+      "schema_rejects": true,
+      "model_rejects": true
+    },
+    {
+      "name": "false_alignment",
+      "schema_rejects": false,
+      "model_rejects": true
+    },
+    {
+      "name": "authority_escalation",
+      "schema_rejects": true,
+      "model_rejects": true
+    },
+    {
+      "name": "implicit_lock",
+      "schema_rejects": false,
+      "model_rejects": true
+    }
+  ],
+  "tests": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "96",
+    "time": "2.089",
+    "timestamp": "2026-09-09T05:03:06.567247+08:00",
+    "hostname": "DESKTOP-TE510QO"
+  },
+  "ruff": "PASS_LINT_AND_FORMAT"
+}

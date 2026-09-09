@@ -1,0 +1,113 @@
+"""Offline guard/ownership tests. They never initialize or connect to PostgreSQL."""
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import native_pg_harness as harness
+
+
+class HarnessGuards(unittest.TestCase):
+    def test_high_commit_guard_prevents_all_provision_actions(self):
+        with (patch.object(harness, 'measure_capacity', return_value={'guard_pass': False}),
+              patch.object(harness, 'record'), patch.object(harness, 'run') as run,
+              patch.object(harness, 'validate_paths') as paths,
+              patch.object(harness, 'save_state') as save):
+            with self.assertRaisesRegex(harness.Hold, 'COMMITTED_MEMORY'):
+                harness.start()
+            run.assert_not_called()
+            paths.assert_not_called()
+            save.assert_not_called()
+
+    def test_measurement_failure_never_starts(self):
+        with (patch.object(harness, 'measure_capacity', side_effect=harness.Hold('CAPACITY_MEASUREMENT_FAILED')),
+              patch.object(harness, 'run') as run, patch.object(harness, 'save_state') as save):
+            with self.assertRaises(harness.Hold):
+                harness.start()
+            run.assert_not_called()
+            save.assert_not_called()
+
+    def test_existing_cluster_is_preserved(self):
+        with tempfile.TemporaryDirectory(dir=harness.ROOT) as folder:
+            existing = Path(folder) / 'existing'
+            existing.mkdir()
+            marker = existing / 'keep.txt'
+            marker.write_text('owned by someone else')
+            with (patch.object(harness, 'PGDATA', existing), patch.object(harness, 'guard_capacity'),
+                  patch.object(harness, 'validate_paths'), patch.object(harness, 'verify_binaries'),
+                  patch.object(harness, 'run') as run):
+                with self.assertRaisesRegex(harness.Hold, 'EXISTING_CLUSTER'):
+                    harness.start()
+                self.assertEqual(marker.read_text(), 'owned by someone else')
+                run.assert_not_called()
+
+    def test_existing_owner_state_prevents_reinitialization(self):
+        with tempfile.TemporaryDirectory(dir=harness.ROOT) as folder:
+            state = Path(folder) / 'owner.json'
+            state.write_text('{"status":"STOPPED"}')
+            with (patch.object(harness, 'STATE', state), patch.object(harness, 'PGDATA', Path(folder) / 'absent'),
+                  patch.object(harness, 'guard_capacity'), patch.object(harness, 'validate_paths'),
+                  patch.object(harness, 'verify_binaries'), patch.object(harness, 'run') as run):
+                with self.assertRaisesRegex(harness.Hold, 'EXISTING_CLUSTER'):
+                    harness.start()
+                run.assert_not_called()
+
+    def test_foreign_cluster_cannot_be_stopped(self):
+        with tempfile.TemporaryDirectory(dir=harness.ROOT) as folder:
+            state_path = Path(folder) / 'owner.json'
+            state_path.write_text(json.dumps({'schema': 'wolf15.disposable-native-pg/v1',
+                                             'owner_nonce': 'test', 'pgdata': str(Path(folder) / 'foreign'),
+                                             'host': '127.0.0.1', 'pid': 123}))
+            with (patch.object(harness, 'STATE', state_path), patch.object(harness, 'guard_capacity'),
+                  patch.object(harness, 'validate_paths'), patch.object(harness, 'verify_binaries'),
+                  patch.object(harness, 'run') as run, patch.object(harness, 'process_image') as image):
+                with self.assertRaisesRegex(harness.Hold, 'OWNED_CLUSTER_BINDING_INVALID'):
+                    harness.stop()
+                run.assert_not_called()
+                image.assert_not_called()
+
+    def test_wrong_pid_image_cannot_be_stopped(self):
+        with tempfile.TemporaryDirectory(dir=harness.ROOT) as folder:
+            data = Path(folder) / 'data'
+            data.mkdir()
+            (data / 'postmaster.pid').write_text(f'123\n{data}\n0\n54321\n')
+            state_path = Path(folder) / 'owner.json'
+            state_path.write_text(json.dumps({'schema': 'wolf15.disposable-native-pg/v1',
+                                             'owner_nonce': 'test', 'pgdata': str(data),
+                                             'host': '127.0.0.1', 'pid': 123, 'port': 54321}))
+            with (patch.object(harness, 'PGDATA', data), patch.object(harness, 'STATE', state_path),
+                  patch.object(harness, 'guard_capacity'), patch.object(harness, 'validate_paths'),
+                  patch.object(harness, 'verify_binaries'), patch.object(harness, 'run') as run,
+                  patch.object(harness, 'process_image', return_value=str(Path(folder) / 'unrelated.exe'))):
+                with self.assertRaisesRegex(harness.Hold, 'OWNED_PID_DATA_PORT_OR_BINARY_MISMATCH'):
+                    harness.stop()
+                run.assert_not_called()
+
+    def test_child_environment_does_not_inherit_production_connections(self):
+        with patch.dict('os.environ', {'DATABASE_URL': 'production-never-use',
+                                      'PGHOST': 'production-never-use', 'PGPASSWORD': 'not-a-fixture'}):
+            result = harness.child_environment()
+        self.assertNotIn('DATABASE_URL', result)
+        self.assertNotIn('PGHOST', result)
+        self.assertEqual(result['PGPASSWORD'], harness.FIXTURE_PASSWORD)
+
+    def test_verified_owned_stop_does_not_require_capacity(self):
+        with tempfile.TemporaryDirectory(dir=harness.ROOT) as folder:
+            state_path = Path(folder) / 'owner.json'
+            state_path.write_text(json.dumps({'status': 'READY_DISPOSABLE_NATIVE_ONLY', 'owner_nonce': 'test'}))
+            with (patch.object(harness, 'STATE', state_path),
+                  patch.object(harness, 'guard_capacity', side_effect=AssertionError('must not measure')) as capacity,
+                  patch.object(harness, 'validate_paths'), patch.object(harness, 'verify_binaries'),
+                  patch.object(harness, 'validate_owner') as ownership,
+                  patch.object(harness, 'record'), patch.object(harness, 'run') as run):
+                harness.stop()
+                capacity.assert_not_called()
+                ownership.assert_called_once()
+                run.assert_called_once()
+                self.assertEqual(run.call_args.args[0][-1], 'stop')
+                self.assertEqual(json.loads(state_path.read_text())['status'], 'STOPPED_PRESERVED_NO_DELETE')
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

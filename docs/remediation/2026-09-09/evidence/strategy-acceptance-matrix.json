@@ -1,0 +1,441 @@
+[
+  {
+    "clause_id": "24.1.01",
+    "requirement": "100% eligible raw block threshold crossing memiliki durable evaluation",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [
+      "raw_admission_blocks",
+      "pair_admission"
+    ],
+    "related_component_tests_executed": 33,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.02",
+    "requirement": "100% PairAdmission coverage memiliki raw-coverage status dan reason code",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "pair_admission"
+    ],
+    "related_component_tests_executed": 16,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.03",
+    "requirement": "100% PairAdmission outcome memiliki reason code dan lineage hash",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "pair_admission"
+    ],
+    "related_component_tests_executed": 16,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.04",
+    "requirement": "100% qualifying mature advisory episode memiliki StrategyAnalysisAdmission outcome",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.05",
+    "requirement": "100% MATURE_ADVISORY GRANTED membuka/attach stable lifecycle",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.06",
+    "requirement": "100% advisory candidate membawa SHADOW_ONLY promotion eligibility",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.07",
+    "requirement": "100% canonical candidate membawa complete canonical raw lineage",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.08",
+    "requirement": "100% admitted lifecycle memiliki stable strategy_lifecycle_id",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "lifecycle_v2_runtime"
+    ],
+    "related_component_tests_executed": 23,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.09",
+    "requirement": "100% candidate memiliki complete evidence lineage",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "tradeplan_candidate_v2"
+    ],
+    "related_component_tests_executed": 37,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.10",
+    "requirement": "100% ContextEpoch hash hanya material fields",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "context_epoch_v1"
+    ],
+    "related_component_tests_executed": 33,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.11",
+    "requirement": "100% H1/M15 proof memakai closed/as-of candles",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "closed_candle_evidence",
+      "directional_thesis_v1"
+    ],
+    "related_component_tests_executed": 59,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.12",
+    "requirement": "100% target adalah nearest fresh unconsumed target",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [
+      "tradeplan_candidate_v2"
+    ],
+    "related_component_tests_executed": 37,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.13",
+    "requirement": "100% TradePlanCandidate valid_for_execution=false",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "tradeplan_candidate_v2_containment"
+    ],
+    "related_component_tests_executed": 5,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.14",
+    "requirement": "100% terminal/suspended lifecycle memiliki reason",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "lifecycle_v2_runtime",
+      "directional_thesis_v1"
+    ],
+    "related_component_tests_executed": 69,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.1.15",
+    "requirement": "100% repeated replay menghasilkan output hash sama",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "raw_admission_blocks",
+      "context_epoch_v1",
+      "microboost_v1"
+    ],
+    "related_component_tests_executed": 59,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.01",
+    "requirement": "0 derived pressure stream menjadi raw PairAdmission authority",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "raw_admission_blocks"
+    ],
+    "related_component_tests_executed": 17,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.02",
+    "requirement": "0 eligible raw block silently NOT_EVALUATED setelah SLA",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [
+      "pair_admission"
+    ],
+    "related_component_tests_executed": 16,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.03",
+    "requirement": "0 raw coverage UNKNOWN diklasifikasikan sebagai NOT_APPLICABLE",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [
+      "pair_admission"
+    ],
+    "related_component_tests_executed": 16,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.04",
+    "requirement": "0 mature advisory qualifying episode silent-dropped karena PairAdmission tidak ada",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.05",
+    "requirement": "0 MATURE_ADVISORY candidate masuk risk reservation",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.06",
+    "requirement": "0 MATURE_ADVISORY candidate menghasilkan FinalSignal/ExecutionCommand",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.07",
+    "requirement": "0 duplicate lifecycle saat advisory di-upgrade ke canonical raw",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.08",
+    "requirement": "0 advisory candidate dimutasi menjadi canonical candidate tanpa re-evaluation",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.09",
+    "requirement": "0 quote/context menghapus StrategyAnalysisAdmission atau hypothesis",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.10",
+    "requirement": "0 partial/future HTF candle authoritative",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "closed_candle_evidence",
+      "directional_thesis_v1"
+    ],
+    "related_component_tests_executed": 59,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.11",
+    "requirement": "0 direction di luar legal domain",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "directional_thesis_v1"
+    ],
+    "related_component_tests_executed": 46,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.12",
+    "requirement": "0 automatic opposite thesis dari rejection",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "directional_thesis_v1"
+    ],
+    "related_component_tests_executed": 46,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.13",
+    "requirement": "0 mutable DirectionalThesis",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "directional_thesis_v1"
+    ],
+    "related_component_tests_executed": 46,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.14",
+    "requirement": "0 target jauh melewati nearer target",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [
+      "tradeplan_candidate_v2"
+    ],
+    "related_component_tests_executed": 37,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.15",
+    "requirement": "0 empty feasible interval menghasilkan fill search",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "tradeplan_candidate_v2"
+    ],
+    "related_component_tests_executed": 37,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.16",
+    "requirement": "0 WAIT/NO_TRADE dihitung sebagai win",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.17",
+    "requirement": "0 duplicate telemetry membuat admission/lifecycle/pulse/epoch/thesis/box baru",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "raw_admission_blocks",
+      "microboost_v1",
+      "context_epoch_v1"
+    ],
+    "related_component_tests_executed": 59,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.18",
+    "requirement": "0 telemetry-driven expiry extension",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "microboost_v1"
+    ],
+    "related_component_tests_executed": 9,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.19",
+    "requirement": "0 command tanpa active reservation",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": true,
+    "component_test_family_hints": [],
+    "related_component_tests_executed": 0,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  },
+  {
+    "clause_id": "24.2.20",
+    "requirement": "0 symbol-specific strategy branch",
+    "status": "INCOMPLETE",
+    "known_implementation_or_binding_gap": false,
+    "component_test_family_hints": [
+      "tradeplan_candidate_v2_containment"
+    ],
+    "related_component_tests_executed": 5,
+    "acceptance_numerator": null,
+    "acceptance_denominator": null,
+    "reason": "Component suites are not complete v3.1 acceptance fixtures or runtime cohort. No acceptance percentage claimed."
+  }
+]

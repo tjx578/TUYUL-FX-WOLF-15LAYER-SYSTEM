@@ -69,7 +69,7 @@ def test_raw_global_ledger_produces_non_executable_analysis_grant() -> None:
     assert grant.maximum_allowed_gap_seconds == 300
     assert grant.source_scanner_cycle_ids == ("cycle-0", "cycle-150", "cycle-300")
     assert grant.source_event_authority == "RAW_SIGNAL_THROTTLE_LOG_EVENT"
-    assert grant.cross_symbol_interruption_policy == "SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL"
+    assert grant.cross_symbol_interruption_policy == "CROSS_SYMBOL_EVENT_FINALIZES_BLOCK"
     assert grant.duplicate_event_policy == "REJECT_DUPLICATE_STABLE_RAW_ID"
     assert grant.deployment_boundary_policy == "SINGLE_DEPLOYMENT_REQUIRED"
     assert grant.lineage_complete is True
@@ -161,9 +161,9 @@ def test_raw_ledger_ids_are_deterministic_in_event_time_order() -> None:
     assert forward.source_ledger_hash == reversed_input.source_ledger_hash
 
 
-def test_scanner_cross_symbol_interleaving_is_proven_but_does_not_interrupt_pair() -> None:
-    grant = build_pair_admission_grant(
-        _block(),
+def test_cross_symbol_raw_authority_interrupts_a_forged_pair_block() -> None:
+    audit = build_pair_admission_audit(
+        [_block()],
         raw_events=[
             _event(0),
             _event(75, symbol="EURUSD"),
@@ -173,9 +173,18 @@ def test_scanner_cross_symbol_interleaving_is_proven_but_does_not_interrupt_pair
         ],
     )
 
+    assert audit.grants == ()
+    assert audit.rejection_counts == {"CROSS_SYMBOL_INTERRUPTION": 1}
+
+
+def test_cross_symbol_policy_is_explicit_on_grant() -> None:
+    grant = build_pair_admission_grant(
+        _block(),
+        raw_events=[_event(0), _event(150), _event(300)],
+    )
+
     assert grant is not None
-    assert grant.source_event_count == 3
-    assert grant.cross_symbol_interruption_policy == "SCANNER_INTERLEAVING_DOES_NOT_INTERRUPT_SAME_SYMBOL"
+    assert grant.cross_symbol_interruption_policy == "CROSS_SYMBOL_EVENT_FINALIZES_BLOCK"
 
 
 def test_duplicate_stable_raw_identity_fails_closed() -> None:
