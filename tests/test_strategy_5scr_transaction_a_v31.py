@@ -87,7 +87,7 @@ async def fixture():
         pg=db,
         capacity_repository=capacity,
         candidate_repository=candidates,
-        verify_handoff=lambda *_: True,
+        verify_handoff=kwargs["verify_handoff"],
         verify_universe=lambda *_: True,
         verify_risk_inputs=lambda *_: True,
     )

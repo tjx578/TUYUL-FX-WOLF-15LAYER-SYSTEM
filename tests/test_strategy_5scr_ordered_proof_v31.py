@@ -4,9 +4,23 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from analysis.strategy_5scr_reference_pattern_v31 import (
+    ReferencePatternPolicyV31,
+    build_reference_pattern_receipts_v31,
+    reference_pattern_policy_hash,
+)
 from contracts.strategy_5scr_ordered_proof_v31 import OrderedProofEvidenceV31, ordered_proof_hash_v31
 from tests.test_strategy_5scr_context_route_v31 import NOW, H, receipt
 from tests.test_strategy_5scr_directional_thesis_v1 import _candles, _rehash_candle
+
+
+def reference_policy():
+    return ReferencePatternPolicyV31(
+        profile="TEST_ONLY",
+        rule_id="ADJACENT_H1_PAIR_M15_TRIPLE_TEST_V1",
+        source_rule="5scr.directional-thesis.v1",
+        selected_route="FIXTURE_CONTINUATION",
+    )
 
 
 def proof(context=None, thesis_id=None):
@@ -29,7 +43,7 @@ def proof(context=None, thesis_id=None):
         )
 
     h1, m15 = shifted(h1), shifted(m15)
-    return OrderedProofEvidenceV31(
+    value = OrderedProofEvidenceV31(
         profile="TEST_ONLY",
         strategy_thesis_id=thesis_id,
         strategy_lifecycle_id=context.strategy_lifecycle_id,
@@ -38,7 +52,7 @@ def proof(context=None, thesis_id=None):
         direction=context.direction,
         selected_route=context.selected_route,
         context_material_hash=context.material_context_hash,
-        pattern_policy_hash=H,
+        pattern_policy_hash=reference_pattern_policy_hash(reference_policy()),
         level_version="fixture-level-v1",
         h1_proof_id=UUID(int=70),
         m15_proof_id=UUID(int=71),
@@ -54,6 +68,7 @@ def proof(context=None, thesis_id=None):
         evaluated_at=NOW,
         valid_until=NOW + timedelta(hours=1),
     )
+    return build_reference_pattern_receipts_v31(value, policy=reference_policy())
 
 
 @pytest.mark.parametrize("direction", ["BUY", "SELL"])

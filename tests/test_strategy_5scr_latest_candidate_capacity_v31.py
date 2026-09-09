@@ -5,12 +5,14 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from analysis.strategy_5scr_reference_pattern_v31 import ReferencePatternHandoffVerifierV31
 from analysis.strategy_5scr_target_selection_v31 import target_universe_hash_v31
 from contracts.strategy_5scr_candidate_revision_v31 import CandidateCapacityPreparationV31
 from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
 from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
 from tests.test_strategy_5scr_candidate_handoff_v31 import bundle
 from tests.test_strategy_5scr_candidate_revision_v31 import NOW, FakeDB, repository, revision
+from tests.test_strategy_5scr_ordered_proof_v31 import reference_policy
 
 
 async def fixture(advisory=False):
@@ -30,7 +32,9 @@ async def fixture(advisory=False):
         "now": NOW,
         "capacity_owner_epoch": ledger.owner_epoch,
         "expected_capacity_version": ledger.version,
-        "verify_handoff": lambda _, digest: digest == candidate_handoff_hash_v31(handoff),
+        "verify_handoff": ReferencePatternHandoffVerifierV31(
+            policy=reference_policy(), attest_remaining=lambda _, digest: digest == candidate_handoff_hash_v31(handoff)
+        ),
         "verify_universe": lambda _, digest: digest == target_universe_hash_v31(handoff.target_universe),
         "verify_risk_inputs": lambda _, digest: digest == parent_sizing_request_hash_v31(request),
     }

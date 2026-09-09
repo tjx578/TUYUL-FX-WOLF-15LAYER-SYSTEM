@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from analysis.strategy_5scr_reference_pattern_v31 import ReferencePatternHandoffVerifierV31
 from analysis.strategy_5scr_target_selection_v31 import solve_target_geometry_v31, target_universe_hash_v31
 from contracts.strategy_5scr_candidate_handoff_v31 import CandidateHandoffV31, TradePlanCandidateV31
 from contracts.strategy_5scr_context_route_v31 import (
@@ -23,6 +24,7 @@ from tests.test_strategy_5scr_capacity_v31 import NOW, H, request_for, seed
 from tests.test_strategy_5scr_context_route_v31 import receipt as context_fixture
 from tests.test_strategy_5scr_net_geometry_v31 import request_data
 from tests.test_strategy_5scr_ordered_proof_v31 import proof as proof_fixture
+from tests.test_strategy_5scr_ordered_proof_v31 import reference_policy
 from tests.test_strategy_5scr_target_selection_v31 import fixture as target_fixture
 
 
@@ -119,7 +121,9 @@ def propose(ledger, handoff, request, **overrides):
         now=NOW,
         owner_epoch=ledger.owner_epoch,
         expected_version=ledger.version,
-        verify_handoff=lambda _, digest: digest == handoff_hash,
+        verify_handoff=ReferencePatternHandoffVerifierV31(
+            policy=reference_policy(), attest_remaining=lambda _, digest: digest == handoff_hash
+        ),
         verify_universe=lambda _, digest: digest == universe_hash,
         verify_risk_inputs=lambda _, digest: digest == risk_hash,
     )
