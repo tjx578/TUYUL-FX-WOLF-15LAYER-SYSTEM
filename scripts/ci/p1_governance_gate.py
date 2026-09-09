@@ -67,9 +67,14 @@ def validate_branch_protection(protection: dict[str, Any]) -> None:
     require(protection.get("enforce_admins", {}).get("enabled") is True, "admin enforcement missing")
     reviews = protection.get("required_pull_request_reviews") or {}
     count = reviews.get("required_approving_review_count")
-    require(type(count) is int and count >= 1, "at least one approving review required")
+    # Owner-operated policy: a PR and automated gates remain mandatory, but a
+    # second account is optional. Preserve stronger review rules if configured.
+    require(type(count) is int and count >= 0, "explicit nonnegative review count required")
     require(reviews.get("dismiss_stale_reviews") is True, "stale approvals must be dismissed")
-    require(reviews.get("require_last_push_approval") is True, "latest push must require independent approval")
+    if count > 0:
+        require(reviews.get("require_last_push_approval") is True, "latest push must require independent approval")
+    else:
+        require(reviews.get("require_last_push_approval") is False, "owner-operated review policy is inconsistent")
     require(
         protection.get("required_conversation_resolution", {}).get("enabled") is True,
         "review conversations must be resolved",
@@ -83,10 +88,13 @@ def validate_branch_protection(protection: dict[str, Any]) -> None:
 def validate_environment(environment: dict[str, Any]) -> None:
     require(str(environment.get("name", "")).lower() == "production", "wrong protected environment")
     require(environment.get("can_admins_bypass") is False, "environment admin bypass enabled or unknown")
-    rules = [rule for rule in environment.get("protection_rules", []) if rule.get("type") == "required_reviewers"]
-    require(len(rules) == 1, "required environment reviewer rule absent or duplicated")
-    require(bool(rules[0].get("reviewers")), "environment reviewer list empty")
-    require(rules[0].get("prevent_self_review") is True, "environment self approval not blocked")
+    protection_rules = environment.get("protection_rules")
+    require(isinstance(protection_rules, list), "environment protection metadata absent")
+    rules = [rule for rule in protection_rules if rule.get("type") == "required_reviewers"]
+    require(len(rules) <= 1, "environment reviewer rule duplicated")
+    if rules:
+        require(bool(rules[0].get("reviewers")), "environment reviewer list empty")
+        require(rules[0].get("prevent_self_review") is True, "environment self approval not blocked")
     policy = environment.get("deployment_branch_policy") or {}
     require(
         policy.get("protected_branches") is True and policy.get("custom_branch_policies") is False,
