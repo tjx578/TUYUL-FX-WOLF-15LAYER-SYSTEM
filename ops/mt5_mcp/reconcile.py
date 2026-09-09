@@ -285,7 +285,7 @@ def _measurement_summary(
         return {}, False
     summary: dict[str, Any] = {}
     expected_window = {"from_utc": _iso(window_from), "to_utc": _iso(window_to)}
-    measured = bool(broker.get("tool_surface_exact")) and broker.get("window") == expected_window
+    measured = broker.get("tool_surface_exact") is True and broker.get("window") == expected_window
     for tool_name in (
         "mt5_account_get",
         "mt5_positions_get",
@@ -300,13 +300,30 @@ def _measurement_summary(
             continue
         state = payload.get("measurement_state", "NOT_MEASURED")
         truncated = payload.get("truncated")
+        records = payload.get("records")
+        count = payload.get("record_count")
+        source_count = payload.get("source_record_count")
+        consistent = (
+            isinstance(records, list)
+            and all(isinstance(record, Mapping) for record in records)
+            and type(count) is int
+            and type(source_count) is int
+            and count == source_count == len(records)
+            and state == ("MEASURED" if records else "MEASURED_EMPTY")
+        )
+        if consistent and tool_name != "mt5_account_get":
+            tickets = [record.get("ticket") for record in records]
+            consistent = all(type(ticket) is int and ticket > 0 for ticket in tickets)
+            if consistent:
+                consistent = len(set(tickets)) == len(tickets)
         summary[tool_name] = {
             "measurement_state": state,
             "record_count": payload.get("record_count"),
             "source_record_count": payload.get("source_record_count"),
             "truncated": truncated,
+            "payload_consistent": consistent,
         }
-        if state not in MEASURED_STATES or truncated is not False:
+        if state not in MEASURED_STATES or truncated is not False or not consistent:
             measured = False
         if tool_name.startswith("mt5_history_") and payload.get("window") != expected_window:
             measured = False
@@ -481,12 +498,13 @@ def reconcile_snapshots(
         window_from=window_from,
         window_to=window_to,
     )
-    database_measured = bool(database.get("measured")) and not bool(database.get("truncated"))
+    database_measured = database.get("measured") is True and database.get("truncated") is False
     mutation_evidence = database.get("mutation_evidence", {})
     zero_mutation = bool(
         isinstance(mutation_evidence, Mapping)
         and mutation_evidence.get("xid_unassigned") is True
-        and int(mutation_evidence.get("changed_tuples") or 0) == 0
+        and type(mutation_evidence.get("changed_tuples")) is int
+        and mutation_evidence["changed_tuples"] == 0
     )
     account_state, account_evidence = _account_binding(broker, database)
 
