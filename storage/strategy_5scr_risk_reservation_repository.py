@@ -588,8 +588,8 @@ class Strategy5SCRRiskReservationRepository:
                 entry_role=request.entry_role,
                 parent_is_open=False,
                 child_already_exists=False,
-                committed_or_reserved_campaign_risk_usd=float(totals["campaign_risk"]),
-                account_total_open_risk_usd=float(totals["account_risk"]),
+                committed_or_reserved_campaign_risk_usd=totals["campaign_risk"],
+                account_total_open_risk_usd=totals["account_risk"],
                 policy=self._policy.campaign,
             )
             if verdict != _APPROVED_PARENT:

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
+from fractions import Fraction
 
 from contracts.mt5_execution_protocol import AccountSnapshotV1, SymbolCapability
 
@@ -257,28 +258,55 @@ def authorize_campaign_risk(
     entry_role: str,
     parent_is_open: bool,
     child_already_exists: bool,
-    committed_or_reserved_campaign_risk_usd: float,
-    account_total_open_risk_usd: float,
+    committed_or_reserved_campaign_risk_usd: float | Decimal,
+    account_total_open_risk_usd: float | Decimal,
     policy: CampaignRiskPolicy,
 ) -> S5RiskReason:
     role = entry_role.upper()
     if role not in {"PARENT", "CHILD"}:
         return S5RiskReason.INVALID_ENTRY_ROLE
-    if committed_or_reserved_campaign_risk_usd < 0 or account_total_open_risk_usd < 0:
+    campaign_total = Decimal(str(committed_or_reserved_campaign_risk_usd))
+    account_total = Decimal(str(account_total_open_risk_usd))
+    if any(not value.is_finite() or value < 0 for value in (campaign_total, account_total)):
         return S5RiskReason.RISK_STATE_INVALID
     if not candidate.allowed:
+        if candidate.reason in {S5RiskReason.APPROVED_PARENT, S5RiskReason.APPROVED_CHILD}:
+            return S5RiskReason.RISK_STATE_INVALID
         return candidate.reason
+    approved_reason = S5RiskReason.APPROVED_CHILD if role == "CHILD" else S5RiskReason.APPROVED_PARENT
+    values = (
+        candidate.risk_budget_usd,
+        candidate.effective_loss_per_lot,
+        candidate.raw_volume,
+        candidate.final_volume,
+        candidate.actual_planned_risk_usd,
+        risk_lock.risk_unit_usd,
+        risk_lock.max_campaign_risk_usd,
+        risk_lock.balance_base,
+    )
+    if any(not isinstance(value, Decimal) or not value.is_finite() or value <= 0 for value in values):
+        return S5RiskReason.RISK_STATE_INVALID
+    if (
+        candidate.reason != approved_reason
+        or candidate.risk_budget_usd != risk_lock.risk_unit_usd
+        or candidate.final_volume > candidate.raw_volume
+        or Fraction(candidate.actual_planned_risk_usd)
+        != Fraction(candidate.final_volume) * Fraction(candidate.effective_loss_per_lot)
+    ):
+        return S5RiskReason.RISK_STATE_INVALID
+    if candidate.actual_planned_risk_usd > risk_lock.risk_unit_usd:
+        return S5RiskReason.ACTUAL_EXCEEDS_1R
     if role == "CHILD" and not parent_is_open:
         return S5RiskReason.PARENT_NOT_OPEN
     if role == "CHILD" and child_already_exists:
         return S5RiskReason.CHILD_ALREADY_EXISTS
 
-    combined_campaign = Decimal(str(committed_or_reserved_campaign_risk_usd)) + candidate.actual_planned_risk_usd
-    if combined_campaign > risk_lock.max_campaign_risk_usd:
+    combined_campaign = Fraction(campaign_total) + Fraction(candidate.actual_planned_risk_usd)
+    if combined_campaign > Fraction(risk_lock.max_campaign_risk_usd):
         return S5RiskReason.CAMPAIGN_EXCEEDS_2R
 
-    projected_open_risk = Decimal(str(account_total_open_risk_usd)) + candidate.actual_planned_risk_usd
-    account_cap = risk_lock.balance_base * policy.max_total_open_risk_percent
+    projected_open_risk = Fraction(account_total) + Fraction(candidate.actual_planned_risk_usd)
+    account_cap = Fraction(risk_lock.balance_base) * Fraction(policy.max_total_open_risk_percent)
     if projected_open_risk > account_cap:
         return S5RiskReason.ACCOUNT_OPEN_RISK_EXCEEDED
     return S5RiskReason.APPROVED_CHILD if role == "CHILD" else S5RiskReason.APPROVED_PARENT

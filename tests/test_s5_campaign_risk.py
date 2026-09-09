@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
+
+import pytest
 
 from contracts.mt5_execution_protocol import AccountSnapshotV1, MarginMode, SymbolCapability
 from risk.s5_campaign_risk import (
@@ -173,3 +176,80 @@ def test_stale_snapshot_fails_closed() -> None:
     )
     assert not result.allowed
     assert result.reason == S5RiskReason.SNAPSHOT_STALE
+
+
+def _authorize(candidate, **overrides):
+    args = dict(
+        risk_lock=_risk_lock(),
+        candidate=candidate,
+        entry_role="PARENT",
+        parent_is_open=False,
+        child_already_exists=False,
+        committed_or_reserved_campaign_risk_usd=0,
+        account_total_open_risk_usd=0,
+        policy=CampaignRiskPolicy(),
+    )
+    args.update(overrides)
+    return authorize_campaign_risk(**args)
+
+
+def _sized_parent():
+    return size_position_for_locked_risk(
+        risk_lock=_risk_lock(), symbol_spec=_symbol(), entry_price=1.1, stop_loss=1.095, entry_role="PARENT"
+    )
+
+
+def test_sizing_from_different_risk_lock_cannot_borrow_current_campaign_capacity():
+    larger = CampaignRiskLock.create(
+        campaign_id="OTHER", account_id="acct-01", closed_balance=1200, policy=CampaignRiskPolicy()
+    )
+    candidate = size_position_for_locked_risk(
+        risk_lock=larger, symbol_spec=_symbol(), entry_price=1.1, stop_loss=1.095, entry_role="PARENT"
+    )
+    assert candidate.actual_planned_risk_usd == Decimal("60")
+    assert _authorize(candidate) == S5RiskReason.RISK_STATE_INVALID
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"allowed": False},
+        {"actual_planned_risk_usd": Decimal("-1")},
+        {"actual_planned_risk_usd": Decimal("NaN")},
+        {"effective_loss_per_lot": Decimal("Infinity")},
+        {"actual_planned_risk_usd": Decimal("1")},
+        {"reason": S5RiskReason.APPROVED_CHILD},
+    ],
+)
+def test_inconsistent_sizing_cannot_authorize(changes):
+    assert _authorize(replace(_sized_parent(), **changes)) == S5RiskReason.RISK_STATE_INVALID
+
+
+@pytest.mark.parametrize("field", ["committed_or_reserved_campaign_risk_usd", "account_total_open_risk_usd"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
+def test_invalid_ledger_numbers_return_rejection(field, value):
+    assert _authorize(_sized_parent(), **{field: value}) == S5RiskReason.RISK_STATE_INVALID
+
+
+def test_current_lock_valid_candidate_is_still_approved():
+    assert _authorize(_sized_parent()) == S5RiskReason.APPROVED_PARENT
+
+
+def test_one_risk_unit_is_rechecked_even_when_campaign_cap_has_room():
+    candidate = replace(
+        _sized_parent(), final_volume=Decimal("0.12"), raw_volume=Decimal("0.12"), actual_planned_risk_usd=Decimal("60")
+    )
+    assert _authorize(candidate) == S5RiskReason.ACTUAL_EXCEEDS_1R
+
+
+@pytest.mark.parametrize(
+    "field,reason",
+    [
+        ("committed_or_reserved_campaign_risk_usd", S5RiskReason.CAMPAIGN_EXCEEDS_2R),
+        ("account_total_open_risk_usd", S5RiskReason.ACCOUNT_OPEN_RISK_EXCEEDED),
+    ],
+)
+def test_decimal_ledger_excess_is_not_rounded_down_at_cap(field, reason):
+    total = Decimal("50.000000000000000000000000001")
+    assert float(total) == 50.0  # The old repository conversion lost this excess.
+    assert _authorize(_sized_parent(), **{field: total}) == reason
