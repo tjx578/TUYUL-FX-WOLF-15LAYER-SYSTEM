@@ -257,7 +257,11 @@ def repository(db):
     return CandidateRevisionRepositoryV31(pg=db, fence=db.fence, verify_reevaluation=lambda *_: True)
 
 
-def test_repository_commit_retry_and_latest_keep_immutable_history():
+def test_repository_commit_retry_and_latest_keep_immutable_history(monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(seconds=1))
+
     async def run():
         db = FakeDB()
         repo = repository(db)
@@ -268,7 +272,7 @@ def test_repository_commit_retry_and_latest_keep_immutable_history():
         assert await repo.append(request, now=NOW + timedelta(days=1)) == first
         async with db.transaction():
             assert await repo.lock_latest(db, request.handoff.candidate.tradeplan_id) == second
-        assert len(db.rows) == 2 and db.commits == 4
+        assert len(db.rows) == 2 and db.commits == 6
         conflict = request.model_copy(update={"reevaluation_receipt_hash": "sha256:" + "f" * 64})
         with pytest.raises(ValueError, match="PAYLOAD_CONFLICT"):
             await repo.append(conflict, now=NOW)
@@ -297,5 +301,94 @@ def test_repository_caller_transaction_and_owner_are_required():
         with pytest.raises(ValueError, match="STALE_OR_UNBOUND"):
             await repo.append(revision(), now=NOW)
         assert not db.rows
+
+    asyncio.run(run())
+
+
+def test_append_verifier_releases_snapshot_lock_and_commit_rechecks_expiry(monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    async def run():
+        db = FakeDB()
+        repo = repository(db)
+        request = revision()
+
+        def verify(*_):
+            assert not db.active
+            monkeypatch.setattr(detached, "commit_time_v31", lambda: request.handoff.handoff_receipt_valid_until)
+            return True
+
+        repo._verify = verify
+        with pytest.raises(ValueError, match="RECEIPT_EXPIRED"):
+            await repo.append(request, now=NOW)
+        assert not db.rows and db.commits == 1
+
+    asyncio.run(run())
+
+
+def test_append_verifier_handover_cannot_write_with_old_owner(monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW)
+
+    async def run():
+        db = FakeDB()
+        repo = repository(db)
+
+        def verify(*_):
+            assert not db.active
+            db.fence = LifecycleOwnerFence("EURUSD", db.fence.scope_hash, "successor", 2, UUID(int=99))
+            return True
+
+        repo._verify = verify
+        with pytest.raises(ValueError, match="STALE_OR_UNBOUND"):
+            await repo.append(revision(), now=NOW)
+        assert not db.rows
+
+    asyncio.run(run())
+
+
+def test_append_expiry_during_insert_rolls_back(monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW)
+
+    async def run():
+        db = FakeDB()
+        request = revision()
+        execute = db.execute
+
+        async def delayed(sql, *args):
+            result = await execute(sql, *args)
+            if "INSERT INTO" in sql:
+                monkeypatch.setattr(detached, "commit_time_v31", lambda: request.handoff.handoff_receipt_valid_until)
+            return result
+
+        db.execute = delayed
+        with pytest.raises(ValueError, match="RECEIPT_EXPIRED"):
+            await repository(db).append(request, now=NOW)
+        assert not db.rows and db.commits == 1
+
+    asyncio.run(run())
+
+
+def test_append_writing_commit_failure_does_not_ack_or_leave_row(monkeypatch):
+    from storage import strategy_5scr_prepared_v31 as detached
+
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW)
+
+    async def run():
+        db = FakeDB()
+        repo = repository(db)
+
+        def verify(*_):
+            assert not db.active
+            db.fail_commit = True
+            return True
+
+        repo._verify = verify
+        with pytest.raises(RuntimeError, match="commit failure"):
+            await repo.append(revision(), now=NOW)
+        assert not db.rows and db.commits == 1
 
     asyncio.run(run())

@@ -11,6 +11,7 @@ from contracts.strategy_5scr_activity_delivery import ActivityConsumerScopeV1
 from contracts.strategy_5scr_capacity_owner_v31 import CapacityOwnerFenceV31
 from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
 from risk.strategy_5scr_capacity_v31 import capacity_content_hash_v31, capacity_ledger_hash_v31
+from storage import strategy_5scr_prepared_v31 as detached
 from storage.strategy_5scr_activity_consumer import transfer_owner
 from storage.strategy_5scr_candidate_revision_v31 import CandidateRevisionRepositoryV31
 from storage.strategy_5scr_capacity_v31 import TABLE, CapacityRepositoryV31
@@ -35,7 +36,9 @@ __all__ = ["pg_dsn"]
         "parent_rollback",
     ],
 )
-def test_capacity_persistence_postgres_acceptance(pg_dsn, scenario):
+def test_capacity_persistence_postgres_acceptance(pg_dsn, scenario, monkeypatch):
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(microseconds=500000))
+
     async def run():
         db = DB(pg_dsn)
         ledger, _, request = bundle()
@@ -57,8 +60,9 @@ def test_capacity_persistence_postgres_acceptance(pg_dsn, scenario):
             assert await c.fetchval("SELECT to_regclass($1)", TABLE), "explicit migration 20260909_05 required"
 
         async def initialize():
+            prepared = repo.prepare_initial_detached(ledger, verify_initial=lambda *_: True)
             async with db.transaction() as c:
-                result = await repo.initialize_in_transaction(c, ledger, verify_initial=lambda *_: True)
+                result = await repo.initialize_in_transaction(c, ledger, prepared=prepared)
                 if scenario == "initialization_rollback":
                     raise RuntimeError("injected initialization rollback")
                 return result
@@ -136,19 +140,29 @@ def test_capacity_persistence_postgres_acceptance(pg_dsn, scenario):
             reservation = uuid4()
 
             async def parent():
+                kwargs = dict(
+                    expected_candidate_revision_hash=stored.request_hash,
+                    request=request,
+                    reservation_id=reservation,
+                    expires_at=NOW + timedelta(seconds=1),
+                    now=NOW,
+                    expected_capacity_version=0,
+                )
+                async with db.transaction() as c:
+                    current = await repo.lock_current(c)
+                    latest = await candidates.lock_latest(c, plan)
+                prepared = candidates.prepare_parent_detached(
+                    latest,
+                    ledger=current,
+                    capacity_owner_epoch=repo.fence.owner_epoch,
+                    **kwargs,
+                    verify_handoff=lambda *_: True,
+                    verify_universe=lambda *_: True,
+                    verify_risk_inputs=lambda *_: True,
+                )
                 async with db.transaction() as c:
                     result = await repo.prepare_parent_in_transaction(
-                        c,
-                        candidate_repository=candidates,
-                        expected_candidate_revision_hash=stored.request_hash,
-                        request=request,
-                        reservation_id=reservation,
-                        expires_at=NOW + timedelta(seconds=1),
-                        now=NOW,
-                        expected_capacity_version=0,
-                        verify_handoff=lambda *_: True,
-                        verify_universe=lambda *_: True,
-                        verify_risk_inputs=lambda *_: True,
+                        c, candidate_repository=candidates, prepared=prepared, **kwargs
                     )
                     if scenario == "parent_rollback":
                         raise RuntimeError("injected parent rollback")

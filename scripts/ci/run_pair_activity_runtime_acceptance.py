@@ -35,6 +35,7 @@ SOURCES = (
     "scripts/ci/pair_activity_run_evidence.py",
     "scripts/ci/postgres_server_binding.py",
     "tests/conftest.py",
+    "tests/test_detached_preparation_v31.py",
     "conftest.py",
     "requirements.txt",
     "pyproject.toml",

@@ -9,6 +9,7 @@ from contracts.strategy_5scr_transaction_a_v31 import (
     TransactionARequestV31,
     transaction_content_hash_v31,
 )
+from storage import strategy_5scr_prepared_v31 as detached
 
 PREFIX = "public.strategy_5scr_transaction_a_"
 
@@ -76,6 +77,9 @@ class TransactionARepositoryV31:
 
     async def submit(self, request: TransactionARequestV31, *, now):
         request = TransactionARequestV31.model_validate(request.model_dump())
+        request_digest = transaction_content_hash_v31(request)
+        # Snapshot locks are released before any externally supplied verifier.
+        # An exact historical bundle wins before freshness or a new proposal.
         async with self._pg.transaction() as connection:
             current = await self.capacity.lock_current(connection)
             if (request.sizing.expected_account_id, request.sizing.expected_executor_id) != (
@@ -84,20 +88,46 @@ class TransactionARepositoryV31:
             ):
                 raise ValueError("TRANSACTION_A_ACCOUNT_BINDING_MISMATCH")
             bundle = await self._existing(connection, request, current)
+            latest = (
+                await self.candidates.lock_latest(connection, UUID(request.sizing.tradeplan_id))
+                if bundle is None
+                else None
+            )
+        if bundle is not None:
+            return TransactionAReceiptV31(status="DUPLICATE_TEST_ONLY", bundle=bundle)
+
+        arguments = dict(
+            request=request.sizing,
+            expected_candidate_revision_hash=request.candidate_revision_hash,
+            reservation_id=request.reservation_id,
+            expires_at=request.expires_at,
+            now=now,
+            expected_capacity_version=request.expected_capacity_version,
+        )
+        prepared_token = self.candidates.prepare_parent_detached(
+            latest,
+            ledger=current,
+            capacity_owner_epoch=self.capacity.fence.owner_epoch,
+            **arguments,
+            verify_handoff=self.verify_handoff,
+            verify_universe=self.verify_universe,
+            verify_risk_inputs=self.verify_risk_inputs,
+        )
+        if transaction_content_hash_v31(request) != request_digest:
+            raise ValueError("TRANSACTION_A_REQUEST_CHANGED_DURING_VERIFICATION")
+
+        # This is the only writing transaction. Reacquire both owners and state
+        # bindings; never execute the verifier again while those locks are held.
+        async with self._pg.transaction() as connection:
+            current = await self.capacity.lock_current(connection)
+            bundle = await self._existing(connection, request, current)
             duplicate = bundle is not None
             if bundle is None:
                 prepared = await self.capacity.prepare_parent_in_transaction(
                     connection,
                     candidate_repository=self.candidates,
-                    request=request.sizing,
-                    expected_candidate_revision_hash=request.candidate_revision_hash,
-                    reservation_id=request.reservation_id,
-                    expires_at=request.expires_at,
-                    now=now,
-                    expected_capacity_version=request.expected_capacity_version,
-                    verify_handoff=self.verify_handoff,
-                    verify_universe=self.verify_universe,
-                    verify_risk_inputs=self.verify_risk_inputs,
+                    **arguments,
+                    prepared=prepared_token,
                 )
                 if prepared.capacity.status != "APPLIED_TEST_ONLY":
                     raise ValueError("TRANSACTION_A_ORPHAN_CAPACITY_REQUIRES_RECONCILIATION")
@@ -127,6 +157,14 @@ class TransactionARepositoryV31:
                         transaction_content_hash_v31(payload),
                         json.dumps(payload),
                     )
+                # Recheck after awaited writes. This is an application exit check,
+                # not a guarantee about the server's eventual commit timestamp.
+                detached.fresh_parent_v31(
+                    request.sizing,
+                    prepared.candidate_revision.request.handoff,
+                    request.expires_at,
+                    detached.commit_time_v31(),
+                )
         # Even the duplicate path exits the transaction before its receipt leaves.
         return TransactionAReceiptV31(
             status="DUPLICATE_TEST_ONLY" if duplicate else "COMMITTED_TEST_ONLY", bundle=bundle

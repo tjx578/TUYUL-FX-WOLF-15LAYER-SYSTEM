@@ -10,9 +10,24 @@ from analysis.strategy_5scr_target_selection_v31 import target_universe_hash_v31
 from contracts.strategy_5scr_candidate_revision_v31 import CandidateCapacityPreparationV31
 from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31
 from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
+from storage import strategy_5scr_prepared_v31 as detached
 from tests.test_strategy_5scr_candidate_handoff_v31 import bundle
 from tests.test_strategy_5scr_candidate_revision_v31 import NOW, FakeDB, repository, revision
 from tests.test_strategy_5scr_ordered_proof_v31 import reference_policy
+
+
+@pytest.fixture(autouse=True)
+def commit_clock(monkeypatch):
+    monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(seconds=0.5))
+
+
+async def prepare(db, repo, kwargs):
+    async with db.transaction():
+        latest = await repo.lock_latest(db, UUID(kwargs["request"].tradeplan_id))
+    token = repo.prepare_parent_detached(latest, **kwargs)
+    arguments = {name: value for name, value in kwargs.items() if not name.startswith("verify_")}
+    async with db.transaction():
+        return await repo.prepare_parent_in_transaction(db, **arguments, prepared=token)
 
 
 async def fixture(advisory=False):
@@ -44,14 +59,13 @@ async def fixture(advisory=False):
 def test_caller_loads_locked_current_candidate_then_runs_actual_capacity_handoff():
     async def run():
         db, repo, stored, kwargs = await fixture()
-        async with db.transaction():
-            result = await repo.prepare_parent_in_transaction(db, **kwargs)
-            assert result.candidate_revision == stored
-            assert result.capacity.ledger.version == 1
-            assert result.capacity.reservation.strategy_candidate_receipt_hash == candidate_handoff_hash_v31(
-                stored.request.handoff
-            )
-            assert result.durable_commit is result.capital_reservation_authority is result.execution_authority is False
+        result = await prepare(db, repo, kwargs)
+        assert result.candidate_revision == stored
+        assert result.capacity.ledger.version == 1
+        assert result.capacity.reservation.strategy_candidate_receipt_hash == candidate_handoff_hash_v31(
+            stored.request.handoff
+        )
+        assert result.durable_commit is result.capital_reservation_authority is result.execution_authority is False
         assert kwargs["ledger"].reservations == ()
         assert len(db.rows) == 1  # Preparation does not claim to persist risk/outbox effects.
 
@@ -92,23 +106,23 @@ def test_latest_candidate_capacity_denies_missing_or_conflicting_binding(fault, 
             kwargs["now"] = NOW + timedelta(seconds=2)
         with pytest.raises(ValueError, match=reason):
             if fault == "transaction":
-                await repo.prepare_parent_in_transaction(db, **kwargs)
+                arguments = {name: value for name, value in kwargs.items() if not name.startswith("verify_")}
+                await repo.prepare_parent_in_transaction(db, **arguments)
             else:
-                async with db.transaction():
-                    await repo.prepare_parent_in_transaction(db, **kwargs)
+                await prepare(db, repo, kwargs)
 
     asyncio.run(run())
 
 
-def test_superseded_revision_cannot_enter_capacity_even_with_matching_old_receipt():
+def test_superseded_revision_cannot_enter_capacity_even_with_matching_old_receipt(monkeypatch):
     async def run():
         db, repo, first, kwargs = await fixture()
+        monkeypatch.setattr(detached, "commit_time_v31", lambda: NOW + timedelta(seconds=1))
         second = await repo.append(revision(2, first), now=NOW + timedelta(seconds=1))
         for expected in (first.request_hash, second.request_hash):
             kwargs["expected_candidate_revision_hash"] = expected
             with pytest.raises(ValueError, match="LATEST_REVISION_MISMATCH"):
-                async with db.transaction():
-                    await repo.prepare_parent_in_transaction(db, **kwargs)
+                await prepare(db, repo, kwargs)
         assert await repo.append(first.request, now=NOW + timedelta(days=1)) == first
 
     asyncio.run(run())
@@ -123,8 +137,7 @@ def test_advisory_history_cannot_gain_risk_authority_through_storage():
 
         kwargs.update(verify_handoff=forbidden, verify_universe=forbidden, verify_risk_inputs=forbidden)
         with pytest.raises(ValueError, match="ADVISORY_RISK_HANDOFF_PROHIBITED"):
-            async with db.transaction():
-                await repo.prepare_parent_in_transaction(db, **kwargs)
+            await prepare(db, repo, kwargs)
 
     asyncio.run(run())
 
@@ -132,8 +145,7 @@ def test_advisory_history_cannot_gain_risk_authority_through_storage():
 def test_preparation_contract_cannot_claim_commit_or_substitute_candidate_identity():
     async def run():
         db, repo, _, kwargs = await fixture()
-        async with db.transaction():
-            result = await repo.prepare_parent_in_transaction(db, **kwargs)
+        result = await prepare(db, repo, kwargs)
         with pytest.raises(ValidationError):
             CandidateCapacityPreparationV31.model_validate({**result.model_dump(), "durable_commit": True})
         payload = result.model_dump()

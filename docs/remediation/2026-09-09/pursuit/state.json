@@ -6,7 +6,7 @@
   "selected_ssot": "repository_existing_v3.1",
   "readme_updates_allowed": false,
   "current_goal": "NATURAL_DEMO_DONE_AND_REAL_REVIEW_DONE",
-  "current_slice": "P1_CI_AND_POSTGRES_EXECUTION",
+  "current_slice": "K05_DETACHED_VERIFICATION_CURRENT_POSTGRES_ACCEPTANCE",
   "canonical_action_state": {
     "A00": {
       "historical_report": "DONE_ACQUISITION_ONLY",
@@ -754,7 +754,7 @@
     "changes": [],
     "independent_review": "NOT_EXECUTED"
   },
-  "next_action_on_resume": "Continue C01 equivalent alternate canary source/target gate, C02 runtime owner and legacy zero-submit, C06 disabled-profile and other required roles, and K05 external attestation outside account locks.",
+  "next_action_on_resume": "Run current 94 PostgreSQL identities and required CI on detached-verification candidate; preserve C04 closed scope and remaining C01/C02/C06 and K05 operational bindings.",
   "no_executable_default_credentials": true,
   "selected_ssot_binding": {
     "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
@@ -803,12 +803,13 @@
       "DONE": false
     },
     "K05": {
-      "status": "EXPLICIT_REFERENCE_PATTERN_CALLER_LOCAL_PASS_RUNTIME_PARTIAL",
+      "status": "DETACHED_VERIFICATION_LOCAL_PASS_CURRENT_PG_PENDING_OPERATIONAL_PARTIAL",
       "DONE": false,
-      "evidence_ref": "evidence/k05-reference-pattern-validation.json",
+      "evidence_ref": "pursuit/evidence/k05-detached-20260909/validation.json",
       "previous_evidence_refs": [
         "evidence/k05-ordered-proof-validation.json",
-        "evidence/k05-context-validation.json"
+        "evidence/k05-context-validation.json",
+        "evidence/k05-reference-pattern-validation.json"
       ],
       "remaining": [
         "Latest witness selection, later-candle invalidation and full session/source coverage attestation",
@@ -942,5 +943,14 @@
     "github_billing": "PAID_REPORTED",
     "actions": "VERIFIED_EXECUTED",
     "evidence_ref": "evidence/p1-ci-20260909/validation.json"
+  },
+  "detached_verification_checkpoint": {
+    "base_head": "bf20631d44f7b3ed4c0caf8e17f943c3003535d6",
+    "source": "WORKING_TREE_BOUND_BY_LOCAL_RECEIPTS",
+    "local_distinct": 205,
+    "pg_collected": 94,
+    "pg_current_source": "NOT_EXECUTED",
+    "ref": "pursuit/evidence/k05-detached-20260909/validation.json",
+    "observed_at_utc": "2026-09-09T14:22:52.013110+00:00"
   }
 }
