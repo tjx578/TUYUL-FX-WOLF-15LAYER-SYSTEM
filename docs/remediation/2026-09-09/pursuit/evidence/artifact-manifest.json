@@ -1,0 +1,96 @@
+{
+  "source_commit": "f8fcbfb1b53f4cc9861a32aa1368dc3828070caa",
+  "scope": "evidence files excluding this manifest; imported inputs use input-import.json",
+  "files": [
+    {
+      "path": "g00-source.json",
+      "sha256": "86f8f05c796f713f3107c65077250b942678a4d6d81015df2f64b758ad0d6f1b",
+      "bytes": 1272
+    },
+    {
+      "path": "lint-format.json",
+      "sha256": "c4a29214c34eebcbfa480dce46084424cb2659d5362d06835fa1cd0d0b915bf2",
+      "bytes": 755
+    },
+    {
+      "path": "net-geometry-source.diff",
+      "sha256": "2ae894a6ff78dd5daa349312fd17defad73d3ec1bd537fd69a3b382034e1d016",
+      "bytes": 19050
+    },
+    {
+      "path": "net-geometry-validation.json",
+      "sha256": "b36c9678148c09550d25e60bc23d09899e7945dc91e7834324d9ff48e5fca3cf",
+      "bytes": 12191
+    },
+    {
+      "path": "ng1-collection.log",
+      "sha256": "a37dde7cc4d1ad66526acd7022f795cd6ec3173d259f78c9d82d6a4c8d850b79",
+      "bytes": 6268
+    },
+    {
+      "path": "ng1-pytest.log",
+      "sha256": "16123331f56e06597a5e451221facde63a50398e9bf95fa0b4049707d1a11df3",
+      "bytes": 1705
+    },
+    {
+      "path": "ng1-receipt.json",
+      "sha256": "ba7721e7fd400fb7dff1f3ce621372c3e148551dc9e2429afa603ec472c6fb07",
+      "bytes": 11193
+    },
+    {
+      "path": "ng1.xml",
+      "sha256": "70ce94bc2d97b3d0989ff2c87b3ef5560d91401a3355a412a58804fa98f85e1f",
+      "bytes": 6781
+    },
+    {
+      "path": "ng2-collection.log",
+      "sha256": "e7e9881d4fa13432ab7f36aed5934662ed477b573315a23289482f7f3b9dbcc2",
+      "bytes": 9782
+    },
+    {
+      "path": "ng2-pytest.log",
+      "sha256": "a568d465bf9be744dd45d2d5719a0e97d5c8653bb9cf91fd10804fea9f7398a6",
+      "bytes": 3689
+    },
+    {
+      "path": "ng2-receipt.json",
+      "sha256": "d9ec2878e19ea68158791b6174b13eeb1d081b7db2175f661bf076c4196ad7d3",
+      "bytes": 16488
+    },
+    {
+      "path": "ng2.xml",
+      "sha256": "ae25db20a580a967f6725cf6642840940f533d722065dc6916c712bd9482e59a",
+      "bytes": 14936
+    },
+    {
+      "path": "ng3-collection.log",
+      "sha256": "6af6ef5925ab69bbb78aadccc6703d1ab1c530800a51bf0a5f3f9dc9d9f0f572",
+      "bytes": 9782
+    },
+    {
+      "path": "ng3-pytest.log",
+      "sha256": "b1b7c38f2358c6093f82089317e2e2722127da8c9b3b295b0d49a0ab28733ca6",
+      "bytes": 1055
+    },
+    {
+      "path": "ng3-receipt.json",
+      "sha256": "0e9753b26cfb6a0301dfea4ba447be96727acd42663e0d026649b40478b50f9d",
+      "bytes": 16487
+    },
+    {
+      "path": "ng3.xml",
+      "sha256": "e110de5e50977597fb75aa3a32a7c0d5b28e9133ec6f16db4092ef9f6dbda924",
+      "bytes": 12458
+    },
+    {
+      "path": "package-validation-current.json",
+      "sha256": "ac0822c1f0cbfa7764842f971365e974c52890eb3459e732cfeec63f32abfa97",
+      "bytes": 1163
+    },
+    {
+      "path": "railway-source-bindings.json",
+      "sha256": "2d9bb6bc9723f1ae389c63f81f319afb37c1c45c7ead14cf760f4eca8be9d4a4",
+      "bytes": 5199
+    }
+  ]
+}
