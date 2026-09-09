@@ -848,7 +848,7 @@ def _create_app_inner() -> FastAPI:
     return app
 
 
-def create_app() -> FastAPI:
+def create_app(*, activity_delivery_endpoint=None) -> FastAPI:
     """Build the FastAPI application with fail-open bootstrap protection.
 
     If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
@@ -857,9 +857,20 @@ def create_app() -> FastAPI:
     """
     fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
     try:
-        return _create_app_inner()
+        application = _create_app_inner()
+        if activity_delivery_endpoint is not None:
+            from services.pressure_outbox.activity_delivery_transport import ActivityDeliveryEndpoint
+
+            if not isinstance(activity_delivery_endpoint, ActivityDeliveryEndpoint):
+                raise ValueError("ACTIVITY_DELIVERY_ENDPOINT_BINDING_REQUIRED")
+            if "/internal/s03/activity-deliveries" in application.openapi().get("paths", {}):
+                raise ValueError("ACTIVITY_DELIVERY_ENDPOINT_ALREADY_REGISTERED")
+            application.include_router(activity_delivery_endpoint.router())
+            application.openapi_schema = None
+            _assert_no_duplicate_routes(application)
+        return application
     except Exception as exc:
-        if not fail_open:
+        if not fail_open or activity_delivery_endpoint is not None:
             raise
         logger.exception("API bootstrap failed — enabling fallback liveness app")
         return _build_bootstrap_fallback_app(f"api_bootstrap_failed: {exc!s}")

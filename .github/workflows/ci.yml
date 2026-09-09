@@ -147,6 +147,9 @@ jobs:
       - name: Require separate S03 producer and relay PostgreSQL acceptance
         run: python scripts/ci/run_activity_delivery_producer_acceptance.py
 
+      - name: Require separate S03 consumer and owner PostgreSQL acceptance
+        run: python scripts/ci/run_activity_delivery_consumer_acceptance.py
+
       - name: Upload S03 source-bound PostgreSQL receipt
         if: always()
         uses: actions/upload-artifact@v4
