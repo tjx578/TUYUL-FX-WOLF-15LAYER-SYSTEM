@@ -8,6 +8,8 @@ description: >-
 
 Use this skill to assess maintainability, correctness risks, complexity, and consistency in a scoped codebase.
 
+Repository note: This repository provides a local skill entrypoint under `.github/skills/` with the same name as a Codex global package; this file is the authoritative definition for this repository.
+
 ## Applicability
 
 Apply it when the user requests a code-quality assessment rather than a security-only or performance-only scan. Keep adjacent concerns in their own workflow unless they are necessary to this objective.
