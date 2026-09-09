@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from analysis.clean_block_watch_router import (
     emit_signal_watch_promotion_diagnostic,
     route_clean_block_to_watch,
@@ -138,6 +140,26 @@ def test_clean_block_with_market_context_becomes_non_executable_watch():
         "valid_for_execution": False,
         "execution_impact": False,
     }
+
+
+@pytest.mark.parametrize("direction", [None, "", "UNRESOLVED"])
+def test_clean_block_without_direction_stays_diagnostic(direction):
+    route = route_clean_block_to_watch(_candidate(direction=direction), market_context=_market())
+
+    assert route.event == "signal_watch_promotion_diagnostic"
+    assert route.emit_as_watch is False
+    assert route.diagnostic is True
+    assert "CLEAN_BLOCK_DIRECTION_MISSING" in route.payload["blocked_by"]
+    assert route.payload["valid_for_execution"] is False
+
+
+def test_dataclass_type_without_price_stays_diagnostic():
+    route = route_clean_block_to_watch(_candidate(), market_context=MarketContext)
+
+    assert route.emit_as_watch is False
+    assert route.diagnostic is True
+    assert "SIGNAL_PRICE_MISSING" in route.payload["blocked_by"]
+    assert route.payload["valid_for_execution"] is False
 
 
 def test_clean_block_id_stays_stable_as_latest_end_moves():
