@@ -1,6 +1,6 @@
 {
-  "source_commit": "12836a04df9f3fbb9e8706aae4264f3c40269d1a",
-  "scope": "Evidence files; individual historical receipts retain their own source/status",
+  "source_commit": "71ee81a6d18c3ee0a904eec6489f11bf10d19b59",
+  "scope": "Evidence files; historical receipts retain their own scope and status",
   "files": [
     {
       "path": "bc1-collection.log",
@@ -596,6 +596,56 @@
       "path": "rb4.xml",
       "sha256": "b3c6d801976bccd654bb77f91c26c913c9670059ee901baf7da91e82e224f90d",
       "bytes": 5162
+    },
+    {
+      "path": "replay-retention-rb1-collection.log",
+      "sha256": "b20548ccec853616f65e9037a342a3920e1c8588e93dabb4650c4ddae77d3e31",
+      "bytes": 11428
+    },
+    {
+      "path": "replay-retention-rb1-pytest.log",
+      "sha256": "755dcbdc8490ca6e47a6a2bc4bee073af1f54614c33b48f903916b2a7c14038f",
+      "bytes": 3320
+    },
+    {
+      "path": "replay-retention-rb1-receipt.json",
+      "sha256": "86a572f209cf4b6712705655442e1037b10ee9787e2f5596cc50321a067d8e34",
+      "bytes": 17417
+    },
+    {
+      "path": "replay-retention-rb1.xml",
+      "sha256": "c9ed2583ed0b2ee7907e9d20aa984e04a3f2e7c3c84072c8f84d038141708214",
+      "bytes": 16900
+    },
+    {
+      "path": "replay-retention-rb2-collection.log",
+      "sha256": "5cbd94752c5c873b89457d43413233d28aa8d6cd363189b2b33b6c53ba8349b0",
+      "bytes": 11428
+    },
+    {
+      "path": "replay-retention-rb2-pytest.log",
+      "sha256": "e8b648cef5171064ecf517e28b85f232250c0dc43a0c4baab7f2bc247c9b5403",
+      "bytes": 1056
+    },
+    {
+      "path": "replay-retention-rb2-receipt.json",
+      "sha256": "32e616c2372aadee48d352e3b16769ccc45ac1bb10432aac9b86d4dfe1ac09b7",
+      "bytes": 17417
+    },
+    {
+      "path": "replay-retention-rb2.xml",
+      "sha256": "2d89a93f3799272ebf4cfbed6c0262733f2c491eb8989a1ca958ee8b3096cbf5",
+      "bytes": 14806
+    },
+    {
+      "path": "replay-retention-source.diff",
+      "sha256": "d04e61166acf78cab4ad7107a88eb3696df235986d9f87acf6a81b4d9dfa92a2",
+      "bytes": 13933
+    },
+    {
+      "path": "replay-retention-validation.json",
+      "sha256": "466bb2a5271d0ac9c31bf43c88e20ea2245066abfb825c5d9a265711dba84d96",
+      "bytes": 16378
     },
     {
       "path": "reservation-row-source.diff",

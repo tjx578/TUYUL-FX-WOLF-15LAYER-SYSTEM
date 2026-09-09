@@ -1,0 +1,327 @@
+commit 71ee81a6d18c3ee0a904eec6489f11bf10d19b59
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 14:19:40 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 14:19:40 2026 +0800
+
+    feat(audit): retain typed replay inputs through explicit caller sink
+
+diff --git a/ops/mt5_mcp/reconcile.py b/ops/mt5_mcp/reconcile.py
+index 01979b21..764d91ae 100644
+--- a/ops/mt5_mcp/reconcile.py
++++ b/ops/mt5_mcp/reconcile.py
+@@ -732,7 +732,15 @@ async def _broker_snapshot(
+         return {"tool_surface_exact": False, "snapshots": {}, "error_type": type(exc).__name__}
+ 
+ 
+-async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) -> dict[str, Any]:
++async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path, retention_sink=None) -> dict[str, Any]:
++    """Collect and seal; an optional synchronous sink returns True after durability.
++
++    Sink receives confidential replay bytes and a separately retainable receipt
++    digest. No default sink is configured. Storage protection and trusted digest
++    custody remain caller responsibilities; a sink failure aborts report return.
++    """
++    if retention_sink is not None and not callable(retention_sink):
++        raise ValueError("INVALID_REPLAY_RETENTION_SINK")
+     sources_before = orchestrator_sources()
+     window_to = datetime.now(UTC)
+     window_from = window_to - timedelta(days=HISTORY_DAYS)
+@@ -749,13 +757,27 @@ async def run_reconciliation(*, dsn: str, repo_root: Path, config_path: Path) ->
+         window_from=window_from,
+         window_to=window_to,
+     )
+-    return seal_report(
++    sealed = seal_report(
+         report,
+         database=database,
+         broker=broker,
+         sources_before=sources_before,
+         sources_after=orchestrator_sources(),
+     )
++    if retention_sink is not None:
++        from ops.mt5_mcp.replay_bundle import encode_replay_bundle
++
++        accepted = retention_sink(
++            encode_replay_bundle(report=sealed, database=database, broker=broker),
++            sealed["integrity"]["receipt_digest"],
++        )
++        if accepted is not True:
++            import inspect
++
++            if inspect.iscoroutine(accepted):
++                accepted.close()
++            raise ValueError("REPLAY_RETENTION_NOT_ACKNOWLEDGED")
++    return sealed
+ 
+ 
+ def exit_code_for_gate(gate: object) -> int:
+diff --git a/ops/mt5_mcp/replay_bundle.py b/ops/mt5_mcp/replay_bundle.py
+new file mode 100644
+index 00000000..7edab86a
+--- /dev/null
++++ b/ops/mt5_mcp/replay_bundle.py
+@@ -0,0 +1,97 @@
++"""Portable replay inputs for an explicitly supplied confidential evidence sink.
++
++This codec provides neither encryption nor reader attestation. The caller owns
++storage access controls and independently retains the expected receipt digest.
++No filesystem, environment configuration, or broker access is used here.
++"""
++
++from __future__ import annotations
++
++import json
++from datetime import datetime
++from decimal import Decimal
++from typing import Any
++from uuid import UUID
++
++SCHEMA = "wolf15.channel-b-replay-bundle.v1"
++MAX_BYTES = 8 * 1024 * 1024
++MAX_DEPTH = 64
++
++
++def _pack(value: Any, depth: int = 0) -> list[Any]:
++    if depth > MAX_DEPTH:
++        raise ValueError("REPLAY_BUNDLE_TOO_DEEP")
++    if type(value) is dict:
++        if any(type(key) is not str for key in value):
++            raise ValueError("REPLAY_BUNDLE_NONSTRING_KEY")
++        return ["dict", [[key, _pack(item, depth + 1)] for key, item in sorted(value.items())]]
++    if type(value) is list:
++        return ["list", [_pack(item, depth + 1) for item in value]]
++    if isinstance(value, datetime):
++        if value.tzinfo is None or value.utcoffset() is None:
++            raise ValueError("REPLAY_BUNDLE_NAIVE_TIME")
++        return ["datetime", value.isoformat()]
++    if isinstance(value, Decimal):
++        if not value.is_finite():
++            raise ValueError("REPLAY_BUNDLE_NONFINITE_DECIMAL")
++        return ["decimal", str(value)]
++    if isinstance(value, UUID):
++        return ["uuid", str(value)]
++    if value is None or type(value) in (bool, int, float, str):
++        return ["value", value]
++    raise ValueError("REPLAY_BUNDLE_UNSUPPORTED_TYPE")
++
++
++def _unpack(node: Any, depth: int = 0) -> Any:
++    if depth > MAX_DEPTH or type(node) is not list or len(node) != 2:
++        raise ValueError("MALFORMED_REPLAY_BUNDLE")
++    tag, value = node
++    if tag == "dict" and type(value) is list:
++        result = {}
++        for pair in value:
++            if type(pair) is not list or len(pair) != 2 or type(pair[0]) is not str or pair[0] in result:
++                raise ValueError("MALFORMED_REPLAY_BUNDLE")
++            result[pair[0]] = _unpack(pair[1], depth + 1)
++        return result
++    if tag == "list" and type(value) is list:
++        return [_unpack(item, depth + 1) for item in value]
++    if type(value) is str:
++        if tag == "datetime":
++            return datetime.fromisoformat(value)
++        if tag == "decimal":
++            return Decimal(value)
++        if tag == "uuid":
++            return UUID(value)
++    if tag == "value" and (value is None or type(value) in (bool, int, float, str)):
++        return value
++    raise ValueError("MALFORMED_REPLAY_BUNDLE")
++
++
++def encode_replay_bundle(*, report: dict, database: dict, broker: dict) -> bytes:
++    payload = [SCHEMA, _pack({"report": report, "database": database, "broker": broker})]
++    encoded = json.dumps(payload, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode("ascii")
++    if len(encoded) > MAX_BYTES:
++        raise ValueError("REPLAY_BUNDLE_TOO_LARGE")
++    return encoded
++
++
++def decode_replay_bundle(encoded: bytes) -> dict[str, Any]:
++    """Load data only; no dynamic imports, pickle, or type-selected execution."""
++    if type(encoded) is not bytes or len(encoded) > MAX_BYTES:
++        raise ValueError("INVALID_REPLAY_BUNDLE_SIZE_OR_TYPE")
++    try:
++        payload = json.loads(encoded)
++        if type(payload) is not list or len(payload) != 2 or payload[0] != SCHEMA:
++            raise ValueError("MALFORMED_REPLAY_BUNDLE")
++        bundle = _unpack(payload[1])
++        if type(bundle) is not dict or set(bundle) != {"report", "database", "broker"}:
++            raise ValueError("MALFORMED_REPLAY_BUNDLE")
++        if any(type(item) is not dict for item in bundle.values()):
++            raise ValueError("MALFORMED_REPLAY_BUNDLE")
++        # Require the one canonical encoding, rejecting duplicate keys, exotic
++        # scalars, naive dates, nonfinite numbers and ambiguous typed lookalikes.
++        if encode_replay_bundle(**bundle) != encoded:
++            raise ValueError("NONCANONICAL_REPLAY_BUNDLE")
++        return bundle
++    except (ValueError, TypeError, ArithmeticError, RecursionError, UnicodeError) as exc:
++        raise ValueError("MALFORMED_REPLAY_BUNDLE") from exc
+diff --git a/ops/mt5_mcp/report_integrity.py b/ops/mt5_mcp/report_integrity.py
+index 1edb27fe..e1098a7e 100644
+--- a/ops/mt5_mcp/report_integrity.py
++++ b/ops/mt5_mcp/report_integrity.py
+@@ -40,7 +40,7 @@ def orchestrator_sources() -> dict[str, str]:
+     directory = Path(__file__).resolve().parent
+     return {
+         name: "sha256:" + hashlib.sha256((directory / name).read_bytes()).hexdigest()
+-        for name in ("reconcile.py", "report_integrity.py", "account_binding.py")
++        for name in ("reconcile.py", "report_integrity.py", "account_binding.py", "replay_bundle.py")
+     }
+ 
+ 
+diff --git a/tests/test_channel_b_reconciliation.py b/tests/test_channel_b_reconciliation.py
+index ae6dfc4c..83e20146 100644
+--- a/tests/test_channel_b_reconciliation.py
++++ b/tests/test_channel_b_reconciliation.py
+@@ -1091,3 +1091,148 @@ def test_consistent_replay_of_blocked_gate_is_not_accepted():
+     result = verify_reconciliation_replay(**bundle)
+     assert result["reason"] == "RECONCILIATION_GATE_NOT_PASS"
+     assert result["input_replay_consistent"] is False
++
++
++def test_replay_bundle_preserves_types_without_dictionary_tag_collision():
++    from decimal import Decimal
++    from uuid import UUID
++
++    from ops.mt5_mcp.replay_bundle import decode_replay_bundle, encode_replay_bundle
++    from ops.mt5_mcp.report_integrity import evidence_digest
++
++    database = {
++        "timestamp": WINDOW_TO,
++        "amount": Decimal("0.00100"),
++        "id": UUID(int=7),
++        "lookalikes": [{"datetime": WINDOW_TO.isoformat()}, ["uuid", str(UUID(int=7))]],
++    }
++    original = {"report": {}, "database": database, "broker": {}}
++    restored = decode_replay_bundle(encode_replay_bundle(**original))
++    assert restored == original
++    assert type(restored["database"]["timestamp"]) is datetime
++    assert type(restored["database"]["amount"]) is Decimal
++    assert type(restored["database"]["id"]) is UUID
++    assert evidence_digest(restored) == evidence_digest(original)
++
++
++@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), datetime(2026, 1, 1), {1: "key"}, object()])
++def test_replay_bundle_rejects_unsupported_evidence(invalid):
++    from ops.mt5_mcp.replay_bundle import encode_replay_bundle
++
++    with pytest.raises(ValueError):
++        encode_replay_bundle(report={}, database={"bad": invalid}, broker={})
++
++
++@pytest.mark.parametrize("change", ["truncated", "schema", "duplicate", "type", "size", "noncanonical", "depth"])
++def test_replay_bundle_rejects_malformed_storage(change):
++    from ops.mt5_mcp.replay_bundle import MAX_BYTES, SCHEMA, decode_replay_bundle, encode_replay_bundle
++
++    encoded = encode_replay_bundle(report={}, database={}, broker={})
++    if change == "truncated":
++        encoded = encoded[:-1]
++    elif change == "schema":
++        encoded = encoded.replace(SCHEMA.encode(), b"unknown")
++    elif change == "duplicate":
++        payload = json.loads(encoded)
++        payload[1][1].append(payload[1][1][0])
++        encoded = json.dumps(payload).encode()
++    elif change == "type":
++        encoded = encoded.decode()
++    elif change == "size":
++        encoded = b" " * (MAX_BYTES + 1)
++    elif change == "noncanonical":
++        encoded += b" "
++    elif change == "depth":
++        node = ["value", 1]
++        for _ in range(70):
++            node = ["list", [node]]
++        encoded = json.dumps([SCHEMA, node]).encode()
++    with pytest.raises(ValueError):
++        decode_replay_bundle(encoded)
++
++
++def _retention_caller(monkeypatch, tmp_path, **kwargs):
++    class Clock(datetime):
++        @classmethod
++        def now(cls, tz=None):
++            return WINDOW_TO
++
++    async def broker(*args, **kwargs):
++        return _broker()
++
++    async def database(*args, **kwargs):
++        return _database(
++            account_identifier=DIRECT_IDENTIFIER, account_identifier_source=account_binding.DATABASE_SOURCE
++        )
++
++    monkeypatch.setattr(reconcile, "datetime", Clock)
++    monkeypatch.setattr(reconcile, "_broker_snapshot", broker)
++    monkeypatch.setattr(reconcile, "_database_snapshot", database)
++    return asyncio.run(
++        reconcile.run_reconciliation(dsn="fixture-only", repo_root=tmp_path, config_path=tmp_path / "unused", **kwargs)
++    )
++
++
++def test_caller_retains_fixture_inputs_and_replays_after_reload(monkeypatch, tmp_path):
++    from ops.mt5_mcp.replay_bundle import decode_replay_bundle
++    from ops.mt5_mcp.replay_report import verify_reconciliation_replay
++    from ops.mt5_mcp.report_integrity import orchestrator_sources
++
++    path = tmp_path / "fixture-evidence.json"
++    trusted_receipts = []
++
++    def sink(encoded, digest):
++        path.write_bytes(encoded)
++        trusted_receipts.append(digest)
++        return True
++
++    report = _retention_caller(monkeypatch, tmp_path, retention_sink=sink)
++    restored = decode_replay_bundle(path.read_bytes())
++    assert restored["report"] == report
++    assert len(trusted_receipts) == 1
++    # Real datetime type is required by verifier scope; restore module clock.
++    monkeypatch.setattr(reconcile, "datetime", datetime)
++    scope = {
++        "expected_receipt_digest": trusted_receipts[0],
++        "expected_sources": orchestrator_sources(),
++        "expected_account_identifier": DIRECT_IDENTIFIER,
++        "window_from": WINDOW_FROM,
++        "window_to": WINDOW_TO,
++        "as_of": WINDOW_TO + timedelta(seconds=10),
++        "maximum_age": timedelta(seconds=10),
++    }
++    result = verify_reconciliation_replay(**restored, **scope)
++    assert result["reason"] == "CONSISTENT_REPLAY"
++    assert result["execution_authority"] is False
++    assert result["independent_reader_attestation"] == "NOT_VERIFIED"
++    restored["database"]["mutation_evidence"]["changed_tuples"] = 1
++    assert verify_reconciliation_replay(**restored, **scope)["reason"] == "INPUT_DIGEST_MISMATCH"
++    assert "fixture-only" not in path.read_text()
++
++
++def test_caller_default_does_not_write_replay_data(monkeypatch, tmp_path):
++    report = _retention_caller(monkeypatch, tmp_path)
++    assert "integrity" in report
++    assert list(tmp_path.iterdir()) == []
++
++
++@pytest.mark.parametrize("ack", [None, False, 1, "true"])
++def test_caller_does_not_return_report_without_explicit_retention_ack(monkeypatch, tmp_path, ack):
++    with pytest.raises(ValueError, match="REPLAY_RETENTION_NOT_ACKNOWLEDGED"):
++        _retention_caller(monkeypatch, tmp_path, retention_sink=lambda *_: ack)
++
++
++def test_caller_storage_failure_propagates(monkeypatch, tmp_path):
++    def sink(*args):
++        raise OSError("fixture-storage-failure")
++
++    with pytest.raises(OSError, match="fixture-storage-failure"):
++        _retention_caller(monkeypatch, tmp_path, retention_sink=sink)
++
++
++def test_caller_rejects_unawaited_retention_sink(monkeypatch, tmp_path):
++    async def sink(*args):
++        return True
++
++    with pytest.raises(ValueError, match="REPLAY_RETENTION_NOT_ACKNOWLEDGED"):
++        _retention_caller(monkeypatch, tmp_path, retention_sink=sink)
