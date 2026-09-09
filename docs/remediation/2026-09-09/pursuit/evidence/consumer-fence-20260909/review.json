@@ -1,0 +1,68 @@
+{
+  "source_commit": "e70264ce6ecf10fa0216908ba2b5a5930e43d67a",
+  "reviewed_previous_commit": "66d2978bb07e740044c24e5a796fb75b55bebf93",
+  "review": "INDEPENDENT_AGENT_FINDING_WITH_PARENT_FIX_REVIEW",
+  "ci_run": "34358463245",
+  "security_run": "34358463415",
+  "docs_run": "34358463271",
+  "ci_conclusion": "FAILURE_ONE_STALE_LOCK_ORDER_ASSERTION",
+  "ci_failure": "test_account_then_candidate_preparation_persists_one_capacity_state_and_replays searched for old inline owner-lock SQL; binder now owns that lock. Follow-up test assertion checks account lock before binder. Full CI rerun required.",
+  "python_suite_at_source": {
+    "passed": 10185,
+    "failed": 1,
+    "deselected_benchmarks": 6
+  },
+  "captured_at_utc": "2026-09-09T13:51:07.306816+00:00",
+  "finding": "Application fixture role could delete owner fence or read active token; historical four privilege negatives did not cover this bypass.",
+  "repair": "Additive migration07, capability validation function and trigger with fixed definer search_path; application role has no owner table privilege, explicit binder EXECUTE only.",
+  "postgres": {
+    "runtime": 45,
+    "producer_relay": 7,
+    "consumer": 11,
+    "restricted_application_role": 1,
+    "failures": 0,
+    "skipped": 0,
+    "role_denied_privileges": 8,
+    "stale_or_forged_guc_denials": 2,
+    "major": 16,
+    "migration_head": "20260909_07"
+  },
+  "local": {
+    "tests": 142,
+    "failures": 0,
+    "skipped": 0,
+    "source_unchanged": true,
+    "label": "consumer-fence-role-a2"
+  },
+  "local_assertion_repair": {
+    "tests": 18,
+    "failures": 0,
+    "skipped": 0,
+    "scope": "Current capacity test with e70264ce committed candidate/TransactionA modules loaded from separate overlay; unrelated dirty repository modules preserved."
+  },
+  "retained_failed_attempt": "a1:47pass/1fail in unrelated dirty candidate implementation; fingerprint changed during run; not accepted as source-bound proof.",
+  "ack_expected_actual": [
+    "COMMITTED",
+    "STALE_LEASE_ACK_IGNORED",
+    "DUPLICATE_NO_EFFECT",
+    "ACKNOWLEDGED",
+    "successor COMMITTED and ACKNOWLEDGED; one mapping and emission"
+  ],
+  "delivery_scenario_scope": {
+    "D01-D05": "POSTGRES_FIXTURE_PASS",
+    "D06": "SEPARATE_PRODUCER_POSTGRES_PASS",
+    "D07-D09": "POSTGRES_FIXTURE_PASS_WITH_RESTRICTED_ROLE_NEGATIVES",
+    "D10": "PARTIAL_EXPIRY_AND_MISSING_POLICY_MODEL_ONLY",
+    "D11": "PARTIAL_AUTHENTICATED_ASGI_NOT_DEPLOYED_HTTPS"
+  },
+  "canonical_s03_closure": "NOT_CLOSED",
+  "milestones_done": 0,
+  "limits": [
+    "Delivery D01-D11 are scenario IDs, not canonical register action IDs.",
+    "Operational endpoint, policy, source attestor and owner handover remain unbound.",
+    "Existing named-role grants must be explicitly reconciled by deployment controller; migration does not discover or revoke them.",
+    "Symbols without registered ownership retain legacy compatibility.",
+    "Strategy V1 migration and DEMO account/risk/EA/canary/independent broker reader remain separate.",
+    "No main merge, production migration, Railway mutation or broker operation."
+  ]
+}

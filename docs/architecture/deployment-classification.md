@@ -4,7 +4,9 @@
 **Scope:** Deployment target classification, support expectations, and operational truth hierarchy for TUYUL FX
 **Audience:** Architecture, DevOps, runtime operators, maintainers
 **Last Verified:** 2026-04-15
-**Source of Truth:** `docker-compose.yml`, `railway-*.toml`, `services/*/Dockerfile`, `dashboard/nextjs/vercel.json`
+**Source of Truth:** `docker-compose.yml`, `railway-*.toml`, `services/*/Dockerfile`, `dashboard/nextjs/railway.toml`, `dashboard/nextjs/Dockerfile`
+> Dashboard revision 2026-09-09: the selected frontend is `https://wolf15-dashboard-frontend-production.up.railway.app` (port `8080`), with server-only direct core calls to `https://wolf15-api-production.up.railway.app`. Public `/login` still shows `VIEWER JWT`; repository password-login/direct-core changes are not a production deployment. Production acceptance remains HOLD. Other service sections retain their earlier evidence dates and do not authorize engine, broker, database or provider mutations.
+
 
 ---
 
@@ -58,7 +60,7 @@ Alasan:
 | `railway.toml` | `start_api_consolidated.sh` | API + embedded Orchestrator | ON_FAILURE (5 retries) |
 | `railway-engine.toml` | `start_engine_consolidated.sh` | Engine-only pipeline | ON_FAILURE (5 retries) |
 | `railway-execution.toml` | `start_trade_consolidated.sh` | Allocation + Execution consolidated | ON_FAILURE (5 retries) |
-| `railway-dashboard-bff.toml` | `start_dashboard_bff.sh` | Dashboard BFF aggregation | ON_FAILURE (5 retries) |
+| `railway-dashboard-bff.toml` | `start_dashboard_bff.sh` | Legacy standalone BFF; disconnected from selected frontend | ON_FAILURE (5 retries) |
 | `railway-ea-bridge.toml` | `start_ea_bridge.sh` | SHADOW MT5 command bridge | ON_FAILURE (5 retries) |
 | `railway-pressure-outbox.toml` | `start_pressure_outbox.sh` | Durable pressure dispatcher/inbox worker | ON_FAILURE (5 retries) |
 | `railway-migrator.toml` | `start_migrator.sh` | One-shot DB migration (alembic) | NEVER restart |
@@ -123,21 +125,19 @@ Compose file berisi **two stacks** yang coexist selama transisi:
 * Compose tidak boleh diperlakukan sebagai file opsional kecil
 * sebelum Compose dipensiunkan, harus ada pengganti yang setara untuk local full-stack reproducibility
 
-### 3.3 Supported frontend deployment — Vercel
+### 3.3 Canonical frontend deployment — Railway
 
-**Vercel** diklasifikasikan sebagai **supported deployment target** untuk dashboard frontend.
+The selected frontend is the existing Railway dashboard service. Its Next.js source is `dashboard/nextjs/`, with Docker/standalone runtime and port `8080`. The previous frontend deployment adapter and obsolete design surface are removed from the selected frontend source.
 
-Alasan:
+Required repository contract:
 
-* `dashboard/nextjs/vercel.json` aktif, region = SIN1 (Singapore)
-* `next.config.js` mengatur API base URL dan WebSocket origin dari env
-* dashboard frontend tidak mengandung constitutional logic, sehingga deployability-nya terpisah dari backend
+- `DASHBOARD_MODE=viewer`.
+- `DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app`.
+- Server-only `INTERNAL_API_URL=https://wolf15-api-production.up.railway.app`.
+- Three exact GET projections call existing core routes; no BFF dependency or public API/WS credential path.
+- The selected API must use an API-only entrypoint with embedded orchestrator disabled. The legacy consolidated API configuration in the earlier inventory is not a deployment instruction for owner-login.
 
-**Implikasi:**
-
-* Vercel hanya relevan untuk dashboard frontend, bukan backend services
-* Vercel deploy berjalan independen dari Railway/Compose backend
-* perubahan backend API contract harus divalidasi terhadap dashboard build
+Local source/build evidence, provider service identity and production login acceptance must be recorded separately. See [direct API topology](dashboard-hybrid-topology.md).
 
 ### 3.4 Removed deployment — Hostinger VPS
 
@@ -162,7 +162,7 @@ Fakta:
 | ----------------- | ------ | --------------- | -------------------- | ----- |
 | Railway | **Canonical** | Cloud runtime (consolidated services) | Current service-oriented runtime topology | 10 active + 3 deprecated tomls |
 | Docker Compose | **Canonical** | Local/integration full-stack | Local reproducibility, integration validation | 14 services (hybrid transitional) |
-| Vercel | **Supported** | Dashboard frontend deployment | Frontend deployment only | SIN1 region, `dashboard/nextjs/` |
+| Railway dashboard | **Canonical** | Viewer frontend deployment | Direct core API, same-origin HttpOnly auth | Selected service port 8080; production revision acceptance HOLD |
 | Hostinger VPS | **Removed** | (formerly bare-metal ops) | N/A | `deploy/hostinger/` deleted from repo |
 | Nginx reverse proxy | **Artifact** | Reverse proxy config reference | Ops convenience only | `deploy/nginx/`, placeholder domain |
 
@@ -177,7 +177,7 @@ Fakta:
 | Trade | `services/trade/runner.py` | Consolidated allocation + execution; dual Prometheus ports | `trade` |
 | Ingest | `services/ingest/ingest_worker.py` | Market data acquisition; lightweight health probe first | `ingest` |
 | Orchestrator | `services/orchestrator/coordinator.py` | Coordination-only, never verdict synthesis | `orchestrator` |
-| Dashboard BFF | `services/dashboard_bff/main.py` | Non-authoritative BFF aggregation for dashboard | `dashboard-bff` |
+| Legacy Dashboard BFF | `services/dashboard_bff/main.py` | Standalone legacy service, disconnected from selected frontend | `dashboard-bff` |
 | Worker | `services/worker/` | Dispatched by `WOLF15_WORKER_ENTRY` env var | (per job) |
 | Legacy monolith | `main.py` | Logical flow reference; still functions as combined entrypoint | N/A |
 
@@ -199,7 +199,7 @@ Untuk urusan deployment, gunakan hierarchy berikut:
 1. **Current runtime topology docs** (`runtime-topology-current.md`)
 2. **Service entrypoints aktif** (tabel Section 5)
 3. **Canonical deployment definitions** (Railway tomls, `docker-compose.yml`)
-4. **Supported deployment adapters** (Vercel config)
+4. **Selected frontend deployment definition** (Railway Docker/standalone config)
 5. **Reference architecture docs** (`reference-architecture.md`)
 
 Dalam praktiknya:
@@ -226,11 +226,12 @@ Dalam praktiknya:
 * jalur debug lintas-service yang cukup dekat dengan runtime production mindset
 * kemampuan memvalidasi integrasi tanpa bergantung pada provider cloud
 
-### 8.3 Vercel must guarantee
+### 8.3 Railway frontend must guarantee
 
-* dashboard frontend build yang konsisten dengan backend API contract
-* environment variables untuk API base URL dan WS origin yang benar
-* region deployment yang sesuai (currently SIN1)
+* Strict build and matching core auth/read contracts.
+* Exact canonical browser origin, server-only HTTPS core origin and port 8080.
+* HttpOnly viewer session, three GET projections, server-side response filtering and no machine credential exposure.
+* Separate production acceptance evidence before promotion.
 
 ---
 
@@ -251,7 +252,7 @@ Supported targets:
 
 * boleh tetap ada dan didukung
 * diprioritaskan setelah canonical targets
-* harus jelas scope-nya (Vercel = frontend only)
+* harus jelas scope-nya; selected dashboard frontend remains Railway-only
 
 ### 9.3 Removed targets
 
@@ -269,7 +270,7 @@ Setiap perubahan baru yang menyentuh runtime harus dievaluasi menurut urutan ini
 
 1. Apakah perubahan ini kompatibel dengan **Railway** sebagai canonical cloud deployment?
 2. Apakah perubahan ini tetap bisa direproduksi di **Docker Compose** sebagai canonical local/integration deployment?
-3. Jika menyentuh dashboard, apakah perubahan ini kompatibel dengan **Vercel** deployment?
+3. Jika menyentuh dashboard, apakah build, login dan direct-core containment cocok dengan **Railway dashboard** yang dipilih?
 
 Jika jawaban nomor 1 dan 2 tidak jelas, perubahan belum siap dipromosikan.
 
@@ -353,7 +354,9 @@ Tidak ada deployment target yang boleh diam-diam menciptakan perilaku runtime ba
 
 ---
 
-## 16. Changelog
+## 16. Historical Changelog
+
+The entries below preserve earlier classification history; section 3.3 supersedes the historical frontend target.
 
 ```text
 v1.0 — Initial deployment classification (flat inventory format)

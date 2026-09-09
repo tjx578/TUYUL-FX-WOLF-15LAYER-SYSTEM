@@ -1,54 +1,25 @@
 # Deployment Topology — TUYUL FX Wolf-15
 
-## Production Architecture
+
+> Dashboard revision 2026-09-09: repository-only direct-core owner-login changes target the existing Railway frontend `https://wolf15-dashboard-frontend-production.up.railway.app`, port `8080`, and API `https://wolf15-api-production.up.railway.app`. The observed public login still displays `VIEWER JWT`. Password-login/direct-core production acceptance remains HOLD; no deployment, provider-variable mutation, secret provisioning or trading activation was performed.
+
+## Selected dashboard architecture
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                          USERS / EA                                  │
-└───────────────┬─────────────────────────────┬───────────────────────┘
-                │                             │
-       HTTPS/WSS traffic               MQL5 EA (local MT5)
-                │                             │
-                ▼                             ▼
-┌────────────────────────┐     ┌─────────────────────────────┐
-│   Vercel (Next.js)     │     │  Railway — ea-bridge svc    │
-│   dashboard/nextjs/    │     │  POST /api/v1/ea/*          │
-│                        │     └──────────────┬──────────────┘
-│  NEXT_PUBLIC_API_BASE_ │                    │
-│  URL=<https://api…>      │                    │
-│  NEXT_PUBLIC_WS_BASE_  │                    │
-│  URL=wss://api…/ws     │                    │
-└──────────┬─────────────┘                    │
-           │ REST (Authorization: Bearer JWT)  │
-           │ WS  (?token=JWT)                  │
-           ▼                                   ▼
-┌──────────────────────────────────────────────────────────────┐
-│               Railway — API + Engine Service                  │
-│               api_server.py  (FastAPI / Uvicorn)              │
-│                                                               │
-│  Middleware stack (app_factory.py):                           │
-│    1. ForwardedHTTPSRedirect                                  │
-│    2. SecurityHeaders (CSP, X-Frame-Options)                  │
-│    3. CORS  (CORS_ORIGINS env var)                            │
-│    4. PrometheusMiddleware                                     │
-│    5. RateLimitMiddleware  ← ACTIVE, per-IP sliding window    │
-│                                                               │
-│  Auth:  api/middleware/auth.py                                │
-│    REST  → Authorization: Bearer `JWT`                        │
-│    WS    → ?token=`JWT`  (ws_auth.py)                         │
-│                                                               │
-│  CORS_ORIGINS=<https://dashboard.yourdomain.com>               │
-└──────────────────────┬─────────────────────────────────────--┘
-                       │
-          ┌────────────┴────────────┐
-          ▼                         ▼
-┌─────────────────┐      ┌─────────────────────┐
-│  Railway Redis  │      │  Railway Postgres    │
-│  streams/cache  │      │  config / audit /    │
-│                 │      │  journal / ledger    │
-└─────────────────┘      └─────────────────────┘
+Browser on selected Railway dashboard origin
+  -> Railway Next.js viewer, PORT=8080
+  -> same-origin owner-login/session + three GET projections
+  -> HTTPS core API (API-only; embedded orchestrator disabled)
+  -> existing backend read state
 
+Independent system services retain their own authority boundaries:
+  Engine / orchestrator / trade / EA bridge
+  Redis: streams, operational cache and heartbeat state
+  PostgreSQL: durable configuration, audit, journal and ledger
 ```
+
+The selected viewer has no route to engine control, broker execution or database mutation. Its legacy standalone Python BFF is disconnected. Broader backend/EA sections below describe separate services, not additional viewer permissions.
+
 
 ---
 
@@ -56,8 +27,9 @@
 
 | Service | Platform | Purpose |
 | --- | --- | --- |
-| Dashboard | Vercel | Next.js frontend — account governor, ledger, monitoring |
-| API + Engine | Railway | FastAPI backend — constitution, risk, execution, WS broker |
+| Dashboard | Railway, port 8080 | Next.js owner-login viewer; three direct core read projections |
+| API | Railway | API-only auth and existing read endpoints; no embedded orchestrator for selected login deployment |
+| Engine / trade services | Railway | Separate constitutional, risk and execution responsibilities; unchanged by dashboard revision |
 | Redis | Railway (managed) | Tick streams, context cache, rate-limit state |
 | Postgres | Railway (managed) | Config profiles, journal, account ledger |
 | EA bridge | Railway **or** local MT5 host | Receives execution commands from EA, reports fills |
@@ -110,35 +82,30 @@ Railway cron note:
 
 - `cronSchedule` di Railway dievaluasi dalam timezone `UTC`; sesuaikan jam nightly/weekly terhadap timezone operasional tim agar tidak ambigu.
 
-### Frontend (Vercel)
+### Frontend (selected Railway service)
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
-NEXT_PUBLIC_WS_BASE_URL=wss://api.yourdomain.com/ws
-NEXT_PUBLIC_TIMEZONE=Asia/Singapore
-NEXT_PUBLIC_VERDICT_REFRESH_MS=5000
-NEXT_PUBLIC_CONTEXT_REFRESH_MS=10000
-NEXT_PUBLIC_HEALTH_REFRESH_MS=30000
+DASHBOARD_MODE=viewer
+DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app
+INTERNAL_API_URL=https://wolf15-api-production.up.railway.app
+PORT=8080
+NEXT_PUBLIC_TIMEZONE=Asia/Makassar
 ```
 
-> **Note:** Never use `NEXT_PUBLIC_API_URL` or derive WS URL via
-> `replace(/^http/, "ws")`. Always set both `NEXT_PUBLIC_API_BASE_URL`
-> and `NEXT_PUBLIC_WS_BASE_URL` explicitly.
+`INTERNAL_API_URL` is server-only, credential-free and HTTPS in production. The frontend needs no public API/WS origin, signing secret, machine API key or dashboard-BFF variable. Changing repository examples does not change provider service variables.
 
 ---
 
-## Auth Flow
+## Selected owner-login flow
 
-```text
-1. User POSTs credentials → POST /api/v1/auth/login
-2. Backend issues signed JWT (HMAC-SHA256, DASHBOARD_JWT_SECRET)
-3. Frontend stores JWT in localStorage["wolf15_token"]   (lib/auth.ts)
-4. Every REST request:  Authorization: Bearer <JWT>      (lib/api.ts, lib/fetcher.ts)
-5. Every WS connection: wss://api.domain/ws?token=<JWT>  (lib/websocket.ts)
-6. Backend validates JWT via api/middleware/auth.py (same verifier for REST + WS)
-```
+1. Browser posts username/password to same-origin `/api/auth/owner-login`.
+2. Next forwards to core `/api/auth/owner-login`; backend verification issues only a viewer JWT with `read:dashboard`.
+3. Next sets the Secure HttpOnly SameSite `wolf15_session` cookie. JavaScript/localStorage never receive the token.
+4. The three exact GET projections validate the session against core and forward only an explicit Bearer token server-to-server.
+5. Core JSON is projected to safe fields before browser delivery; unknown paths, mutation verbs, raw diagnostics and credentials are rejected or removed.
+6. Password-owner access expires within 15 minutes; legacy refresh/reissuance cannot extend it. Logout clears browser access.
 
-No cookies. No cross-domain session mismatch. Token expiry is unified.
+The earlier backend-wide token settings are not permission to extend the owner-password session. See [direct API contract](../dashboard-hybrid-topology.md). Production credentials and acceptance checks remain separate authorized operations.
 
 ---
 
@@ -163,7 +130,7 @@ Production Redis must use AUTH + TLS (`rediss://`).
 
 ---
 
-## WebSocket Channels
+## Other backend WebSocket channels (not used by the selected viewer)
 
 | Path | Description |
 | --- | --- |
@@ -174,7 +141,7 @@ Production Redis must use AUTH + TLS (`rediss://`).
 | `/ws/equity` | Equity curve points |
 | `/ws/alerts` | System alert feed |
 
-All channels require `?token=<JWT>` query parameter.
+These backend channels have their own authentication contract. They are not exposed by the selected viewer proxy, and the viewer does not receive a JavaScript token for them.
 
 ---
 

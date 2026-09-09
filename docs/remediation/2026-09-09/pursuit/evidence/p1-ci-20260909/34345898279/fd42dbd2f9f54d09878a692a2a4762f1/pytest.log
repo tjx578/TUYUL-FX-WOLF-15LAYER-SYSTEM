@@ -1,0 +1,8 @@
+...........                                                              [100%]
+=============================== warnings summary ===============================
+tests/integration/test_activity_delivery_consumer_postgres.py::test_commit_expired_lease_replay_then_successor
+  /opt/hostedtoolcache/Python/3.11.16/x64/lib/python3.11/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+11 passed, 1 warning in 4.01s

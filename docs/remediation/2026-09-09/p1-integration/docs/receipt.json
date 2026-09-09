@@ -1,0 +1,50 @@
+{
+  "scope": "Exact run blocks from docs-hygiene.yml; local Git Bash; gate expressions resolved from preceding local outcomes",
+  "timestamp_utc": "2026-09-09T10:41:49.424490+00:00",
+  "workflow_sha256": "79f08eb1d29bb22018aab0efa4d9084a7860ce7cdcc595b51b05f2c51d8aceaf",
+  "head_at_check": "57f27f236d2a68229a18a8ff45b36841f0d0285f",
+  "modified_source_sha256": {
+    "docs/architecture/contracts/operational-api-event-acceptance-spec.md": "a0aa4d3e57db695a82947aace904313dd159edf4d02db9848779bd1c6b696854",
+    "docs/architecture/guardrails/tick-spike-filter.md": "0e4eae918ad6ba023f994c1857ed253b39281f7ed6c4af9fd9ff8fb3ead48725",
+    "docs/architecture/operations/go-live-checklist.md": "7ec513423e2c7f1d4dcae7acdcd7cb00e23f20c350baf72d1a21b94c9c526347",
+    "docs/architecture/operations/observability-async-workers.md": "33c3b30ac2196bc7419b2a6394d04bc7eb3f14476d69ed172c50619bb8ea091e"
+  },
+  "results": [
+    {
+      "job": "reading-order",
+      "step": "Verify every reading-order entry exists",
+      "exit_code": 0,
+      "script_sha256": "5d117b23b204236d65fe23296f00beaa5bd1958d0e755703c9d4284bfac3af6f",
+      "log": "reading-order-1.log"
+    },
+    {
+      "job": "legacy-quarantine",
+      "step": "No production code may import from docs/legacy/",
+      "exit_code": 0,
+      "script_sha256": "3ffb60d7321b2686ba26eed9d94d01845e7807f8c4b39fe31c7267ddcac019bf",
+      "log": "legacy-quarantine-1.log"
+    },
+    {
+      "job": "legacy-quarantine",
+      "step": "docs/legacy/README.md must exist",
+      "exit_code": 0,
+      "script_sha256": "4d2ddf53f241732341258793578a71c810d9190ec575a278d6aea56e2e4081a3",
+      "log": "legacy-quarantine-2.log"
+    },
+    {
+      "job": "cross-references",
+      "step": "Check internal markdown links",
+      "exit_code": 0,
+      "script_sha256": "20d6a18dd057158d1d4fe4b9632e52f838701b326b91e0e5604c46b3ac7dee0c",
+      "log": "cross-references-2.log"
+    },
+    {
+      "job": "docs-gate",
+      "step": "Evaluate docs hygiene jobs",
+      "exit_code": 0,
+      "script_sha256": "ed29292f5e610997d42a2367419fabf5de2eac34099182987a165f49f79c94df",
+      "log": "docs-gate-0.log"
+    }
+  ],
+  "remote_ci": "NOT_EXECUTED by this subtask"
+}

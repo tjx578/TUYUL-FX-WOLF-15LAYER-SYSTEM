@@ -281,9 +281,7 @@ def test_snapshot_does_not_mark_period_open_daily_stale_over_weekend():
     assert snapshot.daily_bias_freshness_status == "FRESH"
     assert snapshot.daily_bias_source_period_open == latest_daily_open.isoformat()
     assert snapshot.daily_bias_source_period_close == datetime(2026, 7, 31, 21, 0, tzinfo=UTC).isoformat()
-    assert snapshot.daily_bias_latest_expected_period_close == datetime(
-        2026, 7, 31, 21, 0, tzinfo=UTC
-    ).isoformat()
+    assert snapshot.daily_bias_latest_expected_period_close == datetime(2026, 7, 31, 21, 0, tzinfo=UTC).isoformat()
     assert snapshot.daily_bias_missed_expected_closed_bars == 0
     assert snapshot.allowed_playbook != "NONE"
 
@@ -312,9 +310,9 @@ def test_snapshot_applies_provider_holiday_calendar_to_daily_freshness():
     assert standard.daily_bias_missed_expected_closed_bars == 1
     assert provider_aware.daily_bias_freshness_status == "FRESH"
     assert provider_aware.daily_bias_missed_expected_closed_bars == 0
-    assert provider_aware.daily_bias_latest_expected_period_close == datetime(
-        2026, 12, 24, 22, 0, tzinfo=UTC
-    ).isoformat()
+    assert (
+        provider_aware.daily_bias_latest_expected_period_close == datetime(2026, 12, 24, 22, 0, tzinfo=UTC).isoformat()
+    )
 
 
 def test_snapshot_carries_auditable_location_price_lineage():

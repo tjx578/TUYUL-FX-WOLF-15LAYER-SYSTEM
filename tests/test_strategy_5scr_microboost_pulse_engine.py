@@ -19,7 +19,7 @@ from analysis.strategy_5scr_microboost_pulse_engine import (
 )
 
 START = datetime(2026, 7, 17, 13, 0, 0, tzinfo=UTC)
-LIFECYCLE = "episode:CHFJPY:20260717T130000.000000Z:abc123"
+LIFECYCLE = "5scr-lifecycle:0123456789abcdef0123456789abcdef"
 
 
 def _payload(
@@ -29,6 +29,7 @@ def _payload(
     ticks=10,
     strength="MICROBOOST",
     stage="MICROBOOST",
+    family="REPEATED_MICROBOOST",
     block="CHFJPY_20260717T130000Z_20260717T130500Z",
     at=START,
 ):
@@ -38,6 +39,7 @@ def _payload(
         "block_effective_ticks": ticks,
         "pressure_strength": strength,
         "source_stage": stage,
+        "source_family": family,
         "source_clean_block_id": block,
         "block_latest_end_utc": at.isoformat(),
     }
@@ -80,6 +82,59 @@ def test_sticky_ratio_exposes_carried_share():
     assert state.observed_snapshot_count == 10
     assert state.carried_snapshot_count == 9
     assert state.sticky_ratio == pytest.approx(0.9)
+
+
+def test_publisher_metadata_change_before_ttl_is_lineage_only():
+    engine = _engine(ttl_seconds=300.0)
+    formed = engine.ingest(
+        _payload(stage="MICROBOOST", family="REPEATED_MICROBOOST"),
+        event_id="evt-formed",
+    )
+    assert formed[0].source_stage == "MICROBOOST"
+    assert formed[0].source_family == "REPEATED_MICROBOOST"
+
+    changed = engine.ingest(
+        _payload(
+            stage="SIGNAL_THROTTLE_INTEL",
+            family="PRESSURE_REFRESH",
+            at=START + timedelta(seconds=120),
+        ),
+        event_id="evt-publisher-change",
+    )
+
+    assert changed == ()
+    assert engine.state.independent_pulse_count == 1
+    assert engine.state.reinforcement_count == 0
+
+
+@pytest.mark.parametrize(
+    ("stage", "family"),
+    (
+        ("SIGNAL_THROTTLE_INTEL", "REPEATED_MICROBOOST"),
+        ("MICROBOOST", "PRESSURE_REFRESH"),
+        ("SIGNAL_THROTTLE_INTEL", "PRESSURE_REFRESH"),
+    ),
+)
+def test_publisher_metadata_change_after_ttl_does_not_rearm(stage, family):
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(
+        _payload(stage="MICROBOOST", family="REPEATED_MICROBOOST"),
+        event_id="evt-formed",
+    )
+
+    boundary = engine.ingest(
+        _payload(stage=stage, family=family, at=START + timedelta(seconds=400)),
+        event_id="evt-expiry",
+    )
+    sticky = engine.ingest(
+        _payload(stage=stage, family=family, at=START + timedelta(seconds=401)),
+        event_id="evt-sticky",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert sticky == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.independent_pulse_count == 1
 
 
 def test_duplicate_emission_does_not_add_a_pulse():
@@ -172,6 +227,144 @@ def test_ttl_lapse_expires_the_pulse():
 
     assert expired is not None and expired.transition == "EXPIRED"
     assert engine.state.state == "EXPIRED"
+
+
+def test_sticky_snapshot_after_ttl_expires_without_rearming():
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(_payload(), event_id="evt-1")
+
+    boundary = engine.ingest(
+        _payload(at=START + timedelta(seconds=400)),
+        event_id="evt-expiry",
+    )
+    repeated = engine.ingest(
+        _payload(at=START + timedelta(seconds=401)),
+        event_id="evt-sticky",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert repeated == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.independent_pulse_count == 1
+
+
+def test_expiry_event_cannot_also_form_from_new_material():
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(_payload(ticks=10), event_id="evt-1")
+
+    boundary = engine.ingest(
+        _payload(ticks=40, at=START + timedelta(seconds=400)),
+        event_id="evt-expiry-new-material",
+    )
+    later = engine.ingest(
+        _payload(ticks=40, at=START + timedelta(seconds=401)),
+        event_id="evt-new-material-confirmed",
+    )
+    retry = engine.ingest(
+        _payload(ticks=40, at=START + timedelta(seconds=401)),
+        event_id="evt-new-material-confirmed",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert [pulse.transition for pulse in later] == ["FORMED"]
+    assert retry == ()
+    assert engine.state.independent_pulse_count == 2
+
+
+def test_nonmaterial_tick_change_after_expiry_stays_expired():
+    engine = _engine(ttl_seconds=300.0, tick_bucket=5)
+    engine.ingest(_payload(ticks=10), event_id="evt-1")
+
+    boundary = engine.ingest(
+        _payload(ticks=11, at=START + timedelta(seconds=400)),
+        event_id="evt-expiry-same-bucket",
+    )
+    repeated = engine.ingest(
+        _payload(ticks=11, at=START + timedelta(seconds=401)),
+        event_id="evt-same-bucket-repeated",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert repeated == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.independent_pulse_count == 1
+
+
+def test_explicit_false_reset_allows_later_formation():
+    engine = _engine()
+    engine.ingest(_payload(), event_id="evt-1")
+    invalidated = engine.ingest(
+        _payload(detected=False, at=START + timedelta(seconds=30)),
+        event_id="evt-reset",
+    )
+    reformed = engine.ingest(
+        _payload(at=START + timedelta(seconds=60)),
+        event_id="evt-after-reset",
+    )
+
+    assert [pulse.transition for pulse in invalidated] == ["INVALIDATED"]
+    assert [pulse.transition for pulse in reformed] == ["FORMED"]
+    assert engine.state.independent_pulse_count == 2
+
+
+def test_explicit_false_reset_after_expiry_rearms_across_restart():
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(_payload(), event_id="evt-formed")
+    prior_evidence_hash = engine.state.evidence_hash
+    expired = engine.ingest(
+        _payload(at=START + timedelta(seconds=400)),
+        event_id="evt-expired",
+    )
+    reset = engine.ingest(
+        _payload(detected=False, at=START + timedelta(seconds=401)),
+        event_id="evt-reset",
+    )
+
+    assert [pulse.transition for pulse in expired] == ["EXPIRED"]
+    assert reset == ()
+    assert engine.state.state == "EXPIRED"
+    assert engine.state.evidence_hash != prior_evidence_hash
+
+    restarted = MicroboostPulseEngine(
+        LIFECYCLE,
+        "CHFJPY",
+        policy=MicroboostPulsePolicy(ttl_seconds=300.0),
+        initial_state=engine.state,
+    )
+    reformed = restarted.ingest(
+        _payload(at=START + timedelta(seconds=402)),
+        event_id="evt-reformed",
+    )
+
+    assert [pulse.transition for pulse in reformed] == ["FORMED"]
+    assert restarted.state.state == "ACTIVE"
+    assert restarted.state.independent_pulse_count == 2
+
+
+def test_false_snapshot_crossing_ttl_rearms_without_double_transition():
+    engine = _engine(ttl_seconds=300.0)
+    engine.ingest(_payload(), event_id="evt-formed")
+    boundary = engine.ingest(
+        _payload(detected=False, at=START + timedelta(seconds=400)),
+        event_id="evt-expired-and-reset",
+    )
+
+    assert [pulse.transition for pulse in boundary] == ["EXPIRED"]
+    assert engine.state.state == "EXPIRED"
+
+    restarted = MicroboostPulseEngine(
+        LIFECYCLE,
+        "CHFJPY",
+        policy=MicroboostPulsePolicy(ttl_seconds=300.0),
+        initial_state=engine.state,
+    )
+    reformed = restarted.ingest(
+        _payload(at=START + timedelta(seconds=401)),
+        event_id="evt-reformed",
+    )
+
+    assert [pulse.transition for pulse in reformed] == ["FORMED"]
+    assert restarted.state.independent_pulse_count == 2
 
 
 def test_carried_snapshot_does_not_extend_ttl():

@@ -1,0 +1,35 @@
+**BLOCKED untuk aktivasi live otomatis; assessment dan rancangan perbaikannya sudah selesai.** Penilaian saya: WOLF15 memiliki fondasi yang layak dipertahankan, tetapi sambungan strategi–risiko–eksekusi belum lengkap. Prioritasnya adalah memperbaiki correctness dan integrasi, kemudian membuktikan satu jalur trading secara menyeluruh.
+
+Saya mengonsolidasikan **107 konten unik dari seluruh lampiran**, memeriksa source kritis pada main `1837f4b7…`, menelaah enam PR, dan memverifikasi metadata **20 service Railway**. Ini mencakup analisis mendalam pada jalur kritis, bukan klaim audit setiap baris seluruh repository.
+
+Temuan paling menentukan:
+
+| Temuan                                                                                                                                                                         | Dampak                                                                                    | Perbaikan utama                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Admission berbeda dari SSOT.** BUY@0, SELL@150, BUY@300 menghasilkan tiga blok 0 detik; seluruhnya BUY menghasilkan satu blok 300 detik.                                     | Pair dapat kehilangan kesempatan dianalisis akibat konflik arah.                          | Jadikan konflik arah sebagai kualitas bukti; perbaiki suspension, backfill, dan lifecycle berversi. |
+| **#418 + #419 belum membentuk natural DEMO.** #418 tetap projection/SHADOW; EA #419 menolak strategy/risk lineage.                                                             | Merge atau perubahan flag tidak menyelesaikan otomatisasi 5S-CR.                          | Bangun kontrak natural DEMO, capital-risk adapter, producer, EA validator, dan reconciliation.      |
+| **Integrasi PR mempunyai konflik nyata.** Delapan region konflik protokol; gabungan migrasi menghasilkan dua head.                                                             | Penggabungan tanpa resolusi dapat menghilangkan guard atau merusak kompatibilitas schema. | Pisahkan kebutuhan D0; konvergensikan protokol dan migrasi sebelum natural DEMO.                    |
+| **Readiness dan telemetry belum cukup membuktikan kesiapan.** Ada default-ready probe, kegagalan task/router yang dapat tersamarkan, dan reconciliation boolean dari executor. | Sistem dapat terlihat sehat meskipun pekerjaan wajib atau bukti broker belum tersedia.    | Readiness berdasarkan task nyata, independent attestation, dan pemulihan submission ambigu.         |
+| **Parity deployment belum terbukti.** Beberapa service menunjuk commit berbeda; banyak metadata service inti tidak menyertakan SHA.                                            | Source yang diaudit belum tentu sama dengan artifact yang berjalan.                       | Manifest rilis per service UUID: source, image, konfigurasi, schema, dan binary EA.                 |
+
+Rincian source mendukung pemisahan antara [projection #418](https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/blob/a28ee83b838df259f89a87153f16d2c4cac3dc92/contracts/strategy_5scr_shadow_risk_projection.py) dan [EA canary #419](https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/blob/3f4b8293c6c70b010bbbb85306379ba54079e125/ea_interface/wolf15_executor/Wolf15_DumbExecutor_Demo.mq5). Observasi deployment terikat pada [project Railway WOLF-15 LAYER](https://railway.com/project/af4d15d8-d4cb-44b7-80e7-d99a37ca0045).
+
+**Solusi paling efisien menurut bukti saat ini adalah mempertahankan monorepo, PostgreSQL, signed command, HTTPS pull, dan EA mekanis.** Program perbaikannya terdiri dari enam milestone:
+
+1. **P1:** benahi release gates, pemilik proses, dan readiness.
+2. **P2:** pastikan evidence, admission, lifecycle, serta geometri strategi deterministik.
+3. **P3:** selesaikan account-risk → FinalSignal → natural command.
+4. **P4:** buktikan D0 engineering DEMO dengan outcome broker independen.
+5. **P5:** jalankan parent alami, kemudian parent-child dan compounding dengan bukti rilis tersendiri.
+6. **P6:** susun bukti kesiapan REAL dari evaluasi strategi, biaya eksekusi, reliability, dan recovery.
+
+P2/P3 dapat dikembangkan paralel dengan D0. **Parent-only adalah tahap rollout; belum memenuhi target lengkap parent-child 5S-CR.** Profil risiko dari dokumen berbeda juga tetap dipisahkan.
+
+Paket lengkap:
+
+* [WOLF15_Master_Remediation_2026-09-08.md](sandbox:/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/WOLF15_Master_Remediation_2026-09-08.md) — laporan induk dan rancangan menyeluruh.
+* [WOLF15_Master_Backlog_2026-09-08.csv](sandbox:/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/WOLF15_Master_Backlog_2026-09-08.csv) — **41 tindakan** dengan owner, dependency, dan acceptance.
+* [WOLF15_Master_GOAP_2026-09-08.json](sandbox:/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/WOLF15_Master_GOAP_2026-09-08.json) — rencana yang tervalidasi secara struktural.
+* [WOLF15_Master_Evidence_2026-09-08.zip](sandbox:/workspace/scratch/3c52c2735051/master-remediation-20260908-v1/WOLF15_Master_Evidence_2026-09-08.zip) — 48 berkas bukti, memo domain, dan pemetaan temuan.
+
+**Verifikasi aktual:** 11 diagnostik terbatas, lima probe raw-builder, analisis konflik tekstual, serta pemeriksaan graph/identitas source. Hasil ini mengonfirmasi sejumlah masalah; belum membuktikan combined build, terminal MT5, broker, atau profitabilitas. **Implementasi repo dan aktivasi trading belum dilakukan.**

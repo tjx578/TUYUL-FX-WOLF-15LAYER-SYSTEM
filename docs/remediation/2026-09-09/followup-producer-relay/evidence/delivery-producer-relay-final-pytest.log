@@ -1,0 +1,81 @@
+........................................................................ [ 44%]
+........................................................................ [ 88%]
+..F................                                                      [100%]
+================================== FAILURES ===================================
+___ test_runner_requires_one_complete_bound_run_and_persists_failures[None] ___
+
+tmp_path = WindowsPath('C:/Users/INTEL/.codex/visualizations/2026/09/08/01a08273-1154-71e3-8242-cf3965a5b514/s03-runtime-staging/ci-temp/delivery-producer-relay-final/test_runner_requires_one_compl0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000019C18D76A50>
+failure = None
+
+    @pytest.mark.parametrize(
+        "failure", [None, "collection", "timeout", "missing_fixture", "dirty", "capacity", "source_change"]
+    )
+    def test_runner_requires_one_complete_bound_run_and_persists_failures(tmp_path, monkeypatch, failure):
+        import json
+        import subprocess
+        from types import SimpleNamespace
+    
+        from scripts.ci import run_pair_activity_runtime_acceptance as runner
+    
+        monkeypatch.setattr(runner, "ROOT", tmp_path)
+        monkeypatch.setattr(runner, "source_hashes", lambda: {"fixture": "before"})
+        monkeypatch.setattr(runner, "migration_graph", lambda root: {"repository_heads": ["20260909_01"]})
+        monkeypatch.setattr(
+            runner,
+            "host_snapshot",
+            lambda enabled: {"os": "Linux", "capacity": {"below_90_percent": failure != "capacity"}},
+        )
+        monkeypatch.setattr(
+            runner.subprocess,
+            "check_output",
+            lambda args, **kw: ("dirty" if failure == "dirty" else "") if "status" in args else "source-sha\n",
+        )
+        for key, value in {
+            "WOLF15_RUN_POSTGRES_INTEGRATION": "1",
+            "WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS": "YES_I_UNDERSTAND",
+            "WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL": "postgresql://fixture:fixture@127.0.0.1:5432/wolf15_ci_test",
+            "WOLF15_POSTGRES_TEST_DATABASE": "wolf15_ci_test",
+            "WOLF15_PAIR_ACTIVITY_EXPECTED_PG_MAJOR": "16",
+        }.items():
+            monkeypatch.setenv(key, value)
+    
+        def fake_run(command, **kwargs):
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(command, 1, output="must-not-leak-secret")
+            if "--collect-only" in command:
+                return SimpleNamespace(
+                    returncode=1 if failure == "collection" else 0, stdout=runner.TEST + "::test_bound\n", stderr=""
+                )
+            env = kwargs["env"]
+            folder = Path(env["WOLF15_PAIR_ACTIVITY_EVIDENCE_DIR"])
+            (folder / "tests.xml").write_text(
+                '<testsuites><testsuite><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_bound"/></testsuite></testsuites>'
+            )
+            if failure != "missing_fixture":
+                for phase in ("before", "after"):
+                    _phase(folder, env["WOLF15_PAIR_ACTIVITY_RUN_ID"], phase)
+                (folder / "runtime-fixtures.jsonl").write_text(
+                    json.dumps({"run_id": env["WOLF15_PAIR_ACTIVITY_RUN_ID"]}) + "\n"
+                )
+            if failure == "source_change":
+                monkeypatch.setattr(runner, "source_hashes", lambda: {"fixture": "after"})
+            return SimpleNamespace(returncode=0, stdout="passed", stderr="")
+    
+        monkeypatch.setattr(runner.subprocess, "run", fake_run)
+>       assert runner.main() == (0 if failure is None else 1)
+E       AssertionError: assert 1 == 0
+E        +  where 1 = <function main at 0x0000019C18CB9300>()
+E        +    where <function main at 0x0000019C18CB9300> = <module 'scripts.ci.run_pair_activity_runtime_acceptance' from 'D:\\WOLF15-work\\master-remediation-20260909\\repo\\scripts\\ci\\run_pair_activity_runtime_acceptance.py'>.main
+
+tests\test_pair_activity_ci_receipt.py:153: AssertionError
+---------------------------- Captured stdout call -----------------------------
+{"run_id": "e5e1e75781fa4209a5be032937067fd4", "head": "source-sha", "expected_tests": 1, "pytest_exit": null, "counts": null, "source_unchanged": true, "accepted": false, "failure_class": "FileNotFoundError"}
+- generated xml file: C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s03-runtime-staging\ci-evidence\delivery-producer-relay-final.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_pair_activity_ci_receipt.py::test_runner_requires_one_complete_bound_run_and_persists_failures[None]
+1 failed, 162 passed in 7.94s
+C:\Users\INTEL\.codex\visualizations\2026\09\08\01a08273-1154-71e3-8242-cf3965a5b514\s01-s03-staging\api-exact-venv\Lib\site-packages\pytest_asyncio\plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

@@ -71,8 +71,11 @@ class TestPeriodicRefresh:
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
             mock_bus.check_price_drift.return_value = {
+                "comparable": False,
+                "reason": "MISSING_ALIGNED_WS_CLOSED_H1",
                 "drifted": False,
-                "drift_pips": 5.0,
+                "drift_pips": 0.0,
+                "observed_live_gap_pips": 5.0,
                 "rest_close": 1.1005,
                 "ws_mid": 1.10055,
             }
@@ -97,6 +100,8 @@ class TestPeriodicRefresh:
 
         # Verify context bus update_candle was called
         assert mock_bus.update_candle.called
+        mock_state_instance.mark_symbol_degraded.assert_not_called()
+        mock_state_instance.mark_symbol_recovered.assert_not_called()
 
 
 class TestPriceDriftDetection:
@@ -141,9 +146,13 @@ class TestPriceDriftDetection:
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
             mock_bus.check_price_drift.return_value = {
+                "comparable": True,
+                "reason": "ALIGNED_CLOSED_H1",
                 "drifted": True,
                 "drift_pips": 75.0,  # Exceeds threshold
                 "rest_close": 1.1005,
+                "ws_h1_close": 1.0930,
+                "rest_close_time": "2024-01-15T11:00:00+00:00",
                 "ws_mid": 1.09975,
             }
             mock_bus.get_warmup_bar_count.return_value = 50
@@ -201,9 +210,13 @@ class TestPriceDriftDetection:
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
             mock_bus.check_price_drift.return_value = {
+                "comparable": True,
+                "reason": "ALIGNED_CLOSED_H1",
                 "drifted": False,
                 "drift_pips": 5.0,  # Within threshold
                 "rest_close": 1.1005,
+                "ws_h1_close": 1.1000,
+                "rest_close_time": "2024-01-15T11:00:00+00:00",
                 "ws_mid": 1.10055,
             }
             mock_bus.get_warmup_bar_count.return_value = 50

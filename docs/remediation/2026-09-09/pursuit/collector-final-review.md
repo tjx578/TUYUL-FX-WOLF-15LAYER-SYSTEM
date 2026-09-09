@@ -1,0 +1,9 @@
+# Collector final acceptance
+
+Final source 12836a04: configured tool mismatch stops before transport launch; listed tool mismatch stops before tool reads. Configured audit DSN is removed from child env case-insensitively. Helper hashes and configured launch digest are emitted without raw credentials; configured server identity remains UNVERIFIED and environment values are not attested. Missing/changed helper files fail collection.
+
+cp3 passes all 11 Native MCP fixtures, including four new cases, with exact JUnit/collection identities and unchanged working source. MCP 2.0.0/Pydantic 2.13.5 stays in the dedicated existing test environment. API dependencies were not changed. Ruff/format pass. Tests already belong to the separately required Native MCP CI job; this does not establish that remote job execution occurred.
+
+The earlier cp2 snapshot OOM was mitigated by per-command Git settings: packedGitWindowSize=1m, packedGitLimit=32m, deltaBaseCacheLimit=8m. Full binary diff/source snapshot coverage was retained. No repository/global config, pagefile, process or workload was changed. This successful alternative does not prove why the initial allocation failed, resolve host memory pressure or authorize larger workloads. Git documents these as pack mapping/base cache controls, not a cap on total process memory: https://git-scm.com/docs/git-config .
+
+Previous pending/handoff documents remain historical evidence and are superseded by collector-final-validation.json for final test/commit status. Final source is committed; evidence commit follows. Independent agent review unavailable. No production/DB/broker mutation, README edit or canonical closure; milestones 0/6. Publication remains HOLD pending Railway branch-trigger binding and required checks. Next source frontier is a trusted receipt retention/verification caller and explicit independent collector binding; metadata alone provides neither.

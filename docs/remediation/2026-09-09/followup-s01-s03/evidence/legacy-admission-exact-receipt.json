@@ -1,0 +1,98 @@
+{
+  "label": "legacy-admission-exact",
+  "runner": "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+  "platform": "win32",
+  "collection_command": [
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_strategy_5scr_pair_admission.py",
+    "tests/test_strategy_5scr_raw_admission_blocks.py",
+    "--collect-only",
+    "-q"
+  ],
+  "test_command": [
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\api-exact-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_strategy_5scr_pair_admission.py",
+    "tests/test_strategy_5scr_raw_admission_blocks.py",
+    "-q",
+    "--timeout=60",
+    "--basetemp",
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\ci-temp\\legacy-admission-exact",
+    "--junitxml",
+    "C:\\Users\\INTEL\\.codex\\visualizations\\2026\\09\\08\\01a08273-1154-71e3-8242-cf3965a5b514\\s01-s03-staging\\ci-evidence\\legacy-admission-exact.xml"
+  ],
+  "collection_exit": 0,
+  "expected_test_count": 33,
+  "expected_test_ids": [
+    "tests/test_strategy_5scr_pair_admission.py::test_raw_global_ledger_produces_non_executable_analysis_grant",
+    "tests/test_strategy_5scr_pair_admission.py::test_lineage_without_minimum_duration_cannot_grant_admission",
+    "tests/test_strategy_5scr_pair_admission.py::test_mixed_deployments_fail_closed",
+    "tests/test_strategy_5scr_pair_admission.py::test_shadow_audit_exposes_mixed_deployment_rejection_reason",
+    "tests/test_strategy_5scr_pair_admission.py::test_block_summary_cannot_forge_raw_duration",
+    "tests/test_strategy_5scr_pair_admission.py::test_block_summary_cannot_forge_effective_ticks",
+    "tests/test_strategy_5scr_pair_admission.py::test_one_missing_deployment_in_mixed_evidence_fails_closed",
+    "tests/test_strategy_5scr_pair_admission.py::test_missing_scanner_cycle_lineage_fails_closed",
+    "tests/test_strategy_5scr_pair_admission.py::test_raw_ledger_ids_are_deterministic_in_event_time_order",
+    "tests/test_strategy_5scr_pair_admission.py::test_cross_symbol_raw_authority_interrupts_a_forged_pair_block",
+    "tests/test_strategy_5scr_pair_admission.py::test_cross_symbol_policy_is_explicit_on_grant",
+    "tests/test_strategy_5scr_pair_admission.py::test_duplicate_stable_raw_identity_fails_closed",
+    "tests/test_strategy_5scr_pair_admission.py::test_derived_pressure_state_cannot_impersonate_raw_admission_authority",
+    "tests/test_strategy_5scr_pair_admission.py::test_rejection_audit_retains_deterministic_raw_metrics_and_reason",
+    "tests/test_strategy_5scr_pair_admission.py::test_expired_grant_is_not_active",
+    "tests/test_strategy_5scr_pair_admission.py::test_gap_beyond_uninterrupted_limit_fails_closed",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_canary_only_builds_no_raw_admission_block",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_mixed_canary_does_not_change_raw_interval_or_counts",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_raw_only_300_seconds_grants_exactly_once",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_duplicate_replay_does_not_increase_raw_count_or_duplicate_grant",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_cross_symbol_event_finalizes_the_active_raw_block",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_gap_boundary_is_inclusive_at_exactly_300_seconds",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_replay_produces_stable_raw_block_and_lineage_hashes",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_grant_identity_and_evidence_freeze_at_first_threshold_crossing",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_runtime_throttle_pair_can_grant_without_promoting_execution_authority",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_true_unresolved_raw_event_still_fails_closed",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_non_throttled_event_cannot_launder_inferred_direction",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_inferred_direction_is_part_of_stable_raw_identity",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_identical_active_snapshot_replays_the_same_evaluation_identity",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_growing_active_block_versions_the_evaluation_watermark",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_active_to_finalized_versions_evaluation_without_changing_raw_block_identity",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_active_grant_survives_normal_cross_symbol_finalization",
+    "tests/test_strategy_5scr_raw_admission_blocks.py::test_multi_symbol_finalizer_ordering_is_deterministic"
+  ],
+  "pytest_exit": 0,
+  "xml_counts": {
+    "tests": 33,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "elapsed_seconds": 12.988,
+  "before": {
+    "head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "files": {
+      "tests/test_strategy_5scr_pair_admission.py": "c9b5afe9399bc9264f05fbd2e9d7eecfde639f7520ea847fb97a117fa8cd1f4c",
+      "tests/test_strategy_5scr_raw_admission_blocks.py": "bb7bc8972943e491e8f565725cb3f2720856163773cfce9f1048acd05c13035b"
+    }
+  },
+  "after": {
+    "head": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+    "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "files": {
+      "tests/test_strategy_5scr_pair_admission.py": "c9b5afe9399bc9264f05fbd2e9d7eecfde639f7520ea847fb97a117fa8cd1f4c",
+      "tests/test_strategy_5scr_raw_admission_blocks.py": "bb7bc8972943e491e8f565725cb3f2720856163773cfce9f1048acd05c13035b"
+    }
+  },
+  "source_unchanged": true,
+  "scope": "LOCAL_SUBSET_ONLY_NO_PRODUCTION_DB_BROKER_OR_PROVIDER"
+}

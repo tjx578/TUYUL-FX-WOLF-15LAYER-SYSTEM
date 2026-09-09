@@ -12,7 +12,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 _RAW_AUTHORITY_STREAMS = frozenset({"RAW_THROTTLED", "ALLOWED", "DOWNGRADED"})
 _RAW_AUTHORITY_EVENT_TYPES = frozenset({"THROTTLED", "ALLOWED", "DOWNGRADED_TO_HOLD"})
@@ -58,6 +58,18 @@ def raw_signal_throttle_event_id(event: Any) -> str:
         "scanner_cycle_id": _value(event, "scanner_cycle_id"),
         "deployment_id": _value(event, "deployment_id"),
     }
+    event_type = str(_value(event, "event_type") or "").strip().upper()
+    source_stream = str(_value(event, "source_stream") or "").strip().upper()
+    inferred_direction = _value(event, "throttled_inferred_direction")
+    if (
+        event_type == "THROTTLED"
+        and source_stream == "RAW_THROTTLED"
+        and inferred_direction is not None
+        and str(inferred_direction).strip()
+    ):
+        # Preserve historical identities for every event that never carried
+        # this field; only newly authoritative inferred provenance changes ID.
+        identity["throttled_inferred_direction"] = inferred_direction
     return "sha256:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
 
 
@@ -73,10 +85,26 @@ def is_raw_signal_throttle_authority(event: Any) -> bool:
     )
 
 
-def _direction(event: Any) -> str | None:
+def raw_signal_throttle_direction(event: Any) -> str | None:
+    """Resolve analysis-only direction from fields emitted by SignalThrottle.
+
+    A throttled runtime decision is recorded as two raw events.  The first is
+    the pure THROTTLED fact and carries ``throttled_inferred_direction``; the
+    second is the directional DOWNGRADED_TO_HOLD fact.  Treating the inferred
+    field as analysis provenance keeps that pair replayable without promoting
+    either event to execution authority.
+    """
+
     direct = str(_value(event, "direction") or "").strip().upper()
     if direct in {"BUY", "SELL"}:
         return direct
+    if (
+        str(_value(event, "event_type") or "").strip().upper() == "THROTTLED"
+        and str(_value(event, "source_stream") or "").strip().upper() == "RAW_THROTTLED"
+    ):
+        inferred = str(_value(event, "throttled_inferred_direction") or "").strip().upper()
+        if inferred in {"BUY", "SELL"}:
+            return inferred
     verdict = str(_value(event, "verdict") or "").strip().upper()
     if verdict.endswith("_BUY"):
         return "BUY"
@@ -111,6 +139,9 @@ class RawAdmissionBlock:
     scanner_cycle_ids: tuple[str, ...]
     source_event_ids: tuple[str, ...]
     cross_symbol_interruption_count: int = 0
+    evaluation_state: Literal["ACTIVE", "FINALIZED"] = "ACTIVE"
+    finalization_reason: str | None = None
+    finalization_event_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -128,6 +159,9 @@ class RawAdmissionBlock:
             "scanner_cycle_ids": list(self.scanner_cycle_ids),
             "source_event_ids": list(self.source_event_ids),
             "cross_symbol_interruption_count": self.cross_symbol_interruption_count,
+            "evaluation_state": self.evaluation_state,
+            "finalization_reason": self.finalization_reason,
+            "finalization_event_id": self.finalization_event_id,
             "ledger_scope": "GLOBAL_SIGNAL_THROTTLE_RAW_LEDGER",
             "authority_population": "RAW_SIGNAL_THROTTLE_ONLY",
             "execution_authority": False,
@@ -162,7 +196,12 @@ class RawAdmissionPopulation:
         }
 
 
-def _make_block(events: list[Any], *, interrupted: bool) -> RawAdmissionBlock:
+def _make_block(
+    events: list[Any],
+    *,
+    finalization_reason: str | None = None,
+    finalization_event: Any | None = None,
+) -> RawAdmissionBlock:
     ordered = sorted(events, key=lambda event: (_utc(_value(event, "timestamp")), raw_signal_throttle_event_id(event)))
     timestamps = tuple(_utc(_value(event, "timestamp")) for event in ordered)
     assert all(timestamp is not None for timestamp in timestamps)
@@ -173,7 +212,9 @@ def _make_block(events: list[Any], *, interrupted: bool) -> RawAdmissionBlock:
     gaps = tuple(
         (concrete_times[index] - concrete_times[index - 1]).total_seconds() for index in range(1, len(concrete_times))
     )
-    directions = {_direction(event) for event in ordered if _direction(event) is not None}
+    directions = {
+        raw_signal_throttle_direction(event) for event in ordered if raw_signal_throttle_direction(event) is not None
+    }
     deployments = tuple(
         sorted(
             {
@@ -200,6 +241,7 @@ def _make_block(events: list[Any], *, interrupted: bool) -> RawAdmissionBlock:
     raw_block_id = "5scr-raw-block:" + hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()[:32]
     duration = (end - start).total_seconds()
     effective_ticks = sum(_effective_ticks(event) for event in ordered)
+    finalized = finalization_reason is not None
     return RawAdmissionBlock(
         raw_block_id=raw_block_id,
         symbol=str(_value(ordered[0], "symbol") or "").upper(),
@@ -214,7 +256,12 @@ def _make_block(events: list[Any], *, interrupted: bool) -> RawAdmissionBlock:
         deployment_ids=deployments,
         scanner_cycle_ids=cycles,
         source_event_ids=event_ids,
-        cross_symbol_interruption_count=1 if interrupted else 0,
+        cross_symbol_interruption_count=1 if finalization_reason == "CROSS_SYMBOL_EVENT" else 0,
+        evaluation_state="FINALIZED" if finalized else "ACTIVE",
+        finalization_reason=finalization_reason,
+        finalization_event_id=(
+            raw_signal_throttle_event_id(finalization_event) if finalized and finalization_event is not None else None
+        ),
     )
 
 
@@ -257,20 +304,34 @@ def build_raw_admission_population(
         current_time = _utc(_value(event, "timestamp"))
         assert previous_time is not None and current_time is not None
         symbol_changed = str(_value(previous, "symbol") or "").upper() != str(_value(event, "symbol") or "").upper()
-        prior_direction = _direction(previous)
-        next_direction = _direction(event)
+        prior_direction = raw_signal_throttle_direction(previous)
+        next_direction = raw_signal_throttle_direction(event)
         direction_changed = (
             prior_direction is not None and next_direction is not None and prior_direction != next_direction
         )
         gap_exceeded = (current_time - previous_time).total_seconds() > max_gap_seconds
         deployment_changed = str(_value(previous, "deployment_id") or "") != str(_value(event, "deployment_id") or "")
         if symbol_changed or direction_changed or gap_exceeded or deployment_changed:
-            blocks.append(_make_block(current, interrupted=symbol_changed))
+            if symbol_changed:
+                finalization_reason = "CROSS_SYMBOL_EVENT"
+            elif direction_changed:
+                finalization_reason = "DIRECTION_CHANGE_EVENT"
+            elif gap_exceeded:
+                finalization_reason = "MAX_GAP_EXCEEDED_EVENT"
+            else:
+                finalization_reason = "DEPLOYMENT_CHANGE_EVENT"
+            blocks.append(
+                _make_block(
+                    current,
+                    finalization_reason=finalization_reason,
+                    finalization_event=event,
+                )
+            )
             current = [event]
         else:
             current.append(event)
     if current:
-        blocks.append(_make_block(current, interrupted=False))
+        blocks.append(_make_block(current))
 
     return RawAdmissionPopulation(
         events=tuple(unique),
@@ -286,5 +347,6 @@ __all__ = [
     "RawAdmissionPopulation",
     "build_raw_admission_population",
     "is_raw_signal_throttle_authority",
+    "raw_signal_throttle_direction",
     "raw_signal_throttle_event_id",
 ]

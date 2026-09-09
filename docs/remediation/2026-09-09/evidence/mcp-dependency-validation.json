@@ -1,0 +1,25 @@
+{
+  "utc": "2026-09-08T19:43:26.830896+00:00",
+  "commit": "c7d51c35d11c04cc61f152588ebded7614df1670",
+  "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+  "python_executable": "D:\\WOLF15-work\\master-remediation-20260909\\mcp-test-env\\Scripts\\python.exe",
+  "pytest_exit_code": 0,
+  "versions": {
+    "mcp": "2.0.0",
+    "psutil": "7.2.2",
+    "pytest": "8.4.2",
+    "pytest-asyncio": "1.4.0",
+    "pytest-timeout": "2.4.0"
+  },
+  "native_mt5_import_attempts": [],
+  "suite": "tests/test_native_mt5_readonly_mcp.py",
+  "source_sha256": {
+    "tests/test_native_mt5_readonly_mcp.py": "008711b4b74d38e10cbffecc24a09969d2874860ccd8caf7a3f15d3a8c7a6868",
+    "ops/mt5_mcp/server.py": "3bc658609285c0854f938e67a4682c35fdca653e979dfbdc7778cb0434295c7f",
+    "ops/mt5_mcp/account_binding.py": "3c2eb7a68c76760d26dbdf59b692384890028f2b87ea3f0d5f4eeb67d784db09",
+    "ops/mt5_mcp/requirements.txt": "53f1b76dcc3184f1adab337155907971d1c8e3befd83b5ae9636828756845c37"
+  },
+  "scope": "Fixture-only with injected FakeMT5; native import forbidden; no server launch or account binding packet.",
+  "broker": "NOT_MEASURED",
+  "C03": "PARTIAL_LOCAL_PREREQUISITE"
+}

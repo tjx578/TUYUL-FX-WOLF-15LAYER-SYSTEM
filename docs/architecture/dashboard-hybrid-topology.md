@@ -1,214 +1,77 @@
-# Dashboard Hybrid Topology
+# Railway Dashboard — Direct Core API Topology
 
-**Status:** Canonical
-**Scope:** Optional hybrid BFF routing rules, safety contract, and deployment boundaries.
+**Status:** Canonical repository contract; production rollout remains HOLD.
+**Updated:** 2026-09-09 (dashboard scope only).
+**Filename:** `dashboard-hybrid-topology.md` is retained so existing links resolve. Its former hybrid routing prescription is superseded by this direct API contract.
 
-## Purpose
+## Selected service and evidence boundary
 
-This document defines the contract for operating a hybrid dashboard
-topology where an optional backend-for-frontend (BFF) service runs
-alongside the core-api.
+- Dashboard: `https://wolf15-dashboard-frontend-production.up.railway.app`
+- Login: `https://wolf15-dashboard-frontend-production.up.railway.app/login`
+- Core API: `https://wolf15-api-production.up.railway.app`
+- Selected frontend service port: `8080`, confirmed from provider metadata.
+- Source: `dashboard/nextjs/`; Railway Docker/standalone deployment.
 
-The BFF is designed for dashboard-specific workloads: aggregation,
-caching, pre-processing, and presentation-layer APIs that do not
-belong in the constitutional pipeline.
+These are the selected existing services. The repository revision does not prove a deployment: the observed public login still shows `VIEWER JWT`. Password-login and direct-core production acceptance remain unverified. No production deployment, variable change, credential creation or trading activation is authorized by this document.
 
-## Routing Matrix
+## Request path
 
-| Path Pattern | Phase 1 Upstream | Auth | Notes |
-| --- | --- | --- | --- |
-| `/api/proxy/dashboard/*` | BFF (if deployed) | session → JWT | Allowlisted BFF paths |
-| `/api/proxy/bff/*` | BFF (if deployed) | session → JWT | Allowlisted BFF paths |
-| `/api/proxy/*` (all other) | core-api | session → JWT | Default upstream |
-| `/api/status` | core-api | session → JWT | Operator diagnostics |
-| `/api/set-session` | Next.js internal | cookie | Not proxied |
-| `/api/auth/ws-ticket` | Next.js internal | cookie | Not proxied |
-| WebSocket channels | core-api (direct) | ws-ticket | Phase 1: no BFF WS relay |
-| `/healthz`, `/readyz` | core-api | none / machine-key | Infra probes |
+```text
+Browser on selected Railway origin
+  -> same-origin Next.js owner-login/session and three GET projections
+  -> server-only INTERNAL_API_URL
+  -> existing core API auth and read endpoints
+```
 
-### Resolution Logic
-
-Routing is resolved at request time by `resolveDashboardUpstream()` in
-`dashboard/nextjs/src/lib/server/dashboardTopology.ts`.
-
-The resolver checks:
-
-1. Is `INTERNAL_DASHBOARD_BFF_URL` set and non-empty?
-2. Does the request path match `BFF_ALLOWLISTED_PATHS`?
-3. If both: route to BFF. Otherwise: route to core-api.
-
-If the BFF URL is not configured, all traffic routes to core-api.
-The allowlist is a static, code-defined set — not configurable via env.
-
-## WebSocket Rule
-
-In Phase 1, all WebSocket channels remain direct-to-backend.
-
-- `NEXT_PUBLIC_WS_BASE_URL` points to core-api
-- The multiplexer connects to core-api only
-- No WS traffic flows through the BFF
-
-Future phases may introduce WS relay through the BFF, but this requires
-multiplexer refactoring to support split-origin connections.
-
-## Auth Rule
-
-The BFF must accept the same auth contract as core-api for proxied
-requests:
-
-- `Authorization: Bearer <jwt>` header injected by Next.js middleware
-- The BFF must validate the JWT or forward it to core-api for validation
-- The BFF must not introduce new auth surfaces for browser traffic
-- Machine-to-machine auth between BFF and core-api (if needed) uses
-  a separate service key, never the owner session JWT
-
-## Observability Contract
-
-Proxy and status route handlers add surface headers for debugging:
-
-| Header | Value | Route |
+| Browser request | Core request made by Next server | Browser projection |
 | --- | --- | --- |
-| `x-proxy-surface` | `core-api` or `bff` | `/api/proxy/[...path]` |
-| `x-status-surface` | `core-api` or `bff` | `/api/status` |
-| `x-proxy-target` | upstream URL | `/api/proxy/[...path]` (existing) |
-| `x-proxy-status` | HTTP status code | `/api/proxy/[...path]` (existing) |
-| `x-request-id` | UUID v4 | All proxied requests |
+| POST `/api/auth/owner-login` | POST `/api/auth/owner-login` | Session result; JWT retained in HttpOnly cookie |
+| GET `/api/proxy/dashboard/overview` | GET `/api/v1/status` and `/healthz` | Sanitized `{status, health, source}` |
+| GET `/api/proxy/dashboard/feed-status` | GET `/api/v1/candles/feed-status` | Sanitized feed metadata and `source` |
+| GET `/api/proxy/dashboard/aggregated-status` | GET `/api/v1/status` | Sanitized `{core_status, source}` |
+| DELETE `/api/set-session` | No core business request | Clear browser session |
 
-These headers are informational and must not be used for routing decisions.
+Session validation uses the existing core `/api/auth/session` endpoint. The proxy accepts exactly the three listed GET paths. Unknown paths, extra query parameters and mutations fail before any upstream fetch. There is no general API passthrough, browser WebSocket/SSE route or upstream fallback in this viewer profile.
 
-### Trace ID Propagation
+## Authentication and authority
 
-Every proxied request must carry an `x-request-id` header for end-to-end
-tracing across the request chain: browser → Next.js proxy → BFF → core-api.
+The owner authenticates with username/password; the backend issues a JWT with `role=viewer` and explicit `read:dashboard`. The Next server sets the `wolf15_session` cookie with HttpOnly, Secure and SameSite protection. Browser JavaScript receives no JWT or machine credential. Session expiry is bounded to 15 minutes; the password-owner subject cannot obtain successor tokens through legacy refresh/session/login routes.
 
-Rules:
+Middleware converts the session cookie to an explicit Bearer header for the server proxy. The proxy validates the session with core and requires JWT authentication, viewer role and the dashboard-read scope. Owner/operator/admin roles and machine API keys cannot authorize this viewer profile. Session cookies are not forwarded as core business credentials.
 
-- The Next.js proxy generates `x-request-id` (UUID v4) if the inbound
-  request does not already carry one.
-- The proxy forwards `x-request-id` to the upstream (core-api or BFF).
-- The BFF must forward the same `x-request-id` on any sub-requests it
-  makes to core-api — it must not generate a new ID.
-- The proxy copies `x-request-id` onto the response so the browser can
-  correlate requests with backend logs.
-- Backend services should log `x-request-id` for incident correlation.
+The dashboard observes existing backend state. It cannot create verdicts, alter strategy, call execution/broker routes, write risk/configuration state or enable engine/orchestrator work. The selected API deployment must remain API-only (`WOLF15_EMBED_ORCHESTRATOR=false`); this repository change does not modify a running API service.
 
-## Safety Rules
+## Server-side projection and failures
 
-### No silent fallback
+`src/lib/server/viewerProjection.ts` selects explicit safe fields before JSON reaches the browser. It excludes raw `detail`, `router_boot_errors`, arbitrary nested payloads, credential fields and hardcoded placeholder activity/MT5 values. Numeric values must be finite and bounded; enum strings, symbol identifiers and collection size are validated. Missing observations remain null/unknown.
 
-If a path is BFF-allowlisted and the BFF is unreachable, the proxy must
-return an error. It must NOT silently fall back to core-api. This
-prevents phantom routing drift where the dashboard unknowingly consumes
-core-api data instead of BFF-processed data.
+Core responses are capped at 128 KiB and feed collections at 256 symbols. Reads use a five-second timeout, reject redirects and use `cache: no-store`. Failed or malformed core responses yield a generic 502; missing/invalid core configuration yields 503. Responses never expose upstream error bodies, cookies or private origin diagnostics.
 
-### No authority escalation
+Browser responses carry `cache-control: no-store`, `x-proxy-surface: core-api` and a server-generated `x-request-id`. There is no BFF cache header or user-shared response cache. Backend liveness is separate from freshness, database availability and trading readiness.
 
-The BFF must not:
+## Repository configuration
 
-- produce constitutional verdicts
-- override Layer 12 decisions
-- bypass risk firewall or execution boundaries
-- mutate trade state
-- act as an alternate strategy or analysis engine
+```env
+DASHBOARD_MODE=viewer
+DASHBOARD_CANONICAL_ORIGIN=https://wolf15-dashboard-frontend-production.up.railway.app
+INTERNAL_API_URL=https://wolf15-api-production.up.railway.app
+PORT=8080
+```
 
-### No account state in signals
+`INTERNAL_API_URL` is server-only and must be a credential-free bare HTTPS origin in production. It cannot equal the dashboard origin. Missing or invalid values fail closed. The selected frontend does not require public API/WS variables or a dashboard-BFF variable. Provisioning any production password verifier/signing secret is a separate backend-only operation requiring its own authorization.
 
-The BFF must not inject account state (`balance`, `equity`, `margin`)
-into Layer 12 signals. Sizing remains the responsibility of the
-dashboard/risk zone.
+## Legacy service boundary
 
-### Allowlist is code-defined
+`services/dashboard_bff/` and its standalone deployment artifacts remain legacy Python service code. They are disconnected from the selected frontend and are not a dependency or fallback for its login or read projections. This does not claim that an existing provider BFF service has been stopped or deleted.
 
-The BFF path allowlist is defined in source code, not in environment
-variables. This ensures routing changes require code review and cannot
-be silently changed via deployment config.
+## Verification required before promotion
 
-## Deployment
+- Exact source/commit identity and preserved dirty-checkout recovery.
+- Strict frontend build, owner auth and exact-path containment tests.
+- Direct core mapping, server-side secret projection and bounded failure tests.
+- Browser password login, expiry, logout and denied privilege checks on the selected production origin.
+- API-only effective entrypoint; source-to-image-to-domain identity; TLS/network and actual read-data acceptance.
 
-### Environment Variables
+Local checks and provider metadata do not satisfy the production gates. Keep HOLD until each gate has direct evidence.
 
-| Variable | Where | Purpose |
-| --- | --- | --- |
-| `INTERNAL_DASHBOARD_BFF_URL` | Vercel (dashboard) | BFF upstream URL for server-side proxy |
-| `INTERNAL_API_URL` | Vercel (dashboard) | Core-api upstream URL (existing) |
-| `NEXT_PUBLIC_WS_BASE_URL` | Vercel (dashboard) | WS origin for browser (existing, stays core-api) |
-
-### Railway Service
-
-When deployed on Railway, the BFF runs as a separate service:
-
-- Service name: `wolf15-dashboard-bff`
-- Exposes its own `/healthz` and `/readyz`
-- Health must not be conflated with core-api health
-- Requires access to Redis and/or core-api for data sourcing
-
-### Vercel Configuration
-
-No Vercel config changes are needed. The Next.js proxy reads
-`INTERNAL_DASHBOARD_BFF_URL` at request time. If the variable is unset,
-all traffic routes to core-api — the system operates in single-upstream
-mode identical to the pre-hybrid state.
-
-## Cache / TTL Contract
-
-The BFF may cache responses from core-api to reduce load and improve
-dashboard responsiveness. Caching must follow these rules:
-
-### Cacheable surfaces
-
-| BFF Route | Max TTL | Stale-While-Revalidate | Notes |
-| --- | --- | --- | --- |
-| `dashboard/overview` | 5 s | 10 s | Composite operator snapshot |
-| `dashboard/prices` | 2 s | 5 s | Latest price grid |
-| `dashboard/feed-status` | 10 s | 20 s | Ingest health summary |
-| `bff/aggregated-status` | 5 s | 10 s | Multi-source status rollup |
-
-### Non-cacheable surfaces
-
-The following must never be cached by the BFF:
-
-- Any path containing `/verdict`, `/execution`, `/risk`, `/governance`
-- Any write operation (POST, PUT, PATCH, DELETE)
-- Any response with `cache-control: no-store` from core-api
-
-### Cache identity
-
-- Cache key: `{path}:{query_params_sorted}` — auth headers are NOT
-  part of the cache key (owner-only, single-user).
-- Cache storage: in-process memory (Phase 1). Redis-backed cache is
-  a Phase 2 option.
-
-### Stale read detection
-
-BFF responses must include:
-
-| Header | Value | Purpose |
-| --- | --- | --- |
-| `x-bff-cache` | `HIT`, `MISS`, or `STALE` | Cache status |
-| `x-bff-cache-age` | seconds since cache fill | Staleness indicator |
-
-The dashboard frontend may use these headers to display freshness
-indicators but must not make routing or retry decisions based on them.
-
-## Phasing
-
-### Phase 1 (Current)
-
-- REST-only BFF routing via allowlist
-- WS remains direct-to-backend
-- No circuit breaker (BFF failure = error, not fallback)
-- Single BFF instance, no load balancing
-- x-request-id propagation for end-to-end tracing
-
-### Phase 2 (Future)
-
-- Circuit breaker with configurable thresholds
-- WS relay through BFF (requires multiplexer refactoring)
-- BFF health monitoring in dashboard diagnostics
-- BFF-side caching per Cache / TTL Contract above
-- Redis-backed shared cache (optional)
-
-## Related Documents
-
-- `docs/architecture/dashboard-control-surface.md` — Dashboard authority boundary
-- `docs/architecture/runtime-topology-current.md` — Runtime service topology
+Related: [Dashboard authority](dashboard-control-surface.md), [runtime topology](runtime-topology-current.md), [go-live gates](operations/go-live-checklist.md).

@@ -1,0 +1,153 @@
+{
+  "source_commit": "2c9d3dab743747f17dc350a04a8225f65490b26b",
+  "tests": 86,
+  "new_adapter_cases": 41,
+  "existing_geometry_cases": 45,
+  "skipped": 0,
+  "failures": 0,
+  "exact_junit_identity_match": true,
+  "test_ids": [
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_capture_boundary_is_accepted",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_cost_scenarios_are_separate_and_hash_is_bound",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_cost_time_boundary_is_fail_closed[-2]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_cost_time_boundary_is_fail_closed[1]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_cost_time_boundary_is_fail_closed[2]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_cross_binding_is_rejected[instrument_class-METAL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_cross_binding_is_rejected[symbol-USDJPY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_decimal_context_does_not_change_tick_selection",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_exact_boundary_and_one_tick_outside[BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_exact_boundary_and_one_tick_outside[SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[0-EURUSD-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[0-EURUSD-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[0-USDJPY-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[0-USDJPY-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[0-XAUUSD-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[0-XAUUSD-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[1-EURUSD-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[1-EURUSD-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[1-USDJPY-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[1-USDJPY-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[1-XAUUSD-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[1-XAUUSD-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[20-EURUSD-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[20-EURUSD-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[20-USDJPY-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[20-USDJPY-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[20-XAUUSD-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[20-XAUUSD-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[5-EURUSD-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[5-EURUSD-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[5-USDJPY-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[5-USDJPY-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[5-XAUUSD-BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_feasible_interval_matches_exhaustive_tick_oracle[5-XAUUSD-SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_gross_rr_pass_does_not_hide_net_rr_failure[BUY]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_gross_rr_pass_does_not_hide_net_rr_failure[SELL]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_invalid_inputs_are_not_defaulted[active_profile]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_invalid_inputs_are_not_defaulted[naive]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_invalid_inputs_are_not_defaulted[nan]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_invalid_inputs_are_not_defaulted[negative_cost]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_invalid_inputs_are_not_defaulted[omitted_cost]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_invalid_inputs_are_not_defaulted[tick]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_missing_binding_waits[costs-COST_EVIDENCE_UNBOUND]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_missing_binding_waits[policy-POLICY_UNBOUND]",
+    "tests/test_strategy_5scr_net_geometry_v31.py::test_solver_revalidates_model_copy_and_authority_cannot_be_enabled",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_cannot_relabel_profile_or_grant_execution_authority",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_capacity_state_has_its_own_bound_freshness[-11]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_capacity_state_has_its_own_bound_freshness[1]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_decimal_context_cannot_change_risk_size_or_cap",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_exact_account_capacity_boundary_has_no_epsilon_allowance",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_floating_profit_cannot_increase_parent_budget",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_geometry_to_parent_sizing_exact_cost_and_step_oracle[BUY]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_geometry_to_parent_sizing_exact_cost_and_step_oracle[SELL]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_input_receipt_binds_strategy_policy_geometry_account_and_exposure[exposure]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_input_receipt_binds_strategy_policy_geometry_account_and_exposure[geometry]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_input_receipt_binds_strategy_policy_geometry_account_and_exposure[policy]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_input_receipt_binds_strategy_policy_geometry_account_and_exposure[revision]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_input_receipt_binds_strategy_policy_geometry_account_and_exposure[snapshot]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_input_verifier_required_and_exact_true",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_missing_capacity_or_tick_denomination_binding_rejected[risk_state_evidence_hash]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_missing_capacity_or_tick_denomination_binding_rejected[tick_value_currency]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_missing_capacity_or_tick_denomination_binding_rejected[tick_value_model_id]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_no_default_risk_numbers[equity_tolerance_usd]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_no_default_risk_numbers[risk_fraction]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_no_default_risk_numbers[snapshot_max_age_seconds]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_nonfinite_account_input_cannot_produce_sizing[inf]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_nonfinite_account_input_cannot_produce_sizing[nan]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[account-RISK_ACCOUNT_EXECUTOR_MISMATCH]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[account_risk-RISK_ACCOUNT_CAPACITY_EXCEEDED]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[campaign_risk-RISK_PARENT_CAMPAIGN_ALREADY_HAS_EXPOSURE]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[clock-RISK_GEOMETRY_CLOCK_MISMATCH]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[costs-RISK_GEOMETRY_COST_EVIDENCE_UNBOUND]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[currency-RISK_ACCOUNT_CURRENCY_UNSUPPORTED]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[disabled-RISK_TRADE_DISABLED]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[duplicate_spec-RISK_SYMBOL_BINDING_MISSING_OR_AMBIGUOUS]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[equity-RISK_EQUITY_INCONSISTENT]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[executor-RISK_ACCOUNT_EXECUTOR_MISMATCH]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[future-RISK_SNAPSHOT_STALE_OR_FUTURE]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[max_volume-RISK_VOLUME_ABOVE_MAXIMUM]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[min_volume-RISK_VOLUME_BELOW_MINIMUM]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[missing_spec-RISK_SYMBOL_BINDING_MISSING_OR_AMBIGUOUS]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[profit_tick-RISK_MONETARY_NET_RR_INSUFFICIENT]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[stale-RISK_SNAPSHOT_STALE_OR_FUTURE]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_risk_adapter_rejects_incomplete_or_conflicting_inputs[tick-RISK_GEOMETRY_SPEC_MISMATCH]",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_snapshot_and_risk_state_exact_age_limits_are_accepted",
+    "tests/test_strategy_5scr_risk_adapter_v31.py::test_verifier_cannot_mutate_bound_snapshot"
+  ],
+  "receipt": "k07-adapter-20260909-a2-receipt.json",
+  "source_files": {
+    "contracts/strategy_5scr_risk_adapter_v31.py": {
+      "git_sha256": "c66887e59be9bc2b8b5e7071a432a122c7934179d8677f681d456dccb4483b14",
+      "working_sha256": "c66887e59be9bc2b8b5e7071a432a122c7934179d8677f681d456dccb4483b14"
+    },
+    "risk/strategy_5scr_risk_adapter_v31.py": {
+      "git_sha256": "0a262a82f459e61184efc0f51e9077d170bebe0aa40a4b72c455a3c56a7a0ee6",
+      "working_sha256": "0a262a82f459e61184efc0f51e9077d170bebe0aa40a4b72c455a3c56a7a0ee6"
+    },
+    "tests/test_strategy_5scr_risk_adapter_v31.py": {
+      "git_sha256": "1ab17f2c0e47db56d15cef6e848fce595af1fc2e0f1e477bccf83972c119829d",
+      "working_sha256": "1ab17f2c0e47db56d15cef6e848fce595af1fc2e0f1e477bccf83972c119829d"
+    }
+  },
+  "ruff": "PASS",
+  "format": "PASS",
+  "diff_check": "PASS",
+  "environment": "Existing API exact venv; Windows; isolated fixtures; no DB or broker",
+  "prior_turn_classification": "PROGRESS: caller retention source/evidence committed at 062ef668",
+  "acceptance": [
+    {
+      "expected": "Net geometry connects to explicit parent sizing and lot-step floor",
+      "actual": "BUY/SELL exact Fraction oracle passes including all four loss cost components"
+    },
+    {
+      "expected": "Floating profit does not increase closed-balance parent budget",
+      "actual": "Budget and volume unchanged"
+    },
+    {
+      "expected": "Monetary RR validates asymmetric profit/loss tick values",
+      "actual": "RISK_MONETARY_NET_RR_INSUFFICIENT for price-feasible fixture with low profit tick value"
+    },
+    {
+      "expected": "Account, executor, clock, symbol, denomination, policy and exposure evidence required",
+      "actual": "Mismatch/missing/stale/future/tampered bindings rejected"
+    },
+    {
+      "expected": "Exact account cap is accepted; smallest representable excess is rejected",
+      "actual": "Boundary accepted; +0.000000000001 USD rejected"
+    },
+    {
+      "expected": "No execution or reservation authority from sizing",
+      "actual": "Literal false fields; profile cannot be relabeled DEMO"
+    }
+  ],
+  "limitations": [
+    "TEST_ONLY parent sizing, not risk authorization or persistent risk lock",
+    "Input verifier in tests pins synthetic bytes, not active broker/strategy/risk attestation",
+    "Active account-risk profile, margin checks, versioned candidate persistence and capacity reducer remain open",
+    "63 S03 PostgreSQL acceptance tests NOT_EXECUTED",
+    "Linux/remote CI and independent agent review NOT_EXECUTED"
+  ],
+  "canonical_actions_closed": [],
+  "milestones_done": 0,
+  "publish": "HOLD"
+}

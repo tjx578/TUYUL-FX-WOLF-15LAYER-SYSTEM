@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="119" time="8.284" timestamp="2026-09-09T16:34:39.728565+08:00" hostname="DESKTOP-TE510QO"><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_mandatory_material_change_changes_identity[counter_pressure_policy_hash-sha256:8888888888888888888888888888888888888888888888888888888888888888]" time="0.006" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_mandatory_material_change_changes_identity[pressure_contract_status-TRANSITION_PENDING]" time="0.004" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_mandatory_material_change_changes_identity[d1_structure-NEW_STRUCTURE]" time="0.003" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_mandatory_material_change_changes_identity[target_map_version-fixture-map-v2]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_telemetry_cannot_enter_material_contract[box_version]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_telemetry_cannot_enter_material_contract[cluster_id]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_telemetry_cannot_enter_material_contract[deployment_id]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_telemetry_cannot_enter_material_contract[telemetry_count]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_receipt_refresh_changes_receipt_hash_without_reminting_material" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_incoherent_domain_route_or_sources_rejected[allowed_directions-value0]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_incoherent_domain_route_or_sources_rejected[blocked_routes-value1]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_incoherent_domain_route_or_sources_rejected[d1_source_ids-value2]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_incoherent_domain_route_or_sources_rejected[h4_source_ids-value3]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_context_clock_failures_rejected[source_closed_through-value0]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_context_clock_failures_rejected[valid_until-value1]" time="0.002" /><testcase classname="tests.test_strategy_5scr_context_route_v31" name="test_context_clock_failures_rejected[evaluated_at-value2]" time="0.002" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_canonical_candidate_to_target_geometry_sizing_capacity_is_bound_and_nonexecutable[BUY]" time="0.017" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_canonical_candidate_to_target_geometry_sizing_capacity_is_bound_and_nonexecutable[SELL]" time="0.013" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_advisory_candidate_stops_before_verifiers_or_capacity" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_candidate_schema_rejects_escalation_or_legacy_id_relabeling[valid_for_execution-True]" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_candidate_schema_rejects_escalation_or_legacy_id_relabeling[final_signal_allowed-True]" time="0.005" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_candidate_schema_rejects_escalation_or_legacy_id_relabeling[execution_command_allowed-True]" time="0.006" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_candidate_schema_rejects_escalation_or_legacy_id_relabeling[analysis_admission_class-MATURE_ADVISORY]" time="0.006" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_candidate_schema_rejects_escalation_or_legacy_id_relabeling[profile-DEMO]" time="0.006" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_candidate_schema_rejects_escalation_or_legacy_id_relabeling[tradeplan_id-5scr-plan:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]" time="0.006" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_risk_request_cannot_substitute_candidate_scope[receipt-STRATEGY_HANDOFF_RECEIPT_MISMATCH]" time="0.008" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_risk_request_cannot_substitute_candidate_scope[plan-STRATEGY_HANDOFF_IDENTITY_MISMATCH]" time="0.008" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_risk_request_cannot_substitute_candidate_scope[revision-STRATEGY_HANDOFF_IDENTITY_MISMATCH]" time="0.009" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_risk_request_cannot_substitute_candidate_scope[thesis-STRATEGY_HANDOFF_IDENTITY_MISMATCH]" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_risk_request_cannot_substitute_candidate_scope[direction-STRATEGY_HANDOFF_CONTEXT_MISMATCH]" time="0.009" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_risk_request_cannot_substitute_candidate_scope[policy-STRATEGY_HANDOFF_POLICY_MISMATCH]" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_each_independent_verifier_is_mandatory[verify_handoff]" time="0.008" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_each_independent_verifier_is_mandatory[verify_universe]" time="0.008" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_each_independent_verifier_is_mandatory[verify_risk_inputs]" time="0.010" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_farther_target_is_not_accepted_while_nearest_remains_live" time="0.010" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_claimed_rr_is_recomputed_even_when_handoff_receipt_matches[gross_rr-STRATEGY_GROSS_RR_MISMATCH]" time="0.010" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_claimed_rr_is_recomputed_even_when_handoff_receipt_matches[net_rr-STRATEGY_GEOMETRY_REPLAY_MISMATCH]" time="0.009" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_expired_receipt_denies_new_proposal_but_exact_lost_ack_retry_returns_existing" time="0.018" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_universe_verifier_cannot_delete_nearest_target_after_hash_check" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_reservation_expiry_is_bounded_by_handoff_receipt" time="0.010" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_missing_strategy_proof_reference_cannot_enter_handoff[admission_receipt_hash]" time="0.005" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_missing_strategy_proof_reference_cannot_enter_handoff[thesis_structural_proof_hash]" time="0.008" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_missing_strategy_proof_reference_cannot_enter_handoff[context_route_receipt_hash]" time="0.005" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_missing_strategy_proof_reference_cannot_enter_handoff[price_quality_receipt_hash]" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_selected_ssot_binding_cannot_be_substituted" time="0.005" /><testcase classname="tests.test_strategy_5scr_candidate_handoff_v31" name="test_handoff_verifier_cannot_change_candidate_after_digest_verification" time="0.010" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_advisory_to_canonical_appends_new_reevaluated_revision_without_mutation" time="0.017" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[revision-PREDECESSOR_CONFLICT]" time="0.015" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[predecessor-PREDECESSOR_CONFLICT]" time="0.013" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[symbol-PLAN_SCOPE_CHANGED]" time="0.014"><failure message="AssertionError: Regex pattern did not match.&#10; Regex: 'PLAN_SCOPE_CHANGED'&#10; Input: &quot;1 validation error for CandidateRevisionAppendV31\nhandoff\n  Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.9/v/value_error&quot;">fault = 'symbol', reason = 'PLAN_SCOPE_CHANGED'
+
+    @pytest.mark.parametrize(
+        "fault,reason",
+        [
+            ("revision", "PREDECESSOR_CONFLICT"),
+            ("predecessor", "PREDECESSOR_CONFLICT"),
+            ("symbol", "PLAN_SCOPE_CHANGED"),
+            ("tradeplan_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_lifecycle_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_thesis_id", "PLAN_SCOPE_CHANGED"),
+            ("clock", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_id", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_receipt", "FRESH_REEVALUATION_REQUIRED"),
+            ("admission_id", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+            ("admission_receipt", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+        ],
+    )
+    def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+        first = prepared(revision(advisory=True))
+        request = revision(2, first)
+        candidate = request.handoff.candidate
+        if fault == "revision":
+            candidate = candidate.model_copy(update={"tradeplan_revision": 3})
+        elif fault == "predecessor":
+            request = request.model_copy(update={"predecessor_hash": "sha256:" + "f" * 64})
+        elif fault in ("tradeplan_id", "strategy_lifecycle_id", "strategy_thesis_id"):
+            candidate = candidate.model_copy(update={fault: UUID(int=999)})
+        elif fault == "symbol":
+            candidate = candidate.model_copy(update={"symbol": "XAUUSD"})
+        elif fault == "clock":
+            candidate = candidate.model_copy(update={"decision_at": NOW})
+        elif fault == "evaluation_id":
+            request = request.model_copy(update={"reevaluation_id": first.request.reevaluation_id})
+        elif fault == "evaluation_receipt":
+            request = request.model_copy(update={"reevaluation_receipt_hash": first.request.reevaluation_receipt_hash})
+        elif fault == "admission_id":
+            candidate = candidate.model_copy(
+                update={"strategy_analysis_admission_id": first.request.handoff.candidate.strategy_analysis_admission_id}
+            )
+        elif fault == "admission_receipt":
+            request = request.model_copy(
+                update={
+                    "handoff": request.handoff.model_copy(
+                        update={"admission_receipt_hash": first.request.handoff.admission_receipt_hash}
+                    )
+                }
+            )
+        request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+        with pytest.raises(ValueError, match=reason):
+&gt;           prepared(request, first)
+
+tests\test_strategy_5scr_candidate_revision_v31.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_strategy_5scr_candidate_revision_v31.py:61: in prepared
+    return prepare_candidate_revision_v31(request, previous, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+request = CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUATED_CANDIDATE_TEST_V1', handoff=Can...00-0000000000ca'), reevaluation_receipt_hash='sha256:000000000000000000000000000000000000000000000000000000000000000c')
+previous = StoredCandidateRevisionV31(request=CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUA...000000000000000000000000000b'), request_hash='sha256:b55e1b797a6a022d57bc0285a115c1d4ffecab0a1d93a6a5324eff76af1cd334')
+
+    def prepare_candidate_revision_v31(
+        request: CandidateRevisionAppendV31,
+        previous: StoredCandidateRevisionV31 | None,
+        *,
+        now: datetime,
+        verify_reevaluation: Callable[[CandidateRevisionAppendV31, str], bool] | None,
+    ) -&gt; StoredCandidateRevisionV31:
+        """Validate a new append; duplicate handling belongs to the locked store.
+    
+        The verifier must bind complete S3-S5 re-evaluation and individual authority
+        clocks. Receipt references alone do not prove those domain requirements.
+        """
+&gt;       request = CandidateRevisionAppendV31.model_validate(request.model_dump())
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for CandidateRevisionAppendV31
+E       handoff
+E         Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.9/v/value_error
+
+contracts\strategy_5scr_candidate_revision_v31.py:86: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+fault = 'symbol', reason = 'PLAN_SCOPE_CHANGED'
+
+    @pytest.mark.parametrize(
+        "fault,reason",
+        [
+            ("revision", "PREDECESSOR_CONFLICT"),
+            ("predecessor", "PREDECESSOR_CONFLICT"),
+            ("symbol", "PLAN_SCOPE_CHANGED"),
+            ("tradeplan_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_lifecycle_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_thesis_id", "PLAN_SCOPE_CHANGED"),
+            ("clock", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_id", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_receipt", "FRESH_REEVALUATION_REQUIRED"),
+            ("admission_id", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+            ("admission_receipt", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+        ],
+    )
+    def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+        first = prepared(revision(advisory=True))
+        request = revision(2, first)
+        candidate = request.handoff.candidate
+        if fault == "revision":
+            candidate = candidate.model_copy(update={"tradeplan_revision": 3})
+        elif fault == "predecessor":
+            request = request.model_copy(update={"predecessor_hash": "sha256:" + "f" * 64})
+        elif fault in ("tradeplan_id", "strategy_lifecycle_id", "strategy_thesis_id"):
+            candidate = candidate.model_copy(update={fault: UUID(int=999)})
+        elif fault == "symbol":
+            candidate = candidate.model_copy(update={"symbol": "XAUUSD"})
+        elif fault == "clock":
+            candidate = candidate.model_copy(update={"decision_at": NOW})
+        elif fault == "evaluation_id":
+            request = request.model_copy(update={"reevaluation_id": first.request.reevaluation_id})
+        elif fault == "evaluation_receipt":
+            request = request.model_copy(update={"reevaluation_receipt_hash": first.request.reevaluation_receipt_hash})
+        elif fault == "admission_id":
+            candidate = candidate.model_copy(
+                update={"strategy_analysis_admission_id": first.request.handoff.candidate.strategy_analysis_admission_id}
+            )
+        elif fault == "admission_receipt":
+            request = request.model_copy(
+                update={
+                    "handoff": request.handoff.model_copy(
+                        update={"admission_receipt_hash": first.request.handoff.admission_receipt_hash}
+                    )
+                }
+            )
+        request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+&gt;       with pytest.raises(ValueError, match=reason):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'PLAN_SCOPE_CHANGED'
+E        Input: "1 validation error for CandidateRevisionAppendV31\nhandoff\n  Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.9/v/value_error"
+
+tests\test_strategy_5scr_candidate_revision_v31.py:121: AssertionError</failure></testcase><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[tradeplan_id-PLAN_SCOPE_CHANGED]" time="0.014" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[strategy_lifecycle_id-PLAN_SCOPE_CHANGED]" time="0.014"><failure message="AssertionError: Regex pattern did not match.&#10; Regex: 'PLAN_SCOPE_CHANGED'&#10; Input: &quot;1 validation error for CandidateRevisionAppendV31\nhandoff\n  Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.9/v/value_error&quot;">fault = 'strategy_lifecycle_id', reason = 'PLAN_SCOPE_CHANGED'
+
+    @pytest.mark.parametrize(
+        "fault,reason",
+        [
+            ("revision", "PREDECESSOR_CONFLICT"),
+            ("predecessor", "PREDECESSOR_CONFLICT"),
+            ("symbol", "PLAN_SCOPE_CHANGED"),
+            ("tradeplan_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_lifecycle_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_thesis_id", "PLAN_SCOPE_CHANGED"),
+            ("clock", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_id", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_receipt", "FRESH_REEVALUATION_REQUIRED"),
+            ("admission_id", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+            ("admission_receipt", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+        ],
+    )
+    def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+        first = prepared(revision(advisory=True))
+        request = revision(2, first)
+        candidate = request.handoff.candidate
+        if fault == "revision":
+            candidate = candidate.model_copy(update={"tradeplan_revision": 3})
+        elif fault == "predecessor":
+            request = request.model_copy(update={"predecessor_hash": "sha256:" + "f" * 64})
+        elif fault in ("tradeplan_id", "strategy_lifecycle_id", "strategy_thesis_id"):
+            candidate = candidate.model_copy(update={fault: UUID(int=999)})
+        elif fault == "symbol":
+            candidate = candidate.model_copy(update={"symbol": "XAUUSD"})
+        elif fault == "clock":
+            candidate = candidate.model_copy(update={"decision_at": NOW})
+        elif fault == "evaluation_id":
+            request = request.model_copy(update={"reevaluation_id": first.request.reevaluation_id})
+        elif fault == "evaluation_receipt":
+            request = request.model_copy(update={"reevaluation_receipt_hash": first.request.reevaluation_receipt_hash})
+        elif fault == "admission_id":
+            candidate = candidate.model_copy(
+                update={"strategy_analysis_admission_id": first.request.handoff.candidate.strategy_analysis_admission_id}
+            )
+        elif fault == "admission_receipt":
+            request = request.model_copy(
+                update={
+                    "handoff": request.handoff.model_copy(
+                        update={"admission_receipt_hash": first.request.handoff.admission_receipt_hash}
+                    )
+                }
+            )
+        request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+        with pytest.raises(ValueError, match=reason):
+&gt;           prepared(request, first)
+
+tests\test_strategy_5scr_candidate_revision_v31.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_strategy_5scr_candidate_revision_v31.py:61: in prepared
+    return prepare_candidate_revision_v31(request, previous, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+request = CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUATED_CANDIDATE_TEST_V1', handoff=Can...00-0000000000ca'), reevaluation_receipt_hash='sha256:000000000000000000000000000000000000000000000000000000000000000c')
+previous = StoredCandidateRevisionV31(request=CandidateRevisionAppendV31(profile='TEST_ONLY', revision_policy_id='APPEND_REEVALUA...000000000000000000000000000b'), request_hash='sha256:b55e1b797a6a022d57bc0285a115c1d4ffecab0a1d93a6a5324eff76af1cd334')
+
+    def prepare_candidate_revision_v31(
+        request: CandidateRevisionAppendV31,
+        previous: StoredCandidateRevisionV31 | None,
+        *,
+        now: datetime,
+        verify_reevaluation: Callable[[CandidateRevisionAppendV31, str], bool] | None,
+    ) -&gt; StoredCandidateRevisionV31:
+        """Validate a new append; duplicate handling belongs to the locked store.
+    
+        The verifier must bind complete S3-S5 re-evaluation and individual authority
+        clocks. Receipt references alone do not prove those domain requirements.
+        """
+&gt;       request = CandidateRevisionAppendV31.model_validate(request.model_dump())
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for CandidateRevisionAppendV31
+E       handoff
+E         Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.9/v/value_error
+
+contracts\strategy_5scr_candidate_revision_v31.py:86: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+fault = 'strategy_lifecycle_id', reason = 'PLAN_SCOPE_CHANGED'
+
+    @pytest.mark.parametrize(
+        "fault,reason",
+        [
+            ("revision", "PREDECESSOR_CONFLICT"),
+            ("predecessor", "PREDECESSOR_CONFLICT"),
+            ("symbol", "PLAN_SCOPE_CHANGED"),
+            ("tradeplan_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_lifecycle_id", "PLAN_SCOPE_CHANGED"),
+            ("strategy_thesis_id", "PLAN_SCOPE_CHANGED"),
+            ("clock", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_id", "FRESH_REEVALUATION_REQUIRED"),
+            ("evaluation_receipt", "FRESH_REEVALUATION_REQUIRED"),
+            ("admission_id", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+            ("admission_receipt", "CANONICAL_ADMISSION_REBIND_REQUIRED"),
+        ],
+    )
+    def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+        first = prepared(revision(advisory=True))
+        request = revision(2, first)
+        candidate = request.handoff.candidate
+        if fault == "revision":
+            candidate = candidate.model_copy(update={"tradeplan_revision": 3})
+        elif fault == "predecessor":
+            request = request.model_copy(update={"predecessor_hash": "sha256:" + "f" * 64})
+        elif fault in ("tradeplan_id", "strategy_lifecycle_id", "strategy_thesis_id"):
+            candidate = candidate.model_copy(update={fault: UUID(int=999)})
+        elif fault == "symbol":
+            candidate = candidate.model_copy(update={"symbol": "XAUUSD"})
+        elif fault == "clock":
+            candidate = candidate.model_copy(update={"decision_at": NOW})
+        elif fault == "evaluation_id":
+            request = request.model_copy(update={"reevaluation_id": first.request.reevaluation_id})
+        elif fault == "evaluation_receipt":
+            request = request.model_copy(update={"reevaluation_receipt_hash": first.request.reevaluation_receipt_hash})
+        elif fault == "admission_id":
+            candidate = candidate.model_copy(
+                update={"strategy_analysis_admission_id": first.request.handoff.candidate.strategy_analysis_admission_id}
+            )
+        elif fault == "admission_receipt":
+            request = request.model_copy(
+                update={
+                    "handoff": request.handoff.model_copy(
+                        update={"admission_receipt_hash": first.request.handoff.admission_receipt_hash}
+                    )
+                }
+            )
+        request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
+&gt;       with pytest.raises(ValueError, match=reason):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'PLAN_SCOPE_CHANGED'
+E        Input: "1 validation error for CandidateRevisionAppendV31\nhandoff\n  Value error, HANDOFF_CONTEXT_SCOPE_MISMATCH [type=value_error, input_value={'profile': 'TEST_ONLY', ...=datetime.timezone.utc)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.9/v/value_error"
+
+tests\test_strategy_5scr_candidate_revision_v31.py:121: AssertionError</failure></testcase><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[strategy_thesis_id-PLAN_SCOPE_CHANGED]" time="0.014" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[clock-FRESH_REEVALUATION_REQUIRED]" time="0.014" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[evaluation_id-FRESH_REEVALUATION_REQUIRED]" time="0.014" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[evaluation_receipt-FRESH_REEVALUATION_REQUIRED]" time="0.014" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[admission_id-CANONICAL_ADMISSION_REBIND_REQUIRED]" time="0.013" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_revision_cannot_relabel_stale_or_unrelated_evidence[admission_receipt-CANONICAL_ADMISSION_REBIND_REQUIRED]" time="0.014" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_new_revision_rejects_future_or_expired_receipt[-1]" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_new_revision_rejects_future_or_expired_receipt[2]" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_new_revision_requires_literal_verified_reevaluation[None]" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_new_revision_requires_literal_verified_reevaluation[&lt;lambda&gt;0]" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_new_revision_requires_literal_verified_reevaluation[&lt;lambda&gt;1]" time="0.006" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_verifier_mutation_is_rejected" time="0.008" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_hash_tampered_stored_history_rejected" time="0.007" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_row_and_payload_identity_must_agree[revision-9]" time="0.008" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_row_and_payload_identity_must_agree[symbol-XAUUSD]" time="0.006" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_row_and_payload_identity_must_agree[reevaluation_id-value2]" time="0.009" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_repository_commit_retry_and_latest_keep_immutable_history" time="0.046" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_repository_does_not_ack_commit_failure" time="0.017" /><testcase classname="tests.test_strategy_5scr_candidate_revision_v31" name="test_repository_caller_transaction_and_owner_are_required" time="0.021" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_caller_loads_locked_current_candidate_then_runs_actual_capacity_handoff" time="0.029" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_latest_candidate_capacity_denies_missing_or_conflicting_binding[missing-LATEST_REVISION_UNAVAILABLE]" time="0.025" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_latest_candidate_capacity_denies_missing_or_conflicting_binding[hash-LATEST_REVISION_MISMATCH]" time="0.022" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_latest_candidate_capacity_denies_missing_or_conflicting_binding[revision-LATEST_REVISION_MISMATCH]" time="0.022" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_latest_candidate_capacity_denies_missing_or_conflicting_binding[handoff-HANDOFF_RECEIPT_MISMATCH]" time="0.028" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_latest_candidate_capacity_denies_missing_or_conflicting_binding[capacity_epoch-OWNER_FENCED]" time="0.026" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_latest_candidate_capacity_denies_missing_or_conflicting_binding[capacity_version-VERSION_CONFLICT]" time="0.028" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_latest_candidate_capacity_denies_missing_or_conflicting_binding[expiry-RECEIPT_EXPIRED]" time="0.023" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_latest_candidate_capacity_denies_missing_or_conflicting_binding[transaction-CALLER_TRANSACTION_REQUIRED]" time="0.019" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_superseded_revision_cannot_enter_capacity_even_with_matching_old_receipt" time="0.038" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_advisory_history_cannot_gain_risk_authority_through_storage" time="0.023" /><testcase classname="tests.test_strategy_5scr_latest_candidate_capacity_v31" name="test_preparation_contract_cannot_claim_commit_or_substitute_candidate_identity" time="0.032" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_initialization_is_explicit_verified_and_never_resets_progress" time="0.012" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_locked_state_requires_bound_owner_transaction_and_content[uninitialized-UNINITIALIZED]" time="0.011" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_locked_state_requires_bound_owner_transaction_and_content[transaction-CALLER_TRANSACTION_REQUIRED]" time="0.013" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_locked_state_requires_bound_owner_transaction_and_content[owner-OWNER_FENCED]" time="0.009" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_locked_state_requires_bound_owner_transaction_and_content[hash-PERSISTED_STATE_MISMATCH]" time="0.011" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_locked_state_requires_bound_owner_transaction_and_content[row_version-PERSISTED_STATE_MISMATCH]" time="0.012" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_initialization_rejects_unverified_or_noninitial_state[verifier]" time="0.011" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_initialization_rejects_unverified_or_noninitial_state[mutation]" time="0.010" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_initialization_rejects_unverified_or_noninitial_state[nonzero_version]" time="0.010" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_initialization_rejects_unverified_or_noninitial_state[epoch]" time="0.011" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_account_then_candidate_preparation_persists_one_capacity_state_and_replays" time="0.035" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_failed_parent_transaction_leaves_no_capacity_effect[after_write]" time="0.030" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_failed_parent_transaction_leaves_no_capacity_effect[commit]" time="0.032" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_failed_parent_transaction_leaves_no_capacity_effect[cas]" time="0.031" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_owner_handover_preserves_risk_state_and_fences_old_writer" time="0.032" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_failed_owner_handover_preserves_old_owner_and_state[stale_version]" time="0.012" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_failed_owner_handover_preserves_old_owner_and_state[rollback]" time="0.012" /><testcase classname="tests.test_strategy_5scr_capacity_persistence_v31" name="test_expiry_transition_persists_without_freeing_pending_broker_risk" time="0.032" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_all_records_and_capacity_commit_together_as_non_deliverable_test_only" time="0.036" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_failure_after_each_write_or_commit_rolls_back_every_effect[campaigns]" time="0.033" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_failure_after_each_write_or_commit_rolls_back_every_effect[parent_legs]" time="0.032" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_failure_after_each_write_or_commit_rolls_back_every_effect[signal_previews]" time="0.033" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_failure_after_each_write_or_commit_rolls_back_every_effect[outbox]" time="0.032" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_failure_after_each_write_or_commit_rolls_back_every_effect[commit]" time="0.032" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_lost_ack_retry_after_expiry_returns_same_complete_bundle_without_new_effect" time="0.042" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_replay_cannot_substitute_any_bound_request[signal_id]" time="0.037" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_replay_cannot_substitute_any_bound_request[outbox_id]" time="0.035" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_replay_cannot_substitute_any_bound_request[candidate_revision_hash]" time="0.034" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_replay_cannot_substitute_any_bound_request[expected_capacity_version]" time="0.033" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_leg]" time="0.037" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[payload_hash]" time="0.041" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[record_id]" time="0.038" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[missing_capacity]" time="0.037" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_partial_or_corrupt_existing_bundle_is_not_automatically_rebuilt[capacity_scope]" time="0.037" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_orphan_capacity_is_rejected_without_creating_missing_transaction_records" time="0.037" /><testcase classname="tests.test_strategy_5scr_transaction_a_v31" name="test_request_rejects_legacy_plan_and_campaign_identity_relabeling" time="0.024" /></testsuite></testsuites>
