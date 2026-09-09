@@ -12,20 +12,23 @@ def test_orchestrator_late_fatal_clears_readiness_and_exits(monkeypatch):
     from services.shared import diagnostics
 
     observed = []
+    probe = SimpleNamespace(set_alive=lambda alive: observed.append(("alive", alive)))
 
     def run_forever(on_started):
         on_started()
         assert mod._ORCHESTRATOR_READY.is_set()
         raise RuntimeError("fixture_fatal")
 
-    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: None)
+    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: probe)
     monkeypatch.setattr(mod, "StateManager", lambda: SimpleNamespace(run_forever=run_forever))
     monkeypatch.setattr(
-        diagnostics, "hold_alive_sync", lambda **kwargs: observed.append(mod._ORCHESTRATOR_READY.is_set())
+        diagnostics,
+        "hold_alive_sync",
+        lambda **kwargs: observed.append((mod._ORCHESTRATOR_READY.is_set(), kwargs["timeout_sec"])),
     )
     with pytest.raises(RuntimeError, match="fixture_fatal"):
         mod.run()
-    assert observed == [False]
+    assert observed == [("alive", False), (False, 30)]
 
 
 @pytest.mark.asyncio
