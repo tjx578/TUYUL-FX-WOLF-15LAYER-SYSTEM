@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from core.redis_keys import HEARTBEAT_INGEST
 from infrastructure.redis_url import get_redis_url
 from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.state_manager import StateManager
@@ -84,6 +85,22 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
     monkeypatch.setenv("ORCHESTRATOR_STATE_KEY", state_key)
     monkeypatch.setenv("ORCHESTRATOR_ACCOUNT_STATE_KEY", account_key)
     monkeypatch.setenv("ORCHESTRATOR_TRADE_RISK_KEY", risk_key)
+    monkeypatch.setattr("services.orchestrator.state_manager.is_forex_market_open", lambda: True)
+
+    redis_client.set(
+        account_key,
+        json.dumps(
+            {
+                "balance": 10_000,
+                "equity": 9_900,
+                "compliance_mode": True,
+                "daily_dd_percent": 0.2,
+                "max_daily_dd_percent": 5.0,
+            }
+        ),
+    )
+    redis_client.set(risk_key, json.dumps({"risk_percent": 0.5}))
+    redis_client.set(HEARTBEAT_INGEST, json.dumps({"ts": time.time()}))
 
     manager = StateManager(redis_client=_RedisAdapter(redis_client))  # type: ignore[arg-type]
     manager.start_listener()
@@ -111,7 +128,7 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
         assert payload["mode"] == "SAFE"
     finally:
         manager.close()
-        redis_client.delete(state_key, account_key, risk_key)
+        redis_client.delete(state_key, account_key, risk_key, HEARTBEAT_INGEST)
 
 
 @pytest.mark.integration
