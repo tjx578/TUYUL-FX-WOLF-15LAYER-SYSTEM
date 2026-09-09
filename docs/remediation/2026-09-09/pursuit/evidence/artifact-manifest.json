@@ -1,5 +1,5 @@
 {
-  "source_commit": "e996b331dac08067d848fbdd9268f4088c12adda",
+  "source_commit": "94b333f16c4de743153720c145e56589a35b1ff7",
   "scope": "Evidence files; historical receipts retain source and scope",
   "files": [
     {
@@ -451,6 +451,56 @@
       "path": "k03-tx-0909-a1.xml",
       "sha256": "3a326e9a2d9625f071ff3e3748b9a6380f40995f86960b850b1c9d46ded54911",
       "bytes": 21745
+    },
+    {
+      "path": "k05-context-source.diff",
+      "sha256": "a7725258f9af34624d34df34f5cd603be1ad428a3e87ccbd37cfb6b9b50b1bf2",
+      "bytes": 19735
+    },
+    {
+      "path": "k05-context-validation.json",
+      "sha256": "422fc93193de703d45c388a3ec9342c1f4199f0b721e0bad2f1b828a8b3799e6",
+      "bytes": 25796
+    },
+    {
+      "path": "k05-ctx-0909-a1-collection.log",
+      "sha256": "773aec7d30be027d9fc2a6d74260a95e8b47b58fa74bdc614f728a2cde10ab18",
+      "bytes": 16409
+    },
+    {
+      "path": "k05-ctx-0909-a1-pytest.log",
+      "sha256": "4cc81631b7ab55f71cb6520d07e92267aeee4a8eedc611f6b208319b2318be24",
+      "bytes": 17580
+    },
+    {
+      "path": "k05-ctx-0909-a1-receipt.json",
+      "sha256": "9904c0de658343b6045726f7737a9be770e57d92c91dd2096723b97e39c60af1",
+      "bytes": 24618
+    },
+    {
+      "path": "k05-ctx-0909-a1.xml",
+      "sha256": "72cf7ae8055400638c2bdd22c993c5539ce49c048c1ea76d2ca5943ef9396859",
+      "bytes": 37258
+    },
+    {
+      "path": "k05-ctx-0909-a2-collection.log",
+      "sha256": "1a814a7996160fb6009fb2e5dd946a23c8491c3289fde80fc020e6b8116b3ba0",
+      "bytes": 17651
+    },
+    {
+      "path": "k05-ctx-0909-a2-pytest.log",
+      "sha256": "fb4633182226281d1a609d742b17fbdfebe956eb127b4eeb1f089b025857f532",
+      "bytes": 1068
+    },
+    {
+      "path": "k05-ctx-0909-a2-receipt.json",
+      "sha256": "12d3665bb709d5e5eb9166169668cfe27346ba296c060800c8c10dc1df0752ce",
+      "bytes": 26181
+    },
+    {
+      "path": "k05-ctx-0909-a2.xml",
+      "sha256": "8b50d6a1926539da41e2dd7c722b591addf4bdfdc53a0bbb650181bdac590ed2",
+      "bytes": 22133
     },
     {
       "path": "k07-adapter-20260909-a1-collection.log",

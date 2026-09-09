@@ -1,0 +1,441 @@
+commit 94b333f16c4de743153720c145e56589a35b1ff7
+Author:     kadek tajox <Kadektjx@gmail.com>
+AuthorDate: Wed Sep 9 16:37:45 2026 +0800
+Commit:     kadek tajox <Kadektjx@gmail.com>
+CommitDate: Wed Sep 9 16:37:45 2026 +0800
+
+    feat(strategy): bind material context receipt to v31 candidate handoff
+
+diff --git a/contracts/strategy_5scr_candidate_handoff_v31.py b/contracts/strategy_5scr_candidate_handoff_v31.py
+index c53106f6..32dbcdda 100644
+--- a/contracts/strategy_5scr_candidate_handoff_v31.py
++++ b/contracts/strategy_5scr_candidate_handoff_v31.py
+@@ -7,6 +7,7 @@ from uuid import UUID
+ 
+ from pydantic import Field, model_validator
+ 
++from contracts.strategy_5scr_context_route_v31 import ContextRouteReceiptV31, context_route_receipt_hash_v31
+ from contracts.strategy_5scr_net_geometry_v31 import EntryIntervalV31, GeometryContract, Price
+ from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
+ 
+@@ -69,12 +70,13 @@ class TradePlanCandidateV31(GeometryContract):
+ class CandidateHandoffV31(GeometryContract):
+     profile: Literal["TEST_ONLY"]
+     selected_ssot_hash: Literal["sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902"]
+-    proof_policy_id: Literal["S3_S5_HANDOFF_TEST_V1"]
++    proof_policy_id: Literal["S3_S5_HANDOFF_TEST_V2"]
+     candidate: TradePlanCandidateV31
+     target_universe: TargetUniverseV31
+     admission_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+     thesis_structural_proof_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+     context_route_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
++    context_route_receipt: ContextRouteReceiptV31
+     price_quality_receipt_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+     handoff_receipt_valid_until: datetime
+ 
+@@ -83,4 +85,25 @@ class CandidateHandoffV31(GeometryContract):
+         deadline = self.handoff_receipt_valid_until
+         if deadline.tzinfo is None or deadline.utcoffset() is None or deadline <= self.candidate.decision_at:
+             raise ValueError("handoff receipt must have an aware positive validity window")
++        context = self.context_route_receipt
++        candidate = self.candidate
++        if self.context_route_receipt_hash != context_route_receipt_hash_v31(context):
++            raise ValueError("HANDOFF_CONTEXT_RECEIPT_HASH_MISMATCH")
++        if (context.context_epoch_id, context.strategy_lifecycle_id, context.symbol, context.direction) != (
++            candidate.context_epoch_id,
++            candidate.strategy_lifecycle_id,
++            candidate.symbol,
++            candidate.direction,
++        ):
++            raise ValueError("HANDOFF_CONTEXT_SCOPE_MISMATCH")
++        if (
++            context.state != "ACTIVE"
++            or not context.evaluated_at <= candidate.decision_at < deadline <= context.valid_until
++        ):
++            raise ValueError("HANDOFF_CONTEXT_NOT_ACTIVE_OR_EXPIRED")
++        if (
++            context.direction not in context.material.allowed_directions
++            or context.selected_route not in context.material.allowed_routes
++        ):
++            raise ValueError("HANDOFF_CONTEXT_ROUTE_NOT_ALLOWED")
+         return self
+diff --git a/contracts/strategy_5scr_context_route_v31.py b/contracts/strategy_5scr_context_route_v31.py
+new file mode 100644
+index 00000000..52b9245d
+--- /dev/null
++++ b/contracts/strategy_5scr_context_route_v31.py
+@@ -0,0 +1,109 @@
++"""TEST_ONLY material context and route receipt, not a policy or source attestor."""
++
++import hashlib
++import json
++from datetime import UTC, datetime
++from typing import Annotated, Literal
++from uuid import UUID
++
++from pydantic import Field, field_validator, model_validator
++
++from contracts.strategy_5scr_net_geometry_v31 import GeometryContract
++
++Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
++Label = Annotated[str, Field(min_length=1, max_length=160, pattern=r"^\S(?:.*\S)?$")]
++Direction = Literal["BUY", "SELL"]
++
++
++def content_hash(value):
++    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
++    return "sha256:" + hashlib.sha256(encoded).hexdigest()
++
++
++class MaterialContextV31(GeometryContract):
++    d1_source_ids: tuple[Digest, ...] = Field(min_length=1, max_length=1000)
++    h4_source_ids: tuple[Digest, ...] = Field(min_length=1, max_length=1000)
++    d1_structure: Label
++    h4_structure: Label
++    price_location: Label
++    liquidity_state: Label
++    primary_direction_domain: Literal["BUY_ONLY", "SELL_ONLY", "BOTH_CONDITIONAL", "UNRESOLVED", "EMPTY"]
++    allowed_directions: tuple[Direction, ...] = Field(max_length=2)
++    counter_pressure_policy_hash: Digest
++    counter_pressure_observation_allowed: bool = Field(strict=True)
++    counter_pressure_thesis_status: Literal["PROHIBITED", "PROOF_REQUIRED", "AUTHORIZED"]
++    allowed_routes: tuple[Label, ...] = Field(max_length=100)
++    blocked_routes: tuple[Label, ...] = Field(max_length=100)
++    target_map_version: Label
++    structural_invalidation_version: Label
++    pressure_contract_status: Literal["OPEN", "LOCKED", "TRANSITION_PENDING", "INVALIDATED", "EXPIRED"]
++
++    @model_validator(mode="after")
++    def coherent(self):
++        for values in (
++            self.d1_source_ids,
++            self.h4_source_ids,
++            self.allowed_directions,
++            self.allowed_routes,
++            self.blocked_routes,
++        ):
++            if values != tuple(sorted(set(values))):
++                raise ValueError("CONTEXT_IDENTITIES_MUST_BE_SORTED_UNIQUE")
++        if set(self.d1_source_ids) & set(self.h4_source_ids):
++            raise ValueError("CONTEXT_SOURCE_TIMEFRAME_ID_CONFLICT")
++        if set(self.allowed_routes) & set(self.blocked_routes):
++            raise ValueError("CONTEXT_ROUTE_CONFLICT")
++        domain = {
++            "BUY_ONLY": {"BUY"},
++            "SELL_ONLY": {"SELL"},
++            "BOTH_CONDITIONAL": {"BUY", "SELL"},
++            "UNRESOLVED": set(),
++            "EMPTY": set(),
++        }[self.primary_direction_domain]
++        if not set(self.allowed_directions) <= domain:
++            raise ValueError("CONTEXT_DIRECTION_DOMAIN_CONFLICT")
++        return self
++
++
++class ContextRouteReceiptV31(GeometryContract):
++    profile: Literal["TEST_ONLY"]
++    context_epoch_id: UUID
++    strategy_lifecycle_id: UUID
++    symbol: str = Field(pattern=r"^[A-Z0-9._-]{3,32}$")
++    state: Literal["ACTIVE", "SUPERSEDED", "INVALIDATED", "EXPIRED"]
++    material: MaterialContextV31
++    material_context_hash: Digest
++    registry_version: Label
++    location_route_policy_hash: Digest
++    location_alignment: Literal["FAVORABLE", "NEUTRAL", "UNFAVORABLE", "UNKNOWN"]
++    selected_route: Label
++    direction: Direction
++    resolution_evidence_hash: Digest
++    source_closed_through: datetime
++    evaluated_at: datetime
++    valid_until: datetime
++
++    @field_validator("source_closed_through", "evaluated_at", "valid_until")
++    @classmethod
++    def aware(cls, value):
++        if value.tzinfo is None or value.utcoffset() is None:
++            raise ValueError("CONTEXT_CLOCK_MUST_BE_AWARE")
++        return value.astimezone(UTC)
++
++    @model_validator(mode="after")
++    def coherent(self):
++        if self.material_context_hash != material_context_hash_v31(self.symbol, self.material):
++            raise ValueError("CONTEXT_MATERIAL_HASH_MISMATCH")
++        if not self.source_closed_through <= self.evaluated_at < self.valid_until:
++            raise ValueError("CONTEXT_CLOCK_ORDER_INVALID")
++        return self
++
++
++def material_context_hash_v31(symbol: str, material: MaterialContextV31) -> str:
++    material = MaterialContextV31.model_validate(material.model_dump())
++    return content_hash({"symbol": symbol, "material": material.model_dump(mode="json")})
++
++
++def context_route_receipt_hash_v31(receipt: ContextRouteReceiptV31) -> str:
++    receipt = ContextRouteReceiptV31.model_validate(receipt.model_dump())
++    return content_hash(receipt.model_dump(mode="json"))
+diff --git a/tests/test_strategy_5scr_candidate_handoff_v31.py b/tests/test_strategy_5scr_candidate_handoff_v31.py
+index ba3d6b20..4e756b5e 100644
+--- a/tests/test_strategy_5scr_candidate_handoff_v31.py
++++ b/tests/test_strategy_5scr_candidate_handoff_v31.py
+@@ -8,12 +8,18 @@ from pydantic import ValidationError
+ 
+ from analysis.strategy_5scr_target_selection_v31 import solve_target_geometry_v31, target_universe_hash_v31
+ from contracts.strategy_5scr_candidate_handoff_v31 import CandidateHandoffV31, TradePlanCandidateV31
++from contracts.strategy_5scr_context_route_v31 import (
++    ContextRouteReceiptV31,
++    context_route_receipt_hash_v31,
++    material_context_hash_v31,
++)
+ from contracts.strategy_5scr_net_geometry_v31 import NetGeometryContextV31, NetGeometryRequestV31
+ from contracts.strategy_5scr_target_selection_v31 import TargetUniverseV31
+ from risk.strategy_5scr_candidate_handoff_v31 import candidate_handoff_hash_v31, propose_canonical_parent_v31
+ from risk.strategy_5scr_capacity_v31 import CapacityRejectedError
+ from risk.strategy_5scr_risk_adapter_v31 import parent_sizing_request_hash_v31
+ from tests.test_strategy_5scr_capacity_v31 import NOW, H, request_for, seed
++from tests.test_strategy_5scr_context_route_v31 import receipt as context_fixture
+ from tests.test_strategy_5scr_net_geometry_v31 import request_data
+ from tests.test_strategy_5scr_target_selection_v31 import fixture as target_fixture
+ 
+@@ -74,15 +80,17 @@ def bundle(direction="BUY"):
+         evidence_hash=H,
+         decision_at=NOW,
+     )
++    context_receipt = context_fixture(direction)
+     handoff = CandidateHandoffV31(
+         profile="TEST_ONLY",
+         selected_ssot_hash="sha256:6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+-        proof_policy_id="S3_S5_HANDOFF_TEST_V1",
++        proof_policy_id="S3_S5_HANDOFF_TEST_V2",
+         candidate=candidate,
+         target_universe=universe,
+         admission_receipt_hash=H,
+         thesis_structural_proof_hash=H,
+-        context_route_receipt_hash=H,
++        context_route_receipt_hash=context_route_receipt_hash_v31(context_receipt),
++        context_route_receipt=context_receipt,
+         price_quality_receipt_hash=H,
+         handoff_receipt_valid_until=NOW + timedelta(seconds=1),
+     )
+@@ -115,6 +123,71 @@ def propose(ledger, handoff, request, **overrides):
+     return propose_canonical_parent_v31(ledger, handoff, request, **kwargs)
+ 
+ 
++@pytest.mark.parametrize(
++    "fault,reason",
++    [
++        ("epoch", "CONTEXT_SCOPE_MISMATCH"),
++        ("lifecycle", "CONTEXT_SCOPE_MISMATCH"),
++        ("hash", "CONTEXT_RECEIPT_HASH_MISMATCH"),
++        ("state", "CONTEXT_NOT_ACTIVE_OR_EXPIRED"),
++        ("deadline", "CONTEXT_NOT_ACTIVE_OR_EXPIRED"),
++        ("route", "CONTEXT_ROUTE_NOT_ALLOWED"),
++        ("unresolved", "CONTEXT_ROUTE_NOT_ALLOWED"),
++        ("legacy_policy", "literal_error"),
++        ("missing_body", "Field required"),
++    ],
++)
++def test_context_binding_rejected_before_risk_verifiers(fault, reason):
++    ledger, handoff, request = bundle()
++    body = handoff.model_dump()
++    context = body["context_route_receipt"]
++    if fault == "epoch":
++        context["context_epoch_id"] = UUID(int=999)
++    elif fault == "lifecycle":
++        context["strategy_lifecycle_id"] = UUID(int=999)
++    elif fault == "state":
++        context["state"] = "SUPERSEDED"
++    elif fault == "deadline":
++        body["handoff_receipt_valid_until"] = context["valid_until"] + timedelta(seconds=1)
++    elif fault == "route":
++        context["selected_route"] = "UNLISTED_ROUTE"
++    elif fault == "unresolved":
++        context["material"]["primary_direction_domain"] = "UNRESOLVED"
++        context["material"]["allowed_directions"] = ()
++        from contracts.strategy_5scr_context_route_v31 import MaterialContextV31
++
++        material = MaterialContextV31.model_validate(context["material"])
++        context["material_context_hash"] = material_context_hash_v31(context["symbol"], material)
++    elif fault == "legacy_policy":
++        body["proof_policy_id"] = "S3_S5_HANDOFF_TEST_V1"
++    elif fault == "missing_body":
++        body.pop("context_route_receipt")
++    body["context_route_receipt_hash"] = (
++        H if fault == "hash" else context_route_receipt_hash_v31(ContextRouteReceiptV31.model_validate(context))
++    )
++    body["candidate"] = handoff.candidate
++    body["target_universe"] = handoff.target_universe
++    if fault != "missing_body":
++        body["context_route_receipt"] = ContextRouteReceiptV31.model_validate(context)
++    unsafe = CandidateHandoffV31.model_construct(**body)
++    calls = []
++    with pytest.raises(ValidationError, match=reason):
++        propose_canonical_parent_v31(
++            ledger,
++            unsafe,
++            request,
++            reservation_id=UUID(int=21),
++            expires_at=NOW + timedelta(seconds=1),
++            now=NOW,
++            owner_epoch=ledger.owner_epoch,
++            expected_version=ledger.version,
++            verify_handoff=lambda *args: calls.append(args),
++            verify_universe=None,
++            verify_risk_inputs=None,
++        )
++    assert not calls and ledger.reservations == ()
++
++
+ @pytest.mark.parametrize("direction", ["BUY", "SELL"])
+ def test_canonical_candidate_to_target_geometry_sizing_capacity_is_bound_and_nonexecutable(direction):
+     ledger, handoff, request = bundle(direction)
+diff --git a/tests/test_strategy_5scr_candidate_revision_v31.py b/tests/test_strategy_5scr_candidate_revision_v31.py
+index 491a62b6..9a5e41cb 100644
+--- a/tests/test_strategy_5scr_candidate_revision_v31.py
++++ b/tests/test_strategy_5scr_candidate_revision_v31.py
+@@ -12,6 +12,7 @@ from contracts.strategy_5scr_candidate_revision_v31 import (
+     candidate_revision_hash_v31,
+     prepare_candidate_revision_v31,
+ )
++from contracts.strategy_5scr_context_route_v31 import context_route_receipt_hash_v31, material_context_hash_v31
+ from storage.strategy_5scr_activity_consumer import LifecycleOwnerFence
+ from storage.strategy_5scr_candidate_revision_v31 import CandidateRevisionRepositoryV31, _stored
+ from tests.test_strategy_5scr_candidate_handoff_v31 import NOW, bundle
+@@ -117,7 +118,21 @@ def test_revision_cannot_relabel_stale_or_unrelated_evidence(fault, reason):
+                 )
+             }
+         )
+-    request = request.model_copy(update={"handoff": request.handoff.model_copy(update={"candidate": candidate})})
++    handoff = request.handoff.model_copy(update={"candidate": candidate})
++    if fault in ("symbol", "strategy_lifecycle_id"):
++        # Keep the new context internally coherent so this case still reaches
++        # the separate immutable plan/predecessor check it was written to test.
++        context = handoff.context_route_receipt.model_copy(update={fault: getattr(candidate, fault)})
++        context = context.model_copy(
++            update={"material_context_hash": material_context_hash_v31(context.symbol, context.material)}
++        )
++        handoff = handoff.model_copy(
++            update={
++                "context_route_receipt": context,
++                "context_route_receipt_hash": context_route_receipt_hash_v31(context),
++            }
++        )
++    request = request.model_copy(update={"handoff": handoff})
+     with pytest.raises(ValueError, match=reason):
+         prepared(request, first)
+ 
+diff --git a/tests/test_strategy_5scr_context_route_v31.py b/tests/test_strategy_5scr_context_route_v31.py
+new file mode 100644
+index 00000000..572a18e5
+--- /dev/null
++++ b/tests/test_strategy_5scr_context_route_v31.py
+@@ -0,0 +1,109 @@
++from datetime import timedelta
++from uuid import UUID
++
++import pytest
++from pydantic import ValidationError
++
++from contracts.strategy_5scr_context_route_v31 import (
++    ContextRouteReceiptV31,
++    MaterialContextV31,
++    context_route_receipt_hash_v31,
++    material_context_hash_v31,
++)
++from tests.test_strategy_5scr_capacity_v31 import NOW, H
++
++
++def receipt(direction="BUY"):
++    material = MaterialContextV31(
++        d1_source_ids=("sha256:" + "1" * 64,),
++        h4_source_ids=("sha256:" + "2" * 64,),
++        d1_structure="FIXTURE_STRUCTURE",
++        h4_structure="FIXTURE_STRUCTURE",
++        price_location="FIXTURE_RANGE",
++        liquidity_state="TESTING",
++        primary_direction_domain=direction + "_ONLY",
++        allowed_directions=(direction,),
++        counter_pressure_policy_hash=H,
++        counter_pressure_observation_allowed=True,
++        counter_pressure_thesis_status="PROHIBITED",
++        allowed_routes=("FIXTURE_CONTINUATION",),
++        blocked_routes=(),
++        target_map_version="fixture-map-v1",
++        structural_invalidation_version="fixture-invalidation-v1",
++        pressure_contract_status="OPEN",
++    )
++    return ContextRouteReceiptV31(
++        profile="TEST_ONLY",
++        context_epoch_id=UUID(int=6),
++        strategy_lifecycle_id=UUID(int=3),
++        symbol="EURUSD",
++        state="ACTIVE",
++        material=material,
++        material_context_hash=material_context_hash_v31("EURUSD", material),
++        registry_version="fixture-registry-v1",
++        location_route_policy_hash=H,
++        location_alignment="FAVORABLE",
++        selected_route="FIXTURE_CONTINUATION",
++        direction=direction,
++        resolution_evidence_hash=H,
++        source_closed_through=NOW - timedelta(hours=1),
++        evaluated_at=NOW,
++        valid_until=NOW + timedelta(hours=1),
++    )
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("counter_pressure_policy_hash", "sha256:" + "8" * 64),
++        ("pressure_contract_status", "TRANSITION_PENDING"),
++        ("d1_structure", "NEW_STRUCTURE"),
++        ("target_map_version", "fixture-map-v2"),
++    ],
++)
++def test_mandatory_material_change_changes_identity(field, value):
++    old = receipt()
++    changed = old.material.model_copy(update={field: value})
++    assert material_context_hash_v31(old.symbol, changed) != old.material_context_hash
++    with pytest.raises(ValidationError, match="MATERIAL_HASH_MISMATCH"):
++        ContextRouteReceiptV31.model_validate({**old.model_dump(), "material": changed})
++
++
++@pytest.mark.parametrize("field", ["box_version", "cluster_id", "deployment_id", "telemetry_count"])
++def test_telemetry_cannot_enter_material_contract(field):
++    with pytest.raises(ValidationError, match="Extra inputs"):
++        MaterialContextV31.model_validate({**receipt().material.model_dump(), field: 1})
++
++
++def test_receipt_refresh_changes_receipt_hash_without_reminting_material():
++    old = receipt()
++    changed = ContextRouteReceiptV31.model_validate({**old.model_dump(), "evaluated_at": NOW + timedelta(seconds=1)})
++    assert changed.material_context_hash == old.material_context_hash
++    assert context_route_receipt_hash_v31(old) != context_route_receipt_hash_v31(changed)
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("allowed_directions", ("SELL",)),
++        ("blocked_routes", ("FIXTURE_CONTINUATION",)),
++        ("d1_source_ids", ()),
++        ("h4_source_ids", ("sha256:" + "1" * 64,)),
++    ],
++)
++def test_incoherent_domain_route_or_sources_rejected(field, value):
++    with pytest.raises(ValidationError):
++        MaterialContextV31.model_validate({**receipt().material.model_dump(), field: value})
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("source_closed_through", NOW + timedelta(seconds=1)),
++        ("valid_until", NOW),
++        ("evaluated_at", NOW.replace(tzinfo=None)),
++    ],
++)
++def test_context_clock_failures_rejected(field, value):
++    with pytest.raises(ValidationError):
++        ContextRouteReceiptV31.model_validate({**receipt().model_dump(), field: value})
