@@ -7,6 +7,8 @@ profit never increases the risk unit.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import ROUND_FLOOR, Decimal
@@ -104,6 +106,29 @@ class PositionRiskResult:
     raw_volume: Decimal
     final_volume: Decimal
     actual_planned_risk_usd: Decimal
+    risk_lock_fingerprint: str | None = None
+
+
+def campaign_risk_lock_fingerprint(risk_lock: CampaignRiskLock) -> str:
+    """Bind sizing to the complete lock, independent of Decimal display scale.
+
+    This is identity binding, not an authorization signature. The repository
+    must still obtain the lock and broker evidence from its trusted transaction.
+    """
+    if risk_lock.locked_at_utc.tzinfo is None or risk_lock.locked_at_utc.utcoffset() is None:
+        raise ValueError("risk lock clock must be timezone-aware")
+    numeric = {}
+    for name in ("balance_base", "risk_percent_per_entry", "risk_unit_usd", "max_campaign_risk_usd"):
+        value = Fraction(getattr(risk_lock, name))
+        numeric[name] = (value.numerator, value.denominator)
+    payload = {
+        "schema": "s5-risk-lock-binding/v1",
+        "campaign_id": risk_lock.campaign_id,
+        "account_id": risk_lock.account_id,
+        "locked_at": risk_lock.locked_at_utc.astimezone(UTC).isoformat(),
+        "numeric": numeric,
+    }
+    return "sha256:" + hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def validate_account_snapshot(
@@ -248,6 +273,7 @@ def size_position_for_locked_risk(
         raw_volume,
         final_volume,
         actual_risk,
+        risk_lock_fingerprint=campaign_risk_lock_fingerprint(risk_lock),
     )
 
 
@@ -283,8 +309,15 @@ def authorize_campaign_risk(
         risk_lock.risk_unit_usd,
         risk_lock.max_campaign_risk_usd,
         risk_lock.balance_base,
+        risk_lock.risk_percent_per_entry,
     )
     if any(not isinstance(value, Decimal) or not value.is_finite() or value <= 0 for value in values):
+        return S5RiskReason.RISK_STATE_INVALID
+    if risk_lock.locked_at_utc.tzinfo is None or risk_lock.locked_at_utc.utcoffset() is None:
+        return S5RiskReason.RISK_STATE_INVALID
+    if candidate.risk_lock_fingerprint is None or candidate.risk_lock_fingerprint != campaign_risk_lock_fingerprint(
+        risk_lock
+    ):
         return S5RiskReason.RISK_STATE_INVALID
     if (
         candidate.reason != approved_reason
@@ -318,6 +351,7 @@ __all__ = [
     "CampaignRiskLock",
     "SnapshotValidation",
     "PositionRiskResult",
+    "campaign_risk_lock_fingerprint",
     "validate_account_snapshot",
     "find_symbol_capability",
     "size_position_for_locked_risk",

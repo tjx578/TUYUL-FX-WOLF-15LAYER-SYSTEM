@@ -13,6 +13,7 @@ from risk.s5_campaign_risk import (
     CampaignRiskPolicy,
     S5RiskReason,
     authorize_campaign_risk,
+    campaign_risk_lock_fingerprint,
     size_position_for_locked_risk,
     validate_account_snapshot,
 )
@@ -65,6 +66,7 @@ def _risk_lock() -> CampaignRiskLock:
         account_id="acct-01",
         closed_balance=1000,
         policy=CampaignRiskPolicy(),
+        now=datetime(2026, 9, 9, tzinfo=UTC),
     )
 
 
@@ -253,3 +255,43 @@ def test_decimal_ledger_excess_is_not_rounded_down_at_cap(field, reason):
     total = Decimal("50.000000000000000000000000001")
     assert float(total) == 50.0  # The old repository conversion lost this excess.
     assert _authorize(_sized_parent(), **{field: total}) == reason
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"campaign_id": "OTHER_CAMPAIGN"},
+        {"account_id": "OTHER_ACCOUNT"},
+        {"locked_at_utc": datetime(2026, 9, 9, 0, 0, 1, tzinfo=UTC)},
+        {"max_campaign_risk_usd": Decimal("101")},
+    ],
+)
+def test_equal_budget_does_not_allow_cross_lock_sizing(changes):
+    other = replace(_risk_lock(), **changes)
+    candidate = size_position_for_locked_risk(
+        risk_lock=other, symbol_spec=_symbol(), entry_price=1.1, stop_loss=1.095, entry_role="PARENT"
+    )
+    assert candidate.risk_budget_usd == _risk_lock().risk_unit_usd
+    assert _authorize(candidate) == S5RiskReason.RISK_STATE_INVALID
+
+
+def test_unbound_legacy_sizing_cannot_authorize():
+    assert _authorize(replace(_sized_parent(), risk_lock_fingerprint=None)) == S5RiskReason.RISK_STATE_INVALID
+
+
+def test_risk_lock_fingerprint_survives_decimal_database_scale():
+    original = _risk_lock()
+    restored = replace(
+        original,
+        balance_base=Decimal("1000.00000000"),
+        risk_percent_per_entry=Decimal("0.05000000"),
+        risk_unit_usd=Decimal("50.00000000"),
+        max_campaign_risk_usd=Decimal("100.00000000"),
+    )
+    assert campaign_risk_lock_fingerprint(original) == campaign_risk_lock_fingerprint(restored)
+    assert _authorize(_sized_parent(), risk_lock=restored) == S5RiskReason.APPROVED_PARENT
+
+
+def test_naive_lock_clock_is_rejected_explicitly():
+    invalid = replace(_risk_lock(), locked_at_utc=datetime(2026, 9, 9))
+    assert _authorize(_sized_parent(), risk_lock=invalid) == S5RiskReason.RISK_STATE_INVALID
