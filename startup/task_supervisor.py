@@ -81,21 +81,11 @@ async def supervised_task(
                 max_restarts,
             )
             await coro_factory()
-            if required and not (shutdown_event and shutdown_event.is_set()):
-                raise RuntimeError(f"{name}_unexpected_exit")
             return  # intentional optional exit or requested shutdown
         except asyncio.CancelledError:
-            if required and not (shutdown_event and shutdown_event.is_set()):
-                if health_probe:
-                    health_probe.set_alive(False)
-                    health_probe.set_detail("dead_reason", f"{name}_unexpected_cancellation")
-                raise RuntimeError(f"{name}_unexpected_cancellation") from None
             logger.info("[SUPERVISOR] Task '{}' cancelled", name)
             return
         except Exception as exc:
-            if required and health_probe:
-                health_probe.set_alive(False)
-                health_probe.set_detail("dead_reason", f"{name}_required_task_failed")
             elapsed = time.monotonic() - started_at
 
             # If task survived long enough, treat crash as transient → reset counter
@@ -130,8 +120,6 @@ async def supervised_task(
                 if health_probe:
                     health_probe.set_alive(False)
                     health_probe.set_detail("dead_reason", f"{name}_crash_limit")
-                if required:
-                    raise RuntimeError(f"{name}_crash_limit") from exc
                 return
             await asyncio.sleep(delay)
 
