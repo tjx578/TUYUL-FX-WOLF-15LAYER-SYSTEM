@@ -1,0 +1,586 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="45" failures="0" skipped="0" tests="45" time="1.284" timestamp="2026-09-09T09:57:45.938899+00:00" hostname="runnervmejwal"><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_real_service_caller_300_seconds_restart_and_replay" time="0.012"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_restart_in_fresh_python_process_reads_postgres_not_memory" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_concurrent_connections_do_not_duplicate_activity_or_observation" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_crash_rolls_back_outcome_attachment_and_watermark" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_failure_cases_through_caller_persist_explicit_outcomes[missing_checkpoint-INDETERMINATE_RAW_AUTHORITY_COVERAGE]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_failure_cases_through_caller_persist_explicit_outcomes[missing_policy-PAIR_ACTIVITY_POLICY_UNBOUND]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_failure_cases_through_caller_persist_explicit_outcomes[incomplete-INDETERMINATE_RAW_AUTHORITY_COVERAGE]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_failure_cases_through_caller_persist_explicit_outcomes[missing_population-INDETERMINATE_RAW_AUTHORITY_COVERAGE]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_failure_cases_through_caller_persist_explicit_outcomes[gap-SUSPENDED_SOURCE_GAP]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_backfill_requires_reconciliation_and_keeps_one_frozen_admission" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_conflicting_source_identity_rolls_back_raw_append" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_immutable_ledger_binding_rejected" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[hypothesis_authority-True]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[hypothesis_authority-None]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[hypothesis_authority-false]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[hypothesis_authority-missing]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[risk_authority-True]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[risk_authority-None]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[risk_authority-false]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[risk_authority-missing]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[execution_authority-True]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[execution_authority-None]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[execution_authority-false]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[execution_authority-missing]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[valid_for_execution-True]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[valid_for_execution-None]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[valid_for_execution-false]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_postgres_itself_rejects_authority_escalation_or_null[valid_for_execution-missing]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_stale_worker_cannot_rewind_committed_watermark" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_temporary_coverage_loss_recovers_original_frozen_admission" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_incomplete_coverage_does_not_advance_covered_watermark" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_producer_twins_and_duplicate_deliveries_have_one_durable_observation" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[True-hypothesis_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[True-risk_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[True-execution_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[None-hypothesis_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[None-risk_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[None-execution_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[false-hypothesis_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[false-risk_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[false-execution_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[missing-hypothesis_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[missing-risk_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_snapshot_database_guard_requires_boolean_false_for_all_authorities[missing-execution_authority]" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase><testcase classname="tests.integration.test_pair_activity_runtime_postgres" name="test_database_authority_guards_accept_actual_boolean_false_control" time="0.000"><error message="failed on setup with &quot;AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}&quot;">@pytest.fixture(scope="module")
+    def pg_dsn():
+        if os.environ.get("WOLF15_RUN_POSTGRES_INTEGRATION") != "1":
+            pytest.skip("requires explicitly enabled disposable PostgreSQL")
+        require_destructive_postgres_opt_in(os.environ.get("WOLF15_ALLOW_DESTRUCTIVE_PG_TESTS", ""))
+        dsn = os.environ["WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL"]
+        expected = os.environ["WOLF15_POSTGRES_TEST_DATABASE"]
+        require_disposable_postgres_target(dsn, expected_database=expected)
+        assert not urlsplit(dsn).query and not urlsplit(dsn).fragment, "test DSN overrides are forbidden"
+        with psycopg.connect(dsn) as connection:
+&gt;           assert connection.execute("SELECT inet_server_addr()::text").fetchone()[0] in {"127.0.0.1", "::1"}
+E           AssertionError: assert '172.18.0.3/32' in {'127.0.0.1', '::1'}
+
+tests/integration/test_pair_activity_runtime_postgres.py:49: AssertionError</error></testcase></testsuite></testsuites>

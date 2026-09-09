@@ -1,0 +1,86 @@
+{
+  "source_commit": "188c78d5072653aa73f950da06860ffea75efd18",
+  "status": "SOURCE_FIX_LOCAL_PASS_RUNTIME_UNVERIFIED",
+  "source_files": {
+    "risk/s5_campaign_risk.py": {
+      "git_sha256": "32b22754876ab72abe5d737b2e1768eec31f081af77f9eb6dd878403ea9e0aa1",
+      "working_sha256": "fa98fc5d5203656c1c2199030bd652f0500c4224452c2d1358c1bbc0bd561d18"
+    },
+    "storage/strategy_5scr_risk_reservation_repository.py": {
+      "git_sha256": "a674da842e4da02d1e6ec42ec0dfed34d9d0962a77e6f18800cf0d2c5f12e2e7",
+      "working_sha256": "3eba5bae30d8449ab91f963e6232aa6c74423db9c6b0988cadc0cfd7be1a234f"
+    },
+    "tests/test_s5_campaign_risk.py": {
+      "git_sha256": "a645e0341b0f235d702017fd61c9560bc6376bc6187cd76e62a13ea72a639ed1",
+      "working_sha256": "37f936e254b0b08a5b7db2bd0ad7e9840b810d78635c280f420d3b3a0cc2fa2f"
+    },
+    "tests/test_strategy_5scr_risk_reservation.py": {
+      "git_sha256": "c513f8d9d330ca332b65462f16273332ca71ce1bbbfb3b51698f4c8809bf1716",
+      "working_sha256": "d33904fd46ecef553af2056478bb36f43b58eeedc3c5a1d3cd977b9571c1bdb2"
+    }
+  },
+  "tests": 34,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "exact_junit_identity_match": true,
+  "test_ids": [
+    "tests/test_s5_campaign_risk.py::test_account_cap_blocks_additional_campaign",
+    "tests/test_s5_campaign_risk.py::test_broker_aware_volume_rounds_down",
+    "tests/test_s5_campaign_risk.py::test_campaign_locks_five_percent_from_closed_balance",
+    "tests/test_s5_campaign_risk.py::test_child_requires_open_parent",
+    "tests/test_s5_campaign_risk.py::test_current_lock_valid_candidate_is_still_approved",
+    "tests/test_s5_campaign_risk.py::test_decimal_ledger_excess_is_not_rounded_down_at_cap[account_total_open_risk_usd-RISK_ACCOUNT_OPEN_RISK_EXCEEDED]",
+    "tests/test_s5_campaign_risk.py::test_decimal_ledger_excess_is_not_rounded_down_at_cap[committed_or_reserved_campaign_risk_usd-RISK_CAMPAIGN_EXCEEDS_2R]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes0]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes1]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes2]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes3]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes4]",
+    "tests/test_s5_campaign_risk.py::test_inconsistent_sizing_cannot_authorize[changes5]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[-1-account_total_open_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[-1-committed_or_reserved_campaign_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[inf-account_total_open_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[inf-committed_or_reserved_campaign_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[nan-account_total_open_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_invalid_ledger_numbers_return_rejection[nan-committed_or_reserved_campaign_risk_usd]",
+    "tests/test_s5_campaign_risk.py::test_negative_cost_buffer_fails_closed",
+    "tests/test_s5_campaign_risk.py::test_one_risk_unit_is_rechecked_even_when_campaign_cap_has_room",
+    "tests/test_s5_campaign_risk.py::test_sizing_from_different_risk_lock_cannot_borrow_current_campaign_capacity",
+    "tests/test_s5_campaign_risk.py::test_stale_snapshot_fails_closed",
+    "tests/test_s5_campaign_risk.py::test_unknown_entry_role_fails_closed",
+    "tests/test_s5_campaign_risk.py::test_volume_is_never_clamped_up_to_broker_minimum",
+    "tests/test_strategy_5scr_risk_reservation.py::test_candidate_with_premature_execution_authority_is_rejected",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_promotion_is_credential_free_and_does_not_mutate_candidate",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path0-44444444-4444-4444-8444-444444444444-does not match proof]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path1-other-snapshot-does not match proof]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path2-0.2-does not match proof]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path3-CHFJPY.other-does not match reservation proof]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path4-2.0-universal-pattern-wrong event or schema]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_final_signal_reservation_tamper_fails_closed[path5-False-requires valid_for_execution=true]",
+    "tests/test_strategy_5scr_risk_reservation.py::test_reservation_request_is_parent_only_and_ttl_is_bounded"
+  ],
+  "negative_baseline": "rb1: 11 failed, 11 passed before source repair",
+  "positive_receipt": "rb4-receipt.json",
+  "platform": "Windows",
+  "intermediate_evidence_rejection": "rb2 had 34 passing tests but mismatching JUnit ID due to UUID generated independently during collection and execution; fixed to a deterministic tamper fixture.",
+  "ruff": "PASS",
+  "format": "PASS_1409_FILES",
+  "production_caller": "storage/strategy_5scr_risk_reservation_repository.py calls authorize_campaign_risk; now preserves database Decimal totals",
+  "scope": [
+    "Recheck sizing budget against supplied risk lock and one-entry cap.",
+    "Reject inconsistent allowed/reason/role/amount fields and nonfinite ledger totals.",
+    "Compare ledger caps using exact rational arithmetic instead of float or rounded Decimal addition."
+  ],
+  "limitations": [
+    "No active DEMO profile selected; historical default percentages unchanged.",
+    "Equal-budget results do not carry account/campaign provenance in PositionRiskResult; full lineage binding remains separate.",
+    "No database migrations or PostgreSQL tests executed.",
+    "Independent agent review unavailable after earlier quota failure.",
+    "No deployment or broker run performed."
+  ],
+  "canonical_actions_closed": [],
+  "milestones_done": 0,
+  "merge": "HOLD",
+  "push": "HOLD_B-PUBLISH-FRONTEND-BRANCH"
+}

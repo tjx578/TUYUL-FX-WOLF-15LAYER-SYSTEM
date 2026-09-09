@@ -1,0 +1,1153 @@
+{
+  "schema_version": "wolf15.s01-rule-contract-test-matrix.v1",
+  "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+  "rows": [
+    {
+      "mapping_id": "M01",
+      "requirement_refs": "6;7.1",
+      "rule": "Normalize one raw material event; derived evidence cannot grant raw admission",
+      "source_paths": [
+        "analysis/strategy_5scr_raw_admission_blocks.py",
+        "analysis/signal_throttle_log_analyzer.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_raw_admission_blocks.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "CURRENT_RAW_V2_BOUND_V31_PARITY_OPEN",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "6",
+          "line": 570,
+          "heading": "S0 — Pressure normalization dan telemetry boundary"
+        },
+        {
+          "section": "7.1",
+          "line": 739,
+          "heading": "Authority"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M02",
+      "requirement_refs": "7.2;7.3;7.7;7.8",
+      "rule": "Pair activity >=300 seconds without cross-symbol interruption; mixed direction quality separate; gap suspension/restart identity",
+      "source_paths": [
+        "contracts/strategy_5scr_pair_admission.py",
+        "analysis/strategy_5scr_pair_admission.py",
+        "analysis/strategy_5scr_raw_admission_blocks.py",
+        "storage/pair_admission_evaluations.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_pair_admission.py",
+        "tests/test_strategy_5scr_raw_admission_blocks.py",
+        "tests/integration/test_pair_admission_evaluations_postgres.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "V2_DIRECTION_AND_GAP_CONTRACT_DIFFERENCE_S03",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "7.2",
+          "line": 748,
+          "heading": "Global block FSM"
+        },
+        {
+          "section": "7.3",
+          "line": 770,
+          "heading": "Eligibility minimum"
+        },
+        {
+          "section": "7.7",
+          "line": 854,
+          "heading": "Trigger evaluator"
+        },
+        {
+          "section": "7.8",
+          "line": 869,
+          "heading": "Startup recovery dan cutover backfill"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M03",
+      "requirement_refs": "7.6;7.12",
+      "rule": "Raw coverage COMPLETE/INCOMPLETE/UNKNOWN separate from evaluation status",
+      "source_paths": [
+        "contracts/strategy_5scr_pair_admission.py",
+        "storage/pair_admission_evaluations.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_pair_admission.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "FULL_PAIR_ADMISSION_COVERAGE_V1_SCHEMA_NOT_BOUND",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "7.6",
+          "line": 829,
+          "heading": "Raw-authority coverage"
+        },
+        {
+          "section": "7.12",
+          "line": 929,
+          "heading": "PairAdmission coverage contract"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M04",
+      "requirement_refs": "7A;8",
+      "rule": "CANONICAL_RAW and qualifying MATURE_ADVISORY analysis; advisory zero capital and same-lifecycle canonical upgrade",
+      "source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py",
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "storage/observer_strategy_events.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py",
+        "tests/test_5scr_lifecycle_v2_runtime.py"
+      ],
+      "missing_source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py"
+      ],
+      "missing_test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py"
+      ],
+      "coverage_status": "DUAL_ANALYSIS_ADMISSION_NOT_PRESENT_ON_BOUND_COMMIT",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "7A",
+          "line": 962,
+          "heading": "S1B — StrategyAnalysisAdmissionV1"
+        },
+        {
+          "section": "8",
+          "line": 1170,
+          "heading": "S2 — Durable AnalysisLifecycle"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M05",
+      "requirement_refs": "8;9",
+      "rule": "Stable episode/material identity and idempotent microboost pulse",
+      "source_paths": [
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "contracts/strategy_5scr_microboost_pulse.py",
+        "analysis/strategy_5scr_microboost_pulse_engine.py"
+      ],
+      "test_paths": [
+        "tests/test_5scr_lifecycle_v2_runtime.py",
+        "tests/test_strategy_5scr_microboost_v1.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "EXISTING_COMPONENTS_BOUND_V31_POLICY_COMPOSITION_OPEN",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "8",
+          "line": 1170,
+          "heading": "S2 — Durable AnalysisLifecycle"
+        },
+        {
+          "section": "9",
+          "line": 1316,
+          "heading": "Microboost pulse dan state"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M06",
+      "requirement_refs": "10.2;10.5;10.6;23.11",
+      "rule": "Pressure hypothesis requires resolved alignment; explicit LOCKED contract; legal separate route never automatic opposite",
+      "source_paths": [
+        "contracts/strategy_5scr_directional_thesis_v1.py",
+        "analysis/strategy_5scr_directional_thesis_v1.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_directional_thesis_v1.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "TYPED_DIRECTION_AUTHORITY_EXISTS_FULL_HYPOTHESIS_V31_SCHEMA_OPEN",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "10.2",
+          "line": 1396,
+          "heading": "Creation rule"
+        },
+        {
+          "section": "10.5",
+          "line": 1503,
+          "heading": "Pressure authority modes"
+        },
+        {
+          "section": "10.6",
+          "line": 1540,
+          "heading": "Direction-lineage conflict"
+        },
+        {
+          "section": "23.11",
+          "line": 2889,
+          "heading": "Direction conflict"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M07",
+      "requirement_refs": "11;12",
+      "rule": "Closed/as-of authoritative candles and material ContextEpoch",
+      "source_paths": [
+        "contracts/strategy_5scr_context_epoch_v1.py",
+        "contracts/strategy_5scr_shadow_evidence_v2.py",
+        "analysis/strategy_5scr_closed_candle_provider.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_context_epoch_v1.py",
+        "tests/test_strategy_5scr_closed_candle_evidence.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "COMPONENT_MAPPING_ONLY_RUNTIME_COHORT_NOT_MEASURED",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "11",
+          "line": 1552,
+          "heading": "Market-data, quote, dan candle authority"
+        },
+        {
+          "section": "12",
+          "line": 1673,
+          "heading": "S3 — Material ContextEpoch dan legal direction domain"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M08",
+      "requirement_refs": "13;14",
+      "rule": "Immutable thesis with ordered closed H1 then M15 structural proof",
+      "source_paths": [
+        "contracts/strategy_5scr_directional_thesis_v1.py",
+        "analysis/strategy_5scr_directional_thesis_v1.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_directional_thesis_v1.py",
+        "tests/test_strategy_5scr_directional_thesis_v1_containment.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "TYPED_COMPONENT_EXISTS_V31_ADMISSION_CLASS_LINK_OPEN",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "13",
+          "line": 1816,
+          "heading": "Liquidity state machine"
+        },
+        {
+          "section": "14",
+          "line": 1855,
+          "heading": "S4 — Immutable DirectionalThesis dan ordered proof"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M09",
+      "requirement_refs": "15;16",
+      "rule": "ExecutionBox frozen versions and one material evaluation per revision",
+      "source_paths": [
+        "contracts/strategy_5scr_execution_box_v1.py",
+        "analysis/strategy_5scr_execution_box_v1.py",
+        "storage/strategy_5scr_execution_box_v1_repository.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_execution_box_v1.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "COMPONENT_EXISTS_V31_FULL_LIFECYCLE_MAPPING_OPEN",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "15",
+          "line": 1961,
+          "heading": "Durable evaluation scheduler dan stage semantics"
+        },
+        {
+          "section": "16",
+          "line": 2075,
+          "heading": "PressureRange dan ExecutionBox"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M10",
+      "requirement_refs": "17.1;17.2;17.5;17.6",
+      "rule": "Nearest fresh full-universe structural target, SL before RR/cost feasible intersection",
+      "source_paths": [
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+        "analysis/strategy_5scr_tradeplan_candidate_v2.py",
+        "contracts/strategy_5scr_execution_policy.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_tradeplan_candidate_v2.py",
+        "tests/test_strategy_5scr_execution_policy.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "S05_GAP_TARGET_KIND_H4_ONLY_DESPITE_NEWER_AUTHORITY_CONTRACTS",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "implementation_gap_source": "contracts/strategy_5scr_tradeplan_candidate_v2.py:21",
+      "selected_ssot_anchors": [
+        {
+          "section": "17.1",
+          "line": 2155,
+          "heading": "Correct solve order"
+        },
+        {
+          "section": "17.2",
+          "line": 2172,
+          "heading": "Target engine"
+        },
+        {
+          "section": "17.5",
+          "line": 2246,
+          "heading": "Structural SL"
+        },
+        {
+          "section": "17.6",
+          "line": 2255,
+          "heading": "Cost and RR"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M11",
+      "requirement_refs": "17.7;18",
+      "rule": "TradePlan remains non-executable and carries admission/promotion lineage; candidate versus final stage distinct",
+      "source_paths": [
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+        "contracts/strategy_5scr_risk_reservation.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_tradeplan_candidate_v2_containment.py",
+        "tests/test_strategy_5scr_risk_reservation.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "V2_CANDIDATE_NOT_FULL_V31_SCHEMA_OR_NATURAL_RISK_ADAPTER",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "17.7",
+          "line": 2268,
+          "heading": "TradePlanCandidate"
+        },
+        {
+          "section": "18",
+          "line": 2338,
+          "heading": "Expiry dan revalidation clocks"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M12",
+      "requirement_refs": "19;20",
+      "rule": "Child count/capital owned by separate risk policy; atomic reservation and FinalSignal/outbox before delivery",
+      "source_paths": [
+        "risk/s5_campaign_risk.py",
+        "contracts/strategy_5scr_risk_reservation.py",
+        "storage/strategy_5scr_risk_reservation_repository.py",
+        "execution/mt5_risk_command_producer.py"
+      ],
+      "test_paths": [
+        "tests/test_s5_campaign_risk.py",
+        "tests/integration/test_5scr_risk_reservation_postgres.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "ACCOUNT_PROFILE_NATURAL_ADAPTER_AND_CHILD_BINDING_OPEN",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "19",
+          "line": 2372,
+          "heading": "Campaign, parent, child, dan reinforcement semantics"
+        },
+        {
+          "section": "20",
+          "line": 2442,
+          "heading": "Monotonic handoff ke risk dan execution"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M13",
+      "requirement_refs": "21;22;24",
+      "rule": "Persist terminal reasons; frozen replay manifests and15 acceptance+20 zero-tolerance with denominators",
+      "source_paths": [
+        "contracts/strategy_5scr_replay.py",
+        "analysis/strategy_5scr_replay.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_m1_outcome.py",
+        "tests/test_strategy_5scr_log_archive_audit.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "EXISTING_OUTCOME_REPLAY_NOT_FULL_V31_COHORT_MANIFEST",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "21",
+          "line": 2512,
+          "heading": "Reason-code registry minimum"
+        },
+        {
+          "section": "22",
+          "line": 2647,
+          "heading": "Statistik, replay, dan reproducibility"
+        },
+        {
+          "section": "24",
+          "line": 2959,
+          "heading": "Acceptance dan promotion gate"
+        }
+      ],
+      "external_requirement_refs": []
+    },
+    {
+      "mapping_id": "M14",
+      "requirement_refs": "26;S01 acceptance",
+      "rule": "Versioned policy/schema mapping; policy identifiers cannot silently imply active selection",
+      "source_paths": [
+        "contracts/strategy_5scr_execution_policy.py",
+        "contracts/strategy_5scr_directional_thesis_v1.py",
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_execution_policy.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "PARTIAL_POLICY_CONSTANTS_BOUND_ACTIVE_REGISTRY_SELECTION_OPEN",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "26",
+          "line": 3126,
+          "heading": "Policy registry dan change control"
+        }
+      ],
+      "external_requirement_refs": [
+        "S01 acceptance"
+      ]
+    },
+    {
+      "mapping_id": "M15",
+      "requirement_refs": "S01 authority acceptance;20;24.5",
+      "rule": "L1-L11 analysis/validation, source-bound L12 verdict, post-verdict controls, separate risk, record-only journal and non-authorizing enrichment",
+      "source_paths": [
+        "pipeline/wolf_constitutional_pipeline.py",
+        "constitution/verdict_engine.py",
+        "constitution/l12_router_evaluator.py",
+        "pipeline/phases/gates.py",
+        "execution/mt5_risk_command_producer.py"
+      ],
+      "test_paths": [
+        "tests/test_l12_verdict.py",
+        "tests/test_l12_router_evaluator.py",
+        "tests/test_v11_gate.py",
+        "tests/integration/test_l12_journal_execution_ledger_e2e.py"
+      ],
+      "missing_source_paths": [],
+      "missing_test_paths": [],
+      "coverage_status": "SOURCE_CALL_GRAPH_BOUND_MANDATORY_GATE_POLICY_AND_NATURAL_RUNTIME_OPEN",
+      "tests_executed_this_s01_slice": false,
+      "acceptance_pass_claimed": false,
+      "selected_ssot_anchors": [
+        {
+          "section": "20",
+          "line": 2442,
+          "heading": "Monotonic handoff ke risk dan execution"
+        },
+        {
+          "section": "24.5",
+          "line": 3034,
+          "heading": "Demo gate"
+        }
+      ],
+      "external_requirement_refs": [
+        "S01 authority acceptance"
+      ]
+    }
+  ],
+  "test_claim": "Paths/functions are source traceability only. No test execution or complete acceptance is inferred.",
+  "acceptance_clause_mapping": [
+    {
+      "clause_id": "24.1.01",
+      "selected_ssot_line": 2964,
+      "requirement": "100% eligible raw block threshold crossing memiliki durable evaluation",
+      "mapping_id": "M02",
+      "source_paths": [
+        "contracts/strategy_5scr_pair_admission.py",
+        "analysis/strategy_5scr_pair_admission.py",
+        "analysis/strategy_5scr_raw_admission_blocks.py",
+        "storage/pair_admission_evaluations.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_pair_admission.py",
+        "tests/test_strategy_5scr_raw_admission_blocks.py",
+        "tests/integration/test_pair_admission_evaluations_postgres.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.02",
+      "selected_ssot_line": 2965,
+      "requirement": "100% PairAdmission coverage memiliki raw-coverage status dan reason code",
+      "mapping_id": "M03",
+      "source_paths": [
+        "contracts/strategy_5scr_pair_admission.py",
+        "storage/pair_admission_evaluations.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_pair_admission.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.03",
+      "selected_ssot_line": 2966,
+      "requirement": "100% PairAdmission outcome memiliki reason code dan lineage hash",
+      "mapping_id": "M02",
+      "source_paths": [
+        "contracts/strategy_5scr_pair_admission.py",
+        "analysis/strategy_5scr_pair_admission.py",
+        "analysis/strategy_5scr_raw_admission_blocks.py",
+        "storage/pair_admission_evaluations.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_pair_admission.py",
+        "tests/test_strategy_5scr_raw_admission_blocks.py",
+        "tests/integration/test_pair_admission_evaluations_postgres.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.04",
+      "selected_ssot_line": 2967,
+      "requirement": "100% qualifying mature advisory episode memiliki StrategyAnalysisAdmission outcome",
+      "mapping_id": "M04",
+      "source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py",
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "storage/observer_strategy_events.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py",
+        "tests/test_5scr_lifecycle_v2_runtime.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.05",
+      "selected_ssot_line": 2968,
+      "requirement": "100% MATURE_ADVISORY GRANTED membuka/attach stable lifecycle",
+      "mapping_id": "M04",
+      "source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py",
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "storage/observer_strategy_events.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py",
+        "tests/test_5scr_lifecycle_v2_runtime.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.06",
+      "selected_ssot_line": 2969,
+      "requirement": "100% advisory candidate membawa SHADOW_ONLY promotion eligibility",
+      "mapping_id": "M04",
+      "source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py",
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "storage/observer_strategy_events.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py",
+        "tests/test_5scr_lifecycle_v2_runtime.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.07",
+      "selected_ssot_line": 2970,
+      "requirement": "100% canonical candidate membawa complete canonical raw lineage",
+      "mapping_id": "M11",
+      "source_paths": [
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+        "contracts/strategy_5scr_risk_reservation.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_tradeplan_candidate_v2_containment.py",
+        "tests/test_strategy_5scr_risk_reservation.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.08",
+      "selected_ssot_line": 2971,
+      "requirement": "100% admitted lifecycle memiliki stable strategy_lifecycle_id",
+      "mapping_id": "M05",
+      "source_paths": [
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "contracts/strategy_5scr_microboost_pulse.py",
+        "analysis/strategy_5scr_microboost_pulse_engine.py"
+      ],
+      "test_paths": [
+        "tests/test_5scr_lifecycle_v2_runtime.py",
+        "tests/test_strategy_5scr_microboost_v1.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.09",
+      "selected_ssot_line": 2972,
+      "requirement": "100% candidate memiliki complete evidence lineage",
+      "mapping_id": "M11",
+      "source_paths": [
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+        "contracts/strategy_5scr_risk_reservation.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_tradeplan_candidate_v2_containment.py",
+        "tests/test_strategy_5scr_risk_reservation.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.10",
+      "selected_ssot_line": 2973,
+      "requirement": "100% ContextEpoch hash hanya material fields",
+      "mapping_id": "M07",
+      "source_paths": [
+        "contracts/strategy_5scr_context_epoch_v1.py",
+        "contracts/strategy_5scr_shadow_evidence_v2.py",
+        "analysis/strategy_5scr_closed_candle_provider.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_context_epoch_v1.py",
+        "tests/test_strategy_5scr_closed_candle_evidence.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.11",
+      "selected_ssot_line": 2974,
+      "requirement": "100% H1/M15 proof memakai closed/as-of candles",
+      "mapping_id": "M07",
+      "source_paths": [
+        "contracts/strategy_5scr_context_epoch_v1.py",
+        "contracts/strategy_5scr_shadow_evidence_v2.py",
+        "analysis/strategy_5scr_closed_candle_provider.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_context_epoch_v1.py",
+        "tests/test_strategy_5scr_closed_candle_evidence.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.12",
+      "selected_ssot_line": 2975,
+      "requirement": "100% target adalah nearest fresh unconsumed target",
+      "mapping_id": "M10",
+      "source_paths": [
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+        "analysis/strategy_5scr_tradeplan_candidate_v2.py",
+        "contracts/strategy_5scr_execution_policy.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_tradeplan_candidate_v2.py",
+        "tests/test_strategy_5scr_execution_policy.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.13",
+      "selected_ssot_line": 2976,
+      "requirement": "100% TradePlanCandidate valid_for_execution=false",
+      "mapping_id": "M11",
+      "source_paths": [
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+        "contracts/strategy_5scr_risk_reservation.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_tradeplan_candidate_v2_containment.py",
+        "tests/test_strategy_5scr_risk_reservation.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.14",
+      "selected_ssot_line": 2977,
+      "requirement": "100% terminal/suspended lifecycle memiliki reason",
+      "mapping_id": "M05",
+      "source_paths": [
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "contracts/strategy_5scr_microboost_pulse.py",
+        "analysis/strategy_5scr_microboost_pulse_engine.py"
+      ],
+      "test_paths": [
+        "tests/test_5scr_lifecycle_v2_runtime.py",
+        "tests/test_strategy_5scr_microboost_v1.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.1.15",
+      "selected_ssot_line": 2978,
+      "requirement": "100% repeated replay menghasilkan output hash sama",
+      "mapping_id": "M13",
+      "source_paths": [
+        "contracts/strategy_5scr_replay.py",
+        "analysis/strategy_5scr_replay.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_m1_outcome.py",
+        "tests/test_strategy_5scr_log_archive_audit.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.01",
+      "selected_ssot_line": 2984,
+      "requirement": "0 derived pressure stream menjadi raw PairAdmission authority",
+      "mapping_id": "M01",
+      "source_paths": [
+        "analysis/strategy_5scr_raw_admission_blocks.py",
+        "analysis/signal_throttle_log_analyzer.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_raw_admission_blocks.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.02",
+      "selected_ssot_line": 2985,
+      "requirement": "0 eligible raw block silently NOT_EVALUATED setelah SLA",
+      "mapping_id": "M02",
+      "source_paths": [
+        "contracts/strategy_5scr_pair_admission.py",
+        "analysis/strategy_5scr_pair_admission.py",
+        "analysis/strategy_5scr_raw_admission_blocks.py",
+        "storage/pair_admission_evaluations.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_pair_admission.py",
+        "tests/test_strategy_5scr_raw_admission_blocks.py",
+        "tests/integration/test_pair_admission_evaluations_postgres.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.03",
+      "selected_ssot_line": 2986,
+      "requirement": "0 raw coverage UNKNOWN diklasifikasikan sebagai NOT_APPLICABLE",
+      "mapping_id": "M03",
+      "source_paths": [
+        "contracts/strategy_5scr_pair_admission.py",
+        "storage/pair_admission_evaluations.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_pair_admission.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.04",
+      "selected_ssot_line": 2987,
+      "requirement": "0 mature advisory qualifying episode silent-dropped karena PairAdmission tidak ada",
+      "mapping_id": "M04",
+      "source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py",
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "storage/observer_strategy_events.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py",
+        "tests/test_5scr_lifecycle_v2_runtime.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.05",
+      "selected_ssot_line": 2988,
+      "requirement": "0 MATURE_ADVISORY candidate masuk risk reservation",
+      "mapping_id": "M04",
+      "source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py",
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "storage/observer_strategy_events.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py",
+        "tests/test_5scr_lifecycle_v2_runtime.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.06",
+      "selected_ssot_line": 2989,
+      "requirement": "0 MATURE_ADVISORY candidate menghasilkan FinalSignal/ExecutionCommand",
+      "mapping_id": "M04",
+      "source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py",
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "storage/observer_strategy_events.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py",
+        "tests/test_5scr_lifecycle_v2_runtime.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.07",
+      "selected_ssot_line": 2990,
+      "requirement": "0 duplicate lifecycle saat advisory di-upgrade ke canonical raw",
+      "mapping_id": "M05",
+      "source_paths": [
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "contracts/strategy_5scr_microboost_pulse.py",
+        "analysis/strategy_5scr_microboost_pulse_engine.py"
+      ],
+      "test_paths": [
+        "tests/test_5scr_lifecycle_v2_runtime.py",
+        "tests/test_strategy_5scr_microboost_v1.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.08",
+      "selected_ssot_line": 2991,
+      "requirement": "0 advisory candidate dimutasi menjadi canonical candidate tanpa re-evaluation",
+      "mapping_id": "M04",
+      "source_paths": [
+        "contracts/strategy_5scr_analysis_admission.py",
+        "analysis/strategy_5scr_analysis_admission.py",
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "storage/observer_strategy_events.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_analysis_admission.py",
+        "tests/test_5scr_lifecycle_v2_runtime.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.09",
+      "selected_ssot_line": 2992,
+      "requirement": "0 quote/context menghapus StrategyAnalysisAdmission atau hypothesis",
+      "mapping_id": "M07",
+      "source_paths": [
+        "contracts/strategy_5scr_context_epoch_v1.py",
+        "contracts/strategy_5scr_shadow_evidence_v2.py",
+        "analysis/strategy_5scr_closed_candle_provider.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_context_epoch_v1.py",
+        "tests/test_strategy_5scr_closed_candle_evidence.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.10",
+      "selected_ssot_line": 2993,
+      "requirement": "0 partial/future HTF candle authoritative",
+      "mapping_id": "M07",
+      "source_paths": [
+        "contracts/strategy_5scr_context_epoch_v1.py",
+        "contracts/strategy_5scr_shadow_evidence_v2.py",
+        "analysis/strategy_5scr_closed_candle_provider.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_context_epoch_v1.py",
+        "tests/test_strategy_5scr_closed_candle_evidence.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.11",
+      "selected_ssot_line": 2994,
+      "requirement": "0 direction di luar legal domain",
+      "mapping_id": "M06",
+      "source_paths": [
+        "contracts/strategy_5scr_directional_thesis_v1.py",
+        "analysis/strategy_5scr_directional_thesis_v1.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_directional_thesis_v1.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.12",
+      "selected_ssot_line": 2995,
+      "requirement": "0 automatic opposite thesis dari rejection",
+      "mapping_id": "M06",
+      "source_paths": [
+        "contracts/strategy_5scr_directional_thesis_v1.py",
+        "analysis/strategy_5scr_directional_thesis_v1.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_directional_thesis_v1.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.13",
+      "selected_ssot_line": 2996,
+      "requirement": "0 mutable DirectionalThesis",
+      "mapping_id": "M08",
+      "source_paths": [
+        "contracts/strategy_5scr_directional_thesis_v1.py",
+        "analysis/strategy_5scr_directional_thesis_v1.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_directional_thesis_v1.py",
+        "tests/test_strategy_5scr_directional_thesis_v1_containment.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.14",
+      "selected_ssot_line": 2997,
+      "requirement": "0 target jauh melewati nearer target",
+      "mapping_id": "M10",
+      "source_paths": [
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+        "analysis/strategy_5scr_tradeplan_candidate_v2.py",
+        "contracts/strategy_5scr_execution_policy.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_tradeplan_candidate_v2.py",
+        "tests/test_strategy_5scr_execution_policy.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.15",
+      "selected_ssot_line": 2998,
+      "requirement": "0 empty feasible interval menghasilkan fill search",
+      "mapping_id": "M10",
+      "source_paths": [
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+        "analysis/strategy_5scr_tradeplan_candidate_v2.py",
+        "contracts/strategy_5scr_execution_policy.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_tradeplan_candidate_v2.py",
+        "tests/test_strategy_5scr_execution_policy.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.16",
+      "selected_ssot_line": 2999,
+      "requirement": "0 WAIT/NO_TRADE dihitung sebagai win",
+      "mapping_id": "M13",
+      "source_paths": [
+        "contracts/strategy_5scr_replay.py",
+        "analysis/strategy_5scr_replay.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_m1_outcome.py",
+        "tests/test_strategy_5scr_log_archive_audit.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.17",
+      "selected_ssot_line": 3000,
+      "requirement": "0 duplicate telemetry membuat admission/lifecycle/pulse/epoch/thesis/box baru",
+      "mapping_id": "M05",
+      "source_paths": [
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "contracts/strategy_5scr_microboost_pulse.py",
+        "analysis/strategy_5scr_microboost_pulse_engine.py"
+      ],
+      "test_paths": [
+        "tests/test_5scr_lifecycle_v2_runtime.py",
+        "tests/test_strategy_5scr_microboost_v1.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.18",
+      "selected_ssot_line": 3001,
+      "requirement": "0 telemetry-driven expiry extension",
+      "mapping_id": "M05",
+      "source_paths": [
+        "contracts/strategy_5scr_lifecycle_v2.py",
+        "contracts/strategy_5scr_microboost_pulse.py",
+        "analysis/strategy_5scr_microboost_pulse_engine.py"
+      ],
+      "test_paths": [
+        "tests/test_5scr_lifecycle_v2_runtime.py",
+        "tests/test_strategy_5scr_microboost_v1.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.19",
+      "selected_ssot_line": 3002,
+      "requirement": "0 command tanpa active reservation",
+      "mapping_id": "M12",
+      "source_paths": [
+        "risk/s5_campaign_risk.py",
+        "contracts/strategy_5scr_risk_reservation.py",
+        "storage/strategy_5scr_risk_reservation_repository.py",
+        "execution/mt5_risk_command_producer.py"
+      ],
+      "test_paths": [
+        "tests/test_s5_campaign_risk.py",
+        "tests/integration/test_5scr_risk_reservation_postgres.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    },
+    {
+      "clause_id": "24.2.20",
+      "selected_ssot_line": 3003,
+      "requirement": "0 symbol-specific strategy branch",
+      "mapping_id": "M14",
+      "source_paths": [
+        "contracts/strategy_5scr_execution_policy.py",
+        "contracts/strategy_5scr_directional_thesis_v1.py",
+        "contracts/strategy_5scr_tradeplan_candidate_v2.py"
+      ],
+      "test_paths": [
+        "tests/test_strategy_5scr_execution_policy.py"
+      ],
+      "status": "TRACEABILITY_MAPPED_ACCEPTANCE_NOT_EXECUTED",
+      "numerator": null,
+      "denominator": null
+    }
+  ]
+}

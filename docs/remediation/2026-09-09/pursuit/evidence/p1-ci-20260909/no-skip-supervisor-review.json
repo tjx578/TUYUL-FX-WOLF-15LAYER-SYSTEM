@@ -1,0 +1,368 @@
+{
+  "scope": "P1_ENGINEERING_SOURCE_AND_CI_NOT_RUNTIME_RELEASE",
+  "source_commit": "2e80441413cca767eec5c6d8baf4c643407d1159",
+  "captured_at": "2026-09-09T12:03:27.222644+00:00",
+  "last_complete_ci_candidate": "5e3ab2e319d18176e0f1080057522c9fcec36a48",
+  "ci_run": "34347734680",
+  "full_suite": {
+    "tests": 10159,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "separate_required_benchmark_tests": 6,
+  "pg_receipts": [
+    {
+      "run": "34345898279",
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "tested_merge_sha": "ae27c34a77d8c86021b1ef182c5c06d1423e1e5d",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "receipt": "p1-ci-20260909/34345898279/1335cf9b02cf4840917875a6a679b3d5/receipt.json"
+    },
+    {
+      "run": "34345898279",
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "tested_merge_sha": "ae27c34a77d8c86021b1ef182c5c06d1423e1e5d",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "receipt": "p1-ci-20260909/34345898279/4ab3763686364b19b33b9e48fdea90c1/receipt.json"
+    },
+    {
+      "run": "34345898279",
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "tested_merge_sha": "ae27c34a77d8c86021b1ef182c5c06d1423e1e5d",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "receipt": "p1-ci-20260909/34345898279/552929253acc430f8027ce3e9ead2bcc/receipt.json"
+    },
+    {
+      "run": "34345898279",
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "tested_merge_sha": "ae27c34a77d8c86021b1ef182c5c06d1423e1e5d",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 9
+      },
+      "receipt": "p1-ci-20260909/34345898279/5ff304ca6a6749c3992965fe8e809a8b/receipt.json"
+    },
+    {
+      "run": "34345898279",
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "tested_merge_sha": "ae27c34a77d8c86021b1ef182c5c06d1423e1e5d",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "receipt": "p1-ci-20260909/34345898279/91662c42e0de408eac0d62ffe91e54d9/receipt.json"
+    },
+    {
+      "run": "34345898279",
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "tested_merge_sha": "ae27c34a77d8c86021b1ef182c5c06d1423e1e5d",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "receipt": "p1-ci-20260909/34345898279/fd42dbd2f9f54d09878a692a2a4762f1/receipt.json"
+    },
+    {
+      "run": "34347015880",
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "tested_merge_sha": "8d3bb6c3fbcc9fc729dee2daf303109ed3657c81",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "receipt": "p1-ci-20260909/34347015880/142dde65b57c418f986043035bbb314b/receipt.json"
+    },
+    {
+      "run": "34347015880",
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "tested_merge_sha": "8d3bb6c3fbcc9fc729dee2daf303109ed3657c81",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "receipt": "p1-ci-20260909/34347015880/6a382ebbd4d64e61b5b323c10d67b6ba/receipt.json"
+    },
+    {
+      "run": "34347015880",
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "tested_merge_sha": "8d3bb6c3fbcc9fc729dee2daf303109ed3657c81",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 9
+      },
+      "receipt": "p1-ci-20260909/34347015880/9c362996baca4e4e8ff2601648385532/receipt.json"
+    },
+    {
+      "run": "34347015880",
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "tested_merge_sha": "8d3bb6c3fbcc9fc729dee2daf303109ed3657c81",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "receipt": "p1-ci-20260909/34347015880/b8016db2d8214aa290d303b970dd0d9e/receipt.json"
+    },
+    {
+      "run": "34347015880",
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "tested_merge_sha": "8d3bb6c3fbcc9fc729dee2daf303109ed3657c81",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "receipt": "p1-ci-20260909/34347015880/c01831be13cb42acb1bdefdc3e2ba9c7/receipt.json"
+    },
+    {
+      "run": "34347015880",
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "tested_merge_sha": "8d3bb6c3fbcc9fc729dee2daf303109ed3657c81",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "receipt": "p1-ci-20260909/34347015880/fac03c3e50af4dbf8901d18b0aef925f/receipt.json"
+    },
+    {
+      "run": "34347734680",
+      "module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+      "tested_merge_sha": "1a10904b8f46a7d3255a5e57ddde914c2f56f959",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 11
+      },
+      "receipt": "p1-ci-20260909/34347734680/0134d9d5daba42fb857ffa5d918e7fba/receipt.json"
+    },
+    {
+      "run": "34347734680",
+      "module": "tests/integration/test_activity_delivery_producer_postgres.py",
+      "tested_merge_sha": "1a10904b8f46a7d3255a5e57ddde914c2f56f959",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "receipt": "p1-ci-20260909/34347734680/144b6b4f1b904372a148f764150da05b/receipt.json"
+    },
+    {
+      "run": "34347734680",
+      "module": "tests/integration/test_pair_activity_runtime_postgres.py",
+      "tested_merge_sha": "1a10904b8f46a7d3255a5e57ddde914c2f56f959",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 45
+      },
+      "receipt": "p1-ci-20260909/34347734680/7084d5d98ae449669a9bf4fa92282d76/receipt.json"
+    },
+    {
+      "run": "34347734680",
+      "module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+      "tested_merge_sha": "1a10904b8f46a7d3255a5e57ddde914c2f56f959",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 8
+      },
+      "receipt": "p1-ci-20260909/34347734680/b5dcebee4b674381b23a3b9b221a4691/receipt.json"
+    },
+    {
+      "run": "34347734680",
+      "module": "tests/integration/test_candidate_revision_v31_postgres.py",
+      "tested_merge_sha": "1a10904b8f46a7d3255a5e57ddde914c2f56f959",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "receipt": "p1-ci-20260909/34347734680/cec4eaeff2524c90ab6d52761c56144c/receipt.json"
+    },
+    {
+      "run": "34347734680",
+      "module": "tests/integration/test_transaction_a_v31_postgres.py",
+      "tested_merge_sha": "1a10904b8f46a7d3255a5e57ddde914c2f56f959",
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 9
+      },
+      "receipt": "p1-ci-20260909/34347734680/d31a866c6601422c80cc98f7d20489c8/receipt.json"
+    }
+  ],
+  "distinct_pg_tests_per_run": 87,
+  "local_receipts": [
+    {
+      "label": "p1-secret-a1",
+      "counts": {
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_unchanged": true,
+      "platform": "win32"
+    },
+    {
+      "label": "p1-sec-gate-a1",
+      "counts": {
+        "tests": 57,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_unchanged": true,
+      "platform": "win32"
+    },
+    {
+      "label": "p1-skips-a1",
+      "counts": {
+        "tests": 103,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_unchanged": true,
+      "platform": "win32"
+    },
+    {
+      "label": "p1-ws-a1",
+      "counts": {
+        "tests": 5,
+        "failures": 0,
+        "errors": 5,
+        "skipped": 0
+      },
+      "source_unchanged": true,
+      "platform": "win32"
+    },
+    {
+      "label": "p1-ws-a2",
+      "counts": {
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_unchanged": true,
+      "platform": "win32"
+    },
+    {
+      "label": "p1-junit-a1",
+      "counts": {
+        "tests": 60,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_unchanged": true,
+      "platform": "win32"
+    },
+    {
+      "label": "p1-super-a1",
+      "counts": {
+        "tests": 114,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_unchanged": true,
+      "platform": "win32"
+    },
+    {
+      "label": "p1-super-a2",
+      "counts": {
+        "tests": 139,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "source_unchanged": true,
+      "platform": "win32"
+    }
+  ],
+  "security": {
+    "run": "34347015778",
+    "status": "PASS",
+    "source": "4d05476433a1b5077caddb5789cdf565e35941af",
+    "exact_reviewed_finding_occurrences": 49,
+    "credential_validation": false
+  },
+  "expected_actual": [
+    {
+      "expected": "All required PostgreSQL modules execute, with immutable source/fixture metadata and no skips",
+      "actual": "87 distinct identities across six modules per archived run; repeated runs are not added together"
+    },
+    {
+      "expected": "API suite runs under pinned API dependencies; MCP fixture required in separate environment",
+      "actual": "CI Gate PASS on 5e3ab2e3, 10159 suite tests and six separate latency budgets, zero skip/error/failure; native MCP job PASS"
+    },
+    {
+      "expected": "Skipped or empty JUnit cannot pass the required suite gate",
+      "actual": "Seven negative cases plus positive validation passed locally; mandatory JUnit validator executed in Linux CI"
+    },
+    {
+      "expected": "Socket clients authenticate, receive correct channel evidence, and release state",
+      "actual": "50 loopback clients, five channel contracts, 20 churn cycles, invalid and unscoped tokens rejected; readers TEST_ONLY, no live feed claims"
+    },
+    {
+      "expected": "Required API worker loss drives readiness and process failure",
+      "actual": "New source 2e804414; 114 local supervisor/lifespan/owner tests passed and 139 adjacent regressions passed. Built image fault acceptance on new source remains pending"
+    }
+  ],
+  "failed_attempts": {
+    "p1-ws-a1": "5 setup errors from missing Windows SYSTEMROOT in sanitized child environment; corrected explicit system variable allowlist in p1-ws-a2",
+    "34344760831": "Full-suite benchmark exceeded one-second bound under coverage; fixed separate uninstrumented required lane with unchanged limit",
+    "34345898344": "Security failure preserved; dependency and exact fixture/resource-ID review repaired in 4d054764"
+  },
+  "review_scope": "AUTHOR_SERIAL_REVIEW_NO_INDEPENDENT_AGENT_CONSENSUS",
+  "remaining": [
+    "C01 alternate canary release controls",
+    "C02 runtime owner and legacy zero-submit proof",
+    "C03 depends on C01; final source CI pending",
+    "C05 main remains unprotected/ruleset disabled",
+    "C06 other required roles and full shutdown faults",
+    "K05 attestor calls under account lock",
+    "DEMO binding and P2-P6 acceptance"
+  ],
+  "milestones_done": 0
+}

@@ -1,0 +1,12 @@
+{
+  "routing": "Central coordinator with3 independent bounded workstreams under user AGENTS.md",
+  "skills": [
+    "agent-orchestrator-task",
+    "verification-quality",
+    "agent-coder",
+    "agent-release-manager",
+    "wolf15-authority-boundary-review",
+    "wolf15-replay-audit"
+  ],
+  "scope": "Relevant skills were selected. No claim that all142 skills were executed or benchmarked. No skill installation or upgrade."
+}

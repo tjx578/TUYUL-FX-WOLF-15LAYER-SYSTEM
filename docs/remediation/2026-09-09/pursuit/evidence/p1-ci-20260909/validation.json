@@ -1,0 +1,255 @@
+{
+  "source_commit": "d9515f8e433f2752aab4258ef380a4a9ef200998",
+  "status": "INCOMPLETE_HOLD",
+  "billing": "PAID_REPORTED",
+  "actions_capability": "VERIFIED_EXECUTED",
+  "runs": [
+    {
+      "github_run_id": 34309431328,
+      "groups": [
+        {
+          "run_id": "bf86abc4478f404c929c249a28c3e0cc",
+          "head": "24efd07dfb9b7aa8699685ccb149ea794e539cf6",
+          "test_module": "tests/integration/test_pair_activity_runtime_postgres.py",
+          "expected_tests": 45,
+          "observed_counts": {
+            "errors": 45,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 45
+          },
+          "counts": null,
+          "accepted": false,
+          "failure_class": "ValueError"
+        }
+      ]
+    },
+    {
+      "github_run_id": 34338772833,
+      "groups": [
+        {
+          "run_id": "01fe0bb4e87048e08158a240e1898c6f",
+          "head": "13d917d80a0f7c2c267dd1d858cf2220fa0c67c9",
+          "test_module": "tests/integration/test_activity_delivery_producer_postgres.py",
+          "expected_tests": 7,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 7
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 7
+          },
+          "accepted": true,
+          "failure_class": null
+        },
+        {
+          "run_id": "3e2e2e7628094028a9123f759046f5ee",
+          "head": "13d917d80a0f7c2c267dd1d858cf2220fa0c67c9",
+          "test_module": "tests/integration/test_pair_activity_runtime_postgres.py",
+          "expected_tests": 45,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 45
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 45
+          },
+          "accepted": true,
+          "failure_class": null
+        },
+        {
+          "run_id": "9630c4cb06774ff6ab60d245738b7c81",
+          "head": "13d917d80a0f7c2c267dd1d858cf2220fa0c67c9",
+          "test_module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+          "expected_tests": 11,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 11
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 11
+          },
+          "accepted": true,
+          "failure_class": null
+        }
+      ]
+    },
+    {
+      "github_run_id": 34339544343,
+      "groups": [
+        {
+          "run_id": "5725032ef6864a7d95fcf87966b27609",
+          "head": "dfa6751e7b7a9920bfed270d2b597304d15a8a80",
+          "test_module": "tests/integration/test_capacity_persistence_v31_postgres.py",
+          "expected_tests": 8,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 8
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 8
+          },
+          "accepted": true,
+          "failure_class": null
+        },
+        {
+          "run_id": "81df3068718d4746ad30f9e356bb3e8d",
+          "head": "dfa6751e7b7a9920bfed270d2b597304d15a8a80",
+          "test_module": "tests/integration/test_activity_delivery_producer_postgres.py",
+          "expected_tests": 7,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 7
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 7
+          },
+          "accepted": true,
+          "failure_class": null
+        },
+        {
+          "run_id": "82a65c85bd0b4fc18bbf5c653606023e",
+          "head": "dfa6751e7b7a9920bfed270d2b597304d15a8a80",
+          "test_module": "tests/integration/test_pair_activity_runtime_postgres.py",
+          "expected_tests": 45,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 45
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 45
+          },
+          "accepted": true,
+          "failure_class": null
+        },
+        {
+          "run_id": "b84d6a83ca8d495ca1b997187bc3c5ed",
+          "head": "dfa6751e7b7a9920bfed270d2b597304d15a8a80",
+          "test_module": "tests/integration/test_activity_delivery_consumer_postgres.py",
+          "expected_tests": 11,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 11
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 11
+          },
+          "accepted": true,
+          "failure_class": null
+        },
+        {
+          "run_id": "e41c7a64ff9e4e1f8f9d2465f3288d37",
+          "head": "dfa6751e7b7a9920bfed270d2b597304d15a8a80",
+          "test_module": "tests/integration/test_transaction_a_v31_postgres.py",
+          "expected_tests": 9,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 9
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 9
+          },
+          "accepted": true,
+          "failure_class": null
+        },
+        {
+          "run_id": "edf5a8c52f9a40d088294606a999c0a8",
+          "head": "dfa6751e7b7a9920bfed270d2b597304d15a8a80",
+          "test_module": "tests/integration/test_candidate_revision_v31_postgres.py",
+          "expected_tests": 7,
+          "observed_counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 7
+          },
+          "counts": {
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 7
+          },
+          "accepted": true,
+          "failure_class": null
+        }
+      ]
+    }
+  ],
+  "latest_87_scope": "PR HEAD 81a251a0b96e7785038efc35113cba9fea357ddd; tested merge dfa6751e7b7a9920bfed270d2b597304d15a8a80; NOT the later isolation candidate",
+  "current_candidate_ci": "PENDING_NEW_RUN",
+  "expected_vs_actual": [
+    {
+      "expected": "Container server matches inspected service IP",
+      "actual": "45 initial fixture errors; corrected exact IP binding; 45 runtime PASS thereafter"
+    },
+    {
+      "expected": "Producer/relay/consumer rollback retry fencing acceptance executes",
+      "actual": "7 producer + 11 consumer PASS on real PostgreSQL16.15; no skip"
+    },
+    {
+      "expected": "Candidate/capacity/Transaction A required identities execute",
+      "actual": "7+8+9 PASS on PostgreSQL; later broad suite revealed owner state contamination; isolated child database patch awaiting CI"
+    },
+    {
+      "expected": "All CI jobs pass",
+      "actual": "FAIL: dashboard HTTP build origin and shared-domain owner fixture contamination; fixes committed; no gate weakened"
+    }
+  ],
+  "document_package_validation": {
+    "status": "DOCUMENT_PACKAGE_PASS",
+    "checks": 378,
+    "stable_files": 52,
+    "actions": 41,
+    "goap_nodes": 54,
+    "runtime_acceptance": false
+  },
+  "authority": {
+    "merge": false,
+    "deployment": false,
+    "broker": false,
+    "natural_demo": false,
+    "real_activation": false
+  },
+  "historical_evidence_files_preserved": 278,
+  "review": "Serial review; no new independent worker review available"
+}

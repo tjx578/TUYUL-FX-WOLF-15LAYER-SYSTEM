@@ -1,0 +1,117 @@
+{
+  "archive_name": "WOLF15_Codex_Desktop_Goal_Pursuit_2026-09-09.zip",
+  "archive_sha256": "8a18eb65dfc955a0b47a73c297be08d9a4f7a757d3ce38306fa343d1d79f31e2",
+  "files": [
+    {
+      "path": "START_CODEX_DESKTOP.md",
+      "sha256": "958bb5820904b0bafc1471ce49d4ee7c02854b8efcf27961e6e008a1439b2ed4",
+      "bytes": 6177
+    },
+    {
+      "path": "WOLF15_ACTION_MAP.md",
+      "sha256": "6cbecfea774d036058d5ee76ac238d5fc7f2fd8965cc968396b3e432ffd23240",
+      "bytes": 4167
+    },
+    {
+      "path": "WOLF15_BINDING_INPUTS.template.json",
+      "sha256": "21818d79487afe09dbda412505a6b86260d99be566bc5a13f488cbb2ac5ad7cf",
+      "bytes": 4535
+    },
+    {
+      "path": "WOLF15_FAILURE_PLAYBOOK.json",
+      "sha256": "3f61472c340ddc9dc7308f9d0a0608f8a7ad44e63d65e527bc33c932a9b5965f",
+      "bytes": 38921
+    },
+    {
+      "path": "WOLF15_FAILURE_PLAYBOOK.md",
+      "sha256": "05c0f4237cfa4aca66e7c7abc61d0ef5ace953541d9497716e00cc324c4494bd",
+      "bytes": 26479
+    },
+    {
+      "path": "WOLF15_GATE_RECEIPT.template.json",
+      "sha256": "bb084e80c2590780ea428763070d59299a2d6721b73a7c876e8cbfc2aa38ad30",
+      "bytes": 2743
+    },
+    {
+      "path": "WOLF15_PURSUIT_GOAL.md",
+      "sha256": "323befc5281ae0eb1f014a75f8990dba748b0332e4f810cadf7910937c1faff6",
+      "bytes": 75824
+    },
+    {
+      "path": "WOLF15_PURSUIT_PLAN.json",
+      "sha256": "9986dd171febdcd13cad94e58c892a4cfcd8b0c5b4e3f204ab5e72ef8645cad9",
+      "bytes": 155866
+    },
+    {
+      "path": "WOLF15_PURSUIT_STATE.template.json",
+      "sha256": "ee12daddf263f32368899cff38aa9296bc5d9d84d73ef4eb82b706f483b0056e",
+      "bytes": 9960
+    },
+    {
+      "path": "review/authority-envelope.json",
+      "sha256": "a313510b280f8ec21ed8c70f501582c6d1c334d7f934daa92cd6ae654a0ee9c8",
+      "bytes": 4027
+    },
+    {
+      "path": "review/authority-review.md",
+      "sha256": "d9c7d8214c38e6ffa8fe3a0232e07c06d3428d6f74093a1db6832efe3be77c03",
+      "bytes": 3030
+    },
+    {
+      "path": "review/authority-validation.json",
+      "sha256": "3c18cb197c43bb38a15bcec9057c21c2e28f58828aeb21d10cbbecf42f47ca77",
+      "bytes": 404
+    },
+    {
+      "path": "review/coordination-and-review.md",
+      "sha256": "48f575ee3b87f02f190d5c97bfb5aa87e3bc448abd731f459e480d5be2db6deb",
+      "bytes": 2757
+    },
+    {
+      "path": "review/goap-validation.json",
+      "sha256": "f8663d80cb312cb2929b604ea348a07742dbbecf914b8daf23b6004093ea345f",
+      "bytes": 802
+    },
+    {
+      "path": "review/validation-environment.json",
+      "sha256": "0f0e741d8f680ba6a71d1d71e1aad1426b790dcaf9deb5e08bce9a3391556b1b",
+      "bytes": 797
+    },
+    {
+      "path": "sources/canonical-backlog-41.csv",
+      "sha256": "9672d5bf6e07b3d6db5f6d6cd92f903ce53fec12369df744c88aaab7ce1c8490",
+      "bytes": 32683
+    },
+    {
+      "path": "sources/definition-of-done-baseline.md",
+      "sha256": "0b2ed9e0bf3758509ad065babbaf59b3f1e24a1d0e469b96a6adb7e37276a705",
+      "bytes": 19433
+    },
+    {
+      "path": "sources/latest-reported-checkpoint.json",
+      "sha256": "6cfcd900694cf1cdeff2247aa950567bdc1591b95659f77fa9144613a8866bec",
+      "bytes": 3226
+    },
+    {
+      "path": "sources/ssot-v31-historical-reference.md",
+      "sha256": "2cd41d01fdd3661af59284c78df669f7b312a7b7e4870f1620cfcfbe1aedb624",
+      "bytes": 85414
+    },
+    {
+      "path": "tools/validate_pursuit_package.py",
+      "sha256": "2623227b03299f85e11cc67838c826aa7ccf72dcdb466ab952b1082ab5e4d7d8",
+      "bytes": 9379
+    },
+    {
+      "path": "PACKAGE_MANIFEST.json",
+      "sha256": "289323e832e6c84b5a4a014eda7e5d78acd3f5194b57ad2ac17561eb0daa15bc",
+      "bytes": 3778
+    },
+    {
+      "path": "review/package-validation.json",
+      "sha256": "ac0822c1f0cbfa7764842f971365e974c52890eb3459e732cfeec63f32abfa97",
+      "bytes": 1163
+    }
+  ],
+  "instructions_adopted": "START_CODEX_DESKTOP within current user engineering scope only"
+}

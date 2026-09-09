@@ -1,0 +1,20 @@
+{
+  "scope": "K07 TEST_ONLY multi-record transaction composition, separate from earlier database inventories",
+  "source_commit": "01eb39efa679564eebab1ba7542453054ae4bfef",
+  "required_migration_head": "20260909_06",
+  "required_count": 9,
+  "test_ids": [
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[commit]",
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[restart_duplicate]",
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[concurrent_duplicate]",
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[conflicting_replay]",
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_capacity]",
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_campaigns]",
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_parent_legs]",
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_signal_previews]",
+    "tests/integration/test_transaction_a_v31_postgres.py::test_transaction_a_postgres_acceptance[rollback_outbox]"
+  ],
+  "database_execution": "NOT_EXECUTED",
+  "migration_application": "NOT_EXECUTED",
+  "acceptance_rule": "Run all nine exact identities on bound disposable PostgreSQL with matching source/config/DB/migration/fixture and JUnit evidence, without skips/errors/failures. Even a passing run would establish only TEST_ONLY composition, not authority-bearing FinalSignal/Transaction B or natural DEMO."
+}
