@@ -178,5 +178,36 @@
       "160 passed, 1 failed: stale expected migration head; corrected",
       "162 passed, 1 failed: FileNotFoundError in nested temporary fixture; same source passed with shorter temp label"
     ]
+  },
+  "latest_consumer_owner_followup": {
+    "path": "followup-consumer-owner/validation.json",
+    "source_commit": "3d8df68057d6a0c2f9dc1b1969651f8f298aa713",
+    "verdict": "INCOMPLETE_HOLD",
+    "local": {
+      "tests": 185,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "local_platform": "Windows",
+    "local_scope": "SELECTED_MODEL_ASGI_AND_REGRESSION_TESTS",
+    "postgres_existing_skipped": 45,
+    "postgres_producer_skipped": 7,
+    "postgres_consumer_skipped": 11,
+    "strict_consumer_skip_control": "REJECTED_ON_SOURCE_COMMIT",
+    "postgres_acceptance": false,
+    "migration_head": "20260909_03",
+    "offline_sql": "PASS",
+    "actual_migration": "NOT_EXECUTED",
+    "runtime_activation": "NOT_EXECUTED",
+    "live_https_tls": "NOT_EXECUTED",
+    "linux": "NOT_EXECUTED",
+    "github_required_checks": "NOT_SATISFIED",
+    "performance": "NOT_BENCHMARKED; serialized per symbol, recovery refuses >1000 rows rather than truncating",
+    "consumer_policy_and_owner_credentials": "NOT_BOUND",
+    "legacy_worker": "Unbound writes to managed symbols are rejected; no automatic fence acquisition",
+    "independent_agent_review": "UNAVAILABLE_PREVIOUS_USAGE_LIMIT",
+    "milestones_done": 0,
+    "milestones_total": 6
   }
 }

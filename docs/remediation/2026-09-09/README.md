@@ -219,3 +219,7 @@ Latest follow-up: [S03 delivery protocol and hosted-runner diagnosis](followup-d
 ## Producer/relay follow-up
 
 Source `5219624a92253b66fe8bc67a1acace99b71e61e7`: opt-in producer outbox and relay implemented; 176 selected local tests pass. Existing45 and new7 PostgreSQL cases remain unexecuted. Consumer owner transaction/fencing is still open. See [checkpoint](followup-producer-relay/README.md). Status remains INCOMPLETE / HOLD, 0/6 milestones.
+
+## Consumer and owner follow-up
+
+Source `3d8df68057d6a0c2f9dc1b1969651f8f298aa713` adds the owner transaction, shared DB fence and explicit authenticated endpoint binding. Latest local subset: 185 passed. The separate 11-case consumer PostgreSQL gate remains unexecuted, as do the original 45 and producer 7. See [consumer checkpoint](followup-consumer-owner/README.md). INCOMPLETE / HOLD, 0/6 milestones.
