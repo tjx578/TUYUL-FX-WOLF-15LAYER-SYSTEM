@@ -178,7 +178,12 @@ def _governance_observer():
                     ],
                 },
                 "enforce_admins": {"enabled": True},
-                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": True},
+                "required_pull_request_reviews": {
+                    "required_approving_review_count": 1,
+                    "dismiss_stale_reviews": True,
+                    "require_last_push_approval": True,
+                },
+                "required_conversation_resolution": {"enabled": True},
                 "allow_force_pushes": {"enabled": False},
                 "allow_deletions": {"enabled": False},
             }

@@ -70,6 +70,8 @@ class _FakePipeline:
 
 
 class _FakeRedis:
+    from tests.orchestrator_mode_owner_fake import eval_mode_owner as eval
+
     def __init__(self) -> None:
         super().__init__()
         self.values: dict[str, str] = {}

@@ -21,9 +21,11 @@ def protection():
         "required_pull_request_reviews": {
             "required_approving_review_count": 1,
             "dismiss_stale_reviews": True,
+            "require_last_push_approval": True,
             "bypass_pull_request_allowances": {"users": [], "teams": [], "apps": []},
         },
         "allow_force_pushes": {"enabled": False},
+        "required_conversation_resolution": {"enabled": True},
         "allow_deletions": {"enabled": False},
     }
 
@@ -112,6 +114,7 @@ def test_active_protection_and_environment_pass(protection, environment):
         "required_pull_request_reviews",
         "allow_force_pushes",
         "allow_deletions",
+        "required_conversation_resolution",
     ],
 )
 def test_missing_protection_field_rejects(protection, field):
@@ -132,6 +135,8 @@ def test_missing_protection_field_rejects(protection, field):
         "no_reviews",
         "bool_reviews",
         "stale",
+        "last_push",
+        "unresolved_conversations",
         "bypass_user",
         "bypass_team",
         "bypass_app",
@@ -160,6 +165,10 @@ def test_weakened_protection_rejects(protection, case):
         reviews["required_approving_review_count"] = True
     elif case == "stale":
         reviews["dismiss_stale_reviews"] = False
+    elif case == "last_push":
+        reviews["require_last_push_approval"] = False
+    elif case == "unresolved_conversations":
+        protection["required_conversation_resolution"]["enabled"] = False
     elif case.startswith("bypass_"):
         reviews["bypass_pull_request_allowances"][
             {"bypass_user": "users", "bypass_team": "teams", "bypass_app": "apps"}[case]

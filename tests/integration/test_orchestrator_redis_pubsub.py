@@ -39,6 +39,9 @@ class _RedisAdapter:
         super().__init__()
         self._client = client
 
+    def eval(self, *args):
+        return self._client.eval(*args)
+
     def pubsub(self) -> Any:
         return self._client.pubsub()
 

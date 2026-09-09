@@ -76,6 +76,11 @@ jobs:
     env:
       PYTHONPATH: .
       REDIS_URL: redis://localhost:6379/0
+      WOLF15_RUN_MODE_OWNER_REDIS: "1"
+      WOLF15_MODE_OWNER_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      WOLF15_C06_TEST_REDIS_URL: redis://127.0.0.1:6379/14
+      WOLF15_C06_DISPOSABLE_REDIS: YES_I_UNDERSTAND
+      WOLF15_C06_OUTPUT: artifacts/c06-effective-api
       DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_PAIR_ACTIVITY_TEST_DATABASE_URL: postgresql://wolf_user:test_password@localhost:5432/wolf15_ci_test
       WOLF15_RUN_POSTGRES_INTEGRATION: "1"
@@ -169,6 +174,32 @@ jobs:
 
       - name: Require supported PostgreSQL upgrade with existing data
         run: python scripts/ci/run_supported_upgrade_acceptance.py
+
+      - name: Require distributed mode-owner Redis acceptance
+        run: |
+          python -m pytest tests/integration/test_orchestrator_mode_owner_redis.py \
+            -o addopts= -q --timeout=60 \
+            --junitxml=artifacts/python-suite/mode-owner.xml
+          python scripts/ci/validate_suite_junit.py artifacts/python-suite/mode-owner.xml
+
+      - name: Require actual in-flight PostgreSQL shutdown drain
+        run: |
+          python -m pytest tests/integration/test_runtime_drain_postgres.py \
+            --noconftest -o addopts= -q --timeout=60 \
+            --junitxml=artifacts/python-suite/runtime-drain.xml
+          python scripts/ci/validate_suite_junit.py artifacts/python-suite/runtime-drain.xml
+
+      - name: Require effective Railway API role acceptance
+        run: python scripts/ci/effective_api_role_acceptance.py
+
+      - name: Upload effective Railway API role evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c06-effective-api
+          path: artifacts/c06-effective-api/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Require executed S03 PostgreSQL acceptance
         run: python scripts/ci/run_pair_activity_runtime_acceptance.py

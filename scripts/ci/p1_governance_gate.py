@@ -73,6 +73,11 @@ def validate_branch_protection(protection: dict[str, Any]) -> None:
     count = reviews.get("required_approving_review_count")
     require(type(count) is int and count >= 1, "at least one approving review required")
     require(reviews.get("dismiss_stale_reviews") is True, "stale approvals must be dismissed")
+    require(reviews.get("require_last_push_approval") is True, "latest push must require independent approval")
+    require(
+        protection.get("required_conversation_resolution", {}).get("enabled") is True,
+        "review conversations must be resolved",
+    )
     bypass = reviews.get("bypass_pull_request_allowances") or {}
     require(not any(bypass.get(key) for key in ("users", "teams", "apps")), "review bypass allowance present")
     for key in ("allow_force_pushes", "allow_deletions"):
