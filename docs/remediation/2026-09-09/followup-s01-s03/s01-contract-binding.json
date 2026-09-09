@@ -1,0 +1,4321 @@
+{
+  "schema_version": "wolf15.s01-contract-binding.v1",
+  "observed_at_utc": "2026-09-08T20:13:34.768320+00:00",
+  "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+  "selected_ssot": {
+    "git_commit": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
+    "git_path": "docs/strategy/WOLF15_STRATEGY_5SCR_CANONICAL_SSOT_V3_1_CANDIDATE.md",
+    "git_blob": "cd848447a2e923d0ea0de6c566a558c7205d3d3b",
+    "sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "bytes": 86002,
+    "lines": 3491,
+    "committed_evidence_copy_sha256": "6daea387745ffa305d3cd55b0fee4f0efed79be21e24503c2a1f8a16c6a83902",
+    "evidence_copy_exact_match": true,
+    "user_selection": "Existing selected repo v3.1 retained; no R1/R2 adoption and no repeated version approval."
+  },
+  "strategy_rule_version": "5scr.dual-analysis-admission.pressure-hypothesis.structural-core.v3.1",
+  "assessment_status": "SOURCE_BOUND_CONTRACT_MAP_COMPLETED_WITH_OPEN_GAPS",
+  "S01_DONE": false,
+  "S01_status": "SOURCE_BOUND_POLICY_AND_SCHEMA_CLOSURE_INCOMPLETE",
+  "reason": "Exact source and source/test mapping can close binding substeps. Full S01 acceptance also requires versioned policy IDs, coherent machine schemas/examples and explicit mandatory authority mapping; unresolved gaps remain.",
+  "controls": {
+    "execution_authority": false,
+    "broker_side_effect_allowed": false,
+    "order_send_eligible": false,
+    "final_size_authorized": false,
+    "external_mutation_authorized": false
+  },
+  "runtime_status": "NOT_MEASURED",
+  "source_evidence": [
+    {
+      "path": "analysis/signal_throttle_log_analyzer.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "82017a4bd9361cdbbeb57b972a696198cc231a25",
+      "sha256": "8f2f4f9393333abe0ac6d6ded56109b464e1bdb1fe138454e19f9ae15dd2b1b8",
+      "bytes": 209538,
+      "classes": [
+        {
+          "name": "SignalThrottleLogEvent",
+          "line": 101,
+          "fields": [
+            "timestamp",
+            "severity",
+            "message",
+            "symbol",
+            "event_type",
+            "verdict",
+            "direction",
+            "raw_verdict",
+            "effective_action",
+            "is_downgraded",
+            "suppressed",
+            "count",
+            "remaining",
+            "allowed_streak",
+            "max_signals",
+            "window_seconds",
+            "pressure_strength",
+            "pressure_source",
+            "source_stream",
+            "deployment_id",
+            "scanner_cycle_id",
+            "scanner_epoch",
+            "observed_cycle_index",
+            "eligible_for_pressure_block",
+            "eligible_for_execution",
+            "execution_block_reason",
+            "direction_source",
+            "direction_confidence",
+            "direction_inherited",
+            "inherited_direction",
+            "inherited_direction_age_seconds",
+            "base_ccy",
+            "quote_ccy",
+            "symbol_orientation",
+            "verdict_source",
+            "verdict_features_hash",
+            "window_count_before",
+            "window_count_after",
+            "window_remaining_before",
+            "window_remaining_after",
+            "allowed_streak_before",
+            "allowed_streak_after",
+            "throttled_inferred_direction"
+          ]
+        },
+        {
+          "name": "PressureBlock",
+          "line": 158,
+          "fields": [
+            "symbol",
+            "start",
+            "end",
+            "events",
+            "duration_seconds",
+            "density_per_minute",
+            "max_gap_seconds",
+            "avg_gap_seconds",
+            "direction",
+            "effective_ticks",
+            "suppressed_ticks",
+            "allowed_events",
+            "throttled_events",
+            "downgraded_events",
+            "effective_density_per_minute",
+            "direction_source",
+            "direction_confidence",
+            "direction_inherited",
+            "inherited_direction",
+            "inherited_direction_age_seconds",
+            "deployment_ids",
+            "scanner_cycle_ids",
+            "scanner_epoch_start_utc",
+            "scanner_epoch_end_utc",
+            "observed_cycle_index_min",
+            "observed_cycle_index_max",
+            "source_stream_profile",
+            "raw_signal_throttle_severity_profile",
+            "raw_signal_throttle_error_count",
+            "raw_signal_throttle_primary_severity",
+            "raw_pressure_origin"
+          ]
+        },
+        {
+          "name": "SignalThrottleLiveAnalyzer",
+          "line": 1081,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "DEFAULT_SIGNAL_THROTTLE_RAW_LOGGER",
+          "value": "signal_throttle_raw",
+          "line": 87
+        },
+        {
+          "name": "DEFAULT_SIGNAL_THROTTLE_RAW_PREFIX",
+          "value": "[SignalThrottle]",
+          "line": 88
+        },
+        {
+          "name": "DEFAULT_SIGNAL_THROTTLE_RAW_LEVEL",
+          "value": "WARNING",
+          "line": 89
+        },
+        {
+          "name": "_MICROBOOST_WATCH_MIN_DURATION_SECONDS",
+          "value": 18.0,
+          "line": 2330
+        }
+      ]
+    },
+    {
+      "path": "analysis/strategy_5scr_analysis_admission.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": false,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE"
+    },
+    {
+      "path": "analysis/strategy_5scr_closed_candle_provider.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "7f0bbadd5d0c7ceed9b25d378584fa41486e1dbb",
+      "sha256": "49a48038ce9ff884362c2247267fc855551d9bcddc4d99ed0ec820f2a8edfd1e",
+      "bytes": 16987,
+      "classes": [
+        {
+          "name": "ClosedCandleEvidenceError",
+          "line": 45,
+          "fields": []
+        },
+        {
+          "name": "FutureCandleLeakageError",
+          "line": 49,
+          "fields": []
+        },
+        {
+          "name": "ClosedCandleStore",
+          "line": 53,
+          "fields": []
+        },
+        {
+          "name": "Strategy5SCRClosedCandleEvidenceProvider",
+          "line": 81,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "analysis/strategy_5scr_directional_thesis_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "cd2db2b57a8f29a33d1dbabf4ecb7af9694131dd",
+      "sha256": "3c71fc25ca6eea529602704bcb9035195ea21148543469713fc29b1cca8d26de",
+      "bytes": 28250,
+      "classes": [
+        {
+          "name": "ActiveStructuralLivenessResult",
+          "line": 30,
+          "fields": [
+            "reason_code",
+            "invalidated_at_utc",
+            "checked_through_utc"
+          ]
+        },
+        {
+          "name": "DirectionalThesisBuildArtifact",
+          "line": 271,
+          "fields": [
+            "h1_proof",
+            "m15_proof",
+            "structural_proof_hash",
+            "counter_pressure_proof_hash",
+            "semantic_identity_hash"
+          ]
+        },
+        {
+          "name": "DirectionalThesisBuildResult",
+          "line": 280,
+          "fields": [
+            "status",
+            "reason_code",
+            "artifact"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "analysis/strategy_5scr_execution_box_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "67090070885c6cc7693997c36d85123dddfb56a6",
+      "sha256": "2aafe489c63d0b852eb334fa1cba2c4cb5c3743babc3729f2cd2ebfedcc1d209",
+      "bytes": 13854,
+      "classes": [
+        {
+          "name": "ExecutionBoxReductionResult",
+          "line": 125,
+          "fields": [
+            "status",
+            "reason_code",
+            "box",
+            "previous_box"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "analysis/strategy_5scr_microboost_pulse_engine.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "9d89d4ad5f32bd9a27684cd0bf815ad785fb84e2",
+      "sha256": "a4aa2d80edb46f637de452077f5e5e4343a75a2b482c721b24b2e0aebc01332a",
+      "bytes": 23840,
+      "classes": [
+        {
+          "name": "MicroboostPulsePolicy",
+          "line": 61,
+          "fields": []
+        },
+        {
+          "name": "_Observation",
+          "line": 131,
+          "fields": []
+        },
+        {
+          "name": "MicroboostPulseEngine",
+          "line": 178,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "DEFAULT_TTL_SECONDS",
+          "value": 900.0,
+          "line": 53
+        }
+      ]
+    },
+    {
+      "path": "analysis/strategy_5scr_pair_admission.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "bc6aa3a8cb8117978577e298b4c1d017f89b3ba8",
+      "sha256": "155d4809f1b58a4343bb848e75b38526accc364f05f39718a852187a0b89b9f7",
+      "bytes": 24024,
+      "classes": [
+        {
+          "name": "PairAdmissionAudit",
+          "line": 31,
+          "fields": [
+            "grants",
+            "evaluated_blocks",
+            "rejection_counts",
+            "evaluations"
+          ]
+        },
+        {
+          "name": "_ValidatedRawEvidence",
+          "line": 53,
+          "fields": [
+            "events",
+            "deployment_id",
+            "started_at_utc",
+            "observed_through_utc",
+            "duration_seconds",
+            "effective_ticks",
+            "max_gap_seconds",
+            "maximum_allowed_gap_seconds",
+            "source_event_ids",
+            "scanner_cycle_ids",
+            "ledger_hash"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "DEFAULT_PAIR_ADMISSION_MIN_DURATION_SECONDS",
+          "value": 300.0,
+          "line": 24
+        },
+        {
+          "name": "DEFAULT_PAIR_ADMISSION_MAX_GAP_SECONDS",
+          "value": 300.0,
+          "line": 27
+        }
+      ]
+    },
+    {
+      "path": "analysis/strategy_5scr_raw_admission_blocks.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "26e90364dd3ff4d092e85fae9663926064bc2804",
+      "sha256": "34862f65da43db1633cb3852ce44585042f744ee7308df01ffa51233a5a19777",
+      "bytes": 13981,
+      "classes": [
+        {
+          "name": "RawAdmissionBlock",
+          "line": 125,
+          "fields": [
+            "raw_block_id",
+            "symbol",
+            "start",
+            "end",
+            "events",
+            "duration_seconds",
+            "density_per_minute",
+            "max_gap_seconds",
+            "direction",
+            "effective_ticks",
+            "deployment_ids",
+            "scanner_cycle_ids",
+            "source_event_ids",
+            "cross_symbol_interruption_count",
+            "evaluation_state",
+            "finalization_reason",
+            "finalization_event_id"
+          ]
+        },
+        {
+          "name": "RawAdmissionPopulation",
+          "line": 172,
+          "fields": [
+            "events",
+            "blocks",
+            "input_event_count",
+            "skipped_non_authority_count",
+            "duplicate_event_count"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "analysis/strategy_5scr_replay.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "cfee2df3e6b302c2701e9e45c5ff04881ebbc43b",
+      "sha256": "945615a3b7cf3075cc60da32f25bd867faf201981e38e97fde94cee4f99d586f",
+      "bytes": 4177,
+      "classes": [
+        {
+          "name": "FrozenClosedCandleStore",
+          "line": 22,
+          "fields": []
+        },
+        {
+          "name": "Strategy5SCRReplay",
+          "line": 68,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "analysis/strategy_5scr_tradeplan_candidate_v2.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "b93c7b57bb33178be67ff4a779b600bffd9f003f",
+      "sha256": "a561a9c451ee6e86ba92ad0f949f1f574e6229c1378b339b73f3a045162115e3",
+      "bytes": 29022,
+      "classes": [],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "constitution/l12_router_evaluator.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "b502a7e9706ce452d453cc57af21cd5744decc99",
+      "sha256": "2c79ae790bac66c1298ea249f8b3d38d6a5ed78a4db497a87ed7da945b963824",
+      "bytes": 32334,
+      "classes": [
+        {
+          "name": "L12Status",
+          "line": 24,
+          "fields": []
+        },
+        {
+          "name": "L12Verdict",
+          "line": 30,
+          "fields": []
+        },
+        {
+          "name": "L12BlockerCode",
+          "line": 37,
+          "fields": []
+        },
+        {
+          "name": "L12GateName",
+          "line": 59,
+          "fields": []
+        },
+        {
+          "name": "L12Input",
+          "line": 72,
+          "fields": [
+            "input_ref",
+            "timestamp",
+            "upstream_continuation_allowed",
+            "upstream_next_legal_targets",
+            "foundation_status",
+            "scoring_status",
+            "enrichment_status",
+            "structure_status",
+            "risk_chain_status",
+            "layer_scores",
+            "l7_status",
+            "l7_evidence_score",
+            "l7_confidence_penalty",
+            "l7_hard_stop",
+            "l7_advisory_continuation",
+            "l7_hard_blockers",
+            "l7_soft_blockers",
+            "l2_status",
+            "l2_evidence_score",
+            "l2_confidence_penalty",
+            "l2_hard_stop",
+            "l2_advisory_continuation",
+            "l2_hard_blockers",
+            "l2_soft_blockers",
+            "l2_primary_conflict",
+            "l9_status",
+            "l9_evidence_score",
+            "l9_confidence_penalty",
+            "l9_hard_stop",
+            "l9_advisory_continuation",
+            "l9_hard_blockers",
+            "l9_soft_blockers",
+            "l9_source_builder_state",
+            "phase1_available",
+            "phase2_available",
+            "phase3_available",
+            "phase4_available",
+            "synthesis_score",
+            "integrity_status",
+            "probability_status",
+            "firewall_status",
+            "governance_status"
+          ]
+        },
+        {
+          "name": "L12EvaluationResult",
+          "line": 134,
+          "fields": [
+            "layer",
+            "layer_version",
+            "timestamp",
+            "input_ref",
+            "verdict",
+            "verdict_status",
+            "continuation_allowed",
+            "next_legal_targets",
+            "score_numeric",
+            "gate_summary",
+            "blocker_codes",
+            "warning_codes",
+            "audit",
+            "raw_confidence",
+            "penalized_confidence",
+            "sizing_multiplier",
+            "soft_fail_count",
+            "soft_warn_count",
+            "penalty_breakdown"
+          ]
+        },
+        {
+          "name": "L12RouterEvaluator",
+          "line": 180,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "constitution/verdict_engine.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "1c37252e7af59a783650cf825ae10e7427b64d72",
+      "sha256": "6588d608b0f4bd10c2984245b92bfc67809cb17baf46bebba378050837186d38",
+      "bytes": 31428,
+      "classes": [
+        {
+          "name": "MetaResults",
+          "line": 13,
+          "fields": [
+            "structural",
+            "model_integrity",
+            "statistical"
+          ]
+        },
+        {
+          "name": "VerdictThresholds",
+          "line": 23,
+          "fields": [
+            "wolf_min_score",
+            "tii_min_score",
+            "frpc_min_score",
+            "exhaustion_min_confidence",
+            "exhaustion_min_score"
+          ]
+        },
+        {
+          "name": "ExhaustionLayerInput",
+          "line": 34,
+          "fields": [
+            "score",
+            "confidence",
+            "reason",
+            "missing_tfs"
+          ]
+        },
+        {
+          "name": "VerdictEngine",
+          "line": 90,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "contracts/strategy_5scr_analysis_admission.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": false,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE"
+    },
+    {
+      "path": "contracts/strategy_5scr_context_epoch_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "c0601b748178ceea503c6eae8b3bf16336f4ac43",
+      "sha256": "39732d3fa053ab6d884a42b86ea14efa79b83af6654dcffab5fc875ec201fef2",
+      "bytes": 12275,
+      "classes": [
+        {
+          "name": "FrozenContextContract",
+          "line": 26,
+          "fields": []
+        },
+        {
+          "name": "ContextCandleAuthorityV1",
+          "line": 38,
+          "fields": [
+            "candle_id",
+            "symbol",
+            "timeframe",
+            "open_time_utc",
+            "close_time_utc",
+            "complete",
+            "provider",
+            "provider_timestamp_semantics",
+            "provider_session_lineage_valid",
+            "structural_authority"
+          ]
+        },
+        {
+          "name": "MaterialContextEvidenceV1",
+          "line": 66,
+          "fields": [
+            "contract_version",
+            "source_pressure_event_id",
+            "source_event_ids",
+            "symbol",
+            "observed_at_utc",
+            "d1_candles",
+            "h4_candles",
+            "daily_bias",
+            "h4_structure",
+            "price_location",
+            "liquidity_state",
+            "direction_domain",
+            "allowed_routes",
+            "blocked_routes",
+            "target_map_version",
+            "structural_invalidation_version",
+            "deterministic_context",
+            "future_candle_leakage_detected",
+            "source_deployment_id",
+            "source_replica_id",
+            "source_cluster_id",
+            "source_stage",
+            "source_family",
+            "reference_price",
+            "microboost_evidence_hash",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "StrategyContextEpochV1",
+          "line": 125,
+          "fields": [
+            "contract_version",
+            "context_epoch_id",
+            "strategy_lifecycle_id",
+            "symbol",
+            "epoch_sequence",
+            "state",
+            "material_context_hash",
+            "opened_at_utc",
+            "last_confirmed_at_utc",
+            "closed_at_utc",
+            "daily_source_candle_ids",
+            "h4_source_candle_ids",
+            "daily_bias",
+            "h4_structure",
+            "price_location",
+            "liquidity_state",
+            "direction_domain",
+            "allowed_routes",
+            "blocked_routes",
+            "target_map_version",
+            "structural_invalidation_version",
+            "transition_reason",
+            "evidence_hash",
+            "last_observed_at_utc",
+            "last_source_event_id",
+            "state_version",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "ContextTransitionV1",
+          "line": 190,
+          "fields": [
+            "transition_id",
+            "strategy_lifecycle_id",
+            "from_context_epoch_id",
+            "to_context_epoch_id",
+            "reason",
+            "source_pressure_event_id",
+            "source_event_ids",
+            "occurred_at_utc",
+            "material_context_hash",
+            "evidence_hash",
+            "dedupe_key",
+            "execution_authority"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "CONTEXT_EPOCH_CONTRACT_VERSION",
+          "value": "5scr.context-epoch.v1",
+          "line": 16
+        },
+        {
+          "name": "CONTEXT_EVIDENCE_CONTRACT_VERSION",
+          "value": "5scr.context-evidence.v1",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_directional_thesis_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "92b48921638e7d1b675a6fbd8f709f7f91e0beab",
+      "sha256": "122a4e30e4686c21f4d8cdd07d2333bf274f80cb1a26dfd7ba2da8d7a793c248",
+      "bytes": 27811,
+      "classes": [
+        {
+          "name": "FrozenThesisContract",
+          "line": 56,
+          "fields": []
+        },
+        {
+          "name": "ClosedCandleAuthorityRefV1",
+          "line": 73,
+          "fields": [
+            "candle_evidence_id",
+            "material_candle_hash",
+            "source_content_hash",
+            "canonical_row_id",
+            "selected_raw_candle_id",
+            "symbol",
+            "timeframe",
+            "open_time_utc",
+            "close_time_utc",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "tick_count",
+            "provider",
+            "feed",
+            "provider_timestamp_semantics",
+            "selection_policy",
+            "selection_rank",
+            "is_closed",
+            "structural_authority"
+          ]
+        },
+        {
+          "name": "PressureDirectionAuthorityV1",
+          "line": 125,
+          "fields": [
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "symbol",
+            "mode",
+            "contract_status",
+            "raw_pressure_direction",
+            "contract_direction",
+            "source_event_ids",
+            "formal_transition_event_id",
+            "authority_hash",
+            "rule_version",
+            "observed_at_utc",
+            "valid_until_utc",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "RouteDirectionAuthorizationV1",
+          "line": 173,
+          "fields": [
+            "context_epoch_id",
+            "material_context_hash",
+            "selected_route",
+            "strategy_direction",
+            "source_event_ids",
+            "authorization_hash",
+            "rule_version",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "DirectionalThesisEvidenceV1",
+          "line": 231,
+          "fields": [
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "symbol",
+            "decision_at_utc",
+            "strategy_direction",
+            "selected_route",
+            "pressure_authority",
+            "route_authorization",
+            "h1_candles",
+            "m15_candles",
+            "source_request_id",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "H1StructureProofV1",
+          "line": 270,
+          "fields": [
+            "h1_proof_id",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "symbol",
+            "strategy_direction",
+            "structure_event",
+            "anchor_candle",
+            "confirmation_candle",
+            "reference_level",
+            "confirmation_close",
+            "confirmed_at_utc",
+            "decision_at_utc",
+            "coverage_start_at_utc",
+            "coverage_end_at_utc",
+            "source_candle_ids",
+            "source_content_hashes",
+            "coverage_complete",
+            "structural_authority",
+            "material_proof_hash",
+            "evidence_hash",
+            "semantic_dedupe_key",
+            "rule_version",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "M15StructuralProofV1",
+          "line": 343,
+          "fields": [
+            "m15_proof_id",
+            "h1_proof_id",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "symbol",
+            "strategy_direction",
+            "reference_candle",
+            "break_candle",
+            "completion_candle",
+            "break_level",
+            "h1_confirmed_at_utc",
+            "break_close_at_utc",
+            "completed_at_utc",
+            "completion_kind",
+            "decision_at_utc",
+            "coverage_start_at_utc",
+            "coverage_end_at_utc",
+            "source_candle_ids",
+            "source_content_hashes",
+            "coverage_complete",
+            "structural_authority",
+            "ordering_valid",
+            "material_proof_hash",
+            "evidence_hash",
+            "semantic_dedupe_key",
+            "rule_version",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "DirectionalThesisV1",
+          "line": 435,
+          "fields": [
+            "strategy_thesis_id",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "thesis_sequence",
+            "symbol",
+            "strategy_direction",
+            "direction_immutable",
+            "state",
+            "direction_domain_at_creation",
+            "selected_route",
+            "route_authorization_hash",
+            "pressure_authority_mode",
+            "pressure_contract_status",
+            "pressure_reference_direction",
+            "pressure_formal_transition_event_id",
+            "pressure_authority_hash",
+            "counter_pressure_proof_hash",
+            "h1_proof_id",
+            "m15_proof_id",
+            "structural_proof_hash",
+            "semantic_identity_hash",
+            "rule_version",
+            "created_at_utc",
+            "liveness_checked_through_utc",
+            "closed_at_utc",
+            "closure_reason",
+            "state_version",
+            "valid_for_execution",
+            "execution_authority"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "DIRECTIONAL_THESIS_RULE_VERSION",
+          "value": "5scr.directional-thesis.v1",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_execution_box_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "251443a6fb165d664410d578b09cd354395e3a7e",
+      "sha256": "ef9d0bf6b97faa4a968b43b47763456f7ee011831b6139a471e2f1540fe27bbb",
+      "bytes": 24708,
+      "classes": [
+        {
+          "name": "FrozenExecutionBoxContract",
+          "line": 34,
+          "fields": []
+        },
+        {
+          "name": "M1CandleAuthorityV1",
+          "line": 57,
+          "fields": [
+            "candle_evidence_id",
+            "material_candle_hash",
+            "source_content_hash",
+            "canonical_row_id",
+            "selected_raw_candle_id",
+            "symbol",
+            "timeframe",
+            "open_time_utc",
+            "close_time_utc",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "tick_count",
+            "provider",
+            "feed",
+            "provider_timestamp_semantics",
+            "selection_policy",
+            "selection_rank",
+            "is_closed",
+            "price_authority"
+          ]
+        },
+        {
+          "name": "ExecutionBoxRouteGeometryAuthorityV1",
+          "line": 125,
+          "fields": [
+            "geometry_kind",
+            "context_epoch_id",
+            "strategy_thesis_id",
+            "symbol",
+            "strategy_direction",
+            "route_type",
+            "reference_candle_material_hash",
+            "break_candle_material_hash",
+            "retest_candle_material_hash",
+            "acceptance_candle_material_hash",
+            "route_low",
+            "route_high",
+            "authority_hash",
+            "rule_version",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "ExecutionBoxEvidenceV1",
+          "line": 268,
+          "fields": [
+            "contract_version",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "strategy_thesis_id",
+            "thesis_semantic_identity_hash",
+            "symbol",
+            "strategy_direction",
+            "route_type",
+            "observed_at_utc",
+            "material_m1_candles",
+            "route_geometry_authority",
+            "freeze_requested",
+            "freeze_reason",
+            "freeze_authority_hash",
+            "source_request_id",
+            "source_deployment_id",
+            "source_replica_id",
+            "source_cluster_id",
+            "source_stage",
+            "source_family",
+            "telemetry_count",
+            "reference_price",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "ExecutionBoxV1",
+          "line": 401,
+          "fields": [
+            "contract_version",
+            "execution_box_id",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "strategy_thesis_id",
+            "box_sequence",
+            "box_version",
+            "previous_execution_box_id",
+            "symbol",
+            "strategy_direction",
+            "route_type",
+            "state",
+            "box_low",
+            "box_high",
+            "opened_at_utc",
+            "frozen_at_utc",
+            "freeze_authority_hash",
+            "superseded_at_utc",
+            "invalidated_at_utc",
+            "consumed_at_utc",
+            "expired_at_utc",
+            "material_box_hash",
+            "evidence_hash",
+            "thesis_semantic_identity_hash",
+            "source_m1_ids",
+            "source_m1_evidence_ids",
+            "last_observed_at_utc",
+            "last_source_request_id",
+            "state_version",
+            "rule_version",
+            "valid_for_execution",
+            "execution_authority"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "EXECUTION_BOX_RULE_VERSION",
+          "value": "5scr.execution-box.v1",
+          "line": 18
+        },
+        {
+          "name": "EXECUTION_BOX_EVIDENCE_VERSION",
+          "value": "5scr.execution-box-evidence.v1",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_execution_policy.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "7b593f03aa10c45c30ae111f9e55d30f1a14bdbf",
+      "sha256": "ede698b186c779e8b04e2d53242cb1e42d23e312963c2162bd55da6d3c3991d7",
+      "bytes": 6687,
+      "classes": [
+        {
+          "name": "TargetFloorAssessment",
+          "line": 44,
+          "fields": [
+            "execution_policy_id",
+            "execution_policy_version",
+            "target_distance_pips",
+            "minimum_target_pips",
+            "broker_cost_floor_pips",
+            "required_target_pips",
+            "target_floor_status"
+          ]
+        },
+        {
+          "name": "ExecutionPolicy",
+          "line": 62,
+          "fields": [
+            "policy_id",
+            "policy_version",
+            "minimum_fx_target_pips",
+            "minimum_rr",
+            "spread_multiplier",
+            "minimum_metal_target_price",
+            "close_policy",
+            "target_source_required"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "EXECUTION_POLICY_ENV",
+          "value": "STRATEGY_5SCR_EXECUTION_POLICY_ID",
+          "line": 38
+        },
+        {
+          "name": "EXECUTION_POLICY_MISSING_REASON",
+          "value": "STRATEGY_5SCR_EXECUTION_POLICY_MISSING",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_lifecycle_v2.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "e1b736aa8b95f284622288570ba304b932095a36",
+      "sha256": "a297761a462fb12777b754ba3466b7edde47f42f14f20779dce0b3fb0df372e2",
+      "bytes": 6393,
+      "classes": [
+        {
+          "name": "FrozenContract",
+          "line": 52,
+          "fields": []
+        },
+        {
+          "name": "StrategyLifecycleV2",
+          "line": 62,
+          "fields": [
+            "strategy_lifecycle_id",
+            "symbol",
+            "state",
+            "direction_state",
+            "opened_at_utc",
+            "last_event_at_utc",
+            "last_continuity_event_at_utc",
+            "last_material_event_at_utc",
+            "rule_version",
+            "material_state_hash",
+            "event_count",
+            "clean_block_count",
+            "watch_count",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "StrategyLifecycleEventLink",
+          "line": 124,
+          "fields": [
+            "strategy_lifecycle_id",
+            "pressure_event_id",
+            "transport_lifecycle_id",
+            "source_clean_block_id",
+            "source_watch_id",
+            "linked_at_utc",
+            "link_reason"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "MARKET_EPISODE_RULE_VERSION",
+          "value": "5scr.market-episode.v1",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_microboost_pulse.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "4606833898cc276b084b8589df8dea10568d9dd5",
+      "sha256": "9bd81a3743db49c38eda9291e56e7de88fe9fc1cf0b71741a16748e9482a018e",
+      "bytes": 8051,
+      "classes": [
+        {
+          "name": "_FrozenPulseContract",
+          "line": 54,
+          "fields": []
+        },
+        {
+          "name": "MicroboostPulseEvent",
+          "line": 64,
+          "fields": [
+            "pulse_event_id",
+            "contract_version",
+            "strategy_lifecycle_id",
+            "symbol",
+            "transition",
+            "direction",
+            "occurred_at_utc",
+            "source_event_ids",
+            "evidence_hash",
+            "source_deployment_id",
+            "source_commit_sha",
+            "source_stage",
+            "source_family",
+            "active_block_id",
+            "effective_ticks_before",
+            "effective_ticks_after",
+            "strength_before",
+            "strength_after",
+            "dedupe_key",
+            "valid_for_execution",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "MicroboostState",
+          "line": 104,
+          "fields": [
+            "contract_version",
+            "strategy_lifecycle_id",
+            "symbol",
+            "state",
+            "direction",
+            "first_formed_at_utc",
+            "last_pulse_at_utc",
+            "last_confirmed_at_utc",
+            "expires_at_utc",
+            "independent_pulse_count",
+            "reinforcement_count",
+            "carried_snapshot_count",
+            "observed_snapshot_count",
+            "current_effective_ticks",
+            "peak_effective_ticks",
+            "current_strength",
+            "peak_strength",
+            "active_block_id",
+            "last_source_stage",
+            "last_observed_at_utc",
+            "last_source_event_id",
+            "evidence_hash",
+            "state_version",
+            "valid_for_execution",
+            "execution_authority"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "MICROBOOST_PULSE_CONTRACT_VERSION",
+          "value": "microboost-pulse-state.v1",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_pair_admission.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "791ba13211b9b09e44d02f8722ef51232da2bef8",
+      "sha256": "e05e3544b2ca62638791e5d3474b7a5e3f3cec5258b6c80bc54f28e57381d9bc",
+      "bytes": 5718,
+      "classes": [
+        {
+          "name": "PairAdmissionGrant",
+          "line": 15,
+          "fields": [
+            "event",
+            "schema_version",
+            "rule_version",
+            "pair_admission_id",
+            "status",
+            "ledger_scope",
+            "deployment_id",
+            "symbol",
+            "direction",
+            "episode_started_at_utc",
+            "episode_observed_through_utc",
+            "granted_at_utc",
+            "expires_at_utc",
+            "duration_seconds",
+            "effective_ticks",
+            "source_event_count",
+            "max_observed_gap_seconds",
+            "maximum_allowed_gap_seconds",
+            "source_ledger_event_ids",
+            "source_scanner_cycle_ids",
+            "source_ledger_hash",
+            "source_ledger_ordering",
+            "source_event_authority",
+            "cross_symbol_interruption_policy",
+            "duplicate_event_policy",
+            "deployment_boundary_policy",
+            "lineage_complete",
+            "source_clean_block_ids",
+            "pair_eligible_for_analysis",
+            "execution_authority"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "PAIR_ADMISSION_RULE_VERSION",
+          "value": "5scr.pair-admission.raw-ledger.v2",
+          "line": 11
+        },
+        {
+          "name": "PAIR_ADMISSION_MAX_TTL_SECONDS",
+          "value": 900,
+          "line": 12
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_replay.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "32ef25552e69a6835d534a8bc60373afdae31c6d",
+      "sha256": "123f17255d61b518c129b7194aa9e26ca5bc79410b1fc80bfbd242996000d9d5",
+      "bytes": 4039,
+      "classes": [
+        {
+          "name": "Strategy5SCRM1Outcome",
+          "line": 21,
+          "fields": [
+            "outcome_id",
+            "classifier_version",
+            "tradeplan_id",
+            "symbol",
+            "direction",
+            "decision_at_utc",
+            "evaluated_until_utc",
+            "entry_assumption",
+            "entry",
+            "stop_loss",
+            "tp1",
+            "status",
+            "realized_r",
+            "bars_evaluated",
+            "first_bar_open_utc",
+            "last_bar_close_utc",
+            "terminal_candle",
+            "valid_for_execution"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "contracts/strategy_5scr_risk_reservation.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "08a46663dab4945dddf46c362da635e00294384a",
+      "sha256": "dfcadadc0cb20ab4e488b73fb54020d59d29a19a92a5dc35f32fa05ff8a40a86",
+      "bytes": 9787,
+      "classes": [
+        {
+          "name": "FrozenContract",
+          "line": 24,
+          "fields": []
+        },
+        {
+          "name": "RiskReservationRequest",
+          "line": 34,
+          "fields": [
+            "tradeplan_id",
+            "executor_id",
+            "broker_symbol",
+            "entry_role",
+            "requested_at_utc",
+            "expires_at_utc"
+          ]
+        },
+        {
+          "name": "FinalSignalRiskReservation",
+          "line": 58,
+          "fields": [
+            "schema_version",
+            "reservation_id",
+            "campaign_id",
+            "tradeplan_id",
+            "canonical_symbol",
+            "broker_symbol",
+            "direction",
+            "policy_id",
+            "state",
+            "risk_snapshot_id",
+            "entry_role",
+            "risk_unit_usd",
+            "reserved_risk_usd",
+            "reserved_volume",
+            "reserved_at_utc",
+            "expires_at_utc"
+          ]
+        },
+        {
+          "name": "DurableRiskReservation",
+          "line": 94,
+          "fields": [
+            "reservation_id",
+            "campaign_id",
+            "tradeplan_id",
+            "executor_id",
+            "account_id",
+            "account_snapshot_id",
+            "policy_id",
+            "state",
+            "canonical_symbol",
+            "broker_symbol",
+            "entry_role",
+            "direction",
+            "volume",
+            "entry_price",
+            "stop_loss",
+            "take_profit",
+            "risk_unit_usd",
+            "reserved_risk_usd",
+            "balance_snapshot",
+            "equity_snapshot",
+            "reserved_at_utc",
+            "expires_at_utc"
+          ]
+        },
+        {
+          "name": "RiskReservationResult",
+          "line": 157,
+          "fields": [
+            "reservation",
+            "outbox_id",
+            "signal_id",
+            "signal_payload",
+            "signal_payload_hash"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "RISK_RESERVATION_SCHEMA_VERSION",
+          "value": "wolf15.strategy-5scr.risk-reservation.v1",
+          "line": 18
+        },
+        {
+          "name": "FINAL_SIGNAL_SCHEMA_VERSION",
+          "value": "wolf15.strategy-5scr.final-signal.v1",
+          "line": 19
+        },
+        {
+          "name": "RISK_POLICY_ID",
+          "value": "5scr.production-adjusted.parent-only.v1",
+          "line": 20
+        },
+        {
+          "name": "MAX_RESERVATION_TTL_SECONDS",
+          "value": 300,
+          "line": 21
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_shadow_evidence_v2.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "fb7fb2556af56ec72f6750120343274cf03f1b9b",
+      "sha256": "a6632bf11463797ee014050f703b6f2126f9755a10bf4f4d4ae0422484e5441f",
+      "bytes": 6638,
+      "classes": [
+        {
+          "name": "_FrozenContract",
+          "line": 14,
+          "fields": []
+        },
+        {
+          "name": "StrategyLifecycleAdmissionLinkV2",
+          "line": 24,
+          "fields": [
+            "admission_event_id",
+            "strategy_lifecycle_id",
+            "pressure_event_id",
+            "raw_lineage_hash",
+            "admission_rule_version",
+            "admitted_at_utc",
+            "linked_at_utc",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "ShadowCandleReferenceV2",
+          "line": 48,
+          "fields": [
+            "candle_id",
+            "timeframe",
+            "period_open_utc",
+            "period_close_utc",
+            "provider",
+            "is_closed"
+          ]
+        },
+        {
+          "name": "StrategyShadowEvidenceSnapshotV2",
+          "line": 70,
+          "fields": [
+            "schema_version",
+            "snapshot_id",
+            "evidence_job_id",
+            "strategy_lifecycle_id",
+            "admission_event_id",
+            "symbol",
+            "decision_time_utc",
+            "provider_calendar_version",
+            "source_candles",
+            "coverage_status",
+            "context_hash",
+            "evidence_hash",
+            "result_state",
+            "terminal_reason",
+            "trade_geometry_hash",
+            "valid_for_execution",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "StrategyEvidenceComparisonV2",
+          "line": 108,
+          "fields": [
+            "comparison_id",
+            "strategy_lifecycle_id",
+            "v2_snapshot_id",
+            "legacy_lifecycle_id",
+            "legacy_snapshot_id",
+            "same_lifecycle_grouping",
+            "same_candle_set",
+            "same_context_hash",
+            "same_terminal_reason",
+            "same_trade_geometry",
+            "reason_codes",
+            "execution_authority"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "SHADOW_EVIDENCE_V2_SCHEMA_VERSION",
+          "value": "5scr.shadow-evidence-owner.v1",
+          "line": 10
+        },
+        {
+          "name": "SHADOW_EVIDENCE_V2_CALENDAR_VERSION",
+          "value": "FOREX_17NY_EXPECTED_CLOSED_BAR_V2_PROVIDER_CALENDAR",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "path": "contracts/strategy_5scr_tradeplan_candidate_v2.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "e3e84fddbbff93eabd20d26125c92f0204067bf3",
+      "sha256": "634bb67eb37128b77791552810cf7a9f4c4b0c21db512b60465cb242efb41535",
+      "bytes": 38796,
+      "classes": [
+        {
+          "name": "FrozenTradePlanContract",
+          "line": 30,
+          "fields": []
+        },
+        {
+          "name": "StructuralCandleAuthorityV1",
+          "line": 59,
+          "fields": [
+            "candle_evidence_id",
+            "material_candle_hash",
+            "source_content_hash",
+            "canonical_row_id",
+            "selected_raw_candle_id",
+            "symbol",
+            "timeframe",
+            "open_time_utc",
+            "close_time_utc",
+            "open",
+            "high",
+            "low",
+            "close",
+            "provider",
+            "feed",
+            "provider_timestamp_semantics",
+            "selection_policy",
+            "selection_rank",
+            "is_closed",
+            "structural_authority"
+          ]
+        },
+        {
+          "name": "StructuralTargetMapEvidenceV1",
+          "line": 119,
+          "fields": [
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "strategy_thesis_id",
+            "execution_box_id",
+            "material_context_hash",
+            "thesis_semantic_identity_hash",
+            "execution_box_material_hash",
+            "symbol",
+            "direction",
+            "target_map_version",
+            "decision_at_utc",
+            "coverage_start_utc",
+            "coverage_end_utc",
+            "h4_cohort_count",
+            "h1_coverage_start_utc",
+            "h1_coverage_end_utc",
+            "h1_cohort_count",
+            "selection_anchor",
+            "h4_candles",
+            "h1_consumption_candles",
+            "rule_version",
+            "cohort_policy_id",
+            "freshness_policy_id",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "StructuralTargetAuthorityV1",
+          "line": 192,
+          "fields": [
+            "target_id",
+            "authority_hash",
+            "material_target_hash",
+            "symbol",
+            "direction",
+            "target_kind",
+            "target_price",
+            "left_candle_id",
+            "pivot_candle_id",
+            "right_candle_id",
+            "left_material_candle_hash",
+            "pivot_material_candle_hash",
+            "right_material_candle_hash",
+            "formed_at_utc",
+            "consumed_at_utc",
+            "consumed_by_h1_candle_id",
+            "target_map_version",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "StructuralTargetMapAuthorityV1",
+          "line": 275,
+          "fields": [
+            "target_map_id",
+            "authority_hash",
+            "target_map_version",
+            "source_evidence_hash",
+            "symbol",
+            "direction",
+            "selection_anchor_price",
+            "selected_target_id",
+            "targets",
+            "latest_h4_confirmation_at_utc",
+            "decision_at_utc",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "BrokerGeometryCostAuthorityV1",
+          "line": 339,
+          "fields": [
+            "authority_id",
+            "authority_hash",
+            "symbol",
+            "captured_at_utc",
+            "valid_until_utc",
+            "digits",
+            "point",
+            "tick_size",
+            "pip_size",
+            "spread_price",
+            "cost_policy_id",
+            "cost_authority",
+            "requires_risk_revalidation",
+            "account_id",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "PriceIntervalV1",
+          "line": 400,
+          "fields": [
+            "low",
+            "high",
+            "source"
+          ]
+        },
+        {
+          "name": "StructuralStopAuthorityV1",
+          "line": 412,
+          "fields": [
+            "authority_id",
+            "authority_hash",
+            "execution_box_id",
+            "direction",
+            "policy_id",
+            "route_extreme",
+            "buffer_price",
+            "structural_stop_price",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "TradePlanCandidateV2",
+          "line": 424,
+          "fields": [
+            "tradeplan_id",
+            "candidate_sequence",
+            "candidate_revision",
+            "previous_tradeplan_id",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "strategy_thesis_id",
+            "execution_box_id",
+            "material_context_hash",
+            "thesis_semantic_identity_hash",
+            "execution_box_material_hash",
+            "execution_box_freeze_authority_hash",
+            "box_sequence",
+            "box_version",
+            "symbol",
+            "direction",
+            "route_type",
+            "decision_at_utc",
+            "lifecycle_state",
+            "target_authority",
+            "target_map_authority_hash",
+            "stop_authority",
+            "broker_authority_hash",
+            "broker_geometry_material_hash",
+            "broker_digits",
+            "broker_point",
+            "broker_tick_size",
+            "broker_pip_size",
+            "broker_spread_price",
+            "structural_interval",
+            "route_interval",
+            "target_room_interval",
+            "cost_room_interval",
+            "rr_interval",
+            "feasible_interval",
+            "candidate_price",
+            "target_distance_pips",
+            "risk_distance_pips",
+            "gross_rr",
+            "execution_policy_id",
+            "minimum_target_pips",
+            "minimum_rr",
+            "material_candidate_hash",
+            "evidence_hash",
+            "rule_version",
+            "valid_for_execution",
+            "execution_authority",
+            "next_required_stage"
+          ]
+        },
+        {
+          "name": "TradePlanCandidateTransitionV2",
+          "line": 626,
+          "fields": [
+            "transition_id",
+            "tradeplan_id",
+            "from_state",
+            "to_state",
+            "reason_code",
+            "occurred_at_utc",
+            "successor_tradeplan_id",
+            "authority_hash",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "TradePlanEvaluationV2",
+          "line": 662,
+          "fields": [
+            "evaluation_id",
+            "evaluation_sequence",
+            "source_request_id",
+            "strategy_lifecycle_id",
+            "context_epoch_id",
+            "strategy_thesis_id",
+            "execution_box_id",
+            "material_context_hash",
+            "thesis_semantic_identity_hash",
+            "execution_box_material_hash",
+            "execution_box_freeze_authority_hash",
+            "symbol",
+            "direction",
+            "decision_at_utc",
+            "decision",
+            "reason_codes",
+            "evidence_hash",
+            "material_evaluation_hash",
+            "result_tradeplan_id",
+            "rule_version",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "TradePlanCandidateBuildEvidenceV2",
+          "line": 701,
+          "fields": [
+            "source_request_id",
+            "decision_at_utc",
+            "target_map_evidence",
+            "broker_geometry",
+            "source_deployment_id",
+            "source_replica_id",
+            "execution_authority"
+          ]
+        },
+        {
+          "name": "TradePlanCandidateReductionResultV2",
+          "line": 724,
+          "fields": [
+            "decision",
+            "reason_code",
+            "evaluation",
+            "candidate",
+            "previous_candidate",
+            "transition",
+            "target_map"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": [
+        {
+          "name": "TRADEPLAN_CANDIDATE_V2_RULE_VERSION",
+          "value": "5scr.tradeplan-candidate.v2",
+          "line": 13
+        },
+        {
+          "name": "TARGET_MAP_RULE_VERSION",
+          "value": "5scr.structural-target-map.v1",
+          "line": 14
+        },
+        {
+          "name": "TARGET_COHORT_POLICY_ID",
+          "value": "CONTEXT_EPOCH_FULL_CANONICAL_TARGET_MAP_V1",
+          "line": 15
+        },
+        {
+          "name": "TARGET_FRESHNESS_POLICY_ID",
+          "value": "CONTEXT_EPOCH_STRUCTURAL_TARGET_LIVENESS_V1",
+          "line": 16
+        },
+        {
+          "name": "STOP_POLICY_ID",
+          "value": "P5_ROUTE_EXTREME_1_TICK_V1",
+          "line": 17
+        },
+        {
+          "name": "COST_POLICY_ID",
+          "value": "ESTIMATED_STRATEGY_COST_V1",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "path": "docs/strategy/strategy-5scr-final.md",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "d49e5df9efb3154d3b7b5a108d13081cfbb222c9",
+      "sha256": "4650d1079fee1c8a99831bb6bac2bc50da76f135406dd0fd7ff8bb5c62464465",
+      "bytes": 3968
+    },
+    {
+      "path": "execution/mt5_risk_command_producer.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "b9500d1649a6b25d21a92df8e17a40936e0ba68a",
+      "sha256": "df51b1ce28e9bbd6bff457fa911d12151aeede883a96a351a6e328bfef336937",
+      "bytes": 24951,
+      "classes": [
+        {
+          "name": "RiskCommandProducerError",
+          "line": 39,
+          "fields": []
+        },
+        {
+          "name": "RiskCommandProducerNotReadyError",
+          "line": 43,
+          "fields": []
+        },
+        {
+          "name": "RiskCommandProducerRejectedError",
+          "line": 47,
+          "fields": []
+        },
+        {
+          "name": "RiskCommandProductionPolicy",
+          "line": 55,
+          "fields": [
+            "magic",
+            "max_spread_points",
+            "max_price_drift_points",
+            "heartbeat_max_age_seconds",
+            "snapshot_max_age_seconds",
+            "command_ttl_seconds",
+            "minimum_command_window_seconds"
+          ]
+        },
+        {
+          "name": "RiskCommandProductionResult",
+          "line": 81,
+          "fields": [
+            "command",
+            "outbox_id",
+            "reservation_id"
+          ]
+        },
+        {
+          "name": "MT5RiskCommandProducer",
+          "line": 108,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "pipeline/phases/gates.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "b6bd304677e192dcf09999c9e28e583eba036f15",
+      "sha256": "cd081367caa3297000b56cc0541466ad50bb1029f53f22bb4b7a3802779a342f",
+      "bytes": 4096,
+      "classes": [],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "pipeline/wolf_constitutional_pipeline.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "04a149b7e83c0b24d9af7d22c7a2783e6ead4d46",
+      "sha256": "e7245b5f94ebd862b652911cc67994e54f914626c51f89537aa73a6b38b620e2",
+      "bytes": 454656,
+      "classes": [
+        {
+          "name": "_SpreadQuality",
+          "line": 186,
+          "fields": [
+            "spread_normal",
+            "spread_pips",
+            "max_allowed_spread_pips"
+          ]
+        },
+        {
+          "name": "WolfConstitutionalPipeline",
+          "line": 327,
+          "fields": [
+            "WARMUP_MIN_BARS",
+            "DQ_WARNING_LOG_INTERVAL_SEC",
+            "WARMUP_WARNING_LOG_INTERVAL_SEC",
+            "ENABLE_LFS_SOFTENER"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "risk/s5_campaign_risk.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "2a363b5cef3dada8624586e357b4242d82eca3c3",
+      "sha256": "80b3a5f164b7c765e9f85d9d0451be7cb37ccc5bbc868601b46f236159156b68",
+      "bytes": 10379,
+      "classes": [
+        {
+          "name": "S5RiskReason",
+          "line": 18,
+          "fields": []
+        },
+        {
+          "name": "CampaignRiskPolicy",
+          "line": 38,
+          "fields": [
+            "risk_percent_per_entry",
+            "max_entries",
+            "max_total_open_risk_percent",
+            "snapshot_max_age_seconds"
+          ]
+        },
+        {
+          "name": "CampaignRiskLock",
+          "line": 56,
+          "fields": [
+            "campaign_id",
+            "account_id",
+            "balance_base",
+            "risk_percent_per_entry",
+            "risk_unit_usd",
+            "max_campaign_risk_usd",
+            "locked_at_utc"
+          ]
+        },
+        {
+          "name": "SnapshotValidation",
+          "line": 91,
+          "fields": [
+            "allowed",
+            "reason",
+            "detail"
+          ]
+        },
+        {
+          "name": "PositionRiskResult",
+          "line": 98,
+          "fields": [
+            "allowed",
+            "reason",
+            "risk_budget_usd",
+            "effective_loss_per_lot",
+            "raw_volume",
+            "final_volume",
+            "actual_planned_risk_usd"
+          ]
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "storage/observer_strategy_events.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "58024b3d4f53d88494554fe248e4d0a4074c421a",
+      "sha256": "2304843de609e7c6f8c823cddcc7e8e37ea42e664bd8d47b523de3a3a256b272",
+      "bytes": 9755,
+      "classes": [],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "storage/pair_admission_evaluations.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "2bec5bd6e993af5314a0013c41bca29183183b23",
+      "sha256": "a6035e6adb03848bba6cb569c138379f3521c4712db9cd025d5bb63be99c10f2",
+      "bytes": 30014,
+      "classes": [
+        {
+          "name": "_ColumnContract",
+          "line": 31,
+          "fields": [
+            "data_type",
+            "nullable",
+            "max_length",
+            "default_kind"
+          ]
+        },
+        {
+          "name": "PairAdmissionEvaluationError",
+          "line": 118,
+          "fields": []
+        },
+        {
+          "name": "PairAdmissionEvaluationContractError",
+          "line": 122,
+          "fields": []
+        },
+        {
+          "name": "PairAdmissionEvaluationIntegrityError",
+          "line": 126,
+          "fields": []
+        },
+        {
+          "name": "DurablePairAdmissionEvaluation",
+          "line": 131,
+          "fields": [
+            "evaluation_id",
+            "raw_block_id",
+            "decision",
+            "duplicate"
+          ]
+        },
+        {
+          "name": "PairAdmissionPersistenceResult",
+          "line": 142,
+          "fields": [
+            "status",
+            "evaluation_id",
+            "error"
+          ]
+        },
+        {
+          "name": "PairAdmissionEvaluationSchemaStatus",
+          "line": 149,
+          "fields": [
+            "present_tables",
+            "present_columns",
+            "present_constraints",
+            "present_indexes",
+            "missing_tables",
+            "missing_columns",
+            "invalid_columns",
+            "missing_constraints",
+            "invalid_constraints",
+            "missing_indexes",
+            "invalid_indexes"
+          ]
+        },
+        {
+          "name": "PairAdmissionEvaluationRepository",
+          "line": 315,
+          "fields": []
+        },
+        {
+          "name": "PairAdmissionEvaluationRuntime",
+          "line": 570,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "storage/strategy_5scr_execution_box_v1_repository.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "31c26f3ba693bb61fbc9f9ad2da56f2387ca1335",
+      "sha256": "827e9e7fa438f7d0cce3b8e63b86c3b9c47bf0a709aadff687dcea1c6e44faae",
+      "bytes": 62101,
+      "classes": [
+        {
+          "name": "ExecutionBoxV1IntegrityError",
+          "line": 45,
+          "fields": []
+        },
+        {
+          "name": "ExecutionBoxV1RuntimeConfig",
+          "line": 87,
+          "fields": [
+            "enabled",
+            "shadow_only"
+          ]
+        },
+        {
+          "name": "ExecutionBoxV1SchemaStatus",
+          "line": 105,
+          "fields": [
+            "missing_tables",
+            "missing_columns",
+            "invalid_columns",
+            "missing_constraints",
+            "invalid_constraints",
+            "missing_indexes",
+            "invalid_indexes",
+            "missing_triggers",
+            "invalid_triggers"
+          ]
+        },
+        {
+          "name": "_ColumnContract",
+          "line": 134,
+          "fields": [
+            "data_type",
+            "nullable",
+            "max_length",
+            "default"
+          ]
+        },
+        {
+          "name": "_ConstraintContract",
+          "line": 142,
+          "fields": [
+            "table",
+            "contype"
+          ]
+        },
+        {
+          "name": "_IndexContract",
+          "line": 148,
+          "fields": [
+            "table",
+            "unique",
+            "columns"
+          ]
+        },
+        {
+          "name": "_TriggerContract",
+          "line": 155,
+          "fields": [
+            "table",
+            "function"
+          ]
+        },
+        {
+          "name": "ExecutionBoxPersistenceResult",
+          "line": 640,
+          "fields": [
+            "status",
+            "reason_code",
+            "box",
+            "previous_box"
+          ]
+        },
+        {
+          "name": "Strategy5SCRExecutionBoxV1Repository",
+          "line": 647,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "storage/strategy_5scr_risk_reservation_repository.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "80ebe6bdcd50f951f3d3ad602ac139fa00d9b252",
+      "sha256": "219c8be3c775f4021ec60106f220c2c5338233337b98a5aa22c93cffea9067b3",
+      "bytes": 32374,
+      "classes": [
+        {
+          "name": "RiskReservationError",
+          "line": 47,
+          "fields": []
+        },
+        {
+          "name": "RiskReservationNotReadyError",
+          "line": 51,
+          "fields": []
+        },
+        {
+          "name": "RiskReservationRejectedError",
+          "line": 55,
+          "fields": []
+        },
+        {
+          "name": "RiskReservationConflictError",
+          "line": 64,
+          "fields": []
+        },
+        {
+          "name": "DurableRiskReservationPolicy",
+          "line": 69,
+          "fields": [
+            "campaign",
+            "candidate_max_age_seconds",
+            "request_clock_skew_seconds",
+            "commission_buffer_per_lot",
+            "slippage_buffer_per_lot"
+          ]
+        },
+        {
+          "name": "Strategy5SCRRiskReservationRepository",
+          "line": 223,
+          "fields": []
+        }
+      ],
+      "test_functions": [],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/integration/test_5scr_risk_reservation_postgres.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "161c277224315105276c1ce8fbe31f2cd003d28c",
+      "sha256": "9be21524611730e6f6020ee9ee810b040adb3b4f4b84009fc0f72cac2c23ee7e",
+      "bytes": 42363,
+      "classes": [
+        {
+          "name": "_PoolBackedPostgres",
+          "line": 63,
+          "fields": []
+        },
+        {
+          "name": "_SeededAuthority",
+          "line": 163,
+          "fields": [
+            "executor_id",
+            "account_id",
+            "tradeplan_id",
+            "campaign_id",
+            "broker_symbol",
+            "request"
+          ]
+        }
+      ],
+      "test_functions": [
+        {
+          "name": "test_reservation_and_final_signal_outbox_are_atomic_and_idempotent",
+          "line": 428
+        },
+        {
+          "name": "test_database_immutability_rejects_final_signal_tamper",
+          "line": 456
+        },
+        {
+          "name": "test_outbox_constraint_failure_rolls_back_lock_and_reservation",
+          "line": 475
+        },
+        {
+          "name": "test_parent_reservation_fails_closed_when_account_has_a_broker_position",
+          "line": 509
+        },
+        {
+          "name": "test_concurrent_retry_creates_exactly_one_authority_chain",
+          "line": 548
+        },
+        {
+          "name": "test_stale_account_snapshot_creates_no_authority_rows",
+          "line": 569
+        },
+        {
+          "name": "test_disengaged_kill_switch_creates_no_authority_rows_and_is_restored",
+          "line": 595
+        },
+        {
+          "name": "test_risk_command_production_is_atomic_signed_shadow_and_idempotent",
+          "line": 634
+        },
+        {
+          "name": "test_reservation_selector_cannot_consume_a_different_pending_outbox",
+          "line": 705
+        },
+        {
+          "name": "test_operator_controlled_c3_writes_one_audited_shadow_command",
+          "line": 734
+        },
+        {
+          "name": "test_command_producer_readiness_fails_closed_without_relational_binding",
+          "line": 869
+        },
+        {
+          "name": "test_concurrent_risk_command_producers_create_exactly_one_command",
+          "line": 897
+        },
+        {
+          "name": "test_command_producer_rejects_disengaged_kill_switch_without_mutation",
+          "line": 914
+        },
+        {
+          "name": "test_command_producer_rejects_a_superseded_risk_snapshot",
+          "line": 967
+        },
+        {
+          "name": "test_database_failure_rolls_back_command_reservation_and_outbox",
+          "line": 1020
+        },
+        {
+          "name": "test_shadow_command_database_guards_forbid_broker_effects",
+          "line": 1056
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/integration/test_l12_journal_execution_ledger_e2e.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "a935da01ba34ef93c751127f4428c555bc8082d2",
+      "sha256": "e715c3630240e06ba7b0c9f445021bc8478ae2fbb345e31d6b3250608b776eee",
+      "bytes": 10854,
+      "classes": [
+        {
+          "name": "_FakeRiskEngine",
+          "line": 16,
+          "fields": []
+        },
+        {
+          "name": "_KillSwitchOff",
+          "line": 30,
+          "fields": []
+        }
+      ],
+      "test_functions": [
+        {
+          "name": "test_minimal_l12_to_journal_execution_ledger_pipeline",
+          "line": 48
+        },
+        {
+          "name": "test_system_violation_still_records_j4_reflection",
+          "line": 187
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/integration/test_pair_admission_evaluations_postgres.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "85421697892414e9297a9fc2fa2fdeff688eca0e",
+      "sha256": "b55044ea34b6ba7da993e9c34ee8a1aa24a9d3c1bf1e97ed304add3de1d7b67a",
+      "bytes": 18409,
+      "classes": [
+        {
+          "name": "_FailAfterObserverAppend",
+          "line": 56,
+          "fields": []
+        }
+      ],
+      "test_functions": [
+        {
+          "name": "test_pair_admission_schema_matches_the_full_migration_contract",
+          "line": 87
+        },
+        {
+          "name": "test_pair_admission_and_observer_export_share_one_transaction",
+          "line": 94
+        },
+        {
+          "name": "test_pair_admission_grant_is_idempotent_and_non_executable",
+          "line": 146
+        },
+        {
+          "name": "test_database_rejects_execution_authority",
+          "line": 174
+        },
+        {
+          "name": "test_growing_block_remains_one_grant_across_repository_restart",
+          "line": 191
+        },
+        {
+          "name": "test_active_snapshot_growth_appends_without_identity_collision",
+          "line": 222
+        },
+        {
+          "name": "test_active_to_finalized_appends_once_and_replays_after_restart",
+          "line": 240
+        },
+        {
+          "name": "test_grant_identity_survives_finalization_without_second_grant",
+          "line": 266
+        },
+        {
+          "name": "test_schema_readiness_rejects_missing_and_weakened_non_execution_check",
+          "line": 297
+        },
+        {
+          "name": "test_schema_readiness_rejects_broadened_non_execution_check",
+          "line": 328
+        },
+        {
+          "name": "test_schema_readiness_rejects_wrong_unique_predicate",
+          "line": 356
+        },
+        {
+          "name": "test_schema_readiness_rejects_broadened_unique_predicate",
+          "line": 384
+        },
+        {
+          "name": "test_schema_readiness_rejects_wrong_execution_authority_default",
+          "line": 412
+        },
+        {
+          "name": "test_schema_readiness_rejects_inverted_execution_authority_default",
+          "line": 427
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_5scr_lifecycle_v2_runtime.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "bd66cd42498d270e28e121c9dcd09be4ffc7ab15",
+      "sha256": "282053df1ecb3052ebb5bb2a062eb1a23dfc2983c61e8ac009ea06742d8f769e",
+      "bytes": 12701,
+      "classes": [
+        {
+          "name": "_FakeRepository",
+          "line": 30,
+          "fields": []
+        }
+      ],
+      "test_functions": [
+        {
+          "name": "test_config_defaults_are_safe",
+          "line": 98
+        },
+        {
+          "name": "test_config_reads_all_flags",
+          "line": 107
+        },
+        {
+          "name": "test_config_rejects_a_non_integer_gap",
+          "line": 123
+        },
+        {
+          "name": "test_disabled_runner_does_not_read_anything",
+          "line": 134
+        },
+        {
+          "name": "test_runner_refuses_to_start_when_not_shadow_only",
+          "line": 145
+        },
+        {
+          "name": "test_runner_paces_a_successful_nonempty_poll",
+          "line": 153
+        },
+        {
+          "name": "test_poll_folds_a_batch_into_one_episode",
+          "line": 178
+        },
+        {
+          "name": "test_poll_accepts_json_text_payload_from_postgres",
+          "line": 192
+        },
+        {
+          "name": "test_poll_with_dual_write_off_reads_but_does_not_write",
+          "line": 208
+        },
+        {
+          "name": "test_empty_poll_returns_zero",
+          "line": 219
+        },
+        {
+          "name": "test_active_episode_is_recovered_before_the_first_event_is_folded",
+          "line": 231
+        },
+        {
+          "name": "test_recovery_happens_once_per_symbol",
+          "line": 246
+        },
+        {
+          "name": "test_each_symbol_is_recovered_separately",
+          "line": 257
+        },
+        {
+          "name": "test_restart_midway_matches_a_continuous_run",
+          "line": 268
+        },
+        {
+          "name": "test_runner_never_leases_or_mutates_transport_rows",
+          "line": 300
+        },
+        {
+          "name": "test_preflight_is_ready_only_when_nothing_is_missing",
+          "line": 328
+        },
+        {
+          "name": "test_preflight_fails_closed_on_every_dimension",
+          "line": 338
+        },
+        {
+          "name": "test_preflight_error_names_the_missing_guarantee",
+          "line": 345
+        },
+        {
+          "name": "test_builder_returns_a_runner",
+          "line": 355
+        },
+        {
+          "name": "test_runner_is_not_constructed_when_disabled",
+          "line": 361
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_l12_router_evaluator.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "b58f1e477a2f13e68e530c32f100534cdf7ac23b",
+      "sha256": "f9dc9493cc087d829eb4ae1b14f8736b09075887bc961c17d47379b6fcf6b3a7",
+      "bytes": 49722,
+      "classes": [
+        {
+          "name": "TestL12RouterEvaluator",
+          "line": 19,
+          "fields": [
+            "HIGH_SCORES",
+            "MID_SCORES",
+            "LOW_SCORES"
+          ]
+        },
+        {
+          "name": "TestBuildL12InputFromUpstream",
+          "line": 459,
+          "fields": []
+        },
+        {
+          "name": "TestL12V2SoftPenalty",
+          "line": 734,
+          "fields": [
+            "HIGH_SCORES"
+          ]
+        }
+      ],
+      "test_functions": [
+        {
+          "name": "test_result_type",
+          "line": 85
+        },
+        {
+          "name": "test_result_layer",
+          "line": 89
+        },
+        {
+          "name": "test_result_to_dict",
+          "line": 94
+        },
+        {
+          "name": "test_all_pass_high_score_execute",
+          "line": 106
+        },
+        {
+          "name": "test_execute_with_enrichment_warn",
+          "line": 114
+        },
+        {
+          "name": "test_medium_score_hold",
+          "line": 142
+        },
+        {
+          "name": "test_upstream_not_continuable",
+          "line": 172
+        },
+        {
+          "name": "test_foundation_fail_no_trade",
+          "line": 199
+        },
+        {
+          "name": "test_structure_fail_no_trade",
+          "line": 225
+        },
+        {
+          "name": "test_firewall_fail_no_trade",
+          "line": 251
+        },
+        {
+          "name": "test_risk_chain_fail_no_trade",
+          "line": 277
+        },
+        {
+          "name": "test_synthesis_score_too_low",
+          "line": 303
+        },
+        {
+          "name": "test_phase_missing_blockers",
+          "line": 329
+        },
+        {
+          "name": "test_contract_payload_malformed",
+          "line": 355
+        },
+        {
+          "name": "test_upstream_target_not_phase5",
+          "line": 379
+        },
+        {
+          "name": "test_enrichment_fail_non_fatal",
+          "line": 405
+        },
+        {
+          "name": "test_gate_summary_has_all_9_gates",
+          "line": 434
+        },
+        {
+          "name": "test_gate_summary_all_pass",
+          "line": 439
+        },
+        {
+          "name": "test_score_numeric_is_penalized_confidence",
+          "line": 446
+        },
+        {
+          "name": "test_blocker_deduplicated",
+          "line": 454
+        },
+        {
+          "name": "test_empty_upstream_defaults",
+          "line": 460
+        },
+        {
+          "name": "test_minimal_upstream",
+          "line": 471
+        },
+        {
+          "name": "test_build_input_prefers_l2_evidence_payload",
+          "line": 532
+        },
+        {
+          "name": "test_build_input_extracts_l9_evidence_payload",
+          "line": 599
+        },
+        {
+          "name": "test_build_input_extracts_l7_evidence_payload",
+          "line": 666
+        },
+        {
+          "name": "test_scoring_fail_not_blocker",
+          "line": 753
+        },
+        {
+          "name": "test_integrity_fail_produces_reduced_risk",
+          "line": 784
+        },
+        {
+          "name": "test_sizing_multiplier_reduced_on_soft_fail",
+          "line": 812
+        },
+        {
+          "name": "test_sizing_multiplier_1_when_all_pass",
+          "line": 839
+        },
+        {
+          "name": "test_raw_confidence_populated",
+          "line": 865
+        },
+        {
+          "name": "test_penalty_breakdown_in_audit",
+          "line": 892
+        },
+        {
+          "name": "test_multiple_soft_fails_stack_penalties",
+          "line": 923
+        },
+        {
+          "name": "test_hard_gate_still_vetoes",
+          "line": 953
+        },
+        {
+          "name": "test_to_dict_includes_v2_fields",
+          "line": 980
+        },
+        {
+          "name": "test_l2_weak_evidence_emits_warning_not_blocker",
+          "line": 1012
+        },
+        {
+          "name": "test_l2_hard_illegality_emits_dedicated_blocker",
+          "line": 1049
+        },
+        {
+          "name": "test_l9_weak_structure_evidence_emits_warning_not_blocker",
+          "line": 1083
+        },
+        {
+          "name": "test_l9_hard_structure_illegality_emits_dedicated_blocker",
+          "line": 1119
+        },
+        {
+          "name": "test_l7_weak_probability_evidence_emits_warning_not_blocker",
+          "line": 1154
+        },
+        {
+          "name": "test_l7_hard_probability_illegality_emits_dedicated_blocker",
+          "line": 1188
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_l12_verdict.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "1a3036079d1b1ddb452b0f512f9ff13acf341c97",
+      "sha256": "04e65c1956e1b3d0057e5345309998640bdea0c7906964600577fb1108751e83",
+      "bytes": 14669,
+      "classes": [
+        {
+          "name": "TestL12VerdictAllGatesPassing",
+          "line": 103,
+          "fields": []
+        },
+        {
+          "name": "TestL12VerdictGateFailures",
+          "line": 134,
+          "fields": []
+        },
+        {
+          "name": "TestL12VerdictTypes",
+          "line": 238,
+          "fields": []
+        },
+        {
+          "name": "TestL12CannotBeBypassed",
+          "line": 294,
+          "fields": []
+        },
+        {
+          "name": "TestL12EnrichmentInjection",
+          "line": 345,
+          "fields": []
+        }
+      ],
+      "test_functions": [
+        {
+          "name": "test_all_gates_pass_execute_verdict",
+          "line": 106
+        },
+        {
+          "name": "test_all_gates_pass_high_confidence",
+          "line": 124
+        },
+        {
+          "name": "test_tii_gate_failure",
+          "line": 137
+        },
+        {
+          "name": "test_integrity_gate_failure",
+          "line": 147
+        },
+        {
+          "name": "test_rr_gate_failure",
+          "line": 156
+        },
+        {
+          "name": "test_fta_gate_failure",
+          "line": 165
+        },
+        {
+          "name": "test_monte_carlo_gate_failure",
+          "line": 174
+        },
+        {
+          "name": "test_propfirm_gate_failure",
+          "line": 183
+        },
+        {
+          "name": "test_drawdown_gate_failure",
+          "line": 192
+        },
+        {
+          "name": "test_latency_gate_failure",
+          "line": 201
+        },
+        {
+          "name": "test_conf12_gate_failure",
+          "line": 210
+        },
+        {
+          "name": "test_multiple_gate_failures",
+          "line": 219
+        },
+        {
+          "name": "test_no_trade_verdict",
+          "line": 241
+        },
+        {
+          "name": "test_hold_verdict",
+          "line": 253
+        },
+        {
+          "name": "test_execute_buy_verdict",
+          "line": 263
+        },
+        {
+          "name": "test_execute_sell_verdict",
+          "line": 273
+        },
+        {
+          "name": "test_execute_reduced_risk_near_pass",
+          "line": 283
+        },
+        {
+          "name": "test_l12_always_validates_gates",
+          "line": 297
+        },
+        {
+          "name": "test_l12_requires_valid_synthesis",
+          "line": 307
+        },
+        {
+          "name": "test_l12_verdict_immutable",
+          "line": 318
+        },
+        {
+          "name": "test_l12_gates_must_all_pass_for_full_execute",
+          "line": 329
+        },
+        {
+          "name": "test_high_enrichment_upgrades_confidence",
+          "line": 348
+        },
+        {
+          "name": "test_low_enrichment_downgrades_confidence",
+          "line": 359
+        },
+        {
+          "name": "test_no_enrichment_no_change",
+          "line": 368
+        },
+        {
+          "name": "test_enrichment_never_overrides_verdict",
+          "line": 377
+        },
+        {
+          "name": "test_enrichment_in_output_scores",
+          "line": 387
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_s5_campaign_risk.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "464b5af8207726c539e4aee2ca34f4242b8be7fa",
+      "sha256": "3c41e1e826cffed4af0129be2a2b71fd08759ba96fb51d1675f8ae1ecaabba27",
+      "bytes": 5250,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_campaign_locks_five_percent_from_closed_balance",
+          "line": 68
+        },
+        {
+          "name": "test_broker_aware_volume_rounds_down",
+          "line": 74
+        },
+        {
+          "name": "test_volume_is_never_clamped_up_to_broker_minimum",
+          "line": 87
+        },
+        {
+          "name": "test_negative_cost_buffer_fails_closed",
+          "line": 100
+        },
+        {
+          "name": "test_unknown_entry_role_fails_closed",
+          "line": 113
+        },
+        {
+          "name": "test_child_requires_open_parent",
+          "line": 125
+        },
+        {
+          "name": "test_account_cap_blocks_additional_campaign",
+          "line": 146
+        },
+        {
+          "name": "test_stale_snapshot_fails_closed",
+          "line": 167
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_analysis_admission.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": false,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE"
+    },
+    {
+      "path": "tests/test_strategy_5scr_closed_candle_evidence.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "7abb3c680c4c535c93d10d18e93582351cd7e038",
+      "sha256": "4e3ea4f2217e2908aaad80e94c2fb3f2ad7c93362aca2fea5d219aa71ebb789f",
+      "bytes": 14498,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_provider_builds_frozen_asof_shadow_evidence",
+          "line": 177
+        },
+        {
+          "name": "test_ordered_resolver_requires_m15_proof_after_lifecycle_anchor",
+          "line": 196
+        },
+        {
+          "name": "test_ordered_resolver_builds_m1_only_after_m15_acceptance",
+          "line": 215
+        },
+        {
+          "name": "test_snapshot_identity_includes_lifecycle_anchor",
+          "line": 232
+        },
+        {
+          "name": "test_provider_supports_shadow_validation_symbols",
+          "line": 256
+        },
+        {
+          "name": "test_direct_snapshot_rejects_future_candle_leakage",
+          "line": 272
+        },
+        {
+          "name": "test_replay_keeps_post_decision_outcome_out_of_evidence",
+          "line": 284
+        },
+        {
+          "name": "test_h4_is_authoritative_only_for_four_complete_contiguous_h1",
+          "line": 331
+        },
+        {
+          "name": "test_finnhub_normalization_marks_forming_candle_incomplete",
+          "line": 344
+        },
+        {
+          "name": "test_finnhub_refresh_promotes_the_same_period_from_forming_to_closed",
+          "line": 371
+        },
+        {
+          "name": "test_fetch_range_uses_historical_cutoff_and_returns_canonical_window",
+          "line": 405
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_context_epoch_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "ede8e13a871868d38de362d6f794c3044e1cb881",
+      "sha256": "0fd361200265c05b8956a10e500357b2ffa44ce6500ca517b7c74020c78af25f",
+      "bytes": 13519,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_same_context_repeated_100_times_is_one_epoch",
+          "line": 111
+        },
+        {
+          "name": "test_lineage_and_reference_price_churn_do_not_change_material_identity",
+          "line": 122
+        },
+        {
+          "name": "test_material_change_opens_successor_epoch",
+          "line": 159
+        },
+        {
+          "name": "test_a_to_b_to_a_creates_three_distinct_epoch_identities",
+          "line": 175
+        },
+        {
+          "name": "test_duplicate_and_restart_recover_same_active_epoch",
+          "line": 189
+        },
+        {
+          "name": "test_same_source_event_with_changed_material_is_quarantined",
+          "line": 204
+        },
+        {
+          "name": "test_same_source_event_with_changed_lineage_is_quarantined",
+          "line": 216
+        },
+        {
+          "name": "test_invalid_authority_fails_closed",
+          "line": 286
+        },
+        {
+          "name": "test_terminal_epoch_cannot_resurrect",
+          "line": 297
+        },
+        {
+          "name": "test_parent_terminal_authority_closes_epoch_despite_nonadvancing_context_cursor",
+          "line": 312
+        },
+        {
+          "name": "test_execution_authority_cannot_be_enabled",
+          "line": 332
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_directional_thesis_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "d6148bace62df699e98210f75b6f5d8d6d5ae1ff",
+      "sha256": "c4784a5ebb392a1b70c6b2c9075913d6dc74c270e9e56ad51890c4286bad1268",
+      "bytes": 53299,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_p4_schema_fingerprint_binds_exact_catalog_bytes",
+          "line": 45
+        },
+        {
+          "name": "test_direction_domain_matrix",
+          "line": 407
+        },
+        {
+          "name": "test_both_conditional_requires_matching_typed_route",
+          "line": 421
+        },
+        {
+          "name": "test_pressure_authority_matrix_fails_closed",
+          "line": 439
+        },
+        {
+          "name": "test_lifecycle_direction_alone_cannot_fabricate_locked_authority",
+          "line": 498
+        },
+        {
+          "name": "test_pressure_and_route_material_hashes_reject_caller_tampering",
+          "line": 518
+        },
+        {
+          "name": "test_future_and_expired_pressure_authority_fail_closed",
+          "line": 593
+        },
+        {
+          "name": "test_candle_adapter_and_builder_share_exact_hash_contract",
+          "line": 612
+        },
+        {
+          "name": "test_missing_forming_future_and_inactive_context_never_form_thesis",
+          "line": 627
+        },
+        {
+          "name": "test_h1_and_m15_ordering_are_recomputed_not_trusted",
+          "line": 661
+        },
+        {
+          "name": "test_gapped_h1_or_m15_coverage_cannot_claim_complete_authority",
+          "line": 704
+        },
+        {
+          "name": "test_proof_coverage_starts_at_selected_pair_not_earlier_scanner_history",
+          "line": 739
+        },
+        {
+          "name": "test_m15_failed_reclaim_is_derived_from_closed_ordered_candles",
+          "line": 769
+        },
+        {
+          "name": "test_nonmaterial_lineage_and_irrelevant_route_churn_keep_identity_stable",
+          "line": 784
+        },
+        {
+          "name": "test_material_candle_or_context_epoch_change_changes_semantic_identity",
+          "line": 820
+        },
+        {
+          "name": "test_closure_preserves_direction_and_later_opposite_uses_new_identity",
+          "line": 836
+        },
+        {
+          "name": "test_latest_h1_material_break_is_authoritative_but_neutral_churn_is_not",
+          "line": 881
+        },
+        {
+          "name": "test_later_opposite_h1_break_supersedes_requested_direction",
+          "line": 918
+        },
+        {
+          "name": "test_newer_same_direction_h1_break_cannot_reuse_older_m15_proof",
+          "line": 960
+        },
+        {
+          "name": "test_m15_proof_survives_neutral_closes_but_not_a_close_through_level",
+          "line": 1002
+        },
+        {
+          "name": "test_fresh_m15_triple_after_failure_replaces_invalidated_proof",
+          "line": 1040
+        },
+        {
+          "name": "test_invalid_latest_m15_candidate_does_not_fall_back_to_older_live_level",
+          "line": 1092
+        },
+        {
+          "name": "test_active_liveness_uses_persisted_level_not_newer_candidate_level",
+          "line": 1148
+        },
+        {
+          "name": "test_active_liveness_cannot_be_masked_by_successor_pressure_or_direction",
+          "line": 1210
+        },
+        {
+          "name": "test_active_liveness_a_to_b_to_a_does_not_resurrect_old_identity",
+          "line": 1257
+        },
+        {
+          "name": "test_active_liveness_rejects_future_or_drifted_candle_authority",
+          "line": 1302
+        },
+        {
+          "name": "test_h1_contract_rejects_self_consistent_false_structural_claim",
+          "line": 1345
+        },
+        {
+          "name": "test_h1_contract_rejects_direction_without_directional_break",
+          "line": 1355
+        },
+        {
+          "name": "test_m15_contract_rejects_false_level_or_completion_claim",
+          "line": 1373
+        },
+        {
+          "name": "test_m15_contract_rejects_break_or_completion_that_does_not_close_beyond_level",
+          "line": 1383
+        },
+        {
+          "name": "test_pressure_authority_is_bound_to_exact_market_scope",
+          "line": 1407
+        },
+        {
+          "name": "test_pressure_authority_lineage_refresh_preserves_scoped_material_identity",
+          "line": 1420
+        },
+        {
+          "name": "test_m15_break_must_open_at_or_after_h1_authority",
+          "line": 1431
+        },
+        {
+          "name": "test_complete_long_range_liveness_finds_old_invalidation_and_gaps_fail_closed",
+          "line": 1461
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_directional_thesis_v1_containment.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "b91fdd75ea5aab645239296529be77d5e8f5cccc",
+      "sha256": "5476d7762e9e22c8d46f59789480e40aab0806922f490571486f2349dc8533d7",
+      "bytes": 6573,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_p4_has_no_execution_box_tradeplan_risk_command_or_ea_dependency",
+          "line": 53
+        },
+        {
+          "name": "test_p4_contracts_expose_no_downstream_or_broker_authority",
+          "line": 69
+        },
+        {
+          "name": "test_p4_runtime_defaults_off_and_requires_shadow_mode",
+          "line": 106
+        },
+        {
+          "name": "test_p4_has_no_production_consumer_or_runtime_wiring",
+          "line": 127
+        },
+        {
+          "name": "test_p4_does_not_change_railway_or_mql5_surface",
+          "line": 173
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_execution_box_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "0e9e0f7b1c8292cf2c6b7881f9157380dd8165c3",
+      "sha256": "99125179c5ef994d8e8e0e039c846ebfb50e92d2b4b5bfdd075c90c2edff1291",
+      "bytes": 24875,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_p5_schema_fingerprint_binds_exact_catalog_bytes",
+          "line": 37
+        },
+        {
+          "name": "test_same_material_evidence_replayed_100_times_is_one_box",
+          "line": 194
+        },
+        {
+          "name": "test_nonmaterial_churn_does_not_version_box",
+          "line": 206
+        },
+        {
+          "name": "test_material_pre_freeze_change_supersedes_and_versions",
+          "line": 217
+        },
+        {
+          "name": "test_a_to_b_to_a_creates_three_box_versions_without_identity_reuse",
+          "line": 227
+        },
+        {
+          "name": "test_freeze_is_same_version_and_post_freeze_expansion_is_rejected",
+          "line": 242
+        },
+        {
+          "name": "test_parent_scope_and_terminal_thesis_fail_closed",
+          "line": 260
+        },
+        {
+          "name": "test_terminal_box_never_resurrects",
+          "line": 273
+        },
+        {
+          "name": "test_stale_event_cannot_roll_box_backward_and_same_request_drift_is_quarantined",
+          "line": 286
+        },
+        {
+          "name": "test_contract_rejects_execution_authority_and_invalid_geometry",
+          "line": 311
+        },
+        {
+          "name": "test_route_geometry_is_derived_from_typed_break_retest_roles",
+          "line": 324
+        },
+        {
+          "name": "test_route_geometry_rejects_wrong_direction_and_unsupported_route",
+          "line": 339
+        },
+        {
+          "name": "test_route_geometry_requires_reference_close_through_and_directional_acceptance",
+          "line": 353
+        },
+        {
+          "name": "test_route_geometry_forbids_skipped_role_candles_and_post_acceptance_tail",
+          "line": 371
+        },
+        {
+          "name": "test_route_geometry_forbids_role_order_drift",
+          "line": 386
+        },
+        {
+          "name": "test_pre_thesis_evidence_and_any_pre_thesis_m1_open_are_rejected",
+          "line": 411
+        },
+        {
+          "name": "test_current_box_requires_full_parent_scope_and_canonical_id",
+          "line": 438
+        },
+        {
+          "name": "test_nonmaterial_refresh_advances_watermark_and_blocks_late_material_change",
+          "line": 455
+        },
+        {
+          "name": "test_equal_clock_conflicting_evidence_is_quarantined",
+          "line": 475
+        },
+        {
+          "name": "test_exact_freeze_retry_is_duplicate_after_restart_projection",
+          "line": 490
+        },
+        {
+          "name": "test_exact_replay_survives_parent_liveness_advance_but_new_evidence_does_not",
+          "line": 515
+        },
+        {
+          "name": "test_freeze_retry_requires_full_evidence_identity",
+          "line": 535
+        },
+        {
+          "name": "test_box_sequence_is_bound_to_identity_and_successor_is_contiguous",
+          "line": 549
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_execution_policy.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "5a7db68cc671115a2445ec901b44646236c693d7",
+      "sha256": "f40458b1754be2ee400efd9c43889d4887966cdc0be52d3c81bb0295066f44cb",
+      "bytes": 7099,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_both_policies_are_registered_and_distinct",
+          "line": 43
+        },
+        {
+          "name": "test_both_policies_keep_minimum_rr_at_1_5",
+          "line": 51
+        },
+        {
+          "name": "test_unresolved_policy_returns_none_rather_than_guessing",
+          "line": 56
+        },
+        {
+          "name": "test_policy_resolves_from_env",
+          "line": 62
+        },
+        {
+          "name": "test_explicit_policy_id_overrides_env",
+          "line": 67
+        },
+        {
+          "name": "test_policies_are_frozen_so_a_floor_cannot_be_mutated_in_place",
+          "line": 72
+        },
+        {
+          "name": "test_v3_structural_floor_boundary",
+          "line": 92
+        },
+        {
+          "name": "test_legacy_structural_floor_boundary",
+          "line": 104
+        },
+        {
+          "name": "test_jpy_pip_arithmetic_is_correct",
+          "line": 111
+        },
+        {
+          "name": "test_five_digit_fx_pip_arithmetic_is_correct",
+          "line": 124
+        },
+        {
+          "name": "test_cost_floor_can_bind_above_the_structural_floor",
+          "line": 141
+        },
+        {
+          "name": "test_required_target_is_the_max_of_both_floors",
+          "line": 150
+        },
+        {
+          "name": "test_metals_do_not_inherit_the_fx_ten_pip_rule",
+          "line": 165
+        },
+        {
+          "name": "test_metal_floor_is_identical_across_policies",
+          "line": 175
+        },
+        {
+          "name": "test_fx_floor_differs_across_policies",
+          "line": 183
+        },
+        {
+          "name": "test_assess_target_rejects_non_positive_pip_size",
+          "line": 191
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_log_archive_audit.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "432d60d4dd9d057180b945d8a25f317bf99db5db",
+      "sha256": "1605ea233546f8999c6047100725202cd5404a54ba988d43421624eeda802263",
+      "bytes": 3406,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_archive_audit_deduplicates_the_same_event_across_overlapping_exports",
+          "line": 56
+        },
+        {
+          "name": "test_archive_audit_skips_a_byte_identical_export",
+          "line": 82
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_m1_outcome.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "7a5793296d698f57dcbf0c6a4059eaff76f8b942",
+      "sha256": "2def8ce585637dfe2dcef4af243a9e948777d5aa9516de17c46c561e76714316",
+      "bytes": 4926,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_buy_tp1_is_classified_at_first_touch_and_stops_scanning",
+          "line": 57
+        },
+        {
+          "name": "test_sell_stop_is_classified_at_first_touch",
+          "line": 70
+        },
+        {
+          "name": "test_same_candle_tp1_and_stop_is_explicitly_ambiguous",
+          "line": 81
+        },
+        {
+          "name": "test_no_touch_at_horizon_is_timeout",
+          "line": 92
+        },
+        {
+          "name": "test_empty_legal_horizon_is_no_data",
+          "line": 106
+        },
+        {
+          "name": "test_replay_excludes_candle_that_started_before_decision",
+          "line": 115
+        },
+        {
+          "name": "test_incomplete_and_wrong_symbol_candles_are_not_outcome_data",
+          "line": 132
+        },
+        {
+          "name": "test_conflicting_canonical_candles_fail_closed",
+          "line": 141
+        },
+        {
+          "name": "test_outcome_id_is_deterministic_for_same_frozen_inputs",
+          "line": 149
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_microboost_v1.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "e4a9bbc96faca38be5962e497ee04149dd6d2b91",
+      "sha256": "18b4ea59d6f31ff38a9de98f61ed3be18277d2a068f38f72ca7f017eb0c391c5",
+      "bytes": 9508,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_canonical_sticky_true_is_one_formed_pulse",
+          "line": 57
+        },
+        {
+          "name": "test_synthetic_580_legacy_cohort_is_not_580_pulses",
+          "line": 70
+        },
+        {
+          "name": "test_broad_p1_semantic_hash_change_is_not_automatic_reinforcement",
+          "line": 101
+        },
+        {
+          "name": "test_context_only_change_after_expiry_does_not_rearm_sticky_pulse",
+          "line": 115
+        },
+        {
+          "name": "test_publisher_and_context_refresh_stay_expired_across_restart",
+          "line": 141
+        },
+        {
+          "name": "test_recovered_state_rejects_duplicate_and_continues_deterministically",
+          "line": 204
+        },
+        {
+          "name": "test_pulse_and_state_are_non_executable_authority",
+          "line": 232
+        },
+        {
+          "name": "test_noncanonical_lifecycle_identity_is_rejected",
+          "line": 242
+        },
+        {
+          "name": "test_runtime_config_defaults_off_and_requires_shadow_only",
+          "line": 247
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_pair_admission.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "ae3ee5f6d23c52c463c442b1528a1d53406ad6e4",
+      "sha256": "cbdaad97b7ac489ddb5ec59876e42085822281c657f4c15839d066eeb44895c2",
+      "bytes": 9051,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_raw_global_ledger_produces_non_executable_analysis_grant",
+          "line": 53
+        },
+        {
+          "name": "test_lineage_without_minimum_duration_cannot_grant_admission",
+          "line": 79
+        },
+        {
+          "name": "test_mixed_deployments_fail_closed",
+          "line": 89
+        },
+        {
+          "name": "test_shadow_audit_exposes_mixed_deployment_rejection_reason",
+          "line": 98
+        },
+        {
+          "name": "test_block_summary_cannot_forge_raw_duration",
+          "line": 108
+        },
+        {
+          "name": "test_block_summary_cannot_forge_effective_ticks",
+          "line": 120
+        },
+        {
+          "name": "test_one_missing_deployment_in_mixed_evidence_fails_closed",
+          "line": 132
+        },
+        {
+          "name": "test_missing_scanner_cycle_lineage_fails_closed",
+          "line": 142
+        },
+        {
+          "name": "test_raw_ledger_ids_are_deterministic_in_event_time_order",
+          "line": 152
+        },
+        {
+          "name": "test_cross_symbol_raw_authority_interrupts_a_forged_pair_block",
+          "line": 164
+        },
+        {
+          "name": "test_cross_symbol_policy_is_explicit_on_grant",
+          "line": 180
+        },
+        {
+          "name": "test_duplicate_stable_raw_identity_fails_closed",
+          "line": 190
+        },
+        {
+          "name": "test_derived_pressure_state_cannot_impersonate_raw_admission_authority",
+          "line": 201
+        },
+        {
+          "name": "test_rejection_audit_retains_deterministic_raw_metrics_and_reason",
+          "line": 224
+        },
+        {
+          "name": "test_expired_grant_is_not_active",
+          "line": 243
+        },
+        {
+          "name": "test_gap_beyond_uninterrupted_limit_fails_closed",
+          "line": 254
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_raw_admission_blocks.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "959f4890542d98305dca96dd6ab57f43db95c696",
+      "sha256": "2409a59b256415986f1c5c858a90225ced28ddeb88a7024ed0f532214d5fdea3",
+      "bytes": 11788,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_canary_only_builds_no_raw_admission_block",
+          "line": 60
+        },
+        {
+          "name": "test_mixed_canary_does_not_change_raw_interval_or_counts",
+          "line": 69
+        },
+        {
+          "name": "test_raw_only_300_seconds_grants_exactly_once",
+          "line": 83
+        },
+        {
+          "name": "test_duplicate_replay_does_not_increase_raw_count_or_duplicate_grant",
+          "line": 93
+        },
+        {
+          "name": "test_cross_symbol_event_finalizes_the_active_raw_block",
+          "line": 103
+        },
+        {
+          "name": "test_gap_boundary_is_inclusive_at_exactly_300_seconds",
+          "line": 119
+        },
+        {
+          "name": "test_replay_produces_stable_raw_block_and_lineage_hashes",
+          "line": 129
+        },
+        {
+          "name": "test_grant_identity_and_evidence_freeze_at_first_threshold_crossing",
+          "line": 141
+        },
+        {
+          "name": "test_runtime_throttle_pair_can_grant_without_promoting_execution_authority",
+          "line": 155
+        },
+        {
+          "name": "test_true_unresolved_raw_event_still_fails_closed",
+          "line": 168
+        },
+        {
+          "name": "test_non_throttled_event_cannot_launder_inferred_direction",
+          "line": 180
+        },
+        {
+          "name": "test_inferred_direction_is_part_of_stable_raw_identity",
+          "line": 196
+        },
+        {
+          "name": "test_identical_active_snapshot_replays_the_same_evaluation_identity",
+          "line": 205
+        },
+        {
+          "name": "test_growing_active_block_versions_the_evaluation_watermark",
+          "line": 217
+        },
+        {
+          "name": "test_active_to_finalized_versions_evaluation_without_changing_raw_block_identity",
+          "line": 229
+        },
+        {
+          "name": "test_active_grant_survives_normal_cross_symbol_finalization",
+          "line": 243
+        },
+        {
+          "name": "test_multi_symbol_finalizer_ordering_is_deterministic",
+          "line": 256
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_risk_reservation.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "3e0433862c5cee1edc6b3014a3edd5b25caaedad",
+      "sha256": "bb491a8cd38c1dae04ff25e3a7bb8bfcb8470b60f3f6118e489d5b4bb8d4ed5f",
+      "bytes": 5248,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_final_signal_promotion_is_credential_free_and_does_not_mutate_candidate",
+          "line": 55
+        },
+        {
+          "name": "test_final_signal_reservation_tamper_fails_closed",
+          "line": 97
+        },
+        {
+          "name": "test_reservation_request_is_parent_only_and_ttl_is_bounded",
+          "line": 115
+        },
+        {
+          "name": "test_candidate_with_premature_execution_authority_is_rejected",
+          "line": 140
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_tradeplan_candidate_v2.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "a8795c8867e97092d211fa1e1ea2c22c6ee1fbcf",
+      "sha256": "9cd6c6625b3e3235b6503a5128abad134d8f46850f852a85b192efc02823d663",
+      "bytes": 30902,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_schema_fingerprint_binds_exact_catalog_bytes",
+          "line": 39
+        },
+        {
+          "name": "test_schema_status_fails_closed_for_nonpersistent_authority_tables",
+          "line": 62
+        },
+        {
+          "name": "test_valid_buy_and_sell_build_shadow_candidate",
+          "line": 325
+        },
+        {
+          "name": "test_nearest_eight_pip_target_blocks_without_selecting_far_twenty_pip_target",
+          "line": 335
+        },
+        {
+          "name": "test_target_eight_pips_from_anchor_is_valid_if_route_has_ten_pip_room",
+          "line": 344
+        },
+        {
+          "name": "test_exact_ten_pips_is_eligible",
+          "line": 350
+        },
+        {
+          "name": "test_rr_exactly_one_point_five_passes_after_canonical_quantization",
+          "line": 355
+        },
+        {
+          "name": "test_raw_rr_below_one_point_five_is_rejected_before_rounding",
+          "line": 364
+        },
+        {
+          "name": "test_cost_room_failure_is_distinct_from_generic_empty_intersection",
+          "line": 380
+        },
+        {
+          "name": "test_h1_after_formation_consumes_nearest_and_selects_next_target",
+          "line": 401
+        },
+        {
+          "name": "test_later_consumption_invalidates_current_without_a_successor",
+          "line": 411
+        },
+        {
+          "name": "test_consumption_invalidation_reduction_is_deterministic_for_request_retry",
+          "line": 436
+        },
+        {
+          "name": "test_h1_before_or_at_formation_does_not_consume_target",
+          "line": 455
+        },
+        {
+          "name": "test_stop_is_exact_route_extreme_plus_one_tick",
+          "line": 462
+        },
+        {
+          "name": "test_forged_candle_material_hash_is_rejected",
+          "line": 469
+        },
+        {
+          "name": "test_target_map_version_must_match_context",
+          "line": 476
+        },
+        {
+          "name": "test_building_box_waits_and_terminal_box_does_not_form_candidate",
+          "line": 482
+        },
+        {
+          "name": "test_broker_cost_expiry_fails_closed",
+          "line": 491
+        },
+        {
+          "name": "test_exact_retry_is_duplicate_and_nonmaterial_lineage_churn_is_ignored",
+          "line": 497
+        },
+        {
+          "name": "test_exact_evidence_retry_precedes_advanced_parent_liveness_gate",
+          "line": 512
+        },
+        {
+          "name": "test_neutral_h1_coverage_churn_reuses_material_candidate_with_new_evaluation",
+          "line": 533
+        },
+        {
+          "name": "test_broker_capture_clock_churn_is_lineage_only_when_geometry_is_identical",
+          "line": 577
+        },
+        {
+          "name": "test_target_map_authority_cannot_be_replayed_with_forged_lineage",
+          "line": 594
+        },
+        {
+          "name": "test_provider_lineage_churn_does_not_create_material_target_or_candidate",
+          "line": 602
+        },
+        {
+          "name": "test_self_hashed_map_cannot_select_a_farther_unconsumed_target",
+          "line": 637
+        },
+        {
+          "name": "test_off_grid_route_or_target_fails_closed_as_broker_constraint",
+          "line": 649
+        },
+        {
+          "name": "test_a_b_a_creates_three_distinct_occurrences",
+          "line": 658
+        },
+        {
+          "name": "test_current_candidate_material_drift_quarantines_in_solver",
+          "line": 673
+        },
+        {
+          "name": "test_contract_rejects_rebuilt_candidate_with_material_drift",
+          "line": 685
+        },
+        {
+          "name": "test_target_cohort_requires_unique_clocks_and_context_start_binding",
+          "line": 694
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_strategy_5scr_tradeplan_candidate_v2_containment.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "bbd89b0a417ee846b024eef53aefd10c468762e7",
+      "sha256": "751564c55ebcdc6a0e63da657cd33643e3e76963a0fb5a69ab745350d92c668a",
+      "bytes": 5508,
+      "classes": [],
+      "test_functions": [
+        {
+          "name": "test_p6_has_no_legacy_risk_command_or_ea_dependency",
+          "line": 33
+        },
+        {
+          "name": "test_p6_exposes_plan_geometry_but_no_broker_or_risk_authority",
+          "line": 51
+        },
+        {
+          "name": "test_p6_has_no_existing_production_consumer",
+          "line": 85
+        },
+        {
+          "name": "test_p6_runtime_defaults_off_and_shadow_only",
+          "line": 122
+        },
+        {
+          "name": "test_p6_does_not_modify_railway_or_mql5_runtime_artifacts",
+          "line": 131
+        }
+      ],
+      "literal_version_policy_constants": []
+    },
+    {
+      "path": "tests/test_v11_gate.py",
+      "subject_commit": "261a3b476055accc3d0ea45ebc80a910e0e80f6b",
+      "present": true,
+      "evidence_class": "IMMUTABLE_GIT_SOURCE",
+      "git_blob": "56c6c95a8befb04476b0c8c2c5f4d13e78244d1d",
+      "sha256": "2785ff14ce2cdbf173198fa38270e3bf6aa9e343a902e461420bc0225d18c4cb",
+      "bytes": 9012,
+      "classes": [
+        {
+          "name": "TestV11GateInput",
+          "line": 17,
+          "fields": []
+        },
+        {
+          "name": "TestExtremeSelectivityGate",
+          "line": 81,
+          "fields": []
+        },
+        {
+          "name": "TestV11DataAdapter",
+          "line": 178,
+          "fields": []
+        },
+        {
+          "name": "TestV11PipelineHook",
+          "line": 223,
+          "fields": []
+        }
+      ],
+      "test_functions": [
+        {
+          "name": "test_from_dict_empty",
+          "line": 18
+        },
+        {
+          "name": "test_from_dict_none",
+          "line": 25
+        },
+        {
+          "name": "test_from_dict_with_values",
+          "line": 30
+        },
+        {
+          "name": "test_scores_clamped",
+          "line": 45
+        },
+        {
+          "name": "test_invalid_type_raises",
+          "line": 51
+        },
+        {
+          "name": "test_from_dict_garbage_scores_default",
+          "line": 56
+        },
+        {
+          "name": "test_frozen",
+          "line": 69
+        },
+        {
+          "name": "test_all_passing",
+          "line": 98
+        },
+        {
+          "name": "test_all_failing",
+          "line": 106
+        },
+        {
+          "name": "test_partial_fail",
+          "line": 113
+        },
+        {
+          "name": "test_custom_thresholds",
+          "line": 122
+        },
+        {
+          "name": "test_accepts_v11_gate_input_directly",
+          "line": 147
+        },
+        {
+          "name": "test_never_crashes_on_garbage",
+          "line": 164
+        },
+        {
+          "name": "test_flat_dict",
+          "line": 179
+        },
+        {
+          "name": "test_nested_aliases",
+          "line": 192
+        },
+        {
+          "name": "test_garbage_input",
+          "line": 211
+        },
+        {
+          "name": "test_full_pipeline_pass",
+          "line": 224
+        },
+        {
+          "name": "test_full_pipeline_fail",
+          "line": 243
+        },
+        {
+          "name": "test_run_and_annotate",
+          "line": 248
+        },
+        {
+          "name": "test_never_crashes",
+          "line": 256
+        }
+      ],
+      "literal_version_policy_constants": []
+    }
+  ],
+  "resolved_and_unresolved_differences": [
+    {
+      "id": "D01",
+      "topic": "SELECTED_SOURCE_IDENTITY",
+      "status": "RESOLVED_BINDING",
+      "detail": "Uppercase full SSOT exact Git bytes verified; lowercase untracked AnalysisAdmission stub is distinct.",
+      "refs": "S01"
+    },
+    {
+      "id": "D02",
+      "topic": "HISTORICAL_COPY_PARITY",
+      "status": "UNRESOLVED_MISSING_BYTES",
+      "detail": "Original reported2cd41... document is represented by metadata only; do not assert complete old-versus-selected semantic equivalence.",
+      "refs": "S01 source provenance",
+      "effect": "PROVENANCE_LIMITATION_NOT_A_NEW_PERMISSION_GATE",
+      "blocks_source_only_S03": false
+    },
+    {
+      "id": "D03",
+      "topic": "S05_H4_ONLY_SUMMARY",
+      "status": "RESOLVED_REQUIREMENT_PRECEDENCE",
+      "detail": "DoD correction follows selected17.2 D1/H4/H1 plus legal structural sources. Bound261a source has newer authority/cohort contracts, but TargetKind atcontracts/strategy_5scr_tradeplan_candidate_v2.py:21 remains H4_STRICT_SWING_HIGH|H4_STRICT_SWING_LOW. The narrower implementation universe remains an S05 gap; updated authority contracts do not close it.",
+      "refs": "17.2;DoD section1"
+    },
+    {
+      "id": "D04",
+      "topic": "SOLVER_DIAGRAM_ORDER",
+      "status": "RESOLVED_REQUIREMENT_PRECEDENCE",
+      "detail": "Selected27 diagram places feasible intersection before structuralSL/netcost; DoD explicitly chooses normative17.1: target, route interval, structuralSL, RR/cost constraints, intersection, candidate.",
+      "refs": "17.1;27;DoD section1"
+    },
+    {
+      "id": "D05",
+      "topic": "MISSING_PRESSURE_CONTRACT_FIELDS",
+      "status": "UNRESOLVED_SCHEMA_CLOSURE",
+      "detail": "10.5 requires pressure_contract_version and pressure_contract_invalidated_at, but10.3 hypothesis example omits both. Do not infer LOCKED from aligned direction labels. Typed V1 pressure authority exists; no fullV3.1 generated schema/example parity demonstrated.",
+      "refs": "10.3;10.5"
+    },
+    {
+      "id": "D06",
+      "topic": "WAITING_PRESSURE_RESOLUTION_ENUM",
+      "status": "UNRESOLVED_SCHEMA_CLOSURE",
+      "detail": "10.6 allows lifecycle WAITING_PRESSURE_RESOLUTION;28.12 consolidated lifecycle enum omits it. Need versioned explicit state/reason serialization and generated examples; do not silently add or alias state.",
+      "refs": "10.6;28.12"
+    },
+    {
+      "id": "D07",
+      "topic": "CANDIDATE_ORDER_TYPE",
+      "status": "UNRESOLVED_SCHEMA_CLOSURE",
+      "detail": "17.1 selects candidate entry and order type;17.7 schema has no order_type field, and bound TradePlanCandidateV2 has no such field. Natural command/order-mode mapping belongs to R03/N02; no value guessed.",
+      "refs": "17.1;17.7"
+    },
+    {
+      "id": "D08",
+      "topic": "RADAR_SEPARATE_ROUTE_VS_CONFLICT",
+      "status": "UNRESOLVED_DECISION_TABLE",
+      "detail": "10.5 and14.1 allow legally authorized separate routes;23.11 globally says no hypothesis/thesis/tradeplan on lineage conflict. Pressure-path prohibition is clear; whether an independent separate route can coexist for same episode/conflict needs explicit typed policy/table. Default no natural promotion while unresolved.",
+      "refs": "10.2;10.5;10.6;14.1;23.11"
+    },
+    {
+      "id": "D09",
+      "topic": "LIQUIDITY_DISPLAY_LABEL",
+      "status": "RESOLVED_DOCUMENTARY_INTERPRETATION",
+      "detail": "13 minimum machine state TESTING and directional example BUY_SIDE_TESTING should be distinguished as machine state versus directional presentation; not a demonstrated serialized enum alias.",
+      "refs": "13"
+    },
+    {
+      "id": "D10",
+      "topic": "CANDIDATE_VS_CORE_OUTPUT_STATES",
+      "status": "RESOLVED_DOCUMENTARY_INTERPRETATION",
+      "detail": "17.7 object stateTRADEPLAN_CANDIDATE and28.18 core-output canonical/shadow categories are different objects/projections, not automatically one union enum. Implementation adapter still required.",
+      "refs": "17.7;28.18"
+    },
+    {
+      "id": "D11",
+      "topic": "V2_V31_IDENTITY_AND_FIELDS",
+      "status": "UNRESOLVED_IMPLEMENTATION_MAPPING",
+      "detail": "PairAdmissionGrantV2 requires BUY/SELL and effective_ticks;V3.1 pair evaluation is direction-independent. V2 candidate lacks analysis-admission/promotion fields and uses different IDs than natural risk. Never regex-rewrite identity to bypass semantics.",
+      "refs": "7.11;17.7;R02/R03"
+    },
+    {
+      "id": "D12",
+      "topic": "L12_POST_VERDICT_AUTHORITY",
+      "status": "UNRESOLVED_MANDATORY_POLICY_AND_NATURAL_WIRING",
+      "detail": "LegacyL12 and constitutionalPhase5 overlay coexist; overlay errors nonfatal. V11 veto downgrades but missing import passes and other errors append without guaranteed downgrade. Mandatory-versus-optional policy and natural consumption of final gates are not bound by selectedSSOT. No runtime PASS claimed.",
+      "refs": "S01 authority acceptance;pipeline source"
+    }
+  ],
+  "policy_registry_map": [
+    {
+      "registry": "RawAuthorityCoveragePolicyRegistry",
+      "binding_needed": "Coverage windows, sequence/partition completeness, source-gap recovery and authoritative ledger scope",
+      "current_mapping_status": "PARTIAL_RAW_SOURCE_CONSTANTS_ONLY",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "PairAdmissionRuleRegistry",
+      "binding_needed": "V3.1 activity contract/version,300s threshold, source continuity and deployment/backfill identity",
+      "current_mapping_status": "V2_DEFAULTS_NOT_V31_ACTIVE_BINDING",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "PairAdmissionCoveragePolicyRegistry",
+      "binding_needed": "Durable coverage outcome and unknown handling/SLA",
+      "current_mapping_status": "V31_SCHEMA_BINDING_MISSING",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "StrategyAnalysisAdmissionPolicyRegistry",
+      "binding_needed": "Canonical/advisory mode and durable grants",
+      "current_mapping_status": "V31_SCHEMA_BINDING_MISSING",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "AdvisoryPressureMaturityPolicyRegistry",
+      "binding_needed": "Duration/effective-events/density source policy",
+      "current_mapping_status": "NUMERIC_SELECTION_UNBOUND",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "AnalysisPriorityPolicyRegistry",
+      "binding_needed": "Queue priority/fairness/deadline and capacity disposition",
+      "current_mapping_status": "NUMERIC_SELECTION_UNBOUND",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "LifecycleMergePolicyRegistry",
+      "binding_needed": "Same episode upgrade/merge/fork and revision boundaries",
+      "current_mapping_status": "EXISTING_MARKET_EPISODE_V1_NOT_FULL_V31_BINDING",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "PressureMaturityPolicyRegistry",
+      "binding_needed": "Qualification and direction stability/continuity",
+      "current_mapping_status": "ACTIVE_POLICY_UNBOUND",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "MicroboostPulsePolicyRegistry",
+      "binding_needed": "Material pulse separation and deduplication",
+      "current_mapping_status": "COMPONENT_EXISTS_V31_POLICY_SELECTION_UNBOUND",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "LocationRoutePolicyRegistry",
+      "binding_needed": "Allowed independent route under pressure modes/alignment",
+      "current_mapping_status": "DECISION_TABLE_UNRESOLVED",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "DirectionDomainRegistry",
+      "binding_needed": "Typed BUY_ONLY/SELL_ONLY/BOTH_CONDITIONAL/UNRESOLVED/EMPTY",
+      "current_mapping_status": "ENUM_EXISTS_FULL_POLICY_BINDING_OPEN",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "LiquidityTransitionRegistry",
+      "binding_needed": "Ordered transition evidence and display/state mapping",
+      "current_mapping_status": "V31_MACHINE_SCHEMA_BINDING_OPEN",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "StructuralPatternRegistry",
+      "binding_needed": "H1/M15 pattern definitions/as-of and proof policy",
+      "current_mapping_status": "TYPED_P4_COMPONENT_EXISTS",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "ExecutionPolicyRegistry",
+      "binding_needed": "FX10pip versus legacy6pip, unsupported instruments, netRR>=1.5 baseline",
+      "current_mapping_status": "EXISTING_IDS_BOUND_ACTIVE_DEPLOYMENT_NOT_MEASURED",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "CostModelRegistry",
+      "binding_needed": "Spread/commission/slippage/swap budget and broker-spec/currency",
+      "current_mapping_status": "ESTIMATED_STRATEGY_COST_V1_NOT_LIVE_ACCOUNT_BINDING",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "RiskPolicyRegistry",
+      "binding_needed": "Account/mode/currency/profile/caps/child/releasedrisk",
+      "current_mapping_status": "R01_SELECTION_UNBOUND_OUTSIDE_SSOT_NORMATIVE_RISK_PERCENTAGE",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "FillPolicyRegistry",
+      "binding_needed": "Market/limit selection, pending expiry,cancel/partial fill",
+      "current_mapping_status": "NATURAL_POLICY_UNBOUND",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    },
+    {
+      "registry": "OutcomePolicyRegistry",
+      "binding_needed": "TP1/SL/no-fill/unknown cohort/window/cost accounting",
+      "current_mapping_status": "EXISTING_M1_V1_NOT_FULL_V31_EVALUATION_BINDING",
+      "new_value_selected": false,
+      "active_runtime_verified": false
+    }
+  ],
+  "authority_map": [
+    {
+      "owner": "L1-L11",
+      "normative_role": "Analysis/scoring/validation only",
+      "source": "pipeline/wolf_constitutional_pipeline.py:1939;2000;2038;2059",
+      "source_status": "SOURCE_CALL_GRAPH_ONLY",
+      "runtime_status": "NOT_MEASURED"
+    },
+    {
+      "owner": "L12 legacy verdict",
+      "normative_role": "Strategy constitutional verdict; never final account size",
+      "source": "pipeline/wolf_constitutional_pipeline.py:2886-2889;constitution/verdict_engine.py",
+      "source_status": "CALL_OBSERVED",
+      "runtime_status": "NOT_MEASURED"
+    },
+    {
+      "owner": "ConstitutionalPhase5 overlay",
+      "normative_role": "Source labels govern synthesis audit/downstream; exact mandatory authority selection unresolved",
+      "source": "pipeline/wolf_constitutional_pipeline.py:2903-2927",
+      "source_status": "NONFATAL_OVERLAY_OBSERVED",
+      "runtime_status": "NOT_MEASURED"
+    },
+    {
+      "owner": "Post-verdict L13/L15/market-context/throttle/V11",
+      "normative_role": "Can restrict readiness; cannot originate account-risk approval",
+      "source": "pipeline/wolf_constitutional_pipeline.py:2932-2957;3392;9288-9347",
+      "source_status": "VETO_AND_ERROR_PATHS_OBSERVED_MANDATORY_POLICY_UNBOUND",
+      "runtime_status": "NOT_MEASURED"
+    },
+    {
+      "owner": "Risk authority",
+      "normative_role": "Independent account snapshot, exposure, sizing and reservation",
+      "source": "storage/strategy_5scr_risk_reservation_repository.py;contracts/strategy_5scr_risk_reservation.py",
+      "source_status": "PARENT_ONLY_SHADOW_EXISTING_CONTRACT",
+      "runtime_status": "NOT_MEASURED"
+    },
+    {
+      "owner": "FinalSignal/command producer and EA",
+      "normative_role": "Consume approved immutable lineage; no strategy authority",
+      "source": "execution/mt5_risk_command_producer.py:284-285;398-428",
+      "source_status": "SHADOW_ONLY_NO_NATURAL_PROMOTION",
+      "runtime_status": "NOT_MEASURED"
+    },
+    {
+      "owner": "Journal and enrichment",
+      "normative_role": "Journal records; enrichment cannot override L12/risk/mandatory safety gates",
+      "source": "S01/R03/N01 DoD acceptance;pipeline integration tests listed",
+      "source_status": "NORMATIVE_BOUNDARY_MAPPED_NATURAL_END_TO_END_PROOF_ABSENT",
+      "runtime_status": "NOT_MEASURED"
+    }
+  ],
+  "s03_contract_gates": [
+    "Separate activity accumulation from resolved directional hypothesis; retain original raw-only provenance.",
+    "300-second threshold is minimum eligible evaluation, never order permission.",
+    "Versioned source-gap policy suspends; never treat unknown coverage as COMPLETE or NOT_APPLICABLE.",
+    "New typed grant/evaluation must represent direction conflict without fabricating BUY/SELL; retain downstream no-hypothesis-on-conflict.",
+    "Stable raw IDs, first-threshold lineage, restart/backfill and duplicate material event semantics remain deterministic.",
+    "Version new behavior and preserve old replay rule; no account/risk/FinalSignal/EA promotion."
+  ],
+  "skill_validation": {
+    "skill": "audit-wolf15-constitution",
+    "skill_file_read": "C:/Users/INTEL/.codex/skills/audit-wolf15-constitution/SKILL.md",
+    "referenced_files": "MISSING authority-model.md/evidence-contract.md/pipeline-contract.md/decision-envelope.md; bounded skill/catalog search no copy",
+    "official_envelope_validation": "NOT_EXECUTED_RESOURCE_UNAVAILABLE",
+    "fallback": "Manual source-bound authority assertions and reproducible artifact structural checks; never claim official envelope PASS."
+  },
+  "tests_this_slice": "NO_RUNTIME_TESTS_EXECUTED; source AST/schema inventory and artifact checks only",
+  "no_production_or_account_access": true,
+  "memory_modified": false
+}

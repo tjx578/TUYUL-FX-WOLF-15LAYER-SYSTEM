@@ -1,0 +1,1210 @@
+[
+  {
+    "baseRefName": "main",
+    "baseRefOid": "7c45484e9124bb4a8a745dc1ef8832a7745ea58c",
+    "headRefName": "codex/railway-deploy-governance",
+    "headRefOid": "f5cd076b86e5bc3ed22242f75a896ef453871d90",
+    "isDraft": true,
+    "mergeCommit": null,
+    "mergeStateStatus": "UNSTABLE",
+    "mergeable": "MERGEABLE",
+    "mergedAt": null,
+    "number": 413,
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "StatusContext",
+        "context": "Vercel",
+        "startedAt": "2026-08-17T03:28:07Z",
+        "state": "FAILURE",
+        "targetUrl": "https://vercel.com/knowledge/why-is-my-account-deployment-blocked"
+      }
+    ],
+    "title": "ci: gate Railway deploys by exact SHA"
+  },
+  {
+    "baseRefName": "main",
+    "baseRefOid": "7c45484e9124bb4a8a745dc1ef8832a7745ea58c",
+    "headRefName": "docs/5scr-ssot-v3-1-candidate",
+    "headRefOid": "dd27ae87d0207466caad4c3e098224112ac0eaf7",
+    "isDraft": false,
+    "mergeCommit": null,
+    "mergeStateStatus": "UNSTABLE",
+    "mergeable": "MERGEABLE",
+    "mergedAt": null,
+    "number": 414,
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821173/job/96544542303",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959782/job/96541752014",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-20T18:45:43Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:10Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821017/job/96544541442",
+        "name": "Architecture reading-order integrity",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959734/job/96541751102",
+        "name": "Architecture reading-order integrity",
+        "startedAt": "2026-08-20T18:45:42Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959718/job/96541751177",
+        "name": "lint",
+        "startedAt": "2026-08-20T18:45:42Z",
+        "status": "COMPLETED",
+        "workflowName": "Lint"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959719/job/96541751094",
+        "name": "pytest",
+        "startedAt": "2026-08-20T18:45:42Z",
+        "status": "COMPLETED",
+        "workflowName": "Tests"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821175/job/96544541909",
+        "name": "pip-audit (Python deps)",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821173/job/96544542351",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:44Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959782/job/96541751733",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-20T18:45:43Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821017/job/96544541460",
+        "name": "Legacy docs quarantine",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959734/job/96541751346",
+        "name": "Legacy docs quarantine",
+        "startedAt": "2026-08-20T18:45:42Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821175/job/96544541804",
+        "name": "npm audit (Node deps)",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821173/job/96544542287",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:44Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959782/job/96541752035",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-20T18:45:43Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:10Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821017/job/96544541258",
+        "name": "Architecture cross-reference check",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959734/job/96541751468",
+        "name": "Architecture cross-reference check",
+        "startedAt": "2026-08-20T18:45:42Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821175/job/96544541593",
+        "name": "Secret leak scan",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821173/job/96544542320",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959782/job/96541752239",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-20T18:45:43Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:14Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821017/job/96544556177",
+        "name": "Docs Gate",
+        "startedAt": "2026-08-20T18:55:12Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959734/job/96541766991",
+        "name": "Docs Gate",
+        "startedAt": "2026-08-20T18:45:46Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:14Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821175/job/96544553719",
+        "name": "Security Gate",
+        "startedAt": "2026-08-20T18:55:11Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:11Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821173/job/96544542030",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-20T18:55:09Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959782/job/96541752047",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-20T18:45:43Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:55:18Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32405821173/job/96544554663",
+        "name": "CI Gate",
+        "startedAt": "2026-08-20T18:55:11Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T18:45:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32404959782/job/96541766010",
+        "name": "CI Gate",
+        "startedAt": "2026-08-20T18:45:45Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "Vercel",
+        "startedAt": "2026-08-20T18:45:41Z",
+        "state": "FAILURE",
+        "targetUrl": "https://vercel.com/knowledge/why-is-my-account-deployment-blocked"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-20T19:14:30Z",
+        "conclusion": "NEUTRAL",
+        "detailsUrl": "https://vercel.com/github",
+        "name": "Vercel Agent Review",
+        "startedAt": "2026-08-20T19:14:30Z",
+        "status": "COMPLETED",
+        "workflowName": ""
+      }
+    ],
+    "title": "docs(strategy): add SSOT v3.1 as first published v3-series candidate"
+  },
+  {
+    "baseRefName": "main",
+    "baseRefOid": "7c45484e9124bb4a8a745dc1ef8832a7745ea58c",
+    "headRefName": "codex/test-baseline-performance-gates",
+    "headRefOid": "128472045277632b3a091086c5fd1b7cbdf40549",
+    "isDraft": true,
+    "mergeCommit": null,
+    "mergeStateStatus": "UNSTABLE",
+    "mergeable": "MERGEABLE",
+    "mergedAt": null,
+    "number": 415,
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:41Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235155/job/96840691556",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-21T16:41:38Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:12Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504194657/job/96840563044",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-21T16:41:10Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:12Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504194565/job/96840562703",
+        "name": "lint",
+        "startedAt": "2026-08-21T16:41:10Z",
+        "status": "COMPLETED",
+        "workflowName": "Lint"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:13Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504194758/job/96840563930",
+        "name": "pytest",
+        "startedAt": "2026-08-21T16:41:10Z",
+        "status": "COMPLETED",
+        "workflowName": "Tests"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:40Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235144/job/96840691278",
+        "name": "pip-audit (Python deps)",
+        "startedAt": "2026-08-21T16:41:38Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:41Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235155/job/96840691692",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-21T16:41:38Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:12Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504194657/job/96840563294",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-21T16:41:10Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:41Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235144/job/96840691337",
+        "name": "npm audit (Node deps)",
+        "startedAt": "2026-08-21T16:41:38Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:40Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235155/job/96840691735",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-21T16:41:38Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:12Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504194657/job/96840563418",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-21T16:41:10Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:40Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235144/job/96840691320",
+        "name": "Secret leak scan",
+        "startedAt": "2026-08-21T16:41:38Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:41Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235155/job/96840691700",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-21T16:41:38Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:13Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504194657/job/96840563350",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-21T16:41:10Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:43Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235144/job/96840703368",
+        "name": "Security Gate",
+        "startedAt": "2026-08-21T16:41:41Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:42Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235155/job/96840691843",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-21T16:41:38Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:12Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504194657/job/96840563369",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-21T16:41:10Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:45Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504235155/job/96840708860",
+        "name": "CI Gate",
+        "startedAt": "2026-08-21T16:41:42Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T16:41:15Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32504194657/job/96840574902",
+        "name": "CI Gate",
+        "startedAt": "2026-08-21T16:41:13Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "Vercel",
+        "startedAt": "2026-08-21T16:41:09Z",
+        "state": "FAILURE",
+        "targetUrl": "https://vercel.com/knowledge/why-is-my-account-deployment-blocked"
+      }
+    ],
+    "title": "test: repair baseline and separate performance gates"
+  },
+  {
+    "baseRefName": "codex/test-baseline-performance-gates",
+    "baseRefOid": "128472045277632b3a091086c5fd1b7cbdf40549",
+    "headRefName": "codex/health-probe-lifecycle",
+    "headRefOid": "2ee5239ec0e029805c54b364d973f33c5674e9e7",
+    "isDraft": true,
+    "mergeCommit": null,
+    "mergeStateStatus": "UNSTABLE",
+    "mergeable": "MERGEABLE",
+    "mergedAt": null,
+    "number": 416,
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508280321/job/96853292222",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-21T17:27:47Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:26Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508248344/job/96853192399",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-21T17:27:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:26Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508248210/job/96853191572",
+        "name": "lint",
+        "startedAt": "2026-08-21T17:27:24Z",
+        "status": "COMPLETED",
+        "workflowName": "Lint"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:27Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508248470/job/96853192041",
+        "name": "pytest",
+        "startedAt": "2026-08-21T17:27:24Z",
+        "status": "COMPLETED",
+        "workflowName": "Tests"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508280321/job/96853292374",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-21T17:27:47Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:26Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508248344/job/96853192364",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-21T17:27:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508280321/job/96853292327",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-21T17:27:47Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:26Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508248344/job/96853192462",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-21T17:27:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:50Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508280321/job/96853292031",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-21T17:27:47Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:26Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508248344/job/96853192431",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-21T17:27:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508280321/job/96853292259",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-21T17:27:47Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:26Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508248344/job/96853192207",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-21T17:27:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:52Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508280321/job/96853305966",
+        "name": "CI Gate",
+        "startedAt": "2026-08-21T17:27:50Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-21T17:27:29Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32508248344/job/96853202389",
+        "name": "CI Gate",
+        "startedAt": "2026-08-21T17:27:27Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "Vercel",
+        "startedAt": "2026-08-21T17:27:23Z",
+        "state": "FAILURE",
+        "targetUrl": "https://vercel.com/knowledge/why-is-my-account-deployment-blocked"
+      }
+    ],
+    "title": "fix: own health probe thread lifecycle"
+  },
+  {
+    "baseRefName": "main",
+    "baseRefOid": "7c45484e9124bb4a8a745dc1ef8832a7745ea58c",
+    "headRefName": "codex/c2v2-c3-shadow-adapter-v2",
+    "headRefOid": "a28ee83b838df259f89a87153f16d2c4cac3dc92",
+    "isDraft": true,
+    "mergeCommit": null,
+    "mergeStateStatus": "DIRTY",
+    "mergeable": "CONFLICTING",
+    "mergedAt": null,
+    "number": 418,
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:30Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646096089/job/97210474781",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-23T14:39:28Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058390/job/97210382201",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-23T14:38:45Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:46Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058355/job/97210381522",
+        "name": "lint",
+        "startedAt": "2026-08-23T14:38:44Z",
+        "status": "COMPLETED",
+        "workflowName": "Lint"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:30Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646095983/job/97210473979",
+        "name": "Import-time budget",
+        "startedAt": "2026-08-23T14:39:27Z",
+        "status": "COMPLETED",
+        "workflowName": "Perf Guard"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:46Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058380/job/97210381921",
+        "name": "Import-time budget",
+        "startedAt": "2026-08-23T14:38:45Z",
+        "status": "COMPLETED",
+        "workflowName": "Perf Guard"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:46Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058361/job/97210381624",
+        "name": "pytest",
+        "startedAt": "2026-08-23T14:38:44Z",
+        "status": "COMPLETED",
+        "workflowName": "Tests"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:29Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646095980/job/97210474096",
+        "name": "pip-audit (Python deps)",
+        "startedAt": "2026-08-23T14:39:27Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:30Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646096089/job/97210474785",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-23T14:39:28Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058390/job/97210382073",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-23T14:38:45Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:29Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646095983/job/97210474055",
+        "name": "Slow-test marker enforcement",
+        "startedAt": "2026-08-23T14:39:27Z",
+        "status": "COMPLETED",
+        "workflowName": "Perf Guard"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:46Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058380/job/97210381688",
+        "name": "Slow-test marker enforcement",
+        "startedAt": "2026-08-23T14:38:44Z",
+        "status": "COMPLETED",
+        "workflowName": "Perf Guard"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:29Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646095980/job/97210473973",
+        "name": "npm audit (Node deps)",
+        "startedAt": "2026-08-23T14:39:27Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:31Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646096089/job/97210474734",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-23T14:39:28Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:46Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058390/job/97210382313",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-23T14:38:45Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:29Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646095983/job/97210474038",
+        "name": "Tick module complexity guard",
+        "startedAt": "2026-08-23T14:39:27Z",
+        "status": "COMPLETED",
+        "workflowName": "Perf Guard"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:47Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058380/job/97210381909",
+        "name": "Tick module complexity guard",
+        "startedAt": "2026-08-23T14:38:45Z",
+        "status": "COMPLETED",
+        "workflowName": "Perf Guard"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:31Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646095980/job/97210474047",
+        "name": "Secret leak scan",
+        "startedAt": "2026-08-23T14:39:27Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:30Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646096089/job/97210474668",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-23T14:39:28Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:47Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058390/job/97210382287",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-23T14:38:45Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:32Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646095983/job/97210478944",
+        "name": "Perf Gate",
+        "startedAt": "2026-08-23T14:39:30Z",
+        "status": "COMPLETED",
+        "workflowName": "Perf Guard"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058380/job/97210386809",
+        "name": "Perf Gate",
+        "startedAt": "2026-08-23T14:38:47Z",
+        "status": "COMPLETED",
+        "workflowName": "Perf Guard"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:33Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646095980/job/97210481365",
+        "name": "Security Gate",
+        "startedAt": "2026-08-23T14:39:31Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:30Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646096089/job/97210474748",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-23T14:39:28Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:46Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058390/job/97210382268",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-23T14:38:45Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:39:33Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646096089/job/97210481407",
+        "name": "CI Gate",
+        "startedAt": "2026-08-23T14:39:31Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-23T14:38:51Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32646058390/job/97210389983",
+        "name": "CI Gate",
+        "startedAt": "2026-08-23T14:38:48Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "Vercel",
+        "startedAt": "2026-08-23T14:38:43Z",
+        "state": "FAILURE",
+        "targetUrl": "https://vercel.com/knowledge/why-is-my-account-deployment-blocked"
+      }
+    ],
+    "title": "Add C2 V2 to C3 manual SHADOW authority adapter"
+  },
+  {
+    "baseRefName": "main",
+    "baseRefOid": "7b00ec0bba7763f347cf6de0381468999c4ace29",
+    "headRefName": "codex/d0-engineering-demo-canary",
+    "headRefOid": "3f4b8293c6c70b010bbbb85306379ba54079e125",
+    "isDraft": true,
+    "mergeCommit": null,
+    "mergeStateStatus": "UNSTABLE",
+    "mergeable": "MERGEABLE",
+    "mergedAt": null,
+    "number": 419,
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:50Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040059/job/97602951117",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-24T21:43:48Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781038256/job/97602945393",
+        "name": "Ruff lint & format",
+        "startedAt": "2026-08-24T21:43:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:50Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040070/job/97602950952",
+        "name": "Architecture reading-order integrity",
+        "startedAt": "2026-08-24T21:43:48Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781038185/job/97602944996",
+        "name": "lint",
+        "startedAt": "2026-08-24T21:43:46Z",
+        "status": "COMPLETED",
+        "workflowName": "Lint"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781038290/job/97602945389",
+        "name": "pytest",
+        "startedAt": "2026-08-24T21:43:46Z",
+        "status": "COMPLETED",
+        "workflowName": "Tests"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:50Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040007/job/97602950809",
+        "name": "pip-audit (Python deps)",
+        "startedAt": "2026-08-24T21:43:47Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040059/job/97602950762",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-24T21:43:47Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781038256/job/97602945693",
+        "name": "Python tests (pytest)",
+        "startedAt": "2026-08-24T21:43:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040070/job/97602950749",
+        "name": "Legacy docs quarantine",
+        "startedAt": "2026-08-24T21:43:47Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:50Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040007/job/97602950739",
+        "name": "npm audit (Node deps)",
+        "startedAt": "2026-08-24T21:43:47Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:50Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040059/job/97602951009",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-24T21:43:48Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781038256/job/97602945620",
+        "name": "Dashboard build (Next.js)",
+        "startedAt": "2026-08-24T21:43:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:51Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040070/job/97602950926",
+        "name": "Architecture cross-reference check",
+        "startedAt": "2026-08-24T21:43:48Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040007/job/97602950535",
+        "name": "Secret leak scan",
+        "startedAt": "2026-08-24T21:43:47Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040059/job/97602950956",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-24T21:43:48Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781038256/job/97602945605",
+        "name": "Deprecated shim guard",
+        "startedAt": "2026-08-24T21:43:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:54Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040070/job/97602966833",
+        "name": "Docs Gate",
+        "startedAt": "2026-08-24T21:43:51Z",
+        "status": "COMPLETED",
+        "workflowName": "Docs Hygiene"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:52Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040007/job/97602962605",
+        "name": "Security Gate",
+        "startedAt": "2026-08-24T21:43:50Z",
+        "status": "COMPLETED",
+        "workflowName": "Wolf Security Scan"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:49Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040059/job/97602950950",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-24T21:43:48Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:48Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781038256/job/97602945695",
+        "name": "Architecture drift guard",
+        "startedAt": "2026-08-24T21:43:46Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:52Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781040059/job/97602962678",
+        "name": "CI Gate",
+        "startedAt": "2026-08-24T21:43:50Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-08-24T21:43:50Z",
+        "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/actions/runs/32781038256/job/97602956408",
+        "name": "CI Gate",
+        "startedAt": "2026-08-24T21:43:49Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "Vercel",
+        "startedAt": "2026-08-24T21:43:45Z",
+        "state": "FAILURE",
+        "targetUrl": "https://vercel.com/knowledge/why-is-my-account-deployment-blocked"
+      }
+    ],
+    "title": "Add one-shot engineering DEMO canary"
+  }
+]

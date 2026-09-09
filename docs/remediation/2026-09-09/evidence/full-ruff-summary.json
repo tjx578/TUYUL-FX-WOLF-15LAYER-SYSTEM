@@ -1,0 +1,6 @@
+{
+  "scope": "Whole candidate source lint only",
+  "returncode": 0,
+  "finding_count": 0,
+  "affected_paths": 0
+}

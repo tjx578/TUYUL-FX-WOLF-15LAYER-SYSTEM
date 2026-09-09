@@ -1,68 +1,64 @@
-import type { SessionUser, UserRole } from "@/contracts/auth";
-import { hasRole } from "@/lib/auth";
+import { cookies } from "next/headers";
+import type { SessionUser } from "@/contracts/auth";
+import { getCoreApiUrl } from "@/lib/server/dashboardTopology";
+import { isAuthorizedViewerSession } from "@/lib/viewerContract";
+
+const SESSION_COOKIE = "wolf15_session";
+
+export class SessionAuthorizationError extends Error {
+  constructor(message: string, readonly status: 401 | 403 = 401) {
+    super(message);
+    this.name = "SessionAuthorizationError";
+  }
+}
 
 /**
- * Owner-only auth model — explicit mode.
- *
- * DASHBOARD_MODE must be "owner" (the only supported mode).
- * This dashboard is a private owner control surface — NOT a public
- * multi-user product.  There is no login UI, no public-user session,
- * and no browser-facing API key flow.
- *
- * The mode is validated at first use.  If the env var is missing or
- * set to an unsupported value, the guard throws immediately — no
- * implicit bypass, no silent fallback.
- *
- * See docs/architecture/dashboard-control-surface.md — Auth Model.
+ * Ask the core auth authority to validate a candidate token, then enforce the
+ * narrower visual-dashboard contract locally. A 2xx response alone is not
+ * sufficient: only a JWT-backed viewer carrying read:dashboard is accepted.
  */
+export async function validateSessionToken(
+  token: string,
+  signal?: AbortSignal,
+): Promise<SessionUser | null> {
+  const candidate = token.trim();
+  if (!candidate || candidate.split(".").length !== 3) return null;
 
-const SUPPORTED_MODES = ["owner"] as const;
-type DashboardMode = (typeof SUPPORTED_MODES)[number];
+  const coreApiUrl = getCoreApiUrl();
+  if (!coreApiUrl) return null;
 
-function validateDashboardMode(): DashboardMode {
-  const raw = (process.env.DASHBOARD_MODE ?? "").trim().toLowerCase();
-  if (!raw) {
-    throw new Error(
-      "DASHBOARD_MODE env var is not set. " +
-      "Set DASHBOARD_MODE=owner for the owner-only control surface.",
-    );
+  try {
+    const response = await fetch(coreApiUrl + "/api/auth/session", {
+      method: "GET",
+      headers: {
+        authorization: "Bearer " + candidate,
+        accept: "application/json",
+        cookie: "",
+      },
+      cache: "no-store",
+      redirect: "error",
+      signal: signal ?? AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+
+    const session: unknown = await response.json();
+    return isAuthorizedViewerSession(session) ? session : null;
+  } catch {
+    return null;
   }
-  if (!SUPPORTED_MODES.includes(raw as DashboardMode)) {
-    throw new Error(
-      `DASHBOARD_MODE="${raw}" is not supported. ` +
-      `Supported modes: ${SUPPORTED_MODES.join(", ")}.`,
-    );
-  }
-  return raw as DashboardMode;
 }
-
-let _validatedMode: DashboardMode | null = null;
-
-function ensureOwnerMode(): DashboardMode {
-  if (_validatedMode === null) {
-    _validatedMode = validateDashboardMode();
-  }
-  return _validatedMode;
-}
-
-const OWNER_USER: SessionUser = {
-  user_id: "owner",
-  email: "owner@tuyulfx.com",
-  role: "owner" as UserRole,
-  name: "TUYUL FX Owner",
-};
 
 export async function getVerifiedSessionUser(): Promise<SessionUser | null> {
-  ensureOwnerMode();
-  return OWNER_USER;
+  const cookieStore = await cookies();
+  return validateSessionToken(cookieStore.get(SESSION_COOKIE)?.value ?? "");
 }
 
-export async function requireVerifiedSession(
-  allowedRoles?: readonly UserRole[],
-): Promise<SessionUser> {
-  ensureOwnerMode();
-  if (allowedRoles?.length && !hasRole(OWNER_USER.role, allowedRoles)) {
-    throw new Error("Forbidden: role is not allowed for this route");
+export async function requireVerifiedSession(): Promise<SessionUser> {
+  const user = await getVerifiedSessionUser();
+  if (!user) {
+    throw new SessionAuthorizationError(
+      "Unauthorized: scoped viewer session required",
+    );
   }
-  return OWNER_USER;
+  return user;
 }

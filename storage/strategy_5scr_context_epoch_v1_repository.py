@@ -30,6 +30,8 @@ from contracts.strategy_5scr_context_epoch_v1 import (
     StrategyContextEpochV1,
 )
 from contracts.strategy_5scr_lifecycle_v2 import TERMINAL_LIFECYCLE_STATES
+from storage.observer_export_outbox import ObserverExportOutboxRepository
+from storage.observer_strategy_events import context_epoch_transition_observer_draft
 from storage.postgres_client import PostgresClient, pg_client
 
 EPOCH_TABLE = "strategy_5scr_context_epochs_v1"
@@ -444,8 +446,16 @@ def _epoch_from_row(row: Any) -> StrategyContextEpochV1:
 class StrategyContextEpochV1Repository:
     """Fold linked material context evidence under a lifecycle row lock."""
 
-    def __init__(self, *, pg: PostgresClient | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        pg: PostgresClient | None = None,
+        observer_export_repository: ObserverExportOutboxRepository | None = None,
+    ) -> None:
         self._pg = pg or pg_client
+        self._observer_export = observer_export_repository
+        if pg is None and observer_export_repository is None:
+            self._observer_export = ObserverExportOutboxRepository(pg=self._pg)
 
     @property
     def is_available(self) -> bool:
@@ -691,6 +701,15 @@ class StrategyContextEpochV1Repository:
 
             if reduction.transition is not None:
                 await self._insert_transition(connection, reduction.transition, evidence)
+                if self._observer_export is not None:
+                    await self._observer_export.append_in_transaction(
+                        connection,
+                        context_epoch_transition_observer_draft(
+                            reduction.transition,
+                            reduction.epoch,
+                            evidence,
+                        ),
+                    )
             return ContextEpochPersistenceResult(
                 status="NO_CHANGE" if reduction.status == "CONFIRMED" else "PERSISTED",
                 strategy_lifecycle_id=lifecycle_id,
