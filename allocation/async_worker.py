@@ -417,7 +417,7 @@ async def _main() -> None:
                 logger.info("[SUPERVISOR] Allocation worker cancelled")
                 raise
             except Exception as exc:
-                if any(not task.done() for task in worker._in_flight):
+                if worker is not None and any(not task.done() for task in worker._in_flight):
                     raise RuntimeError("allocation_restart_before_drain_forbidden") from exc
                 restarts += 1
                 logger.error(
@@ -431,12 +431,14 @@ async def _main() -> None:
                     raise RuntimeError("ALLOCATION_REQUIRED_WORKER_EXHAUSTED") from None
                 await asyncio.sleep(_RESTART_COOLDOWN)
     finally:
-        if worker is not None and any(not task.done() for task in worker._in_flight):
-            raise RuntimeError("allocation_pool_close_before_drain_forbidden")
-        await close_pool()
+        pool_close_forbidden = worker is not None and any(not task.done() for task in worker._in_flight)
+        if not pool_close_forbidden:
+            await close_pool()
         _probe_task.cancel()
         await asyncio.gather(_probe_task, return_exceptions=True)
         await _probe.stop()
+        if pool_close_forbidden:
+            logger.critical("Allocation pool close forbidden: in-flight tasks were not drained")
 
 
 if __name__ == "__main__":

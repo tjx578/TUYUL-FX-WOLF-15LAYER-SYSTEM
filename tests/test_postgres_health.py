@@ -24,7 +24,11 @@ def test_postgres_health_not_configured(monkeypatch) -> None:
     try:
         # Deliberately no context manager: route projection must not start workers
         # or acquire a real database connection. Built-image CI covers lifespan.
-        response = TestClient(app).get("/api/v1/status/full")
+        client = TestClient(app)
+        try:
+            response = client.get("/api/v1/status/full")
+        finally:
+            client.close()
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)

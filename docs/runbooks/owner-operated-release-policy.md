@@ -1,9 +1,10 @@
 # Owner-operated release policy
 
 On 2026-09-09 the repository owner requested removal of mandatory additional
-reviewers. Pull requests remain required, with zero required approvals and no
-last-push approval requirement. Existing automated review findings still require
-technical assessment; this policy does not certify their fixes.
+reviewers. Pull requests remain required; required approvals and last-push
+approval are governed by the current branch protection settings. Existing
+automated review findings still require technical assessment; this policy does not
+certify their fixes.
 
 Main retains strict CI Gate, Security Gate and Docs Gate checks bound to GitHub
 Actions, admin enforcement, conversation resolution, no force pushes and no
