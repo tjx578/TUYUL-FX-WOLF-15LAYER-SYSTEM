@@ -53,9 +53,13 @@ class FaultConnection:
         return result
 
 
-def setup(dsn):
-    start = datetime.now(UTC) - timedelta(seconds=300)
-    binding = fixture_binding().model_copy(update={"window_start_utc": start})
+def setup(dsn, *, evaluated_at=None, grant_ttl_seconds=600):
+    start = (evaluated_at or datetime.now(UTC)) - timedelta(seconds=300)
+    original_binding = fixture_binding()
+    policy = original_binding.policy.model_copy(
+        update={"policy_id": f"TEST_ONLY_GAP150_TTL{grant_ttl_seconds}", "grant_ttl_seconds": grant_ttl_seconds}
+    )
+    binding = original_binding.model_copy(update={"window_start_utc": start, "policy": policy})
     events = [
         replace(raw(second, direction, symbol="S03TEST"), timestamp=start + timedelta(seconds=second))
         for second, direction in ((0, "BUY"), (150, "SELL"), (300, "BUY"))
@@ -349,8 +353,11 @@ def test_unprivileged_application_role_enforces_owner_fence(pg_dsn):
             await admin.execute(
                 f'GRANT SELECT, INSERT, UPDATE ON public.strategy_5scr_analysis_lifecycles_v2 TO "{role}"'
             )
-            # SELECT FOR UPDATE in bind_owner needs UPDATE, not owner-table ownership.
-            await admin.execute(f'GRANT SELECT, UPDATE ON public.strategy_5scr_owner_fences_v1 TO "{role}"')
+            # Migration 07 validates the capability without exposing controller
+            # state or permitting the application role to replace its owner.
+            await admin.execute(
+                f'GRANT EXECUTE ON FUNCTION public.bind_5scr_lifecycle_owner_v1(text,text,text,bigint,uuid) TO "{role}"'
+            )
 
             @asynccontextmanager
             async def app_transaction():
@@ -388,9 +395,199 @@ def test_unprivileged_application_role_enforces_owner_fence(pg_dsn):
             with pytest.raises(asyncpg.InsufficientPrivilegeError):
                 async with app_transaction() as c:
                     await c.execute("ALTER TABLE public.strategy_5scr_analysis_lifecycles_v2 DISABLE TRIGGER ALL")
+            for statement in (
+                "SELECT token FROM public.strategy_5scr_owner_fences_v1",
+                "UPDATE public.strategy_5scr_owner_fences_v1 SET token=gen_random_uuid() WHERE symbol='S03TEST'",
+                "DELETE FROM public.strategy_5scr_owner_fences_v1 WHERE symbol='S03TEST'",
+            ):
+                with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                    async with app_transaction() as c:
+                        await c.execute(statement)
         finally:
             await admin.execute(f'DROP OWNED BY "{role}"')
             await admin.execute(f'DROP ROLE "{role}"')
             await admin.close()
 
     asyncio.run(run())
+
+
+# D10: actual authenticated consumer caller and actual PostgreSQL wall clock.
+# These supplement, rather than rename, the original eleven consumer cases.
+def _authenticated_client(consumer):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from services.pressure_outbox.activity_delivery_transport import ActivityTransportBinding, activity_consumer_router
+
+    binding = ActivityTransportBinding(
+        destination="https://fixture.test/internal/s03/activity-deliveries",
+        identity="fixture-producer",
+        key=b"x" * 32,
+        maximum_skew_seconds=30,
+    )
+    application = FastAPI()
+    application.include_router(
+        activity_consumer_router(binding=binding, consumer=consumer, maximum_payload_bytes=100000)
+    )
+    return TestClient(application), binding
+
+
+def _post_delivery(client, binding, payload):
+    import time
+
+    timestamp = str(int(time.time()))
+    return client.post(
+        "/internal/s03/activity-deliveries",
+        content=payload,
+        headers={
+            "X-S03-Identity": binding.identity,
+            "X-S03-Time": timestamp,
+            "X-S03-Signature": binding.signature(timestamp, payload),
+        },
+    )
+
+
+def _delivery_effects(producer, consumer, lifecycle, event):
+    predicates = {
+        "strategy_5scr_analysis_lifecycles_v2": ("strategy_lifecycle_id=%s", (lifecycle.strategy_lifecycle_id,)),
+        "strategy_5scr_activity_inbox_v1": ("delivery_id=%s", (event.delivery_id,)),
+        "strategy_5scr_activity_conflicts_v1": ("delivery_id=%s", (event.delivery_id,)),
+        "strategy_5scr_activity_mappings_v1": (
+            "consumer_scope_id=%s AND activity_id=%s",
+            (consumer.scope.consumer_scope_id, event.evaluation.activity_id),
+        ),
+        "strategy_5scr_activity_consumer_cursors_v1": (
+            "scope_hash=%s AND activity_id=%s",
+            (consumer.scope.scope_hash, event.evaluation.activity_id),
+        ),
+        "strategy_5scr_activity_emissions_v1": ("lifecycle_id=%s", (lifecycle.strategy_lifecycle_id,)),
+    }
+    with producer._connect() as connection:
+        return {
+            table: [
+                row["row"]
+                for row in connection.execute(
+                    f"SELECT row_to_json(t) AS row FROM public.{table} AS t WHERE {where} ORDER BY row_to_json(t)::text",
+                    arguments,
+                ).fetchall()
+            ]
+            for table, (where, arguments) in predicates.items()
+        }
+
+
+def _assert_no_new_authority(value):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in {"hypothesis_authority", "risk_authority", "execution_authority"}:
+                assert item is False
+            _assert_no_new_authority(item)
+    elif isinstance(value, list):
+        for item in value:
+            _assert_no_new_authority(item)
+
+
+def test_unseen_delivery_expiry_through_authenticated_caller_postgres(pg_dsn):
+    producer, consumer, _, _, lifecycle, wire = setup(
+        pg_dsn, evaluated_at=datetime.now(UTC) - timedelta(seconds=30), grant_ttl_seconds=5
+    )
+    payload = wire()[0]["payload"].encode()
+    event = ActivityDeliveryV1.model_validate_json(payload)
+    assert event.evaluation.decision == "GRANTED"
+    with producer._connect() as connection:
+        assert (
+            connection.execute("SELECT clock_timestamp() AS now").fetchone()["now"] >= event.evaluation.valid_until_utc
+        )
+    before = _delivery_effects(producer, consumer, lifecycle, event)
+    assert all(not rows for rows in before.values())
+    consumer.select_lifecycle = lambda *_: pytest.fail("expired delivery must not reduce lifecycle")
+    client, binding = _authenticated_client(consumer)
+    with client:
+        response = _post_delivery(client, binding, payload)
+    assert response.status_code == 200
+    assert response.json() == {
+        "delivery_id": event.delivery_id,
+        "payload_hash": event.payload_hash,
+        "outcome": "EXPIRED_UNSEEN_DELIVERY",
+    }
+    assert _delivery_effects(producer, consumer, lifecycle, event) == before
+    _assert_no_new_authority(event.model_dump(mode="json"))
+
+
+def test_expired_committed_delivery_replay_through_authenticated_caller_postgres(pg_dsn):
+    import time
+
+    # Explicit TEST_ONLY expiry is short for this acceptance, with no clock mock.
+    producer, consumer, _, _, lifecycle, wire = setup(pg_dsn, grant_ttl_seconds=10)
+    payload = wire()[0]["payload"].encode()
+    event = ActivityDeliveryV1.model_validate_json(payload)
+    client, binding = _authenticated_client(consumer)
+    with client:
+        response = _post_delivery(client, binding, payload)
+    assert response.status_code == 200 and response.json()["outcome"] == "COMMITTED"
+    before = _delivery_effects(producer, consumer, lifecycle, event)
+    assert [len(rows) for table, rows in before.items() if not table.endswith("conflicts_v1")] == [1] * 5
+    assert before["strategy_5scr_activity_conflicts_v1"] == []
+    deadline = time.monotonic() + 15
+    with producer._connect() as connection:
+        while (
+            connection.execute("SELECT clock_timestamp() AS now").fetchone()["now"] < event.evaluation.valid_until_utc
+        ):
+            assert time.monotonic() < deadline, "actual server clock did not reach the bound expiry"
+            time.sleep(0.05)
+    restarted = StrategyShadowEvidenceV2Repository(pg=DB(pg_dsn)).activity_consumer(
+        scope=consumer.scope,
+        fence=consumer.fence,
+        policy_hash=consumer.scope.lifecycle_policy_hash,
+        select_lifecycle=lambda *_: pytest.fail("expired committed replay must not reduce"),
+        validate_source=lambda *_: pytest.fail("expired committed replay must not reacquire source"),
+    )
+    client, binding = _authenticated_client(restarted)
+    with client:
+        replay = _post_delivery(client, binding, payload)
+    assert replay.status_code == 200
+    assert replay.json() == {
+        "delivery_id": event.delivery_id,
+        "payload_hash": event.payload_hash,
+        "outcome": "DUPLICATE_NO_EFFECT",
+    }
+    assert _delivery_effects(producer, consumer, lifecycle, event) == before
+    _assert_no_new_authority(before)
+
+
+@pytest.mark.parametrize("policy_hash", [None, "sha256:" + "9" * 64], ids=["missing", "mismatched"])
+def test_unbound_policy_blocks_actual_postgres_consumer_factory(pg_dsn, policy_hash):
+    producer, consumer, _, owner, lifecycle, wire = setup(pg_dsn)
+    event = ActivityDeliveryV1.model_validate_json(wire()[0]["payload"])
+    before = _delivery_effects(producer, consumer, lifecycle, event)
+    assert all(not rows for rows in before.values())
+    with pytest.raises(ValueError, match="CONSUMER_POLICY_OR_OWNER_UNBOUND"):
+        owner.activity_consumer(
+            scope=consumer.scope,
+            fence=consumer.fence,
+            policy_hash=policy_hash,
+            select_lifecycle=lambda *_: pytest.fail("unbound policy must not reduce"),
+            validate_source=lambda *_: pytest.fail("unbound policy must not read source"),
+        )
+    assert _delivery_effects(producer, consumer, lifecycle, event) == before
+    _assert_no_new_authority(event.model_dump(mode="json"))
+
+
+def test_missing_policy_cannot_reopen_committed_postgres_delivery(pg_dsn):
+    producer, consumer, _, _, lifecycle, wire = setup(pg_dsn)
+    payload = wire()[0]["payload"].encode()
+    event = ActivityDeliveryV1.model_validate_json(payload)
+    client, binding = _authenticated_client(consumer)
+    with client:
+        response = _post_delivery(client, binding, payload)
+    assert response.status_code == 200 and response.json()["outcome"] == "COMMITTED"
+    before = _delivery_effects(producer, consumer, lifecycle, event)
+    with pytest.raises(ValueError, match="CONSUMER_POLICY_OR_OWNER_UNBOUND"):
+        StrategyShadowEvidenceV2Repository(pg=DB(pg_dsn)).activity_consumer(
+            scope=consumer.scope,
+            fence=consumer.fence,
+            policy_hash=None,
+            select_lifecycle=lambda *_: pytest.fail("missing policy cannot replay as new analysis"),
+            validate_source=lambda *_: pytest.fail("missing policy cannot grant a source caller"),
+        )
+    assert _delivery_effects(producer, consumer, lifecycle, event) == before
+    _assert_no_new_authority(before)

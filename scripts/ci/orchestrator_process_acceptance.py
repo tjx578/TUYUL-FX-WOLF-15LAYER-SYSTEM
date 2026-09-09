@@ -58,6 +58,8 @@ def run(image, redis_image, output):
         "services/orchestrator/mode_owner.py",
         "deploy/railway/start_orchestrator.sh",
         "core/health_probe.py",
+        "services/shared/diagnostics.py",
+        "scripts/ci/orchestrator_process_acceptance.py",
     ]
     try:
         receipt["image_id"] = json.loads(docker("image", "inspect", image))[0]["Id"]
@@ -203,7 +205,9 @@ print(json.dumps([int(r.split()[1].split(':')[1],16) for f in ['tcp','tcp6'] for
                 assert not subscribed
             else:
                 docker("stop", "--time", "5", cache, timeout=15)
+                receipt["fault_stage"] = "awaiting_dependency_readiness_rejection"
                 until(lambda: request()["status"] == 503, timeout=10)
+                receipt["fault_stage"] = "awaiting_nonzero_exit_after_bounded_diagnostics"
                 until(lambda app=app: not json.loads(docker("inspect", app))[0]["State"]["Running"], timeout=25)
                 exit_code = json.loads(docker("inspect", app))[0]["State"]["ExitCode"]
                 assert exit_code not in (0, 137)

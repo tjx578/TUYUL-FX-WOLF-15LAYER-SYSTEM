@@ -13,7 +13,6 @@ Zone: startup/ — process lifecycle, no execution side-effects.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import math
 from collections.abc import Awaitable, Callable
 
@@ -89,10 +88,12 @@ class GracefulShutdown:
                 # Give forcefully cancelled tasks a short window to clean up
                 followup_done, pending = await asyncio.wait(pending, timeout=2.0)
                 done.update(followup_done)
-                if pending and self._require_quiescent:
+                if pending:
                     # The process owner supplies the final bounded exit. Never
                     # close resources still reachable by these live writers.
-                    raise ShutdownDrainTimeoutError("SHUTDOWN_WRITERS_NOT_QUIESCENT")
+                    if self._require_quiescent:
+                        raise ShutdownDrainTimeoutError("SHUTDOWN_WRITERS_NOT_QUIESCENT")
+                    raise RuntimeError("shutdown_tasks_not_drained")
 
             # Collect and log any unexpected exceptions from drained tasks
             for task in done:
@@ -176,10 +177,8 @@ class GracefulShutdown:
             )
             for t in pending:
                 t.cancel()
-            if self._require_quiescent:
-                _, pending = await asyncio.wait(pending, timeout=2.0)
-                if pending:
+            _, pending = await asyncio.wait(pending, timeout=2.0)
+            if pending:
+                if self._require_quiescent:
                     raise ShutdownDrainTimeoutError("SHUTDOWN_WRITERS_NOT_QUIESCENT")
-            else:
-                with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait(pending, timeout=2.0)
+                raise RuntimeError("shutdown_worker_tasks_not_drained")

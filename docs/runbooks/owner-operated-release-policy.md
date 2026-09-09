@@ -1,9 +1,10 @@
 # Release approval policy
 
-Main requires pull requests, at least one independent approval, dismissal of
-stale approvals, and approval after the latest push. It also retains strict CI
-Gate, Security Gate and Docs Gate checks bound to GitHub Actions, admin
-enforcement, conversation resolution, no force pushes, and no deletions.
+On 2026-09-09 the repository owner requested removal of mandatory additional
+reviewers. Pull requests remain required; required approvals and last-push
+approval are governed by the current branch protection settings. Existing
+automated review findings still require technical assessment; this policy does not
+certify their fixes.
 
 Production requires a non-empty reviewer rule that prevents self-review,
 protected-branch restrictions, and no admin bypass. RAILWAY_TOKEN remains

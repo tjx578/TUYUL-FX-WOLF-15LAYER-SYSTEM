@@ -78,7 +78,7 @@ async def test_pressure_outbox_failure_drains_siblings_before_pool_close(monkeyp
     for config in [mod.OutcomeRuntimeConfig, mod.LifecycleV2RuntimeConfig, mod.ShadowEvidenceV2RuntimeConfig]:
         monkeypatch.setattr(config, "from_env", lambda: SimpleNamespace(enabled=False))
     monkeypatch.setattr(asyncio.get_running_loop(), "add_signal_handler", lambda *args: callbacks.append(args[1]))
-    with pytest.raises(RuntimeError, match="crash_limit"):
+    with pytest.raises(RuntimeError, match="REQUIRED_TASK_FAILED:evidence_worker:exception"):
         await mod._main()
     assert order[-1] == "pool_closed"
     assert "primary_drained" in order[:-1]

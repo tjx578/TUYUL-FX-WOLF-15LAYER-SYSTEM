@@ -423,12 +423,21 @@ def test_release_entrypoint_enforces_real_governance_with_fixture_reads(
     }.items():
         monkeypatch.setenv(key, value)
 
+    fixtures = {path: for_workflow(receipt, path) for path in module.RELEASE_WORKFLOWS}
+
     def ci_read(endpoint):
-        if endpoint.endswith("/ci.yml"):
-            return receipt["workflow"]
-        if "/jobs?" in endpoint:
-            return {"jobs": receipt["jobs"], "total_count": len(receipt["jobs"])}
-        return receipt["run"]
+        for path, fixture in fixtures.items():
+            name = path.rsplit("/", 1)[1]
+            if endpoint.endswith("/" + name):
+                return fixture["workflow"]
+            if "/" + name + "/runs?" in endpoint:
+                return {"workflow_runs": [fixture["run"]], "total_count": 1}
+        for fixture in fixtures.values():
+            if f"/runs/{fixture['run']['id']}" in endpoint:
+                if "/jobs?" in endpoint:
+                    return {"jobs": fixture["jobs"], "total_count": len(fixture["jobs"])}
+                return fixture["run"]
+        pytest.fail(f"unexpected release fixture endpoint: {endpoint}")
 
     observe = _governance_observer()
     observed = []

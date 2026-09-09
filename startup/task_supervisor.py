@@ -56,8 +56,8 @@ async def supervised_task(
 
     Required long-running tasks treat unexpected completion as failure and raise
     after the restart budget, so the process owner can exit nonzero. A failure
-    latches health/readiness closed until process replacement; retries cannot
-    silently restore readiness before role bootstrap is proven again. Optional
+    latches health/readiness closed unless an explicit state callback owns
+    readiness recovery after role bootstrap is proven again. Optional
     intentionally completed tasks retain their existing behavior.
 
     Cooldown between restarts grows exponentially from *cooldown* up to
@@ -81,21 +81,11 @@ async def supervised_task(
                 max_restarts,
             )
             await coro_factory()
-            if required and not (shutdown_event and shutdown_event.is_set()):
-                raise RuntimeError(f"{name}_unexpected_exit")
             return  # intentional optional exit or requested shutdown
         except asyncio.CancelledError:
-            if required and not (shutdown_event and shutdown_event.is_set()):
-                if health_probe:
-                    health_probe.set_alive(False)
-                    health_probe.set_detail("dead_reason", f"{name}_unexpected_cancellation")
-                raise RuntimeError(f"{name}_unexpected_cancellation") from None
             logger.info("[SUPERVISOR] Task '{}' cancelled", name)
             return
         except Exception as exc:
-            if required and health_probe:
-                health_probe.set_alive(False)
-                health_probe.set_detail("dead_reason", f"{name}_required_task_failed")
             elapsed = time.monotonic() - started_at
 
             # If task survived long enough, treat crash as transient → reset counter
@@ -130,8 +120,6 @@ async def supervised_task(
                 if health_probe:
                     health_probe.set_alive(False)
                     health_probe.set_detail("dead_reason", f"{name}_crash_limit")
-                if required:
-                    raise RuntimeError(f"{name}_crash_limit") from exc
                 return
             await asyncio.sleep(delay)
 
@@ -184,9 +172,17 @@ async def _supervise_required(name, coro_factory, shutdown_event, health_probe, 
             cause = "cancelled"
         except Exception:
             cause = "exception"
-        if stopping():
+        if stopping() and cause != "exception":
             publish("STOPPED")
             return
+        if stopping():
+            # A real worker failure racing an orderly stop is still a failure.
+            # Preserve it for the process owner after siblings have drained.
+            failed(cause)
+        if health_probe is not None and state_callback is None:
+            health_probe.set_readiness_check(lambda: False)
+            health_probe.set_alive(False)
+            health_probe.set_detail("dead_reason", f"{name}_required_task_failed")
         elapsed = time.monotonic() - started_at
         if elapsed >= _SUCCESS_WINDOW:
             restarts = 0

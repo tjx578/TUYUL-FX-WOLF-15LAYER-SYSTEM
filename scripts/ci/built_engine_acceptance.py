@@ -14,7 +14,6 @@ from pathlib import Path
 from scripts.ci.built_api_acceptance import environment, listener_ports, request
 
 SOURCES = (
-    "Dockerfile",
     "main.py",
     "services/engine/runner.py",
     "services/engine/runtime_state.py",
@@ -190,6 +189,8 @@ def main():
     }
     try:
         expected = json.loads(os.environ["WOLF15_TEST_ENGINE_SOURCES_JSON"])
+        receipt["missing_source_paths"] = [path for path in SOURCES if not Path(path).is_file()]
+        assert not receipt["missing_source_paths"], "required runtime source absent from image"
         actual = {path: hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in SOURCES}
         assert set(expected) == set(SOURCES) and expected == actual, "built engine source binding differs"
         receipt["source_hashes"] = actual
