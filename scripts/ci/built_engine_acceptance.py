@@ -128,6 +128,7 @@ def case(mode):
         log_path = folder / "engine.log"
         with log_path.open("w+") as log:
             process = subprocess.Popen([sys.executable, "-c", CHILD, mode, directory], env=env, stdout=log, stderr=log)
+            stage = "initial_readiness"
             try:
                 wait_ready(process, 503 if mode == "bootstrap_failure" else 200)
                 assert listener_ports(process.pid) == [18080], "engine must own one probe listener"
@@ -147,10 +148,12 @@ def case(mode):
                     (folder / "resume").write_text("TEST_ONLY")
                     wait_ready(process, 200, timeout=5)
                 normal = mode in {"graceful", "restart"}
+                stage = "shutdown_signal" if normal else "fatal_readiness"
                 if normal:
                     process.send_signal(signal.SIGTERM)
                 else:
                     wait_ready(process, 503, timeout=8)
+                stage = "process_exit"
                 code = process.wait(timeout=55 if mode == "resistant" else 15)
                 elapsed = time.monotonic() - started
                 output = log_path.read_text()
@@ -172,6 +175,29 @@ def case(mode):
                     "elapsed_seconds": round(elapsed, 3),
                     "readiness_scope": "FIXTURE_ANALYSIS_CYCLE_AND_REQUIRED_TASK_LIFECYCLE_ONLY",
                     "pool_closed_while_writer_alive": False,
+                }
+            except Exception as error:
+                # Preserve bounded, allowlisted lifecycle evidence without
+                # exporting arbitrary application logs or exception messages.
+                output = log_path.read_text()
+                return {
+                    "case": mode,
+                    "passed": False,
+                    "failure_class": type(error).__name__,
+                    "failure_stage": stage,
+                    "exit_code": process.poll(),
+                    "lifecycle_markers": {
+                        marker: marker in output
+                        for marker in (
+                            "Received signal",
+                            "CI_ANALYSIS_DRAINED",
+                            "CI_REDIS_DRAINED",
+                            "CI_STORAGE_CLOSE",
+                            "CI_POOL_CLOSE",
+                            "CI_CANCEL_RESISTED",
+                            "System shutdown complete",
+                        )
+                    },
                 }
             finally:
                 if process.poll() is None:
@@ -195,8 +221,11 @@ def main():
         assert set(expected) == set(SOURCES) and expected == actual, "built engine source binding differs"
         receipt["source_hashes"] = actual
         for mode in ("bootstrap_failure", "graceful", "exception", "returned", "cancelled", "restart", "resistant"):
-            receipt["cases"].append(case(mode))
-        receipt["accepted"] = True
+            result = case(mode)
+            receipt["cases"].append(result)
+            if not result["passed"]:
+                break
+        receipt["accepted"] = len(receipt["cases"]) == 7 and all(result["passed"] for result in receipt["cases"])
     except Exception as error:
         receipt["failure_class"] = type(error).__name__
     print(json.dumps(receipt, indent=2))

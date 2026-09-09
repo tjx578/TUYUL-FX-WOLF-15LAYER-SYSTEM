@@ -19,7 +19,8 @@ def test_orchestrator_late_fatal_clears_readiness_and_exits(monkeypatch):
         assert mod._ORCHESTRATOR_READY.is_set()
         raise RuntimeError("fixture_fatal")
 
-    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: probe)
+    owner = SimpleNamespace(probe=probe, close=lambda: observed.append("probe_closed"))
+    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: owner)
     monkeypatch.setattr(mod, "StateManager", lambda: SimpleNamespace(run_forever=run_forever))
     monkeypatch.setattr(
         diagnostics,
@@ -28,7 +29,28 @@ def test_orchestrator_late_fatal_clears_readiness_and_exits(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="fixture_fatal"):
         mod.run()
-    assert observed == [("alive", False), (False, 30)]
+    assert observed == [("alive", False), (False, 30), "probe_closed"]
+
+
+def test_orchestrator_normal_exit_closes_probe_without_diagnostic_hold(monkeypatch):
+    from services.orchestrator import state_manager as mod
+
+    observed = []
+    owner = SimpleNamespace(probe=SimpleNamespace(), close=lambda: observed.append("probe_closed"))
+
+    def run_forever(on_started):
+        on_started()
+        observed.append("runtime_finished")
+
+    def forbidden_hold(**kwargs):
+        pytest.fail("graceful orchestrator exit must not enter diagnostics")
+
+    monkeypatch.setattr(mod, "_start_health_probe_in_thread", lambda **kwargs: owner)
+    monkeypatch.setattr(mod, "StateManager", lambda: SimpleNamespace(run_forever=run_forever))
+    monkeypatch.setattr("services.shared.diagnostics.hold_alive_sync", forbidden_hold)
+    mod.run()
+    assert observed == ["runtime_finished", "probe_closed"]
+    assert not mod._ORCHESTRATOR_READY.is_set()
 
 
 @pytest.mark.asyncio

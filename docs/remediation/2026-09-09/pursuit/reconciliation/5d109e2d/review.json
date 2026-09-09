@@ -1,0 +1,116 @@
+{
+  "source": "5d109e2d64e4b653b1a9a916736e3d2b75ac42c1",
+  "observed_at_utc": "2026-09-09T16:02:45.866941+00:00",
+  "ci_run": 34372125336,
+  "ci_gate": "FAILURE",
+  "security_gate": "SUCCESS",
+  "docs_gate": "SUCCESS",
+  "postgres_dedicated": 100,
+  "postgres_receipts_verified": true,
+  "python_suites": {
+    "benchmark.xml": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "3a1aec00be503bf5a1c4d6495c149159e675feef6022572076c25a0e42c0ebb5",
+      "identities_sha256": "824b13beacf731435c6f20c79b6a7e4e9127c2df552112de35b223ab55dcad25",
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\python-suite-5d109e2d\\benchmark.xml",
+      "executed_identities": [
+        "tests.test_ws_connection_stress.TestBroadcastThroughput::test_broadcast_50_clients_under_100ms",
+        "tests.test_ws_connection_stress.TestBroadcastThroughput::test_broadcast_1000_messages_to_10_clients",
+        "tests.test_load_tick_stress.TestHighFrequencyTickBurst::test_process_10k_ticks_within_time_bound",
+        "tests.test_load_tick_stress.TestHighFrequencyTickBurst::test_throughput_meets_minimum",
+        "tests.test_load_tick_stress.TestMultiSymbolConcurrentLoad::test_multi_symbol_throughput",
+        "tests.test_load_tick_stress.TestSustainedLoad::test_processing_latency_per_cycle"
+      ]
+    },
+    "mode-owner.xml": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "4d5405535c1603b2c0fb5171508387a6cd420dcceee384a552f1260c2432233a",
+      "identities_sha256": "899279854c2856fc8d1789b3d14c115777bc5068d163e8369efdd58e1870e5b9",
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\python-suite-5d109e2d\\mode-owner.xml",
+      "executed_identities": [
+        "tests.integration.test_orchestrator_mode_owner_redis::test_atomic_duplicate_owner_race_has_one_winner",
+        "tests.integration.test_orchestrator_mode_owner_redis::test_actual_mode_writer_expiry_takeover_rejects_stale_all_state_writes",
+        "tests.integration.test_orchestrator_mode_owner_redis::test_backend_unavailable_does_not_fall_back_or_acquire_authority",
+        "tests.integration.test_orchestrator_mode_owner_redis::test_served_health_probe_rejects_expired_mode_owner"
+      ]
+    },
+    "runtime-drain.xml": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "a1f0cec11e8e9411237b036e9d3c2d29883ec7a5368456bf32399b30e94fff03",
+      "identities_sha256": "aa6051df8c45a4f8d1819706c054c981787a26c0bab1337d5c01c0582c695dec",
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\python-suite-5d109e2d\\runtime-drain.xml",
+      "executed_identities": [
+        "tests.integration.test_runtime_drain_postgres::test_actual_outbox_update_cancelled_before_pool_close[api_required]",
+        "tests.integration.test_runtime_drain_postgres::test_actual_outbox_update_cancelled_before_pool_close[pressure_graceful]"
+      ]
+    },
+    "tests.xml": {
+      "tests": 10464,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "194e011de9e261558b3b0b0f15cd7d12617e031e10da4d69d563a212cc9e1ff1",
+      "identities_sha256": "dcad1738a689bedb242f584073ccba416fbdf2dcf3e25b3666be14810910fbc9",
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\python-suite-5d109e2d\\tests.xml"
+    }
+  },
+  "runtime": {
+    "built-engine.json": {
+      "accepted": false,
+      "receipt_sha256": "55594dbfa1acf7b06f0c262214385b35e6518dd24d584f47347c393f2d5e8f96",
+      "source_manifest_matches_feature_head": true,
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\runtime-5d109e2d\\built-engine.json"
+    },
+    "orchestrator-process.json": {
+      "accepted": true,
+      "receipt_sha256": "32a837610122e9c023eb3cd564dcdc2b674afae790fdc0f6f3ef320133d1505d",
+      "source_manifest_matches_feature_head": true,
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\runtime-5d109e2d\\orchestrator-process.json"
+    },
+    "engine-trade-process.json": {
+      "accepted": true,
+      "receipt_sha256": "c38e143d0e3c031e8fe49425dbf8dbb55518330e512eaed0e72a1dddb74b24ae",
+      "source_manifest_matches_feature_head": true,
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\runtime-5d109e2d\\engine-trade-process.json"
+    },
+    "ingest-process.json": {
+      "accepted": true,
+      "receipt_sha256": "35090410667640e2b5bd67d8e378c7dc9888cca90aa1212ae4bec0515d86de45",
+      "source_manifest_matches_feature_head": true,
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\runtime-5d109e2d\\ingest-process.json"
+    },
+    "pressure-outbox-process.json": {
+      "accepted": true,
+      "receipt_sha256": "b0944637f3af94cf91d7308b3f8f7cd578934e61a655aee4f3fb86d2599f6a1d",
+      "source_manifest_matches_feature_head": true,
+      "artifact_path": "D:\\WOLF15-work\\master-remediation-20260909\\runtime-5d109e2d\\pressure-outbox-process.json"
+    }
+  },
+  "artifacts": {
+    "postgres-verified-summary.json": "5f05f7a45e31e8747438f24273a569092ddd2e22be4afb1917bcccad08b15358",
+    "runner-qualification.json": "5c2e9d10867e3335535814ffa29ad44ed6be6cb56f84e3426a7c8445fa8b0d1e",
+    "upgrade-receipt.json": "b27b5582a1fc80c4426a03eeb8791fe6c757bf30a52c4c9d1b098dc8591989e6",
+    "built-engine-failed.json": "55594dbfa1acf7b06f0c262214385b35e6518dd24d584f47347c393f2d5e8f96",
+    "signal-wakeup-regression.json": "e885584db6d948b6a349aa7e0370a0d7a461eee0d5f6c1bd86b85e0c4b5f5cf8",
+    "run-34372125336.json": "dac17736491ff373b887db9028d5460a287c3d38d9328f355772aef34ccf3957",
+    "run-34372125450.json": "aff6b669249e6213e50a0b4963667ff4e93d732a950af6410e2dc6de04426a17",
+    "run-34372125296.json": "cb59328c6bf7cb97eaa9b49334009a358fdbdeab141d86aea5439f35676fd3c9"
+  },
+  "next_source": "UNCOMMITTED_OWNER_PROBE_CALLERS_AND_SIGNAL_WAKEUP_FIX",
+  "closure": "HOLD",
+  "limitations": [
+    "No newer-candidate Linux acceptance yet",
+    "C03 additional PR415 and PR413 reconciliation remains in progress",
+    "No production or broker acceptance",
+    "Counts across overlapping suites are not added"
+  ]
+}

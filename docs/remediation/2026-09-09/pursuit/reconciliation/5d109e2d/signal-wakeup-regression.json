@@ -1,0 +1,12 @@
+{
+  "committed": {
+    "elapsed_seconds": 1.514999999999418,
+    "woke_before_deadline": false,
+    "source_sha256": "36e7a9474774e74482c771295a98f101f0f203bb9905bb63d29f27ae37335aa1"
+  },
+  "fixed": {
+    "elapsed_seconds": 0.062000000005355105,
+    "woke_before_deadline": true,
+    "source_sha256": "c4c2ad1aa31a505386532bd2860f701982561b270bb2a3d5728085a7854d8660"
+  }
+}

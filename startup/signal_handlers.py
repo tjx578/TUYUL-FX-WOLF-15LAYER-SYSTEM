@@ -22,9 +22,15 @@ def create_shutdown_event() -> asyncio.Event:
 def install_signal_handlers(shutdown_event: asyncio.Event) -> None:
     """Install SIGINT/SIGTERM handlers that set the shutdown event."""
 
+    loop = asyncio.get_running_loop()
+
     def _handler(signum: int, frame: types.FrameType | None) -> None:
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-        shutdown_event.set()
+        # Event.set() alone schedules callbacks without waking an idle selector.
+        # Python may restart the interrupted selector syscall after this handler
+        # returns. Wake the owning loop explicitly, including on Windows where
+        # loop.add_signal_handler is unavailable.
+        loop.call_soon_threadsafe(shutdown_event.set)
 
     signal.signal(signal.SIGINT, _handler)
     signal.signal(signal.SIGTERM, _handler)
